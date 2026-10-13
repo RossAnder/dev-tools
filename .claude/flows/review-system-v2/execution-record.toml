@@ -1,2 +1,2254 @@
 schema_version = 1
-last_updated = 2026-10-09
+last_updated = 2026-10-13
+
+[[items]]
+id = "E1"
+agent = "implement"
+from_status = "draft"
+to_status = "in-progress"
+summary = "status draft -> in-progress"
+type = "status-transition"
+date = 2026-10-12
+
+[[items]]
+id = "E2"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+files = ["tomlctl/src/agents/correlate.rs"]
+summary = "Added review-v2 to the LEDGER regex alternation in correlate.rs and the ledger_line_attributes_review_v2_store test (falsifier: 1 failed with alternation reverted)."
+type = "task-completion"
+task_ref = "attribute-review-v2-store-prompts-in-agent-correlation"
+date = 2026-10-12
+
+[[items]]
+id = "E3"
+agent = "implement"
+original_intent = "Workflow index returns cells with shape unspecified."
+rationale = "cells is a small per-cell list {id, status, findings, escalated} (status skipped/no-return/error when nothing usable came back) so the orchestrator sees failed cells without reading the digest."
+summary = "Index cells field shaped as per-cell {id, status, findings, escalated} in claude/workflows/review-v2.js"
+type = "deviation"
+task_ref = "write-the-review-v2-saved-workflow-and-its-deploy-entry"
+date = 2026-10-12
+
+[[items]]
+id = "E4"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/workflows/review-v2.js",
+    "scripts/deploy-claude.ps1",
+]
+summary = "Wrote claude/workflows/review-v2.js (review-v2-pipeline: pipelined cells, route-based verifier/panel/checker dispatch, pooled checker batches of 20, reroutes, logged skips, deterministic) and the workflows row in scripts/deploy-claude.ps1."
+type = "task-completion"
+task_ref = "write-the-review-v2-saved-workflow-and-its-deploy-entry"
+date = 2026-10-12
+
+[[items]]
+id = "E5"
+agent = "implement"
+original_intent = "Agents pass coverage notes and verdict rationales as `--note -` / `--rationale -` (stdin)."
+rationale = "The review-v2-store-writer block forbids piping a payload into tomlctl, so agent bodies tell agents to Write the text to a file in the run directory and redirect stdin from it (`- < file`); io::read_text_arg accepts that form, not @path."
+summary = "Agent bodies pass prose via stdin redirect from a staged file (review-finder.md, review-verifier.md, plan-executor.md)"
+type = "deviation"
+task_ref = "write-the-opus-agents-review-finder-review-verifier-plan-executor"
+date = 2026-10-12
+
+[[items]]
+id = "E6"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/agents/review-finder.md",
+    "claude/agents/review-verifier.md",
+    "claude/agents/plan-executor.md",
+]
+summary = "Wrote claude/agents/review-finder.md, review-verifier.md (opus/high) and plan-executor.md (opus/medium) with skills preload, own procedures, and byte-identical review-v2-store-writer and research-delivering blocks."
+type = "task-completion"
+task_ref = "write-the-opus-agents-review-finder-review-verifier-plan-executor"
+date = 2026-10-12
+
+[[items]]
+id = "E7"
+agent = "implement"
+original_intent = "Every agent payload goes through `--ndjson <path>` (store-writer block)."
+rationale = """`review run update` takes only `--set-json`; the surveyor stages signals JSON in payloads/ and passes `--set-json "signals=$(cat <file>)"` since @path inside a KEY= value is unconfirmed. Still a staged file, never piped or heredoc'd."""
+summary = "review-surveyor.md passes staged signals via --set-json command substitution"
+type = "deviation"
+task_ref = "write-the-haiku-agents-review-surveyor-review-sweeper-review-checker"
+date = 2026-10-12
+
+[[items]]
+id = "E8"
+agent = "implement"
+original_intent = "Sweeper seals with `review cover … --note -` and never pipes a payload."
+rationale = "Stdin is redirected from a note staged at payloads/<cell>.note.md — the same idiom task 50 used in review-finder.md."
+summary = "review-sweeper.md seals with stdin redirected from a staged note file"
+type = "deviation"
+task_ref = "write-the-haiku-agents-review-surveyor-review-sweeper-review-checker"
+date = 2026-10-12
+
+[[items]]
+id = "E9"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/agents/review-surveyor.md",
+    "claude/agents/review-sweeper.md",
+    "claude/agents/review-checker.md",
+]
+summary = "Wrote claude/agents/review-surveyor.md, review-sweeper.md, review-checker.md (haiku/medium, omitClaudeMd, review-v2-method preload) with byte-identical shared blocks; falsifier on omitClaudeMd count observed (3->2)."
+type = "task-completion"
+task_ref = "write-the-haiku-agents-review-surveyor-review-sweeper-review-checker"
+date = 2026-10-12
+
+[[items]]
+id = "E10"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+files = ["scripts/shared-blocks.toml"]
+summary = "Registered review-v2-store-writer block (six v2 agents) and added the six to research-delivering in scripts/shared-blocks.toml; verify-shared-blocks.sh exits 0 (falsifier: 7th non-carrier made it exit 1)."
+type = "task-completion"
+task_ref = "register-the-v2-agents-as-shared-block-carriers"
+date = 2026-10-12
+
+[[items]]
+id = "E11"
+agent = "implement"
+original_intent = "route(kind, direction, severity, depth, file, target_file, routing_globs)"
+rationale = "A cleanup row covers many sites through instances, and any edit to executable non-test code must go to the verifier; without instances an executable instance would be routed to the Haiku checker. Task 8 must pass the row instances."
+summary = "route() takes an extra instances: &[String] parameter in tomlctl/src/review/fields.rs"
+type = "deviation"
+task_ref = "add-the-review-field-catalogue"
+date = 2026-10-12
+
+[[items]]
+id = "E12"
+agent = "implement"
+original_intent = "project(role, …)"
+rationale = "The matrix same_as target summary and status, the latest verdict and the audit full verdict list need inputs beyond the row."
+summary = "project(role, record, row, &ProjectCtx { verdicts, same_as_target }) in tomlctl/src/review/fields.rs"
+type = "deviation"
+task_ref = "add-the-review-field-catalogue"
+date = 2026-10-12
+
+[[items]]
+id = "E13"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/review/fields.rs",
+    "tomlctl/src/review/mod.rs",
+    "tomlctl/src/lib.rs",
+]
+summary = "Added tomlctl/src/review module with the FIELDS catalogue, validate_row, project and route, registered in lib.rs; 10 tests pass, falsifier rounds observed 9 and 1 failures."
+type = "task-completion"
+task_ref = "add-the-review-field-catalogue"
+date = 2026-10-12
+
+[[items]]
+id = "E14"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/review/store.rs",
+    "tomlctl/src/review/matching.rs",
+    "tomlctl/src/review/mod.rs",
+]
+summary = "Added tomlctl/src/review/store.rs (typed Store core + rest table, two-phase mint-then-typed write via mutate_doc, schema_seed, run_dir) and matching.rs (anchor, candidates, LINE_WINDOW=10); 9 tests pass, falsifier batches observed 4/5/1 failures."
+type = "task-completion"
+task_ref = "add-the-review-store-and-anchor-matcher"
+date = 2026-10-12
+
+[[items]]
+id = "E15"
+agent = "implement"
+original_intent = "Task 3 Acceptance lists twelve named tests."
+rationale = "The check, probe, depth-limit and family rules of bind_cell had no other coverage, so bind_cell_binds_checks_probes_and_depth_limits was added."
+summary = "Thirteenth test added in tomlctl/src/review/catalogue.rs"
+type = "deviation"
+task_ref = "add-the-lens-catalogue-loader-resolver-and-validator"
+date = 2026-10-12
+
+[[items]]
+id = "E16"
+agent = "implement"
+original_intent = "Catalogue index rows carry type, id, hash, status, families, mode, produces, activation, apply_when, matched, attaches_to, path."
+rationale = "A disabled entry would otherwise not show in review catalogue output, so each row also carries layer and disabled."
+summary = "Index rows gain layer and disabled columns in tomlctl/src/review/catalogue.rs"
+type = "deviation"
+task_ref = "add-the-lens-catalogue-loader-resolver-and-validator"
+date = 2026-10-12
+
+[[items]]
+id = "E17"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/review/catalogue.rs",
+    "tomlctl/src/review/mod.rs",
+]
+summary = "Added tomlctl/src/review/catalogue.rs: layered loader (+++ TOML frontmatter, sections, config override/extend/disable/enable/scope, project checks), content and tree hashes, validate(), index/owners/detectors/routing, claude_dir, bind_cell; 13 tests pass, falsifier rounds observed 5 and 10 failures."
+type = "task-completion"
+task_ref = "add-the-lens-catalogue-loader-resolver-and-validator"
+date = 2026-10-12
+
+[[items]]
+id = "E18"
+agent = "implement"
+original_intent = "Files line for task 4 omits tomlctl/src/cli/mod.rs"
+rationale = "cli/mod.rs declares mod types privately and re-exports a fixed list of clap types; crate::review cannot name ReviewOp or the per-verb arg structs without adding them to its pub(crate) use types::{…} list (tasks use the same route via crate::cli::TasksOp)."
+summary = "Task 4 widened to claim tomlctl/src/cli/mod.rs for the review re-exports"
+type = "deviation"
+task_ref = "wire-the-review-verb-group-into-the-cli-with-stub-verbs"
+date = 2026-10-12
+
+[[items]]
+id = "E19"
+agent = "implement"
+original_intent = "Prose flags pass by stdin only: `--note -`, `--rationale -`; `--<flag>-file` twins on triage only."
+rationale = "The store-writer block bans piping text into tomlctl, so cover --note-file, verdict --rationale-file and run finish --incomplete-file twins were added."
+summary = "Added --note-file, --rationale-file, --incomplete-file twins in tomlctl/src/cli/types/review.rs"
+type = "deviation"
+task_ref = "wire-the-review-verb-group-into-the-cli-with-stub-verbs"
+date = 2026-10-12
+
+[[items]]
+id = "E20"
+agent = "implement"
+original_intent = "verdict --citation and --rationale required."
+rationale = "Not required at parse time so the verdict-without-citation refusal is a kind=validation error task 9 can test, not clap usage text."
+summary = "verdict --citation/--rationale optional at parse, refused in validation (tomlctl/src/cli/types/review.rs)"
+type = "deviation"
+task_ref = "wire-the-review-verb-group-into-the-cli-with-stub-verbs"
+date = 2026-10-12
+
+[[items]]
+id = "E21"
+agent = "implement"
+original_intent = "plan --accept-signals/--lens/--out require --propose; triage --trigger pairs with --defer."
+rationale = "clap does not enforce a requires that points at a member of a required group, so these flags conflict with --ndjson (and triage modes conflict with each other) instead."
+summary = "plan/triage flag constraints expressed as conflicts in tomlctl/src/cli/types/review.rs"
+type = "deviation"
+task_ref = "wire-the-review-verb-group-into-the-cli-with-stub-verbs"
+date = 2026-10-12
+
+[[items]]
+id = "E22"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/cli/mod.rs",
+    "tomlctl/src/cli/types/review.rs",
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/src/cli/types/cmd.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/src/review/mod.rs",
+    "tomlctl/src/review/dispatch.rs",
+    "tomlctl/src/review/runs.rs",
+    "tomlctl/src/review/survey.rs",
+    "tomlctl/src/review/cells.rs",
+    "tomlctl/src/review/add.rs",
+    "tomlctl/src/review/verdict.rs",
+    "tomlctl/src/review/resolve.rs",
+    "tomlctl/src/review/query.rs",
+    "tomlctl/src/review/digest.rs",
+    "tomlctl/src/review/triage.rs",
+    "tomlctl/src/review/stats.rs",
+    "tomlctl/src/review/sync.rs",
+    "tomlctl/src/review/export.rs",
+    "tomlctl/src/review/catalogue_cmd.rs",
+    "tomlctl/src/review/schema_out.rs",
+    "tomlctl/src/capabilities.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/README.md",
+]
+summary = "Wired the review clap group: ReviewOp with every verb, Cmd::Review -> review::dispatch, 15 stub verb modules with single entry points, 13 review_* capability features, README transcriptions, and the Review* re-exports in cli/mod.rs (after a cross-cut widening). Clippy/fmt clean; 125 narrow tests pass."
+type = "task-completion"
+task_ref = "wire-the-review-verb-group-into-the-cli-with-stub-verbs"
+date = 2026-10-12
+
+[[items]]
+id = "E23"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+files = [
+    "tomlctl/src/review/catalogue_cmd.rs",
+    "tomlctl/tests/review_catalogue.rs",
+]
+summary = "Implemented tomlctl review catalogue (merged index with hashes/layer/disabled/matched, --family, --signals, --vocabulary, --owners, --check) and tests/review_catalogue.rs (4 tests); vet fixed one stale doc comment."
+type = "task-completion"
+task_ref = "implement-the-review-catalogue-verb"
+date = 2026-10-12
+
+[[items]]
+id = "E24"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/skills/review-v2-method/SKILL.md",
+    "claude/skills/review-v2-method/references/finding-kinds.md",
+    "claude/skills/review-v2-method/references/verifying.md",
+]
+summary = "Wrote review-v2-method skill: SKILL.md (kinds, per-kind fields from fields.rs, never-a-finding, caps, store-write idiom preferring --*-file twins, returns) plus finding-kinds.md and verifying.md worked examples; 43 dispatch gates pass, falsifier on command_lint observed (1 failure)."
+type = "task-completion"
+task_ref = "write-the-review-v2-method-skill-shared-core"
+date = 2026-10-12
+
+[[items]]
+id = "E25"
+agent = "implement"
+original_intent = "agent-waves.md uses the same per-cell prompt template as the workflow script."
+rationale = "The cell prompt matches exactly, but verifier and checker procedures need a batch id and sweeper-row marks the script does not provide, so the fallback adds batch: and sweeper rows: lines."
+summary = "agent-waves.md verifier/checker prompts add batch: and sweeper rows: lines"
+type = "deviation"
+task_ref = "write-the-engine-references-agent-waves-triage-and-close-measurement"
+date = 2026-10-12
+
+[[items]]
+id = "E26"
+agent = "implement"
+original_intent = "measurement.md records the v1 figures quoted in the plan."
+rationale = "Counts re-measured 2026-10-12 had drifted (optimise 81 applied vs 80; plan-review 883 items over 40 plans vs 810/38; vet-drop package-quality 23% vs 24%; review-plan 2.2% vs 2.3%); the doc records the re-measured values with method."
+summary = "measurement.md records re-measured v1 baselines"
+type = "deviation"
+task_ref = "write-the-engine-references-agent-waves-triage-and-close-measurement"
+date = 2026-10-12
+
+[[items]]
+id = "E27"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/skills/review-v2-engine/references/agent-waves.md",
+    "claude/skills/review-v2-engine/references/triage-and-close.md",
+    "claude/skills/review-v2-engine/references/measurement.md",
+]
+summary = "Wrote review-v2-engine references: agent-waves.md (fallback with the workflow cell template, sweeper-row and signals lines), triage-and-close.md (audit, triage grammar, backlog picks, export, finish), measurement.md (baselines with method, thresholds, seeded recall); lint gates pass with negative controls observed."
+type = "task-completion"
+task_ref = "write-the-engine-references-agent-waves-triage-and-close-measurement"
+date = 2026-10-12
+
+[[items]]
+id = "E28"
+agent = "implement"
+original_intent = "plan carries no task for marking sweeper rows and batch ids in the workflow batch prompts"
+rationale = "Task 48 found that review-v2.js checkerPrompt gives no batch id and no sweeper-row marks, which the review-checker procedure requires (it returns [] without them), so every Workflow checker batch would verify nothing; the checker return (bare array) also disagrees with batchSchema ({verdicts})."
+summary = "Minted task 59 to fix the workflow batch prompts and align batch return shapes"
+type = "deviation"
+task_ref = "write-the-engine-references-agent-waves-triage-and-close-measurement"
+date = 2026-10-12
+
+[[items]]
+id = "E29"
+agent = "implement"
+original_intent = "Batch ids like K<n> / V<cellId>."
+rationale = "Used check-<wave>-<n> / verify-<cellId>-minor, the wording agent-waves.md already uses, keeping both substrates in step."
+summary = "Batch ids check-<wave>-<n> / verify-<cellId>-minor in claude/workflows/review-v2.js"
+type = "deviation"
+task_ref = "give-the-workflow-batch-prompts-a-batch-id-and-sweeper-marks"
+date = 2026-10-12
+
+[[items]]
+id = "E30"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/workflows/review-v2.js",
+    "claude/agents/review-checker.md",
+    "claude/agents/review-verifier.md",
+]
+summary = "Workflow checker/minor-verifier batch prompts now carry batch: and sweeper rows: lines (pooled rows track source agentType); checker and verifier bodies return batches as {verdicts:[...]}; mocked run and falsifier observed; shared-block parity OK. Orchestrator dropped the stale bare-array sentence from agent-waves.md."
+type = "task-completion"
+task_ref = "give-the-workflow-batch-prompts-a-batch-id-and-sweeper-marks"
+date = 2026-10-12
+
+[[items]]
+id = "E31"
+agent = "implement"
+original_intent = "run update patches a whitelist of run fields"
+rationale = "audit and baselines are merged key by key, waivers upserted by concern or file, agents replaced: the engine records one baseline per verification dispatch, so replacing would let the second call wipe the first, and merging keeps the retry-once rule harmless."
+summary = "run update merges audit/baselines and upserts waivers in tomlctl/src/review/runs.rs"
+type = "deviation"
+task_ref = "implement-review-run-startupdate-and-schema-emission"
+date = 2026-10-12
+
+[[items]]
+id = "E32"
+agent = "implement"
+original_intent = "run start halts with the offending file on a project-layer catalogue error"
+rationale = "It halts on any validation error, built-in layer included, listing each with its file, since a broken built-in layer would break the proposal anyway."
+summary = "run start halts on any catalogue validation error in tomlctl/src/review/runs.rs"
+type = "deviation"
+task_ref = "implement-review-run-startupdate-and-schema-emission"
+date = 2026-10-12
+
+[[items]]
+id = "E33"
+agent = "implement"
+original_intent = "run start computes changed_lines"
+rationale = "Approach, Coverage proposal says the plan family does not use changed_lines, so it is left unset for that family."
+summary = "changed_lines unset for the plan family in tomlctl/src/review/runs.rs"
+type = "deviation"
+task_ref = "implement-review-run-startupdate-and-schema-emission"
+date = 2026-10-12
+
+[[items]]
+id = "E34"
+agent = "implement"
+original_intent = "Plan silent on run directories already on disk"
+rationale = "The U high-water mark is raised past every existing U<n>/ directory before minting; otherwise deleting a run row or the store would hand an old run's id and leftover files to a new run."
+summary = "run start bumps the U high-water past existing run dirs in tomlctl/src/review/runs.rs"
+type = "deviation"
+task_ref = "implement-review-run-startupdate-and-schema-emission"
+date = 2026-10-12
+
+[[items]]
+id = "E35"
+agent = "implement"
+original_intent = "Plan silent on a missing explicit --project"
+rationale = "A missing explicit --project directory is a kind=not_found error rather than silently running without the project layer."
+summary = "run start refuses a missing explicit --project in tomlctl/src/review/runs.rs"
+type = "deviation"
+task_ref = "implement-review-run-startupdate-and-schema-emission"
+date = 2026-10-12
+
+[[items]]
+id = "E36"
+agent = "implement"
+original_intent = "Plan does not define the escalate and reroute shapes in the return schemas"
+rationale = "escalate is an array of strings and reroute the string verifier, matching review-sweeper.md, review-checker.md and the workflow; schemas omit $schema since the Workflow passes them to agent({schema}); plan-family fields are listed but never required because a row does not carry its family."
+summary = "Return-schema shapes for escalate/reroute chosen in tomlctl/src/review/schema_out.rs"
+type = "deviation"
+task_ref = "implement-review-run-startupdate-and-schema-emission"
+date = 2026-10-12
+
+[[items]]
+id = "E37"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/review/runs.rs",
+    "tomlctl/src/review/schema_out.rs",
+    "tomlctl/tests/review_runs.rs",
+]
+summary = "Implemented review run start (U mint, base sha, changed_lines, catalogue roots/shas, validation, guarded run dir), run update (whitelisted, signal upsert by name, merges) and review schema built from fields::FIELDS; 12 tests pass, two falsifier rounds observed."
+type = "task-completion"
+task_ref = "implement-review-run-startupdate-and-schema-emission"
+date = 2026-10-12
+
+[[items]]
+id = "E38"
+agent = "implement"
+original_intent = "count holds per-stack literal substrings with a window and threshold."
+rationale = "Each stack entry is { files = [globs], patterns = [literals] } plus a { per_kloc = N } threshold form: without per-stack file globs a Rust root containing a TS sub-app mixes counts, and test-growth needs a per-1000-lines ratio."
+summary = "count detector shape extended in claude/skills/review-v2-lenses/vocabulary.toml"
+type = "deviation"
+task_ref = "write-the-catalogue-skill-and-vocabulary"
+date = 2026-10-12
+
+[[items]]
+id = "E39"
+agent = "implement"
+original_intent = "finding-hotspot and backlog-cluster are health signals detected from git history."
+rationale = "Neither fits the fixed detect keys literally; they are proxies: finding-hotspot = a file touched by >=3 fix commits in 180 days; backlog-cluster = >=5 open items in .claude/backlog.toml (grouping by area is not expressible)."
+summary = "finding-hotspot/backlog-cluster defined as proxies in vocabulary.toml"
+type = "deviation"
+task_ref = "write-the-catalogue-skill-and-vocabulary"
+date = 2026-10-12
+
+[[items]]
+id = "E40"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/skills/review-v2-lenses/SKILL.md",
+    "claude/skills/review-v2-lenses/vocabulary.toml",
+]
+summary = "Wrote review-v2-lenses SKILL.md (entry format rules from catalogue.rs, detectors, lifecycle limits) and vocabulary.toml (29 signals, 95 concern tags grouped by owning lens, routing globs); lint gates pass, falsifier on command_lint observed."
+type = "task-completion"
+task_ref = "write-the-catalogue-skill-and-vocabulary"
+date = 2026-10-12
+
+[[items]]
+id = "E41"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/skills/review-v2-lenses/methods/measure.md",
+    "claude/skills/review-v2-lenses/methods/dry-run.md",
+    "claude/skills/review-v2-lenses/methods/steelman.md",
+]
+summary = "Wrote methods measure (perf evidence ladder), dry-run (plan-executor procedure), steelman (contrarian advisory discipline); no catalogue errors name them."
+type = "task-completion"
+task_ref = "write-the-methods-measure-dry-run-steelman"
+date = 2026-10-12
+
+[[items]]
+id = "E42"
+agent = "implement"
+original_intent = "sweep reports each site as file:symbol plus the search strings and state"
+rationale = "v2 instances holds plain repo-relative paths only (fields.rs: PathForm::Path, cleanup only, max 50), so cleanup rows list files in instances and name symbols in edit; defects name other sites in fix and carry the sweep in one evidence entry; >50 files splits by subsystem or becomes advisory."
+summary = "sweep method maps sites onto v2 instances/edit/evidence in methods/sweep.md"
+type = "deviation"
+task_ref = "write-the-methods-sweep-trace-history-idiom"
+date = 2026-10-12
+
+[[items]]
+id = "E43"
+agent = "implement"
+original_intent = "history-idiom applies the v1 deliberate-choice drop"
+rationale = "The v2 finding-kind rules say a documented deliberate choice is never dropped and is raised as advisory angle=challenge with challenges; the method follows the v2 rule."
+summary = "history-idiom raises deliberate choices as advisory challenges in methods/history-idiom.md"
+type = "deviation"
+task_ref = "write-the-methods-sweep-trace-history-idiom"
+date = 2026-10-12
+
+[[items]]
+id = "E44"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/skills/review-v2-lenses/methods/sweep.md",
+    "claude/skills/review-v2-lenses/methods/trace.md",
+    "claude/skills/review-v2-lenses/methods/history-idiom.md",
+]
+summary = "Wrote methods sweep, trace, history-idiom adapted from research-methods codebase-review to v2 finding fields; parse cleanly in the catalogue."
+type = "task-completion"
+task_ref = "write-the-methods-sweep-trace-history-idiom"
+date = 2026-10-12
+
+[[items]]
+id = "E45"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/skills/review-v2-lenses/lenses/correctness.md",
+    "claude/skills/review-v2-lenses/lenses/type-design.md",
+    "claude/skills/review-v2-lenses/lenses/domain-model.md",
+]
+summary = "Wrote lenses correctness (floor, with context-free variant), type-design, domain-model; owns match vocabulary groups; no validator errors name them."
+type = "task-completion"
+task_ref = "write-the-lenses-correctness-type-design-domain-model"
+date = 2026-10-12
+
+[[items]]
+id = "E46"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/skills/review-v2-lenses/lenses/architecture.md",
+    "claude/skills/review-v2-lenses/lenses/idioms.md",
+    "claude/skills/review-v2-lenses/lenses/duplication.md",
+]
+summary = "Wrote lenses architecture, idioms (cites history-idiom), duplication; owns match vocabulary groups; no validator errors name them; falsifier on owns observed (2 errors)."
+type = "task-completion"
+task_ref = "write-the-lenses-architecture-idioms-duplication"
+date = 2026-10-12
+
+[[items]]
+id = "E47"
+agent = "implement"
+original_intent = "apply_when taken from the task Detail."
+rationale = "The Detail names no apply_when for the candidate lenses test-gaps and seams, so both are signal-less; they then never count as matched and drop without a waiver when the budget skips them."
+summary = "test-gaps and seams carry no apply_when (lenses/test-gaps.md, seams.md)"
+type = "deviation"
+task_ref = "write-the-lenses-ripple-test-gaps-seams"
+date = 2026-10-12
+
+[[items]]
+id = "E48"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/skills/review-v2-lenses/lenses/ripple.md",
+    "claude/skills/review-v2-lenses/lenses/test-gaps.md",
+    "claude/skills/review-v2-lenses/lenses/seams.md",
+]
+summary = "Wrote lenses ripple (mechanical, code+plan, sweep), test-gaps, seams; no validator errors name them; Owns falsifier observed."
+type = "task-completion"
+task_ref = "write-the-lenses-ripple-test-gaps-seams"
+date = 2026-10-12
+
+[[items]]
+id = "E49"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/skills/review-v2-lenses/lenses/security.md",
+    "claude/skills/review-v2-lenses/lenses/external-validity.md",
+    "claude/skills/review-v2-lenses/lenses/hygiene.md",
+]
+summary = "Wrote lenses security (cap 5, trace), external-validity (pinned-source rule), hygiene (mechanical, sweep+trace, apply_when rename-or-removal/churn-hotspot); no validator errors name them."
+type = "task-completion"
+task_ref = "write-the-lenses-security-external-validity-hygiene"
+date = 2026-10-12
+
+[[items]]
+id = "E50"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/skills/review-v2-lenses/lenses/diagnostics-dx.md",
+    "claude/skills/review-v2-lenses/lenses/test-pruning.md",
+    "claude/skills/review-v2-lenses/lenses/doc-drift.md",
+]
+summary = "Wrote lenses diagnostics-dx, test-pruning (remove direction with coverage-given-up rule), doc-drift (apply_when docs-touched); no validator errors name them."
+type = "task-completion"
+task_ref = "write-the-lenses-diagnostics-dx-test-pruning-doc-drift"
+date = 2026-10-12
+
+[[items]]
+id = "E51"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/skills/review-v2-lenses/lenses/memory-runtime.md",
+    "claude/skills/review-v2-lenses/lenses/data-shape.md",
+    "claude/skills/review-v2-lenses/lenses/data-access.md",
+]
+summary = "Wrote perf lenses memory-runtime, data-shape, data-access (signal query-layer), each citing measure; no validator errors name them; owns falsifier observed."
+type = "task-completion"
+task_ref = "write-the-perf-lenses-memory-runtime-data-shape-data-access"
+date = 2026-10-12
+
+[[items]]
+id = "E52"
+agent = "implement"
+original_intent = "methods come from the task Detail, which names none for doc-consolidation and synthesis."
+rationale = "Their probes depend on those procedures and the cell assignment only carries cited method paths, so doc-consolidation cites sweep and synthesis cites trace."
+summary = "doc-consolidation methods=[sweep], synthesis methods=[trace]"
+type = "deviation"
+task_ref = "write-the-lenses-doc-consolidation-contrarian-synthesis"
+date = 2026-10-12
+
+[[items]]
+id = "E53"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/skills/review-v2-lenses/lenses/doc-consolidation.md",
+    "claude/skills/review-v2-lenses/lenses/contrarian.md",
+    "claude/skills/review-v2-lenses/lenses/synthesis.md",
+]
+summary = "Wrote lenses doc-consolidation (signal doc-growth), contrarian (advisory only, steelman, always at deep), synthesis (opt-in, after_wave 1, cross-cell + perf concurrency); scratch-copy falsifiers observed 3 failures."
+type = "task-completion"
+task_ref = "write-the-lenses-doc-consolidation-contrarian-synthesis"
+date = 2026-10-12
+
+[[items]]
+id = "E54"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/skills/review-v2-lenses/lenses/algorithm.md",
+    "claude/skills/review-v2-lenses/lenses/concurrency.md",
+    "claude/skills/review-v2-lenses/lenses/io-process.md",
+]
+summary = "Wrote perf lenses algorithm (floor), concurrency (optimise A5 severity mapping), io-process; catalogue --check ok at completion."
+type = "task-completion"
+task_ref = "write-the-perf-lenses-algorithm-concurrency-io-process"
+date = 2026-10-12
+
+[[items]]
+id = "E55"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = ["claude/skills/review-v2-lenses/lenses/plan-structure.md"]
+summary = "Wrote plan-structure lens (goal coverage, approver sections, FORMAT CONTRACT conformance, Execution Policy); catalogue --check ok; owns falsifier observed (2 errors)."
+type = "task-completion"
+task_ref = "write-the-plan-structure-lens"
+date = 2026-10-12
+
+[[items]]
+id = "E56"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/skills/review-v2-lenses/lenses/plan-executor.md",
+    "claude/skills/review-v2-lenses/lenses/plan-risk.md",
+    "claude/skills/review-v2-lenses/lenses/plan-premortem.md",
+]
+summary = "Wrote plan lenses plan-executor (floor, executor mode, dry-run), plan-risk, plan-premortem (experimental opt-in); catalogue --check ok."
+type = "task-completion"
+task_ref = "write-the-plan-lenses-plan-executor-plan-risk-plan-premortem"
+date = 2026-10-12
+
+[[items]]
+id = "E57"
+agent = "implement"
+original_intent = "methods come from the task Detail, which names none for the plan lenses."
+rationale = "plan-grounding cites sweep+trace and feasibility cites trace so the cell assignment carries the procedures their probes rely on (matching ripple citing sweep for plan sweeps)."
+summary = "plan-grounding methods=[sweep,trace], feasibility methods=[trace]"
+type = "deviation"
+task_ref = "write-the-plan-lenses-plan-grounding-plan-dependencies-feasibility"
+date = 2026-10-12
+
+[[items]]
+id = "E58"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/skills/review-v2-lenses/lenses/plan-grounding.md",
+    "claude/skills/review-v2-lenses/lenses/plan-dependencies.md",
+    "claude/skills/review-v2-lenses/lenses/feasibility.md",
+]
+summary = "Wrote plan lenses plan-grounding (sweeps 4-5, premises), plan-dependencies (STORE CHECK as ground truth), feasibility; catalogue --check ok with all 31 lenses; exit-1 falsifier observed."
+type = "task-completion"
+task_ref = "write-the-plan-lenses-plan-grounding-plan-dependencies-feasibility"
+date = 2026-10-12
+
+[[items]]
+id = "E59"
+agent = "implement"
+original_intent = "A probe records its nearest concern tag."
+rationale = "The cell field catalogue (fields.rs) has no slot for it, so compose.md has the probe cell reason open with `nearest <tag>:` as a convention that stats --by probe can group on."
+summary = "Probe nearest-tag carried as a reason prefix convention in compose.md"
+type = "deviation"
+task_ref = "write-the-review-v2-engine-skill-pipeline-survey-compose"
+date = 2026-10-12
+
+[[items]]
+id = "E60"
+agent = "implement"
+original_intent = "plan-checks is one cell bundling three check: concerns."
+rationale = "Catalogue::bind_cell refuses bundling a check: concern with anything, so compose.md tells the orchestrator to keep the cell exactly as --propose emits it; the bind_cell gap is fixed by minted task 60."
+summary = "compose.md defers plan-checks cell shape to --propose"
+type = "deviation"
+task_ref = "write-the-review-v2-engine-skill-pipeline-survey-compose"
+date = 2026-10-12
+
+[[items]]
+id = "E61"
+agent = "implement"
+original_intent = "plan carries no task for binding a multi-check plan-checks cell"
+rationale = "Task 47 found catalogue.rs bind_cell refuses any cell with more than one check: concern, but the plan composes two-control-probe, falsifiability and acceptance-contradiction as one plan-checks review-finder cell; task 7 (proposal) and task 55 (review-plan-v2) cannot express it otherwise."
+summary = "Minted task 60 to let bind_cell bundle cell-executor checks"
+type = "deviation"
+task_ref = "write-the-review-v2-engine-skill-pipeline-survey-compose"
+date = 2026-10-12
+
+[[items]]
+id = "E62"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/skills/review-v2-engine/SKILL.md",
+    "claude/skills/review-v2-engine/references/survey.md",
+    "claude/skills/review-v2-engine/references/compose.md",
+]
+summary = "Wrote review-v2-engine SKILL.md (stages 0-8, steering flags, Workflow launch and fallback, depth envelopes), survey.md and compose.md; 43 dispatch gates pass, command_lint falsifier observed. Orchestrator fixed spaced placeholders in triage-and-close.md fences."
+type = "task-completion"
+task_ref = "write-the-review-v2-engine-skill-pipeline-survey-compose"
+date = 2026-10-12
+
+[[items]]
+id = "E63"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = ["claude/skills/review-v2-lenses/facets/claude-harness.md"]
+summary = "Wrote claude-harness facet (harness:claude; attaches to hygiene, doc-drift, ripple); catalogue --check ok; attaches_to falsifier observed."
+type = "task-completion"
+task_ref = "write-the-claude-harness-facet"
+date = 2026-10-12
+
+[[items]]
+id = "E64"
+agent = "implement"
+original_intent = "survey records each true signal with its roots."
+rationale = "plan --propose needs the churn-hotspot files and has no other source, so commits-per-file signals also carry evidence: the files that reached the threshold, most commits first."
+summary = "Commits-per-file signals carry evidence files in tomlctl/src/review/survey.rs"
+type = "deviation"
+task_ref = "implement-review-survey-with-deterministic-detectors"
+date = 2026-10-12
+
+[[items]]
+id = "E65"
+agent = "implement"
+original_intent = "Detectors glob over git ls-files (source unspecified)."
+rationale = "repo_files::tracked_files also returns untracked files; the spec says tracked files, so survey uses git ls-files --full-name (cached only)."
+summary = "survey enumerates git ls-files --full-name in tomlctl/src/review/survey.rs"
+type = "deviation"
+task_ref = "implement-review-survey-with-deterministic-detectors"
+date = 2026-10-12
+
+[[items]]
+id = "E66"
+agent = "implement"
+original_intent = "A failed detector records unknown rather than false."
+rationale = "store.rs Signal has no reason field and drops unknown keys, so an unknown detector is stored as source=unknown with the reason as its only evidence entry; consumers must count only detector and accepted judged signals."
+summary = "Unknown detectors stored as source=unknown signals in tomlctl/src/review/survey.rs"
+type = "deviation"
+task_ref = "implement-review-survey-with-deterministic-detectors"
+date = 2026-10-12
+
+[[items]]
+id = "E67"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/review/survey.rs",
+    "tomlctl/tests/review_survey.rs",
+]
+summary = "Implemented review survey: stack/diff/health detectors per the vocabulary Detectors rules, roots per signal, unknown on failure, idempotent re-run keeping judged signals; 10 tests pass, two falsifier groups each observed exactly the predicted 4 failures."
+type = "task-completion"
+task_ref = "implement-review-survey-with-deterministic-detectors"
+date = 2026-10-12
+
+[[items]]
+id = "E68"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/skills/review-v2-lenses/facets/dotnet.md",
+    "claude/skills/review-v2-lenses/facets/efcore.md",
+    "claude/skills/review-v2-lenses/facets/dapper-sql.md",
+]
+summary = "Wrote facets dotnet, efcore, dapper-sql (Context7-checked EF Core 8-10 and Dapper pitfalls); catalogue --check ok; id/attaches_to falsifier observed."
+type = "task-completion"
+task_ref = "write-the-facets-dotnet-efcore-dapper-sql"
+date = 2026-10-12
+
+[[items]]
+id = "E69"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/skills/review-v2-lenses/facets/typescript.md",
+    "claude/skills/review-v2-lenses/facets/react.md",
+    "claude/skills/review-v2-lenses/facets/vue.md",
+]
+summary = "Wrote facets typescript, react (React 19 via Context7), vue (grounded in lumina/web Vapor); catalogue --check ok."
+type = "task-completion"
+task_ref = "write-the-facets-typescript-react-vue"
+date = 2026-10-12
+
+[[items]]
+id = "E70"
+agent = "implement"
+original_intent = "TS default lint is tsc --noEmit; .NET default is dotnet build with warnings-as-errors."
+rationale = "A declared lint/type-check script wins, then tsc --noEmit --pretty false; .NET uses dotnet build --no-incremental --tl:off without -warnaserror: an up-to-date project does not re-emit warnings unless rebuilt, and warnings-as-errors stops dependent projects compiling, hiding their diagnostics."
+summary = "lint-baseline TS/.NET default commands adjusted in checks/lint-baseline.md"
+type = "deviation"
+task_ref = "write-the-checks-lint-baseline-profile-baseline-break-set-baseline"
+date = 2026-10-12
+
+[[items]]
+id = "E71"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/skills/review-v2-lenses/checks/lint-baseline.md",
+    "claude/skills/review-v2-lenses/checks/profile-baseline.md",
+    "claude/skills/review-v2-lenses/checks/break-set-baseline.md",
+]
+summary = "Wrote verification checks lint-baseline, profile-baseline, break-set-baseline with portable discover ladders (Rust/TS/.NET) and <id>-<n> keying for multi-command baselines; catalogue --check ok."
+type = "task-completion"
+task_ref = "write-the-checks-lint-baseline-profile-baseline-break-set-baseline"
+date = 2026-10-12
+
+[[items]]
+id = "E72"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/skills/review-v2-lenses/facets/rust.md",
+    "claude/skills/review-v2-lenses/facets/tokio.md",
+    "claude/skills/review-v2-lenses/facets/sqlx.md",
+]
+summary = "Wrote facets rust (edition 2024 pitfalls), tokio, sqlx (claims checked against pinned registry sources); catalogue --check ok; attaches_to falsifier observed."
+type = "task-completion"
+task_ref = "write-the-facets-rust-tokio-sqlx"
+date = 2026-10-12
+
+[[items]]
+id = "E73"
+agent = "implement"
+original_intent = "dev-server-probe applies to the code family with frontend scope."
+rationale = "v1 /optimise also probes a dev server for frontend scope, so the check declares families code and perf."
+summary = "dev-server-probe families = [code, perf]"
+type = "deviation"
+task_ref = "write-the-checks-store-check-format-contract-dev-server-probe"
+date = 2026-10-12
+
+[[items]]
+id = "E74"
+agent = "implement"
+original_intent = "dev-server-probe is signal-tier on frontend."
+rationale = "The surveyor runs every listed surveyor check regardless of activation, and frontend is a diff-only signal that a path review never sets, so the probe checks frontend scope itself (signal or frontend file extensions)."
+summary = "dev-server-probe self-checks frontend scope in its Runs section"
+type = "deviation"
+task_ref = "write-the-checks-store-check-format-contract-dev-server-probe"
+date = 2026-10-12
+
+[[items]]
+id = "E75"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/skills/review-v2-lenses/checks/store-check.md",
+    "claude/skills/review-v2-lenses/checks/format-contract.md",
+    "claude/skills/review-v2-lenses/checks/dev-server-probe.md",
+]
+summary = "Wrote surveyor checks store-check (templated finding lines), format-contract (pointer with line ranges, foreign-format body), dev-server-probe (never starts a server); catalogue --check ok. Orchestrator aligned plan-structure.md wording so STORE CHECK errors belong to plan-dependencies and a foreign-format fence triggers foreign-format."
+type = "task-completion"
+task_ref = "write-the-checks-store-check-format-contract-dev-server-probe"
+date = 2026-10-12
+
+[[items]]
+id = "E76"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+files = [".claude/review-lenses/config.toml"]
+summary = "Wrote .claude/review-lenses/config.toml with only the harness-gates project check; catalogue --check ok; misspelled-key falsifier observed (2 errors)."
+type = "task-completion"
+task_ref = "write-this-repos-project-catalogue-config"
+date = 2026-10-12
+
+[[items]]
+id = "E77"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = ["tomlctl/src/review/catalogue.rs"]
+summary = "bind_cell accepts 1-3 cell-executor check: concerns (depth-exempt, no facets), still refusing mixes, non-cell checks, duplicates and >3; bind_cell_bundles_cell_checks added; 14 catalogue tests pass."
+type = "task-completion"
+task_ref = "let-bind_cell-bundle-the-cell-run-checks-of-plan-checks"
+date = 2026-10-12
+
+[[items]]
+id = "E78"
+agent = "implement"
+original_intent = "falsifiability severities as v1 assigns."
+rationale = "v1 check 3 assigns none; a vacuous acceptance is critical when no other criterion on the task discriminates (a do-nothing change passes green), major when one does, matching two-control-probe and plan-executor calibration."
+summary = "falsifiability severities critical/major in checks/falsifiability.md"
+type = "deviation"
+task_ref = "write-the-checks-two-control-probe-falsifiability-acceptance-contradiction"
+date = 2026-10-12
+
+[[items]]
+id = "E79"
+agent = "implement"
+original_intent = "two-control-probe classifications follow v1."
+rationale = "v1 does not classify a missing success: key, a missing today: baseline, a missing predicted-unverified label or an unrunnable probe; the first three are cleanup (plan-text edits only) and the last advisory angle=risk."
+summary = "two-control-probe classifies v1-silent cases in checks/two-control-probe.md"
+type = "deviation"
+task_ref = "write-the-checks-two-control-probe-falsifiability-acceptance-contradiction"
+date = 2026-10-12
+
+[[items]]
+id = "E80"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/skills/review-v2-lenses/checks/two-control-probe.md",
+    "claude/skills/review-v2-lenses/checks/falsifiability.md",
+    "claude/skills/review-v2-lenses/checks/acceptance-contradiction.md",
+]
+summary = "Wrote cell checks two-control-probe (one batched probe call, judged on output), falsifiability (vacuous shapes + break-set preconditions), acceptance-contradiction; catalogue --check ok; 2-error falsifier observed."
+type = "task-completion"
+task_ref = "write-the-checks-two-control-probe-falsifiability-acceptance-contradiction"
+date = 2026-10-12
+
+[[items]]
+id = "E81"
+agent = "implement"
+original_intent = "Proposal rows carry facets where present."
+rationale = "The facets field of a plan --ndjson row means +id/-id edits, so emitting attached ids would be read back as edits; facets are attached and stored when plan --ndjson binds the cell."
+summary = "Proposal rows omit attached facets in tomlctl/src/review/cells.rs"
+type = "deviation"
+task_ref = "implement-review-plan-the-proposal-accounting-and-cover"
+date = 2026-10-12
+
+[[items]]
+id = "E82"
+agent = "implement"
+original_intent = "plan --ndjson appends validated cells."
+rationale = "It also refuses a row whose agent does not match its concerns mode and refuses a finished run, prints the run accounting so waivers due are visible immediately, and writes nothing (failing with all reasons) when every row is refused."
+summary = "plan --ndjson adds agent/mode and finished-run checks plus accounting output"
+type = "deviation"
+task_ref = "implement-review-plan-the-proposal-accounting-and-cover"
+date = 2026-10-12
+
+[[items]]
+id = "E83"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/review/cells.rs",
+    "tomlctl/tests/review_cells.rs",
+]
+summary = "Implemented review plan --propose (deterministic coverage map, ceiling scaling, bundling, repeats, executor batches, summary line), plan --ndjson (validate+bind+append wave), idempotent cover sealing, and coverage_accounting for digest/finish; 12 tests pass, falsifier batches observed 7/7 and 5/5."
+type = "task-completion"
+task_ref = "implement-review-plan-the-proposal-accounting-and-cover"
+date = 2026-10-12
+
+[[items]]
+id = "E84"
+agent = "implement"
+original_intent = "An advisory whose same_as names a dismissed/deferred/parked/backlogged/converted target is minted merged."
+rationale = "Such rows never reach review resolve and run finish counts suppressed from outcome, so add also sets outcome = suppressed and merged_into."
+summary = "add stamps outcome=suppressed and merged_into on suppressed advisories"
+type = "deviation"
+task_ref = "implement-review-add-with-cell-scoped-idempotency-and-routing"
+date = 2026-10-12
+
+[[items]]
+id = "E85"
+agent = "implement"
+original_intent = "Plan silent on empty and all-refused submissions."
+rationale = "An empty NDJSON supersedes the cell unverified rows and mints nothing (meaning no findings); a submission whose every row is refused fails and writes nothing, so earlier rows are not superseded."
+summary = "add semantics for empty and all-refused submissions in tomlctl/src/review/add.rs"
+type = "deviation"
+task_ref = "implement-review-add-with-cell-scoped-idempotency-and-routing"
+date = 2026-10-12
+
+[[items]]
+id = "E86"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/review/add.rs",
+    "tomlctl/tests/review_add.rs",
+]
+summary = "Implemented review add: per-row validation, lens-in-cell, old-text window with CRLF normalisation, plan anchor_old exactly-once, route with instances, cell-scoped supersede, same_as-must-be-candidate, sealed refusal printing existing ids; 12 tests pass, four falsifier batches each failed exactly the predicted tests."
+type = "task-completion"
+task_ref = "implement-review-add-with-cell-scoped-idempotency-and-routing"
+date = 2026-10-12
+
+[[items]]
+id = "E87"
+agent = "implement"
+original_intent = "Plan silent on how a verdict relates to the finding existing state."
+rationale = "Advisory and superseded findings refuse verdicts; seat required for by=panel and refused otherwise so the upsert key is unambiguous; a verdict never overrides a later disposition (parked, exported, resolved); the verdict run is the finding minting run."
+summary = "verdict state rules added in tomlctl/src/review/verdict.rs"
+type = "deviation"
+task_ref = "implement-review-verdict-as-an-upsert"
+date = 2026-10-12
+
+[[items]]
+id = "E88"
+agent = "implement"
+original_intent = "Task 9 lists 8 named tests."
+rationale = "same_as_finding_stays_unverified_until_struck added to cover the same_as and --strike-same-as rules."
+summary = "Ninth verdict test added in tomlctl/tests/review_verdict.rs"
+type = "deviation"
+task_ref = "implement-review-verdict-as-an-upsert"
+date = 2026-10-12
+
+[[items]]
+id = "E89"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/review/verdict.rs",
+    "tomlctl/tests/review_verdict.rs",
+]
+summary = "Implemented review verdict upsert on (finding, by, seat) with byte-identical replay, checker unsettled reroute and sweeper-only refute, severity reassessment, strike-same-as, panel tally, citation refusal, batch partial landing; 9 tests pass, four falsifier rounds observed."
+type = "task-completion"
+task_ref = "implement-review-verdict-as-an-upsert"
+date = 2026-10-12
+
+[[items]]
+id = "E90"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/review/sync.rs",
+    "tomlctl/tests/review_sync.rs",
+]
+summary = "Implemented review sync-v1: reads recorded export ledgers plus family defaults, maps v1 status via pub(crate) map_status, upserts by=sync verdicts with ledger citations, idempotent, v1 read-only; 8 tests pass, falsifier rounds observed 6 and 3 failures."
+type = "task-completion"
+task_ref = "implement-review-sync-v1"
+date = 2026-10-12
+
+[[items]]
+id = "E91"
+agent = "implement"
+original_intent = "Files line for task 13 omits tomlctl/src/review/add.rs and tomlctl/src/review/fields.rs"
+rationale = "Convert must run the same old/anchor_old file checks as review add, which live in private add.rs functions (copying was ruled out), and --reopen stores reopen_reason, which the field catalogue lacks."
+summary = "Task 13 widened to add.rs and fields.rs"
+type = "deviation"
+task_ref = "implement-review-triage-with-park-conversion-and-backlog-refs"
+date = 2026-10-12
+
+[[items]]
+id = "E92"
+agent = "implement"
+original_intent = "Plan gives no field for a reopen reason."
+rationale = "--reopen records reopen_reason; it is being added to the fields.rs catalogue so projections and review schema carry it."
+summary = "reopen_reason added as a finding status companion"
+type = "deviation"
+task_ref = "implement-review-triage-with-park-conversion-and-backlog-refs"
+date = 2026-10-12
+
+[[items]]
+id = "E93"
+agent = "implement"
+original_intent = "--for selects the role (no default specified)."
+rationale = "clap makes list --for optional, so a missing --for defaults to orchestrator."
+summary = "review list --for defaults to orchestrator"
+type = "deviation"
+task_ref = "implement-review-list-and-role-projected-show"
+date = 2026-10-12
+
+[[items]]
+id = "E94"
+agent = "implement"
+original_intent = "list has no default status filter."
+rationale = "To keep PRIOR clean, list without --status omits superseded rows; --status superseded still lists them."
+summary = "review list omits superseded rows by default"
+type = "deviation"
+task_ref = "implement-review-list-and-role-projected-show"
+date = 2026-10-12
+
+[[items]]
+id = "E95"
+agent = "implement"
+original_intent = "audit excerpts each cited file:line."
+rationale = "The audit judges whether old is at the anchor, so the finding's own file:line is excerpted too (deduplicated against verdict citations)."
+summary = "audit projection also excerpts the finding anchor"
+type = "deviation"
+task_ref = "implement-review-list-and-role-projected-show"
+date = 2026-10-12
+
+[[items]]
+id = "E96"
+agent = "implement"
+original_intent = "No rule for showing a cell under a role that sees no cell field."
+rationale = "verifier, checker, implementer, audit and backlog are refused with a validation error rather than given an empty object."
+summary = "show <C> refused for roles with no cell fields"
+type = "deviation"
+task_ref = "implement-review-list-and-role-projected-show"
+date = 2026-10-12
+
+[[items]]
+id = "E97"
+agent = "implement"
+original_intent = "backlog kind derives from angle only."
+rationale = "Defect and cleanup rows need a value too: they map to bug and debt; advisory risk/probe -> question, else direction."
+summary = "backlog projection kind mapping for defect and cleanup"
+type = "deviation"
+task_ref = "implement-review-list-and-role-projected-show"
+date = 2026-10-12
+
+[[items]]
+id = "E98"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/review/query.rs",
+    "tomlctl/tests/review_query.rs",
+]
+summary = "Implemented review list (filters, --in glob, orchestrator carries cell/route) and show --for role via fields::project (finder cell assignment with facet/method paths, pack, baselines; method reference paths; audit excerpts; backlog add object); 5+2 tests pass, five-mutation falsifier observed."
+type = "task-completion"
+task_ref = "implement-review-list-and-role-projected-show"
+date = 2026-10-12
+
+[[items]]
+id = "E99"
+agent = "implement"
+original_intent = "plan carries no task for consolidating the duplicated run-catalogue loader"
+rationale = "Five verb modules (survey, cells, add, triage, query) each hold a private copy of the rebuild-the-Catalogue-from-the-run helper, and the remaining verbs would add more; a fix to project-root resolution would need N edits. Minted after the remaining verb tasks so it folds every copy."
+summary = "Minted task 61 to share the run-catalogue helper"
+type = "deviation"
+task_ref = "implement-review-list-and-role-projected-show"
+date = 2026-10-12
+
+[[items]]
+id = "E100"
+agent = "implement"
+original_intent = "resolve outcomes: CONFIRMED on refuted/resolved targets, CONFIRMED/PLAUSIBLE vs REFUTED on open/exported."
+rationale = "Rules were needed for PLAUSIBLE and REFUTED on refuted/resolved targets: PLAUSIBLE there is contested (row merges, target keeps status and gains the verdict); REFUTED there is a repeat appending seen_in without refreshing line/evidence. Keeps five outcomes and lands such rows in the audit contested sample."
+summary = "resolve handles PLAUSIBLE/REFUTED on refuted or resolved targets"
+type = "deviation"
+task_ref = "implement-review-resolve-for-identity-outcomes"
+date = 2026-10-12
+
+[[items]]
+id = "E101"
+agent = "implement"
+original_intent = "A contested or reopened target gains the verdict."
+rationale = "resolve appends a copy of the row deciding verdicts with finding set to the target (skipping an identical copy) so the audit reads both; upsert would drop the verdict that made the target open."
+summary = "resolve copies deciding verdicts onto the target"
+type = "deviation"
+task_ref = "implement-review-resolve-for-identity-outcomes"
+date = 2026-10-12
+
+[[items]]
+id = "E102"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/review/resolve.rs",
+    "tomlctl/tests/review_resolve.rs",
+]
+summary = "Implemented review resolve: fixed-point passes in dependency order, follows merged_into, five outcomes (repeat, contested, reopened, regression, suppressed), idempotent; 10 tests pass, mutation batches observed 7/10 and 8/10 red."
+type = "task-completion"
+task_ref = "implement-review-resolve-for-identity-outcomes"
+date = 2026-10-12
+
+[[items]]
+id = "E103"
+agent = "implement"
+original_intent = "plan carries no task for de-duplicating panel seats in verdict decide"
+rationale = "Task 10 found verdict.rs decide counts every panel verdict, while resolve now copies deciding verdicts onto targets; a re-verdict could reach the panel threshold on duplicated seats."
+summary = "Minted task 62 to tally the latest verdict per panel seat"
+type = "deviation"
+task_ref = "implement-review-resolve-for-identity-outcomes"
+date = 2026-10-12
+
+[[items]]
+id = "E104"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 1
+files = [
+    "tomlctl/src/review/triage.rs",
+    "tomlctl/tests/review_triage.rs",
+    "tomlctl/src/review/add.rs",
+    "tomlctl/src/review/fields.rs",
+]
+summary = "Implemented review triage (every mode with --*-file twins, --expect-status compare-and-set with skipped_stale, convert minting unverified with an orchestrator verdict and add-equivalent old/anchor_old checks); made add check_old/check_anchor_old pub(super); added reopen_reason to the field catalogue. 7 triage, 13 add and 11 fields/schema tests pass; falsifiers observed."
+type = "task-completion"
+task_ref = "implement-review-triage-with-park-conversion-and-backlog-refs"
+date = 2026-10-12
+
+[[items]]
+id = "E105"
+agent = "implement"
+original_intent = "Test case: seat 1 refuted then confirmed plus seat 2 confirmed is the falsifier."
+rationale = "The old counting also yields open for that case, so it cannot falsify; it is kept as a positive check and two discriminating cases (duplicate refuting seat; confirmed-then-refuted seat) were added."
+summary = "Discriminating duplicate-seat cases added in tomlctl/tests/review_verdict.rs"
+type = "deviation"
+task_ref = "count-only-the-latest-verdict-per-panel-seat"
+date = 2026-10-12
+
+[[items]]
+id = "E106"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = [
+    "tomlctl/src/review/verdict.rs",
+    "tomlctl/tests/review_verdict.rs",
+]
+summary = "Panel decide tallies each seat once by its latest vote in store order; two duplicate-seat tests added; falsifier observed (2 failed)."
+type = "task-completion"
+task_ref = "count-only-the-latest-verdict-per-panel-seat"
+date = 2026-10-12
+
+[[items]]
+id = "E107"
+agent = "implement"
+original_intent = "export-v1 --all expands to the open defect and cleanup ids of the run."
+rationale = "ReviewExportArgs has no --run flag, so --all takes every open defect and cleanup finding in the store whose family matches the --to ledger."
+summary = "export --all scopes by store and ledger family, not run"
+type = "deviation"
+task_ref = "implement-review-export-v1"
+date = 2026-10-12
+
+[[items]]
+id = "E108"
+agent = "implement"
+original_intent = "--all excludes needs-plan, test removals and PLAUSIBLE cleanup."
+rationale = "needs-plan is refused even by explicit id so it is skipped silently; test removals and PLAUSIBLE cleanup are reported under held, since only those two can still be exported by id."
+summary = "export --all reports held test removals and PLAUSIBLE cleanup"
+type = "deviation"
+task_ref = "implement-review-export-v1"
+date = 2026-10-12
+
+[[items]]
+id = "E109"
+agent = "implement"
+original_intent = "v2 instances carried onto the v1 row."
+rationale = "v2 instances are bare paths that anchor::parse rejects as v1 instances, so they are written into description, which the apply flow file budget also reads."
+summary = "v2 instances written into the v1 description"
+type = "deviation"
+task_ref = "implement-review-export-v1"
+date = 2026-10-12
+
+[[items]]
+id = "E110"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/review/export.rs",
+    "tomlctl/tests/review_export.rs",
+]
+summary = "Implemented review export-v1: implementer-projection description, severity/category mapping, v1 required-field validation, v2_ref lookup then v1 merge rule, two sequential mutate_doc writes with compare-and-set, last_updated from seen_in runs, depends_on mapping; 10 tests pass, mutation batches observed 5/8 each."
+type = "task-completion"
+task_ref = "implement-review-export-v1"
+date = 2026-10-12
+
+[[items]]
+id = "E111"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/review/digest.rs",
+    "tomlctl/tests/review_digest.rs",
+]
+summary = "Implemented review digest (counts, cells, unverified with routes, accounting from coverage_accounting, contested with targets, refuted criticals, deterministic spread audit sample, open advisory, orchestrator projections) and review report (deterministic markdown, prints path + counts line); 8+2 tests pass, falsifier rounds observed 7 and 2 failures."
+type = "task-completion"
+task_ref = "implement-review-digest-and-review-report"
+date = 2026-10-12
+
+[[items]]
+id = "E112"
+agent = "implement"
+original_intent = "Audit overturn rates per lens and per agent model."
+rationale = "Run models sit untyped in the run rest table and no named test covers a per-model breakdown, so overturn rates are reported per lens/probe/run only; measurement.md per-model row has no producing command yet."
+summary = "stats omits the per-agent-model overturn breakdown"
+type = "deviation"
+task_ref = "implement-review-stats-with-outcomes-escapes-and-calibration"
+date = 2026-10-12
+
+[[items]]
+id = "E113"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/review/stats.rs",
+    "tomlctl/tests/review_stats.rs",
+]
+summary = "Implemented review stats: --by lens|probe|run with yield/refute/overturn/dismissal/uncovered/waiver rates, read-only --outcomes via sync helpers, --escapes against earlier sealed covered cells, --calibration exemplars from user dismissals, v1 wontfix and audit overturns, --all store scan; 6+3 tests pass, six-mutation falsifier observed 6/6."
+type = "task-completion"
+task_ref = "implement-review-stats-with-outcomes-escapes-and-calibration"
+date = 2026-10-12
+
+[[items]]
+id = "E114"
+agent = "implement"
+original_intent = "--incomplete records a reason (storage unspecified)."
+rationale = "fields.rs has no incomplete run field and was owned by task 13, so the reason is stored as incomplete in the run rest fields; a later clean finish removes it."
+summary = "run finish stores the bypass reason as run.incomplete"
+type = "deviation"
+task_ref = "implement-review-run-finish-with-its-completeness-gate"
+date = 2026-10-12
+
+[[items]]
+id = "E115"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/review/runs.rs",
+    "tomlctl/tests/review_finish.rs",
+]
+summary = "Implemented review run finish: completeness gate (unverified, unresolved same_as, unwaived accounting) inside the write lock, --incomplete/--incomplete-file bypass recorded with gaps, counts mirroring digest.rs definitions; 4 tests pass, falsifiers observed."
+type = "task-completion"
+task_ref = "implement-review-run-finish-with-its-completeness-gate"
+date = 2026-10-12
+
+[[items]]
+id = "E116"
+agent = "implement"
+original_intent = "Consolidate the catalogue-rebuild copies without changing any error text"
+rationale = "survey's copy prefixed its no-catalogue error with `review survey:` while the other five did not; the shared run_catalogue uses the five-copy form, since wrapping in survey would also prefix Catalogue::load errors. No test or doc names the string."
+summary = "Unified survey's no-catalogue error message to the shared form in tomlctl/src/review/survey.rs"
+type = "deviation"
+task_ref = "share-one-helper-that-rebuilds-a-runs-catalogue"
+date = 2026-10-13
+
+[[items]]
+id = "E117"
+agent = "implement"
+original_intent = "Fold runs.rs load_catalogue into the shared catalogue-rebuild helper"
+rationale = "runs.rs load_catalogue is run start's loader (resolves --builtin/--project, validates, returns the record stored on the run), not a copy of the rebuild; left its body alone and renamed it so the rebuild grep finds one definition."
+summary = "Renamed runs.rs load_catalogue to start_catalogue in tomlctl/src/review/runs.rs instead of folding it"
+type = "deviation"
+task_ref = "share-one-helper-that-rebuilds-a-runs-catalogue"
+date = 2026-10-13
+
+[[items]]
+id = "E118"
+agent = "implement"
+original_intent = "Keep one shared store view in its natural store-level home"
+rationale = "store.rs and fields.rs are outside the task's Files; the view stays in query.rs as View with a with_same_as flag so digest's output is unchanged."
+summary = "Shared View kept in tomlctl/src/review/query.rs; digest.rs imports it"
+type = "deviation"
+task_ref = "share-one-helper-that-rebuilds-a-runs-catalogue"
+date = 2026-10-13
+
+[[items]]
+id = "E119"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/review/catalogue.rs",
+    "tomlctl/src/review/survey.rs",
+    "tomlctl/src/review/cells.rs",
+    "tomlctl/src/review/add.rs",
+    "tomlctl/src/review/triage.rs",
+    "tomlctl/src/review/query.rs",
+    "tomlctl/src/review/digest.rs",
+    "tomlctl/src/review/runs.rs",
+    "tomlctl/src/review/stats.rs",
+    "tomlctl/src/review/export.rs",
+]
+summary = "Folded four duplication groups into shared definitions: one run_catalogue in catalogue.rs (replacing copies in add, cells, export, query, triage and survey), query.rs View shared with digest (Rows deleted), cells.rs PathSet shared with stats, and digest.rs Counts shared with runs.rs run finish. Pure refactor; review suites 161 passed, clippy clean."
+type = "task-completion"
+task_ref = "share-one-helper-that-rebuilds-a-runs-catalogue"
+date = 2026-10-13
+
+[[items]]
+id = "E120"
+agent = "implement"
+original_intent = "Add Rows-and-header-per-command rows for review list, show, digest, stats, catalogue and export-v1"
+rationale = "Only list and show print row reports; digest, stats, catalogue and export-v1 print single objects, so table rows would misstate their --lines/--header behaviour. They get one sentence naming each one's --rows path instead."
+summary = "Two table rows plus a --rows sentence in claude/skills/tomlctl/SKILL.md"
+type = "deviation"
+task_ref = "document-the-review-verb-group-in-the-tomlctl-skill"
+date = 2026-10-13
+
+[[items]]
+id = "E121"
+agent = "implement"
+original_intent = "Document the review verbs per the plan's verb prose"
+rationale = "The code differs from the plan in four places and the doc follows the code: report --out must lie under .claude/ (no --allow-outside); export-v1 --all exits 0 when every finding is refused; a checker's refuted is gated on a review-sweeper cell, not a grep citation; cell-return is the agent's echo, not add's output."
+summary = "Documented the as-built behaviour in claude/skills/tomlctl/references/review.md"
+type = "deviation"
+task_ref = "document-the-review-verb-group-in-the-tomlctl-skill"
+date = 2026-10-13
+
+[[items]]
+id = "E122"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/skills/tomlctl/references/review.md",
+    "claude/skills/tomlctl/SKILL.md",
+    "tomlctl/README.md",
+]
+summary = "Wrote claude/skills/tomlctl/references/review.md (19 verb sections with flag tables, store shape, field catalogue summary, role projections, routing) from the as-built clap tree; added the SKILL.md quick-reference, references, rows-and-header and feature rows; added 19 review lines to the README quick tour. cli::dispatch::tests 43 passed; flag_table_lint and command_lint falsifiers each failed 1 test."
+type = "task-completion"
+task_ref = "document-the-review-verb-group-in-the-tomlctl-skill"
+date = 2026-10-13
+
+[[items]]
+id = "E123"
+agent = "implement"
+original_intent = "Files line for add-output-option-cases-and-help-list-entries-for-the-review-verbs omits tomlctl/src/review/digest.rs and tomlctl/src/review/stats.rs"
+rationale = "review digest, report and stats are read verbs printing through the write-side print_json_compact, so a bad --get/--header/--where warns and exits 0; the new review output-option group fails 6 checks until the printer is swapped to print_json_line in digest(), report() and stats run()."
+summary = "Widened task 20's files to digest.rs and stats.rs and re-dispatched"
+type = "deviation"
+task_ref = "add-output-option-cases-and-help-list-entries-for-the-review-verbs"
+date = 2026-10-13
+
+[[items]]
+id = "E124"
+agent = "implement"
+original_intent = """grep -c '&["review", ' on output_options.rs prints at least 19"""
+rationale = "rustfmt splits 9 of the 19 cases across lines so the grep prints 10; coverage is checked by every_leaf_command_has_a_case, which passes."
+summary = "Acceptance grep undercounts in tomlctl/tests/output_options.rs; leaf-coverage test is the real gate"
+type = "deviation"
+task_ref = "add-output-option-cases-and-help-list-entries-for-the-review-verbs"
+date = 2026-10-13
+
+[[items]]
+id = "E125"
+agent = "implement"
+original_intent = "Add only cases and the fixture seed to output_options.rs"
+rationale = "review run start records an absolute catalogue path, which differs between two fixture copies, so snapshot() must mask the copy root for the same-files check."
+summary = "snapshot() masks the fixture copy root in tomlctl/tests/output_options.rs"
+type = "deviation"
+task_ref = "add-output-option-cases-and-help-list-entries-for-the-review-verbs"
+date = 2026-10-13
+
+[[items]]
+id = "E126"
+agent = "implement"
+original_intent = "Fixture seeds a review store without touching other groups"
+rationale = "run start --base HEAD needs a resolvable HEAD, so the shared fixture makes one git commit when git is available; no other group's case reads HEAD."
+summary = "Shared output_options fixture now makes one git commit"
+type = "deviation"
+task_ref = "add-output-option-cases-and-help-list-entries-for-the-review-verbs"
+date = 2026-10-13
+
+[[items]]
+id = "E127"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+escalation_reason = "cross-cut"
+files = [
+    "tomlctl/tests/output_options.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/src/review/digest.rs",
+    "tomlctl/src/review/stats.rs",
+]
+summary = "Added output-option cases for all 19 review leaves (fixture catalogue + store, one git commit, snapshot root masking) and placed the 7 read / 12 write verbs in the capabilities help lists; swapped review digest, report and stats to the read printer print_json_line so shaping failures fail. Review output-option group 6 failing checks to 0; narrow suites 93/93."
+type = "task-completion"
+task_ref = "add-output-option-cases-and-help-list-entries-for-the-review-verbs"
+date = 2026-10-13
+
+[[items]]
+id = "E128"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "glimpse/Cargo.lock",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/README.md",
+]
+summary = "Bumped tomlctl to 0.16.0 in Cargo.toml, the capabilities version test literal and message, the README capabilities sample, and both lockfiles (refreshed via cargo tree; one version line each). capabilities binary 69/69; glimpse clippy --locked clean; version falsifier failed 2 of 2."
+type = "task-completion"
+task_ref = "bump-tomlctl-to-0160-and-refresh-the-glimpse-lockfile"
+date = 2026-10-13
+
+[[items]]
+id = "E129"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/cli/dispatch/tests/catalogue.rs",
+    "tomlctl/src/cli/dispatch/tests/mod.rs",
+    "tomlctl/src/cli/dispatch/tests/lint.rs",
+]
+summary = "Added the catalogue_validates gate (loads claude/skills/review-v2-lenses with .claude/review-lenses as project layer, lists every error) and widened command_lint_scan_set to the catalogue's lenses/facets/methods/checks dirs, extending the temp-tree scan-set test. Shipped catalogue validates clean; cli::dispatch::tests 44 passed; both falsifiers failed 1 test each."
+type = "task-completion"
+task_ref = "gate-the-catalogue-and-lint-its-files"
+date = 2026-10-13
+
+[[items]]
+id = "E130"
+agent = "implement"
+command = "CARGO_INCREMENTAL=0 cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+duration_s = 91
+summary = "checkpoint A build: pass"
+type = "verification"
+task_ref = "bump-tomlctl-to-0160-and-refresh-the-glimpse-lockfile"
+date = 2026-10-13
+
+[[items]]
+id = "E131"
+agent = "implement"
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 283
+summary = "checkpoint A: 2044 tests run: 2044 passed, 1 skipped"
+type = "verification"
+task_ref = "bump-tomlctl-to-0160-and-refresh-the-glimpse-lockfile"
+date = 2026-10-13
+
+[[items]]
+id = "E132"
+agent = "implement"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+duration_s = 2
+summary = "checkpoint A fmt check: pass"
+type = "verification"
+task_ref = "bump-tomlctl-to-0160-and-refresh-the-glimpse-lockfile"
+date = 2026-10-13
+
+[[items]]
+id = "E133"
+agent = "implement"
+command = "cargo clippy --manifest-path glimpse/Cargo.toml --locked"
+outcome = "pass"
+duration_s = 3
+summary = "checkpoint A glimpse clippy --locked: pass"
+type = "verification"
+task_ref = "bump-tomlctl-to-0160-and-refresh-the-glimpse-lockfile"
+date = 2026-10-13
+
+[[items]]
+id = "E134"
+agent = "implement"
+kind = "commit-train"
+summary = "checkpoint A (unnarrowed, carries done B rows): 6e0519c: tasks 1-18,20-22,60-62; 433e45e: 19; d579155: 23; 9176f41: 24-46; 10cbab9: 48-51,59; b12d5fc: 47; 50f9b00: 52"
+commits = [
+    "6e0519c",
+    "433e45e",
+    "d579155",
+    "9176f41",
+    "10cbab9",
+    "b12d5fc",
+    "50f9b00",
+]
+type = "checkpoint"
+task_ref = "bump-tomlctl-to-0160-and-refresh-the-glimpse-lockfile"
+date = 2026-10-13
+
+[[items]]
+id = "E135"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [".githooks/pre-commit"]
+summary = 'Widened the pre-commit cli::dispatch::tests path gate from ^(claude/.*\.md|tomlctl/src/.*)$ to also match claude/**/*.toml and .claude/review-lenses/**, so catalogue-only commits run catalogue_validates and command_lint. Old pattern matched 0 of the two new paths, new pattern 2; flow TOMLs and lumina paths still excluded; bash -n clean.'
+type = "task-completion"
+task_ref = "widen-the-pre-commit-catalogue-trigger"
+date = 2026-10-13
+
+[[items]]
+id = "E136"
+agent = "implement"
+original_intent = "The context-free correctness cell is composed at stage 3 only"
+rationale = "The Workflow preamble and review show --for finder both hand every cell the pack, and no store field marks a cell context-free, so the carrier also needs a stage-4 delta: it dispatches and routes that cell itself with the pack line removed, its checker batch named check-<wave>-cf."
+summary = "Added a stage-4 hand-dispatch for the context-free cell in claude/commands/review-v2.md"
+type = "deviation"
+task_ref = "write-the-review-v2-carrier"
+date = 2026-10-13
+
+[[items]]
+id = "E137"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = ["claude/commands/review-v2.md"]
+summary = "Wrote the /review-v2 code-family carrier: invokes tomlctl, flow-contract-flow-context, review-v2-engine and backlog-capture; binds the code family with LINT BASELINE, the correctness/ripple floor, a hand-dispatched context-free correctness cell (pack withheld, skipped on base HEAD), export to review-ledger.toml or .claude/reviews/<scope>.toml, and the /review-apply hand-off. cli::dispatch::tests 44 passed."
+type = "task-completion"
+task_ref = "write-the-review-v2-carrier"
+date = 2026-10-13
+
+[[items]]
+id = "E138"
+agent = "implement"
+original_intent = "Support a branch1..branch2 scope"
+rationale = "run start measures changed_lines over base..HEAD and agents read the working tree, so the carrier passes the merge-base as --base and, when branch2 is not HEAD, asks whether to review the current checkout or stop (empty answer stops before run start)."
+summary = "Added the branch-range scope rule to claude/commands/optimise-v2.md"
+type = "deviation"
+task_ref = "write-the-optimise-v2-carrier"
+date = 2026-10-13
+
+[[items]]
+id = "E139"
+agent = "implement"
+original_intent = "export-v1 --all exports the run's findings"
+rationale = "export-v1 has no run filter; --all takes every open perf finding in the store, so the carrier shows the dry-run list to the user before anything is written."
+summary = "Export step gated on a dry-run review in claude/commands/optimise-v2.md"
+type = "deviation"
+task_ref = "write-the-optimise-v2-carrier"
+date = 2026-10-13
+
+[[items]]
+id = "E140"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = ["claude/commands/optimise-v2.md"]
+summary = "Wrote the /optimise-v2 perf-family carrier: invokes tomlctl, flow-contract-flow-context, review-v2-engine and backlog-capture; bindings table, branch-range scope rule, PROFILE BASELINE dispatches keyed profile-baseline[-n], Focal Points Brief delivered via lens-cell question notes, a synthesis follow-up wave for cross-subsystem concurrency, the perf defect rule, and export to the optimise ledger with the /optimise-apply hand-off. cli::dispatch::tests 44 passed; command_lint falsifier failed 1."
+type = "task-completion"
+task_ref = "write-the-optimise-v2-carrier"
+date = 2026-10-13
+
+[[items]]
+id = "E141"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = ["tomlctl/tests/review_vocabulary.rs"]
+summary = "Added tomlctl/tests/review_vocabulary.rs: six git-sandbox fixtures (Rust crate at depth three with tokio, EF Core via central package management, React in a Bun workspace, Dapper via legacy Reference, Vue under web/ in a Rust repo, Rust test-growth) run run start + survey against the shipped vocabulary and assert signals, exact roots and no unknowns. 6 passed; positive falsifiers 6/6 fail, negative controls + vocabulary falsifier 4/6 fail as predicted. No detector bug found."
+type = "task-completion"
+task_ref = "test-the-shipped-vocabularys-detectors-on-fixture-trees"
+date = 2026-10-13
+
+[[items]]
+id = "E142"
+agent = "implement"
+original_intent = "The merge follows v1 claude/commands/review-plan.md Step 4 by reference"
+rationale = "That repo path does not exist in other repos a deployed carrier runs in; the carrier points at the review-plan.md beside it in the commands directory, which deploy-claude.ps1 links into ~/.claude/commands/."
+summary = "Merge step references the sibling review-plan.md in claude/commands/review-plan-v2.md"
+type = "deviation"
+task_ref = "write-the-review-plan-v2-carrier"
+date = 2026-10-13
+
+[[items]]
+id = "E143"
+agent = "implement"
+original_intent = "Add the carrier to finding_classes.rs PROSE only if it names a class"
+rationale = "The carrier names dag/cycle, checkpoint/invalid-cut and dag/duplicate-number, and checks/store-check.md is the only catalogue file naming tasks check classes, so both were added; facets/react.md's react-hooks/exhaustive-deps is not a class and stays out."
+summary = "Added review-plan-v2.md and checks/store-check.md to PROSE in tomlctl/src/cli/dispatch/tests/finding_classes.rs"
+type = "deviation"
+task_ref = "write-the-review-plan-v2-carrier"
+date = 2026-10-13
+
+[[items]]
+id = "E144"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/commands/review-plan-v2.md",
+    "tomlctl/src/cli/dispatch/tests/finding_classes.rs",
+]
+summary = "Wrote the /review-plan-v2 carrier (family plan, base HEAD; invokes seven skills incl. review-v2-engine): stage 0 plansDirectory prompt and task-store import, stage 2 store-check/format-contract and keyed break-set baselines, the plan floor with plan-checks kept as --propose emits it, and a stage 8 verified-only merge offer following v1 Step 4. Added the carrier and checks/store-check.md to the finding-class PROSE gate. cli::dispatch::tests 44 passed; class falsifier failed 1 test naming both."
+type = "task-completion"
+task_ref = "write-the-review-plan-v2-carrier"
+date = 2026-10-13
+
+[[items]]
+id = "E145"
+agent = "implement"
+command = "CARGO_INCREMENTAL=0 cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+duration_s = 4
+summary = "checkpoint B+C build: pass"
+type = "verification"
+task_ref = "write-the-review-v2-carrier"
+date = 2026-10-13
+
+[[items]]
+id = "E146"
+agent = "implement"
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 363
+summary = "checkpoint B+C: 2050 tests run: 2050 passed, 1 skipped"
+type = "verification"
+task_ref = "write-the-review-v2-carrier"
+date = 2026-10-13
+
+[[items]]
+id = "E147"
+agent = "implement"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+duration_s = 6
+summary = "checkpoint B+C fmt check: pass"
+type = "verification"
+task_ref = "write-the-review-v2-carrier"
+date = 2026-10-13
+
+[[items]]
+id = "E148"
+agent = "implement"
+command = "cargo clippy --manifest-path glimpse/Cargo.toml --locked"
+outcome = "pass"
+duration_s = 22
+summary = "checkpoint B+C glimpse clippy --locked: pass"
+type = "verification"
+task_ref = "write-the-review-v2-carrier"
+date = 2026-10-13
+
+[[items]]
+id = "E149"
+agent = "implement"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+duration_s = 38
+summary = "checkpoint B+C shared-block parity: pass"
+type = "verification"
+task_ref = "write-the-review-v2-carrier"
+date = 2026-10-13
+
+[[items]]
+id = "E150"
+agent = "implement"
+command = "bash -n .githooks/pre-commit"
+outcome = "pass"
+duration_s = 0
+summary = "checkpoint B+C hook syntax: pass"
+type = "verification"
+task_ref = "write-the-review-v2-carrier"
+date = 2026-10-13
+
+[[items]]
+id = "E151"
+agent = "implement"
+kind = "commit-train"
+summary = "checkpoints B and C (unnarrowed, carries done D rows): 88be848: 53; 31e81c8: 54; b8fad97: 55; fed7b26: 57; c735bff: 58"
+commits = [
+    "88be848",
+    "31e81c8",
+    "b8fad97",
+    "fed7b26",
+    "c735bff",
+]
+type = "checkpoint"
+task_ref = "write-the-review-v2-carrier"
+date = 2026-10-13
+
+[[items]]
+id = "E152"
+agent = "implement"
+original_intent = "Falsify the new skill-gate row by removing the review-v2-engine invocation from claude/commands/review-v2.md"
+rationale = "That carrier is outside the task's Files; the agent instead added a skill the carrier never invokes to the new row, which tripped carrier_invokes_required_skills (1 failure). Both controls exercise the same check; the plan's own control was not run."
+summary = "Substituted falsifier control for the skill gate in tomlctl/src/cli/dispatch/tests/skills.rs"
+type = "deviation"
+task_ref = "add-the-v2-carriers-to-the-skill-gate-table-ignore-run-artifacts-document-v2-in-claudemd"
+date = 2026-10-13
+
+[[items]]
+id = "E153"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/cli/dispatch/tests/skills.rs",
+    ".gitignore",
+    "CLAUDE.md",
+]
+summary = "Added carrier_invokes_required_skills rows for review-v2.md, optimise-v2.md and review-plan-v2.md (skill sets verified against carrier text), ignored /.claude/review-v2-runs/, and added a Review v2 section to CLAUDE.md plus the workflows deploy entry and widened hook-trigger list. cli::dispatch::tests 44 passed; extra-skill falsifier failed 1."
+type = "task-completion"
+task_ref = "add-the-v2-carriers-to-the-skill-gate-table-ignore-run-artifacts-document-v2-in-claudemd"
+date = 2026-10-13
+
+[[items]]
+id = "E154"
+agent = "implement"
+command = "CARGO_INCREMENTAL=0 cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+duration_s = 3
+summary = "final build: pass"
+type = "verification"
+task_ref = "add-the-v2-carriers-to-the-skill-gate-table-ignore-run-artifacts-document-v2-in-claudemd"
+date = 2026-10-13
+
+[[items]]
+id = "E155"
+agent = "implement"
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 311
+summary = "final: 2050 tests run: 2050 passed, 1 skipped"
+type = "verification"
+task_ref = "add-the-v2-carriers-to-the-skill-gate-table-ignore-run-artifacts-document-v2-in-claudemd"
+date = 2026-10-13
+
+[[items]]
+id = "E156"
+agent = "implement"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --test tasks_corpus -- --ignored"
+outcome = "pass"
+duration_s = 4
+summary = "plan corpus: 1 passed"
+type = "verification"
+task_ref = "add-the-v2-carriers-to-the-skill-gate-table-ignore-run-artifacts-document-v2-in-claudemd"
+date = 2026-10-13
+
+[[items]]
+id = "E157"
+agent = "implement"
+command = "success: git diff --quiet 27b7e1a -- <v1 guard paths>"
+outcome = "pass"
+duration_s = 0
+summary = "v1 harness files byte-unchanged against 27b7e1a"
+type = "verification"
+task_ref = "add-the-v2-carriers-to-the-skill-gate-table-ignore-run-artifacts-document-v2-in-claudemd"
+date = 2026-10-13
+
+[[items]]
+id = "E158"
+agent = "implement"
+command = "success: three v2 carriers invoke the review-v2-engine skill"
+outcome = "pass"
+duration_s = 0
+summary = "3 of 3 carriers"
+type = "verification"
+task_ref = "add-the-v2-carriers-to-the-skill-gate-table-ignore-run-artifacts-document-v2-in-claudemd"
+date = 2026-10-13
+
+[[items]]
+id = "E159"
+agent = "implement"
+command = "success: catalogue counts 31 lenses, 10 facets, 6 methods, 9 checks + vocabulary"
+outcome = "pass"
+duration_s = 2
+summary = "catalogue complete"
+type = "verification"
+task_ref = "add-the-v2-carriers-to-the-skill-gate-table-ignore-run-artifacts-document-v2-in-claudemd"
+date = 2026-10-13
+
+[[items]]
+id = "E160"
+agent = "implement"
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml --lib --no-tests=fail -E 'test(catalogue_validates)'"
+outcome = "pass"
+duration_s = 5
+summary = "1 test run: 1 passed"
+type = "verification"
+task_ref = "add-the-v2-carriers-to-the-skill-gate-table-ignore-run-artifacts-document-v2-in-claudemd"
+date = 2026-10-13
+
+[[items]]
+id = "E161"
+agent = "implement"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+outcome = "pass"
+duration_s = 26
+summary = "44 passed"
+type = "verification"
+task_ref = "add-the-v2-carriers-to-the-skill-gate-table-ignore-run-artifacts-document-v2-in-claudemd"
+date = 2026-10-13
+
+[[items]]
+id = "E162"
+agent = "implement"
+command = "success: Haiku/Opus agent frontmatter (model + omitClaudeMd)"
+outcome = "pass"
+duration_s = 1
+summary = "3 haiku + omitClaudeMd, 3 opus"
+type = "verification"
+task_ref = "add-the-v2-carriers-to-the-skill-gate-table-ignore-run-artifacts-document-v2-in-claudemd"
+date = 2026-10-13
+
+[[items]]
+id = "E163"
+agent = "implement"
+command = "success: review-v2-store-writer registered and verify-shared-blocks.sh passes"
+outcome = "pass"
+duration_s = 26
+summary = "shared-block parity pass"
+type = "verification"
+task_ref = "add-the-v2-carriers-to-the-skill-gate-table-ignore-run-artifacts-document-v2-in-claudemd"
+date = 2026-10-13
+
+[[items]]
+id = "E164"
+agent = "implement"
+command = "success: v2 carriers in the skill gate table (3 rows)"
+outcome = "pass"
+duration_s = 1
+summary = "3 rows"
+type = "verification"
+task_ref = "add-the-v2-carriers-to-the-skill-gate-table-ignore-run-artifacts-document-v2-in-claudemd"
+date = 2026-10-13
+
+[[items]]
+id = "E165"
+agent = "implement"
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast -E 'binary(/^review_/)'"
+outcome = "pass"
+duration_s = 44
+summary = "119 tests run: 119 passed"
+type = "verification"
+task_ref = "add-the-v2-carriers-to-the-skill-gate-table-ignore-run-artifacts-document-v2-in-claudemd"
+date = 2026-10-13
+
+[[items]]
+id = "E166"
+agent = "implement"
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml --lib --no-tests=fail -E 'test(/^review::/)'"
+outcome = "pass"
+duration_s = 3
+summary = "48 tests run: 48 passed"
+type = "verification"
+task_ref = "add-the-v2-carriers-to-the-skill-gate-table-ignore-run-artifacts-document-v2-in-claudemd"
+date = 2026-10-13
+
+[[items]]
+id = "E167"
+agent = "implement"
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-tests=fail -E 'binary(review_stats)'"
+outcome = "pass"
+duration_s = 4
+summary = "6 tests run: 6 passed"
+type = "verification"
+task_ref = "add-the-v2-carriers-to-the-skill-gate-table-ignore-run-artifacts-document-v2-in-claudemd"
+date = 2026-10-13
+
+[[items]]
+id = "E168"
+agent = "implement"
+command = "cargo clippy --manifest-path glimpse/Cargo.toml --locked"
+outcome = "pass"
+duration_s = 2
+summary = "glimpse clippy --locked clean"
+type = "verification"
+task_ref = "add-the-v2-carriers-to-the-skill-gate-table-ignore-run-artifacts-document-v2-in-claudemd"
+date = 2026-10-13
+
+[[items]]
+id = "E169"
+agent = "implement"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+duration_s = 15
+summary = "tomlctl clippy clean"
+type = "verification"
+task_ref = "add-the-v2-carriers-to-the-skill-gate-table-ignore-run-artifacts-document-v2-in-claudemd"
+date = 2026-10-13
+
+[[items]]
+id = "E170"
+agent = "implement"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+duration_s = 3
+summary = "fmt clean"
+type = "verification"
+task_ref = "add-the-v2-carriers-to-the-skill-gate-table-ignore-run-artifacts-document-v2-in-claudemd"
+date = 2026-10-13
+
+[[items]]
+id = "E171"
+agent = "implement"
+command = "cargo audit --file tomlctl/Cargo.lock"
+outcome = "pass"
+duration_s = 19
+summary = "no advisories"
+type = "verification"
+task_ref = "add-the-v2-carriers-to-the-skill-gate-table-ignore-run-artifacts-document-v2-in-claudemd"
+date = 2026-10-13
+
+[[items]]
+id = "E172"
+agent = "implement"
+kind = "commit-train"
+summary = "final train (checkpoint D): 254d56d: 56"
+commits = ["254d56d"]
+type = "checkpoint"
+task_ref = "add-the-v2-carriers-to-the-skill-gate-table-ignore-run-artifacts-document-v2-in-claudemd"
+date = 2026-10-13
+
+[[items]]
+id = "E173"
+agent = "plan-update"
+from_status = "in-progress"
+to_status = "review"
+summary = "status in-progress -> review: all 62 tasks done and the final verification pass green"
+type = "status-transition"
+date = 2026-10-13
+
+[[items]]
+id = "E174"
+agent = "plan-update"
+summary = "/review-apply 2026-10-13 changed four user-visible review-group behaviours while deduplicating the review module: resolve follows a converted advisory to its replacement; repo-relative path validation is one stricter predicate; prose flags share one reader and wording; a missing review store reports one not_found error across verbs."
+original_intent = 'As shipped by the plan: review resolve treated a `converted` advisory as suppressing; finding file, run scope, cell slice and citation paths each had their own path-safety rules; review cover read --note-file raw (a BOM survived) with its own empty-note message; and a missing store reported a per-verb "review store not found", a "file does not exist", or a raw OS error depending on the verb.'
+rationale = 'Review findings R21, R16, R17 and R36. Now: resolve follows converted_to like merged_into, so a repeat naming a converted advisory credits its replacement and a regression on a resolved replacement is caught. fields::path_problem refuses the strictest union of the old rules (whitespace-only, backslash, leading slash, any second-byte colon, `..`). io::read_prose strips the BOM and gives cover and run finish the shared "needs a non-empty value" wording. store::load/require report "review store not found at <path>" (kind not_found) for every verb, including review stats under --strict-read. Covered by new tests in review_resolve, review_cells and review_query; the full tomlctl suite passed (2076 tests).'
+type = "deviation"
+task_ref = "implement-review-resolve-for-identity-outcomes"
+date = 2026-10-13

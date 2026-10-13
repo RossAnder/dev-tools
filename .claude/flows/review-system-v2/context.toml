@@ -1,8 +1,8 @@
 slug = "review-system-v2"
 plan_path = "docs/plans/review-system-v2.md"
-status = "draft"
+status = "review"
 created = 2026-10-09
-updated = 2026-10-09
+updated = 2026-10-13
 branch = "main"
 scope = [
     "tomlctl/src/**",
@@ -14,16 +14,18 @@ scope = [
     "claude/skills/**",
     "claude/agents/**",
     "claude/commands/**",
-    "claude/workflows/review-v2.js",
-    ".claude/review-lenses/harness-quality.md",
+    "claude/workflows/**",
+    ".claude/review-lenses/**",
     "scripts/shared-blocks.toml",
     "scripts/deploy-claude.ps1",
+    ".githooks/pre-commit",
+    ".gitignore",
     "CLAUDE.md",
 ]
 
 [tasks]
-total = 0
-completed = 0
+total = 62
+completed = 62
 in_progress = 0
 
 [artifacts]

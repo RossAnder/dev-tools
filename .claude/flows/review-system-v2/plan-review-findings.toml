@@ -1,6 +1,6 @@
 schema_version = 1
-last_updated = 2026-10-09
-round = 1
+last_updated = 2026-10-12
+round = 2
 
 [[items]]
 id = "P1"
@@ -159,10 +159,10 @@ summary = "review record outcome rules overlap, are not total, and leave a refut
 description = "(a) 'suppressed: … or one not re-confirmed' overlaps `repeat` (a PLAUSIBLE re-find of an open finding fits both). (b) A REFUTED re-find of an open/exported match is undefined; for exported, the v1 row stays open and /review-apply applies a finding the latest verifier refuted. (c) No outcome for a row failing validation, and batch atomicity is unstated (one bad row aborting the single write loses a whole run). Fix: suppressed = dismissed/deferred match, or refuted match not CONFIRMED this run; add `contested` (open/exported match REFUTED this run: keep status, append verdict, report the v1 id to defer) and `refused` (invalid row reported and skipped, rest lands); state evaluation order. Raised by Agent 4."
 anchor_old = "  - `suppressed`: a dismissed, deferred or refuted match, or one not re-confirmed, is reported and not minted."
 anchor_new = """
-  - `suppressed`: a dismissed or deferred match (any verdict), or a refuted match this run did not CONFIRM, is reported and not minted.
-  - `contested`: an open or exported match this run REFUTED keeps its status, gains the verdict, and is listed in the report (for an exported match, with the v1 id to defer).
-  - `refused`: a row failing validation is reported with its reason and skipped; the rest of the batch still lands in the single write.
-
+  - `suppressed`: a dismissed or deferred match (any verdict), or a refuted match this run did not CONFIRM, is reported and not minted.\r
+  - `contested`: an open or exported match this run REFUTED keeps its status, gains the verdict, and is listed in the report (for an exported match, with the v1 id to defer).\r
+  - `refused`: a row failing validation is reported with its reason and skipped; the rest of the batch still lands in the single write.\r
+\r
   Outcomes are evaluated in this order: refused, contested, reopened, regression, repeat, suppressed, minted."""
 dedup_id = "5384e80e6f539dba"
 
@@ -460,6 +460,424 @@ anchor_old = "**Workflow is unavailable, disabled, or limited by the size guidel
 anchor_new = "**Workflow is unavailable or disabled, needs per-run approval (manual/accept-edits modes; a `Workflow(<name>)` allow rule under `-p`), shows the advisory Large-workflow warning above 25 agents, or the deployed copy is missing or stale.**"
 dedup_id = "7ce3c06472639334"
 
+[[items]]
+id = "P38"
+review_round = 2
+status = "merged"
+severity = "critical"
+category = "feasibility"
+plan_section = "### 46. Gate the catalogue and lint its files [M]"
+summary = "Checkpoint B (then C, D) gates a red suite: task 4's stub leaves are in the tree but task 20's output_options cases are not"
+description = "Task 20's own Detail says the full suite is red from task 4 until it lands (every_leaf_command_has_a_case, tomlctl/tests/output_options.rs:1303, walks capabilities .commands). `tomlctl tasks closure --checkpoint B` gives members 23-52 whose closure reaches 1-4 but not 20; A's chain 4->5->...->10->12/15/17->20->22 is ~13 levels deep vs B's ~7, and implement.md:161 fires a milestones checkpoint when its own members are terminal, with no declaration-order rule. So B's gate runs with task 4 landed and task 20 absent, fails, and nothing commits. The Dependency Graph's 'Buildable because no carrier references it yet' is false. Regresses round-1 P2. Fix: add 20 to task 46's Depends on; C and D inherit it through 53-55 -> 46. Re-render after. (Agents 1 and 3 found this independently.)"
+anchor_old = "- **Depends on**: 3, 25, 26,"
+anchor_new = "- **Depends on**: 3, 20, 25, 26,"
+dedup_id = "64c58ebed5ffe1e9"
+
+[[items]]
+id = "P39"
+review_round = 2
+status = "merged"
+severity = "critical"
+category = "executability"
+plan_section = "## Verification Commands"
+summary = "Two cargo success: keys pass vacuously today: a libtest name filter matching nothing exits 0"
+description = "Measured baseline: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- review::` exits 0 with 'test result: ok. 0 passed; 0 failed; 1192 filtered out' - the key passes while its criterion (field-catalogue, store, catalogue and matcher unit tests pass) does not hold, and it would still pass after implementation if the tests were misnamed or missing. `success: cargo test ... --lib -- cli::dispatch::tests` stands for 'the catalogue validates' but passes today (43 passed) before catalogue_validates exists. Same vacuity in Success Criteria lines for both, and in tasks 1-3 acceptance (`-- review::fields`, `review::matching`, `review::catalogue`). The nextest key with -E 'binary(/^review_/)' is healthy (exits 94 today: no binary matched). Fix: use nextest with --no-tests=fail (installed 0.9.136): `cargo nextest run --manifest-path tomlctl/Cargo.toml --lib --no-tests=fail -E 'test(/^review::/)'` for the unit key and tasks 1-3 (narrowed per module), and add `-E 'test(catalogue_validates)' --no-tests=fail` for the catalogue criterion."
+anchor_old = "success: cargo test --manifest-path tomlctl/Cargo.toml --lib -- review::"
+anchor_new = "success: cargo nextest run --manifest-path tomlctl/Cargo.toml --lib --no-tests=fail -E 'test(/^review::/)'"
+dedup_id = "ef3bc1097e7922fd"
+
+[[items]]
+id = "P40"
+review_round = 2
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### Agents"
+summary = "Store-writing agents have no Write tool, so whole-cell payloads must go through stdin heredocs that fail on this Windows host"
+description = "The store-writer block mandates `--ndjson -` with one full-set `review add` per cell (resubmission supersedes, so it cannot be chunked). review-finder/verifier inherit research-deep's tools (claude/agents/research-deep.md:4, no Write); sweeper, checker and plan-executor get Read/Grep/Glob/Bash/Skill. The tomlctl guidance canon (claude/skills/tomlctl/SKILL.md, 'Many entries or whole payloads') requires staging with Write and `--ndjson <path>`, and guidance_lint enforces heredoc-into-tomlctl (lint.rs ~787-801). Measured locally: ~700-byte rows fail intermittently from 14 rows. v2 rows carry old (400), fix (800), failure_scenario (600), evidence 5x300, full of quotes/backticks; Haiku agents run with omitClaudeMd and never see the rule. Fix: grant Write to the five writer agents, scope their writes to the git-ignored run directory, stage `<run dir>/payloads/<cell>.ndjson` and pass `--ndjson <path>`; widen the block's working-tree exception accordingly (tasks 50, 51, 23, Approach 'Agents')."
+dedup_id = "3e89074ac6044cba"
+
+[[items]]
+id = "P41"
+review_round = 2
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "### Lens catalogue"
+summary = "Detector patterns are unspecified literal-vs-regex; the plan's examples break as regexes and the release build has no Unicode classes"
+description = 'tomlctl/Cargo.toml:56 builds regex with default-features=false, features=[std,perf] - no unicode; codebase-review.md:38 notes the shipped binary rejects \w/\d/\b while the test build (dev-dep feature unification, tasks/parse_policy.rs:461) accepts them, so catalogue_validates can pass a pattern that review survey then records as `unknown` on every run. As regexes, `#[test]` is a character class, `[Fact]` matches any of F/a/c/t, `test(` does not compile. `manifest` key paths for Directory.Packages.props / .csproj need an XML parser the crate lacks. Fix: declare `count` patterns literal substrings; compile `contains` through query::compile_user_bytes_regex; make catalogue validate() compile every pattern and reject unwrapped Unicode shorthands; restrict `manifest` to TOML/JSON manifests and detect MSBuild XML via `contains` (tasks 3, 6, 24).'
+anchor_old = "and for health signals `count` (per-stack patterns, e.g."
+anchor_new = "and for health signals `count` (per-stack literal substrings matched verbatim, never regexes, e.g."
+dedup_id = "b921a9ea7a7ec522"
+
+[[items]]
+id = "P42"
+review_round = 2
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### 8. Implement review add with cell-scoped idempotency and routing [M]"
+summary = "review add's old-text check does not normalise CRLF, so multi-line old text from CRLF files is refused"
+description = '''core.autocrlf=true and `git ls-files --eol` reports 469 tracked files with CRLF working-tree endings (lumina, claude/skills, docs/plans); the user's .NET repos are CRLF throughout. Agents copy `old` joined with \n, so the substring check refuses the row, the agent resubmits once, then the finding is lost. The checker's grep predicate cannot match multi-line text either; it should rely on add's deterministic proof. Fix: normalise \r\n to \n on both sides before the search; add test `cleanup_old_text_matches_in_crlf_file`; same rule for the audit projection (task 11).'''
+anchor_old = "check `old` text near `line` (in `target_file` when given and existing)"
+anchor_new = 'check `old` text near `line` (in `target_file` when given and existing), comparing after normalising `\r\n` to `\n` in both the file text and `old`'
+dedup_id = "883e3b07f7ba007b"
+
+[[items]]
+id = "P43"
+review_round = 2
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### v2 store and the tomlctl review group"
+summary = "The --builtin default `~/.claude/skills/review-v2-lenses` is unresolvable in tomlctl and ignores CLAUDE_CONFIG_DIR"
+description = "No CLAUDE_CONFIG_DIR/USERPROFILE/home_dir resolution exists anywhere in tomlctl/src (grep), and clap does not expand `~`. The plan's own D11 / After Merge record a machine whose sessions read ~/.claude-work, where run start would validate a stale or missing catalogue. The default is defined twice (task 5 run start, task 18 catalogue), and task 20's output_options cases relying on it would read the developer's real home. Fix: resolve once in tomlctl/src/review/catalogue.rs (task 3) as CLAUDE_CONFIG_DIR, else USERPROFILE then HOME joined with .claude (as glimpse/src/config.rs does), record the resolved absolute path in the run, unit-test both branches, and have test cases pass --builtin."
+anchor_old = "(`--builtin` defaults to `~/.claude/skills/review-v2-lenses`)"
+anchor_new = "(`--builtin` defaults to `<claude dir>/skills/review-v2-lenses`, the claude dir being `CLAUDE_CONFIG_DIR` when set, else `USERPROFILE` then `HOME` joined with `.claude`, as `glimpse/src/config.rs` resolves it; resolved once in `tomlctl/src/review/catalogue.rs` and recorded as an absolute path)"
+dedup_id = "eb33bbdd76603bcb"
+
+[[items]]
+id = "P44"
+review_round = 2
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### Family specifics"
+summary = "/review-plan-v2's merge keeps only three of v1's merge safety rules"
+description = "v1 Step 4 (claude/commands/review-plan.md) also: skips a plan_section group holding >1 anchor (B2), applies anchor_old only when found exactly once (B3), defaults Q3 to Keep both with an async question on empty answer (B7), enforces Files-line closure (A3.5c), guards transitions with expect, and passes merged sections as merge-provenance context next round. Family specifics lists only the empty-answer rule, .premerge.md and the ref-set gate -> import -> check; v2 skips the user-inputs store so B7's async Q3 has nowhere to go. These are the rules that stop the merge itself creating defects (the merge is the least-reviewed text). Fix (needs-plan): state that the v2 merge follows review-plan.md Step 4A/4B and A3.5 by reference, with B2/B3 conflict rules, Keep-both default and empty-answer handling without the inputs store, and feed merged sections into next round's PRIOR."
+dedup_id = "a1f885e98b52059a"
+
+[[items]]
+id = "P45"
+review_round = 2
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### Field readership"
+summary = "Plan-family fields (plan_section, anchor_old, anchor_new) are absent from the field catalogue and readership matrix"
+description = "Records says 'plan family adds plan_section, anchor_old, anchor_new', but the matrix and task 1's caps/enums omit all three, so projection_table_matches_matrix will enforce a matrix that never carries them; Family specifics has the orchestrator merge 'from the implementer projection', which then lacks the anchors. Also undefined for plan rows: which file/line/symbol apply (the ±20-line old check and the (file, symbol) anchor matcher), and anchor_old uniqueness under plan_section - a deterministic check that belongs in review add per design principle 1. Fix: add the three fields with caps, kind applicability and implementer/report visibility; define a plan row's file/line/symbol (e.g. plan path, heading line, task ref); validate anchor uniqueness at add; name them in task 1's Detail."
+dedup_id = "a51af5d809dedecb"
+
+[[items]]
+id = "P46"
+review_round = 2
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### Run pipeline"
+summary = "Baseline fences have no writer and no barrier: the frozen verification agent cannot do what stage 2 asks"
+description = "claude/agents/verification.md (frozen by the guard): stops at the first fail or timeout (:3), writes only its own mktemp dir (:66), does no interpretation. So a red lint baseline marks break-set-baseline and harness-gates not_run; it cannot write 'into the run directory'; it cannot filter diagnostics to in-scope files as v1's LINT BASELINE does. pack.md is written by the surveyor before the verification dispatch, so nobody fills LINT/PROFILE/break-set fences, and nothing in stages 3-4 waits for the verification completion notification (background delivery is the default) before cells launch. The Agent-wave fallback also needs a stated barrier and a 20-slot running-agent count that includes the verification agent (spawns past 20 fail without retry, sub-agents docs). Fix (task 47 survey.md, task 42, task 48 agent-waves.md): one verification dispatch per baseline command or failure-tolerant ordering; name the role that greps the reported log paths into pack.md fences; add a stage 3->4 gate that every baseline file exists or records 'none - <reason>'; state background delivery and slot accounting."
+dedup_id = "d768ef38cab90797"
+
+[[items]]
+id = "P47"
+review_round = 2
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### v2 store and the tomlctl review group"
+summary = "review resolve leaves the new row's status undefined for contested and reopened, and records no outcome"
+description = "repeat -> merged, regression -> open, suppressed -> merged are stated; contested says only the target keeps its status and gains the verdict; reopened says not which row changes or to what. A row left unverified blocks run finish forever. No `contested` status or outcome field exists, so task 12 cannot list contested findings and task 17 cannot tell suppressed from repeat for counts.suppressed (both merged). Fix: state each outcome's row and target status (e.g. contested -> row merged with merged_into, target unchanged; reopened -> target open, row merged) and add an `outcome` field the digest and counts read (Approach plus tasks 10, 12, 17)."
+dedup_id = "3bb94b36f7a04a6b"
+
+[[items]]
+id = "P48"
+review_round = 2
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### Export to v1"
+summary = "v1 requires effort on every row but the defect kind has no effort field"
+description = """flow-contract-ledger-schema SKILL.md lists `effort` (trivial|small|medium) as required, and task 16 validates it, but Finding kinds gives defects severity, failure_scenario, fix, fix_shape, counter, grade, evidence - no effort. Only cleanup carries effort, and its value set is never enumerated (refusing effort="large" implies four values task 1 does not list). As written export-v1 refuses every defect or task 16 invents a value. Fix: add effort (trivial|small|medium|large) to defect's required fields and task 1's enums, or state the fixed v1 effort export assigns to defects."""
+dedup_id = "2f0e3d3309086775"
+
+[[items]]
+id = "P49"
+review_round = 2
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### 1. Add the review field catalogue [M]"
+summary = "route()'s fixed signature cannot produce the panel route"
+description = "Routes are verifier|panel|checker|none, computed by add; panel means critical defects at deep, which needs severity and the run's depth - neither is a parameter of `route(kind, direction, file, target_file, routing_globs)`. Task 8 computes route via fields::route but does not own fields.rs, so it must either edit outside its Files line or place panel routing ad hoc. Fix: add severity and depth to the signature and a test such as route_sends_critical_at_deep_to_panel."
+anchor_old = "route(kind, direction, file, target_file, routing_globs) -> Route"
+anchor_new = "route(kind, direction, severity, depth, file, target_file, routing_globs) -> Route"
+dedup_id = "d9a849b3f242c497"
+
+[[items]]
+id = "P50"
+review_round = 2
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 7. Implement review plan, the proposal, accounting and cover [M]"
+summary = "The proposal algorithm is underspecified and changed_lines makes the ceiling contradict the plan-executor rows"
+description = "changed_lines is computed from base..HEAD, so a plan-family run or a code run on an unchanged path (the success criterion's tomlctl/src/sweep.rs) has ~0 changed lines and the scaled ceiling drops to its floor of 3 - below the plan floor (bundles + plan-checks + executor cells) and below 'standard <=12 tasks'; at deep 'every task' of this 56-task plan needs >=56 per-task cells against a ceiling of 32. Also left to the implementer: rounding of '≈1 cell per 100 changed lines', how lens `slice` frontmatter drives slicing, candidate priority when the budget runs out, the agent-count estimate, where --propose gets plan tasks, and repeat passes (no owner, no file-order field). Fix (needs-plan): add a 'Proposal' paragraph to the Approach defining changed_lines for no-diff scopes, whether executor cells count against the ceiling or batch several task refs, the ceiling formula, slice-by-lens, candidate order, repeat-cell generation and the estimate; cite it from task 7."
+dedup_id = "10db10f8db90bab1"
+
+[[items]]
+id = "P51"
+review_round = 2
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### 46. Gate the catalogue and lint its files [M]"
+summary = "Task 46 edits files off its Files line and cannot reach a private review::catalogue"
+description = "Its Detail says to fix every error the first run reports (ownership collisions between the parallel lens tasks) in the offending entry or vocabulary file - files not declared, so /implement's claims and rollback miss them. Widening command_lint_scan_set (lint.rs:15-53) also puts the catalogue under guidance_lint and flag_table_lint, which use the same scan set. catalogue_validates lives in crate::cli::dispatch::tests while tasks 1 and 3 declare private `mod review;` / `mod catalogue;` (lib.rs uses private mods; tasks/mod.rs:38 uses pub(crate) for exactly this), so the call fails with E0603. Fix: task 3 declares `pub(crate) mod catalogue;` and `pub(crate) fn validate`; task 46's Files add claude/skills/review-v2-lenses/vocabulary.toml and .claude/review-lenses/config.toml, with lens-entry fixes routed to a derived follow-on; tasks 42-44 state fences must pass guidance_lint too."
+dedup_id = "8e76523e99d50b72"
+
+[[items]]
+id = "P52"
+review_round = 2
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### 28. Write the lenses: architecture, idioms, duplication [M]"
+summary = "14 tasks rely on another task's body, which implementers never receive (regressed from round-1 P27)"
+description = "'same format rules as task 27' (tasks 28-36), 'same format rules as task 38' (39, 40), 'the same two blocks as task 50' (51), 'the same steering flags as task 53' (54, 55), and '(R9)' citing Research Notes (26, 36). Task 27's rules (owns from vocabulary.toml, Does-not-flag seeding, collisions settled at 46) and the flags --depth/--flow/--probe/--lens exist only in those task bodies. Fix: move the entry-writing rules into Approach 'Lens catalogue', the steering flags into 'Run pipeline' stage 3, and restate R9's dry-run checklist in task 26; cite headings instead of tasks."
+dedup_id = "2918a3503990d859"
+
+[[items]]
+id = "P53"
+review_round = 2
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### Lens catalogue"
+summary = "Most lens frontmatter values have no owner; doc-drift has two activation tiers (regressed from round-1 P19)"
+description = "The lens table fixes families, mode and activation only, but frontmatter also requires v1_category, slice, produces, methods and apply_when.paths; export-v1 takes the category from v1_category and the proposal needs slice. New lenses (correctness, hygiene, test-pruning, doc-drift, doc-consolidation, io-process, synthesis) have no v1 source to inherit from, so nine parallel lens tasks invent them. The validator closes only the optimise category set, while flow-contract-ledger-schema closes the review set (quality|security|architecture|completeness|db|testability|package-quality). doc-drift's 'signal (docs-touched) + candidate' is not one activation value. Fix: add v1_category, slice and produces columns to the lens table; close the review category set in validation; give doc-drift one tier with a stated fallback."
+dedup_id = "12cf70496c7af8b6"
+
+[[items]]
+id = "P54"
+review_round = 2
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### 46. Gate the catalogue and lint its files [M]"
+summary = "A commit touching only vocabulary.toml or .claude/review-lenses/** skips the catalogue gate"
+description = '''.githooks/pre-commit:34 runs cli::dispatch::tests only when a staged path matches ^(claude/.*\.md|tomlctl/src/.*)$. vocabulary.toml is .toml and .claude/review-lenses/config.toml starts with .claude/, so a detector, ownership or routing edit commits unchecked - contradicting the Risks claim that catalogue_validates blocks a broken edit at commit time. Fix: add .githooks/pre-commit to a task's Files (widen to ^(claude/.*\.(md|toml)|\.claude/review-lenses/.*|tomlctl/src/.*)$) and update CLAUDE.md's hook paragraph in task 56; review the hook diff with CI-step scrutiny per CLAUDE.md.'''
+dedup_id = "70e0b5765c56a8d1"
+
+[[items]]
+id = "P55"
+review_round = 2
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "## After Merge"
+summary = "After Merge omits reinstalling glimpse, so review-v2.toml attribution never takes effect"
+description = "The harness hooks run glimpse.exe, which records agents through tomlctl::record_agent in-process (glimpse/src/hook.rs:2,280) and so through correlate's LEDGER regex; CLAUDE.md says glimpse needs a reinstall after tomlctl changes. Only `cargo install --path tomlctl` is listed, so task 19 silently does nothing."
+anchor_old = "- Run `cargo install --path tomlctl`; the carriers shell out to the installed binary, `review` lands in 0.16.0, and each v2 carrier halts at stage 0 on an older binary."
+anchor_new = "- Run `cargo install --path tomlctl`; the carriers shell out to the installed binary, `review` lands in 0.16.0, and each v2 carrier halts at stage 0 on an older binary. Run `cargo install --path glimpse` too: the harness's `glimpse hook` records agents through tomlctl's library in-process, so the `review-v2.toml` attribution takes effect only in a rebuilt glimpse."
+dedup_id = "19016a5460f18b33"
+
+[[items]]
+id = "P56"
+review_round = 2
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### 24. Write the catalogue skill and vocabulary [M]"
+summary = "The shipped vocabulary's detectors are never run against fixture trees"
+description = "Risks claims detectors are unit-tested on fixture trees modelled on the user's repos, but task 6 depends only on 5 (no edge to 24) so its fixtures use test-local tables; task 24's acceptance counts [concerns. lines; catalogue_validates checks schema and ownership only. Every layout requirement in task 24 (depth>1 manifests, Directory.Packages.props, Bun workspaces, legacy <Reference Include>, per-stack test patterns) is unverified until live trials. Fix: add tomlctl/tests/review_vocabulary.rs (depends on 6 and 24) loading the real vocabulary.toml over fixture trees (Rust at depth 3, EF Core via central package management, Bun-workspace React, legacy csproj with Dapper, a Vue subdirectory) asserting signals and roots."
+dedup_id = "6ade5fe58b645f82"
+
+[[items]]
+id = "P57"
+review_round = 2
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### 4. Wire the review verb group into the CLI with stub verbs [L]"
+summary = "Task 4 copies a StampArgs idiom inputs/backlog do not use, and mixed read/write leaves have no help-list assignment"
+description = "cli/types/shared.rs:95-97: 'The tasks, backlog, inputs and agents writers stamp their own stores and do not take it' - the review store restamps itself, so --no-stamp would be dead. Several leaves both read and write (stats --outcomes runs sync-v1 and --all touches every store; plan --propose reads vs --ndjson writes; report --out writes markdown like tasks render, which sits in the read list at tests/capabilities.rs:47-51), but task 20 must place each leaf in exactly one of the two help-list tests without a rule. tomlctl/src/capabilities.rs is on task 4's Files with no stated edit (FEATURES lives in cli/types/mod.rs). Fix: drop StampArgs; add a leaf-by-leaf read/write table to task 20 and decide whether stats --outcomes writes; state or remove the capabilities.rs edit."
+dedup_id = "8a69c6408cd6ed6a"
+
+[[items]]
+id = "P58"
+review_round = 2
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### Measurement and tuning"
+summary = "The context-cost scripts the baselines and task 48 rely on are not in the repo"
+description = "The 401k/635k/329k context baselines came from ctx.py and siblings that exist only in an ephemeral session scratchpad under %TEMP%; the effectiveness output likewise. `git ls-files | grep -iE 'transcript|effectiveness'` matches only glimpse/src/transcript.rs. Task 48 must cite each baseline 'with the command that produced each', which nobody can rerun once the temp directory is cleared. Fix: commit the attribution script (e.g. claude/skills/review-v2-engine/scripts/context-cost.py) on task 48's Files and cite it, or record each baseline with value, date and method."
+dedup_id = "ff951b18d925e7e6"
+
+[[items]]
+id = "P59"
+review_round = 2
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### 14. Implement review sync-v1 [S]"
+summary = "sync-v1 scans only default ledgers, never export_ledger; sync verdict rows have no valid shape; S tag unwarranted"
+description = """export-v1 takes a free --to path and records export_ledger, but task 14 reads only review-ledger.toml / optimise-findings.toml, so a finding exported elsewhere stays exported forever, stats --outcomes misses it and a re-found fixed issue is never a regression. A by="sync" verdict must carry verdict in confirmed|plausible|refuted|unsettled and a citation (verdicts without one are refused); a sync 'note' fits neither. Not fully specified means not lite-eligible. Fix: read every distinct export_ledger plus the defaults (test sync_reads_recorded_export_ledger); define sync verdict rows (e.g. confirmed, citation <ledger>#<v1 id>) or exempt by=sync; retag M."""
+anchor_old = "(code family from `review-ledger.toml`, perf from `optimise-findings.toml`, flow-local and flow-less)"
+anchor_new = "(every distinct `export_ledger` recorded on this store's exported findings, plus the family's default ledger for the store's slug or scope)"
+dedup_id = "dae51936019b9924"
+
+[[items]]
+id = "P60"
+review_round = 2
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 48. Write the engine references: agent waves, triage and close, measurement [M]"
+summary = "Task 48 copies the Workflow's per-cell prompt template but has no edge to task 49"
+description = "agent-waves.md must use 'the same per-cell prompt template as the Workflow', which task 49 builds; the Approach only lists three ingredients, so the two substrates' prompts are written independently and fallback parity (an explicit goal) is luck. Task 49 has no dependencies, so the edge costs no critical-path time. Fix: 48 depends on 49 and copies the template from claude/workflows/review-v2.js."
+anchor_old = "- **Depends on**: 4"
+anchor_new = "- **Depends on**: 4, 49"
+dedup_id = "9e97a43e73f2b23e"
+
+[[items]]
+id = "P61"
+review_round = 2
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 2. Add the review store and anchor matcher [M]"
+summary = "mutate hands the closure two writable views with no write-back rule, and the copied seed path yields an empty table"
+description = "tasks/store.rs:75-80 ends with `*doc = schema::to_toml(&store)`, so raw-minted rows (items_append_minted takes the raw doc) are dropped by the typed write-back, and the reverse order drops typed edits; review add needs both (supersede typed, mint raw). Rows minted through JSON get first_seen/started as strings since convert.rs DATE_KEYS lacks them (widening DATE_KEYS trips write_reference_enumerates_every_date_key). Separately, tasks/store.rs seeds via on_missing_for -> seed_doc_for, and neither review-v2.toml nor .claude/review-v2/ is in SCHEMA_SEEDED_FLOW_FILES / SCHEMA_SEEDED_LEDGER_DIRS (io.rs:728-746), giving an empty table without schema_version. Fix: one writable view - mint in the typed layer through a pub(crate) wrapper over items::next_id_number (honours id_high_water), or mint raw first and re-parse before typed edits; seed with io::schema_seed() (io.rs:772) while honouring --no-create; consider naming review::fields to avoid confusion with crate::fields."
+dedup_id = "20a47c3676bf65bc"
+
+[[items]]
+id = "P62"
+review_round = 2
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 55. Write the /review-plan-v2 carrier [M]"
+summary = "Adding a thin carrier to PROSE fails the gate if it names no tasks-check class, while the catalogue files that do name classes stay ungated"
+description = "finding_classes.rs:356 fails a PROSE document that 'names no class at all'. Task 53 says the carrier restates nothing the engine owns, and the class names live in checks/store-check.md, lenses/plan-dependencies.md and lenses/plan-structure.md - so the carrier likely names none and checkpoint D goes red, while a class rename goes uncaught in the catalogue. Fix: in task 55 add the catalogue plan files that name classes to PROSE (each naming at least one real class), and add the carrier only if it names one."
+dedup_id = "45a2ad660e30ac03"
+
+[[items]]
+id = "P63"
+review_round = 2
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### v2 store and the tomlctl review group"
+summary = "Agent-written paths and --base reach the filesystem and git without normalisation or containment"
+description = "v2 removes the orchestrator re-typing that kept v1 file values clean; agents may emit backslash or absolute paths (including catalogue paths under ~/.claude), breaking the raw-string anchor matcher and --in PRIOR, and export-v1 then hands /review-apply a path outside the repo; the audit projection inlines ±5 lines from any cited path. A --base value starting with - is parsed by git as an option (git diff --output=<f> writes a file). io.rs:1586 guard_write_path applies only on mutate_doc paths, not report --out / plan --propose --out / run-dir creation. Fix: require repo-relative, /-separated, ..-free paths in the field catalogue; resolve --base via `git rev-parse --verify --end-of-options <base>^{commit}` and store the sha; route --out and run-dir writes through guard_write_path."
+dedup_id = "e5001a44689ff8ab"
+
+[[items]]
+id = "P64"
+review_round = 2
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### Agents"
+summary = "Skill preload reports no base directory, so worked examples are unreachable and the surveyor cannot run the fallback (regressed from round-1 P14, P35)"
+description = "Sub-agent docs (fetched 2026-10-12) say preload injects the skill's content and nothing about a base directory or supporting files; 'worked examples from the base directory the Skill tool reports' assumes a Skill call preload never makes, so review-v2-method/references/finding-kinds.md and verifying.md (most valuable to Haiku agents) and research-methods' gated references are unreachable. review-surveyor has no Skill tool, so it cannot invoke the skill when a preload is silently skipped; task 51 omits task 50's fallback sentence. Fix: link references as ${CLAUDE_SKILL_DIR}/references/... or have review show --for <role> emit absolute method-reference paths; tell finder/verifier to call Skill(research-methods) for gated references; give the surveyor Skill and copy the fallback sentence into task 51."
+dedup_id = "4e923ab6f3e8546c"
+
+[[items]]
+id = "P65"
+review_round = 2
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "### v2 store and the tomlctl review group"
+summary = "Retry-once after os error 5 is not idempotent for cover and run update"
+description = "The Windows failure is the sidecar rename after the TOML has committed, so a retried review cover meets a cell its first attempt sealed (refusal is defined for add, not cover) and a retried run update --set-json signals can duplicate judged signals. Fix: make cover a successful no-op on a cell sealed with the same status and note; upsert signals by name; add tests to tasks 5 and 7."
+dedup_id = "3e831d4c335ba2c0"
+
+[[items]]
+id = "P66"
+review_round = 2
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### Design principles"
+summary = "Principle 8 says v2 never edits the tomlctl skill, but task 21 does"
+description = "Task 21 edits claude/skills/tomlctl/SKILL.md and adds references/review.md; Scope's Affected areas lists claude/skills/tomlctl/; the success guard correctly omits it. Only the principle's prose is wrong, and a later reader will flag task 21 against it."
+anchor_old = "v2 reuses unchanged v1 skills by invocation (`tomlctl`, `flow-contract-flow-context`, `backlog-capture`, `flow-contract-task-store`, `flow-contract-plan-output-format`, `flow-contract-plansdirectory-prompt`, `research-methods`) and never edits them."
+anchor_new = "v2 reuses unchanged v1 skills by invocation (`flow-contract-flow-context`, `backlog-capture`, `flow-contract-task-store`, `flow-contract-plan-output-format`, `flow-contract-plansdirectory-prompt`, `research-methods`) and never edits them. The `tomlctl` skill is the one exception: it documents the tooling surface, so it gains the `review` reference and rows additively (task 21) and stays outside the byte-identity guard."
+dedup_id = "e358d599ec1f67b3"
+
+[[items]]
+id = "P67"
+review_round = 2
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### 4. Wire the review verb group into the CLI with stub verbs [L]"
+summary = "Missed hand-maintained transcriptions: README subcommands array, SKILL.md version example; description count drift"
+description = """tomlctl/README.md:325-328 carries a 17-name "subcommands" array mirroring SUBCOMMANDS (task 4's 'both README transcriptions' covers only features) - add "review". claude/skills/tomlctl/SKILL.md shows "version":"0.15.0" in an example - bump in task 21 or 22. The tomlctl skill description measures 1,010 chars (chars().count(), skills.rs:1034), not 1,012; the 'do not edit' instruction still holds."""
+dedup_id = "b02e0d8c0c85368b"
+
+[[items]]
+id = "P68"
+review_round = 2
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "## Scope"
+summary = "The flow context's scope list names a file the plan no longer creates and misses new paths"
+description = ".claude/flows/review-system-v2/context.toml scope lists .claude/review-lenses/harness-quality.md (task 45 now writes config.toml) and omits .gitignore, .claude/review-lenses/**, and .githooks/pre-commit if adopted. Flow resolution by path reads it. Fix (flow-state write, not a plan edit): set scope to Scope -> Affected areas with `tomlctl set <context> --set-json 'scope=[...]'`. Separately, flow doctor reports sidecar digest mismatches on context.toml and execution-record.toml."
+dedup_id = "f3fe9dbec5ca13e1"
+
+[[items]]
+id = "P69"
+review_round = 2
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### 2. Add the review store and anchor matcher [M]"
+summary = "Reuse the existing field-flag and stdin/file helpers instead of re-deriving them"
+description = "crate::fields::FieldArgs (tomlctl/src/fields.rs:16-30) already implements --set/--set-json/--set-file for review run start/update; io::read_text_arg and read_flag_file serve the `-` stdin and --<flag>-file twins. Name them in the relevant task Details."
+dedup_id = "fd74d36d29e6750c"
+
+[[items]]
+id = "P70"
+review_round = 2
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "### 46. Gate the catalogue and lint its files [M]"
+summary = "catalogue_entry_counts_match_the_plan freezes plan-time counts against the plan's own lens lifecycle"
+description = "The lifecycle adds reworked lenses as new experimental ids beside old ones and promotes probes to built-ins; each breaks a crate test pinned to 31/10/6/9, contrary to derive-don't-transcribe. The Success Criterion already checks the counts once. Fix: drop the test or assert each type is non-empty."
+dedup_id = "e59bb952b05e8089"
+
+[[items]]
+id = "P71"
+review_round = 2
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "### 49. Write the review-v2 saved workflow and its deploy entry [L]"
+summary = "Task 49 should tell its implementer to invoke the workflow-authoring skill"
+description = "Script rules it needs (meta as a pure literal with required description, phase titles matching phase() calls, plain JS, no filesystem, concurrency cap) live in that skill or in Research Notes R13, which implementers never receive. The node --check wrapper probe is sound. Fix: add 'Invoke the workflow-authoring skill first' to the Detail."
+dedup_id = "79f8fd4a3ba33e95"
+
+[[items]]
+id = "P72"
+review_round = 2
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "## Success Criteria"
+summary = "Success Criteria miss the perf apply path and the 'learn from what was applied' goal; most runnable criteria check only that tasks ran"
+description = "Context's outcome includes applying defect and cleanup findings through the existing apply flows and learning from what was applied. Only /review-apply is checked; no criterion covers a perf export to optimise-findings.toml selected by /optimise-apply, nor applied outcomes reaching stats --outcomes or calibration reaching the next run's CALIBRATION fence. The runnable criteria on lines 452-457 check file existence, counts and frontmatter. Fix: add a predicted perf export -> /optimise-apply -> sync-v1 criterion and a runnable review stats --outcomes --calibration criterion over a seeded store (also a success: key)."
+dedup_id = "492e6622e918cf91"
+
+[[items]]
+id = "P73"
+review_round = 2
+status = "merged"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "### 4. Wire the review verb group into the CLI with stub verbs [L]"
+summary = "`review plan --lens -id` will not parse without allow_hyphen_values"
+description = "clap_builder 4.6.7 (locked) rejects a value starting with a hyphen unless Arg::allow_hyphen_values(true) is set (src/builder/arg.rs:1521-1536), and a doc fence showing `--lens -id` would also fail command_lint. The plan's grammar is `--lens +id|-id`."
+anchor_old = "Declare every `--<flag>-file` twin."
+anchor_new = "Declare every `--<flag>-file` twin. Give `review plan`'s `--lens` `allow_hyphen_values = true` so `--lens -id` parses."
+dedup_id = "eba949b8ff3c33e1"
+
 [[vet_events]]
 timestamp = "2026-10-09T21:46:39Z"
 command = "review-plan"
@@ -506,4 +924,52 @@ sampled_count = 3
 dropped_count = 0
 downgraded_count = 0
 rationale = "Sampled: no serde dependency or derive in tomlctl (Cargo.toml [dependencies]), mutate_doc closure-scoped (io.rs:1015), Workflow returns immediately (this session's Workflow tool contract matches the cited SDK doc). All confirmed."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-12T10:50:13Z"
+command = "review-plan"
+lens = "feasibility"
+tier = "deep"
+agent_index = 1
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled F1 (checkpoint B red gate; confirmed via tasks closure + implement.md:161) and F9 (store.rs write-back; confirmed tasks/store.rs:75-80). Verified clap allow_hyphen_values claim by source citation, regex features at tomlctl/Cargo.toml:56, finding_classes.rs:356 names-no-class. F1 duplicated by executability F1; F5 merged with risk F1; F6 merged with risk F2 / completeness F2; F3 merged with executability F7; F4 merged with executability F6."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-12T10:50:13Z"
+command = "review-plan"
+lens = "completeness"
+tier = "deep"
+agent_index = 2
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "Stale/API claims verified first: StampArgs not taken by inputs/backlog (cli/types/shared.rs:95-97), hook regex (.githooks/pre-commit:34), glimpse in-process record_agent (glimpse/src/hook.rs:2,280), verification agent writes only <D> and stops at first fail (verification.md:3,66), io::schema_seed (io.rs:772), README subcommands array (README.md:325-328). Sampled F6 (task 6 depends only on 5; plan text) and F11 (context.toml scope names harness-quality.md; bootstrap envelope). F2 merged with risk F2; F5 merged with risk F4; F12 merged with risk F9; F13 trap folded into feasibility F9."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-12T10:50:13Z"
+command = "review-plan"
+lens = "executability"
+tier = "deep"
+agent_index = 3
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled F2 (resolve outcome statuses; plan lines 222/248 read) and F4 (route signature lacks severity/depth; plan line 499 vs 212). F3 v1 effort required verified at flow-contract-ledger-schema/SKILL.md. F9 vacuous filter confirmed by orchestrator baseline run (cargo test --lib -- review:: => 0 passed, 1192 filtered out, exit 0); merged with orchestrator check 3/4. F1 merged into feasibility F1; F7 into feasibility F3; F6 merged with feasibility F4; F11 merged with risk F8."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-12T10:50:13Z"
+command = "review-plan"
+lens = "risk"
+tier = "deep"
+agent_index = 4
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled F3 (core.autocrlf=true, git ls-files --eol shows 469 w/crlf) and F8 (sync-v1 default-ledger scan vs export_ledger; plan text). F1 regex default-features without unicode verified at tomlctl/Cargo.toml:56. F4 no CLAUDE_CONFIG_DIR/USERPROFILE/home_dir in tomlctl/src verified by grep. Harness flagged instruction-shaped text (bypass-permissions) — an observation about settings defaultMode, treated as data. F6 merged with completeness F3."
 dedup_id = "45ca31c3315a5978"

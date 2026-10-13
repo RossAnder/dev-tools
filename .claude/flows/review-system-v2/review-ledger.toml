@@ -1,0 +1,1352 @@
+schema_version = 1
+last_updated = 2026-10-13
+
+[[vet_events]]
+timestamp = "2026-10-13T07:23:34Z"
+command = "review"
+lens = "quality"
+tier = "deep"
+agent_index = 1
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled sync::SYNCABLE (read sync.rs apply/set_status: no unchanged-check, reopen is overwritten), verdict::decide vs resolve::decide trigger split, mod.rs dead_code allows (Site::of test-only caller), resolve SUPPRESSING. All anchors matched. Merged with Agent-3 on SYNCABLE, decide, dead_code, v1 vocabulary, NOTE_CAP, implementer_rows; store.rs Finding::status folded into the FINDING_STATUSES lifecycle finding; catalogue_cmd --project merged with Agent-4."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-13T07:23:34Z"
+command = "review"
+lens = "security"
+tier = "deep"
+agent_index = 2
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled all 3: runs.rs:228 default project layer from reviewed tree, security.md:69 remove form + export.rs Old text, run_catalogue no sha check (grep: tree_sha/config_sha written only). run_catalogue merged with Agent-3 db finding."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-13T07:23:34Z"
+command = "review"
+lens = "architecture"
+tier = "deep"
+agent_index = 3
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled run_catalogue absolute path (runs.rs:218), SYNC_REASON_PREFIX vs sync.rs literals, review-v2.md:58 stats claim (stats never reads question), export is_test_removal, fields.rs FINDING_STATUSES. All confirmed."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-13T07:23:34Z"
+command = "review"
+lens = "completeness"
+tier = "lite"
+agent_index = 4
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled Gaps::of (no unsealed field), review-v2.js:65 ids.length wording vs batchSchema, runs.rs:106 no ignore file, README lacks run update, survey/cover lack finished guard (grep). All confirmed. verifierPrompt merged with Agent-6; --project merged with Agent-1."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-13T07:23:34Z"
+command = "review"
+lens = "testability"
+tier = "lite"
+agent_index = 5
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled lint.rs scan set (no workflows), review-v2.js:58 prompt, review_vocabulary.rs:38 skip, 8 copies of store-not-found vs store::load, SealedMeanwhile absent from tests. All confirmed."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-13T07:23:34Z"
+command = "review"
+lens = "package-quality"
+tier = "lite"
+agent_index = 6
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 1
+rationale = "Sampled plan-executor tasks show (TaskIds Vec<u32>), sweeper step 8 (no plan_section), ripple floor for plan, review-plan-v2 floor list, review list --in Option<String>, review-finder frontmatter. Downgraded the context-free-cell/omitClaudeMd finding warning->suggestion: experiment fidelity, not a run-breaking defect."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-13T12:00:00Z"
+command = "review-apply"
+agent_index = 7
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "R10 ref-to-id step read in diff; matches recommendation"
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-13T12:00:00Z"
+command = "review-apply"
+agent_index = 10
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "R25 corrected sentence read in diff; consistent with stats.rs by_lens"
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-13T12:00:00Z"
+command = "review-apply"
+agent_index = 11
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "R29 synopsis line checked against ReviewRunUpdateArgs (RUN positional + FieldArgs)"
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-13T12:00:00Z"
+command = "review-apply"
+agent_index = 12
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "R32 dry-run test read; asserts store, ledger and sidecars byte-identical"
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-13T12:00:00Z"
+command = "review-apply"
+agent_index = 14
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "R34 assert replaces only the vocabulary skip; git skip kept"
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-13T12:00:00Z"
+command = "review-apply"
+agent_index = 15
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "R37 help strings checked against query.rs list defaults"
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-13T12:00:00Z"
+command = "review-apply"
+agent_index = 17
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "R39 wording now keyed on batch; verifyOne/verifyPanel pass no batch"
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-13T12:00:00Z"
+command = "review-apply"
+agent_index = 18
+lens = "implement-lite"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "R40, R44, R45 all read in diff"
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-13T12:00:00Z"
+command = "review-apply"
+agent_index = 19
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 1
+downgraded_count = 1
+dropped_ids = ["R42"]
+rationale = "R42 description grew to 1056 chars, over the 1024 cap enforced by skill_descriptions_under_spec_cap; re-dispatched to implement-deep"
+dedup_id = "45ca31c3315a5978"
+
+[[items]]
+id = "R1"
+first_flagged = 2026-10-13
+rounds = 1
+status = "deferred"
+flow = "review-system-v2"
+file = "tomlctl/src/review/sync.rs"
+line = 28
+symbol = "sync::SYNCABLE"
+severity = "warning"
+effort = "medium"
+category = "db"
+summary = "A triage --reopen of an exported finding that v1 settled is reverted by the next sync-v1, and a re-export re-links to the closed v1 row"
+description = "[needs-plan] SYNCABLE admits `open` (meant only for an export whose v2 write never landed), and triage COMPANIONS keeps exported_as/export_ledger on a reopened row, so sync::linked_rows still matches it by v2_ref and set_status puts back resolved/dismissed/deferred from the unchanged v1 row. sync-v1 runs at every run start, so the reopen never sticks. Re-export cannot help: export::decide returns Linked on an existing v2_ref regardless of v1 status. Fix needs coordinated parts: a reopen retires the v1 link (move exported_as/export_ledger to history), sync skips retired links, export::decide ignores them so the reopened finding mints as a regression. No test covers reopen-then-sync."
+evidence = [
+    "tomlctl/src/review/sync.rs:26-28 SYNCABLE includes open",
+    "tomlctl/src/review/sync.rs:292 only gate before set_status; no unchanged check",
+    "tomlctl/src/review/triage.rs:36-54 REOPENABLE includes resolved; COMPANIONS omits exported_as/export_ledger",
+    "tomlctl/src/review/export.rs:818 decide matches v2_ref first, ignoring v1 status",
+]
+related = [
+    "B-1fc81407",
+    "B-6601255f",
+]
+dedup_id = "e4a2f4928355722d"
+defer_reason = "needs-plan; moved to backlog B-8a4b923f at user request during /review-apply"
+defer_trigger = "backlog item B-8a4b923f is promoted into a plan"
+
+[[items]]
+id = "R2"
+first_flagged = 2026-10-13
+rounds = 1
+status = "deferred"
+flow = "review-system-v2"
+file = "tomlctl/src/review/fields.rs"
+line = 106
+symbol = "FINDING_STATUSES"
+severity = "warning"
+effort = "medium"
+category = "architecture"
+summary = "The finding lifecycle has no owner: statuses are bare Strings and seven modules each declare their own status subsets and companion lists, which already disagree"
+description = "[needs-plan] Finding.status/outcome, Cell.status/agent and Verdict.by/verdict/severity are Strings validated only on read against &[&str] lists, while Kind/Family/Route/Depth use str_enum! in the same module. Status subsets (triage SETTLED/REOPENABLE, sync SYNCABLE, verdict DECIDED_BY_VERDICT, SUPPRESSING twice) and companion lists (triage COMPANIONS, sync SYNC_COMPANIONS, digest DISPOSITIONS) are re-declared per verb and differ: SYNC_COMPANIONS omits reopen_reason/park_reason/backlog_ref (B-1fc81407), COMPANIONS omits exported_as/export_ledger (the reopen defect). ~90 string-literal status comparisons compile even if misspelled. Fix: str_enum!(FindingStatus) with companions() and settled/reopenable/suppressing predicates, typed Finding.status, one status-write helper clearing other statuses' companions."
+evidence = [
+    "tomlctl/src/review/fields.rs:106-137 status/verdict/agent sets as &[&str]",
+    "tomlctl/src/review/store.rs:133,137,171-172,182-185 String fields",
+    "tomlctl/src/review/add.rs:33 and tomlctl/src/review/resolve.rs:26 identical SUPPRESSING",
+    "tomlctl/src/review/triage.rs:45 vs sync.rs:30 vs digest.rs:31 three different companion sets",
+]
+instances = [
+    "tomlctl/src/review/triage.rs:SETTLED",
+    "tomlctl/src/review/triage.rs:REOPENABLE",
+    "tomlctl/src/review/triage.rs:COMPANIONS",
+    "tomlctl/src/review/sync.rs:SYNCABLE",
+    "tomlctl/src/review/sync.rs:SYNC_COMPANIONS",
+    "tomlctl/src/review/digest.rs:DISPOSITIONS",
+    "tomlctl/src/review/add.rs:SUPPRESSING",
+    "tomlctl/src/review/resolve.rs:SUPPRESSING",
+    "tomlctl/src/review/verdict.rs:DECIDED_BY_VERDICT",
+    "tomlctl/src/review/store.rs:Finding",
+]
+sweep = ["SUPPRESSING|SYNCABLE|SETTLED|REOPENABLE|DECIDED_BY_VERDICT|COMPANIONS|DISPOSITIONS"]
+enumeration = "complete"
+related = ["B-1fc81407"]
+dedup_id = "e8c9d47ff20281ed"
+defer_reason = "needs-plan; moved to backlog B-faca904c at user request during /review-apply"
+defer_trigger = "backlog item B-faca904c is promoted into a plan"
+
+[[items]]
+id = "R3"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "tomlctl/src/review/verdict.rs"
+line = 288
+symbol = "verdict::decide"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "The verdict decision rule (panel quorum, else latest verdict) is written three times and the copies choose the panel rule by different triggers"
+description = "verdict::decide keys the quorum on the incoming verdict's `by == panel`; resolve::decide keys on the finding's route == Panel; stats::verifier_call keys on any panel vote existing. A `--by verifier` vote on a panel-routed finding therefore settles it at once in verdict.rs (bypassing the two-seat quorum), while resolve ignores it and stats ignores it once a seat voted. apply_one never checks `by` against `route`. Fix: one call(route, verdicts) helper used by all three, plus refusal of a non-panel, non-audit verdict on a panel route."
+evidence = [
+    'tomlctl/src/review/verdict.rs:289 if by == "panel"',
+    "tomlctl/src/review/resolve.rs:213 if row.route == Some(Route::Panel)",
+    "tomlctl/src/review/stats.rs:257-280 verifier_call",
+    "tomlctl/src/review/verdict.rs:163-226 apply_one has no by-vs-route check",
+]
+instances = [
+    "tomlctl/src/review/verdict.rs:decide",
+    "tomlctl/src/review/resolve.rs:decide",
+    "tomlctl/src/review/stats.rs:verifier_call",
+]
+sweep = [
+    'by == "panel"',
+    "Route::Panel",
+]
+enumeration = "complete"
+dedup_id = "ac1fba721320ba04"
+resolved = 2026-10-13
+resolution = "Uncommitted (review-apply 2026-10-13): one route-keyed settle() helper in verdict.rs used by verdict::decide, resolve::decide and stats verifier_call/overturn; apply_one refuses non-panel, non-audit verdicts on panel-routed findings and panel verdicts on non-panel findings. Non-panel review verdict now settles on the latest stored verdict. Tests in review_verdict/resolve/stats."
+
+[[items]]
+id = "R4"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "tomlctl/src/review/catalogue.rs"
+line = 2172
+symbol = "run_catalogue"
+severity = "warning"
+effort = "small"
+category = "db"
+summary = "A run is not pinned to its catalogue: it stores a machine-absolute builtin path and tree_sha/config_sha that nothing reads, so later verbs load whatever catalogue is on disk now"
+description = "start_catalogue validates and hashes the catalogue only at run start and writes an absolute builtin path (std::path::absolute) into the git-tracked store. run_catalogue, used by add routing, plan/cover accounting, survey, show --for finder, triage --convert and export, reloads from those roots without re-validating or comparing tree_sha/config_sha. A pull, lens edit or project-layer edit mid-run (the surveyor holds Write+Bash) silently changes lens selection and verifier/checker routing while the run record claims the start-time hashes; on another machine the absolute path fails to load. Fix: recompute both shas in run_catalogue and refuse on drift; store the builtin root relative to the Claude config dir or fall back to default_builtin_root()."
+evidence = [
+    "tomlctl/src/review/runs.rs:218 std::path::absolute(&builtin)",
+    "tomlctl/src/review/runs.rs:250-252 tree_sha/config_sha written, never read back",
+    "tomlctl/src/review/catalogue.rs:2198 Catalogue::load with no validate or sha comparison",
+    "tomlctl/src/review/add.rs:112 run_catalogue(...).routing().compile() decides routing",
+]
+dedup_id = "cd9183a0143ed3e6"
+resolved = 2026-10-13
+resolution = "Uncommitted (review-apply 2026-10-13): run_catalogue recomputes tree_sha/config_sha and refuses on drift (legacy runs without tree_sha unchecked); run start omits builtin for the default root and resolves it via default_builtin_root(), a missing recorded root falls back to the default. review_survey failed_detector_records_unknown reworked to pin its catalogue (bad-regex case dropped; run start now rejects it up front)."
+
+[[items]]
+id = "R5"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "tomlctl/src/review/runs.rs"
+line = 228
+symbol = "start_catalogue"
+severity = "warning"
+effort = "medium"
+category = "security"
+summary = "A change under review can configure its own review: the project lens layer is read from the reviewed tree and can disable floor/security lenses or add auto-run check commands, unflagged"
+description = 'Without --project, start_catalogue loads <root>/.claude/review-lenses/ from the working tree whose base..HEAD diff is under review. Its config.toml can disable any built-in entry including correctness and security (disabled lenses need no waiver and `--lens +id` refuses them), override lens Question/Probes/Does-not-flag prose, add [[checks]] commands the orchestrator runs through the verification agent, and disable lenses per path. Verified: `review catalogue --check` with disable=[security,correctness] + an override + `[[checks]] command="echo pwned"` returns ok. Nothing tells the operator the config is part of the change. Fix: in run start, list paths under the project layer that base..HEAD changes (`git diff --name-only <base>..HEAD -- .claude/review-lenses`) as project_layer_changed and refuse unless --project was passed explicitly; surface them at engine stage 1.'
+evidence = [
+    "tomlctl/src/review/runs.rs:228 default project layer from the reviewed tree",
+    "tomlctl/src/review/cells.rs:729-731 --lens +id refused for a project-disabled lens",
+    "tomlctl/src/review/cells.rs:1189 disabled lenses need no waiver",
+    "claude/skills/review-v2-engine/references/survey.md:107 check commands dispatched one per line",
+]
+dedup_id = "4c8adfe3b685a9d1"
+resolved = 2026-10-13
+resolution = "Uncommitted (review-apply 2026-10-13): run start without --project refuses when base..HEAD changes paths under .claude/review-lenses (git diff --no-renames, listed in the error); with --project they are recorded as catalogue.project_layer_changed and surfaced at engine stage 1 (review-v2-engine SKILL.md, tomlctl references/review.md). Tests in review_runs.rs."
+
+[[items]]
+id = "R6"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "claude/skills/review-v2-lenses/lenses/security.md"
+line = 69
+symbol = "Edit forms"
+severity = "warning"
+effort = "trivial"
+category = "security"
+summary = "The security lens files a committed secret as a `remove` cleanup, whose required `old` field copies the secret verbatim into the tracked store and the exported v1 ledger"
+description = "remove/change cleanups require `old` (fields.rs Need::OldText) and add::check_old requires an exact match in the file, so the finder copies the secret into the row. The v2 store (.claude/flows/<slug>/review-v2.toml or .claude/review-v2/<scope>.toml) is not git-ignored (only .claude/review-v2-runs/ is), and export-v1 writes `Old text: {old}` into the v1 ledger description. In a public repo the review republishes the credential in a second tracked file. Fix: security.md says a secret's remove row quotes only the non-secret part of the line (key name and `=`), never the value; add a review-v2-method rule that no field may quote a secret/token/key value."
+evidence = [
+    "claude/skills/review-v2-lenses/lenses/security.md:69 'The one cleanup form is remove — a secret, a credential or a private key'",
+    "tomlctl/src/review/add.rs:388 exact-match check of old",
+    "tomlctl/src/review/export.rs:528-529 Old text: {old}",
+    "git check-ignore: only /.claude/review-v2-runs/ ignored",
+]
+dedup_id = "fd97dc8f880c0bf0"
+resolved = 2026-10-13
+resolution = "Uncommitted (review-apply 2026-10-13): security lens remove rows quote only the non-secret part of the line in old (check_old is a substring match); review-v2-method SKILL.md gains a rule that no field quotes a secret, token, password or key value."
+
+[[items]]
+id = "R7"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "tomlctl/src/review/runs.rs"
+line = 648
+symbol = "Gaps::of"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "run finish does not treat unsealed cells as a gap, so a run whose cell agent never returned finishes clean with uncovered 0"
+description = "Gaps holds unverified, unresolved_same_as, unselected and unsliced only. Probe: plan 3 cells, seal none → `review run finish U1` returns ok with counts.cells 3, uncovered 0, while digest still lists C3 unsealed/assigned. A dead cell agent is reported as coverage the run never got, with no --incomplete reason required. Fix: add an unsealed list (cells of this run with !sealed) to Gaps, is_empty, describe and to_json; update the gap list in claude/skills/tomlctl/references/review.md and claude/skills/review-v2-engine/SKILL.md."
+evidence = [
+    "tomlctl/src/review/runs.rs:648-679 Gaps fields",
+    "scratch probe: finish U1 with C3 unsealed => ok, uncovered 0",
+    "claude/skills/review-v2-engine/references/agent-waves.md:16 relies on digest unsealed cells for mop-up",
+]
+dedup_id = "03abcd087a08854d"
+resolved = 2026-10-13
+resolution = "Uncommitted (review-apply 2026-10-13): Gaps gains an unsealed list (is_empty, describe, to_json); documented in tomlctl references/review.md, review-v2-engine SKILL.md and references/triage-and-close.md. Test in review_finish.rs."
+
+[[items]]
+id = "R8"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "tomlctl/src/review/catalogue_cmd.rs"
+line = 30
+symbol = "catalogue_cmd::run"
+severity = "warning"
+effort = "trivial"
+category = "completeness"
+summary = "review catalogue --project <missing dir> silently validates the built-in layer alone, so --check passes a catalogue that run start rejects"
+description = """catalogue_cmd passes an explicit --project straight to Catalogue::load, which drops a non-directory (catalogue.rs:620). `review catalogue --project nosuchdir --check` prints {"ok":true}; `review run start --project nosuchdir` fails 'project catalogue layer not found'. review-v2-lenses/SKILL.md tells layer authors to validate exactly this way, and review.md says run start runs the same validation. The missing-claude-dir error is also NotFound in one verb and Validation in the other. Fix: one resolver used by both verbs; keep the silent fallback only for the default .claude/review-lenses."""
+evidence = [
+    "tomlctl/src/review/catalogue_cmd.rs:30-33",
+    "tomlctl/src/review/catalogue.rs:620 project.filter(|p| p.is_dir())",
+    "tomlctl/src/review/runs.rs:219-229 run start refuses a missing named layer",
+    "probe: review catalogue --project nosuchdir --check => ok:true",
+]
+dedup_id = "280f20d6c5351c00"
+resolved = 2026-10-13
+resolution = "Uncommitted (review-apply 2026-10-13): shared catalogue::project_layer resolver used by run start and review catalogue; a missing explicit --project fails NotFound in both, only the default .claude/review-lenses falls back silently. Test in review_catalogue.rs."
+
+[[items]]
+id = "R9"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "tomlctl/src/review/add.rs"
+line = 129
+symbol = "review::add::run"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "Nothing tests concurrent review add calls or the in-lock SealedMeanwhile re-check, though v2 finders write the store in parallel"
+description = "add validates the cell before taking the lock, then re-checks the seal and recomputes superseded under it; the SealedMeanwhile branch never runs in any test and no review test spawns concurrent writers. Add a tests/review_add.rs case spawning N `review add` processes on distinct cells of one run and asserting N×k distinct F-ids with no lost rows, following items_id_prefix.rs::concurrent_id_prefix_adds_mint_distinct_ids."
+evidence = [
+    "tomlctl/src/review/add.rs:129-188",
+    "grep thread::spawn|concurren over tomlctl/tests/review_*.rs: 0 hits",
+    "grep SealedMeanwhile over tomlctl/tests: 0 hits",
+    "tomlctl/tests/items_id_prefix.rs:71 existing concurrent pattern",
+]
+dedup_id = "08d0edca41aaa11e"
+resolved = 2026-10-13
+resolution = "Uncommitted (review-apply 2026-10-13): review_add.rs concurrent_adds_on_distinct_cells_mint_distinct_ids spawns four review add processes on distinct cells and asserts distinct ids and no lost rows."
+
+[[items]]
+id = "R10"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "claude/agents/plan-executor.md"
+line = 24
+symbol = "Hold an implementer's context, no more"
+severity = "warning"
+effort = "trivial"
+category = "package-quality"
+summary = "plan-executor is told to run `tomlctl tasks show <id>` but its cell slice holds task refs, and tasks show accepts only numeric ids"
+description = "review plan fills a plan-executor cell's slice with task refs (cells::order_tasks returns t.ref strings; the body itself says 'the slice (the task refs)'). tasks show parses its positional as Vec<u32>, so `tasks show <ref>` fails. Fix: add a step mapping refs to ids (`tomlctl tasks list --slug <flow slug> --select id,ref`) before the per-task tasks show, or say to pass the id matching each ref."
+evidence = [
+    "claude/agents/plan-executor.md:20 'the slice (the task refs)'",
+    "claude/agents/plan-executor.md:24 tomlctl tasks show <id>",
+    "tomlctl/src/review/cells.rs:667-701 order_tasks returns refs",
+    "tomlctl/src/cli/types/tasks.rs:38-45 TaskIds ids: Vec<u32>",
+]
+dedup_id = "45f29693c1618acd"
+resolved = 2026-10-13
+resolution = "Uncommitted (review-apply 2026-10-13): plan-executor.md maps slice refs to ids with tasks list --select id,ref before tasks show."
+
+[[items]]
+id = "R11"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "claude/agents/review-sweeper.md"
+line = 35
+symbol = "Steps step 8"
+severity = "warning"
+effort = "small"
+category = "package-quality"
+summary = "review-sweeper has no plan-family row shape, yet floor lens ripple serves the plan family and is dispatched to the sweeper on every plan review"
+description = "ripple has families [code, plan], mode mechanical, activation floor, so every /review-plan-v2 run gets a review-sweeper cell. Plan-family cleanup rows need plan_section and an anchor_old unique under that section; step 8 only says to copy old byte for byte 'from the file' and never mentions plan_section/anchor_old/anchor_new. A Haiku sweeper following the body writes rows review add refuses, and they degrade to escalations. Fix: add a plan-family clause to step 8 (file = plan path, line = plan_section heading line, symbol = task ref, anchor_old unique under the section), as plan-executor.md already does."
+evidence = [
+    "claude/skills/review-v2-lenses/lenses/ripple.md:4-8 families code+plan, mechanical, floor",
+    "tomlctl/src/review/cells.rs:546-551 Mechanical => review-sweeper",
+    "tomlctl/src/review/fields.rs:486 plan_section required for plan-family cleanup",
+    "claude/agents/review-sweeper.md:35 step 8",
+]
+dedup_id = "2dad7216980197bc"
+resolved = 2026-10-13
+resolution = "Uncommitted (review-apply 2026-10-13): review-sweeper step 8 gains a plan-family clause (file = plan path, line = plan_section heading, symbol = task ref, anchor_old unique under the section, anchor_new)."
+
+[[items]]
+id = "R12"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "tomlctl/src/review/mod.rs"
+line = 4
+symbol = "review (module attributes)"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Four #[allow(dead_code)] attributes cite 'until they are wired', false since the commit that added them, and hide dead code"
+description = "catalogue, fields, matching and store carry allow(dead_code, reason = 'the review verbs are its callers; until they are wired only its tests reach it'). git log -S shows they arrived in 6e0519c, which also wired every verb through review/dispatch.rs. They hide at least matching::Site::of (only caller is a test). Fix: delete the four attributes and remove or justify what clippy then reports."
+evidence = [
+    "tomlctl/src/review/mod.rs:4-24",
+    "git log -S'until they are wired only its tests reach it' -> 6e0519c",
+    "tomlctl/src/review/matching.rs:23 Site::of; only caller matching.rs:165 in #[cfg(test)]",
+]
+dedup_id = "d478b2e458ad2fc0"
+resolved = 2026-10-13
+resolution = "Uncommitted (review-apply 2026-10-13): removed the four module-level dead_code allows; deleted dead Catalogue::builtin_root/project_root/concerns, the write-only builtin/project fields and matching::Site::of; scoped allows only on the word_enum!/str_enum! generated impls."
+
+[[items]]
+id = "R13"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "tomlctl/src/review/catalogue.rs"
+line = 33
+symbol = "catalogue::word_enum"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "word_enum! duplicates fields.rs str_enum! nearly line for line, and Depth's missing Ord forces two hand-written depth_rank copies"
+description = "The two macros generate the same VALUES/as_str/parse impl and differ only in derives. Because Depth lacks Ord, cells.rs and catalogue.rs each write depth_rank; Kind lacks ALL so schema_out.rs re-lists KINDS and stats maps Kind by hand. Fix: one macro with Ord/Hash and an ALL const; compare depths with <=."
+evidence = [
+    "tomlctl/src/review/catalogue.rs:33-57 word_enum!",
+    "tomlctl/src/review/fields.rs:17-42 str_enum!",
+    "tomlctl/src/review/cells.rs:88 and tomlctl/src/review/catalogue.rs:1325 depth_rank",
+    "tomlctl/src/review/schema_out.rs:23 KINDS",
+]
+instances = [
+    "tomlctl/src/review/catalogue.rs:word_enum",
+    "tomlctl/src/review/fields.rs:str_enum",
+    "tomlctl/src/review/cells.rs:depth_rank",
+    "tomlctl/src/review/catalogue.rs:depth_rank",
+    "tomlctl/src/review/schema_out.rs:KINDS",
+    "tomlctl/src/review/stats.rs:Tally::add_finding",
+]
+sweep = [
+    "macro_rules!",
+    "fn depth_rank",
+    "const KINDS",
+]
+enumeration = "complete"
+dedup_id = "d6254be3eddb512e"
+resolved = 2026-10-13
+resolution = "uncommitted (review-apply 2026-10-13): str_enum! derives PartialOrd/Ord/Hash and generates ALL; word_enum! deleted and catalogue enums use str_enum!; both depth_rank helpers removed in favour of direct Depth comparisons; schema_out KINDS -> Kind::ALL; stats indexes Tally.kinds by Kind (sized from Kind::ALL) and to_json iterates Kind::ALL; EntryType::ALL generated."
+
+[[items]]
+id = "R14"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "tomlctl/src/review/export.rs"
+line = 35
+symbol = "export::REVIEW_CATEGORIES"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "The v1 ledger vocabulary (categories twice, severities, efforts, dispositions, id prefixes, status→prose field) is re-declared in export, catalogue, sync and stats"
+description = "export.rs repeats catalogue.rs CODE_/PERF_V1_CATEGORIES (whose comment calls them 'values export-v1 can write'), V1_SEVERITIES/V1_EFFORTS repeat ledgers.rs, sync.rs re-encodes items::STATUS_COMPANIONS, V1_SETTLED/V1_FIXED and stats::is_wontfix restate items::is_terminal_status, and export hardcodes R/O prefixes. They agree today; a v1 change would mint rows v1 readers reject or sync them wrongly. Fix: put categories and id prefix on LedgerKind, expose ledgers SEVERITIES/EFFORTS, derive sync's prose field from items::status_companions."
+evidence = [
+    "tomlctl/src/review/export.rs:35-55",
+    "tomlctl/src/review/catalogue.rs:127-143",
+    "tomlctl/src/ledgers.rs:291-292",
+    "tomlctl/src/items.rs:2191,2202-2213",
+    "tomlctl/src/review/sync.rs:74-80",
+]
+instances = [
+    "tomlctl/src/review/export.rs:REVIEW_CATEGORIES",
+    "tomlctl/src/review/export.rs:OPTIMISE_CATEGORIES",
+    "tomlctl/src/review/export.rs:V1_SEVERITIES",
+    "tomlctl/src/review/export.rs:V1_EFFORTS",
+    "tomlctl/src/review/export.rs:V1_SETTLED",
+    "tomlctl/src/review/export.rs:V1_FIXED",
+    "tomlctl/src/review/catalogue.rs:CODE_V1_CATEGORIES",
+    "tomlctl/src/review/catalogue.rs:PERF_V1_CATEGORIES",
+    "tomlctl/src/review/sync.rs:V1Outcome::from_row",
+    "tomlctl/src/review/stats.rs:is_wontfix",
+]
+sweep = [
+    '"package-quality"',
+    '"serialization"',
+    "wontapply",
+]
+enumeration = "complete"
+dedup_id = "d0333eec61c5f2f2"
+resolved = 2026-10-13
+resolution = "uncommitted (review-apply 2026-10-13): ledgers.rs SEVERITIES/EFFORTS raised to pub(crate); LedgerKind gains id_prefix() and categories(); export and catalogue read them (duplicate category lists deleted); sync's status->prose field derives from items::status_companions; export settled/fixed sets derive from sync::map_status. stats::is_wontfix left local (stats-only grouping; items::is_terminal_status differs on discarded)."
+
+[[items]]
+id = "R15"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "tomlctl/src/review/cells.rs"
+line = 43
+symbol = "cells::NOTE_CAP"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "Field caps and cell-agent names from the field catalogue are re-typed as local constants in four modules"
+description = "fields.rs says 'a field's contract lives only here', yet cells NOTE_CAP=600 restates the Cell note cap, sync RATIONALE_CAP=600 restates the Verdict rationale cap, cells FINDER/SWEEPER/EXECUTOR plus digest/verdict SWEEPER restate CELL_AGENTS, and cells.rs:1263 hard-codes a CELL_STATUSES subset. Changing a cap in the catalogue leaves cover and sync enforcing the old one. Fix: read caps through fields::spec(...).cap and take agent names from one str_enum!(CellAgent)."
+evidence = [
+    "tomlctl/src/review/fields.rs:7,137,385-387,536-538",
+    "tomlctl/src/review/cells.rs:39-43",
+    "tomlctl/src/review/sync.rs:37",
+    "tomlctl/src/review/digest.rs:29",
+    "tomlctl/src/review/verdict.rs:23",
+]
+instances = [
+    "tomlctl/src/review/cells.rs:NOTE_CAP",
+    "tomlctl/src/review/cells.rs:FINDER",
+    "tomlctl/src/review/cells.rs:SWEEPER",
+    "tomlctl/src/review/cells.rs:EXECUTOR",
+    "tomlctl/src/review/sync.rs:RATIONALE_CAP",
+    "tomlctl/src/review/digest.rs:SWEEPER",
+    "tomlctl/src/review/verdict.rs:SWEEPER",
+]
+sweep = [
+    "NOTE_CAP|RATIONALE_CAP",
+    '"review-sweeper"|"review-finder"|"plan-executor"',
+]
+enumeration = "complete"
+dedup_id = "6ef8fcba1cff5c4c"
+resolved = 2026-10-13
+resolution = "uncommitted (review-apply 2026-10-13): fields::cap(record, name) reads catalogue caps; cells note and sync rationale caps use it (local 600 consts deleted); FINDER/SWEEPER/EXECUTOR are pub(super) consts in fields.rs building CELL_AGENTS, imported by cells/digest/verdict; cover's status subset derives from CELL_STATUSES minus assigned with byte-identical error text."
+
+[[items]]
+id = "R16"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "tomlctl/src/review/fields.rs"
+line = 796
+symbol = "fields::path_problem"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "The repo-relative path-safety check is hand-written four times in the review module and the copies disagree on what counts as absolute"
+description = "fields::path_problem, query::parse_citation, runs::scope_problem and cells::slice_problem each test empty/backslash/absolute/`..` differently: fields treats `X:` as absolute only for an ASCII letter, runs/cells refuse any second-byte `:` (so `a:b` is refused as a scope but accepted as a finding file), query refuses `?:` with no letter check. flow/record_schema.rs::is_unsafe_path already exists and also refuses `~`. Fix: one predicate returning the problem text, called from all four."
+evidence = [
+    "tomlctl/src/review/fields.rs:796-811",
+    "tomlctl/src/review/query.rs:417-421",
+    "tomlctl/src/review/runs.rs:142-155",
+    "tomlctl/src/review/cells.rs:981-994",
+    "tomlctl/src/flow/record_schema.rs:332-338",
+]
+instances = [
+    "tomlctl/src/review/fields.rs:path_problem",
+    "tomlctl/src/review/query.rs:parse_citation",
+    "tomlctl/src/review/runs.rs:scope_problem",
+    "tomlctl/src/review/cells.rs:slice_problem",
+]
+enumeration = "complete"
+dedup_id = "448e6d53c868c76e"
+resolved = 2026-10-13
+resolution = "uncommitted (review-apply 2026-10-13): one fields::path_problem(path, noun) refusing the strictest union (empty/whitespace, backslash, leading slash, second-byte colon, .. segment); runs/cells/fields pass their noun, query::parse_citation keeps its whitespace pre-check; scope_problem and slice_problem deleted. Tightens finding-file validation for whitespace-only and non-letter-colon paths."
+
+[[items]]
+id = "R17"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "tomlctl/src/review/cells.rs"
+line = 1270
+symbol = "cells::cover"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "review cover --note-file uses fs::read_to_string instead of read_flag_file, so a BOM survives; the literal-or-file read is hand-written four times"
+description = "verdict, triage and runs read --x/--x-file via read_text_arg/read_flag_file (strips BOM and trailing newline). cells::cover reads directly, so a BOM-staged note keeps U+FEFF (str::trim does not remove it), counts toward the 600 cap, lands in the report, and a retried cover with BOM-free text fails sealed_as as a different note; every read error is tagged NotFound. Fix: give triage::prose a shared home and call it from all four verbs."
+evidence = [
+    "tomlctl/src/review/cells.rs:1268-1279",
+    "tomlctl/src/io.rs:389-407 read_flag_file",
+    "tomlctl/src/review/triage.rs:265-276 prose()",
+]
+instances = [
+    "tomlctl/src/review/cells.rs:cover",
+    "tomlctl/src/review/verdict.rs:single",
+    "tomlctl/src/review/triage.rs:prose",
+    "tomlctl/src/review/runs.rs:finish",
+]
+enumeration = "complete"
+dedup_id = "65fa42508ec9ffbd"
+resolved = 2026-10-13
+resolution = "uncommitted (review-apply 2026-10-13): io::read_prose(verb, flag, literal, file) strips BOM and one trailing newline, normalises CRLF, trims, refuses empty, tags NotFound only for a missing file; used by triage, review cover and review run finish. verdict stays on read_flag_file (accepts empty). Regression test cover_note_file_drops_a_leading_bom. Empty-input messages for cover and run finish now use the shared wording."
+
+[[items]]
+id = "R18"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "tomlctl/src/review/export.rs"
+line = 358
+symbol = "export::implementer_rows"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "export-v1 rebuilds query::View's store→JSON projection by hand, with a per-finding scan of every verdict"
+description = "implementer_rows repeats View::new/View::project (to_toml, toml_to_json per array, verdicts grouped by finding) but filters all verdicts once per finding where View builds a HashMap once. View::new(stored).project(Role::Implementer, i, false) gives the same rows. Third consumer of the View that B-615a500d wants moved to store level; fix placement first or together."
+evidence = [
+    "tomlctl/src/review/export.rs:358-392",
+    "tomlctl/src/review/query.rs:216-274",
+]
+related = ["B-615a500d"]
+dedup_id = "92bb68efc9f0534b"
+resolved = 2026-10-13
+resolution = "uncommitted (review-apply 2026-10-13): export builds one query::View and projects each finding with Role::Implementer; implementer_rows and its imports deleted. ledger_family now derives its family->kind map from v1_kind."
+
+[[items]]
+id = "R19"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "tomlctl/src/review/sync.rs"
+line = 357
+symbol = "sync::upsert"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "The verdict upsert on (finding, by, seat) and the latest-reassessed-severity rule are each copied verbatim into a second module"
+description = "sync::upsert is identical to verdict::upsert, and export::reassessed_severity is identical to digest::severity, so the report and the v1 export could drift on a defect's severity. Fix: move each into store.rs (or a verdicts module) and call from both sites."
+evidence = [
+    "tomlctl/src/review/sync.rs:357-367",
+    "tomlctl/src/review/verdict.rs:271-282",
+    "tomlctl/src/review/export.rs:558-565",
+    "tomlctl/src/review/digest.rs:209-216",
+]
+instances = [
+    "tomlctl/src/review/sync.rs:upsert",
+    "tomlctl/src/review/verdict.rs:upsert",
+    "tomlctl/src/review/export.rs:reassessed_severity",
+    "tomlctl/src/review/digest.rs:severity",
+]
+enumeration = "complete"
+dedup_id = "72824b13fdbe26e6"
+resolved = 2026-10-13
+resolution = "uncommitted (review-apply 2026-10-13): verdict upsert and latest-reassessed-severity moved into store.rs as Store::upsert_verdict and Store::severity; sync::upsert, verdict::upsert, export::reassessed_severity and digest::severity deleted and callers rewired."
+
+[[items]]
+id = "R20"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "tomlctl/src/review/triage.rs"
+line = 643
+symbol = "triage::text_check_refusals"
+severity = "suggestion"
+effort = "medium"
+category = "quality"
+summary = "triage --convert re-implements review add's per-row checks: lens-vs-cell, old/anchor_old text checks, route computation, bookkeeping stamping and str_of"
+description = "triage.rs replacement_row/text_check_refusals/route_of/finish_row/str_of mirror add.rs prepare/check_old/route/finish_row/str_of; only related and same_as handling truly differ. A rule change to the add contract (OLD_WINDOW target choice, a new computed field) must be made twice. Fix: add exposes prepare/stamp helpers taking (row, run, cell, root, globs) and convert calls them, keeping only advisory-specific defaults."
+evidence = [
+    "tomlctl/src/review/triage.rs:612-622,643-697,702-740",
+    "tomlctl/src/review/add.rs:264-268,272-353,481-536",
+]
+instances = [
+    "tomlctl/src/review/triage.rs:replacement_row",
+    "tomlctl/src/review/triage.rs:text_check_refusals",
+    "tomlctl/src/review/triage.rs:route_of",
+    "tomlctl/src/review/triage.rs:finish_row",
+    "tomlctl/src/review/triage.rs:str_of",
+]
+enumeration = "complete"
+dedup_id = "4c321bf01f55083d"
+resolved = 2026-10-13
+resolution = "uncommitted (review-apply 2026-10-13): add.rs exposes pub(super) field_refusals, text_refusals, route_of and line_of; add::prepare and triage convert both call them; triage's text_check_refusals, route_of, str_of and inline checks deleted; finish_row kept separate (semantics differ). Refusal messages and order unchanged."
+
+[[items]]
+id = "R21"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "tomlctl/src/review/resolve.rs"
+line = 26
+symbol = "resolve::SUPPRESSING"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "Treating `converted` as suppressing drops a repeat that should reach the advisory's replacement, so the replacement never gains the run in seen_in"
+description = "settled_target follows `merged` through merged_into, but `converted` (same kind of identity move, via converted_to; triage groups it with merged) is suppressed instead. matching::candidates offers converted rows, so a defect naming the converted advisory merges into a dead row and a regression on a resolved replacement goes unnoticed. review.md documents converted → suppressed without a reason. Suggest following converted_to in settled_target and sharing one SUPPRESSING constant with add.rs."
+evidence = [
+    "tomlctl/src/review/resolve.rs:25-26,58,260-275",
+    "tomlctl/src/review/add.rs:32-33",
+    "tomlctl/src/review/matching.rs:50",
+    "claude/skills/tomlctl/references/review.md:303",
+]
+dedup_id = "dae2ec4826607ad8"
+resolved = 2026-10-13
+resolution = "uncommitted (review-apply 2026-10-13): resolve::settled_target follows converted through converted_to like merged through merged_into; SUPPRESSING defined once in add.rs and imported by resolve; resolve.rs module doc and references/review.md updated. Test same_as_on_converted_advisory_follows_to_its_replacement."
+
+[[items]]
+id = "R22"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "tomlctl/src/review/catalogue.rs"
+line = 447
+symbol = "catalogue::Entry::disabled"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Entry keeps disabled and enabled as two independent bools, so an id in both config lists is silently disabled and validate does not report it"
+description = "Both flags are set independently from config.disable and config.enable; every consumer checks disabled first, so both-true resolves to disabled with no message, and validate only checks ids exist. Fix: refuse an id in both lists in validate, or model the switch as one Option<Toggle>."
+evidence = [
+    "tomlctl/src/review/catalogue.rs:447-450",
+    "tomlctl/src/review/catalogue.rs:704-707",
+    "tomlctl/src/review/catalogue.rs:1279-1285",
+]
+dedup_id = "2c21c53514a89f4a"
+resolved = 2026-10-13
+resolution = "Uncommitted (review-apply 2026-10-13): validate_config refuses an id present in both enable and disable; unit test in catalogue.rs."
+
+[[items]]
+id = "R23"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "tomlctl/src/review/export.rs"
+line = 591
+symbol = "TestGlobs::is_test_removal"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "Which paths a cleanup edits, and how the tests globs compile, is coded in both fields::route and export's TestGlobs"
+description = "fields::route defines edited paths as target_file (else file) plus instances matched against [routing] tests globs; export::is_test_removal re-derives that set from `rest` and matches globs that export::test_globs compiles itself, duplicating fields::compile used by Routing::compile. If routing changes what counts as edited, export's test-removal hold drifts from the finding's route. Fix: an edited-paths helper next to route, RoutingGlobs::is_test, and export calls routing().compile()."
+evidence = [
+    "tomlctl/src/review/fields.rs:971-982",
+    "tomlctl/src/review/export.rs:604-624",
+    "tomlctl/src/review/fields.rs:924 compile",
+]
+dedup_id = "3bfcf5fa19c89be0"
+resolved = 2026-10-13
+resolution = "uncommitted (review-apply 2026-10-13): fields::edited_paths(file, target_file, instances) used by fields::route and export::TestGlobs::is_test_removal; fields::compile made pub(super) and export::test_globs deleted (export still compiles only the tests globs)."
+
+[[items]]
+id = "R24"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "tomlctl/src/review/stats.rs"
+line = 31
+symbol = "SYNC_REASON_PREFIX"
+severity = "suggestion"
+effort = "small"
+category = "db"
+summary = 'Calibration tells user dismissals from v1 ones by a "v1: " text prefix that sync.rs writes with its own literal'
+description = 'stats::user_dismissal and synced_wontfix parse dismiss_reason for SYNC_REASON_PREFIX; sync::set_status writes `format!("v1: {}", ...)` separately. If they drift, v1 wontfix reasons count as user dismissals in finder calibration exemplars. Provenance is already stored structurally as the by = "sync" verdict. Minimal fix: one pub(crate) constant in sync.rs; better: read provenance from the sync verdict.'
+evidence = [
+    "tomlctl/src/review/stats.rs:31,308,723",
+    "tomlctl/src/review/sync.rs:340,346",
+    "tomlctl/src/review/sync.rs:304 by = sync verdict",
+]
+dedup_id = "7129fa3a2ad13928"
+resolved = 2026-10-13
+resolution = "uncommitted (review-apply 2026-10-13): sync.rs owns pub(crate) SYNC_REASON_PREFIX, used by both set_status format sites; stats imports it and its own copy is deleted."
+
+[[items]]
+id = "R25"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "claude/commands/review-v2.md"
+line = 58
+symbol = "Stage 3 — the context-free correctness cell"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "The carrier says review stats reads the context-free cell's question and reason, but stats never reads them, so the cell's yield is unmeasurable"
+description = "stats::by_lens groups by concern/lens only and never reads cell `question`; the only cell prose it parses is a probe's reason. The context-free cell's findings merge into `correctness`, so the experiment it exists for cannot be measured. Either correct the sentence or give the cell a marker stats can split on (e.g. a `variant` field in the field catalogue)."
+evidence = [
+    "claude/commands/review-v2.md:58 'the question and reason above are the record review stats reads'",
+    "tomlctl/src/review/stats.rs:428-465 by_lens",
+]
+dedup_id = "a23e3eb744c99388"
+resolved = 2026-10-13
+resolution = "Uncommitted (review-apply 2026-10-13): review-v2.md now says the question/reason record why the cell exists and its findings count under correctness in review stats, unseparated."
+
+[[items]]
+id = "R26"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "tomlctl/src/review/runs.rs"
+line = 106
+symbol = "start"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "run start creates .claude/review-v2-runs/ in every repo, but only dev-tools' own .gitignore ignores it"
+description = "The catalogue is advertised as global with no per-project setup, and CLAUDE.md says run artifacts are git-ignored, but that holds only here. Elsewhere profile.md, pack.md, staged payloads and reports show as untracked and a `git add -A` commits them. Fix: when run start creates the runs root, write .claude/review-v2-runs/.gitignore containing `*` if absent."
+evidence = [
+    "tomlctl/src/review/runs.rs:104-110 create_dir_all with no ignore file",
+    "tomlctl/src/review/store.rs:43 RUNS_DIR",
+    "CLAUDE.md Review v2: 'Run artifacts under .claude/review-v2-runs/ are git-ignored'",
+]
+dedup_id = "4d4cd2d24fb123cb"
+resolved = 2026-10-13
+resolution = "Uncommitted (review-apply 2026-10-13): run start writes .claude/review-v2-runs/.gitignore containing * when absent. Test in review_runs.rs."
+
+[[items]]
+id = "R27"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "tomlctl/src/review/cells.rs"
+line = 1111
+symbol = "cells::cover finished-run guard"
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "Only add and plan --ndjson refuse a finished run; review cover and review survey still change a finished run's coverage and signals after its counts were stamped"
+description = "Probe: after `run finish U1`, `review cover C2 --status covered` sealed a cell and `review survey` rewrote signals, leaving stored counts and incomplete gaps stale. verdict must stay open for sync/audit and re-finishing is documented, so the guard belongs only on cover and survey. Fix: add the `run {id} is finished` refusal to cover (via the cell's run) and to survey."
+evidence = [
+    "tomlctl/src/review/add.rs:105 and tomlctl/src/review/cells.rs:1111 only run.finished guards",
+    "probe: cover and survey succeed after run finish",
+]
+dedup_id = "d1581bd44359ecc0"
+resolved = 2026-10-13
+resolution = "Uncommitted (review-apply 2026-10-13): review cover and review survey refuse a finished run, checked before and inside the store lock; idempotent cover retries still return unchanged. Tests in review_cells.rs and review_survey.rs."
+
+[[items]]
+id = "R28"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "tomlctl/src/review/catalogue_cmd.rs"
+line = 72
+symbol = "catalogue_cmd index modes"
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "review catalogue's index, --vocabulary and --owners modes discard load errors and accept unknown --signals, printing empty successful output"
+description = "Catalogue::load collects errors (e.g. missing built-in vocabulary) that only --check reports; over an empty root the other modes exit 0 with empty arrays. --signals is not checked against the vocabulary while plan --accept-signals refuses unknown names. review-surveyor builds its check list from these modes. Fix: fail non-check modes on Unreadable/vocabulary errors and refuse undeclared --signals names."
+evidence = [
+    'probe: review catalogue --builtin <empty dir> => {"entries": []} exit 0',
+    "probe: --signals bogus => full index exit 0",
+    "claude/agents/review-surveyor.md:26",
+]
+dedup_id = "5c9724b239a51d23"
+resolved = 2026-10-13
+resolution = "Uncommitted (review-apply 2026-10-13): index, --vocabulary and --owners modes fail on catalogue load errors (new Catalogue::load_errors), and index refuses undeclared --signals names. Tests in review_catalogue.rs."
+
+[[items]]
+id = "R29"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "tomlctl/README.md"
+line = 98
+symbol = "review synopsis"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "README's review command list covers every verb except review run update"
+description = "tomlctl/README.md lists every review verb but `run update`, which the engine runs for waivers, signals, audit, agents and baselines; flag_table_lint covers claude/ only. Add one synopsis line for run update."
+evidence = [
+    "tomlctl/README.md:83-101",
+    "tomlctl/src/cli/types/review.rs:80-81 ReviewRunOp::Update",
+    "claude/skills/review-v2-engine/SKILL.md:156",
+]
+dedup_id = "223c3e40fb59052c"
+resolved = 2026-10-13
+resolution = "Uncommitted (review-apply 2026-10-13): README review synopsis gains a review run update line."
+
+[[items]]
+id = "R30"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "tomlctl/src/review/add.rs"
+line = 105
+symbol = "run.finished refusals"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "The run-is-finished refusals in add, plan --ndjson and triage --convert have no test"
+description = "Three verbs refuse to write into a finished run (add.rs:105, cells.rs:1111, triage.rs:567), but no fixture in review_add/review_cells/review_triage seeds a finished run. Add one per fixture asserting the refusal and an untouched store."
+evidence = [
+    "tomlctl/src/review/add.rs:105",
+    "tomlctl/src/review/cells.rs:1111",
+    "tomlctl/src/review/triage.rs:567",
+    "grep finished in the three test files: no hits",
+]
+instances = [
+    "tomlctl/src/review/add.rs:run",
+    "tomlctl/src/review/cells.rs:append",
+    "tomlctl/src/review/triage.rs:replacement_row",
+]
+enumeration = "complete"
+dedup_id = "c0c7c3f1b93fbd57"
+resolved = 2026-10-13
+resolution = "Uncommitted (review-apply 2026-10-13): finished-run refusal tests for add, plan --ndjson and triage --convert, each asserting an untouched store."
+
+[[items]]
+id = "R31"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "tomlctl/src/review/triage.rs"
+line = 311
+symbol = "review::triage::judge"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "Nothing tests that triage refuses a finding that is superseded, merged, converted or exported"
+description = "judge() refuses any disposition on a SETTLED status, including the `exported` guard that keeps v2 triage off a finding a v1 ledger owns; no test triages a SETTLED row. Seed an exported row in review_triage.rs and assert --dismiss and --reopen both fail with the store untouched."
+evidence = [
+    "tomlctl/src/review/triage.rs:34,311-315",
+    "grep 'does not move' over tomlctl/tests: 0 hits",
+]
+dedup_id = "2e13652ab5dfb7a8"
+resolved = 2026-10-13
+resolution = "Uncommitted (review-apply 2026-10-13): review_triage.rs triage_refuses_a_settled_finding seeds an exported row and asserts --dismiss and --reopen fail with the store untouched."
+
+[[items]]
+id = "R32"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "tomlctl/src/review/export.rs"
+line = 190
+symbol = "review::export::run"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "review export-v1 --dry-run has no test proving it writes neither the v1 ledger nor the v2 store"
+description = "The dry run relies on dry_run_read_opts and a `!args.dry_run` guard on the store mutation; a regression in either would write v1 rows or stamp exported_as unnoticed. Add a review_export.rs case checking both files are byte-identical afterwards and would_change.exported is populated."
+evidence = [
+    "tomlctl/src/review/export.rs:190-226",
+    "grep --dry-run over tomlctl/tests/review_*.rs: 0 hits",
+]
+dedup_id = "51ff3b21861fa272"
+resolved = 2026-10-13
+resolution = "Uncommitted (review-apply 2026-10-13): review_export.rs export_dry_run_writes_neither_ledger_nor_store asserts store, ledger and sidecars byte-identical and would_change.exported populated."
+
+[[items]]
+id = "R33"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "tomlctl/tests/review_survey.rs"
+line = 527
+symbol = "commits_per_file_filters_by_subject_and_threshold"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "No test checks that health-detector `window` excludes older commits; every fixture commit is dated now"
+description = "survey.rs passes --since=<days> days ago, but every fixture commit uses the wall clock, so dropping the window would still pass. Make one commit with GIT_AUTHOR_DATE/GIT_COMMITTER_DATE >90 days back and assert it counts for neither churn-hotspot nor test-growth."
+evidence = [
+    "tomlctl/src/review/survey.rs:725,793",
+    "grep DATE|--date over tests/common/mod.rs and tests/review_survey.rs: 0 hits",
+]
+dedup_id = "fd92ac41d972a73b"
+resolved = 2026-10-13
+resolution = "Uncommitted (review-apply 2026-10-13): review_survey.rs health_window_excludes_commits_before_it backdates one commit 200 days and asserts the 90-day churn-hotspot/test-growth windows exclude it, with 3650-day controls that include it."
+
+[[items]]
+id = "R34"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "tomlctl/tests/review_vocabulary.rs"
+line = 38
+symbol = "Fixture::new"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "The shipped-vocabulary tests skip green if the in-repo vocabulary.toml is missing"
+description = "Fixture::new returns None (all tests pass) when claude/skills/review-v2-lenses/vocabulary.toml is absent, but that file is tracked, so its absence is a regression (rename, moved crate), not a missing environment. Keep the git-missing skip (repo convention); replace this one with an assert naming the path."
+evidence = [
+    "tomlctl/tests/review_vocabulary.rs:38-41",
+    "tomlctl/tests/review_vocabulary.rs:19-24",
+]
+dedup_id = "192f2a7843f29a34"
+resolved = 2026-10-13
+resolution = "Uncommitted (review-apply 2026-10-13): Fixture::new asserts the shipped vocabulary.toml exists instead of skipping; the git-missing skip is kept."
+
+[[items]]
+id = "R35"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "tomlctl/src/review/catalogue_cmd.rs"
+line = 65
+symbol = "review::catalogue_cmd::vocabulary"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "review catalogue --vocabulary has no test, though review-surveyor relies on its hint field"
+description = "review-surveyor step 3 and review-v2-lenses/SKILL.md read judged signals and hints from --vocabulary; review_catalogue.rs covers index, --signals, --owners and --check only. Add a test asserting the {name, kind, meaning, detect, hint, layer} shape."
+evidence = [
+    "tomlctl/src/review/catalogue_cmd.rs:65-99",
+    "grep --vocabulary over tomlctl/tests: 0 hits",
+    "claude/agents/review-surveyor.md:26",
+]
+dedup_id = "097842bfbbd431b3"
+resolved = 2026-10-13
+resolution = "Uncommitted (review-apply 2026-10-13): review_catalogue.rs test asserts --vocabulary entries carry name, kind, meaning, detect, hint, layer."
+
+[[items]]
+id = "R36"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "tomlctl/src/review/store.rs"
+line = 827
+symbol = "review::store::load"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "A missing store reports three different errors by verb; list, show, digest and report surface a raw OS error"
+description = '''Eight write verbs say 'review store not found at <path>' (each its own copy), survey says 'file does not exist', and list/show/digest/report say 'reading \\?\C:\...\review-v2.toml: The system cannot find the path specified. (os error 3)', naming neither the verb nor the store. Move the not-found check into store::load so one owner phrases it.'''
+evidence = [
+    "probe: review list --slug no-such-flow => raw os error 3",
+    "tomlctl/src/review/add.rs:92 and 7 siblings 'review store not found at'",
+    "tomlctl/src/review/store.rs:827 load",
+]
+instances = [
+    "tomlctl/src/review/add.rs:run",
+    "tomlctl/src/review/cells.rs:cover",
+    "tomlctl/src/review/export.rs:run",
+    "tomlctl/src/review/resolve.rs:run",
+    "tomlctl/src/review/runs.rs:update",
+    "tomlctl/src/review/runs.rs:finish",
+    "tomlctl/src/review/triage.rs:run",
+    "tomlctl/src/review/verdict.rs:run",
+    "tomlctl/src/review/query.rs:list",
+    "tomlctl/src/review/query.rs:show",
+    "tomlctl/src/review/digest.rs:digest",
+    "tomlctl/src/review/digest.rs:report",
+    "tomlctl/src/review/survey.rs:run",
+]
+enumeration = "complete"
+dedup_id = "531ce7115a94602c"
+resolved = 2026-10-13
+resolution = "uncommitted (review-apply 2026-10-13): store::load owns the existence check via store::require/store::not_found, reporting 'review store not found at <path>' (not_found) for every verb; eight per-verb copies deleted; runs set/finish call store::require before mutate; sync and stats keep missing-means-empty. Test missing_store_reports_one_error_for_reads_and_writes."
+
+[[items]]
+id = "R37"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "tomlctl/src/cli/types/review.rs"
+line = 413
+symbol = "ReviewListArgs"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "review list --help omits its defaults: --for falls back to orchestrator and omitting --status hides superseded rows"
+description = "query.rs defaults --for to orchestrator and, without --status, keeps every status except superseded; --status has no help text or value list. Add the defaults and the FINDING_STATUSES list to the help."
+evidence = [
+    "tomlctl/src/cli/types/review.rs:413,427-432",
+    "tomlctl/src/review/query.rs:49,60-62",
+]
+dedup_id = "341ac4c93061fc33"
+resolved = 2026-10-13
+resolution = "Uncommitted (review-apply 2026-10-13): review list --help states the --for default (orchestrator) and lists the --status values with its default (every status except superseded)."
+
+[[items]]
+id = "R38"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "tomlctl/src/cli/dispatch/tests/lint.rs"
+line = 43
+symbol = "command_lint_scan_set"
+severity = "suggestion"
+effort = "medium"
+category = "testability"
+summary = "command_lint does not scan tomlctl commands embedded in the Workflow script's prompts"
+description = "The scan set covers .md under commands, agents, skills and the lens catalogue, not claude/workflows/review-v2.js, whose prompts embed `tomlctl review` invocations; a renamed flag there drifts with no gate. Extend the scan to backtick-quoted `tomlctl ...` spans in claude/workflows/*.js, replacing ${...} with a placeholder before parsing."
+evidence = [
+    "tomlctl/src/cli/dispatch/tests/lint.rs:42-50",
+    "claude/workflows/review-v2.js:58",
+]
+dedup_id = "e7b37557f45036c6"
+resolved = 2026-10-13
+resolution = "Uncommitted (review-apply 2026-10-13): command_lint also checks backtick tomlctl spans in claude/workflows/*.js, with numbered stand-ins for ${...} that are dropped when clap rejects them (flag-group interpolations); new temp-tree test."
+
+[[items]]
+id = "R39"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "claude/workflows/review-v2.js"
+line = 65
+symbol = "verifierPrompt"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "A one-row minor batch gets the bare-object return instruction while its schema requires {verdicts:[...]}"
+description = "verifyBatch always uses batchSchema (required: verdicts) and routeCell sends minors through it even when there is one, but verifierPrompt picks its return wording by ids.length === 1. That contradicts the schema, review-verifier.md ('For a batch, return them under verdicts') and agent-waves.md. Fix: choose the wording by `batch`, or route a single minor to verifyOne."
+evidence = [
+    "claude/workflows/review-v2.js:65",
+    "claude/workflows/review-v2.js:100-102 verifyBatch schema batchSchema",
+    "claude/workflows/review-v2.js:171",
+    "claude/agents/review-verifier.md:41",
+]
+dedup_id = "bf092fe01481b9a5"
+resolved = 2026-10-13
+resolution = "Uncommitted (review-apply 2026-10-13): verifierPrompt picks its return wording by the batch argument, not ids.length."
+
+[[items]]
+id = "R40"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "claude/commands/review-plan-v2.md"
+line = 61
+symbol = "Stage 3 — compose / The floor"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "The plan carrier's floor list omits ripple, which the catalogue makes a floor lens for the plan family"
+description = "The carrier names plan-structure, plan-grounding, plan-dependencies and plan-executor as the floor and says a floor lens is never dropped; ripple is also floor for plan (its frontmatter and the plan's lens table). An orchestrator reading only the carrier would treat the ripple cell as droppable, contradicting compose.md. Add ripple to the list."
+evidence = [
+    "claude/commands/review-plan-v2.md:61",
+    "claude/skills/review-v2-lenses/lenses/ripple.md:4,8",
+]
+dedup_id = "a9a3fa28467b27a3"
+resolved = 2026-10-13
+resolution = "Uncommitted (review-apply 2026-10-13): review-plan-v2.md floor list includes ripple."
+
+[[items]]
+id = "R41"
+first_flagged = 2026-10-13
+rounds = 1
+status = "deferred"
+flow = "review-system-v2"
+file = "claude/agents/review-finder.md"
+line = 1
+symbol = "frontmatter (context-free cell)"
+severity = "suggestion"
+effort = "medium"
+category = "package-quality"
+summary = "The context-free correctness cell runs on review-finder, which loads CLAUDE.md, so its 'no project conventions' read is not independent"
+description = "[needs-plan] review-v2.md stage 3/4 and correctness.md's context-free variant intend a diff-only read untouched by project conventions, but review-finder sets no omitClaudeMd, so repo and user CLAUDE.md reach it anyway (only the three Haiku agents set omitClaudeMd: true, the plan's stated mechanism). Making the cell truly context-free needs a decision, e.g. a dedicated agent type with omitClaudeMd: true, which also changes the Workflow and the dispatch."
+evidence = [
+    "claude/commands/review-v2.md:48,79",
+    "claude/agents/review-finder.md:1-12 no omitClaudeMd",
+    "claude/agents/review-sweeper.md:9 omitClaudeMd: true",
+]
+dedup_id = "9d22c12562d1959e"
+defer_reason = "needs-plan; moved to backlog B-c2c975d1 at user request during /review-apply"
+defer_trigger = "backlog item B-c2c975d1 is promoted into a plan"
+
+[[items]]
+id = "R42"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "claude/skills/tomlctl/SKILL.md"
+line = 3
+symbol = "description"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "The tomlctl skill's trigger description lists neither review-v2.toml nor the review verb group"
+description = "This change added a review quick-reference row, a references/review.md entry and review_* capability features, but the frontmatter description still lists only context.toml through inputs.toml and the older verb groups, so an agent about to run tomlctl review gets no trigger match. Add review-v2.toml to the file list and the review group to the verb groups."
+evidence = ["claude/skills/tomlctl/SKILL.md:3"]
+dedup_id = "a4ad38dea5dd366e"
+resolved = 2026-10-13
+resolution = "Uncommitted (review-apply 2026-10-13): tomlctl skill description lists review-v2.toml and the review verb group, trimmed to stay under the 1024-char cap (lite apply exceeded it; redone by implement-deep)."
+
+[[items]]
+id = "R43"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "claude/agents/review-sweeper.md"
+line = 28
+symbol = "Steps step 5"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "PRIOR is read with a single --in <slice glob>, but a cell slice can hold several entries and --in takes exactly one glob"
+description = "review list --in is Option<String>; slices are arrays and a re-slice or merged sliver yields several entries. The sweeper, finder and method examples show one --in and never say to run it per entry, so prior rows in the rest of the slice are missed and duplicated. Say 'once per slice entry' at each site."
+evidence = [
+    "tomlctl/src/cli/types/review.rs:421-426 in_glob: Option<String>",
+    "claude/skills/review-v2-engine/references/compose.md:49",
+]
+instances = [
+    "claude/agents/review-sweeper.md:28",
+    "claude/agents/review-finder.md:31",
+    "claude/skills/review-v2-method/SKILL.md:16",
+    "claude/skills/review-v2-method/SKILL.md:106",
+]
+enumeration = "complete"
+dedup_id = "f4d8a19a08ce1c46"
+resolved = 2026-10-13
+resolution = "Uncommitted (review-apply 2026-10-13): review-sweeper, review-finder and review-v2-method (two sites) say to run review list --in once per slice entry."
+
+[[items]]
+id = "R44"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "claude/commands/optimise-v2.md"
+line = 8
+symbol = "preamble"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "optimise-v2 and review-plan-v2 drop the Effort requirement line that review-v2 and all three v1 carriers carry"
+description = "review-v2.md requires xhigh or max because composition, audit and triage are judgement steps shared by all three v2 carriers; the other two have no effort line. Copy it into both."
+evidence = [
+    "claude/commands/review-v2.md:14",
+    "claude/commands/optimise.md:12",
+    "claude/commands/review-plan.md:14",
+]
+instances = [
+    "claude/commands/optimise-v2.md",
+    "claude/commands/review-plan-v2.md",
+]
+enumeration = "complete"
+dedup_id = "13446cd87154126f"
+resolved = 2026-10-13
+resolution = "Uncommitted (review-apply 2026-10-13): Effort requirement line copied into optimise-v2.md and review-plan-v2.md."
+
+[[items]]
+id = "R45"
+first_flagged = 2026-10-13
+rounds = 1
+status = "fixed"
+flow = "review-system-v2"
+file = "claude/commands/review-plan-v2.md"
+line = 3
+symbol = "argument-hint"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "review-plan-v2's argument-hint shows --probe and --lens as single-use, unlike its siblings and the engine"
+description = 'The engine makes --probe and --lens repeatable on all three carriers and review-v2/optimise-v2 mark them with `...`; review-plan-v2 does not. Write [--probe "<question>"]... [--lens +id|-id]....'
+evidence = [
+    "claude/commands/review-plan-v2.md:3",
+    "claude/commands/review-v2.md:3",
+]
+dedup_id = "27788b95cac6e515"
+resolved = 2026-10-13
+resolution = "Uncommitted (review-apply 2026-10-13): review-plan-v2 argument-hint marks --probe and --lens repeatable."

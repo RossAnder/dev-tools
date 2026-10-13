@@ -1,75 +1,117 @@
 schema_version = 1
-last_updated = 2026-10-09
+last_updated = 2026-10-13
 plan_path = "docs/plans/review-system-v2.md"
 last_import_refs = [
-    "add-the-v2-review-store-schema-and-anchor-matcher",
+    "add-the-review-field-catalogue",
+    "add-the-review-store-and-anchor-matcher",
+    "add-the-lens-catalogue-loader-resolver-and-validator",
     "wire-the-review-verb-group-into-the-cli-with-stub-verbs",
-    "implement-review-run-startfinish-and-schema-emission",
-    "implement-review-record-with-anchor-matching-outcomes",
-    "implement-review-list-show-and-triage",
-    "implement-review-stats-with-calibration-exemplars",
-    "implement-review-compare-across-runs-and-against-v1-ledgers",
+    "implement-review-run-startupdate-and-schema-emission",
+    "implement-review-survey-with-deterministic-detectors",
+    "implement-review-plan-the-proposal-accounting-and-cover",
+    "implement-review-add-with-cell-scoped-idempotency-and-routing",
+    "implement-review-verdict-as-an-upsert",
+    "implement-review-resolve-for-identity-outcomes",
+    "implement-review-list-and-role-projected-show",
+    "implement-review-digest-and-review-report",
+    "implement-review-triage-with-park-conversion-and-backlog-refs",
+    "implement-review-sync-v1",
+    "implement-review-stats-with-outcomes-escapes-and-calibration",
     "implement-review-export-v1",
+    "implement-review-run-finish-with-its-completeness-gate",
+    "implement-the-review-catalogue-verb",
     "attribute-review-v2-store-prompts-in-agent-correlation",
+    "add-output-option-cases-and-help-list-entries-for-the-review-verbs",
     "document-the-review-verb-group-in-the-tomlctl-skill",
     "bump-tomlctl-to-0160-and-refresh-the-glimpse-lockfile",
-    "add-output-option-cases-and-help-list-entries-for-the-review-verbs",
-    "write-the-review-v2-method-skill-agent-side-procedure",
-    "write-the-review-v2-lenses-catalogue-index",
-    "write-the-code-lenses-correctness-design-change-impact",
-    "write-the-code-lenses-tests-security-idioms",
+    "write-the-review-v2-method-skill-shared-core",
+    "write-the-catalogue-skill-and-vocabulary",
+    "write-the-methods-sweep-trace-history-idiom",
+    "write-the-methods-measure-dry-run-steelman",
+    "write-the-lenses-correctness-type-design-domain-model",
+    "write-the-lenses-architecture-idioms-duplication",
+    "write-the-lenses-security-external-validity-hygiene",
+    "write-the-lenses-ripple-test-gaps-seams",
+    "write-the-lenses-diagnostics-dx-test-pruning-doc-drift",
+    "write-the-lenses-doc-consolidation-contrarian-synthesis",
     "write-the-perf-lenses-memory-runtime-data-shape-data-access",
     "write-the-perf-lenses-algorithm-concurrency-io-process",
-    "write-the-plan-lenses-grounding-completeness-dependencies",
-    "write-the-plan-lenses-executor-risk-premortem",
-    "write-the-synthesis-lens-and-the-harness-quality-project-pack",
-    "write-the-review-v2-engine-skill-pipeline-context-pack-routing",
-    "write-the-engine-references-agent-waves-report-and-dispositions-ab-testing",
-    "write-the-review-finder-review-finder-lite-and-review-verifier-agents",
-    "write-the-plan-executor-agent-and-register-v2-shared-block-carriers",
+    "write-the-plan-lenses-plan-grounding-plan-dependencies-feasibility",
+    "write-the-plan-lenses-plan-executor-plan-risk-plan-premortem",
+    "write-the-plan-structure-lens",
+    "write-the-facets-rust-tokio-sqlx",
+    "write-the-facets-typescript-react-vue",
+    "write-the-facets-dotnet-efcore-dapper-sql",
+    "write-the-claude-harness-facet",
+    "write-the-checks-lint-baseline-profile-baseline-break-set-baseline",
+    "write-the-checks-store-check-format-contract-dev-server-probe",
+    "write-the-checks-two-control-probe-falsifiability-acceptance-contradiction",
+    "write-this-repos-project-catalogue-config",
+    "gate-the-catalogue-and-lint-its-files",
+    "write-the-review-v2-engine-skill-pipeline-survey-compose",
+    "write-the-engine-references-agent-waves-triage-and-close-measurement",
     "write-the-review-v2-saved-workflow-and-its-deploy-entry",
+    "write-the-opus-agents-review-finder-review-verifier-plan-executor",
+    "write-the-haiku-agents-review-surveyor-review-sweeper-review-checker",
+    "register-the-v2-agents-as-shared-block-carriers",
     "write-the-review-v2-carrier",
     "write-the-optimise-v2-carrier",
     "write-the-review-plan-v2-carrier",
-    "add-the-v2-carriers-to-the-skill-gate-table-and-document-v2-in-claudemd",
+    "add-the-v2-carriers-to-the-skill-gate-table-ignore-run-artifacts-document-v2-in-claudemd",
+    "widen-the-pre-commit-catalogue-trigger",
+    "test-the-shipped-vocabularys-detectors-on-fixture-trees",
+    "give-the-workflow-batch-prompts-a-batch-id-and-sweeper-marks",
+    "let-bind_cell-bundle-the-cell-run-checks-of-plan-checks",
+    "share-one-helper-that-rebuilds-a-runs-catalogue",
+    "count-only-the-latest-verdict-per-panel-seat",
 ]
 
 [policy]
 checkpoints = "milestones"
-max_parallel = 6
+max_parallel = 8
 commit_granularity = "per-task"
 origin = "plan"
 note = ""
 
 [[checkpoints]]
 id = "A"
-rationale = "The `tomlctl review` group is complete, tested and documented, and the version is bumped. This is a buildable crate increment, and every later markdown fence that names `tomlctl review` parses against it."
+rationale = "The `tomlctl review` group, including detectors, proposal and accounting, identity resolution, v1 read-back and the catalogue loader and verb, complete, tested, documented and version-bumped. A buildable crate increment; every later markdown fence naming `tomlctl review` parses against it."
 
 [[checkpoints]]
 id = "B"
-rationale = "The v2 harness foundation (method, catalogue, every lens, engine, agents, workflow, deploy entry). It is buildable because no carrier references it yet, and `verify-shared-blocks.sh` covers the new agents."
+rationale = "The v2 harness foundation: method core, the full catalogue gated by `catalogue_validates` and the widened lint scan set (with the hook trigger and the vocabulary fixture tests), engine, six agents, workflow and deploy entry. Buildable because no carrier references it yet and task 20's output cases are in the tree; `verify-shared-blocks.sh` covers the new agents."
 
 [[checkpoints]]
 id = "C"
-rationale = "`/review-v2` usable end to end, the first A/B-able carrier."
+rationale = "`/review-v2` usable end to end, the first trial-ready carrier."
 
 [[checkpoints]]
 id = "D"
-rationale = "`/optimise-v2`, `/review-plan-v2`, the gate rows and CLAUDE.md."
+rationale = "`/optimise-v2`, `/review-plan-v2`, the gate rows, the ignore rule and CLAUDE.md."
 
 [[file_notes]]
-ref = "add-the-v2-review-store-schema-and-anchor-matcher"
+ref = "add-the-review-field-catalogue"
+file = "tomlctl/src/review/fields.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "add-the-review-field-catalogue"
 file = "tomlctl/src/review/mod.rs"
 note = "(new)"
 
 [[file_notes]]
-ref = "add-the-v2-review-store-schema-and-anchor-matcher"
+ref = "add-the-review-store-and-anchor-matcher"
 file = "tomlctl/src/review/store.rs"
 note = "(new)"
 
 [[file_notes]]
-ref = "add-the-v2-review-store-schema-and-anchor-matcher"
+ref = "add-the-review-store-and-anchor-matcher"
 file = "tomlctl/src/review/matching.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "add-the-lens-catalogue-loader-resolver-and-validator"
+file = "tomlctl/src/review/catalogue.rs"
 note = "(new)"
 
 [[file_notes]]
@@ -89,12 +131,37 @@ note = "(new)"
 
 [[file_notes]]
 ref = "wire-the-review-verb-group-into-the-cli-with-stub-verbs"
-file = "tomlctl/src/review/record.rs"
+file = "tomlctl/src/review/survey.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "wire-the-review-verb-group-into-the-cli-with-stub-verbs"
+file = "tomlctl/src/review/cells.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "wire-the-review-verb-group-into-the-cli-with-stub-verbs"
+file = "tomlctl/src/review/add.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "wire-the-review-verb-group-into-the-cli-with-stub-verbs"
+file = "tomlctl/src/review/verdict.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "wire-the-review-verb-group-into-the-cli-with-stub-verbs"
+file = "tomlctl/src/review/resolve.rs"
 note = "(new)"
 
 [[file_notes]]
 ref = "wire-the-review-verb-group-into-the-cli-with-stub-verbs"
 file = "tomlctl/src/review/query.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "wire-the-review-verb-group-into-the-cli-with-stub-verbs"
+file = "tomlctl/src/review/digest.rs"
 note = "(new)"
 
 [[file_notes]]
@@ -109,7 +176,7 @@ note = "(new)"
 
 [[file_notes]]
 ref = "wire-the-review-verb-group-into-the-cli-with-stub-verbs"
-file = "tomlctl/src/review/compare.rs"
+file = "tomlctl/src/review/sync.rs"
 note = "(new)"
 
 [[file_notes]]
@@ -119,32 +186,67 @@ note = "(new)"
 
 [[file_notes]]
 ref = "wire-the-review-verb-group-into-the-cli-with-stub-verbs"
+file = "tomlctl/src/review/catalogue_cmd.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "wire-the-review-verb-group-into-the-cli-with-stub-verbs"
 file = "tomlctl/src/review/schema_out.rs"
 note = "(new)"
 
 [[file_notes]]
-ref = "implement-review-run-startfinish-and-schema-emission"
+ref = "implement-review-run-startupdate-and-schema-emission"
 file = "tomlctl/tests/review_runs.rs"
 note = "(new)"
 
 [[file_notes]]
-ref = "implement-review-record-with-anchor-matching-outcomes"
-file = "tomlctl/tests/review_record.rs"
+ref = "implement-review-survey-with-deterministic-detectors"
+file = "tomlctl/tests/review_survey.rs"
 note = "(new)"
 
 [[file_notes]]
-ref = "implement-review-list-show-and-triage"
+ref = "implement-review-plan-the-proposal-accounting-and-cover"
+file = "tomlctl/tests/review_cells.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "implement-review-add-with-cell-scoped-idempotency-and-routing"
+file = "tomlctl/tests/review_add.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "implement-review-verdict-as-an-upsert"
+file = "tomlctl/tests/review_verdict.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "implement-review-resolve-for-identity-outcomes"
+file = "tomlctl/tests/review_resolve.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "implement-review-list-and-role-projected-show"
+file = "tomlctl/tests/review_query.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "implement-review-digest-and-review-report"
+file = "tomlctl/tests/review_digest.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "implement-review-triage-with-park-conversion-and-backlog-refs"
 file = "tomlctl/tests/review_triage.rs"
 note = "(new)"
 
 [[file_notes]]
-ref = "implement-review-stats-with-calibration-exemplars"
-file = "tomlctl/tests/review_stats.rs"
+ref = "implement-review-sync-v1"
+file = "tomlctl/tests/review_sync.rs"
 note = "(new)"
 
 [[file_notes]]
-ref = "implement-review-compare-across-runs-and-against-v1-ledgers"
-file = "tomlctl/tests/review_compare.rs"
+ref = "implement-review-stats-with-outcomes-escapes-and-calibration"
+file = "tomlctl/tests/review_stats.rs"
 note = "(new)"
 
 [[file_notes]]
@@ -153,183 +255,398 @@ file = "tomlctl/tests/review_export.rs"
 note = "(new)"
 
 [[file_notes]]
+ref = "implement-review-run-finish-with-its-completeness-gate"
+file = "tomlctl/tests/review_finish.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "implement-the-review-catalogue-verb"
+file = "tomlctl/tests/review_catalogue.rs"
+note = "(new)"
+
+[[file_notes]]
 ref = "document-the-review-verb-group-in-the-tomlctl-skill"
 file = "claude/skills/tomlctl/references/review.md"
 note = "(new)"
 
 [[file_notes]]
-ref = "write-the-review-v2-method-skill-agent-side-procedure"
+ref = "write-the-review-v2-method-skill-shared-core"
 file = "claude/skills/review-v2-method/SKILL.md"
 note = "(new)"
 
 [[file_notes]]
-ref = "write-the-review-v2-method-skill-agent-side-procedure"
+ref = "write-the-review-v2-method-skill-shared-core"
+file = "claude/skills/review-v2-method/references/finding-kinds.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-review-v2-method-skill-shared-core"
 file = "claude/skills/review-v2-method/references/verifying.md"
 note = "(new)"
 
 [[file_notes]]
-ref = "write-the-review-v2-method-skill-agent-side-procedure"
-file = "claude/skills/review-v2-method/references/dry-run.md"
-note = "(new)"
-
-[[file_notes]]
-ref = "write-the-review-v2-lenses-catalogue-index"
+ref = "write-the-catalogue-skill-and-vocabulary"
 file = "claude/skills/review-v2-lenses/SKILL.md"
 note = "(new)"
 
 [[file_notes]]
-ref = "write-the-code-lenses-correctness-design-change-impact"
-file = "claude/skills/review-v2-lenses/references/lens-correctness.md"
+ref = "write-the-catalogue-skill-and-vocabulary"
+file = "claude/skills/review-v2-lenses/vocabulary.toml"
 note = "(new)"
 
 [[file_notes]]
-ref = "write-the-code-lenses-correctness-design-change-impact"
-file = "claude/skills/review-v2-lenses/references/lens-design.md"
+ref = "write-the-methods-sweep-trace-history-idiom"
+file = "claude/skills/review-v2-lenses/methods/sweep.md"
 note = "(new)"
 
 [[file_notes]]
-ref = "write-the-code-lenses-correctness-design-change-impact"
-file = "claude/skills/review-v2-lenses/references/lens-change-impact.md"
+ref = "write-the-methods-sweep-trace-history-idiom"
+file = "claude/skills/review-v2-lenses/methods/trace.md"
 note = "(new)"
 
 [[file_notes]]
-ref = "write-the-code-lenses-tests-security-idioms"
-file = "claude/skills/review-v2-lenses/references/lens-tests.md"
+ref = "write-the-methods-sweep-trace-history-idiom"
+file = "claude/skills/review-v2-lenses/methods/history-idiom.md"
 note = "(new)"
 
 [[file_notes]]
-ref = "write-the-code-lenses-tests-security-idioms"
-file = "claude/skills/review-v2-lenses/references/lens-security.md"
+ref = "write-the-methods-measure-dry-run-steelman"
+file = "claude/skills/review-v2-lenses/methods/measure.md"
 note = "(new)"
 
 [[file_notes]]
-ref = "write-the-code-lenses-tests-security-idioms"
-file = "claude/skills/review-v2-lenses/references/lens-idioms.md"
+ref = "write-the-methods-measure-dry-run-steelman"
+file = "claude/skills/review-v2-lenses/methods/dry-run.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-methods-measure-dry-run-steelman"
+file = "claude/skills/review-v2-lenses/methods/steelman.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-lenses-correctness-type-design-domain-model"
+file = "claude/skills/review-v2-lenses/lenses/correctness.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-lenses-correctness-type-design-domain-model"
+file = "claude/skills/review-v2-lenses/lenses/type-design.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-lenses-correctness-type-design-domain-model"
+file = "claude/skills/review-v2-lenses/lenses/domain-model.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-lenses-architecture-idioms-duplication"
+file = "claude/skills/review-v2-lenses/lenses/architecture.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-lenses-architecture-idioms-duplication"
+file = "claude/skills/review-v2-lenses/lenses/idioms.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-lenses-architecture-idioms-duplication"
+file = "claude/skills/review-v2-lenses/lenses/duplication.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-lenses-security-external-validity-hygiene"
+file = "claude/skills/review-v2-lenses/lenses/security.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-lenses-security-external-validity-hygiene"
+file = "claude/skills/review-v2-lenses/lenses/external-validity.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-lenses-security-external-validity-hygiene"
+file = "claude/skills/review-v2-lenses/lenses/hygiene.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-lenses-ripple-test-gaps-seams"
+file = "claude/skills/review-v2-lenses/lenses/ripple.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-lenses-ripple-test-gaps-seams"
+file = "claude/skills/review-v2-lenses/lenses/test-gaps.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-lenses-ripple-test-gaps-seams"
+file = "claude/skills/review-v2-lenses/lenses/seams.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-lenses-diagnostics-dx-test-pruning-doc-drift"
+file = "claude/skills/review-v2-lenses/lenses/diagnostics-dx.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-lenses-diagnostics-dx-test-pruning-doc-drift"
+file = "claude/skills/review-v2-lenses/lenses/test-pruning.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-lenses-diagnostics-dx-test-pruning-doc-drift"
+file = "claude/skills/review-v2-lenses/lenses/doc-drift.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-lenses-doc-consolidation-contrarian-synthesis"
+file = "claude/skills/review-v2-lenses/lenses/doc-consolidation.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-lenses-doc-consolidation-contrarian-synthesis"
+file = "claude/skills/review-v2-lenses/lenses/contrarian.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-lenses-doc-consolidation-contrarian-synthesis"
+file = "claude/skills/review-v2-lenses/lenses/synthesis.md"
 note = "(new)"
 
 [[file_notes]]
 ref = "write-the-perf-lenses-memory-runtime-data-shape-data-access"
-file = "claude/skills/review-v2-lenses/references/lens-memory-runtime.md"
+file = "claude/skills/review-v2-lenses/lenses/memory-runtime.md"
 note = "(new)"
 
 [[file_notes]]
 ref = "write-the-perf-lenses-memory-runtime-data-shape-data-access"
-file = "claude/skills/review-v2-lenses/references/lens-data-shape.md"
+file = "claude/skills/review-v2-lenses/lenses/data-shape.md"
 note = "(new)"
 
 [[file_notes]]
 ref = "write-the-perf-lenses-memory-runtime-data-shape-data-access"
-file = "claude/skills/review-v2-lenses/references/lens-data-access.md"
+file = "claude/skills/review-v2-lenses/lenses/data-access.md"
 note = "(new)"
 
 [[file_notes]]
 ref = "write-the-perf-lenses-algorithm-concurrency-io-process"
-file = "claude/skills/review-v2-lenses/references/lens-algorithm.md"
+file = "claude/skills/review-v2-lenses/lenses/algorithm.md"
 note = "(new)"
 
 [[file_notes]]
 ref = "write-the-perf-lenses-algorithm-concurrency-io-process"
-file = "claude/skills/review-v2-lenses/references/lens-concurrency.md"
+file = "claude/skills/review-v2-lenses/lenses/concurrency.md"
 note = "(new)"
 
 [[file_notes]]
 ref = "write-the-perf-lenses-algorithm-concurrency-io-process"
-file = "claude/skills/review-v2-lenses/references/lens-io-process.md"
+file = "claude/skills/review-v2-lenses/lenses/io-process.md"
 note = "(new)"
 
 [[file_notes]]
-ref = "write-the-plan-lenses-grounding-completeness-dependencies"
-file = "claude/skills/review-v2-lenses/references/lens-plan-grounding.md"
+ref = "write-the-plan-lenses-plan-grounding-plan-dependencies-feasibility"
+file = "claude/skills/review-v2-lenses/lenses/plan-grounding.md"
 note = "(new)"
 
 [[file_notes]]
-ref = "write-the-plan-lenses-grounding-completeness-dependencies"
-file = "claude/skills/review-v2-lenses/references/lens-plan-completeness.md"
+ref = "write-the-plan-lenses-plan-grounding-plan-dependencies-feasibility"
+file = "claude/skills/review-v2-lenses/lenses/plan-dependencies.md"
 note = "(new)"
 
 [[file_notes]]
-ref = "write-the-plan-lenses-grounding-completeness-dependencies"
-file = "claude/skills/review-v2-lenses/references/lens-plan-dependencies.md"
+ref = "write-the-plan-lenses-plan-grounding-plan-dependencies-feasibility"
+file = "claude/skills/review-v2-lenses/lenses/feasibility.md"
 note = "(new)"
 
 [[file_notes]]
-ref = "write-the-plan-lenses-executor-risk-premortem"
-file = "claude/skills/review-v2-lenses/references/lens-plan-executor.md"
+ref = "write-the-plan-lenses-plan-executor-plan-risk-plan-premortem"
+file = "claude/skills/review-v2-lenses/lenses/plan-executor.md"
 note = "(new)"
 
 [[file_notes]]
-ref = "write-the-plan-lenses-executor-risk-premortem"
-file = "claude/skills/review-v2-lenses/references/lens-plan-risk.md"
+ref = "write-the-plan-lenses-plan-executor-plan-risk-plan-premortem"
+file = "claude/skills/review-v2-lenses/lenses/plan-risk.md"
 note = "(new)"
 
 [[file_notes]]
-ref = "write-the-plan-lenses-executor-risk-premortem"
-file = "claude/skills/review-v2-lenses/references/lens-plan-premortem.md"
+ref = "write-the-plan-lenses-plan-executor-plan-risk-plan-premortem"
+file = "claude/skills/review-v2-lenses/lenses/plan-premortem.md"
 note = "(new)"
 
 [[file_notes]]
-ref = "write-the-synthesis-lens-and-the-harness-quality-project-pack"
-file = "claude/skills/review-v2-lenses/references/lens-synthesis.md"
+ref = "write-the-plan-structure-lens"
+file = "claude/skills/review-v2-lenses/lenses/plan-structure.md"
 note = "(new)"
 
 [[file_notes]]
-ref = "write-the-synthesis-lens-and-the-harness-quality-project-pack"
-file = ".claude/review-lenses/harness-quality.md"
+ref = "write-the-facets-rust-tokio-sqlx"
+file = "claude/skills/review-v2-lenses/facets/rust.md"
 note = "(new)"
 
 [[file_notes]]
-ref = "write-the-review-v2-engine-skill-pipeline-context-pack-routing"
+ref = "write-the-facets-rust-tokio-sqlx"
+file = "claude/skills/review-v2-lenses/facets/tokio.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-facets-rust-tokio-sqlx"
+file = "claude/skills/review-v2-lenses/facets/sqlx.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-facets-typescript-react-vue"
+file = "claude/skills/review-v2-lenses/facets/typescript.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-facets-typescript-react-vue"
+file = "claude/skills/review-v2-lenses/facets/react.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-facets-typescript-react-vue"
+file = "claude/skills/review-v2-lenses/facets/vue.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-facets-dotnet-efcore-dapper-sql"
+file = "claude/skills/review-v2-lenses/facets/dotnet.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-facets-dotnet-efcore-dapper-sql"
+file = "claude/skills/review-v2-lenses/facets/efcore.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-facets-dotnet-efcore-dapper-sql"
+file = "claude/skills/review-v2-lenses/facets/dapper-sql.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-claude-harness-facet"
+file = "claude/skills/review-v2-lenses/facets/claude-harness.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-checks-lint-baseline-profile-baseline-break-set-baseline"
+file = "claude/skills/review-v2-lenses/checks/lint-baseline.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-checks-lint-baseline-profile-baseline-break-set-baseline"
+file = "claude/skills/review-v2-lenses/checks/profile-baseline.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-checks-lint-baseline-profile-baseline-break-set-baseline"
+file = "claude/skills/review-v2-lenses/checks/break-set-baseline.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-checks-store-check-format-contract-dev-server-probe"
+file = "claude/skills/review-v2-lenses/checks/store-check.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-checks-store-check-format-contract-dev-server-probe"
+file = "claude/skills/review-v2-lenses/checks/format-contract.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-checks-store-check-format-contract-dev-server-probe"
+file = "claude/skills/review-v2-lenses/checks/dev-server-probe.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-checks-two-control-probe-falsifiability-acceptance-contradiction"
+file = "claude/skills/review-v2-lenses/checks/two-control-probe.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-checks-two-control-probe-falsifiability-acceptance-contradiction"
+file = "claude/skills/review-v2-lenses/checks/falsifiability.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-checks-two-control-probe-falsifiability-acceptance-contradiction"
+file = "claude/skills/review-v2-lenses/checks/acceptance-contradiction.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-this-repos-project-catalogue-config"
+file = ".claude/review-lenses/config.toml"
+note = "(new)"
+
+[[file_notes]]
+ref = "gate-the-catalogue-and-lint-its-files"
+file = "tomlctl/src/cli/dispatch/tests/catalogue.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-review-v2-engine-skill-pipeline-survey-compose"
 file = "claude/skills/review-v2-engine/SKILL.md"
 note = "(new)"
 
 [[file_notes]]
-ref = "write-the-review-v2-engine-skill-pipeline-context-pack-routing"
-file = "claude/skills/review-v2-engine/references/context-pack.md"
+ref = "write-the-review-v2-engine-skill-pipeline-survey-compose"
+file = "claude/skills/review-v2-engine/references/survey.md"
 note = "(new)"
 
 [[file_notes]]
-ref = "write-the-review-v2-engine-skill-pipeline-context-pack-routing"
-file = "claude/skills/review-v2-engine/references/routing.md"
+ref = "write-the-review-v2-engine-skill-pipeline-survey-compose"
+file = "claude/skills/review-v2-engine/references/compose.md"
 note = "(new)"
 
 [[file_notes]]
-ref = "write-the-engine-references-agent-waves-report-and-dispositions-ab-testing"
+ref = "write-the-engine-references-agent-waves-triage-and-close-measurement"
 file = "claude/skills/review-v2-engine/references/agent-waves.md"
 note = "(new)"
 
 [[file_notes]]
-ref = "write-the-engine-references-agent-waves-report-and-dispositions-ab-testing"
-file = "claude/skills/review-v2-engine/references/report-and-dispositions.md"
+ref = "write-the-engine-references-agent-waves-triage-and-close-measurement"
+file = "claude/skills/review-v2-engine/references/triage-and-close.md"
 note = "(new)"
 
 [[file_notes]]
-ref = "write-the-engine-references-agent-waves-report-and-dispositions-ab-testing"
-file = "claude/skills/review-v2-engine/references/ab-testing.md"
-note = "(new)"
-
-[[file_notes]]
-ref = "write-the-review-finder-review-finder-lite-and-review-verifier-agents"
-file = "claude/agents/review-finder.md"
-note = "(new)"
-
-[[file_notes]]
-ref = "write-the-review-finder-review-finder-lite-and-review-verifier-agents"
-file = "claude/agents/review-finder-lite.md"
-note = "(new)"
-
-[[file_notes]]
-ref = "write-the-review-finder-review-finder-lite-and-review-verifier-agents"
-file = "claude/agents/review-verifier.md"
-note = "(new)"
-
-[[file_notes]]
-ref = "write-the-plan-executor-agent-and-register-v2-shared-block-carriers"
-file = "claude/agents/plan-executor.md"
+ref = "write-the-engine-references-agent-waves-triage-and-close-measurement"
+file = "claude/skills/review-v2-engine/references/measurement.md"
 note = "(new)"
 
 [[file_notes]]
 ref = "write-the-review-v2-saved-workflow-and-its-deploy-entry"
 file = "claude/workflows/review-v2.js"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-opus-agents-review-finder-review-verifier-plan-executor"
+file = "claude/agents/review-finder.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-opus-agents-review-finder-review-verifier-plan-executor"
+file = "claude/agents/review-verifier.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-opus-agents-review-finder-review-verifier-plan-executor"
+file = "claude/agents/plan-executor.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-haiku-agents-review-surveyor-review-sweeper-review-checker"
+file = "claude/agents/review-surveyor.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-haiku-agents-review-surveyor-review-sweeper-review-checker"
+file = "claude/agents/review-sweeper.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-haiku-agents-review-surveyor-review-sweeper-review-checker"
+file = "claude/agents/review-checker.md"
 note = "(new)"
 
 [[file_notes]]
@@ -347,48 +664,95 @@ ref = "write-the-review-plan-v2-carrier"
 file = "claude/commands/review-plan-v2.md"
 note = "(new)"
 
+[[file_notes]]
+ref = "test-the-shipped-vocabularys-detectors-on-fixture-trees"
+file = "tomlctl/tests/review_vocabulary.rs"
+note = "(new)"
+
 [[items]]
 id = 1
-ref = "add-the-v2-review-store-schema-and-anchor-matcher"
-title = "Add the v2 review store schema and anchor matcher"
-effort = "L"
-status = "pending"
+ref = "add-the-review-field-catalogue"
+title = "Add the review field catalogue"
+effort = "M"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
 heading_depth = 3
 files = [
+    "tomlctl/src/review/fields.rs",
     "tomlctl/src/review/mod.rs",
-    "tomlctl/src/review/store.rs",
-    "tomlctl/src/review/matching.rs",
     "tomlctl/src/lib.rs",
 ]
 needs = []
 coupling = []
 deps_note = ""
-action = "Create the `review` module with typed `Run`, `Finding`, `Verdict` and `FindingInput` structs, the slug/scope path resolver, the `mutate`/`read` helpers and the anchor-candidate matcher; register `mod review;` in `tomlctl/src/lib.rs`."
-detail = """
-Follow Approach, "v2 store and the tomlctl review group" and Approach, "Finding contract v2".
-- Structs convert through hand-written `from_toml`/`to_toml`, as `tomlctl/src/tasks/schema.rs` does. Add no dependency: tomlctl has no `serde` derive, and a dependency change would need both lockfiles in this task to pass the `--locked` glimpse clippy hook.
-- Model `store.rs` on `tomlctl/src/tasks/store.rs` (`mutate` at its line 62 delegates to `io::mutate_doc`), but have `mutate` hand its closure the raw `TomlValue` as well as the typed view, because the minting and compare-and-set helpers take the raw document. Pass `OnMissing::Create` with a seed holding `schema_version = 1` plus `last_updated`, as `tomlctl/src/inputs.rs` builds its seed. Paths are `.claude/flows/<slug>/review-v2.toml` and `.claude/review-v2/<scope>.toml`, both validated by `crate::validate_slug`.
-- `Store` round-trips the root `id_high_water` table. Mint ids through `items::items_append_minted` (`tomlctl/src/items.rs:1950`) with prefixes `U` and `F`, called on the raw doc inside the `mutate_doc` closure.
-- `FindingInput` is the finder-authored record: every field the Records block shows except `id`, `run`, `seen_in`, `anchor`, `status`, `verdict`, `first_seen` and the status companions, plus the optional `same_as`. Define its field names, enums (`family`, `severity`, `effort`, `grade`, verdict values) and required-field lists as `const`s that task 3's schema emitter and task 4's validation both read.
-- `matching.rs` exposes `anchor(&FindingInput) -> String` and `candidates(&[Finding], &FindingInput) -> Vec<usize>`: within the family, `(file, symbol)` when symbol is non-empty, else `(file, line)` within ±10. It never decides identity (that is `same_as`, task 4). Do not reuse `tomlctl/src/anchor.rs` or `tomlctl/src/dedup.rs`.
-- Status companions per the Approach record block.
-- Unit tests in-module: `round_trips_runs_findings_verdicts`, `round_trips_id_high_water`, `candidates_prefer_symbol_over_line_window`, `candidates_within_ten_lines`, `candidates_partition_by_family`."""
+action = "Create `tomlctl/src/review/fields.rs` holding the field catalogue as `const` data — every finding, cell, run and verdict field with its name, kind applicability, required-ness per kind, `direction` and family, enum values, length cap, and per-role visibility — plus `validate_row`, `project(role, …)` and `route(kind, direction, severity, depth, file, target_file, routing_globs) -> Route`. Create `tomlctl/src/review/mod.rs` declaring `mod fields;` and register `mod review;` in `tomlctl/src/lib.rs`."
+detail = """Follow Approach, "Finding kinds" and Approach, "Field readership" — the matrix there is the projection table, plus the `audit` role. Enums: defect `severity` critical/major/minor, `fix_shape` edits/needs-plan, verdicts confirmed/plausible/refuted/unsettled, finding statuses per Approach, "v2 store and the tomlctl review group" **Records**. Cleanup `old` is required for `change`/`remove`, and for `add` unless `target_file` is given and does not exist. `effort` (defect and cleanup) is `trivial`/`small`/`medium`/`large`. Plan-family fields `plan_section`, `anchor_old`, `anchor_new` with the matrix's visibility. Path fields (`file`, `target_file`, `instances`, `citation`) must be repo-relative, `/`-separated, with no `..`. Caps: `summary` 160, `failure_scenario` 600, `fix` 800, `edit` 800, `old` 400, `counter` 300, `rationale` 800, `evidence` 5 × 300, `instances` 50, verdict `rationale` 600, `plan_section` 200, `anchor_old` 400, `anchor_new` 800. `route` returns `panel` for a critical defect at `deep`. Add no dependency. In-module tests: `defect_requires_failure_scenario_and_fix_shape`, `cleanup_add_with_new_target_file_needs_no_old`, `cleanup_change_requires_old`, `advisory_challenge_requires_challenges`, `over_cap_field_is_refused_with_its_cap`, `verifier_projection_withholds_grade_and_fix`, `projection_table_matches_matrix`, `route_sends_executable_edits_and_test_removals_to_verifier`, `route_sends_critical_at_deep_to_panel`, `absolute_or_backslash_path_is_refused`."""
 acceptance = """
 - forward: `grep -c '^mod review;' tomlctl/src/lib.rs` prints `1` (today: `0`).
-- forward: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- review::` passes the five named tests — **predicted, unverified**.
-- falsifier: widening the line window check in `candidates` to unbounded turns `candidates_within_ten_lines`'s far-line case red — **predicted, unverified**."""
-agent = ""
-commit = ""
+- forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --lib --no-tests=fail -E 'test(/^review::fields::/)'` passes the ten named tests — **predicted, unverified**.
+- falsifier: routing every cleanup row to `checker` turns `route_sends_executable_edits_and_test_removals_to_verifier` red — **predicted, unverified**."""
+agent = "implement-deep"
+commit = "6e0519c"
 
 [[items]]
 id = 2
+ref = "add-the-review-store-and-anchor-matcher"
+title = "Add the review store and anchor matcher"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/store.rs",
+    "tomlctl/src/review/matching.rs",
+    "tomlctl/src/review/mod.rs",
+]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "Add the typed `Store` (`runs`, `cells`, `findings`, `verdicts`, root `id_high_water`), the slug/scope path and run-directory resolvers, the `mutate`/`read` helpers, and the anchor-candidate matcher; declare both modules in `tomlctl/src/review/mod.rs`."
+detail = 'Follow Approach, "v2 store and the tomlctl review group" (**Shape**). Model `store.rs` on `tomlctl/src/tasks/store.rs` (`mutate` delegates to `io::mutate_doc`, one `to_toml` write-back), with one writable view at a time: mint first on the raw document through `items::items_append_minted` with prefixes `U`, `C`, `F`, then parse the typed `Store` from it for typed edits. Seed with `io::schema_seed()`, honouring `--no-create` (never `on_missing_for`, whose seed is empty for this basename). `from_toml` accepts a date given as a string. Use `crate::fields::FieldArgs` and `io::read_text_arg` wherever later verbs take `--set`/`--set-json`/`--set-file` or `-`. `matching.rs` exposes `anchor` and `candidates` — within the family, `(file, symbol)` when symbol is non-empty, else `(file, line)` within ±10; it never decides identity. Do not reuse `tomlctl/src/anchor.rs` or `tomlctl/src/dedup.rs`. Tests: `round_trips_all_arrays`, `round_trips_id_high_water`, `minted_rows_survive_the_typed_write_back`, `string_dates_read_back_as_dates`, `candidates_prefer_symbol_over_line_window`, `candidates_within_ten_lines`, `candidates_partition_by_family`, `run_dir_uses_slug_or_scope_key`.'
+acceptance = """
+- forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --lib --no-tests=fail -E 'test(/^review::(store|matching)::/)'` passes — **predicted, unverified**.
+- falsifier: widening the line window in `candidates` to unbounded turns `candidates_within_ten_lines` red — **predicted, unverified**."""
+agent = "implement-deep"
+commit = "6e0519c"
+
+[[items]]
+id = 3
+ref = "add-the-lens-catalogue-loader-resolver-and-validator"
+title = "Add the lens catalogue loader, resolver and validator"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/catalogue.rs",
+    "tomlctl/src/review/mod.rs",
+]
+needs = [2]
+coupling = []
+deps_note = ""
+action = "Implement the catalogue core: load the four entry directories from the built-in root and the optional project root (TOML frontmatter between `+++` lines plus the body's `##` headings), load and merge both vocabularies, apply the project `config.toml` (`disable`, `enable`, `extend`, `override`, `scope`, `[[checks]]`), compute each entry's content hash over its versioned sections and the tree sha, resolve the claude dir and the default built-in root, and expose `validate()`, `index(filter)`, `owners()`, `detectors()`, `routing()`, `claude_dir()` and `bind_cell(concerns, family, signals_with_roots, slice, facet_edits, depth)`. Declare it `pub(crate) mod catalogue;` in `tomlctl/src/review/mod.rs` with `validate` `pub(crate)`, because the dispatch-test gate (task 46) calls it from `crate::cli::dispatch::tests`."
+detail = """Follow Approach, "Lens catalogue" — every validation rule there is one `CatalogueError` variant. `bind_cell` returns per concern the hash, path, methods and `v1_category`, plus facets attached only where the slice meets the facet's signal roots and the concern is in its `attaches_to`, with `scope` blocks applied by path. Validation compiles every `contains` pattern through `query::compile_user_bytes_regex` (the shipped build has no Unicode classes, so a pattern the test build would accept must still be checked this way) and checks `v1_category` against both closed sets. `claude_dir()` is `CLAUDE_CONFIG_DIR` when set, else `USERPROFILE` then `HOME` joined with `.claude`, as `glimpse/src/config.rs` resolves it, using `std` only. Add no dependency. Tests (temp-dir catalogues): `parses_toml_frontmatter_and_sections`, `project_id_colliding_with_builtin_is_refused`, `concern_tag_needs_exactly_one_owner_per_family`, `project_tags_need_the_project_prefix`, `missing_family_probes_section_is_refused`, `config_disable_enable_override_apply`, `scope_block_disables_by_path`, `facet_attaches_only_where_slice_meets_roots`, `content_hash_changes_with_probes_not_with_whitespace_outside_sections`, `deprecated_lens_is_refused_for_new_cells`, `uncompilable_contains_pattern_is_refused`, `claude_dir_prefers_claude_config_dir`."""
+acceptance = """
+- forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --lib --no-tests=fail -E 'test(/^review::catalogue::/)'` passes the twelve named tests — **predicted, unverified**.
+- falsifier: attaching facets by repo-wide signal presence turns `facet_attaches_only_where_slice_meets_roots` red — **predicted, unverified**."""
+agent = "implement-deep"
+commit = "6e0519c"
+
+[[items]]
+id = 4
 ref = "wire-the-review-verb-group-into-the-cli-with-stub-verbs"
 title = "Wire the review verb group into the CLI with stub verbs"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -401,41 +765,48 @@ files = [
     "tomlctl/src/review/mod.rs",
     "tomlctl/src/review/dispatch.rs",
     "tomlctl/src/review/runs.rs",
-    "tomlctl/src/review/record.rs",
+    "tomlctl/src/review/survey.rs",
+    "tomlctl/src/review/cells.rs",
+    "tomlctl/src/review/add.rs",
+    "tomlctl/src/review/verdict.rs",
+    "tomlctl/src/review/resolve.rs",
     "tomlctl/src/review/query.rs",
+    "tomlctl/src/review/digest.rs",
     "tomlctl/src/review/triage.rs",
     "tomlctl/src/review/stats.rs",
-    "tomlctl/src/review/compare.rs",
+    "tomlctl/src/review/sync.rs",
     "tomlctl/src/review/export.rs",
+    "tomlctl/src/review/catalogue_cmd.rs",
     "tomlctl/src/review/schema_out.rs",
     "tomlctl/src/capabilities.rs",
     "tomlctl/tests/capabilities.rs",
     "tomlctl/README.md",
+    "tomlctl/src/cli/mod.rs",
 ]
-needs = [1]
+needs = [3]
 coupling = []
 deps_note = ""
-action = "Declare the full `ReviewOp` clap tree with every verb and flag the Approach lists, add `Cmd::Review`, route it through `tomlctl/src/review/dispatch.rs` to one function per verb module, declare the nine new modules in `tomlctl/src/review/mod.rs`, and register capabilities features."
+action = 'Declare the full `ReviewOp` clap tree with every verb and flag Approach, "v2 store and the tomlctl review group" lists, add `Cmd::Review`, route it through `tomlctl/src/review/dispatch.rs` to one stub function per verb module, declare the fourteen verb modules in `tomlctl/src/review/mod.rs`, and register capabilities features.'
 detail = """
-Follow Approach, "v2 store and the tomlctl review group".
-- Copy the `inputs` and `backlog` idiom: `ReviewOp` re-exported from `tomlctl/src/cli/types/mod.rs`; `ReadIntegrityArgs` flattened on reads; `WriteIntegrityArgs` + `StampArgs` on writes.
-- Every verb except `schema` takes `--slug` or `--scope` (mutually exclusive, one required); `stats` adds `--all`. Declare the `triage` `--<flag>-file` twins. Declare no per-command flag that shadows a global output flag; `the_command_tree_has_no_duplicate_flags` enforces this.
-- Each verb module gets one `pub(crate) fn run(...) -> Result<()>` that returns a `kind=validation` error `"review <verb>: not implemented"`. Tasks 3–8 replace those bodies; the stubs exist so those tasks stay file-disjoint, which is why this task is L.
-- Add features `review_store`, `review_record`, `review_triage`, `review_stats`, `review_compare`, `review_export_v1`, `review_schema` to `FEATURES`, to the expected list in `tomlctl/tests/capabilities.rs`, to `SUBCOMMANDS`, and to both README transcriptions — the `"features"` array of the `capabilities` sample block and the "Feature meanings" table in `tomlctl/README.md` — which `readme_feature_transcriptions_match_capabilities_features` gates.
-- Emit output only through `crate::output` helpers; `tomlctl/src/cli/dispatch/tests/output_gate.rs` enforces this."""
+- Copy the `inputs` and `backlog` idiom: `ReviewOp` re-exported from `tomlctl/src/cli/types/mod.rs`; `ReadIntegrityArgs` flattened on reads; `WriteIntegrityArgs` on writes. No `StampArgs`: like `tasks`, `backlog` and `inputs`, the review store stamps itself (`tomlctl/src/cli/types/shared.rs`).
+- Every verb except `schema` and `catalogue` takes `--slug` or `--scope` (mutually exclusive, one required); `stats` adds `--all`. Mirror that group in the `MUTEX_GROUPS` const of `tomlctl/src/capabilities.rs`, which supplements clap's `ArgGroup`s in the `capabilities` mutex data. Declare every `--<flag>-file` twin. Give `review plan`'s `--lens` `allow_hyphen_values = true` so `--lens -id` parses. Declare no flag that shadows a global output flag.
+- Add `"review"` to the README's `"subcommands"` sample array beside `SUBCOMMANDS`.
+- Each stub returns a `kind=validation` error `"review <verb>: not implemented"`; tasks 5–18 replace the bodies, keeping those tasks file-disjoint, which is why this task is L.
+- Features: `review_store`, `review_survey`, `review_cells`, `review_add`, `review_verdict`, `review_resolve`, `review_digest`, `review_triage`, `review_stats`, `review_sync_v1`, `review_export_v1`, `review_catalogue`, `review_schema` — in `FEATURES`, the expected list in `tomlctl/tests/capabilities.rs`, `SUBCOMMANDS`, and both README transcriptions, which `readme_feature_transcriptions_match_capabilities_features` gates.
+- Emit output only through `crate::output` helpers (`tomlctl/src/cli/dispatch/tests/output_gate.rs`)."""
 acceptance = """
 - forward: `grep -c 'Review' tomlctl/src/cli/types/cmd.rs` prints at least `1` (today: `0`).
 - forward: `cargo test --manifest-path tomlctl/Cargo.toml --test capabilities` passes — **predicted, unverified**.
-- falsifier: deleting `review_store` from the README "Feature meanings" table turns `readme_feature_transcriptions_match_capabilities_features` red — **predicted, unverified**."""
-agent = ""
-commit = ""
+- falsifier: deleting `review_survey` from the README "Feature meanings" table turns `readme_feature_transcriptions_match_capabilities_features` red — **predicted, unverified**."""
+agent = "implement-deep"
+commit = "6e0519c"
 
 [[items]]
-id = 3
-ref = "implement-review-run-startfinish-and-schema-emission"
-title = "Implement review run start/finish and schema emission"
+id = 5
+ref = "implement-review-run-startupdate-and-schema-emission"
+title = "Implement review run start/update and schema emission"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -445,86 +816,249 @@ files = [
     "tomlctl/src/review/schema_out.rs",
     "tomlctl/tests/review_runs.rs",
 ]
-needs = [2]
+needs = [4]
 coupling = []
 deps_note = ""
-action = "Implement `review run start` (mint `U<n>`, stamp `started`) and `review run finish` (stamp `finished`, set counts/audit/agents/passes and the optional `workflow`), plus `review schema finding|verdict|return` printing the JSON Schemas."
-detail = """
-- Build each schema by hand in `tomlctl/src/review/schema_out.rs` from the `FindingInput` `const` field, enum and required lists task 1 defines; add no dependency. `finding` lists only finder-authored fields (no `id`, `anchor`, `status`, `run`, dates or `verdicts`), requires `failure_scenario` conditionally on severity through `if`/`then`, and uses enums for `severity`, `effort`, `grade` and `family`. `verdict` is one verdict (`by`, `verdict`, `citation`, `rationale`). `return` is `{findings: [<finding>], coverage, escalate?}` with an object root, the shape a Workflow `agent()` schema needs (Approach, "Finding contract v2").
-- A unit test in `schema_out.rs`, `schema_agrees_with_record_validation`, asserts that every required field in the emitted `finding` schema is one the `const` required list names, and the reverse.
-- Integration tests use the `tomlctl/tests/common/` sandbox (`TOMLCTL_ROOT`): `run_start_mints_sequential_ids`, `run_ids_never_reuse_a_removed_id` (no review verb removes a run, so the test seeds `[id_high_water] U = n` directly), `run_finish_stamps_finished_and_counts`, `schema_finding_requires_scenario_for_warning`, `schema_return_wraps_findings`."""
+action = "Implement `review run start` (mint `U<n>`, stamp `started`, resolve `--base` to a sha, compute `changed_lines`, record catalogue roots with the default built-in path from `catalogue::claude_dir()`, tree sha and config sha, validate the merged catalogue, create and print the run directory), `review run update` (whitelisted fields including `baselines`; `signals` upserted by `name`, which may only add `judged` entries or set `accepted`), and `review schema finding|cell-return|verdict-return [--kind]`."
+detail = """Follow Approach, "v2 store and the tomlctl review group" (**Paths**, **Verbs**) and Approach, "Coverage proposal" for `changed_lines`. Resolve `--base` with `git rev-parse --verify --end-of-options <base>^{commit}`; create the run directory through `io::guard_write_path`; take `--set`/`--set-json` through `crate::fields::FieldArgs`. Schemas are built by hand from the `tomlctl/src/review/fields.rs` catalogue, with `if`/`then` for kind- and direction-conditional fields; a unit test `schema_agrees_with_field_catalogue` asserts the emitted required sets equal the catalogue's. Tests on the `tomlctl/tests/common/` sandbox (pass `--builtin` explicitly so no test reads the developer's claude dir): `run_start_mints_sequential_ids_and_creates_run_dir`, `run_start_records_catalogue_and_changed_lines`, `run_start_halts_on_invalid_project_catalogue`, `run_start_refuses_option_shaped_base`, `run_ids_never_reuse_a_removed_id`, `run_update_refuses_detector_signal_edits`, `run_update_upserts_signals_by_name`, `schema_defect_requires_failure_scenario`."""
 acceptance = '''
-- forward: `test -f tomlctl/tests/review_runs.rs && grep -c '#\[test\]' tomlctl/tests/review_runs.rs` prints at least `5` (today: prints nothing, exit 1).
-- falsifier: dropping the `id_high_water` consultation from run minting turns `run_ids_never_reuse_a_removed_id` red — **predicted, unverified**.'''
-agent = ""
-commit = ""
+- forward: `test -f tomlctl/tests/review_runs.rs && grep -c '#\[test\]' tomlctl/tests/review_runs.rs` prints at least `6` (today: prints nothing, exit 1).
+- falsifier: skipping catalogue validation at start turns `run_start_halts_on_invalid_project_catalogue` red — **predicted, unverified**.'''
+agent = "implement-deep"
+commit = "6e0519c"
 
 [[items]]
-id = 4
-ref = "implement-review-record-with-anchor-matching-outcomes"
-title = "Implement review record with anchor matching outcomes"
+id = 6
+ref = "implement-review-survey-with-deterministic-detectors"
+title = "Implement review survey with deterministic detectors"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
 heading_depth = 3
 files = [
-    "tomlctl/src/review/record.rs",
-    "tomlctl/tests/review_record.rs",
+    "tomlctl/src/review/survey.rs",
+    "tomlctl/tests/review_survey.rs",
 ]
-needs = [3]
+needs = [5]
 coupling = []
 deps_note = ""
-action = "Implement `review record --run <U> --ndjson <path> [--dry-run]`: validate each row, compute `anchor` and its candidates, resolve identity through `same_as`, and write findings and their embedded verdicts in one `mutate` call, reporting a per-line outcome (`refused`, `contested`, `reopened`, `regression`, `repeat`, `suppressed`, `minted`)."
-detail = """
-Identity and outcome rules are the Approach's, "v2 store and the tomlctl review group" (**Verbs** `review record`, and **Anchor matcher**), evaluated in the order listed there.
-- A row is a `FindingInput` plus `verdicts` (≥ 1). Validation: required `family`, `lens`, `file`, `line` ≥ 0, `severity`, `summary`, `counter`, `grade`, `verdicts`; `failure_scenario` when severity is `warning`/`critical`; `plan_section` when family is `plan`; a `same_as` must name one of the row's anchor candidates. A failing row is `refused` with its reason and the rest of the batch still lands.
-- A row matches a stored finding only through `same_as`. Rows with candidates but no `same_as` are minted with the candidates under `related`; rows in one NDJSON are never collapsed by anchor.
-- REFUTED rows with no identity persist as `status = "refuted"`. A `repeat` refreshes `line`, `evidence` and `description` and appends the run to `seen_in` once. A REFUTED row whose identity is open or exported is `contested`: status kept, verdict appended.
-- Tests: `warning_without_failure_scenario_is_refused_rest_lands`, `distinct_defects_on_one_symbol_both_mint`, `same_as_repeat_appends_run_to_seen_in`, `refind_of_resolved_is_a_regression`, `confirmed_refind_of_refuted_reopens`, `refuted_refind_of_exported_is_contested`, `dismissed_identity_is_suppressed`, `dry_run_writes_nothing`."""
+action = "Implement `review survey --run <U>`: evaluate every `stack`, `diff` and `health` detector from the merged vocabulary over `git ls-files` and the run's `base..HEAD` diff (globs, content regexes, manifest keys including `Directory.Packages.props`, per-stack count patterns over `git log` windows with thresholds), and record each true signal with its `roots`."
+detail = 'Follow Approach, "Lens catalogue" (**Vocabulary**). `count` patterns are literal substrings; `contains` is compiled through `query::compile_user_bytes_regex`; `manifest` key paths read TOML and JSON manifests only, and MSBuild XML is matched by `files` plus `contains`. A detector failing to evaluate (git unavailable, malformed regex) records the signal as `unknown` with the reason rather than false. Tests build fixture repos in temp dirs with test-local detector tables: `stack_signal_found_at_depth_three_with_roots`, `central_package_management_detects_efcore`, `polyglot_repo_records_separate_roots_per_stack`, `health_count_uses_per_stack_pattern_and_threshold`, `count_pattern_matches_literally`, `diff_signal_from_base_range`, `failed_detector_records_unknown`. The shipped vocabulary is tested by task 58.'
 acceptance = """
-- forward: `test -f tomlctl/tests/review_record.rs && grep -c 'fn distinct_defects_on_one_symbol_both_mint' tomlctl/tests/review_record.rs` prints `1` (today: prints nothing, exit 1).
-- falsifier: matching on the `(file, symbol)` candidate alone, without `same_as`, turns `distinct_defects_on_one_symbol_both_mint` red — **predicted, unverified**.
-- falsifier: accepting a `warning` row with no `failure_scenario` turns `warning_without_failure_scenario_is_refused_rest_lands` red — **predicted, unverified**."""
-agent = ""
-commit = ""
+- forward: `test -f tomlctl/tests/review_survey.rs && grep -c 'fn polyglot_repo_records_separate_roots_per_stack' tomlctl/tests/review_survey.rs` prints `1` (today: prints nothing, exit 1).
+- falsifier: limiting manifest search to depth 1 turns `stack_signal_found_at_depth_three_with_roots` red — **predicted, unverified**."""
+agent = "implement-deep"
+commit = "6e0519c"
 
 [[items]]
-id = 5
-ref = "implement-review-list-show-and-triage"
-title = "Implement review list, show and triage"
+id = 7
+ref = "implement-review-plan-the-proposal-accounting-and-cover"
+title = "Implement review plan, the proposal, accounting and cover"
 effort = "M"
-status = "pending"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/cells.rs",
+    "tomlctl/tests/review_cells.rs",
+]
+needs = [6]
+coupling = [60]
+deps_note = ""
+action = 'Implement `review plan --propose` (the default coverage map per Approach, "v2 store and the tomlctl review group"), `review plan --ndjson` (validate, bind each cell through `tomlctl/src/review/catalogue.rs` `bind_cell`, append with `wave` and status `assigned`), `review cover` (status, note, seal), and a `coverage_accounting(run)` function returning unselected matched concerns and unsliced scope files not covered by a waiver, for tasks 12 and 17.'
+detail = """The proposal follows Approach, "Coverage proposal" exactly — ceiling formula, selection order, slicing by each lens's `slice`, bundling, repeat cells (`pass = 2`), plan-executor cells batched up to 4 tasks outside the ceiling, and the agent estimate; every row `reason = "proposed"`. `review cover` on a cell already sealed with the same status and note is a successful no-op. Tests: `propose_includes_floor_and_matched_signal_lenses`, `propose_respects_scaled_ceiling`, `propose_scope_without_diff_uses_line_count`, `propose_bundles_same_mode_concerns_only`, `propose_adds_reverse_order_repeat_cells_at_standard`, `plan_executor_cells_batch_tasks_outside_ceiling`, `plan_binds_hashes_and_root_scoped_facets`, `plan_refuses_mixed_mode_bundle`, `probe_cell_requires_question`, `accounting_lists_unselected_and_unsliced_until_waived`, `cover_seals_the_cell`, `cover_on_sealed_cell_with_same_note_is_a_no_op`."""
+acceptance = """
+- forward: `test -f tomlctl/tests/review_cells.rs && grep -c 'fn accounting_lists_unselected_and_unsliced_until_waived' tomlctl/tests/review_cells.rs` prints `1` (today: prints nothing, exit 1).
+- falsifier: dropping candidates silently instead of listing them turns `accounting_lists_unselected_and_unsliced_until_waived` red — **predicted, unverified**."""
+agent = "implement-deep"
+commit = "6e0519c"
+
+[[items]]
+id = 8
+ref = "implement-review-add-with-cell-scoped-idempotency-and-routing"
+title = "Implement review add with cell-scoped idempotency and routing"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/add.rs",
+    "tomlctl/tests/review_add.rs",
+]
+needs = [7]
+coupling = []
+deps_note = ""
+action = '''Implement `review add --run <U> --cell <C> --ndjson`: validate rows through the field catalogue (`lens` ∈ the cell's concerns, path form), check `old` text near `line` (in `target_file` when given and existing), comparing after normalising `\r\n` to `\n` in both the file text and `old`, check a plan row's `anchor_old` occurs exactly once under its `plan_section`, compute `anchor`, candidates and `route` (via `fields::route` with the row's severity, the run's `depth` and the catalogue's routing globs), require `same_as` to name a candidate, supersede the cell's earlier unverified rows, mint defects and cleanup `unverified` and advisory `open` (or `merged` when `same_as` names a dismissed, deferred, parked, backlogged or converted target), and print each minted id with kind, severity and route; refuse on a sealed cell, printing its ids.'''
+detail = 'Follow Approach, "v2 store and the tomlctl review group" (**Concurrency and idempotency**, **Verbs** `review add`, **Anchor matcher**). Tests: `defect_without_failure_scenario_is_refused_rest_lands`, `cleanup_old_text_must_exist_near_line`, `add_direction_with_new_target_file_lands`, `distinct_defects_on_one_symbol_both_mint`, `resubmitted_cell_supersedes_unverified_rows`, `sealed_cell_refuses_and_prints_ids`, `executable_cleanup_routes_to_verifier`, `critical_defect_at_deep_routes_to_panel`, `advisory_same_as_dismissed_is_merged`, `lens_outside_cell_concerns_is_refused`, `cleanup_old_text_matches_in_crlf_file`, `plan_anchor_old_must_be_unique_in_section`.'
+acceptance = """
+- forward: `test -f tomlctl/tests/review_add.rs && grep -c 'fn resubmitted_cell_supersedes_unverified_rows' tomlctl/tests/review_add.rs` prints `1` (today: prints nothing, exit 1).
+- falsifier: appending instead of superseding on resubmission turns `resubmitted_cell_supersedes_unverified_rows` red — **predicted, unverified**."""
+agent = "implement-deep"
+commit = "6e0519c"
+
+[[items]]
+id = 9
+ref = "implement-review-verdict-as-an-upsert"
+title = "Implement review verdict as an upsert"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/verdict.rs",
+    "tomlctl/tests/review_verdict.rs",
+]
+needs = [8]
+coupling = []
+deps_note = ""
+action = "Implement `review verdict <F>` and its `--ndjson` batch form: upsert on (finding, `by`, `seat`), apply the checker rules (`unsettled` re-routes to `verifier`; `refuted` only on a sweeper row with a citation), record an optional `severity` reassessment, honour `--strike-same-as`, and resolve status immediately for findings without `same_as` (panel: ≥2 non-refuted of 3 → `open`)."
+detail = 'Follow Approach, "v2 store and the tomlctl review group" (**Verbs** `review verdict`). Findings with `same_as` stay `unverified` for task 10. A verdict without a citation is refused. Tests: `confirmed_unverified_becomes_open`, `refuted_unverified_becomes_refuted`, `replayed_verdict_upserts_not_appends`, `checker_unsettled_reroutes_to_verifier`, `checker_cannot_refute_a_finder_row`, `panel_needs_two_non_refuted`, `severity_reassessment_is_recorded`, `verdict_without_citation_is_refused`.'
+acceptance = """
+- forward: `test -f tomlctl/tests/review_verdict.rs && grep -c 'fn replayed_verdict_upserts_not_appends' tomlctl/tests/review_verdict.rs` prints `1` (today: prints nothing, exit 1).
+- falsifier: letting a checker refute a `review-finder` row turns `checker_cannot_refute_a_finder_row` red — **predicted, unverified**."""
+agent = "implement-deep"
+commit = "6e0519c"
+
+[[items]]
+id = 10
+ref = "implement-review-resolve-for-identity-outcomes"
+title = "Implement review resolve for identity outcomes"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/resolve.rs",
+    "tomlctl/tests/review_resolve.rs",
+]
+needs = [9]
+coupling = []
+deps_note = ""
+action = 'Implement `review resolve --run <U> [--wave n]`: for every finding with a `same_as` whose verdicts are complete, in dependency order, apply the repeat, contested, reopened, regression and suppressed outcomes per Approach, "v2 store and the tomlctl review group".'
+detail = "Deterministic and idempotent; a target from the same run resolves first. Each resolved row records its `outcome` and the row and target statuses the Approach states for that outcome (contested and reopened rows become `merged` with `merged_into`). Tests: `same_as_repeat_merges_and_appends_seen_in_once`, `contested_row_merges_and_records_outcome`, `refuted_same_as_on_open_is_contested`, `confirmed_same_as_on_refuted_reopens`, `confirmed_same_as_on_resolved_is_regression`, `same_as_on_parked_is_suppressed`, `same_run_target_resolves_first_regardless_of_verdict_order`, `resolve_is_idempotent`."
+acceptance = """
+- forward: `test -f tomlctl/tests/review_resolve.rs && grep -c 'fn same_run_target_resolves_first_regardless_of_verdict_order' tomlctl/tests/review_resolve.rs` prints `1` (today: prints nothing, exit 1).
+- falsifier: resolving in verdict-arrival order turns `same_run_target_resolves_first_regardless_of_verdict_order` red — **predicted, unverified**."""
+agent = "implement-deep"
+commit = "6e0519c"
+
+[[items]]
+id = 11
+ref = "implement-review-list-and-role-projected-show"
+title = "Implement review list and role-projected show"
+effort = "M"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
 heading_depth = 3
 files = [
     "tomlctl/src/review/query.rs",
-    "tomlctl/src/review/triage.rs",
-    "tomlctl/tests/review_triage.rs",
+    "tomlctl/tests/review_query.rs",
 ]
-needs = [4]
+needs = [9]
 coupling = []
 deps_note = ""
-action = "Implement `review list` (filters `--family`, `--lens`, `--run`, `--status` as a row report over the global output options) and `review show <ids>`, plus `review triage <ids>` with `--dismiss`/`--defer --trigger`/`--reopen`/`--resolve`, their `--<flag>-file` twins, and `--expect-status` compare-and-set."
-detail = """
-- Write the companion fields per the Approach record block, refuse a disposition without its reason, read a `--<flag>-file` value verbatim from the file, and report stale ids under `skipped_stale` without failing the batch.
-- Mirror `tomlctl/src/ledgers.rs` `write_guarded` (line 369) for the guard, on the raw doc `review::store::mutate` exposes.
-- Tests: `triage_dismiss_requires_reason`, `triage_honours_expect_status`, `triage_reads_reason_from_file`, `list_filters_by_lens_and_status`."""
-acceptance = """
-- forward: `test -f tomlctl/tests/review_triage.rs && grep -c 'fn triage_honours_expect_status' tomlctl/tests/review_triage.rs` prints `1` (today: prints nothing, exit 1).
-- falsifier: ignoring `--expect-status` turns `triage_honours_expect_status` red — **predicted, unverified**."""
-agent = ""
-commit = ""
+action = "Implement `review list` (`--kind`, `--lens`, `--run`, `--cell`, `--status`, `--route`, `--in <glob>`) and `review show <ids> --for <role>` for findings and cells, including the `audit` projection with ±5 lines around each cited `file:line`."
+detail = '''Project only through `tomlctl/src/review/fields.rs` `project`. A cell `--for finder` carries its slice, concerns with bound paths, facets and methods with paths, question, pack path and the run's recorded `baselines`; `--for finder|verifier|checker` also carries the absolute paths of `review-v2-method`'s `references/*.md` under `catalogue::claude_dir()`. The `implementer` projection carries a plan row's `plan_section`, `anchor_old` and `anchor_new`. The `audit` projection reads cited lines after normalising `\r\n`. The `backlog` projection emits the `backlog check`/`add` NDJSON object shape (`kind` from `angle`: `challenge`/`alternative`/`direction` → `direction`, `risk`/`probe` → `question`; `area` = the finding's directory; `origin = "review"`). Tests: `list_in_glob_filters_prior`, `show_for_verifier_omits_grade_and_fix`, `show_for_audit_inlines_cited_lines`, `show_for_backlog_emits_backlog_shape`, `show_cell_carries_bound_catalogue_paths`.'''
+acceptance = "forward: `test -f tomlctl/tests/review_query.rs && grep -c 'fn show_for_audit_inlines_cited_lines' tomlctl/tests/review_query.rs` prints `1` (today: prints nothing, exit 1)."
+agent = "implement-deep"
+commit = "6e0519c"
 
 [[items]]
-id = 6
-ref = "implement-review-stats-with-calibration-exemplars"
-title = "Implement review stats with calibration exemplars"
+id = 12
+ref = "implement-review-digest-and-review-report"
+title = "Implement review digest and review report"
 effort = "M"
-status = "pending"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/digest.rs",
+    "tomlctl/tests/review_digest.rs",
+]
+needs = [
+    7,
+    10,
+]
+coupling = []
+deps_note = ""
+action = 'Implement `review digest --run <U> [--since-wave n]` and `review report --run <U> --out <path>` per Approach, "v2 store and the tomlctl review group".'
+detail = "The digest lists unverified ids with routes, unselected and unsliced items from task 7's `coverage_accounting`, contested findings (rows whose `outcome` is `contested`, with their targets), refuted criticals, the audit sample chosen by index, and the advisory list only until triaged; it carries no `evidence`. The report writes to `--out` and prints only the path and a counts line. Tests: `digest_lists_unverified_ids_with_routes`, `digest_lists_unwaived_unselected_concerns`, `digest_since_wave_limits_rows`, `digest_omits_evidence`, `report_writes_file_and_prints_counts`, `report_is_byte_stable`."
+acceptance = "forward: `test -f tomlctl/tests/review_digest.rs && grep -c 'fn digest_lists_unwaived_unselected_concerns' tomlctl/tests/review_digest.rs` prints `1` (today: prints nothing, exit 1)."
+agent = "implement-deep"
+commit = "6e0519c"
+
+[[items]]
+id = 13
+ref = "implement-review-triage-with-park-conversion-and-backlog-refs"
+title = "Implement review triage with park, conversion and backlog refs"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/triage.rs",
+    "tomlctl/tests/review_triage.rs",
+    "tomlctl/src/review/add.rs",
+    "tomlctl/src/review/fields.rs",
+]
+needs = [9]
+coupling = []
+deps_note = ""
+action = "Implement `review triage <ids>` with `--dismiss`/`--defer --trigger`/`--reopen`/`--park`/`--resolve`/`--backlog-ref`/`--convert cleanup|defect --ndjson`, the `--<flag>-file` twins and `--expect-status` compare-and-set."
+detail = "Implement `--expect-status` as a typed status check inside the store closure, modelled on `tomlctl/src/ledgers.rs` `write_guarded`. `--convert` validates the new row through the field catalogue, mints it with an `orchestrator` verdict and its computed `route`, and marks the advisory `converted` in the same write. Tests: `triage_dismiss_requires_reason`, `triage_honours_expect_status`, `triage_reads_reason_from_file`, `park_marks_advisory_parked`, `convert_advisory_mints_routed_cleanup`, `backlog_ref_marks_backlogged`."
+acceptance = """
+- forward: `test -f tomlctl/tests/review_triage.rs && grep -c 'fn convert_advisory_mints_routed_cleanup' tomlctl/tests/review_triage.rs` prints `1` (today: prints nothing, exit 1).
+- falsifier: ignoring `--expect-status` turns `triage_honours_expect_status` red — **predicted, unverified**."""
+agent = "implement-deep"
+commit = "6e0519c"
+
+[[items]]
+id = 14
+ref = "implement-review-sync-v1"
+title = "Implement review sync-v1"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/sync.rs",
+    "tomlctl/tests/review_sync.rs",
+]
+needs = [9]
+coupling = []
+deps_note = ""
+action = """Implement `review sync-v1`: read every v1 row carrying a `v2_ref` into this store (every distinct `export_ledger` recorded on this store's exported findings, plus the family's default ledger for the store's slug or scope) and map its status onto the v2 finding with a `by = "sync"` verdict. Expose the status mapping as a function task 15 reuses read-only."""
+detail = """Mapping and the sync verdict's shape (`verdict = "confirmed"`, `citation = "<ledger path>#<v1 id>"`, `rationale` the v1 status and resolution) per Approach, "v2 store and the tomlctl review group" (**Verbs** `review sync-v1`); idempotent; v1 files are read only. Tests: `fixed_v1_row_resolves_v2_finding`, `wontfix_v1_row_dismisses_with_reason`, `sync_reads_recorded_export_ledger`, `sync_verdict_carries_ledger_citation`, `sync_is_idempotent`, `missing_v1_ledger_is_a_no_op`."""
+acceptance = """
+- forward: `test -f tomlctl/tests/review_sync.rs && grep -c 'fn fixed_v1_row_resolves_v2_finding' tomlctl/tests/review_sync.rs` prints `1` (today: prints nothing, exit 1).
+- falsifier: skipping rows whose v1 status is `applied` turns `fixed_v1_row_resolves_v2_finding`'s applied case red — **predicted, unverified**."""
+agent = "implement-deep"
+commit = "6e0519c"
+
+[[items]]
+id = 15
+ref = "implement-review-stats-with-outcomes-escapes-and-calibration"
+title = "Implement review stats with outcomes, escapes and calibration"
+effort = "M"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -533,58 +1067,26 @@ files = [
     "tomlctl/src/review/stats.rs",
     "tomlctl/tests/review_stats.rs",
 ]
-needs = [4]
-coupling = []
-deps_note = ""
-action = "Implement `review stats [--slug|--scope|--all] [--family] [--by lens|run] [--calibration [--exemplars N]]` with the per-lens metrics the Approach lists."
-detail = """
-- Use Approach, "v2 store and the tomlctl review group", and Approach, "Calibration and A/B".
-- `--all` globs `.claude/flows/*/review-v2.toml` and `.claude/review-v2/*.toml` under the repo root.
-- Exemplars are the first sentence of `dismiss_reason` and of refuted verdict `rationale`, grouped per lens, most frequent first, ties broken by recency.
-- Emit a row report with one row per lens or per run.
-- Tests: `stats_refute_rate_per_lens`, `stats_all_aggregates_across_stores`, `calibration_lists_top_reasons`."""
-acceptance = """
-- forward: `test -f tomlctl/tests/review_stats.rs && grep -c 'fn calibration_lists_top_reasons' tomlctl/tests/review_stats.rs` prints `1` (today: prints nothing, exit 1).
-- falsifier: computing refute rate over persisted rows only (excluding `refuted`) turns `stats_refute_rate_per_lens` red — **predicted, unverified**."""
-agent = ""
-commit = ""
-
-[[items]]
-id = 7
-ref = "implement-review-compare-across-runs-and-against-v1-ledgers"
-title = "Implement review compare across runs and against v1 ledgers"
-effort = "M"
-status = "pending"
-checkpoint = "A"
-phase = ""
-phase_depth = 0
-heading_depth = 3
-files = [
-    "tomlctl/src/review/compare.rs",
-    "tomlctl/tests/review_compare.rs",
+needs = [
+    10,
+    14,
 ]
-needs = [4]
 coupling = []
 deps_note = ""
-action = "Implement `review compare --run <A> (--run <B> | --v1 <ledger> [--v1-since <date>] [--v1-ids <ids>])`, aligning by the `tomlctl/src/review/matching.rs` anchor candidates into `both`/`only_a`/`only_b` with per-lens overlap counts."
-detail = """
-- Read the v1 ledger's `items` array read-only.
-- Map `review-ledger.toml` items to family `code` and `optimise-findings.toml` to `perf` (by basename; flow-less ledgers by directory `.claude/reviews/` or `.claude/optimise-findings/`).
-- v1 items carry no `lens`, so their `category` stands in on the v1 side.
-- When a finding has several candidates on the other side, an exact `summary` breaks the tie; otherwise the nearest line wins.
-- Tests: `compare_aligns_by_symbol_across_runs`, `compare_v1_ledger_maps_family`, `compare_v1_since_filters_by_first_flagged`."""
+action = 'Implement `review stats [--slug|--scope|--all] [--family] [--by lens|probe|run] [--outcomes] [--escapes] [--calibration [--exemplars N]]` per Approach, "v2 store and the tomlctl review group" and Approach, "Measurement and tuning".'
+detail = "Group by lens id with the bound hash as a column; probes group by their concern tag. `stats` writes nothing: `--outcomes` reads v1 statuses through `v2_ref` with task 14's mapping function, read-only. `--escapes` counts findings minted in a (file, concern) an earlier run had sealed `covered`. `--calibration` draws exemplars only from user `dismiss_reason`s, v1 wontfix reasons and audit-overturned verdicts, first sentence each, most frequent first. `--all` globs `.claude/flows/*/review-v2.toml` and `.claude/review-v2/*.toml`. Tests: `stats_refute_and_audit_overturn_rates_per_lens`, `stats_outcomes_join_v1_status`, `stats_escapes_count_refinds_in_covered_cells`, `calibration_ignores_unaudited_refutations`, `stats_probe_groups_by_concern_tag`, `stats_all_aggregates_across_stores`."
 acceptance = """
-- forward: `test -f tomlctl/tests/review_compare.rs && grep -c 'fn compare_v1_ledger_maps_family' tomlctl/tests/review_compare.rs` prints `1` (today: prints nothing, exit 1).
-- falsifier: matching on summary text alone turns `compare_aligns_by_symbol_across_runs` (reworded summary, same symbol) red — **predicted, unverified**."""
-agent = ""
-commit = ""
+- forward: `test -f tomlctl/tests/review_stats.rs && grep -c 'fn calibration_ignores_unaudited_refutations' tomlctl/tests/review_stats.rs` prints `1` (today: prints nothing, exit 1).
+- falsifier: feeding raw verifier rationales into calibration turns `calibration_ignores_unaudited_refutations` red — **predicted, unverified**."""
+agent = "implement-deep"
+commit = "6e0519c"
 
 [[items]]
-id = 8
+id = 16
 ref = "implement-review-export-v1"
 title = "Implement review export-v1"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -593,30 +1095,77 @@ files = [
     "tomlctl/src/review/export.rs",
     "tomlctl/tests/review_export.rs",
 ]
+needs = [11]
+coupling = []
+deps_note = ""
+action = 'Implement `review export-v1 (<ids> | --all) --to <v1-ledger> [--dry-run]` per Approach, "Export to v1".'
+detail = """Build `description` from the `implementer` projection (task 11). Take `category` from the cell binding of the finding's lens, and `effort` from the finding itself (defect and cleanup both carry one; `large` is refused). `--all` excludes `needs-plan`, test removals and PLAUSIBLE cleanup. Validate the v1 required set (`id` by family prefix, `file`, `line`, `severity`, `effort` ∈ trivial/small/medium, `category`, `summary`, `first_flagged`, `rounds`, `status = "open"`). Tests: `export_refuses_advisory_and_needs_plan`, `export_all_skips_test_removals_and_plausible_cleanup`, `export_uses_reassessed_severity`, `export_category_from_cell_binding`, `export_reuses_open_v1_id_and_bumps_rounds_once`, `export_is_idempotent_on_v2_ref`, `export_regression_on_fixed_v1_match`, `export_stamps_last_updated_from_run_date`."""
+acceptance = """
+- forward: `test -f tomlctl/tests/review_export.rs && grep -c 'fn export_all_skips_test_removals_and_plausible_cleanup' tomlctl/tests/review_export.rs` prints `1` (today: prints nothing, exit 1).
+- falsifier: bumping `rounds` on every export call turns `export_reuses_open_v1_id_and_bumps_rounds_once` red — **predicted, unverified**."""
+agent = "implement-deep"
+commit = "6e0519c"
+
+[[items]]
+id = 17
+ref = "implement-review-run-finish-with-its-completeness-gate"
+title = "Implement review run finish with its completeness gate"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/runs.rs",
+    "tomlctl/tests/review_finish.rs",
+]
+needs = [
+    5,
+    7,
+    10,
+]
+coupling = []
+deps_note = ""
+action = "Implement `review run finish <U> [--incomplete <reason>]`: stamp `finished`, compute `counts`, and refuse while any finding is `unverified`, any `same_as` is unresolved, or task 7's `coverage_accounting` reports an unwaived item — unless `--incomplete` records a reason."
+detail = 'Follow Approach, "v2 store and the tomlctl review group" (**Verbs** `review run finish`). `counts.suppressed` counts rows whose `outcome` is `suppressed`. Tests: `finish_refuses_unverified_findings`, `finish_refuses_unwaived_coverage`, `finish_incomplete_records_reason`, `finish_computes_counts`.'
+acceptance = """
+- forward: `test -f tomlctl/tests/review_finish.rs && grep -c 'fn finish_refuses_unwaived_coverage' tomlctl/tests/review_finish.rs` prints `1` (today: prints nothing, exit 1).
+- falsifier: dropping the accounting check turns `finish_refuses_unwaived_coverage` red — **predicted, unverified**."""
+agent = "implement-deep"
+commit = "6e0519c"
+
+[[items]]
+id = 18
+ref = "implement-the-review-catalogue-verb"
+title = "Implement the review catalogue verb"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/catalogue_cmd.rs",
+    "tomlctl/tests/review_catalogue.rs",
+]
 needs = [4]
 coupling = []
 deps_note = ""
-action = 'Implement `review export-v1 <ids> --to <v1-ledger> [--dry-run]` per Approach, "v2 store and the tomlctl review group" → **Export to v1**.'
-detail = """
-- Validate the projected row against the v1 required set: `id` minted with prefix `R` or `O` by family, `file`, `line`, `severity`, `effort` ∈ trivial/small/medium, `category` from the family-keyed lens table (a project-pack lens through its `**V1 category**:` header), `summary`, `first_flagged`, `rounds`, `status = "open"`.
-- Refuse family `plan`, a lens with no category for the finding's family, `needs_plan`, `effort = "large"`, and non-open or refuted findings, each with a reason row.
-- Look up `v2_ref` across v1 rows of every status before applying the v1 merge rule; then apply the merge rule with `v2_ref` idempotency.
-- Set the v1 ledger's root `last_updated` to the later of its current value and the newest run date among the exported findings' `seen_in` runs; seed a new ledger with that date.
-- Write order: two sequential `mutate_doc` calls, never nested — the v1 ledger write commits before the v2 store is opened.
-- Map `depends_on` F-ids to exported v1 ids, dropping unexported ones into a `dropped_deps` header field.
-- Tests: `export_refuses_needs_plan`, `export_refuses_plan_family`, `export_refuses_unmapped_lens`, `export_maps_lens_to_v1_category`, `export_reuses_open_v1_id_and_bumps_rounds_once`, `export_is_idempotent_on_v2_ref`, `export_reuses_v2_ref_on_fixed_v1_row`, `export_regression_on_fixed_v1_match`, `export_stamps_last_updated_from_run_date`."""
+action = "Implement `tomlctl review catalogue [--builtin <dir>] [--project <dir>] [--family <f>] [--signals <a,b>] [--vocabulary] [--owners] [--check]` over `tomlctl/src/review/catalogue.rs`."
+detail = 'Follow Approach, "Lens catalogue" (**Generated index and validation**). `--builtin` defaults to `~/.claude/skills/review-v2-lenses`; `--project` to `.claude/review-lenses` under the repo root when present. Tests (temp-dir catalogues): `catalogue_prints_merged_index_with_hashes`, `catalogue_signals_marks_matched`, `catalogue_owners_prints_generated_map`, `catalogue_check_exits_nonzero_on_invalid`.'
 acceptance = """
-- forward: `test -f tomlctl/tests/review_export.rs && grep -c 'fn export_is_idempotent_on_v2_ref' tomlctl/tests/review_export.rs` prints `1` (today: prints nothing, exit 1).
-- falsifier: bumping `rounds` on every export call turns `export_reuses_open_v1_id_and_bumps_rounds_once` red — **predicted, unverified**."""
-agent = ""
-commit = ""
+- forward: `test -f tomlctl/tests/review_catalogue.rs && grep -c 'fn catalogue_check_exits_nonzero_on_invalid' tomlctl/tests/review_catalogue.rs` prints `1` (today: prints nothing, exit 1).
+- falsifier: making `--check` exit 0 on errors turns `catalogue_check_exits_nonzero_on_invalid` red — **predicted, unverified**."""
+agent = "implement-lite"
+commit = "6e0519c"
 
 [[items]]
-id = 9
+id = 19
 ref = "attribute-review-v2-store-prompts-in-agent-correlation"
 title = "Attribute review-v2 store prompts in agent correlation"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -625,23 +1174,62 @@ files = ["tomlctl/src/agents/correlate.rs"]
 needs = []
 coupling = []
 deps_note = ""
-action = "Extend the `LEDGER` regex in `tomlctl/src/agents/correlate.rs` (around line 201) to accept the `review-v2.toml` basename, and add a test beside the existing in-module ones."
-detail = """
-- Basename only: v2 dispatch prompts carry no F-ids, which `record` mints after every agent returns, so do not add an `F[0-9]+` alternation.
-- Only the flow-local form `.claude/flows/<slug>/review-v2.toml` attributes a flow, matching the v1 behaviour. The prompts that carry the line are tasks 21, 22 and 25's.
-- Test: `ledger_line_attributes_review_v2_store`."""
+action = "Extend the `LEDGER` regex in `tomlctl/src/agents/correlate.rs` (around line 201) to accept the `review-v2.toml` basename, and add `ledger_line_attributes_review_v2_store` beside the existing in-module tests."
+detail = "Basename only — v2 dispatch prompts carry run and cell ids, not F-ids. Only the flow-local `.claude/flows/<slug>/review-v2.toml` attributes a flow. Task 49's workflow and task 48's fallback build the prompts that carry the line."
 acceptance = """
 - forward: `grep -c 'review-v2' tomlctl/src/agents/correlate.rs` prints at least `1` (today: `0`).
 - falsifier: reverting the alternation turns `ledger_line_attributes_review_v2_store` red — **predicted, unverified**."""
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "433e45e"
 
 [[items]]
-id = 10
+id = 20
+ref = "add-output-option-cases-and-help-list-entries-for-the-review-verbs"
+title = "Add output-option cases and help-list entries for the review verbs"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/tests/output_options.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/src/review/digest.rs",
+    "tomlctl/src/review/stats.rs",
+]
+needs = [
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+]
+coupling = [61]
+deps_note = ""
+action = "Give every `review` leaf a case in `cases()` of `tomlctl/tests/output_options.rs`, add a `review` arm to `group()` and the `group_tests!` list, and seed a `review-v2.toml` and a minimal catalogue in `fixture()`. Add the read verbs to `read_only_subcommands_hide_write_integrity_flags_in_help` and the write verbs to `write_subcommands_expose_all_integrity_flags_in_help` in `tomlctl/tests/capabilities.rs`."
+detail = "`every_leaf_command_has_a_case` walks `tomlctl capabilities .commands`, so the full suite is red from task 4 until this lands. Leaves: `sync-v1`, `run start`, `run update`, `run finish`, `survey`, `plan`, `cover`, `add`, `verdict`, `resolve`, `list`, `show`, `digest`, `report`, `triage`, `stats`, `export-v1`, `catalogue`, `schema`. Help-list placement: **write** — `sync-v1`, `run start`, `run update`, `run finish`, `survey`, `plan` (its `--ndjson` mode writes), `cover`, `add`, `verdict`, `resolve`, `triage`, `export-v1`; **read** — `list`, `show`, `digest`, `report` (a derived markdown write with no sidecar, like `tasks render`), `stats`, `catalogue`, `schema`. Cases pass `--builtin` and `--project` pointing at the fixture catalogue, so no case reads the developer's claude dir."
+acceptance = '''
+- forward: `grep -c '&\["review", ' tomlctl/tests/output_options.rs` prints at least `19` (today: `0`).
+- falsifier: deleting the `review resolve` case turns `every_leaf_command_has_a_case` red — **predicted, unverified**.'''
+agent = "implement-deep"
+commit = "6e0519c"
+
+[[items]]
+id = 21
 ref = "document-the-review-verb-group-in-the-tomlctl-skill"
 title = "Document the review verb group in the tomlctl skill"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -652,31 +1240,37 @@ files = [
     "tomlctl/README.md",
 ]
 needs = [
-    3,
     5,
     6,
     7,
     8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
 ]
 coupling = []
 deps_note = ""
-action = 'Write the `review` flag-table reference, with one `### \`tomlctl review <verb>\`` heading and `| Flag |` table per verb plus the store shape. In `claude/skills/tomlctl/SKILL.md`, add a Quick Reference row, a References entry, and "Rows and header per command" rows for `review list`, `review stats`, `review compare`, `review record` and `review export-v1`. In `tomlctl/README.md`, add `tomlctl review …` lines to the `## Usage` Quick-tour fence.'
-detail = '''
-- Do **not** edit the `description:` of `claude/skills/tomlctl/SKILL.md`: it is at 1010/1024 characters.
-- Every `tomlctl review …` line in a bash fence must parse (`command_lint`), and every flag-table row must be a real flag (`flag_table_lint`). A heading names one verb path only (`### \`tomlctl review schema\``, not `schema finding|verdict|return`), or `flag_table_lint` reports it as no subcommand.
-- Keep the reference under 600 lines.'''
+action = 'Write the `review` flag-table reference — one `### \`tomlctl review <verb>\`` heading and `| Flag |` table per verb, plus the store shape, the field catalogue summary, the role list and the routing rules. In `claude/skills/tomlctl/SKILL.md` add a Quick Reference row, a References entry and "Rows and header per command" rows for `review list`, `review show`, `review digest`, `review stats`, `review catalogue` and `review export-v1`. In `tomlctl/README.md` add `tomlctl review …` lines to the `## Usage` Quick-tour fence.'
+detail = 'Do **not** edit the `description:` of `claude/skills/tomlctl/SKILL.md` (14 characters below its 1024-character ceiling; measure with `awk`). Bump the `"version":"0.15.0"` capabilities example in its body to `0.16.0`, matching task 22. Every `tomlctl review …` line in a bash fence must parse (`command_lint`), every flag-table row must be a real flag (`flag_table_lint`), and a heading names one verb path only. Keep the reference under 600 lines.'
 acceptance = """
-- forward: `test -f claude/skills/tomlctl/references/review.md && grep -cE '^### `tomlctl review ' claude/skills/tomlctl/references/review.md` prints at least `10` (today: prints nothing, exit 1).
+- forward: `test -f claude/skills/tomlctl/references/review.md && grep -cE '^### `tomlctl review ' claude/skills/tomlctl/references/review.md` prints at least `19` (today: prints nothing, exit 1).
 - guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes — **predicted, unverified**."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "6e0519c"
 
 [[items]]
-id = 11
+id = 22
 ref = "bump-tomlctl-to-0160-and-refresh-the-glimpse-lockfile"
 title = "Bump tomlctl to 0.16.0 and refresh the glimpse lockfile"
-effort = "M"
-status = "pending"
+effort = "L"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -689,432 +1283,680 @@ files = [
     "tomlctl/README.md",
 ]
 needs = [
-    2,
-    10,
-    30,
+    4,
+    20,
+    21,
 ]
 coupling = []
 deps_note = ""
-action = """Set `version = "0.16.0"` in `tomlctl/Cargo.toml`, update the `0.15.0` literal and its message in `capabilities_version_matches_cargo_toml` (`tomlctl/tests/capabilities.rs`), update the `"version"` of the `capabilities` sample block in `tomlctl/README.md`, then refresh both lockfiles (`cargo tree --manifest-path glimpse/Cargo.toml >/dev/null` rewrites glimpse's)."""
-detail = "The pre-commit glimpse clippy runs `--locked`, so the refreshed `glimpse/Cargo.lock` must be staged with the bump. `readme_sample_version_matches_cargo_toml` gates the README edit. Tasks 10 and 30 edit `tomlctl/README.md` and `tomlctl/tests/capabilities.rs` too, which is why this task depends on them and closes checkpoint A."
+action = """Set `version = "0.16.0"` in `tomlctl/Cargo.toml`, update the version literal and message in `capabilities_version_matches_cargo_toml` (`tomlctl/tests/capabilities.rs`), update the `"version"` of the `capabilities` sample block in `tomlctl/README.md`, then refresh both lockfiles (`cargo tree --manifest-path glimpse/Cargo.toml >/dev/null` rewrites glimpse's)."""
+detail = "The pre-commit glimpse clippy runs `--locked`, so the refreshed `glimpse/Cargo.lock` is staged with the bump. `readme_sample_version_matches_cargo_toml` gates the README edit. The five edits are inseparable for a green tree, hence L."
 acceptance = """
 - forward: `grep -c '^version = "0.16.0"' tomlctl/Cargo.toml` prints `1` (today: `0`).
 - forward: `cargo test --manifest-path tomlctl/Cargo.toml --test capabilities` passes, including `capabilities_version_matches_cargo_toml` and `readme_sample_version_matches_cargo_toml` — **predicted, unverified**."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "6e0519c"
 
 [[items]]
-id = 30
-ref = "add-output-option-cases-and-help-list-entries-for-the-review-verbs"
-title = "Add output-option cases and help-list entries for the review verbs"
+id = 23
+ref = "write-the-review-v2-method-skill-shared-core"
+title = "Write the review-v2-method skill (shared core)"
 effort = "M"
-status = "pending"
-checkpoint = "A"
-phase = ""
-phase_depth = 0
-heading_depth = 3
-files = [
-    "tomlctl/tests/output_options.rs",
-    "tomlctl/tests/capabilities.rs",
-]
-needs = [
-    3,
-    4,
-    5,
-    6,
-    7,
-    8,
-]
-coupling = []
-deps_note = ""
-action = "Give every `review` leaf a case in `cases()` of `tomlctl/tests/output_options.rs`, add a `review` arm to `group()` and to the `group_tests!` list, and seed a `review-v2.toml` in `fixture()`. Add the review read verbs to `read_only_subcommands_hide_write_integrity_flags_in_help` and the write verbs to `write_subcommands_expose_all_integrity_flags_in_help` in `tomlctl/tests/capabilities.rs`."
-detail = "`every_leaf_command_has_a_case` walks `tomlctl capabilities .commands` and fails on any leaf without a case, so the full suite is red from task 2 until this task lands; it waits for tasks 3–8 because a case against a stub verb fails. The leaves are `run start`, `run finish`, `record`, `list`, `show`, `triage`, `stats`, `compare`, `export-v1` and `schema`."
-acceptance = '''
-- forward: `grep -c '&\["review", ' tomlctl/tests/output_options.rs` prints at least `10` (today: `0`).
-- forward: `cargo test --manifest-path tomlctl/Cargo.toml --test output_options` passes — **predicted, unverified**.
-- falsifier: deleting the `review list` case turns `every_leaf_command_has_a_case` red — **predicted, unverified**.'''
-agent = ""
-commit = ""
-
-[[items]]
-id = 12
-ref = "write-the-review-v2-method-skill-agent-side-procedure"
-title = "Write the review-v2-method skill (agent-side procedure)"
-effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
 heading_depth = 3
 files = [
     "claude/skills/review-v2-method/SKILL.md",
+    "claude/skills/review-v2-method/references/finding-kinds.md",
     "claude/skills/review-v2-method/references/verifying.md",
-    "claude/skills/review-v2-method/references/dry-run.md",
 ]
-needs = [3]
+needs = [4]
 coupling = []
 deps_note = ""
-action = "Write the agent-side method every v2 agent preloads. `SKILL.md` covers the finder procedure, the `review schema return` envelope and finding record (including `same_as`, `counter` and `grade`), the hard exclusions, the severity rubric, caps, the coverage line, and a short section each for the refute-first verifier procedure (the three verdicts and their citation rule) and the plan-executor dry-run procedure. `references/verifying.md` and `references/dry-run.md` hold worked examples only."
-detail = """
-- Follow Approach, "Finding contract v2" and Approach, "Agents". A `skills:` preload injects `SKILL.md` only, so every procedure an agent needs is in it; reference files are loaded with the Skill tool, never by a guessed path.
-- Defer source hierarchy, evidence grades and the gated references to the unchanged `research-methods` skill by name; do not restate them. State that the Counter line and grade go in the record's `counter` and `grade` fields.
-- State that the v2 store is read only through the `PRIOR` fence or `tomlctl review list`, never `tomlctl items list` (which returns `[]` on it), overriding research-methods' "list the named ledger" step for v2 stores.
-- Name the confirmation exclusion explicitly as the top v1 drop class.
-- Never use the words "target" or "quota" for counts.
-- The description must state when to use it (v2 finder, verifier or executor agents) and stay under 1024 characters; the body stays under 500 lines. Every `tomlctl review …` line in a bash fence must parse (`command_lint`)."""
+action = "Write the shared core every v2 agent preloads: the three kinds with their required fields and the defect/cleanup/advisory decision rule, `same_as`, the never-a-finding list, caps, the coverage note, the probe template for `probe:` cells, the store-write idiom (one full-set `add` per cell, sealing, the payload staged with the Write tool in the run directory's `payloads/` and passed as `--ndjson <path>`, never piped or heredoc'd, retry rules) and each role's return object. Role procedures live in the agent bodies (tasks 50–51), not here. The references hold worked examples only: one row per kind, direction and family in `finding-kinds.md`; one verdict per outcome and one reassessed severity in `verifying.md`."
+detail = """Follow Approach, "Finding kinds", Approach, "Field readership" and Approach, "Agents". Defer source hierarchy, evidence grades and gated references to the unchanged `research-methods` skill by name; state that the Counter line and grade go in `counter` and `grade`. State that the store is read only through `tomlctl review list|show`, never `tomlctl items list`. Worked examples are reached through the absolute reference paths `review show --for <role>` carries, because a preload reports no base directory. Name the confirmation exclusion as v1's top drop class. Never use the words "target" or "quota" for counts. The description says when to use it (any v2 review agent) and stays under 1024 characters; the body stays under 250 lines so Haiku agents are not crowded. Every `tomlctl review …` line in a bash fence must parse."""
 acceptance = '''
-- forward: `test -f claude/skills/review-v2-method/SKILL.md && grep -c 'failure_scenario' claude/skills/review-v2-method/SKILL.md` prints at least `1` (today: prints nothing, exit 1).
-- forward: `test -f claude/skills/review-v2-method/SKILL.md && grep -cE 'CONFIRMED|PLAUSIBLE|REFUTED' claude/skills/review-v2-method/SKILL.md` prints at least `3` (today: prints nothing, exit 1).
-- forward: `test -f claude/skills/review-v2-method/SKILL.md && ! grep -rqiE '\btarget [0-9]+|quota' claude/skills/review-v2-method && echo clean` prints `clean` (today: prints nothing, exit 1).
+- forward: `test -f claude/skills/review-v2-method/SKILL.md && grep -c 'fix_shape' claude/skills/review-v2-method/SKILL.md` prints at least `1` (today: prints nothing, exit 1).
+- forward: `test -f claude/skills/review-v2-method/SKILL.md && test "$(wc -l < claude/skills/review-v2-method/SKILL.md)" -le 250 && ! grep -rqiE '\btarget [0-9]+|quota' claude/skills/review-v2-method && echo ok` prints `ok` (today: prints nothing, exit 1).
 - guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes — **predicted, unverified**.'''
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "d579155"
 
 [[items]]
-id = 13
-ref = "write-the-review-v2-lenses-catalogue-index"
-title = "Write the review-v2-lenses catalogue index"
+id = 24
+ref = "write-the-catalogue-skill-and-vocabulary"
+title = "Write the catalogue skill and vocabulary"
 effort = "M"
-status = "pending"
-checkpoint = "B"
-phase = ""
-phase_depth = 0
-heading_depth = 3
-files = ["claude/skills/review-v2-lenses/SKILL.md"]
-needs = []
-coupling = []
-deps_note = ""
-action = "Write the catalogue skill: the lens-file header schema and section order; the index table with one `| `<id>` | <family> | <tier> | <activation> | <depth> |` row per lens (19 rows: 6 code, 6 perf, 6 plan, 1 `synthesis`), which is the single source of every lens's tier, activation and depth; the routing signal vocabulary (each signal's name and one-line meaning — the only names a lens's `**Activation**: signals:` line and `claude/skills/review-v2-engine/references/routing.md` may use); the project lens-pack rules (`.claude/review-lenses/*.md`, `**Paths**:` glob activation, `**V1 category**:` export mapping); and how the catalogue hash for `runs.catalogue` is computed (sha256 over the sorted concatenation of the lens files used)."
-detail = """Follow Approach, "Lens catalogue" and Approach, "Pipeline, depth and substrate" (the depth policy decides which lenses are core). Tasks 14–21 write against this table, so fix every lens's tier and depth and every routed lens's signal here. `harness-quality` is a project pack and is not in the index table. The description stays under 1024 characters and the body under 500 lines; write no other table whose rows open with a backticked lowercase name, so the index count stays exact."""
-acceptance = '''forward: `grep -cE '^\| `[a-z-]+` \| (code|perf|plan|any) \|' claude/skills/review-v2-lenses/SKILL.md 2>/dev/null` prints `19` (today: prints nothing).'''
-agent = ""
-commit = ""
-
-[[items]]
-id = 14
-ref = "write-the-code-lenses-correctness-design-change-impact"
-title = "Write the code lenses: correctness, design, change-impact"
-effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
 heading_depth = 3
 files = [
-    "claude/skills/review-v2-lenses/references/lens-correctness.md",
-    "claude/skills/review-v2-lenses/references/lens-design.md",
-    "claude/skills/review-v2-lenses/references/lens-change-impact.md",
+    "claude/skills/review-v2-lenses/SKILL.md",
+    "claude/skills/review-v2-lenses/vocabulary.toml",
 ]
-needs = [13]
+needs = [4]
 coupling = []
 deps_note = ""
-action = "Write three lens files in the catalogue header schema and section order, with header values from the catalogue index."
-detail = """
-- Follow Approach, "Lens catalogue".
-- `correctness` owns logic and edge-case defects and the context-free diff pass rules.
-- `design` absorbs v1 architecture, type design and `db` (`claude/commands/review.md` Agents 1 and 3).
-- `change-impact` is lite and sweep-driven (`tomlctl sweep`), and owns rename and removal ripple across code, prose and literals (`claude/commands/review.md` Agent 4).
-- Seed each lens's **Does not flag** section from the rejection clusters listed in Approach, "Calibration and A/B", keeping those that apply to the lens."""
-acceptance = '''forward: `for f in correctness design change-impact; do p=claude/skills/review-v2-lenses/references/lens-$f.md; test -f $p && grep -q '^\*\*Family\*\*: code' $p || echo MISSING $f; done | wc -l` prints `0` (today: `3`).'''
-agent = ""
-commit = ""
+action = "Write `SKILL.md` — the four entry types with their frontmatter schemas and body section orders, activation tiers, the layers and the project `config.toml` (`disable`, `enable`, `extend`, `override`, `scope`, `[[checks]]`) with a worked example, the project vocabulary and `project:` prefix, the collision refusal, content hashing, the lifecycle and promotion path, the probe template's relation to lenses, listing the catalogue (`tomlctl review catalogue`), and the lumina mapping. Write `vocabulary.toml` — every signal with `kind`, `meaning` and a declarative `detect` table (or a `hint` for judged signals), every concern tag with `meaning` and `families`, and the `[routing]` globs."
+detail = '''Follow Approach, "Lens catalogue". `count` patterns are literal substrings; `contains` regexes use ASCII forms only (`(?-u:\b)`, no `\w`/`\d`/`\s` shorthand); `manifest` key paths only for TOML and JSON manifests, with MSBuild XML matched by `files` plus `contains`. Detectors must cover the user's real layouts: manifests below depth 1, `Directory.Packages.props`, Bun workspaces, legacy .NET `<Reference Include=…>`, and per-stack test patterns for Rust, .NET and TS. Concern tags cover every lens in the table's "From" column, including the cross-cutting plan concerns and `/review-plan` Agent 3's whole-plan concerns. The description says when to use it (authoring or maintaining catalogue entries, configuring a project) and stays under 1024 characters; body under 500 lines. Every `tomlctl review …` line in a bash fence must parse.'''
+acceptance = '''forward: `test -f claude/skills/review-v2-lenses/vocabulary.toml && grep -c '^\[concerns\.' claude/skills/review-v2-lenses/vocabulary.toml` prints at least `31` (today: prints nothing, exit 1).'''
+agent = "implement-deep"
+commit = "9176f41"
 
 [[items]]
-id = 15
-ref = "write-the-code-lenses-tests-security-idioms"
-title = "Write the code lenses: tests, security, idioms"
+id = 25
+ref = "write-the-methods-sweep-trace-history-idiom"
+title = "Write the methods: sweep, trace, history-idiom"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
 heading_depth = 3
 files = [
-    "claude/skills/review-v2-lenses/references/lens-tests.md",
-    "claude/skills/review-v2-lenses/references/lens-security.md",
-    "claude/skills/review-v2-lenses/references/lens-idioms.md",
+    "claude/skills/review-v2-lenses/methods/sweep.md",
+    "claude/skills/review-v2-lenses/methods/trace.md",
+    "claude/skills/review-v2-lenses/methods/history-idiom.md",
 ]
-needs = [13]
+needs = [24]
 coupling = []
 deps_note = ""
-action = "Write three lens files in the catalogue header schema, with header values and signal names from the catalogue index."
-detail = """
-- Follow Approach, "Lens catalogue".
-- `security` is routed on a trust-boundary signal, with a hard cap of 5; its advisory lookups cover only dependencies the scope adds or bumps (`claude/commands/review.md` Agent 2).
-- `idioms` decides convergence from history (`git log -S`), so it never canonises an outlier.
-- `tests` is lite and aims at the regression risk the change carries (`claude/commands/review.md` Agent 5).
-- Seed each lens's **Does not flag** section from the rejection clusters listed in Approach, "Calibration and A/B"."""
-acceptance = '''forward: `for f in tests security idioms; do p=claude/skills/review-v2-lenses/references/lens-$f.md; test -f $p && grep -q '^\*\*Family\*\*: code' $p || echo MISSING $f; done | wc -l` prints `0` (today: `3`).'''
-agent = ""
-commit = ""
+action = "Write three method entries in the catalogue format."
+detail = """`sweep` carries the "Sweep for every instance" procedure of `claude/skills/research-methods/references/codebase-review.md` (derive the sweep from the defect, cover the forms, search the whole tree, report set + search + state, `tomlctl sweep`) plus `/review-plan`'s "one line per sweep, even when it finds nothing". `trace` carries "Contract first" and "Trace before you claim". `history-idiom` carries "Idiom questions are history questions". Rewrite rather than copy; reference the v1 skill by name only."""
+acceptance = 'forward: `for f in sweep trace history-idiom; do p=claude/skills/review-v2-lenses/methods/$f.md; test -f $p && grep -qx "id = \"$f\"" $p || echo MISSING $f; done | wc -l` prints `0` (today: `3`).'
+agent = "implement-deep"
+commit = "9176f41"
 
 [[items]]
-id = 16
+id = 26
+ref = "write-the-methods-measure-dry-run-steelman"
+title = "Write the methods: measure, dry-run, steelman"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/review-v2-lenses/methods/measure.md",
+    "claude/skills/review-v2-lenses/methods/dry-run.md",
+    "claude/skills/review-v2-lenses/methods/steelman.md",
+]
+needs = [24]
+coupling = []
+deps_note = ""
+action = "Write three method entries."
+detail = """`measure` is the perf evidence ladder (benchmark or profile → complexity argument on a real input size → allocation count → hypothesis), with "run a benchmark that exists, never build one". `dry-run` is the plan-executor procedure: given only the plan preamble sections and one task (`tomlctl tasks show <id> --with body,files,deps`), list every decision the task leaves to its executor, the files the work would touch against the **Files** line, acceptance commands not runnable as written, and premises about current behaviour the task asserts without the code to confirm them. `steelman` is the contrarian procedure from lumina's `research-explore` contrarian definition (cite a competing approach, a counter-example or a documented failure — never generic "consider alternatives")."""
+acceptance = 'forward: `for f in measure dry-run steelman; do p=claude/skills/review-v2-lenses/methods/$f.md; test -f $p && grep -qx "id = \"$f\"" $p || echo MISSING $f; done | wc -l` prints `0` (today: `3`).'
+agent = "implement-deep"
+commit = "9176f41"
+
+[[items]]
+id = 27
+ref = "write-the-lenses-correctness-type-design-domain-model"
+title = "Write the lenses: correctness, type-design, domain-model"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/review-v2-lenses/lenses/correctness.md",
+    "claude/skills/review-v2-lenses/lenses/type-design.md",
+    "claude/skills/review-v2-lenses/lenses/domain-model.md",
+]
+needs = [24]
+coupling = []
+deps_note = ""
+action = 'Write three lens entries in the catalogue format, with frontmatter per Approach, "Lens catalogue" (lens table) and `owns` drawn from `claude/skills/review-v2-lenses/vocabulary.toml`.'
+detail = """`correctness` (floor) works the boundary list of `claude/skills/research-methods/references/codebase-review.md` (inputs, error paths, concurrency and ordering, resource lifetimes, cross-layer invariants) plus `claude/commands/review.md` Agent 4's edge cases and missing handling, and documents the context-free diff-only variant. `type-design` and `domain-model` split `claude/commands/review.md` Agents 1 and 3 as the lens table says. Seed every Does not flag section from the v1 rejection clusters and the source agent's own "Do not flag" sentence. Ownership collisions with sibling lens tasks are settled at task 46."""
+acceptance = 'forward: `for f in correctness type-design domain-model; do p=claude/skills/review-v2-lenses/lenses/$f.md; test -f $p && grep -qx "id = \"$f\"" $p || echo MISSING $f; done | wc -l` prints `0` (today: `3`).'
+agent = "implement-deep"
+commit = "9176f41"
+
+[[items]]
+id = 28
+ref = "write-the-lenses-architecture-idioms-duplication"
+title = "Write the lenses: architecture, idioms, duplication"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/review-v2-lenses/lenses/architecture.md",
+    "claude/skills/review-v2-lenses/lenses/idioms.md",
+    "claude/skills/review-v2-lenses/lenses/duplication.md",
+]
+needs = [24]
+coupling = []
+deps_note = ""
+action = 'Write three lens entries (Approach, "Lens catalogue", **Writing an entry**).'
+detail = """`architecture` from `claude/commands/review.md` Agent 3 (layering, placement, evolvability; mostly advisory, cleanup for edits-only fixes). `idioms` from Agent 1, citing `history-idiom` so it never canonises an outlier. `duplication` from Agent 1's DRY plus the method notes' "facts with one owner, rule of three"; a duplicated helper whose extraction needs only edits is cleanup."""
+acceptance = 'forward: `for f in architecture idioms duplication; do p=claude/skills/review-v2-lenses/lenses/$f.md; test -f $p && grep -qx "id = \"$f\"" $p || echo MISSING $f; done | wc -l` prints `0` (today: `3`).'
+agent = "implement-deep"
+commit = "9176f41"
+
+[[items]]
+id = 29
+ref = "write-the-lenses-security-external-validity-hygiene"
+title = "Write the lenses: security, external-validity, hygiene"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/review-v2-lenses/lenses/security.md",
+    "claude/skills/review-v2-lenses/lenses/external-validity.md",
+    "claude/skills/review-v2-lenses/lenses/hygiene.md",
+]
+needs = [24]
+coupling = []
+deps_note = ""
+action = 'Write three lens entries (Approach, "Lens catalogue", **Writing an entry**).'
+detail = "`security` (code and plan probes; signals `trust-boundary`, `dependency-change`; hard cap 5) from `claude/commands/review.md` Agent 2. `external-validity` (code and plan) merges Agent 2's advisory lookups for added or bumped dependencies with `claude/commands/review-plan.md` Agent 4's pinned-API, deprecation and advisory checks. `hygiene` (mechanical) owns only grep-provable cleanup — dead code traced by reference search, stale TODOs, unused config and imports; comment rot belongs to `doc-drift`."
+acceptance = 'forward: `for f in security external-validity hygiene; do p=claude/skills/review-v2-lenses/lenses/$f.md; test -f $p && grep -qx "id = \"$f\"" $p || echo MISSING $f; done | wc -l` prints `0` (today: `3`).'
+agent = "implement-deep"
+commit = "9176f41"
+
+[[items]]
+id = 30
+ref = "write-the-lenses-ripple-test-gaps-seams"
+title = "Write the lenses: ripple, test-gaps, seams"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/review-v2-lenses/lenses/ripple.md",
+    "claude/skills/review-v2-lenses/lenses/test-gaps.md",
+    "claude/skills/review-v2-lenses/lenses/seams.md",
+]
+needs = [24]
+coupling = []
+deps_note = ""
+action = 'Write three lens entries (Approach, "Lens catalogue", **Writing an entry**).'
+detail = "`ripple` (mechanical, floor for code and plan, cites `sweep`) merges `claude/commands/review.md` Agent 4's ripple with `claude/commands/review-plan.md` Agent 2 sweeps 1–3 under separate code and plan probe sections. `test-gaps` (code and plan) aims at the regression risk the change carries (`claude/commands/review.md` Agent 5; `review-plan.md` Agent 2's missing tests) and writes add-direction cleanup with `target_file`. `seams` from Agent 5's seams."
+acceptance = 'forward: `for f in ripple test-gaps seams; do p=claude/skills/review-v2-lenses/lenses/$f.md; test -f $p && grep -qx "id = \"$f\"" $p || echo MISSING $f; done | wc -l` prints `0` (today: `3`).'
+agent = "implement-deep"
+commit = "9176f41"
+
+[[items]]
+id = 31
+ref = "write-the-lenses-diagnostics-dx-test-pruning-doc-drift"
+title = "Write the lenses: diagnostics-dx, test-pruning, doc-drift"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/review-v2-lenses/lenses/diagnostics-dx.md",
+    "claude/skills/review-v2-lenses/lenses/test-pruning.md",
+    "claude/skills/review-v2-lenses/lenses/doc-drift.md",
+]
+needs = [24]
+coupling = []
+deps_note = ""
+action = 'Write three lens entries (Approach, "Lens catalogue", **Writing an entry**).'
+detail = "`diagnostics-dx` (judgement) from `claude/commands/review.md` Agent 5's error messages, logs and help text. `test-pruning` (signals `test-growth`, `test-ratio-high`) yields `direction = remove` cleanup for tests that only re-assert the implementation, duplicate another test, or pin incidental behaviour, and states the coverage each removal gives up (these route to the Opus verifier). `doc-drift` (judgement; signal `docs-touched`) owns comment rot and prose drift against behaviour."
+acceptance = 'forward: `for f in diagnostics-dx test-pruning doc-drift; do p=claude/skills/review-v2-lenses/lenses/$f.md; test -f $p && grep -qx "id = \"$f\"" $p || echo MISSING $f; done | wc -l` prints `0` (today: `3`).'
+agent = "implement-deep"
+commit = "9176f41"
+
+[[items]]
+id = 32
+ref = "write-the-lenses-doc-consolidation-contrarian-synthesis"
+title = "Write the lenses: doc-consolidation, contrarian, synthesis"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/review-v2-lenses/lenses/doc-consolidation.md",
+    "claude/skills/review-v2-lenses/lenses/contrarian.md",
+    "claude/skills/review-v2-lenses/lenses/synthesis.md",
+]
+needs = [24]
+coupling = []
+deps_note = ""
+action = 'Write three lens entries (Approach, "Lens catalogue", **Writing an entry**).'
+detail = """`doc-consolidation` (signal `doc-growth`) yields merges and removals of duplicated docs. `contrarian` (all three families; signals `public-api-change`, `dependency-change`, `new-seam`; `always_at = "deep"`; advisory only; cites `steelman`) carries lumina's `research-explore` contrarian definition and `story-review`'s argue-against and scope-conservatism angles. `synthesis` (all families; opt-in; `after_wave = 1`) reads `review digest` and the scope and reports only cross-cell emergent defects and "what every cell missed"; its perf probes carry `claude/commands/optimise.md`'s cross-cutting concurrency review."""
+acceptance = 'forward: `for f in doc-consolidation contrarian synthesis; do p=claude/skills/review-v2-lenses/lenses/$f.md; test -f $p && grep -qx "id = \"$f\"" $p || echo MISSING $f; done | wc -l` prints `0` (today: `3`).'
+agent = "implement-deep"
+commit = "9176f41"
+
+[[items]]
+id = 33
 ref = "write-the-perf-lenses-memory-runtime-data-shape-data-access"
 title = "Write the perf lenses: memory-runtime, data-shape, data-access"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
 heading_depth = 3
 files = [
-    "claude/skills/review-v2-lenses/references/lens-memory-runtime.md",
-    "claude/skills/review-v2-lenses/references/lens-data-shape.md",
-    "claude/skills/review-v2-lenses/references/lens-data-access.md",
+    "claude/skills/review-v2-lenses/lenses/memory-runtime.md",
+    "claude/skills/review-v2-lenses/lenses/data-shape.md",
+    "claude/skills/review-v2-lenses/lenses/data-access.md",
 ]
-needs = [13]
+needs = [24]
 coupling = []
 deps_note = ""
-action = "Write three perf lens files carrying `claude/commands/optimise.md` Agents 1–3's coverage in the catalogue schema, with header values from the catalogue index."
-detail = """
-- Follow Approach, "Lens catalogue" and Approach, "Family specifics".
-- Each lens requires a workload → cost `failure_scenario` with magnitude, and caps off-path findings without a `PROFILE BASELINE` measurement at `suggestion`.
-- `data-access` is routed on the catalogue's query/ORM-layer signal.
-- Seed each lens's **Does not flag** section from the rejection clusters listed in Approach, "Calibration and A/B"."""
-acceptance = '''forward: `for f in memory-runtime data-shape data-access; do p=claude/skills/review-v2-lenses/references/lens-$f.md; test -f $p && grep -q '^\*\*Family\*\*: perf' $p || echo MISSING $f; done | wc -l` prints `0` (today: `3`).'''
-agent = ""
-commit = ""
+action = 'Write three perf lens entries (Approach, "Lens catalogue", **Writing an entry**) from `claude/commands/optimise.md` Agents 1–3.'
+detail = """Follow Approach, "Family specifics". Each cites `measure`; a perf defect states workload → cost with magnitude, otherwise it is advisory (`angle = risk`). Stack-specific text in the v1 agents (frontend reactivity, ORM pitfalls) moves to facets (tasks 38–40), not into these files. Keep each lens's `research_domain` from its v1 agent."""
+acceptance = 'forward: `for f in memory-runtime data-shape data-access; do p=claude/skills/review-v2-lenses/lenses/$f.md; test -f $p && grep -qx "id = \"$f\"" $p || echo MISSING $f; done | wc -l` prints `0` (today: `3`).'
+agent = "implement-deep"
+commit = "9176f41"
 
 [[items]]
-id = 17
+id = 34
 ref = "write-the-perf-lenses-algorithm-concurrency-io-process"
 title = "Write the perf lenses: algorithm, concurrency, io-process"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
 heading_depth = 3
 files = [
-    "claude/skills/review-v2-lenses/references/lens-algorithm.md",
-    "claude/skills/review-v2-lenses/references/lens-concurrency.md",
-    "claude/skills/review-v2-lenses/references/lens-io-process.md",
+    "claude/skills/review-v2-lenses/lenses/algorithm.md",
+    "claude/skills/review-v2-lenses/lenses/concurrency.md",
+    "claude/skills/review-v2-lenses/lenses/io-process.md",
 ]
-needs = [13]
+needs = [24]
 coupling = []
 deps_note = ""
-action = "Write three perf lens files, with header values and signal names from the catalogue index."
-detail = """
-- Follow Approach, "Lens catalogue".
-- `concurrency` keeps `claude/commands/optimise.md` Agent 5's severity calibration and is routed on an async/thread/lock signal.
-- `io-process` is new: process start-up, syscall counts, filesystem walks and subprocess fan-out, routed on CLI or process-heavy scope.
-- `algorithm` carries `claude/commands/optimise.md` Agent 4's coverage and keeps the boundary that type-modelling expressiveness is the `design` lens's concern.
-- Seed each lens's **Does not flag** section from the rejection clusters listed in Approach, "Calibration and A/B"."""
-acceptance = '''forward: `for f in algorithm concurrency io-process; do p=claude/skills/review-v2-lenses/references/lens-$f.md; test -f $p && grep -q '^\*\*Family\*\*: perf' $p || echo MISSING $f; done | wc -l` prints `0` (today: `3`).'''
-agent = ""
-commit = ""
+action = 'Write three perf lens entries (Approach, "Lens catalogue", **Writing an entry**).'
+detail = "`algorithm` (floor for perf) carries `claude/commands/optimise.md` Agent 4, keeping the boundary that domain modelling belongs to `type-design`. `concurrency` keeps Agent 5's coverage and severity calibration (mapped to critical/major/minor). `io-process` covers process start-up, syscalls, filesystem walks and subprocess fan-out. Stack-specific text goes to facets."
+acceptance = 'forward: `for f in algorithm concurrency io-process; do p=claude/skills/review-v2-lenses/lenses/$f.md; test -f $p && grep -qx "id = \"$f\"" $p || echo MISSING $f; done | wc -l` prints `0` (today: `3`).'
+agent = "implement-deep"
+commit = "9176f41"
 
 [[items]]
-id = 18
-ref = "write-the-plan-lenses-grounding-completeness-dependencies"
-title = "Write the plan lenses: grounding, completeness, dependencies"
+id = 35
+ref = "write-the-plan-lenses-plan-grounding-plan-dependencies-feasibility"
+title = "Write the plan lenses: plan-grounding, plan-dependencies, feasibility"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
 heading_depth = 3
 files = [
-    "claude/skills/review-v2-lenses/references/lens-plan-grounding.md",
-    "claude/skills/review-v2-lenses/references/lens-plan-completeness.md",
-    "claude/skills/review-v2-lenses/references/lens-plan-dependencies.md",
+    "claude/skills/review-v2-lenses/lenses/plan-grounding.md",
+    "claude/skills/review-v2-lenses/lenses/plan-dependencies.md",
+    "claude/skills/review-v2-lenses/lenses/feasibility.md",
 ]
-needs = [13]
+needs = [24]
 coupling = []
 deps_note = ""
-action = "Write three plan lens files, with header values from the catalogue index."
-detail = """
-- Follow Approach, "Lens catalogue". The v1 sources are `claude/commands/review-plan.md` Step 2 (Agents 1 and 2).
-- `plan-grounding` carries v1 Agent 2's completeness sweeps 4–5 (re-derived enumerations, behavioural premises measured) plus path, symbol and line alignment.
-- `plan-completeness` carries v1 Agent 2's sweeps 1–3, with one line per sweep even when it finds nothing.
-- `plan-dependencies` carries v1 Agent 1: it reads the `STORE CHECK` fence as ground truth for the stated edges and spends its budget on missing edges, acceptance-reachability and checkpoint placement.
-- Seed each lens's **Does not flag** section from the rejection clusters listed in Approach, "Calibration and A/B"."""
-acceptance = '''forward: `for f in plan-grounding plan-completeness plan-dependencies; do p=claude/skills/review-v2-lenses/references/lens-$f.md; test -f $p && grep -q '^\*\*Family\*\*: plan' $p || echo MISSING $f; done | wc -l` prints `0` (today: `3`).'''
-agent = ""
-commit = ""
+action = 'Write three plan lens entries (Approach, "Lens catalogue", **Writing an entry**) from `claude/commands/review-plan.md` Step 2.'
+detail = "`plan-grounding` (floor) carries Agent 2's alignment, sweeps 4–5 (re-derived enumerations, behavioural premises measured), its cross-cutting concerns (logging, error handling, authz, cache invalidation) and its config/migration/build changes. `plan-dependencies` (floor) carries Agent 1's edge-completeness and checkpoint-placement judgement, reading `STORE CHECK` as ground truth for stated edges. `feasibility` carries Agent 1's feasibility and coherence judgement."
+acceptance = 'forward: `for f in plan-grounding plan-dependencies feasibility; do p=claude/skills/review-v2-lenses/lenses/$f.md; test -f $p && grep -qx "id = \"$f\"" $p || echo MISSING $f; done | wc -l` prints `0` (today: `3`).'
+agent = "implement-deep"
+commit = "9176f41"
 
 [[items]]
-id = 19
-ref = "write-the-plan-lenses-executor-risk-premortem"
-title = "Write the plan lenses: executor, risk, premortem"
+id = 36
+ref = "write-the-plan-lenses-plan-executor-plan-risk-plan-premortem"
+title = "Write the plan lenses: plan-executor, plan-risk, plan-premortem"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
 heading_depth = 3
 files = [
-    "claude/skills/review-v2-lenses/references/lens-plan-executor.md",
-    "claude/skills/review-v2-lenses/references/lens-plan-risk.md",
-    "claude/skills/review-v2-lenses/references/lens-plan-premortem.md",
+    "claude/skills/review-v2-lenses/lenses/plan-executor.md",
+    "claude/skills/review-v2-lenses/lenses/plan-risk.md",
+    "claude/skills/review-v2-lenses/lenses/plan-premortem.md",
 ]
-needs = [13]
+needs = [24]
 coupling = []
 deps_note = ""
-action = "Write three plan lens files, with header values and signal names from the catalogue index."
-detail = """
-- Follow Approach, "Lens catalogue" and Approach, "Agents".
-- `plan-executor` has tier `executor` and is dispatched per task to `plan-executor`.
-- `plan-risk` keeps `claude/commands/review-plan.md` Agent 4's checkpoint-placement rule (review placement, not cadence) and its pinned-version API and advisory checks.
-- `plan-premortem` has depth `deep` and carries an "experimental — weak evidence" line.
-- Seed each lens's **Does not flag** section from the rejection clusters listed in Approach, "Calibration and A/B"."""
-acceptance = '''forward: `for f in plan-executor plan-risk plan-premortem; do p=claude/skills/review-v2-lenses/references/lens-$f.md; test -f $p && grep -q '^\*\*Family\*\*: plan' $p || echo MISSING $f; done | wc -l` prints `0` (today: `3`).'''
-agent = ""
-commit = ""
+action = 'Write three plan lens entries (Approach, "Lens catalogue", **Writing an entry**).'
+detail = """`plan-executor` (floor, mode `executor`, slice `per-task`, cites `dry-run`) also carries `claude/commands/review-plan.md` Agent 3's per-task executability checks (Files↔body parity, executor-time decisions, sizing). `plan-risk` carries Agent 4's rollback adequacy, risky-task checkpoint placement, back-compat and scope realism. `plan-premortem` is `status = "experimental"`, activation `opt-in`, with an "experimental — weak evidence" line."""
+acceptance = 'forward: `for f in plan-executor plan-risk plan-premortem; do p=claude/skills/review-v2-lenses/lenses/$f.md; test -f $p && grep -qx "id = \"$f\"" $p || echo MISSING $f; done | wc -l` prints `0` (today: `3`).'
+agent = "implement-deep"
+commit = "9176f41"
 
 [[items]]
-id = 20
-ref = "write-the-synthesis-lens-and-the-harness-quality-project-pack"
-title = "Write the synthesis lens and the harness-quality project pack"
+id = 37
+ref = "write-the-plan-structure-lens"
+title = "Write the plan-structure lens"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/review-v2-lenses/lenses/plan-structure.md"]
+needs = [24]
+coupling = []
+deps_note = ""
+action = "Write the whole-plan `plan-structure` lens (plan, judgement, floor, slice `whole-scope`)."
+detail = """It carries `claude/commands/review-plan.md` Agent 3's whole-plan half: goal coverage (Success Criteria verify the goal `## Context` states; a criterion checking only that tasks ran), the approver sections and the `**Status**`-header severity rule, structure judged against the `FORMAT CONTRACT` fence, Execution Policy field checks, and "suggest restructuring if prose-format" for foreign plans."""
+acceptance = """forward: `test -f claude/skills/review-v2-lenses/lenses/plan-structure.md && grep -qx 'id = "plan-structure"' claude/skills/review-v2-lenses/lenses/plan-structure.md && echo ok` prints `ok` (today: prints nothing, exit 1)."""
+agent = "implement-deep"
+commit = "9176f41"
+
+[[items]]
+id = 38
+ref = "write-the-facets-rust-tokio-sqlx"
+title = "Write the facets: rust, tokio, sqlx"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
 heading_depth = 3
 files = [
-    "claude/skills/review-v2-lenses/references/lens-synthesis.md",
-    ".claude/review-lenses/harness-quality.md",
+    "claude/skills/review-v2-lenses/facets/rust.md",
+    "claude/skills/review-v2-lenses/facets/tokio.md",
+    "claude/skills/review-v2-lenses/facets/sqlx.md",
 ]
-needs = [13]
+needs = [24]
 coupling = []
 deps_note = ""
-action = "Write the cross-family `synthesis` lens (`**Family**: any`) and this repo's project lens pack `harness-quality` (`**Paths**: claude/**`, `**V1 category**: package-quality`), which carries `claude/commands/review.md` Agent 6's checks."
-detail = """
-- Follow Approach, "Lens catalogue".
-- Agent 6's checks are: frontmatter, section order, cross-references, stubs, shared-block parity, and the tomlctl text gates — every `tomlctl …` line in a bash fence parses (`command_lint`), flag-table rows name real flags (`flag_table_lint`), SKILL.md bodies ≤500 lines, references ≤600, descriptions ≤1024 characters, relative links resolve, and a gated carrier names each skill as a backticked name plus the word "skill" with no negation within 160 characters.
-- The perf flavour of `synthesis` includes v1 `/optimise`'s cross-cutting concurrency review; perf synthesis findings export as `concurrency`."""
-acceptance = '''forward: `test -f claude/skills/review-v2-lenses/references/lens-synthesis.md && test -f .claude/review-lenses/harness-quality.md && grep -c '^\*\*Paths\*\*: claude/\*\*' .claude/review-lenses/harness-quality.md` prints `1` (today: prints nothing, exit 1).'''
-agent = ""
-commit = ""
+action = "Write three facet entries in the catalogue format, each with a general section and a `### For <lens-id>` section per attached lens."
+detail = "`rust` (`lang:rust`) attaches to correctness, type-design, idioms, memory-runtime, algorithm and hygiene; `tokio` (`runtime:tokio`) to concurrency and correctness, carrying `claude/commands/optimise.md` Agent 5's runtime specifics; `sqlx` (`db:sqlx`) to data-access and domain-model, including the never-edit-an-applied-migration rule. Probes are concrete pitfalls, not tutorials."
+acceptance = 'forward: `for f in rust tokio sqlx; do p=claude/skills/review-v2-lenses/facets/$f.md; test -f $p && grep -qx "id = \"$f\"" $p || echo MISSING $f; done | wc -l` prints `0` (today: `3`).'
+agent = "implement-deep"
+commit = "9176f41"
 
 [[items]]
-id = 21
-ref = "write-the-review-v2-engine-skill-pipeline-context-pack-routing"
-title = "Write the review-v2-engine skill: pipeline, context pack, routing"
+id = 39
+ref = "write-the-facets-typescript-react-vue"
+title = "Write the facets: typescript, react, vue"
 effort = "M"
-status = "pending"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/review-v2-lenses/facets/typescript.md",
+    "claude/skills/review-v2-lenses/facets/react.md",
+    "claude/skills/review-v2-lenses/facets/vue.md",
+]
+needs = [24]
+coupling = []
+deps_note = ""
+action = 'Write three facet entries (Approach, "Lens catalogue", **Writing an entry**).'
+detail = "`react` and `vue` carry the frontend text of `claude/commands/optimise.md` Agents 1 and 4 (reactive-object overhead, component proliferation, bundle size, tree-shaking barriers, reactive dependency chains, reconciliation cost) for memory-runtime and algorithm, plus correctness and idioms probes. `typescript` (`lang:ts`) attaches to type-design, correctness and idioms."
+acceptance = 'forward: `for f in typescript react vue; do p=claude/skills/review-v2-lenses/facets/$f.md; test -f $p && grep -qx "id = \"$f\"" $p || echo MISSING $f; done | wc -l` prints `0` (today: `3`).'
+agent = "implement-deep"
+commit = "9176f41"
+
+[[items]]
+id = 40
+ref = "write-the-facets-dotnet-efcore-dapper-sql"
+title = "Write the facets: dotnet, efcore, dapper-sql"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/review-v2-lenses/facets/dotnet.md",
+    "claude/skills/review-v2-lenses/facets/efcore.md",
+    "claude/skills/review-v2-lenses/facets/dapper-sql.md",
+]
+needs = [24]
+coupling = []
+deps_note = ""
+action = 'Write three facet entries (Approach, "Lens catalogue", **Writing an entry**).'
+detail = "`dotnet` (`lang:csharp`) attaches to correctness, type-design, idioms, memory-runtime (`/optimise` Agent 1's boxing, devirtualisation and JIT/AOT notes) and concurrency. `efcore` (`db:efcore`) carries `/optimise` Agent 3's ORM query-translation pitfalls (compiled queries, tracking, N+1, pagination) for data-access and domain-model. `dapper-sql` (`db:dapper`, raw `.sql` files) covers parameterisation and SQL injection for security, query shape and round trips for data-access, and mapping drift for domain-model."
+acceptance = 'forward: `for f in dotnet efcore dapper-sql; do p=claude/skills/review-v2-lenses/facets/$f.md; test -f $p && grep -qx "id = \"$f\"" $p || echo MISSING $f; done | wc -l` prints `0` (today: `3`).'
+agent = "implement-deep"
+commit = "9176f41"
+
+[[items]]
+id = 41
+ref = "write-the-claude-harness-facet"
+title = "Write the claude-harness facet"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/review-v2-lenses/facets/claude-harness.md"]
+needs = [24]
+coupling = []
+deps_note = ""
+action = "Write the `claude-harness` facet (`harness:claude`), the portable judgement half of `claude/commands/review.md` Agent 6 — frontmatter, section order, cross-references, stubs, terminology — attached to hygiene, doc-drift and ripple."
+detail = "The mechanical half (gates a repo already runs) belongs to project checks such as this repo's `harness-gates`, not to the facet."
+acceptance = """forward: `test -f claude/skills/review-v2-lenses/facets/claude-harness.md && grep -qx 'id = "claude-harness"' claude/skills/review-v2-lenses/facets/claude-harness.md && echo ok` prints `ok` (today: prints nothing, exit 1)."""
+agent = "implement-deep"
+commit = "9176f41"
+
+[[items]]
+id = 42
+ref = "write-the-checks-lint-baseline-profile-baseline-break-set-baseline"
+title = "Write the checks: lint-baseline, profile-baseline, break-set-baseline"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/review-v2-lenses/checks/lint-baseline.md",
+    "claude/skills/review-v2-lenses/checks/profile-baseline.md",
+    "claude/skills/review-v2-lenses/checks/break-set-baseline.md",
+]
+needs = [24]
+coupling = []
+deps_note = ""
+action = 'Write three `executor = "verification"` check entries with `discover` ladders.'
+detail = """Ladder: a flow plan's `## Verification Commands` key (`lint:` / `bench:`), then CLAUDE.md, then an ecosystem default chosen by stack signal (`cargo clippy`, `tsc --noEmit`, `dotnet build`), or "none — <reason>". `profile-baseline` carries `claude/commands/optimise.md`'s declared-bench sources. `break-set-baseline` (plan) runs the plan's predicted break-set commands against the current tree (`claude/commands/review-plan.md` Step 2.6 check 1's baseline half); the precondition judgement belongs to the `plan-checks` cell. Per Approach, "Run pipeline" (stage 2, **Baselines**), each resolved command runs in its own `verification` dispatch and its log path is recorded in the run's `baselines`; each check body states how a finder reads the in-scope lines of that log (for `lint-baseline`, the diagnostics naming a scope file). Any `tomlctl …` line in a bash fence must pass `command_lint` and `guidance_lint` once task 46 widens their scan set."""
+acceptance = 'forward: `for f in lint-baseline profile-baseline break-set-baseline; do p=claude/skills/review-v2-lenses/checks/$f.md; test -f $p && grep -qx "id = \"$f\"" $p || echo MISSING $f; done | wc -l` prints `0` (today: `3`).'
+agent = "implement-deep"
+commit = "9176f41"
+
+[[items]]
+id = 43
+ref = "write-the-checks-store-check-format-contract-dev-server-probe"
+title = "Write the checks: store-check, format-contract, dev-server-probe"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/review-v2-lenses/checks/store-check.md",
+    "claude/skills/review-v2-lenses/checks/format-contract.md",
+    "claude/skills/review-v2-lenses/checks/dev-server-probe.md",
+]
+needs = [24]
+coupling = []
+deps_note = ""
+action = 'Write three `executor = "surveyor"` check entries.'
+detail = "`store-check` (plan) runs `tomlctl tasks import-plan --dry-run` and `tomlctl tasks check --plan` into `STORE CHECK` — never the real import, which stage 0 runs per the `flow-contract-task-store` skill. `format-contract` (plan) points the pack at the `flow-contract-plan-output-format` skill's Format rules when the plan is house-format. `dev-server-probe` writes the `DEV SERVER` fence. Any `tomlctl …` line in a bash fence must pass `command_lint` and `guidance_lint` once task 46 widens their scan set."
+acceptance = 'forward: `for f in store-check format-contract dev-server-probe; do p=claude/skills/review-v2-lenses/checks/$f.md; test -f $p && grep -qx "id = \"$f\"" $p || echo MISSING $f; done | wc -l` prints `0` (today: `3`).'
+agent = "implement-deep"
+commit = "9176f41"
+
+[[items]]
+id = 44
+ref = "write-the-checks-two-control-probe-falsifiability-acceptance-contradiction"
+title = "Write the checks: two-control-probe, falsifiability, acceptance-contradiction"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/review-v2-lenses/checks/two-control-probe.md",
+    "claude/skills/review-v2-lenses/checks/falsifiability.md",
+    "claude/skills/review-v2-lenses/checks/acceptance-contradiction.md",
+]
+needs = [24]
+coupling = []
+deps_note = ""
+action = 'Write three `executor = "cell"` plan checks from `claude/commands/review-plan.md` Step 2.6 checks 4, 3 and 2, composed together as the whole-plan `plan-checks` cell on `review-finder`.'
+detail = "`two-control-probe` points at the `flow-contract-plan-output-format` skill's `references/acceptance-probing.md` rather than restating it, runs the probe helper in one batched shell call, and keeps the verdict-to-severity mapping. Each check states how its results become defects (severity as v1 assigns) for the verifier. Add the break-set precondition judgement against the recorded `break-set-baseline` log to `falsifiability`'s body. Any `tomlctl …` line in a bash fence must pass `command_lint` and `guidance_lint` once task 46 widens their scan set."
+acceptance = 'forward: `for f in two-control-probe falsifiability acceptance-contradiction; do p=claude/skills/review-v2-lenses/checks/$f.md; test -f $p && grep -qx "id = \"$f\"" $p || echo MISSING $f; done | wc -l` prints `0` (today: `3`).'
+agent = "implement-deep"
+commit = "9176f41"
+
+[[items]]
+id = 45
+ref = "write-this-repos-project-catalogue-config"
+title = "Write this repo's project catalogue config"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [".claude/review-lenses/config.toml"]
+needs = [24]
+coupling = []
+deps_note = ""
+action = 'Write the project config declaring the `harness-gates` check (`families = ["code"]`, `paths = ["claude/**"]`, command `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`) and nothing else.'
+detail = 'Follow Approach, "Lens catalogue" (**Layers**). Every other entry stays at its built-in default; this file is the worked example of a minimal project config.'
+acceptance = """forward: `grep -c 'id = "harness-gates"' .claude/review-lenses/config.toml` prints `1` (today: prints nothing, exit 2)."""
+agent = "implement-lite"
+commit = "9176f41"
+
+[[items]]
+id = 46
+ref = "gate-the-catalogue-and-lint-its-files"
+title = "Gate the catalogue and lint its files"
+effort = "L"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/cli/dispatch/tests/catalogue.rs",
+    "tomlctl/src/cli/dispatch/tests/mod.rs",
+    "tomlctl/src/cli/dispatch/tests/lint.rs",
+    "claude/skills/review-v2-lenses/vocabulary.toml",
+    ".claude/review-lenses/config.toml",
+]
+needs = [
+    3,
+    20,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44,
+    45,
+]
+coupling = []
+deps_note = ""
+action = "Add `catalogue_validates` (runs `tomlctl/src/review/catalogue.rs` `validate()` over `claude/skills/review-v2-lenses/` with `.claude/review-lenses/` as the project layer, failing with every error listed); register `mod catalogue;`; extend `command_lint_scan_set` in `tomlctl/src/cli/dispatch/tests/lint.rs` to the catalogue's `lenses/`, `facets/`, `methods/` and `checks/` directories."
+detail = "Resolve paths from the repo root as `tomlctl/src/cli/dispatch/tests/skills.rs` does. `command_lint_scan_set` is shared by `command_lint`, `guidance_lint` and `flag_table_lint`, so all three now cover the catalogue entries. Fix every error the first run reports, never by loosening the validator. Fix ownership collisions and vocabulary errors in `vocabulary.toml` or `config.toml`. An error that can only be fixed inside a lens, facet, method or check entry is reported as a deviation for a follow-on task, because those files belong to tasks 25–44. The task is L because the gate and the fixes it forces must land together for the tree to stay green. Add no count test: the Success Criteria check the plan-time counts once, and the lifecycle adds entries."
+acceptance = """
+- forward: `grep -c '^mod catalogue;' tomlctl/src/cli/dispatch/tests/mod.rs` prints `1` (today: `0`).
+- forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --lib --no-tests=fail -E 'test(catalogue_validates)'` passes — **predicted, unverified** (today: fails, no test matches).
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes (today: 43 passed).
+- falsifier: removing the `owns` key from `claude/skills/review-v2-lenses/lenses/ripple.md` turns `catalogue_validates` red — **predicted, unverified**."""
+agent = "implement-deep"
+commit = "9176f41"
+
+[[items]]
+id = 47
+ref = "write-the-review-v2-engine-skill-pipeline-survey-compose"
+title = "Write the review-v2-engine skill: pipeline, survey, compose"
+effort = "M"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
 heading_depth = 3
 files = [
     "claude/skills/review-v2-engine/SKILL.md",
-    "claude/skills/review-v2-engine/references/context-pack.md",
-    "claude/skills/review-v2-engine/references/routing.md",
+    "claude/skills/review-v2-engine/references/survey.md",
+    "claude/skills/review-v2-engine/references/compose.md",
 ]
 needs = [
-    2,
-    13,
+    4,
+    24,
 ]
 coupling = []
 deps_note = ""
-action = "Write the orchestrator contract: stages 0–9 and the depth table in `SKILL.md`; the fence catalogue with each fence's producer and its absent-fence wording in `references/context-pack.md`; and the change-profile signals in `references/routing.md`, each a cheap Grep or classification test for one signal of the catalogue's vocabulary, mapped to the lenses it activates."
-detail = """
-- Follow Approach, "Pipeline, depth and substrate".
-- Stage 0 checks `review_record` in `tomlctl capabilities` `.features` before anything else. Stage 2 opens every flow-scoped finder, verifier and executor prompt with the column-0 `ledger: .claude/flows/<slug>/review-v2.toml` line, and builds `PRIOR` from `tomlctl review list`. Stage 3 computes the catalogue hash and stage 4 passes it as `--set catalogue=`. Stage 5 ends the turn after the `async_launched` Workflow return and resumes at stage 6 on the task notification. Every `tomlctl review` call passes `--slug` or `--scope`.
-- Every `tomlctl review …` line in a bash fence must parse (`command_lint`), which is why this task depends on 2.
-- Invoke the unchanged `tomlctl`, `flow-contract-flow-context` and `backlog-capture` skills by name.
-- The envelope build uses the v1 `--command` names.
-- Baselines run through the `verification` agent.
-- Drop any prompt-cache justification for the shared preamble (R13).
-- The description stays under 1024 characters, the body under 500 lines and each reference under 600."""
+action = "Write the orchestrator contract: stages 0–8 with the executor of each, the orchestrator's judgement-only role and the depth envelopes in `SKILL.md`; the survey (detectors, surveyor dispatch, judged candidates, checks by executor, fences, the verification dispatch) in `references/survey.md`; compose (accepting candidates, reading the proposal, re-slicing, bundling, probes, facet edits, user steering flags, waivers, the deep confirm step, the agent-count statement, follow-up and mop-up criteria) in `references/compose.md`."
+detail = 'Follow Approach, "Run pipeline", Approach, "Coverage proposal", Approach, "Lens catalogue" and Approach, "Design principles". `references/survey.md` carries the per-command baseline dispatches, the `baselines` record and the stage 3→4 barrier; `SKILL.md` carries the steering flags. Stage 0 checks the capabilities features, runs `review sync-v1`, and for the plan family runs the task-store import per the unchanged `flow-contract-task-store` skill. The engine never loads the `review-v2-lenses` skill (the catalogue path resolves in tomlctl) and loads the `backlog-capture` skill only at stage 8 when a `backlog` pick exists. Every flow-scoped dispatch prompt opens with the column-0 `ledger: .claude/flows/<slug>/review-v2.toml` line. The orchestrator reads `review plan --propose` output, `review digest`, and projections only. Invoke the unchanged `tomlctl` and `flow-contract-flow-context` skills by name. Every `tomlctl review …` line in a bash fence must parse. Description ≤1024 characters, body ≤500 lines, each reference ≤600.'
 acceptance = """
-- forward: `test -f claude/skills/review-v2-engine/SKILL.md && grep -c 'tomlctl review record' claude/skills/review-v2-engine/SKILL.md` prints at least `1` (today: prints nothing, exit 1).
+- forward: `test -f claude/skills/review-v2-engine/SKILL.md && grep -c 'tomlctl review plan' claude/skills/review-v2-engine/SKILL.md` prints at least `1` (today: prints nothing, exit 1).
 - guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes — **predicted, unverified**."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "b12d5fc"
 
 [[items]]
-id = 22
-ref = "write-the-engine-references-agent-waves-report-and-dispositions-ab-testing"
-title = "Write the engine references: agent waves, report and dispositions, A/B testing"
+id = 48
+ref = "write-the-engine-references-agent-waves-triage-and-close-measurement"
+title = "Write the engine references: agent waves, triage and close, measurement"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
 heading_depth = 3
 files = [
     "claude/skills/review-v2-engine/references/agent-waves.md",
-    "claude/skills/review-v2-engine/references/report-and-dispositions.md",
-    "claude/skills/review-v2-engine/references/ab-testing.md",
+    "claude/skills/review-v2-engine/references/triage-and-close.md",
+    "claude/skills/review-v2-engine/references/measurement.md",
 ]
 needs = [
-    2,
-    5,
-    8,
+    4,
+    49,
 ]
 coupling = []
 deps_note = ""
-action = "Write the Agent-tool fallback (wave order, finder and verifier waves of at most 16 per message, the return check against `tomlctl review schema return` by reading, the one re-dispatch, one-shot dispatch with no `name:`, and — when a flow is bound — every finder and verifier prompt opening with the column-0 line `ledger: .claude/flows/<slug>/review-v2.toml`), the report layout plus the disposition grammar mapped to `tomlctl review triage`/`export-v1` calls, and the A/B protocol and metrics."
-detail = 'Follow Approach, "Pipeline, depth and substrate" and Approach, "Calibration and A/B". The fallback also fires when the Workflow launch reports `error` or completes with no result. Dispositions are a user-engagement gate that the autonomy directive does not override. Disposition prose from the user is staged with the Write tool and passed through the `triage` `--<flag>-file` twins, never through shell quoting. Every `tomlctl review …` line in a bash fence must parse (`command_lint`).'
+action = """Write the Agent-tool fallback (the per-cell prompt template copied from `claude/workflows/review-v2.js`, cell waves then verifier/checker waves of ≤16 per message, background completion and the wave barrier, the 16-running-agent accounting, routing from each row's `route`, mop-up from the digest's unverified ids, one-shot dispatch with no `name:`, the column-0 `ledger:` line when a flow is bound); the triage-and-close procedure (the audit sample and its projection, advisory recommendations, the disposition grammar mapped to `review triage` calls, the backlog hand-off for user picks only, `export-v1` and the apply hand-off, `run finish`); and the measurement reference (the signals of Approach, "Measurement and tuning", the seeded recall check, and the thresholds that count as better or worse than v1)."""
+detail = """Dispositions are a user-engagement gate the autonomy directive does not override; user prose is staged with the Write tool and passed through the `--<flag>-file` twins. The measurement thresholds cite v1's baseline values with the command that produced each where one is in the tree (ledger counts through `tomlctl items list … --count-by`), and otherwise with value, date and method (the orchestrator-context baselines, per Approach, "Measurement and tuning"). Every `tomlctl review …` line in a bash fence must parse."""
 acceptance = """
-- forward: `for f in agent-waves report-and-dispositions ab-testing; do test -f claude/skills/review-v2-engine/references/$f.md || echo MISSING $f; done | wc -l` prints `0` (today: `3`).
+- forward: `for f in agent-waves triage-and-close measurement; do test -f claude/skills/review-v2-engine/references/$f.md || echo MISSING $f; done | wc -l` prints `0` (today: `3`).
 - guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes — **predicted, unverified**."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "10cbab9"
 
 [[items]]
-id = 23
-ref = "write-the-review-finder-review-finder-lite-and-review-verifier-agents"
-title = "Write the review-finder, review-finder-lite and review-verifier agents"
-effort = "M"
-status = "pending"
-checkpoint = "B"
-phase = ""
-phase_depth = 0
-heading_depth = 3
-files = [
-    "claude/agents/review-finder.md",
-    "claude/agents/review-finder-lite.md",
-    "claude/agents/review-verifier.md",
-]
-needs = []
-coupling = []
-deps_note = ""
-action = "Write three agents with frontmatter `name`, `description`, `tools`, `model: opus`, `effort` (finder high, lite medium, verifier high), `color`, and `skills:` (finders: `review-v2-method`, `research-methods`; verifier: `review-v2-method`). Each body includes the `research-read-only` and `research-delivering` shared blocks copied byte-identically from `claude/agents/research-deep.md`."
-detail = """
-- Follow Approach, "Agents".
-- Descriptions name what the agent does, never a carrier's lens numbers.
-- The finder tool lists copy `research-deep`'s; the verifier drops the Playwright tools.
-- Bodies say "if `review-v2-method` is not loaded, invoke it first", load reference files only through the Skill tool, and name no `tomlctl review` command in a bash fence (the clap tree may not exist yet when this task runs)."""
-acceptance = "forward: `grep -l '^skills:' claude/agents/review-finder.md claude/agents/review-finder-lite.md claude/agents/review-verifier.md 2>/dev/null | wc -l` prints `3` (today: `0`)."
-agent = ""
-commit = ""
-
-[[items]]
-id = 24
-ref = "write-the-plan-executor-agent-and-register-v2-shared-block-carriers"
-title = "Write the plan-executor agent and register v2 shared-block carriers"
-effort = "S"
-status = "pending"
-checkpoint = "B"
-phase = ""
-phase_depth = 0
-heading_depth = 3
-files = [
-    "claude/agents/plan-executor.md",
-    "scripts/shared-blocks.toml",
-]
-needs = [23]
-coupling = []
-deps_note = ""
-action = "Write `plan-executor` (read-only tools `Glob, Grep, Read, Bash, Skill`, `effort: medium`, `skills: [review-v2-method]`, the two shared blocks), then add the four v2 agent paths to the `files` arrays of the `research-read-only` and `research-delivering` blocks in `scripts/shared-blocks.toml`."
-detail = """Follow Approach, "Agents". The block text is copied byte-identically from `claude/agents/research-deep.md`; no block's text changes."""
-acceptance = '''
-- forward: `grep -cE 'review-finder\.md|review-finder-lite\.md|review-verifier\.md|plan-executor\.md' scripts/shared-blocks.toml` prints at least `4` (today: `0`).
-- guard: `bash scripts/verify-shared-blocks.sh` exits 0 (today: exits 0).'''
-agent = ""
-commit = ""
-
-[[items]]
-id = 25
+id = 49
 ref = "write-the-review-v2-saved-workflow-and-its-deploy-entry"
 title = "Write the review-v2 saved workflow and its deploy entry"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -1126,98 +1968,155 @@ files = [
 needs = []
 coupling = []
 deps_note = ""
-action = "Write the saved Workflow script (`export const meta = {name: 'review-v2-pipeline', …}` with phases Find, Verify, Synthesize, and a `SCRIPT_VERSION` const returned as `script_version`) that implements the depth table over `args`. Add a `workflows` area (`Filter = '*.js'`, file symlinks) to `scripts/deploy-claude.ps1` and name it in the script's header SYNOPSIS/DESCRIPTION."
-detail = """
-Follow Approach, "Pipeline, depth and substrate" (`args` and the return shape are fixed there). The name is `review-v2-pipeline`, not `review-v2`, because a saved workflow registers as `/<meta.name>` and would compete with the `/review-v2` carrier. Use the workflow-authoring idioms:
-- `pipeline()` from each lens to its verifiers; a barrier only before synthesis and inside the deep pass loop.
-- Dedup against every finding seen so far, not only confirmed ones; vary file order by pass index over `args.files`.
-- `agent(prompt, {agentType, schema, label, phase})` with `args.schemas.return` for finders and `args.schemas.verdict` for verifiers; `args.executor_tasks` run as a pipeline stage on `plan-executor`. No `Date.now()`/`Math.random()`.
-- Every prompt is built from `args`, so the carrier's `ledger:` line and preamble reach each agent unchanged.
-- A panel returns three `by = "panel"` verdicts.
-- `log()` every routed-off lens and every trimmed suggestion, so no cap is silent.
-- Return plain data only."""
+action = "Write the saved Workflow script (`export const meta = {name: 'review-v2-pipeline', …}`, phases Cells and Verify, a `SCRIPT_VERSION` const returned as `script_version`) that runs one wave over `args.cells` and routes each returned finding by its `route`. Add a `workflows` area (`Filter = '*.js'`, file symlinks) to `scripts/deploy-claude.ps1` and name it in the script's SYNOPSIS/DESCRIPTION."
+detail = """Invoke the `workflow-authoring` skill first: it holds the script API and its rules (a pure-literal `meta` with a `description`, phase titles matching `phase()` calls, plain JS, no filesystem, the concurrency cap). Follow Approach, "Run pipeline" (stage 4 and **Substrate**). Idioms: `agent(prompt, {agentType, schema, label, phase})` with `args.schemas.cell_return` and `args.schemas.verdict_return`; `verifier` → one `review-verifier` per finding (`panel` → three seats); minor defects at quick and standard → one verifier batch per cell; `checker` rows pooled into `review-checker` batches of ≤20; a checker's `reroute` ids → `review-verifier`; `pipeline()` so verification starts per cell; no `Date.now()`/`Math.random()`; prompts built only from `args`; `log()` every skipped cell and escalation; return plain data only."""
 acceptance = """
 - forward: `test -f claude/workflows/review-v2.js && grep -c "name: 'review-v2-pipeline'" claude/workflows/review-v2.js` prints `1` (today: prints nothing, exit 1).
 - forward: `test -f claude/workflows/review-v2.js && t=$(mktemp --suffix .js) && { echo 'async function __wf(agent, pipeline, parallel, log, phase, args, budget, workflow) {'; sed 's/^export //' claude/workflows/review-v2.js; echo '}'; } > "$t" && node --check "$t"` exits 0 (today: exits 1, file absent).
 - falsifier: deleting one closing parenthesis in the script makes the `node --check` probe exit 1.
 - forward: `grep -c "Name = 'workflows'" scripts/deploy-claude.ps1` prints `1` (today: `0`)."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "10cbab9"
 
 [[items]]
-id = 26
+id = 50
+ref = "write-the-opus-agents-review-finder-review-verifier-plan-executor"
+title = "Write the Opus agents: review-finder, review-verifier, plan-executor"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/agents/review-finder.md",
+    "claude/agents/review-verifier.md",
+    "claude/agents/plan-executor.md",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = """Write three agents with frontmatter `name`, `description`, `tools` (each including Write and Skill), `model: opus`, `effort` (finder high, verifier high, executor medium), `color`, and `skills:` (finder and verifier: `review-v2-method`, `research-methods`; executor: `review-v2-method`). Each body holds that agent's own procedure from Approach, "Agents" and carries the `review-v2-store-writer` block verbatim from Approach, "Agents" and the `research-delivering` block byte-identically from `claude/agents/research-deep.md`."""
+detail = """Tools per the Agents table. The finder's procedure covers lens bundles, probes and `check:` cells (including `plan-checks`); the verifier's covers single findings, minor batches, routed cleanup, severity reassessment and test removals. Descriptions name what the agent does, never a carrier's stage numbers. Bodies say "if `review-v2-method` is not loaded, invoke it first", read catalogue files and `review-v2-method`'s worked examples from the absolute paths in the assignment, tell finder and verifier to call `Skill(research-methods)` when they need one of its gated references, use Write only to stage payloads in the run directory, and name no `tomlctl review` command in a bash fence."""
+acceptance = "forward: `grep -l '^model: opus' claude/agents/review-finder.md claude/agents/review-verifier.md claude/agents/plan-executor.md 2>/dev/null | wc -l` prints `3` (today: `0`)."
+agent = "implement-deep"
+commit = "10cbab9"
+
+[[items]]
+id = 51
+ref = "write-the-haiku-agents-review-surveyor-review-sweeper-review-checker"
+title = "Write the Haiku agents: review-surveyor, review-sweeper, review-checker"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/agents/review-surveyor.md",
+    "claude/agents/review-sweeper.md",
+    "claude/agents/review-checker.md",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = 'Write three agents with `model: haiku`, `effort: medium`, `omitClaudeMd: true`, `skills: [review-v2-method]`, tools per Approach, "Agents" (each including Write and Skill), their own procedures in the body, and two blocks byte-identically: the `review-v2-store-writer` block from Approach, "Agents" and the `research-delivering` block from `claude/agents/research-deep.md`.'
+detail = """Haiku bodies are short and procedural: numbered steps, the exact return object, and explicit stop conditions. Each opens "if `review-v2-method` is not loaded, invoke it first", reads worked examples from the absolute paths in its assignment, and stages every payload with Write in the run directory — the surveyor proposes judged signals with evidence and never decides them; the sweeper writes only grep-provable findings and escalates anything needing judgement; the checker applies only the listed grep-decidable predicates, returns `unsettled` otherwise, and refutes only a sweeper's row with a grep citation."""
+acceptance = "forward: `grep -l '^omitClaudeMd: true' claude/agents/review-surveyor.md claude/agents/review-sweeper.md claude/agents/review-checker.md 2>/dev/null | wc -l` prints `3` (today: `0`)."
+agent = "implement-deep"
+commit = "10cbab9"
+
+[[items]]
+id = 52
+ref = "register-the-v2-agents-as-shared-block-carriers"
+title = "Register the v2 agents as shared-block carriers"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["scripts/shared-blocks.toml"]
+needs = [
+    50,
+    51,
+]
+coupling = []
+deps_note = ""
+action = "Add a `[[block]]` named `review-v2-store-writer` listing the six v2 agent files, and add the six files to the `research-delivering` block's `files`."
+detail = "Run `bash scripts/verify-shared-blocks.sh`; a byte difference between the six copies is fixed in the agent files, never by dropping a carrier."
+acceptance = """
+- forward: `grep -c 'review-v2-store-writer' scripts/shared-blocks.toml` prints `1` (today: `0`).
+- guard: `bash scripts/verify-shared-blocks.sh` exits 0 (today: exits 0)."""
+agent = "implement-lite"
+commit = "50f9b00"
+
+[[items]]
+id = 53
 ref = "write-the-review-v2-carrier"
 title = "Write the /review-v2 carrier"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = ""
 phase_depth = 0
 heading_depth = 3
 files = ["claude/commands/review-v2.md"]
 needs = [
-    2,
-    10,
-    12,
-    13,
-    14,
-    15,
-    20,
     21,
-    22,
     23,
-    25,
+    46,
+    47,
+    48,
+    49,
+    52,
 ]
 coupling = []
 deps_note = ""
-action = "Write the code-family carrier. It covers frontmatter (`description`, `argument-hint` including `--depth` and `--flow`), invocations of the `tomlctl`, `flow-contract-flow-context`, `review-v2-engine`, `review-v2-lenses` and `backlog-capture` skills, and its deltas: the lint baseline, code lens set plus project packs, the context-free correctness pass, export to `review-ledger.toml`, and the `/review-apply` hand-off."
-detail = 'Follow Approach, "Family specifics" and Approach, "Coexistence with v1". The carrier restates nothing the engine owns. Each skill invocation uses the backticked-name-plus-"skill" phrase the gate requires. Task 10 is a dependency because the carrier documents verb outcomes that tasks 3–8 implement.'
+action = 'Write the code-family carrier: frontmatter (`description`, `argument-hint` with the steering flags of Approach, "Run pipeline", stage 3), invocations of the `tomlctl`, `flow-contract-flow-context`, `review-v2-engine` and `backlog-capture` skills, and its deltas — the code floor, the context-free correctness cell, export to `review-ledger.toml` and the `/review-apply` hand-off.'
+detail = 'Follow Approach, "Family specifics" and Approach, "Coexistence with v1". The carrier restates nothing the engine owns. Each skill invocation uses the backticked-name-plus-"skill" phrase the gate requires; the `backlog-capture` invocation is scoped to stage 8.'
 acceptance = """
 - forward: `test -f claude/commands/review-v2.md && grep -c '`review-v2-engine` skill' claude/commands/review-v2.md` prints at least `1` (today: prints nothing, exit 1).
 - guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes — **predicted, unverified**."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "88be848"
 
 [[items]]
-id = 27
+id = 54
 ref = "write-the-optimise-v2-carrier"
 title = "Write the /optimise-v2 carrier"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "D"
 phase = ""
 phase_depth = 0
 heading_depth = 3
 files = ["claude/commands/optimise-v2.md"]
 needs = [
-    2,
-    10,
-    12,
-    13,
-    16,
-    17,
-    20,
     21,
-    22,
     23,
-    25,
+    46,
+    47,
+    48,
+    49,
+    52,
 ]
 coupling = []
 deps_note = ""
-action = "Write the perf-family carrier, with invocations of the `tomlctl`, `flow-contract-flow-context`, `review-v2-engine`, `review-v2-lenses` and `backlog-capture` skills, plus its deltas: the Focal Points Brief, the `PROFILE BASELINE` via the `verification` agent, the perf severity rule, `branch1..branch2` scope, and export to `optimise-findings.toml` with the `/optimise-apply` hand-off."
+action = 'Write the perf-family carrier with invocations of the `tomlctl`, `flow-contract-flow-context`, `review-v2-engine` and `backlog-capture` skills, the steering flags of Approach, "Run pipeline", stage 3 in its `argument-hint`, plus its deltas: the Focal Points Brief (only what the bound facets do not carry), `PROFILE BASELINE` via the `profile-baseline` check, the perf defect rule, `branch1..branch2` scope, and export to `optimise-findings.toml` with the `/optimise-apply` hand-off.'
 detail = 'Follow Approach, "Family specifics". Each skill invocation uses the backticked-name-plus-"skill" phrase the gate requires.'
 acceptance = """
 - forward: `test -f claude/commands/optimise-v2.md && grep -c 'PROFILE BASELINE' claude/commands/optimise-v2.md` prints at least `1` (today: prints nothing, exit 1).
 - guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes — **predicted, unverified**."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "31e81c8"
 
 [[items]]
-id = 28
+id = 55
 ref = "write-the-review-plan-v2-carrier"
 title = "Write the /review-plan-v2 carrier"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "D"
 phase = ""
 phase_depth = 0
@@ -1227,61 +2126,219 @@ files = [
     "tomlctl/src/cli/dispatch/tests/finding_classes.rs",
 ]
 needs = [
-    2,
-    10,
-    12,
-    13,
-    18,
-    19,
-    20,
     21,
-    22,
     23,
-    24,
-    25,
+    46,
+    47,
+    48,
+    49,
+    52,
 ]
 coupling = []
 deps_note = ""
-action = "Write the plan-family carrier, with invocations of the `tomlctl`, `flow-contract-flow-context`, `flow-contract-plansdirectory-prompt`, `flow-contract-task-store`, `flow-contract-plan-output-format`, `review-v2-engine`, `review-v2-lenses` and `backlog-capture` skills. Its deltas are plan resolution, the task-store import and `STORE CHECK`, `FORMAT CONTRACT`, the four orchestrator-only checks, `plan-executor` per task, and the verified-only merge offer with merge-exit ref-set gate → import → check. Add `claude/commands/review-plan-v2.md` to `PROSE` in `tomlctl/src/cli/dispatch/tests/finding_classes.rs`."
-detail = """
-- Follow Approach, "Family specifics".
-- Name every `tasks check` finding class the carrier mentions exactly as it exists in `tomlctl/src/tasks`; the `PROSE` entry makes `prose_class_names_exist_in_the_source` gate it.
-- The merge never runs Manual merge on an empty `AskUserQuestion` answer."""
+action = 'Write the plan-family carrier with invocations of the `tomlctl`, `flow-contract-flow-context`, `flow-contract-plansdirectory-prompt`, `flow-contract-task-store`, `flow-contract-plan-output-format`, `review-v2-engine` and `backlog-capture` skills, and the steering flags of Approach, "Run pipeline", stage 3 in its `argument-hint`. Deltas: plan resolution, the stage-0 task-store import, the `store-check`, `format-contract` and `break-set-baseline` checks, the `plan-checks` cell, the plan floor including `plan-structure`, `plan-executor` cells, and the verified-only merge offer per Approach, "Family specifics". Add to `PROSE` in `tomlctl/src/cli/dispatch/tests/finding_classes.rs` each catalogue file that names a `tasks check` finding class — at least `claude/skills/review-v2-lenses/checks/store-check.md` — and add `claude/commands/review-plan-v2.md` only if the carrier itself names one (the gate fails a `PROSE` document that names no class at all).'
+detail = 'Follow Approach, "Family specifics". Name every `tasks check` finding class exactly as it exists in `tomlctl/src/tasks` (`prose_class_names_exist_in_the_source` gates it). The merge never runs Manual mode on an empty `AskUserQuestion` answer.'
 acceptance = """
-- forward: `test -f claude/commands/review-plan-v2.md && grep -c 'plan-executor' claude/commands/review-plan-v2.md` prints at least `1` (today: prints nothing, exit 1).
-- forward: `grep -c 'review-plan-v2.md' tomlctl/src/cli/dispatch/tests/finding_classes.rs` prints `1` (today: `0`).
+- forward: `test -f claude/commands/review-plan-v2.md && grep -c 'plan-checks' claude/commands/review-plan-v2.md` prints at least `1` (today: prints nothing, exit 1).
+- forward: `grep -c 'review-v2-lenses/checks/store-check.md' tomlctl/src/cli/dispatch/tests/finding_classes.rs` prints `1` (today: `0`).
 - guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes — **predicted, unverified**."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "b8fad97"
 
 [[items]]
-id = 29
-ref = "add-the-v2-carriers-to-the-skill-gate-table-and-document-v2-in-claudemd"
-title = "Add the v2 carriers to the skill gate table and document v2 in CLAUDE.md"
+id = 56
+ref = "add-the-v2-carriers-to-the-skill-gate-table-ignore-run-artifacts-document-v2-in-claudemd"
+title = "Add the v2 carriers to the skill gate table, ignore run artifacts, document v2 in CLAUDE.md"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "D"
 phase = ""
 phase_depth = 0
 heading_depth = 3
 files = [
     "tomlctl/src/cli/dispatch/tests/skills.rs",
+    ".gitignore",
     "CLAUDE.md",
 ]
 needs = [
-    26,
-    27,
-    28,
+    53,
+    54,
+    55,
+    57,
 ]
 coupling = []
 deps_note = ""
-action = 'Add rows for `review-v2.md`, `optimise-v2.md` and `review-plan-v2.md` to the `carrier_invokes_required_skills` table (`tomlctl/src/cli/dispatch/tests/skills.rs` around line 1405), each listing exactly the skills its carrier invokes. Add a short "Review v2" subsection to `CLAUDE.md` covering the three commands, the agents, the store, `tomlctl review compare` for A/B, and the saved-workflow deploy step, and add `workflows` to the `claude/{agents,commands,skills,themes}` list in its "Developer setup" deploy sentence.'
-detail = """
-- Every listed skill must exist under `claude/skills/`.
-- The CLAUDE.md subsection goes after "Flow agent tiers". It names the v2 agents as outside the `lite`/`deep` research buckets and keeps the no-`name:` rule."""
+action = """Add rows for `review-v2.md`, `optimise-v2.md` and `review-plan-v2.md` to the `carrier_invokes_required_skills` table in `tomlctl/src/cli/dispatch/tests/skills.rs`, each listing exactly the skills its carrier invokes. Add `/.claude/review-v2-runs/` to `.gitignore`. Add a short "Review v2" subsection to `CLAUDE.md` after "Flow agent tiers" — the three commands, the six agents and their model tiers (outside the `lite`/`deep` buckets, model in frontmatter only, never named at dispatch), the store, the orchestrator's judgement-only role, the global catalogue with its optional per-project `config.toml`, and the saved-workflow deploy step — add `workflows` to the `claude/{agents,commands,skills,themes}` list in its "Developer setup" deploy sentence, and update that section's hook paragraph so the `cli::dispatch::tests` trigger names `claude/**/*.toml` and `.claude/review-lenses/**` (task 57)."""
+detail = "Every listed skill must exist under `claude/skills/`."
 acceptance = '''
 - forward: `grep -cE '"(review|optimise|review-plan)-v2\.md"' tomlctl/src/cli/dispatch/tests/skills.rs` prints `3` (today: `0`).
+- forward: `grep -c 'review-v2-runs' .gitignore` prints `1` (today: `0`).
 - forward: `grep -c '/review-v2' CLAUDE.md` prints at least `1` (today: `0`).
 - falsifier: removing the `review-v2-engine` invocation from `claude/commands/review-v2.md` turns `carrier_invokes_required_skills` red — **predicted, unverified**.'''
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "254d56d"
+
+[[items]]
+id = 57
+ref = "widen-the-pre-commit-catalogue-trigger"
+title = "Widen the pre-commit catalogue trigger"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [".githooks/pre-commit"]
+needs = [46]
+coupling = []
+deps_note = ""
+action = 'Widen the staged-path pattern that runs `cargo test --manifest-path "$ROOT/tomlctl/Cargo.toml" --lib -- cli::dispatch::tests` in `.githooks/pre-commit` from `^(claude/.*\.md|tomlctl/src/.*)$` to `^(claude/.*\.(md|toml)|\.claude/review-lenses/.*|tomlctl/src/.*)$`, and update the comment above it to name the catalogue.'
+detail = "Without it a commit staging only `claude/skills/review-v2-lenses/vocabulary.toml` or `.claude/review-lenses/config.toml` skips `catalogue_validates`. Change nothing else in the hook; per CLAUDE.md's supply-chain note the diff is reviewed like an unsandboxed CI step."
+acceptance = '''
+- forward: `grep -c 'review-lenses' .githooks/pre-commit` prints `1` (today: `0`).
+- forward: `printf 'claude/skills/review-v2-lenses/vocabulary.toml\n' | grep -Ec "$(grep -o "'\^(claude[^']*'" .githooks/pre-commit | tr -d "'")"` prints `1` (today: `0`).'''
+agent = "implement-deep"
+commit = "fed7b26"
+
+[[items]]
+id = 58
+ref = "test-the-shipped-vocabularys-detectors-on-fixture-trees"
+title = "Test the shipped vocabulary's detectors on fixture trees"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/tests/review_vocabulary.rs"]
+needs = [
+    6,
+    46,
+]
+coupling = []
+deps_note = ""
+action = "Add an integration test that loads the real `claude/skills/review-v2-lenses/vocabulary.toml` (as the built-in layer, via `--builtin claude/skills/review-v2-lenses`) and runs `tomlctl review survey` over temp-dir fixture repos modelled on the user's layouts, asserting each expected signal and its `roots`."
+detail = 'Fixtures, one test each: `rust_crate_at_depth_three_detected_with_root` (a `Cargo.toml` three levels down), `efcore_detected_through_central_package_management` (`Directory.Packages.props` naming `Microsoft.EntityFrameworkCore`), `react_detected_in_bun_workspace` (a Bun-workspace `package.json` with a React package), `dapper_detected_through_legacy_reference` (a `.csproj` with `<Reference Include="Dapper">`), `vue_root_is_its_subdirectory_only` (a Vue app in one subdirectory of a Rust repo; `framework:vue` carries that subdirectory as its only root), and `rust_test_growth_counts_test_attributes` (the literal `#[test]` count over a `git log` window). Use the `tomlctl/tests/common/` sandbox and its git helper. Task 46 runs first so the vocabulary under test is the gated one.'
+acceptance = """
+- forward: `test -f tomlctl/tests/review_vocabulary.rs && grep -c 'fn efcore_detected_through_central_package_management' tomlctl/tests/review_vocabulary.rs` prints `1` (today: prints nothing, exit 1).
+- falsifier: deleting the `Directory.Packages.props` glob from the `db:efcore` detector in `vocabulary.toml` turns `efcore_detected_through_central_package_management` red — **predicted, unverified**."""
+agent = "implement-deep"
+commit = "c735bff"
+
+[[items]]
+id = 59
+ref = "give-the-workflow-batch-prompts-a-batch-id-and-sweeper-marks"
+title = "Give the workflow batch prompts a batch id and sweeper marks"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/workflows/review-v2.js",
+    "claude/agents/review-checker.md",
+    "claude/agents/review-verifier.md",
+]
+needs = [
+    48,
+    49,
+    50,
+    51,
+]
+coupling = []
+deps_note = ""
+action = "In `claude/workflows/review-v2.js`, make `checkerPrompt` and the batch form of `verifierPrompt` carry what the checker and verifier procedures require, matching the `batch:` and `sweeper rows:` lines `claude/skills/review-v2-engine/references/agent-waves.md` already builds: a deterministic `batch: <id>` line (e.g. `K<n>` for checker batch n, `V<cellId>` for a cell minor batch — no clock or randomness) used as the payload name, and for checker batches a `sweeper rows: <ids>` line listing the pooled finding ids whose source cell has `agentType = review-sweeper` (track each pooled id's cell agentType when it enters the pool). Align the batch return contract: `claude/agents/review-checker.md` currently says its return is a bare JSON array while the workflow's `batchSchema` expects `{verdicts: [...]}`; change the checker body (outside its shared blocks) to return `{verdicts: [...]}`, and make `claude/agents/review-verifier.md`'s batch return say the same, so the script, the agents and agent-waves.md agree. Do not touch either agent's SHARED-BLOCK regions."
+detail = ""
+acceptance = """
+- forward: `grep -c "sweeper rows:" claude/workflows/review-v2.js` prints at least `1` and `grep -c "batch:" claude/workflows/review-v2.js` at least `1` (today: `0`).
+- forward: the wrapped `node --check` of the script exits 0, and a mocked run (agent/pipeline/parallel stubs, run from the scratchpad) shows a checker prompt naming a sweeper-cell row under `sweeper rows:` and omitting a finder-cell row.
+- guard: `bash scripts/verify-shared-blocks.sh` exits 0."""
+agent = "implement-deep"
+commit = "10cbab9"
+
+[[items]]
+id = 60
+ref = "let-bind_cell-bundle-the-cell-run-checks-of-plan-checks"
+title = "Let bind_cell bundle the cell-run checks of plan-checks"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/src/review/catalogue.rs"]
+needs = [3]
+coupling = []
+deps_note = ""
+action = """In `tomlctl/src/review/catalogue.rs`, `Catalogue::bind_cell` refuses any cell whose concerns hold a `check:<id>` beside anything else, so the plan-family `plan-checks` cell (Approach → Lens catalogue: `two-control-probe`, `falsifiability` and `acceptance-contradiction`, executor `cell`, composed together as one whole-plan `review-finder` cell) cannot be bound. Allow a cell whose concerns are 1–3 `check:<id>` entries when every one is an enabled check with `executor = "cell"` declaring the run's family; such a cell is exempt from the per-depth concern maximum (2 at `deep`), binds each check like a single one does today, and attaches no facets. Keep refusing a `check:` mixed with a lens or a probe, a check whose executor is not `cell`, and a duplicate check id. Update the module doc where it states the one-check rule."""
+detail = ""
+acceptance = """
+- forward: a new unit test `bind_cell_bundles_cell_checks` binds `["check:two-control-probe","check:falsifiability","check:acceptance-contradiction"]` at plan/deep and asserts three bound concerns; it also asserts `["check:two-control-probe","correctness"]` and `["check:lint-baseline","check:falsifiability"]` are refused — `cargo nextest run --manifest-path tomlctl/Cargo.toml --lib -E 'test(/^review::catalogue::/)'` passes.
+- falsifier: restoring the one-check rule turns `bind_cell_bundles_cell_checks` red."""
+agent = "implement-lite"
+commit = "6e0519c"
+
+[[items]]
+id = 61
+ref = "share-one-helper-that-rebuilds-a-runs-catalogue"
+title = "Share one helper that rebuilds a run's catalogue"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/catalogue.rs",
+    "tomlctl/src/review/survey.rs",
+    "tomlctl/src/review/cells.rs",
+    "tomlctl/src/review/add.rs",
+    "tomlctl/src/review/triage.rs",
+    "tomlctl/src/review/query.rs",
+    "tomlctl/src/review/digest.rs",
+    "tomlctl/src/review/runs.rs",
+    "tomlctl/src/review/stats.rs",
+    "tomlctl/src/review/export.rs",
+]
+needs = [
+    12,
+    13,
+    15,
+    16,
+    17,
+]
+coupling = []
+deps_note = ""
+action = "Every review verb that needs the run's catalogue (survey.rs, cells.rs, add.rs, triage.rs, query.rs, and any of digest.rs, runs.rs, stats.rs, export.rs that gained one) holds a private copy of the code that rebuilds a `Catalogue` from the `catalogue.builtin` / `catalogue.project` roots the run recorded (names vary: `run_catalogue`, survey's own). Replace them with one `pub(crate)` function in `tomlctl/src/review/catalogue.rs` taking the repo root and the run, resolving a relative project root against the repo root exactly as the existing copies agree on (if two copies disagree, keep the stricter behaviour and say which), and call it from every site. Behaviour-preserving: no output or error text changes except where copies disagreed. Fold the duplicated store-to-JSON view too: `query.rs` `View` and `digest.rs` `Rows` both convert the store to JSON maps for `fields::project`; keep one shared `pub(super)` version. Also fold the copied pathspec matcher: `stats.rs` holds a copy of `cells.rs`'s private `PathSet`/`within`; keep one shared `pub(super)` version. Also fold the duplicated counts definitions: `runs.rs` `counts` mirrors `digest.rs`'s private `counts_line`/`report_rows`/`live`; keep one shared `pub(super)` helper both call so the report line and the stored run counts cannot drift."
+detail = ""
+acceptance = """
+- forward: `grep -c` over tomlctl/src/review/*.rs for the old private helper definitions totals 0 and the shared function is defined once in catalogue.rs.
+- guard: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(/^review_/) | test(/^review::/)'` passes."""
+agent = "implement-deep"
+commit = "6e0519c"
+
+[[items]]
+id = 62
+ref = "count-only-the-latest-verdict-per-panel-seat"
+title = "Count only the latest verdict per panel seat"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/verdict.rs",
+    "tomlctl/tests/review_verdict.rs",
+]
+needs = [10]
+coupling = []
+deps_note = ""
+action = "In `tomlctl/src/review/verdict.rs`, the panel `decide` tally counts every `by = panel` verdict on a finding. `review resolve` now appends copies of a merged row's deciding verdicts onto a contested or reopened target, so a later panel verdict on that target could reach the two-seat threshold on duplicated seats. Make the tally read only the latest verdict per `seat` (the last in store order), so copies and re-votes never double-count. Add a test in `tomlctl/tests/review_verdict.rs`: two verdicts recorded for seat 1 (e.g. one refuted then one confirmed) plus seat 2 confirmed resolves `open`, and two copies of the same refuting seat do not make two refuting seats."
+detail = ""
+acceptance = """
+- forward: the new test passes under `cargo nextest run --manifest-path tomlctl/Cargo.toml --test review_verdict`, with every existing verdict test still green.
+- falsifier: counting every panel verdict again turns the new test red."""
+agent = "implement-lite"
+commit = "6e0519c"

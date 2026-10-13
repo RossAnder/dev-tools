@@ -1,5 +1,5 @@
 schema_version = 1
-last_updated = 2026-10-09
+last_updated = 2026-10-13
 
 [[backlog]]
 id = "B-de0a0d87"
@@ -5839,3 +5839,520 @@ context = "Seen in an eggshell /optimise run on 2026-10-09: all five research-de
 base_sha = "d561023b603258005a2f64874f5f36693e4ea7ec"
 resolved = 2026-10-09
 resolution = "research-deep and research-lite (and the research-methods codebase-review reference) now require scratch work in a lens-named subdirectory of the session scratchpad, never its root or a generic name, so parallel lenses dispatched by /optimise, /review and /review-plan cannot collide."
+
+[[backlog]]
+id = "B-8caf86b0"
+kind = "debt"
+summary = "review verb files each define an identical private invalid(msg) error helper"
+area = "tomlctl/src/review"
+tags = [
+    "review-v2",
+    "dry",
+]
+status = "open"
+created = 2026-10-13
+last_seen = 2026-10-13
+seen_count = 1
+dedup_id = "8caf86b0c8f96a32"
+origin = "implement"
+flow = "review-system-v2"
+context = "Copies in add, cells, export, query, runs, stats, survey, triage and verdict. One pub(super) helper in review/mod.rs would end it; the catalogue-rebuild, View, PathSet and Counts duplicates were already folded."
+base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+
+[[backlog]]
+id = "B-615a500d"
+kind = "debt"
+summary = "shared review store View lives in query.rs and digest.rs imports it from there instead of a store-level module"
+area = "tomlctl/src/review"
+tags = ["review-v2"]
+status = "open"
+created = 2026-10-13
+last_seen = 2026-10-13
+seen_count = 1
+dedup_id = "615a500d341e5f25"
+origin = "implement"
+flow = "review-system-v2"
+context = "View gained a with_same_as flag so digest keeps its old output. Moving it to store.rs or fields.rs removes digest's dependency on a sibling verb module."
+base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+
+[[backlog]]
+id = "B-e4c1a22a"
+kind = "question"
+summary = "review report --out ignores --allow-outside while review plan --out honours it"
+area = "tomlctl/src/review"
+tags = [
+    "review-v2",
+    "containment",
+]
+status = "open"
+created = 2026-10-13
+last_seen = 2026-10-13
+seen_count = 1
+dedup_id = "e4c1a22ad3417aac"
+origin = "implement"
+flow = "review-system-v2"
+context = "report calls guard_write_path(out, false) and its read bundle carries no --allow-outside, so a report cannot be written outside .claude/. Decide whether the two --out verbs should share one containment rule; the reference doc states report's as built."
+base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+
+[[backlog]]
+id = "B-be44a578"
+kind = "question"
+summary = "Workflow and review show --for finder hand every cell the pack, so a context-free cell must be hand-dispatched by the carrier"
+area = "claude/workflows"
+tags = [
+    "review-v2",
+    "workflow",
+]
+status = "open"
+created = 2026-10-13
+last_seen = 2026-10-13
+seen_count = 1
+dedup_id = "be44a5789b2dde80"
+origin = "implement"
+flow = "review-system-v2"
+context = "/review-v2 dispatches and routes its context-free correctness cell itself with the pack line removed. A per-cell context: none flag in the Workflow args or the cell projection would let the Workflow run it and drop the hand-routing."
+base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+
+[[backlog]]
+id = "B-8fb6b503"
+kind = "question"
+summary = "survey baseline prompt example uses a timeout above the verification agent's Bash tool cap"
+area = "claude/skills/review-v2-engine"
+tags = [
+    "review-v2",
+    "verification",
+]
+status = "open"
+created = 2026-10-13
+last_seen = 2026-10-13
+seen_count = 1
+dedup_id = "8fb6b50342b54b59"
+origin = "implement"
+flow = "review-system-v2"
+context = "references/survey.md shows timeout: 1500 (s) while the verification agent's Bash calls cap at 600000 ms, so a budget above ~590 s may end as a tool kill rather than a recorded timeout outcome. Cap the example or split slow baselines."
+base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+
+[[backlog]]
+id = "B-f4e7c986"
+kind = "question"
+summary = "engine stage 8 has no slot for a plan-family merge offer, so its ordering before run finish lives only in the carrier"
+area = "claude/skills/review-v2-engine"
+tags = ["review-v2"]
+status = "open"
+created = 2026-10-13
+last_seen = 2026-10-13
+seen_count = 1
+dedup_id = "f4e7c986fc3e7525"
+origin = "implement"
+flow = "review-system-v2"
+context = "Arrived cheap-in-file (references/triage-and-close.md) and was deferred: docs are outside what this run's verification exercises. The rule is that merge status writes precede run finish; /review-plan-v2 states it, the engine does not."
+base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+
+[[backlog]]
+id = "B-47120642"
+kind = "debt"
+summary = "tracked files matched by .gitignore keep git ls-files -ci non-empty, so it cannot gate new tracked-but-ignored files"
+area = ".gitignore"
+tags = ["hygiene"]
+status = "open"
+created = 2026-10-13
+last_seen = 2026-10-13
+seen_count = 1
+dedup_id = "47120642f85f37e8"
+origin = "implement"
+flow = "review-system-v2"
+context = "Eight docs/plans/*.premerge.md files and .claude/settings.local.json are tracked yet ignored. Untrack them (git rm --cached) or carve exceptions, then ls-files -ci --exclude-standard can serve as a clean gate."
+base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+
+[[backlog]]
+id = "B-9e96ce7c"
+kind = "debt"
+summary = "review field catalogue has no run incomplete field, so run finish writes it into rest"
+area = "tomlctl/src/review"
+tags = [
+    "review-v2",
+    "schema",
+]
+status = "open"
+created = 2026-10-13
+last_seen = 2026-10-13
+seen_count = 1
+dedup_id = "9e96ce7c19335bc9"
+origin = "implement"
+flow = "review-system-v2"
+context = "run finish --incomplete lands in the run's catch-all rest table rather than a declared field, so projections and schema output do not describe it. Add it to fields.rs."
+base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+
+[[backlog]]
+id = "B-1fc81407"
+kind = "bug"
+summary = "sync-v1 disposition-companion list omits reopen_reason"
+area = "tomlctl/src/review"
+tags = [
+    "review-v2",
+    "sync",
+]
+status = "open"
+created = 2026-10-13
+last_seen = 2026-10-13
+seen_count = 1
+dedup_id = "1fc81407d9fb331d"
+origin = "implement"
+flow = "review-system-v2"
+context = "A v1 row reopened with a reason does not carry that reason back through review sync-v1. Add reopen_reason to the companion list in sync.rs."
+base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+
+[[backlog]]
+id = "B-e8b56feb"
+kind = "bug"
+summary = "review plan --ndjson is not idempotent per wave, so a retry after os error 5 duplicates cells"
+area = "tomlctl/src/review"
+tags = [
+    "review-v2",
+    "windows",
+]
+status = "open"
+created = 2026-10-13
+last_seen = 2026-10-13
+seen_count = 1
+dedup_id = "e8b56feb304fcbdd"
+origin = "implement"
+flow = "review-system-v2"
+context = "The Windows sidecar-rename os error 5 is retried once by the house rule; cover and run update are idempotent under it but plan --ndjson is not. Until fixed, check review list for the wave's cells before retrying."
+base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+
+[[backlog]]
+id = "B-6601255f"
+kind = "question"
+summary = "v1 v2_ref holds a single string, so a second export matching an already-linked open v1 row overwrites the link"
+area = "tomlctl/src/review"
+tags = [
+    "review-v2",
+    "export",
+]
+status = "open"
+created = 2026-10-13
+last_seen = 2026-10-13
+seen_count = 1
+dedup_id = "6601255f4ea1a9e3"
+origin = "implement"
+flow = "review-system-v2"
+context = "Design question: whether v2_ref should become a list, or a second match should be refused. Today the first finding's link is lost silently."
+base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+
+[[backlog]]
+id = "B-13ec633a"
+kind = "debt"
+summary = "measurement.md per-agent-model audit overturn rates have no producing command"
+area = "claude/skills/review-v2-engine"
+tags = [
+    "review-v2",
+    "measurement",
+]
+status = "open"
+created = 2026-10-13
+last_seen = 2026-10-13
+seen_count = 1
+dedup_id = "13ec633a1242d5de"
+origin = "implement"
+flow = "review-system-v2"
+context = "The thresholds name a per-agent-model overturn rate that review stats does not compute, so the trial review cannot check it. Add the breakdown to review stats --calibration or drop the threshold."
+base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+
+[[backlog]]
+id = "B-f278c33f"
+kind = "debt"
+summary = "survey.md and review-surveyor.md say one command per verification check, but baselines key several as <id>-<n>"
+area = "claude/skills/review-v2-engine"
+tags = [
+    "review-v2",
+    "doc-drift",
+]
+status = "open"
+created = 2026-10-13
+last_seen = 2026-10-13
+seen_count = 1
+dedup_id = "f278c33f9fd22e2b"
+origin = "implement"
+flow = "review-system-v2"
+context = "checks/lint-baseline.md and the carriers key multiple resolved commands as <id>, <id>-2, ...; align references/survey.md section 6 and claude/agents/review-surveyor.md with that."
+base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+
+[[backlog]]
+id = "B-53bf0848"
+kind = "debt"
+summary = "v2 agent bodies use the --note - stdin idiom while review-v2-method prefers the --*-file twins"
+area = "claude/agents"
+tags = [
+    "review-v2",
+    "consistency",
+]
+status = "open"
+created = 2026-10-13
+last_seen = 2026-10-13
+seen_count = 1
+dedup_id = "53bf0848f5e2e7f1"
+origin = "implement"
+flow = "review-system-v2"
+context = "Both forms work. Pick one (the --note-file / --rationale-file / --incomplete-file twins avoid a redirect) and align the review-*.md bodies with the method skill."
+base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+
+[[backlog]]
+id = "B-de835331"
+kind = "bug"
+summary = "review-finder body asks for more in the coverage note than the 600-character cell note cap allows"
+area = "claude/agents"
+tags = ["review-v2"]
+status = "open"
+created = 2026-10-13
+last_seen = 2026-10-13
+seen_count = 1
+dedup_id = "de8353313f8ffb96"
+origin = "implement"
+flow = "review-system-v2"
+context = "cell.note is capped at 600 characters; the finder body's coverage-note checklist overflows it and the cap truncates. Trim the requested content in claude/agents/review-finder.md."
+base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+
+[[backlog]]
+id = "B-8414a070"
+kind = "direction"
+summary = "review vocabulary has no concern tag for supply-chain execution risk in install or build scripts"
+area = "claude/skills/review-v2-lenses"
+tags = [
+    "review-v2",
+    "security",
+]
+status = "open"
+created = 2026-10-13
+last_seen = 2026-10-13
+seen_count = 1
+dedup_id = "8414a07028c724dd"
+origin = "implement"
+flow = "review-system-v2"
+context = "Install hooks, build.rs and package scripts run unsandboxed; no concern in vocabulary.toml routes them to the security lens. Add a concern and a detector."
+base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+
+[[backlog]]
+id = "B-c6fcfb97"
+kind = "question"
+summary = "candidate lenses test-gaps, seams, idioms, architecture and duplication have no apply_when.signals, so skipping one needs no waiver"
+area = "claude/skills/review-v2-lenses"
+tags = [
+    "review-v2",
+    "waivers",
+]
+status = "open"
+created = 2026-10-13
+last_seen = 2026-10-13
+seen_count = 1
+dedup_id = "c6fcfb97a52789f7"
+origin = "implement"
+flow = "review-system-v2"
+context = "run finish demands a waiver only for unselected matched concerns; these lenses never match, so their omission is invisible to stats --escapes. Decide whether they should carry signals."
+base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+
+[[backlog]]
+id = "B-e922f5cb"
+kind = "debt"
+summary = "catalogue validator checks neither facet For-lens sections against attaches_to nor the experimental-rework ownership rule"
+area = "tomlctl/src/review"
+tags = [
+    "review-v2",
+    "catalogue",
+]
+status = "open"
+created = 2026-10-13
+last_seen = 2026-10-13
+seen_count = 1
+dedup_id = "e922f5cb567bf68b"
+origin = "implement"
+flow = "review-system-v2"
+context = "Also, owned_tags reads only the first backtick span of each Owns paragraph. A facet section for a lens it does not attach to passes catalogue_validates today."
+base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+
+[[backlog]]
+id = "B-43bd7e29"
+kind = "debt"
+summary = 'backlog-cluster detector counts literal status = "open" lines'
+area = "claude/skills/review-v2-lenses"
+tags = [
+    "review-v2",
+    "detectors",
+]
+status = "open"
+created = 2026-10-13
+last_seen = 2026-10-13
+seen_count = 1
+dedup_id = "43bd7e29fa6cae95"
+origin = "implement"
+flow = "review-system-v2"
+context = "The vocabulary.toml count pattern matches only that exact spelling, so a reformatted backlog.toml or a promoted row is miscounted. Count via a looser pattern or a tomlctl query."
+base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+
+[[backlog]]
+id = "B-cd31ec02"
+kind = "question"
+summary = "ledgers::scopes and LedgerKind do not include review-v2 stores, so glimpse and the ledger facade cannot see v2 findings"
+area = "tomlctl/src/ledgers.rs"
+tags = [
+    "review-v2",
+    "glimpse",
+]
+status = "open"
+created = 2026-10-13
+last_seen = 2026-10-13
+seen_count = 1
+dedup_id = "cd31ec028ed5da56"
+origin = "review"
+flow = "review-system-v2"
+context = "Raised by the /review of review-system-v2. If v2 replaces v1 review, the user's glimpse triage UI will not show v2 findings and `tomlctl review triage` becomes the only way to act on them; until decided, v2 findings reach glimpse only after `review export-v1`."
+base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+
+[[backlog]]
+id = "B-bd78e505"
+kind = "debt"
+summary = "review run update --set-json has no @path file form, so carriers and the surveyor inline payloads with $(cat <file>)"
+area = "tomlctl/src/review"
+tags = ["review-v2"]
+status = "open"
+created = 2026-10-13
+last_seen = 2026-10-13
+seen_count = 1
+dedup_id = "bd78e5054d69700e"
+origin = "review"
+flow = "review-system-v2"
+context = "--set-file sets a string, so a JSON array or table staged in a file has no file form; the engine and review-surveyor inline it via command substitution, which strains the store-writer rule of passing a path. An @<path> value form on --set-json would let every payload go by file."
+base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+
+[[backlog]]
+id = "B-4a72f1a6"
+kind = "question"
+summary = "review triage --convert refuses advisories of a finished run, so the engine must triage advisories before run finish"
+area = "tomlctl/src/review"
+tags = ["review-v2"]
+status = "open"
+created = 2026-10-13
+last_seen = 2026-10-13
+seen_count = 1
+dedup_id = "4a72f1a6aed90ec3"
+origin = "review"
+flow = "review-system-v2"
+context = "triage::replacement_row refuses a finished run, but advisories may be triaged at a run's close. Either the engine's close ordering must state triage-before-finish, or --convert should accept a finished run's advisories. Related to the finished-run guard findings R27/R30 in the review-system-v2 ledger."
+base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+
+[[backlog]]
+id = "B-ef306556"
+kind = "question"
+summary = "Plan-family cleanup rows must carry both old and anchor_old because old_required ignores the finding family"
+area = "tomlctl/src/review/fields.rs"
+tags = ["review-v2"]
+status = "open"
+created = 2026-10-13
+last_seen = 2026-10-13
+seen_count = 1
+dedup_id = "ef30655600720aad"
+origin = "review-apply"
+flow = "review-system-v2"
+context = "old_required (fields.rs) does not depend on family, so a plan cleanup row needs old as well as plan_section/anchor_old/anchor_new; review-sweeper step 8's plan clause now documents the anchor fields only. Decide whether plan rows should be exempt from old or the sweeper should say to fill both."
+base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+evidence = ["tomlctl/src/review/fields.rs:690"]
+
+[[backlog]]
+id = "B-d8d355f4"
+kind = "bug"
+summary = "A health detector with a very large window passes git --since an out-of-range relative date, the log comes back empty and the signal silently settles False"
+area = "tomlctl/src/review/survey.rs"
+tags = ["review-v2"]
+status = "open"
+created = 2026-10-13
+last_seen = 2026-10-13
+seen_count = 1
+dedup_id = "d8d355f40b25cc82"
+origin = "review-apply"
+flow = "review-system-v2"
+context = "Checked by hand: a 3650-day window lists the commits, 36500 days lists none. A vocabulary author writing a 'forever' window gets a signal that never fires and no error. Fix by capping window at parse time or passing --since an absolute date."
+base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+
+[[backlog]]
+id = "B-771b57e7"
+kind = "debt"
+summary = "Survey's uncompilable-regex branch is reachable only from legacy runs recorded without tree_sha, so no integration test covers it"
+area = "tomlctl/src/review/survey.rs"
+tags = ["review-v2"]
+status = "open"
+created = 2026-10-13
+last_seen = 2026-10-13
+seen_count = 1
+dedup_id = "771b57e78e077630"
+origin = "review-apply"
+flow = "review-system-v2"
+context = "run start rejects an uncompilable contains pattern and the catalogue drift check refuses a later edit, so the survey's 'does not compile' branch serves only legacy stores. The integration test that exercised it was reworked when the drift check landed. Either unit-test the branch inside survey.rs or decide it only needs to serve legacy stores."
+base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+
+[[backlog]]
+id = "B-8a4b923f"
+kind = "bug"
+summary = "triage --reopen of an exported finding that v1 settled is reverted by the next sync-v1, and a re-export re-links to the closed v1 row"
+area = "tomlctl/src/review"
+tags = [
+    "review-v2",
+    "needs-plan",
+]
+status = "open"
+created = 2026-10-13
+last_seen = 2026-10-13
+seen_count = 1
+dedup_id = "8a4b923f09910abb"
+origin = "review-apply"
+flow = "review-system-v2"
+context = "Moved from review ledger R1 (review-system-v2) for planning. sync::SYNCABLE admits open, and triage keeps exported_as/export_ledger on a reopened row, so sync::linked_rows still matches by v2_ref and restores the v1 disposition at every run start; export::decide returns Linked on an existing v2_ref regardless of v1 status. Fix needs coordinated parts: a reopen retires the v1 link (move exported_as/export_ledger to a history field — a store-schema change), sync skips retired links, export::decide ignores them so the reopened finding mints as a regression. No test covers reopen-then-sync. Workaround: do not reopen an exported finding that v1 settled; reopen the v1 row instead."
+base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+evidence = [
+    "tomlctl/src/review/sync.rs:28",
+    "tomlctl/src/review/triage.rs:45",
+]
+related = [
+    "B-6601255f",
+    "B-1fc81407",
+]
+
+[[backlog]]
+id = "B-faca904c"
+kind = "debt"
+summary = "Finding lifecycle has no owner: statuses are bare Strings and seven review modules re-declare their own status subsets and companion lists, which already disagree"
+area = "tomlctl/src/review"
+tags = [
+    "review-v2",
+    "needs-plan",
+]
+status = "open"
+created = 2026-10-13
+last_seen = 2026-10-13
+seen_count = 1
+dedup_id = "faca904c9423552a"
+origin = "review-apply"
+flow = "review-system-v2"
+context = "Moved from review ledger R2 (review-system-v2) for planning. Finding.status/outcome, Cell.status/agent and Verdict fields are Strings checked only on read against &[&str] lists, while Kind/Family/Route/Depth use str_enum!. Subsets are re-declared per verb: triage SETTLED/REOPENABLE/COMPANIONS, sync SYNCABLE/SYNC_COMPANIONS, digest DISPOSITIONS, add and resolve SUPPRESSING, verdict DECIDED_BY_VERDICT; SYNC_COMPANIONS omits reopen_reason/park_reason/backlog_ref and COMPANIONS omits exported_as/export_ledger. Proposed fix: str_enum!(FindingStatus) with companions() and settled/reopenable/suppressing predicates, a typed Finding.status, and one status-write helper that clears other statuses' companions. Crate-wide refactor; plan it before the reopen-vs-sync fix, which it subsumes in part."
+base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+evidence = ["tomlctl/src/review/fields.rs:110"]
+related = ["B-1fc81407"]
+
+[[backlog]]
+id = "B-c2c975d1"
+kind = "bug"
+summary = "Context-free correctness cell runs on review-finder, which loads CLAUDE.md, so its no-project-conventions read is not independent"
+area = "claude/agents"
+tags = [
+    "review-v2",
+    "needs-plan",
+]
+status = "open"
+created = 2026-10-13
+last_seen = 2026-10-13
+seen_count = 1
+dedup_id = "c2c975d134f992d6"
+origin = "review-apply"
+flow = "review-system-v2"
+context = "Moved from review ledger R41 (review-system-v2) for planning. review-v2.md stages 3/4 and the correctness lens's context-free variant intend a diff-only read untouched by project conventions, but review-finder sets no omitClaudeMd, so repo and user CLAUDE.md reach it; only review-checker, review-surveyor and review-sweeper set omitClaudeMd: true. Making the cell truly context-free needs a decision, e.g. a dedicated agent type with omitClaudeMd: true, which also changes claude/workflows/review-v2.js and the engine's dispatch."
+base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+evidence = ["claude/agents/review-finder.md:1"]
