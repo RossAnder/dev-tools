@@ -1,0 +1,5 @@
+[[checks]]
+id = "harness-gates"
+families = ["code"]
+paths = ["claude/**"]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"

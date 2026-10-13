@@ -1,3 +1,4 @@
+mod catalogue;
 mod finding_classes;
 mod lint;
 mod output_gate;

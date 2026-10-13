@@ -8,7 +8,9 @@ use std::path::{Path, PathBuf};
 /// the set is testable against a temp tree rather than only the live repo.
 ///
 /// Every skill body plus one level of `references/*.md`: an unscanned skill
-/// is an ungated skill, so the skills glob carries no name prefix.
+/// is an ungated skill, so the skills glob carries no name prefix. The lens
+/// catalogue's `lenses/`, `facets/`, `methods/` and `checks/` entries are
+/// scanned too: agents read them as instructions.
 /// `templates/`, `scripts/` and anything nested deeper stay out — template
 /// argv is placeholder text that is not meant to parse. std `read_dir`; no
 /// glob crate is in the dependency tree.
@@ -37,8 +39,13 @@ fn command_lint_scan_set(claude_dir: &Path) -> Vec<PathBuf> {
         }
     }
 
-    for dir in ["commands", "agents"] {
-        if let Ok(entries) = fs::read_dir(claude_dir.join(dir)) {
+    let catalogue = claude_dir.join("skills").join("review-v2-lenses");
+    let flat_dirs = ["lenses", "facets", "methods", "checks"]
+        .map(|d| catalogue.join(d))
+        .into_iter()
+        .chain(["commands", "agents"].map(|d| claude_dir.join(d)));
+    for dir in flat_dirs {
+        if let Ok(entries) = fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let p = entry.path();
                 if p.is_file() && md(&p) {
@@ -330,8 +337,9 @@ fn command_lint() {
 
 /// The scan set must reach a skill whose name carries no `flow-contract-`
 /// prefix, and must reach one level into `references/` without descending
-/// into `templates/`. Asserted over a temp tree so the live repo's contents
-/// cannot make it pass by accident.
+/// into `templates/`, and must reach each lens catalogue entry directory.
+/// Asserted over a temp tree so the live repo's contents cannot make it pass
+/// by accident.
 #[test]
 fn command_lint_scan_set_includes_skill_and_reference_files() {
     let dir = tempfile::tempdir().unwrap();
@@ -341,6 +349,14 @@ fn command_lint_scan_set_includes_skill_and_reference_files() {
     fs::create_dir_all(skill.join("templates")).unwrap();
     fs::create_dir_all(claude_dir.join("commands")).unwrap();
     fs::create_dir_all(claude_dir.join("agents")).unwrap();
+    let catalogue = claude_dir.join("skills").join("review-v2-lenses");
+    let catalogue_entries: Vec<PathBuf> = ["lenses", "facets", "methods", "checks"]
+        .iter()
+        .map(|d| {
+            fs::create_dir_all(catalogue.join(d)).unwrap();
+            catalogue.join(d).join("e.md")
+        })
+        .collect();
 
     let body = skill.join("SKILL.md");
     let reference = skill.join("references").join("y.md");
@@ -355,12 +371,18 @@ fn command_lint_scan_set_includes_skill_and_reference_files() {
         &command,
         &agent,
         &not_markdown,
-    ] {
+    ]
+    .into_iter()
+    .chain(&catalogue_entries)
+    {
         fs::write(p, "# fixture\n").unwrap();
     }
 
     let set = command_lint_scan_set(claude_dir);
-    for p in [&body, &reference, &command, &agent] {
+    for p in [&body, &reference, &command, &agent]
+        .into_iter()
+        .chain(&catalogue_entries)
+    {
         assert!(
             set.contains(p),
             "scan set must include {}: {set:?}",

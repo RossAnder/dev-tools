@@ -1,0 +1,641 @@
+# The built-in review-v2 vocabulary: signals with their detectors, concern
+# tags with the families they serve, and the routing globs `review add`
+# computes `route` from. The detector semantics are in SKILL.md ("Detectors").
+# Regexes are TOML literal strings, compiled ASCII-only: `(?-u:\b)` and
+# `(?i-u:...)` forms, never `\w`, `\d`, `\s` or a bare `(?i)`.
+
+# ---------------------------------------------------------------- stack
+
+[signals."lang:rust"]
+kind = "stack"
+meaning = "A Rust crate; each root is a directory holding a Cargo.toml."
+detect = { files = ["**/Cargo.toml"] }
+
+[signals."lang:ts"]
+kind = "stack"
+meaning = "A TypeScript project; each root is a directory holding a tsconfig."
+detect = { files = ["**/tsconfig.json", "**/tsconfig.*.json"] }
+
+[signals."lang:csharp"]
+kind = "stack"
+meaning = "A .NET project, SDK-style or legacy; each root is a directory holding a .csproj."
+detect = { files = ["**/*.csproj"] }
+
+[signals."framework:react"]
+kind = "stack"
+meaning = "A package that depends on React, at any depth, Bun and npm workspace members included."
+detect = { files = ["**/package.json"], manifest = ["dependencies.react", "devDependencies.react", "peerDependencies.react"] }
+
+[signals."framework:vue"]
+kind = "stack"
+meaning = "A package that depends on Vue, at any depth, Bun and npm workspace members included."
+detect = { files = ["**/package.json"], manifest = ["dependencies.vue", "devDependencies.vue", "peerDependencies.vue"] }
+
+[signals."runtime:tokio"]
+kind = "stack"
+meaning = "A crate that depends on tokio, directly or through workspace dependencies."
+detect = { files = ["**/Cargo.toml"], manifest = ["dependencies.tokio", "dev-dependencies.tokio", "workspace.dependencies.tokio"] }
+
+[signals."db:sqlx"]
+kind = "stack"
+meaning = "A crate that depends on sqlx."
+detect = { files = ["**/Cargo.toml"], manifest = ["dependencies.sqlx", "dev-dependencies.sqlx", "workspace.dependencies.sqlx"] }
+
+[signals."db:efcore"]
+kind = "stack"
+meaning = "Entity Framework Core, referenced by PackageReference, central package management (Directory.Packages.props), packages.config or a legacy Reference."
+detect = { files = ["**/*.csproj", "**/Directory.Packages.props", "**/packages.config"], contains = ['Microsoft\.EntityFrameworkCore'] }
+
+[signals."db:dapper"]
+kind = "stack"
+meaning = "Dapper or a raw ADO.NET SQL client, referenced by PackageReference, central package management, packages.config or a legacy <Reference Include=...>."
+detect = { files = ["**/*.csproj", "**/Directory.Packages.props", "**/packages.config"], contains = ['(Include|id)="(Dapper|Microsoft\.Data\.SqlClient|System\.Data\.SqlClient)[",. ]'] }
+
+[signals."harness:claude"]
+kind = "stack"
+meaning = "Claude Code harness files: skills, and agent or command markdown carrying frontmatter."
+detect = { files = ["**/SKILL.md", "**/agents/*.md", "**/commands/*.md"], contains = ['^(name|description|tools|allowed-tools|model|argument-hint):'] }
+
+# ---------------------------------------------------------------- diff
+
+[signals.rename-or-removal]
+kind = "diff"
+meaning = "The change deletes or renames a file, or removes or rewrites a declaration line, so references elsewhere may be stale."
+detect = { contains = [
+  '^(deleted file mode|rename from) ',
+  '^-[ \t]*(pub(\([a-z:]+\))?[ \t]+)?(async[ \t]+|unsafe[ \t]+|const[ \t]+)*(fn|struct|enum|trait|type|const|static|mod|macro_rules!)[ \t]',
+  '^-[ \t]*(export[ \t]+)?(default[ \t]+)?(async[ \t]+)?(function|class|interface|type|enum|const)[ \t]',
+  '^-[ \t]*(public|internal|protected)[ \t].*[ \t](class|interface|record|struct|enum)[ \t]',
+] }
+
+[signals.public-api-change]
+kind = "diff"
+meaning = "The change adds, removes or alters a public declaration: a Rust `pub` item or field, a TypeScript export, a C# public member."
+detect = { files = ["**/*.rs", "**/*.ts", "**/*.tsx", "**/*.js", "**/*.mjs", "**/*.vue", "**/*.cs"], contains = [
+  '^[-+][ \t]*pub[ \t]+(async[ \t]+|unsafe[ \t]+|const[ \t]+)*(fn|struct|enum|trait|type|const|static|mod|use)[ \t]',
+  '^[-+][ \t]*pub[ \t]+[a-z_][a-z0-9_]*[ \t]*:',
+  '^[-+][ \t]*export[ \t]',
+  '^[-+][ \t]*public[ \t]',
+] }
+
+[signals.dependency-change]
+kind = "diff"
+meaning = "The change adds, removes or bumps a third-party dependency, read from lockfile and package-reference lines; a crate's own version bump does not count."
+detect = { files = [
+  "**/Cargo.lock", "**/bun.lock", "**/bun.lockb", "**/package-lock.json", "**/yarn.lock",
+  "**/pnpm-lock.yaml", "**/packages.lock.json", "**/*.csproj", "**/Directory.Packages.props",
+  "**/packages.config",
+], contains = [
+  '^[-+](name|checksum|source) = "',
+  '^[-+].*sha512-',
+  '^[-+].*"contentHash"',
+  '^[-+].*<(PackageReference|PackageVersion|Reference|package)[ \t]',
+  '^Binary files .* differ',
+] }
+
+[signals.schema-change]
+kind = "diff"
+meaning = "The change touches a migration, a SQL file, an EF Core model snapshot or a schema definition."
+detect = { files = ["**/migrations/**", "**/Migrations/**", "**/*.sql", "**/*ModelSnapshot.cs", "**/schema.prisma", "**/*.edmx"] }
+
+[signals.query-layer]
+kind = "diff"
+meaning = "The change edits database access: query macros and builders, Dapper or ADO.NET calls, EF Core sets, or SQL text."
+detect = { files = ["**/*.rs", "**/*.ts", "**/*.tsx", "**/*.js", "**/*.mjs", "**/*.cs", "**/*.sql"], contains = [
+  '^[-+].*(sqlx::|query_as|query_scalar|\.fetch_(one|all|optional)\(|\.Query(Async|First|Single|Multiple)?[<(]|\.Execute(Async|Scalar|ScalarAsync)?[<(]|FromSql|DbSet<|\.Include\(|SaveChanges|\.prepare\()',
+  '^[-+].*(?i-u:(select|update)[ \t].*[ \t](from|set)[ \t]|insert[ \t]+into|delete[ \t]+from)',
+] }
+
+[signals.async-concurrency]
+kind = "diff"
+meaning = "The change edits async code, tasks, threads, locks, atomics or channels."
+detect = { files = ["**/*.rs", "**/*.ts", "**/*.tsx", "**/*.js", "**/*.mjs", "**/*.vue", "**/*.cs"], contains = [
+  '^[-+].*((?-u:\b)(async|await)(?-u:\b)|tokio::|spawn_blocking|thread::spawn|Mutex|RwLock|Atomic[A-Z]|mpsc|oneshot|select!|Semaphore|Promise\.(all|race|any)|Task\.(Run|WhenAll|WhenAny)|Parallel\.|Interlocked|ConfigureAwait|Channel<|lock[ \t]*\()',
+] }
+
+[signals.process-heavy]
+kind = "diff"
+meaning = "The change spawns processes or walks the filesystem."
+detect = { files = ["**/*.rs", "**/*.ts", "**/*.tsx", "**/*.js", "**/*.mjs", "**/*.cs", "**/*.sh", "**/*.ps1"], contains = [
+  '^[-+].*(Command::new|std::process|tokio::process|child_process|execSync|execFile|spawnSync|Bun\.spawn|Bun\.\$|Process\.Start|ProcessStartInfo|WalkDir|walkdir|read_dir|readdir|Directory\.(Enumerate|Get)(Files|Directories)|globSync|git[ \t]+ls-files)',
+] }
+
+[signals.frontend]
+kind = "diff"
+meaning = "The change touches UI components, markup or styles."
+detect = { files = ["**/*.tsx", "**/*.jsx", "**/*.vue", "**/*.svelte", "**/*.css", "**/*.scss", "**/*.less", "**/*.html", "**/*.cshtml", "**/*.razor"] }
+
+[signals.docs-touched]
+kind = "diff"
+meaning = "The change touches prose documentation."
+detect = { files = ["**/*.md", "**/*.mdx", "**/*.rst", "**/*.adoc", "**/docs/**"] }
+
+[signals.tests-touched]
+kind = "diff"
+meaning = "The change touches test files."
+detect = { files = [
+  "**/tests/**", "**/test/**", "**/__tests__/**", "**/tests.rs", "**/*_test.rs", "**/*_tests.rs",
+  "**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.spec.tsx", "**/*.test.js", "**/*.spec.js",
+  "**/*Tests.cs", "**/*Test.cs", "**/*Tests/**",
+] }
+
+# ---------------------------------------------------------------- health
+# Per-stack test markers. A line is matched with `\n` prepended, so a
+# literal starting `\n` matches only at the start of a line.
+
+[signals.test-growth]
+kind = "health"
+meaning = "Over the last 90 days, net test declarations added per 1000 source lines added reached 40: the suite is growing faster than the code."
+
+[signals.test-growth.detect]
+window = 90
+threshold = { per_kloc = 40 }
+count."lang:rust" = { files = ["**/*.rs"], patterns = ["#[test]", "#[tokio::test", "#[rstest", "#[sqlx::test"] }
+count."lang:csharp" = { files = ["**/*.cs"], patterns = ["[Fact", "[Theory", "[Test]", "[TestCase(", "[TestMethod"] }
+count."lang:ts" = { files = ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.mjs"], patterns = ["\ntest(", "\nit(", " test(", " it(", "\ttest(", "\tit("] }
+
+[signals.test-ratio-high]
+kind = "health"
+meaning = "At HEAD, a stack holds at least 25 test declarations per 1000 source lines: tests are roughly half the code."
+
+[signals.test-ratio-high.detect]
+threshold = { per_kloc = 25 }
+count."lang:rust" = { files = ["**/*.rs"], patterns = ["#[test]", "#[tokio::test", "#[rstest", "#[sqlx::test"] }
+count."lang:csharp" = { files = ["**/*.cs"], patterns = ["[Fact", "[Theory", "[Test]", "[TestCase(", "[TestMethod"] }
+count."lang:ts" = { files = ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.mjs"], patterns = ["\ntest(", "\nit(", " test(", " it(", "\ttest(", "\tit("] }
+
+[signals.doc-growth]
+kind = "health"
+meaning = "Over the last 90 days, prose documentation grew by at least 2000 net lines."
+
+[signals.doc-growth.detect]
+window = 90
+threshold = 2000
+count."*" = { files = ["**/*.md", "**/*.mdx", "**/*.rst", "**/*.adoc"], patterns = ["\n"] }
+
+[signals.churn-hotspot]
+kind = "health"
+meaning = "A source file was touched by at least 8 commits in the last 90 days; the top decile by commit count are the run's hotspot files."
+detect = { files = ["**/*.rs", "**/*.ts", "**/*.tsx", "**/*.js", "**/*.mjs", "**/*.vue", "**/*.cs", "**/*.sql"], window = 90, threshold = 8 }
+
+[signals.finding-hotspot]
+kind = "health"
+meaning = "A file was touched by at least 3 fix commits (subject starting fix, bugfix or hotfix) in the last 180 days."
+detect = { files = ["**/*.rs", "**/*.ts", "**/*.tsx", "**/*.js", "**/*.mjs", "**/*.vue", "**/*.cs", "**/*.sql"], window = 180, threshold = 3, contains = ['^(?i-u:fix|bugfix|hotfix)(\(|!|:)'] }
+
+[signals.backlog-cluster]
+kind = "health"
+meaning = "The repo's capture backlog holds at least 5 open items; the surveyor's BACKLOG fence lists the ones in scope."
+
+[signals.backlog-cluster.detect]
+threshold = 5
+count."*" = { files = [".claude/backlog.toml"], patterns = ['status = "open"'] }
+
+# ---------------------------------------------------------------- judged
+
+[signals.trust-boundary]
+kind = "judged"
+meaning = "The scope handles data from outside the process's trust: user input, files, network, environment, other processes."
+hint = "Name the entry point and what the data reaches: a parser, a path join, a query, a shell argument, a deserialiser. Evidence is the file holding the entry point."
+
+[signals.hot-path]
+kind = "judged"
+meaning = "The scope sits on a path run often or over large inputs, where cost matters."
+hint = "Cite a loop over unbounded input, a per-request or per-file path, or a benchmark that exists. Evidence is the file holding the path."
+
+[signals.new-seam]
+kind = "judged"
+meaning = "The change introduces an extension point: a trait, interface, registry, plugin hook or provider others will implement or call."
+hint = "Name the seam and its intended callers. Evidence is the file that declares it."
+
+# ---------------------------------------------------------------- concerns
+# Each comment names the lens that owns the tags below it. The validator
+# needs exactly one owning lens per (family, tag); a tag's families never
+# exceed its owner's.
+
+# correctness
+[concerns.logic]
+meaning = "Wrong output for a nameable input or state."
+families = ["code"]
+
+[concerns.edge-cases]
+meaning = "Boundary inputs: empty, maximal, malformed, CRLF, Windows paths, encodings."
+families = ["code"]
+
+[concerns.missing-handling]
+meaning = "An input, state or branch the code does not handle at all."
+families = ["code"]
+
+[concerns.error-paths]
+meaning = "Swallowed errors, a Result mapped to a default, partial writes with no rollback, an unwrap on user-controlled data."
+families = ["code"]
+
+[concerns.races-ordering]
+meaning = "Shared state, lock order and read-then-write races that make output depend on timing."
+families = ["code"]
+
+[concerns.resource-lifetimes]
+meaning = "Files, handles, temp directories and child processes leaked or misused on an early return."
+families = ["code"]
+
+[concerns.cross-layer-invariants]
+meaning = "A change in one layer missing its decoder, query, wire mirror or construction site in another."
+families = ["code"]
+
+# type-design
+[concerns.illegal-states]
+meaning = "Boolean and optional combinations that make invalid states representable."
+families = ["code"]
+
+[concerns.untyped-primitives]
+meaning = "Domain-meaningful values crossing boundaries as bare strings or integers; redundant or derivable fields."
+families = ["code"]
+
+[concerns.stringly-typed]
+meaning = "A closed set of values carried as free strings instead of an enum or union."
+families = ["code"]
+
+# domain-model
+[concerns.persistence-leakage]
+meaning = "Persistence concerns in domain types; one type serving request, wire and storage roles."
+families = ["code"]
+
+[concerns.aggregate-boundaries]
+meaning = "Aggregates referenced by object rather than identity; cardinality that contradicts the domain."
+families = ["code"]
+
+[concerns.migration-safety]
+meaning = "A migration that changes stored shape without a data step, or edits an applied migration."
+families = ["code"]
+
+[concerns.mapping-drift]
+meaning = "Columns, query results and mapped types that no longer agree."
+families = ["code"]
+
+# architecture
+[concerns.layering]
+meaning = "Logic in the wrong layer; coupling that runs against the dependency direction."
+families = ["code"]
+
+[concerns.placement]
+meaning = "New or moved files placed or named against the layout the tree establishes."
+families = ["code"]
+
+[concerns.evolvability]
+meaning = "A change that makes the codebase harder to extend or change next time."
+families = ["code"]
+
+# idioms
+[concerns.pattern-consistency]
+meaning = "Divergence from the pattern the codebase converged on, decided from history."
+families = ["code"]
+
+[concerns.language-idioms]
+meaning = "Builtins reimplemented, type-system or framework features worked around."
+families = ["code"]
+
+[concerns.naming-drift]
+meaning = "Names that disagree with the surrounding vocabulary for the same thing."
+families = ["code"]
+
+# duplication
+[concerns.duplicated-logic]
+meaning = "The same logic written twice where one helper would serve, past the rule of three."
+families = ["code"]
+
+[concerns.duplicated-facts]
+meaning = "One fact (a constant, a list, a rule) with more than one owner."
+families = ["code"]
+
+# security
+[concerns.input-validation]
+meaning = "Untrusted data reaching a sink without the check the boundary needs."
+families = ["code", "plan"]
+
+[concerns.injection]
+meaning = "Untrusted data reaching a query, shell, path or template as code."
+families = ["code", "plan"]
+
+[concerns.access-control]
+meaning = "Authentication and authorisation missing or bypassable at a boundary."
+families = ["code", "plan"]
+
+[concerns.secrets-and-crypto]
+meaning = "Secrets stored or logged in the clear; weak or misused cryptography."
+families = ["code", "plan"]
+
+# external-validity
+[concerns.api-currency]
+meaning = "A library API used against its pinned version: wrong signature, removed option, deprecated call."
+families = ["code", "plan"]
+
+[concerns.dependency-advisories]
+meaning = "A known vulnerability or maintenance advisory against a dependency the change adds or bumps."
+families = ["code", "plan"]
+
+# ripple
+[concerns.stale-references]
+meaning = "A renamed or removed symbol still named in code, comments, docs or string literals."
+families = ["code", "plan"]
+
+[concerns.unwired-seams]
+meaning = "A new registration seam with no production call site."
+families = ["code", "plan"]
+
+[concerns.removed-justification]
+meaning = "A removed consumer still cited as the reason something else exists."
+families = ["code", "plan"]
+
+[concerns.incomplete-sweep]
+meaning = "Same-pattern sites elsewhere that need the same change."
+families = ["code", "plan"]
+
+# hygiene
+[concerns.dead-code]
+meaning = "Code with no reference anywhere in the tree, proven by search."
+families = ["code"]
+
+[concerns.stale-todos]
+meaning = "TODO and FIXME markers whose work is done or whose owner is gone."
+families = ["code"]
+
+[concerns.unused-config]
+meaning = "Configuration keys, features, flags and imports nothing reads."
+families = ["code"]
+
+# test-gaps
+[concerns.missing-tests]
+meaning = "A behaviour or regression risk the change carries with no test aimed at it."
+families = ["code", "plan"]
+
+[concerns.weak-assertions]
+meaning = "Tests that run the code but would pass if it were wrong."
+families = ["code"]
+
+# seams
+[concerns.hidden-dependencies]
+meaning = "Globals, time, randomness and IO with no injection point."
+families = ["code"]
+
+[concerns.hard-wired-concretes]
+meaning = "Concrete collaborators constructed inline where a test needs a substitute."
+families = ["code"]
+
+# diagnostics-dx
+[concerns.error-messages]
+meaning = "Errors that do not name the operation, the input and expected versus actual."
+families = ["code"]
+
+[concerns.log-quality]
+meaning = "Log levels and content that do not fit what an operator needs."
+families = ["code"]
+
+[concerns.help-text]
+meaning = "Help text, defaults and usage a first-time user cannot discover."
+families = ["code"]
+
+# test-pruning
+[concerns.redundant-tests]
+meaning = "Tests that duplicate another test's coverage."
+families = ["code"]
+
+[concerns.implementation-pinned-tests]
+meaning = "Tests that re-assert the implementation or pin incidental behaviour."
+families = ["code"]
+
+# doc-drift
+[concerns.comment-rot]
+meaning = "Comments and doc comments that no longer describe the code beside them."
+families = ["code"]
+
+[concerns.prose-drift]
+meaning = "READMEs, guides and skill prose that contradict current behaviour."
+families = ["code"]
+
+[concerns.missing-docs]
+meaning = "Behaviour a user or maintainer needs documented that no doc covers."
+families = ["code"]
+
+# doc-consolidation
+[concerns.duplicated-docs]
+meaning = "The same guidance written in more than one doc."
+families = ["code"]
+
+[concerns.obsolete-docs]
+meaning = "Docs describing removed features or superseded procedures."
+families = ["code"]
+
+# memory-runtime
+[concerns.allocations]
+meaning = "Avoidable allocation and copying on a hot path."
+families = ["perf"]
+
+[concerns.memory-retention]
+meaning = "Memory held longer than needed: leaks, unbounded caches, retained buffers."
+families = ["perf"]
+
+[concerns.runtime-overhead]
+meaning = "Boxing, dynamic dispatch, reflection or reactivity cost on a hot path."
+families = ["perf"]
+
+# data-shape
+[concerns.serialization-cost]
+meaning = "Encoding, decoding and conversion work that the data's use does not need."
+families = ["perf"]
+
+[concerns.data-layout]
+meaning = "Data structures whose shape fights the access pattern."
+families = ["perf"]
+
+# data-access
+[concerns.n-plus-one]
+meaning = "A query per item where one query would serve."
+families = ["perf"]
+
+[concerns.query-efficiency]
+meaning = "Query shape, indexes, pagination and over-fetching."
+families = ["perf"]
+
+[concerns.caching]
+meaning = "Repeated reads of unchanged data with no cache, or a cache that never hits."
+families = ["perf"]
+
+# algorithm
+[concerns.algorithmic-complexity]
+meaning = "Super-linear work over an input that grows."
+families = ["perf"]
+
+[concerns.redundant-work]
+meaning = "The same computation repeated where its result could be reused."
+families = ["perf"]
+
+# concurrency
+[concerns.lock-contention]
+meaning = "Locks held across slow work or contended on a hot path."
+families = ["perf"]
+
+[concerns.blocking-in-async]
+meaning = "Blocking calls on an async executor thread."
+families = ["perf"]
+
+[concerns.missed-parallelism]
+meaning = "Independent work run serially, or fan-out without a bound."
+families = ["perf"]
+
+# io-process
+[concerns.process-spawn]
+meaning = "Subprocess start-up cost and fan-out."
+families = ["perf"]
+
+[concerns.filesystem-io]
+meaning = "Filesystem walks, repeated stats and syscalls per item."
+families = ["perf"]
+
+[concerns.startup-cost]
+meaning = "Work done at process start that most invocations never use."
+families = ["perf"]
+
+# plan-grounding
+[concerns.plan-alignment]
+meaning = "Cited files, symbols, paths and line numbers that do not exist or no longer point where the plan says."
+families = ["plan"]
+
+[concerns.enumeration-drift]
+meaning = "An enumeration, allowlist or count the plan transcribes that no longer matches the tree."
+families = ["plan"]
+
+[concerns.behavioural-premises]
+meaning = "A claim about current behaviour the plan relies on that the code or a command contradicts."
+families = ["plan"]
+
+[concerns.unmentioned-consumers]
+meaning = "Files, components and consumers the change affects that no task names."
+families = ["plan"]
+
+[concerns.cross-cutting-concerns]
+meaning = "Logging, error handling, authorisation and cache invalidation the plan leaves unaddressed."
+families = ["plan"]
+
+[concerns.config-migration-build]
+meaning = "Configuration, migration and build changes the plan needs but does not schedule."
+families = ["plan"]
+
+# plan-dependencies
+[concerns.missing-edges]
+meaning = "A task consuming what another builds with no dependency path between them."
+families = ["plan"]
+
+[concerns.edge-correctness]
+meaning = "A stated dependency edge that is the wrong edge or orders tasks against their data flow."
+families = ["plan"]
+
+[concerns.checkpoint-coherence]
+meaning = "Checkpoint groups that are not buildable, coherent increments or leave tasks outside every closure."
+families = ["plan"]
+
+# plan-structure
+[concerns.goal-coverage]
+meaning = "Stated goals no Success Criterion verifies; criteria that check only that tasks ran."
+families = ["plan"]
+
+[concerns.approver-sections]
+meaning = "Summary and Success Criteria missing from a house-format plan."
+families = ["plan"]
+
+[concerns.format-conformance]
+meaning = "Structure that breaks the plan-format contract, prose-format plans that need restructuring included."
+families = ["plan"]
+
+[concerns.execution-policy]
+meaning = "Execution Policy fields missing, out of range or contradicting the task graph."
+families = ["plan"]
+
+# feasibility
+[concerns.feasibility]
+meaning = "A change the current architecture or a pinned API cannot support as written."
+families = ["plan"]
+
+[concerns.coherence]
+meaning = "Sections or tasks that contradict each other."
+families = ["plan"]
+
+# plan-executor
+[concerns.executor-decisions]
+meaning = "Decisions a task leaves to its executor that the plan should make."
+families = ["plan"]
+
+[concerns.files-parity]
+meaning = "Edit targets a task's body names that its Files line omits, or the reverse."
+families = ["plan"]
+
+[concerns.runnable-acceptance]
+meaning = "Acceptance commands that cannot run as written or cannot fail."
+families = ["plan"]
+
+[concerns.task-sizing]
+meaning = "Tasks too large for one session, or with an effort tag that misstates them."
+families = ["plan"]
+
+# plan-risk
+[concerns.rollback-adequacy]
+meaning = "Rollback that the declared checkpoint policy cannot deliver."
+families = ["plan"]
+
+[concerns.risky-task-checkpoints]
+meaning = "Migrations and public-API or schema changes not followed by a checkpoint."
+families = ["plan"]
+
+[concerns.back-compat]
+meaning = "Existing users, data or callers the change breaks."
+families = ["plan"]
+
+[concerns.scope-realism]
+meaning = "Scope or effort the plan's tasks cannot deliver."
+families = ["plan"]
+
+# plan-premortem
+[concerns.premortem-failure]
+meaning = "How the shipped plan most plausibly fails, argued backwards from that failure."
+families = ["plan"]
+
+# contrarian
+[concerns.alternative-approaches]
+meaning = "A competing approach, cited from a counter-example or documented failure, that the change did not weigh."
+families = ["code", "perf", "plan"]
+
+[concerns.decision-challenges]
+meaning = "The argument against a decision the change or plan rests on."
+families = ["code", "perf", "plan"]
+
+[concerns.scope-conservatism]
+meaning = "Scope that could shrink, or work that need not happen at all."
+families = ["code", "perf", "plan"]
+
+# synthesis
+[concerns.emergent-defects]
+meaning = "Defects that appear only across cells: two correct parts that are wrong together."
+families = ["code", "perf", "plan"]
+
+[concerns.coverage-blind-spots]
+meaning = "What every cell missed, judged from the digest and the scope."
+families = ["code", "perf", "plan"]
+
+[concerns.cross-cutting-concurrency]
+meaning = "Concurrency effects across subsystems that no single-subsystem review sees."
+families = ["perf"]
+
+# ---------------------------------------------------------------- routing
+# `review add` routes cleanup to the Opus verifier when it edits an
+# `executable` path, or removes a test; `tests` wins over `executable`.
+
+[routing]
+executable = [
+  "**/*.rs", "**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx", "**/*.mjs", "**/*.cjs", "**/*.vue",
+  "**/*.svelte", "**/*.cs", "**/*.cshtml", "**/*.razor", "**/*.sql", "**/*.py", "**/*.go",
+  "**/*.sh", "**/*.ps1", "**/*.psm1", "**/.githooks/*",
+]
+tests = [
+  "**/tests/**", "**/test/**", "**/__tests__/**", "**/tests.rs", "**/*_test.rs", "**/*_tests.rs",
+  "**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.spec.tsx", "**/*.test.js", "**/*.spec.js",
+  "**/*Tests.cs", "**/*Test.cs", "**/*Tests/**",
+]
