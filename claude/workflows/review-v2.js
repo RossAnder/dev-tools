@@ -3,7 +3,7 @@ export const meta = {
   description: 'Run one review-v2 wave: one agent per cell, then route each finding to its verifier or pooled checker',
   whenToUse: 'Launched by the review-v2-engine skill at stage 4 with the run, wave, cells and schemas as args; not for direct use',
   phases: [
-    { title: 'Cells', detail: 'one review-finder, review-sweeper or plan-executor per cell; each writes and seals its cell' },
+    { title: 'Cells', detail: 'one review-finder, review-finder-cf, review-sweeper or plan-executor per cell; each writes and seals its cell' },
     { title: 'Verify', detail: 'review-verifier per routed finding (panel: three seats), minor-defect batches, pooled review-checker batches' },
   ],
 }
@@ -12,7 +12,9 @@ export const meta = {
 // only an index. Every prompt is built from `args` alone: a relaunch with the
 // same args replays the same agent calls, and the store writes are idempotent.
 const SCRIPT_VERSION = '1'
-const CELL_AGENTS = ['review-finder', 'review-sweeper', 'plan-executor']
+const CELL_AGENTS = ['review-finder', 'review-finder-cf', 'review-sweeper', 'plan-executor']
+// The context-free correctness cell runs without the pack, so its prompt omits the `pack:` line.
+const CONTEXT_FREE_AGENT = 'review-finder-cf'
 const CHECKER_BATCH = 20
 const PANEL_SEATS = 3
 
@@ -37,14 +39,15 @@ if (missing.length) {
 
 const runDir = a.pack_path.replace(/[\\/][^\\/]*$/, '')
 // A flow-bound run carries the `ledger:` line, which agent correlation reads at column 0.
-const preamble = [
+const preambleLines = (withPack) => [
   a.ledger_line ? a.ledger_line.replace(/^\s+/, '') : null,
   `run: ${a.run}`,
   `wave: ${a.wave}`,
   `store: ${storeFlag}`,
-  `pack: ${a.pack_path}`,
+  withPack ? `pack: ${a.pack_path}` : null,
   `run directory: ${runDir}`,
 ].filter(Boolean).join('\n')
+const preamble = preambleLines(true)
 
 const batchSchema = {
   type: 'object',
@@ -52,7 +55,7 @@ const batchSchema = {
   required: ['verdicts'],
 }
 
-const cellPrompt = (cell) => `${preamble}
+const cellPrompt = (cell) => `${preambleLines(cell.agentType !== CONTEXT_FREE_AGENT)}
 cell: ${cell.id}
 
 Fetch your assignment with \`tomlctl review show ${cell.id} --for finder ${storeFlag}\`, then run the cell as your procedure says: write its full finding set with one \`tomlctl review add --run ${a.run} --cell ${cell.id} ${storeFlag}\` call, seal it with \`tomlctl review cover ${cell.id}\`, and return the cell-return object \`review add\` printed.`

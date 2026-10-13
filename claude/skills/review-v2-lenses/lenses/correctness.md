@@ -48,7 +48,7 @@ A defect states its `failure_scenario` as the concrete input or state, the path 
 
 ### Context-free variant
 
-A cell may run this lens with an empty pack over the diff alone. Then read only the changed hunks and the lines they need to be understood; do not load the project's conventions, prior findings or plan. Report only defects whose failure follows from the diff text itself — a broken condition, an unhandled case, an error dropped, a resource leaked — and skip anything whose truth depends on project context you were not given. The point of the variant is an independent read, so do not consult the store's prior findings for the slice before writing.
+A `review-finder-cf` cell runs this lens with no pack over the diff alone. Then read only the changed hunks and the lines they need to be understood; do not load the project's conventions, prior findings or plan. Report only defects whose failure follows from the diff text itself — a broken condition, an unhandled case, an error dropped, a resource leaked — and skip anything whose truth depends on project context you were not given. The point of the variant is an independent read, so do not consult the store's prior findings for the slice before writing.
 
 ## Does not flag
 

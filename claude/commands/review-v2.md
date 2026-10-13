@@ -45,43 +45,18 @@ The surveyor resolves `lint-baseline` through its discovery ladder, one command 
 
 ### Stage 3 — the context-free correctness cell
 
-At `standard` and `deep`, add one cell that runs the `correctness` lens over the diff alone, with no pack and no prior findings. It is an independent read: a finder that has absorbed the project's conventions and the store's history tends to accept what they accept, and this cell is the check on that.
+At `standard` and `deep`, add one cell that runs the `correctness` lens over the diff alone, with no pack, no prior findings and no CLAUDE.md. It is an independent read: a finder that has absorbed the project's conventions and the store's history tends to accept what they accept, and this cell is the check on that. Its agent is `review-finder-cf`, the same finder run with `omitClaudeMd`; the store accepts that agent only on a cell whose concerns are exactly `["correctness"]`.
 
 - **When**: the run has a diff, meaning its `base` is not `HEAD`. Not at `quick`. For a path review of unchanged code there are no hunks to read, so leave it out and say so in the close summary.
 - **Row**: write it into the wave-1 cell file with the composed rows. Its slice is the run's scope, or, when the proposal split `correctness` across several slices because the diff is large, one context-free cell per such slice.
 
   ```json
-  {"slice": ["<scope globs>"], "concerns": ["correctness"], "agent": "review-finder", "question": "context-free variant: diff only, no pack, no prior findings", "reason": "context-free correctness pass over the diff, independent of the pack"}
+  {"slice": ["<scope globs>"], "concerns": ["correctness"], "agent": "review-finder-cf", "question": "context-free variant: diff only, no pack, no prior findings", "reason": "context-free correctness pass over the diff, independent of the pack"}
   ```
 
 - **Ceiling**: it counts against the depth's cell ceiling like any cell, and outranks candidate-tier cells and repeat passes. When nothing but floor cells is left to cut, leave it out and say so in the close summary.
-- **Store record**: no field marks a cell as context-free; the `question` and `reason` above record why the cell exists. Its findings count under `correctness` in `review stats`, which does not separate them from the floor cell's. Keep the minted id: stage 4 needs it.
-
-### Stage 4 — dispatching the context-free cell
-
-The Workflow and the engine's cell prompt hand every cell the run's pack, and `review show --for finder` names the pack path too, so the context-free cell never goes through either.
-
-- **Workflow substrate**: leave the cell out of the Workflow's `cells` and dispatch it yourself in the same turn as the launch, with the prompt below.
-- **Agent-wave substrate**: dispatch it with the wave, using the prompt below in place of the cell prompt.
-
-It is a one-shot background `Agent` dispatch of `review-finder`, with no `name:` and no `model:`, and it counts toward the 16 running agents. The prompt is the engine's preamble with the `pack:` line removed and a `base:` line added, then the cell's own instruction:
-
-```text
-ledger: .claude/flows/<slug>/review-v2.toml
-run: <run-id>
-wave: <wave>
-store: --slug <slug>
-run directory: <run-dir>
-base: <base-sha>
-cell: <cell-id>
-context: none
-
-This is a context-free cell: you run the `correctness` lens's Context-free variant. Fetch your assignment with `tomlctl review show <cell-id> --for finder --slug <slug>` and read the bound `correctness` lens from the path it gives. Ignore the pack path the assignment carries: leave `pack.md`, the store's prior findings for the slice, CLAUDE.md files, plans and project docs unread. Read the slice's diff with `git diff <base-sha> -- <slice paths>` and only the surrounding lines each hunk needs, plus the in-slice lines of the baseline logs the assignment names, so nothing the linter reports is raised. Then write the cell's full finding set with one `tomlctl review add --run <run-id> --cell <cell-id> --slug <slug>` call, seal it with `tomlctl review cover <cell-id>`, and return the cell-return object `review add` printed.
-```
-
-A flow-less run omits the `ledger:` line and passes `--scope <scope>` wherever the prompt says `--slug <slug>`.
-
-The Workflow does not route this cell's findings, so route them yourself from its cell-return, by the routing table in the engine's agent-waves reference: verifiers per finding or as a `verify-<cell-id>-minor` batch, and its checker rows as their own batch named `check-<wave>-cf`, so the payload name cannot collide with the Workflow's numbered batches. None of its rows is a sweeper row. Stage 5's mop-up covers any of its ids left unverified.
+- **Store record**: the cell's `agent` marks it as context-free; the `question` and `reason` above record why it exists. Its findings count under `correctness` in `review stats`, which does not separate them from the floor cell's.
+- **Dispatch**: it runs at stage 4 like any other cell, on either substrate. `review show --for finder` gives a `review-finder-cf` cell no pack and adds the run's `base`, and the cell prompt omits the `pack:` line for it, so the finder reads the slice as `git diff <base>` and skips the prior findings. Its findings route like any finder cell's.
 
 ### Stage 8 — backlog, export and hand-off
 
