@@ -12,7 +12,8 @@ is how to work around it* instead of rediscovering it.
 
 This skill owns the capture **discipline**. The full flag surface of the `tomlctl backlog`
 group lives in `claude/skills/tomlctl/references/backlog.md`; do not go looking for a flag
-table here.
+table here. Reading, searching, batch-resolving and editing stored rows — never by grepping the
+store — is in `claude/skills/tomlctl/references/backlog-recipes.md`.
 
 ## Mint when, and when not
 

@@ -9,6 +9,7 @@ row and when not to is the `backlog-capture` skill's job
 
 ## Contents
 
+- [Reading, searching and editing rows](backlog-recipes.md)
 - [`backlog add`](#backlog-add)
 - [`backlog add-many`](#backlog-add-many)
 - [`backlog check`](#backlog-check)
@@ -16,7 +17,7 @@ row and when not to is the `backlog-capture` skill's job
 - [`backlog show`](#backlog-show)
 - [`backlog relate`](#backlog-relate)
 - [`backlog triage`](#backlog-triage)
-- [`backlog reconcile`](backlog-reconcile.md)
+- [`backlog reconcile`](backlog-reconcile.md) — joins `promoted` rows to the tasks that close them
 - [`backlog cluster`](#backlog-cluster)
 - [`backlog compact`](#backlog-compact)
 - [`backlog evidence dir`](#backlog-evidence-dir)
@@ -153,8 +154,10 @@ when it kept the claim. When the default cap of 5 cut candidates, the header add
 `limited: {"shown":5,"total":N}`.
 
 Under `--ndjson` every line is parsed before the store is read once; a malformed line, a
-missing `summary` or any other key is `kind=validation` naming the line. Each result row
-carries one probe's verdict, and `limited` when its candidates were capped:
+missing `summary` or any other key is `kind=validation` naming the line. `results` are already
+the rows: filter them directly (`--where verdict=related`, `--template '{line} {verdict}
+{candidates.0.id}'`), never with `--rows results`, which is refused. Each result row carries
+one probe's verdict, and `limited` when its candidates were capped:
 
 ```json
 {"thresholds":{"strong":0.75,"related":0.35},
@@ -302,12 +305,6 @@ plan path, `external:<REF>` under `--external`.
 
 With `--expect-status` the envelope adds `applied` and `skipped_stale`, each stale entry naming
 its mismatched `status` (or a missing `id`); when no id passes the guard nothing is written.
-
-## `backlog reconcile`
-
-`backlog reconcile` joins `promoted` rows to the tasks that close them and resolves the
-finished ones. Its flags, buckets, `render_needed` duty, `--apply` writes and output shape are
-in [backlog-reconcile.md](backlog-reconcile.md).
 
 ## `backlog cluster`
 

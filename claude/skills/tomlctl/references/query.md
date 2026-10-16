@@ -94,7 +94,7 @@ tomlctl items list .claude/flows/foo/review-ledger.toml --status open --strict-r
 | `--where-contains` | `--where-contains summary=allocation` | Field string contains substring. |
 | `--where-prefix` | `--where-prefix id=R2` | Field string starts with. |
 | `--where-suffix` | `--where-suffix file=.rs` | Field string ends with. |
-| `--where-regex` | `--where-regex symbol='^old::'` | Caller-supplied regex; does NOT auto-anchor. |
+| `--where-regex` | `--where-regex symbol='^old::'` | Caller-supplied regex; does NOT auto-anchor. Built without Unicode tables, so `(?i)`, `\d`, `\w` and `\s` are refused; write `(?i-u)`, `(?-u:\d)`, `[0-9]`, `[[:space:]]`. `sweep -e` shares the restriction. |
 | `--status` | `--status open` | Legacy shortcut for `--where status=<v>`; prefer `--where` in anything new. |
 | `--category` | `--category security` | Legacy shortcut for `--where category=<v>`. |
 | `--file` | `--file src/a.rs` | Legacy shortcut for `--where file=<p>`. |
