@@ -1,5 +1,5 @@
 schema_version = 1
-last_updated = 2026-10-13
+last_updated = 2026-10-14
 
 [[backlog]]
 id = "B-de0a0d87"
@@ -6658,3 +6658,167 @@ evidence = ["claude/skills/review-v2-engine/references/survey.md"]
 related = ["B-f278c33f"]
 resolved = 2026-10-13
 resolution = "378ad43: survey.md section 7's stage 3 to 4 barrier waits on every key a split baseline produced."
+
+[[backlog]]
+id = "B-f15577d8"
+kind = "annoyance"
+summary = "glimpse lists and tables each have their own scrolling UX; unify on arrows, mouse wheel, PgUp/PgDn and Home/End everywhere"
+area = "glimpse/src/view"
+tags = [
+    "glimpse",
+    "ux",
+    "scrolling",
+]
+status = "open"
+created = 2026-10-14
+last_seen = 2026-10-14
+seen_count = 1
+dedup_id = "f15577d8c109db76"
+origin = "user"
+context = "User capture. The item lists, Inbox, layers, legend, selector and details panel each grew their own key and wheel handling (keys.rs dispatches per overlay/surface), so the controls differ from view to view. Pull one shared scroll/navigation contract (Up/Down, wheel, PgUp/PgDn, Home/End, cursor-vs-viewport scroll) into a common helper and route every list/table through it. Natural foundation for the column-header and help-row items."
+base_sha = "9c829f5c6ce077e135ce74e5ec6d73327c4e5acf"
+evidence = ["glimpse/src/keys.rs:91"]
+related = [
+    "B-7d66028d",
+    "B-5e571ecd",
+    "B-59aa6362",
+]
+
+[[backlog]]
+id = "B-5e571ecd"
+kind = "direction"
+summary = "glimpse tables need clickable headers that toggle sorting and a way to choose which columns appear"
+area = "glimpse/src/view"
+tags = [
+    "glimpse",
+    "ux",
+    "tables",
+]
+status = "open"
+created = 2026-10-14
+last_seen = 2026-10-14
+seen_count = 1
+dedup_id = "5e571ecd7e47988b"
+origin = "user"
+context = "User capture. Today sort is a key/CLI option and the item_columns config key picks columns statically. Wanted: a header row on every table, click (and a key) to cycle sort asc/desc/off per column, and an in-app column picker (persisted to config) rather than editing config. Build on the unified scrolling contract from the sibling scrolling item."
+base_sha = "9c829f5c6ce077e135ce74e5ec6d73327c4e5acf"
+evidence = ["glimpse/src/view/items.rs"]
+related = [
+    "B-d83a24fa",
+    "B-f15577d8",
+]
+
+[[backlog]]
+id = "B-d4da8c1b"
+kind = "direction"
+summary = "glimpse text cannot be selected and copied; at minimum a click should put an item id on the clipboard"
+area = "glimpse/src/keys.rs"
+tags = [
+    "glimpse",
+    "ux",
+    "clipboard",
+    "mouse",
+]
+status = "open"
+created = 2026-10-14
+last_seen = 2026-10-14
+seen_count = 1
+dedup_id = "d4da8c1b659ce809"
+origin = "user"
+context = "User capture. Mouse capture swallows the terminal's native selection. Options, cheapest first: a key and/or click on an id cell that copies it via OSC 52 (works through herdr/ssh where the terminal allows it) with a flash notice; document the terminal's Shift-drag bypass; or an in-app selection mode that temporarily disables mouse capture."
+base_sha = "9c829f5c6ce077e135ce74e5ec6d73327c4e5acf"
+evidence = ["glimpse/src/keys.rs:91"]
+
+[[backlog]]
+id = "B-3dbe27a1"
+kind = "direction"
+summary = "glimpse tree view needs focus and mouse pan/zoom, rendering only the generations and families that fit the available space"
+area = "glimpse/src/diagram"
+tags = [
+    "glimpse",
+    "ux",
+    "diagram",
+    "mouse",
+]
+status = "open"
+created = 2026-10-14
+last_seen = 2026-10-14
+seen_count = 1
+dedup_id = "3dbe27a10abd5390"
+origin = "user"
+context = "User capture. Navigating the task tree means moving the selection with arrows; the viewport only follows the selected node. Wanted: (a) a focus mode scoped to a subtree or ancestry; (b) wheel/drag to pan and a zoom level, independent of the selection; (c) a smarter fit mode that chooses which generations/families around the target fit the available space and re-runs layout/routing on just that subset, so edges are drawn only between included nodes, rather than centring the target in the full layout and clipping."
+base_sha = "9c829f5c6ce077e135ce74e5ec6d73327c4e5acf"
+evidence = ["glimpse/src/diagram/mod.rs"]
+
+[[backlog]]
+id = "B-59aa6362"
+kind = "direction"
+summary = "glimpse needs a key to toggle the shortcut help row"
+area = "glimpse/src/keys.rs"
+tags = [
+    "glimpse",
+    "ux",
+    "keys",
+]
+status = "open"
+created = 2026-10-14
+last_seen = 2026-10-14
+seen_count = 1
+dedup_id = "59aa63622b3865cc"
+origin = "user"
+context = "User capture. The shortcut hint row is always drawn and costs a line on small panes. Add a key binding that hides/shows it (persisting the choice to config would be a bonus), and list the key in the legend."
+base_sha = "9c829f5c6ce077e135ce74e5ec6d73327c4e5acf"
+related = [
+    "B-f15577d8",
+    "B-d1667850",
+]
+
+[[backlog]]
+id = "B-dd0987c7"
+kind = "bug"
+summary = "glimpse panel divider no longer drags with a ghostty touch-screen hold and drag"
+area = "glimpse/src/keys.rs"
+tags = [
+    "glimpse",
+    "mouse",
+    "touch",
+    "ghostty",
+    "regression",
+]
+status = "open"
+created = 2026-10-14
+last_seen = 2026-10-14
+seen_count = 1
+dedup_id = "dd0987c73e839195"
+origin = "user"
+context = "User report: touch hold-and-drag on the divider worked in ghostty before a recent change and now does not; mouse dragging was not reported broken. Not yet diagnosed. Leads: commit 50349c0 (2026-10-06) reordered keys::mouse so a left press checks the tab hit regions first and gates the divider on regions.modal being none; and while app.dragging, any Down(_) ends the drag and Moved maps to nothing, so a touch stream that re-sends a press or reports buttonless motion would end or stall the drag. Capture the raw crossterm event sequence ghostty emits for a touch hold-drag before changing the matcher."
+base_sha = "9c829f5c6ce077e135ce74e5ec6d73327c4e5acf"
+evidence = [
+    "glimpse/src/keys.rs:97",
+    "glimpse/src/keys.rs:124",
+]
+
+[[backlog]]
+id = "B-d1667850"
+kind = "direction"
+summary = "glimpse UI revamp: best-practice design sweep across modern TUI frameworks, switchable theme sets and a pure ANSI theme"
+area = "glimpse/src/theme.rs"
+tags = [
+    "glimpse",
+    "ux",
+    "theme",
+    "ansi",
+]
+status = "open"
+created = 2026-10-14
+last_seen = 2026-10-14
+seen_count = 1
+dedup_id = "d16678506590e3c1"
+origin = "user"
+context = "User capture: the UI reads as too generic. Start with a research sweep of current TUI design language (Charm's Bubble Tea/Lip Gloss, Textual, ratatui showcase apps, lazygit/gitui/k9s/yazi, etc.): spacing, borders, typography via weight/dim, status chips, focus treatment. Then revamp the views. Theming: theme.rs already resolves named tokens from a palette with [theme] overrides; extend it to ship several named theme sets switchable at runtime (key or selector) and via config, including a pure-ANSI set that uses only the 16 terminal palette slots so it follows the user's terminal theme."
+base_sha = "9c829f5c6ce077e135ce74e5ec6d73327c4e5acf"
+evidence = ["glimpse/src/theme.rs:4"]
+related = [
+    "B-af2c5b24",
+    "B-59aa6362",
+]
