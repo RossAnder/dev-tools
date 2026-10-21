@@ -687,12 +687,7 @@ impl ItemsState {
         if self.filter.is_empty() {
             return true;
         }
-        let place = match &row.anchor {
-            Anchor::Code { file, .. } => file.as_str(),
-            Anchor::Area(area) => area.as_str(),
-            Anchor::Section(_) | Anchor::None => "",
-        };
-        [row.id.as_str(), row.summary.as_str(), place]
+        [row.id.as_str(), row.summary.as_str(), place(&row.anchor)]
             .iter()
             .any(|field| field.to_lowercase().contains(needle))
     }
@@ -1359,6 +1354,19 @@ mod tests {
         assert_eq!(items(&state), ["R2", "R3", "R10"]);
         state.filter = "cache".into();
         assert_eq!(items(&state), ["R3"]);
+    }
+
+    #[test]
+    fn the_filter_matches_a_section_anchor() {
+        let mut state = loaded(vec![
+            ItemRow {
+                anchor: Anchor::Section("Risks".into()),
+                ..item("P1", "open", "warning")
+            },
+            item("P2", "open", "warning"),
+        ]);
+        state.filter = "risks".into();
+        assert_eq!(items(&state), ["P1"]);
     }
 
     #[test]

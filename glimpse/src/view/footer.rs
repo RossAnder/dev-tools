@@ -3,8 +3,9 @@
 //! Each state lists its hints most useful first, and that order is their priority: a
 //! narrow pane drops hints from the end, never cuts one, and marks the drop with `…`.
 //! Outside the modals the row always ends `? keys`. [`HintMode`] picks one row, up to
-//! [`FULL_ROWS`] wrapped rows, or none; a live notice replaces the hints in every mode,
-//! and released mouse capture takes the first hint's place.
+//! [`FULL_ROWS`] wrapped rows, or none; a live notice replaces the hints in every mode.
+//! Only after a `v` release, not whenever capture is off, `mouse released · v to capture`
+//! takes the first hint's place, and is the one row hidden mode shows.
 
 use std::time::Instant;
 
