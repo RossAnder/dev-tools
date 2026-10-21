@@ -4,8 +4,11 @@
 //! tokens name a UI feature and default to a palette token by name, so a `[theme]`
 //! table can repaint one feature or the whole palette. A value is a colour (`#rrggbb`,
 //! an ANSI name, an index `0`–`255`, or `default` for the terminal's own) or another
-//! token's name. With `NO_COLOR` set every colour is dropped and backgrounds fall back
-//! to reverse video.
+//! token's name. A [`sets::ThemeSet`] supplies the palette and the drawing rules; with
+//! `NO_COLOR` set the `mono` set drops every colour and backgrounds fall back to reverse
+//! video.
+
+pub(crate) mod sets;
 
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -13,6 +16,7 @@ use std::str::FromStr;
 use ratatui::style::{Color, Modifier, Style};
 
 use crate::model::TaskStatus;
+use sets::{Faint, Fill, ThemeSet};
 
 /// Every token and its default, palette first. Defaults are the Kanso Zen palette the
 /// terminal, herdr and gitui share, with its status colours.
@@ -55,7 +59,7 @@ pub(crate) const TOKENS: &[(&str, &str)] = &[
     ("commit", "muted"),
     ("agent_bg", "accent_bg"),
     ("agent_fg", "on_color"),
-    ("slug", "fg"),
+    ("slug", "accent"),
     ("secondary", "muted"),
     ("key", "accent"),
     ("key_label", "muted"),
@@ -78,8 +82,14 @@ pub(crate) const TOKENS: &[(&str, &str)] = &[
     ("item_saving", "warning"),
     ("badge", "accent"),
     ("surface_tab", "secondary"),
-    ("surface_tab_active", "accent"),
-    ("surface_tab_active_bg", "highlight"),
+    ("surface_tab_active", "on_color"),
+    ("surface_tab_active_bg", "accent_bg"),
+    ("tab_empty", "faint"),
+    ("table_header", "muted"),
+    ("sort_mark", "accent"),
+    ("strong", "accent"),
+    ("backdrop", "faint"),
+    ("selection_text", "idle"),
     ("item_id", "muted"),
     ("item_kind", "muted"),
     ("facet", "muted"),
@@ -104,23 +114,46 @@ pub(crate) fn validate(overrides: &HashMap<String, String>) -> Result<(), String
             return Err(format!("unknown theme token `{key}`"));
         }
     }
+    let empty = HashMap::new();
+    let layers = Layers {
+        per_set: &empty,
+        overrides,
+        palette: &[],
+    };
     for (name, _) in TOKENS {
-        resolve(name, overrides)?;
+        resolve(name, &layers)?;
     }
     Ok(())
 }
 
-fn raw<'a>(name: &str, overrides: &'a HashMap<String, String>) -> Option<&'a str> {
-    overrides
-        .get(name)
-        .map(String::as_str)
-        .or_else(|| TOKENS.iter().find(|(n, _)| *n == name).map(|(_, v)| *v))
+/// Where a token's value comes from, first match winning: `[theme.<set>]`, `[theme]`,
+/// the set's palette, then [`TOKENS`].
+struct Layers<'a> {
+    per_set: &'a HashMap<String, String>,
+    overrides: &'a HashMap<String, String>,
+    palette: &'a [(&'a str, &'a str)],
 }
 
-fn resolve(name: &str, overrides: &HashMap<String, String>) -> Result<Color, String> {
+impl<'a> Layers<'a> {
+    fn raw(&self, name: &str) -> Option<&'a str> {
+        let pick = |pairs: &'a [(&'a str, &'a str)]| {
+            pairs.iter().find(|(n, _)| *n == name).map(|(_, v)| *v)
+        };
+        self.per_set
+            .get(name)
+            .or_else(|| self.overrides.get(name))
+            .map(String::as_str)
+            .or_else(|| pick(self.palette))
+            .or_else(|| pick(TOKENS))
+    }
+}
+
+fn resolve(name: &str, layers: &Layers) -> Result<Color, String> {
     let mut at = name;
     for _ in 0..MAX_DEPTH {
-        let value = raw(at, overrides).ok_or_else(|| format!("unknown theme token `{at}`"))?;
+        let value = layers
+            .raw(at)
+            .ok_or_else(|| format!("unknown theme token `{at}`"))?;
         if TOKENS.iter().any(|(n, _)| *n == value) {
             at = value;
             continue;
@@ -164,8 +197,20 @@ pub(crate) struct Theme {
     pub(crate) overlap: Style,
     pub(crate) agent_chip: Style,
     pub(crate) agent_chip_stale: Style,
-    /// Bold emphasis in the default colour.
+    /// Bold emphasis in the `strong` colour.
     pub(crate) badge: Style,
+    /// Column titles above a table, underlined.
+    pub(crate) table_header: Style,
+    /// The ▲/▼ beside the sorted column.
+    pub(crate) sort_mark: Style,
+    /// Emphasis that must show without bold: markdown strong, hidden-node chips.
+    pub(crate) strong: Style,
+    /// The frame behind a modal overlay.
+    pub(crate) backdrop: Style,
+    /// Muted and faint spans on the selected row.
+    pub(crate) selection_text: Style,
+    /// A surface tab whose ledger is absent.
+    pub(crate) tab_empty: Style,
     /// A row's execution record holds a deferral.
     pub(crate) deferral_badge: Style,
     /// Inline code in a markdown task body.
@@ -230,29 +275,56 @@ impl Default for Theme {
 }
 
 impl Theme {
-    /// `overrides` must already have passed [`validate`]; a token that still fails to
-    /// resolve takes the terminal's default colour.
+    /// `kanso-zen` with `overrides`, or `mono` when `no_color`.
     pub(crate) fn build(overrides: &HashMap<String, String>, no_color: bool) -> Theme {
+        let set = if no_color {
+            &sets::MONO
+        } else {
+            &sets::KANSO_ZEN
+        };
+        Theme::from_set(set, overrides, &HashMap::new())
+    }
+
+    /// `overrides` (`[theme]`) and `per_set` (`[theme.<set>]`) must already have passed
+    /// [`validate`]; a token that still fails to resolve takes the terminal's default
+    /// colour.
+    pub(crate) fn from_set(
+        set: &ThemeSet,
+        overrides: &HashMap<String, String>,
+        per_set: &HashMap<String, String>,
+    ) -> Theme {
+        let layers = Layers {
+            per_set,
+            overrides,
+            palette: set.palette,
+        };
+        let rules = set.rules;
         let color = |name: &str| -> Option<Color> {
-            if no_color {
+            if !rules.colour {
                 return None;
             }
-            resolve(name, overrides).ok()
+            resolve(name, &layers).ok()
         };
         let fg = |name: &str| match color(name) {
             Some(c) => Style::new().fg(c),
             None => Style::new(),
         };
-        // A background that vanishes under NO_COLOR is replaced by reverse video.
+        let reverse = rules.fill == Fill::Reverse;
+        // A background that vanishes, or that the set fills by reverse video, is drawn
+        // reversed with the background token as the foreground.
         let on = |fg_name: &str, bg_name: &str| match (color(fg_name), color(bg_name)) {
-            (Some(f), Some(b)) => Style::new().fg(f).bg(b),
-            _ => Style::new().add_modifier(Modifier::REVERSED),
+            (Some(f), Some(b)) if !reverse => Style::new().fg(f).bg(b),
+            _ => fg(bg_name).add_modifier(Modifier::REVERSED),
+        };
+        let faint = |name: &str| match rules.faint {
+            Faint::Colour => fg(name),
+            Faint::Dim => Style::new().add_modifier(Modifier::DIM),
         };
         let bold = Modifier::BOLD;
         let flash = |status: &str| on("flash_fg", status);
         let selection = match color("selection_bg") {
-            Some(bg) => Style::new().bg(bg).add_modifier(bold),
-            None => Style::new().add_modifier(Modifier::REVERSED | bold),
+            Some(bg) if !reverse => Style::new().bg(bg).add_modifier(bold),
+            _ => Style::new().add_modifier(Modifier::REVERSED | bold),
         };
         let agent_chip = on("agent_fg", "agent_bg");
         Theme {
@@ -270,24 +342,22 @@ impl Theme {
             ],
             selection,
             selection_mark: fg("selection_mark").add_modifier(bold),
-            unrelated: if no_color {
-                Style::new().add_modifier(Modifier::DIM)
-            } else {
-                fg("unrelated")
-            },
+            unrelated: faint("unrelated"),
             edge: fg("edge"),
-            edge_faded: if no_color {
-                Style::new().add_modifier(Modifier::DIM)
-            } else {
-                fg("edge_faded")
-            },
+            edge_faded: faint("edge_faded"),
             needs_edge: fg("edge_needs").add_modifier(bold),
             coupling_edge: fg("edge_coupling").add_modifier(bold),
             out_edge: fg("edge_out").add_modifier(bold),
             overlap: fg("edge_overlap").add_modifier(bold),
             agent_chip,
             agent_chip_stale: agent_chip.add_modifier(Modifier::DIM),
-            badge: Style::new().add_modifier(bold),
+            badge: fg("strong").add_modifier(bold),
+            table_header: fg("table_header").add_modifier(Modifier::UNDERLINED),
+            sort_mark: fg("sort_mark").add_modifier(bold),
+            strong: fg("strong").add_modifier(bold),
+            backdrop: faint("backdrop"),
+            selection_text: fg("selection_text"),
+            tab_empty: faint("tab_empty"),
             deferral_badge: fg("status_deferred").add_modifier(bold),
             inline_code: fg("code"),
             warning: fg("warning_text"),
@@ -466,6 +536,179 @@ mod tests {
             ("info".to_string(), "accent".to_string()),
         ]);
         assert!(validate(&cycle).is_err(), "a cycle");
+    }
+
+    #[test]
+    fn emphasis_tokens_carry_colour_and_the_active_tab_floods() {
+        let t = Theme::default();
+        assert_eq!(t.badge.fg, Some(rgb("#FFC799")));
+        assert_eq!(t.strong.fg, Some(rgb("#FFC799")));
+        assert_eq!(t.slug.fg, Some(rgb("#FFC799")));
+        assert_eq!(t.sort_mark.fg, Some(rgb("#FFC799")));
+        assert_eq!(t.surface_tab_active.fg, Some(rgb("#14171C")));
+        assert_eq!(t.surface_tab_active.bg, Some(rgb("#B6927B")));
+        assert!(t.table_header.add_modifier.contains(Modifier::UNDERLINED));
+        assert_eq!(t.tab_empty.fg, Some(rgb("#6C7380")));
+        assert_eq!(t.selection_text.fg, Some(rgb("#C5C9C7")));
+        let mono = Theme::build(&HashMap::new(), true);
+        assert!(mono.backdrop.add_modifier.contains(Modifier::DIM));
+        assert_eq!(mono.selection_text.fg, None);
+    }
+
+    #[test]
+    fn every_set_is_found_by_name() {
+        for name in ["kanso-zen", "kanso-pearl", "ansi", "mono"] {
+            assert_eq!(sets::by_name(name).map(|s| s.name), Some(name));
+        }
+        assert!(sets::by_name("kanso").is_none());
+    }
+
+    #[test]
+    fn mono_drops_every_colour_overrides_included() {
+        let over = HashMap::from([("accent".to_string(), "#123456".to_string())]);
+        let mono = Theme::from_set(&sets::MONO, &over, &over);
+        assert_eq!(mono, Theme::build(&HashMap::new(), true));
+        assert!(
+            !format!("{mono:?}").contains("Color::"),
+            "mono carries no colour"
+        );
+        assert_eq!(mono.selection, Style::new().reversed().bold());
+        assert_eq!(mono.flash(TaskStatus::Done), Style::new().reversed());
+        assert_eq!(mono.surface_tab_active, Style::new().reversed().bold());
+        for dim in [
+            mono.unrelated,
+            mono.edge_faded,
+            mono.backdrop,
+            mono.tab_empty,
+        ] {
+            assert_eq!(dim, Style::new().dim());
+        }
+        assert_eq!(mono.border, Style::new(), "only the faint elements dim");
+    }
+
+    #[test]
+    fn a_set_layers_under_theme_and_per_set_overrides() {
+        let map = |k: &str, v: &str| HashMap::from([(k.to_string(), v.to_string())]);
+        let pearl = sets::by_name("kanso-pearl").expect("pearl");
+        let plain = Theme::from_set(pearl, &HashMap::new(), &HashMap::new());
+        assert_eq!(plain.done.fg, Some(rgb("#5e7442")));
+        assert_eq!(
+            plain.checkpoint.fg,
+            Some(rgb("#ac506f")),
+            "element defaults"
+        );
+        let theme = Theme::from_set(pearl, &map("success", "#010101"), &HashMap::new());
+        assert_eq!(theme.done.fg, Some(rgb("#010101")));
+        let both = Theme::from_set(
+            pearl,
+            &map("success", "#010101"),
+            &map("success", "#020202"),
+        );
+        assert_eq!(both.done.fg, Some(rgb("#020202")), "[theme.<set>] wins");
+
+        let ansi = Theme::from_set(&sets::ANSI, &HashMap::new(), &HashMap::new());
+        assert_eq!(ansi.done.fg, Some(Color::LightGreen));
+        assert_eq!(
+            ansi.flash(TaskStatus::Done),
+            Style::new().fg(Color::LightGreen).reversed()
+        );
+        assert_eq!(ansi.selection, Style::new().reversed().bold());
+        assert_eq!(ansi.unrelated, Style::new().dim());
+    }
+
+    /// WCAG 2 relative luminance of an RGB colour.
+    fn luminance(c: Color) -> f64 {
+        let Color::Rgb(r, g, b) = c else {
+            panic!("{c:?} is not an RGB colour");
+        };
+        let lin = |v: u8| {
+            let v = f64::from(v) / 255.0;
+            if v <= 0.04045 {
+                v / 12.92
+            } else {
+                ((v + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+    }
+
+    fn contrast(a: Color, b: Color) -> f64 {
+        let (la, lb) = (luminance(a), luminance(b));
+        (la.max(lb) + 0.05) / (la.min(lb) + 0.05)
+    }
+
+    /// Faint tiers, and the elements that default to them, are meant to recede.
+    const EXEMPT: &[&str] = &[
+        "faint",
+        "subtle",
+        "border",
+        "layer_rule",
+        "key_separator",
+        "edge_faded",
+        "unrelated",
+        "tab_empty",
+        "backdrop",
+    ];
+
+    /// Backgrounds, and the foregrounds drawn only on them, checked as pairs instead.
+    const FILLS: &[&str] = &[
+        "accent_bg",
+        "highlight",
+        "selection_bg",
+        "agent_bg",
+        "surface_tab_active_bg",
+        "on_color",
+        "flash_fg",
+        "agent_fg",
+        "surface_tab_active",
+    ];
+
+    #[test]
+    fn rgb_sets_meet_text_contrast() {
+        let empty = HashMap::new();
+        let mut failures = Vec::new();
+        for set in sets::SETS {
+            let (Some(bg), Some(fg)) = (set.bg, set.fg) else {
+                continue;
+            };
+            let (bg, fg) = (rgb(bg), rgb(fg));
+            let layers = Layers {
+                per_set: &empty,
+                overrides: &empty,
+                palette: set.palette,
+            };
+            let colour = |name: &str| match resolve(name, &layers).expect(name) {
+                Color::Reset => fg,
+                c => c,
+            };
+            let mut check = |text: &str, under: Option<&str>| {
+                let back = under.map_or(bg, colour);
+                let ratio = contrast(colour(text), back);
+                if ratio < 4.5 {
+                    let on = under.unwrap_or("bg");
+                    failures.push(format!("{}: {text} on {on} is {ratio:.2}", set.name));
+                }
+            };
+            for (name, _) in TOKENS {
+                if !EXEMPT.contains(name) && !FILLS.contains(name) {
+                    check(name, None);
+                }
+            }
+            check("selection_text", Some("selection_bg"));
+            check("on_color", Some("accent_bg"));
+            check("agent_fg", Some("agent_bg"));
+            check("surface_tab_active", Some("surface_tab_active_bg"));
+            for status in [
+                "status_pending",
+                "status_in_progress",
+                "status_done",
+                "status_failed",
+                "status_deferred",
+            ] {
+                check("flash_fg", Some(status));
+            }
+        }
+        assert!(failures.is_empty(), "{failures:#?}");
     }
 
     #[test]
