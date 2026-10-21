@@ -48,7 +48,7 @@ impl Writer {
             continuation: 0,
             in_code_block: false,
             pending_blank: false,
-            strong: theme.badge,
+            strong: theme.strong,
             code: theme.inline_code,
         }
     }
@@ -236,7 +236,7 @@ mod tests {
                 .map(|s| s.style)
                 .expect("span present")
         };
-        assert!(style_of("b").add_modifier.contains(Modifier::BOLD));
+        assert_eq!(style_of("b"), Theme::default().strong);
         assert!(style_of("c").add_modifier.contains(Modifier::ITALIC));
         assert_eq!(style_of("d"), Theme::default().inline_code);
         assert_eq!(style_of("a "), Style::default());
