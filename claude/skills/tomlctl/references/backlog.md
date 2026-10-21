@@ -10,6 +10,7 @@ row and when not to is the `backlog-capture` skill's job
 ## Contents
 
 - [Reading, searching and editing rows](backlog-recipes.md)
+- [`backlog get`, `backlog edit` and `triage --ndjson` rows](backlog-edit.md)
 - [`backlog add`](#backlog-add)
 - [`backlog add-many`](#backlog-add-many)
 - [`backlog check`](#backlog-check)
@@ -156,8 +157,8 @@ when it kept the claim. When the default cap of 5 cut candidates, the header add
 Under `--ndjson` every line is parsed before the store is read once; a malformed line, a
 missing `summary` or any other key is `kind=validation` naming the line. `results` are already
 the rows: filter them directly (`--where verdict=related`, `--template '{line} {verdict}
-{candidates.0.id}'`), never with `--rows results`, which is refused. Each result row carries
-one probe's verdict, and `limited` when its candidates were capped:
+{candidates.0.id}'`). Each result row carries one probe's verdict, and `limited` when its
+candidates were capped:
 
 ```json
 {"thresholds":{"strong":0.75,"related":0.35},
@@ -260,9 +261,11 @@ tomlctl backlog triage B-a1b2c3d4 --reopen --rationale "flow <flow-slug> closed 
 | `--reason` / `--reason-file` | text / path | Companion to `--dismiss`. Mutually exclusive. Each `-file` form drops a leading BOM and one trailing newline, as `--set-file` does; pass agent-written or user-supplied wording that way, staged with the Write tool, since a backtick or `$(…)` inside a quoted shell argument executes. A fixed literal can stay inline. | none |
 | `--resolution` / `--resolution-file` | text / path | Companion to `--resolve`. Mutually exclusive. | none |
 | `--rationale` / `--rationale-file` | text / path | Companion to `--reopen`. Mutually exclusive. | none |
-| `--expect-status` | status | Move only ids still at this status; stale ids are left untouched and reported under `skipped_stale`. | none |
+| `--expect-status` | status | Move only ids still at this status; stale ids are left untouched and reported under `skipped_stale`. With `--ndjson`, each row's default. | none |
+| `--ndjson` | path, `@<path>` or `-` | One transition per row, applied in one write; row shape in [backlog-edit.md](backlog-edit.md#backlog-triage---ndjson). Conflicts with the ids, the mode flags, `--to` and the companions. | — |
+| `--dry-run` | — | Preview the `--ndjson` batch; accepted only with `--ndjson`. | off |
 
-The four mode flags are a required, mutually-exclusive group: exactly one per invocation.
+The four mode flags are a required, mutually-exclusive group: exactly one per invocation, unless `--ndjson` carries the modes.
 `--rationale` (or its file form) is enforced at the parser rather than the validator because `reopen_rationale`
 is the only companion an `open` item may carry, so a bare `--reopen` would write a row the
 validator then rejects. Without `--expect-status` triage ignores a row's current status, so
