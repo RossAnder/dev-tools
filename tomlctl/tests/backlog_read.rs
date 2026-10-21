@@ -1,7 +1,7 @@
 //! Black-box coverage for the `tomlctl backlog` read verbs — `check`,
-//! `list`, `show`, `cluster` and `evidence audit`.
+//! `list`, `show`, `get`, `cluster` and `evidence audit`.
 //!
-//! The `list` / `show` / `cluster` cases seed the store by hand, because what
+//! The `list` / `show` / `get` / `cluster` cases seed the store by hand, because what
 //! they assert is a projection over a known row set rather than anything
 //! `add` derives. The `check` cases go through `add` instead: a verdict is a
 //! claim about the fingerprint `add` would land on, so a hand-written
@@ -620,6 +620,64 @@ fn show_with_one_unknown_id_among_several_fails_the_whole_call() {
             "json",
             "backlog",
             "show",
+            "B-00000001,B-99999999",
+        ])
+        .write_stdin("")
+        .assert()
+        .failure()
+        .code(1);
+    assert!(out.get_output().stdout.is_empty(), "nothing is printed");
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert_eq!(
+        parse_json_error_envelope(&stderr)["kind"],
+        json!("not_found")
+    );
+}
+
+// ------------------------------------------------------------------ get
+
+#[test]
+fn get_prints_the_stored_row_that_show_wraps() {
+    let (_tmp, root) = sandbox();
+    seed(&root, FIXTURE);
+
+    let row = backlog(&root, &["get", "B-00000002"]);
+    assert_eq!(row, backlog(&root, &["show", "B-00000002"])["item"]);
+    assert!(row.get("neighbours").is_none(), "{row}");
+}
+
+#[test]
+fn get_summary_reads_the_bare_field() {
+    let (_tmp, root) = sandbox();
+    seed(&root, FIXTURE);
+
+    let out = backlog_stdout(&root, &["get", "B-00000003", "--get", "summary"]);
+    assert_eq!(out.trim_end(), "route table is hand maintained");
+}
+
+#[test]
+fn get_with_several_ids_prints_an_array_once_per_distinct_id() {
+    let (_tmp, root) = sandbox();
+    seed(&root, FIXTURE);
+
+    let v = backlog(&root, &["get", "B-00000003,B-00000001,B-00000003"]);
+    let rows = v.as_array().unwrap_or_else(|| panic!("an array: {v}"));
+    assert_eq!(rows.len(), 2, "{v}");
+    assert_eq!(rows[0], backlog(&root, &["get", "B-00000003"]));
+    assert_eq!(rows[1], backlog(&root, &["get", "B-00000001"]));
+}
+
+#[test]
+fn get_with_one_unknown_id_among_several_fails_the_whole_call() {
+    let (_tmp, root) = sandbox();
+    seed(&root, FIXTURE);
+
+    let out = cli(&root)
+        .args([
+            "--error-format",
+            "json",
+            "backlog",
+            "get",
             "B-00000001,B-99999999",
         ])
         .write_stdin("")

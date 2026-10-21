@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use clap::{Args, Subcommand, ValueEnum};
+use clap::{Arg, Args, Subcommand, ValueEnum};
 
 use super::tasks::ids_help;
 use super::{QueryArgs, ReadIntegrityArgs, WriteIntegrityArgs};
@@ -213,6 +213,16 @@ pub(crate) enum BacklogOp {
         integrity: ReadIntegrityArgs,
     },
 
+    /// Print only the stored row, with no neighbourhood or evidence, or an
+    /// array of rows in the order given; an unknown id fails the whole call.
+    #[command(mut_args(ids_help("Item ids to print, comma- or space-separated")))]
+    Get {
+        #[command(flatten)]
+        ids: ItemIds,
+        #[command(flatten)]
+        integrity: ReadIntegrityArgs,
+    },
+
     /// Write a typed edge between two items.
     Relate {
         /// Subject of the edge — the item that gains `related` /
@@ -226,8 +236,12 @@ pub(crate) enum BacklogOp {
         integrity: WriteIntegrityArgs,
     },
 
-    /// Transition one or more items out of (or back into) `open`.
-    #[command(mut_args(ids_help("Item ids to transition, comma- or space-separated")))]
+    /// Transition one or more items out of (or back into) `open`, either one
+    /// mode flag for every id or, with `--ndjson`, a transition per row.
+    #[command(
+        mut_args(triage_ids),
+        mut_group("TriageMode", |g| g.required(false))
+    )]
     Triage {
         #[command(flatten)]
         ids: ItemIds,
@@ -294,9 +308,121 @@ pub(crate) enum BacklogOp {
         )]
         rationale_file: Option<PathBuf>,
         /// Move only the ids still at this status; the rest are reported
-        /// under `skipped_stale` and left untouched.
+        /// under `skipped_stale` and left untouched. With `--ndjson`, the
+        /// default for rows that carry no `expect_status` of their own.
         #[arg(long = "expect-status", value_name = "STATUS")]
         expect_status: Option<String>,
+        /// Each row is `{"id", <mode>: <companion>, "expect_status"?}` with
+        /// exactly one mode key: `resolve` (resolution), `dismiss` (reason),
+        /// `promote` (flow slug or plan path) or `reopen` (rationale). All
+        /// rows apply in one write, or none do.
+        #[arg(
+            long = "ndjson",
+            value_name = "SRC",
+            conflicts_with_all = [
+                "ids", "id", "promote", "dismiss", "resolve", "reopen", "to",
+                "reason", "reason_file", "resolution", "resolution_file",
+                "rationale", "rationale_file",
+            ],
+            help = "One transition per row: `-` for stdin, otherwise a file path (a leading `@` is accepted; a `.toml` path is a record file)"
+        )]
+        ndjson: Option<String>,
+        #[arg(
+            long = "dry-run",
+            requires = "ndjson",
+            help = "Preview the --ndjson batch without writing. Emits the envelope with dry_run: true; no file or sidecar touch."
+        )]
+        dry_run: bool,
+        #[command(flatten)]
+        integrity: WriteIntegrityArgs,
+    },
+
+    /// Change the free-form fields of existing captures: `context`, `tags`,
+    /// `evidence`, `origin`, `flow` and `base_sha`. One id with field flags,
+    /// or with `--ndjson` a row per id; all rows apply in one write, or none
+    /// do. Every other field is refused, naming the verb that owns it.
+    Edit {
+        #[arg(
+            value_name = "ID",
+            required_unless_present = "ndjson",
+            conflicts_with = "ndjson"
+        )]
+        id: Option<String>,
+        #[arg(
+            long,
+            value_name = "TEXT",
+            conflicts_with_all = ["context_file", "ndjson"],
+            help = "Replace the item's context"
+        )]
+        context: Option<String>,
+        #[arg(
+            long = "context-file",
+            value_name = "PATH",
+            conflicts_with_all = ["context", "ndjson"],
+            help = "Replace the item's context with a file's text"
+        )]
+        context_file: Option<PathBuf>,
+        #[arg(
+            long,
+            value_name = "TAG,...",
+            value_delimiter = ',',
+            conflicts_with = "ndjson",
+            help = "Replace the item's tags, comma-separated"
+        )]
+        tags: Option<Vec<String>>,
+        #[arg(
+            long = "add-tag",
+            value_name = "TAG",
+            conflicts_with = "ndjson",
+            help = "Add a tag (repeatable)"
+        )]
+        add_tag: Vec<String>,
+        #[arg(
+            long = "remove-tag",
+            value_name = "TAG",
+            conflicts_with = "ndjson",
+            help = "Remove a tag (repeatable)"
+        )]
+        remove_tag: Vec<String>,
+        #[arg(
+            long = "evidence",
+            value_name = "REF",
+            conflicts_with = "ndjson",
+            help = "Replace the item's evidence refs (repeatable)"
+        )]
+        evidence: Option<Vec<String>>,
+        #[arg(
+            long = "add-evidence",
+            value_name = "REF",
+            conflicts_with = "ndjson",
+            help = "Add an evidence ref (repeatable)"
+        )]
+        add_evidence: Vec<String>,
+        #[arg(long, conflicts_with = "ndjson", help = "Replace the item's origin")]
+        origin: Option<String>,
+        #[arg(long, conflicts_with = "ndjson", help = "Replace the item's flow slug")]
+        flow: Option<String>,
+        #[arg(
+            long = "base-sha",
+            value_name = "SHA",
+            conflicts_with = "ndjson",
+            help = "Replace the commit the capture was made against"
+        )]
+        base_sha: Option<String>,
+        /// Each row is `{"id", "context"?, "tags"?, "evidence"?, "origin"?,
+        /// "flow"?, "base_sha"?}`; a `tags` or `evidence` array replaces the
+        /// stored one.
+        #[arg(
+            long = "ndjson",
+            value_name = "SRC",
+            help = "One edit per row: `-` for stdin, otherwise a file path (a leading `@` is accepted; a `.toml` path is a record file)"
+        )]
+        ndjson: Option<String>,
+        #[arg(
+            long = "dry-run",
+            help = "Preview the edit without writing. Emits the envelope with dry_run: true; no file or sidecar touch."
+        )]
+        dry_run: bool,
         #[command(flatten)]
         integrity: WriteIntegrityArgs,
     },
@@ -457,6 +583,17 @@ impl ItemIds {
         let mut ids = self.ids;
         ids.extend(self.id);
         ids
+    }
+}
+
+/// `backlog triage`'s edit of its flattened [`ItemIds`]: `--ndjson` names
+/// the ids itself, and a conflict alone would not lift the requirement.
+fn triage_ids(a: Arg) -> Arg {
+    if a.get_id() == "ids" {
+        a.help("Item ids to transition, comma- or space-separated")
+            .required_unless_present("ndjson")
+    } else {
+        a
     }
 }
 

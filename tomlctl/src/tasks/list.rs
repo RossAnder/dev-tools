@@ -17,6 +17,9 @@ use crate::query::Query;
 /// query machinery applies to them.
 const ARRAY_ITEMS: &str = "items";
 
+/// The text fields `--grep` searches when no `--grep-field` is given.
+const GREP_FIELDS: &[&str] = &["title", "ref", "action", "detail", "acceptance", "files"];
+
 pub(crate) fn dispatch(
     target: TasksTarget,
     count: bool,
@@ -43,7 +46,9 @@ fn build_query(count: bool, query_args: &QueryArgs, out: &OutputOpts) -> Result<
         newer_than: &unset,
         count,
     };
-    Query::from_query_input(&query_args.to_query_input(&legacy, out))
+    let mut input = query_args.to_query_input(&legacy, out);
+    input.default_grep_fields = GREP_FIELDS;
+    Query::from_query_input(&input)
 }
 
 #[cfg(test)]

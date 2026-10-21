@@ -1,4 +1,5 @@
-//! `backlog list` and `backlog show` — the read paths over the store.
+//! `backlog list`, `backlog show` and `backlog get` — the read paths over the
+//! store.
 //!
 //! `list` narrows the `backlog` array by the four filters this module owns,
 //! then hands the narrowed array to the generic query engine, so the whole
@@ -20,8 +21,9 @@ use toml::Value as TomlValue;
 
 use super::evidence;
 use super::schema::{
-    self, ARRAY_BACKLOG, ARRAY_COMPACTED, FIELD_AREA, FIELD_ID, FIELD_KIND, FIELD_RELATED,
-    FIELD_STATUS, FIELD_SUMMARY, FIELD_TAGS, RELATION_FIELDS, STATUS_OPEN,
+    self, ARRAY_BACKLOG, ARRAY_COMPACTED, FIELD_AREA, FIELD_CONTEXT, FIELD_DISMISS_REASON,
+    FIELD_ID, FIELD_KIND, FIELD_RELATED, FIELD_REOPEN_RATIONALE, FIELD_RESOLUTION, FIELD_STATUS,
+    FIELD_SUMMARY, FIELD_TAGS, RELATION_FIELDS, STATUS_OPEN,
 };
 use crate::cli::{LegacyShortcuts, QueryArgs, ReadIntegrityArgs};
 use crate::convert::toml_to_json;
@@ -32,6 +34,17 @@ use crate::query::Query;
 
 const DIRECTION_OUT: &str = "out";
 const DIRECTION_IN: &str = "in";
+
+/// The prose fields `--grep` searches when no `--grep-field` is given.
+const GREP_FIELDS: &[&str] = &[
+    FIELD_SUMMARY,
+    FIELD_CONTEXT,
+    FIELD_AREA,
+    FIELD_TAGS,
+    FIELD_RESOLUTION,
+    FIELD_DISMISS_REASON,
+    FIELD_REOPEN_RATIONALE,
+];
 
 // One parameter per `BacklogOp::List` field, so the dispatch fan-out stays a
 // mechanical destructure.
@@ -66,16 +79,42 @@ pub(crate) fn dispatch_list(
 /// once at its first position; a single distinct id prints one object.
 pub(crate) fn dispatch_show(ids: &[String], integrity: ReadIntegrityArgs) -> Result<()> {
     let doc = schema::read_store(&integrity)?;
+    print_rows(
+        resolve_distinct(&doc, ids)?
+            .iter()
+            .map(|id| build_show_resolved(&doc, id))
+            .collect::<Result<Vec<_>>>()?,
+    )
+}
+
+/// `show`'s id contract, printing each stored row bare.
+pub(crate) fn dispatch_get(ids: &[String], integrity: ReadIntegrityArgs) -> Result<()> {
+    let doc = schema::read_store(&integrity)?;
+    print_rows(build_get(&doc, ids)?)
+}
+
+fn build_get(doc: &TomlValue, ids: &[String]) -> Result<Vec<JsonValue>> {
+    resolve_distinct(doc, ids)?
+        .iter()
+        .map(|id| stored_row(doc, id).map(toml_to_json))
+        .collect()
+}
+
+/// Every id is resolved before any row is built, so an unknown id fails the
+/// call without partial output.
+fn resolve_distinct(doc: &TomlValue, ids: &[String]) -> Result<Vec<String>> {
     let resolved = ids
         .iter()
-        .map(|id| evidence::resolve_id(&doc, id))
+        .map(|id| evidence::resolve_id(doc, id))
         .collect::<Result<Vec<_>>>()?;
     let mut seen = BTreeSet::new();
-    let mut rows = resolved
-        .iter()
-        .filter(|id| seen.insert(id.as_str()))
-        .map(|id| build_show_resolved(&doc, id))
-        .collect::<Result<Vec<_>>>()?;
+    Ok(resolved
+        .into_iter()
+        .filter(|id| seen.insert(id.clone()))
+        .collect())
+}
+
+fn print_rows(mut rows: Vec<JsonValue>) -> Result<()> {
     if rows.len() == 1 {
         return print_json(&rows.remove(0));
     }
@@ -163,6 +202,7 @@ fn build_query(
         count,
     };
     let mut input = query.to_query_input(&legacy, out);
+    input.default_grep_fields = GREP_FIELDS;
     if open {
         input
             .filters
@@ -186,16 +226,21 @@ fn build_show(doc: &TomlValue, id: &str) -> Result<JsonValue> {
     build_show_resolved(doc, &evidence::resolve_id(doc, id)?)
 }
 
+fn stored_row<'a>(doc: &'a TomlValue, resolved: &str) -> Result<&'a TomlValue> {
+    stored_rows(doc)
+        .find(|r| row_str(r, FIELD_ID) == Some(resolved))
+        .ok_or_else(|| {
+            tagged_err(
+                ErrorKind::NotFound,
+                schema::backlog_path().ok(),
+                format!("no backlog item with id \"{resolved}\""),
+            )
+        })
+}
+
 fn build_show_resolved(doc: &TomlValue, resolved: &str) -> Result<JsonValue> {
+    let row = stored_row(doc, resolved)?;
     let resolved = resolved.to_string();
-    let Some(row) = stored_rows(doc).find(|r| row_str(r, FIELD_ID) == Some(resolved.as_str()))
-    else {
-        return Err(tagged_err(
-            ErrorKind::NotFound,
-            schema::backlog_path().ok(),
-            format!("no backlog item with id \"{resolved}\""),
-        ));
-    };
 
     let mut edges: BTreeSet<(String, &'static str, &'static str)> = BTreeSet::new();
     for &relation in RELATION_FIELDS {

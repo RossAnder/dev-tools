@@ -34,6 +34,7 @@ use crate::output::{
     print_query_list, print_report, print_text,
 };
 use crate::query::Query;
+use crate::store_guard::refuse_owned_store;
 use crate::sweep::SweepOptions;
 
 use super::{read_integrity_opts, write_envelope, write_integrity_opts};
@@ -47,6 +48,10 @@ use super::{read_integrity_opts, write_envelope, write_integrity_opts};
 /// accidental loop-generated mega-payload fails fast instead of timing out
 /// the wrapping shell.
 const MAX_OPS_PER_APPLY: usize = 10_000;
+
+/// The ledger text fields `items list --grep` searches when no `--grep-field`
+/// is given.
+const LEDGER_GREP_FIELDS: &[&str] = &["summary", "description", "file", "symbol"];
 
 /// Parse the `--dedupe-by` flag value into a `Vec<String>` of field
 /// paths. `None` (flag absent) returns an empty Vec — the caller treats
@@ -166,27 +171,48 @@ pub(super) fn items_dispatch(op: ItemsOp) -> Result<()> {
                 newer_than: &newer_than,
                 count,
             };
-            let q = Query::from_query_input(&query.to_query_input(&legacy, crate::output::opts()))?;
+            let mut input = query.to_query_input(&legacy, crate::output::opts());
+            input.default_grep_fields = LEDGER_GREP_FIELDS;
+            let q = Query::from_query_input(&input)?;
             read_doc(&file, opts, |doc| print_query_list(doc, &array, &q))?;
         }
         ItemsOp::Get {
             file,
-            id,
+            ids,
             array,
             integrity,
         } => {
             strict_read_check(&file, integrity.strict_read)?;
             let opts = read_integrity_opts(&integrity);
-            let out = read_doc_either(
+            let mut seen = std::collections::BTreeSet::new();
+            let ids: Vec<String> = ids
+                .into_ids()
+                .into_iter()
+                .filter(|id| seen.insert(id.clone()))
+                .collect();
+            let mut rows = read_doc_either(
                 &file,
                 opts,
-                |doc| items_get_from(doc, &array, &id),
-                |doc| items_get_from_json(doc, &array, &id),
+                |doc| {
+                    ids.iter()
+                        .map(|id| items_get_from(doc, &array, id))
+                        .collect::<Result<Vec<_>>>()
+                },
+                |doc| {
+                    ids.iter()
+                        .map(|id| items_get_from_json(doc, &array, id))
+                        .collect::<Result<Vec<_>>>()
+                },
             )?;
-            print_json(&out)?;
+            if rows.len() == 1 {
+                print_json(&rows.remove(0))?;
+            } else {
+                print_report(JsonValue::Array(rows), Rows::Top)?;
+            }
         }
         ItemsOp::Add {
             file,
+            raw,
             json,
             fields,
             array,
@@ -196,6 +222,7 @@ pub(super) fn items_dispatch(op: ItemsOp) -> Result<()> {
             integrity,
             stamp,
         } => {
+            refuse_owned_store(&file, raw.raw_store)?;
             let opts = write_integrity_opts(&integrity);
             let stamp = !stamp.no_stamp;
             let dedupe_fields = parse_dedupe_fields(dedupe_by.as_deref())?;
@@ -396,6 +423,7 @@ pub(super) fn items_dispatch(op: ItemsOp) -> Result<()> {
         }
         ItemsOp::AddMany {
             file,
+            raw,
             ndjson,
             defaults_json,
             array,
@@ -405,6 +433,7 @@ pub(super) fn items_dispatch(op: ItemsOp) -> Result<()> {
             integrity,
             stamp,
         } => {
+            refuse_owned_store(&file, raw.raw_store)?;
             let opts = write_integrity_opts(&integrity);
             let stamp = !stamp.no_stamp;
             let dedupe_fields = parse_dedupe_fields(dedupe_by.as_deref())?;
@@ -533,6 +562,7 @@ pub(super) fn items_dispatch(op: ItemsOp) -> Result<()> {
         }
         ItemsOp::Update {
             file,
+            raw,
             id,
             json,
             fields,
@@ -553,6 +583,7 @@ pub(super) fn items_dispatch(op: ItemsOp) -> Result<()> {
                 );
             }
             refuse_dotted_update_keys(&fields)?;
+            refuse_owned_store(&file, raw.raw_store)?;
             let opts = write_integrity_opts(&integrity);
             // The json arg parse sits above the dry-run/live split.
             // `compute_update_mutation` takes the raw &str and parses
@@ -611,12 +642,14 @@ pub(super) fn items_dispatch(op: ItemsOp) -> Result<()> {
         }
         ItemsOp::Remove {
             file,
+            raw,
             id,
             array,
             dry_run,
             integrity,
             stamp,
         } => {
+            refuse_owned_store(&file, raw.raw_store)?;
             let opts = write_integrity_opts(&integrity);
             if dry_run {
                 // Advisory warn for dry-run reads outside `.claude/`.
@@ -665,6 +698,7 @@ pub(super) fn items_dispatch(op: ItemsOp) -> Result<()> {
         }
         ItemsOp::Apply {
             file,
+            raw,
             ops,
             array,
             no_remove,
@@ -674,6 +708,7 @@ pub(super) fn items_dispatch(op: ItemsOp) -> Result<()> {
             integrity,
             stamp,
         } => {
+            refuse_owned_store(&file, raw.raw_store)?;
             let opts = write_integrity_opts(&integrity);
             let id_prefix = id_prefix.as_deref();
             let policy = match on_stale {
@@ -1011,11 +1046,13 @@ pub(super) fn items_dispatch(op: ItemsOp) -> Result<()> {
         }
         ItemsOp::BackfillDedupId {
             file,
+            raw,
             array,
             dry_run,
             integrity,
             stamp,
         } => {
+            refuse_owned_store(&file, raw.raw_store)?;
             // Kill-switch short-circuit. Checked at the dispatch
             // boundary (rather than inside `compute_backfill_mutation`) so
             // both live and dry-run paths surface the documented

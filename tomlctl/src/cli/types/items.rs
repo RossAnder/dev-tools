@@ -7,7 +7,8 @@ use crate::dedup::DupTier;
 use crate::fields::FieldArgs;
 use crate::sweep::{DEFAULT_MAX_FILE_BYTES, DEFAULT_MAX_HITS};
 
-use super::{QueryArgs, ReadIntegrityArgs, StampArgs, WriteIntegrityArgs};
+use super::tasks::ids_help;
+use super::{ItemIds, QueryArgs, RawStoreArg, ReadIntegrityArgs, StampArgs, WriteIntegrityArgs};
 
 /// What `items apply` does with an op whose `expect` precondition no longer
 /// matches its row.
@@ -68,10 +69,14 @@ pub(crate) enum ItemsOp {
         integrity: ReadIntegrityArgs,
     },
 
-    /// Get a single item by its `id` field.
+    /// Get items by their `id` field: one id prints the item, several
+    /// (comma- or space-separated) print an array in the order given. An
+    /// unknown id fails the whole call.
+    #[command(mut_args(ids_help("Item ids to print, comma- or space-separated")))]
     Get {
         file: PathBuf,
-        id: String,
+        #[command(flatten)]
+        ids: ItemIds,
         /// Target array-of-tables name. See `List --array`.
         #[arg(long, default_value = "items")]
         array: String,
@@ -83,6 +88,8 @@ pub(crate) enum ItemsOp {
     /// merge over it and stand in for it when it is absent.
     Add {
         file: PathBuf,
+        #[command(flatten)]
+        raw: RawStoreArg,
         #[arg(
             long,
             required_unless_present_any = ["set", "set_json", "set_file"],
@@ -133,6 +140,8 @@ pub(crate) enum ItemsOp {
     /// mutating the file. Output: `{"ok":true,"added":N}`.
     AddMany {
         file: PathBuf,
+        #[command(flatten)]
+        raw: RawStoreArg,
         #[arg(
             long = "ndjson",
             help = "NDJSON source: `-` for stdin, otherwise a file path (a leading `@` is accepted)"
@@ -197,6 +206,8 @@ pub(crate) enum ItemsOp {
     Update {
         file: PathBuf,
         id: String,
+        #[command(flatten)]
+        raw: RawStoreArg,
         #[arg(
             long,
             help = "JSON patch object merged into the item; pass `-` to read from stdin or `@<path>` to read a file. Optional when --unset or a field flag is given; field flags merge over it."
@@ -229,6 +240,8 @@ pub(crate) enum ItemsOp {
     Remove {
         file: PathBuf,
         id: String,
+        #[command(flatten)]
+        raw: RawStoreArg,
         /// Target array-of-tables name. See `List --array`.
         #[arg(long, default_value = "items")]
         array: String,
@@ -292,6 +305,8 @@ pub(crate) enum ItemsOp {
     /// Apply a batch of add/update/remove operations in a single file rewrite.
     Apply {
         file: PathBuf,
+        #[command(flatten)]
+        raw: RawStoreArg,
         #[arg(
             long,
             help = "JSON array of ops, or NDJSON with one op object per line; each op is `{\"op\":\"add|update|remove\", ...}`; pass `-` to read from stdin or `@<path>` to read a file"
@@ -477,6 +492,8 @@ pub(crate) enum ItemsOp {
     /// - `--dry-run`: `{"ok":true,"dry_run":true,"would_backfill":N,"ids":[...]}`.
     BackfillDedupId {
         file: PathBuf,
+        #[command(flatten)]
+        raw: RawStoreArg,
         /// Target array-of-tables name. Defaults to `items` (the ledger
         /// schema). Use e.g. `--array rollback_events` for non-standard
         /// arrays that carry a `dedup_id` contract.

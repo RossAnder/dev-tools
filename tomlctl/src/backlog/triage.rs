@@ -9,11 +9,12 @@
 //!
 //! A bulk sweep is all-or-nothing: every id is resolved and every rewritten
 //! row validated before the first is stored, so one unknown id leaves the
-//! file and its sidecar untouched.
+//! file and its sidecar untouched. The `--ndjson` form carries a transition
+//! per row through the same staging, so it shares that guarantee.
 
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde_json::{Value as JsonValue, json};
 use toml::Value as TomlValue;
 
@@ -23,8 +24,8 @@ use crate::cli::{TriageMode, WriteIntegrityArgs, write_integrity_opts};
 use crate::convert::toml_to_json;
 use crate::errors::{ErrorKind, tagged_arg_err, tagged_err};
 use crate::io::{
-    item_id, items_array, items_array_mut, mutate_doc_conditional, on_missing_for, relativise,
-    repo_or_cwd_root, warn_if_created,
+    dry_run_read_opts, item_id, items_array, items_array_mut, mutate_doc_conditional,
+    on_missing_for, read_doc, read_ndjson_source, relativise, repo_or_cwd_root, warn_if_created,
 };
 use crate::items::StaleOp;
 use crate::output::print_json_compact;
@@ -113,7 +114,8 @@ impl Transition {
             _ => Err(tagged_err(
                 ErrorKind::Validation,
                 None,
-                "`backlog triage` takes exactly one of --promote, --dismiss, --resolve, --reopen",
+                "`backlog triage` takes exactly one of --promote, --dismiss, --resolve, --reopen \
+                 (or --ndjson <SRC> for a transition per row)",
             )),
         }
     }
@@ -214,28 +216,39 @@ fn apply_transition(
     t: &Transition,
     today: toml::value::Datetime,
 ) -> Result<()> {
-    let mut targets: Vec<usize> = Vec::new();
-    for id in ids {
+    let pairs: Vec<(&str, &Transition)> = ids.iter().map(|id| (id.as_str(), t)).collect();
+    apply_rows(doc, &pairs, today)
+}
+
+/// [`apply_transition`] with a transition per id, under the same
+/// all-or-nothing staging. A row reached twice keeps its first transition.
+fn apply_rows(
+    doc: &mut TomlValue,
+    pairs: &[(&str, &Transition)],
+    today: toml::value::Datetime,
+) -> Result<()> {
+    let mut targets: Vec<(usize, &Transition)> = Vec::new();
+    for &(id, t) in pairs {
         let mut found = false;
         for (index, item) in items_array(doc, schema::ARRAY_BACKLOG).iter().enumerate() {
-            if item_id(item) != Some(id.as_str()) {
+            if item_id(item) != Some(id) {
                 continue;
             }
             found = true;
-            if !targets.contains(&index) {
-                targets.push(index);
+            if !targets.iter().any(|&(i, _)| i == index) {
+                targets.push((index, t));
             }
         }
         if !found {
             let compacted = items_array(doc, schema::ARRAY_COMPACTED)
                 .iter()
-                .any(|item| item_id(item) == Some(id.as_str()));
+                .any(|item| item_id(item) == Some(id));
             return Err(not_found(id, compacted));
         }
     }
 
     let mut staged: Vec<(usize, TomlValue)> = Vec::with_capacity(targets.len());
-    for &index in &targets {
+    for &(index, t) in &targets {
         let mut row = items_array(doc, schema::ARRAY_BACKLOG)[index].clone();
         rewrite(&mut row, t, today)?;
         schema::validate(&toml_to_json(&row)).map_err(|e| e.into_tagged(None))?;
@@ -414,6 +427,281 @@ pub(crate) fn dispatch(
         expect_status.as_deref(),
         &integrity,
     )?;
+    print_json_compact(&out)
+}
+
+const MODE_KEYS: [&str; 4] = ["promote", "dismiss", "resolve", "reopen"];
+const ROW_KEYS: [&str; 7] = [
+    "id",
+    "promote",
+    "dismiss",
+    "resolve",
+    "reopen",
+    "rationale",
+    "expect_status",
+];
+
+/// One `--ndjson` row: an id, its transition, and the status it must still
+/// be at to move.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BatchRow {
+    id: String,
+    transition: Transition,
+    expect_status: Option<String>,
+}
+
+fn batch_err(line: usize, msg: impl std::fmt::Display) -> anyhow::Error {
+    tagged_arg_err(
+        ErrorKind::Validation,
+        "ndjson",
+        format!("line {line}: {msg}"),
+    )
+}
+
+fn companion_name(mode: &str) -> &'static str {
+    match mode {
+        "promote" => "target flow slug or plan path",
+        "dismiss" => "reason",
+        "resolve" => "resolution",
+        _ => "rationale",
+    }
+}
+
+/// The row's single mode key holds its companion text. `reopen` may instead
+/// be `true` beside a `rationale`, the spelling the flag form uses.
+fn row_transition(
+    line: usize,
+    row: &serde_json::Map<String, JsonValue>,
+    mode: &str,
+) -> Result<Transition> {
+    let rationale = row.get("rationale");
+    if rationale.is_some() && mode != "reopen" {
+        return Err(batch_err(
+            line,
+            format!(
+                "`rationale` is the `reopen` companion; a `{mode}` row carries its text as the `{mode}` value"
+            ),
+        ));
+    }
+    let text = match (row.get(mode), rationale) {
+        (Some(JsonValue::String(s)), None) => s.as_str(),
+        (Some(JsonValue::Bool(true)), Some(JsonValue::String(s))) => s.as_str(),
+        (Some(JsonValue::String(_)), Some(_)) => {
+            return Err(batch_err(
+                line,
+                "give the reopen rationale once: as the `reopen` value, or as `rationale` beside `\"reopen\": true`",
+            ));
+        }
+        _ => {
+            return Err(batch_err(
+                line,
+                format!("`{mode}` must be its {} as a string", companion_name(mode)),
+            ));
+        }
+    };
+    if text.trim().is_empty() {
+        return Err(batch_err(
+            line,
+            format!("`{mode}` needs a non-empty {}", companion_name(mode)),
+        ));
+    }
+    let text = text.to_string();
+    Ok(match mode {
+        "promote" => Transition::Promote(text),
+        "dismiss" => Transition::Dismiss(text),
+        "resolve" => Transition::Resolve(text),
+        _ => Transition::Reopen(text),
+    })
+}
+
+/// Parse every row before the store is read, so a malformed row fails the
+/// batch with nothing written. `default_expect` fills a row's missing
+/// `expect_status`.
+fn parse_batch(text: &str, default_expect: Option<&str>) -> Result<Vec<BatchRow>> {
+    let objects = crate::items::parse_ndjson_objects(text)?;
+    if objects.is_empty() {
+        return Err(tagged_arg_err(
+            ErrorKind::Validation,
+            "ndjson",
+            "the batch names no rows; each row is {\"id\", <mode>: <companion>}",
+        ));
+    }
+    let mut first_line: std::collections::BTreeMap<String, usize> = Default::default();
+    let mut rows = Vec::with_capacity(objects.len());
+    for (line, row) in objects {
+        if let Some(key) = row.keys().find(|k| !ROW_KEYS.contains(&k.as_str())) {
+            return Err(batch_err(
+                line,
+                format!(
+                    "`{key}` is not a triage row key; accepted: {}",
+                    ROW_KEYS.join(", ")
+                ),
+            ));
+        }
+        let id = match row.get("id") {
+            Some(JsonValue::String(s)) if !s.trim().is_empty() => s.clone(),
+            _ => return Err(batch_err(line, "needs a non-empty string `id`")),
+        };
+        if let Some(first) = first_line.get(&id) {
+            return Err(batch_err(
+                line,
+                format!("{id} is already named on line {first}; a batch names each id once"),
+            ));
+        }
+        first_line.insert(id.clone(), line);
+        let modes: Vec<&str> = MODE_KEYS
+            .iter()
+            .copied()
+            .filter(|k| row.contains_key(*k))
+            .collect();
+        let [mode] = modes.as_slice() else {
+            let got = if modes.is_empty() {
+                "none".to_string()
+            } else {
+                modes.join(", ")
+            };
+            return Err(batch_err(
+                line,
+                format!("takes exactly one of {}; got {got}", MODE_KEYS.join(", ")),
+            ));
+        };
+        let transition = row_transition(line, &row, mode)?;
+        let expect_status = match row.get("expect_status") {
+            None => default_expect.map(str::to_string),
+            Some(JsonValue::String(s)) => Some(s.clone()),
+            Some(_) => return Err(batch_err(line, "`expect_status` must be a string")),
+        };
+        rows.push(BatchRow {
+            id,
+            transition,
+            expect_status,
+        });
+    }
+    Ok(rows)
+}
+
+/// Rows whose `expect_status` no longer holds are skipped as stale; the rest
+/// move together or not at all. Returns the ids that moved and the stale
+/// records.
+fn apply_batch(
+    doc: &mut TomlValue,
+    rows: &[BatchRow],
+    today: toml::value::Datetime,
+) -> Result<(Vec<String>, Vec<StaleOp>)> {
+    let mut pending: Vec<(&str, &Transition)> = Vec::new();
+    let mut stale: Vec<StaleOp> = Vec::new();
+    for row in rows {
+        if let Some(expected) = &row.expect_status {
+            let (passed, skipped) = filter_on_status(doc, std::slice::from_ref(&row.id), expected);
+            stale.extend(skipped);
+            if passed.is_empty() {
+                continue;
+            }
+        }
+        pending.push((row.id.as_str(), &row.transition));
+    }
+    if !pending.is_empty() {
+        apply_rows(doc, &pending, today)?;
+    }
+    let applied = pending.iter().map(|(id, _)| (*id).to_string()).collect();
+    Ok((applied, stale))
+}
+
+/// Applies a parsed batch to the store under `root` and returns the envelope
+/// the CLI prints: the id-list form's keys, with `transition` the shared mode
+/// name (`mixed` when rows differ) and a `rows` entry per row.
+fn triage_batch_value(
+    root: &Path,
+    rows: &[BatchRow],
+    dry_run: bool,
+    integrity: &WriteIntegrityArgs,
+) -> Result<JsonValue> {
+    let path = root.join(".claude").join("backlog.toml");
+    let today = crate::time::today_toml_date()?;
+    let (applied, stale) = if dry_run {
+        if path.exists() {
+            read_doc(
+                &path,
+                dry_run_read_opts(integrity.verify_integrity),
+                |doc| apply_batch(&mut doc.clone(), rows, today),
+            )?
+        } else {
+            apply_batch(&mut TomlValue::Table(toml::Table::new()), rows, today)?
+        }
+    } else {
+        let opts = write_integrity_opts(integrity);
+        let on_missing = on_missing_for(&path, integrity.no_create)?;
+        let mut outcome = None;
+        let created =
+            mutate_doc_conditional(&path, integrity.allow_outside, opts, on_missing, |doc| {
+                let result = apply_batch(doc, rows, today)?;
+                let wrote = !result.0.is_empty();
+                outcome = Some(result);
+                Ok(wrote)
+            })?;
+        warn_if_created(&path, created);
+        outcome.expect("the closure runs on every success path")
+    };
+
+    let first = rows[0].transition.name();
+    let transition = if rows.iter().all(|r| r.transition.name() == first) {
+        first
+    } else {
+        "mixed"
+    };
+    let per_row: Vec<JsonValue> = rows
+        .iter()
+        .map(|r| {
+            let mut v = json!({"id": r.id, "transition": r.transition.name()});
+            if let Transition::Promote(to) = &r.transition {
+                v["to"] = json!(to);
+            }
+            v
+        })
+        .collect();
+    let ids: Vec<&str> = rows.iter().map(|r| r.id.as_str()).collect();
+    let mut out = json!({
+        "ok": true,
+        "transition": transition,
+        "ids": ids,
+        "path": relativise(root, &path),
+        "rows": per_row,
+    });
+    if rows.iter().any(|r| r.expect_status.is_some()) {
+        out["applied"] = json!(applied);
+        out["skipped_stale"] = stale.iter().map(StaleOp::to_json).collect();
+    }
+    if dry_run {
+        out["dry_run"] = json!(true);
+    }
+    Ok(out)
+}
+
+/// `backlog triage --ndjson`: every row is validated, and every promotion
+/// target resolved, before the store is locked.
+pub(crate) fn dispatch_batch(
+    src: &str,
+    expect_status: Option<String>,
+    dry_run: bool,
+    integrity: WriteIntegrityArgs,
+) -> Result<()> {
+    let mut rows = parse_batch(&read_ndjson_source(src)?, expect_status.as_deref())?;
+    let root = repo_or_cwd_root()?;
+    if rows
+        .iter()
+        .any(|r| matches!(r.transition, Transition::Promote(_)))
+    {
+        let resolver = Resolver::new(&root)?;
+        resolver.advise_skipped();
+        for row in &mut rows {
+            if let Transition::Promote(raw) = &row.transition {
+                let to = promotion_target(&resolver, raw, false, false)
+                    .with_context(|| format!("--ndjson row for {}", row.id))?;
+                row.transition = Transition::Promote(to);
+            }
+        }
+    }
+    let out = triage_batch_value(&root, &rows, dry_run, &integrity)?;
     print_json_compact(&out)
 }
 

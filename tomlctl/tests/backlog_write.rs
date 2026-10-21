@@ -1177,3 +1177,277 @@ fn add_many_names_the_line_carrying_an_unknown_key() {
         "a refused batch must not create the store"
     );
 }
+
+const CACHE_SUMMARY: &str = "evidence audit re-walks the tree on every call";
+
+/// Three open items — drift, flake, cache — with their minted ids.
+fn three_items(root: &Path) -> [String; 3] {
+    let drift = add_drift(root);
+    let mint = |summary: &str, kind: &str| {
+        backlog(root, &["add", "--summary", summary, "--kind", kind])["id"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    let flake = mint(FLAKE_SUMMARY, "flaky-test");
+    let cache = mint(CACHE_SUMMARY, "debt");
+    [drift, flake, cache]
+}
+
+/// Stage `text` as `name` under the sandbox and hand back its path.
+fn stage_batch(root: &Path, name: &str, text: &str) -> String {
+    let path = root.join(name);
+    fs::write(&path, text).unwrap();
+    path.to_string_lossy().into_owned()
+}
+
+fn ndjson(rows: &[serde_json::Value]) -> String {
+    rows.iter().map(|r| format!("{r}\n")).collect()
+}
+
+/// Neither an id nor a mode flag is given: the file names both, row by row,
+/// and each row's own text lands on its own item.
+#[test]
+fn triage_ndjson_resolves_three_ids_with_three_texts() {
+    let (_tmp, root) = sandbox();
+    let [a, b, c] = three_items(&root);
+    let texts = [
+        "fixed in 1a2b3c4 by the renormalise guard",
+        "it's `gone` after $(retry) on \"slow\" runners",
+        "cached the walk\nsecond line",
+    ];
+    let src = stage_batch(
+        &root,
+        "batch.ndjson",
+        &ndjson(&[
+            json!({"id": a, "resolve": texts[0]}),
+            json!({"id": b, "resolve": texts[1]}),
+            json!({"id": c, "resolve": texts[2]}),
+        ]),
+    );
+
+    let out = backlog(&root, &["triage", "--ndjson", &src]);
+    assert_eq!(out["ok"], json!(true));
+    assert_eq!(out["transition"], json!("resolve"));
+    assert_eq!(out["ids"], json!([a, b, c]));
+    assert!(
+        out.get("applied").is_none(),
+        "no expectation, no applied: {out}"
+    );
+
+    let doc = read_store(&root);
+    for (id, text) in [&a, &b, &c].into_iter().zip(texts) {
+        let item = row(&doc, "backlog", id);
+        assert_eq!(field(item, "status"), Some("resolved"), "{id}");
+        assert_eq!(field(item, "resolution"), Some(text), "{id}");
+    }
+    assert_sidecar_matches(&store_path(&root));
+}
+
+#[test]
+fn triage_ndjson_mixes_resolve_and_dismiss_in_one_call() {
+    let (_tmp, root) = sandbox();
+    let [a, b, _] = three_items(&root);
+    let src = stage_batch(
+        &root,
+        "batch.ndjson",
+        &ndjson(&[
+            json!({"id": a, "resolve": "fixed"}),
+            json!({"id": b, "dismiss": "not ours"}),
+        ]),
+    );
+
+    let out = backlog(&root, &["triage", "--ndjson", &src]);
+    assert_eq!(out["transition"], json!("mixed"));
+    assert_eq!(
+        out["rows"],
+        json!([
+            {"id": a, "transition": "resolve"},
+            {"id": b, "transition": "dismiss"},
+        ])
+    );
+    let doc = read_store(&root);
+    assert_eq!(field(row(&doc, "backlog", &a), "resolution"), Some("fixed"));
+    let dismissed = row(&doc, "backlog", &b);
+    assert_eq!(field(dismissed, "status"), Some("dismissed"));
+    assert_eq!(field(dismissed, "dismiss_reason"), Some("not ours"));
+}
+
+/// A refused `backlog triage --ndjson <src>`, its JSON error, and proof the
+/// store and sidecar were left alone.
+fn refused_triage_batch(root: &Path, text: &str) -> serde_json::Value {
+    let src = stage_batch(root, "batch.ndjson", text);
+    let before = snapshot(root);
+    let err = refused_triage(root, &["--ndjson", &src]);
+    assert_eq!(snapshot(root), before, "a refused batch writes nothing");
+    err
+}
+
+#[test]
+fn triage_ndjson_refuses_a_row_with_two_modes() {
+    let (_tmp, root) = sandbox();
+    let [a, b, _] = three_items(&root);
+    let err = refused_triage_batch(
+        &root,
+        &ndjson(&[
+            json!({"id": a, "resolve": "fixed"}),
+            json!({"id": b, "resolve": "fixed", "dismiss": "dropped"}),
+        ]),
+    );
+    assert_eq!(err["kind"], json!("validation"), "{err}");
+    let message = err["message"].as_str().unwrap();
+    assert!(message.starts_with("line 2: "), "{message}");
+    assert!(message.contains("exactly one of"), "{message}");
+}
+
+#[test]
+fn triage_ndjson_refuses_a_repeated_id() {
+    let (_tmp, root) = sandbox();
+    let [a, _, _] = three_items(&root);
+    let err = refused_triage_batch(
+        &root,
+        &ndjson(&[
+            json!({"id": a, "resolve": "fixed"}),
+            json!({"id": a, "dismiss": "dropped"}),
+        ]),
+    );
+    assert_eq!(err["kind"], json!("validation"), "{err}");
+    let message = err["message"].as_str().unwrap();
+    assert!(message.starts_with("line 2: "), "{message}");
+    assert!(message.contains("already named on line 1"), "{message}");
+}
+
+#[test]
+fn triage_ndjson_names_an_unknown_row_key() {
+    let (_tmp, root) = sandbox();
+    let [a, _, _] = three_items(&root);
+    let err = refused_triage_batch(
+        &root,
+        &ndjson(&[json!({"id": a, "resolve": "fixed", "resolutoin": "typo"})]),
+    );
+    let message = err["message"].as_str().unwrap();
+    assert!(message.contains("`resolutoin`"), "{message}");
+    assert!(message.contains("accepted:"), "{message}");
+}
+
+/// The line's `--expect-status` is each row's default and a row's own
+/// `expect_status` overrides it; a row that no longer matches is reported
+/// stale and left alone while the rest move.
+#[test]
+fn triage_ndjson_skips_a_stale_row() {
+    let (_tmp, root) = sandbox();
+    let [a, b, c] = three_items(&root);
+    for id in [&b, &c] {
+        backlog(
+            &root,
+            &["triage", id, "--dismiss", "--reason", "first pass"],
+        );
+    }
+    let src = stage_batch(
+        &root,
+        "batch.ndjson",
+        &ndjson(&[
+            json!({"id": a, "resolve": "fixed"}),
+            json!({"id": b, "reopen": "came back", "expect_status": "dismissed"}),
+            json!({"id": c, "resolve": "fixed too"}),
+        ]),
+    );
+
+    let out = backlog(
+        &root,
+        &["triage", "--ndjson", &src, "--expect-status", "open"],
+    );
+    assert_eq!(out["applied"], json!([a, b]));
+    assert_eq!(
+        out["skipped_stale"],
+        json!([{"id": c, "field": "status", "expected": "open", "found": "dismissed"}])
+    );
+    let doc = read_store(&root);
+    assert_eq!(field(row(&doc, "backlog", &a), "status"), Some("resolved"));
+    let reopened = row(&doc, "backlog", &b);
+    assert_eq!(field(reopened, "status"), Some("open"));
+    assert_eq!(field(reopened, "reopen_rationale"), Some("came back"));
+    let skipped = row(&doc, "backlog", &c);
+    assert_eq!(field(skipped, "status"), Some("dismissed"));
+    assert_eq!(field(skipped, "dismiss_reason"), Some("first pass"));
+}
+
+/// A `.toml` record file carries prose verbatim: `'''` keeps backticks,
+/// quotes and `$` literal and loses only the newline before its closer.
+#[test]
+fn triage_ndjson_reads_a_toml_record_file() {
+    let (_tmp, root) = sandbox();
+    let [a, b, _] = three_items(&root);
+    let resolution =
+        "Guarded by `renormalise --check`; the \"drift\" was $HOME-relative.\nSecond line.";
+    let src = stage_batch(
+        &root,
+        "batch.toml",
+        &format!(
+            "[[record]]\nid = \"{a}\"\nresolve = '''\n{resolution}\n'''\n\n\
+             [[record]]\nid = \"{b}\"\ndismiss = '''Not ours: C:\\tmp\\x'''\n"
+        ),
+    );
+
+    backlog(&root, &["triage", "--ndjson", &src]);
+    let doc = read_store(&root);
+    assert_eq!(
+        field(row(&doc, "backlog", &a), "resolution"),
+        Some(resolution)
+    );
+    assert_eq!(
+        field(row(&doc, "backlog", &b), "dismiss_reason"),
+        Some("Not ours: C:\\tmp\\x")
+    );
+}
+
+#[test]
+fn triage_ndjson_dry_run_writes_nothing() {
+    let (_tmp, root) = sandbox();
+    let [a, _, _] = three_items(&root);
+    let src = stage_batch(
+        &root,
+        "batch.ndjson",
+        &ndjson(&[json!({"id": a, "resolve": "fixed"})]),
+    );
+    let before = snapshot(&root);
+
+    let out = backlog(&root, &["triage", "--ndjson", &src, "--dry-run"]);
+    assert_eq!(out["dry_run"], json!(true));
+    assert_eq!(out["ids"], json!([a]));
+    assert_eq!(snapshot(&root), before, "a dry run writes nothing");
+}
+
+/// Relaxing the mode group for `--ndjson` must not let the flag form through
+/// without a mode.
+#[test]
+fn triage_flag_form_without_a_mode_is_refused() {
+    let (_tmp, root) = sandbox();
+    let [a, _, _] = three_items(&root);
+    let before = snapshot(&root);
+    let err = refused_triage(&root, &[&a, "--resolution", "fixed"]);
+    assert_eq!(err["kind"], json!("validation"), "{err}");
+    let message = err["message"].as_str().unwrap();
+    assert!(message.contains("exactly one of --promote"), "{message}");
+    assert_eq!(snapshot(&root), before);
+}
+
+#[test]
+fn triage_ndjson_conflicts_with_ids_and_mode_flags() {
+    let (_tmp, root) = sandbox();
+    let src = stage_batch(&root, "batch.ndjson", "");
+    for extra in [&["B-a1b2c3d4"][..], &["--resolve", "--resolution", "x"][..]] {
+        let out = cli(&root)
+            .args(["backlog", "triage", "--ndjson", &src])
+            .args(extra)
+            .write_stdin("")
+            .assert()
+            .failure()
+            .code(2);
+        let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+        assert!(
+            stderr.contains("cannot be used with"),
+            "{extra:?} with --ndjson must conflict; got: {stderr:?}"
+        );
+    }
+}
