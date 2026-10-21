@@ -189,7 +189,7 @@ pub(crate) fn codex_latest_dispatch(path: &Path) -> Option<Dispatch> {
 
 fn dispatch_in(text: &str, prompt_of: fn(&str) -> Option<String>) -> Option<Dispatch> {
     static PATTERN: OnceLock<Regex> = OnceLock::new();
-    // `[0-9]` rather than `\d`: the crate is built without Unicode classes.
+    // `[0-9]` rather than `\d`: the ids are ASCII digits, which `\d` would widen to all Unicode digits.
     let pattern = PATTERN.get_or_init(|| {
         Regex::new(r"tasks show ([0-9]+(?:,[0-9]+)*) --slug ([a-z0-9][a-z0-9-]{0,63})")
             .expect("dispatch pattern compiles")

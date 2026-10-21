@@ -92,8 +92,9 @@ pub(crate) const MAX_USER_PATTERN_LEN: usize = 512;
 /// `-e` from another without reproducing the flood the cap prevents.
 const OVERSIZE_PATTERN_PREFIX_LEN: usize = 40;
 
-const REGEX_UNICODE_HINT: &str =
-    "Unicode classes are unavailable in this build; write ASCII forms such as (?-u:\\w)";
+const REGEX_UNICODE_HINT: &str = "\\p{..} Unicode property classes are unavailable in this build; \
+     Unicode \\w/\\W repeats above about 20 (\\w{21}) exceed the compile-size limit, so write \
+     (?-u:\\w); (?-u:\\b) keeps sweep on the fast DFA";
 
 fn check_user_pattern_len(pattern: &str) -> Result<()> {
     if pattern.len() > MAX_USER_PATTERN_LEN {
@@ -173,6 +174,7 @@ pub(crate) enum Predicate {
     WherePrefix { key: String, prefix: String },
     WhereSuffix { key: String, suffix: String },
     WhereRegex { key: String, pattern: String },
+    Grep { fields: Vec<String>, regex: String },
 }
 
 /// Per-predicate evaluation-cost rank used by `apply_filters` to
@@ -211,6 +213,8 @@ fn predicate_cost(p: &Predicate) -> u8 {
         // but per-item match-cost is still substantially higher than
         // fixed-string substring search. Always last.
         Predicate::WhereRegex { .. } => 6,
+        // Regex over several fields: dearer than a single-field regex.
+        Predicate::Grep { .. } => 7,
     }
 }
 
@@ -1008,6 +1012,9 @@ impl<'p> PreparedPredicates<'p> {
             .iter()
             .map(|p| match p {
                 Predicate::WhereRegex { pattern, .. } => compile_user_regex(pattern).map(Some),
+                Predicate::Grep { regex, .. } => {
+                    compile_user_regex(&format!("(?i){regex}")).map(Some)
+                }
                 _ => Ok(None),
             })
             .collect::<Result<Vec<_>>>()?;
@@ -1279,6 +1286,19 @@ fn eval_predicate(
             any_element(field(key), |f| {
                 Ok(value_as_string(f).is_some_and(|s| re.is_match(&s)))
             })
+        }
+        Predicate::Grep { fields, .. } => {
+            let re = compiled_regex
+                .ok_or_else(|| anyhow::anyhow!("internal: missing compiled regex for --grep"))?;
+            for key in fields {
+                let hit = any_element(field(key), |f| {
+                    Ok(value_as_string(f).is_some_and(|s| re.is_match(&s)))
+                })?;
+                if hit {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
         }
     }
 }
@@ -1877,6 +1897,11 @@ pub(crate) struct QueryInput {
     pub(crate) count: bool,
     // Filter predicates (repeatable KEY=VAL families).
     pub(crate) filters: WhereFilters,
+    // `--grep` pattern, the `--grep-field` overrides, and the verb's default
+    // field set (empty: the verb has none, so `--grep` needs `--grep-field`).
+    pub(crate) grep: Option<String>,
+    pub(crate) grep_fields: Vec<String>,
+    pub(crate) default_grep_fields: &'static [&'static str],
     // Projection + shape + pagination. `select` arrives already split and
     // validated by the global output options.
     pub(crate) select: Option<Vec<String>>,
@@ -2162,6 +2187,30 @@ impl Query {
         }
 
         predicates.extend(filters.predicates()?);
+
+        if let Some(pattern) = &input.grep {
+            let fields: Vec<String> = if input.grep_fields.is_empty() {
+                input
+                    .default_grep_fields
+                    .iter()
+                    .map(|s| (*s).to_string())
+                    .collect()
+            } else {
+                input.grep_fields.clone()
+            };
+            if fields.is_empty() {
+                return Err(tagged_err(
+                    ErrorKind::Validation,
+                    None,
+                    "`--grep` has no default fields on this list verb; pass `--grep-field <FIELD>`"
+                        .to_string(),
+                ));
+            }
+            predicates.push(Predicate::Grep {
+                fields,
+                regex: pattern.clone(),
+            });
+        }
 
         // Projection: parse `--exclude a,b` into Vec<String>; `select` is
         // already split. `validate_query` enforces `select` / `exclude` /
@@ -2489,6 +2538,128 @@ rounds = []
             ..Default::default()
         };
         assert!(f.predicates().is_ok());
+    }
+
+    // -- grep ------------------------------------------------------------
+
+    fn grep_fixture() -> TomlValue {
+        toml::from_str(
+            r#"
+[[items]]
+id = "A"
+status = "open"
+summary = "Parser Crash"
+context = "none"
+tags = ["alpha", "Needle"]
+line = 4200
+
+[[items]]
+id = "B"
+status = "closed"
+summary = "unrelated"
+context = "the needle is here"
+
+[[items]]
+id = "C"
+status = "open"
+summary = "unrelated"
+context = "nothing"
+"#,
+        )
+        .unwrap()
+    }
+
+    fn grep_ids(fields: &[&str], pattern: &str, mut preds: Vec<Predicate>) -> Vec<String> {
+        preds.push(Predicate::Grep {
+            fields: fields.iter().map(|s| (*s).to_string()).collect(),
+            regex: pattern.into(),
+        });
+        ids(&run(&grep_fixture(), "items", &q_with(preds)).unwrap())
+    }
+
+    #[test]
+    fn grep_matches_when_any_field_matches() {
+        assert_eq!(
+            grep_ids(&["summary", "context"], "crash|needle", vec![]),
+            ["A", "B"]
+        );
+    }
+
+    #[test]
+    fn grep_is_case_insensitive() {
+        assert_eq!(grep_ids(&["summary"], "PARSER", vec![]), ["A"]);
+    }
+
+    #[test]
+    fn grep_ands_with_where() {
+        let open = Predicate::Where {
+            key: "status".into(),
+            rhs: "open".into(),
+        };
+        assert_eq!(
+            grep_ids(&["summary", "context"], "crash|needle", vec![open]),
+            ["A"]
+        );
+    }
+
+    #[test]
+    fn grep_matches_any_array_element_and_rendered_scalars() {
+        assert_eq!(grep_ids(&["tags"], "^needle$", vec![]), ["A"]);
+        assert_eq!(grep_ids(&["line"], "^42", vec![]), ["A"]);
+        assert!(grep_ids(&["absent"], ".", vec![]).is_empty());
+    }
+
+    #[test]
+    fn grep_field_override_replaces_default_fields() {
+        let input = |fields: Vec<String>| QueryInput {
+            grep: Some("needle".into()),
+            grep_fields: fields,
+            default_grep_fields: &["summary"],
+            ..grep_query_input()
+        };
+        let run_with = |fields: Vec<String>| {
+            let q = Query::from_query_input(&input(fields)).unwrap();
+            ids(&run(&grep_fixture(), "items", &q).unwrap())
+        };
+        assert!(run_with(vec![]).is_empty());
+        assert_eq!(run_with(vec!["context".into()]), ["B"]);
+    }
+
+    #[test]
+    fn grep_without_any_field_set_is_refused() {
+        let input = QueryInput {
+            grep: Some("x".into()),
+            ..grep_query_input()
+        };
+        let msg = format!("{:#}", Query::from_query_input(&input).err().unwrap());
+        assert!(msg.contains("--grep-field"), "{msg}");
+    }
+
+    fn grep_query_input() -> QueryInput {
+        QueryInput {
+            status: None,
+            category: None,
+            file: None,
+            newer_than: None,
+            count: false,
+            filters: WhereFilters::default(),
+            grep: None,
+            grep_fields: vec![],
+            default_grep_fields: &[],
+            select: None,
+            exclude: None,
+            pluck: None,
+            sort_by: vec![],
+            limit: None,
+            offset: None,
+            distinct: false,
+            group_by: None,
+            count_by: None,
+            count_distinct: None,
+            ndjson: false,
+            lines: false,
+            raw: false,
+        }
     }
 
     // -- one test per predicate kind -----------------------------------
@@ -3387,18 +3558,23 @@ category = "quality"
         assert!(compile_user_regex(&"a".repeat(512)).is_ok());
     }
 
-    /// `\w`-style classes compile under `cargo test` (a dev-dep enables the
-    /// crate's Unicode feature) but not in the shipped binary, so the hint
-    /// is pinned via a pattern that fails in every build.
+    /// `\p{Greek}` compiles under `cargo test` (a dev-dep enables the
+    /// crate's full Unicode feature) but not in the shipped binary, so the
+    /// hint is pinned via a syntax error and a size-limit overflow, both of
+    /// which fail in every build.
     #[test]
     fn compile_user_bytes_regex_error_carries_the_unicode_hint() {
-        let err = compile_user_bytes_regex("(").unwrap_err().to_string();
-        assert!(
-            err.contains(REGEX_UNICODE_HINT),
-            "build error must carry the Unicode hint; got: {err}"
-        );
-        let err = compile_user_regex("(").unwrap_err().to_string();
-        assert!(err.contains(REGEX_UNICODE_HINT));
+        for pattern in ["(", r"\w{100}"] {
+            let err = compile_user_bytes_regex(pattern).unwrap_err().to_string();
+            assert!(
+                err.contains(REGEX_UNICODE_HINT),
+                "build error must carry the Unicode hint; got: {err}"
+            );
+            let err = compile_user_regex(pattern).unwrap_err().to_string();
+            assert!(err.contains(REGEX_UNICODE_HINT));
+        }
+        assert!(REGEX_UNICODE_HINT.contains(r"\p{..}"));
+        assert!(REGEX_UNICODE_HINT.contains(r"(?-u:\b)"));
     }
 
     /// A malformed typed RHS on `--where` must propagate as a

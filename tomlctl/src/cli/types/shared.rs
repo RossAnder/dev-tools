@@ -108,6 +108,18 @@ pub(crate) struct StampArgs {
     pub(crate) no_stamp: bool,
 }
 
+/// The bypass for the generic writers' refusal of a verb-owned store
+/// (`store_guard::refuse_owned_store`).
+#[derive(Args, Clone)]
+#[command(next_help_heading = "Integrity options")]
+pub(crate) struct RawStoreArg {
+    #[arg(
+        long = "raw-store",
+        help = "Write a verb-owned store (backlog, tasks, execution record, inputs, review-v2) with this generic writer, bypassing its validator"
+    )]
+    pub(crate) raw_store: bool,
+}
+
 /// Flattened bundle of all `items list` query options — predicates,
 /// projection, shaping, aggregation. Lives here rather than as inline
 /// fields on the `List` variant so that `next_help_heading = "Query options"`
@@ -197,6 +209,19 @@ pub(crate) struct QueryArgs {
         help = "Filter: field string matches regex PAT (repeatable)"
     )]
     pub(crate) where_regex: Vec<String>,
+    #[arg(
+        long = "grep",
+        value_name = "REGEX",
+        help = "Filter: case-insensitive regex matching any of the verb's default text fields"
+    )]
+    pub(crate) grep: Option<String>,
+    #[arg(
+        long = "grep-field",
+        value_name = "FIELD",
+        requires = "grep",
+        help = "Fields --grep searches instead of the defaults (repeatable)"
+    )]
+    pub(crate) grep_field: Vec<String>,
     #[arg(
         long = "exclude",
         value_name = "F1,F2,...",
@@ -312,6 +337,9 @@ impl QueryArgs {
                 where_suffix: self.where_suffix.clone(),
                 where_regex: self.where_regex.clone(),
             },
+            grep: self.grep.clone(),
+            grep_fields: self.grep_field.clone(),
+            default_grep_fields: &[],
             select: out.select.clone(),
             exclude: self.exclude.clone(),
             pluck: self.pluck.clone(),

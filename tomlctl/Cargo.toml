@@ -52,8 +52,9 @@ tempfile = "^3"
 # `default-features = false` skips mimalloc's `secure` mode.
 mimalloc = { version = "0.1", default-features = false, optional = true }
 sha2 = "^0.11"
-# Default features trimmed: no Unicode classes — query predicates target ASCII identifiers/paths
-regex = { version = "^1", default-features = false, features = ["std", "perf"] }
+# Default features trimmed to the Unicode subset that `(?i)`, `\d`, `\w`, `\s` and `\b` need;
+# `\p{..}` property classes stay unavailable.
+regex = { version = "^1", default-features = false, features = ["std", "perf", "unicode-perl", "unicode-case"] }
 # memchr: the sweep's binary sniff (NUL in the first 8 KiB) and newline offset table
 memchr = "^2"
 

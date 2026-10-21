@@ -308,7 +308,8 @@ fn stdin_overflow_message() -> String {
 }
 
 /// Resolve a JSON argument: `-` reads stdin to a String, `@<path>` reads
-/// that file, anything else is returned as-is.
+/// that file (a `.toml` one as a TOML record file), anything else is
+/// returned as-is.
 ///
 /// Stdin handling:
 ///
@@ -332,23 +333,40 @@ pub(crate) fn read_json_arg(arg: &str) -> Result<String> {
         }
         Ok(buf)
     } else if let Some(path) = at_file_path(arg) {
-        read_at_file(path)
+        read_payload_file(path, false)
     } else {
         Ok(arg.to_string())
+    }
+}
+
+/// `read_at_file`, with a TOML record file converted to compact JSON: NDJSON
+/// lines when `as_ndjson`, else the array or object text.
+fn read_payload_file(path: &str, as_ndjson: bool) -> Result<String> {
+    let text = read_at_file(path)?;
+    if crate::payload::is_toml_path(path) {
+        crate::payload::toml_payload(Path::new(path), &text, as_ndjson)
+    } else {
+        Ok(text)
     }
 }
 
 /// Resolve an NDJSON source argument. A literal dash reads stdin via
 /// `read_json_arg` (preserving its guard against a second `-` sentinel on
 /// the same invocation); any other value is a file path, with or without
-/// the `@` prefix.
+/// the `@` prefix. A `.toml` path is a TOML record file, one line per row.
 pub(crate) fn read_ndjson_source(src: &str) -> Result<String> {
     if src == "-" {
         read_json_arg("-")
     } else if let Some(path) = at_file_path(src) {
-        read_at_file(path)
+        read_payload_file(path, true)
     } else {
-        fs::read_to_string(src).with_context(|| format!("reading NDJSON file `{src}`"))
+        let text =
+            fs::read_to_string(src).with_context(|| format!("reading NDJSON file `{src}`"))?;
+        if crate::payload::is_toml_path(src) {
+            crate::payload::toml_payload(Path::new(src), &text, true)
+        } else {
+            Ok(text)
+        }
     }
 }
 
@@ -477,7 +495,12 @@ pub(crate) fn read_json_value_from_arg(arg: &str) -> Result<serde_json::Value> {
         let stdin = std::io::stdin();
         parse_json_capped(stdin.lock())
     } else if let Some(path) = at_file_path(arg) {
-        Ok(serde_json::from_str(&read_at_file(path)?)?)
+        let text = read_at_file(path)?;
+        if crate::payload::is_toml_path(path) {
+            crate::payload::toml_payload_value(Path::new(path), &text)
+        } else {
+            Ok(serde_json::from_str(&text)?)
+        }
     } else {
         Ok(serde_json::from_str(arg)?)
     }
