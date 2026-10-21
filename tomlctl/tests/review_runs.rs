@@ -450,7 +450,7 @@ fn run_ids_never_reuse_a_removed_id() {
     repo.start(&repo.first, &[]);
     repo.start(&repo.first, &[]);
     repo.tomlctl()
-        .args(["items", "remove"])
+        .args(["items", "remove", "--raw-store"])
         .arg(repo.store())
         .args(["U2", "--array", "runs"])
         .assert()

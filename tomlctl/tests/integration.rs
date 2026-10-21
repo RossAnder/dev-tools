@@ -1936,6 +1936,7 @@ fn write_under_claude_auto_creates_missing_parent_dirs() {
         .env("TOMLCTL_ROOT", dir.path())
         .env("TOMLCTL_LOCK_TIMEOUT", "5")
         .arg("set")
+        .arg("--raw-store")
         .arg(&target)
         .arg("schema_version")
         .arg("1")
