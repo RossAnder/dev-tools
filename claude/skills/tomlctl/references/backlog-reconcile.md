@@ -91,6 +91,7 @@ store and its sidecar stay byte-identical. `--apply` never writes a `tasks.toml`
                             "closes":["fix-the-probe"],"refs":[],
                             "reason":"closing tasks not done: fix-the-probe (pending)"}],
             "stalled":[],"unlinked":[],"orphaned":[],"dangling":[],"external":[]},
+ "counts":{"ready":1,"in-progress":1,"stalled":0,"unlinked":0,"orphaned":0,"dangling":0,"external":0},
  "adopted":[{"id":"B-1a2b3c4d","flow":"alpha","task_refs":["fix-the-probe"]}],
  "applied":["B-a1b2c3d4"],
  "skipped":[],
@@ -101,6 +102,9 @@ store and its sidecar stay byte-identical. `--apply` never writes a `tasks.toml`
 
 - `flow` echoes `--flow`, and is `null` without it.
 - Every bucket key is present, and an empty bucket is `[]`.
+- `counts` has one key per bucket (`ready`, `in-progress`, `stalled`, `unlinked`, `orphaned`,
+  `dangling`, `external`), zero when the bucket is empty. Read it without parsing the buckets:
+  `--template '{counts.ready} ready, {counts.stalled} stalled'` or `--get counts.ready`.
 - `target` is the resolved value, so a row stored under a bound plan path reads as the flow's
   slug. `flow_status` is `null` in `dangling` and `external`.
 - `closes` and `refs` are task `ref` slugs, not ids.
