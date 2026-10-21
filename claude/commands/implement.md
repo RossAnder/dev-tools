@@ -136,11 +136,19 @@ That line is the record. It is orchestrator-held state that no store field carri
 Per completed agent:
 
 - **3a. Vet `implement-lite` output before promoting completion.** A vet reads the touched lines and confirms they match `Action`+`Detail` with the surrounding style preserved. **Flagged — always vetted:** a lite return carrying `applied <id> [vet-recommended]` (start from what its `uncertain:` reason names), `note: check not run` on a non-trivial edit, an added or changed assertion with no observed falsifier failure count or a count of 0, a `deviation:` line, or `skipped <id>: already-applied` (read its cited `file:line` and confirm the `Action`'s post-state is there — no citation fails the vet). **Sampled:** of the unflagged lite returns, vet 1 in 2 in run order (the 1st, 3rd, 5th…); drop to 1 in 4 once this repo's execution records hold ≥ 30 lite-tier completions with a `sampled-*` or `flagged-*` `vet` written since `implement-lite`'s `model:` or `effort:` last changed, under 5% of them `*-fail` — a retune restarts the count. A failed vet ⇒ re-dispatch the task to `implement-deep` (counts as a failed retry; 5b records it with `escalation_reason = "vet-failed"`, superseding the task's earlier entry if it had one), vet every unvetted lite return of the current checkpoint window before its gate, and vet every lite return for the rest of the run. Skip vetting for deep tasks. Do NOT append a `task-completion` for a task whose vet failed until its re-dispatch settles.
-- **3b. Plan deviations.** Each `deviation: <id> — <file> — spec said <planned>, code required <done>: <why>` line in a return becomes one `type=deviation` entry in `<record>`, written with `--task <id>` so its `task_ref` is the row's: `original_intent` = `<planned>`, `rationale` = `<why>`, `summary` = `<done>` in `<file>`, `commits` per 5b. All three are agent-written text, so write each to its own file with the Write tool and pass it by `--set-file` — never paste them into a shell argument, where a backtick or `$(…)` executes and an apostrophe ends the quote. **Pre-append dedupe guard (mid-batch-crash safety):** list the row's existing deviations, filtering on machine values only, with the row's `ref` as `<ref>`; compare `<planned>` and `<why>` against the returned `original_intent` / `rationale` yourself, and append only when no row matches both:
+- **3b. Plan deviations.** Each `deviation: <id> — <file> — spec said <planned>, code required <done>: <why>` line in a return becomes one `type=deviation` entry in `<record>`: `original_intent` = `<planned>`, `rationale` = `<why>`, `summary` = `<done>` in `<file>`, `commits` per 5b. All three are agent-written text, so write them with the Write tool into one TOML record file — one `[[record]]` per deviation, `task` = the task id (resolved per row to the row's `task_ref`), each text as a `'''` literal — and pass it by `--ndjson`; never paste them into a shell argument, where a backtick or `$(…)` executes and an apostrophe ends the quote. **Pre-append dedupe guard (mid-batch-crash safety):** for each deviation, list the row's existing deviations, filtering on machine values only, with the row's `ref` as `<ref>`; compare `<planned>` and `<why>` against the returned `original_intent` / `rationale` yourself, and leave out of the file any deviation whose row matches both:
 
   ```bash
   tomlctl items list <record> --where type=deviation --where task_ref=<ref> --select original_intent,rationale --lines
-  tomlctl flow record --slug <slug> --type deviation --task <id> --set agent=implement --set-file original_intent=<intent-file> --set-file rationale=<rationale-file> --set-file summary=<summary-file>
+  tomlctl flow record --slug <slug> --type deviation --set agent=implement --ndjson <deviations-file>
+  ```
+
+  ```toml
+  [[record]]
+  task = 12
+  original_intent = '''Files line for <ref> omits src/a.rs'''
+  rationale = '''<why>'''
+  summary = '''<done> in src/a.rs'''
   ```
 
   Significant deviations pause and surface to the user. Do NOT advise a second `/plan-update deviation` for an already-recorded deviation.

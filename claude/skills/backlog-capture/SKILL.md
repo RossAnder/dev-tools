@@ -366,10 +366,12 @@ tomlctl backlog show B-1a2b3c4d
 ```
 
 `show` takes a comma-separated id list and returns one object per id, each with the row under
-`item` beside its relations and evidence. For a one-line status check across several:
+`item` beside its relations and evidence. `get` prints only the stored row, with no `item` wrapper,
+so a field read or a one-line status check across several ids addresses the fields directly:
 
 ```bash
-tomlctl backlog show B-1a2b3c4d,B-5e6f7a8b --template '{item.id} [{item.status}] {item.summary}'
+tomlctl backlog get B-1a2b3c4d --get summary
+tomlctl backlog get B-1a2b3c4d,B-5e6f7a8b --template '{id} [{status}] {summary}'
 ```
 
 Survey what is live — open or claimed — under an area:
