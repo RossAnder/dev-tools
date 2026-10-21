@@ -1385,6 +1385,9 @@ pub(crate) fn parse_apply_ops(s: &str) -> Result<JsonValue> {
     Ok(serde_json::from_str(s)?)
 }
 
+/// Appended to NDJSON syntax errors so prose-heavy rows have a way out of JSON escaping.
+const NDJSON_TOML_HINT: &str = "Hint: for prose-heavy rows, write a TOML record file ([[record]] tables with ''' strings) and pass its .toml path to the same flag";
+
 fn parse_ndjson_lines(s: &str, expected: &str) -> Result<Vec<JsonValue>> {
     // Pre-size by newline count so the common case (one JSON row per
     // line, no blanks) fills the Vec without any reallocation. Blank lines
@@ -1395,8 +1398,8 @@ fn parse_ndjson_lines(s: &str, expected: &str) -> Result<Vec<JsonValue>> {
     // payload sizes tomlctl sees (agent-generated NDJSON, typically <1 MB).
     let mut rows = Vec::with_capacity(s.as_bytes().iter().filter(|&&b| b == b'\n').count());
     for (n, line) in numbered_lines(s) {
-        let v: JsonValue =
-            serde_json::from_str(line).with_context(|| format!("line {n} ({expected})"))?;
+        let v: JsonValue = serde_json::from_str(line)
+            .with_context(|| format!("line {n} ({expected}). {NDJSON_TOML_HINT}"))?;
         rows.push(v);
     }
     Ok(rows)
@@ -1433,7 +1436,7 @@ pub(crate) fn parse_ndjson_objects(
             Err(e) => Err(tagged_err(
                 ErrorKind::Validation,
                 None,
-                format!("line {n}: expected one JSON object per line: {e}"),
+                format!("line {n}: expected one JSON object per line: {e}. {NDJSON_TOML_HINT}"),
             )),
         })
         .collect()
@@ -3656,6 +3659,22 @@ summary = "existing"
         let err = parse_ndjson(input).unwrap_err();
         let msg = format!("{err:#}");
         assert!(msg.contains("line 3"), "expected 'line 3', got: {msg}");
+    }
+
+    #[test]
+    fn parse_ndjson_error_carries_toml_hint() {
+        let lines_err = parse_ndjson("{not json\n").unwrap_err();
+        let msg = format!("{lines_err:#}");
+        assert!(msg.contains("TOML record file"), "got: {msg}");
+        assert!(msg.contains("line 1"), "got: {msg}");
+
+        let objs_err = parse_ndjson_objects("{not json\n").unwrap_err();
+        let msg = format!("{objs_err:#}");
+        assert!(msg.contains("TOML record file"), "got: {msg}");
+
+        let non_obj = parse_ndjson_objects("[1]\n").unwrap_err();
+        let msg = format!("{non_obj:#}");
+        assert!(!msg.contains("TOML record file"), "got: {msg}");
     }
 
     #[test]
