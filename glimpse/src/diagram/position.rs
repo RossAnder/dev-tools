@@ -21,8 +21,9 @@ use super::order::{Chain, Ordered, Slot};
 
 /// Down, up, down, up, down: the last pass aligns each chain with its upper endpoint.
 const PASSES: usize = 5;
-/// Blank cells between two slots when either is a task.
-const TASK_GAP: i32 = 2;
+/// Blank cells between two slots when either is a task, unless
+/// [`position_with_gap`] is given another.
+pub(crate) const TASK_GAP: u16 = 2;
 /// Blank cells between two adjacent dummies.
 const DUMMY_GAP: i32 = 1;
 /// Cap on the rounds that move dummies off unrelated columns, since each push can
@@ -59,11 +60,50 @@ impl Positions {
 /// Adjacent slots are separated by at least [`TASK_GAP`] blank cells, or
 /// [`DUMMY_GAP`] between two dummies, so a row of tasks has pitch `width + 2` and a
 /// run of dummies pitch 2.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "the diagram passes its zoom's gap")
+)]
 pub(crate) fn position(ordered: &Ordered, label_width: impl Fn(u32) -> u16) -> Positions {
-    place_all(ordered, label_width, true)
+    position_with_gap(ordered, label_width, TASK_GAP)
 }
 
-fn place_all(ordered: &Ordered, label_width: impl Fn(u32) -> u16, compacted: bool) -> Positions {
+/// [`position`] with `task_gap` blank cells in place of [`TASK_GAP`].
+pub(crate) fn position_with_gap(
+    ordered: &Ordered,
+    label_width: impl Fn(u32) -> u16,
+    task_gap: u16,
+) -> Positions {
+    place_all(ordered, label_width, true, Gaps::new(task_gap))
+}
+
+/// The least blank cells between two adjacent slots.
+#[derive(Clone, Copy)]
+struct Gaps {
+    task: i32,
+}
+
+impl Gaps {
+    fn new(task: u16) -> Self {
+        Self {
+            task: i32::from(task),
+        }
+    }
+
+    fn between(self, left: Slot, right: Slot) -> i32 {
+        match (left, right) {
+            (Slot::Dummy { .. }, Slot::Dummy { .. }) => DUMMY_GAP,
+            _ => self.task,
+        }
+    }
+}
+
+fn place_all(
+    ordered: &Ordered,
+    label_width: impl Fn(u32) -> u16,
+    compacted: bool,
+    gaps: Gaps,
+) -> Positions {
     let rows = &ordered.rows;
     let widths: Vec<Vec<i32>> = rows
         .iter()
@@ -106,7 +146,7 @@ fn place_all(ordered: &Ordered, label_width: impl Fn(u32) -> u16, compacted: boo
                 .map(|i| {
                     let x = next;
                     if i + 1 < row.len() {
-                        next += widths[i] + gap(row[i], row[i + 1]);
+                        next += widths[i] + gaps.between(row[i], row[i + 1]);
                     }
                     x
                 })
@@ -131,15 +171,15 @@ fn place_all(ordered: &Ordered, label_width: impl Fn(u32) -> u16, compacted: boo
                 .map(|(&x, &w)| x + w / 2)
                 .collect();
             let neighbours = if reference < r { &up[r] } else { &down[r] };
-            place(&mut xs[r], &widths[r], &rows[r], neighbours, &centres);
+            place(&mut xs[r], &widths[r], &rows[r], neighbours, &centres, gaps);
         }
     }
     if compacted {
-        realign(&mut xs, &widths, rows, &up, &down);
+        realign(&mut xs, &widths, rows, &up, &down, gaps);
     }
-    separate_dummies(&mut xs, &widths, rows, &up, &down);
+    separate_dummies(&mut xs, &widths, rows, &up, &down, gaps);
     if compacted {
-        compact(&mut xs, &widths, rows, &up, &down);
+        compact(&mut xs, &widths, rows, &up, &down, gaps);
     }
 
     let shift = xs.iter().flatten().copied().min().unwrap_or(0);
@@ -159,13 +199,6 @@ fn place_all(ordered: &Ordered, label_width: impl Fn(u32) -> u16, compacted: boo
     positions
 }
 
-fn gap(left: Slot, right: Slot) -> i32 {
-    match (left, right) {
-        (Slot::Dummy { .. }, Slot::Dummy { .. }) => DUMMY_GAP,
-        _ => TASK_GAP,
-    }
-}
-
 /// One row of one pass. `neighbours[i]` indexes the reference row, whose slot centres
 /// are `centres`. Slots with no neighbour there only move when pushed.
 fn place(
@@ -174,9 +207,10 @@ fn place(
     slots: &[Slot],
     neighbours: &[Vec<usize>],
     centres: &[i32],
+    gaps: Gaps,
 ) {
     let len = slots.len();
-    let seps = separations(widths, slots);
+    let seps = separations(widths, slots, gaps);
     let mid = len.saturating_sub(1) / 2;
     let mut order: Vec<usize> = (0..len).filter(|&i| !neighbours[i].is_empty()).collect();
     order.sort_by_key(|&i| {
@@ -209,9 +243,9 @@ fn place(
 }
 
 /// `seps[i]` is the least distance from slot `i`'s leading cell to slot `i + 1`'s.
-fn separations(widths: &[i32], slots: &[Slot]) -> Vec<i32> {
+fn separations(widths: &[i32], slots: &[Slot], gaps: Gaps) -> Vec<i32> {
     (0..slots.len().saturating_sub(1))
-        .map(|i| widths[i] + gap(slots[i], slots[i + 1]))
+        .map(|i| widths[i] + gaps.between(slots[i], slots[i + 1]))
         .collect()
 }
 
@@ -249,12 +283,13 @@ fn separate_dummies(
     rows: &[Vec<Slot>],
     up: &[Vec<Vec<usize>>],
     down: &[Vec<Vec<usize>>],
+    gaps: Gaps,
 ) {
     let centre = |xs: &[Vec<i32>], r: usize, j: usize| xs[r][j] + widths[r][j] / 2;
     for _ in 0..SEPARATE_ROUNDS {
         let mut moved = false;
         for r in 0..rows.len() {
-            let seps = separations(&widths[r], &rows[r]);
+            let seps = separations(&widths[r], &rows[r], gaps);
             for i in 0..rows[r].len() {
                 if !matches!(rows[r][i], Slot::Dummy { .. }) {
                     continue;
@@ -317,9 +352,10 @@ fn compact(
     rows: &[Vec<Slot>],
     up: &[Vec<Vec<usize>>],
     down: &[Vec<Vec<usize>>],
+    gaps: Gaps,
 ) {
     let mut centres = centres_of(xs, widths);
-    let seps = centre_separations(widths, rows);
+    let seps = centre_separations(widths, rows, gaps);
     for _ in 0..COMPACT_ROUNDS {
         let mut values: Vec<i32> = centres.iter().flatten().copied().collect();
         values.sort_unstable();
@@ -371,12 +407,12 @@ fn set_centres(xs: &mut [Vec<i32>], widths: &[Vec<i32>], centres: &[Vec<i32>]) {
 }
 
 /// `seps[r][i]` is the least distance from slot `i`'s centre to slot `i + 1`'s.
-fn centre_separations(widths: &[Vec<i32>], rows: &[Vec<Slot>]) -> Vec<Vec<i32>> {
+fn centre_separations(widths: &[Vec<i32>], rows: &[Vec<Slot>], gaps: Gaps) -> Vec<Vec<i32>> {
     rows.iter()
         .zip(widths)
         .map(|(row, ws)| {
             (0..row.len().saturating_sub(1))
-                .map(|i| ws[i] - ws[i] / 2 + ws[i + 1] / 2 + gap(row[i], row[i + 1]))
+                .map(|i| ws[i] - ws[i] / 2 + ws[i + 1] / 2 + gaps.between(row[i], row[i + 1]))
                 .collect()
         })
         .collect()
@@ -396,9 +432,10 @@ fn realign(
     rows: &[Vec<Slot>],
     up: &[Vec<Vec<usize>>],
     down: &[Vec<Vec<usize>>],
+    gaps: Gaps,
 ) {
     let centres = centres_of(xs, widths);
-    let seps = centre_separations(widths, rows);
+    let seps = centre_separations(widths, rows, gaps);
     let start: Vec<usize> = rows
         .iter()
         .scan(0, |next, row| {
@@ -952,7 +989,7 @@ mod tests {
     fn compaction_closes_the_slack_a_dragged_subtree_leaves() {
         let ordered = dragged_fan();
         for (name, cross) in [("vertical", 3), ("horizontal", 1)] {
-            let loose = place_all(&ordered, |_| cross, false);
+            let loose = place_all(&ordered, |_| cross, false, Gaps::new(TASK_GAP));
             let tight = position(&ordered, |_| cross);
             assert!(
                 tight.layer_extent * 4 <= loose.layer_extent * 3,
