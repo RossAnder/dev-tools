@@ -1,6 +1,7 @@
 //! The `--template` mini-language: literal text with `{path}` placeholders,
 //! `{{` and `}}` for literal braces. A path uses the dotted syntax of
-//! `convert::navigate_json`. Strings render bare, numbers and bools as literals,
+//! `convert::navigate_json`. Literal text also takes the escapes `\n`, `\t` and
+//! `\\`; any other backslash stays literal. Strings render bare, numbers and bools as literals,
 //! arrays and objects as compact JSON, and null or a missing path as nothing.
 //! A path with a `*` segment renders its matches comma-joined. `{path:N}`
 //! truncates the rendered text to N characters with `truncate_text`.
@@ -79,6 +80,21 @@ impl Template {
                         col + 1
                     )));
                 }
+                '\\' => match chars.peek().map(|&(_, n)| n) {
+                    Some('n') => {
+                        chars.next();
+                        literal.push('\n');
+                    }
+                    Some('t') => {
+                        chars.next();
+                        literal.push('\t');
+                    }
+                    Some('\\') => {
+                        chars.next();
+                        literal.push('\\');
+                    }
+                    _ => literal.push('\\'),
+                },
                 c => literal.push(c),
             }
         }
@@ -307,6 +323,31 @@ mod tests {
     fn wildcard_placeholder_width_truncates_the_joined_text() {
         let row = json!({ "files": ["a.rs", "b.rs", "c.rs"] });
         assert_eq!(render("{files.*:6}", row), "a.rs,b…(+8)");
+    }
+
+    #[test]
+    fn escape_n_and_t_render_newline_and_tab() {
+        assert_eq!(
+            render(r"{id}\n{title}", json!({ "id": 1, "title": "t" })),
+            "1\nt"
+        );
+        assert_eq!(render(r"a\tb", json!({})), "a\tb");
+    }
+
+    #[test]
+    fn escape_doubled_backslash_is_one_literal_backslash() {
+        assert_eq!(render(r"a\\nb", json!({})), r"a\nb");
+    }
+
+    #[test]
+    fn escape_unknown_sequence_stays_literal() {
+        assert_eq!(render(r"\x", json!({})), r"\x");
+        assert_eq!(render(r"end\", json!({})), r"end\");
+    }
+
+    #[test]
+    fn escape_does_not_apply_to_values_or_placeholders() {
+        assert_eq!(render("{s}", json!({ "s": r"a\nb" })), r"a\nb");
     }
 
     #[test]
