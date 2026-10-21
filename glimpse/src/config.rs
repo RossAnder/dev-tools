@@ -276,6 +276,42 @@ impl ItemColumn {
     }
 }
 
+/// How much of the footer's key hints is shown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HintMode {
+    Short,
+    Full,
+    Hidden,
+}
+
+impl HintMode {
+    pub(crate) fn parse(s: &str) -> Option<Self> {
+        match s {
+            "short" => Some(HintMode::Short),
+            "full" => Some(HintMode::Full),
+            "hidden" => Some(HintMode::Hidden),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            HintMode::Short => "short",
+            HintMode::Full => "full",
+            HintMode::Hidden => "hidden",
+        }
+    }
+
+    /// Short, then full, then hidden, then short again.
+    pub(crate) fn next(self) -> Self {
+        match self {
+            HintMode::Short => HintMode::Full,
+            HintMode::Full => HintMode::Hidden,
+            HintMode::Hidden => HintMode::Short,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Config {
     pub(crate) orientation: OrientationPref,
@@ -303,8 +339,16 @@ pub(crate) struct Config {
     pub(crate) mouse: bool,
     /// The columns an item row shows, in order; never empty and never repeating one.
     pub(crate) item_columns: Vec<ItemColumn>,
+    /// How much of the footer's key hints starts shown.
+    pub(crate) hints: HintMode,
     /// Theme token overrides, already checked by [`crate::theme::validate`].
     pub(crate) theme: HashMap<String, String>,
+    /// The theme set `[theme] base` names, already checked against the known sets.
+    pub(crate) theme_base: Option<String>,
+    /// Token overrides from `[theme.<set>]` subtables, keyed by set name and already checked.
+    pub(crate) theme_sets: HashMap<String, HashMap<String, String>>,
+    /// Set when the theme was chosen with `--theme`, never from the file.
+    pub(crate) theme_from_flag: bool,
     /// Set from the environment by [`Config::load`], never from the file.
     pub(crate) no_color: bool,
 }
@@ -328,7 +372,11 @@ impl Default for Config {
             column_max: 40,
             mouse: true,
             item_columns: ItemColumn::ALL.to_vec(),
+            hints: HintMode::Short,
             theme: HashMap::new(),
+            theme_base: None,
+            theme_sets: HashMap::new(),
+            theme_from_flag: false,
             no_color: false,
         }
     }
@@ -359,7 +407,12 @@ impl Config {
                     cfg.panel_split_threshold = positive_float(key, value)?;
                 }
                 "cell_aspect" => cfg.cell_aspect = positive_float(key, value)?,
-                "theme" => cfg.theme = theme_table(value)?,
+                "theme" => {
+                    let theme = theme_table(value)?;
+                    cfg.theme = theme.tokens;
+                    cfg.theme_base = theme.base;
+                    cfg.theme_sets = theme.sets;
+                }
                 "split_threshold" => cfg.split_threshold = positive_float(key, value)?,
                 "pane_ratio" => {
                     let r = positive_float(key, value)?;
@@ -400,6 +453,10 @@ impl Config {
                         .ok_or_else(|| "`mouse` must be true or false".to_string())?;
                 }
                 "item_columns" => cfg.item_columns = item_columns(value)?,
+                "hints" => {
+                    cfg.hints = HintMode::parse(str_value(key, value)?)
+                        .ok_or_else(|| "`hints` must be short, full or hidden".to_string())?;
+                }
                 other => return Err(format!("unknown key `{other}`")),
             }
         }
@@ -436,19 +493,57 @@ impl Config {
     }
 }
 
-fn theme_table(value: &toml::Value) -> Result<HashMap<String, String>, String> {
+/// The parsed `[theme]` table: flat token overrides, the base set and per-set overrides.
+struct ThemeTable {
+    tokens: HashMap<String, String>,
+    base: Option<String>,
+    sets: HashMap<String, HashMap<String, String>>,
+}
+
+fn theme_table(value: &toml::Value) -> Result<ThemeTable, String> {
     let table = value
         .as_table()
         .ok_or_else(|| "`theme` must be a table".to_string())?;
-    let mut out = HashMap::new();
+    let mut out = ThemeTable {
+        tokens: HashMap::new(),
+        base: None,
+        sets: HashMap::new(),
+    };
     for (token, value) in table {
-        let v = value
-            .as_str()
-            .ok_or_else(|| format!("theme token `{token}` must be a string"))?;
-        out.insert(token.clone(), v.to_string());
+        if token == "base" {
+            let name = value
+                .as_str()
+                .ok_or_else(|| "`theme.base` must be a string".to_string())?;
+            known_set(name)?;
+            out.base = Some(name.to_string());
+        } else if let Some(sub) = value.as_table() {
+            known_set(token)?;
+            let mut tokens = HashMap::new();
+            for (name, value) in sub {
+                let v = value.as_str().ok_or_else(|| {
+                    format!("theme token `{name}` in `[theme.{token}]` must be a string")
+                })?;
+                tokens.insert(name.clone(), v.to_string());
+            }
+            crate::theme::validate(&tokens).map_err(|e| format!("`[theme.{token}]`: {e}"))?;
+            out.sets.insert(token.clone(), tokens);
+        } else {
+            let v = value
+                .as_str()
+                .ok_or_else(|| format!("theme token `{token}` must be a string"))?;
+            out.tokens.insert(token.clone(), v.to_string());
+        }
     }
-    crate::theme::validate(&out)?;
+    crate::theme::validate(&out.tokens)?;
     Ok(out)
+}
+
+fn known_set(name: &str) -> Result<(), String> {
+    if crate::theme::sets::by_name(name).is_some() {
+        Ok(())
+    } else {
+        Err(format!("unknown theme set `{name}`"))
+    }
 }
 
 fn item_columns(value: &toml::Value) -> Result<Vec<ItemColumn>, String> {
@@ -652,6 +747,26 @@ mod tests {
     }
 
     #[test]
+    fn hints_parse_default_to_short_and_reject_unknown_values() {
+        assert_eq!(Config::default().hints, HintMode::Short);
+        for (text, mode) in [
+            ("short", HintMode::Short),
+            ("full", HintMode::Full),
+            ("hidden", HintMode::Hidden),
+        ] {
+            let cfg = Config::parse(&format!("hints = \"{text}\"")).expect("parses");
+            assert_eq!(cfg.hints, mode);
+            assert_eq!(mode.as_str(), text);
+        }
+        let err = Config::parse("hints = \"tiny\"").expect_err("unknown value");
+        assert_eq!(err, "`hints` must be short, full or hidden");
+        assert!(Config::parse("hints = 1").is_err());
+        assert_eq!(HintMode::Short.next(), HintMode::Full);
+        assert_eq!(HintMode::Full.next(), HintMode::Hidden);
+        assert_eq!(HintMode::Hidden.next(), HintMode::Short);
+    }
+
+    #[test]
     fn poll_ms_out_of_range_is_rejected() {
         for bad in ["poll_ms = 49", "poll_ms = 10001"] {
             let err = Config::parse(bad).expect_err(bad);
@@ -826,6 +941,43 @@ mod tests {
         let cfg = Config::parse("panel_split = \"below\"\ncell_aspect = 2.6\n").expect("parses");
         assert_eq!(cfg.panel_split, SplitPref::Fixed(Split::Below));
         assert_eq!(cfg.cell_aspect, 2.6);
+    }
+
+    #[test]
+    fn a_legacy_theme_table_leaves_the_set_fields_empty() {
+        let cfg = Config::parse("[theme]\naccent = \"#112233\"\n").expect("parses");
+        assert_eq!(cfg.theme.len(), 1);
+        assert_eq!(cfg.theme_base, None);
+        assert!(cfg.theme_sets.is_empty());
+        assert!(!cfg.theme_from_flag);
+    }
+
+    #[test]
+    fn theme_base_and_per_set_tables_parse() {
+        let cfg = Config::parse(
+            "[theme]\nbase = \"ansi\"\naccent = \"red\"\n[theme.ansi]\nsuccess = \"green\"\n",
+        )
+        .expect("parses");
+        assert_eq!(cfg.theme_base.as_deref(), Some("ansi"));
+        assert_eq!(cfg.theme.get("accent").map(String::as_str), Some("red"));
+        assert!(!cfg.theme.contains_key("base"));
+        let ansi = cfg.theme_sets.get("ansi").expect("ansi subtable");
+        assert_eq!(ansi.get("success").map(String::as_str), Some("green"));
+    }
+
+    #[test]
+    fn unknown_theme_sets_and_per_set_tokens_are_rejected() {
+        for bad in [
+            "[theme]\nbase = \"neon\"",
+            "[theme]\nbase = 1",
+            "[theme.neon]\naccent = \"red\"",
+            "[theme.ansi]\nnope = \"red\"",
+            "[theme.ansi]\naccent = 3",
+        ] {
+            assert!(Config::parse(bad).is_err(), "{bad:?} should be rejected");
+        }
+        let err = Config::parse("[theme]\nbase = \"neon\"").expect_err("unknown base");
+        assert_eq!(err, "unknown theme set `neon`");
     }
 
     #[test]
