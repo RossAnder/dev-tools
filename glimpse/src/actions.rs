@@ -9,6 +9,7 @@ use serde_json::{Map, Value};
 use tomlctl::{BACKLOG_MANAGED_FIELDS, BacklogTriage, LedgerRef, RestoreRow, STATUS_COMPANIONS};
 use tui_input::Input;
 
+use crate::config::ItemColumn;
 use crate::form::{Field, FieldValue, Form};
 use crate::ledger::{EFFORTS, InputRow, ItemRow, Kind, SEVERITIES};
 use crate::surface::Surface;
@@ -764,6 +765,39 @@ impl InputForm {
     }
 }
 
+/// The column picker: one required multi-select with `current` checked. The checked columns
+/// are listed first in their current order and the rest follow in canonical order, so reading
+/// the form back keeps the existing order and appends newly checked columns.
+pub(crate) fn columns_form(current: &[ItemColumn]) -> Form {
+    let mut order: Vec<ItemColumn> = Vec::new();
+    for &column in current.iter().chain(ItemColumn::ALL.iter()) {
+        if !order.contains(&column) {
+            order.push(column);
+        }
+    }
+    let options = order.iter().map(|c| c.as_str().to_owned()).collect();
+    let checked: Vec<&str> = current.iter().map(|c| c.as_str()).collect();
+    Form::new(
+        "columns",
+        vec![
+            Field::multi("show", options)
+                .with_value(&checked)
+                .required(),
+        ],
+    )
+}
+
+/// The columns a submitted picker checked, in the order the form listed them.
+pub(crate) fn columns_from(form: &Form) -> Vec<ItemColumn> {
+    match form.fields.first().map(Field::value) {
+        Some(FieldValue::Many(names)) => names
+            .iter()
+            .filter_map(|name| ItemColumn::parse(name))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
 /// Withdraws `ids`: the `w` action, and the undo of an input write, whose outcome names the
 /// record it created.
 pub(crate) fn withdraw(ids: Vec<String>, next: &mut RequestId) -> WriteRequest {
@@ -1114,6 +1148,36 @@ mod tests {
                 text: Some("after the release".into()),
             }))
         );
+    }
+
+    #[test]
+    fn the_column_picker_round_trips_the_current_columns() {
+        let current = [ItemColumn::Summary, ItemColumn::Id, ItemColumn::Status];
+        let mut form = columns_form(&current);
+        assert_eq!(columns_from(&form), current);
+        submitted(&mut form);
+    }
+
+    #[test]
+    fn newly_checked_columns_append_after_the_current_ones() {
+        let current = [ItemColumn::Summary, ItemColumn::Id];
+        let mut form = columns_form(&current);
+        for _ in 0..2 {
+            press(&mut form, KeyCode::Down);
+        }
+        press(&mut form, KeyCode::Char(' '));
+        submitted(&mut form);
+        assert_eq!(
+            columns_from(&form),
+            vec![ItemColumn::Summary, ItemColumn::Id, ItemColumn::Status]
+        );
+    }
+
+    #[test]
+    fn the_column_picker_refuses_an_empty_choice() {
+        let mut form = columns_form(&[ItemColumn::Id]);
+        press(&mut form, KeyCode::Char(' '));
+        assert_eq!(press(&mut form, KeyCode::Enter), FormOutcome::Pending);
     }
 
     #[test]
