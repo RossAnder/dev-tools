@@ -9,10 +9,9 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 
-use super::{DiagramCache, Layout, NodeBox, Stroke, TITLE_CAP, Zoom};
+use super::{DiagramCache, Layout, NodeBox, Stroke, char_cells};
 use crate::app::App;
 use crate::config::Orientation;
-use crate::model::Task;
 use crate::theme::Theme;
 
 /// A drawn node's on-screen cells and its task id.
@@ -105,34 +104,20 @@ fn render_at(
                 style = style.underline_color(colour);
             }
         }
-        for (x, ch) in (node.x..).zip(label(app.diagram_zoom, task).chars()) {
-            put(buf, area, scroll, (x, node.y), ch, style);
+        let label = app.diagram_zoom.label(task.id, &task.title, task.status);
+        let mut x = node.x;
+        for ch in label.chars() {
+            let cells = char_cells(ch);
+            if cells > 0 {
+                put(buf, area, scroll, (x, node.y), ch, style);
+                x = x.saturating_add(cells);
+            }
         }
     }
     if layout.hidden > 0 {
         hidden_chip(buf, area, layout.hidden, &targets, selected, theme);
     }
     targets
-}
-
-/// What a node shows at `zoom`, as many chars as `Zoom::label_width` gives it: `[id
-/// title]` with a title past `TITLE_CAP` chars cut to end in `…`, `[id]`, or the status
-/// glyph alone.
-fn label(zoom: Zoom, task: &Task) -> String {
-    match zoom {
-        Zoom::Titles => {
-            let title = if task.title.chars().count() > TITLE_CAP {
-                let mut cut: String = task.title.chars().take(TITLE_CAP - 1).collect();
-                cut.push('…');
-                cut
-            } else {
-                task.title.clone()
-            };
-            format!("[{} {title}]", task.id)
-        }
-        Zoom::Ids => format!("[{}]", task.id),
-        Zoom::Tight => task.status.glyph().to_string(),
-    }
 }
 
 /// The cells of `node` the viewport shows, in screen coordinates.
@@ -243,8 +228,9 @@ fn follow(offset: u16, start: u16, len: u16, view: u16, total: u16) -> u16 {
 mod tests {
     use super::*;
     use crate::config::Config;
+    use crate::diagram::Zoom;
     use crate::diagram::order::EdgeKind;
-    use crate::model::fixture;
+    use crate::model::{TaskStatus, fixture};
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
 
@@ -436,6 +422,27 @@ mod tests {
         let layout = cache.layout.as_ref().expect("drawn");
         let node = layout.node(4).expect("drawn");
         assert_eq!(usize::from(node.width), cut.chars().count());
+    }
+
+    #[test]
+    fn a_titled_label_draws_control_chars_as_spaces() {
+        let title = "a\u{1b}]52;c;x\u{7}b\tc\u{1b}[2J";
+        let label = Zoom::Titles.label(4, title, TaskStatus::Pending);
+        assert!(!label.chars().any(char::is_control), "{label:?}");
+        let raw = format!("[4 {title}]");
+        assert_eq!(label.chars().count(), raw.chars().count());
+
+        let mut snap = fixture();
+        snap.tasks[3].title = title.into();
+        let mut app = App::new(snap, &Config::default());
+        app.diagram_zoom = Zoom::Titles;
+        let mut cache = DiagramCache::default();
+        let buf = draw(&app, &mut cache, Orientation::Vertical, 200, 40);
+        let screen = text(&buf);
+        assert!(screen.contains(&label), "{screen}");
+        assert!(screen.lines().all(|l| !l.chars().any(char::is_control)));
+        let node = cache.layout.as_ref().and_then(|l| l.node(4)).unwrap();
+        assert_eq!(usize::from(node.width), label.chars().count());
     }
 
     #[test]

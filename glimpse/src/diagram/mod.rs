@@ -24,12 +24,13 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::app::{Dir, Navigator};
 use crate::config::Orientation;
-use crate::model::{Index, Snapshot};
+use crate::model::{Index, Snapshot, TaskStatus};
+use crate::view::text_width;
 
 use glyph::ArmMask;
 use order::{Edge, EdgeId, EdgeKind, Slot};
 use route::{Arrow, Cell};
-use subset::Focus;
+use subset::{Focus, Subset};
 
 /// Corners are drawn `╭╮╰╯` rather than `┌┐└┘`.
 const ROUNDED: bool = true;
@@ -40,7 +41,7 @@ const TITLE_CAP: usize = 24;
 /// How much of each task a diagram label shows.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub(crate) enum Zoom {
-    /// `[id] title`, the title cut to `TITLE_CAP` characters.
+    /// `[id title]`, the title cut to `TITLE_CAP` characters.
     Titles,
     #[default]
     Ids,
@@ -49,14 +50,36 @@ pub(crate) enum Zoom {
 }
 
 impl Zoom {
+    /// The stable name `state.toml` saves, independent of the label.
+    pub(crate) fn key(self) -> &'static str {
+        match self {
+            Self::Titles => "titles",
+            Self::Ids => "ids",
+            Self::Tight => "tight",
+        }
+    }
+
+    pub(crate) fn from_key(key: &str) -> Option<Zoom> {
+        [Self::Titles, Self::Ids, Self::Tight]
+            .into_iter()
+            .find(|zoom| zoom.key() == key)
+    }
+
+    /// What a node shows: `[id title]` with the title as `shown_title` cuts it, `[id]`,
+    /// or the status glyph alone. Paint draws exactly this and the layout reserves
+    /// `label_cells` of it.
+    pub(crate) fn label(self, id: u32, title: &str, status: TaskStatus) -> String {
+        match self {
+            Zoom::Titles => format!("[{id} {}]", shown_title(title)),
+            Zoom::Ids => format!("[{id}]"),
+            Zoom::Tight => status.glyph().to_string(),
+        }
+    }
+
+    /// The cells a node's label takes. Status sits outside the layout key, so this
+    /// measures the default status's glyph, which every glyph matches in width.
     fn label_width(self, id: u32, title: &str) -> u16 {
-        let digits = id.to_string().len();
-        let cells = match self {
-            Zoom::Titles => digits + 3 + title.chars().count().min(TITLE_CAP),
-            Zoom::Ids => digits + 2,
-            Zoom::Tight => 1,
-        };
-        u16::try_from(cells).unwrap_or(u16::MAX)
+        label_cells(&self.label(id, title, TaskStatus::default()))
     }
 
     fn task_gap(self) -> u16 {
@@ -65,6 +88,32 @@ impl Zoom {
             Zoom::Titles | Zoom::Ids => position::TASK_GAP,
         }
     }
+}
+
+/// `title` as a [`Zoom::Titles`] label shows it: past `TITLE_CAP` chars it is cut to end
+/// in `…`, and each control char becomes a space, so an agent-written title cannot put
+/// an escape sequence on the terminal and the char count is kept.
+fn shown_title(title: &str) -> String {
+    let clean = |c: char| if c.is_control() { ' ' } else { c };
+    if title.chars().count() > TITLE_CAP {
+        let mut cut: String = title.chars().take(TITLE_CAP - 1).map(clean).collect();
+        cut.push('…');
+        cut
+    } else {
+        title.chars().map(clean).collect()
+    }
+}
+
+/// The cells `ch` advances a label by: its display width, 0 for a char paint skips.
+pub(crate) fn char_cells(ch: char) -> u16 {
+    u16::try_from(text_width(ch.encode_utf8(&mut [0; 4]))).unwrap_or(u16::MAX)
+}
+
+/// The cells paint covers drawing `label` char by char.
+fn label_cells(label: &str) -> u16 {
+    label
+        .chars()
+        .fold(0u16, |cells, ch| cells.saturating_add(char_cells(ch)))
 }
 
 /// A task's `[id]` label, in canvas cells.
@@ -137,13 +186,6 @@ struct FitKey {
     titles: Option<u64>,
 }
 
-/// The ids a subset draws and how many of the snapshot's tasks it leaves out.
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct Chosen {
-    ids: BTreeSet<u32>,
-    hidden: usize,
-}
-
 /// Holds the last layout under one [`LayoutKey`] and recomputes it only when that key
 /// changes, and the last subset choice under its [`FitKey`], so an unchanged frame runs
 /// no fit search. The viewport scroll lives here too, since it must survive between
@@ -155,7 +197,7 @@ pub(crate) struct DiagramCache {
     show_implied: bool,
     layout: Option<Layout>,
     computations: usize,
-    fitted: Option<(FitKey, Option<Chosen>)>,
+    fitted: Option<(FitKey, Option<Subset>)>,
     searches: usize,
     /// Canvas cell at the viewport's top-left corner.
     scroll: (u16, u16),
@@ -279,27 +321,21 @@ impl DiagramCache {
 
 /// The subset `key` asks for, and the layout of it when the search already measured
 /// that, so it need not be laid out again.
-fn choose(snapshot: &Snapshot, source: &Source, key: &FitKey) -> (Option<Chosen>, Option<Layout>) {
+fn choose(snapshot: &Snapshot, source: &Source, key: &FitKey) -> (Option<Subset>, Option<Layout>) {
     let Some(target) = key
         .target
         .filter(|&target| snapshot.tasks.iter().any(|task| task.id == target))
     else {
         return (None, None);
     };
-    let total = snapshot.tasks.len();
-    let chosen = |ids: BTreeSet<u32>| Chosen {
-        hidden: total.saturating_sub(ids.len()),
-        ids,
-    };
-    let closure = (key.focus != Focus::Off)
-        .then(|| subset::generations(snapshot, target, key.focus, usize::MAX));
+    let closure = (key.focus != Focus::Off).then(|| subset::closure(snapshot, target, key.focus));
     let Some((width, height)) = key.view else {
-        return (closure.map(chosen), None);
+        return (closure, None);
     };
     let fits = |layout: &Layout| layout.width <= width && layout.height <= height;
-    let whole = source.layout(closure.as_ref());
+    let whole = source.layout(closure.as_ref().map(|closure| &closure.ids));
     if fits(&whole) {
-        return (closure.map(chosen), Some(whole));
+        return (closure, Some(whole));
     }
     let mut accepted: Option<(BTreeSet<u32>, Layout)> = None;
     let found = subset::fit(snapshot, target, key.focus, |ids| {
@@ -313,7 +349,7 @@ fn choose(snapshot: &Snapshot, source: &Source, key: &FitKey) -> (Option<Chosen>
     let measured = accepted
         .filter(|(ids, _)| *ids == found.ids)
         .map(|(_, layout)| layout);
-    (Some(chosen(found.ids)), measured)
+    (Some(found), measured)
 }
 
 /// The navigator for what [`paint::render`] draws in `orientation`, built from the
@@ -359,8 +395,8 @@ fn ids_hash(ids: &BTreeSet<u32>) -> u64 {
     hash
 }
 
-/// FNV-1a over each task's id and title cut to `TITLE_CAP` characters, in id order,
-/// over the tasks in `only` or every task.
+/// FNV-1a over each task's id and title as its `Zoom::Titles` label shows it, in id
+/// order, over the tasks in `only` or every task.
 fn title_hash(snapshot: &Snapshot, only: Option<&BTreeSet<u32>>) -> u64 {
     let mut tasks: Vec<_> = snapshot
         .tasks
@@ -371,7 +407,7 @@ fn title_hash(snapshot: &Snapshot, only: Option<&BTreeSet<u32>>) -> u64 {
     let mut hash = FNV_OFFSET;
     for task in tasks {
         fnv(&mut hash, &task.id.to_le_bytes());
-        let cut: String = task.title.chars().take(TITLE_CAP).collect();
+        let cut = shown_title(&task.title);
         let len = u32::try_from(cut.len()).unwrap_or(u32::MAX);
         fnv(&mut hash, &len.to_le_bytes());
         fnv(&mut hash, cut.as_bytes());
@@ -852,6 +888,14 @@ mod tests {
     }
 
     #[test]
+    fn every_zoom_round_trips_through_its_key() {
+        for zoom in [Zoom::Titles, Zoom::Ids, Zoom::Tight] {
+            assert_eq!(Zoom::from_key(zoom.key()), Some(zoom));
+        }
+        assert_eq!(Zoom::from_key("nope"), None);
+    }
+
+    #[test]
     fn a_status_change_reuses_the_layout_and_a_flip_recomputes_it() {
         let snap = fixture();
         let mut cache = DiagramCache::default();
@@ -1198,6 +1242,17 @@ mod tests {
         assert_eq!(Zoom::Titles.label_width(12, &"x".repeat(40)), 2 + 3 + 24);
         assert_eq!(Zoom::Ids.label_width(12, "anything"), 4);
         assert_eq!(Zoom::Tight.label_width(12, "anything"), 1);
+        for status in [
+            TaskStatus::Pending,
+            TaskStatus::InProgress,
+            TaskStatus::Done,
+            TaskStatus::Failed,
+            TaskStatus::Deferred,
+            TaskStatus::Unknown,
+        ] {
+            let drawn = label_cells(&Zoom::Tight.label(12, "", status));
+            assert_eq!(drawn, Zoom::Tight.label_width(12, ""), "{status:?}");
+        }
     }
 
     /// One `layout_for` call's inputs beyond the snapshot.

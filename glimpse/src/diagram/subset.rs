@@ -8,14 +8,6 @@
 //! radius while a caller-supplied predicate accepts the result, so it needs no layout
 //! of its own. Every set is a `BTreeSet`, so the search is deterministic.
 
-#![cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the diagram cache does not drive the fit search yet"
-    )
-)]
-
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::model::Snapshot;
@@ -30,8 +22,8 @@ pub(crate) enum Focus {
     Both,
 }
 
-/// The tasks [`fit`] chose to draw, how many of the snapshot's tasks it left out, and
-/// the largest whole radius it kept.
+/// The tasks [`fit`] or [`closure`] chose to draw, how many of the snapshot's tasks it
+/// left out, and the largest whole radius it kept.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Subset {
     pub(crate) ids: BTreeSet<u32>,
@@ -41,6 +33,7 @@ pub(crate) struct Subset {
 
 /// The tasks within `radius` hops of `target`, the target included; empty when the
 /// snapshot has no such task. `usize::MAX` yields the whole closure.
+#[cfg(test)]
 pub(crate) fn generations(
     snapshot: &Snapshot,
     target: u32,
@@ -50,9 +43,21 @@ pub(crate) fn generations(
     Links::new(snapshot).walk(target, focus, radius)
 }
 
+/// The whole neighbourhood of `target` under `focus`, at radius `usize::MAX`.
+pub(crate) fn closure(snapshot: &Snapshot, target: u32, focus: Focus) -> Subset {
+    let links = Links::new(snapshot);
+    let ids = links.walk(target, focus, usize::MAX);
+    Subset {
+        hidden: links.ids.len() - ids.len(),
+        ids,
+        radius: usize::MAX,
+    }
+}
+
 /// Splits `ring` into families: the tasks sharing one neighbour in `inside`, keyed on
 /// the lowest-id such neighbour and ordered by it. A ring task with no neighbour in
 /// `inside` forms a family of its own, after the rest.
+#[cfg(test)]
 pub(crate) fn families(
     snapshot: &Snapshot,
     inside: &BTreeSet<u32>,
