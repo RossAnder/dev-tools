@@ -426,8 +426,7 @@ fn draw_view(
         }
         ViewKind::Ego => ego::render(frame, area, app, orientation),
         ViewKind::Diagram => {
-            diagram::paint::render(frame.buffer_mut(), area, app, orientation, cache);
-            Vec::new()
+            diagram::paint::render(frame.buffer_mut(), area, app, orientation, cache)
         }
     }
 }
@@ -831,6 +830,23 @@ mod tests {
         app.density = crate::config::DensityPref::Fixed(Density::Compact);
         draw(&mut app, 120, 30);
         assert_eq!(app.regions.body.x, 0, "compact has no gutter");
+    }
+
+    #[test]
+    fn diagram_nodes_are_click_targets() {
+        let mut app = app();
+        app.view = ViewKind::Diagram;
+        app.selected = Some(4);
+        let rows = draw(&mut app, 120, 30);
+        let (rect, _) = app
+            .regions
+            .tasks
+            .iter()
+            .find(|(_, id)| *id == 4)
+            .expect("the selection is a target");
+        let row = &rows[usize::from(rect.y)];
+        let label: String = row.chars().skip(usize::from(rect.x)).take(3).collect();
+        assert_eq!(label, "[4]");
     }
 
     #[test]
