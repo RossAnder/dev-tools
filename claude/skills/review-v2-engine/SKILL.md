@@ -1,6 +1,6 @@
 ---
 name: review-v2-engine
-description: The orchestrator contract behind /review-v2, /optimise-v2 and /review-plan-v2 — the nine run stages (pre-flight, run start, survey, compose, wave, resolve and digest, audit, triage, close) with the executor of each, the orchestrator's judgement-only role, the steering flags, the depth envelopes, the Workflow launch with its Agent-wave fallback, and the follow-up and mop-up decisions. Covers `tomlctl review sync-v1`, `run start`, `survey`, `plan --propose`, `plan`, `resolve`, `digest` and `run finish` as the orchestrator drives them, the column-0 `ledger:` line every flow-scoped dispatch opens with, and the references for the survey, composition, Agent waves, triage and close, and measurement. Invoke it from a v2 carrier before the first `tomlctl review` call; carriers state only their family deltas. Agent-side rules live in `review-v2-method`, and catalogue authoring in `review-v2-lenses`.
+description: "Orchestrator contract for /review-v2, /optimise-v2 and /review-plan-v2 — the run stages, steering flags, depth envelopes, the Workflow launch with its Agent-wave fallback, triage and close. Invoke from a v2 carrier before the first `tomlctl review` call."
 ---
 
 # Review v2 engine

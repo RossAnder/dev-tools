@@ -1,6 +1,6 @@
 ---
 name: backlog-clear
-description: "Clears open items from the repo-scoped capture log at `.claude/backlog.toml` unattended, inside a dedicated worktree the tooling has already prepared — the eligibility filter over `kind`, the judgeability gate that separates a verified resolution from an item this worktree structurally cannot see, the five verdicts and the conservatism rule governing them, the run record that carries the run's base commit and doubles as a skip list, the minimum-change constraints on a fix, the build-discipline limit that forbids whole-suite verification, and the hard rule that the agent never runs git because the sandbox forbids it. Use when clearing, working, or picking off backlog items."
+description: "Clears open `.claude/backlog.toml` items unattended inside a prepared worktree — eligibility, the judgeability gate, the five verdicts, the run record, minimum-change fixes, no whole-suite runs and no git. Use when clearing, working, or picking off backlog items."
 ---
 
 # Backlog clear

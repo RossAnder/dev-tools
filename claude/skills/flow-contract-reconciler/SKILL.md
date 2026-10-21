@@ -1,6 +1,6 @@
 ---
 name: flow-contract-reconciler
-description: The reconciler contract every execution-record writer honours — build a task_ref skip-set before appending so `/plan-update status` never double-writes the `task-completion` entries `/implement` just recorded, gate `status-transition` appends on an actual status change, never silently back-fill completions (only the `migrate` op may), always re-render PROGRESS-LOG.md after appends, and supersede-rather-than-duplicate on the three dedupe keys — reconcile `(date, agent)`, deviation `(task_ref, original_intent, rationale)`, deferral `(task_ref, reason)`. Consult before any operation that appends `task-completion`, `status-transition`, `reconcile`, `deviation`, or `deferral` entries to a flow's `execution-record.toml`.
+description: "Rules for every execution-record writer — a task_ref skip-set before appending, status-transition only on a change, no silent back-fill, re-render PROGRESS-LOG.md, supersede on the dedupe keys. Consult before appending completion, transition, reconcile, deviation or deferral entries."
 ---
 
 ## Reconciler contract

@@ -1,6 +1,6 @@
 ---
 name: flow-contract-showcase-bundle
-description: The two-part showcase-tests contract for /test-bootstrap — the Phase-1 candidate survey (how to discover public symbols in the target project, score them against the six showcase slots happy/parameterised/error/tempdir/mock/property, and reject candidates whose behaviour is not characterizable) and the Phase-2 Agent A bundle contract (one named test per slot in fixed order, each bound to a real user symbol as a characterization test or falling back to a colocated synthetic SUT, plus the stub marker, conventional file locations, binding-mode header comments, and the isolation discipline that triggers an agent re-prompt). Consult when surveying showcase candidates or when emitting/validating the showcase test file.
+description: "The /test-bootstrap showcase-tests contract — the Phase-1 candidate survey across six test slots and the Phase-2 bundle each slot's test must follow. Consult when surveying showcase candidates or emitting the showcase test file."
 ---
 
 ## Showcase-bundle contract

@@ -1,6 +1,6 @@
 ---
 name: flow-contract-ledger-schema
-description: Canonical schema for review/optimise ledgers — `[[items]]` table shape, required and optional fields, status vocabulary, vet-event log, dedupe contract, and write idioms for `review-ledger.toml` and `optimise-findings.toml` (both flow-local and flow-less `.claude/reviews/<scope>.toml` / `.claude/optimise-findings/<scope>.toml`). Sole canonical source for this schema; defines every field a finding must carry plus the reconciler's behaviour on schema drift. Consult before any read, write, or update against a review or optimise ledger TOML file.
+description: "Schema for review and optimise ledgers (`review-ledger.toml`, `optimise-findings.toml`, flow-local or flow-less) — `[[items]]` fields, status vocabulary, vet events, dedupe and write idioms. Consult before any ledger read or write."
 ---
 
 ## Ledger Schema

@@ -1,6 +1,6 @@
 ---
 name: flow-contract-apply-pipeline
-description: "Canonical end-to-end pipeline contract shared by the apply-flow carriers (/review-apply, /optimise-apply) — the Step 0→6 orchestration each carrier runs: pre-flight envelope gating, ledger location + selector semantics (ID-prefixed vs legacy numeric, --file-budget / --allow-cross-file overrides), the freshness gate, pre-analysis (Explore delegation, Tier-1/Tier-2 already-applied tests), file clustering, agent dispatch + prompt contract, escalation routing, the interim checkpoint, verification with applied-claim diff reconciliation and the regression cross-check, ledger mutation and its single stamping write, the final summary, and deviation follow-up. Carriers bind a small vocabulary interface (id prefix, dispositions, producer command, ledger paths) and state only their domain-specific deltas. Consult when running or editing an apply-flow command."
+description: "The Step 0→6 pipeline shared by /review-apply and /optimise-apply — pre-flight, selection, freshness, pre-analysis, clustering, dispatch, escalation, verification, ledger stamping and summary; carriers state only their deltas. Consult when running or editing an apply-flow command."
 ---
 
 # Apply pipeline (shared contract)
@@ -244,8 +244,8 @@ finding's `category` so the agent applies the right judgement per item.
 
 Evaluate each cluster as a whole against ALL of:
 
-1. **File scope**: the cluster's `lite_file_scope` from Step 3 is `true` — ≤ 2 files, OR a
-   single item whose `instances` carry `enumeration = "complete"`. The ≤ 2-file limb passes on
+1. **File scope**: the cluster's `lite_file_scope` from Step 3 is `true` — ≤ 3 files, OR a
+   single item whose `instances` carry `enumeration = "complete"`. The ≤ 3-file limb passes on
    its own; the enumeration limb passes only with one edit shape across all of its sites, which
    the flag cannot see and the orchestrator judges. Twelve sites of the same mechanical fix are
    lite work; three sites of three different fixes are not.

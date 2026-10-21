@@ -1,6 +1,6 @@
 ---
 description: Review code with composed coverage — a coverage map built per change from the shared lens catalogue, findings classified as defect, cleanup or advisory and verified refute-first, then exported to the v1 review ledger for /review-apply
-argument-hint: [--depth quick|standard|deep] [--flow <slug>] [--probe "<question>"]... [--lens +id|-id]... [file paths, globs, feature name, or empty for recent changes]
+argument-hint: '[--depth quick|standard|deep] [--flow <slug>] [--probe "<question>"]... [--lens +id|-id]... [file paths, globs, feature name, or empty for recent changes]'
 ---
 
 # /review-v2 — composed code review

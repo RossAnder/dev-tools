@@ -1,6 +1,6 @@
 ---
 name: flow-contract-execution-record-schema
-description: Canonical schema and contract for a flow's per-flow append-only execution log at `.claude/flows/<slug>/execution-record.toml` — the single source of truth from which `PROGRESS-LOG.md` is rendered (by `tomlctl flow render-progress-log`) and `[tasks].completed` is derived. Defines the `[[items]]` entry shape, the always-required fields, and the type vocabulary (`task-completion`, `verification`, `deviation`, `deferral`, `reconcile`, `status-transition`, `checkpoint`) with each type's additional required fields. Covers the write contract (one `tomlctl flow record` per entry, which mints the id, defaults the date, derives `task_ref` and validates types, required fields, enums, caps and `files[]`), append-only supersession, the `[tasks].completed` derivation, field-length caps, and the read-path integrity contract (`--verify-integrity`, no auto-repair). Consult before any read or write of a flow's execution-record.toml by /plan-new, /implement, /plan-update, or /tdd.
+description: "Schema and write contract for a flow's append-only `execution-record.toml` — the entry shape and type vocabulary, `tomlctl flow record`, supersession, the `[tasks].completed` derivation, caps and integrity. Consult before reading or writing an execution record."
 ---
 
 ## Execution Record Schema

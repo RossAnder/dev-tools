@@ -1,6 +1,6 @@
 ---
 description: Create a structured implementation plan using parallel exploration, research, and design — feeds into /review-plan, /implement, /plan-update
-argument-hint: [task description, design doc path, or feature name] [--backlog [seed-slug]]
+argument-hint: '[task description, design doc path, or feature name] [--backlog [seed-slug]]'
 ---
 
 # /plan-new — structured implementation plan creation

@@ -1,6 +1,6 @@
 ---
 description: Update plan documents — track progress, deviations, deferrals, and reconcile against codebase
-argument-hint: [plan path] [operation: status|complete (gated)|deviation|defer|reconcile|reformat|catchup|snapshot|migrate]
+argument-hint: '[plan path] [operation: status|complete (gated)|deviation|defer|reconcile|reformat|catchup|snapshot|migrate]'
 ---
 
 # /plan-update — plan documents as living records

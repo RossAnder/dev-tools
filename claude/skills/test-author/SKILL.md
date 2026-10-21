@@ -1,6 +1,6 @@
 ---
 name: test-author
-description: Author well-structured unit and integration tests on demand. Activates whenever the user asks to write tests for a function/module/file, add coverage for an untested branch, test this function or method directly, generate test cases for a specific symbol, or scaffold tests for a brand-new module. Polyglot — detects the target project's framework (Rust cargo test / Python pytest / TypeScript vitest / Go testing) from a CLAUDE.md marker block, the parent flow's plan-file Verification Commands, or a manifest walk, then emits idiomatic test files following a 5-phase recon → enumeration → fixtures → mocks → output procedure with strict per-test isolation.
+description: "Writes unit and integration tests on demand — when asked to write tests for a function, module or file, cover an untested branch, or scaffold tests for a new module. Polyglot: detects the project's framework (cargo test, pytest, vitest, Go testing) and emits idiomatic, isolated tests."
 ---
 
 # test-author

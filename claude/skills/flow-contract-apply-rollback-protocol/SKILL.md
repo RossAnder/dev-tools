@@ -1,6 +1,6 @@
 ---
 name: flow-contract-apply-rollback-protocol
-description: "Canonical apply-rollback-protocol contract for the apply-flow carriers (/optimise-apply, /review-apply) — defines the Step 5.5 rollback protocol that fires when Step 5 verification fails: the trigger conditions (build failure on a touched file, an out-of-scope test regression that reproduces on a narrow rerun — never a `flaky` or `timeout` outcome — and applied-claim-without-diff), the seven-step revert sequence (collect touched paths, classify them — scope-clamping declared untracked files — before stashing, stash with `-u` and record the stash commit SHA, restore tracked files, reverse ledger transitions back to `open` with `rollback_rationale`, append a `[[rollback_events]]` entry, surface a `### Rollback` callout), the interactive/non-interactive confirmation prompts, and the safety constraints (only this-run transitions, re-derive paths from git diff, never bypass the stash, never auto-retry). Consult before reverting any apply-flow batch or appending a rollback event to a review/optimise ledger."
+description: "The Step 5.5 rollback for /optimise-apply and /review-apply when verification fails — the triggers, the stash-and-restore revert sequence, ledger reversal, the `[[rollback_events]]` entry, confirmation prompts and safety rules. Consult before reverting an apply batch."
 ---
 
 ## Step 5.5: Rollback protocol

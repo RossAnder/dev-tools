@@ -1,6 +1,6 @@
 ---
 name: review-checker
-description: Haiku checker for a pooled batch of up to 20 cleanup findings in a v2 review run. Applies only grep-decidable predicates to each row — the `old` text is present, a symbol claimed dead has no reference, the edit stays within its declared files, the target exists — and writes one verdict per row to the v2 review store: `confirmed` when every predicate holds with a citation, `unsettled` otherwise, and `refuted` only on a sweeper's row with a grep citation. Returns the verdict-return objects. Never edits the working tree outside its run directory.
+description: "Haiku checker for a pooled batch of up to 20 cleanup findings in a v2 review run. Applies only grep-decidable predicates to each row — the `old` text is present, a symbol claimed dead has no reference, the edit stays within its declared files, the target exists — and writes one verdict per row to the v2 review store: `confirmed` when every predicate holds with a citation, `unsettled` otherwise, and `refuted` only on a sweeper's row with a grep citation. Returns the verdict-return objects. Never edits the working tree outside its run directory."
 tools: Read, Grep, Glob, Bash, Write, Skill
 model: haiku
 effort: medium

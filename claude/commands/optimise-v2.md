@@ -1,6 +1,6 @@
 ---
 description: Research performance and efficiency opportunities with composed, accounted-for coverage — the perf family of the v2 review system
-argument-hint: [paths | globs | feature | branch1..branch2 [focus]] [--depth quick|standard|deep] [--flow <slug>] [--probe "<question>"]... [--lens +id|-id]...
+argument-hint: '[paths | globs | feature | branch1..branch2 [focus]] [--depth quick|standard|deep] [--flow <slug>] [--probe "<question>"]... [--lens +id|-id]...'
 ---
 
 # /optimise-v2 — composed performance review

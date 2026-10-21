@@ -1,6 +1,6 @@
 ---
 name: flow-contract-vet-research
-description: Orchestrator-side vet pass run after a research agent returns — triage by evidence-grade, spot-check cited file:line/URLs/versions, drop or downgrade fabrications, append a vet_event, escalate on >30% systemic failure. Dispatched by name from flow carriers (review, optimise, plan-new, plan-update, review-plan, test-bootstrap); consult before persisting research findings to any ledger.
+description: "Orchestrator vet pass after a research agent returns — triage by evidence grade, spot-check citations, drop or downgrade fabrications, log a vet_event, escalate on systemic failure. Consult before persisting research findings."
 ---
 
 **Vet research-agent output (orchestrator).** This block defines the universal vet-pass procedure the orchestrator runs after research-agent dispatch returns. The build/test verification agent catches code-shape failures, but it does NOT catch fabricated `file:line` references, made-up library version pins, or low-confidence claims dressed up as fact in research output. The vet pass is the gate that distinguishes "research returned" from "research findings are trustworthy."

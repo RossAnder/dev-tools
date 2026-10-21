@@ -1,6 +1,6 @@
 ---
 description: Review an implementation plan with composed, verified coverage — the v2 plan family, findings in the v2 store, and a merge offer into the plan
-argument-hint: [plan path or directory] [--depth quick|standard|deep] [--flow <slug>] [--probe "<question>"]... [--lens +id|-id]...
+argument-hint: '[plan path or directory] [--depth quick|standard|deep] [--flow <slug>] [--probe "<question>"]... [--lens +id|-id]...'
 ---
 
 # /review-plan-v2 — plan review, v2

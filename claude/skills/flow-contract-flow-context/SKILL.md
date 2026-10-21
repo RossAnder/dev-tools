@@ -1,6 +1,6 @@
 ---
 name: flow-contract-flow-context
-description: Flow resolution + doctor contract for flow-bootstrap envelopes — defines how a carrier's Step-0 builds the input envelope, gates on `envelope.ok`, and binds `envelope.resolved.{slug, context_path, artifacts.*, status, plan_path, scope, stale}` plus `envelope.doctor.ok` for downstream phases. Covers the no-flow fallback, doctor-fail handling, staleness reconciliation, status vocabulary, slug derivation, canonical artifact paths, and the mandatory bootstrap-summary console line format. Consult when any flow-carrying command (review, optimise, plan-new, plan-update, implement, tdd, review-plan, review-apply, optimise-apply) dispatches flow-bootstrap and needs to interpret the returned envelope correctly.
+description: "How a flow carrier's Step 0 builds the flow-bootstrap envelope, gates on `envelope.ok` and binds the resolved slug, paths, status and doctor result — with the no-flow fallback, staleness handling and the bootstrap summary line. Consult when interpreting an envelope."
 ---
 
 ## Flow Context

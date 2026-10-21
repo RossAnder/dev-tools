@@ -1,6 +1,6 @@
 ---
 name: flow-contract-apply-constraints
-description: "Canonical apply-constraints contract for the apply-flow carriers (/optimise-apply, /review-apply) — defines the \"Important Constraints\" that bound every implementer agent's edits: orchestrator front-loading, the suggestion/dependency/public-API guardrails, behaviour preservation, one-concern-per-edit, minimum-change discipline, the declared-file-set budget (an item's `file` + `instances` + `description`-named files, touched with no numeric cap; the 3-file allowance and its `--file-budget` / `--allow-cross-file` overrides survive only for undeclared items), the `escalate <id>: cross-cut` form for a file outside the set and the `skipped <id>: requires deliberate refactor` form, and the no-auto-commit rule. Consult before applying any ledger item or dispatching an implementer agent."
+description: "Implementer edit constraints for /optimise-apply and /review-apply — the guardrails, behaviour preservation, one concern per edit, minimum change, the declared-file-set budget with its escalate and skip forms, and no auto-commit. Consult before applying a ledger item or dispatching an implementer."
 ---
 
 ## Important Constraints

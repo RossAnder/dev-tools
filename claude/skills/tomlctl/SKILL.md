@@ -1,6 +1,6 @@
 ---
 name: tomlctl
-description: "Read, write, query, batch-edit, and validate TOML files used by Claude Code flows — context.toml, review-ledger.toml, optimise-findings.toml, execution-record.toml, plan-review-findings.toml, tasks.toml, agents.toml, .claude/backlog.toml, .claude/inputs.toml, review-v2.toml — and their per-row [[items]] arrays; also the regex enumerator over git-tracked files (`sweep`, the preferred `file:line` enumerator for findings) and the ledger-driven `items sweep` / `items clusters` that re-verify and batch apply-flow findings. Verb groups: get/query/set/set-json/append, items, flow (resolve, doctor, envelope-build, render-progress-log), tasks (import-plan, check, render, snapshot), backlog (add, check, reconcile), inputs (add, list, ack, handle, answer, withdraw), agents (hook-written record, list), review (the v2 review store), validate, integrity, dedupe. Use for any flow TOML mutation — never line-edit ledger arrays-of-tables. Outputs JSON; `-` reads ops/json/ndjson payloads from stdin."
+description: "Read, write, query and validate the TOML files Claude Code flows use (context, ledgers, execution records, tasks, backlog, inputs, review-v2 stores) and their `[[items]]` arrays; also `sweep`, the `file:line` enumerator over tracked files. Use for any flow TOML mutation — never line-edit ledger arrays-of-tables."
 ---
 
 # tomlctl

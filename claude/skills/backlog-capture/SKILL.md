@@ -1,6 +1,6 @@
 ---
 name: backlog-capture
-description: "Captures a real but out-of-scope discovery into the repo-scoped store at `.claude/backlog.toml` via the `tomlctl backlog` group — when minting is warranted and when it is not, the mandatory `backlog check` gate and how to act on each verdict (duplicate, in-flight, previously-resolved, duplicate-id, likely-duplicate, related, novel), the kind and status vocabularies, the live `promoted` claim and its reconcile-driven resolution, seed flows, the orchestrator-only writer rule and the `TANGENTIAL:` heading a sub-agent uses to surface a candidate instead, the git-ignored evidence drop-box and its publication discipline in a public repository, and the capture idioms. Use whenever an agent or orchestrator notices a real but out-of-scope issue — a flaky test, a bug elsewhere, a follow-up, an annoyance — and before any `tomlctl backlog add`."
+description: "Captures a real but out-of-scope discovery — a flaky test, a bug elsewhere, a follow-up, an annoyance — into `.claude/backlog.toml`: when to mint, the mandatory `backlog check` gate and its verdicts, the orchestrator-only writer rule and the sub-agent `TANGENTIAL:` heading. Use before any `tomlctl backlog add`."
 ---
 
 # Backlog capture

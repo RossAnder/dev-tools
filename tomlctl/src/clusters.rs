@@ -168,7 +168,7 @@ pub(crate) fn items_clusters(doc: &TomlValue, root: &Path, ids: &[String]) -> Re
                 .iter()
                 .flat_map(|p| files[*p].iter().map(String::as_str))
                 .collect();
-            let lite_file_scope = cluster_files.len() <= 2
+            let lite_file_scope = cluster_files.len() <= 3
                 || (members.len() == 1
                     && str_field(selected[members[0]].1, "enumeration") == "complete");
             batches[level[members[0]]].push(cluster_id(k));
@@ -502,13 +502,13 @@ id = "R2"
 status = "open"
 file = "src/d.rs"
 enumeration = "incomplete"
-instances = ["src/d.rs:foo", "src/e.rs:foo", "src/f.rs:foo"]
+instances = ["src/d.rs:foo", "src/e.rs:foo", "src/f.rs:foo", "src/o.rs:foo"]
 
 [[items]]
 id = "R3"
 status = "open"
 file = "src/g.rs"
-instances = ["src/g.rs:foo", "src/h.rs:foo", "src/i.rs:foo"]
+instances = ["src/g.rs:foo", "src/h.rs:foo", "src/i.rs:foo", "src/p.rs:foo"]
 
 [[items]]
 id = "R4"
@@ -522,13 +522,13 @@ id = "R5"
 status = "open"
 file = "src/k.rs"
 enumeration = "complete"
-instances = ["src/k.rs:foo", "src/l.rs:foo"]
+instances = ["src/k.rs:foo", "src/l.rs:foo", "src/q.rs:foo"]
 
 [[items]]
 id = "R6"
 status = "open"
 file = "src/m.rs"
-instances = ["src/m.rs:foo", "src/n.rs:foo"]
+instances = ["src/m.rs:foo", "src/n.rs:foo", "src/r.rs:foo"]
 "#,
             &[],
         )

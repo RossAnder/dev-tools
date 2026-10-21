@@ -489,7 +489,7 @@ The same report under the global `--lines` (`tomlctl items clusters <ledger> --l
 
 Cluster ids are assigned in first-item order; `batches` lists cluster ids per dependency
 level, so every cluster in one batch may be dispatched in parallel once the previous batch
-has landed. `lite_file_scope` is `true` when the cluster has at most two files, or holds
+has landed. `lite_file_scope` is `true` when the cluster has at most three files, or holds
 exactly one item whose `enumeration` is `complete` (a missing key counts as not complete).
 It answers the lite-eligibility gate's file-scope criterion only; whether a multi-site
 cluster shares one edit shape stays the orchestrator's judgement.

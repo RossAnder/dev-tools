@@ -1,6 +1,6 @@
 ---
 name: flow-contract-plansdirectory-prompt
-description: First-use plansDirectory prompt contract — fires at carrier Step 0.5 ONLY when envelope.plans_directory == null (the bootstrap agent normalises both the unset case and the literal "__DONT_ASK__" sentinel to null). Defines option-list construction (always docs/plans/ recommended, other → free-text, and Don't ask again; conditionally .claude/plans/ when the directory exists), recommended-first single-select AskUserQuestion ordering, headless/acceptEdits empty-answer detection (bind docs/plans/ in-memory, persist nothing), the Don't ask again → "__DONT_ASK__" sentinel arbitration, the other → free-text follow-up, the tomlctl json set persist idiom (sidecar-skipped per P16), and the final in-memory bind that downstream phases consume in place of envelope.plans_directory == null. Consult at Step 0.5 of /plan-new, /plan-update, or /review-plan when plansDirectory is unresolved.
+description: "The first-use plansDirectory prompt at Step 0.5 of /plan-new, /plan-update and /review-plan, fired only when `envelope.plans_directory` is null — the options, headless handling, the `__DONT_ASK__` sentinel and persistence."
 ---
 
 ## Step 0.5: First-use `plansDirectory` prompt (per-carrier)

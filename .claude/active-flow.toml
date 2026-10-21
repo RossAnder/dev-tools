@@ -769,3 +769,26 @@ scope = [
     "scripts/shared-blocks.toml",
     "CLAUDE.md",
 ]
+
+[[active]]
+slug = "federated-beaming-hollerith"
+last_used = "2026-10-21T09:04:29.4436949Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "tomlctl/Cargo.toml",
+    "tomlctl/src/**",
+    "tomlctl/tests/**",
+    "tomlctl/README.md",
+    "claude/skills/tomlctl/**",
+    "claude/skills/flow-contract-execution-record-schema/SKILL.md",
+    "claude/skills/flow-contract-apply-pipeline/references/pre-analysis.md",
+    "claude/agents/**",
+    "claude/commands/plan-new.md",
+    "claude/commands/review.md",
+    "claude/commands/optimise.md",
+    "claude/commands/plan-update.md",
+    "scripts/shared-blocks.toml",
+]

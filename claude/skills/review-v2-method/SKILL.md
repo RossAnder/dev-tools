@@ -1,6 +1,6 @@
 ---
 name: review-v2-method
-description: The shared core every v2 review agent works from — review-surveyor, review-sweeper, review-checker, review-finder, review-finder-cf, review-verifier and plan-executor preload it, and any agent writing to or reading from a v2 review store (`tomlctl review`) invokes it when it is not loaded. Defines the three finding kinds (defect, cleanup, advisory) with their required fields and the rule that decides between them, `same_as` identity against PRIOR, the never-a-finding list, the per-cell caps, the coverage note, the probe template for `probe:` cells, the verdict vocabulary and its citation rule, the store-write idiom (one full-set `review add` per cell staged as a payload file, sealing with `review cover`, retry rules) and each role's return object. Role procedures live in the agent bodies; source hierarchy and evidence grades stay in `research-methods`.
+description: "Shared core for v2 review agents and any agent reading or writing a v2 review store — finding kinds and fields, `same_as`, caps, verdicts and citations, the `tomlctl review` write idiom, and each role's return object."
 ---
 
 # Review v2 method

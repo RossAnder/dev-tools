@@ -1,6 +1,6 @@
 ---
 name: flow-contract-plan-restructure
-description: Shared contract for the plan-rewriting ops `/plan-update reformat` and `/plan-update catchup` — the byte-for-byte heading-preservation rule and its mandatory `tomlctl tasks import-plan --dry-run` ref-set diff gate (a rephrased heading changes the task's derived `ref`, the store's primary key, so a real import refuses with `dag/duplicate-number` and `/implement` re-executes the orphaned task), the `tasks update --ref` rename recovery, archive-before-rewriting, the multi-file and single-file output structures, the RESEARCH-NOTES.md format, faithful preservation of User Decisions and Execution Policy, the merge-exit `tasks check` re-derivation, inferred deviations/deferrals, and PROGRESS-LOG.md regeneration. Consult before any op that rewrites plan documents in place.
+description: "Contract for /plan-update reformat and catchup — byte-for-byte heading preservation with the `import-plan --dry-run` ref-set gate, rename recovery, archiving, output structures and preserved sections. Consult before rewriting plan documents in place."
 ---
 
 ## Plan restructure contract

@@ -1,0 +1,33 @@
+slug = "federated-beaming-hollerith"
+plan_path = "docs/plans/federated-beaming-hollerith.md"
+status = "draft"
+created = 2026-10-21
+updated = 2026-10-21
+branch = "main"
+scope = [
+    "tomlctl/Cargo.toml",
+    "tomlctl/src/**",
+    "tomlctl/tests/**",
+    "tomlctl/README.md",
+    "claude/skills/tomlctl/**",
+    "claude/skills/flow-contract-execution-record-schema/SKILL.md",
+    "claude/skills/flow-contract-apply-pipeline/references/pre-analysis.md",
+    "claude/agents/**",
+    "claude/commands/plan-new.md",
+    "claude/commands/review.md",
+    "claude/commands/optimise.md",
+    "claude/commands/plan-update.md",
+    "scripts/shared-blocks.toml",
+]
+
+[tasks]
+total = 0
+completed = 0
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/federated-beaming-hollerith/review-ledger.toml"
+optimise_findings = ".claude/flows/federated-beaming-hollerith/optimise-findings.toml"
+execution_record = ".claude/flows/federated-beaming-hollerith/execution-record.toml"
+plan_review_findings = ".claude/flows/federated-beaming-hollerith/plan-review-findings.toml"
+tasks = ".claude/flows/federated-beaming-hollerith/tasks.toml"

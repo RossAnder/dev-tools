@@ -1,6 +1,6 @@
 ---
 description: Bootstrap a modern test stack for the current project — research-agent dispatch surfaces 2-3 candidate stacks, then scaffolds config + smoke test + showcase tests + CI workflow + marker block
-argument-hint: [language] [--with-mutation] [--no-showcase]
+argument-hint: '[language] [--with-mutation] [--no-showcase]'
 ---
 
 # /test-bootstrap — stand up a modern test stack

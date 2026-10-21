@@ -1,6 +1,6 @@
 ---
 name: flow-contract-task-store
-description: Canonical contract for a flow's per-flow task DAG store at `.claude/flows/<slug>/tasks.toml` and the `tomlctl tasks` verb group that owns it — the store schema and row fields, the `ref` slug rule that makes a task heading the primary key and import upsert key, the status vocabulary, the `needs` / `coupling` edge kinds and the graph products (`ready`, `batches`, `closure`, checkpoint membership, the `train` commit groups) computed on read, the semantics of every `tasks` verb from `import-plan` to `render`, the `check` finding classes and exit policy, the render contract's three owned sections, auto-import at Step 0, the ref-set diff gate and the renamed-heading trap, the orchestrator-only status-write rule, the fetch-by-id dispatch idiom, and `tomlctl integrity refresh` as the recovery step after a failed write. Consult before any read or write of a flow's tasks.toml by /plan-new, /implement, /review-plan, or /plan-update.
+description: "Contract for a flow's task DAG at `.claude/flows/<slug>/tasks.toml` and the `tomlctl tasks` verbs — row fields, the `ref` key rule, statuses, edges and graph products, `check` classes, the render contract and the renamed-heading trap. Consult before reading or writing tasks.toml."
 ---
 
 ## Task-store contract

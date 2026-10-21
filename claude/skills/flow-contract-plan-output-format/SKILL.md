@@ -1,6 +1,6 @@
 ---
 name: flow-contract-plan-output-format
-description: "On-disk plan-document structure — the canonical section order and authoring contract for the markdown plan written by /plan-new Phase 7: the header, `## Summary`, `## Context`, `## Scope`, `## User Decisions`, `## Approach`, `## Success Criteria`, `## Verification Commands` (machine-parsed, incl. `success:` keys), `## Execution Policy`, `## Tasks`, `## Dependency Graph`, `## Risks`, `## After Merge`, and the `## Exploration Notes` / `## Research Notes` appendix. Records the three sections `tomlctl tasks render` owns and the plan-mode `import-plan --dry-run` check. Covers S/M/L effort by dispatch meaning, the `(new)` / `(delete)` Files vocabulary, `forward:` / `falsifier:` / `guard:` acceptance sub-bullets and the two-control rule, and the format rules — repo-relative paths, Files-line closure, derive-don't-transcribe, file-disjoint decomposition, checkpoint markers as topological cuts. Consult when writing or reformatting a plan document — /plan-new Phase 7, /plan-update reformat, /review-plan."
+description: "The plan-document contract for /plan-new Phase 7 — section order, per-task fields, S/M/L effort by dispatch tier, the Files vocabulary and closure rule, acceptance sub-bullets, and the sections `tomlctl tasks render` owns. Consult when writing, reformatting or reviewing a plan."
 ---
 
 ## Plan Output Format
@@ -228,9 +228,9 @@ Omit this section only if both Phase 3 (initial research) and Phase 5 (directed 
 **Format rules:**
 - Section order: header → `## Summary` → `## Context` → `## Scope` → `## User Decisions` → `## Approach` → `## Success Criteria` → `## Verification Commands` → `## Execution Policy` → `## Tasks` → `## Dependency Graph` → `## Risks` → `## After Merge` → `## Exploration Notes` → `## Research Notes`. The header carries `**Plan path**` and `**Created**` only — no `**Status**` line.
 - Task effort names the implementer tier a task is dispatched to, not its expected duration:
-  - **S** is lite-eligible: ≤2 files, fully specified, no cross-file refactor, not security-sensitive — the gate `/implement` applies before dispatching `implement-lite`.
-  - **M** is one concern for `implement-deep`, ≤3 files.
-  - **L** is cross-cutting, or 4+ files whose edits are inseparable.
+  - **S** asserts the lite criteria hold: ≤3 files, fully specified, no cross-file refactor, not security-sensitive — the gate `/implement` applies before dispatching `implement-lite`.
+  - **M** is one concern, ≤3 files. `/implement` runs the same gate on it, so it goes lite when the criteria hold and deep otherwise.
+  - **L** is cross-cutting, or 4+ files whose edits are inseparable. It always goes to `implement-deep`.
 
   An untagged task is dispatched as if it were M or L. Tag S only when every S criterion holds; a task that is small but ambiguous or security-sensitive is M.
 - A task should touch ≤3 files unless its edits are inseparable (they must land together to keep the tree green — e.g. a domain-type field plus its row decoder and SELECTs). Prefer splitting L tasks into S/M tasks.

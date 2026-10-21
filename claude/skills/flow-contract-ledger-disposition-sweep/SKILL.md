@@ -1,6 +1,6 @@
 ---
 name: flow-contract-ledger-disposition-sweep
-description: Ledger disposition sweep procedure for /review and /optimise — read-only orphan surfacing (file orphans, symbol orphans, instance orphans), duplicate-finding detection, and the disposition-sweep workflow that surfaces stale or no-longer-applicable items without auto-transitioning them. Defines how the sweep walks open `[[items]]`, batches Glob/Grep lookups for efficiency, and reports findings to the console for user disposition. Consult during the disposition-sweep phase of /review or /optimise, or any time a ledger needs orphan/duplicate triage.
+description: "The read-only disposition sweep for /review and /optimise — file, symbol and instance orphans and duplicate findings among open ledger items, reported for user disposition and never auto-transitioned."
 ---
 
 ### Orphan surfacing (read-only)

@@ -1,6 +1,6 @@
 ---
 name: review-v2-lenses
-description: The pluggable lens catalogue behind /review-v2, /optimise-v2 and /review-plan-v2 — the four entry types (lens, facet, method, check) with their TOML frontmatter and fixed body sections, the Owns-section rule, activation tiers, the vocabulary.toml of signals, deterministic detectors, concern tags and routing globs, the optional project layer (`.claude/review-lenses/config.toml` with disable, enable, extend, override, scope and project checks; project vocabulary under the `project:` prefix; project lenses and facets), the built-in collision refusal, content hashing, the lifecycle and promotion path, and listing or validating the merged catalogue with `tomlctl review catalogue`. Use when authoring or maintaining catalogue entries or the vocabulary, configuring a project's review lenses, or fixing a catalogue validation error. Review agents read entry bodies from the paths their cell assignment carries; orchestrators never read them.
+description: "The v2 review lens catalogue — entry types and format, activation, vocabulary, the project layer at `.claude/review-lenses/config.toml`, and `tomlctl review catalogue`. Use when authoring catalogue entries, configuring a project's lenses, or fixing a catalogue validation error."
 ---
 
 # Review v2 lens catalogue

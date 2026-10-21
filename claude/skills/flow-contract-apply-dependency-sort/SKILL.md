@@ -1,6 +1,6 @@
 ---
 name: flow-contract-apply-dependency-sort
-description: Canonical apply-dependency-sort contract for the apply-flow carriers (/optimise-apply, /review-apply) — specifies what `tomlctl items clusters` computes over the selected ledger items: Kahn's-algorithm topological layering over `depends_on` restricted to the selected set (references to unselected items dropped and reported under `dropped_deps`), the cycle refusal, file-disjoint clustering within one layer only, and the sequential batches across layers that hold even when a file is shared. Retains the hand algorithm as the fallback for a binary predating the verb and guarantees backward compatibility when no `depends_on` edges are present. Consult before ordering, clustering, or batching ledger items for application.
+description: "How /optimise-apply and /review-apply order ledger items: what `tomlctl items clusters` computes (Kahn layering over `depends_on`, cycle refusal, file-disjoint clusters within a layer) and the hand fallback. Consult before ordering, clustering or batching items."
 ---
 
 ### Dependency sort (topological)
@@ -68,7 +68,7 @@ The topological order `L` feeds into the file-clustering step — items at the s
 remaining dependencies between them) may cluster together if they also share a file. Items at
 different topo levels run in **sequential batches** even when they share a file: apply batch-k
 fully (including the post-batch commit if further batches remain), then launch batch-(k+1).
-Derive each cluster's `lite_file_scope` by hand: `true` when it has at most two files, or holds a
+Derive each cluster's `lite_file_scope` by hand: `true` when it has at most three files, or holds a
 single item whose `enumeration` is `complete`.
 
 Absent `depends_on` everywhere, `deps[i]` is empty for every item, `queue` starts with all items,

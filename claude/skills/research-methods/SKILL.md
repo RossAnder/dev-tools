@@ -1,6 +1,6 @@
 ---
 name: research-methods
-description: The method every investigative lens runs — codebase review, library / API / doc research, plan critique, or an ad hoc "look into X" — invoked before the first finding is written. Sets the bar a finding must clear (anchored, graded, falsifiable, actionable this round, not already deliberate and not already known), the verify-then-disconfirm loop that keeps findings out of the wontfix pile, the external-source hierarchy (the pinned installed source before any doc) and its conflict rule, the search plan with its saturation stop, the currency check against the knowledge cutoff, the unified evidence-grade rubric with its mandatory Counter line, the coverage line and search log, and the gated references for code-judgement lenses, web / doc lookups, supply-chain and vulnerability intelligence, scholarly citation-graph crawls, and browser observation. `research-deep` and `research-lite` load it at the top of every dispatch; any agent asked to investigate rather than change can load it too.
+description: "The method every investigative lens runs — codebase review, library or doc research, plan critique, or an ad hoc \"look into X\": the finding bar, verify-then-disconfirm, the source hierarchy, evidence grades and the coverage line. Load it before writing the first finding."
 ---
 
 # Research method

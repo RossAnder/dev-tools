@@ -438,7 +438,7 @@ pub(crate) enum ItemsOp {
     /// `depends_on` first, so two items sharing a file join one cluster
     /// only within a layer. `depends_on` targets outside the selection are
     /// dropped and listed under `dropped_deps`; a cycle is refused. Each
-    /// cluster carries `lite_file_scope`: at most two files, or a single
+    /// cluster carries `lite_file_scope`: at most three files, or a single
     /// item whose `enumeration` is `complete`.
     Clusters {
         file: PathBuf,
