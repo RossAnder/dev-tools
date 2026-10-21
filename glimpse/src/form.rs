@@ -4,6 +4,11 @@ use ratatui::crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModif
 use tui_input::Input;
 use tui_input::backend::crossterm::EventHandler;
 
+use crate::app::Scroll;
+
+/// Rows a PageUp or PageDown moves; the form does not know its drawn height.
+const PAGE: usize = 5;
+
 #[derive(Debug, Clone)]
 pub(crate) enum Field {
     Text {
@@ -204,6 +209,10 @@ impl Field {
     }
 
     fn step(&mut self, down: bool) {
+        self.shift(if down { Scroll::Down(1) } else { Scroll::Up(1) });
+    }
+
+    fn shift(&mut self, scroll: Scroll) {
         let (cursor, len, confirmed) = match self {
             Field::Select {
                 options,
@@ -224,11 +233,7 @@ impl Field {
         if let Some(confirmed) = confirmed {
             *confirmed = false;
         }
-        *cursor = if down {
-            (*cursor + 1).min(len.saturating_sub(1))
-        } else {
-            cursor.saturating_sub(1)
-        };
+        *cursor = crate::scroll::step(Some(*cursor), len, PAGE, scroll).unwrap_or(*cursor);
     }
 }
 
@@ -283,6 +288,10 @@ impl Form {
             KeyCode::Enter => return self.enter(),
             KeyCode::Down => field.step(true),
             KeyCode::Up => field.step(false),
+            KeyCode::PageDown if !typing => field.shift(Scroll::PageDown),
+            KeyCode::PageUp if !typing => field.shift(Scroll::PageUp),
+            KeyCode::Home if !typing => field.shift(Scroll::Top),
+            KeyCode::End if !typing => field.shift(Scroll::Bottom),
             KeyCode::Char('j') if !typing && key.modifiers == KeyModifiers::NONE => {
                 field.step(true)
             }
@@ -439,6 +448,29 @@ mod tests {
             form.fields[0].value(),
             FieldValue::Many(vec!["a".into(), "c".into()])
         );
+    }
+
+    #[test]
+    fn paging_keys_move_a_multi_cursor() {
+        let names: Vec<String> = (0..20).map(|i| format!("o{i}")).collect();
+        let mut form = Form::new("t", vec![Field::multi("m", names)]);
+        form.handle_key(press(KeyCode::End));
+        assert!(matches!(form.fields[0], Field::Multi { cursor: 19, .. }));
+        form.handle_key(press(KeyCode::PageUp));
+        assert!(matches!(form.fields[0], Field::Multi { cursor: 14, .. }));
+        form.handle_key(press(KeyCode::Home));
+        assert!(matches!(form.fields[0], Field::Multi { cursor: 0, .. }));
+        form.handle_key(press(KeyCode::PageDown));
+        assert!(matches!(form.fields[0], Field::Multi { cursor: 5, .. }));
+    }
+
+    #[test]
+    fn home_and_end_stay_with_a_text_field() {
+        let mut form = Form::new("t", vec![Field::text("a")]);
+        type_str(&mut form, "ab");
+        form.handle_key(press(KeyCode::Home));
+        type_str(&mut form, "x");
+        assert_eq!(form.fields[0].value(), FieldValue::Text("xab".into()));
     }
 
     #[test]

@@ -155,19 +155,17 @@ fn draw_field(
             cursor,
             ..
         } => {
-            let lines: Vec<Line> = options
+            let items: Vec<ListItem> = options
                 .iter()
                 .zip(checked)
-                .enumerate()
-                .map(|(i, (option, on))| {
+                .map(|(option, on)| {
                     let mark = if *on { "[x]" } else { "[ ]" };
-                    Line::styled(
-                        format!("{mark} {option}"),
-                        row_style(theme, focused && i == *cursor),
-                    )
+                    ListItem::new(format!("{mark} {option}"))
                 })
                 .collect();
-            frame.render_widget(Paragraph::new(lines), body);
+            let list = List::new(items).highlight_style(row_style(theme, true));
+            let mut state = ListState::default().with_selected(focused.then_some(*cursor));
+            frame.render_stateful_widget(list, body, &mut state);
             None
         }
     }
@@ -265,6 +263,18 @@ mod tests {
 
     fn options(names: &[&str]) -> Vec<String> {
         names.iter().map(|s| (*s).to_owned()).collect()
+    }
+
+    #[test]
+    fn a_multi_cursor_at_the_end_is_drawn() {
+        let names: Vec<String> = (0..20).map(|i| format!("opt{i}")).collect();
+        let mut form = Form::new("t", vec![Field::multi("m", names)]);
+        if let Field::Multi { cursor, .. } = &mut form.fields[0] {
+            *cursor = 19;
+        }
+        let (rows, _) = draw(&form);
+        let text = rows.join("\n");
+        assert!(text.contains("[ ] opt19"), "{text}");
     }
 
     #[test]
