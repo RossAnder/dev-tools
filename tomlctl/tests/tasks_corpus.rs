@@ -111,8 +111,8 @@ fn has_task_in_tasks_section(source: &str) -> bool {
 }
 
 /// `^#{3,6} [0-9]+\. `, spelled out. Hand-rolled rather than compiled: the
-/// binary resolves `regex` without its unicode features and a test build
-/// unifies them back on, so a pattern here would be checked under settings the
+/// binary enables only a subset of `regex`'s unicode features and a test build
+/// unifies a wider set, so a pattern here would be checked under settings the
 /// shipped binary does not use.
 ///
 /// The depth run mirrors the importer's own heading grammar. A narrower run

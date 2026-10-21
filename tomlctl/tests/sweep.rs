@@ -1,8 +1,8 @@
 //! Black-box coverage for `tomlctl sweep` and `tomlctl items sweep`.
 //!
 //! Every case runs the real binary over a sandbox repo, so the patterns use
-//! the `(?-u:…)` forms the shipped build accepts: `cargo test` links Unicode
-//! tables through a dev-dependency and would pass a `\b` the binary refuses.
+//! the `(?-u:…)` ASCII forms: they are the fast forms, and a test build
+//! unifies a wider regex feature set than the shipped binary compiles.
 //! Files are written, never committed — the enumeration lists untracked
 //! files too. The ledger sits under `.claude/`, which the default excludes
 //! cover, so its verbatim `sweep` strings must never surface as sites.
