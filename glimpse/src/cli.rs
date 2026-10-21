@@ -26,6 +26,8 @@ VIEW OPTIONS
                                 flip, else the config's)
         --surface <S>           tasks, review, optimise, plan-review, backlog or inbox:
                                 the surface to open on (default: the last run's)
+        --theme <T>             kanso-zen, kanso-pearl, ansi or mono: the colour set,
+                                over the config's and the last run's
         --once                  render one frame as plain text to stdout and exit
         --size <WxH>            --once only: frame size in cells (default: 120x40)
         --snapshot <FILE>       --once only: render a `tomlctl tasks snapshot` JSON
@@ -89,6 +91,7 @@ pub(crate) struct ViewArgs {
     pub(crate) view: Option<ViewKind>,
     pub(crate) orientation: Option<OrientationPref>,
     pub(crate) surface: Option<Surface>,
+    pub(crate) theme: Option<String>,
     pub(crate) once: Option<Once>,
 }
 
@@ -164,6 +167,7 @@ fn parse_inner<I: IntoIterator<Item = String>>(args: I) -> Result<Parsed, String
     let mut snapshot = None;
     let mut select = None;
     let mut surface = None;
+    let mut theme = None;
     let mut ledger = None;
     let mut arrange = Arrange::default();
     let mut focus = false;
@@ -208,6 +212,21 @@ fn parse_inner<I: IntoIterator<Item = String>>(args: I) -> Result<Parsed, String
                 orientation = Some(OrientationPref::parse(&v).ok_or_else(|| {
                     format!("unknown orientation `{v}`: expected auto, vertical or horizontal")
                 })?);
+                true
+            }
+            (None, "--theme") => {
+                let v = value("--theme")?;
+                if crate::theme::sets::by_name(&v).is_none() {
+                    let names: Vec<&str> = crate::theme::sets::SETS
+                        .iter()
+                        .map(|set| set.name)
+                        .collect();
+                    return Err(format!(
+                        "unknown theme `{v}`: expected one of {}",
+                        names.join(", ")
+                    ));
+                }
+                theme = Some(v);
                 true
             }
             (None, "--once") => {
@@ -325,6 +344,7 @@ fn parse_inner<I: IntoIterator<Item = String>>(args: I) -> Result<Parsed, String
                 view,
                 orientation,
                 surface,
+                theme,
                 once,
             })
         }
@@ -433,9 +453,28 @@ mod tests {
                 view: None,
                 orientation: None,
                 surface: None,
+                theme: None,
                 once: None,
             }
         );
+    }
+
+    #[test]
+    fn theme_is_checked_against_the_known_sets() {
+        assert_eq!(view(&["--theme", "ansi"]).theme.as_deref(), Some("ansi"));
+        assert_eq!(
+            view(&["--theme=kanso-pearl"]).theme.as_deref(),
+            Some("kanso-pearl")
+        );
+        let bad = fails(&["--theme", "nope"]);
+        assert!(
+            bad.contains(
+                "unknown theme `nope`: expected one of kanso-zen, kanso-pearl, ansi, mono"
+            ),
+            "{bad}"
+        );
+        assert!(fails(&["--theme"]).contains("needs a value"));
+        assert!(fails(&["setup", "--theme", "ansi"]).contains("for `setup`"));
     }
 
     #[test]
@@ -594,6 +633,27 @@ mod tests {
             "{err}"
         );
         assert!(check_arrange(Surface::Tasks, &arrange(None, None, true)).is_err());
+        let err = check_arrange(Surface::Review, &arrange(None, Some(Sort::Kind), false))
+            .expect_err("findings carry a severity, not a kind");
+        assert!(err.starts_with("--sort kind: the review surface"), "{err}");
+        assert!(check_arrange(Surface::Backlog, &arrange(None, Some(Sort::Kind), false)).is_ok());
+        assert!(check_arrange(Surface::Inbox, &arrange(None, Some(Sort::Kind), false)).is_err());
+    }
+
+    #[test]
+    fn sort_takes_every_column_key() {
+        for (key, sort) in [
+            ("kind", Sort::Kind),
+            ("status", Sort::Status),
+            ("category", Sort::Category),
+            ("summary", Sort::Summary),
+            ("area", Sort::Area),
+        ] {
+            let once = view(&["--once", "--sort", key])
+                .once
+                .expect("--once parsed");
+            assert_eq!(once.arrange.sort, Some(sort), "{key}");
+        }
     }
 
     #[test]

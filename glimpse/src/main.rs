@@ -3,6 +3,7 @@
 mod actions;
 mod app;
 mod cli;
+mod clipboard;
 mod config;
 mod diagram;
 mod diff;
@@ -16,6 +17,7 @@ mod model;
 mod pane;
 mod presence;
 mod runtime;
+mod scroll;
 mod setup;
 mod source;
 mod state;
@@ -85,6 +87,10 @@ fn run_view(args: ViewArgs) -> Result<(), String> {
     }
     if let Some(orientation) = args.orientation {
         config.orientation = orientation;
+    }
+    if let Some(theme) = args.theme {
+        config.theme_base = Some(theme);
+        config.theme_from_flag = true;
     }
     let cwd =
         std::env::current_dir().map_err(|e| format!("cannot read the working directory: {e}"))?;

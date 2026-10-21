@@ -192,6 +192,38 @@ fn once_renders_the_diagram_view() {
     assert!(stdout(&out).contains("[1]"), "{}", stdout(&out));
 }
 
+#[test]
+fn once_accepts_a_known_theme() {
+    let sb = Sandbox::new("theme");
+    let out = sb.run(
+        &[
+            "--once",
+            "--snapshot",
+            FIXTURE,
+            "--size",
+            "110x40",
+            "--theme",
+            "ansi",
+        ],
+        "",
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert!(stdout(&out).contains("1 Scaffold"), "{}", stdout(&out));
+}
+
+#[test]
+fn an_unknown_theme_is_a_usage_error() {
+    let sb = Sandbox::new("theme-bad");
+    let out = sb.run(&["--once", "--theme", "nope"], "");
+    assert_eq!(out.status.code(), Some(2));
+    assert!(stdout(&out).is_empty(), "{}", stdout(&out));
+    assert!(
+        stderr(&out).contains("unknown theme `nope`"),
+        "{}",
+        stderr(&out)
+    );
+}
+
 const REVIEW_LEDGER: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/fixtures/review-ledger.toml"

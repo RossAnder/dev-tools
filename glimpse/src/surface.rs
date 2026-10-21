@@ -6,8 +6,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::ops::{Deref, DerefMut};
 use std::time::Instant;
 
-use crate::app::FLASH;
+use crate::app::{FLASH, Scroll};
+use crate::config::ItemColumn;
 use crate::ledger::{Anchor, EFFORTS, InputRow, ItemRow, Kind, SEVERITIES, Seen, StatusClass};
+use crate::scroll;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub(crate) enum Surface {
@@ -106,16 +108,56 @@ impl Surface {
         }
     }
 
-    /// The sort orders `S` cycles through, starting at `Sort::Id`.
+    /// The sort orders `S` cycles through, starting at `Sort::Id`. Each lists only
+    /// the fields that surface's rows carry. The Inbox sorts by [`InboxColumn`] instead.
     pub(crate) fn sorts(self) -> &'static [Sort] {
         match self {
-            Self::Review | Self::Optimise => {
-                &[Sort::Id, Sort::Severity, Sort::Effort, Sort::Newest]
-            }
-            Self::PlanReview => &[Sort::Id, Sort::Severity, Sort::Newest],
-            Self::Backlog => &[Sort::Id, Sort::Newest],
+            Self::Review | Self::Optimise => &[
+                Sort::Id,
+                Sort::Severity,
+                Sort::Effort,
+                Sort::Newest,
+                Sort::Status,
+                Sort::Category,
+                Sort::Summary,
+                Sort::Area,
+            ],
+            Self::PlanReview => &[
+                Sort::Id,
+                Sort::Severity,
+                Sort::Newest,
+                Sort::Status,
+                Sort::Category,
+                Sort::Summary,
+                Sort::Area,
+            ],
+            Self::Backlog => &[
+                Sort::Id,
+                Sort::Newest,
+                Sort::Kind,
+                Sort::Status,
+                Sort::Summary,
+                Sort::Area,
+            ],
             Self::Tasks | Self::Inbox => &[Sort::Id],
         }
+    }
+
+    /// The order a click on `column`'s header sorts by, when this surface offers one.
+    /// The kind column shows a finding's severity, so it sorts by severity where the
+    /// rows carry one.
+    pub(crate) fn column_sort(self, column: ItemColumn) -> Option<Sort> {
+        let sort = match column {
+            ItemColumn::Status => Sort::Status,
+            ItemColumn::Id => Sort::Id,
+            ItemColumn::Kind if self.sorts().contains(&Sort::Severity) => Sort::Severity,
+            ItemColumn::Kind => Sort::Kind,
+            ItemColumn::Category => Sort::Category,
+            ItemColumn::Effort => Sort::Effort,
+            ItemColumn::Summary => Sort::Summary,
+            ItemColumn::Area => Sort::Area,
+        };
+        self.sorts().contains(&sort).then_some(sort)
     }
 }
 
@@ -168,6 +210,11 @@ pub(crate) enum Sort {
     Severity,
     Effort,
     Newest,
+    Kind,
+    Status,
+    Category,
+    Summary,
+    Area,
 }
 
 impl Sort {
@@ -177,6 +224,11 @@ impl Sort {
             Self::Severity => "severity",
             Self::Effort => "effort",
             Self::Newest => "newest",
+            Self::Kind => "kind",
+            Self::Status => "status",
+            Self::Category => "category",
+            Self::Summary => "summary",
+            Self::Area => "area",
         }
     }
 
@@ -187,7 +239,109 @@ impl Sort {
             Self::Severity => "severity",
             Self::Effort => "effort",
             Self::Newest => "newest",
+            Self::Kind => "kind",
+            Self::Status => "status",
+            Self::Category => "category",
+            Self::Summary => "summary",
+            Self::Area => "area",
         }
+    }
+}
+
+/// Which way a sort runs. `Desc` reverses the order's own comparison only: rows that
+/// compare equal still follow ascending id, and blank text values stay last.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub(crate) enum SortDir {
+    #[default]
+    Asc,
+    Desc,
+}
+
+impl SortDir {
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn label(self) -> &'static str {
+        self.key()
+    }
+
+    /// The stable name `state.toml` saves, independent of the label.
+    pub(crate) fn key(self) -> &'static str {
+        match self {
+            Self::Asc => "asc",
+            Self::Desc => "desc",
+        }
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn from_key(key: &str) -> Option<SortDir> {
+        [Self::Asc, Self::Desc].into_iter().find(|d| d.key() == key)
+    }
+
+    pub(crate) fn flipped(self) -> SortDir {
+        match self {
+            Self::Asc => Self::Desc,
+            Self::Desc => Self::Asc,
+        }
+    }
+
+    fn apply(self, ordering: Ordering) -> Ordering {
+        match self {
+            Self::Asc => ordering,
+            Self::Desc => ordering.reverse(),
+        }
+    }
+}
+
+/// A column of the Inbox's rows, each also the order its header sorts by.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub(crate) enum InboxColumn {
+    #[default]
+    Id,
+    Kind,
+    Status,
+    /// A question's prompt, or another record's text.
+    Text,
+}
+
+impl InboxColumn {
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) const ALL: [InboxColumn; 4] = [Self::Id, Self::Kind, Self::Status, Self::Text];
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn label(self) -> &'static str {
+        self.key()
+    }
+
+    /// The stable name `state.toml` saves, independent of the label.
+    pub(crate) fn key(self) -> &'static str {
+        match self {
+            Self::Id => "id",
+            Self::Kind => "kind",
+            Self::Status => "status",
+            Self::Text => "text",
+        }
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn from_key(key: &str) -> Option<InboxColumn> {
+        Self::ALL.into_iter().find(|column| column.key() == key)
+    }
+}
+
+/// A table header a click sorts by.
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum HeaderKey {
+    Item(ItemColumn),
+    Inbox(InboxColumn),
+}
+
+/// The next `(key, direction)` after a click on `clicked`'s header: another key sorts
+/// by it ascending, and the same key steps asc → desc → `off`.
+fn cycle<T: Copy + PartialEq>(current: (T, SortDir), clicked: T, off: T) -> (T, SortDir) {
+    match current {
+        (key, SortDir::Asc) if key == clicked => (clicked, SortDir::Desc),
+        (key, SortDir::Desc) if key == clicked => (off, SortDir::Asc),
+        _ => (clicked, SortDir::Asc),
     }
 }
 
@@ -235,6 +389,8 @@ pub(crate) struct Tracking<R> {
     /// Set by the wheel: the list stays where the wheel left it, even with the cursor
     /// off screen, until the cursor or the visible order changes.
     pub(crate) scroll_pinned: bool,
+    /// How many list rows the last frame drew, written back by the list view; a page move steps by it.
+    pub(crate) page: usize,
     /// Row id to its first position in `rows`, rebuilt by [`Tracking::refresh`].
     index: HashMap<String, usize>,
 }
@@ -338,6 +494,16 @@ impl<R: Tracked> Tracking<R> {
         self.cursor = items.get(next).cloned();
     }
 
+    /// Moves the cursor through `items` by `scroll` and unpins the list. A cursor
+    /// not in `items` lands on the first; an empty `items` leaves the cursor alone.
+    fn page_through(&mut self, items: &[String], scroll: Scroll) {
+        let at = self.position_in(items);
+        if let Some(next) = scroll::step(at, items.len(), self.page, scroll) {
+            self.cursor = items.get(next).cloned();
+            self.scroll_pinned = false;
+        }
+    }
+
     fn position_in(&self, items: &[String]) -> Option<usize> {
         let cursor = self.cursor.as_deref()?;
         items.iter().position(|id| id == cursor)
@@ -355,6 +521,7 @@ pub(crate) struct ItemsState {
     pub(crate) filter: String,
     pub(crate) group: Group,
     pub(crate) sort: Sort,
+    pub(crate) sort_dir: SortDir,
     pub(crate) show_closed: bool,
 }
 
@@ -415,7 +582,7 @@ impl ItemsState {
             .iter()
             .filter(|r| self.shows(r, &needle))
             .collect();
-        shown.sort_by(|a, b| compare(self.sort, a, b));
+        shown.sort_by(|a, b| compare(self.sort, self.sort_dir, a, b));
         if self.group == Group::None {
             return shown
                 .into_iter()
@@ -445,6 +612,13 @@ impl ItemsState {
     pub(crate) fn move_cursor(&mut self, delta: isize) {
         let items = self.visible_ids();
         self.tracking.step_cursor(&items, delta);
+    }
+
+    /// Moves the cursor through [`ItemsState::visible`] by `scroll`, a page being
+    /// the rows the last frame drew.
+    pub(crate) fn page_cursor(&mut self, scroll: Scroll) {
+        let items = self.visible_ids();
+        self.tracking.page_through(&items, scroll);
     }
 
     /// Toggles the cursor row's mark, then advances the cursor. A read-only row
@@ -492,6 +666,28 @@ impl ItemsState {
         self.sort = next_of(self.surface.sorts(), self.sort);
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn flip_dir(&mut self) {
+        self.sort_dir = self.sort_dir.flipped();
+    }
+
+    /// Sorts by `column`'s header as [`cycle`] steps, off being `Sort::Id` ascending.
+    /// `false`, changing nothing, for a column this surface cannot sort by.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn cycle_header(&mut self, column: ItemColumn) -> bool {
+        let Some(clicked) = self.surface.column_sort(column) else {
+            return false;
+        };
+        (self.sort, self.sort_dir) = cycle((self.sort, self.sort_dir), clicked, Sort::Id);
+        true
+    }
+
+    /// Whether the rows are sorted by `column`, and which way, for its header's mark.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn header_sort(&self, column: ItemColumn) -> Option<SortDir> {
+        (self.surface.column_sort(column) == Some(self.sort)).then_some(self.sort_dir)
+    }
+
     /// `needle` is the lowercased filter.
     fn shows(&self, row: &ItemRow, needle: &str) -> bool {
         if !self.show_closed && matches!(row.class, StatusClass::Done | StatusClass::Declined) {
@@ -528,6 +724,9 @@ pub(crate) struct InboxState {
     pub(crate) tracking: Tracking<InputRow>,
     /// Shows `handled` and `withdrawn` records.
     pub(crate) show_closed: bool,
+    /// The order within each section; the sections themselves keep their fixed order.
+    pub(crate) sort: InboxColumn,
+    pub(crate) sort_dir: SortDir,
     /// `(ledger, item id)` to the indices in `rows` of the pending records naming it, in
     /// id order; rebuilt by [`InboxState::apply_inputs`].
     pending: HashMap<(Kind, String), Vec<usize>>,
@@ -630,7 +829,7 @@ impl InboxState {
         }
         let mut out = Vec::new();
         for ((_, label), mut members) in groups {
-            members.sort_by(|a, b| id_key(&a.id).cmp(&id_key(&b.id)));
+            members.sort_by(|a, b| compare_input(self.sort, self.sort_dir, a, b));
             out.push(VisibleRow::Header {
                 label: label.to_owned(),
                 count: members.len(),
@@ -643,6 +842,28 @@ impl InboxState {
     pub(crate) fn move_cursor(&mut self, delta: isize) {
         let items = self.visible_ids();
         self.tracking.step_cursor(&items, delta);
+    }
+
+    /// [`ItemsState::page_cursor`] for the Inbox.
+    pub(crate) fn page_cursor(&mut self, scroll: Scroll) {
+        let items = self.visible_ids();
+        self.tracking.page_through(&items, scroll);
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn flip_dir(&mut self) {
+        self.sort_dir = self.sort_dir.flipped();
+    }
+
+    /// [`ItemsState::cycle_header`] for the Inbox, off being id ascending.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn cycle_header(&mut self, column: InboxColumn) {
+        (self.sort, self.sort_dir) = cycle((self.sort, self.sort_dir), column, InboxColumn::Id);
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn header_sort(&self, column: InboxColumn) -> Option<SortDir> {
+        (self.sort == column).then_some(self.sort_dir)
     }
 
     fn visible_ids(&self) -> Vec<String> {
@@ -784,14 +1005,60 @@ fn effort_rank(effort: &str) -> u8 {
     rank_in(&EFFORTS, effort)
 }
 
-fn compare(sort: Sort, a: &ItemRow, b: &ItemRow) -> Ordering {
+fn compare(sort: Sort, dir: SortDir, a: &ItemRow, b: &ItemRow) -> Ordering {
     let primary = match sort {
-        Sort::Id => Ordering::Equal,
-        Sort::Severity => severity_rank(&a.severity).cmp(&severity_rank(&b.severity)),
-        Sort::Effort => effort_rank(&a.effort).cmp(&effort_rank(&b.effort)),
-        Sort::Newest => b.created.cmp(&a.created),
+        Sort::Id => dir.apply(id_key(&a.id).cmp(&id_key(&b.id))),
+        Sort::Severity => dir.apply(severity_rank(&a.severity).cmp(&severity_rank(&b.severity))),
+        Sort::Effort => dir.apply(effort_rank(&a.effort).cmp(&effort_rank(&b.effort))),
+        Sort::Newest => dir.apply(b.created.cmp(&a.created)),
+        Sort::Status => dir.apply((a.class as u8, &a.status).cmp(&(b.class as u8, &b.status))),
+        Sort::Kind => compare_text(&a.kind, &b.kind, dir),
+        Sort::Category => compare_text(&a.category, &b.category, dir),
+        Sort::Summary => compare_text(&a.summary, &b.summary, dir),
+        Sort::Area => compare_text(place(&a.anchor), place(&b.anchor), dir),
     };
     primary.then_with(|| id_key(&a.id).cmp(&id_key(&b.id)))
+}
+
+fn compare_input(sort: InboxColumn, dir: SortDir, a: &InputRow, b: &InputRow) -> Ordering {
+    fn text(row: &InputRow) -> &str {
+        if row.is_unanswered_question() {
+            &row.prompt
+        } else {
+            &row.text
+        }
+    }
+    let primary = match sort {
+        InboxColumn::Id => dir.apply(id_key(&a.id).cmp(&id_key(&b.id))),
+        InboxColumn::Kind => compare_text(&a.kind, &b.kind, dir),
+        InboxColumn::Status => compare_text(&a.status, &b.status, dir),
+        InboxColumn::Text => compare_text(text(a), text(b), dir),
+    };
+    primary.then_with(|| id_key(&a.id).cmp(&id_key(&b.id)))
+}
+
+/// Case-insensitive, with a blank value last whichever way `dir` runs.
+fn compare_text(a: &str, b: &str, dir: SortDir) -> Ordering {
+    match (a.is_empty(), b.is_empty()) {
+        (false, false) => {
+            let folded = a
+                .chars()
+                .flat_map(char::to_lowercase)
+                .cmp(b.chars().flat_map(char::to_lowercase));
+            dir.apply(folded.then_with(|| a.cmp(b)))
+        }
+        (a_blank, b_blank) => a_blank.cmp(&b_blank),
+    }
+}
+
+/// The text an item's anchor shows: a file, a section or an area.
+fn place(anchor: &Anchor) -> &str {
+    match anchor {
+        Anchor::Code { file, .. } => file,
+        Anchor::Section(section) => section,
+        Anchor::Area(area) => area,
+        Anchor::None => "",
+    }
 }
 
 /// Splits an id into its prefix and trailing number, so `R10` sorts after `R2`.
@@ -908,8 +1175,25 @@ mod tests {
                 "none", "severity", "category", "effort", "file", "status", "kind", "area"
             ]
         );
-        let sorts = [Sort::Id, Sort::Severity, Sort::Effort, Sort::Newest].map(Sort::key);
-        assert_eq!(sorts, ["id", "severity", "effort", "newest"]);
+        let sorts = [
+            Sort::Id,
+            Sort::Severity,
+            Sort::Effort,
+            Sort::Newest,
+            Sort::Kind,
+            Sort::Status,
+            Sort::Category,
+            Sort::Summary,
+            Sort::Area,
+        ]
+        .map(Sort::key);
+        assert_eq!(
+            sorts,
+            [
+                "id", "severity", "effort", "newest", "kind", "status", "category", "summary",
+                "area"
+            ]
+        );
     }
 
     #[test]
@@ -1253,9 +1537,202 @@ mod tests {
             seen.push(state.group);
         }
         assert_eq!(seen, [Group::Kind, Group::Area, Group::Status, Group::None]);
-        state.cycle_sort();
-        assert_eq!(state.sort, Sort::Newest);
-        state.cycle_sort();
-        assert_eq!(state.sort, Sort::Id);
+        let mut sorts = Vec::new();
+        for _ in 0..6 {
+            state.cycle_sort();
+            sorts.push(state.sort);
+        }
+        assert_eq!(
+            sorts,
+            [
+                Sort::Newest,
+                Sort::Kind,
+                Sort::Status,
+                Sort::Summary,
+                Sort::Area,
+                Sort::Id
+            ]
+        );
+    }
+
+    #[test]
+    fn a_header_cycles_asc_then_desc_then_off() {
+        let mut state = ItemsState::new(Surface::Review);
+        assert!(state.cycle_header(ItemColumn::Effort));
+        assert_eq!((state.sort, state.sort_dir), (Sort::Effort, SortDir::Asc));
+        assert_eq!(state.header_sort(ItemColumn::Effort), Some(SortDir::Asc));
+        state.cycle_header(ItemColumn::Effort);
+        assert_eq!((state.sort, state.sort_dir), (Sort::Effort, SortDir::Desc));
+        state.cycle_header(ItemColumn::Effort);
+        assert_eq!((state.sort, state.sort_dir), (Sort::Id, SortDir::Asc));
+        assert_eq!(state.header_sort(ItemColumn::Effort), None);
+
+        state.cycle_header(ItemColumn::Kind);
+        state.cycle_header(ItemColumn::Kind);
+        state.cycle_header(ItemColumn::Summary);
+        assert_eq!(
+            (state.sort, state.sort_dir),
+            (Sort::Summary, SortDir::Asc),
+            "another column starts ascending"
+        );
+
+        let mut backlog = ItemsState::new(Surface::Backlog);
+        assert!(!backlog.cycle_header(ItemColumn::Effort));
+        assert_eq!((backlog.sort, backlog.sort_dir), (Sort::Id, SortDir::Asc));
+        assert!(backlog.cycle_header(ItemColumn::Kind));
+        assert_eq!(backlog.sort, Sort::Kind);
+    }
+
+    #[test]
+    fn the_kind_column_sorts_a_finding_by_severity() {
+        assert_eq!(
+            Surface::Review.column_sort(ItemColumn::Kind),
+            Some(Sort::Severity)
+        );
+        assert_eq!(
+            Surface::Backlog.column_sort(ItemColumn::Kind),
+            Some(Sort::Kind)
+        );
+        assert_eq!(Surface::PlanReview.column_sort(ItemColumn::Effort), None);
+        for surface in Surface::ALL {
+            for column in ItemColumn::ALL {
+                if let Some(sort) = surface.column_sort(column) {
+                    assert!(surface.sorts().contains(&sort), "{surface:?} {column:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn desc_reverses_severity_but_ties_stay_in_id_order() {
+        let mut state = loaded(vec![
+            item("R1", "open", "warning"),
+            item("R2", "open", "critical"),
+            item("R3", "open", "suggestion"),
+            item("R4", "open", "critical"),
+        ]);
+        state.sort = Sort::Severity;
+        assert_eq!(items(&state), ["R2", "R4", "R1", "R3"]);
+        state.flip_dir();
+        assert_eq!(state.sort_dir, SortDir::Desc);
+        assert_eq!(items(&state), ["R3", "R1", "R2", "R4"]);
+        state.sort = Sort::Id;
+        assert_eq!(items(&state), ["R4", "R3", "R2", "R1"]);
+    }
+
+    #[test]
+    fn a_blank_value_sorts_last_either_way() {
+        let area = |id: &str, area: &str| ItemRow {
+            anchor: Anchor::Area(area.to_owned()),
+            ..item(id, "open", "warning")
+        };
+        let mut state = loaded(vec![area("R1", ""), area("R2", "b"), area("R3", "A")]);
+        state.sort = Sort::Area;
+        assert_eq!(items(&state), ["R3", "R2", "R1"]);
+        state.flip_dir();
+        assert_eq!(items(&state), ["R2", "R3", "R1"]);
+    }
+
+    #[test]
+    fn the_inbox_sorts_by_kind_within_its_sections() {
+        let mut state = inbox(vec![
+            input("I1", "request", "user", "new"),
+            input("I2", "capture", "user", "new"),
+            input("I3", "note", "user", "new"),
+            input("I4", "question", "review", "new"),
+            input("I5", "capture", "user", "acknowledged"),
+            input("I6", "note", "user", "acknowledged"),
+        ]);
+        state.cycle_header(InboxColumn::Kind);
+        assert_eq!(state.header_sort(InboxColumn::Kind), Some(SortDir::Asc));
+        assert_eq!(
+            item_ids(state.visible()),
+            ["I4", "I2", "I3", "I1", "I5", "I6"]
+        );
+        state.cycle_header(InboxColumn::Kind);
+        assert_eq!(
+            item_ids(state.visible()),
+            ["I4", "I1", "I3", "I2", "I6", "I5"]
+        );
+        state.cycle_header(InboxColumn::Kind);
+        assert_eq!(
+            (state.sort, state.sort_dir),
+            (InboxColumn::Id, SortDir::Asc)
+        );
+        state.flip_dir();
+        assert_eq!(
+            item_ids(state.visible()),
+            ["I4", "I3", "I2", "I1", "I6", "I5"]
+        );
+    }
+
+    #[test]
+    fn sort_directions_and_inbox_columns_round_trip_their_keys() {
+        for dir in [SortDir::Asc, SortDir::Desc] {
+            assert_eq!(SortDir::from_key(dir.key()), Some(dir));
+            assert_eq!(dir.flipped().flipped(), dir);
+        }
+        for column in InboxColumn::ALL {
+            assert_eq!(InboxColumn::from_key(column.label()), Some(column));
+        }
+        assert_eq!(SortDir::from_key("down"), None);
+        assert_eq!(SortDir::Desc.label(), "desc");
+        assert_ne!(
+            HeaderKey::Item(ItemColumn::Id),
+            HeaderKey::Inbox(InboxColumn::Id)
+        );
+    }
+
+    fn five_items() -> ItemsState {
+        loaded(
+            (1..=5)
+                .map(|n| item(&format!("R{n}"), "open", "warning"))
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn page_down_moves_a_drawn_page_of_rows() {
+        let mut state = five_items();
+        state.cursor = Some("R1".to_owned());
+        state.page = 3;
+        state.scroll_pinned = true;
+        state.page_cursor(Scroll::PageDown);
+        assert_eq!(state.cursor.as_deref(), Some("R4"));
+        assert!(!state.scroll_pinned);
+        state.page_cursor(Scroll::PageUp);
+        assert_eq!(state.cursor.as_deref(), Some("R1"));
+    }
+
+    #[test]
+    fn bottom_lands_on_the_last_visible_id() {
+        let mut state = five_items();
+        state.page_cursor(Scroll::Bottom);
+        assert_eq!(state.cursor.as_deref(), Some("R5"));
+        state.page_cursor(Scroll::Top);
+        assert_eq!(state.cursor.as_deref(), Some("R1"));
+    }
+
+    #[test]
+    fn paging_an_empty_list_leaves_the_cursor_none() {
+        let mut state = ItemsState::new(Surface::Review);
+        state.page_cursor(Scroll::PageDown);
+        assert_eq!(state.cursor, None);
+        let mut inbox = InboxState::default();
+        inbox.page_cursor(Scroll::Bottom);
+        assert_eq!(inbox.cursor, None);
+    }
+
+    #[test]
+    fn the_inbox_pages_through_its_visible_order() {
+        let mut state = inbox(vec![
+            input("I1", "request", "user", "new"),
+            input("I2", "request", "user", "new"),
+            input("I3", "request", "user", "new"),
+        ]);
+        state.cursor = Some("I1".to_owned());
+        state.page = 2;
+        state.page_cursor(Scroll::PageDown);
+        assert_eq!(state.cursor.as_deref(), Some("I3"));
     }
 }
