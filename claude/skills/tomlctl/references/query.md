@@ -94,7 +94,9 @@ tomlctl items list .claude/flows/foo/review-ledger.toml --status open --strict-r
 | `--where-contains` | `--where-contains summary=allocation` | Field string contains substring. |
 | `--where-prefix` | `--where-prefix id=R2` | Field string starts with. |
 | `--where-suffix` | `--where-suffix file=.rs` | Field string ends with. |
-| `--where-regex` | `--where-regex symbol='^old::'` | Caller-supplied regex; does NOT auto-anchor. Built without Unicode tables, so `(?i)`, `\d`, `\w` and `\s` are refused; write `(?i-u)`, `(?-u:\d)`, `[0-9]`, `[[:space:]]`. `sweep -e` shares the restriction. |
+| `--where-regex` | `--where-regex symbol='^old::'` | Caller-supplied regex; does NOT auto-anchor. `(?i)`, `\d`, `\w`, `\s` and `\b` compile with Unicode semantics; `\p{..}` classes are refused. Unicode `\w` / `\W` repeated above about 20 times (`\w{21}`) exceeds the compile-size limit: write `(?-u:\w)`. `sweep -e` shares the engine. |
+| `--grep` | `--grep 'race.*lock'` | Case-insensitive regex (compiled with `(?i)` prepended; same syntax, 512-byte cap and `\p{..}` refusal as `--where-regex`). Matches when ANY field of the default set matches; an array field matches when any element does. ANDs with every `--where*`. Defaults: `items list` `summary`, `description`, `file`, `symbol`; `backlog list` `summary`, `context`, `area`, `tags`, `resolution`, `dismiss_reason`, `reopen_rationale`; `tasks list` `title`, `ref`, `action`, `detail`, `acceptance`, `files`. |
+| `--grep-field` | `--grep-field summary` | Repeatable; replaces the default field set of `--grep`. Requires `--grep`. |
 | `--status` | `--status open` | Legacy shortcut for `--where status=<v>`; prefer `--where` in anything new. |
 | `--category` | `--category security` | Legacy shortcut for `--where category=<v>`. |
 | `--file` | `--file src/a.rs` | Legacy shortcut for `--where file=<p>`. |
@@ -214,8 +216,13 @@ post-process it:
 
 ### Single-item fetch
 
+`items get <file> <ids>` takes ids comma- or space-separated. One id prints the object;
+several print an array in the order given, duplicates collapsed. An unknown id fails the
+whole call.
+
 ```bash
 tomlctl items get .claude/flows/auth-overhaul/review-ledger.toml R22
+tomlctl items get .claude/flows/auth-overhaul/review-ledger.toml R22,R25 R31
 ```
 
 #### `items get`
@@ -326,10 +333,11 @@ What the `git ls-files` basis does and does not cover:
   (ripgrep's heuristic, which also catches UTF-16 text); anything over `--max-file-bytes`
   skips. Both are counted, not fatal.
 
-Patterns compile without Unicode tables — the installed binary is built with `regex`'s
-`std` + `perf` features only — so `\b`, `\w`, `\d`, `\s` and case-insensitive `(?i)` on
-non-ASCII fail to compile. Write the ASCII forms `(?-u:\b)`, `(?-u:\w)`, `(?-u:\d)`; the
-compile error names that rewrite. Matching is multi-line with CRLF awareness (`$` does not
+Patterns compile with `unicode-perl` and `unicode-case`, so `(?i)`, `\d`, `\w`, `\s` and
+`\b` work as written. `\p{..}` classes are refused, and Unicode `\w` / `\W` repeats above
+about 20 (`\w{21}`) exceed the compile-size limit; write `(?-u:\w)` there. Prefer
+`(?-u:\b)` for word boundaries: it keeps the sweep on the fast DFA, where a Unicode `\b`
+drops it to the slower PikeVM. The compile error names these rewrites. Matching is multi-line with CRLF awareness (`$` does not
 match before a `\r`), and a pattern longer than 512 bytes is refused — the same cap
 `items list --where-regex` applies.
 
