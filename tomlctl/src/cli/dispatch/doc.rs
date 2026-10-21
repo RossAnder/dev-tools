@@ -16,6 +16,7 @@ use crate::items::{compute_array_append_mutation, parse_ndjson};
 use crate::output::{
     build_dry_run_scalar_envelope, emit_dry_run_plan, emit_dry_run_scalar, print_json_compact,
 };
+use crate::store_guard::refuse_owned_store;
 
 use super::{write_envelope, write_integrity_opts};
 
@@ -89,11 +90,13 @@ pub(super) fn set(cmd: Cmd) -> Result<()> {
         dry_run,
         integrity,
         stamp,
+        raw_store,
     } = cmd
     else {
         unreachable!("doc::set dispatched with a non-`set` command");
     };
     refuse_json_extension_for_toml_writers(&file)?;
+    refuse_owned_store(&file, raw_store.raw_store)?;
     let pairs = collect_set_pairs(path, value, ty, set)?;
     if dry_run {
         // A caller passing `tomlctl set --dry-run /etc/passwd`
@@ -165,11 +168,13 @@ pub(super) fn set_json(cmd: Cmd) -> Result<()> {
         dry_run,
         integrity,
         stamp,
+        raw_store,
     } = cmd
     else {
         unreachable!("doc::set_json dispatched with a non-`set-json` command");
     };
     refuse_json_extension_for_toml_writers(&file)?;
+    refuse_owned_store(&file, raw_store.raw_store)?;
     // Parse stdin/literal JSON straight into a `JsonValue`, skipping
     // the intermediate String allocation. Keeping the parse outside
     // the `mutate_doc` closure means a malformed payload fails
@@ -221,11 +226,13 @@ pub(super) fn array_append(cmd: Cmd) -> Result<()> {
         dry_run,
         integrity,
         stamp,
+        raw_store,
     } = cmd
     else {
         unreachable!("doc::array_append dispatched with a non-`array-append` command");
     };
     refuse_json_extension_for_toml_writers(&file)?;
+    refuse_owned_store(&file, raw_store.raw_store)?;
     // clap's `conflicts_with` keeps `--ndjson` apart from the single-row
     // sources; enforce "at least one" here since clap has no first-class
     // required-one-of primitive across a flattened group.

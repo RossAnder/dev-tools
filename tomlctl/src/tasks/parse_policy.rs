@@ -5,11 +5,12 @@
 //! is only ever compared against the markers' derived maximal elements — the
 //! markers are the sole authority for checkpoint membership.
 //!
-//! Every pattern here uses explicit ASCII classes. The binary resolves `regex`
-//! without its unicode features, so a `\d`/`\s`/`\w` shorthand makes
-//! `Regex::new` return `Err` at startup there — while a dev-dependency unifies
-//! those features back on, so a test run accepts it. That asymmetry is what
-//! `every_pattern_compiles` scans the pattern text for.
+//! Every pattern here uses explicit ASCII classes. The shipped binary resolves
+//! `regex` with a narrower feature set than a test build, where a
+//! dev-dependency unifies the full Unicode features on, so a Unicode class can
+//! pass under test yet fail or exceed the compile-size limit in the binary.
+//! `every_pattern_compiles` scans the pattern text for shorthand classes to
+//! catch that.
 
 use crate::io::advise;
 use std::sync::OnceLock;
@@ -458,10 +459,10 @@ mod tests {
     fn every_pattern_compiles() {
         let patterns = [bullet_re(), marker_re(), ids_re(), closure_re()];
 
-        // A dev-dependency unifies `regex/unicode` on, so a shorthand class is
-        // accepted here and rejected by the dependency-free release build, where
-        // `Regex::new` returns `Err` and the `expect` panics. Only a textual scan
-        // of the pattern catches that from a test.
+        // Test builds unify a different regex feature set from the shipped
+        // binary, so a Unicode shorthand class can compile here and still fail
+        // or blow the compile-size limit in the binary. Only a textual scan of
+        // the pattern catches that from a test.
         for re in patterns {
             for shorthand in [r"\d", r"\D", r"\s", r"\S", r"\w", r"\W", r"\b", r"\B"] {
                 assert!(

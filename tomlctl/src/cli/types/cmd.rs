@@ -9,8 +9,8 @@ use crate::convert::ScalarType;
 use crate::sweep::{DEFAULT_MAX_FILE_BYTES, DEFAULT_MAX_HITS};
 
 use super::{
-    BacklogOp, FlowOp, InputsOp, ItemsOp, ReadIntegrityArgs, ReviewOp, StampArgs, TasksOp,
-    WriteIntegrityArgs,
+    BacklogOp, FlowOp, InputsOp, ItemsOp, RawStoreArg, ReadIntegrityArgs, ReviewOp, StampArgs,
+    TasksOp, WriteIntegrityArgs,
 };
 
 // The CLI subcommand enums carry a lot of `Vec<String>` / nested-struct
@@ -81,6 +81,8 @@ pub(crate) enum Cmd {
         integrity: WriteIntegrityArgs,
         #[command(flatten)]
         stamp: StampArgs,
+        #[command(flatten)]
+        raw_store: RawStoreArg,
     },
 
     /// Set a JSON-encoded value (array, object, or scalar) at a dotted key path.
@@ -103,6 +105,8 @@ pub(crate) enum Cmd {
         integrity: WriteIntegrityArgs,
         #[command(flatten)]
         stamp: StampArgs,
+        #[command(flatten)]
+        raw_store: RawStoreArg,
     },
 
     /// Parse-check only. Exit 0 on valid TOML, non-zero otherwise.
@@ -164,6 +168,8 @@ pub(crate) enum Cmd {
         integrity: WriteIntegrityArgs,
         #[command(flatten)]
         stamp: StampArgs,
+        #[command(flatten)]
+        raw_store: RawStoreArg,
     },
 
     /// Emit a JSON description of this binary's capabilities. Downstream
@@ -249,8 +255,9 @@ pub(crate) enum Cmd {
     /// sites. Files come from `git ls-files` at the repo root (a tagged
     /// error outside a git tree); `.claude/**` and `docs/plans/**` are
     /// excluded by default because ledgers and plans quote patterns
-    /// verbatim. The binary has no Unicode tables, so `\b` / `\w` / `\d`
-    /// need the `(?-u:…)` form. Output carries `hits`, `files_scanned`,
+    /// verbatim. `(?i)`, `\d`, `\w`, `\s` and `\b` compile, but `\p{..}`
+    /// classes do not and a Unicode `\w` repeat above about 20 exceeds the
+    /// compile-size limit; `(?-u:\b)` is the fast form. Output carries `hits`, `files_scanned`,
     /// `skipped` counts, `truncated` and `coverage_complete`.
     Sweep {
         /// Pattern to search for; repeatable. Each hit records the index of
