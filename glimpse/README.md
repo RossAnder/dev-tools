@@ -133,7 +133,7 @@ agent whose dispatch names the item, and the item's `file:line` (its heading or
 area where it has no file) in a column of its own, aligned down the list. A long
 path keeps its end, as `…apply-pipeline/SKILL.md`; the column narrows, then drops,
 before the summary falls under 20 cells. `item_columns` picks which columns show
-and their order, and `C` changes them for the session: previously chosen columns
+and their order, and `C` changes them and the choice is saved: previously chosen columns
 keep their order and newly ticked ones go on the end. `✉` means an
 input record not yet handled names the item, in the `input_new` colour while the
 newest such record is `new` and `input_acknowledged` once an agent has read it;
@@ -474,8 +474,9 @@ optional:
 Validation is strict: an unknown key, a wrong type or an out-of-range value makes
 the whole file fall back to the defaults, with a warning in the header naming the
 problem. The `--view`, `--orientation` and `--theme` flags override the file. The
-file is only a default for `hints` and the theme set: a choice saved in
-`state.toml` wins over it (see [Views and keys](#views-and-keys)).
+file is only a default: every layout choice saved in `state.toml`, item columns
+included, wins over its config key, while `hints` and the theme set are saved only
+once chosen in the app (see [Views and keys](#views-and-keys)).
 
 ### Theme
 
