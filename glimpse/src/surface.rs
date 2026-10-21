@@ -270,7 +270,6 @@ impl SortDir {
         }
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn from_key(key: &str) -> Option<SortDir> {
         [Self::Asc, Self::Desc].into_iter().find(|d| d.key() == key)
     }
@@ -302,7 +301,6 @@ pub(crate) enum InboxColumn {
 }
 
 impl InboxColumn {
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) const ALL: [InboxColumn; 4] = [Self::Id, Self::Kind, Self::Status, Self::Text];
 
     pub(crate) fn label(self) -> &'static str {
@@ -319,7 +317,6 @@ impl InboxColumn {
         }
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn from_key(key: &str) -> Option<InboxColumn> {
         Self::ALL.into_iter().find(|column| column.key() == key)
     }

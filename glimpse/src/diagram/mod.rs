@@ -45,7 +45,6 @@ pub(crate) enum Zoom {
     #[default]
     Ids,
     /// One status glyph, with tasks a single cell apart.
-    #[cfg_attr(not(test), expect(dead_code, reason = "no key selects a zoom yet"))]
     Tight,
 }
 
@@ -222,10 +221,6 @@ impl DiagramCache {
     /// `focus` other than off keeps only its closure; `fit` shrinks that, or the whole
     /// graph, to the largest neighbourhood of `target` whose layout fits `view`, when
     /// it does not fit already. With no `target` the whole graph is laid out.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the diagram view does not pass a zoom or fit yet")
-    )]
     #[expect(clippy::too_many_arguments, reason = "each is one input of the key")]
     pub(crate) fn layout_for(
         &mut self,
