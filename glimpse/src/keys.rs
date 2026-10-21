@@ -74,6 +74,8 @@ pub(crate) fn map(event: KeyEvent) -> Option<Action> {
         KeyCode::Char('V') => Action::MarkVisible,
         KeyCode::Char('g') => Action::CycleGroup,
         KeyCode::Char('S') => Action::CycleSort,
+        KeyCode::Char('D') => Action::FlipSortDir,
+        KeyCode::Char('C') => Action::OpenColumns,
         KeyCode::Char('c') => Action::ToggleClosed,
         KeyCode::Char('m') => Action::OpenMenu,
         KeyCode::Char('e') => Action::OpenClassify,
@@ -88,7 +90,8 @@ pub(crate) fn map(event: KeyEvent) -> Option<Action> {
 }
 
 /// The wheel scrolls the details panel or the view under the pointer, never the
-/// selection; a left press on a header tab switches to its surface, one on a task or
+/// selection; a left press on a header tab switches to its surface, one on a table header
+/// sorts by its column, one on an item's id cell copies the id, one elsewhere on a task or
 /// item row selects it, and one on or beside the divider starts a drag. Only the press
 /// edge of a click acts, the mouse counterpart of dropping key `Release`. Every other
 /// kind, including the motion reports capture turns on, maps to nothing. With a form or
@@ -144,18 +147,20 @@ pub(crate) fn mouse(event: MouseEvent, app: &App) -> Option<Action> {
     let over_details = regions.details.is_some_and(|r| r.contains(at));
     let over_view = regions.modal.is_none() && regions.view.is_some_and(|r| r.contains(at));
     match event.kind {
-        MouseEventKind::Down(MouseButton::Left) if regions.modal.is_none() => regions
-            .items
-            .iter()
-            .find(|(rect, _)| rect.contains(at))
-            .map(|(_, id)| Action::SelectItem(id.clone()))
-            .or_else(|| {
+        MouseEventKind::Down(MouseButton::Left) if regions.modal.is_none() => {
+            let task = || {
                 regions
                     .tasks
                     .iter()
                     .find(|(rect, _)| over_view && rect.contains(at))
                     .map(|(_, id)| Action::Select(*id))
-            }),
+            };
+            hit(&regions.headers, at)
+                .map(|key| Action::SortBy(*key))
+                .or_else(|| hit(&regions.ids, at).map(|id| Action::CopyItem(id.clone())))
+                .or_else(|| hit(&regions.items, at).map(|id| Action::SelectItem(id.clone())))
+                .or_else(task)
+        }
         MouseEventKind::ScrollDown if over_details => {
             Some(Action::ScrollDetails(Scroll::Down(WHEEL_ROWS)))
         }
@@ -168,6 +173,14 @@ pub(crate) fn mouse(event: MouseEvent, app: &App) -> Option<Action> {
         MouseEventKind::ScrollLeft if over_view => scroll_view(app, -1, 0),
         _ => None,
     }
+}
+
+/// The key of the first rect in `targets` that holds `at`.
+fn hit<T>(targets: &[(Rect, T)], at: Position) -> Option<&T> {
+    targets
+        .iter()
+        .find(|(rect, _)| rect.contains(at))
+        .map(|(_, key)| key)
 }
 
 /// Whether `at` lies on the divider strip or one cell either side of it, measured
@@ -484,6 +497,8 @@ mod tests {
             ('V', Action::MarkVisible),
             ('g', Action::CycleGroup),
             ('S', Action::CycleSort),
+            ('D', Action::FlipSortDir),
+            ('C', Action::OpenColumns),
             ('c', Action::ToggleClosed),
             ('m', Action::OpenMenu),
             ('e', Action::OpenClassify),
@@ -517,6 +532,32 @@ mod tests {
             Some(Action::SelectItem("R1".to_string()))
         );
         assert_eq!(mouse(event(left, 5, 15), &app), None, "no row there");
+    }
+
+    #[test]
+    fn a_header_click_sorts_and_an_id_cell_click_copies_before_the_row_selects() {
+        use crate::config::ItemColumn;
+        use crate::surface::HeaderKey;
+        let mut app = app_with_regions();
+        let effort = HeaderKey::Item(ItemColumn::Effort);
+        app.regions.headers = vec![(Rect::new(10, 2, 8, 1), effort)];
+        app.regions.items = vec![(Rect::new(0, 3, 60, 1), "R1".to_string())];
+        app.regions.ids = vec![(Rect::new(2, 3, 4, 1), "R1".to_string())];
+        let left = MouseEventKind::Down(MouseButton::Left);
+        assert_eq!(
+            mouse(event(left, 12, 2), &app),
+            Some(Action::SortBy(effort))
+        );
+        assert_eq!(
+            mouse(event(left, 3, 3), &app),
+            Some(Action::CopyItem("R1".to_string()))
+        );
+        assert_eq!(
+            mouse(event(left, 20, 3), &app),
+            Some(Action::SelectItem("R1".to_string()))
+        );
+        app.regions.modal = Some(Rect::new(1, 1, 58, 18));
+        assert_eq!(mouse(event(left, 12, 2), &app), None, "under the modal");
     }
 
     #[test]

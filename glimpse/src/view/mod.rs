@@ -32,7 +32,7 @@ use crate::app::{App, Navigator, Regions};
 use crate::config::{Config, Density, Orientation, Split, ViewKind, aspect};
 use crate::diagram::{self, DiagramCache};
 use crate::model::{Task, TaskStatus};
-use crate::surface::Surface;
+use crate::surface::{HeaderKey, Surface};
 use crate::transcript::TailView;
 
 pub(crate) fn text_width(s: &str) -> usize {
@@ -172,9 +172,9 @@ pub(crate) fn render(
 
     let tabs = header::render(frame, head, app, compact);
     cache.set_implied(app.show_implied);
-    let (tasks, items) = match view_area {
+    let hits = match view_area {
         Some(view_area) => draw_surface(frame, view_area, app, orientation, cache),
-        None => (Vec::new(), Vec::new()),
+        None => Hits::default(),
     };
     app.scroll_nudge = (0, 0);
     let (panel_area, modal, divider) = match panels {
@@ -201,8 +201,10 @@ pub(crate) fn render(
         view: view_area,
         details: details.map(|(rect, _)| rect),
         modal,
-        tasks,
-        items,
+        tasks: hits.tasks,
+        items: hits.items,
+        headers: hits.headers,
+        ids: hits.ids,
         tabs,
         body,
         divider,
@@ -328,6 +330,26 @@ pub(crate) fn notice_style(app: &App, task: &Task) -> Option<ratatui::style::Sty
     })
 }
 
+/// What the current surface's body drew that a click can hit.
+#[derive(Default)]
+struct Hits {
+    tasks: Vec<layers::Target>,
+    items: Vec<items::Target>,
+    headers: Vec<(Rect, HeaderKey)>,
+    ids: Vec<items::Target>,
+}
+
+impl Hits {
+    fn of(drawn: items::Drawn) -> Hits {
+        Hits {
+            tasks: Vec::new(),
+            items: drawn.targets,
+            headers: drawn.headers,
+            ids: drawn.ids,
+        }
+    }
+}
+
 /// The current surface's body: Tasks draws the active view, an item surface its list.
 fn draw_surface(
     frame: &mut Frame,
@@ -335,14 +357,17 @@ fn draw_surface(
     app: &mut App,
     orientation: Orientation,
     cache: &mut DiagramCache,
-) -> (Vec<layers::Target>, Vec<items::Target>) {
+) -> Hits {
     match app.surface {
-        Surface::Tasks => (draw_view(frame, area, app, orientation, cache), Vec::new()),
+        Surface::Tasks => Hits {
+            tasks: draw_view(frame, area, app, orientation, cache),
+            ..Hits::default()
+        },
         Surface::Inbox => {
             let drawn = inbox::render(frame.buffer_mut(), area, app);
             app.inbox.scroll = drawn.scroll;
             app.inbox.page = drawn.page;
-            (Vec::new(), drawn.targets)
+            Hits::of(drawn)
         }
         Surface::Review | Surface::Optimise | Surface::PlanReview | Surface::Backlog => {
             let drawn = items::render(frame.buffer_mut(), area, app);
@@ -353,7 +378,7 @@ fn draw_surface(
                 state.scroll = drawn.scroll;
                 state.page = drawn.page;
             }
-            (Vec::new(), drawn.targets)
+            Hits::of(drawn)
         }
     }
 }

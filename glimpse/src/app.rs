@@ -26,7 +26,7 @@ use crate::form::{FieldValue, Form, FormOutcome};
 use crate::ledger::{InputRow, Inputs, ItemRow, Ledger};
 use crate::model::{AgentStatus, Index, Snapshot, TaskStatus};
 use crate::scroll;
-use crate::surface::{InboxState, ItemsState, Surface};
+use crate::surface::{HeaderKey, InboxState, ItemsState, Surface};
 use crate::theme::Theme;
 use crate::writer::{WriteOutcome, WriteRequest};
 use crate::writes::{Saving, Writes};
@@ -111,6 +111,10 @@ pub(crate) struct Regions {
     pub(crate) tasks: Vec<(Rect, u32)>,
     /// One rect per item row the mouse can hit, keyed by item id.
     pub(crate) items: Vec<(Rect, String)>,
+    /// One rect per table header cell a click sorts by.
+    pub(crate) headers: Vec<(Rect, HeaderKey)>,
+    /// One rect per item id cell a click copies, keyed by item id.
+    pub(crate) ids: Vec<(Rect, String)>,
     /// One rect per surface tab in the header.
     pub(crate) tabs: Vec<(Rect, Surface)>,
     /// The body the docked panel shares with the view; a drag measures against it.
@@ -185,6 +189,15 @@ pub(crate) enum Action {
     MarkVisible,
     CycleGroup,
     CycleSort,
+    /// A header click: sorts the current item surface or the Inbox by that column, stepping
+    /// ascending, descending, then back to id order.
+    SortBy(HeaderKey),
+    /// Reverses the current item surface's or the Inbox's sort.
+    FlipSortDir,
+    /// Opens the column picker; item surfaces only.
+    OpenColumns,
+    /// An id-cell click: copies the id by handing back [`Action::Copy`].
+    CopyItem(String),
     /// Shows or hides the done and declined rows of the current item surface.
     ToggleClosed,
     /// Opens the status moves offered for the marks, else the cursor row.
@@ -765,6 +778,44 @@ impl App {
                 }
                 None
             }
+            Action::SortBy(HeaderKey::Inbox(column)) => {
+                if self.surface == Surface::Inbox {
+                    self.edit_inbox(|inbox| inbox.cycle_header(column));
+                    self.notify_sort();
+                }
+                None
+            }
+            Action::SortBy(HeaderKey::Item(column)) => {
+                let mut sorted = false;
+                self.edit_items(|state| sorted = state.cycle_header(column));
+                if sorted {
+                    self.notify_sort();
+                }
+                None
+            }
+            Action::FlipSortDir if self.surface == Surface::Inbox => {
+                self.edit_inbox(InboxState::flip_dir);
+                self.notify_sort();
+                None
+            }
+            Action::FlipSortDir => {
+                self.edit_items(ItemsState::flip_dir);
+                self.notify_sort();
+                None
+            }
+            Action::OpenColumns => {
+                if self.current_items().is_some() {
+                    self.overlay = Some(Overlay::Form {
+                        purpose: Purpose::Columns,
+                        form: actions::columns_form(&self.item_columns),
+                    });
+                }
+                None
+            }
+            Action::CopyItem(id) => {
+                self.notify(format!("copied {id}"));
+                Some(Action::Copy(id))
+            }
             Action::ToggleClosed if self.surface == Surface::Inbox => {
                 self.edit_inbox(|inbox| {
                     inbox.show_closed = !inbox.show_closed;
@@ -929,6 +980,7 @@ impl App {
                 filter: std::mem::take(&mut state.filter),
                 group: state.group,
                 sort: state.sort,
+                sort_dir: state.sort_dir,
                 show_closed: state.show_closed,
                 ..ItemsState::new(surface)
             };
@@ -1037,7 +1089,10 @@ impl App {
         let Some(state) = self.items.get_mut(&self.surface) else {
             return;
         };
-        let order = |s: &ItemsState| (s.group, s.sort, s.show_closed, s.filter.clone());
+        let order = |s: &ItemsState| {
+            let arrangement = (s.group, s.sort, s.sort_dir);
+            (arrangement, s.show_closed, s.filter.clone())
+        };
         let before = state.cursor.clone();
         let order_before = order(state);
         edit(state);
@@ -1052,10 +1107,11 @@ impl App {
 
     /// [`App::edit_items`] for the Inbox.
     fn edit_inbox(&mut self, edit: impl FnOnce(&mut InboxState)) {
+        let order = |i: &InboxState| (i.show_closed, i.sort, i.sort_dir);
         let before = self.inbox.cursor.clone();
-        let closed = self.inbox.show_closed;
+        let order_before = order(&self.inbox);
         edit(&mut self.inbox);
-        if self.inbox.show_closed != closed {
+        if order(&self.inbox) != order_before {
             self.inbox.scroll_pinned = false;
         }
         if self.inbox.cursor != before {
@@ -1245,6 +1301,26 @@ impl App {
                 }
                 None
             }
+            Purpose::Columns => {
+                let columns = actions::columns_from(&form);
+                if !columns.is_empty() {
+                    self.item_columns = columns;
+                }
+                None
+            }
+        }
+    }
+
+    /// Announces the current item surface's or the Inbox's sort and its direction.
+    fn notify_sort(&mut self) {
+        let sort = if self.surface == Surface::Inbox {
+            Some((self.inbox.sort.label(), self.inbox.sort_dir))
+        } else {
+            self.current_items()
+                .map(|state| (state.sort.label(), state.sort_dir))
+        };
+        if let Some((label, dir)) = sort {
+            self.notify(format!("sort by {label} {}", dir.label()));
         }
     }
 
@@ -1624,7 +1700,7 @@ mod tests {
     use super::*;
     use crate::ledger::{ItemRow, Kind, StatusClass};
     use crate::model::fixture;
-    use crate::surface::{Group, Sort};
+    use crate::surface::{Group, InboxColumn, Sort, SortDir};
 
     /// Steps through ids by one, as a stand-in for a view's layout.
     struct Step;
@@ -2288,6 +2364,92 @@ mod tests {
             app.apply(Action::CopyId),
             Some(Action::Copy("I2".to_string()))
         );
+    }
+
+    #[test]
+    fn a_header_click_cycles_the_sort_and_d_flips_it() {
+        let mut app = review_app();
+        app.apply(Action::SwitchSurface(Surface::Review));
+        let state = |app: &App| {
+            let state = app.current_items().expect("the review surface");
+            (state.sort, state.sort_dir)
+        };
+        let effort = HeaderKey::Item(ItemColumn::Effort);
+        app.apply(Action::SortBy(effort));
+        assert_eq!(state(&app), (Sort::Effort, SortDir::Asc));
+        assert_eq!(app.live_notice(Instant::now()), Some("sort by effort asc"));
+        app.apply(Action::SortBy(effort));
+        assert_eq!(state(&app), (Sort::Effort, SortDir::Desc));
+        app.apply(Action::SortBy(effort));
+        assert_eq!(
+            state(&app),
+            (Sort::Id, SortDir::Asc),
+            "a third click is off"
+        );
+
+        app.items
+            .get_mut(&Surface::Review)
+            .expect("review")
+            .scroll_pinned = true;
+        app.apply(Action::FlipSortDir);
+        assert_eq!(state(&app), (Sort::Id, SortDir::Desc));
+        assert!(
+            !app.items[&Surface::Review].scroll_pinned,
+            "a new direction lets the list follow the cursor again"
+        );
+
+        app.apply_ledger(
+            review("other.toml", "v1", &[("R7", "open")]),
+            Instant::now(),
+        );
+        assert_eq!(
+            state(&app),
+            (Sort::Id, SortDir::Desc),
+            "a new file keeps it"
+        );
+
+        let mut app = inbox_app();
+        app.apply(Action::SortBy(HeaderKey::Inbox(InboxColumn::Kind)));
+        assert_eq!(
+            (app.inbox.sort, app.inbox.sort_dir),
+            (InboxColumn::Kind, SortDir::Asc)
+        );
+        app.apply(Action::FlipSortDir);
+        assert_eq!(app.inbox.sort_dir, SortDir::Desc);
+    }
+
+    #[test]
+    fn an_id_cell_click_copies_the_id_with_a_notice() {
+        let mut app = review_app();
+        app.apply(Action::SwitchSurface(Surface::Review));
+        assert_eq!(
+            app.apply(Action::CopyItem("R3".to_string())),
+            Some(Action::Copy("R3".to_string()))
+        );
+        assert_eq!(app.live_notice(Instant::now()), Some("copied R3"));
+    }
+
+    #[test]
+    fn the_column_picker_sets_the_item_columns() {
+        let mut app = app();
+        app.apply(Action::OpenColumns);
+        assert!(app.overlay.is_none(), "Tasks has no columns to pick");
+
+        let mut app = review_app();
+        app.apply(Action::SwitchSurface(Surface::Review));
+        assert_eq!(app.item_columns, ItemColumn::ALL);
+        app.apply(Action::OpenColumns);
+        assert!(matches!(
+            app.overlay,
+            Some(Overlay::Form {
+                purpose: Purpose::Columns,
+                ..
+            })
+        ));
+        key(&mut app, KeyCode::Char(' '));
+        key(&mut app, KeyCode::Enter);
+        assert!(app.overlay.is_none());
+        assert_eq!(app.item_columns, ItemColumn::ALL[1..]);
     }
 
     #[test]

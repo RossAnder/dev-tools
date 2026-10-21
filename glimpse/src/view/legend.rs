@@ -36,7 +36,7 @@ const KEYS: &[(&str, &str)] = &[
     ("s  a", "flows / auto-follow flows"),
     ("d", "density: auto, compact, comfortable"),
     ("H", "key hints: short, full, hidden"),
-    ("y", "copy the row's or the task's id"),
+    ("y", "copy the row's or the task's id (or click an id)"),
     ("v", "release the mouse to select text, or take it back"),
     (
         "1-6",
@@ -45,6 +45,8 @@ const KEYS: &[(&str, &str)] = &[
     ("space", "mark the item and move on"),
     ("V", "mark every visible item"),
     ("g  S", "items: next group-by / sort"),
+    ("D", "items, inbox: flip the sort direction"),
+    ("C", "items: choose the columns"),
     ("c", "items, inbox: show / hide closed"),
     ("m  e", "items: action menu / classify"),
     ("r  n", "request or note on the items / capture one"),
@@ -181,6 +183,14 @@ fn lines(theme: &Theme) -> Vec<Line<'static>> {
     ] {
         out.push(row(Span::styled("M", style), text));
     }
+    out.push(glyphs(
+        theme,
+        vec![
+            Span::styled("▲", theme.sort_mark),
+            Span::styled("▼", theme.sort_mark),
+        ],
+        "sorted ascending / descending; click a header to sort",
+    ));
 
     heading(&mut out, "Items");
     for (class, text) in [
@@ -431,7 +441,7 @@ mod tests {
     fn every_bound_letter_key_has_a_legend_row() {
         let keys: String = KEYS.iter().map(|(key, _)| format!(" {key} ")).collect();
         for key in [
-            "m", "e", "r", "n", "u", "/", "w", "c", "enter", "J", "K", "H", "y", "v",
+            "m", "e", "r", "n", "u", "/", "w", "c", "enter", "J", "K", "H", "y", "v", "D", "C",
         ] {
             assert!(keys.contains(&format!(" {key} ")), "{key} is missing");
         }

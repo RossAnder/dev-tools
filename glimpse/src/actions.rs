@@ -205,6 +205,8 @@ pub(crate) enum Purpose {
     Transition(Selection, Transition),
     Classify(Selection),
     Input(Box<InputForm>),
+    /// The column picker; submitting it sets the item surfaces' columns.
+    Columns,
 }
 
 /// The modal on top of the surfaces. While one is open it takes every key.
