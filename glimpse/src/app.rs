@@ -20,6 +20,8 @@ use crate::config::{
     COLUMN_RANGE, Config, Density, DensityPref, HintMode, ItemColumn, Orientation, OrientationPref,
     PANEL_PERCENT_RANGE, Split, ViewKind,
 };
+use crate::diagram::Zoom;
+use crate::diagram::subset::Focus;
 use crate::diff::{Changes, diff};
 use crate::flows::{FlowEntry, ScopeEntry, Scopes};
 use crate::form::{FieldValue, Form, FormOutcome};
@@ -28,6 +30,7 @@ use crate::model::{AgentStatus, Index, Snapshot, TaskStatus};
 use crate::scroll;
 use crate::surface::{HeaderKey, InboxState, ItemsState, Surface};
 use crate::theme::Theme;
+use crate::theme::sets::{self, ThemeSet};
 use crate::writer::{WriteOutcome, WriteRequest};
 use crate::writes::{Saving, Writes};
 
@@ -125,7 +128,7 @@ pub(crate) struct Regions {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Action {
-    /// A selection move, or a cursor move while the selector is open.
+    /// A selection move, or a cursor move while the theme picker or the selector is open.
     Move(Dir),
     NextView,
     PrevView,
@@ -140,6 +143,18 @@ pub(crate) enum Action {
     /// The pointer's column and row while a drag is on.
     DragTo(u16, u16),
     DragEnd,
+    /// A left press on diagram background; the following drags pan the view.
+    PanStart(u16, u16),
+    /// The pointer's column and row while a pan is on; the view moves with the pointer
+    /// through [`Action::ScrollView`], which pins it.
+    PanTo(u16, u16),
+    PanEnd,
+    /// Steps the diagram's focus on the selection through off, ancestry, subtree and both.
+    CycleFocus,
+    /// Zooms the diagram in (`true`, towards titles) or out (towards status glyphs).
+    Zoom(bool),
+    /// Turns on or off laying out only the tasks around the selection that fit the view.
+    ToggleFit,
     ToggleFollow,
     ToggleAutoFlow,
     ToggleActivity,
@@ -148,8 +163,9 @@ pub(crate) enum Action {
     SelectorPrev,
     /// Opens details, then makes them full-screen, then closes them; compact
     /// density skips the full-screen step, since its modal already fills the body.
-    /// With the selector open it switches to the flow under the cursor instead, and on an
-    /// Inbox question it opens the answer form.
+    /// With the theme picker open it keeps the set under the cursor, with the selector open
+    /// it switches to the flow under the cursor instead, and on an Inbox question it opens
+    /// the answer form.
     Details,
     ScrollDetails(Scroll),
     /// Pages or jumps whatever has focus: the legend, the selector, full-screen details,
@@ -196,6 +212,8 @@ pub(crate) enum Action {
     FlipSortDir,
     /// Opens the column picker; item surfaces only.
     OpenColumns,
+    /// Opens the theme picker, or closes it the way `Back` does.
+    ToggleThemes,
     /// An id-cell click: copies the id by handing back [`Action::Copy`].
     CopyItem(String),
     /// Shows or hides the done and declined rows of the current item surface.
@@ -213,8 +231,9 @@ pub(crate) enum Action {
     /// Puts back the rows glimpse's last applied write changed.
     Undo,
     OpenFilter,
-    /// Closes an open form or prompt, else clears the current item surface's marks, else
-    /// closes the topmost panel, or quits when none is open.
+    /// Cancels the theme picker, else closes an open form or prompt, else clears the
+    /// current item surface's marks, else closes the topmost panel, or quits when none is
+    /// open.
     Back,
     Quit,
 }
@@ -226,6 +245,16 @@ pub(crate) enum SelectorEntry<'a> {
     /// A flow holding ledgers but no task store.
     LedgerOnly(&'a str),
     Scope(&'a ScopeEntry),
+}
+
+/// The open theme picker. Moving its cursor shows the set under it at once; cancelling
+/// shows `original` again.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ThemePicker {
+    /// An index into [`sets::SETS`].
+    pub(crate) cursor: usize,
+    /// The set shown when the picker opened.
+    pub(crate) original: String,
 }
 
 pub(crate) struct App {
@@ -247,6 +276,12 @@ pub(crate) struct App {
     pub(crate) show_implied: bool,
     /// Needs edges `(from, to)` another path of needs edges implies.
     pub(crate) implied: HashSet<(u32, u32)>,
+    /// Which neighbourhood of the selection the diagram lays out.
+    pub(crate) diagram_focus: Focus,
+    pub(crate) diagram_zoom: Zoom,
+    /// Whether a diagram that overflows the view lays out only the tasks around the
+    /// selection that fit; off, the whole layout is drawn and can be panned.
+    pub(crate) diagram_fit: bool,
     pub(crate) legend_open: bool,
     /// The legend's first visible line and the bounds the last frame drew.
     pub(crate) legend_scroll: u16,
@@ -254,6 +289,8 @@ pub(crate) struct App {
     pub(crate) legend_page: u16,
     /// A drag on the divider is under way.
     pub(crate) dragging: bool,
+    /// The pointer cell a diagram pan last moved from, while the press is held.
+    pub(crate) pan: Option<(u16, u16)>,
     pub(crate) selected: Option<u32>,
     /// The crossings the traversal view made to reach the selection, oldest first.
     /// Any selection change a navigator's `walk` did not make empties it.
@@ -286,6 +323,15 @@ pub(crate) struct App {
     pub(crate) stale_deadlines: HashMap<String, SystemTime>,
     pub(crate) stale_after: Duration,
     pub(crate) theme: Theme,
+    /// The name of the set `theme` was built from.
+    pub(crate) theme_set: String,
+    /// The config's `[theme]` tokens, laid over whichever set is shown.
+    theme_overrides: HashMap<String, String>,
+    /// The config's `[theme.<set>]` tokens, keyed by set name.
+    theme_per_set: HashMap<String, HashMap<String, String>>,
+    /// `NO_COLOR` keeps the theme `mono`, so the picker does not open.
+    no_color: bool,
+    pub(crate) theme_picker: Option<ThemePicker>,
     pub(crate) nav: Option<Box<dyn Navigator>>,
     pub(crate) density: DensityPref,
     /// The density the last frame drew in; `Details` and `Back` read it.
@@ -349,6 +395,15 @@ impl App {
             OrientationPref::Fixed(o) => o,
             OrientationPref::Auto => Orientation::Vertical,
         };
+        let set = if config.no_color {
+            &sets::MONO
+        } else {
+            config
+                .theme_base
+                .as_deref()
+                .and_then(sets::by_name)
+                .unwrap_or(&sets::KANSO_ZEN)
+        };
         let mut app = App {
             index: snapshot.index(),
             implied: implied_set(&snapshot),
@@ -360,11 +415,15 @@ impl App {
             resolved_split: None,
             cell_aspect: config.cell_aspect,
             show_implied: false,
+            diagram_focus: Focus::Off,
+            diagram_zoom: Zoom::Ids,
+            diagram_fit: true,
             legend_open: false,
             legend_scroll: 0,
             legend_max_scroll: 0,
             legend_page: 1,
             dragging: false,
+            pan: None,
             selected: None,
             trail: Vec::new(),
             follow: true,
@@ -384,7 +443,12 @@ impl App {
             stale_agents: HashSet::new(),
             stale_deadlines: HashMap::new(),
             stale_after: Duration::from_secs(config.stale_after_s),
-            theme: Theme::build(&config.theme, config.no_color),
+            theme: Theme::default(),
+            theme_set: String::new(),
+            theme_overrides: config.theme.clone(),
+            theme_per_set: config.theme_sets.clone(),
+            no_color: config.no_color,
+            theme_picker: None,
             nav: None,
             density: config.density,
             resolved_density: config.density.resolve(u16::MAX, config.compact_below),
@@ -418,6 +482,7 @@ impl App {
             overlay: None,
             writes: Writes::default(),
         };
+        app.show_set(set);
         app.refresh_stale();
         app.reselect();
         app
@@ -427,6 +492,62 @@ impl App {
     /// `SetCapture`, or `SwitchFlow` to a flow other than the current one.
     pub(crate) fn apply(&mut self, action: Action) -> Option<Action> {
         match action {
+            Action::Move(dir) if self.theme_picker.is_some() => {
+                let delta = match dir {
+                    Dir::Up => -1,
+                    Dir::Down => 1,
+                    Dir::Left | Dir::Right => return None,
+                };
+                if let Some(picker) = &self.theme_picker {
+                    let last = sets::SETS.len() - 1;
+                    let cursor = picker.cursor.saturating_add_signed(delta).min(last);
+                    self.preview_set(cursor);
+                }
+                None
+            }
+            Action::Page(scroll) if self.theme_picker.is_some() => {
+                if let Some(picker) = &self.theme_picker
+                    && let Some(cursor) = scroll::step(
+                        Some(picker.cursor),
+                        sets::SETS.len(),
+                        sets::SETS.len(),
+                        scroll,
+                    )
+                {
+                    self.preview_set(cursor);
+                }
+                None
+            }
+            Action::Details if self.theme_picker.is_some() => {
+                self.theme_picker = None;
+                self.notify(format!("theme {}", self.theme_set));
+                None
+            }
+            Action::ToggleThemes | Action::Back if self.theme_picker.is_some() => {
+                if let Some(picker) = self.theme_picker.take() {
+                    let original = sets::by_name(&picker.original).unwrap_or(&sets::KANSO_ZEN);
+                    self.show_set(original);
+                }
+                None
+            }
+            Action::ToggleLegend | Action::ToggleSelector if self.theme_picker.is_some() => None,
+            Action::ToggleThemes if self.no_color => {
+                self.notify("NO_COLOR keeps the theme mono".to_owned());
+                None
+            }
+            Action::ToggleThemes => {
+                self.legend_open = false;
+                self.selector_open = false;
+                let cursor = sets::SETS
+                    .iter()
+                    .position(|set| set.name == self.theme_set)
+                    .unwrap_or(0);
+                self.theme_picker = Some(ThemePicker {
+                    cursor,
+                    original: self.theme_set.clone(),
+                });
+                None
+            }
             Action::Move(dir) if self.legend_open => {
                 match dir {
                     Dir::Up => self.scroll_legend(Scroll::Up(1)),
@@ -502,6 +623,71 @@ impl App {
             }
             Action::DragEnd => {
                 self.dragging = false;
+                None
+            }
+            Action::PanStart(column, row) => {
+                self.pan = Some((column, row));
+                None
+            }
+            Action::PanTo(column, row) => {
+                let (from_column, from_row) = self.pan?;
+                self.pan = Some((column, row));
+                let across = i32::from(from_column) - i32::from(column);
+                let down = i32::from(from_row) - i32::from(row);
+                if self.surface != Surface::Tasks || (across, down) == (0, 0) {
+                    return None;
+                }
+                self.apply(Action::ScrollView(across, down))
+            }
+            Action::PanEnd => {
+                self.pan = None;
+                None
+            }
+            Action::CycleFocus => {
+                self.diagram_focus = match self.diagram_focus {
+                    Focus::Off => Focus::Ancestry,
+                    Focus::Ancestry => Focus::Subtree,
+                    Focus::Subtree => Focus::Both,
+                    Focus::Both => Focus::Off,
+                };
+                self.nav = None;
+                self.scroll_pinned = false;
+                let label = match self.diagram_focus {
+                    Focus::Off => "off",
+                    Focus::Ancestry => "ancestry",
+                    Focus::Subtree => "subtree",
+                    Focus::Both => "ancestry and subtree",
+                };
+                self.notify(format!("focus {label}"));
+                None
+            }
+            Action::Zoom(closer) => {
+                self.diagram_zoom = match (self.diagram_zoom, closer) {
+                    (Zoom::Tight, true) => Zoom::Ids,
+                    (Zoom::Ids | Zoom::Titles, true) => Zoom::Titles,
+                    (Zoom::Titles, false) => Zoom::Ids,
+                    (Zoom::Ids | Zoom::Tight, false) => Zoom::Tight,
+                };
+                self.nav = None;
+                self.scroll_pinned = false;
+                let label = match self.diagram_zoom {
+                    Zoom::Titles => "titles",
+                    Zoom::Ids => "ids",
+                    Zoom::Tight => "tight",
+                };
+                self.notify(format!("zoom {label}"));
+                None
+            }
+            Action::ToggleFit => {
+                self.diagram_fit = !self.diagram_fit;
+                self.nav = None;
+                self.scroll_pinned = false;
+                let state = if self.diagram_fit {
+                    "fit to the view"
+                } else {
+                    "every task laid out"
+                };
+                self.notify(format!("diagram {state}"));
                 None
             }
             Action::ToggleFollow => {
@@ -655,8 +841,9 @@ impl App {
                 }
             },
             Action::ToggleCapture => {
-                // A drag whose release goes uncaptured would otherwise never end.
+                // A drag or pan whose release goes uncaptured would otherwise never end.
                 self.dragging = false;
+                self.pan = None;
                 let on = !self.mouse_captured;
                 self.capture_released = !on;
                 Some(Action::SetCapture(on))
@@ -1422,6 +1609,25 @@ impl App {
 
     fn notify(&mut self, text: String) {
         self.notify_for(text, NOTICE);
+    }
+
+    /// Rebuilds `theme` from `set` under the config's overrides.
+    fn show_set(&mut self, set: &ThemeSet) {
+        let none = HashMap::new();
+        let per_set = self.theme_per_set.get(set.name).unwrap_or(&none);
+        self.theme = Theme::from_set(set, &self.theme_overrides, per_set);
+        self.theme_set = set.name.to_owned();
+    }
+
+    /// Puts the picker's cursor on `cursor` and shows that set.
+    fn preview_set(&mut self, cursor: usize) {
+        let Some(set) = sets::SETS.get(cursor) else {
+            return;
+        };
+        if let Some(picker) = &mut self.theme_picker {
+            picker.cursor = cursor;
+        }
+        self.show_set(set);
     }
 
     pub(crate) fn notify_error(&mut self, text: String) {
@@ -2457,11 +2663,13 @@ mod tests {
         let mut app = app();
         assert!(app.mouse_captured, "capture starts as the config's mouse");
         app.dragging = true;
+        app.pan = Some((3, 4));
         assert_eq!(
             app.apply(Action::ToggleCapture),
             Some(Action::SetCapture(false))
         );
         assert!(!app.dragging);
+        assert_eq!(app.pan, None);
         app.mouse_captured = false;
         assert_eq!(
             app.apply(Action::ToggleCapture),
@@ -2479,6 +2687,145 @@ mod tests {
         app.apply(Action::CycleHints);
         app.apply(Action::CycleHints);
         assert_eq!(app.hints, HintMode::Short);
+    }
+
+    #[test]
+    fn focus_cycles_and_zoom_steps_between_its_ends_with_notices() {
+        let mut app = app();
+        assert_eq!(
+            (app.diagram_focus, app.diagram_zoom, app.diagram_fit),
+            (Focus::Off, Zoom::Ids, true)
+        );
+        let mut seen = Vec::new();
+        for _ in 0..4 {
+            app.apply(Action::CycleFocus);
+            seen.push(app.diagram_focus);
+        }
+        assert_eq!(
+            seen,
+            [Focus::Ancestry, Focus::Subtree, Focus::Both, Focus::Off]
+        );
+        assert_eq!(app.live_notice(Instant::now()), Some("focus off"));
+
+        app.apply(Action::Zoom(true));
+        assert_eq!(app.diagram_zoom, Zoom::Titles);
+        app.apply(Action::Zoom(true));
+        assert_eq!(app.diagram_zoom, Zoom::Titles, "titles is the closest");
+        app.apply(Action::Zoom(false));
+        app.apply(Action::Zoom(false));
+        assert_eq!(app.diagram_zoom, Zoom::Tight);
+        app.apply(Action::Zoom(false));
+        assert_eq!(app.diagram_zoom, Zoom::Tight, "tight is the furthest");
+        assert_eq!(app.live_notice(Instant::now()), Some("zoom tight"));
+
+        app.scroll_pinned = true;
+        app.apply(Action::ToggleFit);
+        assert!(!app.diagram_fit);
+        assert!(!app.scroll_pinned, "a new layout starts unpinned");
+        assert_eq!(
+            app.live_notice(Instant::now()),
+            Some("diagram every task laid out")
+        );
+    }
+
+    #[test]
+    fn a_pan_scrolls_the_view_with_the_pointer_and_pins_it() {
+        let mut app = app();
+        app.apply(Action::PanTo(5, 5));
+        assert_eq!(app.scroll_nudge, (0, 0), "no pan is on");
+        app.apply(Action::PanStart(10, 10));
+        app.apply(Action::PanTo(13, 8));
+        assert_eq!(app.scroll_nudge, (-3, 2));
+        assert!(app.scroll_pinned);
+        app.apply(Action::PanTo(12, 8));
+        assert_eq!(app.scroll_nudge, (-2, 2), "each move scrolls from the last");
+        app.apply(Action::PanEnd);
+        assert_eq!(app.pan, None);
+        app.apply(Action::PanTo(0, 0));
+        assert_eq!(app.scroll_nudge, (-2, 2));
+    }
+
+    fn set_theme(name: &str) -> Theme {
+        let set = sets::by_name(name).expect(name);
+        Theme::from_set(set, &HashMap::new(), &HashMap::new())
+    }
+
+    #[test]
+    fn the_theme_starts_from_the_base_set_and_no_color_forces_mono() {
+        assert_eq!(app().theme_set, "kanso-zen");
+        assert_eq!(app().theme, set_theme("kanso-zen"));
+
+        let config = Config {
+            theme_base: Some("ansi".to_owned()),
+            ..Config::default()
+        };
+        let app = App::new(fixture(), &config);
+        assert_eq!(app.theme_set, "ansi");
+        assert_eq!(app.theme, set_theme("ansi"));
+
+        let config = Config {
+            theme_base: Some("ansi".to_owned()),
+            no_color: true,
+            ..Config::default()
+        };
+        let mut app = App::new(fixture(), &config);
+        assert_eq!(app.theme, set_theme("mono"));
+        app.apply(Action::ToggleThemes);
+        assert!(app.theme_picker.is_none(), "NO_COLOR keeps mono");
+    }
+
+    #[test]
+    fn the_theme_picker_previews_on_move_and_back_restores_the_original() {
+        let mut app = app();
+        app.selector_open = true;
+        app.apply(Action::ToggleThemes);
+        assert!(!app.selector_open, "the picker replaces the selector");
+        assert_eq!(
+            app.theme_picker,
+            Some(ThemePicker {
+                cursor: 0,
+                original: "kanso-zen".to_owned(),
+            })
+        );
+        app.apply(Action::Move(Dir::Down));
+        assert_eq!(app.theme_set, "kanso-pearl");
+        assert_eq!(app.theme, set_theme("kanso-pearl"));
+        app.apply(Action::Page(Scroll::Bottom));
+        assert_eq!(app.theme, set_theme("mono"));
+        app.apply(Action::Move(Dir::Down));
+        assert_eq!(app.theme_picker.as_ref().map(|p| p.cursor), Some(3));
+
+        assert_eq!(
+            app.apply(Action::Back),
+            None,
+            "Back closes the picker first"
+        );
+        assert!(app.theme_picker.is_none());
+        assert_eq!(app.theme_set, "kanso-zen");
+        assert_eq!(app.theme, set_theme("kanso-zen"));
+    }
+
+    #[test]
+    fn enter_keeps_the_previewed_theme_with_a_notice() {
+        let config = Config {
+            theme: HashMap::from([("accent".to_owned(), "#123456".to_owned())]),
+            ..Config::default()
+        };
+        let mut app = App::new(fixture(), &config);
+        app.apply(Action::ToggleThemes);
+        app.apply(Action::Move(Dir::Down));
+        app.apply(Action::Move(Dir::Down));
+        app.apply(Action::Details);
+        assert!(app.theme_picker.is_none());
+        assert!(!app.details_open, "Enter went to the picker");
+        assert_eq!(app.theme_set, "ansi");
+        let ansi = sets::by_name("ansi").expect("ansi");
+        assert_eq!(
+            app.theme,
+            Theme::from_set(ansi, &config.theme, &HashMap::new()),
+            "the config's overrides stay laid over the kept set"
+        );
+        assert_eq!(app.live_notice(Instant::now()), Some("theme ansi"));
     }
 
     #[test]

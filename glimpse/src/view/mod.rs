@@ -17,8 +17,10 @@ pub(crate) mod items;
 pub(crate) mod layers;
 pub(crate) mod legend;
 pub(crate) mod markdown;
+pub(crate) mod panel;
 pub(crate) mod selector;
 pub(crate) mod table;
+pub(crate) mod themes;
 
 use std::time::{Instant, SystemTime};
 
@@ -150,11 +152,12 @@ pub(crate) fn render(
     let compact = density == Density::Compact;
     let now = Instant::now();
     let [head, body, foot] = Layout::vertical([
-        Constraint::Length(header::height(app, compact)),
+        Constraint::Length(header::height(app, compact, area.height)),
         Constraint::Min(0),
         Constraint::Length(footer::height(app, area.width, now)),
     ])
     .areas(area);
+    let body = if compact { body } else { gutter(body) };
 
     let (view_area, panels) = split_body(app, config, body, density);
     let orientation_area = view_area.unwrap_or(body);
@@ -170,7 +173,7 @@ pub(crate) fn render(
     });
     app.resolved_orientation = orientation;
 
-    let tabs = header::render(frame, head, app, compact);
+    let tabs = header::render(frame, head, app, compact, area.height);
     cache.set_implied(app.show_implied);
     let hits = match view_area {
         Some(view_area) => draw_surface(frame, view_area, app, orientation, cache),
@@ -210,11 +213,23 @@ pub(crate) fn render(
         divider,
     };
     footer::render(frame, foot, app, now);
+    let form_open = app.overlay.as_ref().and_then(Overlay::form).is_some();
+    if app.selector_open || app.legend_open || app.theme_picker.is_some() || form_open {
+        // The footer keeps full strength: it carries the open overlay's keys.
+        let behind = Rect {
+            height: foot.y.saturating_sub(area.y),
+            ..area
+        };
+        frame.buffer_mut().set_style(behind, app.theme.backdrop);
+    }
     if app.selector_open {
         selector::render(frame, area, app);
     }
     if app.legend_open {
         legend::render(frame, area, app);
+    }
+    if app.theme_picker.is_some() {
+        themes::render(frame, area, app);
     }
     // The filter prompt is drawn in the item list's facet row, not as a modal.
     if let Some(form) = app.overlay.as_ref().and_then(Overlay::form) {
@@ -223,6 +238,16 @@ pub(crate) fn render(
 
     let nav = navigator(app, orientation, cache);
     app.nav = Some(nav);
+}
+
+/// `body` less a blank column on the left, the comfortable-density gutter.
+fn gutter(body: Rect) -> Rect {
+    let inset = body.width.min(1);
+    Rect {
+        x: body.x + inset,
+        width: body.width - inset,
+        ..body
+    }
 }
 
 /// The view's rect and where the panels go. Compact density leaves the view the whole
@@ -749,6 +774,63 @@ mod tests {
         assert!(screen.contains("legend") && screen.contains("shares a file"));
         app.apply(Action::Back);
         assert!(!app.legend_open);
+    }
+
+    /// Renders one frame at `width` x `height` and returns its buffer.
+    fn buffer(app: &mut App, width: u16, height: u16) -> ratatui::buffer::Buffer {
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("terminal");
+        let mut cache = DiagramCache::default();
+        let tail = TailView::default();
+        terminal
+            .draw(|frame| render(frame, app, &Config::default(), &mut cache, &tail))
+            .expect("draw");
+        terminal.backend().buffer().clone()
+    }
+
+    #[test]
+    fn an_open_legend_restyles_the_frame_behind_it_with_the_backdrop() {
+        let mut app = app();
+        let backdrop = app.theme.backdrop.fg.expect("a backdrop colour");
+        let closed = buffer(&mut app, 120, 60);
+        assert_ne!(
+            closed[(0, 0)].fg,
+            backdrop,
+            "no backdrop without an overlay"
+        );
+
+        app.apply(Action::ToggleLegend);
+        let open = buffer(&mut app, 120, 60);
+        assert_eq!(
+            open[(0, 0)].fg,
+            backdrop,
+            "the header corner, outside the legend"
+        );
+        let body = app.regions.body;
+        assert_eq!(open[(body.right() - 1, body.y)].fg, backdrop);
+        assert_ne!(open[(0, 59)].fg, backdrop, "the footer keeps full strength");
+    }
+
+    #[test]
+    fn comfortable_density_leaves_a_blank_gutter_left_of_the_body() {
+        let mut app = app();
+        app.density = crate::config::DensityPref::Fixed(Density::Comfortable);
+        app.apply(Action::Details);
+        let rows = draw(&mut app, 120, 30);
+        let body = app.regions.body;
+        assert_eq!(body.x, 1, "the body starts one cell in");
+        assert_eq!(app.regions.view.expect("a view").x, 1);
+        for y in body.y..body.bottom() {
+            let row = &rows[usize::from(y)];
+            assert!(row.starts_with(' '), "row {y} column 0: {row:?}");
+        }
+        assert!(
+            (body.y..body.bottom()).any(|y| !rows[usize::from(y)][1..].trim().is_empty()),
+            "the body draws beside the gutter"
+        );
+
+        app.density = crate::config::DensityPref::Fixed(Density::Compact);
+        draw(&mut app, 120, 30);
+        assert_eq!(app.regions.body.x, 0, "compact has no gutter");
     }
 
     #[test]

@@ -20,9 +20,12 @@ fn latest_flow_event(app: &App) -> Option<&RecordEntry> {
         .find(|entry| matches!(entry.entry_type.as_str(), "status-transition" | "reconcile"))
 }
 
+/// Panes shorter than this drop the flow event row.
+const HISTORY_MIN_ROWS: u16 = 30;
+
 /// The second row's text: the source error, else the config warning, else
-/// the latest flow-level event.
-fn second_row(app: &App) -> Option<Line<'static>> {
+/// the latest flow-level event when the pane is `tall`.
+fn second_row(app: &App, tall: bool) -> Option<Line<'static>> {
     if let Some(error) = &app.source_error {
         return Some(Line::from(Span::styled(
             format!("! {error}"),
@@ -35,6 +38,9 @@ fn second_row(app: &App) -> Option<Line<'static>> {
             app.theme.warning,
         )));
     }
+    if !tall {
+        return None;
+    }
     latest_flow_event(app).map(|entry| {
         Line::from(Span::styled(
             format!("{} {}: {}", entry.date, entry.entry_type, entry.summary),
@@ -44,10 +50,11 @@ fn second_row(app: &App) -> Option<Line<'static>> {
 }
 
 /// The identity row and the surface tabs, plus a row when there is an error, a
-/// warning or a flow event to show. A `compact` header folds the tabs into its one
-/// row and drops the flow event, which is history rather than state.
-pub(crate) fn height(app: &App, compact: bool) -> u16 {
-    u16::try_from(rows(app, compact).len()).unwrap_or(u16::MAX)
+/// warning or, in a pane at least `HISTORY_MIN_ROWS` tall, a flow event to show. A
+/// `compact` header folds the tabs into its one row and drops the flow event, which
+/// is history rather than state.
+pub(crate) fn height(app: &App, compact: bool, pane_rows: u16) -> u16 {
+    u16::try_from(rows(app, compact, pane_rows).len()).unwrap_or(u16::MAX)
 }
 
 /// The cells a tab covers on its row: its first column and its width.
@@ -68,7 +75,7 @@ impl From<Line<'static>> for Row {
     }
 }
 
-fn rows(app: &App, compact: bool) -> Vec<Row> {
+fn rows(app: &App, compact: bool, pane_rows: u16) -> Vec<Row> {
     let mut rows = if compact {
         vec![compact_row(app)]
     } else {
@@ -77,7 +84,7 @@ fn rows(app: &App, compact: bool) -> Vec<Row> {
     let second = if compact && app.source_error.is_none() && app.warning.is_none() {
         None
     } else {
-        second_row(app)
+        second_row(app, pane_rows >= HISTORY_MIN_ROWS)
     };
     rows.extend(second.map(Row::from));
     rows
@@ -96,9 +103,10 @@ fn push_tab(
     tabs.push((start, width, surface));
 }
 
-/// A tab's count text: open rows, `—` while the surface has no ledger file read,
-/// and Inbox's unanswered questions marked `?`. Tasks has none.
-fn tab_count(app: &App, surface: Surface) -> Option<String> {
+/// A tab's count text: open rows, and Inbox's unanswered questions marked `?`.
+/// The outer `None` is Tasks, which has no count; the inner `None` is a surface whose
+/// ledger file has not been read.
+fn tab_count(app: &App, surface: Surface) -> Option<Option<String>> {
     let count = match surface {
         Surface::Tasks => return None,
         Surface::Inbox => app.inbox_unanswered().map(|n| {
@@ -120,12 +128,15 @@ fn tab_count(app: &App, surface: Surface) -> Option<String> {
                 open.count().to_string()
             }),
     };
-    Some(count.unwrap_or_else(|| "—".to_string()))
+    Some(count)
 }
 
-fn tab_style(app: &App, surface: Surface) -> Style {
+/// The active tab is flooded; a tab whose ledger is absent is faded.
+fn tab_style(app: &App, surface: Surface, absent: bool) -> Style {
     if app.surface == surface {
         app.theme.surface_tab_active
+    } else if absent {
+        app.theme.tab_empty
     } else {
         app.theme.surface_tab
     }
@@ -154,8 +165,9 @@ fn tabs_row(app: &App) -> Row {
         if !spans.is_empty() {
             spans.push(Span::raw(" "));
         }
-        let style = tab_style(app, surface);
-        let text = match tab_count(app, surface) {
+        let count = tab_count(app, surface);
+        let style = tab_style(app, surface, matches!(count, Some(None)));
+        let text = match count.flatten() {
             Some(count) => format!(" {} {count}", surface.label()),
             None => format!(" {}", surface.label()),
         };
@@ -173,7 +185,7 @@ fn tabs_row(app: &App) -> Row {
     }
 }
 
-/// `R12+3 O4 P— B6 I2?`: the item surfaces' tabs by initial, appended to the compact
+/// `R12+3 O4 P B6 I2?`: the item surfaces' tabs by initial, appended to the compact
 /// row's `spans`.
 fn compact_tabs(app: &App, spans: &mut Vec<Span<'static>>, tabs: &mut Vec<TabCells>) {
     let mut first = true;
@@ -185,8 +197,9 @@ fn compact_tabs(app: &App, spans: &mut Vec<Span<'static>>, tabs: &mut Vec<TabCel
             spans.push(Span::raw(" "));
         }
         first = false;
-        let style = tab_style(app, surface);
+        let style = tab_style(app, surface, count.is_none());
         let initial = surface.label().chars().next().unwrap_or(' ');
+        let count = count.unwrap_or_default();
         let mut tab = vec![Span::styled(format!("{initial}{count}"), style)];
         tab.extend(arrival_badge(app, surface, style));
         push_tab(spans, tabs, surface, tab);
@@ -289,14 +302,16 @@ fn running_chip(app: &App, text: String, running: usize) -> Span<'static> {
     }
 }
 
-/// Returns each tab's on-screen rect, clipped to `area`, for mouse hits.
+/// Returns each tab's on-screen rect, clipped to `area`, for mouse hits. `pane_rows` is
+/// the whole pane's height, which decides whether the flow event row is drawn.
 pub(crate) fn render(
     frame: &mut Frame,
     area: Rect,
     app: &App,
     compact: bool,
+    pane_rows: u16,
 ) -> Vec<(Rect, Surface)> {
-    let rows = rows(app, compact);
+    let rows = rows(app, compact, pane_rows);
     let mut targets = Vec::new();
     for (row, y) in rows.iter().zip(area.y..area.bottom()) {
         for &(start, width, surface) in &row.tabs {
@@ -330,10 +345,14 @@ mod tests {
     }
 
     fn draw_as(app: &App, compact: bool) -> Vec<String> {
+        draw_in(app, compact, 40)
+    }
+
+    fn draw_in(app: &App, compact: bool, pane_rows: u16) -> Vec<String> {
         let mut terminal = Terminal::new(TestBackend::new(100, 3)).expect("terminal");
         terminal
             .draw(|frame| {
-                render(frame, frame.area(), app, compact);
+                render(frame, frame.area(), app, compact, pane_rows);
             })
             .expect("draw");
         let buffer = terminal.backend().buffer().clone();
@@ -371,7 +390,20 @@ mod tests {
             "the third row carries the latest flow event: {:?}",
             rows[2]
         );
-        assert_eq!(height(&app, false), 3);
+        assert_eq!(height(&app, false, 40), 3);
+    }
+
+    #[test]
+    fn a_short_pane_has_no_history_row_but_keeps_a_source_error() {
+        let mut app = App::new(fixture(), &Config::default());
+        assert_eq!(height(&app, false, 24), 2);
+        assert_eq!(height(&app, false, 30), 3);
+        let rows = draw_in(&app, false, 24);
+        assert_eq!(rows[2], "", "{rows:?}");
+
+        app.source_error = Some("parse failed".to_string());
+        assert_eq!(height(&app, false, 24), 3);
+        assert!(draw_in(&app, false, 24)[2].contains("parse failed"));
     }
 
     fn rows_of(statuses: &[&str]) -> Vec<ItemRow> {
@@ -412,10 +444,10 @@ mod tests {
         let rows = draw(&app);
         assert_eq!(
             rows[1],
-            " Tasks   Review 2 +3   Optimise 1   Plan-review —   Backlog —   Inbox —"
+            " Tasks   Review 2 +3   Optimise 1   Plan-review   Backlog   Inbox"
         );
         assert!(
-            draw_as(&app, true)[0].ends_with("  R2+3 O1 P— B— I—"),
+            draw_as(&app, true)[0].ends_with("  R2+3 O1 P B I"),
             "{:?}",
             draw_as(&app, true)[0]
         );
@@ -423,7 +455,7 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(100, 3)).expect("terminal");
         let mut tabs = Vec::new();
         terminal
-            .draw(|frame| tabs = render(frame, frame.area(), &app, false))
+            .draw(|frame| tabs = render(frame, frame.area(), &app, false, 40))
             .expect("draw");
         let buffer = terminal.backend().buffer();
         let column = |needle: &str| {
@@ -447,6 +479,13 @@ mod tests {
             app.theme.surface_tab.fg.expect("a colour")
         );
         assert_ne!(buffer[(column("Review"), 1)].bg, fill);
+        for absent in ["Plan-review", "Backlog", "Inbox"] {
+            assert_eq!(
+                buffer[(column(absent), 1)].fg,
+                app.theme.tab_empty.fg.expect("a colour"),
+                "{absent} has no ledger"
+            );
+        }
         assert_eq!(
             buffer[(column("+3"), 1)].fg,
             app.theme.arrival_badge.fg.expect("a colour")
@@ -469,7 +508,7 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(100, 3)).expect("terminal");
         let mut tabs = Vec::new();
         terminal
-            .draw(|frame| tabs = render(frame, frame.area(), &app, true))
+            .draw(|frame| tabs = render(frame, frame.area(), &app, true, 40))
             .expect("draw");
         let surfaces: Vec<Surface> = tabs.iter().map(|(_, s)| *s).collect();
         assert_eq!(
@@ -483,9 +522,9 @@ mod tests {
             ],
             "Tasks has no folded tab"
         );
-        let at = rows[0].find("P—").expect("the plan-review tab");
+        let at = rows[0].find(" P ").expect("the plan-review tab") + 1;
         let x = u16::try_from(rows[0][..at].chars().count()).expect("column");
-        assert_eq!(tabs[2].0, Rect::new(x, 0, 2, 1));
+        assert_eq!(tabs[2].0, Rect::new(x, 0, 1, 1));
     }
 
     #[test]
@@ -525,9 +564,9 @@ mod tests {
     fn the_compact_header_is_one_short_row_unless_something_is_wrong() {
         let mut app = App::new(fixture(), &Config::default());
         let rows = draw_as(&app, true);
-        assert_eq!(rows[0], "demo-flow  3/8  ⟳   1▶   R— O— P— B— I—");
+        assert_eq!(rows[0], "demo-flow  3/8  ⟳   1▶   R O P B I");
         assert_eq!(rows[1], "", "the flow event is dropped");
-        assert_eq!(height(&app, true), 1);
+        assert_eq!(height(&app, true, 40), 1);
 
         app.follow = false;
         app.pending_changes = 2;
@@ -535,7 +574,7 @@ mod tests {
         let rows = draw_as(&app, true);
         assert!(rows[0].contains("⏸+2"), "{:?}", rows[0]);
         assert!(rows[1].contains("unknown config key"));
-        assert_eq!(height(&app, true), 2);
+        assert_eq!(height(&app, true, 40), 2);
     }
 
     #[test]
@@ -544,7 +583,7 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(100, 2)).expect("terminal");
         terminal
             .draw(|frame| {
-                render(frame, frame.area(), &app, false);
+                render(frame, frame.area(), &app, false, 40);
             })
             .expect("draw");
         let buffer = terminal.backend().buffer();
@@ -588,7 +627,7 @@ mod tests {
         let mut snap = fixture();
         snap.record.clear();
         let app = App::new(snap, &Config::default());
-        assert_eq!(height(&app, false), 2);
-        assert_eq!(height(&app, true), 1);
+        assert_eq!(height(&app, false, 40), 2);
+        assert_eq!(height(&app, true, 40), 1);
     }
 }

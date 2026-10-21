@@ -4,11 +4,9 @@
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Margin, Rect};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{
-    Block, Borders, Clear, Padding, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState,
-};
+use ratatui::widgets::{Clear, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState};
 
-use super::items;
+use super::{items, panel};
 use crate::app::App;
 use crate::ledger::{SEVERITIES, StatusClass};
 use crate::model::TaskStatus;
@@ -32,12 +30,17 @@ const KEYS: &[(&str, &str)] = &[
     ("[ ]", "shrink / grow the panel (or drag its edge)"),
     ("- =", "narrow / widen layer columns"),
     ("i", "diagram: show implied edges"),
+    ("F", "diagram focus: off, ancestry, subtree, both"),
+    ("z", "diagram: zoom out to status glyphs (or ctrl+wheel)"),
+    ("Z", "diagram: zoom in to titles (or ctrl+wheel)"),
+    ("x", "diagram: fit the view / show every task (drag pans)"),
     ("f", "follow the frontier"),
     ("s  a", "flows / auto-follow flows"),
     ("d", "density: auto, compact, comfortable"),
     ("H", "key hints: short, full, hidden"),
     ("y", "copy the row's or the task's id (or click an id)"),
     ("v", "release the mouse to select text, or take it back"),
+    ("T", "themes: preview with j k, enter keeps, esc reverts"),
     (
         "1-6",
         "surface: tasks review optimise plan-review backlog inbox",
@@ -68,11 +71,7 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         Constraint::Length(width.min(area.width)),
         Constraint::Length(height.min(area.height)),
     );
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(app.theme.border)
-        .title(Line::styled(" legend ", app.theme.border_title))
-        .padding(Padding::horizontal(1));
+    let block = panel::block(" legend ", &app.theme);
     let inner = block.inner(rect);
     let content_height = u16::try_from(lines.len()).unwrap_or(u16::MAX);
     let max_scroll = content_height.saturating_sub(inner.height);
@@ -190,6 +189,10 @@ fn lines(theme: &Theme) -> Vec<Line<'static>> {
             Span::styled("▼", theme.sort_mark),
         ],
         "sorted ascending / descending; click a header to sort",
+    ));
+    out.push(row(
+        super::chip("+3 hidden", theme.strong),
+        "diagram: tasks left out to fit the view",
     ));
 
     heading(&mut out, "Items");
@@ -316,7 +319,7 @@ mod tests {
     fn the_legend_scrolls_to_its_items_and_keys_sections() {
         let mut app = App::new(fixture(), &Config::default());
         app.legend_open = true;
-        let mut terminal = Terminal::new(TestBackend::new(100, 40)).expect("terminal");
+        let mut terminal = Terminal::new(TestBackend::new(100, 46)).expect("terminal");
         terminal
             .draw(|frame| render(frame, frame.area(), &mut app))
             .expect("draw");
@@ -442,6 +445,7 @@ mod tests {
         let keys: String = KEYS.iter().map(|(key, _)| format!(" {key} ")).collect();
         for key in [
             "m", "e", "r", "n", "u", "/", "w", "c", "enter", "J", "K", "H", "y", "v", "D", "C",
+            "T", "F", "z", "Z", "x",
         ] {
             assert!(keys.contains(&format!(" {key} ")), "{key} is missing");
         }

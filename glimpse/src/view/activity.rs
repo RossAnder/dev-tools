@@ -9,8 +9,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Padding, Paragraph};
+use ratatui::widgets::Paragraph;
 
+use super::panel;
 use crate::app::App;
 use crate::hook::parse_utc;
 use crate::model::{Agent, AgentStatus};
@@ -28,22 +29,13 @@ pub(crate) fn agent(app: &App) -> Option<&Agent> {
         .find(|agent| agent.status == AgentStatus::Running)
 }
 
-/// The panel's frame: themed border and title, a cell of padding inside each side.
-fn panel(app: &App, title: String) -> Block<'static> {
-    Block::default()
-        .borders(Borders::ALL)
-        .border_style(app.theme.border)
-        .title(Line::styled(title, app.theme.border_title))
-        .padding(Padding::horizontal(1))
-}
-
 pub(crate) fn render(frame: &mut Frame, area: Rect, app: &App, tail: &TailView, now: SystemTime) {
     let Some(agent) = agent(app) else {
         let message = match app.selected {
             Some(id) => format!("no running agent on task {id}"),
             None => "no task selected".to_string(),
         };
-        let block = panel(app, " activity ".to_string());
+        let block = panel::block(" activity ", &app.theme);
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(message, app.theme.secondary))).block(block),
             area,
@@ -52,7 +44,7 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, app: &App, tail: &TailView, 
     };
 
     let title = format!(" {} {} ", agent.agent_type, agent.id);
-    let block = panel(app, title);
+    let block = panel::block(&title, &app.theme);
 
     let mut status = Vec::new();
     if let Some(elapsed) = parse_utc(&agent.started_at).and_then(|start| {

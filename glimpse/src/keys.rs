@@ -55,6 +55,10 @@ pub(crate) fn map(event: KeyEvent) -> Option<Action> {
         KeyCode::Char('o') => Action::FlipOrientation,
         KeyCode::Char('|') => Action::FlipSplit,
         KeyCode::Char('i') => Action::ToggleImplied,
+        KeyCode::Char('F') => Action::CycleFocus,
+        KeyCode::Char('z') => Action::Zoom(false),
+        KeyCode::Char('Z') => Action::Zoom(true),
+        KeyCode::Char('x') => Action::ToggleFit,
         KeyCode::Char('?') => Action::ToggleLegend,
         KeyCode::Char('f') => Action::ToggleFollow,
         KeyCode::Char('s') => Action::ToggleSelector,
@@ -76,6 +80,7 @@ pub(crate) fn map(event: KeyEvent) -> Option<Action> {
         KeyCode::Char('S') => Action::CycleSort,
         KeyCode::Char('D') => Action::FlipSortDir,
         KeyCode::Char('C') => Action::OpenColumns,
+        KeyCode::Char('T') => Action::ToggleThemes,
         KeyCode::Char('c') => Action::ToggleClosed,
         KeyCode::Char('m') => Action::OpenMenu,
         KeyCode::Char('e') => Action::OpenClassify,
@@ -92,30 +97,24 @@ pub(crate) fn map(event: KeyEvent) -> Option<Action> {
 /// The wheel scrolls the details panel or the view under the pointer, never the
 /// selection; a left press on a header tab switches to its surface, one on a table header
 /// sorts by its column, one on an item's id cell copies the id, one elsewhere on a task or
-/// item row selects it, and one on or beside the divider starts a drag. Only the press
+/// item row selects it, one on or beside the divider starts a drag, and one on diagram
+/// background starts a pan. Ctrl+wheel over the diagram zooms it. Only the press
 /// edge of a click acts, the mouse counterpart of dropping key `Release`. Every other
 /// kind, including the motion reports capture turns on, maps to nothing. With a form or
 /// the filter prompt up, nothing reacts; with the legend up the wheel scrolls it and
-/// with the selector up the wheel moves its cursor, and nothing else reacts; with the
+/// with the theme picker or the selector up the wheel moves its cursor, and nothing else
+/// reacts; with the
 /// compact modal up, nothing in the body outside the details panel does.
 ///
-/// During a drag, left-button motion, bare motion and a re-sent left press all move
-/// the edge, since a touch hold-drag need not report as a left-button drag; any
+/// During a drag or a pan, left-button motion, bare motion and a re-sent left press all
+/// move it, since a touch hold-drag need not report as a left-button drag; any
 /// release, or a right or middle press, ends it.
 pub(crate) fn mouse(event: MouseEvent, app: &App) -> Option<Action> {
     if app.dragging {
-        return match event.kind {
-            MouseEventKind::Drag(MouseButton::Left)
-            | MouseEventKind::Moved
-            | MouseEventKind::Down(MouseButton::Left) => {
-                Some(Action::DragTo(event.column, event.row))
-            }
-            MouseEventKind::Up(_)
-            | MouseEventKind::Down(MouseButton::Right | MouseButton::Middle) => {
-                Some(Action::DragEnd)
-            }
-            _ => None,
-        };
+        return held(event, Action::DragTo, Action::DragEnd);
+    }
+    if app.pan.is_some() {
+        return held(event, Action::PanTo, Action::PanEnd);
     }
     if app.overlay.is_some() {
         return None;
@@ -124,6 +123,13 @@ pub(crate) fn mouse(event: MouseEvent, app: &App) -> Option<Action> {
         return match event.kind {
             MouseEventKind::ScrollDown => Some(Action::ScrollDetails(Scroll::Down(WHEEL_ROWS))),
             MouseEventKind::ScrollUp => Some(Action::ScrollDetails(Scroll::Up(WHEEL_ROWS))),
+            _ => None,
+        };
+    }
+    if app.theme_picker.is_some() {
+        return match event.kind {
+            MouseEventKind::ScrollDown => Some(Action::Move(Dir::Down)),
+            MouseEventKind::ScrollUp => Some(Action::Move(Dir::Up)),
             _ => None,
         };
     }
@@ -146,6 +152,8 @@ pub(crate) fn mouse(event: MouseEvent, app: &App) -> Option<Action> {
     }
     let over_details = regions.details.is_some_and(|r| r.contains(at));
     let over_view = regions.modal.is_none() && regions.view.is_some_and(|r| r.contains(at));
+    let over_diagram = over_view && app.surface == Surface::Tasks && app.view == ViewKind::Diagram;
+    let ctrl = event.modifiers.contains(KeyModifiers::CONTROL);
     match event.kind {
         MouseEventKind::Down(MouseButton::Left) if regions.modal.is_none() => {
             let task = || {
@@ -160,7 +168,10 @@ pub(crate) fn mouse(event: MouseEvent, app: &App) -> Option<Action> {
                 .or_else(|| hit(&regions.ids, at).map(|id| Action::CopyItem(id.clone())))
                 .or_else(|| hit(&regions.items, at).map(|id| Action::SelectItem(id.clone())))
                 .or_else(task)
+                .or_else(|| over_diagram.then_some(Action::PanStart(event.column, event.row)))
         }
+        MouseEventKind::ScrollUp if over_diagram && ctrl => Some(Action::Zoom(true)),
+        MouseEventKind::ScrollDown if over_diagram && ctrl => Some(Action::Zoom(false)),
         MouseEventKind::ScrollDown if over_details => {
             Some(Action::ScrollDetails(Scroll::Down(WHEEL_ROWS)))
         }
@@ -171,6 +182,20 @@ pub(crate) fn mouse(event: MouseEvent, app: &App) -> Option<Action> {
         MouseEventKind::ScrollUp if over_view => scroll_view(app, 0, -1),
         MouseEventKind::ScrollRight if over_view => scroll_view(app, 1, 0),
         MouseEventKind::ScrollLeft if over_view => scroll_view(app, -1, 0),
+        _ => None,
+    }
+}
+
+/// An event during a divider drag or a pan: motion maps to `to` at the pointer, and a
+/// release or a non-left press to `end`.
+fn held(event: MouseEvent, to: fn(u16, u16) -> Action, end: Action) -> Option<Action> {
+    match event.kind {
+        MouseEventKind::Drag(MouseButton::Left)
+        | MouseEventKind::Moved
+        | MouseEventKind::Down(MouseButton::Left) => Some(to(event.column, event.row)),
+        MouseEventKind::Up(_) | MouseEventKind::Down(MouseButton::Right | MouseButton::Middle) => {
+            Some(end)
+        }
         _ => None,
     }
 }
@@ -284,11 +309,15 @@ mod tests {
             (KeyCode::Char('+'), Action::ResizeColumns(true)),
             (KeyCode::Char('q'), Action::Back),
             (KeyCode::Esc, Action::Back),
+            (KeyCode::Char('F'), Action::CycleFocus),
+            (KeyCode::Char('z'), Action::Zoom(false)),
+            (KeyCode::Char('Z'), Action::Zoom(true)),
+            (KeyCode::Char('x'), Action::ToggleFit),
         ];
         for (code, action) in cases {
             assert_eq!(map(press(code)), Some(action), "{code:?}");
         }
-        assert_eq!(map(press(KeyCode::Char('z'))), None);
+        assert_eq!(map(press(KeyCode::Char('b'))), None);
     }
 
     #[test]
@@ -476,6 +505,88 @@ mod tests {
         assert_ne!(mouse(event(left, 30, 17), &app), Some(Action::DragStart));
     }
 
+    fn diagram_app() -> App {
+        let mut app = app_with_regions();
+        app.view = ViewKind::Diagram;
+        app
+    }
+
+    #[test]
+    fn ctrl_and_the_wheel_over_the_diagram_zoom_it() {
+        let mut app = diagram_app();
+        let ctrl = |kind, column| MouseEvent {
+            modifiers: KeyModifiers::CONTROL,
+            ..event(kind, column, 10)
+        };
+        assert_eq!(
+            mouse(ctrl(MouseEventKind::ScrollUp, 10), &app),
+            Some(Action::Zoom(true))
+        );
+        assert_eq!(
+            mouse(ctrl(MouseEventKind::ScrollDown, 10), &app),
+            Some(Action::Zoom(false))
+        );
+        assert_eq!(
+            mouse(ctrl(MouseEventKind::ScrollDown, 70), &app),
+            Some(Action::ScrollDetails(Scroll::Down(WHEEL_ROWS))),
+            "over the details panel"
+        );
+        assert_eq!(
+            mouse(event(MouseEventKind::ScrollUp, 10, 10), &app),
+            Some(Action::ScrollView(0, -i32::from(WHEEL_ROWS))),
+            "without ctrl"
+        );
+        app.view = ViewKind::Layers;
+        assert_ne!(
+            mouse(ctrl(MouseEventKind::ScrollUp, 10), &app),
+            Some(Action::Zoom(true)),
+            "the layers view has no zoom"
+        );
+    }
+
+    #[test]
+    fn a_press_on_diagram_background_then_a_drag_pans_it() {
+        let mut app = diagram_app();
+        let left = MouseEventKind::Down(MouseButton::Left);
+        let press = mouse(event(left, 30, 15), &app);
+        assert_eq!(press, Some(Action::PanStart(30, 15)));
+        app.apply(press.expect("a pan"));
+        for kind in [
+            MouseEventKind::Drag(MouseButton::Left),
+            MouseEventKind::Moved,
+            MouseEventKind::Down(MouseButton::Left),
+        ] {
+            assert_eq!(
+                mouse(event(kind, 33, 13), &app),
+                Some(Action::PanTo(33, 13)),
+                "{kind:?}"
+            );
+        }
+        app.apply(Action::PanTo(33, 13));
+        assert_eq!(app.scroll_nudge, (-3, 2), "the view follows the pointer");
+        assert!(app.scroll_pinned);
+        let up = mouse(event(MouseEventKind::Up(MouseButton::Left), 33, 13), &app);
+        assert_eq!(up, Some(Action::PanEnd));
+        app.apply(Action::PanEnd);
+        assert_eq!(mouse(event(MouseEventKind::Moved, 40, 13), &app), None);
+
+        app.view = ViewKind::Layers;
+        assert_eq!(mouse(event(left, 30, 15), &app), None, "layers do not pan");
+    }
+
+    #[test]
+    fn a_press_on_a_diagram_node_selects_it_and_the_divider_still_drags() {
+        let mut app = diagram_app();
+        let left = MouseEventKind::Down(MouseButton::Left);
+        assert_eq!(mouse(event(left, 5, 4), &app), Some(Action::Select(2)));
+        app.regions.divider = Some(Rect::new(59, 2, 1, 20));
+        assert_eq!(
+            mouse(event(left, 58, 10), &app),
+            Some(Action::DragStart),
+            "the divider zone overlaps the view's edge"
+        );
+    }
+
     #[test]
     fn digits_switch_surfaces_and_space_marks() {
         for (digit, surface) in [
@@ -499,6 +610,7 @@ mod tests {
             ('S', Action::CycleSort),
             ('D', Action::FlipSortDir),
             ('C', Action::OpenColumns),
+            ('T', Action::ToggleThemes),
             ('c', Action::ToggleClosed),
             ('m', Action::OpenMenu),
             ('e', Action::OpenClassify),
@@ -587,6 +699,24 @@ mod tests {
             Some(Action::SelectorPrev)
         );
         assert_eq!(mouse(event(MouseEventKind::ScrollLeft, 5, 4), &app), None);
+    }
+
+    #[test]
+    fn the_theme_picker_takes_the_wheel_and_swallows_clicks() {
+        let mut app = app_with_regions();
+        app.regions.tabs = vec![(Rect::new(0, 1, 7, 1), Surface::Review)];
+        app.apply(Action::ToggleThemes);
+        assert_eq!(
+            mouse(event(MouseEventKind::ScrollDown, 70, 10), &app),
+            Some(Action::Move(Dir::Down))
+        );
+        assert_eq!(
+            mouse(event(MouseEventKind::ScrollUp, 5, 4), &app),
+            Some(Action::Move(Dir::Up))
+        );
+        let left = MouseEventKind::Down(MouseButton::Left);
+        assert_eq!(mouse(event(left, 5, 4), &app), None, "a task row");
+        assert_eq!(mouse(event(left, 2, 1), &app), None, "a tab");
     }
 
     #[test]

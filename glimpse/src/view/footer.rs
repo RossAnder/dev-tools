@@ -202,6 +202,14 @@ fn hints(app: &App) -> (Vec<Hint>, Option<Hint>) {
     if app.legend_open {
         return (vec![Hint::new("?", "close legend")], None);
     }
+    if app.theme_picker.is_some() {
+        let hints = vec![
+            Hint::new("j/k", "preview"),
+            Hint::new("enter", "keep"),
+            Hint::new("esc", "revert"),
+        ];
+        return (hints, None);
+    }
     if app.selector_open {
         let hints = vec![
             Hint::new("j/k", "move"),
@@ -485,5 +493,16 @@ mod tests {
         let mut app = app();
         app.legend_open = true;
         assert_eq!(text(&lines(&app, 110, Instant::now())), ["? close legend"]);
+    }
+
+    #[test]
+    fn the_theme_picker_lists_its_own_keys() {
+        let mut app = app();
+        app.apply(Action::ToggleThemes);
+        assert!(app.theme_picker.is_some());
+        assert_eq!(
+            text(&lines(&app, 110, Instant::now())),
+            ["j/k preview · enter keep · esc revert"]
+        );
     }
 }
