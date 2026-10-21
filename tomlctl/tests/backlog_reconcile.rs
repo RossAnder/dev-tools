@@ -172,6 +172,15 @@ fn apply_resolves_a_ready_row_with_its_link_and_keeps_the_claim() {
     assert_eq!(bucket_ids(&report, "in-progress"), ["B-aaaa0002"]);
     assert_eq!(report["applied"], json!(["B-aaaa0001"]));
     assert_eq!(report["skipped"], json!([]));
+    for (bucket, count) in [
+        ("ready", 1),
+        ("in-progress", 1),
+        ("stalled", 0),
+        ("unlinked", 0),
+        ("orphaned", 0),
+    ] {
+        assert_eq!(report["counts"][bucket], json!(count), "{bucket}: {report}");
+    }
 
     let row = backlog_row(&root, "B-aaaa0001");
     assert_eq!(str_of(&row, "status"), Some("resolved"), "{row}");

@@ -139,6 +139,7 @@ fn output_opts(cli: &Cli) -> OutputOpts {
         header: out.header,
         max_chars: out.max_chars,
         omit: paths(&out.omit),
+        text_view: out.text_view,
         filters: out.filters.to_filters(),
     }
 }

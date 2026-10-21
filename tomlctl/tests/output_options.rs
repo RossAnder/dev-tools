@@ -380,6 +380,7 @@ fn cases() -> Vec<Case> {
         read(&["validate", LEDGER], One, "ok"),
         read(&["items", "list", LEDGER], Top, "id"),
         read(&["items", "get", LEDGER, "R1"], One, "id"),
+        read(&["items", "get", LEDGER, "R1,R2"], Top, "id"),
         write(
             &[
                 "items",
@@ -559,6 +560,16 @@ fn cases() -> Vec<Case> {
         read(&["backlog", "list"], Top, "id"),
         read(&["backlog", "show", "{B1}"], One, "item"),
         read(&["backlog", "show", "{B1},{B2}"], Top, "item"),
+        read(&["backlog", "get", "{B1}"], One, "id"),
+        read(&["backlog", "get", "{B1},{B2}"], Top, "id"),
+        write(&["backlog", "edit", "{B1}", "--context", "why it matters"], "id").rows("rows"),
+        write(&["backlog", "edit", "--ndjson", "-"], "id")
+            .rows("rows")
+            .stdin(concat!(
+                r#"{"id":"{B1}","context":"first note"}"#,
+                "\n",
+                r#"{"id":"{B2}","tags":["slow"]}"#
+            )),
         write(
             &[
                 "backlog",
@@ -1113,7 +1124,11 @@ fn run(fx: &Fixture, case: &Case, before: &[&str], after: &[&str]) -> Run {
         .args(before)
         .args(&argv)
         .args(after)
-        .write_stdin(case.stdin.to_string())
+        .write_stdin(
+            case.stdin
+                .replace("{B1}", &fx.backlog[0])
+                .replace("{B2}", &fx.backlog[1]),
+        )
         .output()
         .unwrap();
     Run {
@@ -1475,9 +1490,9 @@ fn check(fx: &Fixture, case: &Case) -> Vec<String> {
 }
 
 /// The report-shaping globals on a read: a wildcard `--get`, `--omit` with
-/// `--max-chars`, `--rows` and `--header` on the report kind each applies to
-/// (and refused on the other), and a global `--where` on a row report
-/// (refused on a single object). Writes are left out because each run writes.
+/// `--max-chars`, `--rows` on a single object (refused on a row report),
+/// `--header` (a no-op on a single object), and a global `--where` on a row
+/// report (refused on a single object). Writes are left out because each run writes.
 fn read_options(fx: &Fixture, case: &Case, report: &Value) -> Vec<String> {
     let mut fails = Vec::new();
     let shape = case.shape;
@@ -1529,14 +1544,19 @@ fn read_options(fx: &Fixture, case: &Case, report: &Value) -> Vec<String> {
                     )),
                 }
             }
-            for probe in [&["--header"][..], &["--where", "a=b"]] {
-                let (refused, stderr) = refusal(probe);
-                if !refused {
-                    fails.push(format!(
-                        "{} on a single object must be refused as validation; stderr {stderr:?}",
-                        probe.join(" ")
-                    ));
-                }
+            let header = run(fx, case, &[], &["--header"]);
+            match serde_json::from_str::<Value>(&header.stdout) {
+                Ok(got) if got == *report && header.code == Some(0) => {}
+                _ => fails.push(format!(
+                    "--header on a single object printed {:?} (stderr {:?}), expected {report}",
+                    header.stdout, header.stderr
+                )),
+            }
+            let (refused, stderr) = refusal(&["--where", "a=b"]);
+            if !refused {
+                fails.push(format!(
+                    "--where a=b on a single object must be refused as validation; stderr {stderr:?}"
+                ));
             }
         }
         Some(rows) => {
@@ -1612,6 +1632,53 @@ fn a_compact_read_fails_a_bad_get() {
         let err: Value = serde_json::from_str(stderr.trim()).unwrap();
         assert_eq!(err["error"]["kind"], "validation", "`{what}`: {err}");
     }
+}
+
+/// `--text-view` prints blocks of `key: value` lines for each report shape,
+/// including a list verb that otherwise streams.
+#[test]
+fn text_view_renders_each_report_shape() {
+    let fx = fixture();
+    let [b1, b2] = &fx.backlog;
+    let view = |argv: &[&str]| {
+        let out = cli(&fx.root)
+            .current_dir(&fx.root)
+            .args(argv)
+            .arg("--text-view")
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+        assert_eq!(out.status.code(), Some(0), "`{argv:?}`: {stderr}");
+        String::from_utf8(out.stdout).unwrap()
+    };
+
+    let one = view(&["backlog", "get", b1]);
+    assert!(one.contains(&format!("id: {b1}\n")), "{one}");
+    assert!(one.contains("summary: probe flakes on slow CI\n"), "{one}");
+    assert!(!one.trim_start().starts_with('{'), "{one}");
+
+    let top = view(&["tasks", "list", "--slug", S]);
+    assert!(!top.trim_start().starts_with('['), "{top}");
+    for r in ["first", "second", "third"] {
+        assert!(top.contains(&format!("ref: {r}\n")), "{top}");
+    }
+    assert_eq!(top.matches("\n\n").count(), 2, "{top}");
+
+    let streamed = view(&["backlog", "list"]);
+    assert!(streamed.contains(&format!("id: {b1}\n")), "{streamed}");
+    assert!(streamed.contains(&format!("id: {b2}\n")), "{streamed}");
+    assert!(!streamed.trim_start().starts_with('['), "{streamed}");
+
+    let field = view(&["tasks", "check", "--slug", S]);
+    assert!(!field.trim_start().starts_with('{'), "{field}");
+
+    let clash = cli(&fx.root)
+        .current_dir(&fx.root)
+        .args(["tasks", "list", "--slug", S, "--text-view", "--lines"])
+        .output()
+        .unwrap();
+    assert_eq!(clash.status.code(), Some(1));
+    assert!(clash.stdout.is_empty());
 }
 
 /// The leaf command a case's argv names, walked down the capabilities tree.

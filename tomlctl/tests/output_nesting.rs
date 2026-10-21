@@ -1,5 +1,6 @@
-//! `*` path wildcards, `--rows`, `--header` and the global `--where*` filters,
-//! through the real binary against a task store and a backlog.
+//! `*` path wildcards, `--rows`, `--header`, `--template` after `--select` and
+//! the global `--where*` filters, through the real binary against a task store
+//! and a backlog.
 
 use serde_json::Value;
 use std::path::Path;
@@ -250,7 +251,7 @@ fn where_on_a_single_report_without_rows_is_refused() {
 }
 
 #[test]
-fn rows_and_header_are_refused_on_list_verbs_and_row_reports() {
+fn rows_and_header_refusals_hold_where_the_flag_would_reshape() {
     let (_dir, root) = tasks_root();
     for flag in [&["--rows", "files"][..], &["--header"][..]] {
         let args = [&["tasks", "list", "--slug", TASKS_SLUG][..], flag].concat();
@@ -264,12 +265,115 @@ fn rows_and_header_are_refused_on_list_verbs_and_row_reports() {
     }
     let r = run(
         &root,
-        &["tasks", "check", "--slug", TASKS_SLUG, "--rows", "findings"],
+        &["tasks", "check", "--slug", TASKS_SLUG, "--rows", "policy"],
     );
     assert!(!r.ok);
     assert!(
         r.stderr.contains("rows are already its `findings` field"),
         "{}",
         r.stderr
+    );
+    let r = run(
+        &root,
+        &[
+            "tasks", "check", "--slug", TASKS_SLUG, "--rows", "findings", "--header",
+        ],
+    );
+    assert!(!r.ok);
+    assert!(
+        r.stderr
+            .contains("`--rows` cannot be combined with `--header`"),
+        "{}",
+        r.stderr
+    );
+}
+
+#[test]
+fn rows_naming_the_declared_row_field_changes_nothing() {
+    let (_dir, root) = sandbox();
+    let probes = root.join("probes.ndjson");
+    std::fs::write(
+        &probes,
+        "{\"summary\":\"probe flakes on slow CI\"}\n{\"summary\":\"cache misses\"}\n",
+    )
+    .unwrap();
+    let probes = probes.to_str().unwrap();
+    let base = ["backlog", "check", "--ndjson", probes];
+    let plain = stdout(&root, &[&base[..], &["--lines"]].concat());
+    let redundant = stdout(
+        &root,
+        &[&base[..], &["--rows", "results", "--lines"]].concat(),
+    );
+    assert_eq!(redundant, plain);
+    assert_eq!(plain.lines().count(), 3, "{plain}");
+    let got = stdout(
+        &root,
+        &[&base[..], &["--rows", "results", "--get", "verdict"]].concat(),
+    );
+    assert_eq!(got, "novel\nnovel\n");
+
+    let (_dir, root) = tasks_root();
+    let check = ["tasks", "check", "--slug", TASKS_SLUG, "--lines"];
+    assert_eq!(
+        stdout(&root, &[&check[..], &["--rows", "findings"]].concat()),
+        stdout(&root, &check)
+    );
+}
+
+#[test]
+fn header_on_a_single_object_report_returns_the_object() {
+    let (_dir, root) = tasks_root();
+    let show = ["tasks", "show", "3", "--slug", TASKS_SLUG, "--with", "deps"];
+    let plain: Value = serde_json::from_str(&stdout(&root, &show)).unwrap();
+    let header: Value =
+        serde_json::from_str(&stdout(&root, &[&show[..], &["--header"]].concat())).unwrap();
+    assert_eq!(header, plain);
+    let id = stdout(&root, &[&show[..], &["--header", "--get", "id"]].concat());
+    assert_eq!(id, "3\n");
+}
+
+#[test]
+fn template_renders_after_select() {
+    let (_dir, root) = tasks_root();
+    let show = ["tasks", "show", "3", "--slug", TASKS_SLUG, "--with", "deps"];
+    let got = stdout(
+        &root,
+        &[
+            &show[..],
+            &["--select", "id,deps", "--template", "{id}<-{deps.1.ref}"],
+        ]
+        .concat(),
+    );
+    assert_eq!(got, "3<-second\n");
+
+    let list = ["tasks", "list", "--slug", TASKS_SLUG];
+    let got = stdout(
+        &root,
+        &[
+            &list[..],
+            &["--select", "id,files.0", "--template", "{id} {files.0}"],
+        ]
+        .concat(),
+    );
+    assert_eq!(got, "1 src/a.rs\n2 src/b.rs\n3 src/c.rs\n");
+
+    let r = run(
+        &root,
+        &[
+            &["--error-format", "json"][..],
+            &list[..],
+            &["--select", "id", "--template", "{id} {title}"],
+        ]
+        .concat(),
+    );
+    assert!(!r.ok, "an unselected template path must fail");
+    let err = parse_json_error_envelope(&r.stderr);
+    assert_eq!(err["kind"], "validation", "{err}");
+    assert!(
+        err["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("--template path `title` is not under a --select path"),
+        "{err}"
     );
 }

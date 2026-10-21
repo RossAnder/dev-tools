@@ -1607,6 +1607,7 @@ fn capabilities_global_flags_lists_every_output_flag() {
         "--header",
         "--max-chars",
         "--omit",
+        "--text-view",
         "--where",
         "--where-not",
         "--where-in",
@@ -1762,6 +1763,21 @@ fn capabilities_features_contains_every_plan_feature() {
         "review_export_v1",
         "review_catalogue",
         "review_schema",
+        // Agent ergonomics: prose payloads, batch writes, consistent reads.
+        "regex_unicode",
+        "template_escapes",
+        "text_view",
+        "relaxed_refusals",
+        "items_get_multi",
+        "list_grep",
+        "reconcile_counts",
+        "toml_records",
+        "tasks_update_batch",
+        "backlog_triage_batch",
+        "flow_record_row_task",
+        "backlog_get",
+        "backlog_edit",
+        "owned_store_guard",
     ];
     for name in expected {
         assert!(

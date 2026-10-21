@@ -28,7 +28,7 @@ tomlctl json set    <file> <path> --json <value>      # write a value (array / o
 tomlctl json unset  <file> <path>                     # delete a key at path
 tomlctl validate    <file>                            # parse-check
 tomlctl items list  <file> [--status X] [--category Y] [--newer-than YYYY-MM-DD] [--file PATH] [--count]
-tomlctl items get   <file> <id>
+tomlctl items get   <file> <id>[,<id>...]               # one row; several ids print an array in the order given
 tomlctl items add   <file> --json '{"id":"R7",...}' [--id-prefix P]   # --id-prefix mints the id under the lock (payload must not carry one)
 tomlctl items add   <file> --id-prefix P --set k=v --set-json k=<json> --set-file k=<path>   # field flags build the payload; they also merge over --json on items update and array-append
 tomlctl items add-many <file> --defaults-json '{...}' --ndjson - [--id-prefix P]    # batched NDJSON append; --id-prefix mints each row's id
@@ -61,14 +61,20 @@ tomlctl backlog add    --summary <s> [--kind K] [--area PATH] [--evidence path:l
 tomlctl backlog add-many --ndjson <src> [--auto-base-sha] [--on-duplicate bump|skip|fail]   # one `add --json` payload per line; one lock, one write, all-or-nothing
 tomlctl backlog list   [--open|--live] [--kind K] [--tag T]... [--area-prefix PATH]... [--has-evidence] [--count]   # --live is open or promoted; plus the full --where-* query surface
 tomlctl backlog show   <id>[,<id>...]                  # one item + its one-hop relations + its evidence listing; several ids print an array
+tomlctl backlog get    <id>[,<id>...]                  # the stored row only, with no relations or evidence listing; several ids print an array
+tomlctl backlog edit   <id> [--context <t>|--context-file <p>] [--tags T,...|--add-tag T|--remove-tag T] [--evidence R|--add-evidence R] [--origin O] [--flow S] [--base-sha SHA] [--dry-run]   # free-form fields only
+tomlctl backlog edit   --ndjson <src> [--dry-run]      # one {id, context?, tags?, evidence?, origin?, flow?, base_sha?} edit per line; all rows apply in one write, or none
 tomlctl backlog relate B7 --to B3 --as relates-to|duplicates|supersedes   # duplicates dismisses B7, supersedes dismisses B3
 tomlctl backlog triage --promote --to <flow-slug> B7   # --to must name a flow or plan (see --external / --allow-closed); or --dismiss --reason / --resolve --resolution / --reopen --rationale
 tomlctl backlog triage --dismiss --reason <r> --expect-status open B7 B9   # move only ids still at that status; the rest land in skipped_stale
-tomlctl backlog reconcile [--flow <s>] [--adopt] [--apply]   # bucket promoted items by their closing tasks; --adopt links by id mention, --apply resolves the ready ones
+tomlctl backlog triage --ndjson <src> [--dry-run]      # one {id, resolve|dismiss|promote|reopen: <companion>, expect_status?} transition per line; all rows apply in one write, or none
+tomlctl backlog reconcile [--flow <s>] [--adopt] [--apply]   # bucket promoted items by their closing tasks; --adopt links by id mention, --apply resolves the ready ones; emits a counts map with all seven bucket keys
 tomlctl backlog evidence dir <id>                      # per-item .claude/backlog-evidence/<id>/, created on demand
 tomlctl backlog evidence audit [--strict] [--max-bytes N]   # unowned dirs, policy breaches, stale references
 tomlctl backlog cluster --by all                       # group open items into candidate work scopes
 tomlctl backlog compact [--older-than 90d] [--dry-run]  # ages resolved and dismissed items into [[compacted]]; open and promoted items never move
+tomlctl tasks update <N>... --slug <s> [--status S] [--set k=v]...   # patch one or more rows in one write
+tomlctl tasks update --ndjson <src> --slug <s>         # one {ids|id, status?, agent?, commit?, ref?, set?} patch per line, all in one write; prints {ok, results:[...]}; a .toml path is a record file
 tomlctl tasks snapshot --slug <s>                      # one consistent read of a flow: rows, graph products, joined execution record, agent records
 tomlctl tasks train --slug <s> [--checkpoint <id>]... [--ids N1,N2] [--granularity G]   # commit groups for the done rows with no commit, in commit order
 tomlctl tasks show <N> --slug <s> --with absent        # the row's files that do not exist yet
@@ -102,7 +108,7 @@ tomlctl review catalogue [--check] [--vocabulary] [--owners]   # the merged lens
 tomlctl review schema finding [--kind <k>]             # JSON Schema from the field catalogue; or cell-return, verdict-return
 
 # Output options (work before or after the subcommand): --select, --limit, --lines, --get, --template, -q,
-#   --rows, --header, --max-chars, --omit, and the --where* filters
+#   --rows, --header, --max-chars, --omit, --text-view, and the --where* filters
 
 # Integrity flags (accepted after the subcommand name on any TOML-touching command):
 #   --allow-outside           bypass the best-effort .claude/ containment guard (not a sandbox)
@@ -111,7 +117,7 @@ tomlctl review schema finding [--kind <k>]             # JSON Schema from the fi
 #   --strict-integrity        treat sidecar write failures as hard errors
 ```
 
-`items list` also offers a full query surface — `--where / --where-not / --where-in / --where-has / --where-missing / --where-gt[e] / --where-lt[e] / --where-contains / --where-prefix / --where-suffix / --where-regex`, projections (`--select`, `--exclude`, `--pluck`), shaping (`--sort-by`, `--limit`, `--offset`, `--distinct`), aggregation (`--count`, `--count-by`, `--group-by`), and `--ndjson` output. All `KEY=VAL` right-hand sides accept typed prefixes (`@date:`, `@datetime:`, `@int:`, `@float:`, `@bool:`, `@string:` / `@str:`). See [references/query.md](../claude/skills/tomlctl/references/query.md#query-items-full-query-surface) for the full reference.
+`items list` also offers a full query surface — `--where / --where-not / --where-in / --where-has / --where-missing / --where-gt[e] / --where-lt[e] / --where-contains / --where-prefix / --where-suffix / --where-regex`, a text filter (`--grep <REGEX>` over the verb's default text fields, `--grep-field` to choose others), projections (`--select`, `--exclude`, `--pluck`), shaping (`--sort-by`, `--limit`, `--offset`, `--distinct`), aggregation (`--count`, `--count-by`, `--group-by`), and `--ndjson` output. All `KEY=VAL` right-hand sides accept typed prefixes (`@date:`, `@datetime:`, `@int:`, `@float:`, `@bool:`, `@string:` / `@str:`). See [references/query.md](../claude/skills/tomlctl/references/query.md#query-items-full-query-surface) for the full reference.
 
 **Stdin input** (`-` sentinel on `--json` / `--ops` / `--ndjson` / `--defaults-json`): see [references/write.md stdin section](../claude/skills/tomlctl/references/write.md#stdin-input-for-large-json-payloads) for the full reference.
 
@@ -346,7 +352,12 @@ downstream flow-command templates can feature-gate at boot without parsing
                "review_add", "review_verdict", "review_resolve",
                "review_digest", "review_triage", "review_stats",
                "review_sync_v1", "review_export_v1", "review_catalogue",
-               "review_schema"],
+               "review_schema", "regex_unicode", "template_escapes",
+               "text_view", "relaxed_refusals", "items_get_multi",
+               "list_grep", "reconcile_counts", "toml_records",
+               "tasks_update_batch", "backlog_triage_batch",
+               "flow_record_row_task", "backlog_get", "backlog_edit",
+               "owned_store_guard"],
   "subcommands": ["parse", "get", "set", "set-json", "validate",
                   "items", "blocks", "array-append", "capabilities",
                   "integrity", "flow", "json", "backlog", "tasks",
@@ -363,6 +374,7 @@ downstream flow-command templates can feature-gate at boot without parsing
     "--header":       {"type": "bool",   "required": false, "values": ["true","false"], "repeatable": false},
     "--max-chars":    {"type": "string", "required": false, "repeatable": false},
     "--omit":         {"type": "string", "required": false, "repeatable": false},
+    "--text-view":    {"type": "bool",   "required": false, "values": ["true","false"], "repeatable": false},
     "--where":        {"type": "string", "required": false, "repeatable": true}
   },
   "commands": {
@@ -467,9 +479,9 @@ Feature meanings:
 | `next_id_bare` | `items next-id` prints the bare id (`R23`), with no JSON quotes |
 | `id_prefix` | `items add --id-prefix <P>` / `items add-many --id-prefix <P>` — mint each new row's id inside the locked write; the envelope carries `id` (add) or `ids` (add-many), a dedupe skip reports the matched row's `id`, and a payload that already carries an `id` is refused |
 | `auto_last_updated` | CLI writes through `set`, `set-json`, `array-append` and `items add` / `add-many` / `update` / `remove` / `apply` / `sweep --update` / `backfill-dedup-id` refresh an existing root `last_updated` to today (UTC) when they change anything else; `--no-stamp` opts out, and dry-run previews are unstamped |
-| `multi_id` | `tasks update`, `tasks show` and `backlog show` take a comma- or space-separated id list; one id prints exactly the single-id output |
+| `multi_id` | `tasks update`, `tasks show` and `backlog show` take a comma- or space-separated id list; one id prints exactly the single-id output; `items get` takes one too (see `items_get_multi`) |
 | `path_wildcard` | a `*` segment in a `--select`, `--get` or template path matches every element of an array or every value of an object; `--select` keys the matches by the path string as an array, `--get` prints one match per line, a template placeholder joins them with commas; a path that resolves nothing suggests up to three dotted paths one level deeper |
-| `rows_header` | global `--rows <PATH>` turns the array at PATH of a single-object report into the rows, with the rest as the header; global `--header` shapes a row report's header as one object; the two are exclusive and both are refused on the list verbs |
+| `rows_header` | global `--rows <PATH>` turns the array at PATH of a single-object report into the rows, with the rest as the header; global `--header` shapes a row report's header as one object; the two are exclusive; `--rows` naming the row field of a row report is a no-op, `--header` on a single object returns it, and both are otherwise refused on the list verbs (see `relaxed_refusals`) |
 | `global_where` | the `--where*` filters are global: they filter any row report (including one re-rooted by `--rows`) before `--limit`; on a single object without `--rows` they are a `kind=validation` error, and `--where*` given on both sides of the subcommand is refused |
 | `array_predicates` | a `--where*` filter on an array field matches element by element — any element for `--where`, `-in`, the string and comparison filters, no element for `--where-not`; a dotted key absent flat is navigated as a path |
 | `max_chars` | global `--max-chars <N>` cuts every string value longer than N characters to its first N followed by `…(+K)`, K being the number cut |
@@ -485,6 +497,20 @@ Feature meanings:
 | `tasks_train` | `tasks train --slug <SLUG>` — the commit groups for the `done` rows with no `commit`, by `commit_granularity`, merged on any shared file and on any dependency cycle between groups, in commit order; `shared_with_pending` names a group file a row not yet `done` claims |
 | `show_absent` | `tasks show <N> --with absent` — the row's `files` that do not exist under the repository root |
 | `update_ref` | `tasks update` envelopes carry each row's `ref` |
+| `regex_unicode` | the `regex` crate's `unicode-perl` and `unicode-case` features: `\w`, `\d` and `\s` match Unicode, and case-insensitive matching folds Unicode case, in `--where-regex`, `--grep` and `sweep` |
+| `template_escapes` | `--template` text honours `\n`, `\t` and `\\`; `{{` and `}}` still escape braces |
+| `text_view` | global `--text-view` prints each object as `key: value` lines (multi-line strings indented, scalar arrays comma-joined, nested objects as dotted keys); a row report prints its header block, then one block per row; not combinable with `--get`, `--template`, `--lines` or `-q` |
+| `relaxed_refusals` | `--rows` naming the row field of a row report is a no-op, `--header` on a single object returns it, and `--template` with `--select` is allowed when the select covers every template path |
+| `items_get_multi` | `items get <FILE> <ID>[,<ID>...]` — several ids print an array of rows in the order given; one id prints the bare row |
+| `list_grep` | `--grep <REGEX>` on `items list`, `backlog list` and `tasks list` — case-insensitive match over the verb's default text fields, or over the fields named by repeated `--grep-field` |
+| `reconcile_counts` | `backlog reconcile` emits a `counts` map carrying all seven bucket keys, zero included |
+| `toml_records` | a `.toml` path on a payload flag (`--ndjson`, `--json`) is read as a record file, so prose needs no JSON escaping |
+| `tasks_update_batch` | `tasks update --ndjson <SRC>` — one patch per row, every row in one write; the envelope is `{ok, results:[...]}` |
+| `backlog_triage_batch` | `backlog triage --ndjson <SRC>` — one transition per row, all in one write or none; `--dry-run` is accepted only with `--ndjson` |
+| `flow_record_row_task` | each `flow record --ndjson` row may carry its own `task`, overriding the `--task` default |
+| `backlog_get` | `backlog get <ID>[,<ID>...]` — the stored row only, with no relations or evidence listing |
+| `backlog_edit` | `backlog edit <ID>` with field flags, or `--ndjson` for a row per id — change `context`, `tags`, `evidence`, `origin`, `flow` and `base_sha` only; all rows apply in one write, or none |
+| `owned_store_guard` | the generic writers (`set`, `set-json`, `array-append`, `items ...`) refuse a verb-owned store (backlog, tasks, execution record, inputs, review-v2) unless `--raw-store` is given |
 | `backlog_check_batch` | `backlog check --ndjson <SRC>` — one `{summary,kind?,area?,tags?}` probe per line, read against one load of the store; one `results` row per probe with its `verdict`, `dedup_id` and up to five `candidates` |
 | `suggestions` | a mistyped subcommand or flag gets clap's `did you mean` hint; hidden aliases accept `read` for `parse`, `--as related` for `relates-to`, and `--id` / `--ids` beside the positional ids of `tasks show`, `tasks update`, `backlog show` and `backlog triage` |
 | `review_store` | the `review` group over the v2 review store, `.claude/flows/<SLUG>/review-v2.toml` (`--slug`) or `.claude/review-v2/<SCOPE>.toml` (`--scope`), exactly one per verb except `catalogue` and `schema`; `review run start` / `update` / `finish` mint, patch and close a run |

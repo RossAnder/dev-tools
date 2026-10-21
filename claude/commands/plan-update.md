@@ -100,10 +100,10 @@ Scan plan items against the codebase and git history: for each item, check wheth
 Report the backlog items promoted to this flow from a read-only reconcile:
 
 ```bash
-tomlctl backlog reconcile --flow <slug>
+tomlctl backlog reconcile --flow <slug> --template 'backlog: {counts.ready} ready, {counts.in-progress} in-progress, {counts.stalled} stalled, {counts.unlinked} unlinked, {counts.orphaned} orphaned'
 ```
 
-Print `backlog: N ready, M in-progress, K stalled, L unlinked, O orphaned` from the lengths of those five `buckets` arrays (`dangling` and `external` are always empty under `--flow`). This op resolves nothing: a `ready` item is resolved by `/implement`'s Phase 4 or by `complete`.
+Print that line as the command emits it (`dangling` and `external` are always empty under `--flow`). This op resolves nothing: a `ready` item is resolved by `/implement`'s Phase 4 or by `complete`.
 
 #### `complete` — Explicitly mark the flow as complete
 
@@ -145,27 +145,50 @@ User-invoked; the ONLY path that may set `status = "complete"`. Run once the use
 
 #### `deviation` — Record a deviation
 
-Gather evidence from the conversation and git history — which task was affected, the original intent, what was actually done, and why — and confirm with the user before writing. Append a `type=deviation` entry to `<record>` through `flow record`, with `task_ref`, `original_intent`, `rationale`, and `commits[]` beyond the always-required fields; add `--set supersedes_entry=E<n>` when superseding an earlier deviation (supersession is the forward pointer, never number re-use). `--task <id>` copies the affected store row's `ref` into `task_ref`. Write the planned approach, the rationale and what was actually done to three files with the Write tool first:
+Gather evidence from the conversation and git history — which task was affected, the original intent, what was actually done, and why — and confirm with the user before writing. Append a `type=deviation` entry to `<record>` through `flow record`, with `task_ref`, `original_intent`, `rationale`, and `commits[]` beyond the always-required fields; add `--set supersedes_entry=E<n>` when superseding an earlier deviation (supersession is the forward pointer, never number re-use). A row's `task` (a task id) is resolved to the affected store row's `ref` in `task_ref`. The planned approach, the rationale and what was actually done are agent-written text, so write them with the Write tool into one TOML record file, each text as a `'''` literal, and pass it by `--ndjson`; never paste them into a shell argument:
 
 ```bash
-tomlctl flow record --slug <slug> --type deviation --task <id> --set agent=plan-update --set-file summary=<summary-file> --set-file original_intent=<intent-file> --set-file rationale=<rationale-file> --set-json commits='["<sha>"]' --get id
+tomlctl flow record --slug <slug> --type deviation --set agent=plan-update --ndjson <deviation-file> --get id
+```
+
+```toml
+[[record]]
+task = 12
+summary = '''<what was actually done>'''
+original_intent = '''<planned approach>'''
+rationale = '''<why>'''
+commits = ["<sha>"]
 ```
 
 `--get id` prints the minted id bare, for the report or a later `supersedes_entry`. This op MUST NOT mint legacy IDs of any kind. Then re-render `PROGRESS-LOG.md` and update `context.toml` per Step 1.
 
 #### `defer` — Register a deferral
 
-Gather evidence — which task is being deferred, why, and the **re-evaluation trigger**, which must be a concrete observable condition ("when frontend types are next refactored", "when migrating to .NET 11") and never a vague one ("later") — and confirm with the user before writing. Append a `type=deferral` entry with `task_ref`, `reason`, and `reevaluate_when`; `legacy_id = "DF<n>"` is set only by `migrate`, never here. Append it through `flow record`, with the summary, reason and trigger written to files first; mint no legacy IDs:
+Gather evidence — which task is being deferred, why, and the **re-evaluation trigger**, which must be a concrete observable condition ("when frontend types are next refactored", "when migrating to .NET 11") and never a vague one ("later") — and confirm with the user before writing. Append a `type=deferral` entry with `task_ref`, `reason`, and `reevaluate_when`; `legacy_id = "DF<n>"` is set only by `migrate`, never here. Append it through `flow record`, with the summary, reason and trigger written with the Write tool into one TOML record file (each text a `'''` literal) and passed by `--ndjson`; mint no legacy IDs:
 
 ```bash
-tomlctl flow record --slug <slug> --type deferral --task <id> --set agent=plan-update --set-file summary=<summary-file> --set-file reason=<reason-file> --set-file reevaluate_when=<trigger-file>
+tomlctl flow record --slug <slug> --type deferral --set agent=plan-update --ndjson <deferral-file>
+```
+
+```toml
+[[record]]
+task = 12
+summary = '''<summary>'''
+reason = '''<why>'''
+reevaluate_when = '''<concrete observable trigger>'''
 ```
 
 Then re-render and update `context.toml` per Step 1. If every remaining non-complete item is now deferred, set `status = "review"` — never `"complete"`.
 
 #### `reconcile` — Full plan-code reconciliation
 
-The most comprehensive operation. Launch **two** `subagent_type: "general-purpose"` agents in a single response message — do not reduce the count; forward and reverse are distinct perspectives that cannot be combined.
+The most comprehensive operation. Launch **two** `subagent_type: "general-purpose"` agents in a single response message — do not reduce the count; forward and reverse are distinct perspectives that cannot be combined. Give each the read one-liners (the built-in agent carries no tomlctl guidance of its own), never piping tomlctl into python, jq or grep and never `2>/dev/null`:
+
+```bash
+tomlctl tasks show <ids> --slug <slug> --with body --text-view
+tomlctl backlog get <ids>
+tomlctl backlog list --grep <regex> --text-view
+```
 
 - **Agent 1 (forward, plan → code)**: read every plan item and its expected outcome; for items marked Done, verify the expected artifact exists (files present, code patterns present, tests pass); for items marked Not Done / In Progress, check whether they were implemented without the plan being updated; check `git log` since the progress log's last-updated date for commits touching plan-scoped files. Flags items done but unmarked, items marked done then broken by later changes, and new work tracked by no plan item.
 - **Agent 2 (reverse, code → plan)**: run `git diff --name-only {baseline}..HEAD` (baseline = the progress log's last-updated commit or `git merge-base HEAD master`); for each changed file check whether a plan item covers it. Flags untracked changes, stale items (marked In Progress with no recent commits touching the relevant files), and implicit deviations.
@@ -192,7 +215,15 @@ Launch **two** `subagent_type: "general-purpose"` agents in a single response me
 
 For plans that have fallen behind the codebase. Combines research, reconciliation, and reformat into one pass — the most expensive operation. Runs three phases sequentially; do not skip a phase or wait for user input between them. Archives before rewriting and honours the plan-restructure contract throughout.
 
-**Phase 1** — launch **three** agents in a single response message, non-overlapping scopes, do not reduce the count. **Agent 1 (codebase re-exploration, `general-purpose`)**: read every file the plan references (do they exist? moved, renamed, deleted?), search for code implementing plan items even in different files or via different approaches, identify structural changes since the plan was written, map the current architecture in the plan's domain, check `git log` for the full history in scope, and return a comprehensive current-state inventory. **Agent 2 (technology and API research, `research-lite`** for the default mechanical case; escalate to `research-deep` when the plan introduces architectural pattern questions or library comparisons, stating `DISPATCH: research-deep — <reason>` at the top of the prompt**)**: research the current state of every technology, library, and framework version the plan references, flag deprecated APIs / removed features / outdated guidance, and return a technology assessment with specific corrections. Any upgrade it recommends is a dependency-upgrade finding, which brings the method's supply-chain checks to bear. **Agent 3 (content extraction and classification, `general-purpose`)**: same contract as `reformat`'s Agent 1.
+**Phase 1** — launch **three** agents in a single response message, non-overlapping scopes, do not reduce the count. Give each `general-purpose` agent the same read one-liners (never piping tomlctl into python, jq or grep, never `2>/dev/null`):
+
+```bash
+tomlctl tasks show <ids> --slug <slug> --with body --text-view
+tomlctl backlog get <ids>
+tomlctl backlog list --grep <regex> --text-view
+```
+
+**Agent 1 (codebase re-exploration, `general-purpose`)**: read every file the plan references (do they exist? moved, renamed, deleted?), search for code implementing plan items even in different files or via different approaches, identify structural changes since the plan was written, map the current architecture in the plan's domain, check `git log` for the full history in scope, and return a comprehensive current-state inventory. **Agent 2 (technology and API research, `research-lite`** for the default mechanical case; escalate to `research-deep` when the plan introduces architectural pattern questions or library comparisons, stating `DISPATCH: research-deep — <reason>` at the top of the prompt**)**: research the current state of every technology, library, and framework version the plan references, flag deprecated APIs / removed features / outdated guidance, and return a technology assessment with specific corrections. Any upgrade it recommends is a dependency-upgrade finding, which brings the method's supply-chain checks to bear. **Agent 3 (content extraction and classification, `general-purpose`)**: same contract as `reformat`'s Agent 1.
 
 **Phase 1.5 — vet Agent 2's output (orchestrator).** Invoke the `flow-contract-vet-research` skill to load the universal vet-pass procedure (triage by source+evidence-grade, `ESCALATE-TO-DEEP` honouring, drop-low-confidence rule, spot-check sampling, drop/downgrade-with-rationale, the canonical `[[vet_events]]` append, the mandatory `vet: Agent-{n} (<lens>) — N sampled, M dropped, K downgraded` console line, and the >30% systemic-failure re-dispatch rule). Scope: **Agent 2 only** — Agents 1 and 3 are exempt because Phase 2 already cross-references their outputs. Before sampling, verify every "deprecated" / "removed" / "superseded" claim against the pinned installed source (Context7 when none is on disk) and the library's official changelog — these are the highest-impact assertions because they drive plan rewrites. Carry only post-vet findings into Phase 2; propagating a fabricated tech finding into a rewritten plan corrupts the plan and the user's trust in the catchup.
 

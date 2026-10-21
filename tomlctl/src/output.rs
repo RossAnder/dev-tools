@@ -9,6 +9,7 @@
 //! shape says "CLI".
 
 mod template;
+mod text;
 
 use anyhow::Result;
 use serde_json::Value as JsonValue;
@@ -43,6 +44,7 @@ pub(crate) struct OutputOpts {
     pub(crate) header: bool,
     pub(crate) max_chars: Option<usize>,
     pub(crate) omit: Option<Vec<String>>,
+    pub(crate) text_view: bool,
     pub(crate) filters: WhereFilters,
 }
 
@@ -90,6 +92,7 @@ static UNCONFIGURED: OutputOpts = OutputOpts {
     header: false,
     max_chars: None,
     omit: None,
+    text_view: false,
     filters: WhereFilters::EMPTY,
 };
 
@@ -127,6 +130,9 @@ impl OutputOpts {
         }
         if self.omit.is_some() {
             set.push("--omit");
+        }
+        if self.text_view {
+            set.push("--text-view");
         }
         set.extend(
             self.filters
@@ -182,11 +188,22 @@ impl OutputOpts {
         if self.get.is_some() && self.template.is_some() {
             return Err(invalid("`--get` cannot be combined with `--template`"));
         }
-        if self.template.is_some() && self.select.is_some() {
-            return Err(invalid("`--template` cannot be combined with `--select`"));
-        }
         if self.rows.is_some() && self.header {
             return Err(invalid("`--rows` cannot be combined with `--header`"));
+        }
+        if self.text_view {
+            let other = [
+                (self.get.is_some(), "--get"),
+                (self.template.is_some(), "--template"),
+                (self.lines, "--lines"),
+            ]
+            .into_iter()
+            .find_map(|(set, flag)| set.then_some(flag));
+            if let Some(other) = other {
+                return Err(invalid(format!(
+                    "`--text-view` cannot be combined with `{other}`"
+                )));
+            }
         }
         if self.omit.is_some() {
             let other = [
@@ -203,9 +220,66 @@ impl OutputOpts {
             }
         }
         if let Some(t) = &self.template {
-            Template::parse(t)?;
+            let t = Template::parse(t)?;
+            if let Some(select) = &self.select
+                && let Some(p) = t.paths().find(|p| !is_selected(select, p))
+            {
+                return Err(invalid(format!(
+                    "--template path `{p}` is not under a --select path; --select applies first, so add it there (a `*` select path cannot feed a template)"
+                )));
+            }
         }
         query::prepare_predicates(&self.filters.predicates()?)
+    }
+}
+
+/// Whether `path` is a `*`-free `--select` path or lies below one, and so
+/// resolves the same on the projected row as on the unprojected one.
+fn is_selected(select: &[String], path: &str) -> bool {
+    select.iter().any(|s| {
+        !is_wildcard_path(s)
+            && path
+                .strip_prefix(s.as_str())
+                .is_some_and(|rest| rest.is_empty() || rest.starts_with('.'))
+    })
+}
+
+/// Spell out each dotted, `*`-free key a `--select` projection wrote as
+/// nested objects, shallowest first, so a template path below a selected
+/// path resolves on the projected row. A key that already resolves, or whose
+/// parent is not an object, is left alone.
+fn nest_selected(row: &mut JsonValue) {
+    let Some(obj) = row.as_object() else {
+        return;
+    };
+    let mut dotted: Vec<(String, JsonValue)> = obj
+        .iter()
+        .filter(|(k, _)| k.contains('.') && !is_wildcard_path(k))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    dotted.sort_by_key(|(k, _)| k.matches('.').count());
+    for (key, value) in dotted {
+        if navigate_json(row, &key).is_some() {
+            continue;
+        }
+        if let Some((parent, last)) = key.rsplit_once('.') {
+            insert_nested(row, parent, last, value);
+        }
+    }
+}
+
+fn insert_nested(root: &mut JsonValue, parent: &str, last: &str, value: JsonValue) {
+    let mut cur = root;
+    for seg in parent.split('.') {
+        let JsonValue::Object(map) = cur else {
+            return;
+        };
+        cur = map
+            .entry(seg)
+            .or_insert_with(|| JsonValue::Object(serde_json::Map::new()));
+    }
+    if let JsonValue::Object(map) = cur {
+        map.insert(last.to_string(), value);
     }
 }
 
@@ -320,13 +394,10 @@ fn push_json(out: &mut Vec<u8>, v: &JsonValue, style: Style) -> Result<()> {
 const LIMIT_ON_ONE: &str =
     "`--limit` applies to row reports; this command prints a single object (use --get or --select)";
 
-const HEADER_ON_ONE: &str =
-    "`--header` applies to a report with rows beside a header; this command prints a single object";
-
 const HEADER_ON_TOP: &str =
     "`--header` applies to a report with rows beside a header; this report is a bare row array";
 
-/// `--rows` given for a report whose rows are already declared.
+/// `--rows` given for a report whose rows are already declared elsewhere.
 fn rows_on_row_report(rows: Rows) -> anyhow::Error {
     let what = match rows {
         Rows::Top => "this report is already a row array".to_string(),
@@ -474,13 +545,11 @@ fn trim(v: &mut JsonValue, opts: &OutputOpts) {
 
 /// `emit` for a single-object report, by reference: only `--select`,
 /// `--omit`, `--max-chars` and `--rows` build a new value, so the report
-/// itself is otherwise never cloned.
+/// itself is otherwise never cloned. `--header` is a no-op here: the whole
+/// report is its header.
 fn emit_one(report: &JsonValue, style: Style, opts: &OutputOpts) -> Result<Emitted> {
     if opts.quiet {
         return Ok(Emitted::default());
-    }
-    if opts.header {
-        return Err(invalid(HEADER_ON_ONE));
     }
     if let Some(path) = &opts.rows {
         check_rows_path(report, path)?;
@@ -504,9 +573,11 @@ fn emit_one(report: &JsonValue, style: Style, opts: &OutputOpts) -> Result<Emitt
             "`{flag}` applies to row reports; this command prints a single object (use --rows <PATH> to filter one of its arrays)"
         )));
     }
-    let mut shaped = match &opts.select {
-        Some(paths) => Cow::Owned(project(report, paths)),
-        None => Cow::Borrowed(report),
+    // A template reads only selected paths (`validate`), which resolve the
+    // same unprojected, so it skips the projection.
+    let mut shaped = match (&opts.select, &template) {
+        (Some(paths), None) => Cow::Owned(project(report, paths)),
+        _ => Cow::Borrowed(report),
     };
     if opts.omit.is_some() || opts.max_chars.is_some() {
         trim(shaped.to_mut(), opts);
@@ -527,6 +598,8 @@ fn emit_one(report: &JsonValue, style: Style, opts: &OutputOpts) -> Result<Emitt
         }
     } else if let Some(t) = &template {
         push_line(&mut out, &t.render(report));
+    } else if opts.text_view {
+        out.extend_from_slice(text::render(report).as_bytes());
     } else {
         let style = if opts.lines { Style::Compact } else { style };
         push_json(&mut out, report, style)?;
@@ -539,8 +612,8 @@ fn emit_one(report: &JsonValue, style: Style, opts: &OutputOpts) -> Result<Emitt
 
 /// Apply `opts` to one report. Order: `-q`, `--rows` / `--header`, path
 /// validation against every row, `--where*`, `--limit`, `--omit` /
-/// `--select`, `--max-chars`, then `--get` / `--template`, then `--lines` or
-/// `style`. A report without its declared rows is emitted as one object.
+/// `--select`, `--max-chars`, then `--get` / `--template` / `--text-view`,
+/// then `--lines` or `style`. A report without its declared rows is emitted as one object.
 ///
 /// The list verbs filter in their query engine and reach this through
 /// `print_query_list`, whose `query_opts` drops `--where*`. A list-like verb
@@ -563,9 +636,17 @@ pub(crate) fn emit(
     if opts.quiet {
         return Ok(Emitted::default());
     }
-    if opts.rows.is_some() {
-        return Err(rows_on_row_report(declared));
-    }
+    // `--rows` naming the declared row field is a no-op; any other path is
+    // refused, since a row report has no single object to re-root.
+    let opts = match (&opts.rows, declared) {
+        (None, _) => Cow::Borrowed(opts),
+        (Some(path), Rows::Field(key)) if path == key => Cow::Owned(OutputOpts {
+            rows: None,
+            ..opts.clone()
+        }),
+        (Some(_), _) => return Err(rows_on_row_report(declared)),
+    };
+    let opts: &OutputOpts = &opts;
     if opts.header {
         let Rows::Field(key) = declared else {
             return Err(invalid(HEADER_ON_TOP));
@@ -617,7 +698,10 @@ fn emit_rows(
         rows.truncate(n);
     }
 
-    if let Some(paths) = &opts.select {
+    // A template reads only selected paths, as in `emit_one`.
+    if let Some(paths) = &opts.select
+        && template.is_none()
+    {
         rows.iter_mut().for_each(|r| *r = project(r, paths));
     }
     let trims = opts.omit.is_some() || opts.max_chars.is_some();
@@ -654,6 +738,20 @@ fn emit_rows(
     // walked twice. Omitting the row field itself drops the rows with it.
     if trims && matches!(at, RowsAt::Field(_)) {
         trim(&mut report, opts);
+    }
+    if opts.text_view {
+        let text = match at {
+            RowsAt::Top => text::render_rows(None, &rows),
+            RowsAt::Field(path) => {
+                let kept = row_slot(&mut report, at).is_some();
+                detach(&mut report, path);
+                text::render_rows(Some(&report), if kept { &rows } else { &[] })
+            }
+        };
+        return Ok(Emitted {
+            stdout: text.into_bytes(),
+            notice,
+        });
     }
     if let Some(slot) = row_slot(&mut report, at) {
         *slot = rows;
@@ -888,7 +986,11 @@ fn report_cut(cut: Option<Cut>, opts: &OutputOpts) -> Result<()> {
 /// option the engine does not consume needs the whole row set.
 pub(crate) fn streaming_allowed() -> bool {
     let o = opts();
-    o.get.is_none() && o.template.is_none() && o.omit.is_none() && o.max_chars.is_none()
+    o.get.is_none()
+        && o.template.is_none()
+        && o.omit.is_none()
+        && o.max_chars.is_none()
+        && !o.text_view
 }
 
 /// The options that still apply to a query list's output once its engine
@@ -902,6 +1004,7 @@ fn query_opts(opts: &OutputOpts, lines: bool) -> OutputOpts {
         template: opts.template.clone(),
         omit: opts.omit.clone(),
         max_chars: opts.max_chars,
+        text_view: opts.text_view,
         quiet: opts.quiet,
         json_errors: opts.json_errors,
         lines,
@@ -979,8 +1082,16 @@ pub(crate) fn print_query_list(doc: &toml::Value, array: &str, q: &query::Query)
         }
         return report_cut(cut, opts());
     }
-    let (out, cut) = query::run_counted(doc, array, q)?;
+    let (mut out, cut) = query::run_counted(doc, array, q)?;
     let cut = cut.filter(|_| q.shape.is_streamable());
+    // The engine has already projected the rows, so a template below a
+    // dotted `--select` path needs that path nested again.
+    if q.select.is_some()
+        && opts().template.is_some()
+        && let JsonValue::Array(rows) = &mut out
+    {
+        rows.iter_mut().for_each(nest_selected);
+    }
     if q.raw {
         emit_list_raw(&out, &q.shape)?;
         report_cut(cut, opts())
@@ -1182,7 +1293,7 @@ pub(crate) fn print_raw_value(v: &JsonValue, hint: RawArrayHint) -> Result<()> {
 /// see the trait impl in `query.rs`.
 pub(crate) fn emit_list_raw(v: &JsonValue, shape: &OutputShape) -> Result<()> {
     let o = opts();
-    let print = text_allowed(o, &["--get", "--template", "--omit"])?;
+    let print = text_allowed(o, &["--get", "--template", "--omit", "--text-view"])?;
     let capped;
     let v = match o.max_chars {
         Some(n) => {
@@ -1504,7 +1615,7 @@ mod tests {
     }
 
     #[test]
-    fn get_select_and_template_conflict_pairwise() {
+    fn get_conflicts_with_select_and_template() {
         let both = |f: fn(&mut OutputOpts)| format!("{:#}", with(f).validate().unwrap_err());
         assert_eq!(
             both(|o| {
@@ -1520,13 +1631,6 @@ mod tests {
             }),
             "`--get` cannot be combined with `--template`"
         );
-        assert_eq!(
-            both(|o| {
-                o.template = Some("{a}".into());
-                o.select = Some(vec!["a".into()]);
-            }),
-            "`--template` cannot be combined with `--select`"
-        );
         assert!(with(|o| o.template = Some("{a".into())).validate().is_err());
         assert!(
             with(|o| {
@@ -1537,6 +1641,48 @@ mod tests {
             .validate()
             .is_ok()
         );
+    }
+
+    #[test]
+    fn template_renders_after_select_from_selected_paths_only() {
+        let select = |paths: &[&str], t: &str| {
+            with(|o| {
+                o.select = Some(paths.iter().map(|p| p.to_string()).collect());
+                o.template = Some(t.into());
+            })
+        };
+        let o = select(&["id", "policy"], "{id}:{policy.mode}");
+        o.validate().unwrap();
+        assert_eq!(out(rows3(), TOP, Style::Pretty, &o), "1:\n2:\n3:m\n");
+        let o = select(&["deps"], "{deps.0.ref}");
+        o.validate().unwrap();
+        assert_eq!(out(show_report(), Shape::One, Style::Pretty, &o), "a\n");
+
+        for (paths, t) in [
+            (&["id"][..], "{id} {ref}"),
+            (&["policy.mode"][..], "{policy}"),
+            (&["deps.*.ref"][..], "{deps.*.ref}"),
+        ] {
+            let msg = conflict(|o| *o = select(paths, t));
+            assert!(msg.starts_with("--template path `"), "{msg}");
+            assert!(msg.contains("is not under a --select path"), "{msg}");
+        }
+    }
+
+    #[test]
+    fn nest_selected_spells_dotted_keys_out_for_a_template() {
+        let mut row =
+            json!({ "id": 1, "a.b.c": 3, "a.b": { "c": 3, "d": 4 }, "f.0": "x", "w.*.z": [1] });
+        nest_selected(&mut row);
+        assert_eq!(row["a"], json!({ "b": { "c": 3, "d": 4 } }));
+        assert_eq!(row["f"], json!({ "0": "x" }));
+        assert!(row.get("w").is_none());
+        let t = Template::parse("{id} {a.b.d} {f.0}").unwrap();
+        assert_eq!(t.render(&row), "1 4 x");
+        let mut row = json!({ "files": ["x"], "files.0": "x", "s": "t", "s.k": 1 });
+        nest_selected(&mut row);
+        assert_eq!(row["files"], json!(["x"]));
+        assert_eq!(row["s"], json!("t"));
     }
 
     #[test]
@@ -2109,16 +2255,36 @@ mod tests {
     }
 
     #[test]
-    fn rows_is_refused_on_a_row_report_naming_its_row_field() {
+    fn rows_on_a_row_report_is_refused_unless_it_names_the_row_field() {
         let o = with(|o| o.rows = Some("deps".into()));
         let report = json!({ "total": 3, "items": rows3() });
-        let e = emit(report, FIELD, Style::Pretty, &o).unwrap_err();
+        let e = emit(report.clone(), FIELD, Style::Pretty, &o).unwrap_err();
         assert_eq!(tag(&e), "validation");
         assert_eq!(
             format!("{e:#}"),
             "`--rows` applies to a single-object report; this report's rows are already its `items` field"
         );
         assert!(err(rows3(), TOP, &o).ends_with("this report is already a row array"));
+
+        let same = |f: fn(&mut OutputOpts)| {
+            let mut redundant = with(f);
+            redundant.rows = Some("items".into());
+            assert_eq!(
+                out(report.clone(), FIELD, Style::Pretty, &redundant),
+                out(report.clone(), FIELD, Style::Pretty, &with(f)),
+            );
+        };
+        same(|_| {});
+        same(|o| o.lines = true);
+        same(|o| {
+            o.limit = Some(1);
+            o.get = Some("ref".into());
+        });
+        let o = with(|o| {
+            o.rows = Some("items".into());
+            o.get = Some("total".into());
+        });
+        assert!(err(report, FIELD, &o).ends_with("; it is a header field — add --header"));
     }
 
     #[test]
@@ -2196,14 +2362,23 @@ mod tests {
     }
 
     #[test]
-    fn header_is_refused_on_a_bare_row_array_and_a_single_report() {
+    fn header_is_refused_on_a_bare_row_array_and_returns_a_single_report() {
         let o = with(|o| o.header = true);
         let e = emit(rows3(), TOP, Style::Pretty, &o).unwrap_err();
         assert_eq!(tag(&e), "validation");
         assert_eq!(format!("{e:#}"), HEADER_ON_TOP);
-        let e = emit(json!({ "a": 1 }), Shape::One, Style::Pretty, &o).unwrap_err();
-        assert_eq!(tag(&e), "validation");
-        assert_eq!(format!("{e:#}"), HEADER_ON_ONE);
+        let plain = OutputOpts::default();
+        for shape in [Shape::One, FIELD] {
+            assert_eq!(
+                out(show_report(), shape, Style::Compact, &o),
+                out(show_report(), shape, Style::Compact, &plain)
+            );
+        }
+        let o = with(|o| {
+            o.header = true;
+            o.get = Some("title".into());
+        });
+        assert_eq!(out(show_report(), Shape::One, Style::Pretty, &o), "t\n");
     }
 
     #[test]
@@ -2374,5 +2549,98 @@ mod tests {
         check_where_placement(&one_side[1..], &global).unwrap();
         let positional = ["--", "--where"];
         check_where_placement(positional, &WhereFilters::default()).unwrap();
+    }
+
+    fn text_view(f: impl FnOnce(&mut OutputOpts)) -> OutputOpts {
+        with(|o| {
+            o.text_view = true;
+            f(o);
+        })
+    }
+
+    #[test]
+    fn text_view_renders_a_single_object_after_select_omit_and_max_chars() {
+        let report = json!({ "id": 3, "body": "one\ntwo", "policy": { "mode": "m", "n": 2 } });
+        let o = text_view(|o| o.select = Some(vec!["id".into(), "policy.mode".into()]));
+        assert_eq!(
+            out(report.clone(), Shape::One, Style::Pretty, &o),
+            "id: 3\npolicy.mode: m\n"
+        );
+        let o = text_view(|o| o.select = Some(vec!["policy".into()]));
+        assert_eq!(
+            out(report.clone(), Shape::One, Style::Pretty, &o),
+            "policy.mode: m\npolicy.n: 2\n"
+        );
+        let o = text_view(|o| {
+            o.omit = Some(vec!["policy".into()]);
+            o.max_chars = Some(5);
+        });
+        assert_eq!(
+            out(report, Shape::One, Style::Compact, &o),
+            "id: 3\nbody:\n  one\n  t…(+2)\n"
+        );
+    }
+
+    #[test]
+    fn text_view_renders_the_header_then_each_row_and_cuts_on_stderr() {
+        let report = json!({ "total": 3, "items": rows3() });
+        let o = text_view(|o| o.limit = Some(2));
+        let emitted = emit(report, FIELD, Style::Pretty, &o).unwrap();
+        assert_eq!(
+            String::from_utf8(emitted.stdout).unwrap(),
+            "total: 3\n\nid: 1\nref: a\ndeps: 2\n\nid: 2\nref: b\n"
+        );
+        assert!(emitted.notice.is_some());
+        let o = text_view(|o| o.header = true);
+        let report = json!({ "total": 3, "items": rows3() });
+        assert_eq!(out(report, FIELD, Style::Pretty, &o), "total: 3\n");
+        let report = json!({ "note": "n", "list": [{ "a": 1 }] });
+        let o = text_view(|o| o.rows = Some("list".into()));
+        assert_eq!(
+            out(report, Shape::One, Style::Pretty, &o),
+            "note: n\n\na: 1\n"
+        );
+    }
+
+    #[test]
+    fn text_view_on_a_list_verb_renders_engine_projected_dotted_keys_once() {
+        let rows: Vec<JsonValue> = rows3()
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| project(r, &["id".into(), "policy.mode".into()]))
+            .collect();
+        let o = query_opts(&text_view(|_| {}), false);
+        assert_eq!(
+            out(JsonValue::Array(rows), TOP, Style::Pretty, &o),
+            "id: 1\n\nid: 2\n\nid: 3\npolicy.mode: m\n"
+        );
+    }
+
+    #[test]
+    fn text_view_survives_query_opts_and_counts_as_a_shaping_flag() {
+        let o = query_opts(&text_view(|_| {}), true);
+        assert!(o.text_view);
+        assert_eq!(text_view(|_| {}).shaping_flags(), ["--text-view"]);
+    }
+
+    #[test]
+    fn text_view_conflicts_with_get_template_lines_and_quiet() {
+        for (o, flag) in [
+            (text_view(|o| o.get = Some("id".into())), "`--get`"),
+            (
+                text_view(|o| o.template = Some("{id}".into())),
+                "`--template`",
+            ),
+            (text_view(|o| o.lines = true), "`--lines`"),
+            (text_view(|o| o.quiet = true), "`--text-view`"),
+        ] {
+            let e = o.validate().unwrap_err();
+            assert_eq!(tag(&e), "validation");
+            assert!(format!("{e:#}").contains(flag), "{e:#}");
+        }
+        text_view(|o| o.select = Some(vec!["id".into()]))
+            .validate()
+            .unwrap();
     }
 }

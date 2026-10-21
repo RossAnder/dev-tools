@@ -146,6 +146,21 @@ pub(crate) const FEATURES: &[&str] = &[
     "review_export_v1",
     "review_catalogue",
     "review_schema",
+    // Agent ergonomics: prose payloads, batch writes, consistent reads.
+    "regex_unicode",
+    "template_escapes",
+    "text_view",
+    "relaxed_refusals",
+    "items_get_multi",
+    "list_grep",
+    "reconcile_counts",
+    "toml_records",
+    "tasks_update_batch",
+    "backlog_triage_batch",
+    "flow_record_row_task",
+    "backlog_get",
+    "backlog_edit",
+    "owned_store_guard",
 ];
 
 /// User-facing top-level subcommand names, as they appear in
@@ -247,8 +262,8 @@ pub(crate) struct OutputArgs {
         long = "template",
         value_name = "T",
         global = true,
-        help = "One text line per row (or one for a single report); `{path}` placeholders, `{{`/`}}` for literal braces",
-        long_help = "One text line per row (or one for a single report); `{path}` placeholders, `{{`/`}}` for literal braces. A string value containing newlines prints them verbatim, so one row can span several lines; use --lines or --select for line-safe output"
+        help = "One text line per row (or one for a single report); `{path}` placeholders, `{{`/`}}` for literal braces, `\\n` `\\t` `\\\\` escapes",
+        long_help = "One text line per row (or one for a single report); `{path}` placeholders, `{{`/`}}` for literal braces, and the escapes `\\n` (newline), `\\t` (tab) and `\\\\` (backslash) in the template text. A string value containing newlines prints them verbatim, so one row can span several lines; use --lines or --select for line-safe output"
     )]
     pub(crate) template: Option<String>,
 
@@ -290,6 +305,14 @@ pub(crate) struct OutputArgs {
         help = "Drop these dotted paths — from each row and the header on a row report, from the object otherwise"
     )]
     pub(crate) omit: Option<String>,
+
+    #[arg(
+        long = "text-view",
+        global = true,
+        help = "Print each object as `key: value` lines, multi-line text indented; a row report as its header block, then one block per row",
+        long_help = "Print each object as `key: value` lines: strings bare, a string containing newlines as `key:` and its lines indented two spaces, an array of scalars comma-joined, a nested object as dotted keys, an array of objects as compact JSON; null keys are skipped. A row report prints its header block, then one block per row, separated by blank lines. Not combinable with --get, --template, --lines or -q"
+    )]
+    pub(crate) text_view: bool,
 
     #[command(flatten)]
     pub(crate) filters: GlobalWhereArgs,

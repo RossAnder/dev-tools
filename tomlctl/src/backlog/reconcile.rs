@@ -145,6 +145,7 @@ fn reconcile(
     };
 
     let mut buckets = serde_json::Map::new();
+    let mut counts = serde_json::Map::new();
     for bucket in Bucket::ALL {
         let entries: Vec<JsonValue> = survey
             .entries
@@ -152,6 +153,7 @@ fn reconcile(
             .filter(|entry| entry.bucket == bucket)
             .map(Entry::to_json)
             .collect();
+        counts.insert(bucket.name().to_string(), json!(entries.len()));
         buckets.insert(bucket.name().to_string(), JsonValue::Array(entries));
     }
     let render_needed: BTreeSet<&str> = survey
@@ -163,6 +165,7 @@ fn reconcile(
         "ok": true,
         "flow": flow,
         "buckets": buckets,
+        "counts": counts,
         "adopted": survey
             .adopted
             .iter()
