@@ -442,6 +442,16 @@ impl Theme {
         };
         self.flash[at]
     }
+
+    /// A muted `style`, replaced by `selection_text` on the cursor row so it stays
+    /// legible on the selection fill.
+    pub(crate) fn on_cursor(&self, style: Style, is_cursor: bool) -> Style {
+        if is_cursor {
+            self.selection_text
+        } else {
+            style
+        }
+    }
 }
 
 #[cfg(test)]

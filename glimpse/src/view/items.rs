@@ -434,13 +434,7 @@ fn value_cell(
 ) -> Span<'static> {
     let theme = &app.theme;
     let padded = |text: &str| format!("{text}{}", " ".repeat(w.saturating_sub(text_width(text))));
-    let muted = |style: Style| {
-        if is_cursor {
-            theme.selection_text
-        } else {
-            style
-        }
-    };
+    let muted = |style: Style| theme.on_cursor(style, is_cursor);
     match column {
         ItemColumn::Status => {
             Span::styled(glyph(row.class), theme.item_status(class_name(row.class)))

@@ -68,11 +68,10 @@ fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> Drawn {
 
     let columns = Columns::measure(state, &visible);
     let table = columns.table(width);
-    let sorted = InboxColumn::ALL.iter().find_map(|column| {
-        state
-            .header_sort(*column)
-            .map(|dir| (column_index(*column), dir))
-    });
+    let sorted = TABLE
+        .iter()
+        .enumerate()
+        .find_map(|(at, column)| state.header_sort((*column)?).map(|dir| (at, dir)));
     let headers: Vec<(Rect, HeaderKey)> = header(buf, body, &table, sorted, &app.theme)
         .into_iter()
         .filter_map(|(rect, at)| Some((rect, HeaderKey::Inbox(column_at(at)?))))
@@ -139,24 +138,28 @@ fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> Drawn {
     }
 }
 
-/// The index of the id column in [`Columns::table`]; the glyph column precedes it.
-const ID_AT: usize = 1;
+/// The header table's columns in drawn order; `None` is the glyph column, which sorts
+/// by nothing. [`Columns::table`], header clicks, sort marks and id cells all index it.
+const TABLE: [Option<InboxColumn>; 5] = [
+    None,
+    Some(InboxColumn::Id),
+    Some(InboxColumn::Kind),
+    Some(InboxColumn::Status),
+    Some(InboxColumn::Text),
+];
 
-/// The header table's index for a sortable column.
-fn column_index(column: InboxColumn) -> usize {
-    match column {
-        InboxColumn::Id => ID_AT,
-        InboxColumn::Kind => 2,
-        InboxColumn::Status => 3,
-        InboxColumn::Text => 4,
+/// The id column's index in [`TABLE`]; evaluation fails to compile if it is absent.
+const ID_AT: usize = {
+    let mut at = 0;
+    while !matches!(TABLE[at], Some(InboxColumn::Id)) {
+        at += 1;
     }
-}
+    at
+};
 
 /// The sortable column at a header table index; the glyph column has none.
 fn column_at(index: usize) -> Option<InboxColumn> {
-    InboxColumn::ALL
-        .into_iter()
-        .find(|column| column_index(*column) == index)
+    TABLE.get(index).copied().flatten()
 }
 
 /// `2 unanswered · closed hidden`.
@@ -206,23 +209,27 @@ impl Columns {
         } else {
             self.author
         };
-        let fixed = [1, self.id, kind, self.status];
+        let fixed = |column: Option<InboxColumn>| match column {
+            None => Some(("", 1)),
+            Some(InboxColumn::Id) => Some(("id", self.id)),
+            Some(InboxColumn::Kind) => Some(("kind", kind)),
+            Some(InboxColumn::Status) => Some(("status", self.status)),
+            Some(InboxColumn::Text) => None,
+        };
         let used: usize = usize::from(LEAD)
-            + fixed
-                .iter()
-                .map(|w| if *w == 0 { 0 } else { w + 1 })
+            + TABLE
+                .into_iter()
+                .filter_map(fixed)
+                .map(|(_, w)| if w == 0 { 0 } else { w + 1 })
                 .sum::<usize>();
         let text = width.saturating_sub(used + 2);
-        [
-            ("", fixed[0]),
-            ("id", fixed[1]),
-            ("kind", fixed[2]),
-            ("status", fixed[3]),
-            ("text", text),
-        ]
-        .into_iter()
-        .map(|(title, width)| Column { title, width })
-        .collect()
+        TABLE
+            .into_iter()
+            .map(|column| {
+                let (title, width) = fixed(column).unwrap_or(("text", text));
+                Column { title, width }
+            })
+            .collect()
     }
 }
 
@@ -383,14 +390,9 @@ fn push_target(left: &mut Vec<Span<'static>>, row: &InputRow, theme: &Theme, is_
     }
 }
 
-/// The dimmed style, lifted to `selection_text` on the cursor row so it stays legible
-/// on the selection fill.
+/// The dimmed style, lifted to `selection_text` on the cursor row.
 fn muted(theme: &Theme, is_cursor: bool) -> Style {
-    if is_cursor {
-        theme.selection_text
-    } else {
-        theme.facet
-    }
+    theme.on_cursor(theme.facet, is_cursor)
 }
 
 /// The ledger, its flow or scope, and the targeted ids; a capture's kind and area.
@@ -659,6 +661,33 @@ mod tests {
                 .collect();
             assert_eq!(&text, id);
         }
+    }
+
+    #[test]
+    fn every_column_maps_to_one_header_cell_and_back() {
+        for column in InboxColumn::ALL {
+            let at: Vec<usize> = (0..TABLE.len())
+                .filter(|at| column_at(*at) == Some(column))
+                .collect();
+            assert_eq!(at.len(), 1, "{column:?} at {at:?}");
+            assert_eq!(column_at(at[0]), Some(column));
+        }
+        assert_eq!(column_at(ID_AT), Some(InboxColumn::Id));
+        let table = Columns {
+            id: 2,
+            kind: 4,
+            status: 3,
+            author: 0,
+        }
+        .table(60);
+        assert_eq!(table.len(), TABLE.len());
+        assert_eq!(table[ID_AT].title, "id");
+        let titled = (0..TABLE.len()).filter(|at| column_at(*at).is_some());
+        for at in titled {
+            let column = column_at(at).expect("sortable");
+            assert_eq!(table[at].title, column.label(), "{column:?}");
+        }
+        assert_eq!(column_at(TABLE.len()), None);
     }
 
     #[test]

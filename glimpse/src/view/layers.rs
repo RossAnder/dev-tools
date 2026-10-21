@@ -567,11 +567,7 @@ fn task_parts(
         if !right.is_empty() {
             right.push(Span::raw(" "));
         }
-        let muted = if ctx.is_selected(task.id) {
-            theme.selection_text
-        } else {
-            theme.effort
-        };
+        let muted = theme.on_cursor(theme.effort, ctx.is_selected(task.id));
         let effort = super::notice_style(ctx.app, task).unwrap_or(muted);
         right.push(Span::styled(task.effort.clone(), effort));
     }
