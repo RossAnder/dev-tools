@@ -5,6 +5,7 @@
 //! lock. A `--ndjson` batch is all-or-nothing: every row is validated before
 //! the lock is taken, and the append itself aborts the write on any failure.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -205,6 +206,26 @@ fn task_ref_for(slug: &str, id: u32, verify_integrity: bool) -> Result<String> {
     Ok(row.r#ref.clone())
 }
 
+/// The `ref` of each listed task that exists in the flow's task store, loaded
+/// once, with the store's path for error text.
+fn task_refs_for(
+    slug: &str,
+    ids: &[u32],
+    verify_integrity: bool,
+) -> Result<(PathBuf, HashMap<u32, String>)> {
+    let path = crate::tasks::resolve_store_path(Some(slug), None)?;
+    let integrity = ReadIntegrityArgs {
+        verify_integrity,
+        strict_read: false,
+    };
+    let store = crate::tasks::load_store(&path, &integrity)?;
+    let refs = ids
+        .iter()
+        .filter_map(|id| store.find(*id).map(|row| (*id, row.r#ref.clone())))
+        .collect();
+    Ok((path, refs))
+}
+
 /// Every entry the call writes, before schema validation: the `--json` base
 /// with the field flags over it, each `--ndjson` row laid over that, then
 /// `type`, `task_ref` and `date` filled in from the flags. Each entry is paired
@@ -250,16 +271,81 @@ fn build_entries(
         }
     };
 
-    for (line, entry) in &mut entries {
+    let row_tasks = entries
+        .iter_mut()
+        .map(|(line, entry)| take_row_task(entry).with_context(|| row_label(*line)))
+        .collect::<Result<Vec<_>>>()?;
+    let mut wanted: Vec<u32> = row_tasks.iter().flatten().copied().collect();
+    wanted.sort_unstable();
+    wanted.dedup();
+    let (store_path, refs) = if wanted.is_empty() {
+        (PathBuf::new(), HashMap::new())
+    } else {
+        task_refs_for(&req.slug, &wanted, req.integrity.verify_integrity)?
+    };
+
+    for ((line, entry), row_task) in entries.iter_mut().zip(row_tasks) {
+        let effective = match row_task {
+            None => task_ref.map(str::to_string),
+            Some(id) => Some(
+                resolve_row_task(entry, id, req.task, &refs, &store_path)
+                    .with_context(|| row_label(*line))?,
+            ),
+        };
         fill_defaults(
             entry,
             req.record_type.map(RecordType::as_str),
-            task_ref,
+            effective.as_deref(),
             today,
         )
         .with_context(|| row_label(*line))?;
     }
     Ok(entries)
+}
+
+/// Removes a row's `task` key and returns the task id it names. An empty or
+/// null value counts as absent.
+fn take_row_task(entry: &mut Entry) -> Result<Option<u32>> {
+    match entry.remove("task") {
+        None | Some(JsonValue::Null) => Ok(None),
+        Some(JsonValue::String(s)) if s.is_empty() => Ok(None),
+        Some(value) => value
+            .as_u64()
+            .and_then(|n| u32::try_from(n).ok())
+            .map(Some)
+            .ok_or_else(|| validation(format!("`task` must be a task id, got {value}"))),
+    }
+}
+
+/// The `ref` for a row's `task`, refusing a row whose `task` disagrees with
+/// `--task` or whose `task_ref` disagrees with the resolved ref.
+fn resolve_row_task(
+    entry: &Entry,
+    id: u32,
+    flag_task: Option<u32>,
+    refs: &HashMap<u32, String>,
+    store_path: &Path,
+) -> Result<String> {
+    if let Some(flag) = flag_task.filter(|flag| *flag != id) {
+        return Err(validation(format!(
+            "payload `task` is {id} but --task gives {flag}; drop one of them"
+        )));
+    }
+    let resolved = refs.get(&id).ok_or_else(|| {
+        tagged_err(
+            ErrorKind::NotFound,
+            None,
+            format!("`task` {id}: no task {id} in `{}`", store_path.display()),
+        )
+    })?;
+    match entry.get("task_ref") {
+        Some(current) if !is_unset(Some(current)) && current.as_str() != Some(resolved) => {
+            Err(validation(format!(
+                "payload `task_ref` is {current} but `task` {id} resolves to `{resolved}`; drop one of them"
+            )))
+        }
+        _ => Ok(resolved.clone()),
+    }
 }
 
 fn is_unset(value: Option<&JsonValue>) -> bool {

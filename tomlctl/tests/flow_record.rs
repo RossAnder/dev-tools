@@ -341,6 +341,93 @@ fn ndjson_batch_with_one_bad_row_writes_nothing() {
     assert!(!record.exists());
 }
 
+#[test]
+fn toml_record_file_resolves_each_rows_task_and_keeps_prose_verbatim() {
+    let (_dir, root, record) = flow();
+    let batch = root.join("deviations.toml");
+    fs::write(
+        &batch,
+        concat!(
+            "[[record]]\ntask = 1\nsummary = '''Dropped `redis` for $CACHE'''\n",
+            "original_intent = '''add \"redis\"'''\nrationale = '''\ncache exists\nalready\n'''\n\n",
+            "[[record]]\ntask = 2\nsummary = '''kept sync'''\n",
+            "original_intent = '''go async'''\nrationale = '''no runtime'''\n",
+        ),
+    )
+    .unwrap();
+    let out = record_ok(
+        &root,
+        &[
+            "--type",
+            "deviation",
+            "--set",
+            "agent=implement",
+            "--ndjson",
+            batch.to_str().unwrap(),
+        ],
+    );
+    assert_eq!(out["ids"], json!(["E1", "E2"]));
+    let items = record_items(&record);
+    assert_eq!(items.len(), 2);
+    assert_eq!(
+        items[0]["task_ref"].as_str(),
+        Some("scaffold-the-module-tree")
+    );
+    assert_eq!(items[1]["task_ref"].as_str(), Some("wire-the-graph-engine"));
+    assert_eq!(
+        items[0]["summary"].as_str(),
+        Some("Dropped `redis` for $CACHE")
+    );
+    assert_eq!(
+        items[0]["rationale"].as_str(),
+        Some("cache exists\nalready")
+    );
+    assert!(items.iter().all(|row| row.get("task").is_none()));
+}
+
+fn row_task_err(root: &Path, extra: &[&str], rows: &str) -> Value {
+    let batch = root.join("rows.ndjson");
+    fs::write(&batch, rows).unwrap();
+    let mut args = vec![
+        "--type",
+        "deviation",
+        "--set",
+        "agent=implement",
+        "--ndjson",
+        batch.to_str().unwrap(),
+    ];
+    args.extend(extra);
+    record_err(root, &args)
+}
+
+#[test]
+fn row_task_disagreeing_with_task_flag_or_task_ref_is_refused() {
+    let (_dir, root, record) = flow();
+    let ok_row = r#"{"task":1,"summary":"s","original_intent":"a","rationale":"b"}"#;
+
+    let rows = format!("{ok_row}\n{}\n", ok_row.replace("\"task\":1", "\"task\":2"));
+    let err = row_task_err(&root, &["--task", "1"], &rows);
+    assert_eq!(err["kind"], json!("validation"), "{err}");
+    let message = err["message"].as_str().unwrap();
+    assert!(
+        message.starts_with("--ndjson line 2:") && message.contains("--task"),
+        "{message}"
+    );
+
+    let mismatched = ok_row.replace("\"task\":1", "\"task\":1,\"task_ref\":\"other\"");
+    let err = row_task_err(&root, &[], &format!("{mismatched}\n"));
+    assert_eq!(err["kind"], json!("validation"), "{err}");
+    assert!(
+        err["message"].as_str().unwrap().contains("resolves to"),
+        "{err}"
+    );
+
+    let unknown = ok_row.replace("\"task\":1", "\"task\":99");
+    let err = row_task_err(&root, &[], &format!("{unknown}\n"));
+    assert_eq!(err["kind"], json!("not_found"), "{err}");
+    assert!(!record.exists());
+}
+
 fn deviation_batch_err(root: &Path, contents: &str) -> Value {
     let batch = root.join("rows.ndjson");
     fs::write(&batch, contents).unwrap();
