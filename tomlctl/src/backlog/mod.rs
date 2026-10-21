@@ -14,6 +14,7 @@ mod add_many;
 mod check;
 mod cluster;
 mod compact;
+mod edit;
 mod evidence;
 mod evidence_ops;
 mod ids;
