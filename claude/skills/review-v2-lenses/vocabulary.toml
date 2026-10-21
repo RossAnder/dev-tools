@@ -1,8 +1,10 @@
 # The built-in review-v2 vocabulary: signals with their detectors, concern
 # tags with the families they serve, and the routing globs `review add`
 # computes `route` from. The detector semantics are in SKILL.md ("Detectors").
-# Regexes are TOML literal strings, compiled ASCII-only: `(?-u:\b)` and
-# `(?i-u:...)` forms, never `\w`, `\d`, `\s` or a bare `(?i)`.
+# Regexes are TOML literal strings. Prefer the ASCII forms `(?-u:\b)` and
+# `(?i-u:...)`: a Unicode `\b` drops the lazy DFA to the slower PikeVM. `(?i)`,
+# `\d`, `\w`, `\s` and `\b` compile, but `\p{..}` is refused and a Unicode
+# `\w{21}` exceeds the compile-size limit.
 
 # ---------------------------------------------------------------- stack
 
