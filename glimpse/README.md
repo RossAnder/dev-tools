@@ -71,7 +71,7 @@ start.
 ## Usage
 
 ```
-glimpse [--slug S] [--view V] [--orientation O] [--surface U]
+glimpse [--slug S] [--view V] [--orientation O] [--surface U] [--theme T]
                                                   open the live view
 glimpse --once [--size WxH] [--snapshot FILE] [--select ID] [--ledger FILE]
                [--group F] [--sort F] [--closed]  render one frame as plain text
@@ -86,7 +86,8 @@ changes next. Exit status is 0 on success, 1 on a runtime failure and 2 on a usa
 error; `hook` always exits 0, logging even a usage error. `--harness` is
 `claude-code` (the default) or `codex`. `--surface` is `tasks`, `review`,
 `optimise`, `plan-review`, `backlog` or `inbox`, the surface to open on; without
-it glimpse opens on the one it was left on.
+it glimpse opens on the one it was left on. `--theme` is `kanso-zen`,
+`kanso-pearl`, `ansi` or `mono`, the colour set to start in (see [Theme](#theme)).
 
 `--once` renders through ratatui's test backend with no terminal and no escape
 sequences, at 120x40 unless `--size` says otherwise. With `--snapshot` it draws a
@@ -106,17 +107,21 @@ four item surfaces list the viewed flow's `review-ledger.toml`,
 `.claude/backlog.toml`, and follow them live. Inbox lists `.claude/inputs.toml`
 (see [Inbox](#inbox)).
 
-The header's second row holds the surface tabs, the current one on a filled
-background: ` Tasks   Review 12 +3   Optimise 4   Plan-review —   Backlog 6   Inbox 2?`.
-Click a tab to switch to it. Each count
-is the surface's open items, `—` while it has no ledger file; Inbox counts the
+The header's second row holds the surface tabs, the current one flooded in the
+accent colour: ` Tasks   Review 12 +3   Optimise 4   Plan-review   Backlog 6   Inbox 2?`.
+Click a tab to switch to it. Each count is the surface's open items; a surface with
+no ledger file shows no count and its tab is faded. Inbox counts the
 questions waiting on an answer, marked `?` when there are any. `+N` counts the items
 that appeared or changed status since you last had that surface on screen, and
 clears when you switch to it; glimpse never switches surface by itself. A compact
-header folds the tabs into its one row by initial, as `R12+3 O4 P— B6 I—`.
+header folds the tabs into its one row by initial, as `R12+3 O4 P B6 I2?`. Below
+the tabs a row shows a source error or config warning when there is one, else, in a
+pane at least 30 rows tall, the flow's latest status event; a compact header adds
+only the error or warning.
 
 An item surface opens with a facet row, `group severity · sort id · closed hidden`,
-then one row per item:
+then a header row naming the columns, the sorted one marked `▲` or `▼`, then one
+row per item:
 
 ```
 ▸● ○ R12 warning correctness small Lock held across await…  ↻ ✉ ID src/a.rs:12
@@ -128,7 +133,8 @@ agent whose dispatch names the item, and the item's `file:line` (its heading or
 area where it has no file) in a column of its own, aligned down the list. A long
 path keeps its end, as `…apply-pipeline/SKILL.md`; the column narrows, then drops,
 before the summary falls under 20 cells. `item_columns` picks which columns show
-and their order. `✉` means an
+and their order, and `C` changes them for the session: previously chosen columns
+keep their order and newly ticked ones go on the end. `✉` means an
 input record not yet handled names the item, in the `input_new` colour while the
 newest such record is `new` and `input_acknowledged` once an agent has read it;
 the item's details list those records under **Inputs**. The status glyph is `○` open, `⏸`
@@ -141,13 +147,18 @@ cursor row and moves on, `V` marks every visible row, and `Esc` clears the marks
 before it closes anything. `g` cycles the grouping, each group under a
 `▾ <label> (n)` header: none, severity, category, effort, file and status on
 Review and Optimise; none, severity, category and status on Plan-review; none,
-kind, area and status on Backlog. `S` cycles the sort: id, severity, effort and
-newest on Review and Optimise; id, severity and newest on Plan-review; id and
-newest on Backlog. `c` shows or hides the closed (done and declined) items. `/`
+kind, area and status on Backlog. `S` cycles the sort: id, severity, effort,
+newest, status, category, summary and area on Review and Optimise; the same less
+effort on Plan-review; id, newest, kind, status, summary and area on Backlog. `D`
+flips the direction. A click on a column header sorts by that column ascending,
+a second click descending, a third returns to id ascending; the status glyph's
+column has a blank title but sorts by status all the same. `c` shows or
+hides the closed (done and declined) items. `/`
 opens a filter prompt in the facet row that narrows the list as you type, matching
 the id, summary, file or area without regard to case; `Enter` keeps the filter
-and `Esc` restores the one before. The surface and each surface's grouping and
-sort are saved on exit with the other layout choices.
+and `Esc` restores the one before. The surface, each surface's grouping, sort and
+direction, and the columns are saved on exit with the other layout choices (see
+[Views and keys](#views-and-keys)).
 
 The flow selector (`s`) also lists flows that hold a ledger but no `tasks.toml`,
 marked `no tasks`; picking one shows its ledgers on the item surfaces. After a
@@ -205,7 +216,9 @@ The Inbox lists `.claude/inputs.toml`, under a facet row such as
 `▾ questions (n)`, each marked `?` with its author, target, prompt and options.
 The other records follow grouped by status: `●` new, `◐` acknowledged, `✓`
 handled (with the handling agent's note after `→`) and `✗` withdrawn. `c` shows or
-hides the handled and withdrawn ones.
+hides the handled and withdrawn ones. The header row names the Inbox's own columns,
+id, kind, status and text; a click sorts by one as on an item surface, and `D` flips
+the direction. `S` and `g` do nothing here.
 
 `Enter` on a question opens its answer form, a pick from its options or free text
 as the question asks; on any other record it opens details. `w` withdraws the
@@ -229,11 +242,11 @@ Three views, cycled with `Tab` and `Shift+Tab`:
   one step further out on each side, then (at comfortable density) back to the
   card, which shows the action's markdown lists and then its files. Horizontally
   the card takes whatever width the side columns leave.
-- **diagram**: the layered graph drawn as `[id]` nodes joined by routed edges,
-  coupling edges dashed. A needs edge that another path of needs edges already
-  implies is left out of the layout, which keeps wide graphs compact; `i` lays them
-  out too, and details marks them `implied` under Needs. Tasks sharing a file with
-  the selection are underlined.
+- **diagram**: the layered graph drawn as nodes joined by routed edges, coupling
+  edges dashed. A needs edge that another path of needs edges already implies is
+  left out of the layout, which keeps wide graphs compact; `i` lays them out too,
+  and details marks them `implied` under Needs. Tasks sharing a file with the
+  selection are underlined. See [Diagram focus, zoom and fit](#diagram-focus-zoom-and-fit).
 
 Shapes are judged in pixels, not cells: a cell is about twice as tall as it is
 wide, by a factor that depends on the font. glimpse asks the terminal for its pixel
@@ -250,7 +263,8 @@ activity panels beside a landscape body and below a portrait one; `panel_split`
 pins either side and `|` flips it. The switch point
 is `panel_split_threshold`, with a margin either side so a pane resized near it
 does not flicker. Drag the panel's near border with the mouse to resize it, or use
-`[` and `]`. *Compact* gives the view the whole body and
+`[` and `]`; a press a cell either side of the border grabs it too. Comfortable
+density leaves a blank column left of the body. *Compact* gives the view the whole body and
 opens the panels as a centred modal over it, with a one-row header. `auto`, the
 default, is compact while the terminal is narrower than `compact_below` columns;
 `d` pins it either way and shows the choice in the footer for a moment.
@@ -274,29 +288,64 @@ top or a third of the view from the bottom. A task's effort mark (`S`/`M`/`L`)
 turns `warning` when its record holds a deviation, deferral, retry, escalation or
 timed-out check, and `danger` when it failed.
 
+**Paging.** `PgUp`, `PgDn`, `Home` and `End` act on whatever has focus, the first
+of these that applies: the theme picker's cursor; the open legend; the flow
+selector's cursor, a drawn page at a time; details that cover the body
+(full-screen, or the compact modal); the cursor of an item surface or the Inbox;
+on Tasks, `Home` and `End` select the first and last task by (layer, id) and `PgUp`
+and `PgDn` pan the layers or diagram view a page, as the wheel does. A docked
+details panel scrolls with `J`/`K`, a row at a time, and with `Shift+PgUp`,
+`Shift+PgDn`, `Shift+Home` and `Shift+End`. In a form the paging keys move inside a
+dropdown or checklist.
+
+ghostty on Linux and Windows binds `Shift+PgUp`, `Shift+PgDn`, `Shift+Home` and
+`Shift+End` to its own scrollback, so they never reach glimpse there. `J`/`K` still
+work, or free the keys in ghostty's config:
+
+```
+keybind = shift+page_up=unbind
+keybind = shift+page_down=unbind
+keybind = shift+home=unbind
+keybind = shift+end=unbind
+```
+
+The legend's `Keys` section lists the same keys.
+
 | Key | Action |
 |---|---|
 | `h` `j` `k` `l` / arrows | move the selection; this turns follow off |
 | `Tab` / `Shift+Tab` | next / previous view |
+| `Enter` | details panel, then full-screen details, then close; compact opens and closes a modal |
+| `PgUp` / `PgDn` | page the focused list, the legend or full-screen details (see Paging) |
+| `Home` / `End` | first / last row or task |
+| `J` / `K` | scroll the details panel, or the open legend, a row down / up |
+| `Shift+PgUp` / `Shift+PgDn` | page the details panel |
+| `Shift+Home` / `Shift+End` | details panel: top / bottom |
+| `t` | activity panel for the selected task's newest running agent |
 | `o` | flip the orientation |
 | `\|` | dock the panels beside or below the view |
-| `i` | diagram: lay out implied edges too, or leave them out |
-| `?` | legend: every mark, colour and key, in the current theme |
-| `f` | toggle follow |
-| `Enter` | details panel, then full-screen details, then close; compact opens and closes a modal |
-| `J` / `K` | scroll the details or open legend one row down / up |
-| `PgDn` / `PgUp`, `End` / `Home` | scroll details or the open legend a page, or to the bottom / top |
-| `t` | activity panel for the selected task's newest running agent |
-| `d` | cycle density: auto, compact, comfortable |
 | `[` / `]` | shrink / grow the docked panel by 5% of the body, between 20% and 70%; dragging the divider does the same |
 | `-` / `=` (or `+`) | narrow / widen the horizontal layers columns by 4 cells |
+| `i` | diagram: lay out implied edges too, or leave them out |
+| `F` | diagram focus: off, ancestry, subtree, both |
+| `z` / `Z` | diagram: zoom out toward status glyphs / in toward titles (or Ctrl+wheel) |
+| `x` | diagram: fit the view, or lay out every task (a drag pans) |
+| `f` | toggle follow |
 | `s` | flow selector; `j`/`k` move and `Enter` switches, which turns auto-flow off |
 | `a` | toggle auto-flow (switch to the freshest flow as flows change) |
+| `d` | cycle density: auto, compact, comfortable |
+| `H` | cycle the key hints: short, full, hidden |
+| `y` | copy the cursor row's id, or the selected task's (or click an id) |
+| `v` | release the mouse to select text, or take it back |
+| `T` | theme picker: `j`/`k` preview, `Enter` keeps, `Esc` reverts |
+| `?` | legend: every mark, colour and key, in the current theme |
 | `1`–`6` | switch surface: Tasks, Review, Optimise, Plan-review, Backlog, Inbox |
 | `Space` | item surfaces: mark the cursor row and move to the next |
 | `V` | item surfaces: mark every visible row |
 | `g` | item surfaces: cycle the grouping |
 | `S` | item surfaces: cycle the sort |
+| `D` | item surfaces and Inbox: flip the sort direction |
+| `C` | item surfaces: choose the columns |
 | `c` | item surfaces and Inbox: show or hide closed items |
 | `/` | item surfaces: filter as you type; `Enter` keeps it, `Esc` restores the one before |
 | `m` | item surfaces: action menu, the status moves every target shares |
@@ -311,23 +360,36 @@ timed-out check, and `danger` when it failed.
 
 While a form is open it takes every key; see [Writing](#writing).
 
-The legend shows a scrollbar and position when it does not fit; while it is open,
-the detail-scroll keys and the wheel scroll it instead, and while the flow selector
-is open the wheel moves its cursor. The details scroll goes back to the top
-whenever the selection changes. With mouse capture on, the wheel scrolls whatever
-is under the pointer and never the selection:
-the details panel, the layer list (a layer per notch across horizontal columns),
-the diagram, or an item list or the Inbox, each of which stays where it was left
-until the selection or cursor moves. A left click on a header tab switches to that
-surface; one on a task in the layers or ego view, or on an item row, selects it; the
-diagram view takes the wheel but not clicks. Mouse capture stops the terminal's
-own text selection while glimpse runs; most terminals still select with `Shift`
-held, or set `mouse = false`.
+**Footer.** The bottom row lists the keys most useful in the current state, as many
+whole hints as fit the width, most useful first, ending `? keys` with a `…` before
+it when any were dropped. Over the legend, the flow selector, the theme picker, a
+form or the filter prompt it lists that overlay's keys instead, without `? keys`. `H`
+cycles the hints between short (one row), full (wrapped to at most three rows) and
+hidden (no row). A notice takes the row for a moment in every mode, hidden
+included. While an overlay is open, the header and body behind it are dimmed in
+`backdrop`; the footer keeps full strength.
 
-The view, a flipped orientation or panel side, the panel's share and the implied
-edge toggle are saved on exit to `<claude dir>/glimpse/state.toml` and restored at
-the next start; `--view` and `--orientation` still win. Delete the file to go back
-to the config's defaults. `--once` neither reads nor writes it.
+The legend shows a scrollbar and position when it does not fit; while it is open
+the wheel scrolls it, while the flow selector or theme picker is open the wheel
+moves its cursor, and no other mouse event does anything. The details scroll goes
+back to the top whenever the selection changes. With mouse capture on, the wheel
+scrolls whatever is under the pointer and never the selection: the details panel,
+the layer list (a layer per notch across horizontal columns), the diagram, or an
+item list or the Inbox, each of which stays where it was left until the selection
+or cursor moves. A left click on a header tab switches to that surface; one on a
+column header sorts by it; one on an item's id cell copies the id; one on a task in
+any view, or on an item row, selects it. Over the diagram, Ctrl+wheel zooms and a
+left drag on the background pans.
+
+The view, a flipped orientation or panel side, the panel's share, the implied edge
+toggle, the diagram's zoom and fit, the surface, each surface's grouping, sort and
+direction, and the item columns are saved on exit to
+`<claude dir>/glimpse/state.toml` and restored at the next start; `--view` and
+`--orientation` still win. A hint mode changed with `H` and a theme kept in the
+picker are saved too, but only once chosen in-app, so until then an edit to the
+config's `hints` or `[theme] base` still takes effect; `--theme` and `NO_COLOR`
+win over the saved theme and never replace it. Delete the file to go back to the
+config's defaults. `--once` neither reads nor writes it.
 
 **Follow** keeps the selection on the frontier: the first in-progress task by
 (layer, id), else the first ready one. While follow is off the header counts the
@@ -336,6 +398,51 @@ either way, in the colour of the status it changed to.
 
 A `running` agent whose transcript has not been written for `stale_after_s` is
 shown as stale.
+
+### Copying text
+
+`y` copies the cursor row's id on an item surface or the Inbox, or the selected
+task's id on Tasks, and a click on an item's id cell copies that id; either posts
+`copied <id>`. The copy is sent as an OSC 52 escape, so it reaches the clipboard in
+a terminal that accepts OSC 52 writes (ghostty, Windows Terminal, WezTerm, kitty
+and alacritty among them; tmux needs `set-clipboard`), and one that does not
+ignores it.
+
+Mouse capture stops the terminal's own text selection while glimpse runs. To
+select anything else:
+
+- **`v`** releases capture until it is pressed again, and the footer then leads
+  with `mouse released · v to capture`, even with the hints hidden. A session that
+  started without capture shows no such line. Inside herdr a released drag goes to
+  herdr's own copy-on-select (`ui.copy_on_select`, on by default); outside herdr,
+  to the terminal's selection.
+- **Shift+drag** selects natively without releasing capture in ghostty and Windows
+  Terminal.
+- **`mouse = false`** starts every session with capture off; `v` still takes it.
+
+Without capture the wheel, clicks and the divider drag do nothing.
+
+`GLIMPSE_EVENT_LOG=<path>` appends one line per raw mouse event,
+`<ms since start> <event>`, for diagnosing a drag or a touch that glimpse misreads.
+The file is emptied once it passes 1 MiB, as `hook.log` is; a file that cannot be
+opened is reported once in the footer and the session runs without the log.
+
+### Diagram focus, zoom and fit
+
+A diagram node shows `[id]` by default. `Z` zooms in to `[id title]`, the title
+cut to 24 characters, and `z` zooms out to a single status glyph per task, the
+tasks a cell apart; Ctrl+wheel over the diagram does the same. `F` cycles the focus:
+off, ancestry (the selection and what it needs, transitively), subtree (what needs
+it) and both, each laying out only that closure of the selection.
+
+Fit, on by default, applies when the layout overflows the view: it lays out the
+largest neighbourhood of the selection that fits, whole generations out from it and
+then sibling families from the next ring, and a `+n hidden` chip in `strong` counts
+the tasks left out. The chip sits at the top-right corner, dropping to the
+bottom-right when it would cover a node. `x` turns fit off to lay out every task, or
+the whole focus closure, which the wheel, a left drag on the background, or `PgUp`
+and `PgDn` then pan. With no selection nothing is left out. A click on a node
+selects it.
 
 ## Configuration
 
@@ -361,13 +468,31 @@ optional:
 | `column_max` | `40` | widest a horizontal layers column grows to fit its titles, 18 to 120 |
 | `mouse` | `true` | capture the mouse for wheel scrolling, click-to-select and dragging the divider |
 | `item_columns` | `["status", "id", "kind", "category", "effort", "summary", "area"]` | the columns of an item surface's rows, in order: any of those names, each at most once. `kind` is a finding's severity or a backlog item's kind; `summary` takes the width the others leave |
-| `[theme]` | | colour tokens, below |
+| `hints` | `"short"` | `short`, `full` or `hidden`: how much of the footer's key hints shows at start, until `H` picks another |
+| `[theme]` | | colour tokens and `base`, below |
 
 Validation is strict: an unknown key, a wrong type or an out-of-range value makes
 the whole file fall back to the defaults, with a warning in the header naming the
-problem. The `--view` and `--orientation` flags override the file.
+problem. The `--view`, `--orientation` and `--theme` flags override the file. The
+file is only a default for `hints` and the theme set: a choice saved in
+`state.toml` wins over it (see [Views and keys](#views-and-keys)).
 
 ### Theme
+
+A theme set supplies the palette and how fills and faint elements are drawn:
+
+| Set | Palette |
+|---|---|
+| `kanso-zen` | the default: Kanso Zen hex colours, for a dark background |
+| `kanso-pearl` | kanso.nvim's light Pearl palette, darkened where needed to read on its `#f2f1ef` background |
+| `ansi` | ANSI names only, so the terminal's own palette decides every hue; selection and chips in reverse video, faint elements dimmed |
+| `mono` | no colour at all; highlights in reverse video and faint elements dimmed |
+
+`[theme] base = "<set>"` picks the set to start in, `--theme` overrides it for
+one run, and `T` opens a picker that previews each set as the cursor moves, keeps
+one on `Enter` and reverts on `Esc`. With `NO_COLOR` set to a non-empty value the
+set is always `mono`, whatever the flag, file or saved choice says, and the picker
+does not open.
 
 The `[theme]` table overrides colour tokens. A value is a colour — `#rrggbb`, an
 ANSI name such as `red` or `light-blue`, an index `0`–`255`, or `default` for the
@@ -380,24 +505,30 @@ repaint a single feature or the whole palette:
 accent = "#E6A06B"      # everything that uses the accent
 checkpoint = "info"     # just the checkpoint rows, borrowing another token
 key = "#7FB4CA"         # the footer's key names
+
+[theme.kanso-pearl]
+accent = "#8A4B00"      # only while kanso-pearl is the set
 ```
+
+A token's value comes from the current set's `[theme.<set>]` table, then the plain
+`[theme]` table, then the set's palette, then the token's default.
 
 | Group | Tokens |
 |---|---|
 | Palette | `fg` `accent` `accent_bg` `success` `danger` `warning` `info` `violet` `teal` `idle` `muted` `faint` `subtle` `highlight` `on_color` |
 | Status | `status_pending` `status_in_progress` `status_done` `status_failed` `status_deferred`, and `flash_fg` for text on a status-change flash |
-| Selection | `selection_bg` `selection_mark` `unrelated` |
+| Selection | `selection_bg` `selection_mark` `unrelated`, and `selection_text` for muted and faint text on the cursor row |
 | Edges | `edge` `edge_faded` `edge_needs` `edge_out` `edge_coupling` `edge_overlap` |
-| Chrome | `border` `border_title` `layer_rule` `layer_label` `section` `secondary` `slug` |
+| Chrome | `border` `border_title` `layer_rule` `layer_label` `section` `secondary` `slug`, `strong` for emphasis (markdown bold, badges, the diagram's `+n hidden`), and `backdrop` for the frame dimmed behind an overlay |
+| Tables | `table_header` for column titles, `sort_mark` for the `▲`/`▼` on the sorted one |
 | Chips and rows | `checkpoint` `commit` `agent_bg` `agent_fg` `effort` `effort_warning` `effort_danger` `code` `warning_text` |
 | Footer | `key` `key_label` `key_separator` `notice` |
 | Items | `severity_critical` `severity_warning` `severity_suggestion`, `item_live` `item_parked` `item_done` `item_declined` for the status glyphs, `item_mark` `item_saving` `facet` `group_header`, and `item_id` `item_kind` for the dimmed id and backlog kind |
-| Surface tabs | `surface_tab` `surface_tab_active`, `surface_tab_active_bg` for the current tab's fill, and `badge` for the `+N` arrival count |
+| Surface tabs | `surface_tab` `surface_tab_active`, `surface_tab_active_bg` for the current tab's fill, `tab_empty` for a tab with no ledger, and `badge` for the `+N` arrival count |
 | Inbox and forms | `input_new` `input_acknowledged` `input_handled` `question` `form_label` `form_focus` `form_error` |
 
-The defaults are the Kanso Zen palette. `?` shows the legend in the live theme.
-With `NO_COLOR` set, every colour is dropped and highlights fall back to reverse
-video.
+The token defaults are the Kanso Zen palette. `?` shows the legend in the live
+theme.
 
 ## How it works
 
