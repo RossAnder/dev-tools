@@ -1011,9 +1011,16 @@ fn compare_input(sort: InboxColumn, dir: SortDir, a: &InputRow, b: &InputRow) ->
             &row.text
         }
     }
+    fn kind(row: &InputRow) -> &str {
+        if row.is_unanswered_question() {
+            &row.author
+        } else {
+            &row.kind
+        }
+    }
     let primary = match sort {
         InboxColumn::Id => dir.apply(id_key(&a.id).cmp(&id_key(&b.id))),
-        InboxColumn::Kind => compare_text(&a.kind, &b.kind, dir),
+        InboxColumn::Kind => compare_text(kind(a), kind(b), dir),
         InboxColumn::Status => compare_text(&a.status, &b.status, dir),
         InboxColumn::Text => compare_text(text(a), text(b), dir),
     };
@@ -1660,6 +1667,19 @@ mod tests {
             item_ids(state.visible()),
             ["I4", "I3", "I2", "I1", "I6", "I5"]
         );
+    }
+
+    #[test]
+    fn the_inbox_kind_column_sorts_unanswered_questions_by_author() {
+        let mut state = inbox(vec![
+            input("I1", "question", "zed", "new"),
+            input("I2", "question", "amy", "new"),
+            input("I3", "question", "mid", "new"),
+        ]);
+        state.cycle_header(InboxColumn::Kind);
+        assert_eq!(item_ids(state.visible()), ["I2", "I3", "I1"]);
+        state.cycle_header(InboxColumn::Kind);
+        assert_eq!(item_ids(state.visible()), ["I1", "I3", "I2"]);
     }
 
     #[test]
