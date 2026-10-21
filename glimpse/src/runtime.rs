@@ -11,14 +11,18 @@
 //! the writer before the next event is handled.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::ffi::OsString;
+use std::fs::{File, OpenOptions};
+use std::io::{BufWriter, Write};
+use std::path::{Path, PathBuf};
+use std::sync::Once;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::time::{Duration, Instant, SystemTime};
 
 use ratatui::backend::TestBackend;
 use ratatui::crossterm::event::{
     self as term_event, DisableMouseCapture, EnableMouseCapture, Event as TermEvent, KeyCode,
-    KeyEvent, KeyEventKind, KeyModifiers,
+    KeyEvent, KeyEventKind, KeyModifiers, MouseEvent,
 };
 use ratatui::crossterm::execute;
 use ratatui::text::Span;
@@ -27,9 +31,11 @@ use tomlctl::{LedgerKind, LedgerRef};
 
 use crate::app::{Action, App};
 use crate::cli::{self, Arrange};
+use crate::clipboard;
 use crate::config::Config;
 use crate::diagram::DiagramCache;
 use crate::flows::{self, FlowEntry, Scopes};
+use crate::hook;
 use crate::keys;
 use crate::ledger::{Inputs, Kind, Ledger, Seen, StatusClass};
 use crate::model::Snapshot;
@@ -83,6 +89,7 @@ pub(crate) fn run(opts: RunOpts) -> Result<(), String> {
     if let Some(aspect) = measured_cell_aspect() {
         app.cell_aspect = aspect;
     }
+    let mut event_log = open_event_log(std::env::var_os(EVENT_LOG_VAR), &mut app);
 
     let (events, rx) = mpsc::channel();
     let (writer, refused) = Writer::spawn(root.clone(), events.clone());
@@ -97,9 +104,10 @@ pub(crate) fn run(opts: RunOpts) -> Result<(), String> {
         ratatui::restore();
         format!("cannot open the terminal: {e}")
     })?;
-    let mouse = config.mouse;
-    if mouse {
-        capture_mouse();
+    // Installed whatever the config says, since `v` can take capture in any session.
+    install_release_hook();
+    if app.mouse_captured {
+        set_capture(true);
     }
     spawn_input(events.clone());
     let source = Source::start(root, slug, &config, events);
@@ -110,11 +118,11 @@ pub(crate) fn run(opts: RunOpts) -> Result<(), String> {
         source: &source,
         writer: &writer,
     };
-    let result = run_loop(&mut screen, &rx, &mut host);
+    let result = run_loop(&mut screen, &rx, &mut host, &mut event_log);
     let drained = writer.finish(WRITE_DRAIN);
     State::capture(&screen.app).save();
-    if mouse {
-        release_mouse();
+    if screen.app.mouse_captured {
+        set_capture(false);
     }
     ratatui::restore();
     source.detach();
@@ -128,19 +136,101 @@ pub(crate) fn run(opts: RunOpts) -> Result<(), String> {
 /// short of the ledger-lock wait, which a write still running past it is stuck in.
 const WRITE_DRAIN: Duration = Duration::from_secs(2);
 
-/// Turns mouse reporting on and chains a panic hook that turns it off again ahead of
-/// ratatui's own restore, so a panic cannot leave the shell receiving mouse escapes.
-fn capture_mouse() {
-    let _ = execute!(std::io::stdout(), EnableMouseCapture);
-    let restore = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |info| {
-        release_mouse();
-        restore(info);
-    }));
+/// Chains a panic hook that turns mouse reporting off ahead of ratatui's own restore, so a
+/// panic cannot leave the shell receiving mouse escapes. Later calls do nothing, so the
+/// hook is never chained twice. Turning reporting off when it is not on is harmless.
+fn install_release_hook() {
+    static INSTALLED: Once = Once::new();
+    INSTALLED.call_once(|| {
+        let restore = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            set_capture(false);
+            restore(info);
+        }));
+    });
 }
 
-fn release_mouse() {
-    let _ = execute!(std::io::stdout(), DisableMouseCapture);
+/// Turns the terminal's mouse reporting on or off.
+fn set_capture(on: bool) {
+    let mut out = std::io::stdout();
+    let _ = if on {
+        execute!(out, EnableMouseCapture)
+    } else {
+        execute!(out, DisableMouseCapture)
+    };
+}
+
+/// Names the file the raw mouse event log is appended to; unset, nothing is logged.
+const EVENT_LOG_VAR: &str = "GLIMPSE_EVENT_LOG";
+
+/// Opens the event log at `path`, if one is named. A failed open posts one notice and
+/// the session runs without the log.
+fn open_event_log(path: Option<OsString>, app: &mut App) -> Option<EventLog> {
+    let path = PathBuf::from(path?);
+    match EventLog::open(&path, hook::LOG_CAP) {
+        Ok(log) => Some(log),
+        Err(e) => {
+            app.notify_error(format!(
+                "{EVENT_LOG_VAR}: cannot open {}: {e}",
+                path.display()
+            ));
+            None
+        }
+    }
+}
+
+/// One `<ms since start> {:?}` line per raw mouse event, for diagnosing drags the key map
+/// ends early. Best-effort: a failed write is dropped. Once past `cap` the file is
+/// truncated to empty before the next line, as `hook.log` is.
+struct EventLog {
+    path: PathBuf,
+    cap: u64,
+    out: BufWriter<File>,
+    written: u64,
+    started: Instant,
+}
+
+impl EventLog {
+    fn open(path: &Path, cap: u64) -> std::io::Result<EventLog> {
+        let len = std::fs::metadata(path).map_or(0, |m| m.len());
+        let over = len > cap;
+        let file = OpenOptions::new()
+            .create(true)
+            .append(!over)
+            .write(true)
+            .truncate(over)
+            .open(path)?;
+        Ok(EventLog {
+            path: path.to_path_buf(),
+            cap,
+            out: BufWriter::new(file),
+            written: if over { 0 } else { len },
+            started: Instant::now(),
+        })
+    }
+
+    fn record(&mut self, mouse: &MouseEvent, elapsed: Duration) {
+        if self.written > self.cap {
+            let _ = self.out.flush();
+            let Ok(file) = OpenOptions::new()
+                .write(true)
+                .truncate(true)
+                .open(&self.path)
+            else {
+                return;
+            };
+            self.out = BufWriter::new(file);
+            self.written = 0;
+        }
+        let line = format!("{} {mouse:?}\n", elapsed.as_millis());
+        if self.out.write_all(line.as_bytes()).is_ok() {
+            self.written += line.len() as u64;
+        }
+    }
+
+    fn flush(&mut self) {
+        let _ = self.out.flush();
+    }
 }
 
 /// A cell's height over its width from the terminal's pixel size, when it reports one;
@@ -307,6 +397,8 @@ trait Host {
     fn subscribe(&mut self, feeds: Vec<Feed>);
     fn set_tail(&mut self, path: Option<String>);
     fn submit(&mut self, request: WriteRequest);
+    fn copy(&mut self, text: &str);
+    fn set_mouse_capture(&mut self, on: bool);
 }
 
 struct TerminalHost<'a> {
@@ -337,6 +429,18 @@ impl Host for TerminalHost<'_> {
 
     fn submit(&mut self, request: WriteRequest) {
         self.writer.submit(request);
+    }
+
+    /// Best-effort: a terminal without OSC 52 ignores the sequence, and a failed write
+    /// has nowhere better to go than the notice `apply` already posted.
+    fn copy(&mut self, text: &str) {
+        let mut out = std::io::stdout();
+        let _ = out.write_all(clipboard::osc52(text).as_bytes());
+        let _ = out.flush();
+    }
+
+    fn set_mouse_capture(&mut self, on: bool) {
+        set_capture(on);
     }
 }
 
@@ -371,11 +475,13 @@ impl Pointed {
 /// Draws, then waits for events and redraws once per batch until a quit or until every
 /// sender has gone. Waits carry a timeout only while the app asks for ticks. After each
 /// batch the poller is told which transcript to tail, if that changed; the tail itself
-/// arrives as [`Event::Tail`].
+/// arrives as [`Event::Tail`]. Each raw mouse event goes to `log` before it is handled,
+/// and the log is flushed once per batch.
 fn run_loop(
     screen: &mut Screen,
     events: &Receiver<Event>,
     host: &mut impl Host,
+    log: &mut Option<EventLog>,
 ) -> Result<(), String> {
     let mut pointed = Pointed::starting(&screen.app);
     let mut tailing: Option<String> = None;
@@ -402,11 +508,18 @@ fn run_loop(
 
         let mut redraw = false;
         for event in first.into_iter().chain(events.try_iter()) {
+            if let (Some(log), Event::Input(TermEvent::Mouse(mouse))) = (log.as_mut(), &event) {
+                let elapsed = log.started.elapsed();
+                log.record(mouse, elapsed);
+            }
             match handle(screen, event, host, &mut pointed) {
                 Step::Nothing => {}
                 Step::Redraw => redraw = true,
                 Step::Quit => return Ok(()),
             }
+        }
+        if let Some(log) = log.as_mut() {
+            log.flush();
         }
 
         let now = Instant::now();
@@ -521,15 +634,25 @@ fn submit_writes(app: &mut App, host: &mut impl Host) {
     }
 }
 
-/// Carries out what [`App::apply`] handed back after an input changed the app.
+/// Carries out what [`App::apply`] handed back after an input changed the app. A copy's
+/// notice is already posted; a capture change is recorded only after the host makes it.
 fn carry_out(
-    app: &App,
+    app: &mut App,
     handed_back: Option<Action>,
     host: &mut impl Host,
     pointed: &mut Pointed,
 ) -> Step {
     match handed_back {
         Some(Action::Quit) => Step::Quit,
+        Some(Action::Copy(text)) => {
+            host.copy(&text);
+            Step::Redraw
+        }
+        Some(Action::SetCapture(on)) => {
+            host.set_mouse_capture(on);
+            app.mouse_captured = on;
+            Step::Redraw
+        }
         Some(Action::SwitchFlow(slug)) => {
             switch_slug(app, slug, host, pointed);
             Step::Redraw
@@ -736,6 +859,8 @@ mod tests {
         tails: Vec<Option<String>>,
         subscriptions: Vec<Vec<Feed>>,
         writer: FakeWriter,
+        copies: Vec<String>,
+        captures: Vec<bool>,
     }
 
     impl Host for FakeHost {
@@ -758,6 +883,14 @@ mod tests {
 
         fn submit(&mut self, request: WriteRequest) {
             self.writer.submit(request);
+        }
+
+        fn copy(&mut self, text: &str) {
+            self.copies.push(text.to_string());
+        }
+
+        fn set_mouse_capture(&mut self, on: bool) {
+            self.captures.push(on);
         }
     }
 
@@ -819,7 +952,7 @@ mod tests {
             tx.send(resize()).expect("send");
         }
         drop(tx);
-        run_loop(&mut screen, &rx, &mut host).expect("loop");
+        run_loop(&mut screen, &rx, &mut host, &mut None).expect("loop");
         assert_eq!(host.draws, 2, "the first frame, then one for the burst");
     }
 
@@ -883,7 +1016,7 @@ mod tests {
         let quit = KeyEvent::from(KeyCode::Char('q'));
         tx.send(Event::Input(TermEvent::Key(quit))).expect("send");
         drop(tx);
-        run_loop(&mut screen, &rx, &mut host).expect("loop");
+        run_loop(&mut screen, &rx, &mut host, &mut None).expect("loop");
         assert_eq!(host.draws, 1, "only the first frame");
     }
 
@@ -904,7 +1037,7 @@ mod tests {
                 .expect("send");
         }
         drop(tx);
-        run_loop(&mut screen, &rx, &mut host).expect("loop");
+        run_loop(&mut screen, &rx, &mut host, &mut None).expect("loop");
         assert_eq!(host.draws, 1, "only the first frame");
     }
 
@@ -1163,14 +1296,14 @@ mod tests {
         assert_eq!(host.subscriptions, [flow_feeds("demo-flow")]);
 
         let back = screen.app.apply(Action::SwitchFlow("other".to_string()));
-        carry_out(&screen.app, back, &mut host, &mut pointed);
+        carry_out(&mut screen.app, back, &mut host, &mut pointed);
         assert_eq!(host.slugs, ["other"]);
         assert_eq!(host.subscriptions.last(), Some(&flow_feeds("other")));
 
         let back = screen
             .app
             .apply(Action::SwitchScope(LedgerKind::Review, "loose".to_string()));
-        carry_out(&screen.app, back, &mut host, &mut pointed);
+        carry_out(&mut screen.app, back, &mut host, &mut pointed);
         assert_eq!(host.slugs, ["other"], "a flow-less ledger keeps the flow");
         let mut scoped = flow_feeds("other");
         scoped[0] = Feed::Ledger(LedgerRef::Scope {
@@ -1180,7 +1313,7 @@ mod tests {
         assert_eq!(host.subscriptions.last(), Some(&scoped));
 
         let back = screen.app.apply(Action::SwitchFlow("other".to_string()));
-        carry_out(&screen.app, back, &mut host, &mut pointed);
+        carry_out(&mut screen.app, back, &mut host, &mut pointed);
         assert_eq!(host.slugs, ["other"], "the poller is already on it");
         assert_eq!(
             host.subscriptions.last(),
@@ -1293,6 +1426,156 @@ mod tests {
             Some("write failed: root mismatch"),
             "the outcome reaches the app"
         );
+    }
+
+    #[test]
+    fn y_copies_the_review_cursor_row_through_the_host_once() {
+        let mut review = review_screen();
+        let step = press(&mut review, KeyCode::Char('y'));
+        assert!(matches!(step, Step::Redraw), "the notice is drawn");
+        assert_eq!(review.1.copies, ["R1"]);
+        assert_eq!(
+            review.0.app.live_notice(Instant::now()),
+            Some("copied R1"),
+            "one notice, from apply"
+        );
+    }
+
+    #[test]
+    fn v_toggles_capture_through_the_host_and_keeps_the_app_in_step() {
+        let mut review = review_screen();
+        assert!(review.0.app.mouse_captured);
+        press(&mut review, KeyCode::Char('v'));
+        assert_eq!(review.1.captures, [false]);
+        assert!(!review.0.app.mouse_captured, "released");
+        press(&mut review, KeyCode::Char('v'));
+        assert_eq!(review.1.captures, [false, true]);
+        assert!(review.0.app.mouse_captured, "taken back");
+    }
+
+    fn log_dir(name: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("glimpse-event-log-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        dir
+    }
+
+    fn mouse_at(kind: ratatui::crossterm::event::MouseEventKind, column: u16) -> MouseEvent {
+        MouseEvent {
+            kind,
+            column,
+            row: 3,
+            modifiers: KeyModifiers::NONE,
+        }
+    }
+
+    #[test]
+    fn the_event_log_writes_timestamped_lines_only_when_flushed() {
+        use ratatui::crossterm::event::{MouseButton, MouseEventKind};
+        let dir = log_dir("lines");
+        let path = dir.join("events.log");
+        let down = mouse_at(MouseEventKind::Down(MouseButton::Left), 4);
+        let drag = mouse_at(MouseEventKind::Drag(MouseButton::Left), 5);
+
+        let mut log = EventLog::open(&path, 1024).expect("open");
+        log.record(&down, Duration::from_millis(5));
+        log.record(&drag, Duration::from_millis(1234));
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("read"),
+            "",
+            "buffered"
+        );
+        log.flush();
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("read"),
+            format!("5 {down:?}\n1234 {drag:?}\n")
+        );
+        drop(log);
+
+        let mut log = EventLog::open(&path, 1024).expect("reopen");
+        log.record(&down, Duration::from_millis(7));
+        log.flush();
+        let text = std::fs::read_to_string(&path).expect("read");
+        assert_eq!(text.lines().count(), 3, "a reopen appends:\n{text}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_event_log_is_truncated_once_past_its_cap() {
+        use ratatui::crossterm::event::MouseEventKind;
+        let dir = log_dir("cap");
+        let path = dir.join("events.log");
+        std::fs::write(&path, "x".repeat(65)).expect("fill past the cap");
+        let mut log = EventLog::open(&path, 64).expect("open");
+        log.flush();
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("read"),
+            "",
+            "an over-cap file starts empty"
+        );
+
+        let moved = mouse_at(MouseEventKind::Moved, 1);
+        let line = format!("9 {moved:?}\n");
+        let fits = 64 / line.len() + 1;
+        for _ in 0..fits {
+            log.record(&moved, Duration::from_millis(9));
+        }
+        log.flush();
+        let full = std::fs::read_to_string(&path).expect("read");
+        assert!(full.len() > 64, "past the cap: {}", full.len());
+
+        let last = mouse_at(MouseEventKind::Moved, 2);
+        log.record(&last, Duration::from_millis(10));
+        log.flush();
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("read"),
+            format!("10 {last:?}\n")
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_failed_event_log_open_posts_one_notice_and_logs_nothing() {
+        let dir = log_dir("missing");
+        let mut app = idle_screen("demo-flow").app;
+        assert!(open_event_log(None, &mut app).is_none());
+        assert_eq!(app.live_notice(Instant::now()), None, "unset logs nothing");
+
+        let path = dir.join("no-such-dir").join("events.log");
+        assert!(open_event_log(Some(path.into_os_string()), &mut app).is_none());
+        let notice = app.live_notice(Instant::now()).expect("a notice");
+        assert!(
+            notice.starts_with("GLIMPSE_EVENT_LOG: cannot open"),
+            "{notice}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_run_loop_logs_each_mouse_event_and_flushes_per_batch() {
+        use ratatui::crossterm::event::MouseEventKind;
+        let dir = log_dir("loop");
+        let path = dir.join("events.log");
+        let mut log = Some(EventLog::open(&path, 1024).expect("open"));
+        let mut screen = idle_screen("demo-flow");
+        let mut host = FakeHost::default();
+        let (tx, rx) = mpsc::channel();
+        let moved = mouse_at(MouseEventKind::Moved, 7);
+        tx.send(Event::Input(TermEvent::Mouse(moved)))
+            .expect("send");
+        tx.send(resize()).expect("send");
+        drop(tx);
+        run_loop(&mut screen, &rx, &mut host, &mut log).expect("loop");
+
+        let text = std::fs::read_to_string(&path).expect("read");
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 1, "only the mouse event:\n{text}");
+        let (ms, rest) = lines[0].split_once(' ').expect("a timestamp");
+        assert!(ms.parse::<u128>().is_ok(), "{ms}");
+        assert_eq!(rest, format!("{moved:?}"));
+        drop(log);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

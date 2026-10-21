@@ -23,7 +23,7 @@ use crate::source::with_reinstall_hint;
 /// A sanity cap on the hook's stdin: a real hook payload is a few kilobytes, so anything
 /// past this is not one and is refused before it is buffered whole.
 const MAX_PAYLOAD: u64 = 32 * 1024 * 1024;
-const LOG_CAP: u64 = 1024 * 1024;
+pub(crate) const LOG_CAP: u64 = 1024 * 1024;
 
 /// The JSON object `tomlctl::record_agent` returns. Unknown keys are ignored.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
