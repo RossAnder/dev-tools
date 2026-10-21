@@ -20,7 +20,7 @@ pub(crate) struct FieldArgs {
     #[arg(long = "set", value_name = "KEY=VALUE")]
     pub(crate) set: Vec<String>,
 
-    /// Set a field to any JSON value: KEY=JSON, or KEY=@<path> to read the
+    /// Set a field to any JSON value: KEY=JSON, or `KEY=@<path>` to read the
     /// JSON from a file.
     #[arg(long = "set-json", value_name = "KEY=JSON")]
     pub(crate) set_json: Vec<String>,
