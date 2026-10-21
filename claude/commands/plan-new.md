@@ -53,6 +53,14 @@ Gate: fire ONLY when `envelope.plans_directory == null`. When non-null, skip —
 
 Reason thoroughly through exploration strategy. Launch up to 3 **Explore agents** in parallel based on scope (single sub-area → 1; cross-cutting → up to 3; never below 1 once decided), `subagent_type: "Explore"`, `thoroughness: "very thorough"`. **You MUST make all Explore agent calls in a single response message**, and every one of them one-shot — **never pass `name:`** (see Important Constraints: a named built-in agent has no return channel and its findings are unrecoverable). Common focus patterns: target module (structure, public interfaces, patterns, tests); similar patterns (existing analogous implementations, reusable utilities); integration surface & build system (consumers, CLAUDE.md, manifests, CI — report integration boundaries AND verification commands). Each agent aims for ~500 words structured as file-structure / interfaces / patterns-to-reuse / constraints / [integration agent] build-test-lint commands; prioritise file paths and signatures over prose if truncating.
 
+Tell each Explore agent to read flow stores with these verbs rather than grepping `.claude/*.toml`:
+
+```bash
+tomlctl backlog get <ids>
+tomlctl tasks show <ids> --slug <slug> --with body --text-view
+tomlctl backlog list --grep <regex> --text-view
+```
+
 **Backlog rows**: invoke the `backlog-capture` skill, unless Phase 1 already has, for the status vocabulary and the live `promoted` claim. Once the agents return, list the live backlog rows under every directory exploration found the change touching, in one call with one `--area-prefix` per directory:
 
 ```bash
