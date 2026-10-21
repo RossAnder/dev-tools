@@ -56,6 +56,17 @@ files = [
   "claude/agents/implement-lite.md",
 ]
 
+# The read one-liners every flow agent is taught, in place of grepping stores
+# or piping tomlctl output through another tool.
+[[block]]
+name = "tomlctl-for-agents"
+files = [
+  "claude/agents/implement-deep.md",
+  "claude/agents/implement-lite.md",
+  "claude/agents/research-deep.md",
+  "claude/agents/research-lite.md",
+]
+
 # The research agents share their method-load, read-only contract, finding
 # record and delivery block; the lite/deep split lives in the sections between.
 [[block]]

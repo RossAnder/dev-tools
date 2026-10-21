@@ -107,6 +107,21 @@ Append the literal fifth field `cheap-in-file` when — and only when — both o
 You are never the writer. Do not run `tomlctl backlog add`, `relate`, `triage`, `compact`, or `evidence dir`. The orchestrator is the only writer and runs `backlog check` before every mint, which is what stops parallel agents racing on one store and its integrity sidecar. The read-only verbs are yours: `tomlctl backlog check`, `show`, and `list` answer whether a discovery is already recorded before you spend a line on it.
 <!-- SHARED-BLOCK:backlog-candidates END -->
 
+<!-- SHARED-BLOCK:tomlctl-for-agents START -->
+## Reading flow stores with tomlctl
+
+Read a store through its own verb, never by grepping the TOML file:
+
+```bash
+tomlctl tasks show <ids> --slug <slug> --with body --text-view
+tomlctl backlog get <ids>
+tomlctl items get <file> <ids>
+tomlctl backlog list --grep <regex> --text-view
+```
+
+`tasks list --slug <slug>` and `items list <file>` take `--grep` too. Shape output with `--get`, `--select` or `--template`; never pipe tomlctl into python, jq or grep. Never `2>/dev/null` a tomlctl call: its stderr is the diagnosis.
+<!-- SHARED-BLOCK:tomlctl-for-agents END -->
+
 <!-- SHARED-BLOCK:implementer-report-lines START -->
 ## Report lines
 
