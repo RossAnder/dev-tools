@@ -258,7 +258,6 @@ pub(crate) enum SortDir {
 }
 
 impl SortDir {
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn label(self) -> &'static str {
         self.key()
     }
@@ -306,7 +305,6 @@ impl InboxColumn {
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) const ALL: [InboxColumn; 4] = [Self::Id, Self::Kind, Self::Status, Self::Text];
 
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn label(self) -> &'static str {
         self.key()
     }
@@ -328,7 +326,6 @@ impl InboxColumn {
 }
 
 /// A table header a click sorts by.
-#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum HeaderKey {
     Item(ItemColumn),
@@ -666,14 +663,12 @@ impl ItemsState {
         self.sort = next_of(self.surface.sorts(), self.sort);
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn flip_dir(&mut self) {
         self.sort_dir = self.sort_dir.flipped();
     }
 
     /// Sorts by `column`'s header as [`cycle`] steps, off being `Sort::Id` ascending.
     /// `false`, changing nothing, for a column this surface cannot sort by.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn cycle_header(&mut self, column: ItemColumn) -> bool {
         let Some(clicked) = self.surface.column_sort(column) else {
             return false;
@@ -683,7 +678,6 @@ impl ItemsState {
     }
 
     /// Whether the rows are sorted by `column`, and which way, for its header's mark.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn header_sort(&self, column: ItemColumn) -> Option<SortDir> {
         (self.surface.column_sort(column) == Some(self.sort)).then_some(self.sort_dir)
     }
@@ -850,18 +844,15 @@ impl InboxState {
         self.tracking.page_through(&items, scroll);
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn flip_dir(&mut self) {
         self.sort_dir = self.sort_dir.flipped();
     }
 
     /// [`ItemsState::cycle_header`] for the Inbox, off being id ascending.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn cycle_header(&mut self, column: InboxColumn) {
         (self.sort, self.sort_dir) = cycle((self.sort, self.sort_dir), column, InboxColumn::Id);
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn header_sort(&self, column: InboxColumn) -> Option<SortDir> {
         (self.sort == column).then_some(self.sort_dir)
     }

@@ -16,12 +16,10 @@ use crate::surface::SortDir;
 use crate::theme::Theme;
 
 /// The cursor and mark cells every row starts with.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) const LEAD: u16 = 2;
 
 /// A drawn row, the styles laid under and over its full width, and what a click on it
 /// selects.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct Row<T> {
     pub(crate) line: Line<'static>,
     pub(crate) fill: Option<Style>,
@@ -29,7 +27,6 @@ pub(crate) struct Row<T> {
     pub(crate) target: Option<T>,
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 impl<T> Row<T> {
     /// A row with no styling of its own and nothing to click.
     pub(crate) fn plain(line: Line<'static>) -> Row<T> {
@@ -44,7 +41,6 @@ impl<T> Row<T> {
 
 /// Draws `rows` top-down into `area`, one per line, and hands back each targeted row's
 /// rect. Rows past the bottom of `area` are not drawn.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn draw_rows<T: Clone>(buf: &mut Buffer, area: Rect, rows: &[Row<T>]) -> Vec<(Rect, T)> {
     let mut targets = Vec::new();
     for (row, y) in rows.iter().zip(area.y..area.bottom()) {
@@ -66,7 +62,6 @@ pub(crate) fn draw_rows<T: Clone>(buf: &mut Buffer, area: Rect, rows: &[Row<T>])
 
 /// One column: the title its header shows and the cells its values take.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct Column {
     pub(crate) title: &'static str,
     pub(crate) width: usize,
@@ -74,7 +69,6 @@ pub(crate) struct Column {
 
 /// The rect of column `index` within `row`, clipped to it. A zero-width or missing
 /// column gets a zero-width rect.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn cell(row: Rect, columns: &[Column], index: usize) -> Rect {
     let right = usize::from(row.right());
     let clip = |x: usize, width: usize| {
@@ -107,7 +101,6 @@ pub(crate) fn cell(row: Rect, columns: &[Column], index: usize) -> Rect {
 /// Draws the column titles on `area`'s first line in `table_header`, with `▲`/`▼` in
 /// `sort_mark` right after the title of the column `sorted` names. Returns each drawn
 /// column's rect and index, for header clicks.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn header(
     buf: &mut Buffer,
     area: Rect,
@@ -144,7 +137,6 @@ pub(crate) fn header(
     rects
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 fn mark(dir: SortDir) -> &'static str {
     match dir {
         SortDir::Asc => "▲",
