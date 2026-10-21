@@ -788,37 +788,65 @@ mod tests {
             .collect()
     }
 
+    /// The task gaps a zoom can pass: the tightest (equal to the dummy gap) and the default.
+    const TASK_GAPS: [u16; 2] = [1, TASK_GAP];
+
+    type LabelWidth = fn(u32) -> u16;
+
+    /// Label widths to lay out under: mixed, and the one-cell labels of the tight zoom.
+    fn label_widths() -> [(&'static str, LabelWidth); 2] {
+        [("mixed", width), ("one cell", |_| 1)]
+    }
+
     #[test]
     fn slots_do_not_overlap_and_keep_row_order() {
         let ordered = sample();
-        let positions = position(&ordered, width);
-        for row in gaps(&ordered, &positions) {
-            for (left, right, blank) in row {
-                assert!(blank >= 0, "{left:?} overlaps {right:?}");
+        for task_gap in TASK_GAPS {
+            for (name, label) in label_widths() {
+                let positions = position_with_gap(&ordered, label, task_gap);
+                for row in gaps(&ordered, &positions) {
+                    for (left, right, blank) in row {
+                        assert!(
+                            blank >= 0,
+                            "{name}, gap {task_gap}: {left:?} overlaps {right:?}"
+                        );
+                    }
+                }
+                let slots = ordered.rows.iter().flatten().count();
+                assert_eq!(positions.x.len(), slots);
+                assert_eq!(positions.x.values().min(), Some(&0));
+                let extent = ordered
+                    .rows
+                    .iter()
+                    .flatten()
+                    .map(|slot| positions.x[slot] + positions.width[slot])
+                    .max();
+                assert_eq!(Some(positions.layer_extent), extent);
             }
         }
-        let slots = ordered.rows.iter().flatten().count();
-        assert_eq!(positions.x.len(), slots);
-        assert_eq!(positions.x.values().min(), Some(&0));
-        let extent = ordered
-            .rows
-            .iter()
-            .flatten()
-            .map(|slot| positions.x[slot] + positions.width[slot])
-            .max();
-        assert_eq!(Some(positions.layer_extent), extent);
     }
 
     #[test]
     fn minimum_spacing_is_respected() {
         let ordered = sample();
-        let positions = position(&ordered, width);
-        for row in gaps(&ordered, &positions) {
-            for (left, right, blank) in row {
-                let both_dummies =
-                    matches!((left, right), (Slot::Dummy { .. }, Slot::Dummy { .. }));
-                let min = if both_dummies { 1 } else { 2 };
-                assert!(blank >= min, "{left:?} {right:?} gap {blank}");
+        for task_gap in TASK_GAPS {
+            for (name, label) in label_widths() {
+                let positions = position_with_gap(&ordered, label, task_gap);
+                for row in gaps(&ordered, &positions) {
+                    for (left, right, blank) in row {
+                        let both_dummies =
+                            matches!((left, right), (Slot::Dummy { .. }, Slot::Dummy { .. }));
+                        let min = if both_dummies {
+                            DUMMY_GAP
+                        } else {
+                            i32::from(task_gap)
+                        };
+                        assert!(
+                            blank >= min,
+                            "{name}, gap {task_gap}: {left:?} {right:?} gap {blank}"
+                        );
+                    }
+                }
             }
         }
     }
@@ -865,10 +893,12 @@ mod tests {
                 chain(3, needs(3, 4), 2, vec![Slot::Task(3), Slot::Task(4)]),
             ],
         };
-        let positions = position(&ordered, |_| 4);
-        let top = positions.centre(Slot::Task(1));
-        assert_eq!(positions.centre(dummy(1)), top);
-        assert_eq!(positions.centre(dummy(2)), top);
+        for task_gap in TASK_GAPS {
+            let positions = position_with_gap(&ordered, |_| 4, task_gap);
+            let top = positions.centre(Slot::Task(1));
+            assert_eq!(positions.centre(dummy(1)), top, "gap {task_gap}");
+            assert_eq!(positions.centre(dummy(2)), top, "gap {task_gap}");
+        }
     }
 
     /// Pairs `(dummy, slot)` where the dummy sits on the centre of a slot in an adjacent
@@ -917,15 +947,17 @@ mod tests {
         let layers = vec![vec![1], vec![2], vec![3, 4], vec![5, 6, 7]];
         let edges = vec![needs(2, 6), needs(1, 3), needs(2, 7), needs(4, 7)];
         let ordered = order(&layers, &edges);
-        for (name, positions) in [
-            ("vertical", position(&ordered, |_| 3)),
-            ("horizontal", position(&ordered, |_| 1)),
-        ] {
-            assert_eq!(
-                dummies_on_foreign_columns(&ordered, &positions),
-                vec![],
-                "{name}"
-            );
+        for task_gap in TASK_GAPS {
+            for (name, positions) in [
+                ("vertical", position_with_gap(&ordered, |_| 3, task_gap)),
+                ("horizontal", position_with_gap(&ordered, |_| 1, task_gap)),
+            ] {
+                assert_eq!(
+                    dummies_on_foreign_columns(&ordered, &positions),
+                    vec![],
+                    "{name}, gap {task_gap}"
+                );
+            }
         }
     }
 
@@ -957,15 +989,20 @@ mod tests {
         assert!(ordered.chains.iter().any(|c| c.slots.len() > 2));
         let vertical = |_| 3;
         let horizontal = |_| 1;
-        for (name, positions) in [
-            ("vertical", position(&ordered, vertical)),
-            ("horizontal", position(&ordered, horizontal)),
-        ] {
-            assert_eq!(
-                dummies_on_foreign_columns(&ordered, &positions),
-                vec![],
-                "{name}"
-            );
+        for task_gap in TASK_GAPS {
+            for (name, positions) in [
+                ("vertical", position_with_gap(&ordered, vertical, task_gap)),
+                (
+                    "horizontal",
+                    position_with_gap(&ordered, horizontal, task_gap),
+                ),
+            ] {
+                assert_eq!(
+                    dummies_on_foreign_columns(&ordered, &positions),
+                    vec![],
+                    "{name}, gap {task_gap}"
+                );
+            }
         }
     }
 
@@ -1065,9 +1102,11 @@ mod tests {
     #[test]
     fn output_is_identical_across_runs() {
         let ordered = sample();
-        let first = position(&ordered, width);
-        for _ in 0..20 {
-            assert_eq!(position(&ordered, width), first);
+        for task_gap in TASK_GAPS {
+            let first = position_with_gap(&ordered, width, task_gap);
+            for _ in 0..20 {
+                assert_eq!(position_with_gap(&ordered, width, task_gap), first);
+            }
         }
     }
 }
