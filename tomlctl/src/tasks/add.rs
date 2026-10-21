@@ -14,7 +14,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use serde_json::Value as JsonValue;
+use serde_json::{Map as JsonMap, Value as JsonValue};
 
 use super::graph::{Node, Tense, build_or_refuse};
 use super::schema::{DEFAULT_HEADING_DEPTH, Effort, Status, Store, TaskRow};
@@ -23,6 +23,7 @@ use crate::cli::WriteIntegrityArgs;
 use crate::convert::json_type_name;
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::read_flag_file;
+use crate::items::{parse_ndjson_objects, row_err, row_string, row_strings};
 
 /// One row as the caller supplies it. `effort` is still the raw flag string:
 /// the schema's vocabulary refusal is what the user should see, not clap's
@@ -78,11 +79,10 @@ pub(crate) fn add_many(
     integrity: &WriteIntegrityArgs,
     ndjson: &str,
 ) -> Result<Vec<AddOutcome>> {
-    let rows = crate::items::parse_ndjson(ndjson)?;
+    let rows = parse_ndjson_objects(ndjson)?;
     let tasks = rows
         .iter()
-        .enumerate()
-        .map(|(index, row)| task_from_json(row, index + 1))
+        .map(|(line, row)| task_from_row(*line, row))
         .collect::<Result<Vec<_>>>()?;
     store::mutate(path, integrity, |store| append(store, tasks))
 }
@@ -283,17 +283,11 @@ fn unique_ref(derived: String, taken: &BTreeSet<String>) -> String {
     unreachable!("the suffix search is unbounded")
 }
 
-fn task_from_json(value: &JsonValue, row: usize) -> Result<NewTask> {
-    let object = value.as_object().ok_or_else(|| {
-        row_err(
-            row,
-            format!("expected a JSON object, got {}", json_type_name(value)),
-        )
-    })?;
-    for key in object.keys() {
+fn task_from_row(line: usize, row: &JsonMap<String, JsonValue>) -> Result<NewTask> {
+    for key in row.keys() {
         if !ROW_FIELDS.contains(&key.as_str()) {
             return Err(row_err(
-                row,
+                line,
                 format!(
                     "unknown field `{key}` — accepted fields are {}",
                     ROW_FIELDS.join(", ")
@@ -302,63 +296,31 @@ fn task_from_json(value: &JsonValue, row: usize) -> Result<NewTask> {
         }
     }
 
+    // A row reads `null` as an absent field.
+    let present = |key: &str| row.get(key).filter(|v| !v.is_null());
+    let text = |key: &str| row_string(line, key, present(key)).map(Option::unwrap_or_default);
+    let ids = |key: &str| json_ids(line, key, present(key));
     Ok(NewTask {
-        title: json_str(value, "title", row)?,
-        effort: json_str(value, "effort", row)?,
-        files: json_strings(value, "files", row)?,
-        needs: json_ids(value, "needs", row)?,
-        coupling: json_ids(value, "coupling", row)?,
-        deps_note: json_str(value, "deps_note", row)?,
-        checkpoint: json_str(value, "checkpoint", row)?,
-        action: json_str(value, "action", row)?,
-        detail: json_str(value, "detail", row)?,
-        acceptance: json_str(value, "acceptance", row)?,
+        title: text("title")?,
+        effort: text("effort")?,
+        files: row_strings(line, "files", present("files"))?.unwrap_or_default(),
+        needs: ids("needs")?,
+        coupling: ids("coupling")?,
+        deps_note: text("deps_note")?,
+        checkpoint: text("checkpoint")?,
+        action: text("action")?,
+        detail: text("detail")?,
+        acceptance: text("acceptance")?,
     })
 }
 
-fn json_str(value: &JsonValue, key: &str, row: usize) -> Result<String> {
-    match value.get(key) {
-        None | Some(JsonValue::Null) => Ok(String::new()),
-        Some(JsonValue::String(text)) => Ok(text.clone()),
-        Some(other) => Err(row_err(
-            row,
-            format!("`{key}` must be a string, got {}", json_type_name(other)),
-        )),
-    }
-}
-
-fn json_strings(value: &JsonValue, key: &str, row: usize) -> Result<Vec<String>> {
-    let Some(raw) = value.get(key).filter(|v| !v.is_null()) else {
+fn json_ids(line: usize, key: &str, value: Option<&JsonValue>) -> Result<Vec<u32>> {
+    let Some(raw) = value else {
         return Ok(Vec::new());
     };
     let array = raw.as_array().ok_or_else(|| {
         row_err(
-            row,
-            format!("`{key}` must be an array, got {}", json_type_name(raw)),
-        )
-    })?;
-    array
-        .iter()
-        .map(|entry| match entry {
-            JsonValue::String(text) => Ok(text.clone()),
-            other => Err(row_err(
-                row,
-                format!(
-                    "`{key}` holds a non-string entry ({})",
-                    json_type_name(other)
-                ),
-            )),
-        })
-        .collect()
-}
-
-fn json_ids(value: &JsonValue, key: &str, row: usize) -> Result<Vec<u32>> {
-    let Some(raw) = value.get(key).filter(|v| !v.is_null()) else {
-        return Ok(Vec::new());
-    };
-    let array = raw.as_array().ok_or_else(|| {
-        row_err(
-            row,
+            line,
             format!("`{key}` must be an array, got {}", json_type_name(raw)),
         )
     })?;
@@ -368,17 +330,9 @@ fn json_ids(value: &JsonValue, key: &str, row: usize) -> Result<Vec<u32>> {
             entry
                 .as_u64()
                 .and_then(|n| u32::try_from(n).ok())
-                .ok_or_else(|| row_err(row, format!("`{key}` holds a non-id entry `{entry}`")))
+                .ok_or_else(|| row_err(line, format!("`{key}` holds a non-id entry `{entry}`")))
         })
         .collect()
-}
-
-fn row_err(row: usize, message: String) -> anyhow::Error {
-    tagged_err(
-        ErrorKind::Validation,
-        None,
-        format!("ndjson row {row}: {message}"),
-    )
 }
 
 #[cfg(test)]
@@ -589,7 +543,7 @@ mod tests {
             )
             .expect_err("`neds` is not a row field")
             .to_string();
-            assert!(message.contains("ndjson row 2"), "{message}");
+            assert!(message.starts_with("line 2: "), "{message}");
             assert!(message.contains("neds"), "{message}");
             assert!(!path.exists(), "a refused batch must persist nothing");
         });

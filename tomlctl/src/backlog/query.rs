@@ -29,7 +29,7 @@ use crate::cli::{LegacyShortcuts, QueryArgs, ReadIntegrityArgs};
 use crate::convert::toml_to_json;
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{items_array, relativise, repo_or_cwd_root};
-use crate::output::{self, OutputOpts, Rows, print_json, print_report};
+use crate::output::{self, OutputOpts, print_one_or_rows};
 use crate::query::Query;
 
 const DIRECTION_OUT: &str = "out";
@@ -79,7 +79,7 @@ pub(crate) fn dispatch_list(
 /// once at its first position; a single distinct id prints one object.
 pub(crate) fn dispatch_show(ids: &[String], integrity: ReadIntegrityArgs) -> Result<()> {
     let doc = schema::read_store(&integrity)?;
-    print_rows(
+    print_one_or_rows(
         resolve_distinct(&doc, ids)?
             .iter()
             .map(|id| build_show_resolved(&doc, id))
@@ -90,7 +90,7 @@ pub(crate) fn dispatch_show(ids: &[String], integrity: ReadIntegrityArgs) -> Res
 /// `show`'s id contract, printing each stored row bare.
 pub(crate) fn dispatch_get(ids: &[String], integrity: ReadIntegrityArgs) -> Result<()> {
     let doc = schema::read_store(&integrity)?;
-    print_rows(build_get(&doc, ids)?)
+    print_one_or_rows(build_get(&doc, ids)?)
 }
 
 fn build_get(doc: &TomlValue, ids: &[String]) -> Result<Vec<JsonValue>> {
@@ -112,13 +112,6 @@ fn resolve_distinct(doc: &TomlValue, ids: &[String]) -> Result<Vec<String>> {
         .into_iter()
         .filter(|id| seen.insert(id.clone()))
         .collect())
-}
-
-fn print_rows(mut rows: Vec<JsonValue>) -> Result<()> {
-    if rows.len() == 1 {
-        return print_json(&rows.remove(0));
-    }
-    print_report(JsonValue::Array(rows), Rows::Top)
 }
 
 /// Filters applied before the query engine sees the array.

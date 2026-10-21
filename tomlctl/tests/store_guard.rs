@@ -143,6 +143,55 @@ fn generic_writers_refuse_owned_stores() {
     }
 }
 
+/// Links `link` to the directory `target`; `false` when the host cannot.
+#[cfg(windows)]
+fn link_dir(link: &Path, target: &Path) -> bool {
+    let plain = |p: &Path| {
+        let s = p.display().to_string();
+        s.strip_prefix(r"\\?\").map(str::to_string).unwrap_or(s)
+    };
+    std::process::Command::new("cmd")
+        .args(["/C", "mklink", "/J", &plain(link), &plain(target)])
+        .output()
+        .is_ok_and(|out| out.status.success())
+}
+
+#[cfg(unix)]
+fn link_dir(link: &Path, target: &Path) -> bool {
+    std::os::unix::fs::symlink(target, link).is_ok()
+}
+
+#[cfg(any(windows, unix))]
+#[test]
+fn generic_writers_refuse_through_a_linked_claude_dir() {
+    let (_dir, root) = common::sandbox();
+    let claude = root.join(".claude");
+    let elsewhere = root.join("store-dir");
+    fs::create_dir_all(&elsewhere).unwrap();
+    fs::remove_dir_all(&claude).unwrap();
+    if !link_dir(&claude, &elsewhere) {
+        eprintln!("skipped: cannot link a directory on this host");
+        return;
+    }
+    let path = claude.join("backlog.toml");
+    fs::write(&path, SEED).unwrap();
+    for case in cases(&path) {
+        let out = cli(&root)
+            .args(&case.args)
+            .write_stdin(case.stdin)
+            .assert()
+            .failure()
+            .code(1);
+        let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+        assert!(
+            stderr.contains("backlog edit") && stderr.contains("--raw-store"),
+            "{} through a linked .claude should be refused as an owned store; got: {stderr}",
+            case.name
+        );
+        assert_eq!(fs::read_to_string(&path).unwrap(), SEED, "{}", case.name);
+    }
+}
+
 #[test]
 fn raw_store_lets_generic_writers_through() {
     let (_dir, root) = common::sandbox();

@@ -35,7 +35,7 @@ pub(crate) enum InputsOp {
         #[arg(
             long,
             value_name = "JSON",
-            help = "The record as a JSON object; pass `-` to read from stdin or `@<path>` to read a file"
+            help = "The record as a JSON object; pass `-` to read from stdin or `@<path>` to read a file (a `.toml` path is a record file)"
         )]
         json: String,
         #[command(flatten)]
@@ -81,7 +81,7 @@ pub(crate) enum InputsOp {
         #[arg(
             long = "ndjson",
             value_name = "SRC",
-            help = "One {\"id\",\"note\"} object per line, applied in one write: `-` for stdin, otherwise a file path (a leading `@` is accepted)"
+            help = "One {\"id\",\"note\"} object per line, applied in one write: `-` for stdin, otherwise a file path (a leading `@` is accepted; a `.toml` path is a record file)"
         )]
         ndjson: Option<String>,
         #[command(flatten)]

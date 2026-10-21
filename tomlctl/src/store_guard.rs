@@ -1,9 +1,12 @@
 //! Refusal of generic writes (`set`, `set-json`, `array-append`, the `items`
 //! writers) aimed at a store that a dedicated verb group owns and validates.
-//! The target is classified by the trailing components of its resolved path,
-//! so `..` segments, a junctioned or symlinked directory and an 8.3 short name
-//! resolve to the store they reach. The file and its parents need not exist:
-//! an auto-create target is classified too.
+//! The target is classified by the trailing components of two paths, and
+//! refused when either names a store: the path as given, made absolute with
+//! `.` and `..` folded lexically, which catches a `.claude` that is itself a
+//! junction or symlink to a differently named directory; and the resolved
+//! path, which catches a junction, symlink or 8.3 short name elsewhere that
+//! leads into a store. The file and its parents need not exist: an
+//! auto-create target is classified too.
 
 use std::ffi::OsStr;
 use std::path::{Component, Path, PathBuf};
@@ -25,8 +28,9 @@ impl OwnedStore {
     fn replacement(self) -> &'static str {
         match self {
             Self::Backlog => {
-                "the `backlog` verbs own it: use `backlog edit` for context, tags, evidence or \
-                 origin, and `backlog triage` for status"
+                "the `backlog` verbs own it: use `backlog add` for new rows, `backlog edit` for \
+                 context, tags, evidence, origin, flow or base_sha, `backlog triage` for status, \
+                 and `backlog relate` for related, duplicate_of or supersedes"
             }
             Self::Inputs => {
                 "the `inputs` verbs own it: use `inputs add`, `inputs ack`, `inputs handle`, \
@@ -52,7 +56,7 @@ pub(crate) fn refuse_owned_store(path: &Path, raw_store: bool) -> Result<()> {
     if raw_store {
         return Ok(());
     }
-    let Some(store) = classify(&resolve(path)) else {
+    let Some(store) = classify(&lexical(path)).or_else(|| classify(&resolve(path))) else {
         return Ok(());
     };
     Err(tagged_err(
@@ -64,6 +68,12 @@ pub(crate) fn refuse_owned_store(path: &Path, raw_store: bool) -> Result<()> {
             store.replacement()
         ),
     ))
+}
+
+/// `path` made absolute with `.` and `..` folded, no link followed.
+fn lexical(path: &Path) -> PathBuf {
+    let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    fold(PathBuf::new(), absolute.components())
 }
 
 /// The path a write to `path` reaches: the deepest existing ancestor
@@ -268,7 +278,13 @@ mod tests {
         );
         let err = refuse_owned_store(Path::new(".claude/backlog.toml"), false).unwrap_err();
         let message = format!("{err:#}");
-        assert!(message.contains("backlog edit"), "{message}");
-        assert!(message.contains("backlog triage"), "{message}");
+        for verb in [
+            "backlog add",
+            "backlog edit",
+            "backlog triage",
+            "backlog relate",
+        ] {
+            assert!(message.contains(verb), "{message}");
+        }
     }
 }

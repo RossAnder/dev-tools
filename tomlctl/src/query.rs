@@ -125,8 +125,20 @@ fn regex_build_error(pattern: &str, e: impl std::fmt::Display) -> anyhow::Error 
 /// in-process. Factored out so both the per-predicate hoist and tests
 /// can share one configuration.
 pub(crate) fn compile_user_regex(pattern: &str) -> Result<Regex> {
+    build_user_regex(pattern, false)
+}
+
+/// [`compile_user_regex`] with case-insensitivity set on the builder rather
+/// than by a `(?i)` prefix, so the length cap and error text see only what
+/// the user typed.
+pub(crate) fn compile_user_regex_ci(pattern: &str) -> Result<Regex> {
+    build_user_regex(pattern, true)
+}
+
+fn build_user_regex(pattern: &str, case_insensitive: bool) -> Result<Regex> {
     check_user_pattern_len(pattern)?;
     RegexBuilder::new(pattern)
+        .case_insensitive(case_insensitive)
         .size_limit(REGEX_COMPILE_SIZE_LIMIT)
         .dfa_size_limit(REGEX_DFA_SIZE_LIMIT)
         .build()
@@ -1012,9 +1024,7 @@ impl<'p> PreparedPredicates<'p> {
             .iter()
             .map(|p| match p {
                 Predicate::WhereRegex { pattern, .. } => compile_user_regex(pattern).map(Some),
-                Predicate::Grep { regex, .. } => {
-                    compile_user_regex(&format!("(?i){regex}")).map(Some)
-                }
+                Predicate::Grep { regex, .. } => compile_user_regex_ci(regex).map(Some),
                 _ => Ok(None),
             })
             .collect::<Result<Vec<_>>>()?;

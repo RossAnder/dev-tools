@@ -18,16 +18,17 @@ use anyhow::{Context, Result};
 use serde_json::{Value as JsonValue, json};
 use toml::Value as TomlValue;
 
+use super::add::preview_doc;
 use super::schema::{self, FIELD_LAST_UPDATED};
 use super::target::{Resolver, Target};
 use crate::cli::{TriageMode, WriteIntegrityArgs, write_integrity_opts};
 use crate::convert::toml_to_json;
 use crate::errors::{ErrorKind, tagged_arg_err, tagged_err};
 use crate::io::{
-    dry_run_read_opts, item_id, items_array, items_array_mut, mutate_doc_conditional,
-    on_missing_for, read_doc, read_ndjson_source, relativise, repo_or_cwd_root, warn_if_created,
+    item_id, items_array, items_array_mut, mutate_doc_conditional, on_missing_for,
+    read_ndjson_source, relativise, repo_or_cwd_root, warn_if_created,
 };
-use crate::items::StaleOp;
+use crate::items::{StaleOp, parse_ndjson_batch, row_err, row_string};
 use crate::output::print_json_compact;
 
 /// The chosen mode with its companion value already resolved, so the write
@@ -450,14 +451,6 @@ struct BatchRow {
     expect_status: Option<String>,
 }
 
-fn batch_err(line: usize, msg: impl std::fmt::Display) -> anyhow::Error {
-    tagged_arg_err(
-        ErrorKind::Validation,
-        "ndjson",
-        format!("line {line}: {msg}"),
-    )
-}
-
 fn companion_name(mode: &str) -> &'static str {
     match mode {
         "promote" => "target flow slug or plan path",
@@ -476,7 +469,7 @@ fn row_transition(
 ) -> Result<Transition> {
     let rationale = row.get("rationale");
     if rationale.is_some() && mode != "reopen" {
-        return Err(batch_err(
+        return Err(row_err(
             line,
             format!(
                 "`rationale` is the `reopen` companion; a `{mode}` row carries its text as the `{mode}` value"
@@ -487,20 +480,20 @@ fn row_transition(
         (Some(JsonValue::String(s)), None) => s.as_str(),
         (Some(JsonValue::Bool(true)), Some(JsonValue::String(s))) => s.as_str(),
         (Some(JsonValue::String(_)), Some(_)) => {
-            return Err(batch_err(
+            return Err(row_err(
                 line,
                 "give the reopen rationale once: as the `reopen` value, or as `rationale` beside `\"reopen\": true`",
             ));
         }
         _ => {
-            return Err(batch_err(
+            return Err(row_err(
                 line,
                 format!("`{mode}` must be its {} as a string", companion_name(mode)),
             ));
         }
     };
     if text.trim().is_empty() {
-        return Err(batch_err(
+        return Err(row_err(
             line,
             format!("`{mode}` needs a non-empty {}", companion_name(mode)),
         ));
@@ -518,19 +511,12 @@ fn row_transition(
 /// batch with nothing written. `default_expect` fills a row's missing
 /// `expect_status`.
 fn parse_batch(text: &str, default_expect: Option<&str>) -> Result<Vec<BatchRow>> {
-    let objects = crate::items::parse_ndjson_objects(text)?;
-    if objects.is_empty() {
-        return Err(tagged_arg_err(
-            ErrorKind::Validation,
-            "ndjson",
-            "the batch names no rows; each row is {\"id\", <mode>: <companion>}",
-        ));
-    }
+    let objects = parse_ndjson_batch(text)?;
     let mut first_line: std::collections::BTreeMap<String, usize> = Default::default();
     let mut rows = Vec::with_capacity(objects.len());
     for (line, row) in objects {
         if let Some(key) = row.keys().find(|k| !ROW_KEYS.contains(&k.as_str())) {
-            return Err(batch_err(
+            return Err(row_err(
                 line,
                 format!(
                     "`{key}` is not a triage row key; accepted: {}",
@@ -540,10 +526,10 @@ fn parse_batch(text: &str, default_expect: Option<&str>) -> Result<Vec<BatchRow>
         }
         let id = match row.get("id") {
             Some(JsonValue::String(s)) if !s.trim().is_empty() => s.clone(),
-            _ => return Err(batch_err(line, "needs a non-empty string `id`")),
+            _ => return Err(row_err(line, "needs a non-empty string `id`")),
         };
         if let Some(first) = first_line.get(&id) {
-            return Err(batch_err(
+            return Err(row_err(
                 line,
                 format!("{id} is already named on line {first}; a batch names each id once"),
             ));
@@ -560,17 +546,14 @@ fn parse_batch(text: &str, default_expect: Option<&str>) -> Result<Vec<BatchRow>
             } else {
                 modes.join(", ")
             };
-            return Err(batch_err(
+            return Err(row_err(
                 line,
                 format!("takes exactly one of {}; got {got}", MODE_KEYS.join(", ")),
             ));
         };
         let transition = row_transition(line, &row, mode)?;
-        let expect_status = match row.get("expect_status") {
-            None => default_expect.map(str::to_string),
-            Some(JsonValue::String(s)) => Some(s.clone()),
-            Some(_) => return Err(batch_err(line, "`expect_status` must be a string")),
-        };
+        let expect_status = row_string(line, "expect_status", row.get("expect_status"))?
+            .or_else(|| default_expect.map(str::to_string));
         rows.push(BatchRow {
             id,
             transition,
@@ -619,15 +602,7 @@ fn triage_batch_value(
     let path = root.join(".claude").join("backlog.toml");
     let today = crate::time::today_toml_date()?;
     let (applied, stale) = if dry_run {
-        if path.exists() {
-            read_doc(
-                &path,
-                dry_run_read_opts(integrity.verify_integrity),
-                |doc| apply_batch(&mut doc.clone(), rows, today),
-            )?
-        } else {
-            apply_batch(&mut TomlValue::Table(toml::Table::new()), rows, today)?
-        }
+        apply_batch(&mut preview_doc(&path, integrity)?, rows, today)?
     } else {
         let opts = write_integrity_opts(integrity);
         let on_missing = on_missing_for(&path, integrity.no_create)?;

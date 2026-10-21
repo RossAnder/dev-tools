@@ -1,0 +1,1073 @@
+schema_version = 1
+last_updated = 2026-10-21
+
+[[vet_events]]
+timestamp = "2026-10-21T12:16:17Z"
+command = "review"
+lens = "quality"
+tier = "deep"
+agent_index = 1
+sampled_count = 6
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled 6: junction guard bypass (probe-backed, independently corroborated by security), [record] typo (payload.rs:51-90 read), --grep (?i) prefix, io.rs is_toml_path triplication (:346/:365/:499), task_refs_for double load, edit compacted miss. All confirmed. Two tangentials promoted to findings (parse_tasks/parse_policy stale comment); parse_ids wrong-field error routed to backlog (pre-existing)."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-21T12:16:17Z"
+command = "review"
+lens = "security"
+tier = "deep"
+agent_index = 2
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled both: junction bypass corroborated by quality-lens probe and store_guard.rs:55/72/118 read; backlog edit advisory gap confirmed at dispatch.rs:118-165 vs add.rs:469-499 and corroborated by architecture lens."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-21T12:16:17Z"
+command = "review"
+lens = "architecture"
+tier = "deep"
+agent_index = 3
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled 5: parse_edit_rows replace-only rows (dispatch.rs:82-111 read), refusal_for hand lists (edit.rs:64-97 read), per-row DAG validation (update.rs:335-363, :508-523 read), set.files comma join (corroborated by quality), correlate dispatch_in regex (correlate.rs:194 read; kept as framed hypothesis with a verification step). All confirmed. Tangential on payload.rs CRLF doc promoted to finding."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-21T12:16:17Z"
+command = "review"
+lens = "completeness"
+tier = "lite"
+agent_index = 4
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled 5: backlog-recipes stale escapes/select claims (lines 24-34 read), implement.md:161 and plan-update.md:40 set-file prose, store_guard.rs:27 refusal message, SKILL.md:172 feature sentence, task-store list enumeration. All confirmed. F1 merged with package-quality #2, F3 merged with testability #3."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-21T12:16:17Z"
+command = "review"
+lens = "testability"
+tier = "lite"
+agent_index = 5
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled 3: predicates default-features (Cargo.toml:74 read; cargo tree evidence plausible), --grep (?i) prefix (query.rs:1016 corroborated by quality probe), [record] typo (payload.rs read). All confirmed; merged into quality items where duplicated."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-21T12:16:17Z"
+command = "review"
+lens = "package-quality"
+tier = "lite"
+agent_index = 6
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled 5: --grep-field comma (shared.rs:218-224 Vec<String> no delimiter; recipe line 44), stale recipe claims (lines 24-34), placeholders without .toml (implement.md:143, plan-update.md:151/170), read one-liner drift (pipe warning only at plan-update.md:185/218), backlog.md store-shape table (:462-468, :498). All confirmed. Two tangentials: backlog.md Step-5 routed to backlog; exec-record schema :79 vs :101 merged into completeness finding."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-21T12:30:01Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "diff read: non-array record refused; doc corrected"
+agent_index = 4
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-21T12:30:01Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "diff read: grep-field repeated, template escapes, select note"
+agent_index = 5
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-21T12:30:01Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "diff read: single convert_payload_text decision point, context strings kept"
+agent_index = 8
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-21T12:30:01Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "diff read: task_ref_for delegates to task_refs_for, error text kept"
+agent_index = 9
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-21T12:30:01Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "diff read: three features appended in capabilities order"
+agent_index = 11
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-21T12:30:01Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "diff read: grep in three enumerations, store-shape rows name edit"
+agent_index = 12
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-21T12:30:01Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "diff read: four comments now give the Unicode-width reason"
+agent_index = 13
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-21T12:31:33Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "R22 diff sampled in flow.rs and items.rs: record-file clause added consistently, flow record task key documented"
+agent_index = 15
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[items]]
+id = "R1"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "federated-beaming-hollerith"
+file = "tomlctl/src/store_guard.rs"
+line = 71
+symbol = "resolve"
+severity = "warning"
+effort = "small"
+category = "security"
+summary = "Owned-store guard is bypassed when .claude is a junction or symlink to a differently named directory"
+description = '''refuse_owned_store classifies resolve(path), which canonicalises; when <repo>/.claude is a junction to e.g. D:\shared-data, the canonical path's trailing components are shared-data/backlog.toml, so classify (which matches the literal component `.claude`) lets the write through. The containment guard canonicalises .claude too, so no --allow-outside is needed. The module doc (store_guard.rs:3-5) and the plan's Owned-store guard section both claim a junctioned .claude cannot slip past. Fix: also classify the absolute, lexically folded path (the fold helper exists) and refuse when either matches; add a junction/symlink case to tests/store_guard.rs. Extra refusals are harmless since --raw-store bypasses. Found independently by the security and quality lenses, each with a probe.'''
+evidence = [
+    "tomlctl/src/store_guard.rs:55 classify(&resolve(path)); :72 path.canonicalize(); :118-148 literal .claude component match",
+    'probe (tomlctl 0.16.0, scratch repo): real .claude dir -> `set .claude/backlog.toml probe x` refused; after `mklink /J .claude ..\shared-data` -> {"ok":true,...} and the store was written',
+    "tomlctl/src/io.rs:1667-1673 containment root is claude_dir.canonicalize()",
+    "docs/plans/federated-beaming-hollerith.md:113 claims a junctioned .claude cannot slip past",
+]
+dedup_id = "934f261f8f39e624"
+resolved = 2026-10-21
+resolution = "uncommitted: refuse_owned_store also classifies the lexically folded absolute path, so a junctioned/symlinked .claude is refused; module doc corrected; junction test added to tests/store_guard.rs"
+
+[[items]]
+id = "R2"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "federated-beaming-hollerith"
+file = "tomlctl/src/backlog/dispatch.rs"
+line = 118
+symbol = "run_edits"
+severity = "warning"
+effort = "small"
+category = "security"
+summary = "backlog edit writes context/tags/evidence into the tracked backlog without the credential and machine-local-path advisories backlog add emits"
+description = "add.rs advisories() scans context, tags and evidence for CREDENTIAL_MARKERS and machine-local paths and reports them on stderr and in the envelope's `advisories`; add_many calls it per row. run_edits/apply_to_row never scan, and the edit envelope has no advisories key. With the owned-store guard now blocking `items update --array backlog`, backlog edit is the only unscanned route to those fields of a public, tracked file. The scanner cannot be reused as-is because it takes &AddRequest. Fix: extract a per-value scanner from add::advisories, call it in run_edits over edited values (live and --dry-run), add `advisories` to the envelope, a test in tests/backlog_edit.rs, and a line in backlog-edit.md. Found by the security and architecture lenses."
+evidence = [
+    "tomlctl/src/backlog/add.rs:437 CREDENTIAL_MARKERS; :469-499 advisories; :240 result key",
+    "tomlctl/src/backlog/dispatch.rs:118-165 run_edits: result keys ok, path, rows (dry_run)",
+    'probe (tomlctl 0.16.0): add with context "token ghp_abc123" prints an advisory; edit --context "token ghp_zzz999 and C:\Users\..." prints none, exit 0',
+    "claude/skills/backlog-capture/SKILL.md:216-218 documents the advisory for context, tag and evidence strings",
+]
+dedup_id = "ef5d91c4966345b0"
+resolved = 2026-10-21
+resolution = "uncommitted: add.rs field_advisory per-value scanner shared by add and edit; backlog edit emits advisories (stderr + envelope, live and dry-run); test and docs updated"
+
+[[items]]
+id = "R3"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "federated-beaming-hollerith"
+file = "tomlctl/src/payload.rs"
+line = 51
+symbol = "toml_payload_value"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "A top-level `record` that is not an array of tables ([record] typo for [[record]]) is silently accepted as one object with a `record` field"
+description = """The match only takes the rows branch for Some(DeValue::Array); `[record]` or `record = "x"` falls through to table_to_json and yields {"record": {...}}. set-json then stores a nested record table and `items add --json @f.toml` adds a row without error; items add-many refuses but with a missing-id error that never mentions the typo. The module's own text says `record` is reserved for rows. Fix: refuse any non-array-of-tables `record` with kind=validation naming `[[record]]`, and add a payload_toml.rs case. Found by the quality and testability lenses."""
+evidence = [
+    "tomlctl/src/payload.rs:51-90 match on Some(DeValue::Array) else table_to_json; :64 reserved-for-rows message",
+    'probe: `set-json .claude/ledger.toml payload --json @rows.toml --dry-run` with `[record]` -> new: {"record":{...}}; `items add --json @rows.toml --id-prefix R --dry-run` -> added 1',
+    "tomlctl/tests/payload_toml.rs has no [record] single-table case",
+]
+dedup_id = "f88c4c977fdfc4d9"
+resolved = 2026-10-21
+resolution = "uncommitted: a non-array top-level record is refused naming [[record]]; test added in tests/payload_toml.rs"
+
+[[items]]
+id = "R4"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "federated-beaming-hollerith"
+file = "tomlctl/src/backlog/dispatch.rs"
+line = 82
+symbol = "parse_edit_rows"
+severity = "warning"
+effort = "small"
+category = "db"
+summary = "backlog edit --ndjson rows support only replacement of tags/evidence, not add_tags/remove_tags/add_evidence, forcing a read-modify-write outside the lock"
+description = 'Edit carries add_tags, remove_tags and add_evidence and apply_to_row applies them under the lock, but parse_edit_rows fills only context, tags, evidence, origin, flow and base_sha, then ..Edit::default(). A row with add_tags is refused as "not an editable backlog field". The plan says rows carry the same keys as the flag form plus id. A batch tag sweep must therefore backlog get each row and write whole arrays back, so a concurrent add --on-duplicate bump or another edit is silently overwritten. Fix: accept add_tags/remove_tags/add_evidence (string arrays) before the refusal_for check and update the --ndjson help and backlog-edit.md row shape.'
+evidence = [
+    "tomlctl/src/backlog/edit.rs:42-53 Edit { add_tags, remove_tags, add_evidence, .. }",
+    "tomlctl/src/backlog/dispatch.rs:91-111 row parse fills only replacement fields then ..Edit::default()",
+    "docs/plans/federated-beaming-hollerith.md:107-108 'Rows carry the same keys plus `id`'",
+]
+dedup_id = "3907f1fcf9557c52"
+resolved = 2026-10-21
+resolution = "uncommitted: backlog edit --ndjson rows accept add_tags, remove_tags, add_evidence; help and backlog-edit.md updated"
+
+[[items]]
+id = "R5"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "federated-beaming-hollerith"
+file = "claude/skills/tomlctl/references/backlog-recipes.md"
+line = 44
+symbol = "Search recipe --grep-field"
+severity = "warning"
+effort = "trivial"
+category = "package-quality"
+summary = 'Documented `--grep-field summary,context` is read as one field named "summary,context" and silently matches nothing'
+description = '--grep-field is a repeatable Vec<String> with no value_delimiter (query.md and README say "repeated"). An agent copying the recipe sees zero matches, concludes nothing is captured, and may mint a duplicate backlog row. Fix the doc to `--grep-field summary --grep-field context`; optionally refuse a --grep-field naming a field no row carries.'
+evidence = [
+    'tomlctl/src/cli/types/shared.rs:218-224 grep_field: Vec<String>, help "(repeatable)", no value_delimiter',
+    "probe: `backlog list --grep 'evidence' --grep-field summary,context --template '{id}'` -> no output rc=0; with two --grep-field flags -> 9 ids",
+]
+instances = ["claude/skills/tomlctl/references/backlog-recipes.md:44"]
+sweep = ['--grep-field \S+,']
+enumeration = "complete"
+dedup_id = "ea0678b9e105812d"
+resolved = 2026-10-21
+resolution = "uncommitted: recipe uses repeated --grep-field and the prose says the flag repeats"
+
+[[items]]
+id = "R6"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "federated-beaming-hollerith"
+file = "claude/skills/tomlctl/references/backlog-recipes.md"
+line = 24
+symbol = "Read recipes"
+severity = "warning"
+effort = "trivial"
+category = "package-quality"
+summary = "Rewritten backlog read recipes still describe pre-flow template escapes and the --template/--select refusal, and keep the backlog show {item.*} read"
+description = '''Line 24 says a literal \n does not split a template and line 25 uses $'...' ANSI-C quoting; templates now honour \n, \t and \\. Line 34 says "--template already projects, so it refuses --select"; it is now accepted when the select covers the template paths. Line 25 also teaches the `backlog show ... {item.*}` form the plan set out to replace, though its template uses no neighbour or evidence field, so `backlog get ... --template '{id} [{status}] {summary}\n  ctx: {context}'` is the equivalent. Found by the completeness and package-quality lenses.'''
+evidence = [
+    "claude/skills/tomlctl/references/backlog-recipes.md:24-25,34",
+    """
+probe: `backlog get B-ec0c911b --template '{id}
+  {status}'` prints two lines; `--select id,summary --template '{id} {summary:30}'` rc=0""",
+    "claude/skills/tomlctl/SKILL.md Combinations paragraph: --template excludes --select unless every template path is covered",
+]
+instances = [
+    "claude/skills/tomlctl/references/backlog-recipes.md:24",
+    "claude/skills/tomlctl/references/backlog-recipes.md:25",
+    "claude/skills/tomlctl/references/backlog-recipes.md:34",
+]
+sweep = [
+    'literal \\n does not',
+    "refuses `--select`",
+]
+enumeration = "complete"
+dedup_id = "cc3416d0f38870c8"
+resolved = 2026-10-21
+resolution = "uncommitted: template-escape recipe via backlog get, show kept only for neighbours, --select/--template sentence corrected"
+
+[[items]]
+id = "R7"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "federated-beaming-hollerith"
+file = "tomlctl/Cargo.toml"
+line = 74
+symbol = "predicates"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "predicates' default features pull regex's full unicode feature into every test build, so no test sees the trimmed feature set the binary ships"
+description = '''The change depends on an exact regex feature set (unicode-perl and unicode-case on, \p{..} refused). Cargo unifies features, so every test binary including the CLI binary assert_cmd runs gets full Unicode: tests like grep_is_case_insensitive would still pass if unicode-case were removed (which would break the shipped --grep's (?i)), and the documented \p{..} refusal cannot be tested (query.rs:3566 admits this). Fix: `predicates = { version = "^3", default-features = false, features = ["diff"] }` (tests use only predicates::str::contains), then add tests that \p{Greek} is refused and a non-ASCII (?i) pattern matches. Verify assert_cmd does not re-enable predicates/regex.'''
+evidence = [
+    "cargo tree -e features -i regex: regex feature 'default' comes only from predicates v3.1.4 [dev-dependencies]",
+    'tomlctl/Cargo.toml:74 predicates = "^3"',
+    "tomlctl/src/query.rs:3566-3569 doc comment on compile_user_bytes_regex_error_carries_the_unicode_hint",
+]
+dedup_id = "4740c32239faaa47"
+resolved = 2026-10-21
+resolution = 'uncommitted: predicates default-features off (diff only), test graph now matches shipped regex features; \p{Greek} refusal and non-ASCII case-folding tests added'
+
+[[items]]
+id = "R8"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "federated-beaming-hollerith"
+file = "tomlctl/src/tasks/update.rs"
+line = 142
+symbol = "rows_from_ndjson"
+severity = "suggestion"
+effort = "medium"
+category = "quality"
+summary = "Each new --ndjson batch parser has its own row-error/field helpers, and they disagree on error wording and on the JSON error envelope arg"
+description = 'tasks update --ndjson re-implements row_err/json_ids/json_strings that already exist in tasks/add.rs, and the two tasks batch verbs prefix errors differently (`line N:` vs `ndjson row N:`). backlog edit and backlog triage tag errors with arg "ndjson" (emitted in the --error-format json envelope by lib.rs:376); tasks update and flow record leave arg unset. All four write their own differently worded empty-batch refusal. Fix: one shared helper beside items::parse_ndjson_objects that refuses zero rows, provides row_err(line,msg) tagged arg ndjson, and optional string/string-array/id extractors. The plan cites the inputs.rs per-verb precedent for separate parsers; this finding is about the divergent error contract, not the separation itself.'
+evidence = [
+    "tomlctl/src/tasks/update.rs:142-186 rows_from_ndjson / refuse closure with tagged_err(..., None, ...)",
+    "tomlctl/src/tasks/add.rs:330 json_strings, :355 json_ids, :376 row_err",
+    "tomlctl/src/backlog/dispatch.rs:37-57 row_err/row_string/row_strings tagged arg ndjson",
+    "tomlctl/src/backlog/triage.rs:453 batch_err",
+    "tomlctl/src/flow/record.rs:259-262 empty-batch refusal without arg",
+    "tomlctl/src/lib.rs:376 arg emitted in the JSON error envelope",
+]
+instances = [
+    "tomlctl/src/tasks/update.rs:rows_from_ndjson",
+    "tomlctl/src/tasks/update.rs:batch_row",
+    "tomlctl/src/tasks/add.rs:row_err",
+    "tomlctl/src/backlog/dispatch.rs:row_err",
+    "tomlctl/src/backlog/triage.rs:batch_err",
+    "tomlctl/src/flow/record.rs:build_entries",
+]
+sweep = [
+    'fn (row_err|batch_err|row_string|row_strings|json_strings|json_ids|json_id)\b',
+    "names no rows|holds no rows",
+]
+enumeration = "complete"
+dedup_id = "cef9acb5cb3879c6"
+resolved = 2026-10-21
+resolution = "partial: items::parse_ndjson_batch/row_err/row_string/row_strings shared by tasks update, tasks add-many, backlog edit, backlog triage (line N: prefix, arg=ndjson, one empty-batch message; edit unknown-key message lists additive keys) / pending: flow record --ndjson line N label and add-many empty-batch acceptance, tracked as R35"
+
+[[items]]
+id = "R9"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "federated-beaming-hollerith"
+file = "tomlctl/src/tasks/update.rs"
+line = 272
+symbol = "batch_row"
+severity = "suggestion"
+effort = "small"
+category = "db"
+summary = "tasks update --ndjson joins a set.files array with commas and re-splits it, so a path containing a comma silently becomes two paths"
+description = 'batch_row maps a typed array for a LISTS key to parts.join(",") and emits "files=a,b"; patch then parse_paths splits on "," and trims. A structured array (set.files = ["docs/a, b.md"]) loses the element boundaries a record file makes explicit; only files is affected (needs/coupling are integers). Root cause: UpdateFields.set: Vec<String> serves as both CLI request and batch row type. Minimal fix: refuse a list element containing ","; thorough fix: carry typed list values in UpdateFields. Found by the quality and architecture lenses.'
+evidence = [
+    'tomlctl/src/tasks/update.rs:272-287 Value::Array(parts) if LISTS.contains -> join(",") -> format!("{key}={value}")',
+    'tomlctl/src/tasks/update.rs:585-592 parse_paths split(",").map(str::trim)',
+]
+dedup_id = "13add0283bda2997"
+resolved = 2026-10-21
+resolution = "uncommitted: batch_row refuses a list element containing a comma; test added"
+
+[[items]]
+id = "R10"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "federated-beaming-hollerith"
+file = "tomlctl/src/tasks/update.rs"
+line = 335
+symbol = "apply"
+severity = "suggestion"
+effort = "medium"
+category = "db"
+summary = "tasks update --ndjson validates the DAG after each row, so a valid edge reversal is refused or accepted depending on row order"
+description = "apply loops patch(store, id, fields) row by row on one store, and patch calls reject_broken_graph against the partly patched store before writing needs/coupling. With task 2 needs 1, the batch {id:1,set:{needs:[2]}} then {id:2,set:{needs:[]}} is refused at row 1 (cycle 1->2->1) though the end state is acyclic; swapped rows pass. No invalid state can be written, so the cost is false refusals for an all-or-nothing batch. Fix: for batch rows, apply every row's edge lists first, then one build_or_refuse over the final nodes. A narrow lib test of the two-row swap would confirm."
+evidence = [
+    "tomlctl/src/tasks/update.rs:352-356 patch per row on the shared store",
+    "tomlctl/src/tasks/update.rs:508-510 reject_broken_graph before :517-523 writes the edges",
+]
+dedup_id = "1443b83ca21d6608"
+resolved = 2026-10-21
+resolution = "uncommitted: --ndjson batch skips per-row graph checks and validates the end-state graph once; reversal passes in either order, cyclic batch refused with nothing written"
+
+[[items]]
+id = "R11"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "federated-beaming-hollerith"
+file = "tomlctl/src/backlog/dispatch.rs"
+line = 37
+symbol = "row_string"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "backlog edit's row parsing and store I/O (~130 lines) live in dispatch.rs, against the backlog module's one-module-per-verb layout"
+description = "backlog/mod.rs:3-5 and dispatch.rs:1 say dispatch only fans BacklogOp out to per-verb leaves; add, add_many, query::dispatch_get, relate and triage::dispatch_batch all follow it. Edit's row_err/row_string/row_strings/parse_edit_rows/run_edits and the flag-form Edit assembly sit in dispatch.rs, so edit.rs unit tests cover apply_edits but not row parsing. An artefact of the task split (task 15 owned edit.rs, task 16 dispatch.rs). Fix: move them into edit.rs as edit::dispatch / dispatch_batch; do it together with the parse_edit_rows add_tags finding. Found by the quality and architecture lenses."
+evidence = [
+    "tomlctl/src/backlog/dispatch.rs:1 module doc; :37-165 edit helpers",
+    "tomlctl/src/backlog/mod.rs:3-5 layout rule",
+    "tomlctl/src/backlog/triage.rs:688 dispatch_batch keeps batch I/O in its leaf",
+]
+dedup_id = "26661193b36c105b"
+resolved = 2026-10-21
+resolution = "uncommitted: edit row parsing and store I/O moved to backlog/edit.rs (edit::dispatch / dispatch_batch); dispatch arms delegate"
+
+[[items]]
+id = "R12"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "federated-beaming-hollerith"
+file = "tomlctl/src/backlog/triage.rs"
+line = 620
+symbol = "triage_batch_value"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "The two new backlog --dry-run paths hand-build the preview doc instead of using add::preview_doc, so a preview can succeed where the live write would refuse"
+description = "run_edits and triage_batch_value both do `if path.exists() { read_doc(..clone()) } else { empty Table }`. add::preview_doc (pub(super), used by add and add_many) returns the owned doc and applies the same seed / --no-create refusal the live run would on a missing store. Fix: call add::preview_doc(&path, integrity)? in both."
+evidence = [
+    "tomlctl/src/backlog/add.rs:699 preview_doc",
+    "tomlctl/src/backlog/add.rs:202, add_many.rs:52 use it",
+    "tomlctl/src/backlog/dispatch.rs:121-131 and tomlctl/src/backlog/triage.rs:620-630 hand-rolled preview",
+]
+instances = [
+    "tomlctl/src/backlog/dispatch.rs:run_edits",
+    "tomlctl/src/backlog/triage.rs:triage_batch_value",
+]
+sweep = [
+    'preview_doc\(',
+    'dry_run_read_opts\(',
+]
+enumeration = "complete"
+dedup_id = "70182741d4e539e7"
+resolved = 2026-10-21
+resolution = "uncommitted: edit and triage dry-run paths use add::preview_doc"
+
+[[items]]
+id = "R13"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "federated-beaming-hollerith"
+file = "tomlctl/src/query.rs"
+line = 1016
+symbol = "PreparedPredicates"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = '--grep builds its regex as format!("(?i){regex}"), so errors echo a prefix the user never typed and the 512-byte cap is 4 bytes stricter'
+description = 'compile_user_regex runs check_user_pattern_len on the prefixed string: a 510-byte --grep pattern is refused as "514 bytes" and echoed starting with (?i), while the same pattern passes --where-regex; caret positions are off by 4 and neither error names --grep. Fix: set case-insensitivity with RegexBuilder::case_insensitive(true) (a flag on compile_user_regex or a sibling) and keep the pattern as typed. Found by the quality and testability lenses.'
+evidence = [
+    "tomlctl/src/query.rs:1015-1017; :99-134 check_user_pattern_len / compile_user_regex",
+    'probe: `items list --grep <510 a>` -> "pattern is 514 bytes, over the 512-byte cap"; `--where-regex summary=<510 a>` -> []',
+]
+dedup_id = "264d93e769455950"
+resolved = 2026-10-21
+resolution = "uncommitted: compile_user_regex_ci sets case_insensitive on the builder; pattern length and error text are as typed; tests added"
+
+[[items]]
+id = "R14"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "federated-beaming-hollerith"
+file = "tomlctl/src/cli/types/backlog.rs"
+line = 591
+symbol = "triage_ids"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "triage_ids hand-builds what the generic ids_help + ids_optional_under helpers added to tasks.rs in the same change already do"
+description = 'Both landed minutes apart from parallel tasks; backlog.rs already imports ids_help from super::tasks. tasks update uses mut_args(ids_help(..)), mut_args(ids_optional_under("ndjson")); backlog triage should do the same and drop triage_ids.'
+evidence = [
+    "tomlctl/src/cli/types/tasks.rs:37 ids_optional_under",
+    "tomlctl/src/cli/types/backlog.rs:591-599 triage_ids",
+    "git blame: backlog.rs:591 54665c0f; tasks.rs:37 265afd4b",
+]
+dedup_id = "ba4a6a2590fa47dc"
+resolved = 2026-10-21
+resolution = "uncommitted: triage_ids removed; Triage uses ids_help + ids_optional_under(ndjson)"
+
+[[items]]
+id = "R15"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "federated-beaming-hollerith"
+file = "tomlctl/src/flow/record.rs"
+line = 211
+symbol = "task_refs_for"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "task_refs_for copies task_ref_for's store loading, so --task N plus per-row task loads tasks.toml twice"
+description = "Both resolve the store path, build ReadIntegrityArgs and call load_store; dispatch calls task_ref_for for --task and build_entries then calls task_refs_for for row tasks. Fix: implement task_ref_for via task_refs_for(slug, &[id], ..), or include the --task id in `wanted` and resolve all with one load."
+evidence = ["tomlctl/src/flow/record.rs:192-207 task_ref_for; :211-227 task_refs_for; :60 and :284 call sites"]
+dedup_id = "1c3c30cd47a28fe3"
+resolved = 2026-10-21
+resolution = "uncommitted: task_ref_for delegates to task_refs_for (duplicated store loading removed); --task plus row task still loads twice"
+
+[[items]]
+id = "R16"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "federated-beaming-hollerith"
+file = "tomlctl/src/backlog/query.rs"
+line = 117
+symbol = "print_rows"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "The multi-id read output contract (one id -> object, several -> row array) is now written out in three places"
+description = """tasks show had it; this change adds copies in backlog/query.rs::print_rows and inline in items get. It is one shared contract (the plan's "same multi-id contract"), so it belongs in output.rs as one print_one_or_rows(Vec<JsonValue>)."""
+evidence = [
+    "tomlctl/src/tasks/show.rs:41-44",
+    "tomlctl/src/backlog/query.rs:117-122",
+    "tomlctl/src/cli/dispatch/items.rs:207-211",
+]
+instances = [
+    "tomlctl/src/tasks/show.rs:dispatch",
+    "tomlctl/src/backlog/query.rs:print_rows",
+    "tomlctl/src/cli/dispatch/items.rs:207",
+]
+sweep = ['len\(\) == 1|\.remove\(0\)|Rows::Top\)']
+enumeration = "complete"
+dedup_id = "0d0d1ffbd071df2f"
+resolved = 2026-10-21
+resolution = "uncommitted: output::print_one_or_rows used by tasks show, backlog show/get and items get"
+
+[[items]]
+id = "R17"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "federated-beaming-hollerith"
+file = "tomlctl/src/io.rs"
+line = 365
+symbol = "read_ndjson_source"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = 'The "path ends .toml -> convert" check is written three times in io.rs instead of going through read_payload_file'
+description = "read_payload_file (io.rs:344) wraps the conversion, but the bare-path branch of read_ndjson_source and read_json_value_from_arg each repeat the is_toml_path check with their own read call, differing only in the error context string. Fix: one helper taking the read text plus as_ndjson/context label, so a new payload reader cannot skip the conversion."
+evidence = ["tomlctl/src/io.rs:346, :365, :499 payload::is_toml_path call sites"]
+instances = [
+    "tomlctl/src/io.rs:read_payload_file",
+    "tomlctl/src/io.rs:read_ndjson_source",
+    "tomlctl/src/io.rs:read_json_value_from_arg",
+]
+sweep = ['payload::is_toml_path\(']
+enumeration = "complete"
+dedup_id = "e1464b9afe4e852a"
+resolved = 2026-10-21
+resolution = "uncommitted: io::convert_payload_text is the single .toml decision point for all three payload readers"
+
+[[items]]
+id = "R18"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "federated-beaming-hollerith"
+file = "tomlctl/src/backlog/edit.rs"
+line = 208
+symbol = "apply_edits"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = 'backlog edit on a compacted id says "no backlog item", though backlog get returns that row and triage explains it was compacted'
+description = """apply_edits searches ARRAY_BACKLOG only; backlog get/show resolve through stored_rows (which chains ARRAY_COMPACTED) and triage::not_found reports "has been compacted; triage only transitions live rows". An agent can read a row with get and be told by edit it does not exist. Fix: check ARRAY_COMPACTED on a miss and reuse triage's compacted wording."""
+evidence = [
+    "tomlctl/src/backlog/edit.rs:208-217 position() over ARRAY_BACKLOG -> NotFound",
+    "tomlctl/src/backlog/query.rs:333-337 stored_rows chains ARRAY_COMPACTED",
+    "tomlctl/src/backlog/triage.rs:156-166 not_found(id, compacted)",
+]
+dedup_id = "5d18cd658062dd31"
+resolved = 2026-10-21
+resolution = "uncommitted: edit on a compacted id reports it was compacted; test added"
+
+[[items]]
+id = "R19"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "federated-beaming-hollerith"
+file = "tomlctl/src/backlog/edit.rs"
+line = 64
+symbol = "refusal_for"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "refusal_for re-enumerates schema::MANAGED_FIELDS, RELATION_FIELDS and add.rs MINTED_FIELDS, so a field added to an owner gets the generic refusal"
+description = "edit.rs:69-97 hand-lists the managed fields plus status, the minted fields plus three more, and the relation fields. schema.rs already treats MANAGED_FIELDS as the single owner (asserted at schema.rs:1057). Safety is unaffected (EDITABLE_FIELDS is an allowlist); only the routing message can drift. Fix: match with guards on the schema constants and move MINTED_FIELDS into schema.rs."
+evidence = [
+    "tomlctl/src/backlog/edit.rs:64-97 hand-listed arms",
+    "tomlctl/src/backlog/schema.rs:136 RELATION_FIELDS; :153-164 MANAGED_FIELDS",
+    "tomlctl/src/backlog/add.rs:41 MINTED_FIELDS",
+]
+dedup_id = "559e579878903942"
+resolved = 2026-10-21
+resolution = "uncommitted: refusal_for guards on schema constants; MINTED_FIELDS moved to schema.rs; messages unchanged"
+
+[[items]]
+id = "R20"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "federated-beaming-hollerith"
+file = "tomlctl/src/store_guard.rs"
+line = 51
+symbol = "refuse_owned_store"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "The owned-store guard is opt-in per verb with a hand-listed test, so a new generic writer passes unguarded"
+description = 'Nine dispatch arms call refuse_owned_store and tests/store_guard.rs lists those nine writers by hand; nothing ties "has a generic write path" to "flattens RawStoreArg" (items sweep already takes WriteIntegrityArgs without it, deliberately). The per-verb placement is correct (owners share mutate_doc). Fix: a clap-introspection test beside cli::dispatch::tests that walks Cli::command() and asserts --raw-store on set, set-json, array-append and every items subcommand with write-integrity flags, minus an allowlist (items sweep); the pre-commit hook then catches a forgotten guard.'
+evidence = [
+    "Grep refuse_owned_store: 6 sites in cli/dispatch/items.rs, 3 in cli/dispatch/doc.rs",
+    "tomlctl/tests/store_guard.rs:23-100 cases() hand-enumerates nine writers",
+    "tomlctl/src/cli/types/items.rs:423-447 Sweep has WriteIntegrityArgs, no RawStoreArg",
+]
+dedup_id = "8ac8b9284292c90c"
+resolved = 2026-10-21
+resolution = "uncommitted: cli::dispatch::tests::store_guard_gate asserts --raw-store on every generic writer (allowlist: items sweep)"
+
+[[items]]
+id = "R21"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "federated-beaming-hollerith"
+file = "tomlctl/src/agents/correlate.rs"
+line = 194
+symbol = "dispatch_in"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "Carrier read one-liners use the `tasks show <ids> --slug <slug>` form the agent correlator treats as an implementer dispatch marker"
+description = "dispatch_in matches `tasks show ([0-9]+(?:,[0-9]+)*) --slug (...)` anywhere in an agent's prompt and binds it to those tasks. Six carrier prompts now give Explore/general-purpose agents that form. The `<ids>` placeholder does not match, so this only bites if an orchestrator substitutes concrete ids (most likely in plan-update's reconcile/catchup prompts), making glimpse show a read-only agent as working the tasks. Hypothesis: confirm by checking recorded task_ids for an Explore/general-purpose dispatch after the next /plan-update reconcile. Fix: write the read line as `tasks show --slug <slug> <ids>`, or have the correlator require the DISPATCH: header."
+evidence = [
+    "tomlctl/src/agents/correlate.rs:194-197 dispatch pattern",
+    "claude/commands/plan-update.md:188,221; review.md:43; optimise.md:63; plan-new.md:60 read one-liner in non-implement prompts",
+]
+dedup_id = "173553bc2498e24d"
+resolved = 2026-10-21
+resolution = "uncommitted: carrier read one-liners use tasks show --slug <slug> <ids>, which the correlator dispatch pattern cannot match"
+
+[[items]]
+id = "R22"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "federated-beaming-hollerith"
+file = "tomlctl/src/cli/types/items.rs"
+line = 147
+symbol = "AddMany.ndjson"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "Every payload flag now accepts a .toml record file, but only the three new batch flags say so in --help (and flow record --ndjson help omits per-row task)"
+description = """A first-time agent reading --help cannot discover record files; the NDJSON parse hint appears only after a failed call. The new flags already use the right wording ("a `.toml` path is a record file", backlog.rs:327, :418, tasks.rs:296). flow record's --ndjson doc mentions type/task_ref rows but not the per-row `task` key. Fix: add the record-file sentence to each pre-existing payload flag's help and `task` to flow record's. If command_lint or a help snapshot pins these strings, update the fixtures. Found by the testability and completeness lenses."""
+evidence = [
+    "tomlctl/src/cli/types/items.rs:147 help text",
+    "tomlctl/src/cli/types/flow.rs:229-233 doc",
+    "tomlctl/src/cli/types/backlog.rs:327 new-flag wording",
+]
+instances = [
+    "tomlctl/src/cli/types/backlog.rs:77",
+    "tomlctl/src/cli/types/backlog.rs:96",
+    "tomlctl/src/cli/types/backlog.rs:137",
+    "tomlctl/src/cli/types/cmd.rs:94",
+    "tomlctl/src/cli/types/cmd.rs:149",
+    "tomlctl/src/cli/types/cmd.rs:155",
+    "tomlctl/src/cli/types/flow.rs:223",
+    "tomlctl/src/cli/types/flow.rs:229",
+    "tomlctl/src/cli/types/inputs.rs:38",
+    "tomlctl/src/cli/types/inputs.rs:84",
+    "tomlctl/src/cli/types/items.rs:96",
+    "tomlctl/src/cli/types/items.rs:147",
+    "tomlctl/src/cli/types/items.rs:152",
+    "tomlctl/src/cli/types/items.rs:213",
+    "tomlctl/src/cli/types/items.rs:312",
+    "tomlctl/src/cli/types/review.rs:226",
+    "tomlctl/src/cli/types/review.rs:298",
+    "tomlctl/src/cli/types/review.rs:378",
+    "tomlctl/src/cli/types/review.rs:533",
+    "tomlctl/src/cli/types/tasks.rs:240",
+]
+sweep = [
+    'a leading `@` is accepted\)"',
+    "to read a file",
+    "`@path` a file",
+    '\(`-` for stdin, or a',
+]
+enumeration = "complete"
+dedup_id = "f3acffb041bb97c0"
+resolved = 2026-10-21
+resolution = "uncommitted: record-file clause on every payload flag help; flow record --ndjson doc names the per-row task key; write.md sentence added"
+
+[[items]]
+id = "R23"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "federated-beaming-hollerith"
+file = "tomlctl/tests/backlog_edit.rs"
+line = 0
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "backlog edit's last_updated stamp and the no-write path for an unchanged edit have no test"
+description = "The plan requires last_updated to be stamped only when a row changes. tags_are_added_and_removed checks changed:false but not that the store and sidecar were left byte-identical, and nothing asserts the stamp. A regression that always stamps would rewrite the file on every no-op call. Add both assertions."
+evidence = [
+    "grep last_updated|today in tomlctl/tests/backlog_edit.rs: no hits",
+    "docs/plans/federated-beaming-hollerith.md:110",
+]
+dedup_id = "7f53a7f14688019d"
+resolved = 2026-10-21
+resolution = "uncommitted: tests for last_updated stamping and byte-identical store+sidecar on an unchanged edit"
+
+[[items]]
+id = "R24"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "federated-beaming-hollerith"
+file = "tomlctl/src/backlog/dispatch.rs"
+line = 82
+symbol = "parse_edit_rows (id-only row)"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "A backlog edit --ndjson row carrying only `id` is silently accepted, and a duplicate id error carries no line number"
+description = 'The flag form refuses an edit with no fields ("nothing to edit"); a batch row with only id passes with changed:false, untested. A repeated id is only caught later in apply_edits (edit.rs:197) with no line number, while tasks update and backlog triage name both lines ("already patched by line N"). Fix: refuse an id-only row and check duplicates in parse_edit_rows with line numbers.'
+evidence = [
+    "tomlctl/src/backlog/dispatch.rs:82-111",
+    "tomlctl/src/backlog/edit.rs:197-201",
+]
+dedup_id = "675b32377a37350e"
+resolved = 2026-10-21
+resolution = "uncommitted: batch parser refuses an id-only row and a repeated id naming both lines; tests added"
+
+[[items]]
+id = "R25"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "federated-beaming-hollerith"
+file = "claude/commands/implement.md"
+line = 161
+symbol = "3c minting"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "Carrier and schema prose still says deviation text goes through --set-file / one call per entry after 3b and plan-update moved to TOML record files"
+description = """implement.md:161 says "for the same reason 3b uses --set-file", but 3b now passes a record file through --ndjson. plan-update.md:40 says free text is "passed by --set-file" and "one flow record call per entry", contradicting its own deviation/deferral recipes at :148-180. The execution-record schema skill's deviation example (:83) still stages two --set-file files, and its :79 "one call per entry" contradicts its own :101 multi-entry --ndjson call."""
+evidence = [
+    "claude/commands/implement.md:139 vs :161",
+    "claude/commands/plan-update.md:40 vs :148-180",
+    "claude/skills/flow-contract-execution-record-schema/SKILL.md:79, :83 vs :101",
+]
+instances = [
+    "claude/commands/implement.md:161",
+    "claude/commands/plan-update.md:40",
+    "claude/skills/flow-contract-execution-record-schema/SKILL.md:79",
+    "claude/skills/flow-contract-execution-record-schema/SKILL.md:83",
+]
+sweep = [
+    "same reason 3b uses",
+    "passed by `--set-file`",
+    "set-file original_intent",
+]
+enumeration = "complete"
+dedup_id = "fd472ecaed6efc31"
+resolved = 2026-10-21
+resolution = "uncommitted: implement.md 3c, plan-update.md execution-record paragraph and the execution-record schema skill now describe the record-file / multi-entry form"
+
+[[items]]
+id = "R26"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "federated-beaming-hollerith"
+file = "tomlctl/src/store_guard.rs"
+line = 27
+symbol = "OwnedStore::replacement"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "The backlog refusal names only edit and triage, so a refused `items add --array backlog` is not pointed at backlog add"
+description = "The tasks, inputs and review messages each name their add verb. The backlog message lists edit (context/tags/evidence/origin) and triage (status) only; it omits backlog add for new rows, backlog relate for related/supersedes, and edit's flow/base_sha."
+evidence = [
+    "tomlctl/src/store_guard.rs:27-29",
+    "tomlctl/src/backlog/edit.rs EDITABLE_FIELDS incl. flow, base_sha",
+]
+dedup_id = "5921b2b351276289"
+resolved = 2026-10-21
+resolution = "uncommitted: backlog refusal names add, edit (incl. flow, base_sha), triage and relate"
+
+[[items]]
+id = "R27"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "federated-beaming-hollerith"
+file = "claude/skills/tomlctl/SKILL.md"
+line = 172
+symbol = "Output options"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "The sentence enumerating output-flag capability features stops at list_limited and omits text_view, template_escapes and relaxed_refusals"
+description = "The feature table row lists them, but the Output options sentence presents itself as the enumeration of output features advertised by `tomlctl capabilities`."
+evidence = [
+    "claude/skills/tomlctl/SKILL.md:172",
+    "tomlctl/src/cli/types/mod.rs FEATURES",
+]
+dedup_id = "26a14b4aede210df"
+resolved = 2026-10-21
+resolution = "uncommitted: Output options feature enumeration includes template_escapes, text_view, relaxed_refusals"
+
+[[items]]
+id = "R28"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "federated-beaming-hollerith"
+file = "claude/skills/tomlctl/references/backlog.md"
+line = 170
+symbol = "backlog list"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "Two list-surface enumerations leave out the new --grep"
+description = "backlog.md:170 and the task-store skill's `list` line enumerate the shared query surface without --grep/--grep-field. Both defer to query.md, which documents --grep, but the enumerations read as complete."
+evidence = [
+    "claude/skills/tomlctl/references/backlog.md:170",
+    "claude/skills/flow-contract-task-store/SKILL.md:206",
+    "claude/skills/tomlctl/references/query.md:98",
+]
+instances = [
+    "claude/skills/tomlctl/references/backlog.md:170",
+    "claude/skills/flow-contract-task-store/SKILL.md:206",
+]
+sweep = [
+    "whole `items list` surface",
+    "task rows through the shared query surface",
+]
+enumeration = "complete"
+dedup_id = "b22b2756aecc2ce5"
+resolved = 2026-10-21
+resolution = "uncommitted: --grep listed in backlog.md, task-store SKILL.md and tasks.md enumerations"
+
+[[items]]
+id = "R29"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "federated-beaming-hollerith"
+file = "claude/commands/implement.md"
+line = 143
+symbol = "3b deviation recipe placeholder"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "Record-file recipe placeholders lack .toml, but the payload reader only switches to TOML on a .toml path"
+description = "A file named deviations.txt or with no extension is parsed as NDJSON and fails on line 1. Other new docs show the extension (flow.md <staged-record.toml>, the execution-record schema skill <staged-records.toml>, backlog-recipes <file.toml>). Rename the three placeholders."
+evidence = [
+    "claude/commands/implement.md:143 --ndjson <deviations-file>",
+    "claude/commands/plan-update.md:151, :170",
+    "claude/skills/tomlctl/references/write.md: 'A path ending `.toml` (any case) ... is read as TOML'",
+]
+instances = [
+    "claude/commands/implement.md:143",
+    "claude/commands/plan-update.md:151",
+    "claude/commands/plan-update.md:170",
+]
+sweep = ["--ndjson <[a-z-]*-file>"]
+enumeration = "complete"
+dedup_id = "1f4d9741887b5b3e"
+resolved = 2026-10-21
+resolution = "uncommitted: record-file placeholders end in .toml in implement.md and plan-update.md"
+
+[[items]]
+id = "R30"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "federated-beaming-hollerith"
+file = "claude/commands/implement.md"
+line = 139
+symbol = "3b pre-append dedupe guard"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "The deviation recipe's dedupe guard never says to skip the call when no deviation remains, the common crash-resume case"
+description = 'An empty .toml record file reaches flow record as one empty row and fails with "missing required fields summary, original_intent, rationale" instead of a no-op. Add "skip the call when no deviation remains". Related to B-62578e1d (empty record files untested).'
+evidence = [
+    "probe: flow record --type deviation --ndjson <empty.toml> --dry-run -> --ndjson line 1: missing required fields, rc=1",
+    "claude/commands/implement.md:139",
+]
+dedup_id = "ca1e2ce1a028a777"
+resolved = 2026-10-21
+resolution = "uncommitted: implement.md 3b says to skip flow record when no deviation remains"
+
+[[items]]
+id = "R31"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "federated-beaming-hollerith"
+file = "claude/commands/plan-update.md"
+line = 185
+symbol = "read one-liners"
+severity = "suggestion"
+effort = "small"
+category = "package-quality"
+summary = "The six carrier read one-liner copies are not gated by shared-blocks.toml and have already drifted"
+description = """optimise, plan-new and review list backlog get first; plan-update lists tasks show first. Only plan-update's two general-purpose sites carry "never pipe tomlctl into python/jq/grep, never 2>/dev/null"; the four Explore sites omit it, though Explore is equally a built-in with no tomlctl guidance. Fix: align the wording, or put the snippet under shared-block markers so verify-shared-blocks gates it."""
+evidence = [
+    "claude/commands/plan-update.md:185, :218 carry the pipe warning",
+    "claude/commands/review.md:39-44, optimise.md:59, plan-new.md:56, pre-analysis.md:23 do not",
+]
+instances = [
+    "claude/commands/optimise.md:59",
+    "claude/commands/plan-new.md:56",
+    "claude/commands/review.md:39",
+    "claude/commands/plan-update.md:185",
+    "claude/commands/plan-update.md:218",
+    "claude/skills/flow-contract-apply-pipeline/references/pre-analysis.md:23",
+]
+sweep = [
+    "Tell (any|each) Explore agent to read",
+    "read one-liners",
+    "Tell the agent to read flow",
+]
+enumeration = "complete"
+dedup_id = "1517df33af2447b1"
+resolved = 2026-10-21
+resolution = "uncommitted: six read one-liner blocks aligned byte-identical with the no-pipe / no-2>/dev/null lead-in"
+
+[[items]]
+id = "R32"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "federated-beaming-hollerith"
+file = "claude/skills/tomlctl/references/backlog.md"
+line = 465
+symbol = "Store shape"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "backlog.md Store shape still says context/origin/flow/tags/evidence/base_sha are set only at mint, and says the store has no evidence field"
+description = """backlog edit now rewrites all six fields; the "Set by" table was not updated. backlog.md:498 "The store carries no evidence field of any kind" contradicts the table's own evidence row and backlog-edit.md, and its rationale for naming the array `backlog` is partly moot now the owned-store guard refuses the items writers. Doc instance of B-ec0c911b (same stale claim in schema.rs)."""
+evidence = [
+    "claude/skills/tomlctl/references/backlog.md:462-468, :498",
+    "claude/skills/tomlctl/references/backlog-edit.md flag table",
+]
+dedup_id = "73540549edf0e9f3"
+resolved = 2026-10-21
+resolution = "uncommitted: backlog.md store-shape rows name edit; evidence sentence corrected; raw-store refusal noted"
+
+[[items]]
+id = "R33"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "federated-beaming-hollerith"
+file = "tomlctl/src/tasks/parse_tasks.rs"
+line = 0
+symbol = "every_pattern_compiles"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "Reworded every_pattern_compiles comments still say shorthand classes fail or blow the compile-size limit, which unicode-perl makes false"
+description = '''With unicode-perl enabled, Regex::new's default 10 MiB limit compiles \d/\s/\w/\b, so the remaining reason for the shorthand ban is only that \d matches all Unicode digits. The comments in parse_tasks.rs and parse_policy.rs were reworded in this range but keep the stale reason. Surfaced by the quality lens as a tangential; promoted because both files are in scope.'''
+evidence = [
+    "tomlctl/src/tasks/parse_tasks.rs every_pattern_compiles comment",
+    "tomlctl/src/tasks/parse_policy.rs every_pattern_compiles comment",
+    "tomlctl/Cargo.toml regex features unicode-perl, unicode-case",
+]
+instances = [
+    "tomlctl/src/tasks/parse_tasks.rs:every_pattern_compiles",
+    "tomlctl/src/tasks/parse_policy.rs:every_pattern_compiles",
+]
+sweep = ["compile-size limit"]
+enumeration = "complete"
+dedup_id = "8a89f68e26f55cdc"
+resolved = 2026-10-21
+resolution = "uncommitted: parse_tasks.rs / parse_policy.rs comments give the Unicode-width reason for the shorthand-class ban"
+
+[[items]]
+id = "R34"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "federated-beaming-hollerith"
+file = "tomlctl/src/payload.rs"
+line = 1
+symbol = "module doc"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "payload.rs header says its newline normalisation matches io::read_flag_file, but strip_flag_text keeps interior CRLF while record files convert to LF"
+description = 'The same staged prose lands with different bytes depending on whether it goes through --set-file (interior CRLF kept; its test asserts "a\r\nb") or a record file (CRLF->LF); read_prose is a third policy. Either correct the doc claim or align the policies. Surfaced by the architecture lens as a tangential; promoted because payload.rs is in scope.'
+evidence = [
+    "tomlctl/src/payload.rs module header",
+    'tomlctl/src/io.rs strip_flag_text and its "a\r\nb" test',
+]
+dedup_id = "52d78d45aa425418"
+resolved = 2026-10-21
+resolution = "uncommitted: payload.rs module doc states record-file newline handling and that it differs from --set-file"
+
+[[items]]
+id = "R35"
+file = "tomlctl/src/flow/record.rs"
+line = 248
+symbol = "build_entries"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "pending parts of R8: flow record keeps its `--ndjson line N` row label and tasks add-many still accepts an empty batch"
+description = """R8 unified the batch-error contract (items::parse_ndjson_batch / row_err / row_string / row_strings: `line N:` prefix, arg = "ndjson", one empty-batch message) across tasks update, tasks add-many, backlog edit and backlog triage. Left: (1) flow record's per-row errors come from a with_context layer over shared single-entry validation (normalise, fill_defaults, take_row_task) and still read `--ndjson line N`, with no arg tag; three tests in tomlctl/tests/flow_record.rs (~413, ~480, ~524) assert that wording. (2) tasks add-many (tomlctl/src/tasks/add.rs) still accepts an empty --ndjson batch; refusing it changes accepted input. Both need a decision on whether to change tested wording / accepted input."""
+first_flagged = 2026-10-21
+rounds = 1
+status = "wontfix"
+related = ["R8"]
+flow = "federated-beaming-hollerith"
+dedup_id = "ade6dde092788e37"
+wontfix_rationale = "moved to the repo backlog as B-ed369a76; tracked there with B-e4e3e248"

@@ -4,10 +4,11 @@
 //
 // Shape: a top-level `record` array is the payload's rows, and no other
 // top-level key may sit beside it; any other document is one object. Every
-// multi-line string (its source token opens `'''` or `"""`) has CRLF read as
-// LF and exactly one trailing `\n` removed, matching `io::read_flag_file`, so a
-// block whose closing delimiter sits on its own line reads back as typed.
-// Single-line strings are left as written. Every error is `kind=validation`.
+// multi-line string (its source token opens `'''` or `"""`) has every CRLF read
+// as LF and exactly one trailing `\n` removed, so a block whose closing
+// delimiter sits on its own line reads back as typed. This differs from
+// `--set-file` text, which keeps interior CRLF. Single-line strings are left as
+// written. Every error is `kind=validation`.
 
 use std::path::Path;
 
@@ -87,7 +88,16 @@ pub(crate) fn toml_payload_value(path: &Path, text: &str) -> Result<JsonValue> {
             }
             Ok(JsonValue::Array(out))
         }
-        _ => table_to_json(path, source, doc),
+        Some(other) => Err(refuse(
+            path,
+            format!(
+                "{}: `{ROWS_KEY}` is reserved for rows but is {}; write each row as \
+                 `[[{ROWS_KEY}]]` (an array of tables)",
+                path.display(),
+                kind_name(other)
+            ),
+        )),
+        None => table_to_json(path, source, doc),
     }
 }
 

@@ -223,6 +223,162 @@ fn an_edit_with_no_fields_is_refused() {
 }
 
 #[test]
+fn ndjson_rows_add_and_remove_tags_and_add_evidence() {
+    let (_tmp, root) = sandbox();
+    let id = mint(&root, "theta discovery");
+    let ndjson = root.join("amend.ndjson");
+    fs::write(
+        &ndjson,
+        format!(
+            "{}\n",
+            json!({"id": id, "add_tags": ["x"], "remove_tags": ["keep"], "add_evidence": ["y.log"]})
+        ),
+    )
+    .unwrap();
+
+    let out = backlog(&root, &["edit", "--ndjson", ndjson.to_str().unwrap()]);
+    assert_eq!(out["rows"], json!([{"id": id, "changed": true}]));
+    let r = row(&root, &id);
+    assert_eq!(strs(&r, "tags"), ["x"]);
+    assert_eq!(strs(&r, "evidence"), ["y.log"]);
+}
+
+#[test]
+fn an_ndjson_row_carrying_only_an_id_is_refused_by_line() {
+    let (_tmp, root) = sandbox();
+    let id = mint(&root, "iota discovery");
+    let before = fs::read(store_path(&root)).unwrap();
+    let ndjson = root.join("bare.ndjson");
+    fs::write(
+        &ndjson,
+        format!(
+            "{}\n{}\n",
+            json!({"id": id, "context": "fine"}),
+            json!({"id": id.clone() + "x"}),
+        ),
+    )
+    .unwrap();
+
+    let stderr = failure_stderr(&root, &["edit", "--ndjson", ndjson.to_str().unwrap()]);
+    assert!(stderr.contains("line 2"), "{stderr}");
+    assert!(stderr.contains("nothing to edit"), "{stderr}");
+    assert_eq!(fs::read(store_path(&root)).unwrap(), before);
+}
+
+#[test]
+fn an_ndjson_id_named_twice_is_refused_naming_both_lines() {
+    let (_tmp, root) = sandbox();
+    let id = mint(&root, "kappa discovery");
+    let before = fs::read(store_path(&root)).unwrap();
+    let ndjson = root.join("twice.ndjson");
+    fs::write(
+        &ndjson,
+        format!(
+            "{}\n{}\n",
+            json!({"id": id, "context": "one"}),
+            json!({"id": id, "origin": "two"}),
+        ),
+    )
+    .unwrap();
+
+    let stderr = failure_stderr(&root, &["edit", "--ndjson", ndjson.to_str().unwrap()]);
+    assert!(stderr.contains("line 2"), "{stderr}");
+    assert!(stderr.contains("already named on line 1"), "{stderr}");
+    assert_eq!(fs::read(store_path(&root)).unwrap(), before);
+}
+
+#[test]
+fn a_machine_local_path_raises_an_advisory_but_still_writes() {
+    let (_tmp, root) = sandbox();
+    let id = mint(&root, "lambda discovery");
+    let local = "see C:\\Users\\someone\\trace.log";
+
+    let preview = backlog(&root, &["edit", &id, "--add-evidence", local, "--dry-run"]);
+    let lines = preview["advisories"].as_array().unwrap();
+    assert_eq!(lines.len(), 1, "{preview}");
+    assert!(
+        lines[0].as_str().unwrap().contains("`evidence`"),
+        "{preview}"
+    );
+
+    // stderr is not a terminal under the test harness, so the advisory is
+    // read from the envelope, which is the copy a piped caller sees.
+    let envelope = backlog(&root, &["edit", &id, "--context", local]);
+    let lines = envelope["advisories"].as_array().unwrap();
+    assert_eq!(lines.len(), 1, "{envelope}");
+    let line = lines[0].as_str().unwrap();
+    assert!(
+        line.starts_with(&id) && line.contains("`context`"),
+        "{line}"
+    );
+    assert!(line.contains("machine-local path"), "{line}");
+    assert!(
+        !line.contains("someone"),
+        "the value is never echoed: {line}"
+    );
+    assert_eq!(row(&root, &id)["context"].as_str(), Some(local));
+
+    let clean = backlog(&root, &["edit", &id, "--context", "plain prose"]);
+    assert_eq!(clean["advisories"], json!([]));
+}
+
+fn today_iso() -> String {
+    jiff::Timestamp::now()
+        .to_zoned(jiff::tz::TimeZone::UTC)
+        .strftime("%Y-%m-%d")
+        .to_string()
+}
+
+#[test]
+fn a_changing_edit_stamps_last_updated_today() {
+    let (_tmp, root) = sandbox();
+    let store = store_path(&root);
+    fs::write(
+        &store,
+        "schema_version = 1\nlast_updated = 2026-01-01\n\n[[backlog]]\nid = \"B-00000001\"\nsummary = \"stale stamp\"\nstatus = \"open\"\n",
+    )
+    .unwrap();
+
+    let before = today_iso();
+    backlog(&root, &["edit", "B-00000001", "--context", "fresh"]);
+    let after = today_iso();
+    let stamp = read_store(&root)["last_updated"].to_string();
+    assert!(
+        stamp == before || stamp == after,
+        "last_updated {stamp} is neither {before} nor {after}"
+    );
+}
+
+#[test]
+fn an_unchanged_edit_leaves_the_store_and_sidecar_byte_identical() {
+    let (_tmp, root) = sandbox();
+    let id = mint(&root, "mu discovery");
+    let store = store_path(&root);
+    let sidecar = root.join(".claude").join("backlog.toml.sha256");
+    let before = (fs::read(&store).unwrap(), fs::read(&sidecar).unwrap());
+
+    let out = backlog(&root, &["edit", &id, "--add-tag", "keep"]);
+    assert_eq!(out["rows"][0]["changed"], json!(false));
+    assert_eq!(
+        (fs::read(&store).unwrap(), fs::read(&sidecar).unwrap()),
+        before
+    );
+}
+
+#[test]
+fn a_compacted_id_is_named_as_compacted() {
+    let (_tmp, root) = sandbox();
+    fs::write(
+        store_path(&root),
+        "schema_version = 1\n\n[[compacted]]\nid = \"B-0000dead\"\ndedup_id = \"0000dead00000000\"\nsummary = \"aged out\"\nstatus = \"resolved\"\n",
+    )
+    .unwrap();
+
+    let stderr = failure_stderr(&root, &["edit", "B-0000dead", "--context", "x"]);
+    assert!(stderr.contains("compacted"), "{stderr}");
+}
+
+#[test]
 fn an_edit_that_leaves_a_row_invalid_is_refused_and_writes_nothing() {
     let (_tmp, root) = sandbox();
     let store = store_path(&root);

@@ -203,7 +203,7 @@ A linked row (§1) carries `backlog` after that, on the same terms: `{"closes": 
 tomlctl tasks show <id> --slug <slug> --with body,files,deps
 ```
 
-**`list`** — task rows through the shared query surface: `--where` / `--where-in` / `--where-prefix` and the rest, `--select` / `--pluck`, `--sort-by` / `--limit`, `--count` / `--count-by` / `--group-by`, `--ndjson` / `--raw` / `--lines`.
+**`list`** — task rows through the shared query surface: `--where` / `--where-in` / `--where-prefix` and the rest, `--grep` / `--grep-field`, `--select` / `--pluck`, `--sort-by` / `--limit`, `--count` / `--count-by` / `--group-by`, `--ndjson` / `--raw` / `--lines`.
 
 ```bash
 tomlctl tasks list --slug <slug> --where status=pending --select id,ref,files --ndjson

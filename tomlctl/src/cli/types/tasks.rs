@@ -237,7 +237,7 @@ pub(crate) enum TasksOp {
         #[arg(
             long = "ndjson",
             value_name = "SRC",
-            help = "NDJSON source: `-` for stdin, otherwise a file path (a leading `@` is accepted)"
+            help = "NDJSON source: `-` for stdin, otherwise a file path (a leading `@` is accepted; a `.toml` path is a record file)"
         )]
         ndjson: String,
         #[command(flatten)]

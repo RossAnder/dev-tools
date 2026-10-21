@@ -21,11 +21,13 @@ Forward: the selected item IDs with their `file`, `line`, `symbol`, `severity`, 
 the Tier-1 already-applied test; and the carrier's narration requirement.
 
 Tell the agent to read flow stores and ledgers with these verbs rather than grepping
-`.claude/*.toml`:
+`.claude/*.toml`, never piping tomlctl into python, jq or grep and never `2>/dev/null`:
 
 ```bash
 tomlctl items get <ledger> <ids> --text-view
 tomlctl backlog get <ids>
+tomlctl tasks show --slug <slug> <ids> --with body --text-view
+tomlctl backlog list --grep <regex> --text-view
 ```
 
 **Paraphrase, do not quote.** When forwarding `summary`, `description`, or recommended-fix

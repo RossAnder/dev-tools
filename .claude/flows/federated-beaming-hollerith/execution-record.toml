@@ -1,2 +1,1073 @@
 schema_version = 1
 last_updated = 2026-10-21
+
+[[items]]
+id = "E1"
+agent = "implement"
+from_status = "draft"
+to_status = "in-progress"
+summary = "status draft -> in-progress"
+type = "status-transition"
+date = 2026-10-21
+
+[[items]]
+id = "E2"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = [
+    "tomlctl/Cargo.toml",
+    "tomlctl/src/query.rs",
+    "tomlctl/src/agents/correlate.rs",
+]
+summary = 'Enabled regex unicode-perl + unicode-case features; rewrote REGEX_UNICODE_HINT (\p{..} unavailable, \w{21} size limit, (?-u:\b) fast form) and its pinning test (syntax + size-limit patterns); corrected the correlate.rs comment.'
+type = "task-completion"
+task_ref = "enable-regex-unicode-case-folding-and-perl-classes"
+date = 2026-10-21
+
+[[items]]
+id = "E3"
+agent = "implement"
+original_intent = "counts holds five keys: ready, in-progress, stalled, unlinked, orphaned"
+rationale = "counts is filled in the Bucket::ALL loop, so dangling and external are included too; filtering them out would add a special case for no reader benefit (additive keys)."
+summary = "counts carries all seven bucket keys (adds dangling, external) in tomlctl/src/backlog/reconcile.rs"
+type = "deviation"
+task_ref = "counts-map-on-backlog-reconcile"
+date = 2026-10-21
+
+[[items]]
+id = "E4"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = [
+    "tomlctl/src/backlog/reconcile.rs",
+    "tomlctl/tests/backlog_reconcile.rs",
+    "claude/commands/plan-update.md",
+]
+summary = "Added a counts map (one key per Bucket::ALL bucket) to the backlog reconcile report, asserted it in backlog_reconcile.rs, and switched plan-update.md to print the summary line via --template over counts."
+type = "task-completion"
+task_ref = "counts-map-on-backlog-reconcile"
+date = 2026-10-21
+
+[[items]]
+id = "E5"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+files = [
+    "tomlctl/src/cli/types/items.rs",
+    "tomlctl/src/cli/dispatch/items.rs",
+    "tomlctl/tests/items_get_ids.rs",
+]
+summary = "items get takes a comma- or space-separated id list (ItemIds + ids_help): one id prints the object, several print an array in given order, duplicates collapse, unknown id fails the call; new tests/items_get_ids.rs."
+type = "task-completion"
+task_ref = "items-get-takes-a-list-of-ids"
+date = 2026-10-21
+
+[[items]]
+id = "E6"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+files = ["tomlctl/src/output/template.rs"]
+summary = 'Template::parse handles \n, \t and \ escapes in literal text only (placeholders and values untouched; other backslashes literal); four escape unit tests.'
+type = "task-completion"
+task_ref = "template-escape-sequences"
+date = 2026-10-21
+
+[[items]]
+id = "E7"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+files = [
+    "claude/skills/review-v2-lenses/vocabulary.toml",
+    "claude/skills/review-v2-lenses/SKILL.md",
+    "claude/skills/review-v2-lenses/methods/sweep.md",
+]
+summary = 'Rewrote the regex guidance in review-v2-lenses vocabulary.toml (comment), SKILL.md contains bullet and methods/sweep.md step 4: bare forms compile, \p{..} refused, \w{21} size limit, (?-u:\b)/(?i-u:...) kept as the fast recommended forms.'
+type = "task-completion"
+task_ref = "correct-the-no-unicode-statements-in-the-review-v2-lenses"
+date = 2026-10-21
+scope_warning = true
+
+[[items]]
+id = "E8"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/tests/sweep.rs",
+    "tomlctl/tests/tasks_corpus.rs",
+    "claude/skills/research-methods/references/codebase-review.md",
+]
+summary = "Rewrote the shipped-binary regex claims in tests/sweep.rs header, tests/tasks_corpus.rs doc comment and research-methods codebase-review.md sweep paragraph; (?-u:...) fast forms and 512-byte cap kept."
+type = "task-completion"
+task_ref = "correct-the-no-unicode-statements-in-test-headers-and-the-research-method"
+date = 2026-10-21
+scope_warning = true
+
+[[items]]
+id = "E9"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = [
+    "tomlctl/src/backlog/edit.rs",
+    "tomlctl/src/backlog/mod.rs",
+]
+summary = "New backlog/edit.rs: EDITABLE_FIELDS policy, refusal_for(field) naming the owning verb, Edit/EditOutcome and a pure apply_edits (clone-then-swap, per-row schema::validate + validate_ids_unique, unknown/duplicate id errors, order-keeping tag/evidence dedupe); 14 unit tests."
+type = "task-completion"
+task_ref = "backlog-edit-core"
+date = 2026-10-21
+
+[[items]]
+id = "E10"
+agent = "implement"
+original_intent = "Parse the record file text as given"
+rationale = "A leading BOM would break DeTable::parse; stripping one matches strip_flag_text in io.rs, and error line numbers are counted on the stripped text."
+summary = "payload.rs strips one leading BOM before DeTable::parse (tomlctl/src/payload.rs)"
+type = "deviation"
+task_ref = "toml-record-file-reader"
+date = 2026-10-21
+
+[[items]]
+id = "E11"
+agent = "implement"
+original_intent = "Rows come from a top-level array of tables ([[record]])"
+rationale = "toml's is_array_of_tables is pub(crate), so [[record]] cannot be told apart from record = [{...}]; any top-level record array is read as rows, and a non-table element is refused naming record N (line L), the error form the spec lists."
+summary = "payload.rs treats any top-level record array as the rows, refusing non-table elements (tomlctl/src/payload.rs)"
+type = "deviation"
+task_ref = "toml-record-file-reader"
+date = 2026-10-21
+
+[[items]]
+id = "E12"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+files = [
+    "tomlctl/src/query.rs",
+    "tomlctl/src/cli/types/shared.rs",
+]
+summary = "Added --grep/--grep-field (requires --grep) to QueryArgs and Predicate::Grep to the query engine: (?i)-prefixed compile_user_regex, any-field/any-element OR, ANDed with --where*, cost 7; QueryInput carries default_grep_fields (empty => validation refusal naming --grep-field); 6 unit tests."
+type = "task-completion"
+task_ref = "grep-predicate-in-the-query-engine"
+date = 2026-10-21
+
+[[items]]
+id = "E13"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/payload.rs",
+    "tomlctl/src/io.rs",
+    "tomlctl/src/lib.rs",
+]
+summary = "New payload.rs converts .toml record files to compact JSON/NDJSON (record array = rows, stray top-level key refused, multi-line strings CRLF->LF and one trailing newline trimmed, syntax errors forwarded with path, record N (line L) shape errors); hooked into read_ndjson_source and the @path branches of read_json_arg and read_json_value_from_arg; 10 unit tests."
+type = "task-completion"
+task_ref = "toml-record-file-reader"
+date = 2026-10-21
+
+[[items]]
+id = "E14"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/flow/record.rs",
+    "tomlctl/tests/flow_record.rs",
+]
+summary = "flow record --ndjson rows may carry task: resolved per row to task_ref (store loaded once, only when needed), task key not stored, refusal on disagreement with --task or a row task_ref naming the --ndjson line; tests incl. a two-task TOML record file with verbatim prose."
+type = "task-completion"
+task_ref = "flow-record-accepts-a-per-row-task"
+date = 2026-10-21
+
+[[items]]
+id = "E15"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = ["tomlctl/src/items.rs"]
+summary = "NDJSON syntax-error paths (parse_ndjson_lines, parse_ndjson_objects) append a shared NDJSON_TOML_HINT pointing at TOML record files; non-object arm unchanged; unit test parse_ndjson_error_carries_toml_hint."
+type = "task-completion"
+task_ref = "ndjson-parse-errors-point-at-toml-record-files"
+date = 2026-10-21
+
+[[items]]
+id = "E16"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/backlog/query.rs",
+    "tomlctl/src/tasks/list.rs",
+    "tomlctl/src/cli/dispatch/items.rs",
+    "tomlctl/tests/list_grep.rs",
+]
+summary = "Wired --grep default field sets into backlog list (FIELD_* constants), tasks list and items list; new tests/list_grep.rs covering context/dismiss_reason hits, case-insensitivity, AND with --where, --grep-field override, --template output and the tasks/items defaults."
+type = "task-completion"
+task_ref = "wire-grep-default-fields-into-the-list-verbs"
+date = 2026-10-21
+
+[[items]]
+id = "E17"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+files = ["claude/skills/tomlctl/references/query.md"]
+summary = 'query.md: --grep/--grep-field rows with per-verb default field sets, Unicode regex behaviour in the --where-regex row and sweep paragraph ((?-u:\b) fast form, \p{..} refused, \w{21} size limit), multi-id items get with an example.'
+type = "task-completion"
+task_ref = "querymd-grep-regex-items-get"
+date = 2026-10-21
+
+[[items]]
+id = "E18"
+agent = "implement"
+original_intent = "Classify via canonicalize_for_write when the file or its parent exists, else fold ./.. lexically"
+rationale = "canonicalize_for_write is private to io.rs (outside the task files) and can fail on outside-.claude and symlink checks, which a pure classifier must never do. A local resolver canonicalises the file itself, else the deepest existing ancestor, and folds the remainder lexically, so a junctioned .claude is caught even when flows/<slug>/ does not exist yet."
+summary = "store_guard.rs uses its own deepest-existing-ancestor resolver instead of canonicalize_for_write (tomlctl/src/store_guard.rs)"
+type = "deviation"
+task_ref = "owned-store-guard-module"
+date = 2026-10-21
+
+[[items]]
+id = "E19"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/store_guard.rs",
+    "tomlctl/src/lib.rs",
+    "tomlctl/src/cli/types/shared.rs",
+]
+summary = "New store_guard.rs: refuse_owned_store(path, raw_store) classifies the five owned stores by trailing components of the resolved path (deepest existing ancestor canonicalised, rest folded; Windows case, trailing dot and ::$DATA normalised), refusal names the owning verbs and --raw-store; RawStoreArg in cli/types/shared.rs; 8 unit tests."
+type = "task-completion"
+task_ref = "owned-store-guard-module"
+date = 2026-10-21
+
+[[items]]
+id = "E20"
+agent = "implement"
+original_intent = "tasks update --ndjson envelope stays {ok, rows:[{id, ref, changed}]}"
+rationale = "The existing id-list form already returns {ok, results:[...]} (asserted by update_patches_every_id_in_a_comma_or_space_list), and a single resulting id prints one {ok, id, ref, changed} object; keeping that shape is what keeps the envelope unchanged."
+summary = "tasks update --ndjson prints the existing {ok, results:[...]} envelope, not rows (tomlctl/src/tasks/dispatch.rs)"
+type = "deviation"
+task_ref = "tasks-update-ndjson-batch-form"
+date = 2026-10-21
+
+[[items]]
+id = "E21"
+agent = "implement"
+original_intent = "checkpoint listed only among the flags --ndjson conflicts with"
+rationale = "checkpoint is in SETTABLE, so a row sets it through set.checkpoint rather than a dedicated row key."
+summary = "tasks update --ndjson rows set checkpoint via set.checkpoint (tomlctl/src/tasks/update.rs)"
+type = "deviation"
+task_ref = "tasks-update-ndjson-batch-form"
+date = 2026-10-21
+
+[[items]]
+id = "E22"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/tasks/update.rs",
+    "tomlctl/src/cli/types/tasks.rs",
+    "tomlctl/src/tasks/dispatch.rs",
+    "tomlctl/tests/tasks_write.rs",
+]
+summary = "tasks update --ndjson <SRC> (NDJSON or .toml record file): per-row {ids|id, status?, agent?, commit?, ref?, set?} applied in one store::mutate via a shared apply path with update_many; conflicts with positional ids and value flags; ids positional lifted via ids_optional_under(ndjson); duplicate-id, unknown-key, multi-id ref and set/row-key clash refusals; 7 new tasks_write tests."
+type = "task-completion"
+task_ref = "tasks-update-ndjson-batch-form"
+date = 2026-10-21
+
+[[items]]
+id = "E23"
+agent = "implement"
+original_intent = "backlog triage --dry-run previews (unscoped)"
+rationale = "A dry run for the flag form would change triage_value's signature, which lib.rs (outside the task files) calls; --dry-run is therefore requires = ndjson."
+summary = "backlog triage --dry-run is accepted only with --ndjson (tomlctl/src/cli/types/backlog.rs)"
+type = "deviation"
+task_ref = "backlog-triage-ndjson-batch-form"
+date = 2026-10-21
+
+[[items]]
+id = "E24"
+agent = "implement"
+original_intent = "backlog triage --ndjson output is the id-list form's envelope"
+rationale = 'A mixed batch has no single transition name and each promote row resolves its own target; transition becomes "mixed" when rows differ and a rows:[{id, transition, to?}] array is added so neither is lost, keeping transition a string.'
+summary = "backlog triage --ndjson envelope adds transition=mixed and a rows array (tomlctl/src/backlog/triage.rs)"
+type = "deviation"
+task_ref = "backlog-triage-ndjson-batch-form"
+date = 2026-10-21
+
+[[items]]
+id = "E25"
+agent = "implement"
+original_intent = "Row shape {id, mode: companion, rationale?, expect_status?}"
+rationale = "A mode value already holds its companion; rationale is accepted only as reopen's companion ({reopen: true, rationale}), mirroring --reopen --rationale, and refused beside any other mode. A flag-form call with no mode is now refused in dispatch as kind=validation (exit 1) instead of clap's exit 2, because the TriageMode group was relaxed."
+summary = "backlog triage rows take rationale only with reopen; flag form with no mode now exits 1 validation (tomlctl/src/backlog/triage.rs)"
+type = "deviation"
+task_ref = "backlog-triage-ndjson-batch-form"
+date = 2026-10-21
+
+[[items]]
+id = "E26"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/cli/types/backlog.rs",
+    "tomlctl/src/backlog/triage.rs",
+    "tomlctl/src/backlog/dispatch.rs",
+    "tomlctl/tests/backlog_write.rs",
+]
+summary = "backlog triage --ndjson <SRC>: one transition per row {id, resolve|dismiss|promote|reopen: companion, expect_status?}, validated before the store is read, applied in one staged mutate_doc_conditional with skipped_stale reporting and --dry-run; ids positional and TriageMode group relaxed via mut_args/mut_group with the one-mode rule re-checked in dispatch; 35 backlog_write tests."
+type = "task-completion"
+task_ref = "backlog-triage-ndjson-batch-form"
+date = 2026-10-21
+
+[[items]]
+id = "E27"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/cli/types/cmd.rs",
+    "tomlctl/src/cli/dispatch/doc.rs",
+]
+summary = "Flattened RawStoreArg into Set, SetJson and ArrayAppend and call refuse_owned_store after refuse_json_extension_for_toml_writers, before any dry-run or lock, in set, set_json and array_append."
+type = "task-completion"
+task_ref = "guard-set-set-json-and-array-append"
+date = 2026-10-21
+
+[[items]]
+id = "E28"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+files = [
+    "tomlctl/src/cli/types/items.rs",
+    "tomlctl/src/cli/dispatch/items.rs",
+]
+summary = "Flattened RawStoreArg into items add, add-many, update, remove, apply and backfill-dedup-id and call refuse_owned_store in each arm before any dry-run, lock or read (update after its arg-validation checks; backfill before the kill-switch short-circuit)."
+type = "task-completion"
+task_ref = "guard-the-items-writers"
+date = 2026-10-21
+
+[[items]]
+id = "E29"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = [
+    "claude/skills/tomlctl/references/tasks-write.md",
+    "claude/skills/tomlctl/references/flow.md",
+    "claude/skills/flow-contract-execution-record-schema/SKILL.md",
+]
+summary = "Documented tasks update --ndjson (flag row, row keys, refusals, results[] envelope, example) in tasks-write.md and the per-row task key of flow record --ndjson with TOML record file examples in flow.md and the execution-record schema skill."
+type = "task-completion"
+task_ref = "tasks-and-flow-references-batch-update-and-per-row-task"
+date = 2026-10-21
+
+[[items]]
+id = "E30"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/cli/types/cmd.rs",
+    "tomlctl/src/tasks/parse_tasks.rs",
+    "tomlctl/src/tasks/parse_policy.rs",
+]
+summary = "Rewrote the no-Unicode prose in the Sweep help (cmd.rs) and the parse_tasks.rs / parse_policy.rs module docs and every_pattern_compiles comments; patterns and tests unchanged."
+type = "task-completion"
+task_ref = "correct-the-no-unicode-statements-in-tomlctl-source"
+date = 2026-10-21
+
+[[items]]
+id = "E31"
+agent = "implement"
+original_intent = "--template with --select: select applies first, then the template"
+rationale = "convert::project stores a dotted --select path as one literal key, so a template rendered on the projected row cannot reach it and an unselected path would render blank. validate now refuses a template path not covered by a *-free select path, and the template renders on the unprojected row; list verbs (pre-projected by the query engine) rebuild nested objects via nest_selected."
+summary = "--template + --select refuses template paths outside the select and renders on the unprojected row (tomlctl/src/output.rs)"
+type = "deviation"
+task_ref = "relax-redundant-output-flag-refusals"
+date = 2026-10-21
+
+[[items]]
+id = "E32"
+agent = "implement"
+original_intent = "output_options.rs: change only the single-object --header probe"
+rationale = "The read_options doc comment described --header as refused on a single object; it had to be reworded to match the new contract."
+summary = "Reworded the read_options doc comment alongside the --header probe (tomlctl/tests/output_options.rs)"
+type = "deviation"
+task_ref = "relax-redundant-output-flag-refusals"
+date = 2026-10-21
+
+[[items]]
+id = "E33"
+agent = "implement"
+original_intent = "Rewrite the refusal test to assert the refusals that remain"
+rationale = "The old tasks check --rows findings probe is now a no-op, so the refusal case uses --rows policy and a --rows findings --header conflict case was added."
+summary = "output_nesting refusal probe moved to --rows policy plus a --rows/--header conflict case (tomlctl/tests/output_nesting.rs)"
+type = "deviation"
+task_ref = "relax-redundant-output-flag-refusals"
+date = 2026-10-21
+
+[[items]]
+id = "E34"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/output.rs",
+    "tomlctl/tests/output_nesting.rs",
+    "tomlctl/tests/output_options.rs",
+]
+summary = "Relaxed three output refusals: --rows naming the declared row field is a no-op, --header on a single object returns it (HEADER_ON_ONE removed), --template with --select allowed when every template path is covered by the select; output_nesting and output_options probes updated with positive cases."
+type = "task-completion"
+task_ref = "relax-redundant-output-flag-refusals"
+date = 2026-10-21
+
+[[items]]
+id = "E35"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+files = [
+    "tomlctl/tests/store_guard.rs",
+    "tomlctl/tests/integration.rs",
+    "tomlctl/tests/review_runs.rs",
+]
+summary = "New tests/store_guard.rs: all nine generic writers refused on backlog.toml and flows/s/tasks.toml (exit 1, replacement verb + --raw-store named, bytes unchanged), allowed with --raw-store and on review-ledger.toml, reads unguarded; --raw-store added to the two existing owned-store writes in integration.rs and review_runs.rs."
+type = "task-completion"
+task_ref = "owned-store-guard-tests"
+date = 2026-10-21
+
+[[items]]
+id = "E36"
+agent = "implement"
+original_intent = "Checkpoints A, B and C each gate and commit separately (milestones)"
+rationale = "The frontier runs checkpoint C work (task 14 adds the backlog get leaf, 16 backlog edit) concurrently with A and B, and the full-suite gate every_leaf_command_has_a_case stays red until task 22 adds their output_options cases. No A or B gate over the shared tree can be green before 22, and committing a red window is forbidden, so the A, B and C gates are merged into one gate + one commit train once C is terminal. Commits stay per-task."
+summary = "Checkpoint gates A+B+C merged into one at C completion (orchestrator)"
+type = "deviation"
+date = 2026-10-21
+
+[[items]]
+id = "E37"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/cli/types/backlog.rs",
+    "tomlctl/src/backlog/dispatch.rs",
+    "tomlctl/src/backlog/query.rs",
+    "tomlctl/tests/backlog_read.rs",
+]
+summary = "Added backlog get <ids> printing only the stored row(s) (one id object, several array, deduped, unknown id fails not_found); show and get share resolve_distinct / stored_row / print_rows; 4 backlog_read tests."
+type = "task-completion"
+task_ref = "backlog-get-row-only-read"
+date = 2026-10-21
+
+[[items]]
+id = "E38"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = [
+    "claude/commands/implement.md",
+    "claude/skills/flow-contract-task-store/SKILL.md",
+    "claude/skills/backlog-capture/SKILL.md",
+]
+summary = "implement.md 3b now stages one TOML record file ([[record]] per deviation with task and literal-string prose) through flow record --ndjson with a per-deviation dedupe guard; task-store skill documents tasks update --ndjson; backlog-capture reads via backlog get."
+type = "task-completion"
+task_ref = "carrier-write-recipes-use-record-files-and-batch-forms"
+date = 2026-10-21
+scope_warning = true
+
+[[items]]
+id = "E39"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = [
+    "tomlctl/src/cli/types/backlog.rs",
+    "tomlctl/src/backlog/dispatch.rs",
+    "tomlctl/tests/backlog_edit.rs",
+]
+summary = "Added backlog edit <id> (context/context-file, tags/add-tag/remove-tag, evidence/add-evidence, origin, flow, base-sha) and --ndjson rows parsed before the lock with refusal_for on foreign keys, applied via apply_edits in one mutate_doc_conditional with last_updated stamped on change and --dry-run; 10 backlog_edit tests."
+type = "task-completion"
+task_ref = "backlog-edit-cli"
+date = 2026-10-21
+
+[[items]]
+id = "E40"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/output/text.rs",
+    "tomlctl/src/output.rs",
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/src/cli/dispatch.rs",
+]
+summary = "Global --text-view (id text_view) through OutputArgs, output_opts() and OutputOpts; new output/text.rs renders key: value blocks (multi-line indented, scalar arrays joined, nested objects dotted, row reports header + blank-line-separated blocks); excludes --get/--template/--lines/-q, carried through query_opts with streaming off; 7 text unit tests + 5 emitter tests."
+type = "task-completion"
+task_ref = "global-text-view-block-view"
+date = 2026-10-21
+
+[[items]]
+id = "E41"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+files = ["claude/skills/tomlctl/references/write.md"]
+summary = "write.md gains TOML record files (accepted flags, record shape rule and refusals, multi-line normalisation, BOM, triple-quote fallback, no null, example) and Owned stores (five paths and owners, refusal, classification, --raw-store, unguarded verbs) sections."
+type = "task-completion"
+task_ref = "writemd-toml-record-files-and-the-store-guard"
+date = 2026-10-21
+
+[[items]]
+id = "E42"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+files = [
+    "claude/skills/tomlctl/references/backlog.md",
+    "claude/skills/tomlctl/references/backlog-edit.md",
+]
+summary = "New references/backlog-edit.md (backlog get and backlog edit flag tables, triage --ndjson row shape); backlog.md gains triage --ndjson/--dry-run rows and a link, drops the stale --rows results note (600 lines)."
+type = "task-completion"
+task_ref = "backlog-references-get-edit-triage-batch"
+date = 2026-10-21
+
+[[items]]
+id = "E43"
+agent = "implement"
+original_intent = "Hooking only read_ndjson_source and read_json_arg turns the --json and --defaults-json cases red"
+rationale = "items add --json @file resolves through read_json_arg, which is hooked; only --defaults-json goes through read_json_value_from_arg, so only that case is the falsifier for the second hook (observed: 1 red of 13)."
+summary = "payload_toml falsifier: only the --defaults-json case covers the read_json_value_from_arg hook (tomlctl/tests/payload_toml.rs)"
+type = "deviation"
+task_ref = "toml-record-files-end-to-end"
+date = 2026-10-21
+
+[[items]]
+id = "E44"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = ["tomlctl/tests/payload_toml.rs"]
+summary = "New tests/payload_toml.rs: 13 cases driving TOML record files through items add-many/apply/add/--defaults-json, backlog add-many/check/triage/edit, flow record and tasks update with verbatim prose, CRLF, triple-quote fallback, syntax-error line/column and stray-key refusal."
+type = "task-completion"
+task_ref = "toml-record-files-end-to-end"
+date = 2026-10-21
+
+[[items]]
+id = "E45"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = [
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/README.md",
+]
+summary = "Registered the 14 new FEATURES (regex_unicode ... owned_store_guard), extended capabilities.rs expected features and global flags (--text-view), README synopsis/feature table/capabilities sample, and --template help naming the escapes."
+type = "task-completion"
+task_ref = "register-capabilities-features"
+date = 2026-10-21
+
+[[items]]
+id = "E46"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+files = ["claude/skills/flow-contract-apply-pipeline/references/pre-analysis.md"]
+summary = "pre-analysis.md Explore dispatch gains a sentence and bash fence: read ledgers and backlog with tomlctl items get <ledger> <ids> --text-view and tomlctl backlog get <ids> rather than grepping .claude/*.toml."
+type = "task-completion"
+task_ref = "apply-pre-analysis-explore-prompt"
+date = 2026-10-21
+
+[[items]]
+id = "E47"
+agent = "implement"
+original_intent = "One --text-view case per shape inside cases()"
+rationale = "cases() runs -q and --lines on every case, both of which --text-view excludes, so the --text-view shapes (single object, row report, streaming list verb, header report, --lines refusal) live in a separate test text_view_renders_each_report_shape."
+summary = "--text-view shape coverage is a separate test rather than cases() entries (tomlctl/tests/output_options.rs)"
+type = "deviation"
+task_ref = "output-options-cases-for-new-and-widened-verbs"
+date = 2026-10-21
+
+[[items]]
+id = "E48"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = ["tomlctl/tests/output_options.rs"]
+summary = "output_options.rs gains cases for backlog get (One, Top), backlog edit (field-flag and --ndjson write envelopes), multi-id items get (Top), and a text_view_renders_each_report_shape test; run() fills {B1}/{B2} in stdin."
+type = "task-completion"
+task_ref = "output-options-cases-for-new-and-widened-verbs"
+date = 2026-10-21
+
+[[items]]
+id = "E49"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+files = [
+    "claude/commands/plan-new.md",
+    "claude/commands/review.md",
+    "claude/commands/optimise.md",
+]
+summary = "plan-new, review and optimise Explore dispatches tell agents to read flow stores with backlog get, tasks show --with body --text-view and backlog list --grep --text-view (bash fence)."
+type = "task-completion"
+task_ref = "carrier-explore-prompts-carry-the-read-one-liners"
+date = 2026-10-21
+
+[[items]]
+id = "E50"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+files = ["claude/skills/tomlctl/SKILL.md"]
+summary = "tomlctl SKILL.md: --text-view and template escapes in Output options, relaxed --rows/--header/--template+--select rules, Quick Reference rows for items get <ids>, --grep, backlog get/edit, triage and tasks update --ndjson, guidance-canon bullets for TOML record files and the owned-store guard, backlog-edit.md reference."
+type = "task-completion"
+task_ref = "tomlctl-skillmd-output-options-and-guidance-canon"
+date = 2026-10-21
+
+[[items]]
+id = "E51"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+files = ["claude/commands/plan-update.md"]
+summary = "plan-update.md deviation and deferral recipes use one TOML record file through flow record --ndjson; reconcile and catchup general-purpose dispatches carry the read one-liners fence."
+type = "task-completion"
+task_ref = "plan-update-recipes-and-reconcile-agent-read-one-liners"
+date = 2026-10-21
+
+[[items]]
+id = "E52"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/skills/tomlctl/references/backlog-recipes.md",
+    "claude/skills/tomlctl/references/backlog-reconcile.md",
+]
+summary = "backlog-recipes.md rewritten into one-call recipes (backlog get, list --grep, triage --ndjson with a TOML record file, edit, --text-view); interim workarounds removed; backlog-reconcile.md documents the counts map."
+type = "task-completion"
+task_ref = "backlog-recipes-and-reconcile-references"
+date = 2026-10-21
+
+[[items]]
+id = "E53"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "scripts/shared-blocks.toml",
+    "claude/agents/implement-deep.md",
+    "claude/agents/implement-lite.md",
+    "claude/agents/research-deep.md",
+    "claude/agents/research-lite.md",
+]
+summary = "Registered the tomlctl-for-agents shared block in scripts/shared-blocks.toml and inserted it into implement-deep/lite (after backlog-candidates) and research-deep/lite (after research-read-only): one bash fence of read one-liners plus shaping and no-stderr-suppression guidance."
+type = "task-completion"
+task_ref = "shared-tomlctl-for-agents-block"
+date = 2026-10-21
+
+[[items]]
+id = "E54"
+agent = "implement"
+original_intent = "Checkpoint D gates and commits separately after the merged A+B+C gate"
+rationale = "When A+B+C became terminal, four D doc tasks were in flight editing bash-fenced commands that command_lint (part of the suite) reads, so the gate could not run on a quiescent tree until they finished; by then every task was terminal, so one Phase-3 full pass serves as the gate for all four checkpoints, followed by one per-task commit train. Commits stay per-task; only the train tip is gate-verified."
+summary = "All four checkpoint gates collapsed into the Phase-3 full pass (orchestrator)"
+type = "deviation"
+date = 2026-10-21
+
+[[items]]
+id = "E55"
+agent = "implement"
+original_intent = "plan carries no task for the pre-existing rustdoc invalid-html-tags error in tomlctl/src/fields.rs"
+rationale = "The Phase-3 cargo doc gate failed only on KEY=@<path> in the --set-json doc comment (present since 6d3530a, outside this run). The user chose to fix it in-run so the commit train runs on a fully green pass; minted as task 38 and applied by the orchestrator."
+summary = "Minted task 38: backtick the --set-json placeholder in tomlctl/src/fields.rs"
+type = "deviation"
+task_ref = "escape-the-set-json-doc-comment-placeholder-for-rustdoc"
+date = 2026-10-21
+
+[[items]]
+id = "E56"
+agent = "implement"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "fail"
+duration_s = 10
+summary = "diff in tests/store_guard.rs (const SEED wrap)"
+type = "verification"
+date = 2026-10-21
+
+[[items]]
+id = "E57"
+agent = "implement"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+duration_s = 203
+summary = "debug build ok"
+type = "verification"
+date = 2026-10-21
+
+[[items]]
+id = "E58"
+agent = "implement"
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 345
+summary = "2228 tests run: 2228 passed (7 slow), 1 skipped"
+type = "verification"
+date = 2026-10-21
+
+[[items]]
+id = "E59"
+agent = "implement"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+duration_s = 31
+summary = "clean"
+type = "verification"
+date = 2026-10-21
+
+[[items]]
+id = "E60"
+agent = "implement"
+command = "cargo clippy --manifest-path glimpse/Cargo.toml --locked"
+outcome = "pass"
+duration_s = 35
+summary = "clean"
+type = "verification"
+date = 2026-10-21
+
+[[items]]
+id = "E61"
+agent = "implement"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+duration_s = 28
+summary = "parity ok"
+type = "verification"
+date = 2026-10-21
+
+[[items]]
+id = "E62"
+agent = "implement"
+command = "cargo doc --manifest-path tomlctl/Cargo.toml --lib --no-deps --document-private-items"
+outcome = "fail"
+duration_s = 10
+summary = "pre-existing rustdoc invalid-html-tags in src/fields.rs (KEY=@<path>)"
+type = "verification"
+date = 2026-10-21
+
+[[items]]
+id = "E63"
+agent = "implement"
+command = "cargo audit --file tomlctl/Cargo.lock"
+outcome = "pass"
+duration_s = 9
+summary = "no advisories"
+type = "verification"
+date = 2026-10-21
+
+[[items]]
+id = "E64"
+agent = "implement"
+command = "cargo tree --manifest-path tomlctl/Cargo.toml -e normal,features -i regex-syntax --offline --locked | grep -q 'unicode-case'"
+outcome = "pass"
+duration_s = 0
+summary = "success criterion: release graph enables unicode-case"
+type = "verification"
+date = 2026-10-21
+
+[[items]]
+id = "E65"
+agent = "implement"
+command = """bash -c "! grep -rq '(?i-u)' claude/skills/tomlctl""""
+outcome = "pass"
+duration_s = 0
+summary = "success criterion: no ASCII-regex workaround left"
+type = "verification"
+date = 2026-10-21
+
+[[items]]
+id = "E66"
+agent = "implement"
+command = """bash -c "test $(grep -l 'SHARED-BLOCK:tomlctl-for-agents START' claude/agents/*.md | wc -l) -eq 4 && bash scripts/verify-shared-blocks.sh""""
+outcome = "pass"
+duration_s = 20
+summary = "success criterion: 4 agents carry the block, parity ok"
+type = "verification"
+date = 2026-10-21
+
+[[items]]
+id = "E67"
+agent = "implement"
+command = """bash -c "! grep -q 'lengths of those five' claude/commands/plan-update.md""""
+outcome = "pass"
+duration_s = 1
+summary = "success criterion"
+type = "verification"
+date = 2026-10-21
+
+[[items]]
+id = "E68"
+agent = "implement"
+command = """bash -c "! grep -q 'set-file original_intent' claude/commands/implement.md claude/commands/plan-update.md""""
+outcome = "pass"
+duration_s = 1
+summary = "success criterion"
+type = "verification"
+date = 2026-10-21
+
+[[items]]
+id = "E69"
+agent = "implement"
+command = "cargo build --release --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+duration_s = 230
+summary = "release exe 7003136 bytes (installed 0.16.0 baseline 6797824; +205312)"
+type = "verification"
+date = 2026-10-21
+
+[[items]]
+id = "E70"
+agent = "implement"
+command = "release-binary Success Criteria probes (where-regex (?i), owned-store set refusal, flow record TOML --dry-run, backlog list --grep, backlog get --get summary, tasks show --text-view, tasks update --ndjson on a store copy)"
+outcome = "pass"
+duration_s = 5
+summary = "all 7 pass; text-view probe run without --with body (body shape carries no title) and train readback via tasks list"
+type = "verification"
+date = 2026-10-21
+
+[[items]]
+id = "E71"
+agent = "implement"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+duration_s = 3
+summary = "clean after cargo fmt"
+supersedes_entry = "E56"
+type = "verification"
+date = 2026-10-21
+
+[[items]]
+id = "E72"
+agent = "implement"
+command = "cargo doc --manifest-path tomlctl/Cargo.toml --lib --no-deps --document-private-items"
+outcome = "pass"
+duration_s = 8
+summary = "clean after task 38 fix"
+supersedes_entry = "E62"
+type = "verification"
+date = 2026-10-21
+
+[[items]]
+id = "E73"
+agent = "implement"
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 350
+summary = "2228 tests run: 2228 passed (7 slow), 1 skipped"
+supersedes_entry = "E58"
+type = "verification"
+date = 2026-10-21
+
+[[items]]
+id = "E74"
+agent = "implement"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+duration_s = 32
+summary = "clean"
+supersedes_entry = "E59"
+type = "verification"
+date = 2026-10-21
+
+[[items]]
+id = "E75"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+files = ["tomlctl/src/fields.rs"]
+summary = "Backticked KEY=@<path> in the --set-json doc comment (tomlctl/src/fields.rs) so the rustdoc invalid-html-tags deny lint passes."
+type = "task-completion"
+task_ref = "escape-the-set-json-doc-comment-placeholder-for-rustdoc"
+date = 2026-10-21
+
+[[items]]
+id = "E76"
+agent = "implement"
+kind = "commit-train"
+summary = "79d4620: 1,6,9,17; a2b72c2: 3; c007ca3: 15; 54665c0: 5,7,13,14,16,19; 9806c92: 10; ac708ed: 11; 265afd4: 12; 3aac95e: 18,33; fd40cb5: 34; d06bd81: 35; cbdaf69: 20; 0db2204: 21; c8cd771: 25; 5c6457f: 26; f82f7f4: 28; 68e6b72: 29; 15b6775: 36; 5fdfcda: 2,4,8,22,23,37; 01533f7: 24; 43eed0f: 27; 8e4b622: 30; 4b87e1e: 31; 5b697e3: 32; 7fd4acc: 38 (task ids; refs on each store row's commit)"
+commits = [
+    "79d4620",
+    "a2b72c2",
+    "c007ca3",
+    "54665c0",
+    "9806c92",
+    "ac708ed",
+    "265afd4",
+    "3aac95e",
+    "fd40cb5",
+    "d06bd81",
+    "cbdaf69",
+    "0db2204",
+    "c8cd771",
+    "5c6457f",
+    "f82f7f4",
+    "68e6b72",
+    "15b6775",
+    "5fdfcda",
+    "01533f7",
+    "43eed0f",
+    "8e4b622",
+    "4b87e1e",
+    "5b697e3",
+    "7fd4acc",
+]
+type = "checkpoint"
+task_ref = "enable-regex-unicode-case-folding-and-perl-classes"
+date = 2026-10-21
+
+[[items]]
+id = "E77"
+agent = "plan-update"
+from_status = "in-progress"
+to_status = "review"
+summary = "status in-progress -> review: all 38 tasks done"
+type = "status-transition"
+date = 2026-10-21
+
+[[items]]
+id = "E78"
+agent = "plan-update"
+summary = "Post-review hardening (review-ledger R1-R34): store guard refuses a junctioned .claude; tasks update --ndjson checks the end-state graph once; backlog edit emits advisories and accepts additive row keys; shared batch-error helpers; [record] typo refused; carrier one-liners use tasks show --slug <slug> <ids>."
+original_intent = """Plan Approach "Owned-store guard": a junctioned .claude cannot slip past; batch forms judged all-or-nothing; backlog edit rows carry the flag form's keys plus id; carrier read one-liners in the `tasks show <ids> --slug <slug>` form."""
+rationale = "The /review of this flow found the junction bypass (probe-confirmed), per-row graph validation refusing valid batches, edit skipping the credential/machine-local advisories on a public tracked store, replace-only edit rows forcing read-modify-write outside the lock, divergent batch error contracts, and the read one-liner matching the agent correlator's dispatch pattern. Each fix closes a gap between the plan's stated contract and the shipped behaviour."
+type = "deviation"
+date = 2026-10-21

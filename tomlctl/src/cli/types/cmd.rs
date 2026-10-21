@@ -91,7 +91,7 @@ pub(crate) enum Cmd {
         path: String,
         #[arg(
             long,
-            help = "JSON-encoded value; pass `-` to read from stdin or `@<path>` to read a file"
+            help = "JSON-encoded value; pass `-` to read from stdin or `@<path>` to read a file (a `.toml` path is a record file)"
         )]
         json: String,
         /// Preview the operation without writing. Emits a `would_change`
@@ -146,13 +146,13 @@ pub(crate) enum Cmd {
         #[arg(
             long,
             conflicts_with = "ndjson",
-            help = "JSON object for a single record; pass `-` to read from stdin or `@<path>` to read a file. Field flags merge over it."
+            help = "JSON object for a single record; pass `-` to read from stdin or `@<path>` to read a file (a `.toml` path is a record file). Field flags merge over it."
         )]
         json: Option<String>,
         #[arg(
             long = "ndjson",
             conflicts_with_all = ["json", "set", "set_json", "set_file"],
-            help = "NDJSON source: `-` for stdin, otherwise a file path (a leading `@` is accepted)"
+            help = "NDJSON source: `-` for stdin, otherwise a file path (a leading `@` is accepted; a `.toml` path is a record file)"
         )]
         ndjson: Option<String>,
         #[command(flatten)]

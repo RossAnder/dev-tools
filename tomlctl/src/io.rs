@@ -343,10 +343,26 @@ pub(crate) fn read_json_arg(arg: &str) -> Result<String> {
 /// lines when `as_ndjson`, else the array or object text.
 fn read_payload_file(path: &str, as_ndjson: bool) -> Result<String> {
     let text = read_at_file(path)?;
+    convert_payload_text(
+        path,
+        text,
+        |p, t| crate::payload::toml_payload(p, t, as_ndjson),
+        Ok,
+    )
+}
+
+/// The single decision point for payload files: text read from a `.toml`
+/// path goes through `from_toml`, any other text through `from_plain`.
+fn convert_payload_text<T>(
+    path: &str,
+    text: String,
+    from_toml: impl FnOnce(&Path, &str) -> Result<T>,
+    from_plain: impl FnOnce(String) -> Result<T>,
+) -> Result<T> {
     if crate::payload::is_toml_path(path) {
-        crate::payload::toml_payload(Path::new(path), &text, as_ndjson)
+        from_toml(Path::new(path), &text)
     } else {
-        Ok(text)
+        from_plain(text)
     }
 }
 
@@ -362,11 +378,12 @@ pub(crate) fn read_ndjson_source(src: &str) -> Result<String> {
     } else {
         let text =
             fs::read_to_string(src).with_context(|| format!("reading NDJSON file `{src}`"))?;
-        if crate::payload::is_toml_path(src) {
-            crate::payload::toml_payload(Path::new(src), &text, true)
-        } else {
-            Ok(text)
-        }
+        convert_payload_text(
+            src,
+            text,
+            |p, t| crate::payload::toml_payload(p, t, true),
+            Ok,
+        )
     }
 }
 
@@ -496,11 +513,9 @@ pub(crate) fn read_json_value_from_arg(arg: &str) -> Result<serde_json::Value> {
         parse_json_capped(stdin.lock())
     } else if let Some(path) = at_file_path(arg) {
         let text = read_at_file(path)?;
-        if crate::payload::is_toml_path(path) {
-            crate::payload::toml_payload_value(Path::new(path), &text)
-        } else {
-            Ok(serde_json::from_str(&text)?)
-        }
+        convert_payload_text(path, text, crate::payload::toml_payload_value, |t| {
+            Ok(serde_json::from_str(&t)?)
+        })
     } else {
         Ok(serde_json::from_str(arg)?)
     }

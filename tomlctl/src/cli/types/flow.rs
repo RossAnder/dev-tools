@@ -220,16 +220,18 @@ pub(crate) enum FlowOp {
         /// Task id in the flow's `tasks.toml`; its `ref` becomes `task_ref`.
         #[arg(long = "task", value_name = "ID")]
         task: Option<u32>,
-        /// Base payload as a JSON object (`-` reads stdin, `@path` a file).
-        /// Field flags are laid over it.
+        /// Base payload as a JSON object (`-` reads stdin, `@path` a file; a
+        /// `.toml` path is a record file). Field flags are laid over it.
         #[arg(long = "json", value_name = "JSON")]
         json: Option<String>,
         #[command(flatten)]
         fields: FieldArgs,
         /// Append one entry per JSON line from SRC (`-` for stdin, or a
-        /// path), all or nothing. `--json` and the field flags are defaults a
-        /// row's own keys override; `--type` and `--task` apply to every row,
-        /// and a row whose own `type` or `task_ref` disagrees is refused.
+        /// path; a `.toml` path is a record file), all or nothing. `--json`
+        /// and the field flags are defaults a row's own keys override;
+        /// `--type` and `--task` apply to every row, and a row whose own
+        /// `type` or `task_ref` disagrees is refused. A row may carry `task`
+        /// (a task id resolved to its `task_ref`, like `--task`).
         #[arg(long = "ndjson", value_name = "SRC")]
         ndjson: Option<String>,
         /// Validate and report the ids that would be minted without writing.

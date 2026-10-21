@@ -16,7 +16,7 @@ use crate::convert::{json_type_name, maybe_date_coerce, str_field, toml_to_json,
 #[cfg(test)]
 use crate::dedup::tier_b_fingerprint;
 use crate::dedup::{FINGERPRINTED_FIELDS, tier_b_fingerprint_json, tier_b_fingerprint_table};
-use crate::errors::{ErrorKind, tagged_err};
+use crate::errors::{ErrorKind, tagged_arg_err, tagged_err};
 use crate::io::{capture_row_id, item_id, item_id_json, items_array, items_array_mut};
 
 /// Env-var kill switch for every `dedup_id` auto-populate path. Any
@@ -1440,6 +1440,84 @@ pub(crate) fn parse_ndjson_objects(
             )),
         })
         .collect()
+}
+
+/// Clap id of the `--ndjson` flag, which every batch-row refusal carries as
+/// its `arg` so `--error-format json` can tell it from a flag refusal.
+const NDJSON_ARG: &str = "ndjson";
+
+/// [`parse_ndjson_objects`] for a batch verb: a source naming no rows is
+/// refused rather than written as an empty batch.
+pub(crate) fn parse_ndjson_batch(
+    s: &str,
+) -> Result<Vec<(usize, serde_json::Map<String, JsonValue>)>> {
+    let rows = parse_ndjson_objects(s)?;
+    if rows.is_empty() {
+        return Err(tagged_arg_err(
+            ErrorKind::Validation,
+            NDJSON_ARG,
+            "the --ndjson batch names no rows; give one JSON object per line",
+        ));
+    }
+    Ok(rows)
+}
+
+/// A refusal of the `--ndjson` row on source line `line`.
+pub(crate) fn row_err(line: usize, msg: impl std::fmt::Display) -> anyhow::Error {
+    tagged_arg_err(
+        ErrorKind::Validation,
+        NDJSON_ARG,
+        format!("line {line}: {msg}"),
+    )
+}
+
+/// A row's optional string value. The caller passes `row.get(key)`, or
+/// filters out `null` first where its row shape reads `null` as absent.
+pub(crate) fn row_string(
+    line: usize,
+    key: &str,
+    value: Option<&JsonValue>,
+) -> Result<Option<String>> {
+    match value {
+        None => Ok(None),
+        Some(JsonValue::String(s)) => Ok(Some(s.clone())),
+        Some(other) => Err(row_err(
+            line,
+            format!("`{key}` must be a string, got {}", json_type_name(other)),
+        )),
+    }
+}
+
+/// A row's optional string-array value, under [`row_string`]'s `value` rule.
+pub(crate) fn row_strings(
+    line: usize,
+    key: &str,
+    value: Option<&JsonValue>,
+) -> Result<Option<Vec<String>>> {
+    match value {
+        None => Ok(None),
+        Some(JsonValue::Array(entries)) => entries
+            .iter()
+            .map(|entry| match entry {
+                JsonValue::String(s) => Ok(s.clone()),
+                other => Err(row_err(
+                    line,
+                    format!(
+                        "`{key}` holds a non-string entry ({})",
+                        json_type_name(other)
+                    ),
+                )),
+            })
+            .collect::<Result<Vec<_>>>()
+            .map(Some),
+        Some(other) => Err(row_err(
+            line,
+            format!(
+                "`{key}` must be an array of strings, got {}",
+                json_type_name(other)
+            ),
+        )),
+    }
 }
 
 /// Validate `defaults` as a JSON object (or return an empty map when
@@ -3659,6 +3737,30 @@ summary = "existing"
         let err = parse_ndjson(input).unwrap_err();
         let msg = format!("{err:#}");
         assert!(msg.contains("line 3"), "expected 'line 3', got: {msg}");
+    }
+
+    #[test]
+    fn batch_refusals_carry_the_ndjson_arg_and_the_source_line() {
+        let arg_of = |err: &anyhow::Error| {
+            err.downcast_ref::<crate::errors::TaggedError>()
+                .and_then(|tagged| tagged.arg)
+        };
+        let empty = parse_ndjson_batch("\n  \n").unwrap_err();
+        assert_eq!(arg_of(&empty), Some("ndjson"), "{empty:#}");
+        assert!(empty.to_string().contains("names no rows"), "{empty:#}");
+
+        let wrong = row_strings(4, "tags", Some(&serde_json::json!(["a", 1]))).unwrap_err();
+        assert_eq!(arg_of(&wrong), Some("ndjson"), "{wrong:#}");
+        assert_eq!(
+            wrong.to_string(),
+            "line 4: `tags` holds a non-string entry (number)"
+        );
+        assert_eq!(
+            row_string(2, "agent", Some(&serde_json::json!(3)))
+                .unwrap_err()
+                .to_string(),
+            "line 2: `agent` must be a string, got number"
+        );
     }
 
     #[test]

@@ -21,7 +21,7 @@ use crate::io::{
     read_ndjson_source, read_toml, relativise, repo_or_cwd_root, stamped_conditional,
     warn_if_created,
 };
-use crate::items::{items_append_minted, parse_ndjson_objects};
+use crate::items::{items_append_minted, parse_ndjson_batch};
 use crate::output::{Rows, print_json_compact, print_rows_compact};
 
 const RECORD_ARRAY: &str = "items";
@@ -190,20 +190,14 @@ fn resolve_target(slug: &str) -> Result<FlowTarget> {
 /// The `ref` of task `id` in the flow's task store, read through the same
 /// loader `tasks show` uses.
 fn task_ref_for(slug: &str, id: u32, verify_integrity: bool) -> Result<String> {
-    let path = crate::tasks::resolve_store_path(Some(slug), None)?;
-    let integrity = ReadIntegrityArgs {
-        verify_integrity,
-        strict_read: false,
-    };
-    let store = crate::tasks::load_store(&path, &integrity)?;
-    let row = store.find(id).ok_or_else(|| {
+    let (path, mut refs) = task_refs_for(slug, &[id], verify_integrity)?;
+    refs.remove(&id).ok_or_else(|| {
         tagged_err(
             ErrorKind::NotFound,
             None,
             format!("--task {id}: no task {id} in `{}`", path.display()),
         )
-    })?;
-    Ok(row.r#ref.clone())
+    })
 }
 
 /// The `ref` of each listed task that exists in the flow's task store, loaded
@@ -255,13 +249,8 @@ fn build_entries(
         None => vec![(None, base)],
         Some(src) => {
             let text = read_ndjson_source(src)?;
-            let rows = parse_ndjson_objects(&text).context("--ndjson")?;
-            if rows.is_empty() {
-                return Err(validation(
-                    "--ndjson holds no rows; give one JSON object per line".to_string(),
-                ));
-            }
-            rows.into_iter()
+            parse_ndjson_batch(&text)?
+                .into_iter()
                 .map(|(line, row)| {
                     let mut entry = base.clone();
                     entry.extend(row);

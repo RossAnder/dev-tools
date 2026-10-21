@@ -168,9 +168,9 @@ candidates were capped:
 ## `backlog list`
 
 `--live`, `--tag`, `--area-prefix` and `--has-evidence` narrow the `backlog` array before the
-generic query engine sees it, so the whole `items list` surface — `--where-*` predicates, `--select` / `--exclude` / `--pluck`,
-`--sort-by` / `--limit` / `--offset`, `--count-by` / `--group-by`, `--raw` / `--lines` /
-`--ndjson` — applies on top. See [query.md](query.md) for that half.
+generic query engine sees it, so the whole `items list` surface — `--where-*`, `--grep`,
+`--select` / `--exclude` / `--pluck`, `--sort-by` / `--limit` / `--offset`, `--count-by` /
+`--group-by`, `--raw` / `--lines` / `--ndjson` — applies on top. See [query.md](query.md).
 
 ```bash
 tomlctl backlog list --open --area-prefix lumina/server --has-evidence --sort-by seen_count:desc
@@ -459,12 +459,12 @@ TOML date, refreshed on every write) and two arrays of tables.
 |---|---|
 | `id` | minted — `B-` plus the leading hex of `dedup_id` |
 | `dedup_id` | minted — the content fingerprint |
-| `summary`, `kind`, `area`, `tags` | the caller, at mint |
+| `summary`, `kind`, `area` | the caller, at mint |
 | `status` | `open` at mint, then `triage`, `reconcile --apply`, and the dismissal half of `relate` |
 | `created`, `last_seen`, `seen_count` | minted from the clock; a `bump` refreshes the last two |
-| `context`, `origin`, `flow` | the caller, at mint |
-| `base_sha` | the caller, at mint, via `--base-sha` or `--auto-base-sha`; absent on rows minted before it existed |
-| `evidence` | the caller — `path:line` pointers and bare filenames, never a directory listing |
+| `tags`, `context`, `origin`, `flow` | the caller, at mint; `edit` rewrites them |
+| `base_sha` | the caller, at mint, via `--base-sha` or `--auto-base-sha`, and `edit`; absent on rows minted before it existed |
+| `evidence` | the caller, at mint and via `edit` — `path:line` pointers and bare filenames, never a directory listing |
 | `related`, `duplicate_of`, `supersedes` | `add --related` and `relate` |
 | `promoted`, `promoted_to` | `triage --promote` — the promotion claim |
 | `dismissed`, `dismiss_reason` | `triage --dismiss`, and `relate --as duplicates` / `supersedes` |
@@ -495,10 +495,10 @@ the second, so folding a row away never loses the "we already decided this" answ
 
 Ids are unique across the **union** of the two arrays.
 
-The store carries no evidence field of any kind, and the live array is named `backlog` rather
-than `items` on purpose: an array named `items` under `.claude/` is the default target of
-`tomlctl items add|update|apply`, whose own dedup stamping would overwrite the content-derived
-`dedup_id`.
+`evidence` holds pointers only; evidence-directory files are not listed in the store. The live
+array is named `backlog`, not `items`: `items add|update|apply` target `items` by default, and
+their dedup stamping would overwrite the content-derived `dedup_id`. The generic writers also
+refuse this store outright without `--raw-store`.
 
 ## Id derivation
 

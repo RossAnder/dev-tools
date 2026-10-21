@@ -18,7 +18,7 @@ use super::store;
 use crate::cli::{ReadIntegrityArgs, ShowPart, TasksTarget};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::repo_or_cwd_root;
-use crate::output::{Rows, print_json, print_report};
+use crate::output::print_one_or_rows;
 
 /// Several distinct ids print a row report, so the output options apply per
 /// row; a repeated id prints once, at its first position. Every row is built
@@ -33,15 +33,12 @@ pub(crate) fn dispatch(
     let path = store::resolve_store_path(target.slug.as_deref(), target.file.as_deref())?;
     let store = store::load(&path, &integrity)?;
     let mut seen = BTreeSet::new();
-    let mut rows = ids
+    let rows = ids
         .iter()
         .filter(|&&id| seen.insert(id))
         .map(|&id| show(&store, id, &with))
         .collect::<Result<Vec<_>>>()?;
-    if rows.len() == 1 {
-        return print_json(&rows.remove(0));
-    }
-    print_report(JsonValue::Array(rows), Rows::Top)
+    print_one_or_rows(rows)
 }
 
 /// An empty `parts` is the summary shape. A cycle or a dangling edge is an

@@ -207,6 +207,55 @@ fn an_upper_case_pattern_matches_lower_case_text() {
     assert_eq!(backlog_ids(&root, &["--grep", "HANGAR"]), ["B-00000001"]);
 }
 
+fn backlog_grep_stderr(root: &Path, pattern: &str) -> String {
+    let out = cli(root)
+        .args(["backlog", "list", "--grep", pattern])
+        .write_stdin("")
+        .assert()
+        .failure();
+    String::from_utf8_lossy(&out.get_output().stderr).to_string()
+}
+
+#[test]
+fn a_grep_pattern_at_the_length_cap_is_accepted() {
+    let (_dir, root) = backlog_root();
+    let pattern = format!("hangar|{}", "q".repeat(512 - "hangar|".len()));
+    assert_eq!(pattern.len(), 512);
+    assert_eq!(backlog_ids(&root, &["--grep", &pattern]), ["B-00000001"]);
+    let over = format!("{pattern}q");
+    let err = backlog_grep_stderr(&root, &over);
+    assert!(err.contains("pattern is 513 bytes"), "{err}");
+}
+
+#[test]
+fn an_invalid_grep_pattern_is_echoed_as_typed() {
+    let (_dir, root) = backlog_root();
+    let err = backlog_grep_stderr(&root, "hang(ar");
+    assert!(err.contains("invalid regex `hang(ar`"), "{err}");
+    assert!(!err.contains("(?i)"), "{err}");
+}
+
+#[test]
+fn a_unicode_property_class_is_refused_with_the_hint() {
+    let (_dir, root) = backlog_root();
+    let err = backlog_grep_stderr(&root, r"\p{Greek}");
+    assert!(
+        err.contains("Unicode property classes are unavailable"),
+        "{err}"
+    );
+}
+
+#[test]
+fn case_insensitive_grep_folds_non_ascii_letters() {
+    let (_dir, root) = backlog_root();
+    let path = store_path(&root);
+    let seeded = fs::read_to_string(&path)
+        .unwrap()
+        .replace("nothing to see", "nothing to see at the école");
+    fs::write(&path, seeded).unwrap();
+    assert_eq!(backlog_ids(&root, &["--grep", "ÉCOLE"]), ["B-00000004"]);
+}
+
 #[test]
 fn grep_ands_with_where() {
     let (_dir, root) = backlog_root();

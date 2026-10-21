@@ -55,8 +55,10 @@ printf '%s\n' '{"id":"B-a1b2c3d4","origin":"implement"}' '{"id":"B-1a2b3c4d","ta
 | `--ndjson` | path, `@<path>` or `-` | One edit per line. Conflicts with the positional id and every field flag above. | — |
 | `--dry-run` | — | Emit the envelope with `dry_run: true`; touch neither file nor sidecar. | off |
 
-Each `--ndjson` row is `{id, context?, tags?, evidence?, origin?, flow?, base_sha?}`; a `tags`
-or `evidence` array replaces the stored one.
+Each `--ndjson` row is `{id, context?, tags?, add_tags?, remove_tags?, evidence?, add_evidence?,
+origin?, flow?, base_sha?}`; a `tags` or `evidence` array replaces the stored one, and
+`add_tags`, `remove_tags` and `add_evidence` amend it as the matching flags do. A row naming
+nothing but `id`, or an id an earlier row already named, is refused before the write.
 
 Any other field is refused with `kind=validation`, naming the verb that owns it:
 
@@ -71,8 +73,12 @@ The batch is validated whole before the write and is all-or-nothing. `last_updat
 only when a row changed.
 
 ```json
-{"ok":true,"path":".claude/backlog.toml","rows":[{"id":"B-a1b2c3d4","changed":true}]}
+{"ok":true,"path":".claude/backlog.toml","rows":[{"id":"B-a1b2c3d4","changed":true}],"advisories":[]}
 ```
+
+`advisories` holds one line per written `context`, tag or evidence value that reads as a
+credential or a machine-local path, led by the row's id and also printed to stderr, as on
+`backlog add`; it never blocks the write.
 
 ## `backlog triage --ndjson`
 

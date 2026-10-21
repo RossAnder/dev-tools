@@ -37,7 +37,7 @@ Gate: fire ONLY when `envelope.plans_directory == null` (the bootstrap agent nor
 
 ## Execution record
 
-Invoke the `flow-contract-execution-record-schema` skill to load the canonical contract for the per-flow append-only log at `.claude/flows/<slug>/execution-record.toml` (field set; the `task-completion` / `verification` / `deviation` / `deferral` / `reconcile` / `status-transition` / `checkpoint` type vocabulary with each type's required fields; monotonic `E{n}` id minting; the `flow record` write contract; append-only + supersession; the `[tasks].completed` derivation; read-path `--verify-integrity` integrity contract; field-length caps; and read rules). Every append below goes through that contract: one `tomlctl flow record --slug <slug> --type <type>` call per entry, which resolves `<record>` from the slug, mints the `E{n}` id under the write lock, defaults `date` to today, derives `task_ref` from `--task <id>`, validates the type's required fields and enums, caps over-long text, and restamps `<record>`'s `last_updated` — so the payload carries no `id` and no `date`, and no second write follows. Free text goes in a file written with the Write tool and passed by `--set-file`. Reads of `<record>` resolve it as `[artifacts].execution_record` and use the fully-qualified path — never the bare filename `execution-record.toml`. No manual bootstrap is needed: `flow init` / `/plan-new` pre-seed the record, and `flow record` auto-creates a missing one under an existing flow with the `schema_version = 1` skeleton and its `.sha256` sidecar in the same write. (If a record exists but its sidecar is missing, repair with `tomlctl integrity refresh <path>` — that is sidecar repair, not bootstrap.)
+Invoke the `flow-contract-execution-record-schema` skill to load the canonical contract for the per-flow append-only log at `.claude/flows/<slug>/execution-record.toml` (field set; the `task-completion` / `verification` / `deviation` / `deferral` / `reconcile` / `status-transition` / `checkpoint` type vocabulary with each type's required fields; monotonic `E{n}` id minting; the `flow record` write contract; append-only + supersession; the `[tasks].completed` derivation; read-path `--verify-integrity` integrity contract; field-length caps; and read rules). Every append below goes through that contract: a `tomlctl flow record --slug <slug> --type <type>` call — one per entry, or one for several entries staged in a record file and passed by `--ndjson` — which resolves `<record>` from the slug, mints the `E{n}` id under the write lock, defaults `date` to today, derives `task_ref` from `--task <id>`, validates the type's required fields and enums, caps over-long text, and restamps `<record>`'s `last_updated` — so the payload carries no `id` and no `date`, and no second write follows. Free text goes in a file written with the Write tool, never into a shell argument: passed by `--set-file` for a single field, or as `'''` literals in a TOML record file passed by `--ndjson`. Reads of `<record>` resolve it as `[artifacts].execution_record` and use the fully-qualified path — never the bare filename `execution-record.toml`. No manual bootstrap is needed: `flow init` / `/plan-new` pre-seed the record, and `flow record` auto-creates a missing one under an existing flow with the `schema_version = 1` skeleton and its `.sha256` sidecar in the same write. (If a record exists but its sidecar is missing, repair with `tomlctl integrity refresh <path>` — that is sidecar repair, not bootstrap.)
 
 Invoke the `flow-contract-reconciler` skill to load the reconciler contract (build a `task_ref` skip-set before appending, skip duplicates, gate `status-transition` appends on an actual status change, never silently back-fill completions, always re-render after appends, and supersede-rather-than-duplicate on the reconcile / deviation / deferral dedupe keys). It binds every op below that appends to `<record>`, not just `status`.
 
@@ -148,7 +148,7 @@ User-invoked; the ONLY path that may set `status = "complete"`. Run once the use
 Gather evidence from the conversation and git history — which task was affected, the original intent, what was actually done, and why — and confirm with the user before writing. Append a `type=deviation` entry to `<record>` through `flow record`, with `task_ref`, `original_intent`, `rationale`, and `commits[]` beyond the always-required fields; add `--set supersedes_entry=E<n>` when superseding an earlier deviation (supersession is the forward pointer, never number re-use). A row's `task` (a task id) is resolved to the affected store row's `ref` in `task_ref`. The planned approach, the rationale and what was actually done are agent-written text, so write them with the Write tool into one TOML record file, each text as a `'''` literal, and pass it by `--ndjson`; never paste them into a shell argument:
 
 ```bash
-tomlctl flow record --slug <slug> --type deviation --set agent=plan-update --ndjson <deviation-file> --get id
+tomlctl flow record --slug <slug> --type deviation --set agent=plan-update --ndjson <deviation.toml> --get id
 ```
 
 ```toml
@@ -167,7 +167,7 @@ commits = ["<sha>"]
 Gather evidence — which task is being deferred, why, and the **re-evaluation trigger**, which must be a concrete observable condition ("when frontend types are next refactored", "when migrating to .NET 11") and never a vague one ("later") — and confirm with the user before writing. Append a `type=deferral` entry with `task_ref`, `reason`, and `reevaluate_when`; `legacy_id = "DF<n>"` is set only by `migrate`, never here. Append it through `flow record`, with the summary, reason and trigger written with the Write tool into one TOML record file (each text a `'''` literal) and passed by `--ndjson`; mint no legacy IDs:
 
 ```bash
-tomlctl flow record --slug <slug> --type deferral --set agent=plan-update --ndjson <deferral-file>
+tomlctl flow record --slug <slug> --type deferral --set agent=plan-update --ndjson <deferral.toml>
 ```
 
 ```toml
@@ -185,8 +185,8 @@ Then re-render and update `context.toml` per Step 1. If every remaining non-comp
 The most comprehensive operation. Launch **two** `subagent_type: "general-purpose"` agents in a single response message — do not reduce the count; forward and reverse are distinct perspectives that cannot be combined. Give each the read one-liners (the built-in agent carries no tomlctl guidance of its own), never piping tomlctl into python, jq or grep and never `2>/dev/null`:
 
 ```bash
-tomlctl tasks show <ids> --slug <slug> --with body --text-view
 tomlctl backlog get <ids>
+tomlctl tasks show --slug <slug> <ids> --with body --text-view
 tomlctl backlog list --grep <regex> --text-view
 ```
 
@@ -218,8 +218,8 @@ For plans that have fallen behind the codebase. Combines research, reconciliatio
 **Phase 1** — launch **three** agents in a single response message, non-overlapping scopes, do not reduce the count. Give each `general-purpose` agent the same read one-liners (never piping tomlctl into python, jq or grep, never `2>/dev/null`):
 
 ```bash
-tomlctl tasks show <ids> --slug <slug> --with body --text-view
 tomlctl backlog get <ids>
+tomlctl tasks show --slug <slug> <ids> --with body --text-view
 tomlctl backlog list --grep <regex> --text-view
 ```
 

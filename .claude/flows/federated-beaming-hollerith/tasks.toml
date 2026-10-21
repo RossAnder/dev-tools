@@ -5,7 +5,7 @@ last_import_refs = [
     "enable-regex-unicode-case-folding-and-perl-classes",
     "relax-redundant-output-flag-refusals",
     "template-escape-sequences",
-    "global-text-block-view",
+    "global-text-view-block-view",
     "items-get-takes-a-list-of-ids",
     "grep-predicate-in-the-query-engine",
     "wire-grep-default-fields-into-the-list-verbs",
@@ -34,6 +34,12 @@ last_import_refs = [
     "shared-tomlctl-for-agents-block",
     "carrier-explore-prompts-carry-the-read-one-liners",
     "apply-pre-analysis-explore-prompt",
+    "correct-the-no-unicode-statements-in-tomlctl-source",
+    "correct-the-no-unicode-statements-in-test-headers-and-the-research-method",
+    "correct-the-no-unicode-statements-in-the-review-v2-lenses",
+    "carrier-write-recipes-use-record-files-and-batch-forms",
+    "plan-update-recipes-and-reconcile-agent-read-one-liners",
+    "escape-the-set-json-doc-comment-placeholder-for-rustdoc",
 ]
 
 [policy]
@@ -45,20 +51,34 @@ note = ""
 
 [[checkpoints]]
 id = "A"
-rationale = "Unicode regex, relaxed refusals, template escapes, `--text`, multi-id `items get`, `--grep`, reconcile counts — the read/output layer, buildable and tested on its own"
+rationale = "Unicode regex, relaxed refusals, template escapes, `--text-view`, multi-id `items get`, `--grep`, reconcile counts — the read/output layer, buildable and tested on its own"
 
 [[checkpoints]]
 id = "B"
-rationale = "TOML record files, the batch write forms, `backlog get`/`edit`, the owned-store guard and their test registries — every write-side change plus the leaf-case registry that must land with the new verbs"
+rationale = "The owned-store guard with its tests and the two existing tests it re-flags — the one change that refuses writes that work today, landed as its own verified, revertable tip"
 
 [[checkpoints]]
 id = "C"
-rationale = "Capabilities registration, reference docs and the agent/carrier learnability edits, gated by `command_lint`/`flag_table_lint` against the shipped CLI"
+rationale = "TOML record files, the batch write forms, `backlog get`/`edit` and their test registries — every remaining write-side change plus the leaf-case registry that must land with the new verbs"
+
+[[checkpoints]]
+id = "D"
+rationale = "Capabilities registration, reference docs, the no-Unicode corrections and the agent/carrier learnability edits, gated by `command_lint`/`flag_table_lint` against the shipped CLI"
 
 [[file_notes]]
-ref = "global-text-block-view"
+ref = "relax-redundant-output-flag-refusals"
+file = "tomlctl/tests/output_options.rs"
+note = "— its `read_options` single-object `--header` probe flips from refused to returns-the-object; keep the `--where a=b` probe refused"
+
+[[file_notes]]
+ref = "global-text-view-block-view"
 file = "tomlctl/src/output/text.rs"
 note = "(new)"
+
+[[file_notes]]
+ref = "global-text-view-block-view"
+file = "tomlctl/src/cli/dispatch.rs"
+note = "— `output_opts()` builds `OutputOpts` field by field"
 
 [[file_notes]]
 ref = "items-get-takes-a-list-of-ids"
@@ -200,12 +220,37 @@ ref = "shared-tomlctl-for-agents-block"
 closes = ["B-7138d8d7"]
 refs = []
 
+[[backlog_links]]
+ref = "correct-the-no-unicode-statements-in-tomlctl-source"
+closes = []
+refs = ["B-7138d8d7"]
+
+[[backlog_links]]
+ref = "correct-the-no-unicode-statements-in-test-headers-and-the-research-method"
+closes = []
+refs = ["B-7138d8d7"]
+
+[[backlog_links]]
+ref = "correct-the-no-unicode-statements-in-the-review-v2-lenses"
+closes = []
+refs = ["B-7138d8d7"]
+
+[[backlog_links]]
+ref = "carrier-write-recipes-use-record-files-and-batch-forms"
+closes = []
+refs = ["B-7138d8d7"]
+
+[[backlog_links]]
+ref = "plan-update-recipes-and-reconcile-agent-read-one-liners"
+closes = []
+refs = ["B-7138d8d7"]
+
 [[items]]
 id = 1
 ref = "enable-regex-unicode-case-folding-and-perl-classes"
 title = "Enable regex Unicode case folding and Perl classes"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = "Wave A — reads and output"
 phase_depth = 3
@@ -219,19 +264,19 @@ needs = []
 coupling = []
 deps_note = ""
 action = "Add `unicode-perl` and `unicode-case` to the `regex` dependency's `features` in `tomlctl/Cargo.toml` and update its comment; rewrite `REGEX_UNICODE_HINT` in `tomlctl/src/query.rs` and its pinning unit test; fix the comment in `tomlctl/src/agents/correlate.rs` that says the crate is built without Unicode classes."
-detail = '''Approach, "Regex". The new feature list is `["std", "perf", "unicode-perl", "unicode-case"]` — not the `unicode` umbrella. The hint (used by `compile_user_regex` and `compile_user_bytes_regex`) should now say what is still unsupported (`\p{..}` Unicode property classes), that the 1 MiB compile-size limit can trip on counted Unicode repeats (use `(?-u:\w)`), and that `(?-u:\b)` keeps `sweep` on the fast DFA. Update `compile_user_bytes_regex_error_carries_the_unicode_hint` (`query.rs`) to the new text with a pattern that still fails (e.g. `\p{Greek}`). Leave `REGEX_COMPILE_SIZE_LIMIT` unchanged. In `correlate.rs`, keep the `[0-9]` pattern; only the comment's claim changes. Unit tests cannot prove the release feature set (the `predicates` dev-dependency enables full Unicode in test builds) — the `cargo tree` check below is the proof.'''
+detail = '''Approach, "Regex". The new feature list is `["std", "perf", "unicode-perl", "unicode-case"]` — not the `unicode` umbrella. The hint (used by `compile_user_regex` and `compile_user_bytes_regex`) should now say what is still unsupported (`\p{..}` Unicode property classes), that Unicode `\w`/`\W` repeats above about 20 (`\w{21}`) exceed the 1 MiB compile-size limit (use `(?-u:\w)`), and that `(?-u:\b)` keeps `sweep` on the fast DFA. Update `compile_user_bytes_regex_error_carries_the_unicode_hint` (`query.rs`) to the new text with patterns that fail in every build, test builds included (the `predicates` dev-dependency compiles `\p{Greek}` there): keep `(` for the syntax path and add `\w{100}` for the size-limit path (Unicode `\w{21}` already exceeds the 1 MiB limit; `\w{20}` compiles). Leave `REGEX_COMPILE_SIZE_LIMIT` unchanged. In `correlate.rs`, keep the `[0-9]` pattern; only the comment's claim changes. Unit tests cannot prove the release feature set (the `predicates` dev-dependency enables full Unicode in test builds) — the `cargo tree` check below is the proof.'''
 acceptance = """
 - forward: `cargo tree --manifest-path tomlctl/Cargo.toml -e normal,features -i regex-syntax --offline --locked | grep -c 'unicode-case'` prints ≥1 (today: 0)
 - guard: `cargo nextest run --manifest-path tomlctl/Cargo.toml --lib -E 'test(/unicode_hint/)'` passes"""
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "79d4620"
 
 [[items]]
 id = 2
 ref = "relax-redundant-output-flag-refusals"
 title = "Relax redundant output-flag refusals"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = "Wave A — reads and output"
 phase_depth = 3
@@ -239,24 +284,26 @@ heading_depth = 3
 files = [
     "tomlctl/src/output.rs",
     "tomlctl/tests/output_nesting.rs",
+    "tomlctl/tests/output_options.rs",
 ]
 needs = []
 coupling = []
 deps_note = ""
-action = "In `tomlctl/src/output.rs`, make `--rows <PATH>` a no-op on a row report whose row field is exactly PATH, make `--header` on a single-object report return the object, and allow `--template` with `--select` (select applies first); update the unit tests and `tomlctl/tests/output_nesting.rs` to the new contract."
-detail = 'Approach, "Output view and refusals". The refusals live in `OutputOpts::validate` (the `` `--template` cannot be combined with `--select` `` arm) and in `emit` / `emit_one` (`rows_on_row_report`, `HEADER_ON_ONE`). Keep `HEADER_ON_TOP` (bare-array report), `--rows` naming a different path, `--rows` with `--header`, and every list-verb refusal (`refuse_row_flags_on_list`). The redundant `--rows` case is what `backlog check --ndjson --rows results` hits (`backlog/check.rs` declares `Rows::Field("results")`); `--header` on one object is what `tasks render --check --header` and `backlog reconcile --header` hit. `--template` + `--omit` stays refused. Rename and rewrite `rows_and_header_are_refused_on_list_verbs_and_row_reports` in `output_nesting.rs` so it asserts the refusals that remain and adds positive cases for the three relaxations, and update the unit tests in `output.rs` that pin the removed messages.'
+action = "In `tomlctl/src/output.rs`, make `--rows <PATH>` a no-op on a row report whose row field is exactly PATH, make `--header` on a single-object report return the object, and allow `--template` with `--select` (select applies first); update the unit tests, `tomlctl/tests/output_nesting.rs` and the single-object `--header` probe in `tomlctl/tests/output_options.rs` to the new contract."
+detail = """Approach, "Output view and refusals". The refusals live in `OutputOpts::validate` (the `` `--template` cannot be combined with `--select` `` arm) and in `emit` / `emit_one` (`rows_on_row_report`, `HEADER_ON_ONE`). Keep `HEADER_ON_TOP` (bare-array report), `--rows` naming a different path, `--rows` with `--header`, and every list-verb refusal (`refuse_row_flags_on_list`). The redundant `--rows` case is what `backlog check --ndjson --rows results` hits (`backlog/check.rs` declares `Rows::Field("results")`); `--header` on one object is what `tasks render --check --header` and `backlog reconcile --header` hit. `--template` + `--omit` stays refused. Rename and rewrite `rows_and_header_are_refused_on_list_verbs_and_row_reports` in `output_nesting.rs` so it asserts the refusals that remain and adds positive cases for the three relaxations, and update the unit tests in `output.rs` that pin the removed messages (`header_is_refused_on_a_bare_row_array_and_a_single_report` among them). In `output_options.rs`, the shape harness's single-object arm loops `for probe in [&["--header"][..], &["--where", "a=b"]]` asserting refusal: make the `--header` probe assert the object comes back unchanged and leave the `--where` probe as it is; change nothing else in that file."""
 acceptance = """
 - forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --test output_nesting` passes with a case running `backlog check --ndjson <file> --rows results` successfully — predicted, unverified (the case is new); falsifier: restoring the `rows_on_row_report` refusal for a matching field turns it red
-- guard: `cargo nextest run --manifest-path tomlctl/Cargo.toml --lib -E 'test(/^output::/)'` passes"""
-agent = ""
-commit = ""
+- guard: `cargo nextest run --manifest-path tomlctl/Cargo.toml --lib -E 'test(/^output::/)'` passes
+- guard: `cargo nextest run --manifest-path tomlctl/Cargo.toml --test output_options` passes"""
+agent = "implement-deep"
+commit = "5fdfcda"
 
 [[items]]
 id = 3
 ref = "template-escape-sequences"
 title = "Template escape sequences"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = "Wave A — reads and output"
 phase_depth = 3
@@ -265,18 +312,18 @@ files = ["tomlctl/src/output/template.rs"]
 needs = []
 coupling = []
 deps_note = ""
-action = 'Teach `Template::parse` in `tomlctl/src/output/template.rs` the escapes `\n`, `\t` and `\\` in literal template text, leaving any other backslash sequence literal; add unit tests.'
+action = 'Teach `Template::parse` in `tomlctl/src/output/template.rs` the escapes `\n`, `\t` and `\\` in literal template text, leaving any other backslash sequence literal; add unit tests whose names contain `escape`.'
 detail = '''Approach, "Output view and refusals". Escapes apply only to literal segments, never inside `{path}` placeholders or to values. `{{` / `}}` keep working. Tests: `'{id}\n{title}'` renders two lines; `'a\\nb'` renders `a\nb` (literal backslash-n); `'\x'` renders `\x`.'''
-acceptance = '''forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --lib -E 'test(/template/)'` passes including a test asserting `\n` becomes a newline — predicted, unverified; falsifier: removing the escape branch turns that test red'''
-agent = ""
-commit = ""
+acceptance = '''forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --lib -E 'test(/^output::template::.*escape/)'` passes including a test asserting `\n` becomes a newline (today: fails, no tests match) — predicted, unverified; falsifier: removing the escape branch turns that test red'''
+agent = "implement-lite"
+commit = "a2b72c2"
 
 [[items]]
 id = 4
-ref = "global-text-block-view"
-title = "Global --text block view"
-effort = "M"
-status = "pending"
+ref = "global-text-view-block-view"
+title = "Global --text-view block view"
+effort = "L"
+status = "done"
 checkpoint = "A"
 phase = "Wave A — reads and output"
 phase_depth = 3
@@ -285,22 +332,25 @@ files = [
     "tomlctl/src/output/text.rs",
     "tomlctl/src/output.rs",
     "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/src/cli/dispatch.rs",
 ]
 needs = [2]
 coupling = []
 deps_note = ""
-action = "Add a global `--text` output flag: declare it in `OutputArgs` (`tomlctl/src/cli/types/mod.rs`), carry it in `OutputOpts` (`tomlctl/src/output.rs`) with its exclusions in `validate`, and render objects and row reports as `key: value` blocks in the new `tomlctl/src/output/text.rs`."
-detail = 'Approach, "Output view and refusals". It plugs in where `--get` / `--template` render in the option order (after `--omit`/`--select` and `--max-chars`). Declare `mod text;` beside `mod template;` in `output.rs`. Rendering rules are in the Approach; strings print bare, null/missing keys are skipped, and output always ends with a newline. Excludes `--get`, `--template`, `--lines`, `-q` (each a `kind=validation` refusal through the existing `validate` pattern). Write envelopes (`print_json_compact`) honour `--text` like any object. Unit tests in `text.rs` cover: scalar object, multi-line string indentation, array-of-scalars join, nested object dotted keys, row report with header. Do not touch `tests/capabilities.rs`; task 23 registers the flag there.'
-acceptance = "forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --lib -E 'test(/text/)'` passes including a multi-line indentation case — predicted, unverified; falsifier: rendering strings with `{:?}` turns it red"
-agent = ""
-commit = ""
+action = "Add a global `--text-view` output flag (arg id `text_view`): declare it in `OutputArgs` (`tomlctl/src/cli/types/mod.rs`), copy it into `OutputOpts` in `output_opts()` (`tomlctl/src/cli/dispatch.rs`), carry it in `OutputOpts` (`tomlctl/src/output.rs`) with its exclusions in `validate`, and render objects and row reports as `key: value` blocks in the new `tomlctl/src/output/text.rs`."
+detail = """Approach, "Output view and refusals". Do not name it `--text` and do not give it the id `text`: `inputs answer` already declares a local `--text <TEXT>` (`tomlctl/src/cli/types/inputs.rs` `InputsOp::Answer`), and either form breaks clap's global propagation. It plugs in where `--get` / `--template` render in the option order (after `--omit`/`--select` and `--max-chars`). Declare `mod text;` beside `mod template;` in `output.rs`. Carry the field through `query_opts` (the list verbs' option whitelist), make `streaming_allowed` false under it, and add it to `OutputOpts::shaping_flags`; otherwise `items/backlog/tasks list --text-view` prints JSON and text-output verbs ignore it. Rendering rules are in the Approach; strings print bare, null/missing keys are skipped, and output always ends with a newline. Excludes `--get`, `--template`, `--lines`, `-q` (each a `kind=validation` refusal through the existing `validate` pattern). Write envelopes (`print_json_compact`) honour `--text-view` like any object. Unit tests in `text.rs` cover: scalar object, multi-line string indentation, array-of-scalars join, nested object dotted keys, row report with header. Do not touch `tests/capabilities.rs`; task 23 registers the flag there."""
+acceptance = """
+- forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --lib -E 'test(/^output::text::/)'` passes including a multi-line indentation case (today: fails, no tests match) — predicted, unverified; falsifier: rendering strings with `{:?}` turns it red
+- guard: `cargo nextest run --manifest-path tomlctl/Cargo.toml --test inputs` passes (`inputs answer --text` still parses)"""
+agent = "implement-deep"
+commit = "5fdfcda"
 
 [[items]]
 id = 5
 ref = "items-get-takes-a-list-of-ids"
 title = "items get takes a list of ids"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = "Wave A — reads and output"
 phase_depth = 3
@@ -313,20 +363,20 @@ files = [
 needs = []
 coupling = []
 deps_note = ""
-action = "Change `items get`'s positional `id: String` to a comma- or space-separated id list and print one object for one id or an array in the order given for several, failing the whole call on an unknown id."
-detail = 'Approach, "Backlog get and edit". Follow `TaskIds` (`tomlctl/src/cli/types/tasks.rs`, help from `ids_help`) / `ItemIds` (`tomlctl/src/cli/types/backlog.rs`) for parsing, and `tomlctl/src/tasks/show.rs` for the output pattern (BTreeSet de-dupe, build every row before printing, one → `print_json`, several → `print_report(Array, Rows::Top)`). The handler is the `ItemsOp::Get` arm in `cli/dispatch/items.rs` calling `items_get_from` / `items_get_from_json` (`tomlctl/src/items.rs`) once per id. `cli/types/items.rs` carries an unrelated uncommitted edit — keep it. The new test covers: single id unchanged shape; `R1,R3` and `R1 R3` arrays in order; duplicate collapsed; unknown id fails naming it; `--array` still honoured.'
+action = """Change `items get`'s positional `id: String` to a comma- or space-separated id list and print one object for one id or an array in the order given for several, failing the whole call on an unknown id; update the `items get` about text in `tomlctl/src/cli/types/items.rs` ("Get a single item by its `id` field.") to the list form."""
+detail = """Approach, "Backlog get and edit". Follow `TaskIds` (`tomlctl/src/cli/types/tasks.rs`, help from `ids_help`) / `ItemIds` (`tomlctl/src/cli/types/backlog.rs`) for parsing, and `tomlctl/src/tasks/show.rs` for the output pattern (BTreeSet de-dupe, build every row before printing, one → `print_json`, several → `print_report(Array, Rows::Top)`). The handler is the `ItemsOp::Get` arm in `cli/dispatch/items.rs` calling `items_get_from` / `items_get_from_json` (`tomlctl/src/items.rs`) once per id. The new test covers: single id unchanged shape; `R1,R3` and `R1 R3` arrays in order; duplicate collapsed; unknown id fails naming it (keep `items_get_from`'s untagged `no item with id = …` error — `tests/capabilities.rs` `error_format_json_untagged_fallback_kind_other` pins `kind=other` with a null `file`); `--array` still honoured."""
 acceptance = """
 - forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --test items_get_ids` passes — predicted, unverified; falsifier: reverting to the single `id: String` makes the two-id case a clap error
 - guard: `cargo nextest run --manifest-path tomlctl/Cargo.toml --test output_options` passes (the single-id `items get` case stays a One shape)"""
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "54665c0"
 
 [[items]]
 id = 6
 ref = "grep-predicate-in-the-query-engine"
 title = "--grep predicate in the query engine"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = "Wave A — reads and output"
 phase_depth = 3
@@ -339,17 +389,17 @@ needs = [1]
 coupling = []
 deps_note = ""
 action = "Add `--grep <REGEX>` and repeatable `--grep-field <FIELD>` to `QueryArgs` (`tomlctl/src/cli/types/shared.rs`) and a `Predicate::Grep { fields, regex }` to `tomlctl/src/query.rs` that matches case-insensitively when any field in its set matches, ANDed with the other predicates."
-detail = """Approach, "Search". Extend `QueryInput` with the grep pattern, the override fields and a caller-supplied default field list (`&'static [&'static str]`, empty meaning "`--grep` refused: this list verb has no default fields; pass `--grep-field`"). Compile once in `PreparedPredicates::new` via `compile_user_regex` with `(?i)` prepended (task 1 makes that legal in the release build). Array fields match when any string element matches; non-string scalars are matched on their rendered text; missing fields don't match. Give it a `predicate_cost` above the string predicates. `to_query_input` carries both flags; existing callers pass an empty default until task 7 wires them. Unit tests in `query.rs`: two-field OR, case-insensitivity, AND with `--where`, array element match, `--grep-field` override."""
+detail = """Approach, "Search". Extend `QueryInput` with the grep pattern, the override fields and a caller-supplied default field list (`&'static [&'static str]`, empty meaning "`--grep` refused: this list verb has no default fields; pass `--grep-field`"). Compile once in `PreparedPredicates::new` via `compile_user_regex` with `(?i)` prepended (task 1 makes that legal in the release build). Array fields match when any string element matches; non-string scalars are matched on their rendered text; missing fields don't match. Give it a `predicate_cost` above the string predicates. `to_query_input` carries both flags and sets the default field list to `&[]`; leave its signature and every caller unchanged — task 7 assigns the field on the returned `QueryInput` at each list verb's call site. Unit tests in `query.rs`: two-field OR, case-insensitivity, AND with `--where`, array element match, `--grep-field` override."""
 acceptance = "forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --lib -E 'test(/grep/)'` passes — predicted, unverified; falsifier: making the predicate require every field turns the two-field OR test red"
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "79d4620"
 
 [[items]]
 id = 7
 ref = "wire-grep-default-fields-into-the-list-verbs"
 title = "Wire --grep default fields into the list verbs"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = "Wave A — reads and output"
 phase_depth = 3
@@ -367,17 +417,17 @@ needs = [
 coupling = []
 deps_note = ""
 action = "Pass each list verb's default grep field set into its `QueryInput` — `backlog list` in `tomlctl/src/backlog/query.rs` (`dispatch_list`), `tasks list` in `tomlctl/src/tasks/list.rs`, `items list` in `tomlctl/src/cli/dispatch/items.rs` — and add an integration test over all three."
-detail = """Approach, "Search" (field sets listed there). The three call-site edits are one line each and land together so the integration test can cover every verb. The test seeds a backlog, a tasks store and a review ledger and asserts: a word only in `context` finds the backlog row; `(?i)` upper-case pattern matches lower-case text; `--grep` ANDs with `--where status=open`; `--grep-field summary` excludes a context-only hit; `--template '{id}'` output is the matching ids."""
+detail = """Approach, "Search" (field sets listed there; backlog's come from the `backlog/schema.rs` `FIELD_*` constants). Assign the default-field list on the `QueryInput` that `to_query_input` returns: `backlog/query.rs` already binds `let mut input`; `tasks/list.rs` and `cli/dispatch/items.rs` build it inline and need a `let mut` binding. The three call-site edits are small and land together so the integration test can cover every verb. The test seeds a backlog, a tasks store and a review ledger and asserts: a word only in `context` finds the backlog row; a word only in `dismiss_reason` finds a dismissed row; `(?i)` upper-case pattern matches lower-case text; `--grep` ANDs with `--where status=open`; `--grep-field summary` excludes a context-only hit; `--template '{id}'` output is the matching ids."""
 acceptance = "forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --test list_grep` passes — predicted, unverified; falsifier: passing an empty default list in `backlog/query.rs` makes the context-only case return nothing"
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "54665c0"
 
 [[items]]
 id = 8
 ref = "counts-map-on-backlog-reconcile"
 title = "Counts map on backlog reconcile"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = "Wave A — reads and output"
 phase_depth = 3
@@ -391,19 +441,19 @@ needs = []
 coupling = []
 deps_note = ""
 action = "Add `counts: {ready, in-progress, stalled, unlinked, orphaned}` to the `backlog reconcile` report, filled in the existing `Bucket::ALL` loop in `reconcile()`, assert it in `tomlctl/tests/backlog_reconcile.rs`, and change `claude/commands/plan-update.md` to print the summary line from `counts` instead of asking for array lengths."
-detail = """Approach, "Reconcile counts". Keys are the bucket names exactly as `buckets` keys them; every key is present (zero when empty). In `plan-update.md` (the backlog step that runs `tomlctl backlog reconcile --flow <slug>` and prints `backlog: N ready, …`), replace the "lengths of those five `buckets` arrays" sentence with a bash-fenced `tomlctl backlog reconcile --flow <slug> --template 'backlog: {counts.ready} ready, {counts.in-progress} in-progress, {counts.stalled} stalled, {counts.unlinked} unlinked, {counts.orphaned} orphaned'`. `plan-update.md` carries unrelated uncommitted edits — keep them."""
+detail = """Approach, "Reconcile counts". Keys are the bucket names exactly as `buckets` keys them; every key is present (zero when empty). In `plan-update.md` (the backlog step that runs `tomlctl backlog reconcile --flow <slug>` and prints `backlog: N ready, …`), replace the "lengths of those five `buckets` arrays" sentence with a bash-fenced `tomlctl backlog reconcile --flow <slug> --template 'backlog: {counts.ready} ready, {counts.in-progress} in-progress, {counts.stalled} stalled, {counts.unlinked} unlinked, {counts.orphaned} orphaned'`."""
 acceptance = """
 - forward: `grep -c 'lengths of those five' claude/commands/plan-update.md` prints 0 (today: 1)
 - forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --test backlog_reconcile` passes with a `counts` assertion — predicted, unverified; falsifier: omitting an empty bucket's key turns it red"""
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "5fdfcda"
 
 [[items]]
 id = 9
 ref = "toml-record-file-reader"
 title = "TOML record file reader"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = "Wave B — writes"
 phase_depth = 3
@@ -416,19 +466,19 @@ files = [
 needs = []
 coupling = []
 deps_note = ""
-action = "Create `tomlctl/src/payload.rs` converting a `.toml` record file into JSON text per the shape rule, declare it in `tomlctl/src/lib.rs`, and route `.toml` file paths through it from `read_ndjson_source` (bare and `@` branches) and the `@path` branch of `read_json_arg` in `tomlctl/src/io.rs`."
-detail = """Approach, "TOML record files" — implement exactly its shape rule, string normalisation and error forms. API sketch: `pub(crate) fn toml_payload(path: &Path, text: &str, as_ndjson: bool) -> Result<String>`. Parse with `toml::de::DeTable::parse` (keeps per-row spans; `DeArray` derefs to `[Spanned<DeValue>]`), convert rows with `crate::convert::detable_to_json`, then normalise strings recursively. Detection is by extension on file paths only; literal JSON, `-` stdin, and other extensions are unchanged, and the 32 MiB read cap still applies. Unit tests in `payload.rs`: `[[record]]` two rows → two NDJSON lines; single table → one object; `'''` prose with backticks, quotes, `$` and a trailing newline round-trips minus the one trailing newline; CRLF input → LF; a syntax error carries `line`/`column`; a non-table array entry names `record N (line L)`."""
-acceptance = "forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --lib -E 'test(/payload/)'` passes — predicted, unverified; falsifier: dropping the trailing-newline trim turns the round-trip test red"
-agent = ""
-commit = ""
+action = "Create `tomlctl/src/payload.rs` converting a `.toml` record file into JSON text per the shape rule, declare it in `tomlctl/src/lib.rs`, and route `.toml` file paths through it from `read_ndjson_source` (bare and `@` branches) and from the `@path` branches of both `read_json_arg` and `read_json_value_from_arg` in `tomlctl/src/io.rs`."
+detail = "Approach, \"TOML record files\" — implement exactly its shape rule (the reserved `record` key), string normalisation and error forms. `read_json_value_from_arg` reads `@path` through `read_at_file` itself, not via `read_json_arg`; it feeds `items add/update --json`, `--defaults-json`, `set-json`, `array-append --json`, `flow record --json`, `inputs add` and `agents record`, so both hooks are needed for one `.toml` file to behave the same on every flag. API sketch: `pub(crate) fn toml_payload(path: &Path, text: &str, as_ndjson: bool) -> Result<String>`. Parse with `toml::de::DeTable::parse` (keeps per-row spans; `DeArray` derefs to `[Spanned<DeValue>]`; a `DeValue::String`'s span covers its raw token, delimiters included, which is how a multi-line string is told apart), convert rows with `crate::convert::detable_to_json`, then normalise multi-line strings recursively. Emit compact JSON in every form. Detection is by extension on file paths only; literal JSON, `-` stdin, and other extensions are unchanged. File reads carry no size cap today (only stdin is capped) and this task does not add one. Unit tests in `payload.rs`: `[[record]]` two rows → two NDJSON lines; single table → one object; `'''` prose with backticks, quotes, `$` and a trailing newline round-trips minus the one trailing newline; a single-line basic string ending in `\\n` keeps it; CRLF input → LF; a top-level key beside `[[record]]` is refused naming the key; a syntax error carries `line`/`column`; a non-table array entry names `record N (line L)`."
+acceptance = "forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --lib -E 'test(/^payload::/)'` passes (today: fails, no tests match) — predicted, unverified; falsifier: dropping the trailing-newline trim turns the round-trip test red"
+agent = "implement-deep"
+commit = "79d4620"
 
 [[items]]
 id = 10
 ref = "ndjson-parse-errors-point-at-toml-record-files"
 title = "NDJSON parse errors point at TOML record files"
 effort = "S"
-status = "pending"
-checkpoint = "B"
+status = "done"
+checkpoint = "C"
 phase = "Wave B — writes"
 phase_depth = 3
 heading_depth = 3
@@ -437,18 +487,18 @@ needs = [9]
 coupling = []
 deps_note = ""
 action = "Append a one-sentence hint to the JSON parse failures in `parse_ndjson_lines` and `parse_ndjson_objects` (`tomlctl/src/items.rs`) saying that prose-heavy rows can be written as a TOML record file (`[[record]]` tables with `'''` strings) passed to the same flag."
-detail = """Approach, "Agent learnability". Only the serde_json parse-failure arms gain the hint, not the "got JSON <type>" arm. Keep the existing `line N` prefix and messages intact (tests pin them); append after them. Update the unit tests near `parse_ndjson`'s existing error tests to assert the hint."""
-acceptance = "forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --lib -E 'test(/ndjson/)'` passes with a hint assertion — predicted, unverified; falsifier: removing the hint text turns it red"
-agent = ""
-commit = ""
+detail = """Approach, "Agent learnability". Only the serde_json parse-failure arms gain the hint, not the "got JSON <type>" arm. Keep the existing `line N` prefix and messages intact (tests pin them); append after them. Add a unit test named `parse_ndjson_error_carries_toml_hint` near `parse_ndjson`'s existing error tests asserting the hint."""
+acceptance = "forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --lib -E 'test(/ndjson.*toml_hint/)'` passes (today: fails, no tests match) — predicted, unverified; falsifier: removing the hint text turns it red"
+agent = "implement-lite"
+commit = "9806c92"
 
 [[items]]
 id = 11
 ref = "flow-record-accepts-a-per-row-task"
 title = "flow record accepts a per-row task"
 effort = "M"
-status = "pending"
-checkpoint = "B"
+status = "done"
+checkpoint = "C"
 phase = "Wave B — writes"
 phase_depth = 3
 heading_depth = 3
@@ -462,16 +512,16 @@ deps_note = ""
 action = "Let each `flow record --ndjson` row carry `task` (a task id) resolved per row to `task_ref` in `tomlctl/src/flow/record.rs`, refusing a row whose `task` disagrees with `--task` or whose `task_ref` disagrees with its resolved task; add tests including a TOML record file of two tasks' deviations."
 detail = """Approach, "Batch write forms". Today `build_entries` shallow-extends each row over a base built from `--json` + field flags and `task_ref_for` resolves only the single `--task`. Resolve each row's `task` with the same lookup (load `tasks.toml` once per call), then remove `task` from the stored entry. Error text names the row's line. The TOML test writes `[[record]]` rows with `type = "deviation"`, distinct `task` ids, and `'''` `original_intent` / `rationale` / `summary`, and asserts two entries with the right `task_ref`s and verbatim prose."""
 acceptance = "forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --test flow_record` passes including the per-row task and TOML cases — predicted, unverified; falsifier: applying `--task`'s ref to every row turns the two-task case red"
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "ac708ed"
 
 [[items]]
 id = 12
 ref = "tasks-update-ndjson-batch-form"
 title = "tasks update --ndjson batch form"
 effort = "L"
-status = "pending"
-checkpoint = "B"
+status = "done"
+checkpoint = "C"
 phase = "Wave B — writes"
 phase_depth = 3
 heading_depth = 3
@@ -485,18 +535,18 @@ needs = [9]
 coupling = []
 deps_note = ""
 action = "Add `--ndjson <SRC>` to `tasks update` (`tomlctl/src/cli/types/tasks.rs`) accepting rows `{ids | id, status?, agent?, commit?, ref?, set?}`, apply every row in one `store::mutate` from `tomlctl/src/tasks/update.rs`, wire the arm in `tomlctl/src/tasks/dispatch.rs`, and test it in `tomlctl/tests/tasks_write.rs`."
-detail = """Approach, "Batch write forms". `--ndjson` conflicts with the positional ids and with `--status`/`--agent`/`--commit`/`--ref`/`--set` (clap `conflicts_with_all`); `--unlock-import-fields`/`--relock-import-fields` keep applying to every row. `ids` accepts an array of integers or a comma-separated string; `ref` is legal only on a single-id row (today's `--ref` rule). `set` keys go through `SETTABLE`. Refuse duplicate ids across rows and unknown keys (naming the accepted ones). Reuse `update_many`'s per-row validation by building one `UpdateFields` per row; the envelope stays `{ok, rows:[{id, ref, changed}]}`. Tests: a two-row commit train (different `commit` per row), a status+agent sweep, duplicate-id refusal, nothing written on a bad row, and the same train from a `.toml` record file."""
+detail = """Approach, "Batch write forms". `--ndjson` conflicts with the positional ids and with `--status`/`--agent`/`--commit`/`--checkpoint`/`--ref`/`--set` (clap `conflicts_with_all`), and the `Update` variant adds `#[command(mut_args(..))]` making the shared `TaskIds` positional `required_unless_present("ndjson")` — `TaskIds` itself stays unchanged for the other verbs, and a conflict alone does not lift the requirement. `--unlock-import-fields`/`--relock-import-fields` keep applying to every row. `ids` accepts an array of integers or a comma-separated string; `ref` is legal only on a single-id row (today's `--ref` rule). `set` keys go through `SETTABLE`. Refuse duplicate ids across rows and unknown keys (naming the accepted ones). Reuse `update_many`'s per-row validation by building one `UpdateFields` per row; the envelope stays `{ok, rows:[{id, ref, changed}]}`. Tests: `--ndjson <file>` with no positional ids parses; a two-row commit train (different `commit` per row); a status+agent sweep; duplicate-id refusal; nothing written on a bad row; and the same train from a `.toml` record file."""
 acceptance = "forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --test tasks_write` passes including the commit-train case — predicted, unverified; falsifier: writing rows one `mutate` at a time lets the bad-row case persist the first row, turning it red"
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "265afd4"
 
 [[items]]
 id = 13
 ref = "backlog-triage-ndjson-batch-form"
 title = "backlog triage --ndjson batch form"
 effort = "L"
-status = "pending"
-checkpoint = "B"
+status = "done"
+checkpoint = "C"
 phase = "Wave B — writes"
 phase_depth = 3
 heading_depth = 3
@@ -510,18 +560,18 @@ needs = [9]
 coupling = []
 deps_note = ""
 action = "Add `--ndjson <SRC>` to `backlog triage` taking rows `{id, resolve|dismiss|promote|reopen: <companion>, rationale?, expect_status?}`, building one `Transition` per row and applying all of them in one `mutate_doc_conditional`; test in `tomlctl/tests/backlog_write.rs`."
-detail = """Approach, "Batch write forms" (companion mapping there). `--ndjson` conflicts with the id list, the mode group and the companion flags; `--expect-status` on the line is each row's default; `--dry-run` previews. Build on `Transition::from_cli` (`backlog/triage.rs`) so per-row validation is identical, and on `apply_transition`'s stage-all-then-store path so one bad row writes nothing. Stale rows (status ≠ expected) go to `skipped_stale` as the id-list form reports them. Output shape: the id-list form's envelope. Tests: three ids with three different resolution texts in one call; mixed resolve+dismiss; a row with two mode keys refused; duplicate id refused; stale row skipped; a `.toml` record file with `'''` resolution prose."""
+detail = """Approach, "Batch write forms" (companion mapping there). `--ndjson` conflicts with the id list, the mode group and the companion flags, and the `Triage` variant relaxes both requirements on its own (`mut_args` making `ItemIds.ids` `required_unless_present("ndjson")`, `mut_group("TriageMode", |g| g.required(false))`), with the one-mode rule re-checked in dispatch for the flag form; the shared `ItemIds` stays unchanged for `show` and the other verbs. `--expect-status` on the line is each row's default; `--dry-run` previews. Build on `Transition::from_cli` (`backlog/triage.rs`) so per-row validation is identical, and on `apply_transition`'s stage-all-then-store path so one bad row writes nothing. Stale rows (status ≠ expected) go to `skipped_stale` as the id-list form reports them. Output shape: the id-list form's envelope. Tests: `--ndjson <file>` with no id or mode flag parses; the flag form with no mode is still refused; three ids with three different resolution texts in one call; mixed resolve+dismiss; a row with two mode keys refused; duplicate id refused; stale row skipped; a `.toml` record file with `'''` resolution prose."""
 acceptance = "forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --test backlog_write` passes including the three-texts case — predicted, unverified; falsifier: applying the first row's companion to all ids turns it red"
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "54665c0"
 
 [[items]]
 id = 14
 ref = "backlog-get-row-only-read"
 title = "backlog get row-only read"
 effort = "L"
-status = "pending"
-checkpoint = "B"
+status = "done"
+checkpoint = "C"
 phase = "Wave B — writes"
 phase_depth = 3
 heading_depth = 3
@@ -540,16 +590,16 @@ deps_note = ""
 action = "Add `backlog get <ids>` printing only the stored row(s): a `Get` variant in `BacklogOp` (`tomlctl/src/cli/types/backlog.rs`), a `dispatch_get` beside `dispatch_show` in `tomlctl/src/backlog/query.rs` reusing its id resolution, the arm in `tomlctl/src/backlog/dispatch.rs`, and tests in `tomlctl/tests/backlog_read.rs`."
 detail = """Approach, "Backlog get and edit". Same `ItemIds` and `ReadIntegrityArgs` as `Show`; same unknown-id failure; one id → object, several → array (`print_report(Array, Rows::Top)`), de-duplicated in given order. Resolve ids exactly as `build_show`/`build_show_resolved` do (prefix/alias handling included) but return the row alone. Tests: `--get summary` prints the bare summary (no `item.` prefix); two ids → array; unknown id fails; output equals `show`'s `item` for the same id."""
 acceptance = "forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --test backlog_read` passes including the `--get summary` case — predicted, unverified; falsifier: returning `build_show`'s wrapper makes `--get summary` fail with the `item.summary` suggestion"
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "54665c0"
 
 [[items]]
 id = 15
 ref = "backlog-edit-core"
 title = "backlog edit core"
 effort = "M"
-status = "pending"
-checkpoint = "B"
+status = "done"
+checkpoint = "C"
 phase = "Wave B — writes"
 phase_depth = 3
 heading_depth = 3
@@ -560,19 +610,19 @@ files = [
 needs = []
 coupling = []
 deps_note = ""
-action = "Create `tomlctl/src/backlog/edit.rs` with the field policy (editable: `context`, `tags`, `evidence`, `origin`, `flow`, `base_sha`; refused with the owning verb named: everything else) and a pure `apply_edits(doc: &mut TomlValue, edits: &[Edit]) -> Result<Vec<EditOutcome>>` that applies replace/add/remove operations per id and validates with `backlog::schema::validate`; declare `mod edit;` in `tomlctl/src/backlog/mod.rs`."
-detail = 'Approach, "Backlog get and edit" (refusal wording there). `Edit { id, context: Option<String>, tags: Option<Vec<String>>, add_tags, remove_tags, evidence: Option<Vec<String>>, add_evidence, origin, flow, base_sha }`. Unknown id → error naming it; duplicate id across edits → error; an edit that changes nothing reports `changed: false`. Tags keep their stored order with additions appended and duplicates dropped. Unit tests cover each field, each refusal message, unknown id, and validation failure leaving `doc` untouched (apply to a clone, swap on success). Nothing calls it until task 16 wires it (both land in checkpoint B); add no dead-code attribute — a transient `dead_code` warning between the two tasks is expected.'
+action = "Create `tomlctl/src/backlog/edit.rs` with the field policy (editable: `context`, `tags`, `evidence`, `origin`, `flow`, `base_sha`; refused with the owning verb named: everything else) and a pure `apply_edits(doc: &mut TomlValue, edits: &[Edit]) -> Result<Vec<EditOutcome>>` that applies replace/add/remove operations per id and validates the result; declare `mod edit;` in `tomlctl/src/backlog/mod.rs`."
+detail = 'Approach, "Backlog get and edit" (refusal wording there). `Edit { id, context: Option<String>, tags: Option<Vec<String>>, add_tags, remove_tags, evidence: Option<Vec<String>>, add_evidence, origin, flow, base_sha }`. `backlog::schema::validate` is per-row over `&JsonValue`: validate each edited row as `schema::validate(&toml_to_json(&row))` and the document with `validate_ids_unique`, the idiom `backlog/relate.rs` uses. Unknown id → error naming it; duplicate id across edits → error; an edit that changes nothing reports `changed: false`. Tags keep their stored order with additions appended and duplicates dropped. Unit tests cover each field, each refusal message, unknown id, and validation failure leaving `doc` untouched (apply to a clone, swap on success). Nothing calls it until task 16 wires it (both land in checkpoint C); add no dead-code attribute — a transient `dead_code` warning between the two tasks is expected and denied by no lint.'
 acceptance = "forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --lib -E 'test(/backlog::edit/)'` passes — predicted, unverified; falsifier: allowing `summary` turns the refusal test red"
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "c007ca3"
 
 [[items]]
 id = 16
 ref = "backlog-edit-cli"
 title = "backlog edit CLI"
 effort = "M"
-status = "pending"
-checkpoint = "B"
+status = "done"
+checkpoint = "C"
 phase = "Wave B — writes"
 phase_depth = 3
 heading_depth = 3
@@ -589,17 +639,17 @@ needs = [
 coupling = []
 deps_note = ""
 action = "Add `backlog edit <id>` with `--context`/`--context-file`/`--tags`/`--add-tag`/`--remove-tag`/`--evidence`/`--add-evidence`/`--origin`/`--flow`/`--base-sha` and `--ndjson <SRC>` (rows `{id, context?, tags?, evidence?, origin?, flow?, base_sha?}`), dispatching to `backlog::edit::apply_edits` under one `mutate_doc_conditional` with `last_updated` stamped and `--dry-run`; integration-test it in `tomlctl/tests/backlog_edit.rs`."
-detail = """Approach, "Backlog get and edit". Use `dispatch.rs`'s `literal_or_file` for `--context`/`--context-file` (as `triage` does for its companions). `--ndjson` conflicts with the positional id and every field flag; a row key outside the editable set is refused by the core policy. Output: `{ok, path, rows:[{id, changed}]}` through `print_rows_compact` with `Rows::Field("rows")`. Write through the backlog target helpers the other backlog writers use (`backlog/target.rs`), with the same integrity args. Tests: context replace from a file with backticks/quotes; add/remove tag; `--ndjson` two rows; a `.toml` record file; `summary` refused naming `backlog add`; `status` refused naming `backlog triage`; `--dry-run` writes nothing."""
+detail = """Approach, "Backlog get and edit". Use `dispatch.rs`'s `literal_or_file` for `--context`/`--context-file` (as `triage` does for its companions). `--ndjson` conflicts with the positional id and every field flag, and the positional `id` is `required_unless_present("ndjson")` (a conflict alone does not lift a requirement); a row key outside the editable set is refused by the core policy. Output: `{ok, path, rows:[{id, changed}]}` through `print_rows_compact` with `Rows::Field("rows")`. Write through the backlog target helpers the other backlog writers use (`backlog/target.rs`), with the same integrity args. Tests: context replace from a file with backticks/quotes; add/remove tag; `--ndjson` two rows with no positional id; a `.toml` record file; `summary` refused naming `backlog add`; `status` refused naming `backlog triage`; `--dry-run` writes nothing."""
 acceptance = "forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --test backlog_edit` passes — predicted, unverified; falsifier: skipping `schema::validate` lets an invalid edited row persist in the validation case"
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "54665c0"
 
 [[items]]
 id = 17
 ref = "owned-store-guard-module"
 title = "Owned-store guard module"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = "Wave B — writes"
 phase_depth = 3
@@ -616,17 +666,17 @@ needs = [
 coupling = []
 deps_note = ""
 action = "Create `tomlctl/src/store_guard.rs` with `refuse_owned_store(path: &Path, raw_store: bool) -> Result<()>` classifying the five owned store paths, declare it in `tomlctl/src/lib.rs`, and add the flattenable `RawStoreArg { --raw-store }` to `tomlctl/src/cli/types/shared.rs`."
-detail = """Approach, "Owned-store guard" (path table and message there). Classify on the path's trailing components after normalising separators, case-insensitively on Windows, without requiring the file to exist (auto-create targets must be caught too). Return `tagged_err(ErrorKind::Validation, Some(path), msg)`. The message names the owning group and the concrete replacement for that store: backlog → `backlog edit` (context/tags/evidence/origin), `backlog triage` (status); tasks → `tasks update` / `tasks add`; execution record → `flow record`; inputs → the `inputs` verbs; review → the `review` verbs. Then `pass --raw-store to write it generically`. `--raw-store` help text: "Write a verb-owned store (backlog, tasks, execution record, inputs, review-v2) with this generic writer, bypassing its validator". Unit tests: each owned path refused; `--raw-store` allows; `.claude/flows/x/context.toml`, `.claude/flows/x/review-ledger.toml` and `.claude/execution-record.toml` (no slug) allowed."""
+detail = 'Approach, "Owned-store guard" (path table and message there). Classify on the trailing components of the resolved path — `canonicalize_for_write` (`tomlctl/src/io.rs`) when the file or its parent exists, else the path with `.`/`..` folded lexically — after normalising separators, case-insensitively on Windows; the file need not exist (auto-create targets must be caught too). Return `tagged_err(ErrorKind::Validation, Some(path), msg)`. The message leads with the owning group and the concrete replacement for that store: backlog → `backlog edit` (context/tags/evidence/origin), `backlog triage` (status); tasks → `tasks update` / `tasks add`, and `tasks import-plan` for `[[checkpoints]]`, which no other verb writes; execution record → `flow record`; inputs → the `inputs` verbs; review → the `review` verbs. Then `pass --raw-store to write it generically`. `--raw-store` help text: "Write a verb-owned store (backlog, tasks, execution record, inputs, review-v2) with this generic writer, bypassing its validator". Unit tests: each owned path refused; a `.claude/flows/x/../x/tasks.toml` path refused; `--raw-store` allows; `.claude/flows/x/context.toml`, `.claude/flows/x/review-ledger.toml` and `.claude/execution-record.toml` (no slug) allowed.'
 acceptance = "forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --lib -E 'test(/store_guard/)'` passes — predicted, unverified; falsifier: matching on basename alone refuses `.claude/execution-record.toml`, turning the no-slug case red"
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "79d4620"
 
 [[items]]
 id = 18
 ref = "guard-set-set-json-and-array-append"
 title = "Guard set, set-json and array-append"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = "Wave B — writes"
 phase_depth = 3
@@ -640,16 +690,18 @@ coupling = []
 deps_note = ""
 action = "Flatten `RawStoreArg` into `Set`, `SetJson` and `ArrayAppend` (`tomlctl/src/cli/types/cmd.rs`) and call `store_guard::refuse_owned_store` before the write in `set`, `set_json` and `array_append` (`tomlctl/src/cli/dispatch/doc.rs`)."
 detail = 'Approach, "Owned-store guard". Call it after the target path is resolved and before any read-modify-write or `--dry-run` preview, so a refused call never touches the lock. No other behaviour changes.'
-acceptance = "forward: `cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets` reports no error in either file — predicted, unverified; the behaviour is tested in task 20"
-agent = ""
-commit = ""
+acceptance = """
+- forward: `grep -c 'refuse_owned_store' tomlctl/src/cli/dispatch/doc.rs` prints ≥3 (today: 0)
+- guard: `cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets` reports no error in either file; the behaviour is tested in task 20"""
+agent = "implement-lite"
+commit = "3aac95e"
 
 [[items]]
 id = 19
 ref = "guard-the-items-writers"
 title = "Guard the items writers"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = "Wave B — writes"
 phase_depth = 3
@@ -665,17 +717,19 @@ needs = [
 coupling = []
 deps_note = ""
 action = "Flatten `RawStoreArg` into `items add`, `add-many`, `update`, `remove`, `apply` and `backfill-dedup-id` (`tomlctl/src/cli/types/items.rs`) and call `store_guard::refuse_owned_store` in each arm in `tomlctl/src/cli/dispatch/items.rs` before the write."
-detail = 'Approach, "Owned-store guard". Reads (`get`, `list`, `next-id`, `find-duplicates`, `orphans`, `sweep` without `--update`, `clusters`) are not guarded. `cli/types/items.rs` carries an unrelated uncommitted edit — keep it.'
-acceptance = "forward: `cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets` reports no error in either file — predicted, unverified; the behaviour is tested in task 20"
-agent = ""
-commit = ""
+detail = 'Approach, "Owned-store guard". Reads (`get`, `list`, `next-id`, `find-duplicates`, `orphans`, `sweep`, `clusters`) are not guarded; `sweep --update` is deliberately left unguarded too — it only rewrites `instances` on rows carrying a `sweep` array, which no owned store holds.'
+acceptance = """
+- forward: `grep -c 'refuse_owned_store' tomlctl/src/cli/dispatch/items.rs` prints ≥6 (today: 0)
+- guard: `cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets` reports no error in either file; the behaviour is tested in task 20"""
+agent = "implement-lite"
+commit = "54665c0"
 
 [[items]]
 id = 20
 ref = "owned-store-guard-tests"
 title = "Owned-store guard tests"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = "Wave B — writes"
 phase_depth = 3
@@ -683,6 +737,7 @@ heading_depth = 3
 files = [
     "tomlctl/tests/store_guard.rs",
     "tomlctl/tests/integration.rs",
+    "tomlctl/tests/review_runs.rs",
 ]
 needs = [
     18,
@@ -690,21 +745,21 @@ needs = [
 ]
 coupling = []
 deps_note = ""
-action = "Add `tomlctl/tests/store_guard.rs` exercising the guard through the CLI for every generic writer and owned store, and add `--raw-store` to the existing `tomlctl/tests/integration.rs` cases that write a flow's `execution-record.toml` through `items add` / `array-append`."
-detail = """Approach, "Owned-store guard". The new test asserts, for each of `set`, `set-json`, `array-append`, `items add|update|remove|apply|add-many`: refused on `.claude/backlog.toml` and `.claude/flows/s/tasks.toml` (exit 1, stderr names the replacement verb and `--raw-store`, file bytes unchanged); allowed with `--raw-store`; allowed on `.claude/flows/s/review-ledger.toml`. Also assert `items get`/`list` on an owned store still work. In `integration.rs`, find the cases whose target is `.claude/flows/<slug>/execution-record.toml` (the auto-create skeleton tests) and add `--raw-store`; leave `.claude/execution-record.toml` (no slug) cases alone. If the full suite shows another test writing an owned store generically, stop and report it — do not widen this task's file set."""
+action = "Add `tomlctl/tests/store_guard.rs` exercising the guard through the CLI for every generic writer and owned store, and add `--raw-store` to the two existing tests that write an owned store generically: `write_under_claude_auto_creates_missing_parent_dirs` in `tomlctl/tests/integration.rs` and `run_ids_never_reuse_a_removed_id` in `tomlctl/tests/review_runs.rs`."
+detail = 'Approach, "Owned-store guard". The new test asserts, for each of `set`, `set-json`, `array-append`, `items add|update|remove|apply|add-many|backfill-dedup-id`: refused on `.claude/backlog.toml` and `.claude/flows/s/tasks.toml` (exit 1, stderr names the replacement verb and `--raw-store`, file bytes unchanged); allowed with `--raw-store`; allowed on `.claude/flows/s/review-ledger.toml`. Also assert `items get`/`list` on an owned store still work. The two existing cases are the only owned-store generic writes in `tomlctl/tests/`: `write_under_claude_auto_creates_missing_parent_dirs` runs `set` on `.claude/flows/hashed-kindling-engelbart/execution-record.toml`, and `run_ids_never_reuse_a_removed_id` runs `items remove` on `.claude/review-v2/<scope>.toml` (`repo.store()`). The `integrity_refresh_*` tests in `integration.rs` only read and refresh and stay unchanged, and `.claude/execution-record.toml` (no slug) cases are not owned. Do not run the full suite to look for more — the checkpoint gate does.'
 acceptance = """
 - forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --test store_guard` passes — predicted, unverified; falsifier: removing the guard call from `cli/dispatch/doc.rs` turns the `set` case red
-- guard: `cargo nextest run --manifest-path tomlctl/Cargo.toml --test integration` passes"""
-agent = ""
-commit = ""
+- guard: `cargo nextest run --manifest-path tomlctl/Cargo.toml --test integration --test review_runs` passes"""
+agent = "implement-lite"
+commit = "cbdaf69"
 
 [[items]]
 id = 21
 ref = "toml-record-files-end-to-end"
 title = "TOML record files end to end"
 effort = "M"
-status = "pending"
-checkpoint = "B"
+status = "done"
+checkpoint = "C"
 phase = "Wave B — writes"
 phase_depth = 3
 heading_depth = 3
@@ -717,19 +772,19 @@ needs = [
 ]
 coupling = []
 deps_note = ""
-action = '''Add `tomlctl/tests/payload_toml.rs` driving TOML record files through `items add-many --ndjson`, `items apply --ops '@ops.toml'`, `items add --json '@one.toml'`, `backlog add-many --ndjson`, `backlog check --ndjson`, `flow record --ndjson`, `tasks update --ndjson`, `backlog triage --ndjson` and `backlog edit --ndjson`, asserting prose with backticks, quotes, `$`, `\` and newlines lands verbatim.'''
-detail = "Approach, \"TOML record files\". Use `'''` strings with the closing delimiter on its own line (asserting one trailing newline is trimmed) and one `\"\"\"` string containing `'''`. Include a CRLF-encoded file (written with explicit `\\r\\n` bytes) and a malformed file whose error names `line`/`column`. Seed stores the way neighbouring test files do (`tests/common/mod.rs` helpers). Generic `items` writers here target a plain ledger, not an owned store."
-acceptance = "forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --test payload_toml` passes — predicted, unverified; falsifier: hooking only `read_ndjson_source` (not `read_json_arg`) turns the `--ops` and `--json` cases red"
-agent = ""
-commit = ""
+action = '''Add `tomlctl/tests/payload_toml.rs` driving TOML record files through `items add-many --ndjson`, `items apply --ops '@ops.toml'`, `items add --json '@one.toml'`, `items add-many --defaults-json '@defaults.toml'`, `backlog add-many --ndjson`, `backlog check --ndjson`, `flow record --ndjson`, `tasks update --ndjson`, `backlog triage --ndjson` and `backlog edit --ndjson`, asserting prose with backticks, quotes, `$`, `\` and newlines lands verbatim.'''
+detail = "Approach, \"TOML record files\". Use `'''` strings with the closing delimiter on its own line (asserting one trailing newline is trimmed) and one `\"\"\"` string containing `'''`. Include a CRLF-encoded file (written with explicit `\\r\\n` bytes), a malformed file whose error names `line`/`column`, and a file with a top-level key beside `[[record]]` that is refused. Seed stores the way neighbouring test files do (`tests/common/mod.rs` helpers). Generic `items` writers here target a plain ledger, not an owned store."
+acceptance = "forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --test payload_toml` passes — predicted, unverified; falsifier: hooking only `read_ndjson_source` and `read_json_arg` (not `read_json_value_from_arg`) turns the `--json` and `--defaults-json` cases red"
+agent = "implement-lite"
+commit = "0db2204"
 
 [[items]]
 id = 22
 ref = "output-options-cases-for-new-and-widened-verbs"
 title = "Output-options cases for new and widened verbs"
 effort = "S"
-status = "pending"
-checkpoint = "B"
+status = "done"
+checkpoint = "C"
 phase = "Wave B — writes"
 phase_depth = 3
 heading_depth = 3
@@ -743,19 +798,19 @@ needs = [
 ]
 coupling = []
 deps_note = ""
-action = "Add `cases()` entries in `tomlctl/tests/output_options.rs` for `backlog get` (One and Top), `backlog edit` (write envelope with rows), the multi-id `items get` (Top), and one `--text` case per shape, so `every_leaf_command_has_a_case` and the shape assertions cover them."
-detail = """Approach, "Backlog get and edit" and "Output view and refusals". Follow the neighbouring backlog cases' seeding; generic-writer cases already in the file that target an owned store must pass `--raw-store` (task 20 adds the guard); edit only those lines."""
+action = "Add `cases()` entries in `tomlctl/tests/output_options.rs` for `backlog get` (One and Top), `backlog edit` (write envelope with rows), the multi-id `items get` (Top), and one `--text-view` case per shape including one list verb (`tasks list … --text-view`), so `every_leaf_command_has_a_case` and the shape assertions cover them."
+detail = """Approach, "Backlog get and edit" and "Output view and refusals". Follow the neighbouring backlog cases' seeding. The list-verb `--text-view` case covers the `query_opts` path task 4 wires. The file's existing generic-writer cases target `.claude/review-ledger.toml`, which the guard leaves alone; edit no existing case."""
 acceptance = "forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --test output_options` passes — predicted, unverified; falsifier: deleting the `backlog get` case fails `every_leaf_command_has_a_case`"
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "5fdfcda"
 
 [[items]]
 id = 23
 ref = "register-capabilities-features"
 title = "Register capabilities features"
 effort = "M"
-status = "pending"
-checkpoint = "C"
+status = "done"
+checkpoint = "D"
 phase = "Wave C — registration, docs, agents"
 phase_depth = 3
 heading_depth = 3
@@ -780,19 +835,19 @@ needs = [
 ]
 coupling = []
 deps_note = ""
-action = """Add the fourteen feature names from Approach, "Capabilities and docs" to `FEATURES` (`tomlctl/src/cli/types/mod.rs`) and `SUBCOMMANDS` entries for `backlog get` / `backlog edit` if that list enumerates leaves; extend the expected lists in `tomlctl/tests/capabilities.rs` (features, and the global-flags list for `--text`); transcribe them into `tomlctl/README.md`'s features sample and "Feature meanings" table, and update the README lines describing single-id `items get`, `backlog show`, and the `rows_header` refusals."""
-detail = 'Approach, "Capabilities and docs". Extend the existing `multi_id` meaning to name `items get` and `backlog get` rather than duplicating it, if the README table phrasing allows; otherwise use `items_get_multi`. Keep feature order consistent with how the list is appended today.'
+action = '''Add the fourteen feature names from Approach, "Capabilities and docs" to `FEATURES` (`tomlctl/src/cli/types/mod.rs`); extend the expected lists in `tomlctl/tests/capabilities.rs` (features, and the global-flags list for `--text-view`); transcribe them into `tomlctl/README.md`'s features sample and "Feature meanings" table; update the README lines describing single-id `items get`, `backlog show`, and the `rows_header` refusals; add synopsis lines for `backlog get`, `backlog edit`, `tasks update --ndjson` and `backlog triage --ndjson`, `--text-view` to the output-options comment and `--grep` to the `items list` query-surface sentence; and update the `--template` help in `tomlctl/src/cli/types/mod.rs` to name the `\n` `\t` `\\` escapes.'''
+detail = 'Approach, "Capabilities and docs". Give `items_get_multi` its own `FEATURES` entry and README table row (`readme_feature_transcriptions_match_capabilities_features` needs one row per advertised feature, and `capabilities_features_contains_every_plan_feature` asserts an exact count); the `multi_id` row may also mention `items get`. `SUBCOMMANDS` lists only top-level commands, so it needs no edit. Keep feature order consistent with how the list is appended today. `command_lint` does not scan the README, so check its synopsis against the shipped flags by reading the clap definitions.'
 acceptance = "forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --test capabilities` passes with `text_view` in the expected list — predicted, unverified; falsifier: omitting `text_view` from `FEATURES` fails `capabilities_features_contains_every_plan_feature`"
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "5fdfcda"
 
 [[items]]
 id = 24
 ref = "tomlctl-skillmd-output-options-and-guidance-canon"
 title = "tomlctl SKILL.md: output options and guidance canon"
 effort = "M"
-status = "pending"
-checkpoint = "C"
+status = "done"
+checkpoint = "D"
 phase = "Wave C — registration, docs, agents"
 phase_depth = 3
 heading_depth = 3
@@ -802,24 +857,29 @@ needs = [
     3,
     4,
     9,
+    12,
     17,
+    18,
+    19,
     26,
 ]
 coupling = []
 deps_note = ""
-action = "Update `claude/skills/tomlctl/SKILL.md`: `--text` and template escapes in the Output options table; the relaxed `--rows`/`--header`/`--template --select` rules in the rows-versus-header and Combinations paragraphs; Guidance canon bullets for TOML record files (several prose fields → one record file; `--set-file` stays for one field) and the owned-store guard; Quick Reference rows for `backlog get`, `backlog edit`, `items get <ids>`, `--grep`, `tasks update --ndjson`, `backlog triage --ndjson`; and a References entry for `references/backlog-edit.md`."
-detail = 'Approach, "Capabilities and docs". Bash-fenced commands are parsed by `command_lint`, so every example must match the shipped flags. Stay well under the 500-line ceiling. `SKILL.md` carries an unrelated uncommitted description edit — keep it.'
-acceptance = "forward: `grep -c -- '--text' claude/skills/tomlctl/SKILL.md` prints ≥1 (today: 0); guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes"
-agent = ""
-commit = ""
+action = "Update `claude/skills/tomlctl/SKILL.md`: `--text-view` and template escapes in the Output options table; the relaxed `--rows`/`--header`/`--template --select` rules in the rows-versus-header and Combinations paragraphs; Guidance canon bullets for TOML record files (several prose fields → one record file; `--set-file` stays for one field) and the owned-store guard; Quick Reference rows for `backlog get`, `backlog edit`, `items get <ids>`, `--grep`, `tasks update --ndjson`, `backlog triage --ndjson`; and a References entry for `references/backlog-edit.md`."
+detail = 'Approach, "Capabilities and docs". Bash-fenced commands are parsed by `command_lint`, so every example must match the shipped flags. Stay well under the 500-line ceiling (today 285).'
+acceptance = """
+- forward: `grep -c -- '--text-view' claude/skills/tomlctl/SKILL.md` prints ≥1 (today: 0)
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes"""
+agent = "implement-lite"
+commit = "01533f7"
 
 [[items]]
 id = 25
 ref = "querymd-grep-regex-items-get"
 title = "query.md: --grep, regex, items get"
 effort = "S"
-status = "pending"
-checkpoint = "C"
+status = "done"
+checkpoint = "D"
 phase = "Wave C — registration, docs, agents"
 phase_depth = 3
 heading_depth = 3
@@ -831,19 +891,21 @@ needs = [
 ]
 coupling = []
 deps_note = ""
-action = 'In `claude/skills/tomlctl/references/query.md`, add `--grep` / `--grep-field` rows to the list-verb filter flag table with the per-store default field sets, replace the ASCII-only regex notes (`--where-regex` row and the sweep-pattern section) with the Unicode behaviour plus the `(?-u:\b)` speed note and `\p{..}` exclusion, and document `items get <ids>`.'
-detail = """Approach, "Search" and "Regex". `flag_table_lint` requires each table flag to exist on the heading's subcommand. `query.md` carries an unrelated uncommitted edit — keep it."""
-acceptance = "forward: `grep -c '(?i-u)' claude/skills/tomlctl/references/query.md` prints 0 (today: 1); guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes"
-agent = ""
-commit = ""
+action = 'In `claude/skills/tomlctl/references/query.md`, add `--grep` / `--grep-field` rows to the list-verb filter flag table with the per-store default field sets, replace the ASCII-only regex notes (`--where-regex` row and the sweep-pattern section) with the Unicode behaviour plus the `(?-u:\b)` speed note, the `\p{..}` exclusion and the size limit on Unicode `\w`/`\W` repeats above about 20, and document `items get <ids>`.'
+detail = """Approach, "Search" and "Regex". `flag_table_lint` requires each table flag to exist on the heading's subcommand."""
+acceptance = """
+- forward: `grep -c '(?i-u)' claude/skills/tomlctl/references/query.md` prints 0 (today: 1)
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes"""
+agent = "implement-lite"
+commit = "c8cd771"
 
 [[items]]
 id = 26
 ref = "backlog-references-get-edit-triage-batch"
 title = "Backlog references: get, edit, triage batch"
 effort = "M"
-status = "pending"
-checkpoint = "C"
+status = "done"
+checkpoint = "D"
 phase = "Wave C — registration, docs, agents"
 phase_depth = 3
 heading_depth = 3
@@ -860,17 +922,21 @@ coupling = []
 deps_note = ""
 action = 'Create `claude/skills/tomlctl/references/backlog-edit.md` with flag tables under the headings `` ## `backlog get` `` and `` ## `backlog edit` `` (editable fields, refusals, `--ndjson` row shape) and the `backlog triage --ndjson` row shape; in `backlog.md` add the triage `--ndjson` row, drop the now-stale "never with `--rows results`" note, and link `backlog-edit.md`.'
 detail = 'Approach, "Backlog get and edit" and "Batch write forms". `backlog.md` is at 597 of 600 lines — net its line count to ≤600 (the removed note frees lines). The new file opens with a `## Contents` list like its siblings.'
-acceptance = "forward: `wc -l < claude/skills/tomlctl/references/backlog.md` prints ≤600 and `grep -c 'rows results' claude/skills/tomlctl/references/backlog.md` prints 0 (today: 597 and 1); guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes"
-agent = ""
-commit = ""
+acceptance = """
+- forward: `grep -c 'rows results' claude/skills/tomlctl/references/backlog.md` prints 0 (today: 1)
+- forward: `test -f claude/skills/tomlctl/references/backlog-edit.md` exits 0 (today: absent)
+- guard: `wc -l < claude/skills/tomlctl/references/backlog.md` prints ≤600 (today: 597)
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes"""
+agent = "implement-lite"
+commit = "5c6457f"
 
 [[items]]
 id = 27
 ref = "backlog-recipes-and-reconcile-references"
 title = "Backlog recipes and reconcile references"
 effort = "S"
-status = "pending"
-checkpoint = "C"
+status = "done"
+checkpoint = "D"
 phase = "Wave C — registration, docs, agents"
 phase_depth = 3
 heading_depth = 3
@@ -879,6 +945,7 @@ files = [
     "claude/skills/tomlctl/references/backlog-reconcile.md",
 ]
 needs = [
+    4,
     7,
     8,
     13,
@@ -887,42 +954,53 @@ needs = [
 ]
 coupling = []
 deps_note = ""
-action = "Rewrite `claude/skills/tomlctl/references/backlog-recipes.md` from interim workarounds into one-call recipes (`backlog get`, `backlog list --grep`, `backlog edit`, `backlog triage --ndjson` with a TOML record file, `--text` reading), and document the `counts` map in `claude/skills/tomlctl/references/backlog-reconcile.md`'s output shape."
+action = "Rewrite `claude/skills/tomlctl/references/backlog-recipes.md` from interim workarounds into one-call recipes (`backlog get`, `backlog list --grep`, `backlog edit`, `backlog triage --ndjson` with a TOML record file, `--text-view` reading), and document the `counts` map in `claude/skills/tomlctl/references/backlog-reconcile.md`'s output shape."
 detail = 'Approach, "Search", "Backlog get and edit", "Reconcile counts". Remove the `(?i-u)` recipe, the per-id triage shell loop, the two-call summary-or-context search and the `items update … --array backlog` edit recipe.'
-acceptance = "forward: `grep -c 'items update .claude/backlog.toml' claude/skills/tomlctl/references/backlog-recipes.md` prints 0 and `grep -c '(?i-u)' claude/skills/tomlctl/references/backlog-recipes.md` prints 0 (today: 1 and 2); guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes"
-agent = ""
-commit = ""
+acceptance = """
+- forward: `grep -c 'items update .claude/backlog.toml' claude/skills/tomlctl/references/backlog-recipes.md` prints 0 (today: 1)
+- forward: `grep -c '(?i-u)' claude/skills/tomlctl/references/backlog-recipes.md` prints 0 (today: 2)
+- forward: `grep -c 'counts' claude/skills/tomlctl/references/backlog-reconcile.md` prints ≥1 (today: 0)
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes"""
+agent = "implement-lite"
+commit = "43eed0f"
 
 [[items]]
 id = 28
 ref = "writemd-toml-record-files-and-the-store-guard"
 title = "write.md: TOML record files and the store guard"
 effort = "M"
-status = "pending"
-checkpoint = "C"
+status = "done"
+checkpoint = "D"
 phase = "Wave C — registration, docs, agents"
 phase_depth = 3
 heading_depth = 3
 files = ["claude/skills/tomlctl/references/write.md"]
 needs = [
     9,
+    12,
+    13,
+    16,
     17,
+    18,
+    19,
 ]
 coupling = []
 deps_note = ""
-action = "Add a \"TOML record files\" section to `claude/skills/tomlctl/references/write.md` (where they are accepted, the shape rule, the authoring example, `'''` and `\"\"\"` rules, CRLF and trailing-newline normalisation, `line N` = record N) and an \"Owned stores\" section (the five paths, the refusal, `--raw-store`)."
+action = "Add a \"TOML record files\" section to `claude/skills/tomlctl/references/write.md` (where they are accepted, the shape rule and the reserved `record` key, the authoring example, `'''` and `\"\"\"` rules, CRLF and trailing-newline normalisation of multi-line strings, `line N` = record N, and that TOML has no `null`, so an `items apply` op's `expect` absent-field precondition needs the JSON form) and an \"Owned stores\" section (the five paths, the refusal, `--raw-store`)."
 detail = 'Approach, "TOML record files" and "Owned-store guard". Put the example in a ```` ```toml ```` fence (not bash) and any command in a bash fence so `command_lint` checks it. Stay under the 600-line reference ceiling (today 475).'
-acceptance = "forward: `grep -c 'raw-store' claude/skills/tomlctl/references/write.md` prints ≥1 (today: 0); guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes"
-agent = ""
-commit = ""
+acceptance = """
+- forward: `grep -c 'raw-store' claude/skills/tomlctl/references/write.md` prints ≥1 (today: 0)
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes"""
+agent = "implement-lite"
+commit = "f82f7f4"
 
 [[items]]
 id = 29
 ref = "tasks-and-flow-references-batch-update-and-per-row-task"
 title = "tasks and flow references: batch update and per-row task"
 effort = "S"
-status = "pending"
-checkpoint = "C"
+status = "done"
+checkpoint = "D"
 phase = "Wave C — registration, docs, agents"
 phase_depth = 3
 heading_depth = 3
@@ -937,19 +1015,23 @@ needs = [
 ]
 coupling = []
 deps_note = ""
-action = "Document `tasks update --ndjson` (flag row, row shape, conflicts) in `claude/skills/tomlctl/references/tasks-write.md`, and the per-row `task` key of `flow record --ndjson` in `claude/skills/tomlctl/references/flow.md` and in the `flow record` write contract of `claude/skills/flow-contract-execution-record-schema/SKILL.md` (one call for N tasks' records, TOML record file preferred for prose)."
-detail = 'Approach, "Batch write forms". The schema skill carries an unrelated uncommitted description edit — keep it.'
-acceptance = "forward: `grep -c -- '--ndjson' claude/skills/tomlctl/references/tasks-write.md` prints ≥3 (today: 2); guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes"
-agent = ""
-commit = ""
+action = "Document `tasks update --ndjson` (flag row, row shape, conflicts) in `claude/skills/tomlctl/references/tasks-write.md`, and the per-row `task` key of `flow record --ndjson` in `claude/skills/tomlctl/references/flow.md` and in the `flow record` write contract of `claude/skills/flow-contract-execution-record-schema/SKILL.md` (one call for N tasks' records, TOML record file preferred for prose), each with a bash-fenced `--ndjson` example."
+detail = 'Approach, "Batch write forms".'
+acceptance = """
+- forward: `grep -c -- '--ndjson' claude/skills/tomlctl/references/tasks-write.md` prints ≥3 (today: 2)
+- forward: `grep -c -- '--ndjson' claude/skills/tomlctl/references/flow.md` prints ≥5 (today: 4)
+- forward: `grep -c -- '--ndjson' claude/skills/flow-contract-execution-record-schema/SKILL.md` prints ≥3 (today: 2)
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes"""
+agent = "implement-lite"
+commit = "68e6b72"
 
 [[items]]
 id = 30
 ref = "shared-tomlctl-for-agents-block"
 title = "Shared tomlctl-for-agents block"
 effort = "L"
-status = "pending"
-checkpoint = "C"
+status = "done"
+checkpoint = "D"
 phase = "Wave C — registration, docs, agents"
 phase_depth = 3
 heading_depth = 3
@@ -969,20 +1051,21 @@ needs = [
 coupling = []
 deps_note = ""
 action = "Register a `tomlctl-for-agents` block in `scripts/shared-blocks.toml` and insert the byte-identical block (between `<!-- SHARED-BLOCK:tomlctl-for-agents START -->` / `END -->` markers) into the four agent files."
-detail = 'Approach, "Agent learnability" (content there; ≤14 lines, one bash fence of read one-liners). Place it after the `backlog-candidates` block in the implement pair and after `research-read-only` in the research pair. Keep `tasks show <ids> --slug <slug>` literal where it already appears: `agents/correlate.rs` matches that form in dispatch prompts. `implement-deep.md` carries an unrelated uncommitted frontmatter edit — keep it. Byte identity is checked by `scripts/verify-shared-blocks.sh` (needs gawk).'
+detail = 'Approach, "Agent learnability" (content there; ≤14 lines, one bash fence of read one-liners, no write guidance). Place it after the `backlog-candidates` block in the implement pair and after `research-read-only` in the research pair. Keep `tasks show <ids> --slug <slug>` literal where it already appears: `agents/correlate.rs` matches that form in dispatch prompts. Byte identity is checked by `scripts/verify-shared-blocks.sh` (needs gawk).'
 acceptance = """
 - forward: `grep -l 'SHARED-BLOCK:tomlctl-for-agents START' claude/agents/*.md | wc -l` prints 4 (today: 0)
-- guard: `bash scripts/verify-shared-blocks.sh` exits 0; `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes"""
-agent = ""
-commit = ""
+- guard: `bash scripts/verify-shared-blocks.sh` exits 0
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes"""
+agent = "implement-deep"
+commit = "8e4b622"
 
 [[items]]
 id = 31
 ref = "carrier-explore-prompts-carry-the-read-one-liners"
 title = "Carrier Explore prompts carry the read one-liners"
 effort = "S"
-status = "pending"
-checkpoint = "C"
+status = "done"
+checkpoint = "D"
 phase = "Wave C — registration, docs, agents"
 phase_depth = 3
 heading_depth = 3
@@ -998,19 +1081,21 @@ needs = [
 ]
 coupling = []
 deps_note = ""
-action = "In each command's Explore dispatch instructions (`claude/commands/plan-new.md` Phase 2, `claude/commands/review.md`, `claude/commands/optimise.md`), add one sentence plus a bash fence telling Explore agents to read flow stores with `tomlctl backlog get`, `tomlctl tasks show <ids> --slug <slug> --with body --text` and `tomlctl backlog list --grep <regex> --text` rather than grepping `.claude/*.toml`."
-detail = """Approach, "Agent learnability". Built-in Explore agents cannot carry a shared block, so the carriers' prompt text is the only lever. `plan-new.md` carries an unrelated uncommitted edit — keep it."""
-acceptance = "forward: `grep -c 'tomlctl backlog get' claude/commands/plan-new.md` prints ≥1 (today: 0); guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes"
-agent = ""
-commit = ""
+action = "In each command's Explore dispatch instructions (`claude/commands/plan-new.md` Phase 2, `claude/commands/review.md`, `claude/commands/optimise.md`), add one sentence plus a bash fence telling Explore agents to read flow stores with `tomlctl backlog get`, `tomlctl tasks show <ids> --slug <slug> --with body --text-view` and `tomlctl backlog list --grep <regex> --text-view` rather than grepping `.claude/*.toml`."
+detail = """Approach, "Agent learnability". Built-in Explore agents cannot carry a shared block, so the carriers' prompt text is the only lever."""
+acceptance = """
+- forward: `grep -L 'tomlctl backlog get' claude/commands/plan-new.md claude/commands/review.md claude/commands/optimise.md` prints nothing (today: all three)
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes"""
+agent = "implement-lite"
+commit = "4b87e1e"
 
 [[items]]
 id = 32
 ref = "apply-pre-analysis-explore-prompt"
 title = "Apply pre-analysis Explore prompt"
 effort = "S"
-status = "pending"
-checkpoint = "C"
+status = "done"
+checkpoint = "D"
 phase = "Wave C — registration, docs, agents"
 phase_depth = 3
 heading_depth = 3
@@ -1022,8 +1107,173 @@ needs = [
 ]
 coupling = []
 deps_note = ""
-action = "Add the same read one-liners (sentence + bash fence as in task 31) to the Explore dispatch in `claude/skills/flow-contract-apply-pipeline/references/pre-analysis.md`, plus `tomlctl items get <ledger> <ids> --text` for ledger rows."
+action = "Add the same read one-liners (sentence + bash fence as in task 31) to the Explore dispatch in `claude/skills/flow-contract-apply-pipeline/references/pre-analysis.md`, plus `tomlctl items get <ledger> <ids> --text-view` for ledger rows."
 detail = 'Approach, "Agent learnability".'
-acceptance = "forward: `grep -c 'items get' claude/skills/flow-contract-apply-pipeline/references/pre-analysis.md` prints ≥1 (today: 0); guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes"
-agent = ""
-commit = ""
+acceptance = """
+- forward: `grep -c 'items get' claude/skills/flow-contract-apply-pipeline/references/pre-analysis.md` prints ≥1 (today: 0)
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes"""
+agent = "implement-lite"
+commit = "5b697e3"
+
+[[items]]
+id = 33
+ref = "correct-the-no-unicode-statements-in-tomlctl-source"
+title = "Correct the no-Unicode statements in tomlctl source"
+effort = "S"
+status = "done"
+checkpoint = "D"
+phase = "Wave C — registration, docs, agents"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/cli/types/cmd.rs",
+    "tomlctl/src/tasks/parse_tasks.rs",
+    "tomlctl/src/tasks/parse_policy.rs",
+]
+needs = [
+    1,
+    18,
+]
+coupling = []
+deps_note = ""
+action = "Rewrite the statements that the binary has no Unicode classes: the `Sweep` doc comment in `tomlctl/src/cli/types/cmd.rs` (it is the `sweep --help` text), and the module docs and `every_pattern_compiles` comments in `tomlctl/src/tasks/parse_tasks.rs` and `tomlctl/src/tasks/parse_policy.rs`."
+detail = 'Approach, "Regex". After task 1 the release build compiles `(?i)`, `\d`, `\w`, `\s` and `\b`, but not `\p{..}` classes, and Unicode `\w`/`\W` repeats above about 20 exceed the compile-size limit. Keep `(?-u:\b)` as the documented fast form for `sweep`. Change prose only — leave every regex pattern and every test as it is. The `every_pattern_compiles` scans keep running; restate why (test builds unify a different regex feature set from the shipped binary) rather than deleting them.'
+acceptance = """
+- forward: `grep -c 'no Unicode tables' tomlctl/src/cli/types/cmd.rs` prints 0 (today: 1)
+- forward: `grep -l 'without its unicode features' tomlctl/src/tasks/parse_tasks.rs tomlctl/src/tasks/parse_policy.rs` prints nothing (today: both)
+- guard: `cargo nextest run --manifest-path tomlctl/Cargo.toml --lib -E 'test(/every_pattern_compiles/)'` passes"""
+agent = "implement-lite"
+commit = "3aac95e"
+
+[[items]]
+id = 34
+ref = "correct-the-no-unicode-statements-in-test-headers-and-the-research-method"
+title = "Correct the no-Unicode statements in test headers and the research method"
+effort = "S"
+status = "done"
+checkpoint = "D"
+phase = "Wave C — registration, docs, agents"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/tests/sweep.rs",
+    "tomlctl/tests/tasks_corpus.rs",
+    "claude/skills/research-methods/references/codebase-review.md",
+]
+needs = [1]
+coupling = []
+deps_note = ""
+action = 'Rewrite the header comment of `tomlctl/tests/sweep.rs`, the hand-rolled-pattern doc comment in `tomlctl/tests/tasks_corpus.rs`, and the sweep paragraph of `claude/skills/research-methods/references/codebase-review.md` so none claims the shipped binary has no Unicode tables or refuses a bare `\b`.'
+detail = 'Approach, "Regex". The tests keep their `(?-u:…)` patterns and their reasoning that test builds unify a wider regex feature set than the shipped binary; only the claim about what the binary refuses changes. In `codebase-review.md`, keep recommending `(?-u:\b)` / `(?-u:\w)` / `(?-u:\d)` as the fast forms and the 512-byte cap.'
+acceptance = '''
+- forward: `grep -l 'no Unicode tables\|the binary refuses\|without its unicode features' tomlctl/tests/sweep.rs tomlctl/tests/tasks_corpus.rs claude/skills/research-methods/references/codebase-review.md` prints nothing (today: all three)
+- guard: `cargo nextest run --manifest-path tomlctl/Cargo.toml --test sweep` passes'''
+agent = "implement-lite"
+commit = "fd40cb5"
+
+[[items]]
+id = 35
+ref = "correct-the-no-unicode-statements-in-the-review-v2-lenses"
+title = "Correct the no-Unicode statements in the review-v2 lenses"
+effort = "S"
+status = "done"
+checkpoint = "D"
+phase = "Wave C — registration, docs, agents"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "claude/skills/review-v2-lenses/vocabulary.toml",
+    "claude/skills/review-v2-lenses/SKILL.md",
+    "claude/skills/review-v2-lenses/methods/sweep.md",
+]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "Rewrite the header comment of `claude/skills/review-v2-lenses/vocabulary.toml`, the `contains` detector bullet in `claude/skills/review-v2-lenses/SKILL.md` and step 4 of `claude/skills/review-v2-lenses/methods/sweep.md` so they no longer say the regex build has no Unicode tables or forbid a bare `(?i)`."
+detail = 'Approach, "Regex". Keep `(?-u:\b)` and `(?i-u:…)` as the recommended forms (a Unicode `\b` drops the lazy DFA to the PikeVM) and the 512-byte cap; change no pattern in `vocabulary.toml` — only the comment.'
+acceptance = '''
+- forward: `grep -l 'Unicode tables\|compiled ASCII-only' claude/skills/review-v2-lenses/vocabulary.toml claude/skills/review-v2-lenses/SKILL.md claude/skills/review-v2-lenses/methods/sweep.md` prints nothing (today: all three)
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes'''
+agent = "implement-lite"
+commit = "d06bd81"
+
+[[items]]
+id = 36
+ref = "carrier-write-recipes-use-record-files-and-batch-forms"
+title = "Carrier write recipes use record files and batch forms"
+effort = "M"
+status = "done"
+checkpoint = "D"
+phase = "Wave C — registration, docs, agents"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "claude/commands/implement.md",
+    "claude/skills/flow-contract-task-store/SKILL.md",
+    "claude/skills/backlog-capture/SKILL.md",
+]
+needs = [
+    11,
+    12,
+    14,
+]
+coupling = []
+deps_note = ""
+action = "In `claude/commands/implement.md`, replace the 3b deviation recipe's three `--set-file` stagings with one TOML record file passed to `tomlctl flow record --slug <slug> --type deviation --set agent=implement --ndjson <file>` (one `[[record]]` per deviation, carrying `task`); in `claude/skills/flow-contract-task-store/SKILL.md` add the `--ndjson` batch form to the `update` verb semantics; in `claude/skills/backlog-capture/SKILL.md` switch the `backlog show … {item.*}` reads to `backlog get`."
+detail = """Approach, "Agent learnability" and "Batch write forms". Keep `implement.md`'s per-group commit-train `tasks update <ids> --commit <sha>` and its per-task `task-completion` records (5b) one call per entry: each is recorded right after the event it records, for crash safety. Every bash-fenced command is parsed by `command_lint` against the shipped CLI."""
+acceptance = '''
+- forward: `grep -c 'set-file original_intent' claude/commands/implement.md` prints 0 (today: 1)
+- forward: `grep -c 'item\.' claude/skills/backlog-capture/SKILL.md` prints 0 (today: 1)
+- forward: `grep -c -- '--ndjson' claude/skills/flow-contract-task-store/SKILL.md` prints ≥4 (today: 3)
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes'''
+agent = "implement-lite"
+commit = "15b6775"
+
+[[items]]
+id = 37
+ref = "plan-update-recipes-and-reconcile-agent-read-one-liners"
+title = "plan-update recipes and reconcile-agent read one-liners"
+effort = "S"
+status = "done"
+checkpoint = "D"
+phase = "Wave C — registration, docs, agents"
+phase_depth = 3
+heading_depth = 3
+files = ["claude/commands/plan-update.md"]
+needs = [
+    4,
+    7,
+    8,
+    11,
+    14,
+]
+coupling = []
+deps_note = ""
+action = "In `claude/commands/plan-update.md`, move the deviation and deferral `flow record` recipes (three `--set-file` stagings each) to one TOML record file through `flow record --ndjson`, and add the read one-liners sentence + bash fence (as in task 31) to the `general-purpose` reconcile and catchup agent dispatches."
+detail = """Approach, "Agent learnability". Task 8 edits the same file's reconcile summary line first; keep its change."""
+acceptance = """
+- forward: `grep -c 'set-file original_intent' claude/commands/plan-update.md` prints 0 (today: 1)
+- forward: `grep -c 'tomlctl backlog get' claude/commands/plan-update.md` prints ≥1 (today: 0)
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes"""
+agent = "implement-lite"
+commit = "5fdfcda"
+
+[[items]]
+id = 38
+ref = "escape-the-set-json-doc-comment-placeholder-for-rustdoc"
+title = "Escape the --set-json doc comment placeholder for rustdoc"
+effort = "S"
+status = "done"
+checkpoint = "D"
+phase = "Wave C — registration, docs, agents"
+phase_depth = 3
+heading_depth = 3
+files = ["tomlctl/src/fields.rs"]
+needs = [23]
+coupling = []
+deps_note = ""
+action = "In tomlctl/src/fields.rs, wrap KEY=@<path> in the --set-json doc comment in backticks so rustdoc no longer reads <path> as an unclosed HTML tag."
+detail = ""
+acceptance = "cargo doc --manifest-path tomlctl/Cargo.toml --lib --no-deps --document-private-items exits 0"
+agent = "implement-lite"
+commit = "7fd4acc"

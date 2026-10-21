@@ -31,7 +31,7 @@ use crate::items_sweep::{items_sweep, outcome_json, update_plan};
 use crate::orphans::items_orphans;
 use crate::output::{
     Rows, build_dry_run_plan_envelope, emit_dry_run_plan, print_json, print_json_compact,
-    print_query_list, print_report, print_text,
+    print_one_or_rows, print_query_list, print_report, print_text,
 };
 use crate::query::Query;
 use crate::store_guard::refuse_owned_store;
@@ -190,7 +190,7 @@ pub(super) fn items_dispatch(op: ItemsOp) -> Result<()> {
                 .into_iter()
                 .filter(|id| seen.insert(id.clone()))
                 .collect();
-            let mut rows = read_doc_either(
+            let rows = read_doc_either(
                 &file,
                 opts,
                 |doc| {
@@ -204,11 +204,7 @@ pub(super) fn items_dispatch(op: ItemsOp) -> Result<()> {
                         .collect::<Result<Vec<_>>>()
                 },
             )?;
-            if rows.len() == 1 {
-                print_json(&rows.remove(0))?;
-            } else {
-                print_report(JsonValue::Array(rows), Rows::Top)?;
-            }
+            print_one_or_rows(rows)?;
         }
         ItemsOp::Add {
             file,

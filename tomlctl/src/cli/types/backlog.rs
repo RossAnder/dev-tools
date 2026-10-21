@@ -2,9 +2,9 @@
 
 use std::path::PathBuf;
 
-use clap::{Arg, Args, Subcommand, ValueEnum};
+use clap::{Args, Subcommand, ValueEnum};
 
-use super::tasks::ids_help;
+use super::tasks::{ids_help, ids_optional_under};
 use super::{QueryArgs, ReadIntegrityArgs, WriteIntegrityArgs};
 
 /// Backlog subcommand cluster. Every op resolves its own store path
@@ -74,7 +74,7 @@ pub(crate) enum BacklogOp {
         on_duplicate: OnDuplicate,
         #[arg(
             long,
-            help = "Whole-item JSON payload instead of the field flags; pass `-` to read from stdin or `@<path>` to read a file"
+            help = "Whole-item JSON payload instead of the field flags; pass `-` to read from stdin or `@<path>` to read a file (a `.toml` path is a record file)"
         )]
         json: Option<String>,
         #[arg(
@@ -93,7 +93,7 @@ pub(crate) enum BacklogOp {
         #[arg(
             long = "ndjson",
             value_name = "SRC",
-            help = "NDJSON source: `-` for stdin, otherwise a file path (a leading `@` is accepted)"
+            help = "NDJSON source: `-` for stdin, otherwise a file path (a leading `@` is accepted; a `.toml` path is a record file)"
         )]
         ndjson: String,
         #[arg(
@@ -134,7 +134,7 @@ pub(crate) enum BacklogOp {
         #[arg(
             long = "ndjson",
             value_name = "SRC",
-            help = "Batch of probes, one JSON object per line: `-` for stdin, otherwise a file path (a leading `@` is accepted)"
+            help = "Batch of probes, one JSON object per line: `-` for stdin, otherwise a file path (a leading `@` is accepted; a `.toml` path is a record file)"
         )]
         ndjson: Option<String>,
         #[arg(long, conflicts_with = "ndjson")]
@@ -239,7 +239,8 @@ pub(crate) enum BacklogOp {
     /// Transition one or more items out of (or back into) `open`, either one
     /// mode flag for every id or, with `--ndjson`, a transition per row.
     #[command(
-        mut_args(triage_ids),
+        mut_args(ids_help("Item ids to transition, comma- or space-separated")),
+        mut_args(ids_optional_under("ndjson")),
         mut_group("TriageMode", |g| g.required(false))
     )]
     Triage {
@@ -409,9 +410,10 @@ pub(crate) enum BacklogOp {
             help = "Replace the commit the capture was made against"
         )]
         base_sha: Option<String>,
-        /// Each row is `{"id", "context"?, "tags"?, "evidence"?, "origin"?,
-        /// "flow"?, "base_sha"?}`; a `tags` or `evidence` array replaces the
-        /// stored one.
+        /// Each row is `{"id", "context"?, "tags"?, "add_tags"?,
+        /// "remove_tags"?, "evidence"?, "add_evidence"?, "origin"?, "flow"?,
+        /// "base_sha"?}`; a `tags` or `evidence` array replaces the stored
+        /// one, and the `add_`/`remove_` arrays amend it as the flags do.
         #[arg(
             long = "ndjson",
             value_name = "SRC",
@@ -583,17 +585,6 @@ impl ItemIds {
         let mut ids = self.ids;
         ids.extend(self.id);
         ids
-    }
-}
-
-/// `backlog triage`'s edit of its flattened [`ItemIds`]: `--ndjson` names
-/// the ids itself, and a conflict alone would not lift the requirement.
-fn triage_ids(a: Arg) -> Arg {
-    if a.get_id() == "ids" {
-        a.help("Item ids to transition, comma- or space-separated")
-            .required_unless_present("ndjson")
-    } else {
-        a
     }
 }
 

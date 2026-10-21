@@ -1254,6 +1254,15 @@ pub(crate) fn print_report(report: JsonValue, rows: Rows) -> Result<()> {
     write_emitted(emit(report, Shape::Rows(rows), Style::Pretty, o)?, o)
 }
 
+/// The multi-id read contract: one row prints as the single object, any other
+/// count as a top-level row array.
+pub(crate) fn print_one_or_rows(mut rows: Vec<JsonValue>) -> Result<()> {
+    if rows.len() == 1 {
+        return print_json(&rows.remove(0));
+    }
+    print_report(JsonValue::Array(rows), Rows::Top)
+}
+
 /// Emit one bare-scalar value to stdout, followed by exactly one
 /// trailing newline. The trailing `\n` is deliberate — bash `read -r N`
 /// consumes up to a newline, so agents piping tomlctl output into

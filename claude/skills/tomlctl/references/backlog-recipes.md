@@ -21,8 +21,10 @@ tomlctl backlog get B-a1b2c3d4,B-1a2b3c4d
 tomlctl backlog get B-a1b2c3d4 --get summary
 # Prose fields read as blocks rather than escaped JSON strings.
 tomlctl backlog get B-a1b2c3d4 --text-view
-# With neighbours and evidence; a real newline inside $'…' splits the template, a literal \n does not.
-tomlctl backlog show B-a1b2c3d4,B-1a2b3c4d --template $'{item.id} [{item.status}] {item.summary}\n  ctx: {item.context}'
+# A template splits lines on `\n` (`\t` and `\\` work too) inside plain single quotes.
+tomlctl backlog get B-a1b2c3d4,B-1a2b3c4d --template '{id} [{status}] {summary}\n  ctx: {context}'
+# With neighbours and evidence; the row sits under `item`.
+tomlctl backlog show B-a1b2c3d4 --get neighbours
 # Survey the live rows as one line each.
 tomlctl backlog list --live --template '{id} [{kind}/{status}] {area} :: {summary:120}'
 # Bucket counts.
@@ -31,17 +33,18 @@ tomlctl backlog list --count-by status
 tomlctl backlog list --status resolved --where-gte resolved=@date:2026-10-01 --template '{id} {resolution:160}'
 ```
 
-`--template` already projects, so it refuses `--select`.
+`--select` is accepted beside `--template` when every template path is covered by a select path.
 
 ## Search
 
 `--grep` is one case-insensitive regex over the default fields `summary`, `context`, `area`,
 `tags`, `resolution`, `dismiss_reason` and `reopen_rationale`. `--grep-field` overrides the
-field set, and the match ANDs with every `--where*` predicate.
+field set and repeats, one field per occurrence (a comma is not split), and the match ANDs with
+every `--where*` predicate.
 
 ```bash
 tomlctl backlog list --grep 'pacing|catcher' --template '{id} {summary}'
-tomlctl backlog list --live --grep 'pacing' --grep-field summary,context --template '{id} {summary}'
+tomlctl backlog list --live --grep 'pacing' --grep-field summary --grep-field context --template '{id} {summary}'
 tomlctl backlog list --grep 'spawn' --where area=lumina --text-view
 ```
 

@@ -377,7 +377,7 @@ fn add_many_refuses_an_unknown_row_key_and_writes_nothing() {
 
     assert_eq!(err["kind"], json!("validation"));
     let message = err["message"].as_str().unwrap();
-    assert!(message.contains("ndjson row 2"), "{message}");
+    assert!(message.starts_with("line 2: "), "{message}");
     assert!(message.contains("neds"), "{message}");
     assert!(message.contains("deps_note"), "{message}");
 
@@ -839,6 +839,91 @@ fn update_ndjson_reads_a_toml_record_file() {
         "Keep `$vars` and \"quotes\"."
     );
     assert_sidecar_matches(&store);
+}
+
+/// An array element is one entry, so one carrying a comma is refused rather
+/// than split into two paths on its way to the row.
+#[test]
+fn update_ndjson_refuses_a_list_element_holding_a_comma() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, WRITE_FIXTURE);
+    let before = snapshot(&store);
+
+    let err = tasks_err(
+        &root,
+        &[
+            "update",
+            "--slug",
+            TASKS_SLUG,
+            "--unlock-import-fields",
+            "--ndjson",
+            "-",
+        ],
+        "{\"id\":2,\"set\":{\"files\":[\"src/a.rs\",\"src/b.rs,src/c.rs\"]}}\n",
+    );
+    assert_eq!(err["kind"], json!("validation"));
+    let message = err["message"].as_str().unwrap();
+    assert!(message.contains("line 1"), "{message}");
+    assert!(message.contains("set.files"), "{message}");
+    assert!(message.contains("src/b.rs,src/c.rs"), "{message}");
+    assert_eq!(snapshot(&store), before);
+}
+
+/// A batch is judged on the graph it leaves: reversing 2's edge on 1 passes
+/// whichever row comes first, though the first row alone would cycle.
+#[test]
+fn update_ndjson_reversing_an_edge_passes_in_either_row_order() {
+    let reverse = "{\"id\":1,\"set\":{\"needs\":[2]}}";
+    let clear = "{\"id\":2,\"set\":{\"needs\":[]}}";
+    for ndjson in [
+        format!("{reverse}\n{clear}\n"),
+        format!("{clear}\n{reverse}\n"),
+    ] {
+        let (_tmp, root) = sandbox();
+        let store = seed_tasks(&root, WRITE_FIXTURE);
+        tasks(
+            &root,
+            &[
+                "update",
+                "--slug",
+                TASKS_SLUG,
+                "--unlock-import-fields",
+                "--ndjson",
+                "-",
+            ],
+            &ndjson,
+        );
+        let doc = read_store(&store);
+        assert_eq!(edge_ids(&rows(&doc)[0], "needs"), [2], "{ndjson}");
+        assert!(edge_ids(&rows(&doc)[1], "needs").is_empty(), "{ndjson}");
+        assert_sidecar_matches(&store);
+    }
+}
+
+/// A batch whose end state cycles is refused, names the cycle, and writes
+/// nothing.
+#[test]
+fn update_ndjson_refuses_a_batch_ending_in_a_cycle() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, WRITE_FIXTURE);
+    let before = snapshot(&store);
+
+    let err = tasks_err(
+        &root,
+        &[
+            "update",
+            "--slug",
+            TASKS_SLUG,
+            "--unlock-import-fields",
+            "--ndjson",
+            "-",
+        ],
+        "{\"id\":1,\"set\":{\"needs\":[2]}}\n{\"id\":2,\"status\":\"in-progress\"}\n",
+    );
+    assert_eq!(err["kind"], json!("validation"));
+    let message = err["message"].as_str().unwrap();
+    assert!(message.contains("cycle through tasks 1, 2"), "{message}");
+    assert_eq!(snapshot(&store), before);
 }
 
 // ---------------------------------------------------------------------------

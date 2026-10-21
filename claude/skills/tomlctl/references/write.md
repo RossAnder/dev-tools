@@ -405,7 +405,7 @@ Acquires the same exclusive lock a write path would, so it serialises correctly 
 
 ### Stdin input for large JSON payloads
 
-All JSON-accepting flags (`--ops`, `--json` on `items add` / `items update` / `set-json` / `array-append`, `--defaults-json` / `--ndjson` on `items add-many` / `array-append`) take three spellings: a literal, `-` for stdin, or `@<path>` to read a file. Stdin is capped at 32 MiB and a payload past the cap is an error, never a silent partial batch; tomlctl refuses to block on an interactive TTY; and only one flag per invocation may be `-`, because a process has one stdin (a second errors with `stdin already consumed by another flag on this invocation`). Quote an `@<path>` value (`'@ops.json'`): PowerShell drops an unquoted `@name` as splatting syntax.
+All JSON-accepting flags (`--ops`, `--json` on `items add` / `items update` / `set-json` / `array-append`, `--defaults-json` / `--ndjson` on `items add-many` / `array-append`) take three spellings: a literal, `-` for stdin, or `@<path>` to read a file; a `.toml` path is a record file (`[[record]]` rows, converted to the JSON the flag expects). Stdin is capped at 32 MiB and a payload past the cap is an error, never a silent partial batch; tomlctl refuses to block on an interactive TTY; and only one flag per invocation may be `-`, because a process has one stdin (a second errors with `stdin already consumed by another flag on this invocation`). Quote an `@<path>` value (`'@ops.json'`): PowerShell drops an unquoted `@name` as splatting syntax.
 
 Pick the input by what you are writing, the same way on every platform:
 

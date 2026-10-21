@@ -21,7 +21,7 @@ use super::schema::{
     FIELD_CREATED, FIELD_DEDUP_ID, FIELD_DUPLICATE_OF, FIELD_EVIDENCE, FIELD_FLOW, FIELD_ID,
     FIELD_KIND, FIELD_LAST_SEEN, FIELD_LAST_UPDATED, FIELD_ORIGIN, FIELD_RELATED, FIELD_SEEN_COUNT,
     FIELD_STATUS, FIELD_SUMMARY, FIELD_SUPERSEDES, FIELD_TAGS, KIND_OTHER, MANAGED_FIELDS,
-    STATUS_OPEN, TERMINAL_DATE_FIELDS,
+    MINTED_FIELDS, STATUS_OPEN, TERMINAL_DATE_FIELDS,
 };
 use crate::cli::{OnDuplicate, WriteIntegrityArgs, write_integrity_opts};
 use crate::convert::{is_date_key, json_to_toml, json_type_name, toml_to_json};
@@ -34,17 +34,6 @@ use crate::items::{MutationPlan, SkippedRow};
 use crate::output::{build_dry_run_plan_envelope, print_json_compact};
 
 const FIELD_SCHEMA_VERSION: &str = "schema_version";
-
-/// Payload fields the caller never gets to choose: they derive from the
-/// content or from the clock, so a `--json` payload replayed out of a `show`
-/// carries stale copies of them.
-const MINTED_FIELDS: [&str; 5] = [
-    FIELD_ID,
-    FIELD_DEDUP_ID,
-    FIELD_CREATED,
-    FIELD_LAST_SEEN,
-    FIELD_SEEN_COUNT,
-];
 
 /// Payload fields read into `AddRequest`'s named slots; every other accepted
 /// key rides in `extra` and is written verbatim.
@@ -458,14 +447,30 @@ fn looks_machine_local(value: &str) -> bool {
             .any(|w| w[0].is_ascii_alphabetic() && w[1] == b':' && w[2] == b'\\')
 }
 
-/// One line per coerced `kind` and per field value that reads as a credential
-/// or a machine-local path. Pure and advisory: the store is a tracked file in a public
-/// repository, so the caller is told what it is about to publish and the
-/// write proceeds regardless — the prose rule, not this scan, is the control.
+/// The caller's `kind` when the vocabulary does not know it, else `None`.
 fn coerced_kind(raw: &str) -> Option<String> {
     schema::known_kind(raw).is_none().then(|| raw.to_string())
 }
 
+/// The advisory for one stored `field` value that reads as a credential or a
+/// machine-local path. Names the field only, never echoing the value.
+pub(super) fn field_advisory(field: &str, value: &str) -> Option<String> {
+    let shape = if CREDENTIAL_MARKERS.iter().any(|m| carries_marker(value, m)) {
+        "a credential"
+    } else if looks_machine_local(value) {
+        "a machine-local path"
+    } else {
+        return None;
+    };
+    Some(format!(
+        "`{field}` looks like {shape}; .claude/backlog.toml is tracked and ships to every clone"
+    ))
+}
+
+/// One line per coerced `kind` and per field value that reads as a credential
+/// or a machine-local path. Pure and advisory: the store is a tracked file in a public
+/// repository, so the caller is told what it is about to publish and the
+/// write proceeds regardless — the prose rule, not this scan, is the control.
 pub(super) fn advisories(req: &AddRequest) -> Vec<String> {
     let mut out = Vec::new();
     if let Some(raw) = &req.coerced_kind {
@@ -473,18 +478,7 @@ pub(super) fn advisories(req: &AddRequest) -> Vec<String> {
             "unknown backlog kind `{raw}` — recorded as `{KIND_OTHER}`"
         ));
     }
-    let mut scan = |field: &str, value: &str| {
-        let shape = if CREDENTIAL_MARKERS.iter().any(|m| carries_marker(value, m)) {
-            "a credential"
-        } else if looks_machine_local(value) {
-            "a machine-local path"
-        } else {
-            return;
-        };
-        out.push(format!(
-            "`{field}` looks like {shape}; .claude/backlog.toml is tracked and ships to every clone"
-        ));
-    };
+    let mut scan = |field: &str, value: &str| out.extend(field_advisory(field, value));
     scan(FIELD_SUMMARY, &req.summary);
     if let Some(context) = &req.context {
         scan(FIELD_CONTEXT, context);

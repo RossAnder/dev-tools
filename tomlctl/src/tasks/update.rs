@@ -21,11 +21,12 @@ use std::path::Path;
 use anyhow::{Context, Result};
 
 use super::add::reject_undeclared_checkpoint;
-use super::graph::{Node, Tense, build_or_refuse};
+use super::graph::{Node, Tense, build_or_refuse, nodes_of};
 use super::schema::{Effort, ImportOverride, Status, Store, TaskRow};
 use super::{slug, store};
 use crate::cli::WriteIntegrityArgs;
 use crate::errors::{ErrorKind, tagged_err};
+use crate::items::{parse_ndjson_batch, row_err, row_string};
 
 /// Row fields `--set` reaches, in the order the refusal message lists them.
 const SETTABLE: [&str; 11] = [
@@ -77,7 +78,7 @@ pub(crate) fn update(
     id: u32,
     fields: UpdateFields,
 ) -> Result<Vec<&'static str>> {
-    store::mutate(path, integrity, |store| patch(store, id, &fields))
+    store::mutate(path, integrity, |store| patch(store, id, &fields, true))
 }
 
 /// One patched row: its id, its `ref` as the write left it (so a `--ref`
@@ -140,26 +141,17 @@ pub(crate) fn update_rows(
 /// come from the command line and hold for every row. A task named by two
 /// rows is refused: only one row's values could be the ones that land.
 pub(crate) fn rows_from_ndjson(text: &str, unlock: bool, relock: bool) -> Result<Vec<BatchRow>> {
-    let objects = crate::items::parse_ndjson_objects(text)?;
-    if objects.is_empty() {
-        return Err(tagged_err(
-            ErrorKind::Validation,
-            None,
-            "the --ndjson batch names no rows".to_string(),
-        ));
-    }
+    let objects = parse_ndjson_batch(text)?;
     let mut owner: BTreeMap<u32, usize> = BTreeMap::new();
     let mut rows = Vec::with_capacity(objects.len());
     for (line, object) in objects {
         let row = batch_row(line, &object, unlock, relock)?;
         for id in &row.ids {
             if let Some(first) = owner.insert(*id, line) {
-                return Err(tagged_err(
-                    ErrorKind::Validation,
-                    None,
+                return Err(row_err(
+                    line,
                     format!(
-                        "line {line}: task {id} is already patched by line {first} — give each \
-                         task one row"
+                        "task {id} is already patched by line {first} — give each task one row"
                     ),
                 ));
             }
@@ -176,13 +168,7 @@ fn batch_row(
     relock: bool,
 ) -> Result<BatchRow> {
     use serde_json::Value;
-    let refuse = |message: String| {
-        tagged_err(
-            ErrorKind::Validation,
-            None,
-            format!("line {line}: {message}"),
-        )
-    };
+    let refuse = |message: String| row_err(line, message);
     let type_name = crate::convert::json_type_name;
 
     if let Some(key) = object.keys().find(|key| !ROW_KEYS.contains(&key.as_str())) {
@@ -226,14 +212,7 @@ fn batch_row(
         return Err(refuse("`ids` names no task".to_string()));
     }
 
-    let text = |key: &str| match object.get(key) {
-        None => Ok(None),
-        Some(Value::String(value)) => Ok(Some(value.clone())),
-        Some(other) => Err(refuse(format!(
-            "`{key}` takes a string, got {}",
-            type_name(other)
-        ))),
-    };
+    let text = |key: &str| row_string(line, key, object.get(key));
     let status = text("status")?;
     let agent = text("agent")?;
     let commit = text("commit")?;
@@ -268,10 +247,14 @@ fn batch_row(
                         number.to_string()
                     }
                     // A list field written as a TOML array; the scalar path
-                    // takes the same values comma-separated.
+                    // takes the same values comma-separated, so an element
+                    // holding a comma would land as two entries.
                     Value::Array(parts) if LISTS.contains(&key.as_str()) => parts
                         .iter()
                         .map(|part| match part {
+                            Value::String(part) if part.contains(',') => Err(refuse(format!(
+                                "`set.{key}` holds `{part}`, and an entry may not contain a comma"
+                            ))),
                             Value::String(part) => Ok(part.clone()),
                             Value::Number(part) if part.is_u64() => Ok(part.to_string()),
                             other => Err(refuse(format!(
@@ -332,6 +315,9 @@ fn dedupe(ids: &[u32]) -> Vec<u32> {
 
 /// Patches each `(line, ids, fields)` group in order once every id across
 /// all of them is known to exist. `line` prefixes a group's refusals.
+///
+/// An `--ndjson` batch is judged on the graph it leaves, not row by row: a
+/// batch reversing an edge passes in either row order.
 fn apply(
     store: &mut Store,
     patches: &[(Option<usize>, &[u32], &UpdateFields)],
@@ -348,22 +334,40 @@ fn apply(
         ));
     }
     let mut outcomes = Vec::new();
+    let mut deferred_edges = false;
     for (line, ids, fields) in patches {
         for &id in *ids {
-            let changed = match (patch(store, id, fields), line) {
+            let changed = match (patch(store, id, fields, line.is_none()), line) {
                 (Err(err), Some(line)) => return Err(err.context(format!("line {line}"))),
                 (result, _) => result?,
             };
+            if line.is_some()
+                && changed
+                    .iter()
+                    .any(|field| ["coupling", "needs"].contains(field))
+            {
+                deferred_edges = true;
+            }
             let r#ref = store.find(id).map(|row| row.r#ref.clone()).ok_or_else(|| {
                 anyhow::anyhow!("task {id} vanished from the store after its update")
             })?;
             outcomes.push(Outcome { id, r#ref, changed });
         }
     }
+    if deferred_edges {
+        build_or_refuse(&nodes_of(&store.items), "the batch", Tense::Candidate)?;
+    }
     Ok(outcomes)
 }
 
-fn patch(store: &mut Store, id: u32, fields: &UpdateFields) -> Result<Vec<&'static str>> {
+/// `check_graph` off leaves an edge change unvalidated, for a caller that
+/// validates the whole graph once every row has moved.
+fn patch(
+    store: &mut Store,
+    id: u32,
+    fields: &UpdateFields,
+    check_graph: bool,
+) -> Result<Vec<&'static str>> {
     let UpdateFields {
         status,
         agent,
@@ -493,11 +497,11 @@ fn patch(store: &mut Store, id: u32, fields: &UpdateFields) -> Result<Vec<&'stat
 
     let coupling = lists
         .get("coupling")
-        .map(|value| parse_ids(value))
+        .map(|value| parse_ids("coupling", value))
         .transpose()?;
     let needs = lists
         .get("needs")
-        .map(|value| parse_ids(value))
+        .map(|value| parse_ids("needs", value))
         .transpose()?;
     let files = lists.get("files").map(|value| parse_paths(value));
 
@@ -505,7 +509,7 @@ fn patch(store: &mut Store, id: u32, fields: &UpdateFields) -> Result<Vec<&'stat
     let coupling = coupling.filter(|parsed| *parsed != row.coupling);
     let needs = needs.filter(|parsed| *parsed != row.needs);
     let files = files.filter(|parsed| *parsed != row.files);
-    if coupling.is_some() || needs.is_some() {
+    if check_graph && (coupling.is_some() || needs.is_some()) {
         reject_broken_graph(store, index, coupling.as_deref(), needs.as_deref())?;
     }
 
@@ -653,8 +657,8 @@ fn drop_stamp(store: &mut Store, index: usize) -> bool {
 }
 
 /// An empty value clears the edge set; anything else is the comma-separated id
-/// list `tasks add --coupling` takes.
-fn parse_ids(value: &str) -> Result<Vec<u32>> {
+/// list `tasks add --coupling` takes. `field` names the list in a refusal.
+fn parse_ids(field: &str, value: &str) -> Result<Vec<u32>> {
     let value = value.trim();
     if value.is_empty() {
         return Ok(Vec::new());
@@ -666,7 +670,7 @@ fn parse_ids(value: &str) -> Result<Vec<u32>> {
                 tagged_err(
                     ErrorKind::Validation,
                     None,
-                    format!("`coupling` takes comma-separated task ids, got `{part}`"),
+                    format!("`{field}` takes comma-separated task ids, got `{part}`"),
                 )
             })
         })

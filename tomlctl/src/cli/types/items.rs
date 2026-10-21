@@ -93,7 +93,7 @@ pub(crate) enum ItemsOp {
         #[arg(
             long,
             required_unless_present_any = ["set", "set_json", "set_file"],
-            help = "JSON object for the new item; pass `-` to read from stdin or `@<path>` to read a file. Optional when a field flag is given; field flags merge over it."
+            help = "JSON object for the new item; pass `-` to read from stdin or `@<path>` to read a file (a `.toml` path is a record file). Optional when a field flag is given; field flags merge over it."
         )]
         json: Option<String>,
         #[command(flatten)]
@@ -144,12 +144,12 @@ pub(crate) enum ItemsOp {
         raw: RawStoreArg,
         #[arg(
             long = "ndjson",
-            help = "NDJSON source: `-` for stdin, otherwise a file path (a leading `@` is accepted)"
+            help = "NDJSON source: `-` for stdin, otherwise a file path (a leading `@` is accepted; a `.toml` path is a record file)"
         )]
         ndjson: String,
         #[arg(
             long = "defaults-json",
-            help = "JSON object of default field values; pass `-` to read from stdin or `@<path>` to read a file"
+            help = "JSON object of default field values; pass `-` to read from stdin or `@<path>` to read a file (a `.toml` path is a record file)"
         )]
         defaults_json: Option<String>,
         /// Target array-of-tables name. See `List --array`.
@@ -210,7 +210,7 @@ pub(crate) enum ItemsOp {
         raw: RawStoreArg,
         #[arg(
             long,
-            help = "JSON patch object merged into the item; pass `-` to read from stdin or `@<path>` to read a file. Optional when --unset or a field flag is given; field flags merge over it."
+            help = "JSON patch object merged into the item; pass `-` to read from stdin or `@<path>` to read a file (a `.toml` path is a record file). Optional when --unset or a field flag is given; field flags merge over it."
         )]
         json: Option<String>,
         #[command(flatten)]
@@ -309,7 +309,7 @@ pub(crate) enum ItemsOp {
         raw: RawStoreArg,
         #[arg(
             long,
-            help = "JSON array of ops, or NDJSON with one op object per line; each op is `{\"op\":\"add|update|remove\", ...}`; pass `-` to read from stdin or `@<path>` to read a file"
+            help = "JSON array of ops, or NDJSON with one op object per line; each op is `{\"op\":\"add|update|remove\", ...}`; pass `-` to read from stdin or `@<path>` to read a file (a `.toml` path is a record file)"
         )]
         ops: String,
         /// Target array-of-tables name. Defaults to `items` (the ledger schema).

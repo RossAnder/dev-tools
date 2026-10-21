@@ -6834,7 +6834,7 @@ tags = [
     "backlog",
     "agent-ux",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-10-16
 last_seen = 2026-10-16
 seen_count = 1
@@ -6850,6 +6850,44 @@ evidence = [
 ]
 promoted = 2026-10-21
 promoted_to = "federated-beaming-hollerith"
+resolved = 2026-10-21
+resolution = "resolved by flow `federated-beaming-hollerith` (tasks enable-regex-unicode-case-folding-and-perl-classes, relax-redundant-output-flag-refusals, template-escape-sequences, wire-grep-default-fields-into-the-list-verbs, counts-map-on-backlog-reconcile, backlog-triage-ndjson-batch-form, backlog-get-row-only-read, backlog-edit-cli, owned-store-guard-module, querymd-grep-regex-items-get, backlog-recipes-and-reconcile-references, shared-tomlctl-for-agents-block)"
+resolved_flow = "federated-beaming-hollerith"
+resolved_tasks = [
+    "enable-regex-unicode-case-folding-and-perl-classes",
+    "relax-redundant-output-flag-refusals",
+    "template-escape-sequences",
+    "wire-grep-default-fields-into-the-list-verbs",
+    "counts-map-on-backlog-reconcile",
+    "backlog-triage-ndjson-batch-form",
+    "backlog-get-row-only-read",
+    "backlog-edit-cli",
+    "owned-store-guard-module",
+    "querymd-grep-regex-items-get",
+    "backlog-recipes-and-reconcile-references",
+    "shared-tomlctl-for-agents-block",
+    "tasks-update-ndjson-batch-form",
+    "guard-set-set-json-and-array-append",
+    "guard-the-items-writers",
+    "owned-store-guard-tests",
+    "tomlctl-skillmd-output-options-and-guidance-canon",
+    "backlog-references-get-edit-triage-batch",
+    "writemd-toml-record-files-and-the-store-guard",
+    "correct-the-no-unicode-statements-in-tomlctl-source",
+    "correct-the-no-unicode-statements-in-test-headers-and-the-research-method",
+    "correct-the-no-unicode-statements-in-the-review-v2-lenses",
+    "carrier-write-recipes-use-record-files-and-batch-forms",
+    "plan-update-recipes-and-reconcile-agent-read-one-liners",
+]
+resolved_commits = [
+    "79d4620",
+    "5fdfcda",
+    "a2b72c2",
+    "54665c0",
+    "c8cd771",
+    "43eed0f",
+    "8e4b622",
+]
 
 [[backlog]]
 id = "B-7b662012"
@@ -6930,3 +6968,174 @@ BASELINE (pi codemode smoke test against this repo's store, jev-latest: 19 open 
 SIZE. Multi-decision and cross-cutting (deps/feature gate, cache, config and privacy model, question-set catalogue, stats): a seed-plan candidate for /plan-new --backlog, not a mini build."""
 base_sha = "ba376f43b2805114e8e91083b8abe5c70e9a93d6"
 related = ["B-7b662012"]
+
+[[backlog]]
+id = "B-ec0c911b"
+kind = "debt"
+summary = "backlog/schema.rs module header says the store carries no evidence field, but FIELD_EVIDENCE exists and backlog edit writes evidence"
+area = "tomlctl/src/backlog"
+tags = ["docs"]
+status = "open"
+created = 2026-10-21
+last_seen = 2026-10-21
+seen_count = 1
+dedup_id = "ec0c911bff8548ab"
+origin = "implement"
+flow = "federated-beaming-hollerith"
+context = "The module doc on backlog/schema.rs predates the evidence field; backlog edit (backlog/edit.rs) now writes evidence as a string array. Trust FIELD_EVIDENCE and edit.rs over the header; the fix is a header rewrite in schema.rs. Arrived cheap-in-file but the run never touched schema.rs."
+base_sha = "7fd4accaf0c55e657a404d4ec02036f0f9d19988"
+evidence = ["tomlctl/src/backlog/schema.rs:14"]
+
+[[backlog]]
+id = "B-62578e1d"
+kind = "question"
+summary = "an empty TOML record file (record = []) yields empty NDJSON; whether each --ndjson verb refuses zero rows clearly is untested"
+area = "tomlctl/src/payload"
+tags = ["toml-records"]
+status = "open"
+created = 2026-10-21
+last_seen = 2026-10-21
+seen_count = 1
+dedup_id = "62578e1dcc8195d7"
+origin = "implement"
+flow = "federated-beaming-hollerith"
+context = "payload.rs converts record = [] (or an empty .toml) into zero NDJSON lines and passes them on; each consuming verb (flow record, tasks update, backlog triage/edit, items add-many, ...) then decides. No test covers the zero-row case, so an agent's empty record file may get an ok that did nothing. Check each verb's empty-input behaviour before relying on it."
+base_sha = "7fd4accaf0c55e657a404d4ec02036f0f9d19988"
+
+[[backlog]]
+id = "B-9295751c"
+kind = "debt"
+summary = "convert::project stores a dotted --select path as one literal key, so downstream consumers cannot walk it; output.rs works around it with nest_selected"
+area = "tomlctl/src/convert"
+tags = ["output"]
+status = "open"
+created = 2026-10-21
+last_seen = 2026-10-21
+seen_count = 1
+dedup_id = "9295751ca12c6ff9"
+origin = "implement"
+flow = "federated-beaming-hollerith"
+context = '--select a.b projects to {"a.b": v}, so a later path walk (a template {a.b}, any future consumer) finds nothing. output.rs renders --template on the unprojected row and rebuilds nested objects for list verbs via nest_selected; --text-view prints the literal key as a dotted key, which happens to read correctly. A new consumer of projected rows must do the same.'
+base_sha = "7fd4accaf0c55e657a404d4ec02036f0f9d19988"
+
+[[backlog]]
+id = "B-38bbf4e5"
+kind = "question"
+summary = "a list verb's local --ndjson combined with the global --text-view is not refused; the text view silently wins"
+area = "tomlctl/src/output"
+tags = [
+    "output",
+    "text-view",
+]
+status = "open"
+created = 2026-10-21
+last_seen = 2026-10-21
+seen_count = 1
+dedup_id = "38bbf4e525662666"
+origin = "implement"
+flow = "federated-beaming-hollerith"
+context = "OutputOpts::validate cannot see a list verb's local --ndjson, and emit_rows checks text_view before the engine's line encoding, so items/tasks/backlog list --ndjson --text-view prints blocks with no warning. Decide whether to refuse the pair in the list-verb path (refuse_row_flags_on_list is the natural place)."
+base_sha = "7fd4accaf0c55e657a404d4ec02036f0f9d19988"
+
+[[backlog]]
+id = "B-ff6a3ab1"
+kind = "bug"
+summary = "tasks update parse_ids error always names `coupling`, though it also parses `needs`, so a bad --set needs=x names the wrong field"
+area = "tomlctl/src/tasks"
+tags = []
+status = "resolved"
+created = 2026-10-21
+last_seen = 2026-10-21
+seen_count = 1
+dedup_id = "ff6a3ab1fab2654b"
+origin = "review"
+flow = "federated-beaming-hollerith"
+context = "parse_ids in tasks/update.rs is shared by the needs and coupling parsers but its error text hard-codes coupling (pre-existing, present at 227dc38). Pass the field name into parse_ids. Surfaced by /review of federated-beaming-hollerith; outside the change under review."
+base_sha = "7fd4accaf0c55e657a404d4ec02036f0f9d19988"
+evidence = ["tomlctl/src/tasks/update.rs:440"]
+related = ["B-c49565c6"]
+resolved = 2026-10-21
+resolution = "uncommitted (review-apply 2026-10-21): parse_ids takes the field name, so its error names needs or coupling as set"
+
+[[backlog]]
+id = "B-ce603f29"
+kind = "debt"
+summary = "backlog/add.rs doc comment for the publication advisories sits above coerced_kind instead of advisories"
+area = "tomlctl/src/backlog"
+tags = []
+status = "resolved"
+created = 2026-10-21
+last_seen = 2026-10-21
+seen_count = 1
+dedup_id = "ce603f297f9b2d53"
+origin = "review"
+flow = "federated-beaming-hollerith"
+context = "The comment at add.rs:461-464 (One line per coerced kind ... Pure and advisory) documents the wrong function and misleads readers of the advisory scanner. Move it when R2 (backlog edit skips advisories) extracts a per-value scanner from advisories(). Pre-existing."
+base_sha = "7fd4accaf0c55e657a404d4ec02036f0f9d19988"
+evidence = ["tomlctl/src/backlog/add.rs:461"]
+related = ["B-2e172357"]
+resolved = 2026-10-21
+resolution = "uncommitted (review-apply 2026-10-21): advisory doc comment moved onto advisories; coerced_kind and field_advisory carry their own docs"
+
+[[backlog]]
+id = "B-0f1e1564"
+kind = "debt"
+summary = "/backlog Step 5 still splits a mixed-status triage set into one call per displayed status; backlog triage --ndjson with per-row expect_status does it in one write"
+area = "claude/commands/backlog.md"
+tags = []
+status = "resolved"
+created = 2026-10-21
+last_seen = 2026-10-21
+seen_count = 1
+dedup_id = "0f1e1564b1e3ca3a"
+origin = "review"
+flow = "federated-beaming-hollerith"
+context = "backlog triage --ndjson (landed in federated-beaming-hollerith) takes a per-row expect_status, so the carrier's per-status split is no longer needed. Rewrite Step 5 to stage one record file and make one call. backlog.md was outside that flow's scope."
+base_sha = "7fd4accaf0c55e657a404d4ec02036f0f9d19988"
+related = ["B-27a5c3b6"]
+resolved = 2026-10-21
+resolution = "uncommitted (review-apply 2026-10-21): /backlog Step 2 stages one record file and makes one backlog triage --ndjson call with per-row expect_status"
+
+[[backlog]]
+id = "B-e4e3e248"
+kind = "debt"
+summary = "backlog add-many, backlog check and the review --ndjson readers build their own line N refusals without arg=ndjson instead of items::row_err / row_string"
+area = "tomlctl/src"
+tags = []
+status = "open"
+created = 2026-10-21
+last_seen = 2026-10-21
+seen_count = 1
+dedup_id = "e4e3e2488f3c5a4f"
+origin = "review-apply"
+flow = "federated-beaming-hollerith"
+context = 'items.rs now holds parse_ndjson_batch, row_err, row_string and row_strings (line N: prefix, arg=ndjson), used by tasks update/add-many and backlog edit/triage. backlog/add_many.rs, backlog/check.rs ("must be a string; got") and review/{add,triage,verdict,cells}.rs still build their own, so --error-format json consumers see the ndjson arg on some batch verbs but not others. Switch them to the shared helpers; see also R35 in the federated-beaming-hollerith review ledger for flow record.'
+base_sha = "7fd4accaf0c55e657a404d4ec02036f0f9d19988"
+related = ["B-1c66bf40"]
+
+[[backlog]]
+id = "B-ed369a76"
+kind = "debt"
+summary = "flow record --ndjson keeps its own `--ndjson line N` row-error label and tasks add-many still accepts an empty --ndjson batch, unlike the other batch verbs"
+area = "tomlctl/src"
+tags = [
+    "ndjson",
+    "error-contract",
+]
+status = "open"
+created = 2026-10-21
+last_seen = 2026-10-21
+seen_count = 1
+dedup_id = "ed369a76a87a3c6e"
+origin = "review-apply"
+flow = "federated-beaming-hollerith"
+context = "Moved from review ledger R35 (federated-beaming-hollerith), the pending half of R8. tasks update, tasks add-many, backlog edit and backlog triage now share items::parse_ndjson_batch / row_err (`line N:` prefix, arg=ndjson, one empty-batch message). Left: (1) flow record's per-row errors come from a with_context layer over shared single-entry validation (normalise, fill_defaults, take_row_task) in flow/record.rs build_entries, so they read `--ndjson line N` with no arg tag; tests/flow_record.rs asserts that wording in three places. (2) tasks add-many (tasks/add.rs) accepts an empty batch; refusing it changes accepted input. Each needs a decision on changing tested wording or accepted input. Do together with B-e4e3e248 (the other readers)."
+base_sha = "7fd4accaf0c55e657a404d4ec02036f0f9d19988"
+evidence = [
+    "tomlctl/src/flow/record.rs:248",
+    "tomlctl/src/tasks/add.rs:76",
+]
+related = [
+    "B-e4e3e248",
+    "B-62578e1d",
+]

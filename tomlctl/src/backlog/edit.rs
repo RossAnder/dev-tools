@@ -7,23 +7,28 @@
 //! every edited row and the whole document validate, so a failure leaves the
 //! caller's document untouched.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::Result;
+use serde_json::{Value as JsonValue, json};
 use toml::Value as TomlValue;
 
+use super::add::{field_advisory, preview_doc};
 use super::schema::{
-    self, ARRAY_BACKLOG, FIELD_AREA, FIELD_BASE_SHA, FIELD_COMPACTED_ON, FIELD_CONTEXT,
-    FIELD_CREATED, FIELD_DEDUP_ID, FIELD_DISMISS_REASON, FIELD_DISMISSED, FIELD_DUPLICATE_OF,
-    FIELD_EVIDENCE, FIELD_FLOW, FIELD_ID, FIELD_KIND, FIELD_LAST_SEEN, FIELD_ORIGIN,
-    FIELD_PROMOTED, FIELD_PROMOTED_TO, FIELD_RELATED, FIELD_REOPEN_RATIONALE, FIELD_RESOLUTION,
-    FIELD_RESOLVED, FIELD_RESOLVED_COMMITS, FIELD_RESOLVED_FLOW, FIELD_RESOLVED_TASKS,
-    FIELD_SEEN_COUNT, FIELD_STATUS, FIELD_SUMMARY, FIELD_SUPERSEDES, FIELD_TAGS,
-    FIELD_TERMINAL_DATE, FIELD_TERMINAL_REASON,
+    self, ARRAY_BACKLOG, ARRAY_COMPACTED, FIELD_AREA, FIELD_BASE_SHA, FIELD_COMPACTED_ON,
+    FIELD_CONTEXT, FIELD_EVIDENCE, FIELD_FLOW, FIELD_ID, FIELD_KIND, FIELD_LAST_UPDATED,
+    FIELD_ORIGIN, FIELD_STATUS, FIELD_SUMMARY, FIELD_TAGS, FIELD_TERMINAL_DATE,
+    FIELD_TERMINAL_REASON, MANAGED_FIELDS, MINTED_FIELDS, RELATION_FIELDS,
 };
+use crate::cli::{WriteIntegrityArgs, write_integrity_opts};
 use crate::convert::toml_to_json;
-use crate::errors::{ErrorKind, tagged_err};
-use crate::io::items_array;
+use crate::errors::{ErrorKind, tagged_arg_err, tagged_err};
+use crate::io::{
+    advise, items_array, mutate_doc_conditional, on_missing_for, read_ndjson_source, relativise,
+    repo_or_cwd_root, warn_if_created,
+};
+use crate::items::{parse_ndjson_batch, row_err, row_string, row_strings};
+use crate::output::{Rows, print_rows_compact};
 
 /// The fields `backlog edit` may change.
 pub(crate) const EDITABLE_FIELDS: &[&str] = &[
@@ -33,6 +38,23 @@ pub(crate) const EDITABLE_FIELDS: &[&str] = &[
     FIELD_ORIGIN,
     FIELD_FLOW,
     FIELD_BASE_SHA,
+];
+
+const ROW_ADD_TAGS: &str = "add_tags";
+const ROW_REMOVE_TAGS: &str = "remove_tags";
+const ROW_ADD_EVIDENCE: &str = "add_evidence";
+
+/// `--ndjson` row keys that amend a stored array rather than replace it, the
+/// batch spelling of `--add-tag`, `--remove-tag` and `--add-evidence`. They
+/// name no stored field, so they are let through before `refusal_for` runs.
+const ADDITIVE_ROW_KEYS: &[&str] = &[ROW_ADD_TAGS, ROW_REMOVE_TAGS, ROW_ADD_EVIDENCE];
+
+/// Stored fields only a compacted row carries. Written by `compact`, so a
+/// live-row edit naming one is refused as minted.
+const COMPACTED_ONLY_FIELDS: &[&str] = &[
+    FIELD_TERMINAL_DATE,
+    FIELD_TERMINAL_REASON,
+    FIELD_COMPACTED_ON,
 ];
 
 /// One row's edits. `None` / empty leaves the field alone. For `tags` and
@@ -52,6 +74,16 @@ pub(crate) struct Edit {
     pub(crate) base_sha: Option<String>,
 }
 
+impl Edit {
+    fn changes_nothing(&self) -> bool {
+        *self
+            == (Edit {
+                id: self.id.clone(),
+                ..Edit::default()
+            })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct EditOutcome {
     pub(crate) id: String,
@@ -60,23 +92,14 @@ pub(crate) struct EditOutcome {
 
 /// The refusal for a field `backlog edit` does not own, naming the verb that
 /// does. `None` for an editable field. A field the store does not know is
-/// refused too, listing what is editable.
+/// refused too, listing every key an `--ndjson` row accepts, the additive
+/// ones included, so a mistyped `add_tag` is told the right spelling.
 pub(crate) fn refusal_for(field: &str) -> Option<String> {
     if EDITABLE_FIELDS.contains(&field) {
         return None;
     }
     let msg = match field {
-        FIELD_STATUS
-        | FIELD_PROMOTED
-        | FIELD_PROMOTED_TO
-        | FIELD_DISMISSED
-        | FIELD_DISMISS_REASON
-        | FIELD_RESOLVED
-        | FIELD_RESOLUTION
-        | FIELD_REOPEN_RATIONALE
-        | FIELD_RESOLVED_FLOW
-        | FIELD_RESOLVED_TASKS
-        | FIELD_RESOLVED_COMMITS => format!(
+        f if f == FIELD_STATUS || MANAGED_FIELDS.contains(&f) => format!(
             "`{field}` is managed by `backlog triage` (resolve, dismiss, promote, reopen); \
              `backlog edit` cannot change it"
         ),
@@ -84,22 +107,15 @@ pub(crate) fn refusal_for(field: &str) -> Option<String> {
             "`{field}` feeds the item's `id` and `dedup_id`, so it cannot be edited; capture a \
              successor with `backlog add` and `supersedes`"
         ),
-        FIELD_CREATED
-        | FIELD_LAST_SEEN
-        | FIELD_SEEN_COUNT
-        | FIELD_ID
-        | FIELD_DEDUP_ID
-        | FIELD_TERMINAL_DATE
-        | FIELD_TERMINAL_REASON
-        | FIELD_COMPACTED_ON => {
+        f if MINTED_FIELDS.contains(&f) || COMPACTED_ONLY_FIELDS.contains(&f) => {
             format!("`{field}` is minted by tomlctl and cannot be edited")
         }
-        FIELD_RELATED | FIELD_DUPLICATE_OF | FIELD_SUPERSEDES => {
+        f if RELATION_FIELDS.contains(&f) => {
             format!("`{field}` is written by `backlog relate`; `backlog edit` cannot change it")
         }
         _ => format!(
-            "`{field}` is not an editable backlog field; `backlog edit` changes {}",
-            EDITABLE_FIELDS.join(", ")
+            "`{field}` is not an editable backlog field; a `backlog edit` row carries {}",
+            row_keys().join(", ")
         ),
     };
     Some(msg)
@@ -107,6 +123,22 @@ pub(crate) fn refusal_for(field: &str) -> Option<String> {
 
 fn validation_err(msg: impl Into<String>) -> anyhow::Error {
     tagged_err(ErrorKind::Validation, schema::backlog_path().ok(), msg)
+}
+
+/// An id absent from the live rows, worded to say so when it survives only in
+/// `[[compacted]]`.
+fn not_found(doc: &TomlValue, id: &str) -> anyhow::Error {
+    let compacted = items_array(doc, ARRAY_COMPACTED)
+        .iter()
+        .any(|row| row.get(FIELD_ID).and_then(TomlValue::as_str) == Some(id));
+    let msg = if compacted {
+        format!(
+            "backlog id \"{id}\" has been compacted; edit only changes live `[[{ARRAY_BACKLOG}]]` rows"
+        )
+    } else {
+        format!("no backlog item with id \"{id}\"")
+    };
+    tagged_err(ErrorKind::NotFound, schema::backlog_path().ok(), msg)
 }
 
 fn dedup_keep_order(values: impl IntoIterator<Item = String>) -> Vec<String> {
@@ -208,13 +240,7 @@ pub(crate) fn apply_edits(doc: &mut TomlValue, edits: &[Edit]) -> Result<Vec<Edi
         let index = items_array(&work, ARRAY_BACKLOG)
             .iter()
             .position(|row| row.get(FIELD_ID).and_then(TomlValue::as_str) == Some(edit.id.as_str()))
-            .ok_or_else(|| {
-                tagged_err(
-                    ErrorKind::NotFound,
-                    schema::backlog_path().ok(),
-                    format!("no backlog item with id \"{}\"", edit.id),
-                )
-            })?;
+            .ok_or_else(|| not_found(&work, &edit.id))?;
         let row = &mut work
             .get_mut(ARRAY_BACKLOG)
             .and_then(TomlValue::as_array_mut)
@@ -234,9 +260,210 @@ pub(crate) fn apply_edits(doc: &mut TomlValue, edits: &[Edit]) -> Result<Vec<Edi
     Ok(outcomes)
 }
 
+/// The keys an `--ndjson` row may carry beside `id`.
+fn row_keys() -> Vec<&'static str> {
+    EDITABLE_FIELDS
+        .iter()
+        .chain(ADDITIVE_ROW_KEYS)
+        .copied()
+        .collect()
+}
+
+/// Every row is checked before the store is locked. A key outside the
+/// editable set is refused with the core's message, naming the owning verb;
+/// a row naming nothing to edit, or an id an earlier row already named, is
+/// refused by line.
+fn parse_edit_rows(text: &str) -> Result<Vec<Edit>> {
+    let objects = parse_ndjson_batch(text)?;
+    let mut first_line: BTreeMap<String, usize> = BTreeMap::new();
+    let mut edits = Vec::with_capacity(objects.len());
+    for (line, row) in objects {
+        for key in row
+            .keys()
+            .filter(|k| k.as_str() != FIELD_ID && !ADDITIVE_ROW_KEYS.contains(&k.as_str()))
+        {
+            if let Some(msg) = refusal_for(key) {
+                return Err(row_err(line, msg));
+            }
+        }
+        let id = match row.get(FIELD_ID) {
+            Some(JsonValue::String(s)) if !s.trim().is_empty() => s.clone(),
+            _ => return Err(row_err(line, "needs a non-empty string `id`")),
+        };
+        if let Some(first) = first_line.get(&id) {
+            return Err(row_err(
+                line,
+                format!("{id} is already named on line {first}; a batch names each id once"),
+            ));
+        }
+        first_line.insert(id.clone(), line);
+        let string = |key: &str| row_string(line, key, row.get(key));
+        let strings = |key: &str| row_strings(line, key, row.get(key));
+        let edit = Edit {
+            id,
+            context: string(FIELD_CONTEXT)?,
+            tags: strings(FIELD_TAGS)?,
+            add_tags: strings(ROW_ADD_TAGS)?.unwrap_or_default(),
+            remove_tags: strings(ROW_REMOVE_TAGS)?.unwrap_or_default(),
+            evidence: strings(FIELD_EVIDENCE)?,
+            add_evidence: strings(ROW_ADD_EVIDENCE)?.unwrap_or_default(),
+            origin: string(FIELD_ORIGIN)?,
+            flow: string(FIELD_FLOW)?,
+            base_sha: string(FIELD_BASE_SHA)?,
+        };
+        if edit.changes_nothing() {
+            return Err(row_err(
+                line,
+                format!(
+                    "nothing to edit; a row carries at least one of {}",
+                    row_keys().join(", ")
+                ),
+            ));
+        }
+        edits.push(edit);
+    }
+    Ok(edits)
+}
+
+/// The publication advisories for every value an edit writes, each led by its
+/// row's id. A removed tag publishes nothing, so it is not scanned.
+fn edit_advisories(edits: &[Edit]) -> Vec<String> {
+    let mut out = Vec::new();
+    for edit in edits {
+        let values = edit
+            .context
+            .iter()
+            .map(|v| (FIELD_CONTEXT, v))
+            .chain(
+                edit.tags
+                    .iter()
+                    .flatten()
+                    .chain(&edit.add_tags)
+                    .map(|v| (FIELD_TAGS, v)),
+            )
+            .chain(
+                edit.evidence
+                    .iter()
+                    .flatten()
+                    .chain(&edit.add_evidence)
+                    .map(|v| (FIELD_EVIDENCE, v)),
+            );
+        out.extend(
+            values
+                .filter_map(|(field, value)| field_advisory(field, value))
+                .map(|line| format!("{}: {line}", edit.id)),
+        );
+    }
+    out
+}
+
+/// Apply the edits under one lock and write only when a row changed,
+/// stamping `last_updated` with it. Advisories are carried in the envelope
+/// as well as on stderr, as `backlog add` carries them.
+fn run_edits(edits: &[Edit], dry_run: bool, integrity: &WriteIntegrityArgs) -> Result<()> {
+    let path = schema::backlog_path()?;
+    let today = crate::time::today_toml_date()?;
+    let advisories = edit_advisories(edits);
+    for advisory in &advisories {
+        advise!("tomlctl: {advisory}");
+    }
+    let outcomes = if dry_run {
+        apply_edits(&mut preview_doc(&path, integrity)?, edits)?
+    } else {
+        let opts = write_integrity_opts(integrity);
+        let on_missing = on_missing_for(&path, integrity.no_create)?;
+        let mut outcomes = None;
+        let created =
+            mutate_doc_conditional(&path, integrity.allow_outside, opts, on_missing, |doc| {
+                let result = apply_edits(doc, edits)?;
+                let changed = result.iter().any(|o| o.changed);
+                if changed && let Some(root) = doc.as_table_mut() {
+                    root.insert(FIELD_LAST_UPDATED.to_string(), TomlValue::Datetime(today));
+                }
+                outcomes = Some(result);
+                Ok(changed)
+            })?;
+        warn_if_created(&path, created);
+        outcomes.expect("the closure runs on every success path")
+    };
+
+    let rows: Vec<JsonValue> = outcomes
+        .iter()
+        .map(|o| json!({"id": o.id, "changed": o.changed}))
+        .collect();
+    let mut out = json!({
+        "ok": true,
+        "path": relativise(&repo_or_cwd_root()?, &path),
+        "rows": rows,
+        "advisories": advisories,
+    });
+    if dry_run {
+        out["dry_run"] = json!(true);
+    }
+    print_rows_compact(&out, Rows::Field("rows"))
+}
+
+/// The flag form: one id and the fields its flags name.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn dispatch(
+    id: Option<String>,
+    context: Option<String>,
+    tags: Option<Vec<String>>,
+    add_tags: Vec<String>,
+    remove_tags: Vec<String>,
+    evidence: Option<Vec<String>>,
+    add_evidence: Vec<String>,
+    origin: Option<String>,
+    flow: Option<String>,
+    base_sha: Option<String>,
+    dry_run: bool,
+    integrity: WriteIntegrityArgs,
+) -> Result<()> {
+    let id = id
+        .ok_or_else(|| tagged_arg_err(ErrorKind::Validation, "id", "`backlog edit` needs an id"))?;
+    let edit = Edit {
+        id,
+        context,
+        tags,
+        add_tags,
+        remove_tags,
+        evidence,
+        add_evidence,
+        origin,
+        flow,
+        base_sha,
+    };
+    if edit.changes_nothing() {
+        return Err(tagged_arg_err(
+            ErrorKind::Validation,
+            "id",
+            format!(
+                "nothing to edit; pass at least one of {}",
+                EDITABLE_FIELDS.join(", ")
+            ),
+        ));
+    }
+    run_edits(&[edit], dry_run, &integrity)
+}
+
+/// `backlog edit --ndjson`: every row is parsed and checked before the store
+/// is locked.
+pub(crate) fn dispatch_batch(
+    src: &str,
+    dry_run: bool,
+    integrity: WriteIntegrityArgs,
+) -> Result<()> {
+    let edits = parse_edit_rows(&read_ndjson_source(src)?)?;
+    run_edits(&edits, dry_run, &integrity)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::backlog::schema::{
+        FIELD_CREATED, FIELD_DEDUP_ID, FIELD_DUPLICATE_OF, FIELD_LAST_SEEN, FIELD_PROMOTED_TO,
+        FIELD_RELATED, FIELD_RESOLUTION, FIELD_SEEN_COUNT, FIELD_SUPERSEDES,
+    };
 
     fn doc() -> TomlValue {
         toml::from_str(
@@ -487,5 +714,13 @@ status = "bogus"
     fn unknown_field_lists_the_editable_ones() {
         let msg = refusal_for("colour").unwrap();
         assert!(msg.contains("context, tags, evidence"), "{msg}");
+    }
+
+    #[test]
+    fn an_unknown_batch_row_key_lists_the_additive_keys() {
+        let err = parse_edit_rows("{\"id\":\"B-00000001\",\"add_tag\":[\"x\"]}\n").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.starts_with("line 1: `add_tag`"), "{msg}");
+        assert!(msg.contains("add_tags, remove_tags, add_evidence"), "{msg}");
     }
 }

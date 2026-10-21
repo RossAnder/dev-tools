@@ -102,7 +102,7 @@ under `deps` / `dependents`: they belong to the row that was asked for.
 
 Task rows through the generic query engine — the whole `items list` surface applies, because
 the store's array *is* `items`. See [query.md](query.md) for that half: `--where-*` predicates,
-`--select` / `--exclude` / `--pluck`, `--sort-by` / `--limit` / `--offset`, `--count-by` /
+`--grep` / `--grep-field`, `--select` / `--exclude` / `--pluck`, `--sort-by` / `--limit` / `--offset`, `--count-by` /
 `--group-by`, `--raw` / `--ndjson`, plus the global `--lines`.
 
 ```bash

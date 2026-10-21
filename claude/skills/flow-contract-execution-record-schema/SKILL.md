@@ -76,7 +76,7 @@ legacy_id = "D3"
 
 ### `flow record` write contract
 
-Every writer appends through `tomlctl flow record`, one call per entry, nothing after it. Never append with `items add`, `items add-many` or `items apply`: they apply none of the checks below. Field flags carry the payload — `--set K=V` for a string, `--set-json K=JSON` for an array or number, `--set-file K=PATH` for prose written to a file with the Write tool first:
+Every writer appends through `tomlctl flow record` — one call per entry, or one call for several through a staged record file (below) — and nothing after it. Never append with `items add`, `items add-many` or `items apply`: they apply none of the checks below. Field flags carry a single entry's payload — `--set K=V` for a string, `--set-json K=JSON` for an array or number, `--set-file K=PATH` for prose written to a file with the Write tool first. The deviation line below illustrates that single-entry form; several entries go in one call over a TOML record file instead, as shown further down:
 
 ```bash
 tomlctl flow record --slug <slug> --type task-completion --task <id> --set agent=implement --set status=done --set dispatch_tier=lite --set dispatch_agent=implement-lite --set vet=sampled-pass --set retries=0 --set-json files='["src/retry.rs"]' --set summary='Added retry logic' --get id

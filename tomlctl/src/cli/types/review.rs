@@ -223,7 +223,7 @@ pub(crate) struct ReviewPlanArgs {
     #[arg(
         long = "ndjson",
         value_name = "SRC",
-        help = "Cells to append, one JSON object per line: `-` for stdin, otherwise a file path (a leading `@` is accepted)"
+        help = "Cells to append, one JSON object per line: `-` for stdin, otherwise a file path (a leading `@` is accepted; a `.toml` path is a record file)"
     )]
     pub(crate) ndjson: Option<String>,
     #[arg(
@@ -295,7 +295,7 @@ pub(crate) struct ReviewAddArgs {
     #[arg(
         long = "ndjson",
         value_name = "SRC",
-        help = "The cell's full finding set, one JSON object per line: `-` for stdin, otherwise a file path (a leading `@` is accepted)"
+        help = "The cell's full finding set, one JSON object per line: `-` for stdin, otherwise a file path (a leading `@` is accepted; a `.toml` path is a record file)"
     )]
     pub(crate) ndjson: String,
     #[command(flatten)]
@@ -375,7 +375,7 @@ pub(crate) struct ReviewVerdictArgs {
     #[arg(
         long = "ndjson",
         value_name = "SRC",
-        help = "A batch of verdicts, one JSON object per line: `-` for stdin, otherwise a file path (a leading `@` is accepted)"
+        help = "A batch of verdicts, one JSON object per line: `-` for stdin, otherwise a file path (a leading `@` is accepted; a `.toml` path is a record file)"
     )]
     pub(crate) ndjson: Option<String>,
     #[command(flatten)]
@@ -530,7 +530,7 @@ pub(crate) struct ReviewTriageArgs {
         long = "ndjson",
         value_name = "SRC",
         conflicts_with_all = NOT_CONVERT,
-        help = "The converted finding as one JSON object: `-` for stdin, otherwise a file path (a leading `@` is accepted)"
+        help = "The converted finding as one JSON object: `-` for stdin, otherwise a file path (a leading `@` is accepted; a `.toml` path is a record file)"
     )]
     pub(crate) ndjson: Option<String>,
     #[arg(

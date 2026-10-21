@@ -18,12 +18,11 @@
 //! under a task or a phase label, a fence belonging to no field — is reported
 //! as `plan/text-unstored`, since `render` rebuilds the section without it.
 //!
-//! Patterns spell every class out in ASCII. The shipped binary resolves
-//! `regex` with a narrower feature set than a test build, where a
-//! dev-dependency unifies the full Unicode features on, so a Unicode class can
-//! pass under test yet fail or exceed the compile-size limit in the binary,
-//! where the `expect` panics at startup. `every_pattern_compiles` scans the
-//! pattern text for shorthand classes to catch that.
+//! Patterns spell every class out in ASCII. The crate's `regex` has
+//! `unicode-perl`, so `\d`, `\w` and `\s` compile but match every Unicode digit,
+//! word or space character, wider than the ASCII these parsers mean.
+//! `every_pattern_compiles` scans the pattern text for shorthand classes to
+//! catch that.
 
 use std::sync::OnceLock;
 
@@ -1765,10 +1764,9 @@ These run together.
             bullet_re(),
         ];
 
-        // Test builds unify a different regex feature set from the shipped
-        // binary, so a Unicode shorthand class can compile here and still fail
-        // or blow the compile-size limit in the binary. Only a textual scan of
-        // the pattern catches that from a test.
+        // Shorthand classes compile but match all Unicode digits, word and
+        // space characters, wider than the ASCII these parsers mean. Only a
+        // textual scan of the pattern catches that.
         for re in patterns {
             for shorthand in [r"\d", r"\D", r"\s", r"\S", r"\w", r"\W", r"\b", r"\B"] {
                 assert!(

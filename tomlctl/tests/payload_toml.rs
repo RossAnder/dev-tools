@@ -428,6 +428,22 @@ fn a_syntax_error_names_the_line_and_column() {
 }
 
 #[test]
+fn a_single_record_table_is_refused_and_nothing_is_written() {
+    let (_tmp, root) = sandbox();
+    let l = ledger(&root);
+    let src = stage(&root, "single.toml", "[record]\nid = \"R1\"\n");
+
+    let err = err_json(
+        &root,
+        &["items", "add-many", l.to_str().unwrap(), "--ndjson", &src],
+    );
+    let message = err["message"].as_str().unwrap();
+    assert_eq!(err["kind"], json!("validation"), "{err}");
+    assert!(message.contains("[[record]]"), "{message}");
+    assert_eq!(fs::read_to_string(&l).unwrap(), LEDGER);
+}
+
+#[test]
 fn a_top_level_key_beside_record_rows_is_refused() {
     let (_tmp, root) = sandbox();
     let l = ledger(&root);

@@ -131,6 +131,17 @@ pub(crate) const TERMINAL_DATE_FIELDS: &[&str] = &{
     fields
 };
 
+/// Fields the caller never gets to choose: they derive from the content or
+/// from the clock, so a `--json` payload replayed out of a `show` carries
+/// stale copies of them, and `backlog edit` refuses them.
+pub(crate) const MINTED_FIELDS: &[&str] = &[
+    FIELD_ID,
+    FIELD_DEDUP_ID,
+    FIELD_CREATED,
+    FIELD_LAST_SEEN,
+    FIELD_SEEN_COUNT,
+];
+
 /// The typed relation fields, in the order `show` reports them. `related`
 /// holds an array of ids; the other two hold a single id.
 pub(crate) const RELATION_FIELDS: &[&str] = &[FIELD_RELATED, FIELD_DUPLICATE_OF, FIELD_SUPERSEDES];
