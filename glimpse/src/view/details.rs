@@ -12,9 +12,7 @@ use ratatui::Frame;
 use ratatui::layout::{Margin, Rect};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{
-    Block, Padding, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState,
-};
+use ratatui::widgets::{Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState};
 
 use serde_json::Value;
 
@@ -75,10 +73,7 @@ fn render_text(
     text: Text<'static>,
     scroll: u16,
 ) -> u16 {
-    let block = Block::bordered()
-        .border_style(theme.border)
-        .title(Line::styled(title, theme.border_title))
-        .padding(Padding::horizontal(1));
+    let block = view::panel::block(&title, theme);
     let inner = block.inner(area);
     let lines = wrap(text, inner.width);
     let height = u16::try_from(lines.len()).unwrap_or(u16::MAX);

@@ -3,7 +3,7 @@
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Rect};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Padding, Paragraph};
+use ratatui::widgets::{Clear, Paragraph};
 
 use super::{Place, place};
 use crate::app::{App, SelectorEntry};
@@ -121,11 +121,7 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         Constraint::Length(height.min(area.height)),
     );
     frame.render_widget(Clear, rect);
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(app.theme.border)
-        .title(Line::styled(title, app.theme.border_title))
-        .padding(Padding::horizontal(1));
+    let block = super::panel::block(&title, &app.theme);
     let inner = block.inner(rect);
     frame.render_widget(block, rect);
     frame.render_widget(Paragraph::new(std::mem::take(&mut lines)), inner);

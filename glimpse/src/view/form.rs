@@ -4,7 +4,7 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Position, Rect};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Padding, Paragraph};
+use ratatui::widgets::{Clear, List, ListItem, ListState, Paragraph};
 use tui_input::Input;
 
 use crate::form::{Field, Form};
@@ -186,14 +186,8 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, form: &Form, theme: &Theme) 
         Constraint::Length(height(form).min(area.height)),
     );
     frame.render_widget(Clear, rect);
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(theme.border)
-        .title(Line::styled(
-            format!(" {} ", form.title),
-            theme.border_title,
-        ))
-        .padding(Padding::horizontal(1));
+    let title = format!(" {} ", form.title);
+    let block = super::panel::block(&title, theme);
     let inner = block.inner(rect);
     frame.render_widget(block, rect);
 
