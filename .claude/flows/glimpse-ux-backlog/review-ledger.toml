@@ -1,0 +1,565 @@
+schema_version = 1
+last_updated = 2026-10-21
+
+[[vet_events]]
+timestamp = "2026-10-21T17:57:17Z"
+command = "review"
+lens = "quality"
+tier = "deep"
+agent_index = 1
+sampled_count = 7
+dropped_count = 0
+downgraded_count = 1
+rationale = "Sampled 7 of 10 (footer reflow, inbox kind sort, subset expect, State::apply picker, zoom names, inbox column_index, tab_count); all anchors matched. Inbox kind-sort severity downgraded warning->suggestion (visible no-op on one section, no data effect). subset finding instances trimmed: position.rs expect carries an accurate reason, surface.rs:41 predates the flow. Footer, subset, zoom, label-split and State::apply findings merged with architecture/completeness duplicates."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-21T17:57:17Z"
+command = "review"
+lens = "security"
+tier = "deep"
+agent_index = 2
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled 1 of 1: paint.rs label/put/set_char path read and confirmed; set_char stores control chars unfiltered."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-21T17:57:17Z"
+command = "review"
+lens = "architecture"
+tier = "deep"
+agent_index = 3
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled 5 of 6 (state.toml overwrite, footer reflow, zoom names, subset expect, State::apply picker); all anchors matched. Duplicates of quality/completeness merged. Tangential theme-layer reference-cycle dropped: in-scope file, and the quality lens found the fallback documented."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-21T17:57:17Z"
+command = "review"
+lens = "completeness"
+tier = "lite"
+agent_index = 4
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled 2 of 2; README lines 136/477 and state.rs:253 confirmed. subset.rs finding merged with quality/architecture duplicate."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-21T17:57:17Z"
+command = "review"
+lens = "testability"
+tier = "lite"
+agent_index = 5
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled 4 of 4 (position_with_gap tests, --once state test, known_set error, item_columns persistence); all confirmed. item_columns finding merged into the completeness README item; shared state.toml.tmp tangential folded into the architecture state.toml overwrite item."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-21T12:00:00Z"
+command = "review-apply"
+agent_index = 4
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "R4 README prose diff read in full; matches the recommended wording"
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-21T12:00:00Z"
+command = "review-apply"
+agent_index = 5
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "R5 Kind arm mirrors the Text arm; test helper argument order confirmed"
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-21T12:00:00Z"
+command = "review-apply"
+agent_index = 7
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "R13 TabCount enum and both callers read; Missing keeps the faded style"
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-21T12:00:00Z"
+command = "review-apply"
+agent_index = 8
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "R14 vet-recommended; test loops correct, types checked; orchestrator fixed a clippy type_complexity lint with a local alias"
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-21T12:00:00Z"
+command = "review-apply"
+agent_index = 9
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "R15 sandboxed test read in full; seeds state.toml and asserts byte identity"
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-21T12:00:00Z"
+command = "review-apply"
+agent_index = 10
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "R7 Zoom::key exhaustive match and notice text unchanged"
+dedup_id = "45ca31c3315a5978"
+
+[[items]]
+id = "R1"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "glimpse-ux-backlog"
+file = "glimpse/src/diagram/paint.rs"
+line = 118
+symbol = "paint::label"
+severity = "warning"
+effort = "trivial"
+category = "security"
+summary = "Titles zoom writes task titles cell by cell via Cell::set_char, bypassing ratatui's control-character filter, so ESC/BEL/TAB in a title reach the terminal"
+description = "label()'s Zoom::Titles branch builds `[id title]` from task.title and render_at writes each char through put -> cell.set_char, which stores it verbatim; crossterm then Prints the symbol and render_once copies it to stdout. Every other text path goes through set_stringn/Span, which drop control graphemes. Task titles are agent-written and tomlctl does not validate them, so a title can carry OSC/CSI sequences that fire when the user switches to Titles zoom. Fix: map each c.is_control() to a one-char placeholder (U+FFFD or ' ') in the Titles branch; one-for-one keeps label_width and the titles hash consistent. Add a test beside a_titled_label_cuts_its_title_by_chars_to_fill_its_box."
+evidence = [
+    "glimpse/src/diagram/paint.rs:104-106 (label(..).chars() -> put)",
+    "glimpse/src/diagram/paint.rs:213 (cell.set_char(ch))",
+    "ratatui-core 0.1.2 src/buffer/buffer.rs:351 set_stringn filters char::is_control; src/buffer/cell.rs:170 set_char does not (version per glimpse/Cargo.lock)",
+    'git log -S"Zoom::Titles" -- glimpse/src/diagram/paint.rs -> e12f579',
+]
+instances = ["glimpse/src/diagram/paint.rs:label"]
+sweep = ['set_symbol|set_char\(|\.set_string|set_line|set_span']
+enumeration = "complete"
+related = ["B-29b27f75"]
+dedup_id = "002854fd0b95c4c6"
+resolved = 2026-10-21
+resolution = "Uncommitted (/review-apply 2026-10-21): Zoom::label's shown_title maps every control char to one space, so the width and the title hash stay consistent. Test a_titled_label_draws_control_chars_as_spaces."
+
+[[items]]
+id = "R2"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "glimpse-ux-backlog"
+file = "glimpse/src/view/footer.rs"
+line = 83
+symbol = "footer::height"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "Footer height follows the 1.5 s notice in hidden and full hint modes, so each notice resizes the body twice and re-runs the diagram fit search"
+description = "lines() returns one row for any live notice; otherwise Hidden is 0 rows and Full wraps to up to FULL_ROWS. view::render sizes the footer with footer::height, so the body grows/shrinks when a notice appears and again when it expires. With fit on, the body size is part of FitKey (view: fit.then_some(view)), so each change re-searches and may store a different layout (store resets scroll to (0,0)). z/Z/F/x and Ctrl+wheel all post notices, so the diagram can change its drawn tasks on a timer after every diagram key. Item/layer pages shift by the same rows. Short mode is unaffected. Fix: size the footer from the hints alone and draw the notice inside those rows; in Hidden mode draw it over the body's last row instead of adding one."
+evidence = [
+    "glimpse/src/view/footer.rs:83-85 (height = lines().len())",
+    "glimpse/src/view/footer.rs:91-96 (live notice -> 1 row in every mode), :111-112 (Hidden -> no rows)",
+    "glimpse/src/view/mod.rs:157 (Constraint::Length(footer::height(..)))",
+    "glimpse/src/diagram/mod.rs:244 (view: fit.then_some(view)); :213-217 (store resets scroll)",
+    "test hidden_hints_take_no_row_unless_a_notice_is_live asserts 0 -> 1",
+]
+instances = [
+    "glimpse/src/view/footer.rs:lines",
+    "glimpse/src/view/mod.rs:render",
+]
+dedup_id = "79589727c7e1573c"
+resolved = 2026-10-21
+resolution = "Uncommitted: footer::height takes no notice. A live notice replaces the last hint row in Full and Short mode, and draws over the body's last row in Hidden mode, after the overlay backdrop. Tests updated and added."
+
+[[items]]
+id = "R3"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "glimpse-ux-backlog"
+file = "glimpse/src/state.rs"
+line = 226
+symbol = "State::capture"
+severity = "warning"
+effort = "small"
+category = "db"
+summary = "state.toml is user-global and rewritten whole from each session's start-time baseline, so a glimpse quitting later deletes a theme or hint mode another session saved"
+description = "state.toml lives under claude_dir() and is shared by every repo's glimpse; several run at once (one per repo, ensure-pane ignores the presence marker). capture writes theme/hints only when baseline.saved_* was set at load or this session changed them, and save replaces the whole file. Session B picks a theme and quits; session A, started earlier and never touching the theme, quits later and writes no theme key, erasing B's choice. Other layout keys merely follow last-quit-wins; here a saved choice is deleted. save also uses one fixed state.toml.tmp, so two simultaneous quits can interleave writes into the same temp file. Fix: on save, re-read the file and keep on-disk theme/hints this run neither changed nor pinned; use a per-process temp name."
+evidence = [
+    "glimpse/src/state.rs:231-237 (theme/hints written only if saved_* is Some or changed)",
+    "glimpse/src/state.rs:345-356 (save: fixed toml.tmp + rename over whole file)",
+    "glimpse/src/state.rs:334-336 (path = claude_dir()/glimpse/state.toml)",
+    "glimpse/src/runtime.rs:86 (load once at start)",
+    "glimpse/README.md:388-391 (theme/hints saved once chosen in-app)",
+]
+instances = [
+    "glimpse/src/state.rs:State::capture",
+    "glimpse/src/state.rs:State::save",
+]
+dedup_id = "ebe50956215a8894"
+resolved = 2026-10-21
+resolution = "Uncommitted: State::save_session re-reads state.toml and merges via State::over_disk, keeping the on-disk theme/hints whenever this run left them unchanged. An unreadable file falls back to the run's own capture. The temp file is now state.toml.<pid>.tmp. Test a_choice_another_run_saved_since_survives_a_run_that_left_it_alone."
+
+[[items]]
+id = "R4"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "glimpse-ux-backlog"
+file = "glimpse/README.md"
+line = 477
+symbol = "Configuration"
+severity = "warning"
+effort = "trivial"
+category = "completeness"
+summary = "README says the config is only a default for hints and the theme set, and that C changes item columns for the session, but state.toml always saves and restores item_columns"
+description = "State::capture always writes item_columns: Some(app.item_columns.clone()) (deliberate per the plan's Persistence section), so after the first run editing item_columns in the config does nothing. README line 477 implies only hints and theme are overridden by state.toml, and line 136 says C changes columns 'for the session', contradicting lines 384-391 which list item columns as saved on exit. Fix the prose: every saved layout choice (item_columns included) overrides its config key; only hints and theme are saved just once chosen in-app; line 136 'and the choice is saved'."
+evidence = [
+    "glimpse/src/state.rs:253 (item_columns: Some(app.item_columns.clone()))",
+    "glimpse/README.md:136 ('C changes them for the session')",
+    "glimpse/README.md:384-391 (item columns saved on exit)",
+    "glimpse/README.md:476-478",
+]
+instances = [
+    "glimpse/README.md:136",
+    "glimpse/README.md:477",
+]
+sweep = [
+    "for the session",
+    "only a default for",
+]
+enumeration = "complete"
+dedup_id = "322b1fd1e383267a"
+resolved = 2026-10-21
+resolution = "Uncommitted: README lines 136 and 477 now say item columns are saved and that every saved layout choice overrides its config key."
+
+[[items]]
+id = "R5"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "glimpse-ux-backlog"
+file = "glimpse/src/surface.rs"
+line = 1015
+symbol = "compare_input"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = 'Inbox kind header sorts unanswered questions by row.kind (always "question") while that column draws the author, so the click is a visible no-op there'
+description = 'In the questions section the kind column shows the author (inbox::Columns::table / question_line), but compare_input sorts InboxColumn::Kind by a.kind, which is_unanswered_question pins to "question". The neighbouring Text arm already maps a question to its displayed prompt; Kind should likewise use author for an unanswered question.'
+evidence = [
+    "glimpse/src/surface.rs:1006-1018 (text() special-cases questions; Kind arm does not)",
+    "glimpse/src/view/inbox.rs:201-210 (kind column falls back to author width)",
+    "glimpse/src/ledger.rs:427-428 (is_unanswered_question requires kind == question)",
+]
+dedup_id = "f5c1ab9d1b747d8e"
+resolved = 2026-10-21
+resolution = "Uncommitted: compare_input's Kind arm compares the author for unanswered questions. Test the_inbox_kind_column_sorts_unanswered_questions_by_author."
+
+[[items]]
+id = "R6"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "glimpse-ux-backlog"
+file = "glimpse/src/diagram/subset.rs"
+line = 11
+symbol = "subset (module expect(dead_code))"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "Module-wide expect(dead_code) in subset.rs gives a false reason and now hides genuinely dead code, including a second definition of the hidden count"
+description = "The reason 'the diagram cache does not drive the fit search yet' is false: diagram/mod.rs calls subset::generations and subset::fit. The expectation stays fulfilled only because families (test-only callers), Subset::radius and Subset::hidden are unused outside tests; a8e0871 removed the other fulfilled expects but not this one. choose ignores found.hidden and Chosen recomputes it as total.saturating_sub(ids.len()). Fix: use Subset in choose and drop Chosen (or drop hidden/radius from Subset), gate families/radius behind #[cfg(test)], delete the module attribute so future dead code in subset.rs is reported."
+evidence = [
+    "glimpse/src/diagram/subset.rs:11-17",
+    "glimpse/src/diagram/mod.rs:289-292 (Chosen.hidden recomputed)",
+    "git show a8e0871 (drops fulfilled expects elsewhere, not subset.rs)",
+]
+instances = [
+    "glimpse/src/diagram/subset.rs:module attribute",
+    "glimpse/src/diagram/subset.rs:families",
+    "glimpse/src/diagram/subset.rs:Subset",
+    "glimpse/src/diagram/mod.rs:Chosen",
+]
+dedup_id = "d6b3c6346fe72896"
+resolved = 2026-10-21
+resolution = "Uncommitted: the module expect(dead_code) is removed and Chosen deleted. The cache and choose hold Subset, and the new subset::closure supplies hidden on the closure path. generations and families are cfg(test). radius needs no attribute, since the derived PartialEq reads it."
+
+[[items]]
+id = "R7"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "glimpse-ux-backlog"
+file = "glimpse/src/state.rs"
+line = 55
+symbol = "zoom_key"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = """Zoom's saved names live in a lookup table in state.rs with an unreachable "ids" fallback and are spelled again in App::apply, unlike every other saved enum's exhaustive key()"""
+description = """SortDir, InboxColumn, Sort, Surface, HintMode and ItemColumn own their names via an exhaustive match. Zoom uses ZOOMS + zoom_key's map_or("ids", ..), and the Action::Zoom notice repeats titles/ids/tight. A new Zoom variant would silently save as ids. Fix: impl Zoom { fn key(self) -> &'static str; fn from_key(&str) -> Option<Zoom> } in diagram/mod.rs and use it in both places."""
+evidence = [
+    "glimpse/src/state.rs:55-66",
+    "glimpse/src/app.rs:673-677",
+    "glimpse/src/surface.rs SortDir::key/from_key (pattern to follow)",
+]
+instances = [
+    "glimpse/src/state.rs:ZOOMS",
+    "glimpse/src/state.rs:zoom_key",
+    "glimpse/src/state.rs:State::parse",
+    "glimpse/src/app.rs:App::apply",
+]
+sweep = ['"titles"|"tight"']
+enumeration = "complete"
+dedup_id = "7893162c96c7d6be"
+resolved = 2026-10-21
+resolution = "Uncommitted: Zoom::key/from_key in diagram/mod.rs. ZOOMS and zoom_key are removed, and State::parse/render and the App::apply zoom notice use them. Round-trip test added."
+
+[[items]]
+id = "R8"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "glimpse-ux-backlog"
+file = "glimpse/src/diagram/mod.rs"
+line = 52
+symbol = "Zoom::label_width"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "A diagram node's label text (paint::label) and its laid-out width (Zoom::label_width), plus title_hash's cut, are computed in separate modules and agree only by convention"
+description = "label_width computes digits + 3 + min(chars, TITLE_CAP) / digits + 2 / 1; paint::label separately builds [id title] with its own TITLE_CAP - 1 + ellipsis cut, [id], or the status glyph; title_hash repeats the cut. Backlog rows B-29b27f75 and B-7ffd9652 are both this split surfacing, and fixing either means editing both modules in step. The Zoom::Titles doc also says `[id] title` while paint draws `[id title]`. Fix: one owner in diagram/mod.rs (e.g. Zoom::label(id, title, status) -> String), measure width from that string with view::text_width, and have paint draw it."
+evidence = [
+    "glimpse/src/diagram/mod.rs:38 (TITLE_CAP), :43 (doc), :52-60 (label_width)",
+    "glimpse/src/diagram/paint.rs:115-135 (label, doc ties it to label_width)",
+    "test a_titled_label_cuts_its_title_by_chars_to_fill_its_box pins one case only",
+]
+instances = [
+    "glimpse/src/diagram/mod.rs:Zoom::label_width",
+    "glimpse/src/diagram/mod.rs:title_hash",
+    "glimpse/src/diagram/paint.rs:label",
+]
+sweep = ['TITLE_CAP|label_width|fn label\(']
+enumeration = "complete"
+related = [
+    "B-29b27f75",
+    "B-7ffd9652",
+]
+dedup_id = "e25f72d21f983277"
+resolved = 2026-10-21
+resolution = "Uncommitted: Zoom::label in diagram/mod.rs is the one owner of the node text. label_width measures it per char via view::text_width, paint draws it advancing by cell width, and title_hash shares shown_title. Titles doc fixed to [id title]."
+
+[[items]]
+id = "R9"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "glimpse-ux-backlog"
+file = "glimpse/src/state.rs"
+line = 310
+symbol = "State::apply"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "Restoring the saved theme builds a fake ThemePicker and sends Action::Back instead of calling a method that shows a set"
+description = "To reach the private App::show_set, apply opens a picker it never shows and sends Back, ignoring the return. It depends on the ToggleThemes|Back-if-picker arm staying ahead of the general Back arm (which can close panels or return Quit, silently dropped here) and re-derives the picker cursor from sets::SETS. Fix: make show_set pub(crate) (or add show_set_named) and call it once; the ThemePicker import goes."
+evidence = [
+    "glimpse/src/state.rs:310-324",
+    "glimpse/src/app.rs:526-532 (Back arm calls show_set(original))",
+    "glimpse/src/app.rs:1615-1620 (show_set private)",
+]
+dedup_id = "b55b70639640d09e"
+resolved = 2026-10-21
+resolution = "Uncommitted: App::show_set is pub(crate), and State::apply calls it directly with no hidden ThemePicker or Action::Back."
+
+[[items]]
+id = "R10"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "glimpse-ux-backlog"
+file = "glimpse/src/app.rs"
+line = 327
+symbol = "App::theme_set"
+severity = "suggestion"
+effort = "medium"
+category = "quality"
+summary = "The theme set is validated once against sets::SETS and then carried as a String through six types, forcing repeated by_name lookups with fallbacks that cannot run"
+description = "--theme, [theme] base and state.toml each validate against SETS, then store a String in ViewArgs.theme, Config.theme_base, App.theme_set, ThemePicker.original, State.theme and Baseline. Users re-look it up with unreachable fallbacks (unwrap_or(&sets::KANSO_ZEN), position(..).unwrap_or(0)), and the NO_COLOR -> mono default is written in both App::new and Theme::build. ThemeSet is Copy + Eq, so &'static ThemeSet can be stored; the name is needed only at parse and when writing state.toml. theme_from_flag: bool beside theme_base: Option<String> also admits (true, None)."
+evidence = [
+    "glimpse/src/app.rs:327, 400-406, 528, 543-547",
+    "glimpse/src/state.rs:153-156, 229-231, 316-322",
+    "glimpse/src/config.rs:347-351",
+    "glimpse/src/cli.rs:217-229",
+]
+instances = [
+    "glimpse/src/app.rs:App",
+    "glimpse/src/app.rs:ThemePicker",
+    "glimpse/src/state.rs:State",
+    "glimpse/src/state.rs:Baseline",
+    "glimpse/src/config.rs:Config",
+    "glimpse/src/cli.rs:ViewArgs",
+    "glimpse/src/main.rs:run_view",
+    "glimpse/src/view/themes.rs:row",
+    "glimpse/src/theme.rs:Theme::build",
+]
+sweep = ['theme_set|theme_base|\.original|theme_from_flag|by_name\(']
+enumeration = "complete"
+dedup_id = "d5e7602099b78fb4"
+resolved = 2026-10-21
+resolution = "Uncommitted: the theme set is carried as &'static ThemeSet after parse. Config.theme_base is Option<ThemeChoice> (File/Flag), replacing theme_from_flag. sets::starting is the single NO_COLOR default. The by_name fallbacks are removed; the picker cursor keeps position().unwrap_or(0), now comparing by value."
+
+[[items]]
+id = "R11"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "glimpse-ux-backlog"
+file = "glimpse/src/view/inbox.rs"
+line = 146
+symbol = "column_index"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Inbox header-cell to column mapping is hard-coded positions (ID_AT = 1, Kind 2, ...) separate from the array order in Columns::table"
+description = "column_index and ID_AT copy the order of the literal array in Columns::table; reordering or inserting a column there silently mismatches header clicks, sort marks and id-cell copy targets. items.rs avoids this by building its header from app.item_columns and mapping back by index. Fix: build table() from (Column, Option<InboxColumn>) pairs or from InboxColumn::ALL plus the glyph column and derive both directions."
+evidence = [
+    "glimpse/src/view/inbox.rs:142-160 (ID_AT, column_index, column_at)",
+    "glimpse/src/view/inbox.rs:215-221 (table literal order)",
+]
+dedup_id = "cc60b16b909ebd80"
+resolved = 2026-10-21
+resolution = "Uncommitted: inbox's TABLE const [Option<InboxColumn>; 5] is the single column order. Columns::table, ID_AT, column_at and the sort mark derive from it, and column_index is removed. Test every_column_maps_to_one_header_cell_and_back."
+
+[[items]]
+id = "R12"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "glimpse-ux-backlog"
+file = "glimpse/src/view/inbox.rs"
+line = 388
+symbol = "muted"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "The cursor-row rule 'muted spans use selection_text' is written out separately in items.rs, inbox.rs and layers.rs"
+description = "items.rs uses a closure in value_cell, inbox.rs a free fn muted, layers.rs an inline if in task_parts. The plan states it as one rule; a small Theme method (e.g. on_cursor(style, is_cursor)) gives later views the same lift."
+evidence = [
+    "glimpse/src/view/items.rs:437-443",
+    "glimpse/src/view/inbox.rs:386-394",
+    "glimpse/src/view/layers.rs:570-574",
+]
+instances = [
+    "glimpse/src/view/items.rs:value_cell",
+    "glimpse/src/view/inbox.rs:muted",
+    "glimpse/src/view/layers.rs:task_parts",
+]
+sweep = ["selection_text"]
+enumeration = "complete"
+dedup_id = "c859c59fccae051d"
+resolved = 2026-10-21
+resolution = "Uncommitted: Theme::on_cursor(style, is_cursor) replaces the three copies in inbox muted, items value_cell and layers task_parts."
+
+[[items]]
+id = "R13"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "glimpse-ux-backlog"
+file = "glimpse/src/view/header.rs"
+line = 109
+symbol = "tab_count"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "tab_count returns Option<Option<String>> whose inner None lumps 'not read yet' with 'ledger missing', so every item tab is faded as absent before its first read"
+description = "The two None layers carry meanings only the doc comment explains, decoded by callers with matches!(count, Some(None)) and is_none(). The Seen::At filter makes an unread ledger look the same as a missing one, contradicting tab_empty's documented 'ledger is absent'. A TabCount { Unread, Missing, Count(String) } enum removes the decoding and lets the unread case keep surface_tab."
+evidence = [
+    "glimpse/src/view/header.rs:106-132 (.filter(matches!(state.revision, Seen::At(_))))",
+    "glimpse/src/view/header.rs:134 (tab_style: absent is faded)",
+]
+dedup_id = "80eed6afaa1fb118"
+resolved = 2026-10-21
+resolution = "Uncommitted: tab_count returns Option<TabCount> with Unread/Missing/Count. Only Missing is faded; an unread ledger uses the surface_tab style. Test updated."
+
+[[items]]
+id = "R14"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "glimpse-ux-backlog"
+file = "glimpse/src/diagram/position.rs"
+line = 72
+symbol = "position_with_gap"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "Layout invariant tests (no overlap, min spacing, dummy placement, determinism) run only at the 2-cell gap; the Tight zoom's 1-cell gap is untested"
+description = "Zoom::task_gap passes 1 for Tight, where the task gap equals DUMMY_GAP that separate_dummies and compact rely on. Every invariant test calls the test-only position(), which hard-codes TASK_GAP; the only Tight check (tight_is_narrower_than_ids_and_titles_wider) compares widths and would not catch overlap. Fix: run the invariant tests over gaps [1, TASK_GAP] with 1-cell labels too; optionally point them at position_with_gap and delete position()."
+evidence = [
+    "glimpse/src/diagram/position.rs:63-69 (position test-only, TASK_GAP)",
+    "glimpse/src/diagram/mod.rs:62-66 (Zoom::Tight -> 1)",
+    "glimpse/src/diagram/mod.rs:1186 (tight_is_narrower_than_ids_and_titles_wider: widths only)",
+]
+dedup_id = "af800197725cc979"
+resolved = 2026-10-21
+resolution = "Uncommitted: the overlap, spacing, dummy and determinism tests in position.rs run over task gaps [1, TASK_GAP] via position_with_gap, with one-cell labels too."
+
+[[items]]
+id = "R15"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "glimpse-ux-backlog"
+file = "glimpse/tests/cli.rs"
+line = 0
+symbol = "--once ignores state.toml"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "Nothing pins the README promise that --once neither reads nor writes state.toml, which now holds view, theme, zoom, sort and columns"
+description = """--once is the project's headless check and plan acceptance commands run it; its output is reproducible only while it ignores saved state. Today that holds only because State::load is called from runtime::run alone. Add a sandboxed case: seed claude/glimpse/state.toml with view = "diagram" and theme = "ansi", run --once --snapshot FIXTURE, assert the layers frame is drawn and the file is byte-identical."""
+evidence = [
+    "glimpse/README.md:392 ('--once neither reads nor writes it')",
+    "glimpse/src/runtime.rs:86 (only State::load call site)",
+]
+dedup_id = "aa6060185ba4690f"
+resolved = 2026-10-21
+resolution = "Uncommitted: tests/cli.rs once_neither_reads_nor_writes_the_saved_state seeds state.toml with a diagram view and the ansi theme, runs --once, and asserts the layers frame and an unchanged file."
+
+[[items]]
+id = "R16"
+first_flagged = 2026-10-21
+rounds = 1
+status = "fixed"
+flow = "glimpse-ux-backlog"
+file = "glimpse/src/config.rs"
+line = 541
+symbol = "known_set"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "An unknown theme set in the config errors without listing valid sets or naming which form failed, unlike the --theme flag's error"
+description = """cli.rs answers --theme nope with the list of valid sets; known_set answers both [theme] base = "x" and a [theme.x] subtable with only 'unknown theme set `x`'. Since strict validation drops the whole config to defaults, a typo like [theme.kanso_pearl] leaves the user with a header warning that does not show the fix. Build the list from sets::SETS as cli.rs does, name the form (theme.base or [theme.x]), and update unknown_theme_sets_and_per_set_tokens_are_rejected."""
+evidence = [
+    "glimpse/src/config.rs:541-547",
+    "glimpse/src/cli.rs:217-227",
+]
+dedup_id = "be37671b54c9bc06"
+resolved = 2026-10-21
+resolution = "Uncommitted: known_set errors name the form (theme.base or [theme.x]) and list the valid sets via the new sets::names(), shared with --theme. Test updated."

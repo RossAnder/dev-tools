@@ -1,0 +1,512 @@
+schema_version = 1
+last_updated = 2026-10-21
+round = 1
+
+[[vet_events]]
+timestamp = "2026-10-21T12:00:00Z"
+command = "review-plan"
+lens = "feasibility"
+tier = "deep"
+agent_index = 1
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled #1 (navigator shares DiagramCache single slot; refresh resets scroll) — confirmed at glimpse/src/diagram/mod.rs:114-134. Sampled #5 (legend gate test checks a hard-coded list) — confirmed at glimpse/src/view/legend.rs:424-429. No stale-reference / missing-file claims to pre-verify. Nothing dropped or downgraded."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-21T12:00:00Z"
+command = "review-plan"
+lens = "completeness"
+tier = "deep"
+agent_index = 2
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled F6 (keys::tests::scroll_keys_do_not_collide_with_moves asserts plain PgUp/PgDn/Home/End -> ScrollDetails) — confirmed at glimpse/src/keys.rs:249-264. Sampled F7 (legend SAMPLE = 15 and samples_share_one_column) — confirmed at glimpse/src/view/legend.rs:18 and :379. Line-drift finding F19 is advisory. Nothing dropped or downgraded."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-21T12:00:00Z"
+command = "review-plan"
+lens = "executability"
+tier = "deep"
+agent_index = 3
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled F5 (backlog success criterion counts 15 resolved glimpse-tagged items today) — confirmed by orchestrator probe: tomlctl backlog list --tag glimpse --where status=resolved --count -> 15. Sampled F6 (contrast test fails today's palette) — confirmed by orchestrator WCAG computation: faint #6C7380 4.06:1, subtle #4E5561 2.58:1 vs #090E13. Nothing dropped or downgraded."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-21T12:00:00Z"
+command = "review-plan"
+lens = "risk"
+tier = "deep"
+agent_index = 4
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled #6 (State::capture writes every field as Some, so state overrides config) — confirmed at glimpse/src/state.rs:115-130. Sampled #7 (ghostty binds Shift+PgUp/PgDn/Home/End to scrollback on non-macOS) — external source (ghostty Config.zig via gh api, 2026-10-21) not re-fetched; claim is specific and carries a Counter line; kept at warning. Nothing dropped or downgraded."
+dedup_id = "45ca31c3315a5978"
+
+[[items]]
+id = "P1"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "feasibility"
+plan_section = "### 33. Layout of a node subset at a zoom level [L]"
+summary = "diagram::navigator and paint fight over DiagramCache's one slot, re-laying out and resetting scroll every frame"
+description = "DiagramCache holds one key and one layout (glimpse/src/diagram/mod.rs:79); refresh recomputes and sets scroll = (0, 0) on any key change (mod.rs:114-122). view::render rebuilds the navigator every frame after painting (view/mod.rs:219), and diagram::navigator calls cache.layout (mod.rs:128-134) — the full-graph key the plan keeps. Once task 35 paints through layout_for with a subset/zoom key, the two keys evict each other every frame: two layouts plus the fit search per frame, pinned wheel/drag pans never stick, and the navigator walks nodes the subset hides. Raised by feasibility, completeness and risk lenses."
+anchor_old = "Keep `DiagramCache::layout` as the full-graph, `Zoom::Ids` call."
+anchor_new = "Keep `DiagramCache::layout` as the full-graph, `Zoom::Ids` call for tests only. `diagram::navigator`, which `view::navigator` rebuilds every frame after painting, builds from the layout `layout_for` last stored and never calls `layout`: the cache holds one key, and a second key re-lays out and resets `scroll` to `(0, 0)` on every frame. Test: two consecutive frames at `Zoom::Tight` leave `computations` unchanged and keep a pinned scroll."
+dedup_id = "248df3907adb94b1"
+
+[[items]]
+id = "P2"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "executability"
+plan_section = "### 34. Wire focus, zoom, fit and drag-pan [L]"
+summary = "Renaming App.dragging breaks view/mod.rs, which task 34 does not claim and task 31 edits in parallel"
+description = """app.dragging is read at glimpse/src/view/mod.rs:186 (divider highlight) and in the test at view/mod.rs:844. Task 34's Files are app.rs, keys.rs, legend.rs; task 31 edits view/mod.rs and is not an ancestor of 34 (34 needs 23, 30, 33), so they can run concurrently and 34's own tests cannot compile. Cheapest fix keeps the divider flag and adds a separate pan field, leaving view/mod.rs alone; the Approach "Diagram focus, zoom and fit" Drag-pan bullet (`App.dragging: bool` becomes `App.drag: Option<Drag{Divider, Pan{at}}>`) must change to match. Alternative: add view/mod.rs to Files and an edge 31 → 34."""
+anchor_old = "Replace `App.dragging` with `App.drag: Option<Drag>`, where a left press on diagram background starts `Drag::Pan`."
+anchor_new = "Keep `App.dragging` for the divider (`view::render` and the `view::tests` divider test read it) and add `App.pan: Option<(u16, u16)>`, which a left press on diagram background starts."
+dedup_id = "ddce3bf28b56c15c"
+
+[[items]]
+id = "P3"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "executability"
+plan_section = "### 25. Header: flooded active tab, faint empty tabs, history on tall panes [M]"
+summary = "Task 25 must edit view/mod.rs to pass pane height to header::height, but claims only header.rs and has no edge into the view/mod.rs chain"
+description = """header::height(app, compact) (glimpse/src/view/header.rs:49) and header::render get no pane height; callers are view/mod.rs:150 and :170. Gating the history row on >= 30 rows needs a new parameter and caller edits in view/mod.rs, and task 25 depends only on 12, so it can overlap tasks 13/19/24/27/31. Also: header tests at header.rs:370/415/418/486/528 assert the history row and the `—` text, so the "existing view::header tests pass" guard needs those updated; second_row also carries source_error and the config warning, which should stay visible on short panes; compact tabs (`P—`, header.rs:176) need a decision. Add 25 to task 27's Depends on (24, 25) so it slots into the chain."""
+anchor_old = """
+- **Files**: `glimpse/src/view/header.rs`
+- **Depends on**: 12"""
+anchor_new = """
+- **Files**: `glimpse/src/view/header.rs`, `glimpse/src/view/mod.rs`
+- **Depends on**: 12, 24"""
+dedup_id = "f47d29f06ca85cda"
+
+[[items]]
+id = "P4"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "executability"
+plan_section = "### 20. Named theme sets with style rules [L]"
+summary = "The per-set contrast test cannot pass on today's kanso-zen palette, and its bg, token classes and fg are unspecified"
+description = """Measured (WCAG, orchestrator script) against Kanso Zen bg #090E13: faint #6C7380 = 4.06:1 (< 4.5 if text; it feeds unrelated and the new backdrop/tab_empty), subtle #4E5561 = 2.58:1 (< 3 chrome; it feeds border, layer_rule, key_separator, edge_faded) — 2.80:1 even on #000000. kanso-zen is "today's palette" (shared with terminal/herdr/gitui), so the test as written is red on a correct implementation unless tokens are exempted. ThemeSet{name, palette, rules} carries no bg; fg is "default" with no RGB value; the plan never says which tokens are text vs chrome. Raised by orchestrator check, executability and risk lenses."""
+anchor_old = "The contrast test computes WCAG ratios: text tokens at least 4.5:1 and chrome at least 3:1 against each RGB set's `bg`."
+anchor_new = "Each `ThemeSet` carries a test-only `bg` and `fg` (`None` for `ansi` and `mono`; kanso-zen `#090E13`/`#C5C9C7`), and `default` resolves to the set's `fg`. The contrast test computes WCAG ratios over two named lists: text (`fg` `accent` `success` `danger` `warning` `info` `violet` `teal` `idle` `muted`) at least 4.5:1 on `bg`, plus `selection_text` on `selection_bg` and `on_color` on `accent_bg` at least 4.5:1. The de-emphasised tiers (`faint`, `subtle` and the tokens defaulting to them: `border`, `layer_rule`, `key_separator`, `edge_faded`, `unrelated`, `tab_empty`, `backdrop`) are exempt and listed by name, since today's `subtle` is 2.58:1 and `faint` 4.06:1 on `#090E13`."
+dedup_id = "2d6b914ea094653e"
+
+[[items]]
+id = "P5"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "executability"
+plan_section = "## Success Criteria"
+summary = "The backlog-resolved criterion is broken: --tag glimpse already counts 15 resolved items, and it has no success: key"
+description = """Probe: `tomlctl backlog list --tag glimpse --where status=resolved --count` prints {"count": 15} today (22 tagged in total; the seven plan items are status=promoted). After the plan it would read 22, never 7, and the output is JSON, not a bare number. The criterion is runnable but has no `success:` key under Verification Commands. Corrected command filters on the plan's own promotion target."""
+anchor_old = "- forward: every glimpse backlog item is resolved after `/implement` — `tomlctl backlog list --tag glimpse --where status=resolved --count` reports `7`. **predicted, unverified** (needs the flow's store)."
+anchor_new = "- forward: every backlog item this plan delivers is resolved after `/implement` — `tomlctl backlog list --where promoted_to=glimpse-ux-backlog --where status=resolved --count --get count` prints `7` (today: `0`; `--tag glimpse` already counts 15 earlier resolved items). **predicted, unverified** (items resolve at flow close)."
+dedup_id = "a2dd0beebb996f25"
+
+[[items]]
+id = "P6"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "## Success Criteria"
+summary = "No criterion verifies the Context's goals for one navigation contract, diagram scaling or legibility"
+description = "Context states navigation/tables/chrome follow one contract, the diagram scales to large DAGs, and the look is switchable and legible. Criteria cover only the footer `? keys`, `--theme ansi` exit 0 (render_once emits plain symbols, so the theme never shows in --once output — it proves only that the flag parses), backlog counts, and the whole-suite guard. Add falsifier lines naming the paging tests (task 4), the contrast test (task 20) and the fit/hidden-chip test (task 35), each with the perturbation that turns it red."
+dedup_id = "c402ff1865e39de1"
+
+[[items]]
+id = "P7"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### Wiring discipline"
+summary = "The legend 'gate' test checks a hard-coded key list, so every legend guard in tasks 4/8/19/23/30/34 cannot fail"
+description = 'every_bound_letter_key_has_a_legend_row (glimpse/src/view/legend.rs:424-429) checks only ["m","e","r","n","u","/","w","c","enter"] and never reads keys::map. Binding H y v D C T F z Z x without a legend row passes it. Each wiring task should append the letters it binds to that list and carry a forward grep for them. Raised by all three of feasibility, completeness, executability.'
+anchor_old = "- **The gate.** The test `every_bound_letter_key_has_a_legend_row` fails any task that binds a letter without a legend row, so those three files move together."
+anchor_new = "- **The gate.** The test `every_bound_letter_key_has_a_legend_row` (`glimpse/src/view/legend.rs`) checks only the keys hard-coded in its body (`m e r n u / w c enter`), so on its own it catches nothing new. Each wiring task appends the letters it binds to that list in the same edit, and its Acceptance carries a forward grep for them; only then does the test fail a task that binds a letter without a legend row, which is why those three files move together."
+dedup_id = "c5d5f8e64771184a"
+
+[[items]]
+id = "P8"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### 19. Wire header clicks, sort keys, id-cell copy and the column picker [L]"
+summary = "Submitting the column picker needs a Purpose variant in actions.rs, which task 19 does not claim"
+description = "Overlay::Form{purpose: Purpose, form}; Purpose (glimpse/src/actions.rs:201-207) has no columns variant and App::submitted matches it exhaustively (app.rs:1104). Task 18 cannot add the variant without breaking app.rs until 19; task 19 must add it. Task 18 is already an ancestor, so the claim is safe."
+anchor_old = "- **Files**: `glimpse/src/app.rs`, `glimpse/src/keys.rs`, `glimpse/src/view/legend.rs`, `glimpse/src/view/mod.rs`"
+anchor_new = "- **Files**: `glimpse/src/app.rs`, `glimpse/src/keys.rs`, `glimpse/src/view/legend.rs`, `glimpse/src/view/mod.rs`, `glimpse/src/actions.rs` — adds `Purpose::Columns`"
+dedup_id = "f6f4c340de4bd216"
+
+[[items]]
+id = "P9"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 36. Persist hints, columns, sort direction, theme and diagram view [M]"
+summary = "State::apply has no Config, and capture saves every field, so the flag/NO_COLOR/config precedence cannot hold"
+description = "State::apply(&self, app, keep_view, keep_orientation) (glimpse/src/state.rs:133) takes no config; its caller is runtime.rs:79, which task 11 claims and which is not an ancestor of 36. State::capture (state.rs:115-130) writes every field as Some(..) on every exit (runtime.rs:115), so after one run state.toml overrides config `[theme] base` and `hints` for good, a NO_COLOR run saves `mono` permanently, a saved set overrides NO_COLOR, and Ctrl+C with the picker open saves the previewed set. The Inbox's new sort/direction (task 14) is not in item_surfaces() (state.rs:30-34), so it is never saved. Needs `glimpse/src/runtime.rs` on Files and an edge 11 → 36."
+anchor_old = "`apply` skips `theme` when `config.theme_from_flag`, and ignores an unknown saved set name rather than failing."
+anchor_new = "`State::apply` takes no `Config`, so it gains `keep_theme: bool` beside `keep_view`/`keep_orientation`, which `runtime::run` sets from `config.theme_from_flag || config.no_color` (`glimpse/src/runtime.rs` on Files, edge 11 → 36); it ignores an unknown saved set name rather than failing. `capture` writes `theme` and `hints` only when they were chosen in-app (picker Enter, `H`), never a `--theme`, NO_COLOR-forced or previewed set, so a later config edit still takes effect. The Inbox's sort and direction persist beside the item surfaces'."
+dedup_id = "0822dc6eeb43cc12"
+
+[[items]]
+id = "P10"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 16. Inbox table draws a header row [M]"
+summary = "Task 16 fills Drawn.headers/ids that task 15 adds, with no 15 → 16 edge; task 3's struct literal breaks inbox.rs at task 15"
+description = """Task 3 says "Task 15 adds headers and ids to it, with Default"; task 16 depends only on 3, 13, 14, so it can dispatch beside 15 and not compile. Also task 3 has inbox.rs build Drawn{targets, scroll, page} as a full literal; when task 15 adds fields, glimpse/src/view/inbox.rs (not on 15's Files) stops compiling. Fix: derive Default on Drawn in task 3 and build with ..Drawn::default() in both renders, and add 15 to task 16's Depends on."""
+anchor_old = "- **Depends on**: 3, 13, 14"
+anchor_new = "- **Depends on**: 3, 13, 14, 15"
+dedup_id = "0af7629ae0b4bc5a"
+
+[[items]]
+id = "P11"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 13. Shared table core [M]"
+summary = "table::header takes SortDir, which task 14 creates, with no 14 → 13 edge"
+description = """Approach "Tables" gives header(buf, area, &[Column], sorted: Option<(usize, SortDir)>, &Theme), and task 13's test draws the sort mark. SortDir is added to surface.rs by task 14; task 13 depends only on 9, 12, so it is ready before 14 lands."""
+anchor_old = "- **Depends on**: 9, 12"
+anchor_new = "- **Depends on**: 9, 12, 14"
+dedup_id = "5593aff805f5f2d2"
+
+[[items]]
+id = "P12"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### 19. Wire header clicks, sort keys, id-cell copy and the column picker [L]"
+summary = "sort_dir is dropped on a ledger-source switch and D does not unpin a pinned list"
+description = "App::apply_ledger rebuilds ItemsState keeping only filter/group/sort/show_closed (glimpse/src/app.rs:848-854), so sort_dir resets on every flow/scope switch. App::edit_items' order key (group, sort, show_closed, filter) (app.rs:947) omits sort_dir, so flipping direction would not unpin a wheel-pinned list. Neither task 14 (surface.rs) nor 19 mentions either site."
+anchor_old = "- Apply a submitted column form to `App.item_columns`."
+anchor_new = """
+- Apply a submitted column form to `App.item_columns`.
+  - Carry `sort_dir` through `App::apply_ledger`'s `ItemsState` rebuild, and add it to `App::edit_items`'s order key so `D` unpins a pinned list."""
+dedup_id = "8488b5e11dff273c"
+
+[[items]]
+id = "P13"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### Diagram focus, zoom and fit"
+summary = "The fit predicate is undefined, the search runs every redraw, and Approach and Risks describe different searches"
+description = 'paint::render runs on every redraw (input, snapshot, 1 s agent tick); with the subset hash in the cache key, layout_for must run subset::fit before it can compare keys, and each fits probe is a full layout_of (24 order sweeps, position, pack, route; order.rs:14) over up to 512 nodes. The Approach grows the radius one ring at a time then adds families greedily; Risks says "doubling, then bisect"; no task carries the "measure on the largest real flow" mitigation. What "fits" measures (width only? at which zoom? no selection?) is undefined.'
+anchor_old = "- **Fit.** With focus off and the full layout fitting, there is no subset. When fit is on and the layout overflows the view, `subset::fit` is driven by `layout_of` measurements around the selection."
+anchor_new = "- **Fit.** With focus off and the full layout fitting, there is no subset. When fit is on and the layout overflows the view, `subset::fit` is driven by `layout_of` measurements around the selection: a candidate fits when its layout at the current zoom has `width <= view.0` and `height <= view.1`, and with no selection there is no subset. The radius grows by doubling, then bisects; families from the next ring are then added greedily. The fit result is cached on `(topology_hash, orientation, show_implied, zoom, focus, target, view size)`, so a frame whose inputs are unchanged runs no search."
+dedup_id = "488b67559677c728"
+
+[[items]]
+id = "P14"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### 33. Layout of a node subset at a zoom level [L]"
+summary = "Zoom::Titles label widths depend on task titles, which topology_hash does not cover"
+description = "Index::topology_hash hashes only ids, needs and coupling (glimpse/src/model.rs:480-517). Titles label width is digits + 3 + min(title, 24), so a retitle (e.g. /plan-update) keeps a stale layout — the exact glimpse CLAUDE.md cache-key gotcha."
+anchor_old = "Titles labels use task titles from the snapshot."
+anchor_new = "Titles labels use task titles from the snapshot. At `Zoom::Titles` the cache key also folds in an FNV-1a hash of each drawn title cut to 24 characters, because `Index::topology_hash` covers only ids and edges; a test edits one title and asserts a recompute."
+dedup_id = "b86156651079108a"
+
+[[items]]
+id = "P15"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### 36. Persist hints, columns, sort direction, theme and diagram view [M]"
+summary = """Three acceptance checks fail correct code: task 36's text("fit"), task 8's exact count, task 22's installed binary"""
+description = '''Task 36: fit is a bool read like show_implied (table.get(..).and_then(toml::Value::as_bool), glimpse/src/state.rs:68), never text("fit"), so correct code gives 3, not 4. Task 8: `grep -cE "KeyCode::Char\('(H|y|v)'\)"` prints 3 exactly, but keys.rs test tables use the same spelling (keys.rs:226-243), so adding H/y/v test cases overshoots; append ` =>` as tasks 23 and 34 do. Task 22: probes the installed glimpse, which is only reinstalled After Merge (today exit 2) — use the new tests/cli.rs case or `cargo run --manifest-path glimpse/Cargo.toml -q -- --once ... --theme ansi`.'''
+anchor_old = '''- forward: `grep -cE 'text\("(hints|theme|zoom|fit)"\)' glimpse/src/state.rs` prints `4` (today: `0`).'''
+anchor_new = '''- forward: `grep -cE 'text\("(hints|theme|zoom)"\)' glimpse/src/state.rs` prints `3` and `grep -c '"fit"' glimpse/src/state.rs` prints at least `1` (today: `0` each).'''
+dedup_id = "be14a3895545b966"
+
+[[items]]
+id = "P16"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### 8. Wire hint cycling, copy, capture release and tolerant drags [L]"
+summary = "mouse_captured's start value, the hook install under mouse=false, and carry_out's &App are unspecified"
+description = 'Task 9 shows `mouse released · v to capture` while !mouse_captured. --once never captures (runtime::render_once shares App::new) and run captures only when config.mouse (runtime.rs:100-103); starting the field false puts the banner in every headless frame and breaks the `? keys` success criterion. Pressing v under mouse = false needs the panic hook, installed today only `if mouse` (task 11 should install it once regardless). carry_out takes &App (runtime.rs:525-530), so "keep App.mouse_captured in step" needs &mut App or apply setting the field. Hidden hint mode (Approach "Hint row") also hides the released line, leaving a silently dead mouse — it should take a row like a notice.'
+anchor_old = "Add the `App` fields `hints: HintMode` (from config) and `mouse_captured: bool`."
+anchor_new = "Add the `App` fields `hints: HintMode` (from config) and `mouse_captured: bool` (starting as `config.mouse`, so `--once` and `mouse = false` frames keep their hints; the released line shows only after `v` released capture)."
+dedup_id = "1a0785dc64a47004"
+
+[[items]]
+id = "P17"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### 9. Width-fitted footer with short, full and hidden modes [M]"
+summary = "Hint priorities, the ellipsis position and the released line's placement are left to the implementer"
+description = """"Give each hint a priority" names none; whether `…` sits before or after `? keys` decides the success grep `'? keys *$'`; where the released line sits and whether hidden mode shows it are unstated. Existing footer assertions in glimpse/src/view/mod.rs tests must keep passing: `tab view` at 100 cols (:655), `J/K scroll` at 45 (:704), `space mark`/`m actions`/`e classify` at 120 (:922-925), `enter answer`/`n capture`/`c closed` at 120 (:954-956), `switch` in the selector (:1057)."""
+anchor_old = 'Per Approach, "Hint row". Add the hints for `H`, `y` and `v`.'
+anchor_new = """Per Approach, "Hint row". Add the hints for `H`, `y` and `v`. Priority, highest first, is each hint list's current order, with `? keys` pinned last and `…` immediately before it (`… · ? keys`). `mouse released · v to capture` replaces the first hint while capture is released, and still takes one row in hidden mode. The footer assertions in the `glimpse/src/view/mod.rs` tests keep passing."""
+dedup_id = "642628ebececc37d"
+
+[[items]]
+id = "P18"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### 4. Route paging keys to the focused list [M]"
+summary = "keys::tests::scroll_keys_do_not_collide_with_moves asserts the old mapping; task 5's selector test helper takes &App"
+description = "glimpse/src/keys.rs:249-264 asserts plain PageDown/PageUp/Home/End map to ScrollDetails — task 4 changes exactly that, but its Detail names only app.rs tests. Second instance: the view/selector.rs test helper `fn draw(app: &App)` calls render(frame, frame.area(), app) and stops compiling when task 5 makes render take &mut App, yet task 5's guard says existing tests pass (selector.rs is on task 5's Files, so this is a Detail gap only)."
+anchor_old = "Tests in `app.rs`: Page on an item surface moves the cursor"
+anchor_new = "Rewrite `keys::tests::scroll_keys_do_not_collide_with_moves`, which asserts plain PgUp/PgDn/Home/End map to `ScrollDetails`, so plain keys map to `Page(..)` and the Shift forms to `ScrollDetails`. Tests in `app.rs`: Page on an item surface moves the cursor"
+dedup_id = "ebdd8cdd6fa3a14e"
+
+[[items]]
+id = "P19"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### 4. Route paging keys to the focused list [M]"
+summary = "Legend key cells over 15 cells turn samples_share_one_column red"
+description = "glimpse/src/view/legend.rs:18 `const SAMPLE: usize = 15`; samples_share_one_column (legend.rs:379) asserts every 3-span row's sample width equals SAMPLE. `PgUp PgDn Home End` is 18 cells; `J K S-PgUp S-PgDn` 17. Longest today is `tab enter esc` (13). Applies to every wiring task adding rows (4, 8, 19, 23, 34)."
+anchor_old = "Update the legend `KEYS` rows for paging and the details scroll."
+anchor_new = "Update the legend `KEYS` rows for paging and the details scroll. Keep each key cell within `SAMPLE` (15 cells): `samples_share_one_column` fails on a longer one such as `PgUp PgDn Home End`."
+dedup_id = "1e3c58c37e34371e"
+
+[[items]]
+id = "P20"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### 35. Paint zoom levels, the hidden marker and clickable nodes [M]"
+summary = "The +n hidden chip uses theme.badge, which is bold with no colour; five other badge sites keep it"
+description = 'theme.badge = Style::new().add_modifier(bold) (glimpse/src/theme.rs:290); Approach "Revamp" says never carry emphasis by bold alone. Sites: details.rs:139, :149, :388; ego.rs:487; layers.rs:358; markdown.rs:51 (task 26 fixes). Simplest whole fix: task 12 builds Theme.badge from the new strong token.'
+anchor_old = "The chip uses `theme.badge`."
+anchor_new = 'The chip uses `theme.strong` (`theme.badge` is bold with no colour, which Approach "Revamp" rules out).'
+dedup_id = "b48928786d3e8800"
+
+[[items]]
+id = "P21"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### 37. Document keys, config, themes, copy and the event log [M]"
+summary = "Task 37 omits several README and glimpse/CLAUDE.md passages the plan falsifies"
+description = """glimpse/CLAUDE.md: Structure list lacks scroll.rs, clipboard.rs, theme/sets.rs, view/{footer,table,themes,panel}, diagram/subset; the mouse-capture gotcha names capture_mouse's hook chaining (split by task 11); the "Mouse hits read the last frame" write-back list gains page heights, selector_page, headers, ids. README.md: usage :74-77 (no --theme), `—` tab examples :110-116, facet-row description :118-123, per-surface S list :144-146, state.toml save lists :149-150 and :327-330, diagram `[id]` :232, wheel-not-clicks :315/:323, flag-override :368, NO_COLOR :398-400."""
+anchor_old = "- Update the cache-key gotcha in `glimpse/CLAUDE.md` to name zoom and the subset."
+anchor_new = '- Update `glimpse/CLAUDE.md`: the cache-key gotcha (zoom, the subset and Titles), the Structure list (the new modules), the mouse-capture gotcha (the once-only hook install and the `v` toggle) and the "Mouse hits read the last frame" write-back list. In `glimpse/README.md` also update the usage summary (`--theme`), the tab examples and `—` text, the facet-row description, the per-surface `S` sort list, both lists of what `state.toml` saves, the diagram `[id]` description, the wheel-and-click paragraph, the flag-override sentence and the `NO_COLOR` sentence.'
+dedup_id = "70f2e52f41750848"
+
+[[items]]
+id = "P22"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "## Verification Commands"
+summary = "No command runs the rustdoc lints glimpse/Cargo.toml denies"
+description = "glimpse/Cargo.toml:37-41 denies broken_intra_doc_links and private_intra_doc_links; cargo test and clippy do not run them. diagram/position.rs:59 links [`TASK_GAP`], which task 33 turns into a parameter, and diagram/mod.rs:11 links DiagramCache."
+anchor_old = "lint: cargo clippy --manifest-path glimpse/Cargo.toml --all-targets"
+anchor_new = """
+lint: cargo clippy --manifest-path glimpse/Cargo.toml --all-targets
+success: cargo doc --manifest-path glimpse/Cargo.toml --no-deps"""
+dedup_id = "199081e12f222568"
+
+[[items]]
+id = "P23"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "## Risks"
+summary = "ghostty on Linux/Windows consumes Shift+PgUp/PgDn/Home/End, so the new details-paging keys never arrive there"
+description = "ghostty src/config/Config.zig (non-Darwin block) binds shift+page_up/page_down/home/end to scrollback, not performable (risk lens, fetched 2026-10-21). The user's ghostty is non-macOS per B-dd0987c7. Windows Terminal and alacritty pass them through in the alternate screen. J/K remain."
+anchor_old = "Mitigation: legend, footer and README all state the contract, and full-screen details still take plain PgUp/PgDn."
+anchor_new = "Mitigation: legend, footer and README all state the contract, and full-screen details still take plain PgUp/PgDn. ghostty on Linux/Windows binds Shift+PgUp/PgDn/Home/End to its own scrollback by default, so those keys never reach glimpse there; J/K still work, and task 37's README gives the `keybind = shift+page_up=unbind` lines (and page_down/home/end)."
+dedup_id = "13deb9b5c6281c74"
+
+[[items]]
+id = "P24"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 20. Named theme sets with style rules [L]"
+summary = "A private mod sets; is invisible to config.rs and cli.rs, which call theme::sets::by_name"
+description = "Tasks 21 (config.rs) and 22 (cli.rs) call theme::sets::by_name; a private `mod sets;` inside theme.rs fails with E0603 from sibling modules."
+anchor_old = "(declared `mod sets;` from `glimpse/src/theme.rs`)"
+anchor_new = "(declared `pub(crate) mod sets;` from `glimpse/src/theme.rs`, since `config.rs` and `cli.rs` call `theme::sets::by_name`)"
+dedup_id = "4e3ca3ac3743eb6e"
+
+[[items]]
+id = "P25"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### 20. Named theme sets with style rules [L]"
+summary = "kanso-pearl's token mapping is left to the implementer, and its source accents fail 4.5:1"
+description = "kanso.nvim extras/ghostty/kanso-pearl (MIT): bg #f2f1ef, fg #22262D; on that bg red #c84053 4.31, green #6f894e 3.47, yellow #77713f 4.41, magenta #b35b79 3.97, cyan #597b75 4.12, orange #cc6d00 3.23 (risk lens). glimpse's kanso-zen tokens are custom, so accent, accent_bg, highlight, on_color and the grey tiers have no obvious pearl counterpart, and implement agents may lack web access to fetch extras/. The token → hex table is a plan-time decision."
+anchor_old = "`kanso-pearl` takes kanso.nvim's pearl palette (`extras/`), mapped onto the 15 palette tokens."
+anchor_new = "`kanso-pearl` maps kanso.nvim's pearl palette (`extras/ghostty/kanso-pearl`, MIT; bg `#f2f1ef`, fg `#22262D`) onto the 15 palette tokens by a token → hex table written into this Detail. Source hues below 4.5:1 on that bg (red `#c84053` 4.31, green `#6f894e` 3.47, yellow `#77713f` 4.41, magenta `#b35b79` 3.97, cyan `#597b75` 4.12) are darkened until they pass, and the table records each measured ratio."
+dedup_id = "b735c1be322f5991"
+
+[[items]]
+id = "P26"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### 33. Layout of a node subset at a zoom level [L]"
+summary = "Making TASK_GAP a parameter breaks position() callers in route.rs and position.rs tests and a doc link"
+description = "If position::position gains a gap parameter, the route.rs:532 test and 13 position.rs test call sites break; route.rs is not on task 33's Files. position.rs:59 doc-links [`TASK_GAP`] (rustdoc deny). A sibling function avoids both."
+anchor_old = "Make `position::TASK_GAP` a parameter."
+anchor_new = "Make the task gap a parameter through a new `position::position_with_gap`, keeping `position::position` and `TASK_GAP` (which the `position.rs` docs link) so the `route.rs` and `position.rs` test call sites compile unchanged."
+dedup_id = "4a9e21253f565ab9"
+
+[[items]]
+id = "P27"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "### Divider drag tolerance"
+summary = "The event log writes unbuffered on the UI thread for every hover move, with no size cap"
+description = "Capture reports every Moved; a per-event write on a raw File adds a syscall per move on the input loop during the very capture meant to diagnose drag timing, and an env var left set grows the file unbounded. hook.rs already has LOG_CAP (1 MiB) truncation; its format_utc has one-second resolution, too coarse for drag timing."
+anchor_old = "It is opened once and best-effort: a failed open is noticed once."
+anchor_new = "It is opened once and best-effort: a failed open is noticed once. Lines go through a `BufWriter` flushed once per event batch, carry milliseconds since start, and the file is truncated past `hook::LOG_CAP` as `hook.log` is."
+dedup_id = "84b1120cedf101ba"
+
+[[items]]
+id = "P28"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "### Diagram focus, zoom and fit"
+summary = "subset::fit's signature has no snapshot, so it cannot walk generations or count hidden"
+description = "generations takes snapshot, but fit(target, focus, fits) has no graph input; hidden needs the total node count."
+anchor_old = "`fit(target, focus, fits: impl FnMut(&BTreeSet<u32>) -> bool) -> Subset{ids, hidden, radius}`"
+anchor_new = "`fit(snapshot, target, focus, fits: impl FnMut(&BTreeSet<u32>) -> bool) -> Subset{ids, hidden, radius}`"
+dedup_id = "b33ae843badee3bd"
+
+[[items]]
+id = "P29"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "### 32. Neighbourhood subsets and the fit search [M]"
+summary = "wide()/shortcut()/two_components() are private to diagram::tests, so subset.rs tests cannot call them"
+description = "Private fns in the private test module of glimpse/src/diagram/mod.rs (:519, :553, :607)."
+anchor_old = "Tests on the `wide()`, `shortcut()` and `two_components()` builders in `diagram/mod.rs` tests:"
+anchor_new = "Tests on the `wide()`, `shortcut()` and `two_components()` builders in `glimpse/src/diagram/mod.rs` tests (made `pub(super)`, since they are private to `diagram::tests`):"
+dedup_id = "7477f1c7f7c54962"
+
+[[items]]
+id = "P30"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "### 1. Shared scroll stepping helper [S]"
+summary = "Today's page step overlaps by one row; the plan's offset description drops it"
+description = "glimpse/src/app.rs:1299 and :1314 use `page.saturating_sub(1).max(1)`; the task says PageUp/PageDown by `page` while claiming to reproduce today's arithmetic."
+anchor_old = "PageUp/PageDown by `page`, Top → 0, Bottom → `max`"
+anchor_new = "PageUp/PageDown by `page.saturating_sub(1).max(1)` (one row of overlap, as today), Top → 0, Bottom → `max`"
+dedup_id = "b6a8c5512fc3ea56"
+
+[[items]]
+id = "P31"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### 23. Wire the theme picker and live switching [L]"
+summary = "Mouse events reach the screen beneath the theme picker"
+description = "keys::mouse (glimpse/src/keys.rs:101-117) blocks events only for overlay, legend_open and selector_open; the picker is a new App field, so clicks still switch tabs, select rows or start a divider drag."
+anchor_old = "Place the picker first in the `Action::Back` chain."
+anchor_new = "Place the picker first in the `Action::Back` chain. Give `keys::mouse` a picker branch beside the selector's that maps the wheel to `Move` and every other event to `None`."
+dedup_id = "e26cf9fdfa3e97a8"
+
+[[items]]
+id = "P32"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### 19. Wire header clicks, sort keys, id-cell copy and the column picker [L]"
+summary = "New marks (▲/▼ sort_mark, +n hidden chip) get no legend sample row"
+description = 'glimpse/CLAUDE.md: a new element token that is a mark gets a row in view/legend.rs ("Chips and marks", legend.rs:154-176). Task 35 cannot add the chip row (legend.rs belongs to task 34, which precedes it).'
+anchor_old = "Add legend rows for `D` and `C`."
+anchor_new = 'Add legend rows for `D` and `C`, plus a "Chips and marks" row showing `▲ ▼` in `theme.sort_mark`. Task 34 adds the `+n hidden` chip row.'
+dedup_id = "305ff49d4494eb03"
+
+[[items]]
+id = "P33"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "### 13. Shared table core [M]"
+summary = "The shared Row must be generic: items/inbox key rows by String, layers by u32"
+description = "items.rs:139-163 and inbox.rs:108-131 use id: Option<String>, Target = (Rect, String); layers.rs:225-250 uses task: Option<u32>, Target = (Rect, u32) with Row::plain / Row::task constructors. S-tagged task 17 depends on that shape."
+anchor_old = "Generalise the `Row`/`draw_rows` in `glimpse/src/view/items.rs` (fill, then line, then overlay, keeping chips intact)."
+anchor_new = "Generalise the `Row`/`draw_rows` in `glimpse/src/view/items.rs` (fill, then line, then overlay, keeping chips intact) as `Row<T>` and `draw_rows<T: Clone>(..) -> Vec<(Rect, T)>`, since items and inbox key rows by `String` and layers by `u32`."
+dedup_id = "d2cdc2d7f35d3f56"
+
+[[items]]
+id = "P34"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "### 29. Traversal card uses the helper [S]"
+summary = "panel::block cannot keep the ego card's look on its own: its border is status-coloured"
+description = "The ego card's border uses draw.task_style(id) and its title theme.selection.patch(selection_mark) (glimpse/src/view/ego.rs:532-539), while panel::block uses theme.border and border_title."
+anchor_old = "The card keeps its look; rounded borders are now the shared default."
+anchor_new = "`panel::block` supplies the rounded border and padding; the card then re-applies its status-coloured border style and selection-styled title over it, so its look is unchanged."
+dedup_id = "767129dc686be11a"
+
+[[items]]
+id = "P35"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### Tables / views / theme"
+summary = "Some Exploration Notes line numbers and counts have drifted"
+description = "Theme::build in App::new is app.rs:347 (not 365); 465 inline #[test] (not 485); next_of surface.rs:804 (491 is cycle_sort); trait Host runtime.rs:304; diagram mod tests mod.rs:509; Action::Back chain app.rs:774/780; 23 bold uses plus the `let bold` binding (not 24). All other cited lines verified."
+anchor_old = "built once in `App::new` (app.rs:365)"
+anchor_new = "built once in `App::new` (app.rs:347)"
+dedup_id = "3ebc7c0522d492de"

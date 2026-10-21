@@ -1,0 +1,1281 @@
+schema_version = 1
+last_updated = 2026-10-21
+
+[[items]]
+id = "E1"
+agent = "implement"
+from_status = "draft"
+to_status = "in-progress"
+summary = "status draft -> in-progress"
+type = "status-transition"
+date = 2026-10-21
+
+[[items]]
+id = "E2"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+retries = 0
+vet = "sampled-pass"
+summary = "Created glimpse/src/scroll.rs with step and offset plus 9 inline tests; declared mod scroll in main.rs. Falsifier: 2 tests red with Bottom -> len."
+files = [
+    "glimpse/src/scroll.rs",
+    "glimpse/src/main.rs",
+]
+type = "task-completion"
+task_ref = "shared-scroll-stepping-helper"
+date = 2026-10-21
+
+[[items]]
+id = "E3"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+retries = 0
+vet = "flagged-pass"
+summary = "Added HintMode{Short,Full,Hidden} (parse, as_str, next), Config.hints default short, strict hints key, and a parse/reject test. Compiles (sibling crate build); test and falsifier unrun at return."
+files = ["glimpse/src/config.rs"]
+type = "task-completion"
+task_ref = "hint-mode-config-key"
+date = 2026-10-21
+
+[[items]]
+id = "E4"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+retries = 0
+vet = "flagged-pass"
+summary = "Added tokens table_header, sort_mark, strong, backdrop, selection_text, tab_empty with Theme fields; flooded the active tab, slug -> accent, badge -> strong colour + bold; new emphasis test. Compiles; tests unrun at return."
+files = ["glimpse/src/theme.rs"]
+type = "task-completion"
+task_ref = "new-element-tokens-and-revamp-defaults"
+date = 2026-10-21
+
+[[items]]
+id = "E5"
+agent = "implement"
+status = "done"
+summary = "Created glimpse/src/clipboard.rs osc52 with hand-rolled RFC 4648 base64 and padding; mod clipboard in main.rs; vector + wrapper tests pass; falsifier 1 red on dropped padding."
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+files = [
+    "glimpse/src/clipboard.rs",
+    "glimpse/src/main.rs",
+]
+type = "task-completion"
+task_ref = "osc-52-encoder"
+date = 2026-10-21
+
+[[items]]
+id = "E6"
+agent = "implement"
+status = "done"
+summary = "PgUp/PgDn/Home/End page Select and Multi fields via scroll::step (fixed PAGE=5; form lacks drawn height); Multi drawn windowed via List+ListState; 3 tests; falsifier 1 red."
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+files = [
+    "glimpse/src/form.rs",
+    "glimpse/src/view/form.rs",
+]
+type = "task-completion"
+task_ref = "form-choice-lists-window-and-page"
+date = 2026-10-21
+
+[[items]]
+id = "E7"
+agent = "implement"
+status = "done"
+retries = 0
+vet = "flagged-pass"
+summary = "Markdown **strong** uses theme.strong instead of theme.badge; inline-styles test asserts Theme::default().strong. Falsifier 0: badge and strong now resolve to the same style, so the swap is indistinguishable by style."
+files = ["glimpse/src/view/markdown.rs"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+type = "task-completion"
+task_ref = "markdown-strong-without-bold"
+date = 2026-10-21
+
+[[items]]
+id = "E8"
+agent = "implement"
+status = "done"
+retries = 0
+vet = "skipped"
+summary = "New diagram::subset module: Focus, Subset, generations, families, fit (doubling then bisect then greedy families, BTreeSet-deterministic); mod.rs declares it and test builders are pub(super); 8 tests, 6 falsifier variants all red."
+files = [
+    "glimpse/src/diagram/subset.rs",
+    "glimpse/src/diagram/mod.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+type = "task-completion"
+task_ref = "neighbourhood-subsets-and-the-fit-search"
+date = 2026-10-21
+
+[[items]]
+id = "E9"
+agent = "implement"
+summary = "fit floors at the target alone in glimpse/src/diagram/subset.rs"
+original_intent = "fit returns a subset no larger than what the fits predicate accepted"
+rationale = "When the predicate rejects even the target alone, an empty diagram is worse than an overflowing one; fit floors at {target} at radius 0 (empty set for an unknown target), documented and tested."
+type = "deviation"
+task_ref = "neighbourhood-subsets-and-the-fit-search"
+date = 2026-10-21
+
+[[items]]
+id = "E10"
+agent = "implement"
+status = "done"
+summary = "Tracking.page plus page_cursor on ItemsState and InboxState via shared Tracking::page_through over visible_ids with scroll::step; clears scroll_pinned; 4 tests; falsifier 2 red."
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+files = ["glimpse/src/surface.rs"]
+type = "task-completion"
+task_ref = "item-and-inbox-cursors-page-and-jump"
+date = 2026-10-21
+
+[[items]]
+id = "E11"
+agent = "implement"
+status = "done"
+summary = "items::render and inbox::render return Drawn{targets,scroll,page} (page = list rows drawn); view::draw_surface writes scroll and page back into Tracking; test helpers updated."
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+files = [
+    "glimpse/src/view/items.rs",
+    "glimpse/src/view/inbox.rs",
+    "glimpse/src/view/mod.rs",
+]
+type = "task-completion"
+task_ref = "lists-report-their-page-height"
+date = 2026-10-21
+
+[[items]]
+id = "E12"
+agent = "implement"
+status = "done"
+summary = "actions::columns_form (one required Multi, current columns first then the rest in ALL order) and columns_from; 3 tests; falsifier 3 red."
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+files = ["glimpse/src/actions.rs"]
+type = "task-completion"
+task_ref = "column-picker-form"
+date = 2026-10-21
+
+[[items]]
+id = "E13"
+agent = "implement"
+status = "done"
+summary = "theme/sets.rs: ThemeSet, Rules, Fill, Faint, SETS (kanso-zen, kanso-pearl with darkened colours, ansi on bright slots, mono) and by_name; Theme::from_set with [theme.<set>] > [theme] > set palette > TOKENS; build kept as wrapper; contrast test; mono byte-identical to NO_COLOR; 5 falsifiers red."
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "glimpse/src/theme.rs",
+    "glimpse/src/theme/sets.rs",
+]
+type = "task-completion"
+task_ref = "named-theme-sets-with-style-rules"
+date = 2026-10-21
+
+[[items]]
+id = "E14"
+agent = "implement"
+summary = "Rules{fill, faint, colour} in glimpse/src/theme/sets.rs"
+original_intent = "ThemeSet rules are Rules{fill, faint}"
+rationale = "mono must drop [theme] overrides as well as palette colours to stay byte-identical to NO_COLOR output, so Rules gained colour: bool."
+type = "deviation"
+task_ref = "named-theme-sets-with-style-rules"
+date = 2026-10-21
+
+[[items]]
+id = "E15"
+agent = "implement"
+summary = "kanso-zen palette is empty (falls through to TOKENS) in glimpse/src/theme/sets.rs"
+original_intent = "kanso-zen carries today's palette in its ThemeSet"
+rationale = "TOKENS defaults already are the kanso-zen palette; copying the 15 entries would duplicate them."
+type = "deviation"
+task_ref = "named-theme-sets-with-style-rules"
+date = 2026-10-21
+
+[[items]]
+id = "E16"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "glimpse/src/app.rs",
+    "glimpse/src/keys.rs",
+    "glimpse/src/view/legend.rs",
+]
+summary = "Action::Page(Scroll): plain PgUp/PgDn/Home/End map to it, Shift forms to ScrollDetails; apply routes legend > selector (selector_page, default 1) > full-screen or compact details > item/Inbox page_cursor > Tasks (Home/End select first/last via App::select; PgUp/PgDn pan by a page). scroll_details/scroll_legend use scroll::offset; legend rows updated, J K in the gate list; 7 tests; falsifier 9 red."
+type = "task-completion"
+task_ref = "route-paging-keys-to-the-focused-list"
+date = 2026-10-21
+
+[[items]]
+id = "E17"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "glimpse/src/surface.rs",
+    "glimpse/src/cli.rs",
+]
+summary = "SortDir, Sort::{Kind,Status,Category,Summary,Area}, HeaderKey, InboxColumn, sort_dir on items and Inbox state, cycle_header (asc > desc > off), flip_dir, header_sort, Surface::column_sort; compare honours direction with ascending id tie-break; --sort accepts new keys; falsifiers 3+3 red."
+type = "task-completion"
+task_ref = "sort-direction-and-per-column-sort-keys"
+date = 2026-10-21
+
+[[items]]
+id = "E18"
+agent = "implement"
+summary = "Sort::Category added; kind column maps to Severity on finding surfaces in glimpse/src/surface.rs"
+original_intent = "New Sort variants Kind, Status, Summary, Area, with the Category column mapped to Severity"
+rationale = "Sorting the category column by severity contradicts what it shows; added Sort::Category, and Surface::column_sort maps the kind column (which shows severity on finding surfaces) to Severity."
+type = "deviation"
+task_ref = "sort-direction-and-per-column-sort-keys"
+date = 2026-10-21
+
+[[items]]
+id = "E19"
+agent = "implement"
+summary = "Inbox sort lives on InboxState (InboxColumn, SortDir); Surface::Inbox.sorts() stays [Sort::Id] in glimpse/src/surface.rs"
+original_intent = "The Inbox gains its own sort and direction over its columns (implied via Surface::sorts and --sort)"
+rationale = "runtime::arrange_rows ignores --sort on the Inbox, so listing Inbox keys in Surface::Inbox.sorts() would accept a flag and ignore it; the Inbox sorts through InboxColumn + SortDir on InboxState instead."
+type = "deviation"
+task_ref = "sort-direction-and-per-column-sort-keys"
+date = 2026-10-21
+
+[[items]]
+id = "E20"
+agent = "implement"
+status = "done"
+summary = "[theme] base and [theme.<set>] subtables parse into Config.theme_base and theme_sets, set names via theme::sets::by_name, per-set tokens via theme::validate; theme_from_flag added; legacy tables unchanged; 19 config tests pass; falsifier unobserved."
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = ["glimpse/src/config.rs"]
+type = "task-completion"
+task_ref = "theme-config-base-set-and-per-set-overrides"
+date = 2026-10-21
+
+[[items]]
+id = "E21"
+agent = "implement"
+status = "done"
+summary = "Selector draws the window around selector_cursor via place(.., Place::Jump) with up/down more markers and writes the drawn entry count to App.selector_page; render takes &mut App; new windowing test; falsifier 1 red."
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+files = ["glimpse/src/view/selector.rs"]
+type = "task-completion"
+task_ref = "selector-windows-its-entries"
+date = 2026-10-21
+
+[[items]]
+id = "E22"
+agent = "implement"
+status = "done"
+summary = "Zoom{Titles,Ids,Tight}; layout_of split; position::position_with_gap (position and TASK_GAP kept); DiagramCache::layout_for with stored fit result and layout key over zoom, subset and titles; Layout.hidden; navigator reads the stored layout; 61 diagram tests; 3 falsifier rounds red."
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "glimpse/src/diagram/mod.rs",
+    "glimpse/src/diagram/position.rs",
+]
+type = "task-completion"
+task_ref = "layout-of-a-node-subset-at-a-zoom-level"
+date = 2026-10-21
+
+[[items]]
+id = "E23"
+agent = "implement"
+summary = "Fit cache key adds a titles hash at Zoom::Titles and keys view only under fit, in glimpse/src/diagram/mod.rs"
+original_intent = "Fit result cached on (topology_hash, orientation, show_implied, zoom, focus, target, view size)"
+rationale = "At Zoom::Titles the titles set label widths and so whether a subset fits, so the fit key also hashes the drawn titles; view size is keyed only while fit is on, so the same stored choice covers fit-off focus closures."
+type = "deviation"
+task_ref = "layout-of-a-node-subset-at-a-zoom-level"
+date = 2026-10-21
+
+[[items]]
+id = "E24"
+agent = "implement"
+status = "done"
+summary = "--theme <set> parsed and validated against theme::sets::SETS (usage lists sets); run_view sets config.theme_base and theme_from_flag before App::new; unit test plus two binary cases (ansi exit 0, nope exit 2); falsifier unobserved."
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = [
+    "glimpse/src/cli.rs",
+    "glimpse/src/main.rs",
+    "glimpse/tests/cli.rs",
+]
+type = "task-completion"
+task_ref = "theme-flag"
+date = 2026-10-21
+
+[[items]]
+id = "E25"
+agent = "implement"
+status = "done"
+summary = "App.hints and App.mouse_captured; CycleHints (H), CopyId (y -> Copy with notice), ToggleCapture (v -> SetCapture, ends a drag), runtime-only Copy and SetCapture; drag tolerates re-sent Down(Left) and Moved, any release or right/middle press ends it; keys::grabs_divider widens the hit zone; legend rows + gate list; falsifiers 3 + 4 red."
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "glimpse/src/app.rs",
+    "glimpse/src/keys.rs",
+    "glimpse/src/view/legend.rs",
+]
+type = "task-completion"
+task_ref = "wire-hint-cycling-copy-capture-release-and-tolerant-drags"
+date = 2026-10-21
+
+[[items]]
+id = "E26"
+agent = "implement"
+summary = "Widened task files to include glimpse/src/hook.rs"
+original_intent = "Files line for runtime-carries-out-copy-capture-toggle-and-the-raw-mouse-event-log omits glimpse/src/hook.rs"
+rationale = "The GLIMPSE_EVENT_LOG cap is hook::LOG_CAP, a private const in glimpse/src/hook.rs; the event log needs it made pub(crate) rather than duplicated. Row widened and re-dispatched."
+type = "deviation"
+task_ref = "runtime-carries-out-copy-capture-toggle-and-the-raw-mouse-event-log"
+date = 2026-10-21
+
+[[items]]
+id = "E27"
+agent = "implement"
+status = "done"
+summary = "Host::copy (osc52 to stdout) and Host::set_mouse_capture; carry_out(&mut App) handles Copy and SetCapture and keeps mouse_captured in step; install_release_hook (once) + set_capture replace capture_mouse; exit releases only when held; GLIMPSE_EVENT_LOG EventLog (ms-prefixed lines, BufWriter flushed per batch, truncated past hook::LOG_CAP, now pub(crate)); 6 new tests; falsifiers red. Needed a cross-cut widening for hook.rs."
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "glimpse/src/runtime.rs",
+    "glimpse/src/hook.rs",
+]
+type = "task-completion"
+task_ref = "runtime-carries-out-copy-capture-toggle-and-the-raw-mouse-event-log"
+date = 2026-10-21
+scope_warning = true
+
+[[items]]
+id = "E28"
+agent = "implement"
+status = "done"
+summary = "New view::footer module takes footer, surface_hints, inbox_hints; hints fitted by list-order priority with ? keys pinned last on base surfaces and an ellipsis before it; short/full (<=3 rows)/hidden modes; footer::height replaces Length(1); H, y, v hints; released-capture line; fixture ends ? keys at 110 cols; 6 falsifier variants red."
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "glimpse/src/view/footer.rs",
+    "glimpse/src/view/mod.rs",
+]
+type = "task-completion"
+task_ref = "width-fitted-footer-with-short-full-and-hidden-modes"
+date = 2026-10-21
+
+[[items]]
+id = "E29"
+agent = "implement"
+summary = "Hints carry no priority field; order is priority, in glimpse/src/view/footer.rs"
+original_intent = "Each hint is (key, label, priority)"
+rationale = "Priority is defined as the list order, so a separate field would repeat it; a Hint{lead, key, label} struct carries the released line's notice-styled lead instead."
+type = "deviation"
+task_ref = "width-fitted-footer-with-short-full-and-hidden-modes"
+date = 2026-10-21
+
+[[items]]
+id = "E30"
+agent = "implement"
+summary = "? keys pinned on base surfaces only, not in modals, in glimpse/src/view/footer.rs"
+original_intent = "The footer line always ends with the pinned ? keys hint"
+rationale = "Inside forms and the filter prompt ? is typed into the field, and the legend and selector already show their own ? hint; pinning ? keys there would be false. Base surfaces (Tasks, item surfaces, Inbox, compact details) always end ? keys; modals fit their hints with a trailing ellipsis."
+type = "deviation"
+task_ref = "width-fitted-footer-with-short-full-and-hidden-modes"
+date = 2026-10-21
+
+[[items]]
+id = "E31"
+agent = "implement"
+summary = "Minted task 38 (app.rs + view/footer.rs) into checkpoint A"
+original_intent = "plan carries no task for showing the released-capture footer line only after v releases capture"
+rationale = """Approach "Copy and capture" says mouse = false frames keep their hints and only a v release shows "mouse released · v to capture"; task 9's detail keyed the line on !mouse_captured, which mouse = false sessions start with. A released-by-v flag in App is needed, outside task 9's files."""
+type = "deviation"
+task_ref = "released-capture-footer-line-only-after-a-v-release"
+date = 2026-10-21
+
+[[items]]
+id = "E32"
+agent = "implement"
+status = "done"
+summary = "App.capture_released set by the ToggleCapture arm from the value handed back; footer released line, dropped v hint and hidden-mode row key on capture_released && !mouse_captured; mouse = false sessions keep hints; new test, falsifier 1 red."
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+files = [
+    "glimpse/src/app.rs",
+    "glimpse/src/view/footer.rs",
+]
+type = "task-completion"
+task_ref = "released-capture-footer-line-only-after-a-v-release"
+date = 2026-10-21
+
+[[items]]
+id = "E33"
+agent = "implement"
+status = "done"
+summary = "New view::table: generic Row<T> and draw_rows<T: Clone> (fill, line, overlay), LEAD, Column, cell, header (table_header titles, sort_mark beside the sorted title); local copies left for later adopters; 7 tests; falsifiers 4+2+1 red."
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "glimpse/src/view/table.rs",
+    "glimpse/src/view/mod.rs",
+]
+type = "task-completion"
+task_ref = "shared-table-core"
+date = 2026-10-21
+
+[[items]]
+id = "E34"
+agent = "implement"
+summary = "Column{title: &'static str, width: usize} in glimpse/src/view/table.rs"
+original_intent = "Column{title, width} with types unstated"
+rationale = "items::Columns::width already returns usize and titles are fixed strings, so Column uses title: &'static str and width: usize."
+type = "deviation"
+task_ref = "shared-table-core"
+date = 2026-10-21
+
+[[items]]
+id = "E35"
+agent = "implement"
+summary = "Column layout: LEAD then one gap per drawn column in glimpse/src/view/table.rs"
+original_intent = "Column start positions unspecified beyond LEAD"
+rationale = "Each drawn column starts one gap cell after LEAD and zero-width columns are skipped with their gap, matching today's item rows; inbox rows place their glyph at x+2 with no gap, so the inbox adoption must add one blank cell to line up with cell/header."
+type = "deviation"
+task_ref = "shared-table-core"
+date = 2026-10-21
+
+[[items]]
+id = "E36"
+agent = "implement"
+command = "cargo build --manifest-path glimpse/Cargo.toml"
+outcome = "pass"
+duration_s = 91
+summary = "checkpoint A build pass"
+type = "verification"
+task_ref = "runtime-carries-out-copy-capture-toggle-and-the-raw-mouse-event-log"
+date = 2026-10-21
+
+[[items]]
+id = "E37"
+agent = "implement"
+command = "cargo test --manifest-path glimpse/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 7
+summary = "checkpoint A tests: 572 passed, 0 failed"
+type = "verification"
+task_ref = "runtime-carries-out-copy-capture-toggle-and-the-raw-mouse-event-log"
+date = 2026-10-21
+
+[[items]]
+id = "E38"
+agent = "implement"
+kind = "commit-train"
+commits = [
+    "7bb1c1e",
+    "8703fa8",
+    "0c14783",
+    "85f4daa",
+    "68f9ba3",
+    "d3060f2",
+    "6ea18ec",
+    "5aa75db",
+    "4912a4b",
+    "a9043a8",
+]
+summary = "7bb1c1e: new-element-tokens-and-revamp-defaults, named-theme-sets-with-style-rules; 8703fa8: neighbourhood-subsets-and-the-fit-search, layout-of-a-node-subset-at-a-zoom-level; 0c14783: hint-mode-config-key, theme-config-base-set-and-per-set-overrides; 85f4daa: markdown-strong-without-bold; 68f9ba3: shared-scroll-stepping-helper, item-and-inbox-cursors-page-and-jump, osc-52-encoder, sort-direction-and-per-column-sort-keys, theme-flag; d3060f2: lists-report-their-page-height, route-paging-keys-to-the-focused-list, wire-hint-cycling-copy-capture-release-and-tolerant-drags, width-fitted-footer-with-short-full-and-hidden-modes, shared-table-core, released-capture-footer-line-only-after-a-v-release; 6ea18ec: form-choice-lists-window-and-page; 5aa75db: selector-windows-its-entries; 4912a4b: runtime-carries-out-copy-capture-toggle-and-the-raw-mouse-event-log; a9043a8: column-picker-form"
+type = "checkpoint"
+task_ref = "runtime-carries-out-copy-capture-toggle-and-the-raw-mouse-event-log"
+date = 2026-10-21
+
+[[items]]
+id = "E39"
+agent = "implement"
+summary = "Widened task files to include glimpse/src/view/inbox.rs"
+original_intent = "Files line for item-tables-draw-a-header-row-id-cells-and-empty-states omits glimpse/src/view/inbox.rs"
+rationale = "inbox::render's main return lists every Drawn field without ..Drawn::default(), so adding headers and ids to Drawn breaks the crate until the Inbox task; a one-line ..Drawn::default() in inbox.rs is needed. Row widened and re-dispatched."
+type = "deviation"
+task_ref = "item-tables-draw-a-header-row-id-cells-and-empty-states"
+date = 2026-10-21
+
+[[items]]
+id = "E40"
+agent = "implement"
+status = "done"
+summary = "layers.rs uses table::Row<u32> and table::draw_rows (local copies removed, task_row free fn); selected task row's effort cell lifts to theme.selection_text unless a notice colour wins; 21 layers tests pass; no new assertion."
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+files = ["glimpse/src/view/layers.rs"]
+type = "task-completion"
+task_ref = "layers-view-uses-the-shared-row-drawer"
+date = 2026-10-21
+
+[[items]]
+id = "E41"
+agent = "implement"
+status = "done"
+summary = "items.rs adopts table::Row/draw_rows (local copies and LEAD removed); header row below the facet line from App.item_columns with sort mark; Drawn.headers and Drawn.ids filled; cursor-row muted spans lift to selection_text; empty states name a next step; page excludes the header; inbox.rs gains ..Drawn::default(); falsifiers 1+6+1 red."
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "glimpse/src/view/items.rs",
+    "glimpse/src/view/inbox.rs",
+]
+type = "task-completion"
+task_ref = "item-tables-draw-a-header-row-id-cells-and-empty-states"
+date = 2026-10-21
+
+[[items]]
+id = "E42"
+agent = "implement"
+status = "done"
+summary = "Inbox adopts table::Row/draw_rows; header (glyph, id, kind, status, text) with sort mark; Drawn.headers (HeaderKey::Inbox) and Drawn.ids; rows gain a blank so the glyph aligns; cursor-row lift; empty states name a next step; text header aligns with status+1 while row text follows the target; falsifier partial (2 red on lift)."
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = ["glimpse/src/view/inbox.rs"]
+type = "task-completion"
+task_ref = "inbox-table-draws-a-header-row"
+date = 2026-10-21
+
+[[items]]
+id = "E43"
+agent = "implement"
+status = "done"
+summary = "Regions.headers and Regions.ids filled from Drawn; SortBy(HeaderKey), FlipSortDir (D), OpenColumns (C) via Purpose::Columns, CopyItem (id-cell click -> Copy + notice); keys::mouse hit order header > id > row; sort_dir survives apply_ledger and unpins via order keys; legend D, C and sort-mark rows; 4 new tests; falsifiers 6+1 red."
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "glimpse/src/app.rs",
+    "glimpse/src/keys.rs",
+    "glimpse/src/view/legend.rs",
+    "glimpse/src/view/mod.rs",
+    "glimpse/src/actions.rs",
+]
+type = "task-completion"
+task_ref = "wire-header-clicks-sort-keys-id-cell-copy-and-the-column-picker"
+date = 2026-10-21
+
+[[items]]
+id = "E44"
+agent = "implement"
+command = "cargo build --manifest-path glimpse/Cargo.toml"
+outcome = "pass"
+duration_s = 9
+summary = "checkpoint B build pass"
+type = "verification"
+task_ref = "wire-header-clicks-sort-keys-id-cell-copy-and-the-column-picker"
+date = 2026-10-21
+
+[[items]]
+id = "E45"
+agent = "implement"
+command = "cargo test --manifest-path glimpse/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 9
+summary = "checkpoint B tests: 582 passed, 0 failed"
+type = "verification"
+task_ref = "wire-header-clicks-sort-keys-id-cell-copy-and-the-column-picker"
+date = 2026-10-21
+
+[[items]]
+id = "E46"
+agent = "implement"
+command = "cargo clippy --manifest-path glimpse/Cargo.toml --all-targets"
+outcome = "pass"
+duration_s = 4
+summary = "checkpoint B clippy: no warnings"
+type = "verification"
+task_ref = "wire-header-clicks-sort-keys-id-cell-copy-and-the-column-picker"
+date = 2026-10-21
+
+[[items]]
+id = "E47"
+agent = "implement"
+kind = "commit-train"
+summary = "4398bdf: item-tables-draw-a-header-row-id-cells-and-empty-states, inbox-table-draws-a-header-row; 73b8acb: layers-view-uses-the-shared-row-drawer; dfab048: wire-header-clicks-sort-keys-id-cell-copy-and-the-column-picker; bbdb7e8: orchestrator cleanup of dead-code allowances in surface.rs and table.rs (shared-table-core, sort-direction-and-per-column-sort-keys)"
+commits = [
+    "4398bdf",
+    "73b8acb",
+    "dfab048",
+    "bbdb7e8",
+]
+type = "checkpoint"
+task_ref = "wire-header-clicks-sort-keys-id-cell-copy-and-the-column-picker"
+date = 2026-10-21
+
+[[items]]
+id = "E48"
+agent = "implement"
+status = "done"
+summary = "App::new builds the theme via Theme::from_set from theme_base (kanso-zen default, NO_COLOR -> mono) keeping theme_set and both override layers; T opens ThemePicker{cursor, original}: Move previews, Page steps, Enter keeps with notice, Back/T restores; picker first in the Back chain; keys::mouse picker branch (wheel -> Move, else None); legend T row; 4 tests; falsifiers 5+4 red."
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "glimpse/src/app.rs",
+    "glimpse/src/keys.rs",
+    "glimpse/src/view/legend.rs",
+]
+type = "task-completion"
+task_ref = "wire-the-theme-picker-and-live-switching"
+date = 2026-10-21
+
+[[items]]
+id = "E49"
+agent = "implement"
+summary = "App keeps two override layers plus no_color; T is refused under NO_COLOR, in glimpse/src/app.rs"
+original_intent = "App::new keeps theme_set and the overrides"
+rationale = "Theme::from_set takes both override layers and each preview rebuilds from them, so App keeps theme_overrides ([theme]), theme_per_set ([theme.<set>]) and no_color as separate private fields; T under NO_COLOR posts a notice instead of opening the picker."
+type = "deviation"
+task_ref = "wire-the-theme-picker-and-live-switching"
+date = 2026-10-21
+
+[[items]]
+id = "E50"
+agent = "implement"
+status = "done"
+summary = "New view::themes draws the picker (set names, cursor and current marks, status sample in the live theme) after the legend and before forms; footer picker hints without ? keys; themes test falsifier 1 red; footer test falsifier unobserved."
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = [
+    "glimpse/src/view/themes.rs",
+    "glimpse/src/view/mod.rs",
+    "glimpse/src/view/footer.rs",
+]
+type = "task-completion"
+task_ref = "theme-picker-overlay"
+date = 2026-10-21
+
+[[items]]
+id = "E51"
+agent = "implement"
+status = "done"
+summary = "Active tab flooded; ledger-less tabs drawn in tab_empty without the dash (compact P too); history row only at >= 30 rows (HISTORY_MIN_ROWS) with source errors and warnings kept on short panes; header::height/render take the pane height; falsifier 1 red on the height gate, tab_empty assertion unfalsified."
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = [
+    "glimpse/src/view/header.rs",
+    "glimpse/src/view/mod.rs",
+]
+type = "task-completion"
+task_ref = "header-flooded-active-tab-faint-empty-tabs-history-on-tall-panes"
+date = 2026-10-21
+
+[[items]]
+id = "E52"
+agent = "implement"
+status = "done"
+summary = "New view::panel::block(title, &Theme): rounded border in theme.border, title in border_title, Padding::horizontal(1); activity panel uses it; new test, falsifier 1 red."
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+files = [
+    "glimpse/src/view/panel.rs",
+    "glimpse/src/view/mod.rs",
+    "glimpse/src/view/activity.rs",
+]
+type = "task-completion"
+task_ref = "panel-helper"
+date = 2026-10-21
+
+[[items]]
+id = "E53"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+retries = 0
+vet = "sampled-pass"
+summary = 'Traversal card starts from panel::block("", theme) and re-applies its status-coloured border and selection-styled title; padding unchanged; 18 ego tests pass.'
+files = ["glimpse/src/view/ego.rs"]
+type = "task-completion"
+task_ref = "traversal-card-uses-the-helper"
+date = 2026-10-21
+
+[[items]]
+id = "E54"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+retries = 0
+vet = "skipped"
+summary = 'Legend block built with panel::block(" legend ", theme); padding and scroll bounds unchanged; 6 legend tests pass.'
+files = ["glimpse/src/view/legend.rs"]
+type = "task-completion"
+task_ref = "legend-panel-uses-the-helper"
+date = 2026-10-21
+
+[[items]]
+id = "E55"
+agent = "implement"
+status = "done"
+summary = "Details, selector and form blocks built with panel::block (rounded corners; padding and inner area unchanged); 140 view tests pass."
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+files = [
+    "glimpse/src/view/details.rs",
+    "glimpse/src/view/selector.rs",
+    "glimpse/src/view/form.rs",
+]
+type = "task-completion"
+task_ref = "details-selector-and-form-panels-use-the-helper"
+date = 2026-10-21
+
+[[items]]
+id = "E56"
+agent = "implement"
+status = "done"
+summary = "Comfortable density insets the body one cell left before split_body so Regions follow; header and body restyled with theme.backdrop before selector, legend, picker or form; picker uses panel::block; 2 new view tests; falsifier 2 red."
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "glimpse/src/view/mod.rs",
+    "glimpse/src/view/themes.rs",
+]
+type = "task-completion"
+task_ref = "modal-backdrop-comfortable-gutter-and-the-picker-panel"
+date = 2026-10-21
+
+[[items]]
+id = "E57"
+agent = "implement"
+summary = "Backdrop restyles header and body, not the footer, in glimpse/src/view/mod.rs"
+original_intent = "Restyle the frame with theme.backdrop before drawing an overlay"
+rationale = "While an overlay is open the footer shows that overlay's own keys; dimming them would hide the hints needed right then, so only the header and body are restyled."
+type = "deviation"
+task_ref = "modal-backdrop-comfortable-gutter-and-the-picker-panel"
+date = 2026-10-21
+
+[[items]]
+id = "E58"
+agent = "implement"
+status = "done"
+summary = "App.diagram_focus (Off), diagram_zoom (Ids), diagram_fit (true), App.pan; CycleFocus (F), Zoom(bool) (z/Z, Ctrl+wheel over the diagram), ToggleFit (x) with notices; PanStart/PanTo/PanEnd with shared drag tolerance via keys::held, pan only on diagram background after header/id/item/task hits; legend rows and +3 hidden chip; falsifiers 7+1 red."
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "glimpse/src/app.rs",
+    "glimpse/src/keys.rs",
+    "glimpse/src/view/legend.rs",
+]
+type = "task-completion"
+task_ref = "wire-focus-zoom-fit-and-drag-pan"
+date = 2026-10-21
+
+[[items]]
+id = "E59"
+agent = "implement"
+summary = "Added PanStart, PanTo and PanEnd actions in glimpse/src/keys.rs and glimpse/src/app.rs"
+original_intent = "Actions CycleFocus, Zoom(bool) and ToggleFit; a left press on diagram background starts App.pan"
+rationale = "keys::mouse takes &App and cannot record the pan origin, so starting, moving and ending a pan need PanStart(u16,u16), PanTo(u16,u16) and PanEnd; PanTo re-enters ScrollView so pinning goes through the existing path, and a keys::held helper shares the drag tolerance rules."
+type = "deviation"
+task_ref = "wire-focus-zoom-fit-and-drag-pan"
+date = 2026-10-21
+
+[[items]]
+id = "E60"
+agent = "implement"
+summary = "Legend scroll test terminal raised to 100x46 in glimpse/src/view/legend.rs"
+original_intent = "Add legend rows only"
+rationale = "The Keys section (40 rows plus heading) no longer fits a 38-row inner area, so the_legend_scrolls_to_its_items_and_keys_sections was raised from 100x40 to 100x46; the drag-pan hint is folded into the x row."
+type = "deviation"
+task_ref = "wire-focus-zoom-fit-and-drag-pan"
+date = 2026-10-21
+
+[[items]]
+id = "E61"
+agent = "implement"
+command = "cargo build --manifest-path glimpse/Cargo.toml"
+outcome = "pass"
+duration_s = 9
+summary = "checkpoint C build pass"
+type = "verification"
+task_ref = "modal-backdrop-comfortable-gutter-and-the-picker-panel"
+date = 2026-10-21
+
+[[items]]
+id = "E62"
+agent = "implement"
+command = "cargo test --manifest-path glimpse/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 18
+summary = "checkpoint C tests: 597 passed, 0 failed"
+type = "verification"
+task_ref = "modal-backdrop-comfortable-gutter-and-the-picker-panel"
+date = 2026-10-21
+
+[[items]]
+id = "E63"
+agent = "implement"
+kind = "commit-train"
+summary = "cb48db3: wire-the-theme-picker-and-live-switching, theme-picker-overlay, header-flooded-active-tab-faint-empty-tabs-history-on-tall-panes, panel-helper, legend-panel-uses-the-helper, modal-backdrop-comfortable-gutter-and-the-picker-panel, wire-focus-zoom-fit-and-drag-pan; 77df329: details-selector-and-form-panels-use-the-helper; 697edfd: traversal-card-uses-the-helper"
+commits = [
+    "cb48db3",
+    "77df329",
+    "697edfd",
+]
+type = "checkpoint"
+task_ref = "modal-backdrop-comfortable-gutter-and-the-picker-panel"
+date = 2026-10-21
+
+[[items]]
+id = "E64"
+agent = "implement"
+status = "done"
+summary = "paint::render calls DiagramCache::layout_for with App focus, zoom, fit, view size and selection; labels per zoom ([id title] cut by chars, [id], status glyph); +n hidden chip in theme.strong placed to avoid covering nodes; render returns node screen cells as click targets via draw_view; 5 new tests; falsifiers 5+1 red."
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "glimpse/src/diagram/paint.rs",
+    "glimpse/src/view/mod.rs",
+]
+type = "task-completion"
+task_ref = "paint-zoom-levels-the-hidden-marker-and-clickable-nodes"
+date = 2026-10-21
+
+[[items]]
+id = "E65"
+agent = "implement"
+summary = "Hidden chip avoids covering nodes, in glimpse/src/diagram/paint.rs"
+original_intent = "Draw the +n hidden chip in the view's top-right corner"
+rationale = "In narrow views the top-right chip covered the selected node (the_viewport_scrolls_to_keep_the_selection_visible failed); the chip falls back to bottom-right, then to the first corner leaving the selection uncovered, or is not drawn."
+type = "deviation"
+task_ref = "paint-zoom-levels-the-hidden-marker-and-clickable-nodes"
+date = 2026-10-21
+
+[[items]]
+id = "E66"
+agent = "implement"
+status = "done"
+summary = "state.toml persists hints, item_columns, per-surface dir, Inbox sort and dir, theme, zoom and fit; State::apply takes keep_theme (flag or NO_COLOR) and returns a Baseline so capture writes theme/hints only for in-app choices; previewed sets never saved; unknown set names dropped; legacy files parse unchanged; 11 state tests; falsifiers 4+3+2 red."
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "glimpse/src/state.rs",
+    "glimpse/src/runtime.rs",
+]
+type = "task-completion"
+task_ref = "persist-hints-columns-sort-direction-theme-and-diagram-view"
+date = 2026-10-21
+
+[[items]]
+id = "E67"
+agent = "implement"
+summary = "State::apply returns a Baseline consumed by capture, in glimpse/src/state.rs and glimpse/src/runtime.rs"
+original_intent = "State::apply gains keep_theme; capture writes theme and hints only when chosen in-app"
+rationale = "App records no chosen-in-app flag, so State::apply returns a Baseline of the values the run opened with and capture(app, &baseline) writes theme/hints only when changed from it or already present in state.toml; a saved set is applied through the picker's revert path so Theme::from_set uses App's private override layers."
+type = "deviation"
+task_ref = "persist-hints-columns-sort-direction-theme-and-diagram-view"
+date = 2026-10-21
+
+[[items]]
+id = "E68"
+agent = "implement"
+summary = "Existing saved theme is preserved under keep_theme, in glimpse/src/state.rs"
+original_intent = "capture never writes a --theme or NO_COLOR set"
+rationale = "Under keep_theme a theme already held in state.toml is written back unchanged, so one --theme or NO_COLOR run does not erase an earlier in-app choice; a fresh NO_COLOR run still writes no theme key."
+type = "deviation"
+task_ref = "persist-hints-columns-sort-direction-theme-and-diagram-view"
+date = 2026-10-21
+
+[[items]]
+id = "E69"
+agent = "implement"
+command = "cargo build --manifest-path glimpse/Cargo.toml"
+outcome = "pass"
+duration_s = 8
+summary = "checkpoint D build pass"
+type = "verification"
+task_ref = "paint-zoom-levels-the-hidden-marker-and-clickable-nodes"
+date = 2026-10-21
+
+[[items]]
+id = "E70"
+agent = "implement"
+command = "cargo test --manifest-path glimpse/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 8
+summary = "checkpoint D tests: 587 + 22 passed, 0 failed"
+type = "verification"
+task_ref = "paint-zoom-levels-the-hidden-marker-and-clickable-nodes"
+date = 2026-10-21
+
+[[items]]
+id = "E71"
+agent = "implement"
+command = "cargo clippy --manifest-path glimpse/Cargo.toml --all-targets"
+outcome = "pass"
+duration_s = 4
+summary = "checkpoint D clippy: no warnings"
+type = "verification"
+task_ref = "paint-zoom-levels-the-hidden-marker-and-clickable-nodes"
+date = 2026-10-21
+
+[[items]]
+id = "E72"
+agent = "implement"
+kind = "commit-train"
+summary = "e12f579: paint-zoom-levels-the-hidden-marker-and-clickable-nodes; 33acfc0: persist-hints-columns-sort-direction-theme-and-diagram-view; a8e0871: orchestrator cleanup of fulfilled lint expectations in diagram/mod.rs and surface.rs (layout-of-a-node-subset-at-a-zoom-level, sort-direction-and-per-column-sort-keys)"
+commits = [
+    "e12f579",
+    "33acfc0",
+    "a8e0871",
+]
+type = "checkpoint"
+task_ref = "paint-zoom-levels-the-hidden-marker-and-clickable-nodes"
+date = 2026-10-21
+
+[[items]]
+id = "E73"
+agent = "implement"
+status = "done"
+summary = "README: --theme usage, tabs, header rows and sort, paging contract and ghostty unbind lines, keys table from KEYS, footer modes, copying text (y, id click, OSC 52, v, Shift+drag, herdr), GLIMPSE_EVENT_LOG, diagram focus/zoom/fit, hints config, theme sets and new tokens, state.toml contents. CLAUDE.md: structure, cache-key, mouse-capture and write-back gotchas."
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "glimpse/README.md",
+    "glimpse/CLAUDE.md",
+]
+type = "task-completion"
+task_ref = "document-keys-config-themes-copy-and-the-event-log"
+date = 2026-10-21
+
+[[items]]
+id = "E74"
+agent = "implement"
+summary = "README key table follows KEYS plus the keys KEYS folds or omits, in glimpse/README.md"
+original_intent = "Derive the README key list from view/legend.rs KEYS"
+rationale = "KEYS merges several keys into one row and has no entry for ? or Ctrl+C, so the README table follows KEYS order and wording but still lists ?, Ctrl+C, m, e, r, n, u, /, w and Inbox Enter separately."
+type = "deviation"
+task_ref = "document-keys-config-themes-copy-and-the-event-log"
+date = 2026-10-21
+
+[[items]]
+id = "E75"
+agent = "implement"
+command = "cargo build --manifest-path glimpse/Cargo.toml"
+outcome = "pass"
+duration_s = 6
+summary = "final build pass"
+type = "verification"
+task_ref = "document-keys-config-themes-copy-and-the-event-log"
+date = 2026-10-21
+
+[[items]]
+id = "E76"
+agent = "implement"
+command = "cargo test --manifest-path glimpse/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 5
+summary = "final tests: 587 + 22 passed, 0 failed"
+type = "verification"
+task_ref = "document-keys-config-themes-copy-and-the-event-log"
+date = 2026-10-21
+
+[[items]]
+id = "E77"
+agent = "implement"
+command = "cargo doc --manifest-path glimpse/Cargo.toml --no-deps"
+outcome = "pass"
+duration_s = 3
+summary = "rustdoc lints clean"
+type = "verification"
+task_ref = "document-keys-config-themes-copy-and-the-event-log"
+date = 2026-10-21
+
+[[items]]
+id = "E78"
+agent = "implement"
+command = "cargo run --manifest-path glimpse/Cargo.toml -q -- --once --snapshot glimpse/tests/fixtures/snapshot.json --size 110x40 | tail -1 | grep -q '? keys *$'"
+outcome = "pass"
+duration_s = 5
+summary = "footer ends with ? keys at 110 columns"
+type = "verification"
+task_ref = "document-keys-config-themes-copy-and-the-event-log"
+date = 2026-10-21
+
+[[items]]
+id = "E79"
+agent = "implement"
+command = "cargo run --manifest-path glimpse/Cargo.toml -q -- --once --snapshot glimpse/tests/fixtures/snapshot.json --size 110x40 --theme ansi >/dev/null"
+outcome = "pass"
+duration_s = 0
+summary = "--theme ansi renders with exit 0"
+type = "verification"
+task_ref = "document-keys-config-themes-copy-and-the-event-log"
+date = 2026-10-21
+
+[[items]]
+id = "E80"
+agent = "implement"
+command = "cargo fmt --manifest-path glimpse/Cargo.toml -- --check"
+outcome = "pass"
+duration_s = 1
+summary = "rustfmt clean"
+type = "verification"
+task_ref = "document-keys-config-themes-copy-and-the-event-log"
+date = 2026-10-21
+
+[[items]]
+id = "E81"
+agent = "implement"
+command = "cargo clippy --manifest-path glimpse/Cargo.toml --all-targets"
+outcome = "pass"
+duration_s = 1
+summary = "clippy: no warnings"
+type = "verification"
+task_ref = "document-keys-config-themes-copy-and-the-event-log"
+date = 2026-10-21
+
+[[items]]
+id = "E82"
+agent = "implement"
+kind = "commit-train"
+summary = "480fedb: document-keys-config-themes-copy-and-the-event-log"
+commits = ["480fedb"]
+type = "checkpoint"
+task_ref = "document-keys-config-themes-copy-and-the-event-log"
+date = 2026-10-21
+
+[[items]]
+id = "E83"
+agent = "implement"
+summary = "Minted task 39 (surface.rs + view/footer.rs) into checkpoint E"
+original_intent = "plan carries no task for the section-blind item filter or the stale footer module doc"
+rationale = "Two cheap-in-file discoveries (from the sort-direction and footer agents) in files this run touched and its tests cover: ItemsState::shows omits Anchor::Section while the new place() helper includes it, so the filter cannot find plan-review rows by section; footer.rs's module doc misstates when the released-capture line shows. Fixed in-run rather than captured."
+type = "deviation"
+task_ref = "filter-by-section-and-document-the-released-footer-line"
+date = 2026-10-21
+
+[[items]]
+id = "E84"
+agent = "implement"
+status = "done"
+summary = "ItemsState::shows builds filter text via place() so the / filter matches section anchors (new test, falsifier 1 red); footer.rs module doc states the released-capture line shows only after a v release."
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+files = [
+    "glimpse/src/surface.rs",
+    "glimpse/src/view/footer.rs",
+]
+type = "task-completion"
+task_ref = "filter-by-section-and-document-the-released-footer-line"
+date = 2026-10-21
+
+[[items]]
+id = "E85"
+agent = "implement"
+command = "cargo build --manifest-path glimpse/Cargo.toml"
+outcome = "pass"
+duration_s = 6
+summary = "final build pass"
+type = "verification"
+task_ref = "filter-by-section-and-document-the-released-footer-line"
+date = 2026-10-21
+
+[[items]]
+id = "E86"
+agent = "implement"
+command = "cargo test --manifest-path glimpse/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 5
+summary = "final tests: 588 + 22 passed, 0 failed"
+type = "verification"
+task_ref = "filter-by-section-and-document-the-released-footer-line"
+date = 2026-10-21
+
+[[items]]
+id = "E87"
+agent = "implement"
+command = "cargo doc --manifest-path glimpse/Cargo.toml --no-deps"
+outcome = "pass"
+duration_s = 3
+summary = "rustdoc lints clean"
+type = "verification"
+task_ref = "filter-by-section-and-document-the-released-footer-line"
+date = 2026-10-21
+
+[[items]]
+id = "E88"
+agent = "implement"
+command = "cargo run --manifest-path glimpse/Cargo.toml -q -- --once --snapshot glimpse/tests/fixtures/snapshot.json --size 110x40 | tail -1 | grep -q '? keys *$'"
+outcome = "pass"
+duration_s = 5
+summary = "footer ends with ? keys at 110 columns"
+type = "verification"
+task_ref = "filter-by-section-and-document-the-released-footer-line"
+date = 2026-10-21
+
+[[items]]
+id = "E89"
+agent = "implement"
+command = "cargo run --manifest-path glimpse/Cargo.toml -q -- --once --snapshot glimpse/tests/fixtures/snapshot.json --size 110x40 --theme ansi >/dev/null"
+outcome = "pass"
+duration_s = 0
+summary = "--theme ansi renders with exit 0"
+type = "verification"
+task_ref = "filter-by-section-and-document-the-released-footer-line"
+date = 2026-10-21
+
+[[items]]
+id = "E90"
+agent = "implement"
+command = "cargo fmt --manifest-path glimpse/Cargo.toml -- --check"
+outcome = "pass"
+duration_s = 1
+summary = "rustfmt clean"
+type = "verification"
+task_ref = "filter-by-section-and-document-the-released-footer-line"
+date = 2026-10-21
+
+[[items]]
+id = "E91"
+agent = "implement"
+command = "cargo clippy --manifest-path glimpse/Cargo.toml --all-targets"
+outcome = "pass"
+duration_s = 1
+summary = "clippy: no warnings"
+type = "verification"
+task_ref = "filter-by-section-and-document-the-released-footer-line"
+date = 2026-10-21
+
+[[items]]
+id = "E92"
+agent = "implement"
+kind = "commit-train"
+summary = "f390b91: filter-by-section-and-document-the-released-footer-line"
+commits = ["f390b91"]
+type = "checkpoint"
+task_ref = "filter-by-section-and-document-the-released-footer-line"
+date = 2026-10-21
+
+[[items]]
+id = "E93"
+agent = "plan-update"
+from_status = "in-progress"
+to_status = "review"
+summary = "status in-progress -> review: all 39 tasks done after /implement"
+type = "status-transition"
+date = 2026-10-21
+
+[[items]]
+id = "E94"
+agent = "plan-update"
+summary = "Footer height now depends only on hint mode and width. A live notice replaces the last hint row in Full and Short mode; in Hidden mode the footer stays 0 rows and the notice draws over the body's last row, after the overlay backdrop."
+original_intent = "The footer grew a row for a live notice in Hidden mode and shrank to one row in Full mode."
+rationale = "Each notice resized the body twice, which re-ran the diagram fit search and could reset the layout and shift list pages. Applied by /review-apply on 2026-10-21."
+type = "deviation"
+task_ref = "width-fitted-footer-with-short-full-and-hidden-modes"
+date = 2026-10-21
+
+[[items]]
+id = "E95"
+agent = "plan-update"
+summary = "On quit, state.toml is re-read and merged: theme and hints this run left unchanged keep their on-disk value, other layout keys stay last-quit-wins, and the temp file is per-process."
+original_intent = "Each session rewrote state.toml whole from its own start-time baseline, through one fixed temp file."
+rationale = "state.toml is user-global and several glimpse sessions run at once, so a session quitting later erased a theme or hints choice another session had saved. Applied by /review-apply on 2026-10-21."
+type = "deviation"
+task_ref = "persist-hints-columns-sort-direction-theme-and-diagram-view"
+date = 2026-10-21
+
+[[items]]
+id = "E96"
+agent = "plan-update"
+summary = "Zoom::label in diagram/mod.rs owns the node text. The layout width is measured from it cell by cell, paint draws it advancing by each character's cell width, and control characters in titles become spaces."
+original_intent = "paint.rs built the label text while diagram/mod.rs computed its width separately, and titles were written cell by cell unfiltered."
+rationale = "Width and text agreed only by convention, and agent-written titles could carry terminal escape sequences that reached the terminal. Applied by /review-apply on 2026-10-21."
+type = "deviation"
+task_ref = "paint-zoom-levels-the-hidden-marker-and-clickable-nodes"
+date = 2026-10-21
+
+[[items]]
+id = "E97"
+agent = "plan-update"
+summary = "The theme base is carried as Option<ThemeChoice> (File or Flag of a &'static ThemeSet), with one NO_COLOR default in sets::starting; unknown-set errors name the form and list the valid sets."
+original_intent = "The theme set was stored as a String beside a theme_from_flag bool and looked up again by name at each use."
+rationale = "It removes unreachable by_name fallbacks and a duplicated NO_COLOR default, and the (flag, no set) state can no longer be written. Applied by /review-apply on 2026-10-21."
+type = "deviation"
+task_ref = "theme-config-base-set-and-per-set-overrides"
+date = 2026-10-21
+
+[[items]]
+id = "E98"
+agent = "plan-update"
+summary = "Tab counts are a TabCount enum (Unread, Missing, Count). Only a missing ledger is faded; a ledger not yet read draws in the normal tab style."
+original_intent = "Faint empty tabs marked an absent ledger, but an unread ledger was decoded the same way."
+rationale = "Every item tab was drawn faded as absent until its first read. Applied by /review-apply on 2026-10-21."
+type = "deviation"
+task_ref = "header-flooded-active-tab-faint-empty-tabs-history-on-tall-panes"
+date = 2026-10-21

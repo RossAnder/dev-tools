@@ -1,0 +1,1412 @@
+schema_version = 1
+last_updated = 2026-10-21
+plan_path = "docs/plans/glimpse-ux-backlog.md"
+last_import_refs = [
+    "shared-scroll-stepping-helper",
+    "item-and-inbox-cursors-page-and-jump",
+    "lists-report-their-page-height",
+    "route-paging-keys-to-the-focused-list",
+    "selector-windows-its-entries",
+    "form-choice-lists-window-and-page",
+    "hint-mode-config-key",
+    "wire-hint-cycling-copy-capture-release-and-tolerant-drags",
+    "width-fitted-footer-with-short-full-and-hidden-modes",
+    "osc-52-encoder",
+    "runtime-carries-out-copy-capture-toggle-and-the-raw-mouse-event-log",
+    "new-element-tokens-and-revamp-defaults",
+    "shared-table-core",
+    "sort-direction-and-per-column-sort-keys",
+    "item-tables-draw-a-header-row-id-cells-and-empty-states",
+    "inbox-table-draws-a-header-row",
+    "layers-view-uses-the-shared-row-drawer",
+    "column-picker-form",
+    "wire-header-clicks-sort-keys-id-cell-copy-and-the-column-picker",
+    "named-theme-sets-with-style-rules",
+    "theme-config-base-set-and-per-set-overrides",
+    "theme-flag",
+    "wire-the-theme-picker-and-live-switching",
+    "theme-picker-overlay",
+    "header-flooded-active-tab-faint-empty-tabs-history-on-tall-panes",
+    "markdown-strong-without-bold",
+    "panel-helper",
+    "details-selector-and-form-panels-use-the-helper",
+    "traversal-card-uses-the-helper",
+    "legend-panel-uses-the-helper",
+    "modal-backdrop-comfortable-gutter-and-the-picker-panel",
+    "neighbourhood-subsets-and-the-fit-search",
+    "layout-of-a-node-subset-at-a-zoom-level",
+    "wire-focus-zoom-fit-and-drag-pan",
+    "paint-zoom-levels-the-hidden-marker-and-clickable-nodes",
+    "persist-hints-columns-sort-direction-theme-and-diagram-view",
+    "document-keys-config-themes-copy-and-the-event-log",
+    "released-capture-footer-line-only-after-a-v-release",
+    "filter-by-section-and-document-the-released-footer-line",
+]
+
+[policy]
+checkpoints = "milestones"
+max_parallel = 6
+commit_granularity = "per-task"
+origin = "plan"
+note = ""
+
+[[checkpoints]]
+id = "A"
+rationale = "The navigation contract, footer modes, copy, capture release and drag tolerance; builds and runs on its own"
+
+[[checkpoints]]
+id = "B"
+rationale = "Shared table core, header rows, sorting, id-cell copy and the column picker"
+
+[[checkpoints]]
+id = "C"
+rationale = "Theme sets, config, flag, picker and the revamp"
+
+[[checkpoints]]
+id = "D"
+rationale = "Diagram focus, zoom, fit, drag-pan and clickable nodes"
+
+[[checkpoints]]
+id = "E"
+rationale = "Persistence and docs"
+
+[[file_notes]]
+ref = "shared-scroll-stepping-helper"
+file = "glimpse/src/scroll.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "width-fitted-footer-with-short-full-and-hidden-modes"
+file = "glimpse/src/view/footer.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "osc-52-encoder"
+file = "glimpse/src/clipboard.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "shared-table-core"
+file = "glimpse/src/view/table.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "wire-header-clicks-sort-keys-id-cell-copy-and-the-column-picker"
+file = "glimpse/src/actions.rs"
+note = "— adds `Purpose::Columns`"
+
+[[file_notes]]
+ref = "named-theme-sets-with-style-rules"
+file = "glimpse/src/theme/sets.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "theme-picker-overlay"
+file = "glimpse/src/view/themes.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "panel-helper"
+file = "glimpse/src/view/panel.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "neighbourhood-subsets-and-the-fit-search"
+file = "glimpse/src/diagram/subset.rs"
+note = "(new)"
+
+[[backlog_links]]
+ref = "shared-scroll-stepping-helper"
+closes = ["B-f15577d8"]
+refs = []
+
+[[backlog_links]]
+ref = "item-and-inbox-cursors-page-and-jump"
+closes = ["B-f15577d8"]
+refs = []
+
+[[backlog_links]]
+ref = "lists-report-their-page-height"
+closes = ["B-f15577d8"]
+refs = []
+
+[[backlog_links]]
+ref = "route-paging-keys-to-the-focused-list"
+closes = ["B-f15577d8"]
+refs = []
+
+[[backlog_links]]
+ref = "selector-windows-its-entries"
+closes = ["B-f15577d8"]
+refs = []
+
+[[backlog_links]]
+ref = "form-choice-lists-window-and-page"
+closes = ["B-f15577d8"]
+refs = []
+
+[[backlog_links]]
+ref = "hint-mode-config-key"
+closes = ["B-59aa6362"]
+refs = []
+
+[[backlog_links]]
+ref = "wire-hint-cycling-copy-capture-release-and-tolerant-drags"
+closes = [
+    "B-59aa6362",
+    "B-d4da8c1b",
+    "B-dd0987c7",
+]
+refs = []
+
+[[backlog_links]]
+ref = "width-fitted-footer-with-short-full-and-hidden-modes"
+closes = [
+    "B-59aa6362",
+    "B-d1667850",
+]
+refs = []
+
+[[backlog_links]]
+ref = "osc-52-encoder"
+closes = ["B-d4da8c1b"]
+refs = []
+
+[[backlog_links]]
+ref = "runtime-carries-out-copy-capture-toggle-and-the-raw-mouse-event-log"
+closes = [
+    "B-d4da8c1b",
+    "B-dd0987c7",
+]
+refs = []
+
+[[backlog_links]]
+ref = "new-element-tokens-and-revamp-defaults"
+closes = ["B-d1667850"]
+refs = []
+
+[[backlog_links]]
+ref = "shared-table-core"
+closes = ["B-5e571ecd"]
+refs = []
+
+[[backlog_links]]
+ref = "sort-direction-and-per-column-sort-keys"
+closes = ["B-5e571ecd"]
+refs = []
+
+[[backlog_links]]
+ref = "item-tables-draw-a-header-row-id-cells-and-empty-states"
+closes = [
+    "B-5e571ecd",
+    "B-d4da8c1b",
+    "B-d1667850",
+]
+refs = []
+
+[[backlog_links]]
+ref = "inbox-table-draws-a-header-row"
+closes = ["B-5e571ecd"]
+refs = []
+
+[[backlog_links]]
+ref = "layers-view-uses-the-shared-row-drawer"
+closes = ["B-d1667850"]
+refs = []
+
+[[backlog_links]]
+ref = "column-picker-form"
+closes = ["B-5e571ecd"]
+refs = []
+
+[[backlog_links]]
+ref = "wire-header-clicks-sort-keys-id-cell-copy-and-the-column-picker"
+closes = [
+    "B-5e571ecd",
+    "B-d4da8c1b",
+]
+refs = []
+
+[[backlog_links]]
+ref = "named-theme-sets-with-style-rules"
+closes = ["B-d1667850"]
+refs = []
+
+[[backlog_links]]
+ref = "theme-config-base-set-and-per-set-overrides"
+closes = ["B-d1667850"]
+refs = []
+
+[[backlog_links]]
+ref = "theme-flag"
+closes = ["B-d1667850"]
+refs = []
+
+[[backlog_links]]
+ref = "wire-the-theme-picker-and-live-switching"
+closes = ["B-d1667850"]
+refs = []
+
+[[backlog_links]]
+ref = "theme-picker-overlay"
+closes = ["B-d1667850"]
+refs = []
+
+[[backlog_links]]
+ref = "header-flooded-active-tab-faint-empty-tabs-history-on-tall-panes"
+closes = ["B-d1667850"]
+refs = []
+
+[[backlog_links]]
+ref = "markdown-strong-without-bold"
+closes = ["B-d1667850"]
+refs = []
+
+[[backlog_links]]
+ref = "panel-helper"
+closes = ["B-d1667850"]
+refs = []
+
+[[backlog_links]]
+ref = "details-selector-and-form-panels-use-the-helper"
+closes = ["B-d1667850"]
+refs = []
+
+[[backlog_links]]
+ref = "traversal-card-uses-the-helper"
+closes = ["B-d1667850"]
+refs = []
+
+[[backlog_links]]
+ref = "legend-panel-uses-the-helper"
+closes = ["B-d1667850"]
+refs = []
+
+[[backlog_links]]
+ref = "modal-backdrop-comfortable-gutter-and-the-picker-panel"
+closes = ["B-d1667850"]
+refs = []
+
+[[backlog_links]]
+ref = "neighbourhood-subsets-and-the-fit-search"
+closes = ["B-3dbe27a1"]
+refs = []
+
+[[backlog_links]]
+ref = "layout-of-a-node-subset-at-a-zoom-level"
+closes = ["B-3dbe27a1"]
+refs = []
+
+[[backlog_links]]
+ref = "wire-focus-zoom-fit-and-drag-pan"
+closes = ["B-3dbe27a1"]
+refs = []
+
+[[backlog_links]]
+ref = "paint-zoom-levels-the-hidden-marker-and-clickable-nodes"
+closes = ["B-3dbe27a1"]
+refs = []
+
+[[backlog_links]]
+ref = "persist-hints-columns-sort-direction-theme-and-diagram-view"
+closes = [
+    "B-59aa6362",
+    "B-5e571ecd",
+    "B-d1667850",
+    "B-3dbe27a1",
+]
+refs = []
+
+[[backlog_links]]
+ref = "document-keys-config-themes-copy-and-the-event-log"
+closes = ["B-d4da8c1b"]
+refs = []
+
+[[items]]
+id = 1
+ref = "shared-scroll-stepping-helper"
+title = "Shared scroll stepping helper"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — navigation, hint row, copy, divider drag"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/scroll.rs",
+    "glimpse/src/main.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Create `glimpse/src/scroll.rs` with `pub(crate) fn step(at: Option<usize>, len: usize, page: usize, scroll: Scroll) -> Option<usize>` and `pub(crate) fn offset(current: u16, max: u16, page: u16, scroll: Scroll) -> u16`, and declare `mod scroll;` in `glimpse/src/main.rs`."
+detail = """Semantics per Approach, "Navigation contract". `Scroll` is `crate::app::Scroll` (`Up(u16)`, `Down(u16)`, `PageUp`, `PageDown`, `Top`, `Bottom`). `offset` reproduces today's `App::scroll_details` arithmetic: Up/Down by n saturating, PageUp/PageDown by `page.saturating_sub(1).max(1)` (one row of overlap, as today), Top → 0, Bottom → `max`, all clamped to `max`. Inline `mod tests` covers empty lists, clamping at both ends, `None` landing on the first row, and a page of 0 behaving as 1."""
+acceptance = '''
+- forward: `grep -cE 'pub\(crate\) fn (step|offset)\(' glimpse/src/scroll.rs` prints `2` (today: file absent).
+- forward: `grep -c '^mod scroll;' glimpse/src/main.rs` prints `1` (today: `0`).
+- falsifier: `cargo test --manifest-path glimpse/Cargo.toml scroll::` passes. Making `Bottom` return `len` instead of `len - 1` turns a test red. **predicted, unverified**.'''
+agent = "implement-lite"
+commit = "68f9ba3"
+
+[[items]]
+id = 2
+ref = "item-and-inbox-cursors-page-and-jump"
+title = "Item and Inbox cursors page and jump"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — navigation, hint row, copy, divider drag"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/surface.rs"]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "Add `pub(crate) page: usize` to `Tracking` and `pub(crate) fn page_cursor(&mut self, scroll: Scroll)` to `ItemsState` and `InboxState`, stepping through each one's visible order with `scroll::step`."
+detail = "Reuse each state's `visible_ids` order. A page move clears `scroll_pinned`, as cursor moves do today. Tests: PageDown moves `page` rows, Bottom lands on the last visible id, and an empty list leaves the cursor `None`."
+acceptance = """
+- forward: `grep -c 'fn page_cursor' glimpse/src/surface.rs` prints `2` (today: `0`).
+- falsifier: the new `surface::` tests fail if `page_cursor` ignores `page`. **predicted, unverified**."""
+agent = "implement-lite"
+commit = "68f9ba3"
+
+[[items]]
+id = 3
+ref = "lists-report-their-page-height"
+title = "Lists report their page height"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — navigation, hint row, copy, divider drag"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/view/items.rs",
+    "glimpse/src/view/inbox.rs",
+    "glimpse/src/view/mod.rs",
+]
+needs = [2]
+coupling = []
+deps_note = ""
+action = "Make `items::render` and `inbox::render` return a `Drawn{targets, scroll, page}` struct (`page` = list rows drawn), and have `view::draw_surface` write `scroll` and `page` back into the surface's `Tracking`."
+detail = "Define `pub(crate) struct Drawn` in `glimpse/src/view/items.rs`, deriving `Default`; inbox reuses it. Build it with `..Drawn::default()` in both renders, so task 15 can add `headers` and `ids` without touching `glimpse/src/view/inbox.rs`. Update the existing tests that destructure the tuple."
+acceptance = '''
+- forward: `grep -cE '\.page = ' glimpse/src/view/mod.rs` prints `2` (today: `0`).
+- guard: the existing `view::items` and `view::inbox` tests pass.'''
+agent = "implement-lite"
+commit = "d3060f2"
+
+[[items]]
+id = 4
+ref = "route-paging-keys-to-the-focused-list"
+title = "Route paging keys to the focused list"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — navigation, hint row, copy, divider drag"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/app.rs",
+    "glimpse/src/keys.rs",
+    "glimpse/src/view/legend.rs",
+]
+needs = [
+    1,
+    2,
+]
+coupling = []
+deps_note = ""
+action = "Add `Action::Page(Scroll)`. Map PgUp/PgDn/Home/End to it in `keys::map`, and Shift+PgUp/PgDn/Home/End to `ScrollDetails`. Route it in `App::apply`, add `App.selector_page`, and reimplement `scroll_details`/`scroll_legend` with `scroll::offset`."
+detail = 'Routing order and Tasks behaviour per Approach, "Navigation contract". Home/End on Tasks go through `App::select` (trail rule). Update the legend `KEYS` rows for paging and the details scroll, keeping each key cell within `SAMPLE` (15 cells; Approach, "Wiring discipline"). Rewrite `keys::tests::scroll_keys_do_not_collide_with_moves`, which asserts plain PgUp/PgDn/Home/End map to `ScrollDetails`, so plain keys map to `Page(..)` and the Shift forms to `ScrollDetails`. Tests in `app.rs`: Page on an item surface moves the cursor, Page with the legend open scrolls the legend, and End on Tasks selects the last task.'
+acceptance = """
+- forward: `grep -c 'Action::Page(' glimpse/src/keys.rs` prints at least `4` (today: `0`).
+- forward: `grep -c 'KeyCode::PageDown => Action::ScrollDetails(Scroll::PageDown)' glimpse/src/keys.rs` prints `0` (today: `1`).
+- guard: `legend::tests::every_bound_letter_key_has_a_legend_row` passes."""
+agent = "implement-deep"
+commit = "d3060f2"
+
+[[items]]
+id = 5
+ref = "selector-windows-its-entries"
+title = "Selector windows its entries"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — navigation, hint row, copy, divider drag"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/view/selector.rs"]
+needs = [4]
+coupling = []
+deps_note = ""
+action = "Draw only the window of entries around `App.selector_cursor` that fits, using `view::place(0, Some(cursor), len, rows, Place::Jump)`. Show `↑`/`↓ more` markers, and write the drawn row count to `App.selector_page`."
+detail = "Change `render` to take `&mut App`, and the test helper `draw` in `glimpse/src/view/selector.rs` with it. The call site in `glimpse/src/view/mod.rs` already passes `&mut App`, so it compiles unchanged. Test: with 40 flows in a 10-row area, the cursor at entry 30 is drawn."
+acceptance = """
+- forward: `grep -c 'place(' glimpse/src/view/selector.rs` prints at least `1` (today: `0`).
+- guard: the existing `view::selector` tests pass."""
+agent = "implement-lite"
+commit = "5aa75db"
+
+[[items]]
+id = 6
+ref = "form-choice-lists-window-and-page"
+title = "Form choice lists window and page"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — navigation, hint row, copy, divider drag"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/form.rs",
+    "glimpse/src/view/form.rs",
+]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "Handle PgUp/PgDn/Home/End in `Select` and `Multi` fields with `scroll::step`, and window `Multi` lists the way `Select` uses `ListState`."
+detail = "The form gets raw keys through `App::overlay_key`, so no `app.rs` change is needed. Text fields ignore these keys. Test: End on a 20-option Multi puts the cursor on the last option, and it is drawn."
+acceptance = """
+- forward: `grep -cE 'KeyCode::(PageDown|Home)' glimpse/src/form.rs` prints at least `2` (today: `0`).
+- guard: the existing `form::` tests pass."""
+agent = "implement-lite"
+commit = "6ea18ec"
+
+[[items]]
+id = 7
+ref = "hint-mode-config-key"
+title = "Hint-mode config key"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — navigation, hint row, copy, divider drag"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/config.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add `HintMode{Short, Full, Hidden}` (`parse`, `as_str`, `next`) and the strictly parsed config key `hints` (default `short`) to `Config`."
+detail = "Follow the `density` key's parse pattern in `Config::parse`. An unknown value fails the file with a message listing the three values. Tests cover the parse and the rejection."
+acceptance = """
+- forward: `grep -c '"hints" =>' glimpse/src/config.rs` prints `1` (today: `0`).
+- falsifier: the new rejection test fails if `hints = "tiny"` is accepted. **predicted, unverified**."""
+agent = "implement-lite"
+commit = "0c14783"
+
+[[items]]
+id = 8
+ref = "wire-hint-cycling-copy-capture-release-and-tolerant-drags"
+title = "Wire hint cycling, copy, capture release and tolerant drags"
+effort = "L"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — navigation, hint row, copy, divider drag"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/app.rs",
+    "glimpse/src/keys.rs",
+    "glimpse/src/view/legend.rs",
+]
+needs = [
+    4,
+    7,
+]
+coupling = []
+deps_note = ""
+action = "Add the `App` fields `hints: HintMode` (from config) and `mouse_captured: bool` (starting as `config.mouse`). Add the actions `CycleHints` (`H`), `CopyId` (`y`) → hands back `Action::Copy(String)`, `ToggleCapture` (`v`) → hands back `Action::SetCapture(bool)`, and the runtime-only `Copy` and `SetCapture`. Make the drag matcher tolerant and widen the divider hit zone."
+detail = """
+- Copy targets and notices per Approach, "Copy and capture"; drag rules per Approach, "Divider drag tolerance".
+- When there is nothing to copy, notice `nothing to copy`.
+- While capture is released, `keys::mouse` is never fed events, so no mouse branch changes for it.
+- Add legend rows for `H`, `y` and `v`, and append `"H"`, `"y"` and `"v"` to the key list in `every_bound_letter_key_has_a_legend_row` (Approach, "Wiring discipline").
+- `keys.rs` tests: during a drag, a re-sent `Down(Left)` and a `Moved` each map to `DragTo`, `Up(Left)` maps to `DragEnd`, and a press one cell right of the divider maps to `DragStart`."""
+acceptance = '''
+- forward: `grep -cE "KeyCode::Char\('(H|y|v)'\) =>" glimpse/src/keys.rs` prints `3` (today: `0`).
+- forward: `grep -cE '"(H|y|v)"' glimpse/src/view/legend.rs` prints at least `3` (today: `0`).
+- forward: `grep -c 'MouseEventKind::Up(_) | MouseEventKind::Down(_) => Some(Action::DragEnd)' glimpse/src/keys.rs` prints `0` (today: `1`).
+- guard: `legend::tests::every_bound_letter_key_has_a_legend_row` passes.'''
+agent = "implement-deep"
+commit = "d3060f2"
+
+[[items]]
+id = 9
+ref = "width-fitted-footer-with-short-full-and-hidden-modes"
+title = "Width-fitted footer with short, full and hidden modes"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — navigation, hint row, copy, divider drag"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/view/footer.rs",
+    "glimpse/src/view/mod.rs",
+]
+needs = [
+    3,
+    8,
+]
+coupling = []
+deps_note = ""
+action = "Move `footer`, `surface_hints` and `inbox_hints` from `glimpse/src/view/mod.rs` into a new `pub(crate) mod footer`. Give each hint a priority, fit hints to the width per `App.hints`, and replace the footer's `Constraint::Length(1)` with `footer::height(app, width, now)`."
+detail = """Per Approach, "Hint row" and "Copy and capture". Add the hints for `H`, `y` and `v`. Priority, highest first, is each hint list's current order, with `? keys` pinned last and `…` immediately before it. `mouse released · v to capture` replaces the first hint while `!app.mouse_captured`, and still takes one row in hidden mode. The footer assertions already in the `glimpse/src/view/mod.rs` tests keep passing (`tab view` at 100 columns, `J/K scroll` at 45, `space mark`/`m actions`/`e classify` and `enter answer`/`n capture`/`c closed` at 120, `switch` in the selector). Tests at 60, 110 and 200 columns: the line always ends `? keys`, no hint is cut mid-word, full mode wraps to at most 3 rows, and hidden mode gives a height of 0 unless a notice is live."""
+acceptance = """
+- forward: `grep -c 'fn surface_hints' glimpse/src/view/mod.rs` prints `0` (today: `1`).
+- forward: `grep -c 'fn surface_hints' glimpse/src/view/footer.rs` prints `1` (today: file absent)."""
+agent = "implement-deep"
+commit = "d3060f2"
+
+[[items]]
+id = 10
+ref = "osc-52-encoder"
+title = "OSC 52 encoder"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — navigation, hint row, copy, divider drag"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/clipboard.rs",
+    "glimpse/src/main.rs",
+]
+needs = [1]
+coupling = []
+deps_note = ""
+action = 'Create `pub(crate) fn osc52(text: &str) -> String`, which returns `\u{1b}]52;c;<base64>\u{1b}\\` using a hand-rolled RFC 4648 standard-alphabet base64 with `=` padding, and declare `mod clipboard;`.'
+detail = 'No dependency is added. Tests use the RFC 4648 §10 vectors ("" → "", "f" → "Zg==", "fo" → "Zm8=", "foo" → "Zm9v", "foobar" → "Zm9vYmFy") and the exact wrapper bytes.'
+acceptance = """
+- forward: `grep -c '^mod clipboard;' glimpse/src/main.rs` prints `1` (today: `0`).
+- falsifier: the vector test fails if the padding is dropped (`"f"` → `"Zg"`). **predicted, unverified**."""
+agent = "implement-lite"
+commit = "68f9ba3"
+
+[[items]]
+id = 11
+ref = "runtime-carries-out-copy-capture-toggle-and-the-raw-mouse-event-log"
+title = "Runtime carries out copy, capture toggle and the raw mouse-event log"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — navigation, hint row, copy, divider drag"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/runtime.rs",
+    "glimpse/src/hook.rs",
+]
+needs = [
+    8,
+    10,
+]
+coupling = []
+deps_note = ""
+action = """
+- Add `Host::copy(&mut self, text: &str)` and `Host::set_mouse_capture(&mut self, on: bool)`.
+- Handle `Action::Copy` and `Action::SetCapture` in `carry_out`, and keep `App.mouse_captured` in step.
+- Split `capture_mouse` into a once-only panic-hook install, made at start whatever `config.mouse` says, plus an enable/disable toggle.
+- Add the `GLIMPSE_EVENT_LOG` raw mouse-event log to the run loop."""
+detail = 'The real host writes `clipboard::osc52(text)` to stdout and flushes. Exit releases capture only when it is held. `carry_out` takes `&mut App` so it can set `mouse_captured` (its caller in `handle` already holds `&mut App`). Hook install per Approach, "Copy and capture"; log format, buffering, cap and failure handling per Approach, "Divider drag tolerance". `FakeHost` records `copy` and `set_mouse_capture` calls. A test checks that `y` on a review cursor row reaches `FakeHost` with that id.'
+acceptance = '''
+- forward: `grep -c 'GLIMPSE_EVENT_LOG' glimpse/src/runtime.rs` prints at least `1` (today: `0`).
+- forward: `grep -cE 'fn (copy|set_mouse_capture)\(' glimpse/src/runtime.rs` prints at least `2` (today: `0`).'''
+agent = "implement-deep"
+commit = "4912a4b"
+
+[[items]]
+id = 12
+ref = "new-element-tokens-and-revamp-defaults"
+title = "New element tokens and revamp defaults"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B — tables"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/theme.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add the tokens `table_header` (muted, built with underline), `sort_mark` (accent), `strong` (accent), `backdrop` (faint), `selection_text` (idle) and `tab_empty` (faint) to `TOKENS`, with their `Theme` fields. Flood the active tab (`surface_tab_active` → `on_color` on `accent_bg`), give `slug` the `accent` colour, and build `badge` with the `strong` colour as well as bold."
+detail = 'Per Approach, "Theme sets" and "Revamp". The `no_color` branch gives `backdrop` and `selection_text` the `DIM`/plain fallbacks the existing faint tokens use. Existing theme tests must keep resolving every token.'
+acceptance = '''
+- forward: `grep -cE '\("(table_header|sort_mark|strong|backdrop|selection_text|tab_empty)",' glimpse/src/theme.rs` prints `6` (today: `0`).
+- guard: the existing `theme::` tests pass.'''
+agent = "implement-lite"
+commit = "7bb1c1e"
+
+[[items]]
+id = 13
+ref = "shared-table-core"
+title = "Shared table core"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B — tables"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/view/table.rs",
+    "glimpse/src/view/mod.rs",
+]
+needs = [
+    9,
+    12,
+    14,
+]
+coupling = []
+deps_note = ""
+action = 'Create `pub(crate) mod table` with the shared `Row` and `draw_rows`, plus `Column`, `header` and `cell`, per Approach, "Tables".'
+detail = "Generalise the `Row`/`draw_rows` in `glimpse/src/view/items.rs` (fill, then line, then overlay, keeping chips intact) as `Row<T>` and `draw_rows<T: Clone>(..) -> Vec<(Rect, T)>`, since items and inbox key rows by `String` and layers by `u32`. `header` takes `surface::SortDir` from task 14. Leave the three local copies in place; tasks 15–17 switch to the shared one. Tests: header rects tile the columns, `cell` returns the id column's rect, and the sort mark is drawn beside the sorted column."
+acceptance = """
+- forward: `grep -c 'pub(crate) mod table;' glimpse/src/view/mod.rs` prints `1` (today: `0`).
+- falsifier: the header-rect test fails if `LEAD` is not added before the first column. **predicted, unverified**."""
+agent = "implement-deep"
+commit = "d3060f2"
+
+[[items]]
+id = 14
+ref = "sort-direction-and-per-column-sort-keys"
+title = "Sort direction and per-column sort keys"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B — tables"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/surface.rs",
+    "glimpse/src/cli.rs",
+]
+needs = [2]
+coupling = []
+deps_note = ""
+action = "Add `SortDir`, the new `Sort` variants, `HeaderKey`, `InboxColumn`, `ItemsState.sort_dir`, Inbox sort state, `cycle_header` and `flip_dir`. Make `compare` honour the direction, extend `Surface::sorts()`, and let `--sort` accept the new keys."
+detail = 'Per Approach, "Tables". The `id_key` tie-break stays ascending whatever the direction. `cli::check_arrange` keeps refusing a key the surface lacks. Tests: the asc → desc → off cycle, Desc reversing Severity, and the Inbox sorting by kind.'
+acceptance = """
+- forward: `grep -c 'enum SortDir' glimpse/src/surface.rs` prints `1` (today: `0`).
+- guard: the existing `surface::` and `tests/cli.rs` `--sort` cases pass."""
+agent = "implement-deep"
+commit = "68f9ba3"
+
+[[items]]
+id = 15
+ref = "item-tables-draw-a-header-row-id-cells-and-empty-states"
+title = "Item tables draw a header row, id cells and empty states"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B — tables"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/view/items.rs",
+    "glimpse/src/view/inbox.rs",
+]
+needs = [
+    3,
+    13,
+    14,
+]
+coupling = []
+deps_note = ""
+action = "Switch to `table::Row`/`draw_rows` and delete the local copies. Draw the header row below the facet line from `App.item_columns`, with the current sort marked. Fill `Drawn.headers: Vec<(Rect, HeaderKey)>` and `Drawn.ids: Vec<(Rect, String)>`. Lift muted and faint spans on the cursor row to `theme.selection_text`, and draw an empty state with a next step."
+detail = """
+- Add `headers` and `ids` to `Drawn`, which already derives `Default` (task 3), so the inbox's `..Drawn::default()` keeps compiling.
+- The empty state names the producing command per ledger: `/review`, `/optimise`, `/review-plan`, `/backlog`.
+- The page height now excludes the header row."""
+acceptance = """
+- forward: `grep -c 'fn draw_rows' glimpse/src/view/items.rs` prints `0` (today: `1`).
+- guard: the existing `view::items` tests pass once their row offsets are updated for the header row."""
+agent = "implement-deep"
+commit = "4398bdf"
+
+[[items]]
+id = 16
+ref = "inbox-table-draws-a-header-row"
+title = "Inbox table draws a header row"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B — tables"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/view/inbox.rs"]
+needs = [
+    3,
+    13,
+    14,
+    15,
+]
+coupling = []
+deps_note = ""
+action = "Switch to `table::Row`/`draw_rows`, draw the Inbox column header with its sort mark, fill `Drawn.headers` and `Drawn.ids`, and apply the selected-row lift and an empty-state next step."
+detail = "The Inbox's columns are `InboxColumn` from task 14. The unanswered-questions section stays first whatever the sort."
+acceptance = """
+- forward: `grep -c 'fn draw_rows' glimpse/src/view/inbox.rs` prints `0` (today: `1`).
+- guard: the existing `view::inbox` tests pass."""
+agent = "implement-lite"
+commit = "4398bdf"
+
+[[items]]
+id = 17
+ref = "layers-view-uses-the-shared-row-drawer"
+title = "Layers view uses the shared row drawer"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B — tables"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/view/layers.rs"]
+needs = [13]
+coupling = []
+deps_note = ""
+action = "Replace the local `Row`/`draw_rows` with `table::Row`/`draw_rows`, and lift muted spans on the selected row to `theme.selection_text`."
+detail = "Layer rule rows and task targets behave exactly as today."
+acceptance = """
+- forward: `grep -c 'fn draw_rows' glimpse/src/view/layers.rs` prints `0` (today: `1`).
+- guard: the existing `view::layers` tests pass."""
+agent = "implement-lite"
+commit = "73b8acb"
+
+[[items]]
+id = 18
+ref = "column-picker-form"
+title = "Column picker form"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B — tables"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/actions.rs"]
+needs = [6]
+coupling = []
+deps_note = ""
+action = "Add `pub(crate) fn columns_form(current: &[ItemColumn]) -> Form`, a single `Multi` field over `ItemColumn::ALL` with `current` checked, and `pub(crate) fn columns_from(form: &Form) -> Vec<ItemColumn>`."
+detail = 'Ordering per Approach, "Tables". The field is required, so at least one column is checked. Tests: a round trip, and newly checked columns append.'
+acceptance = "- forward: `grep -c 'fn columns_form' glimpse/src/actions.rs` prints `1` (today: `0`)."
+agent = "implement-lite"
+commit = "a9043a8"
+
+[[items]]
+id = 19
+ref = "wire-header-clicks-sort-keys-id-cell-copy-and-the-column-picker"
+title = "Wire header clicks, sort keys, id-cell copy and the column picker"
+effort = "L"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B — tables"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/app.rs",
+    "glimpse/src/keys.rs",
+    "glimpse/src/view/legend.rs",
+    "glimpse/src/view/mod.rs",
+    "glimpse/src/actions.rs",
+]
+needs = [
+    8,
+    13,
+    14,
+    15,
+    16,
+    18,
+]
+coupling = []
+deps_note = ""
+action = """
+- Add `Regions.headers: Vec<(Rect, HeaderKey)>` and `Regions.ids: Vec<(Rect, String)>`, filled in `view::render` from the list renders' `Drawn`.
+- Add the actions `SortBy(HeaderKey)` (header click), `FlipSortDir` (`D`), `OpenColumns` (`C`, item surfaces only) and `CopyItem(String)` (id-cell click → hands back `Action::Copy`).
+- Add `Purpose::Columns` in `glimpse/src/actions.rs` and apply a submitted column form to `App.item_columns` (`App::submitted` matches `Purpose` exhaustively, so the variant lands here, not in task 18).
+- Carry `sort_dir` through `App::apply_ledger`'s `ItemsState` rebuild, and add it to `App::edit_items`'s order key so `D` unpins a pinned list."""
+detail = 'Inseparable: the `Regions` fields, their fill in `view::render`, and the `keys::mouse` hit tests must land together to compile. In `keys::mouse`, an id-cell hit is checked before the row hit, and a header hit before both. Add legend rows for `D` and `C`, plus a "Chips and marks" row showing `▲ ▼` in `theme.sort_mark`, and append `"D"` and `"C"` to the key list in `every_bound_letter_key_has_a_legend_row`. Tests cover a header click cycling the sort, an id-cell click handing back `Copy`, and the `C` form submit changing the columns.'
+acceptance = '''
+- forward: `grep -cE 'pub\(crate\) (headers|ids):' glimpse/src/app.rs` prints `2` (today: `0`).
+- forward: `grep -cE '"(D|C)"' glimpse/src/view/legend.rs` prints at least `2` (today: `0`).
+- guard: `legend::tests::every_bound_letter_key_has_a_legend_row` passes.'''
+agent = "implement-deep"
+commit = "dfab048"
+
+[[items]]
+id = 20
+ref = "named-theme-sets-with-style-rules"
+title = "Named theme sets with style rules"
+effort = "L"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — theme sets, picker and revamp"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/theme.rs",
+    "glimpse/src/theme/sets.rs",
+]
+needs = [12]
+coupling = []
+deps_note = ""
+action = "Create `glimpse/src/theme/sets.rs` (declared `pub(crate) mod sets;` from `glimpse/src/theme.rs`, since `config.rs` and `cli.rs` call `theme::sets::by_name`) with `ThemeSet`, `Rules`, `SETS` (`kanso-zen`, `kanso-pearl`, `ansi`, `mono`) and `by_name`. Add `Theme::from_set`, keep `Theme::build` as a wrapper, and add the per-set contrast test."
+detail = """
+- Per Approach, "Theme sets".
+- `kanso-pearl` maps kanso.nvim's pearl palette (`extras/ghostty/kanso-pearl`, MIT; `bg` `#f2f1ef`, `fg` `#22262D`) onto the 15 palette tokens: `idle` ← fg; `danger` ← red `#c84053`; `success` ← green `#6f894e`; `warning` ← yellow `#77713f`; `info` ← blue `#4d699b`; `violet` ← magenta `#b35b79`; `teal` ← cyan `#597b75`; `accent` and `accent_bg` ← orange `#cc6d00`; `on_color` ← bg; `muted`, `faint`, `subtle` and `highlight` ← fg mixed into bg at 70%, 50%, 30% and 10%. Every text token below 4.5:1 on bg (red 4.31, green 3.47, yellow 4.41, magenta 3.97, cyan 4.12, orange 3.23) is darkened in lightness until it passes, and a comment table in `sets.rs` records each source hex, final hex and ratio.
+- `ansi` uses only ANSI colour names. Its `Rules` use `Fill::Reverse` for selection, chips and flashes and `Faint::Dim` for `faint` and `subtle`. Bold styles in `ansi` use the bright slot, so bold does not shift hue.
+- `mono` reproduces today's `no_color` output exactly; a test compares the two.
+- The contrast test computes WCAG ratios over the named lists in Approach, "Theme sets": the text tokens at least 4.5:1 on each RGB set's `bg`, and `selection_text` on `selection_bg` and `on_color` on `accent_bg` at least 4.5:1. The de-emphasised tiers (`faint`, `subtle` and the tokens defaulting to them: `border`, `layer_rule`, `key_separator`, `edge_faded`, `unrelated`, `tab_empty`, `backdrop`) are exempt and named in the test. `ansi` and `mono` are exempt, since they follow the terminal palette."""
+acceptance = """
+- forward: `grep -cE '"(kanso-zen|kanso-pearl|ansi|mono)"' glimpse/src/theme/sets.rs` prints at least `4` (today: file absent).
+- falsifier: the contrast test fails if `kanso-zen`'s `muted` is set to `subtle` (`#4E5561`). **predicted, unverified**."""
+agent = "implement-deep"
+commit = "7bb1c1e"
+
+[[items]]
+id = 21
+ref = "theme-config-base-set-and-per-set-overrides"
+title = "Theme config: base set and per-set overrides"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — theme sets, picker and revamp"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/config.rs"]
+needs = [
+    7,
+    20,
+]
+coupling = []
+deps_note = ""
+action = 'Accept `[theme] base = "<set>"` and `[theme.<set>]` subtables in `theme_table`, storing them as `Config.theme_base: Option<String>` and `Config.theme_sets: HashMap<String, HashMap<String, String>>`. Validate set names through `theme::sets::by_name`, and add the non-file field `Config.theme_from_flag: bool` (default `false`) that task 22 sets.'
+detail = '`Config.theme` keeps its type and meaning (string tokens), so old configs parse unchanged. An unknown set name or token fails the file. Tests: a legacy `[theme]` table, `base = "ansi"`, a `[theme.ansi]` override, and an unknown base.'
+acceptance = """
+- forward: `grep -c '"base"' glimpse/src/config.rs` prints at least `1` (today: `0`).
+- guard: the existing `config::` theme tests pass."""
+agent = "implement-lite"
+commit = "0c14783"
+
+[[items]]
+id = 22
+ref = "theme-flag"
+title = "`--theme` flag"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — theme sets, picker and revamp"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/cli.rs",
+    "glimpse/src/main.rs",
+    "glimpse/tests/cli.rs",
+]
+needs = [
+    10,
+    14,
+    21,
+]
+coupling = []
+deps_note = ""
+action = "Parse `--theme <set>`, validated against `theme::sets::by_name`. In `glimpse/src/main.rs`, before `App::new`, apply it over `config.theme_base` and set `config.theme_from_flag = true`. Add a binary case that runs `--once --theme ansi` and expects exit 0, and one with `--theme nope` expecting a usage error."
+detail = "`Config.theme_from_flag` (added by task 21) tells task 36 that state must not override the theme. The usage text lists the sets. Keep the binary cases inside the `tests/cli.rs` sandbox."
+acceptance = """
+- forward: `grep -c '"--theme"' glimpse/src/cli.rs` prints at least `1` (today: `0`).
+- forward: `cargo run --manifest-path glimpse/Cargo.toml -q -- --once --snapshot glimpse/tests/fixtures/snapshot.json --size 110x40 --theme ansi` exits 0, as the new `glimpse/tests/cli.rs` case asserts (today: exit 2, `unknown argument --theme`; the installed binary changes only after `cargo install --path glimpse`). **predicted, unverified** (builds)."""
+agent = "implement-lite"
+commit = "68f9ba3"
+
+[[items]]
+id = 23
+ref = "wire-the-theme-picker-and-live-switching"
+title = "Wire the theme picker and live switching"
+effort = "L"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — theme sets, picker and revamp"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/app.rs",
+    "glimpse/src/keys.rs",
+    "glimpse/src/view/legend.rs",
+]
+needs = [
+    19,
+    20,
+    21,
+]
+coupling = []
+deps_note = ""
+action = """
+- `App::new` builds the theme through `Theme::from_set`, from `theme_base` (default `kanso-zen`; `NO_COLOR` → `mono`), and keeps `theme_set: String` and the overrides.
+- Add `App.theme_picker: Option<ThemePicker{cursor, original}>`, opened by `ToggleThemes` (`T`). With the picker open, `Move` previews the set under the cursor, `Details` (Enter) keeps it with a notice, and `Back` reverts."""
+detail = 'Per Approach, "Theme picker". Place the picker first in the `Action::Back` chain, and give `keys::mouse` the picker branch that Approach describes. Add a legend row for `T` and append `"T"` to the key list in `every_bound_letter_key_has_a_legend_row`. Tests: preview changes `app.theme`, Back restores the original, and Enter keeps the new set.'
+acceptance = """
+- forward: `grep -c "KeyCode::Char('T') =>" glimpse/src/keys.rs` prints `1` (today: `0`).
+- forward: `grep -c '"T"' glimpse/src/view/legend.rs` prints at least `1` (today: `0`).
+- guard: `legend::tests::every_bound_letter_key_has_a_legend_row` passes."""
+agent = "implement-deep"
+commit = "cb48db3"
+
+[[items]]
+id = 24
+ref = "theme-picker-overlay"
+title = "Theme picker overlay"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — theme sets, picker and revamp"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/view/themes.rs",
+    "glimpse/src/view/mod.rs",
+    "glimpse/src/view/footer.rs",
+]
+needs = [
+    9,
+    19,
+    23,
+]
+coupling = []
+deps_note = ""
+action = "Create `pub(crate) mod themes` to draw the picker, with set names, the current mark, the cursor row and a small sample of status chips in the live theme. Draw it from `view::render` after the legend and before forms, and add the picker's footer hints in `glimpse/src/view/footer.rs`."
+detail = "Follow `glimpse/src/view/selector.rs`'s `Clear` + bordered block layout. Task 28 later moves that block onto the panel helper. Test: with the picker open, a `TestBackend` frame shows all four set names."
+acceptance = "- forward: `grep -c 'pub(crate) mod themes;' glimpse/src/view/mod.rs` prints `1` (today: `0`)."
+agent = "implement-lite"
+commit = "cb48db3"
+
+[[items]]
+id = 25
+ref = "header-flooded-active-tab-faint-empty-tabs-history-on-tall-panes"
+title = "Header: flooded active tab, faint empty tabs, history on tall panes"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — theme sets, picker and revamp"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/view/header.rs",
+    "glimpse/src/view/mod.rs",
+]
+needs = [
+    12,
+    24,
+]
+coupling = []
+deps_note = ""
+action = "Draw the active surface tab as a flooded chip (`surface_tab_active` on `surface_tab_active_bg`). Draw tabs whose ledger is absent in `theme.tab_empty`, dropping the `—` (compact `P—` tabs too). Show the history row only when the pane is at least 30 rows tall, passing the pane height to `header::height` and `header::render` from their calls in `view::render`."
+detail = "`header::height` must agree with the row it draws, since `view::render` reserves it. Only the flow event is gated on height: `second_row`'s `source_error` and config `warning` stay visible on short panes. Update the existing `view::header` tests that assert the `—` text or the history row in a short frame. Tests: an absent-ledger tab's cells use `tab_empty`, and a 24-row pane has no history row but still shows a source error."
+acceptance = """
+- forward: `grep -c 'tab_empty' glimpse/src/view/header.rs` prints at least `1` (today: `0`).
+- guard: the existing `view::header` tests pass once the `—` and short-frame history assertions are updated."""
+agent = "implement-lite"
+commit = "cb48db3"
+
+[[items]]
+id = 26
+ref = "markdown-strong-without-bold"
+title = "Markdown strong without bold"
+effort = "S"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — theme sets, picker and revamp"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/view/markdown.rs"]
+needs = [12]
+coupling = []
+deps_note = ""
+action = "Style `**strong**` with `theme.strong` instead of `theme.badge`."
+detail = "Leave italics, strikethrough and links as they are."
+acceptance = """
+- forward: `grep -c 'theme.strong' glimpse/src/view/markdown.rs` prints at least `1` (today: `0`).
+- forward: `grep -c 'theme.badge' glimpse/src/view/markdown.rs` prints `0` (today: `1`)."""
+agent = "implement-lite"
+commit = "85f4daa"
+
+[[items]]
+id = 27
+ref = "panel-helper"
+title = "Panel helper"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — theme sets, picker and revamp"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/view/panel.rs",
+    "glimpse/src/view/mod.rs",
+    "glimpse/src/view/activity.rs",
+]
+needs = [
+    24,
+    25,
+]
+coupling = []
+deps_note = ""
+action = "Create `pub(crate) mod panel` with `pub(crate) fn block<'a>(title: &'a str, theme: &Theme) -> Block<'a>`: rounded borders in `theme.border`, the title in `border_title` and `Padding::horizontal(1)`. Move `glimpse/src/view/activity.rs`'s panel onto it."
+detail = """Per Approach, "Revamp". `view::render`'s `Block::bordered().inner(rect)` details-page arithmetic stays valid, because rounded borders take the same cells."""
+acceptance = """
+- forward: `grep -c 'Block::' glimpse/src/view/activity.rs` prints `0` (today: `1`).
+- guard: the existing `view::activity` tests pass."""
+agent = "implement-lite"
+commit = "cb48db3"
+
+[[items]]
+id = 28
+ref = "details-selector-and-form-panels-use-the-helper"
+title = "Details, selector and form panels use the helper"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — theme sets, picker and revamp"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/view/details.rs",
+    "glimpse/src/view/selector.rs",
+    "glimpse/src/view/form.rs",
+]
+needs = [
+    5,
+    6,
+    27,
+]
+coupling = []
+deps_note = ""
+action = "Replace each hand-built bordered `Block` with `panel::block`."
+detail = "Task 31 moves the theme picker in `glimpse/src/view/themes.rs`. Keep test-only `Block` uses, if any."
+acceptance = "- forward: `grep -c 'Block::' glimpse/src/view/details.rs glimpse/src/view/selector.rs glimpse/src/view/form.rs` prints `0` for each file (today: `1` each)."
+agent = "implement-lite"
+commit = "77df329"
+
+[[items]]
+id = 29
+ref = "traversal-card-uses-the-helper"
+title = "Traversal card uses the helper"
+effort = "S"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — theme sets, picker and revamp"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/view/ego.rs"]
+needs = [27]
+coupling = []
+deps_note = ""
+action = "Build the traversal card's block with `panel::block`."
+detail = "`panel::block` supplies the rounded border and padding; the card then re-applies its status-coloured border style and selection-styled title over it, so its look is unchanged."
+acceptance = """
+- forward: `grep -c 'BorderType::Rounded' glimpse/src/view/ego.rs` prints `0` (today: `1`).
+- guard: the existing `view::ego` tests pass."""
+agent = "implement-lite"
+commit = "697edfd"
+
+[[items]]
+id = 30
+ref = "legend-panel-uses-the-helper"
+title = "Legend panel uses the helper"
+effort = "S"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — theme sets, picker and revamp"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/view/legend.rs"]
+needs = [
+    23,
+    27,
+]
+coupling = []
+deps_note = ""
+action = "Build the legend's block with `panel::block`."
+detail = "Scroll bounds and the scrollbar are unchanged."
+acceptance = """
+- forward: `grep -c 'Block::' glimpse/src/view/legend.rs` prints `0` (today: `1`).
+- guard: `legend::tests::every_bound_letter_key_has_a_legend_row` passes."""
+agent = "implement-lite"
+commit = "cb48db3"
+
+[[items]]
+id = 31
+ref = "modal-backdrop-comfortable-gutter-and-the-picker-panel"
+title = "Modal backdrop, comfortable gutter and the picker panel"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — theme sets, picker and revamp"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/view/mod.rs",
+    "glimpse/src/view/themes.rs",
+]
+needs = [
+    24,
+    27,
+]
+coupling = []
+deps_note = ""
+action = """
+- In `view::render`, restyle the frame with `theme.backdrop` before drawing the selector, legend, theme picker or a form.
+- In comfortable density, inset the body by one cell on the left.
+- Move `glimpse/src/view/themes.rs` onto `panel::block`."""
+detail = "The backdrop must not alter `Regions` (the gutter shifts every rect; recompute them from the inset body). Tests: with the legend open, a cell outside the legend carries the backdrop style, and in comfortable density column 0 of the body is blank."
+acceptance = """
+- forward: `grep -c 'theme.backdrop' glimpse/src/view/mod.rs` prints at least `1` (today: `0`).
+- guard: the existing `view::tests` pass once their offsets are updated for the gutter."""
+agent = "implement-deep"
+commit = "cb48db3"
+
+[[items]]
+id = 32
+ref = "neighbourhood-subsets-and-the-fit-search"
+title = "Neighbourhood subsets and the fit search"
+effort = "M"
+status = "done"
+checkpoint = "D"
+phase = "Milestone D — diagram focus, zoom and fit"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/diagram/subset.rs",
+    "glimpse/src/diagram/mod.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = 'Create `pub(crate) mod subset` with `Focus`, `generations`, `families`, `fit` and `Subset`, per Approach, "Diagram focus, zoom and fit". Declare it in `glimpse/src/diagram/mod.rs`.'
+detail = """Walk `needs` edges from the snapshot. glimpse has no closure helper, and tomlctl's `Graph::closure_up`/`closure_down` are `pub(crate)` there. `fit` takes a `fits` predicate so it is testable without layout; the radius search is per Approach, "Diagram focus, zoom and fit". Tests on the `wide()`, `shortcut()` and `two_components()` builders in `glimpse/src/diagram/mod.rs` tests (made `pub(super)`, since they are private to `diagram::tests`): radius-1 ancestry, Both at radius 2, `fit` stopping at the largest radius the predicate accepts, and `hidden` counting the rest."""
+acceptance = "- forward: `grep -c 'pub(crate) mod subset;' glimpse/src/diagram/mod.rs` prints `1` (today: `0`)."
+agent = "implement-deep"
+commit = "8703fa8"
+
+[[items]]
+id = 33
+ref = "layout-of-a-node-subset-at-a-zoom-level"
+title = "Layout of a node subset at a zoom level"
+effort = "L"
+status = "done"
+checkpoint = "D"
+phase = "Milestone D — diagram focus, zoom and fit"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/diagram/mod.rs",
+    "glimpse/src/diagram/position.rs",
+]
+needs = [32]
+coupling = []
+deps_note = ""
+action = """
+- Add `Zoom{Titles, Ids, Tight}`.
+- Split `layout()` into `layout_of(layers, edges, orientation, zoom, label_width)`.
+- Make the task gap a parameter through a new `position::position_with_gap`, keeping `position::position` and `TASK_GAP` (which the `position.rs` docs link) so the `route.rs` and `position.rs` test call sites compile unchanged.
+- Add `DiagramCache::layout_for(snapshot, index, orientation, view: (u16, u16), target, focus, fit, zoom)`. It runs `subset::fit` with `layout_of` measurements, skips the search when the fit inputs match the last search, and keys the cache per Approach, "Diagram focus, zoom and fit". Keep `DiagramCache::layout` as the full-graph, `Zoom::Ids` call for tests only, and move `diagram::navigator` onto the layout `layout_for` last stored."""
+detail = 'Subset rules (filter layers, drop empty, renumber, keep both-ends edges), the fit predicate, the Titles title hash and the navigator rule per Approach, "Diagram focus, zoom and fit". Titles labels use task titles from the snapshot. The returned `Layout` carries `hidden: usize`. Tests: the edge-connectivity and glyph-arm invariants hold on a subset layout in both orientations; the cache recomputes when the zoom, subset or (at `Zoom::Titles`) a title changes and is reused otherwise; two consecutive `layout_for` calls with unchanged inputs leave `computations` unchanged, run no fit search and keep a pinned scroll; and the Tight layout is narrower than Ids on `wide()`.'
+acceptance = """
+- forward: `grep -cE 'fn layout_of|enum Zoom' glimpse/src/diagram/mod.rs` prints `2` (today: `0`).
+- guard: the existing `diagram::` tests pass."""
+agent = "implement-deep"
+commit = "8703fa8"
+
+[[items]]
+id = 34
+ref = "wire-focus-zoom-fit-and-drag-pan"
+title = "Wire focus, zoom, fit and drag-pan"
+effort = "L"
+status = "done"
+checkpoint = "D"
+phase = "Milestone D — diagram focus, zoom and fit"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/app.rs",
+    "glimpse/src/keys.rs",
+    "glimpse/src/view/legend.rs",
+]
+needs = [
+    23,
+    30,
+    33,
+]
+coupling = []
+deps_note = ""
+action = """
+- Add the `App` fields `diagram_focus`, `diagram_zoom` (default `Ids`) and `diagram_fit` (default `true`).
+- Add the actions `CycleFocus` (`F`), `Zoom(bool)` (`z` out, `Z` in, Ctrl+wheel over the diagram) and `ToggleFit` (`x`), each with a notice.
+- Keep `App.dragging` for the divider and add `App.pan: Option<(u16, u16)>`, which a left press on diagram background starts."""
+detail = 'Drag rules per Approach, "Divider drag tolerance" and "Diagram focus, zoom and fit". Pan motion becomes `ScrollView(dx, dy)`, which pins. Update the `keys.rs` test that asserts `z` is unbound. Add legend rows for `F`, `z`, `Z` and `x` and a "Chips and marks" row for the `+n hidden` chip, and append `"F"`, `"z"`, `"Z"` and `"x"` to the key list in `every_bound_letter_key_has_a_legend_row`. Tests: Ctrl+ScrollUp over the diagram zooms in, a background press then a drag pans, and a press on a node still selects it.'
+acceptance = '''
+- forward: `grep -cE "KeyCode::Char\('(F|z|Z|x)'\) =>" glimpse/src/keys.rs` prints `4` (today: `0`).
+- forward: `grep -cE '"(F|z|Z|x)"' glimpse/src/view/legend.rs` prints at least `4` (today: `0`).
+- guard: `legend::tests::every_bound_letter_key_has_a_legend_row` passes.'''
+agent = "implement-deep"
+commit = "cb48db3"
+
+[[items]]
+id = 35
+ref = "paint-zoom-levels-the-hidden-marker-and-clickable-nodes"
+title = "Paint zoom levels, the hidden marker and clickable nodes"
+effort = "M"
+status = "done"
+checkpoint = "D"
+phase = "Milestone D — diagram focus, zoom and fit"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/diagram/paint.rs",
+    "glimpse/src/view/mod.rs",
+]
+needs = [
+    31,
+    33,
+    34,
+]
+coupling = []
+deps_note = ""
+action = """
+- `paint::render` calls `DiagramCache::layout_for` with `App.diagram_*`, the view size and the selection, and draws the labels per zoom: `[id title…]`, `[id]`, or a status glyph.
+- It draws a `+n hidden` chip in the view's top-right corner when `hidden > 0`.
+- `view::draw_view` returns diagram node targets (`NodeBox` minus scroll) so clicks select nodes."""
+detail = 'The chip uses `theme.strong`, per Approach, "Revamp". `follow`/`pan` keep working on the subset layout. Tests: at Tight zoom a node is one cell, a fit-limited frame shows the `hidden` chip, and a click target exists for the selected node.'
+acceptance = """
+- forward: `grep -c 'hidden' glimpse/src/diagram/paint.rs` prints at least `1` (today: `0`).
+- guard: the existing `diagram::paint` tests and `tests/cli.rs` `once_renders_the_diagram_view` pass."""
+agent = "implement-deep"
+commit = "e12f579"
+
+[[items]]
+id = 36
+ref = "persist-hints-columns-sort-direction-theme-and-diagram-view"
+title = "Persist hints, columns, sort direction, theme and diagram view"
+effort = "M"
+status = "done"
+checkpoint = "E"
+phase = "Milestone E — persistence and docs"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/state.rs",
+    "glimpse/src/runtime.rs",
+]
+needs = [
+    8,
+    11,
+    19,
+    22,
+    23,
+    34,
+]
+coupling = []
+deps_note = ""
+action = "Extend `State` parse, render, capture and apply with `hints`, `item_columns`, an `arrangements` direction, `theme`, `zoom` and `fit`."
+detail = """Per Approach, "Persistence". `State::apply` gains `keep_theme: bool`, which `runtime::run` sets from `config.theme_from_flag || config.no_color` at the existing `State::load().apply(..)` call, and it ignores an unknown saved set name rather than failing. `capture` writes `theme` and `hints` only when chosen in-app, and saves the Inbox's sort and direction beside the item surfaces'. Tests: a round trip, a legacy state.toml parsing unchanged, the flag beating state, a `NO_COLOR` run leaving no `theme` key, and an in-app choice round-tripping."""
+acceptance = '''
+- forward: `grep -cE 'text\("(hints|theme|zoom)"\)' glimpse/src/state.rs` prints `3` and `grep -c '"fit"' glimpse/src/state.rs` prints at least `1` (today: `0` each).
+- guard: the existing `state::` tests pass.'''
+agent = "implement-deep"
+commit = "33acfc0"
+
+[[items]]
+id = 37
+ref = "document-keys-config-themes-copy-and-the-event-log"
+title = "Document keys, config, themes, copy and the event log"
+effort = "M"
+status = "done"
+checkpoint = "E"
+phase = "Milestone E — persistence and docs"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/README.md",
+    "glimpse/CLAUDE.md",
+]
+needs = [
+    11,
+    19,
+    24,
+    35,
+    36,
+]
+coupling = []
+deps_note = ""
+action = """
+- Update `glimpse/README.md`:
+  - "Views and keys": the paging contract and the new keys.
+  - "Configuration": `hints`, `[theme] base` and `[theme.<set>]`.
+  - "Theme": rows for the six new tokens and the four sets.
+  - Copy: `y`, id-cell click, `v`, Shift+drag in ghostty/Windows Terminal, and herdr's copy-on-select.
+  - `GLIMPSE_EVENT_LOG`.
+  - Diagram focus, zoom and fit.
+  - The ghostty `keybind = shift+page_up=unbind` lines (and `page_down`/`home`/`end`), since ghostty on Linux/Windows consumes those Shift keys.
+  - Passages the plan makes wrong: the usage summary (`--theme`), the tab examples and `—` text, the facet-row and item-row description, the per-surface `S` sort list, both lists of what `state.toml` saves, the diagram `[id]` description, the wheel-and-click paragraph, the flag-override sentence and the `NO_COLOR` sentence.
+- Update `glimpse/CLAUDE.md`: the cache-key gotcha (zoom, the subset and Titles), the Structure list (the new modules), the mouse-capture gotcha (the once-only hook install and the `v` toggle) and the "Mouse hits read the last frame" write-back list."""
+detail = "Keep each fact in the one section that owns it. Derive the key list from `view/legend.rs` `KEYS` rather than transcribing it."
+acceptance = """
+- forward: `grep -c 'GLIMPSE_EVENT_LOG' glimpse/README.md` prints at least `1` (today: `0`).
+- forward: `grep -ci 'shift.drag' glimpse/README.md` prints at least `1` (today: `0`)."""
+agent = "implement-deep"
+commit = "480fedb"
+
+[[items]]
+id = 38
+ref = "released-capture-footer-line-only-after-a-v-release"
+title = "Released-capture footer line only after a v release"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = "Milestone E — persistence and docs"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/app.rs",
+    "glimpse/src/view/footer.rs",
+]
+needs = [
+    8,
+    9,
+]
+coupling = []
+deps_note = ""
+action = "Add an `App` flag recording that the user released capture with `v` (set when `ToggleCapture` hands back `SetCapture(false)`, cleared when it hands back `SetCapture(true)`), and make `view/footer.rs` show `mouse released · v to capture` (and drop the `v select text` hint, and keep the one hidden-mode row) only while that flag is set and `!app.mouse_captured`. A session started with `mouse = false` keeps its normal hints. Tests: a `mouse = false` app shows the normal first hint; after `v` twice (capture on, then released) the released line shows."
+detail = ""
+acceptance = """
+- forward: the new footer test fails if the released line keys on `!app.mouse_captured` alone.
+- guard: `cargo test --manifest-path glimpse/Cargo.toml view::footer` and `app::` pass."""
+agent = "implement-lite"
+commit = "d3060f2"
+
+[[items]]
+id = 39
+ref = "filter-by-section-and-document-the-released-footer-line"
+title = "Filter by section and document the released footer line"
+effort = "S"
+status = "done"
+checkpoint = "E"
+phase = "Milestone E — persistence and docs"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/surface.rs",
+    "glimpse/src/view/footer.rs",
+]
+needs = [
+    14,
+    38,
+]
+coupling = []
+deps_note = ""
+action = "In `glimpse/src/surface.rs`, make `ItemsState::shows` build an item's place text through the same helper the area sort uses (`place()`, which includes `Anchor::Section`), so the `/` filter finds plan-review rows by section. Add a test: a plan-review item anchored to a section matches a filter on that section name. In `glimpse/src/view/footer.rs`, correct the module doc so it states that the `mouse released · v to capture` line (and its one hidden-mode row) shows only after a `v` release, not whenever capture is off."
+detail = ""
+acceptance = """
+- falsifier: the new section-filter test fails if `shows` keeps its own anchor match without `Anchor::Section`.
+- guard: `cargo test --manifest-path glimpse/Cargo.toml surface::` and `view::footer` pass."""
+agent = "implement-lite"
+commit = "f390b91"

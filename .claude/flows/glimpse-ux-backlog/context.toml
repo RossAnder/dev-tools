@@ -1,0 +1,39 @@
+slug = "glimpse-ux-backlog"
+plan_path = "docs/plans/glimpse-ux-backlog.md"
+status = "review"
+created = 2026-10-21
+updated = 2026-10-21
+branch = "main"
+scope = [
+    "glimpse/src/scroll.rs",
+    "glimpse/src/clipboard.rs",
+    "glimpse/src/main.rs",
+    "glimpse/src/app.rs",
+    "glimpse/src/keys.rs",
+    "glimpse/src/surface.rs",
+    "glimpse/src/actions.rs",
+    "glimpse/src/form.rs",
+    "glimpse/src/config.rs",
+    "glimpse/src/cli.rs",
+    "glimpse/src/state.rs",
+    "glimpse/src/runtime.rs",
+    "glimpse/src/theme.rs",
+    "glimpse/src/theme/sets.rs",
+    "glimpse/src/view/**",
+    "glimpse/src/diagram/**",
+    "glimpse/tests/cli.rs",
+    "glimpse/README.md",
+    "glimpse/CLAUDE.md",
+]
+
+[tasks]
+total = 39
+completed = 39
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/glimpse-ux-backlog/review-ledger.toml"
+optimise_findings = ".claude/flows/glimpse-ux-backlog/optimise-findings.toml"
+execution_record = ".claude/flows/glimpse-ux-backlog/execution-record.toml"
+plan_review_findings = ".claude/flows/glimpse-ux-backlog/plan-review-findings.toml"
+tasks = ".claude/flows/glimpse-ux-backlog/tasks.toml"

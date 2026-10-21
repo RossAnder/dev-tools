@@ -6669,7 +6669,7 @@ tags = [
     "ux",
     "scrolling",
 ]
-status = "open"
+status = "resolved"
 created = 2026-10-14
 last_seen = 2026-10-14
 seen_count = 1
@@ -6683,6 +6683,25 @@ related = [
     "B-5e571ecd",
     "B-59aa6362",
 ]
+promoted = 2026-10-21
+promoted_to = "glimpse-ux-backlog"
+resolved = 2026-10-21
+resolution = "resolved by flow `glimpse-ux-backlog` (tasks shared-scroll-stepping-helper, item-and-inbox-cursors-page-and-jump, lists-report-their-page-height, route-paging-keys-to-the-focused-list, selector-windows-its-entries, form-choice-lists-window-and-page)"
+resolved_flow = "glimpse-ux-backlog"
+resolved_tasks = [
+    "shared-scroll-stepping-helper",
+    "item-and-inbox-cursors-page-and-jump",
+    "lists-report-their-page-height",
+    "route-paging-keys-to-the-focused-list",
+    "selector-windows-its-entries",
+    "form-choice-lists-window-and-page",
+]
+resolved_commits = [
+    "68f9ba3",
+    "d3060f2",
+    "5aa75db",
+    "6ea18ec",
+]
 
 [[backlog]]
 id = "B-5e571ecd"
@@ -6694,7 +6713,7 @@ tags = [
     "ux",
     "tables",
 ]
-status = "open"
+status = "resolved"
 created = 2026-10-14
 last_seen = 2026-10-14
 seen_count = 1
@@ -6706,6 +6725,28 @@ evidence = ["glimpse/src/view/items.rs"]
 related = [
     "B-d83a24fa",
     "B-f15577d8",
+]
+promoted = 2026-10-21
+promoted_to = "glimpse-ux-backlog"
+resolved = 2026-10-21
+resolution = "resolved by flow `glimpse-ux-backlog` (tasks shared-table-core, sort-direction-and-per-column-sort-keys, item-tables-draw-a-header-row-id-cells-and-empty-states, inbox-table-draws-a-header-row, column-picker-form, wire-header-clicks-sort-keys-id-cell-copy-and-the-column-picker, persist-hints-columns-sort-direction-theme-and-diagram-view)"
+resolved_flow = "glimpse-ux-backlog"
+resolved_tasks = [
+    "shared-table-core",
+    "sort-direction-and-per-column-sort-keys",
+    "item-tables-draw-a-header-row-id-cells-and-empty-states",
+    "inbox-table-draws-a-header-row",
+    "column-picker-form",
+    "wire-header-clicks-sort-keys-id-cell-copy-and-the-column-picker",
+    "persist-hints-columns-sort-direction-theme-and-diagram-view",
+]
+resolved_commits = [
+    "d3060f2",
+    "68f9ba3",
+    "4398bdf",
+    "a9043a8",
+    "dfab048",
+    "33acfc0",
 ]
 
 [[backlog]]
@@ -6719,7 +6760,7 @@ tags = [
     "clipboard",
     "mouse",
 ]
-status = "open"
+status = "resolved"
 created = 2026-10-14
 last_seen = 2026-10-14
 seen_count = 1
@@ -6728,6 +6769,27 @@ origin = "user"
 context = "User capture. Mouse capture swallows the terminal's native selection. Options, cheapest first: a key and/or click on an id cell that copies it via OSC 52 (works through herdr/ssh where the terminal allows it) with a flash notice; document the terminal's Shift-drag bypass; or an in-app selection mode that temporarily disables mouse capture."
 base_sha = "9c829f5c6ce077e135ce74e5ec6d73327c4e5acf"
 evidence = ["glimpse/src/keys.rs:91"]
+promoted = 2026-10-21
+promoted_to = "glimpse-ux-backlog"
+resolved = 2026-10-21
+resolution = "resolved by flow `glimpse-ux-backlog` (tasks wire-hint-cycling-copy-capture-release-and-tolerant-drags, osc-52-encoder, runtime-carries-out-copy-capture-toggle-and-the-raw-mouse-event-log, item-tables-draw-a-header-row-id-cells-and-empty-states, wire-header-clicks-sort-keys-id-cell-copy-and-the-column-picker, document-keys-config-themes-copy-and-the-event-log)"
+resolved_flow = "glimpse-ux-backlog"
+resolved_tasks = [
+    "wire-hint-cycling-copy-capture-release-and-tolerant-drags",
+    "osc-52-encoder",
+    "runtime-carries-out-copy-capture-toggle-and-the-raw-mouse-event-log",
+    "item-tables-draw-a-header-row-id-cells-and-empty-states",
+    "wire-header-clicks-sort-keys-id-cell-copy-and-the-column-picker",
+    "document-keys-config-themes-copy-and-the-event-log",
+]
+resolved_commits = [
+    "d3060f2",
+    "68f9ba3",
+    "4912a4b",
+    "4398bdf",
+    "dfab048",
+    "480fedb",
+]
 
 [[backlog]]
 id = "B-3dbe27a1"
@@ -6740,7 +6802,7 @@ tags = [
     "diagram",
     "mouse",
 ]
-status = "open"
+status = "resolved"
 created = 2026-10-14
 last_seen = 2026-10-14
 seen_count = 1
@@ -6749,6 +6811,24 @@ origin = "user"
 context = "User capture. Navigating the task tree means moving the selection with arrows; the viewport only follows the selected node. Wanted: (a) a focus mode scoped to a subtree or ancestry; (b) wheel/drag to pan and a zoom level, independent of the selection; (c) a smarter fit mode that chooses which generations/families around the target fit the available space and re-runs layout/routing on just that subset, so edges are drawn only between included nodes, rather than centring the target in the full layout and clipping."
 base_sha = "9c829f5c6ce077e135ce74e5ec6d73327c4e5acf"
 evidence = ["glimpse/src/diagram/mod.rs"]
+promoted = 2026-10-21
+promoted_to = "glimpse-ux-backlog"
+resolved = 2026-10-21
+resolution = "resolved by flow `glimpse-ux-backlog` (tasks neighbourhood-subsets-and-the-fit-search, layout-of-a-node-subset-at-a-zoom-level, wire-focus-zoom-fit-and-drag-pan, paint-zoom-levels-the-hidden-marker-and-clickable-nodes, persist-hints-columns-sort-direction-theme-and-diagram-view)"
+resolved_flow = "glimpse-ux-backlog"
+resolved_tasks = [
+    "neighbourhood-subsets-and-the-fit-search",
+    "layout-of-a-node-subset-at-a-zoom-level",
+    "wire-focus-zoom-fit-and-drag-pan",
+    "paint-zoom-levels-the-hidden-marker-and-clickable-nodes",
+    "persist-hints-columns-sort-direction-theme-and-diagram-view",
+]
+resolved_commits = [
+    "8703fa8",
+    "cb48db3",
+    "e12f579",
+    "33acfc0",
+]
 
 [[backlog]]
 id = "B-59aa6362"
@@ -6760,7 +6840,7 @@ tags = [
     "ux",
     "keys",
 ]
-status = "open"
+status = "resolved"
 created = 2026-10-14
 last_seen = 2026-10-14
 seen_count = 1
@@ -6771,6 +6851,22 @@ base_sha = "9c829f5c6ce077e135ce74e5ec6d73327c4e5acf"
 related = [
     "B-f15577d8",
     "B-d1667850",
+]
+promoted = 2026-10-21
+promoted_to = "glimpse-ux-backlog"
+resolved = 2026-10-21
+resolution = "resolved by flow `glimpse-ux-backlog` (tasks hint-mode-config-key, wire-hint-cycling-copy-capture-release-and-tolerant-drags, width-fitted-footer-with-short-full-and-hidden-modes, persist-hints-columns-sort-direction-theme-and-diagram-view)"
+resolved_flow = "glimpse-ux-backlog"
+resolved_tasks = [
+    "hint-mode-config-key",
+    "wire-hint-cycling-copy-capture-release-and-tolerant-drags",
+    "width-fitted-footer-with-short-full-and-hidden-modes",
+    "persist-hints-columns-sort-direction-theme-and-diagram-view",
+]
+resolved_commits = [
+    "0c14783",
+    "d3060f2",
+    "33acfc0",
 ]
 
 [[backlog]]
@@ -6785,7 +6881,7 @@ tags = [
     "ghostty",
     "regression",
 ]
-status = "open"
+status = "resolved"
 created = 2026-10-14
 last_seen = 2026-10-14
 seen_count = 1
@@ -6796,6 +6892,19 @@ base_sha = "9c829f5c6ce077e135ce74e5ec6d73327c4e5acf"
 evidence = [
     "glimpse/src/keys.rs:97",
     "glimpse/src/keys.rs:124",
+]
+promoted = 2026-10-21
+promoted_to = "glimpse-ux-backlog"
+resolved = 2026-10-21
+resolution = "resolved by flow `glimpse-ux-backlog` (tasks wire-hint-cycling-copy-capture-release-and-tolerant-drags, runtime-carries-out-copy-capture-toggle-and-the-raw-mouse-event-log)"
+resolved_flow = "glimpse-ux-backlog"
+resolved_tasks = [
+    "wire-hint-cycling-copy-capture-release-and-tolerant-drags",
+    "runtime-carries-out-copy-capture-toggle-and-the-raw-mouse-event-log",
+]
+resolved_commits = [
+    "d3060f2",
+    "4912a4b",
 ]
 
 [[backlog]]
@@ -6809,7 +6918,7 @@ tags = [
     "theme",
     "ansi",
 ]
-status = "open"
+status = "resolved"
 created = 2026-10-14
 last_seen = 2026-10-14
 seen_count = 1
@@ -6821,6 +6930,43 @@ evidence = ["glimpse/src/theme.rs:4"]
 related = [
     "B-af2c5b24",
     "B-59aa6362",
+]
+promoted = 2026-10-21
+promoted_to = "glimpse-ux-backlog"
+resolved = 2026-10-21
+resolution = "resolved by flow `glimpse-ux-backlog` (tasks width-fitted-footer-with-short-full-and-hidden-modes, new-element-tokens-and-revamp-defaults, item-tables-draw-a-header-row-id-cells-and-empty-states, layers-view-uses-the-shared-row-drawer, named-theme-sets-with-style-rules, theme-config-base-set-and-per-set-overrides, theme-flag, wire-the-theme-picker-and-live-switching, theme-picker-overlay, header-flooded-active-tab-faint-empty-tabs-history-on-tall-panes, markdown-strong-without-bold, panel-helper, details-selector-and-form-panels-use-the-helper, traversal-card-uses-the-helper, legend-panel-uses-the-helper, modal-backdrop-comfortable-gutter-and-the-picker-panel, persist-hints-columns-sort-direction-theme-and-diagram-view)"
+resolved_flow = "glimpse-ux-backlog"
+resolved_tasks = [
+    "width-fitted-footer-with-short-full-and-hidden-modes",
+    "new-element-tokens-and-revamp-defaults",
+    "item-tables-draw-a-header-row-id-cells-and-empty-states",
+    "layers-view-uses-the-shared-row-drawer",
+    "named-theme-sets-with-style-rules",
+    "theme-config-base-set-and-per-set-overrides",
+    "theme-flag",
+    "wire-the-theme-picker-and-live-switching",
+    "theme-picker-overlay",
+    "header-flooded-active-tab-faint-empty-tabs-history-on-tall-panes",
+    "markdown-strong-without-bold",
+    "panel-helper",
+    "details-selector-and-form-panels-use-the-helper",
+    "traversal-card-uses-the-helper",
+    "legend-panel-uses-the-helper",
+    "modal-backdrop-comfortable-gutter-and-the-picker-panel",
+    "persist-hints-columns-sort-direction-theme-and-diagram-view",
+]
+resolved_commits = [
+    "d3060f2",
+    "7bb1c1e",
+    "4398bdf",
+    "73b8acb",
+    "0c14783",
+    "68f9ba3",
+    "cb48db3",
+    "85f4daa",
+    "77df329",
+    "697edfd",
+    "33acfc0",
 ]
 
 [[backlog]]
@@ -7139,3 +7285,108 @@ related = [
     "B-e4e3e248",
     "B-62578e1d",
 ]
+
+[[backlog]]
+id = "B-317ed123"
+kind = "question"
+summary = "glimpse diagram focus/fit subsets drop implied needs edges whose implying path runs through a hidden task, so two drawn tasks can look unconnected"
+area = "glimpse/src/diagram"
+tags = [
+    "glimpse",
+    "diagram",
+]
+status = "open"
+created = 2026-10-21
+last_seen = 2026-10-21
+seen_count = 1
+dedup_id = "317ed123c6b7d726"
+origin = "implement"
+flow = "glimpse-ux-backlog"
+context = "reduce::implied_edges runs over the whole snapshot, and layout_of keeps only edges with both ends inside the subset. Decide whether a subset should recompute implied edges over its own members (or draw a hint edge) so connectivity through hidden tasks stays visible."
+base_sha = "480fedbb746f1504b46dd1e231488b89280c7aad"
+evidence = ["glimpse/src/diagram/mod.rs"]
+related = ["B-3dbe27a1"]
+
+[[backlog]]
+id = "B-29b27f75"
+kind = "bug"
+summary = "glimpse diagram Titles zoom sizes labels by title chars, not display width, so CJK or emoji titles overflow their node box"
+area = "glimpse/src/diagram"
+tags = [
+    "glimpse",
+    "diagram",
+]
+status = "open"
+created = 2026-10-21
+last_seen = 2026-10-21
+seen_count = 1
+dedup_id = "29b27f757c56d71f"
+origin = "implement"
+flow = "glimpse-ux-backlog"
+context = "Zoom::Titles label width is digits + 3 + min(chars, 24) and paint cuts titles by chars to match, so a wide-glyph title draws past its laid-out box. Fix both sides together with a display-width measure (unicode-width via ratatui) if titles with wide glyphs appear in real flows."
+base_sha = "480fedbb746f1504b46dd1e231488b89280c7aad"
+evidence = ["glimpse/src/diagram/paint.rs"]
+related = ["B-3dbe27a1"]
+
+[[backlog]]
+id = "B-00b994ba"
+kind = "annoyance"
+summary = "glimpse item table header titles wider than their column are cut short (effo… over small) because Columns::measure ignores title widths"
+area = "glimpse/src/view/items.rs"
+tags = [
+    "glimpse",
+    "tables",
+]
+status = "open"
+created = 2026-10-21
+last_seen = 2026-10-21
+seen_count = 1
+dedup_id = "00b994ba0b83fea0"
+origin = "implement"
+flow = "glimpse-ux-backlog"
+context = "Columns are measured from row content only. Measuring titles too widens some columns by a cell and shifts row text, so the row-content tests in view::items need their offsets updated alongside. Arrived cheap-in-file and was deferred because it changes row layout."
+base_sha = "480fedbb746f1504b46dd1e231488b89280c7aad"
+evidence = ["glimpse/src/view/items.rs"]
+related = ["B-5e571ecd"]
+
+[[backlog]]
+id = "B-be2797ef"
+kind = "debt"
+summary = "glimpse legend Keys section is about 40 rows and no longer fits one screen of a 40-row terminal"
+area = "glimpse/src/view/legend.rs"
+tags = [
+    "glimpse",
+    "legend",
+]
+status = "open"
+created = 2026-10-21
+last_seen = 2026-10-21
+seen_count = 1
+dedup_id = "be2797ef6467a7af"
+origin = "implement"
+flow = "glimpse-ux-backlog"
+context = "The legend scrolls (PgUp/PgDn), so nothing is unreachable, but every new key grows the list; the legend scroll test already needed a 46-row terminal. Options: group keys per surface, two columns on wide panes, or fold related keys onto one row."
+base_sha = "480fedbb746f1504b46dd1e231488b89280c7aad"
+evidence = ["glimpse/src/view/legend.rs"]
+related = ["B-20481746"]
+
+[[backlog]]
+id = "B-7ffd9652"
+kind = "question"
+summary = "glimpse diagram Tight zoom draws a status glyph as one cell, but the deferred glyph may render two cells wide and overdraw its neighbour"
+area = "glimpse/src/diagram"
+tags = [
+    "glimpse",
+    "diagram",
+]
+status = "open"
+created = 2026-10-21
+last_seen = 2026-10-21
+seen_count = 1
+dedup_id = "7ffd9652a6e99544"
+origin = "implement"
+flow = "glimpse-ux-backlog"
+context = "Tight zoom lays each node out as one cell with a one-cell gap. TaskStatus::glyph for deferred is an emoji-presentation-capable symbol that some terminals draw two cells wide. Check in ghostty and Windows Terminal; if it spills, use a narrow glyph at Tight zoom."
+base_sha = "480fedbb746f1504b46dd1e231488b89280c7aad"
+evidence = ["glimpse/src/diagram/paint.rs"]
+related = ["B-5c5da7b8"]

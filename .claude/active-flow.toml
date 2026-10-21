@@ -792,3 +792,32 @@ scope = [
     "claude/commands/plan-update.md",
     "scripts/shared-blocks.toml",
 ]
+
+[[active]]
+slug = "glimpse-ux-backlog"
+last_used = "2026-10-21T14:55:59.1208853Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "glimpse/src/scroll.rs",
+    "glimpse/src/clipboard.rs",
+    "glimpse/src/main.rs",
+    "glimpse/src/app.rs",
+    "glimpse/src/keys.rs",
+    "glimpse/src/surface.rs",
+    "glimpse/src/actions.rs",
+    "glimpse/src/form.rs",
+    "glimpse/src/config.rs",
+    "glimpse/src/cli.rs",
+    "glimpse/src/state.rs",
+    "glimpse/src/runtime.rs",
+    "glimpse/src/theme.rs",
+    "glimpse/src/theme/sets.rs",
+    "glimpse/src/view/**",
+    "glimpse/src/diagram/**",
+    "glimpse/tests/cli.rs",
+    "glimpse/README.md",
+    "glimpse/CLAUDE.md",
+]
