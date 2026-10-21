@@ -5,6 +5,7 @@ use ratatui::layout::{Constraint, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Padding, Paragraph};
 
+use super::{Place, place};
 use crate::app::{App, SelectorEntry};
 
 /// The slug under the selector cursor, if a flow is there.
@@ -51,9 +52,12 @@ fn row(app: &App, i: usize, entry: SelectorEntry<'_>) -> Line<'static> {
 }
 
 /// The flow rows, then a separator line (as `None`) and the flow-less ledgers.
-fn rows(app: &App) -> Vec<Option<Line<'static>>> {
+/// Also the line index of the cursor entry and, per line, whether it is an entry.
+fn rows(app: &App) -> (Vec<Option<Line<'static>>>, Option<usize>, Vec<bool>) {
     let entries = app.selector_entries();
     let mut lines = Vec::with_capacity(entries.len() + 1);
+    let mut is_entry = Vec::with_capacity(entries.len() + 1);
+    let mut cursor_line = None;
     let first_scope = entries
         .iter()
         .position(|entry| matches!(entry, SelectorEntry::Scope(_)))
@@ -63,24 +67,52 @@ fn rows(app: &App) -> Vec<Option<Line<'static>>> {
             "no flows found",
             app.theme.secondary,
         ))));
+        is_entry.push(false);
     }
     for (i, entry) in entries.into_iter().enumerate() {
         if i == first_scope {
             lines.push(None);
+            is_entry.push(false);
+        }
+        if i == app.selector_cursor {
+            cursor_line = Some(lines.len());
         }
         lines.push(Some(row(app, i, entry)));
+        is_entry.push(true);
     }
-    lines
+    (lines, cursor_line, is_entry)
 }
 
-pub(crate) fn render(frame: &mut Frame, area: Rect, app: &App) {
+pub(crate) fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     let auto = if app.auto_flow { "on" } else { "off" };
-    let rows = rows(app);
+    let (rows, cursor_line, is_entry) = rows(app);
     let widest = rows.iter().flatten().map(Line::width).max().unwrap_or(0);
-    let mut lines: Vec<Line> = rows
+    let all: Vec<Line> = rows
         .into_iter()
         .map(|line| line.unwrap_or_else(|| Line::styled("─".repeat(widest), app.theme.border)))
         .collect();
+    let avail = usize::from(area.height.saturating_sub(2));
+    let overflow = all.len() > avail;
+    let mut lines: Vec<Line> = if overflow {
+        let view = avail.saturating_sub(2).max(1);
+        let start = place(0, cursor_line, all.len(), view, Place::Jump);
+        let end = (start + view).min(all.len());
+        app.selector_page = is_entry[start..end].iter().filter(|e| **e).count().max(1);
+        let marker = |text: &str, shown: bool| {
+            if shown {
+                Line::styled(text.to_string(), app.theme.secondary)
+            } else {
+                Line::raw("")
+            }
+        };
+        let mut window = vec![marker("↑ more", start > 0)];
+        window.extend(all[start..end].iter().cloned());
+        window.push(marker("↓ more", end < all.len()));
+        window
+    } else {
+        app.selector_page = is_entry.iter().filter(|e| **e).count().max(1);
+        all
+    };
     let title = format!(" flows · auto-follow {auto} ");
     let width = (widest.max(title.chars().count()) + 4) as u16;
     let height = lines.len() as u16 + 2;
@@ -120,7 +152,7 @@ mod tests {
         }
     }
 
-    fn draw(app: &App) -> Vec<String> {
+    fn draw(app: &mut App) -> Vec<String> {
         let mut terminal = Terminal::new(TestBackend::new(60, 10)).expect("terminal");
         terminal
             .draw(|frame| render(frame, frame.area(), app))
@@ -146,7 +178,7 @@ mod tests {
     fn it_lists_flows_marking_the_current_one_and_the_cursor() {
         let mut app = app();
         app.selector_cursor = 0;
-        let text = draw(&app).join("\n");
+        let text = draw(&mut app).join("\n");
         assert!(text.contains("other"), "{text}");
         assert!(text.contains("2026-09-02"), "{text}");
         assert!(text.contains("▸  other"), "cursor row: {text}");
@@ -155,7 +187,21 @@ mod tests {
         assert_eq!(selected_slug(&app), Some("other"));
 
         app.auto_flow = true;
-        assert!(draw(&app).join("\n").contains("auto-follow on"));
+        assert!(draw(&mut app).join("\n").contains("auto-follow on"));
+    }
+
+    #[test]
+    fn a_long_list_draws_the_window_around_the_cursor() {
+        let mut app = app();
+        app.flows = (0..40)
+            .map(|i| flow(&format!("flow-{i:02}"), "2026-09-01"))
+            .collect();
+        app.selector_cursor = 30;
+        let text = draw(&mut app).join("\n");
+        assert!(text.contains("▸"), "cursor row drawn: {text}");
+        assert!(text.contains("flow-30"), "{text}");
+        assert!(text.contains("↑ more") && text.contains("↓ more"), "{text}");
+        assert!(app.selector_page > 1 && app.selector_page < 10, "page");
     }
 
     #[test]
@@ -175,7 +221,7 @@ mod tests {
             ],
         };
         app.selector_cursor = 2;
-        let lines = draw(&app);
+        let lines = draw(&mut app);
         let row = |needle: &str| {
             lines
                 .iter()
@@ -201,6 +247,6 @@ mod tests {
         let mut app = app();
         app.flows.clear();
         assert_eq!(selected_slug(&app), None);
-        assert!(draw(&app).join("\n").contains("no flows found"));
+        assert!(draw(&mut app).join("\n").contains("no flows found"));
     }
 }
