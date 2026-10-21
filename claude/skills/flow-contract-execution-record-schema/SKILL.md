@@ -104,6 +104,12 @@ Several entries go in one all-or-nothing call: stage one JSON object per line wi
 tomlctl flow record --slug <slug> --set agent=implement --ndjson <staged-rows-path>
 ```
 
+A row may name its task with `task` (a task id) instead of `task_ref`, so one call records N tasks' completions: each is resolved per row to that row's `task_ref` and not stored, and is refused when it disagrees with `--task` or with the row's own `task_ref`. For prose, stage a TOML record file (`[[record]]` tables, `'''` strings) and pass its path to `--ndjson`; that is the preferred form over JSON lines.
+
+```bash
+tomlctl flow record --slug <slug> --set agent=implement --ndjson <staged-records.toml> --get id
+```
+
 `render-progress-log`, `flow doctor` and `flow ensure-artifact --kind execution-record` resolve the record from `--slug` the same way `flow record` does. A custom `[artifacts].execution_record` that stays under the repo root is supported, and is seeded with the same skeleton whatever its file name; `flow doctor` reports it as a warning rather than an `artifacts-canonical` failure, because `tasks snapshot` (glimpse) reads only the sibling `execution-record.toml`. Readers given a file path (`items list`, `items get`, and the projections `render-progress-log` documents below) take the resolved `[artifacts].execution_record` path, never the bare filename `execution-record.toml`, which resolves against the CWD.
 
 Append order is preserved by tomlctl's exclusive `.lock` sidecar + atomic tempfile + rename.

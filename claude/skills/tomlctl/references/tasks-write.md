@@ -150,6 +150,7 @@ Patches the mutable fields of one or more rows in one write.
 ```bash
 tomlctl tasks update <id> --slug <slug> --status done --agent implement-deep --commit <sha>
 tomlctl tasks update 8,9,14 --slug <slug> --status in-progress
+printf '%s\n' '{"ids":[8,9],"status":"done","commit":"<sha>"}' '{"id":14,"status":"failed","set":{"checkpoint":"B"}}' | tomlctl tasks update --slug <slug> --ndjson -
 ```
 
 | Flag | Value | Meaning | Default |
@@ -163,6 +164,16 @@ tomlctl tasks update 8,9,14 --slug <slug> --status in-progress
 | `--unlock-import-fields` | — | Permit `--set files=` and `--set needs=`, stamping the row with the plan values the patch replaces. Conflicts with `--relock-import-fields`. | off |
 | `--relock-import-fields` | — | Drop that stamp: the next import restores whatever the plan states. Values are left as they are. | off |
 | `--set` | `KEY=VAL`, repeatable | Any other settable field. | — |
+| `--ndjson` | `-`, an NDJSON path, or a `.toml` record file | Batch form: each row patches its own ids with its own values, every row in one write. Conflicts with the positional ids and with `--status`, `--agent`, `--commit`, `--checkpoint`, `--ref` and `--set`. `--unlock-import-fields` and `--relock-import-fields` apply to every row. | — |
+
+`--ndjson` rows take `ids` (a list, or a string such as `"1,2"`) or `id` (a single task id), plus
+optional `status`, `agent`, `commit`, `ref` and `set` (an object of `--set` fields). `ref` is
+accepted only on a single-id row. `set` keys go through the same allowlist as `--set`, and
+`checkpoint` is set as `set.checkpoint`. A key given both as a row key and inside `set`, an unknown
+key, and a task named by more than one row are each refused. The batch is all-or-nothing: every id
+is resolved and every row validated before anything moves. A `.toml` path is read as a record file
+of `[[record]]` rows with the same keys. The output is the id-list envelope below: `results[]` with
+one entry per distinct task (a single resulting id prints the single-row form), never `rows`.
 
 `--set` reaches `acceptance`, `action`, `agent`, `checkpoint`, `commit`, `coupling`, `deps_note`,
 `detail`, `effort`, `status`, `title`, plus `files` and `needs` under `--unlock-import-fields`.

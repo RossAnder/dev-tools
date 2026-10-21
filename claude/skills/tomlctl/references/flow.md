@@ -184,6 +184,24 @@ tomlctl flow record --slug <slug> --type task-completion --task 7 --set agent=im
 tomlctl flow record --slug <slug> --type verification --set agent=implement --set 'summary=checkpoint B build and tests' --set 'command=cargo nextest run' --set outcome=pass --get id
 # Several entries at once — stage the NDJSON with the Write tool; the flags are per-row defaults:
 tomlctl flow record --slug <slug> --set agent=implement --ndjson <staged-file> --get id
+# N tasks' records in one call — each row names its task with `task`; a TOML record file is the form for prose:
+tomlctl flow record --slug <slug> --set agent=implement --ndjson <staged-record.toml> --get id
+```
+
+A TOML record file holds one `[[record]]` table per entry, with `'''` strings for prose:
+
+```toml
+[[record]]
+type = "task-completion"
+task = 7
+status = "done"
+summary = '''Added the retry guard.'''
+
+[[record]]
+type = "task-completion"
+task = 9
+status = "done"
+summary = '''Moved the token reader.'''
 ```
 
 | Flag | Value | Meaning | Default |
@@ -195,7 +213,7 @@ tomlctl flow record --slug <slug> --set agent=implement --ndjson <staged-file> -
 | `--set` | `KEY=VALUE`, repeatable | A string field; a dotted KEY nests. A digit string for `retries`, `duration_s` or `findings_count` is stored as an integer. | none |
 | `--set-json` | `KEY=JSON`, repeatable | Any JSON value — the form for the array fields `files`, `commits`, `failed_ids` and `commits_checked`. | none |
 | `--set-file` | `KEY=PATH`, repeatable | The text of a file (`-` reads stdin), less one leading BOM and one trailing newline — the form for prose. | none |
-| `--ndjson` | path, `@<path>` or `-` | One entry per line, written all or nothing. `--json` and the field flags are defaults a row's own keys override; `--type` and `--task` apply to every row, and a row whose own `type` or `task_ref` disagrees is refused with `kind=validation`. | none |
+| `--ndjson` | path, `@<path>` or `-` | One entry per line, written all or nothing. `--json` and the field flags are defaults a row's own keys override; `--type` and `--task` apply to every row, and a row whose own `type` or `task_ref` disagrees is refused with `kind=validation`. A row may carry `task` (a task id): it is resolved per row to `task_ref` and not stored, and is refused when it disagrees with `--task` or with the row's own `task_ref`. A `.toml` path is read as a record file of `[[record]]` rows. | none |
 | `--dry-run` | — | Validate and report the ids that would be minted; write nothing. | off |
 
 A key given twice across the field flags is `kind=validation`. Under Git Bash a `--set` value
