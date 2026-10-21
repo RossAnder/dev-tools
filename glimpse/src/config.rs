@@ -8,6 +8,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use crate::theme::sets::ThemeSet;
+
 /// The axis layers are laid out along, once `auto` has been resolved.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum Orientation {
@@ -343,14 +345,29 @@ pub(crate) struct Config {
     pub(crate) hints: HintMode,
     /// Theme token overrides, already checked by [`crate::theme::validate`].
     pub(crate) theme: HashMap<String, String>,
-    /// The theme set `[theme] base` names, already checked against the known sets.
-    pub(crate) theme_base: Option<String>,
+    /// The theme set `[theme] base` or `--theme` names.
+    pub(crate) theme_base: Option<ThemeChoice>,
     /// Token overrides from `[theme.<set>]` subtables, keyed by set name and already checked.
     pub(crate) theme_sets: HashMap<String, HashMap<String, String>>,
-    /// Set when the theme was chosen with `--theme`, never from the file.
-    pub(crate) theme_from_flag: bool,
     /// Set from the environment by [`Config::load`], never from the file.
     pub(crate) no_color: bool,
+}
+
+/// Where a chosen base set came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ThemeChoice {
+    /// `[theme] base` in the config file.
+    File(&'static ThemeSet),
+    /// `--theme`, which also keeps a saved set from replacing it.
+    Flag(&'static ThemeSet),
+}
+
+impl ThemeChoice {
+    pub(crate) fn set(self) -> &'static ThemeSet {
+        match self {
+            ThemeChoice::File(set) | ThemeChoice::Flag(set) => set,
+        }
+    }
 }
 
 impl Default for Config {
@@ -376,7 +393,6 @@ impl Default for Config {
             theme: HashMap::new(),
             theme_base: None,
             theme_sets: HashMap::new(),
-            theme_from_flag: false,
             no_color: false,
         }
     }
@@ -410,7 +426,7 @@ impl Config {
                 "theme" => {
                     let theme = theme_table(value)?;
                     cfg.theme = theme.tokens;
-                    cfg.theme_base = theme.base;
+                    cfg.theme_base = theme.base.map(ThemeChoice::File);
                     cfg.theme_sets = theme.sets;
                 }
                 "split_threshold" => cfg.split_threshold = positive_float(key, value)?,
@@ -491,12 +507,23 @@ impl Config {
         cfg.no_color = std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty());
         (cfg, warning)
     }
+
+    /// The set the run starts on, before any saved choice.
+    pub(crate) fn theme_set(&self) -> &'static ThemeSet {
+        crate::theme::sets::starting(self.theme_base.map(ThemeChoice::set), self.no_color)
+    }
+
+    /// `--theme` or `NO_COLOR` chose the set, so neither a saved set replaces it nor is
+    /// it saved.
+    pub(crate) fn keeps_theme(&self) -> bool {
+        self.no_color || matches!(self.theme_base, Some(ThemeChoice::Flag(_)))
+    }
 }
 
 /// The parsed `[theme]` table: flat token overrides, the base set and per-set overrides.
 struct ThemeTable {
     tokens: HashMap<String, String>,
-    base: Option<String>,
+    base: Option<&'static ThemeSet>,
     sets: HashMap<String, HashMap<String, String>>,
 }
 
@@ -514,10 +541,9 @@ fn theme_table(value: &toml::Value) -> Result<ThemeTable, String> {
             let name = value
                 .as_str()
                 .ok_or_else(|| "`theme.base` must be a string".to_string())?;
-            known_set(name)?;
-            out.base = Some(name.to_string());
+            out.base = Some(known_set(name, "`theme.base`")?);
         } else if let Some(sub) = value.as_table() {
-            known_set(token)?;
+            known_set(token, &format!("`[theme.{token}]`"))?;
             let mut tokens = HashMap::new();
             for (name, value) in sub {
                 let v = value.as_str().ok_or_else(|| {
@@ -538,12 +564,14 @@ fn theme_table(value: &toml::Value) -> Result<ThemeTable, String> {
     Ok(out)
 }
 
-fn known_set(name: &str) -> Result<(), String> {
-    if crate::theme::sets::by_name(name).is_some() {
-        Ok(())
-    } else {
-        Err(format!("unknown theme set `{name}`"))
-    }
+/// `form` names where the set was given, `theme.base` or a `[theme.<set>]` subtable.
+fn known_set(name: &str, form: &str) -> Result<&'static ThemeSet, String> {
+    crate::theme::sets::by_name(name).ok_or_else(|| {
+        format!(
+            "{form}: unknown theme set `{name}`: expected one of {}",
+            crate::theme::sets::names()
+        )
+    })
 }
 
 fn item_columns(value: &toml::Value) -> Result<Vec<ItemColumn>, String> {
@@ -949,7 +977,7 @@ mod tests {
         assert_eq!(cfg.theme.len(), 1);
         assert_eq!(cfg.theme_base, None);
         assert!(cfg.theme_sets.is_empty());
-        assert!(!cfg.theme_from_flag);
+        assert!(!cfg.keeps_theme());
     }
 
     #[test]
@@ -958,7 +986,11 @@ mod tests {
             "[theme]\nbase = \"ansi\"\naccent = \"red\"\n[theme.ansi]\nsuccess = \"green\"\n",
         )
         .expect("parses");
-        assert_eq!(cfg.theme_base.as_deref(), Some("ansi"));
+        assert_eq!(
+            cfg.theme_base,
+            Some(ThemeChoice::File(&crate::theme::sets::ANSI))
+        );
+        assert!(!cfg.keeps_theme(), "a file base yields to a saved set");
         assert_eq!(cfg.theme.get("accent").map(String::as_str), Some("red"));
         assert!(!cfg.theme.contains_key("base"));
         let ansi = cfg.theme_sets.get("ansi").expect("ansi subtable");
@@ -976,8 +1008,21 @@ mod tests {
         ] {
             assert!(Config::parse(bad).is_err(), "{bad:?} should be rejected");
         }
+        let names = crate::theme::sets::names();
         let err = Config::parse("[theme]\nbase = \"neon\"").expect_err("unknown base");
-        assert_eq!(err, "unknown theme set `neon`");
+        assert_eq!(
+            err,
+            format!("`theme.base`: unknown theme set `neon`: expected one of {names}")
+        );
+        assert!(
+            names.contains("kanso-zen") && names.contains("mono"),
+            "{names}"
+        );
+        let err = Config::parse("[theme.neon]\naccent = \"red\"").expect_err("unknown subtable");
+        assert_eq!(
+            err,
+            format!("`[theme.neon]`: unknown theme set `neon`: expected one of {names}")
+        );
     }
 
     #[test]

@@ -254,7 +254,7 @@ pub(crate) struct ThemePicker {
     /// An index into [`sets::SETS`].
     pub(crate) cursor: usize,
     /// The set shown when the picker opened.
-    pub(crate) original: String,
+    pub(crate) original: &'static ThemeSet,
 }
 
 pub(crate) struct App {
@@ -323,8 +323,8 @@ pub(crate) struct App {
     pub(crate) stale_deadlines: HashMap<String, SystemTime>,
     pub(crate) stale_after: Duration,
     pub(crate) theme: Theme,
-    /// The name of the set `theme` was built from.
-    pub(crate) theme_set: String,
+    /// The set `theme` was built from.
+    pub(crate) theme_set: &'static ThemeSet,
     /// The config's `[theme]` tokens, laid over whichever set is shown.
     theme_overrides: HashMap<String, String>,
     /// The config's `[theme.<set>]` tokens, keyed by set name.
@@ -395,15 +395,7 @@ impl App {
             OrientationPref::Fixed(o) => o,
             OrientationPref::Auto => Orientation::Vertical,
         };
-        let set = if config.no_color {
-            &sets::MONO
-        } else {
-            config
-                .theme_base
-                .as_deref()
-                .and_then(sets::by_name)
-                .unwrap_or(&sets::KANSO_ZEN)
-        };
+        let set = config.theme_set();
         let mut app = App {
             index: snapshot.index(),
             implied: implied_set(&snapshot),
@@ -444,7 +436,7 @@ impl App {
             stale_deadlines: HashMap::new(),
             stale_after: Duration::from_secs(config.stale_after_s),
             theme: Theme::default(),
-            theme_set: String::new(),
+            theme_set: set,
             theme_overrides: config.theme.clone(),
             theme_per_set: config.theme_sets.clone(),
             no_color: config.no_color,
@@ -520,13 +512,12 @@ impl App {
             }
             Action::Details if self.theme_picker.is_some() => {
                 self.theme_picker = None;
-                self.notify(format!("theme {}", self.theme_set));
+                self.notify(format!("theme {}", self.theme_set.name));
                 None
             }
             Action::ToggleThemes | Action::Back if self.theme_picker.is_some() => {
                 if let Some(picker) = self.theme_picker.take() {
-                    let original = sets::by_name(&picker.original).unwrap_or(&sets::KANSO_ZEN);
-                    self.show_set(original);
+                    self.show_set(picker.original);
                 }
                 None
             }
@@ -540,11 +531,11 @@ impl App {
                 self.selector_open = false;
                 let cursor = sets::SETS
                     .iter()
-                    .position(|set| set.name == self.theme_set)
+                    .position(|set| set == self.theme_set)
                     .unwrap_or(0);
                 self.theme_picker = Some(ThemePicker {
                     cursor,
-                    original: self.theme_set.clone(),
+                    original: self.theme_set,
                 });
                 None
             }
@@ -670,12 +661,7 @@ impl App {
                 };
                 self.nav = None;
                 self.scroll_pinned = false;
-                let label = match self.diagram_zoom {
-                    Zoom::Titles => "titles",
-                    Zoom::Ids => "ids",
-                    Zoom::Tight => "tight",
-                };
-                self.notify(format!("zoom {label}"));
+                self.notify(format!("zoom {}", self.diagram_zoom.key()));
                 None
             }
             Action::ToggleFit => {
@@ -1611,12 +1597,13 @@ impl App {
         self.notify_for(text, NOTICE);
     }
 
-    /// Rebuilds `theme` from `set` under the config's overrides.
-    fn show_set(&mut self, set: &ThemeSet) {
+    /// Rebuilds `theme` from `set` under the config's overrides: the one path both a
+    /// picker choice and a saved set take.
+    pub(crate) fn show_set(&mut self, set: &'static ThemeSet) {
         let none = HashMap::new();
         let per_set = self.theme_per_set.get(set.name).unwrap_or(&none);
         self.theme = Theme::from_set(set, &self.theme_overrides, per_set);
-        self.theme_set = set.name.to_owned();
+        self.theme_set = set;
     }
 
     /// Puts the picker's cursor on `cursor` and shows that set.
@@ -1904,6 +1891,7 @@ pub(crate) fn stale_agents(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::ThemeChoice;
     use crate::ledger::{ItemRow, Kind, StatusClass};
     use crate::model::fixture;
     use crate::surface::{Group, InboxColumn, Sort, SortDir};
@@ -2752,19 +2740,19 @@ mod tests {
 
     #[test]
     fn the_theme_starts_from_the_base_set_and_no_color_forces_mono() {
-        assert_eq!(app().theme_set, "kanso-zen");
+        assert_eq!(app().theme_set.name, "kanso-zen");
         assert_eq!(app().theme, set_theme("kanso-zen"));
 
         let config = Config {
-            theme_base: Some("ansi".to_owned()),
+            theme_base: Some(ThemeChoice::File(&sets::ANSI)),
             ..Config::default()
         };
         let app = App::new(fixture(), &config);
-        assert_eq!(app.theme_set, "ansi");
+        assert_eq!(app.theme_set.name, "ansi");
         assert_eq!(app.theme, set_theme("ansi"));
 
         let config = Config {
-            theme_base: Some("ansi".to_owned()),
+            theme_base: Some(ThemeChoice::File(&sets::ANSI)),
             no_color: true,
             ..Config::default()
         };
@@ -2784,11 +2772,11 @@ mod tests {
             app.theme_picker,
             Some(ThemePicker {
                 cursor: 0,
-                original: "kanso-zen".to_owned(),
+                original: &sets::KANSO_ZEN,
             })
         );
         app.apply(Action::Move(Dir::Down));
-        assert_eq!(app.theme_set, "kanso-pearl");
+        assert_eq!(app.theme_set.name, "kanso-pearl");
         assert_eq!(app.theme, set_theme("kanso-pearl"));
         app.apply(Action::Page(Scroll::Bottom));
         assert_eq!(app.theme, set_theme("mono"));
@@ -2801,7 +2789,7 @@ mod tests {
             "Back closes the picker first"
         );
         assert!(app.theme_picker.is_none());
-        assert_eq!(app.theme_set, "kanso-zen");
+        assert_eq!(app.theme_set.name, "kanso-zen");
         assert_eq!(app.theme, set_theme("kanso-zen"));
     }
 
@@ -2818,7 +2806,7 @@ mod tests {
         app.apply(Action::Details);
         assert!(app.theme_picker.is_none());
         assert!(!app.details_open, "Enter went to the picker");
-        assert_eq!(app.theme_set, "ansi");
+        assert_eq!(app.theme_set.name, "ansi");
         let ansi = sets::by_name("ansi").expect("ansi");
         assert_eq!(
             app.theme,

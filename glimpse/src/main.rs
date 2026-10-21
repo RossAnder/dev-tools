@@ -33,7 +33,7 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use crate::cli::{Command, Once, Parsed, ViewArgs};
-use crate::config::Config;
+use crate::config::{Config, ThemeChoice};
 use crate::herdr::Herdr;
 use crate::ledger::Ledger;
 use crate::model::Snapshot;
@@ -89,8 +89,7 @@ fn run_view(args: ViewArgs) -> Result<(), String> {
         config.orientation = orientation;
     }
     if let Some(theme) = args.theme {
-        config.theme_base = Some(theme);
-        config.theme_from_flag = true;
+        config.theme_base = Some(ThemeChoice::Flag(theme));
     }
     let cwd =
         std::env::current_dir().map_err(|e| format!("cannot read the working directory: {e}"))?;

@@ -17,7 +17,11 @@ const SAMPLE: [&str; 5] = ["pending", "in-progress", "done", "failed", "deferred
 fn row(app: &App, i: usize, name: &str) -> Line<'static> {
     let at_cursor = app.theme_picker.as_ref().is_some_and(|p| p.cursor == i);
     let cursor = if at_cursor { "▸" } else { " " };
-    let current = if app.theme_set == name { "●" } else { " " };
+    let current = if app.theme_set.name == name {
+        "●"
+    } else {
+        " "
+    };
     let line = Line::from(vec![
         Span::styled(cursor, app.theme.selection_mark),
         Span::styled(current, app.theme.in_progress),
@@ -93,7 +97,7 @@ mod tests {
         let mut app = App::new(fixture(), &Config::default());
         app.theme_picker = Some(ThemePicker {
             cursor: 2,
-            original: app.theme_set.clone(),
+            original: app.theme_set,
         });
         let text = draw(&app);
         for set in sets::SETS {

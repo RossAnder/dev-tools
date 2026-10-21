@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use crate::config::{OrientationPref, ViewKind};
 use crate::surface::{Group, Sort, Surface};
+use crate::theme::sets::ThemeSet;
 
 pub(crate) const HELP: &str = "\
 glimpse — live terminal view of a flow's task graph, checkpoints and running agents
@@ -91,7 +92,7 @@ pub(crate) struct ViewArgs {
     pub(crate) view: Option<ViewKind>,
     pub(crate) orientation: Option<OrientationPref>,
     pub(crate) surface: Option<Surface>,
-    pub(crate) theme: Option<String>,
+    pub(crate) theme: Option<&'static ThemeSet>,
     pub(crate) once: Option<Once>,
 }
 
@@ -216,17 +217,13 @@ fn parse_inner<I: IntoIterator<Item = String>>(args: I) -> Result<Parsed, String
             }
             (None, "--theme") => {
                 let v = value("--theme")?;
-                if crate::theme::sets::by_name(&v).is_none() {
-                    let names: Vec<&str> = crate::theme::sets::SETS
-                        .iter()
-                        .map(|set| set.name)
-                        .collect();
-                    return Err(format!(
+                let set = crate::theme::sets::by_name(&v).ok_or_else(|| {
+                    format!(
                         "unknown theme `{v}`: expected one of {}",
-                        names.join(", ")
-                    ));
-                }
-                theme = Some(v);
+                        crate::theme::sets::names()
+                    )
+                })?;
+                theme = Some(set);
                 true
             }
             (None, "--once") => {
@@ -461,9 +458,12 @@ mod tests {
 
     #[test]
     fn theme_is_checked_against_the_known_sets() {
-        assert_eq!(view(&["--theme", "ansi"]).theme.as_deref(), Some("ansi"));
         assert_eq!(
-            view(&["--theme=kanso-pearl"]).theme.as_deref(),
+            view(&["--theme", "ansi"]).theme.map(|set| set.name),
+            Some("ansi")
+        );
+        assert_eq!(
+            view(&["--theme=kanso-pearl"]).theme.map(|set| set.name),
             Some("kanso-pearl")
         );
         let bad = fails(&["--theme", "nope"]);

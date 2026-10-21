@@ -142,3 +142,20 @@ pub(crate) const SETS: &[ThemeSet] = &[KANSO_ZEN, KANSO_PEARL, ANSI, MONO];
 pub(crate) fn by_name(name: &str) -> Option<&'static ThemeSet> {
     SETS.iter().find(|set| set.name == name)
 }
+
+/// Every set's name, comma-separated, for an error that lists the choices.
+pub(crate) fn names() -> String {
+    SETS.iter()
+        .map(|set| set.name)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// The set a run starts on: `mono` under `NO_COLOR`, else `base`, else `kanso-zen`.
+pub(crate) fn starting(base: Option<&'static ThemeSet>, no_color: bool) -> &'static ThemeSet {
+    if no_color {
+        &MONO
+    } else {
+        base.unwrap_or(&KANSO_ZEN)
+    }
+}

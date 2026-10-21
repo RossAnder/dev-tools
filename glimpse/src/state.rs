@@ -9,14 +9,14 @@
 
 use std::path::PathBuf;
 
-use crate::app::{Action, App, ThemePicker};
+use crate::app::App;
 use crate::config::{
     HintMode, ItemColumn, Orientation, OrientationPref, PANEL_PERCENT_RANGE, Split, ViewKind,
     claude_dir,
 };
 use crate::diagram::Zoom;
 use crate::surface::{Group, InboxColumn, Sort, SortDir, Surface};
-use crate::theme::sets;
+use crate::theme::sets::{self, ThemeSet};
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct State {
@@ -32,8 +32,8 @@ pub(crate) struct State {
     pub(crate) inbox: Option<(InboxColumn, SortDir)>,
     pub(crate) hints: Option<HintMode>,
     pub(crate) item_columns: Option<Vec<ItemColumn>>,
-    /// The name of a theme set; a name no set carries reads as absent.
-    pub(crate) theme: Option<String>,
+    /// Saved by name; a name no set carries reads as absent.
+    pub(crate) theme: Option<&'static ThemeSet>,
     pub(crate) zoom: Option<Zoom>,
     pub(crate) fit: Option<bool>,
 }
@@ -43,26 +43,12 @@ pub(crate) struct State {
 /// until one is chosen in-app a config edit still takes effect.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Baseline {
-    theme: String,
+    theme: &'static ThemeSet,
     hints: HintMode,
-    saved_theme: Option<String>,
+    saved_theme: Option<&'static ThemeSet>,
     saved_hints: Option<HintMode>,
     /// `--theme` or `NO_COLOR` chose the set, so the run's own set is never saved.
     keep_theme: bool,
-}
-
-/// The stable names `zoom` saves.
-const ZOOMS: [(Zoom, &str); 3] = [
-    (Zoom::Titles, "titles"),
-    (Zoom::Ids, "ids"),
-    (Zoom::Tight, "tight"),
-];
-
-fn zoom_key(zoom: Zoom) -> &'static str {
-    ZOOMS
-        .iter()
-        .find(|(z, _)| *z == zoom)
-        .map_or("ids", |(_, key)| key)
 }
 
 /// The surfaces whose group-by and sort are saved.
@@ -151,11 +137,8 @@ impl State {
                 .get("item_columns")
                 .and_then(toml::Value::as_array)
                 .and_then(|entries| parse_columns(entries)),
-            theme: text("theme")
-                .filter(|name| sets::by_name(name).is_some())
-                .map(str::to_owned),
-            zoom: text("zoom")
-                .and_then(|key| ZOOMS.iter().find(|(_, k)| *k == key).map(|(zoom, _)| *zoom)),
+            theme: text("theme").and_then(sets::by_name),
+            zoom: text("zoom").and_then(Zoom::from_key),
             fit: table.get("fit").and_then(toml::Value::as_bool),
         }
     }
@@ -191,11 +174,11 @@ impl State {
             out.push_str(&format!("item_columns = [{}]\n", names.join(", ")));
         }
         // Only a known set's name is ever held, and those need no escaping.
-        if let Some(theme) = &self.theme {
-            out.push_str(&format!("theme = \"{theme}\"\n"));
+        if let Some(theme) = self.theme {
+            out.push_str(&format!("theme = \"{}\"\n", theme.name));
         }
         if let Some(zoom) = self.zoom {
-            out.push_str(&format!("zoom = \"{}\"\n", zoom_key(zoom)));
+            out.push_str(&format!("zoom = \"{}\"\n", zoom.key()));
         }
         if let Some(fit) = self.fit {
             out.push_str(&format!("fit = {fit}\n"));
@@ -224,14 +207,11 @@ impl State {
     /// Only pinned choices are kept: an orientation or split `auto` resolved is not. A
     /// theme picker still open is previewing, so the set it opened on is the one saved.
     pub(crate) fn capture(app: &App, baseline: &Baseline) -> State {
-        let shown = app
-            .theme_picker
-            .as_ref()
-            .map_or(&app.theme_set, |picker| &picker.original);
+        let shown = shown_set(app);
         let theme = if baseline.keep_theme {
-            baseline.saved_theme.clone()
+            baseline.saved_theme
         } else {
-            (baseline.saved_theme.is_some() || *shown != baseline.theme).then(|| shown.clone())
+            (baseline.saved_theme.is_some() || shown != baseline.theme).then_some(shown)
         };
         let hints =
             (baseline.saved_hints.is_some() || app.hints != baseline.hints).then_some(app.hints);
@@ -308,24 +288,15 @@ impl State {
             app.diagram_fit = fit;
         }
         if !keep_theme
-            && let Some(set) = self.theme.as_deref().and_then(sets::by_name)
-            && set.name != app.theme_set
+            && let Some(set) = self.theme
+            && set != app.theme_set
         {
-            // Closing a picker shows its `original` under the config's override layers,
-            // which only `App` holds.
-            app.theme_picker = Some(ThemePicker {
-                cursor: sets::SETS
-                    .iter()
-                    .position(|s| s.name == set.name)
-                    .unwrap_or(0),
-                original: set.name.to_owned(),
-            });
-            app.apply(Action::Back);
+            app.show_set(set);
         }
         Baseline {
-            theme: app.theme_set.clone(),
+            theme: app.theme_set,
             hints: app.hints,
-            saved_theme: self.theme.clone(),
+            saved_theme: self.theme,
             saved_hints: self.hints,
             keep_theme,
         }
@@ -341,7 +312,39 @@ impl State {
             .map_or_else(State::default, |text| State::parse(&text))
     }
 
-    /// Written beside the target and renamed over it, so a crash never leaves half a file.
+    /// What a quitting run saves over `on_disk`, the file as it stands now. Several runs
+    /// share the file, so a theme or hint mode this run left as it opened keeps the
+    /// on-disk value, which another run may have chosen since; the layout keys are the
+    /// last quitter's.
+    pub(crate) fn over_disk(app: &App, baseline: &Baseline, on_disk: &State) -> State {
+        let mut state = State::capture(app, baseline);
+        if baseline.keep_theme || shown_set(app) == baseline.theme {
+            state.theme = on_disk.theme;
+        }
+        if app.hints == baseline.hints {
+            state.hints = on_disk.hints;
+        }
+        state
+    }
+
+    /// A file that exists but cannot be read now, as while another run renames over it on
+    /// Windows, falls back to this run's own capture rather than reading as empty.
+    pub(crate) fn save_session(app: &App, baseline: &Baseline) {
+        let Some(path) = State::path() else {
+            return;
+        };
+        let state = match std::fs::read_to_string(&path) {
+            Ok(text) => State::over_disk(app, baseline, &State::parse(&text)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                State::over_disk(app, baseline, &State::default())
+            }
+            Err(_) => State::capture(app, baseline),
+        };
+        state.save();
+    }
+
+    /// Written beside the target under a per-process name and renamed over it, so a crash
+    /// never leaves half a file and two runs quitting together never share a temp file.
     pub(crate) fn save(&self) {
         let Some(path) = State::path() else {
             return;
@@ -349,17 +352,25 @@ impl State {
         if let Some(dir) = path.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
-        let tmp = path.with_extension("toml.tmp");
-        if std::fs::write(&tmp, self.render()).is_ok() {
-            let _ = std::fs::rename(&tmp, &path);
+        let tmp = path.with_extension(format!("toml.{}.tmp", std::process::id()));
+        if std::fs::write(&tmp, self.render()).is_ok() && std::fs::rename(&tmp, &path).is_err() {
+            let _ = std::fs::remove_file(&tmp);
         }
     }
+}
+
+/// A theme picker still open is previewing, so the set it opened on counts as shown.
+fn shown_set(app: &App) -> &'static ThemeSet {
+    app.theme_picker
+        .as_ref()
+        .map_or(app.theme_set, |picker| picker.original)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
+    use crate::app::ThemePicker;
+    use crate::config::{Config, ThemeChoice};
     use crate::model::fixture;
 
     #[test]
@@ -396,7 +407,7 @@ mod tests {
             inbox: Some((InboxColumn::Kind, SortDir::Desc)),
             hints: Some(HintMode::Hidden),
             item_columns: Some(vec![ItemColumn::Summary, ItemColumn::Id]),
-            theme: Some("kanso-pearl".to_owned()),
+            theme: Some(&sets::KANSO_PEARL),
             zoom: Some(Zoom::Tight),
             fit: Some(false),
             ..State::default()
@@ -523,19 +534,46 @@ mod tests {
         let untouched = State::capture(&app, &baseline);
         assert_eq!((untouched.theme, untouched.hints), (None, None));
 
-        app.theme_set = "ansi".to_owned();
+        app.show_set(&sets::ANSI);
         app.hints = HintMode::Full;
         let chosen = State::capture(&app, &baseline);
-        assert_eq!(chosen.theme.as_deref(), Some("ansi"));
+        assert_eq!(chosen.theme, Some(&sets::ANSI));
         assert_eq!(chosen.hints, Some(HintMode::Full));
 
         let mut restored = App::new(fixture(), &Config::default());
         let next = State::parse(&chosen.render()).apply(&mut restored, false, false, false);
-        assert_eq!(restored.theme_set, "ansi");
+        assert_eq!(restored.theme_set.name, "ansi");
         assert_eq!(restored.hints, HintMode::Full);
         let again = State::capture(&restored, &next);
-        assert_eq!(again.theme.as_deref(), Some("ansi"), "kept while unchanged");
+        assert_eq!(again.theme, Some(&sets::ANSI), "kept while unchanged");
         assert_eq!(again.hints, Some(HintMode::Full));
+    }
+
+    #[test]
+    fn a_choice_another_run_saved_since_survives_a_run_that_left_it_alone() {
+        let mut early = App::new(fixture(), &Config::default());
+        let baseline = State::default().apply(&mut early, false, false, false);
+        early.view = ViewKind::Diagram;
+        let since = State {
+            view: Some(ViewKind::Ego),
+            theme: Some(&sets::KANSO_PEARL),
+            hints: Some(HintMode::Hidden),
+            ..State::default()
+        };
+        let saved = State::over_disk(&early, &baseline, &since);
+        assert_eq!(saved.theme, Some(&sets::KANSO_PEARL));
+        assert_eq!(saved.hints, Some(HintMode::Hidden));
+        assert_eq!(
+            saved.view,
+            Some(ViewKind::Diagram),
+            "layout is last-quit-wins"
+        );
+
+        early.show_set(&sets::ANSI);
+        early.hints = HintMode::Full;
+        let saved = State::over_disk(&early, &baseline, &since);
+        assert_eq!(saved.theme, Some(&sets::ANSI), "this run's own choice wins");
+        assert_eq!(saved.hints, Some(HintMode::Full));
     }
 
     #[test]
@@ -544,29 +582,28 @@ mod tests {
         let baseline = State::default().apply(&mut app, false, false, false);
         app.theme_picker = Some(ThemePicker {
             cursor: 2,
-            original: app.theme_set.clone(),
+            original: app.theme_set,
         });
-        app.theme_set = "ansi".to_owned();
+        app.show_set(&sets::ANSI);
         assert_eq!(State::capture(&app, &baseline).theme, None);
     }
 
     #[test]
     fn the_theme_flag_beats_the_saved_set_and_is_not_saved() {
         let config = Config {
-            theme_base: Some("kanso-pearl".to_owned()),
-            theme_from_flag: true,
+            theme_base: Some(ThemeChoice::Flag(&sets::KANSO_PEARL)),
             ..Config::default()
         };
         let saved = State {
-            theme: Some("ansi".to_owned()),
+            theme: Some(&sets::ANSI),
             ..State::default()
         };
         let mut app = App::new(fixture(), &config);
-        let baseline = saved.apply(&mut app, false, false, true);
-        assert_eq!(app.theme_set, "kanso-pearl");
+        let baseline = saved.apply(&mut app, false, false, config.keeps_theme());
+        assert_eq!(app.theme_set.name, "kanso-pearl");
         assert_eq!(
-            State::capture(&app, &baseline).theme.as_deref(),
-            Some("ansi"),
+            State::capture(&app, &baseline).theme,
+            Some(&sets::ANSI),
             "the earlier in-app choice survives"
         );
 
@@ -583,7 +620,7 @@ mod tests {
         };
         let mut app = App::new(fixture(), &config);
         let baseline = State::default().apply(&mut app, false, false, true);
-        assert_eq!(app.theme_set, "mono");
+        assert_eq!(app.theme_set.name, "mono");
         let state = State::capture(&app, &baseline);
         assert_eq!(state.theme, None);
         assert!(!state.render().contains("theme"), "{}", state.render());
@@ -593,6 +630,6 @@ mod tests {
     fn an_unknown_saved_set_is_ignored() {
         let mut app = App::new(fixture(), &Config::default());
         State::parse("theme = \"solarized\"\n").apply(&mut app, false, false, false);
-        assert_eq!(app.theme_set, "kanso-zen");
+        assert_eq!(app.theme_set.name, "kanso-zen");
     }
 }

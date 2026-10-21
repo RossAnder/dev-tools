@@ -277,12 +277,7 @@ impl Default for Theme {
 impl Theme {
     /// `kanso-zen` with `overrides`, or `mono` when `no_color`.
     pub(crate) fn build(overrides: &HashMap<String, String>, no_color: bool) -> Theme {
-        let set = if no_color {
-            &sets::MONO
-        } else {
-            &sets::KANSO_ZEN
-        };
-        Theme::from_set(set, overrides, &HashMap::new())
+        Theme::from_set(sets::starting(None, no_color), overrides, &HashMap::new())
     }
 
     /// `overrides` (`[theme]`) and `per_set` (`[theme.<set>]`) must already have passed

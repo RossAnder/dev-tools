@@ -82,8 +82,7 @@ pub(crate) fn run(opts: RunOpts) -> Result<(), String> {
     let mut app = App::new(placeholder, &config);
     app.auto_flow = slug.is_none();
     app.warning = warning;
-    let keep_theme = config.theme_from_flag || config.no_color;
-    let baseline = State::load().apply(&mut app, keep_view, keep_orientation, keep_theme);
+    let baseline = State::load().apply(&mut app, keep_view, keep_orientation, config.keeps_theme());
     if let Some(surface) = surface {
         app.apply(Action::SwitchSurface(surface));
     }
@@ -121,7 +120,7 @@ pub(crate) fn run(opts: RunOpts) -> Result<(), String> {
     };
     let result = run_loop(&mut screen, &rx, &mut host, &mut event_log);
     let drained = writer.finish(WRITE_DRAIN);
-    State::capture(&screen.app, &baseline).save();
+    State::save_session(&screen.app, &baseline);
     if screen.app.mouse_captured {
         set_capture(false);
     }
