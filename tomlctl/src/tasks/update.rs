@@ -18,7 +18,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use super::add::reject_undeclared_checkpoint;
 use super::graph::{Node, Tense, build_or_refuse};
@@ -97,12 +97,7 @@ pub(crate) fn update_many(
     ids: &[u32],
     fields: UpdateFields,
 ) -> Result<Vec<Outcome>> {
-    let mut unique: Vec<u32> = Vec::with_capacity(ids.len());
-    for id in ids {
-        if !unique.contains(id) {
-            unique.push(*id);
-        }
-    }
+    let unique = dedupe(ids);
     if unique.len() > 1 && fields.task_ref.is_some() {
         return Err(tagged_err(
             ErrorKind::Validation,
@@ -111,27 +106,261 @@ pub(crate) fn update_many(
         ));
     }
     store::mutate(path, integrity, |store| {
-        if let Some(absent) = unique
-            .iter()
-            .find(|id| !store.items.iter().any(|row| row.id == **id))
-        {
-            return Err(tagged_err(
-                ErrorKind::Validation,
-                None,
-                format!("no task {absent} in the store"),
-            ));
-        }
-        unique
-            .iter()
-            .map(|&id| {
-                let changed = patch(store, id, &fields)?;
-                let r#ref = store.find(id).map(|row| row.r#ref.clone()).ok_or_else(|| {
-                    anyhow::anyhow!("task {id} vanished from the store after its update")
-                })?;
-                Ok(Outcome { id, r#ref, changed })
-            })
-            .collect()
+        apply(store, &[(None, unique.as_slice(), &fields)])
     })
+}
+
+/// One `--ndjson` row: its source line, the ids it patches and the values it
+/// sets on each of them.
+pub(crate) struct BatchRow {
+    pub(crate) line: usize,
+    pub(crate) ids: Vec<u32>,
+    pub(crate) fields: UpdateFields,
+}
+
+/// Keys an `--ndjson` row may carry, in the order the refusal lists them.
+const ROW_KEYS: [&str; 7] = ["ids", "id", "status", "agent", "commit", "ref", "set"];
+
+/// Applies every row in one write, reporting each id's outcome in row order.
+/// Every id of every row is resolved before any row moves, and a refusal on
+/// any row aborts the whole batch.
+pub(crate) fn update_rows(
+    path: &Path,
+    integrity: &WriteIntegrityArgs,
+    rows: &[BatchRow],
+) -> Result<Vec<Outcome>> {
+    let patches: Vec<_> = rows
+        .iter()
+        .map(|row| (Some(row.line), row.ids.as_slice(), &row.fields))
+        .collect();
+    store::mutate(path, integrity, |store| apply(store, &patches))
+}
+
+/// Reads `update --ndjson` rows into [`BatchRow`]s. `unlock` and `relock`
+/// come from the command line and hold for every row. A task named by two
+/// rows is refused: only one row's values could be the ones that land.
+pub(crate) fn rows_from_ndjson(text: &str, unlock: bool, relock: bool) -> Result<Vec<BatchRow>> {
+    let objects = crate::items::parse_ndjson_objects(text)?;
+    if objects.is_empty() {
+        return Err(tagged_err(
+            ErrorKind::Validation,
+            None,
+            "the --ndjson batch names no rows".to_string(),
+        ));
+    }
+    let mut owner: BTreeMap<u32, usize> = BTreeMap::new();
+    let mut rows = Vec::with_capacity(objects.len());
+    for (line, object) in objects {
+        let row = batch_row(line, &object, unlock, relock)?;
+        for id in &row.ids {
+            if let Some(first) = owner.insert(*id, line) {
+                return Err(tagged_err(
+                    ErrorKind::Validation,
+                    None,
+                    format!(
+                        "line {line}: task {id} is already patched by line {first} — give each \
+                         task one row"
+                    ),
+                ));
+            }
+        }
+        rows.push(row);
+    }
+    Ok(rows)
+}
+
+fn batch_row(
+    line: usize,
+    object: &serde_json::Map<String, serde_json::Value>,
+    unlock: bool,
+    relock: bool,
+) -> Result<BatchRow> {
+    use serde_json::Value;
+    let refuse = |message: String| {
+        tagged_err(
+            ErrorKind::Validation,
+            None,
+            format!("line {line}: {message}"),
+        )
+    };
+    let type_name = crate::convert::json_type_name;
+
+    if let Some(key) = object.keys().find(|key| !ROW_KEYS.contains(&key.as_str())) {
+        return Err(refuse(format!(
+            "unknown key `{key}` — a row takes {}",
+            ROW_KEYS.join(", ")
+        )));
+    }
+
+    let ids = match (object.get("ids"), object.get("id")) {
+        (Some(_), Some(_)) => return Err(refuse("give `ids` or `id`, not both".to_string())),
+        (None, None) => return Err(refuse("names no task — give `ids` or `id`".to_string())),
+        (None, Some(value)) => vec![
+            json_id(value).ok_or_else(|| refuse(format!("`id` takes a task id, got {value}")))?,
+        ],
+        (Some(Value::Array(values)), None) => values
+            .iter()
+            .map(|value| {
+                json_id(value)
+                    .ok_or_else(|| refuse(format!("`ids` holds `{value}`, not a task id")))
+            })
+            .collect::<Result<Vec<_>>>()?,
+        (Some(Value::String(list)), None) => list
+            .split(',')
+            .map(str::trim)
+            .filter(|part| !part.is_empty())
+            .map(|part| {
+                part.parse::<u32>()
+                    .map_err(|_| refuse(format!("`ids` holds `{part}`, not a task id")))
+            })
+            .collect::<Result<Vec<_>>>()?,
+        (Some(other), None) => {
+            return Err(refuse(format!(
+                "`ids` takes an array of task ids or a comma-separated string, got {}",
+                type_name(other)
+            )));
+        }
+    };
+    let ids = dedupe(&ids);
+    if ids.is_empty() {
+        return Err(refuse("`ids` names no task".to_string()));
+    }
+
+    let text = |key: &str| match object.get(key) {
+        None => Ok(None),
+        Some(Value::String(value)) => Ok(Some(value.clone())),
+        Some(other) => Err(refuse(format!(
+            "`{key}` takes a string, got {}",
+            type_name(other)
+        ))),
+    };
+    let status = text("status")?;
+    let agent = text("agent")?;
+    let commit = text("commit")?;
+    let task_ref = text("ref")?;
+    if task_ref.is_some() && ids.len() > 1 {
+        return Err(refuse(
+            "`ref` names one row's key, so its row takes a single task id".to_string(),
+        ));
+    }
+
+    let set = match object.get("set") {
+        None => Vec::new(),
+        Some(Value::Object(pairs)) => pairs
+            .iter()
+            .map(|(key, value)| {
+                if key == "ref" {
+                    return Err(refuse(
+                        "`ref` is a row key, not a `set` field — give it beside `ids`".to_string(),
+                    ));
+                }
+                if ["status", "agent", "commit"].contains(&key.as_str())
+                    && object.contains_key(key.as_str())
+                {
+                    return Err(refuse(format!(
+                        "`{key}` was given both as a row key and in `set`"
+                    )));
+                }
+                settable(key, unlock).with_context(|| format!("line {line}"))?;
+                let value = match value {
+                    Value::String(value) => value.clone(),
+                    Value::Number(number) if number.is_u64() || number.is_i64() => {
+                        number.to_string()
+                    }
+                    // A list field written as a TOML array; the scalar path
+                    // takes the same values comma-separated.
+                    Value::Array(parts) if LISTS.contains(&key.as_str()) => parts
+                        .iter()
+                        .map(|part| match part {
+                            Value::String(part) => Ok(part.clone()),
+                            Value::Number(part) if part.is_u64() => Ok(part.to_string()),
+                            other => Err(refuse(format!(
+                                "`set.{key}` holds {}, not a string or task id",
+                                type_name(other)
+                            ))),
+                        })
+                        .collect::<Result<Vec<_>>>()?
+                        .join(","),
+                    other => {
+                        return Err(refuse(format!(
+                            "`set.{key}` takes a string, got {}",
+                            type_name(other)
+                        )));
+                    }
+                };
+                Ok(format!("{key}={value}"))
+            })
+            .collect::<Result<Vec<_>>>()?,
+        Some(other) => {
+            return Err(refuse(format!(
+                "`set` takes a table of field = value pairs, got {}",
+                type_name(other)
+            )));
+        }
+    };
+
+    Ok(BatchRow {
+        line,
+        ids,
+        fields: UpdateFields {
+            status,
+            agent,
+            commit,
+            checkpoint: None,
+            task_ref,
+            unlock,
+            relock,
+            set,
+        },
+    })
+}
+
+fn json_id(value: &serde_json::Value) -> Option<u32> {
+    value.as_u64().and_then(|id| u32::try_from(id).ok())
+}
+
+/// The ids in first-seen order, each once.
+fn dedupe(ids: &[u32]) -> Vec<u32> {
+    let mut unique: Vec<u32> = Vec::with_capacity(ids.len());
+    for id in ids {
+        if !unique.contains(id) {
+            unique.push(*id);
+        }
+    }
+    unique
+}
+
+/// Patches each `(line, ids, fields)` group in order once every id across
+/// all of them is known to exist. `line` prefixes a group's refusals.
+fn apply(
+    store: &mut Store,
+    patches: &[(Option<usize>, &[u32], &UpdateFields)],
+) -> Result<Vec<Outcome>> {
+    if let Some(absent) = patches
+        .iter()
+        .flat_map(|(_, ids, _)| ids.iter())
+        .find(|id| !store.items.iter().any(|row| row.id == **id))
+    {
+        return Err(tagged_err(
+            ErrorKind::Validation,
+            None,
+            format!("no task {absent} in the store"),
+        ));
+    }
+    let mut outcomes = Vec::new();
+    for (line, ids, fields) in patches {
+        for &id in *ids {
+            let changed = match (patch(store, id, fields), line) {
+                (Err(err), Some(line)) => return Err(err.context(format!("line {line}"))),
+                (result, _) => result?,
+            };
+            let r#ref = store.find(id).map(|row| row.r#ref.clone()).ok_or_else(|| {
+                anyhow::anyhow!("task {id} vanished from the store after its update")
+            })?;
+            outcomes.push(Outcome { id, r#ref, changed });
+        }
+    }
+    Ok(outcomes)
 }
 
 fn patch(store: &mut Store, id: u32, fields: &UpdateFields) -> Result<Vec<&'static str>> {

@@ -147,21 +147,30 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
             unlock,
             relock,
             set,
+            ndjson,
             integrity,
         } => {
-            let ids = ids.into_ids();
             let path = store::resolve_store_path(target.slug.as_deref(), target.file.as_deref())?;
-            let fields = update::UpdateFields {
-                status,
-                agent,
-                commit,
-                checkpoint,
-                task_ref,
-                unlock,
-                relock,
-                set,
+            let outcomes = match ndjson {
+                Some(src) => {
+                    let rows =
+                        update::rows_from_ndjson(&read_ndjson_source(&src)?, unlock, relock)?;
+                    update::update_rows(&path, &integrity, &rows)?
+                }
+                None => {
+                    let fields = update::UpdateFields {
+                        status,
+                        agent,
+                        commit,
+                        checkpoint,
+                        task_ref,
+                        unlock,
+                        relock,
+                        set,
+                    };
+                    update::update_many(&path, &integrity, &ids.into_ids(), fields)?
+                }
             };
-            let outcomes = update::update_many(&path, &integrity, &ids, fields)?;
             if let [outcome] = outcomes.as_slice() {
                 return print_json_compact(&json!({
                     "ok": true,

@@ -31,6 +31,19 @@ pub(super) fn ids_help(help: &'static str) -> impl FnMut(Arg) -> Arg {
     move |a| if a.get_id() == "ids" { a.help(help) } else { a }
 }
 
+/// Lifts the flattened ids positional's requirement when `flag` is present,
+/// for a verb whose batch flag carries the ids itself. A `conflicts_with`
+/// alone does not: clap still demands the positional.
+pub(super) fn ids_optional_under(flag: &'static str) -> impl FnMut(Arg) -> Arg {
+    move |a| {
+        if a.get_id() == "ids" {
+            a.required_unless_present(flag)
+        } else {
+            a
+        }
+    }
+}
+
 /// Task ids taken positionally or through the hidden `--id` spelling. Read
 /// them only through [`TaskIds::into_ids`]: the positional alone is empty on
 /// an `--id`-only call. Each verb sets the positional's help via [`ids_help`].
@@ -235,8 +248,12 @@ pub(crate) enum TasksOp {
     /// resolved before anything changes, so an unknown id aborts the whole
     /// call. `ref` is immutable unless `--ref` is given explicitly — renaming
     /// it orphans the execution record's `task_ref` and the last import's ref
-    /// set — and `--ref` takes a single id.
-    #[command(mut_args(ids_help("Task ids to patch, comma- or space-separated")))]
+    /// set — and `--ref` takes a single id. `--ndjson` patches each row's ids
+    /// with that row's own values, every row in the same one write.
+    #[command(
+        mut_args(ids_help("Task ids to patch, comma- or space-separated")),
+        mut_args(ids_optional_under("ndjson"))
+    )]
     Update {
         #[command(flatten)]
         ids: TaskIds,
@@ -273,6 +290,16 @@ pub(crate) enum TasksOp {
             help = "Set any other row field (repeatable)"
         )]
         set: Vec<String>,
+        /// Batch rows, one per line: `{ids | id, status?, agent?, commit?,
+        /// ref?, set?}`, where `ids` is an array or a comma-separated string
+        /// and `set` a table of `--set` fields. `-` reads stdin; a `.toml`
+        /// path is a record file. The import-field flags apply to every row.
+        #[arg(
+            long = "ndjson",
+            value_name = "SRC",
+            conflicts_with_all = ["ids", "id", "status", "agent", "commit", "checkpoint", "task_ref", "set"]
+        )]
+        ndjson: Option<String>,
         #[command(flatten)]
         integrity: WriteIntegrityArgs,
     },

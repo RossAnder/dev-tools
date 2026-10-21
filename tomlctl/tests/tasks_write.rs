@@ -606,6 +606,242 @@ fn update_with_an_unknown_id_among_valid_ones_writes_nothing() {
 }
 
 // ---------------------------------------------------------------------------
+// update --ndjson
+// ---------------------------------------------------------------------------
+
+fn field_of(store: &Path, key: &str) -> Vec<String> {
+    rows(&read_store(store))
+        .iter()
+        .map(|row| row[key].as_str().unwrap().to_string())
+        .collect()
+}
+
+/// A commit train lands a different SHA per row from a file source, with no
+/// positional ids on the command line.
+#[test]
+fn update_ndjson_lands_a_commit_train_without_positional_ids() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, REMOVE_FIXTURE);
+    let source = root.join("train.ndjson");
+    fs::write(
+        &source,
+        "{\"id\":1,\"commit\":\"0d1bf49\"}\n\n{\"ids\":[2,3],\"commit\":\"7c3e2a1\",\"status\":\"done\"}\n",
+    )
+    .unwrap();
+
+    let out = tasks(
+        &root,
+        &[
+            "update",
+            "--slug",
+            TASKS_SLUG,
+            "--ndjson",
+            source.to_str().unwrap(),
+        ],
+        "",
+    );
+    assert_eq!(
+        out,
+        json!({"ok": true, "results": [
+            {"id": 1, "ref": "scaffold-the-module-tree", "changed": ["commit"]},
+            {"id": 2, "ref": "wire-the-graph-engine", "changed": ["commit", "status"]},
+            {"id": 3, "ref": "write-the-importer", "changed": ["commit", "status"]},
+        ]})
+    );
+    assert_eq!(
+        field_of(&store, "commit"),
+        ["0d1bf49", "7c3e2a1", "7c3e2a1", ""]
+    );
+    assert_eq!(statuses(&store), ["done", "done", "done", "pending"]);
+    assert_sidecar_matches(&store);
+}
+
+/// A dispatch sweep: per-row status and agent, an `ids` string list, and a
+/// `set` table reaching the `--set` fields.
+#[test]
+fn update_ndjson_sweeps_status_and_agent_per_row() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, REMOVE_FIXTURE);
+
+    let ndjson = "{\"ids\":\"2, 3\",\"status\":\"in-progress\",\"agent\":\"implement-deep\"}\n\
+                  {\"id\":4,\"status\":\"in-progress\",\"agent\":\"implement-lite\",\"set\":{\"effort\":\"M\"}}\n";
+    let out = tasks(
+        &root,
+        &["update", "--slug", TASKS_SLUG, "--ndjson", "-"],
+        ndjson,
+    );
+    assert_eq!(
+        out["results"],
+        json!([
+            {"id": 2, "ref": "wire-the-graph-engine", "changed": ["agent", "status"]},
+            {"id": 3, "ref": "write-the-importer", "changed": ["agent", "status"]},
+            {"id": 4, "ref": "wire-the-renderer", "changed": ["agent", "effort", "status"]},
+        ])
+    );
+    assert_eq!(
+        statuses(&store),
+        ["done", "in-progress", "in-progress", "in-progress"]
+    );
+    assert_eq!(
+        field_of(&store, "agent"),
+        ["", "implement-deep", "implement-deep", "implement-lite"]
+    );
+    assert_eq!(field_of(&store, "effort")[3], "M");
+    assert_sidecar_matches(&store);
+}
+
+/// A task named by two rows is refused before anything is written: only one
+/// row's value could land.
+#[test]
+fn update_ndjson_refuses_a_task_named_by_two_rows() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, REMOVE_FIXTURE);
+    let before = snapshot(&store);
+
+    let ndjson = "{\"ids\":[2,3],\"commit\":\"aaa\"}\n{\"id\":3,\"commit\":\"bbb\"}\n";
+    let err = tasks_err(
+        &root,
+        &["update", "--slug", TASKS_SLUG, "--ndjson", "-"],
+        ndjson,
+    );
+    assert_eq!(err["kind"], json!("validation"));
+    let message = err["message"].as_str().unwrap();
+    assert!(message.contains("line 2"), "{message}");
+    assert!(message.contains("task 3"), "{message}");
+    assert_eq!(snapshot(&store), before);
+}
+
+/// A bad value on the second row aborts the whole batch, so the first row's
+/// valid patch does not land either.
+#[test]
+fn update_ndjson_writes_nothing_when_any_row_is_refused() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, REMOVE_FIXTURE);
+    let before = snapshot(&store);
+
+    let ndjson = "{\"id\":2,\"status\":\"done\"}\n{\"id\":3,\"status\":\"Done\"}\n";
+    let err = tasks_err(
+        &root,
+        &["update", "--slug", TASKS_SLUG, "--ndjson", "-"],
+        ndjson,
+    );
+    assert_eq!(err["kind"], json!("validation"));
+    let message = err["message"].as_str().unwrap();
+    assert!(message.contains("line 2"), "{message}");
+    assert!(message.contains("in-progress"), "{message}");
+    assert_eq!(snapshot(&store), before, "the batch is all-or-nothing");
+}
+
+/// An unknown row key names the accepted set; `ref` on a multi-id row and a
+/// `set` key outside the allowlist are refused the way the flags refuse them.
+#[test]
+fn update_ndjson_refuses_unknown_keys_and_a_shared_ref() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, REMOVE_FIXTURE);
+    let before = snapshot(&store);
+
+    for (ndjson, expected) in [
+        ("{\"id\":2,\"stauts\":\"done\"}\n", "stauts"),
+        (
+            "{\"id\":2,\"stauts\":\"done\"}\n",
+            "agent, commit, ref, set",
+        ),
+        ("{\"ids\":[2,3],\"ref\":\"shared\"}\n", "single task id"),
+        (
+            "{\"id\":2,\"set\":{\"files\":\"a.rs\"}}\n",
+            "--unlock-import-fields",
+        ),
+        ("{\"id\":2,\"set\":{\"ref\":\"renamed\"}}\n", "row key"),
+    ] {
+        let err = tasks_err(
+            &root,
+            &["update", "--slug", TASKS_SLUG, "--ndjson", "-"],
+            ndjson,
+        );
+        assert_eq!(err["kind"], json!("validation"), "{ndjson}");
+        let message = err["message"].as_str().unwrap();
+        assert!(message.contains(expected), "{ndjson}: {message}");
+    }
+    assert_eq!(snapshot(&store), before);
+}
+
+/// `--ndjson` replaces both the positional ids and the per-value flags, so
+/// combining them is a parse error rather than one silently winning.
+#[test]
+fn update_ndjson_conflicts_with_positional_ids_and_value_flags() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, REMOVE_FIXTURE);
+    let before = snapshot(&store);
+
+    for extra in [
+        &["2"][..],
+        &["--status", "done"][..],
+        &["--checkpoint", "A"][..],
+    ] {
+        let mut args = vec!["tasks", "update", "--slug", TASKS_SLUG, "--ndjson", "-"];
+        args.extend_from_slice(extra);
+        let out = cli(&root)
+            .args(&args)
+            .write_stdin("{\"id\":2,\"status\":\"done\"}\n")
+            .assert()
+            .failure()
+            .code(2);
+        let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+        assert!(
+            stderr.contains("cannot be used with"),
+            "{extra:?}: {stderr}"
+        );
+    }
+    assert_eq!(snapshot(&store), before);
+}
+
+/// The same commit train from a TOML record file, prose in a `'''` literal
+/// and a list field written as a TOML array.
+#[test]
+fn update_ndjson_reads_a_toml_record_file() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, REMOVE_FIXTURE);
+    let source = root.join("train.toml");
+    fs::write(
+        &source,
+        "[[record]]\r\nid = 1\r\ncommit = \"0d1bf49\"\r\n\r\n\
+         [[record]]\r\nids = [2, 3]\r\ncommit = \"7c3e2a1\"\r\nstatus = \"done\"\r\n\
+         set.detail = '''\r\nKeep `$vars` and \"quotes\".\r\n'''\r\n\
+         set.coupling = [1]\r\n",
+    )
+    .unwrap();
+
+    let out = tasks(
+        &root,
+        &[
+            "update",
+            "--slug",
+            TASKS_SLUG,
+            "--ndjson",
+            source.to_str().unwrap(),
+        ],
+        "",
+    );
+    assert_eq!(
+        out,
+        json!({"ok": true, "results": [
+            {"id": 1, "ref": "scaffold-the-module-tree", "changed": ["commit"]},
+            {"id": 2, "ref": "wire-the-graph-engine", "changed": ["commit", "coupling", "detail", "status"]},
+            {"id": 3, "ref": "write-the-importer", "changed": ["commit", "coupling", "detail", "status"]},
+        ]})
+    );
+    assert_eq!(
+        field_of(&store, "commit"),
+        ["0d1bf49", "7c3e2a1", "7c3e2a1", ""]
+    );
+    assert_eq!(
+        field_of(&store, "detail")[1],
+        "Keep `$vars` and \"quotes\"."
+    );
+    assert_sidecar_matches(&store);
+}
+
+// ---------------------------------------------------------------------------
 // remove
 // ---------------------------------------------------------------------------
 
