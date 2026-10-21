@@ -3,7 +3,8 @@
 //! Each state lists its hints most useful first, and that order is their priority: a
 //! narrow pane drops hints from the end, never cuts one, and marks the drop with `…`.
 //! Outside the modals the row always ends `? keys`. [`HintMode`] picks one row, up to
-//! [`FULL_ROWS`] wrapped rows, or none; a live notice replaces the hints in every mode.
+//! [`FULL_ROWS`] wrapped rows, or none. A live notice takes the last row's place and
+//! never changes the height; with no row, it draws over the body's last row.
 //! Only after a `v` release, not whenever capture is off, `mouse released · v to capture`
 //! takes the first hint's place, and is the one row hidden mode shows.
 
@@ -12,7 +13,7 @@ use std::time::Instant;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::Paragraph;
+use ratatui::widgets::{Clear, Paragraph};
 
 use super::text_width;
 use crate::actions::Overlay;
@@ -83,22 +84,45 @@ impl Hint {
     }
 }
 
-/// Rows the footer takes at `width`: what [`render`] draws.
-pub(crate) fn height(app: &App, width: u16, now: Instant) -> u16 {
-    u16::try_from(lines(app, width, now).len()).unwrap_or(u16::MAX)
+/// Rows the footer takes at `width`, from the hints alone: a notice never changes it,
+/// since the body's size feeds the diagram fit and the list pages.
+pub(crate) fn height(app: &App, width: u16) -> u16 {
+    u16::try_from(hint_lines(app, width).len()).unwrap_or(u16::MAX)
 }
 
-pub(crate) fn render(frame: &mut Frame, area: Rect, app: &App, now: Instant) {
-    frame.render_widget(Paragraph::new(lines(app, area.width, now)), area);
+/// Draws into `area`, or, when it has no row and a notice is live, over the last row
+/// of `body`.
+pub(crate) fn render(frame: &mut Frame, area: Rect, body: Rect, app: &App, now: Instant) {
+    let lines = lines(app, area.width, now);
+    let area = if area.height == 0 && !lines.is_empty() && body.height > 0 {
+        let row = Rect {
+            y: body.bottom() - 1,
+            height: 1,
+            ..body
+        };
+        frame.render_widget(Clear, row);
+        row
+    } else {
+        area
+    };
+    frame.render_widget(Paragraph::new(lines), area);
 }
 
+/// The hint rows with a live notice in the last one's place, or as the only row when
+/// there are none.
 fn lines(app: &App, width: u16, now: Instant) -> Vec<Line<'static>> {
+    let mut rows = hint_lines(app, width);
     if let Some(notice) = app.live_notice(now) {
-        return vec![Line::from(Span::styled(
-            notice.to_string(),
-            app.theme.notice,
-        ))];
+        let notice = Line::from(Span::styled(notice.to_string(), app.theme.notice));
+        match rows.last_mut() {
+            Some(last) => *last = notice,
+            None => rows.push(notice),
+        }
     }
+    rows
+}
+
+fn hint_lines(app: &App, width: u16) -> Vec<Line<'static>> {
     let (mut hints, tail) = hints(app);
     let released = app.capture_released && !app.mouse_captured;
     if released {
@@ -424,7 +448,7 @@ mod tests {
                     assert!(whole.iter().any(|h| h == part), "{width}: {part:?} cut");
                 }
             }
-            assert_eq!(height(&app, width, Instant::now()), rows.len() as u16);
+            assert_eq!(height(&app, width), rows.len() as u16);
         }
         assert!(
             text(&lines(&app, 60, Instant::now())).len() > 1,
@@ -437,16 +461,40 @@ mod tests {
     }
 
     #[test]
-    fn hidden_hints_take_no_row_unless_a_notice_is_live() {
+    fn hidden_hints_take_no_row_even_while_a_notice_is_live() {
         let mut app = app();
         app.hints = HintMode::Hidden;
-        assert_eq!(height(&app, 110, Instant::now()), 0);
+        assert_eq!(height(&app, 110), 0);
 
         app.hints = HintMode::Full;
         app.apply(Action::CycleHints);
         assert_eq!(app.hints, HintMode::Hidden);
-        assert_eq!(height(&app, 110, Instant::now()), 1);
+        assert!(app.live_notice(Instant::now()).is_some());
+        assert_eq!(height(&app, 110), 0);
         assert_eq!(text(&lines(&app, 110, Instant::now())), ["hints hidden"]);
+    }
+
+    #[test]
+    fn a_notice_keeps_the_full_height_and_takes_the_last_row() {
+        let mut app = app();
+        app.hints = HintMode::Full;
+        let quiet = text(&lines(&app, 60, Instant::now()));
+        assert!(quiet.len() > 1, "{quiet:?}");
+        let before = height(&app, 60);
+
+        app.apply(Action::CycleHints);
+        app.apply(Action::CycleHints);
+        app.apply(Action::CycleHints);
+        assert_eq!(app.hints, HintMode::Full);
+        let notice = app
+            .live_notice(Instant::now())
+            .expect("a notice")
+            .to_string();
+        assert_eq!(height(&app, 60), before);
+        let rows = text(&lines(&app, 60, Instant::now()));
+        assert_eq!(rows.len(), quiet.len());
+        assert_eq!(rows[..rows.len() - 1], quiet[..quiet.len() - 1]);
+        assert_eq!(rows.last(), Some(&notice));
     }
 
     #[test]
@@ -478,7 +526,7 @@ mod tests {
         assert!(!row.contains("mouse released"), "{row:?}");
 
         app.hints = HintMode::Hidden;
-        assert_eq!(height(&app, 110, Instant::now()), 0);
+        assert_eq!(height(&app, 110), 0);
 
         app.hints = HintMode::Short;
         app.apply(Action::ToggleCapture);

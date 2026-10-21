@@ -151,13 +151,17 @@ pub(crate) fn render(
     app.resolved_density = density;
     let compact = density == Density::Compact;
     let now = Instant::now();
-    let [head, body, foot] = Layout::vertical([
+    let [head, full_body, foot] = Layout::vertical([
         Constraint::Length(header::height(app, compact, area.height)),
         Constraint::Min(0),
-        Constraint::Length(footer::height(app, area.width, now)),
+        Constraint::Length(footer::height(app, area.width)),
     ])
     .areas(area);
-    let body = if compact { body } else { gutter(body) };
+    let body = if compact {
+        full_body
+    } else {
+        gutter(full_body)
+    };
 
     let (view_area, panels) = split_body(app, config, body, density);
     let orientation_area = view_area.unwrap_or(body);
@@ -212,7 +216,6 @@ pub(crate) fn render(
         body,
         divider,
     };
-    footer::render(frame, foot, app, now);
     let form_open = app.overlay.as_ref().and_then(Overlay::form).is_some();
     if app.selector_open || app.legend_open || app.theme_picker.is_some() || form_open {
         // The footer keeps full strength: it carries the open overlay's keys.
@@ -222,6 +225,8 @@ pub(crate) fn render(
         };
         frame.buffer_mut().set_style(behind, app.theme.backdrop);
     }
+    // After the body and the backdrop: with hints hidden, a notice draws over the body.
+    footer::render(frame, foot, full_body, app, now);
     if app.selector_open {
         selector::render(frame, area, app);
     }
@@ -576,6 +581,12 @@ mod tests {
         app.hints = crate::config::HintMode::Hidden;
         let hidden = draw(&mut app, 110, 40);
         assert!(find(&hidden, "hjkl move").is_none(), "{hidden:#?}");
+
+        app.hints = crate::config::HintMode::Full;
+        app.apply(Action::CycleHints);
+        let noticed = draw(&mut app, 110, 40);
+        assert_eq!(noticed[39].trim_end(), "hints hidden", "{noticed:#?}");
+        assert_eq!(noticed[..39], hidden[..39], "the body keeps its size");
     }
 
     #[test]
