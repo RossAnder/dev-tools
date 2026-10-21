@@ -104,31 +104,55 @@ fn push_tab(
 }
 
 /// A tab's count text: open rows, and Inbox's unanswered questions marked `?`.
-/// The outer `None` is Tasks, which has no count; the inner `None` is a surface whose
-/// ledger file has not been read.
-fn tab_count(app: &App, surface: Surface) -> Option<Option<String>> {
+/// `None` is Tasks, which has no count.
+fn tab_count(app: &App, surface: Surface) -> Option<TabCount> {
     let count = match surface {
         Surface::Tasks => return None,
-        Surface::Inbox => app.inbox_unanswered().map(|n| {
-            if n > 0 {
+        Surface::Inbox => app.inbox_unanswered().map_or(TabCount::Unread, |n| {
+            TabCount::Count(if n > 0 {
                 format!("{n}?")
             } else {
                 n.to_string()
-            }
+            })
         }),
-        _ => app
-            .items
-            .get(&surface)
-            .filter(|state| matches!(state.revision, Seen::At(_)))
-            .map(|state| {
-                let open = state
-                    .rows
-                    .iter()
-                    .filter(|row| row.class == StatusClass::Live);
-                open.count().to_string()
-            }),
+        _ => match app.items.get(&surface) {
+            None => TabCount::Missing,
+            Some(state) => match state.revision {
+                Seen::Unread => TabCount::Unread,
+                Seen::Missing => TabCount::Missing,
+                Seen::At(_) => {
+                    let open = state
+                        .rows
+                        .iter()
+                        .filter(|row| row.class == StatusClass::Live);
+                    TabCount::Count(open.count().to_string())
+                }
+            },
+        },
     };
     Some(count)
+}
+
+/// What a surface tab shows after its label.
+enum TabCount {
+    /// The ledger has not been read yet.
+    Unread,
+    /// The ledger was read and its file does not exist.
+    Missing,
+    Count(String),
+}
+
+impl TabCount {
+    fn is_missing(&self) -> bool {
+        matches!(self, TabCount::Missing)
+    }
+
+    fn text(self) -> Option<String> {
+        match self {
+            TabCount::Count(text) => Some(text),
+            TabCount::Unread | TabCount::Missing => None,
+        }
+    }
 }
 
 /// The active tab is flooded; a tab whose ledger is absent is faded.
@@ -166,8 +190,12 @@ fn tabs_row(app: &App) -> Row {
             spans.push(Span::raw(" "));
         }
         let count = tab_count(app, surface);
-        let style = tab_style(app, surface, matches!(count, Some(None)));
-        let text = match count.flatten() {
+        let style = tab_style(
+            app,
+            surface,
+            count.as_ref().is_some_and(TabCount::is_missing),
+        );
+        let text = match count.and_then(TabCount::text) {
             Some(count) => format!(" {} {count}", surface.label()),
             None => format!(" {}", surface.label()),
         };
@@ -197,9 +225,9 @@ fn compact_tabs(app: &App, spans: &mut Vec<Span<'static>>, tabs: &mut Vec<TabCel
             spans.push(Span::raw(" "));
         }
         first = false;
-        let style = tab_style(app, surface, count.is_none());
+        let style = tab_style(app, surface, count.is_missing());
         let initial = surface.label().chars().next().unwrap_or(' ');
-        let count = count.unwrap_or_default();
+        let count = count.text().unwrap_or_default();
         let mut tab = vec![Span::styled(format!("{initial}{count}"), style)];
         tab.extend(arrival_badge(app, surface, style));
         push_tab(spans, tabs, surface, tab);
@@ -479,11 +507,16 @@ mod tests {
             app.theme.surface_tab.fg.expect("a colour")
         );
         assert_ne!(buffer[(column("Review"), 1)].bg, fill);
-        for absent in ["Plan-review", "Backlog", "Inbox"] {
+        assert_eq!(
+            buffer[(column("Backlog"), 1)].fg,
+            app.theme.tab_empty.fg.expect("a colour"),
+            "Backlog has no ledger"
+        );
+        for unread in ["Plan-review", "Inbox"] {
             assert_eq!(
-                buffer[(column(absent), 1)].fg,
-                app.theme.tab_empty.fg.expect("a colour"),
-                "{absent} has no ledger"
+                buffer[(column(unread), 1)].fg,
+                app.theme.surface_tab.fg.expect("a colour"),
+                "{unread} is unread, not absent"
             );
         }
         assert_eq!(
