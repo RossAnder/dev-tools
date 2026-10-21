@@ -211,6 +211,26 @@ fn once_accepts_a_known_theme() {
     assert!(stdout(&out).contains("1 Scaffold"), "{}", stdout(&out));
 }
 
+/// `--once` is the headless check, so it neither applies nor rewrites the saved layout.
+#[test]
+fn once_neither_reads_nor_writes_the_saved_state() {
+    let sb = Sandbox::new("once-state");
+    let state = sb.path("claude/glimpse/state.toml");
+    std::fs::create_dir_all(state.parent().expect("the state file has a parent"))
+        .expect("the sandbox is writable");
+    let seeded = "view = \"diagram\"\ntheme = \"ansi\"\n";
+    std::fs::write(&state, seeded).expect("the sandbox is writable");
+    let out = sb.run(&["--once", "--snapshot", FIXTURE, "--size", "100x30"], "");
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let text = stdout(&out);
+    assert!(text.contains("1 Scaffold"), "the layers frame:\n{text}");
+    assert!(!text.contains("[1]"), "not the saved diagram view:\n{text}");
+    assert_eq!(
+        std::fs::read(&state).expect("the state file is still there"),
+        seeded.as_bytes()
+    );
+}
+
 #[test]
 fn an_unknown_theme_is_a_usage_error() {
     let sb = Sandbox::new("theme-bad");
