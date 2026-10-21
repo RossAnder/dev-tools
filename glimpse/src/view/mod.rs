@@ -9,6 +9,7 @@
 pub(crate) mod activity;
 pub(crate) mod details;
 pub(crate) mod ego;
+pub(crate) mod footer;
 pub(crate) mod form;
 pub(crate) mod header;
 pub(crate) mod inbox;
@@ -17,13 +18,14 @@ pub(crate) mod layers;
 pub(crate) mod legend;
 pub(crate) mod markdown;
 pub(crate) mod selector;
+pub(crate) mod table;
 
 use std::time::{Instant, SystemTime};
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Clear, Paragraph};
+use ratatui::text::Span;
+use ratatui::widgets::{Block, Clear};
 
 use crate::actions::Overlay;
 use crate::app::{App, Navigator, Regions};
@@ -146,10 +148,11 @@ pub(crate) fn render(
     let density = app.density.resolve(area.width, config.compact_below);
     app.resolved_density = density;
     let compact = density == Density::Compact;
+    let now = Instant::now();
     let [head, body, foot] = Layout::vertical([
         Constraint::Length(header::height(app, compact)),
         Constraint::Min(0),
-        Constraint::Length(1),
+        Constraint::Length(footer::height(app, area.width, now)),
     ])
     .areas(area);
 
@@ -204,7 +207,7 @@ pub(crate) fn render(
         body,
         divider,
     };
-    frame.render_widget(Paragraph::new(footer(app, Instant::now())), foot);
+    footer::render(frame, foot, app, now);
     if app.selector_open {
         selector::render(frame, area, app);
     }
@@ -336,19 +339,21 @@ fn draw_surface(
     match app.surface {
         Surface::Tasks => (draw_view(frame, area, app, orientation, cache), Vec::new()),
         Surface::Inbox => {
-            let (targets, scroll) = inbox::render(frame.buffer_mut(), area, app);
-            app.inbox.scroll = scroll;
-            (Vec::new(), targets)
+            let drawn = inbox::render(frame.buffer_mut(), area, app);
+            app.inbox.scroll = drawn.scroll;
+            app.inbox.page = drawn.page;
+            (Vec::new(), drawn.targets)
         }
         Surface::Review | Surface::Optimise | Surface::PlanReview | Surface::Backlog => {
-            let (targets, scroll) = items::render(frame.buffer_mut(), area, app);
+            let drawn = items::render(frame.buffer_mut(), area, app);
             if let Some(at) = items::prompt_cursor(area, app) {
                 frame.set_cursor_position(at);
             }
             if let Some(state) = app.items.get_mut(&app.surface) {
-                state.scroll = scroll;
+                state.scroll = drawn.scroll;
+                state.page = drawn.page;
             }
-            (Vec::new(), targets)
+            (Vec::new(), drawn.targets)
         }
     }
 }
@@ -431,164 +436,6 @@ fn navigator(app: &App, orientation: Orientation, cache: &mut DiagramCache) -> B
     }
 }
 
-/// A live notice replaces the hints. Compact density lists fewer hints, most useful
-/// first, since the footer is cut at the pane's edge.
-fn footer(app: &App, now: Instant) -> Line<'static> {
-    if let Some(notice) = app.live_notice(now) {
-        return Line::from(Span::styled(notice.to_string(), app.theme.notice));
-    }
-    let on_off = |flag: bool| if flag { "on" } else { "off" };
-    let compact = app.resolved_density == Density::Compact;
-    let hints: Vec<(&str, String)> = if let Some(overlay) = &app.overlay {
-        match overlay {
-            Overlay::Prompt { .. } => vec![
-                ("enter", "keep filter".to_string()),
-                ("esc", "cancel".to_string()),
-            ],
-            Overlay::Menu { .. } | Overlay::Form { .. } => vec![
-                ("tab", "next field".to_string()),
-                ("enter", "choose/submit".to_string()),
-                ("esc", "cancel".to_string()),
-            ],
-        }
-    } else if app.legend_open {
-        vec![("?", "close legend".to_string())]
-    } else if app.selector_open {
-        vec![
-            ("j/k", "move".to_string()),
-            ("enter", "switch".to_string()),
-            ("a", format!("auto-follow {}", on_off(app.auto_flow))),
-            ("esc", "close".to_string()),
-        ]
-    } else if app.details_open && compact {
-        vec![
-            ("J/K", "scroll".to_string()),
-            ("hjkl", "move".to_string()),
-            ("enter", "close".to_string()),
-            ("t", "activity".to_string()),
-        ]
-    } else if app.surface != Surface::Tasks {
-        surface_hints(app, compact)
-    } else if compact {
-        vec![
-            ("enter", "details".to_string()),
-            ("tab", "view".to_string()),
-            ("d", "density".to_string()),
-            ("q", "back".to_string()),
-            ("hjkl", "move".to_string()),
-            ("?", "legend".to_string()),
-        ]
-    } else {
-        let details = if !app.details_open {
-            "details"
-        } else if !app.details_fullscreen {
-            "full-screen"
-        } else {
-            "close details"
-        };
-        let mut hints = vec![
-            ("hjkl", "move".to_string()),
-            ("tab", "view".to_string()),
-            ("enter", details.to_string()),
-        ];
-        if app.details_open {
-            hints.push(("J/K", "scroll".to_string()));
-        }
-        hints.extend([
-            ("?", "legend".to_string()),
-            ("o", "orient".to_string()),
-            ("|", "split".to_string()),
-            ("t", "activity".to_string()),
-            ("f", format!("follow {}", on_off(app.follow))),
-        ]);
-        if app.view == ViewKind::Diagram {
-            hints.push(("i", format!("implied {}", on_off(app.show_implied))));
-        }
-        hints.extend([
-            ("s", "flows".to_string()),
-            ("d", "density".to_string()),
-            ("q", "back".to_string()),
-        ]);
-        hints
-    };
-    let mut spans = Vec::with_capacity(hints.len() * 3);
-    for (i, (key, label)) in hints.into_iter().enumerate() {
-        if i > 0 {
-            spans.push(Span::styled(" · ", app.theme.key_separator));
-        }
-        spans.push(Span::styled(key.to_string(), app.theme.key));
-        spans.push(Span::styled(format!(" {label}"), app.theme.key_label));
-    }
-    Line::from(spans)
-}
-
-/// An item surface's hints; Esc reads "clear marks" while any are set, since that is
-/// what it does first.
-fn surface_hints(app: &App, compact: bool) -> Vec<(&'static str, String)> {
-    if app.surface == Surface::Inbox {
-        return inbox_hints(app, compact);
-    }
-    let Some(state) = app.current_items() else {
-        return vec![
-            ("1-6", "surface".to_string()),
-            ("s", "flows".to_string()),
-            ("q", "back".to_string()),
-        ];
-    };
-    let mut hints = vec![
-        ("j/k", "move".to_string()),
-        ("space", "mark".to_string()),
-        ("enter", "details".to_string()),
-    ];
-    if !state.marks.is_empty() {
-        hints.push(("esc", format!("clear {} marks", state.marks.len())));
-    }
-    hints.push(("m", "actions".to_string()));
-    if compact {
-        hints.extend([("g", "group".to_string()), ("q", "back".to_string())]);
-        return hints;
-    }
-    if matches!(app.surface, Surface::Review | Surface::Optimise) {
-        hints.push(("e", "classify".to_string()));
-    }
-    hints.extend([
-        ("r", "request".to_string()),
-        ("n", "capture".to_string()),
-        ("u", "undo".to_string()),
-        ("/", "filter".to_string()),
-        ("V", "mark all".to_string()),
-        ("g", "group".to_string()),
-        ("S", "sort".to_string()),
-        ("c", "closed".to_string()),
-        ("1-6", "surface".to_string()),
-        ("s", "flows".to_string()),
-        ("q", "back".to_string()),
-    ]);
-    hints
-}
-
-/// Enter answers the cursor question and opens details on any other record; `w` shows
-/// only while the cursor is on a record the user may withdraw.
-fn inbox_hints(app: &App, compact: bool) -> Vec<(&'static str, String)> {
-    let inbox = &app.inbox;
-    let enter = if inbox.cursor_question().is_some() {
-        "answer"
-    } else {
-        "details"
-    };
-    let mut hints = vec![("j/k", "move".to_string()), ("enter", enter.to_string())];
-    if inbox.cursor_withdrawable().is_some() {
-        hints.push(("w", "withdraw".to_string()));
-    }
-    hints.push(("n", "capture".to_string()));
-    hints.push(("c", "closed".to_string()));
-    if !compact {
-        hints.extend([("1-6", "surface".to_string()), ("s", "flows".to_string())]);
-    }
-    hints.push(("q", "back".to_string()));
-    hints
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -663,6 +510,23 @@ mod tests {
                 "{view:?}'s navigator moves off task 4"
             );
         }
+    }
+
+    #[test]
+    fn the_footer_fits_the_width_and_ends_with_the_keys_hint() {
+        let mut app = app();
+        let rows = draw(&mut app, 110, 40);
+        let last = rows.last().expect("a footer row");
+        assert!(last.trim_end().ends_with("? keys"), "{last:?}");
+
+        app.hints = crate::config::HintMode::Full;
+        let full = draw(&mut app, 60, 40);
+        assert!(find(&full, "hjkl move").is_some_and(|(row, _)| row < 39));
+        assert!(full[39].trim_end().ends_with("? keys"), "{full:#?}");
+
+        app.hints = crate::config::HintMode::Hidden;
+        let hidden = draw(&mut app, 110, 40);
+        assert!(find(&hidden, "hjkl move").is_none(), "{hidden:#?}");
     }
 
     #[test]

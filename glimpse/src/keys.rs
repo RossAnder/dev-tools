@@ -8,7 +8,7 @@
 use ratatui::crossterm::event::{
     KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
-use ratatui::layout::Position;
+use ratatui::layout::{Position, Rect};
 
 use crate::app::{Action, App, Dir, Scroll};
 use crate::config::{Orientation, ViewKind};
@@ -30,6 +30,7 @@ pub(crate) fn map(event: KeyEvent) -> Option<Action> {
     if mods.contains(KeyModifiers::ALT) {
         return None;
     }
+    let shift = mods.contains(KeyModifiers::SHIFT);
     let action = match event.code {
         KeyCode::Char('j') | KeyCode::Down => Action::Move(Dir::Down),
         KeyCode::Char('k') | KeyCode::Up => Action::Move(Dir::Up),
@@ -38,12 +39,16 @@ pub(crate) fn map(event: KeyEvent) -> Option<Action> {
         // Shift+j and Shift+k arrive as the capital letter, with or without SHIFT set.
         KeyCode::Char('J') => Action::ScrollDetails(Scroll::Down(1)),
         KeyCode::Char('K') => Action::ScrollDetails(Scroll::Up(1)),
-        KeyCode::PageDown => Action::ScrollDetails(Scroll::PageDown),
-        KeyCode::PageUp => Action::ScrollDetails(Scroll::PageUp),
-        KeyCode::Home => Action::ScrollDetails(Scroll::Top),
-        KeyCode::End => Action::ScrollDetails(Scroll::Bottom),
+        KeyCode::PageDown if shift => Action::ScrollDetails(Scroll::PageDown),
+        KeyCode::PageUp if shift => Action::ScrollDetails(Scroll::PageUp),
+        KeyCode::Home if shift => Action::ScrollDetails(Scroll::Top),
+        KeyCode::End if shift => Action::ScrollDetails(Scroll::Bottom),
+        KeyCode::PageDown => Action::Page(Scroll::PageDown),
+        KeyCode::PageUp => Action::Page(Scroll::PageUp),
+        KeyCode::Home => Action::Page(Scroll::Top),
+        KeyCode::End => Action::Page(Scroll::Bottom),
         // Some terminals send Shift+Tab as `Tab` with SHIFT rather than `BackTab`.
-        KeyCode::Tab if mods.contains(KeyModifiers::SHIFT) => Action::PrevView,
+        KeyCode::Tab if shift => Action::PrevView,
         KeyCode::Tab => Action::NextView,
         KeyCode::BackTab => Action::PrevView,
         KeyCode::Enter => Action::Details,
@@ -56,6 +61,9 @@ pub(crate) fn map(event: KeyEvent) -> Option<Action> {
         KeyCode::Char('a') => Action::ToggleAutoFlow,
         KeyCode::Char('t') => Action::ToggleActivity,
         KeyCode::Char('d') => Action::CycleDensity,
+        KeyCode::Char('H') => Action::CycleHints,
+        KeyCode::Char('y') => Action::CopyId,
+        KeyCode::Char('v') => Action::ToggleCapture,
         KeyCode::Char('[') => Action::ResizePanel(false),
         KeyCode::Char(']') => Action::ResizePanel(true),
         KeyCode::Char('-') => Action::ResizeColumns(false),
@@ -81,20 +89,28 @@ pub(crate) fn map(event: KeyEvent) -> Option<Action> {
 
 /// The wheel scrolls the details panel or the view under the pointer, never the
 /// selection; a left press on a header tab switches to its surface, one on a task or
-/// item row selects it, and one on the divider starts a drag that left-button motion
-/// continues and the release ends. Only the press edge of a click acts, the mouse
-/// counterpart of dropping key `Release`. Every other kind, including the motion
-/// reports capture turns on, maps to nothing. With a form or the filter prompt up,
-/// nothing reacts; with the legend up the wheel scrolls it and with the selector up the
-/// wheel moves its cursor, and nothing else reacts; with the compact modal up, nothing
-/// in the body outside the details panel does.
+/// item row selects it, and one on or beside the divider starts a drag. Only the press
+/// edge of a click acts, the mouse counterpart of dropping key `Release`. Every other
+/// kind, including the motion reports capture turns on, maps to nothing. With a form or
+/// the filter prompt up, nothing reacts; with the legend up the wheel scrolls it and
+/// with the selector up the wheel moves its cursor, and nothing else reacts; with the
+/// compact modal up, nothing in the body outside the details panel does.
+///
+/// During a drag, left-button motion, bare motion and a re-sent left press all move
+/// the edge, since a touch hold-drag need not report as a left-button drag; any
+/// release, or a right or middle press, ends it.
 pub(crate) fn mouse(event: MouseEvent, app: &App) -> Option<Action> {
     if app.dragging {
         return match event.kind {
-            MouseEventKind::Drag(MouseButton::Left) => {
+            MouseEventKind::Drag(MouseButton::Left)
+            | MouseEventKind::Moved
+            | MouseEventKind::Down(MouseButton::Left) => {
                 Some(Action::DragTo(event.column, event.row))
             }
-            MouseEventKind::Up(_) | MouseEventKind::Down(_) => Some(Action::DragEnd),
+            MouseEventKind::Up(_)
+            | MouseEventKind::Down(MouseButton::Right | MouseButton::Middle) => {
+                Some(Action::DragEnd)
+            }
             _ => None,
         };
     }
@@ -121,7 +137,7 @@ pub(crate) fn mouse(event: MouseEvent, app: &App) -> Option<Action> {
         if let Some((_, surface)) = regions.tabs.iter().find(|(rect, _)| rect.contains(at)) {
             return Some(Action::SwitchSurface(*surface));
         }
-        if regions.modal.is_none() && regions.divider.is_some_and(|r| r.contains(at)) {
+        if regions.modal.is_none() && regions.divider.is_some_and(|r| grabs_divider(r, at)) {
             return Some(Action::DragStart);
         }
     }
@@ -154,6 +170,21 @@ pub(crate) fn mouse(event: MouseEvent, app: &App) -> Option<Action> {
     }
 }
 
+/// Whether `at` lies on the divider strip or one cell either side of it, measured
+/// across the strip, so a press a cell off the one-cell edge still grabs it.
+fn grabs_divider(divider: Rect, at: Position) -> bool {
+    let zone = if divider.width <= divider.height {
+        let left = divider.x.saturating_sub(1);
+        let right = divider.right().saturating_add(1);
+        Rect::new(left, divider.y, right - left, divider.height)
+    } else {
+        let top = divider.y.saturating_sub(1);
+        let bottom = divider.bottom().saturating_add(1);
+        Rect::new(divider.x, top, divider.width, bottom - top)
+    };
+    zone.contains(at)
+}
+
 /// One wheel notch over the view, as `(across, down)` in notches. Horizontal layers
 /// scroll a whole layer per notch whichever way the wheel turns; the traversal view
 /// fits its area and takes no wheel; an item list or the Inbox scrolls only down and up.
@@ -175,7 +206,6 @@ mod tests {
     use crate::app::Regions;
     use crate::config::Config;
     use crate::model::fixture;
-    use ratatui::layout::Rect;
 
     fn press(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
@@ -231,6 +261,9 @@ mod tests {
             (KeyCode::Char('a'), Action::ToggleAutoFlow),
             (KeyCode::Char('t'), Action::ToggleActivity),
             (KeyCode::Char('d'), Action::CycleDensity),
+            (KeyCode::Char('H'), Action::CycleHints),
+            (KeyCode::Char('y'), Action::CopyId),
+            (KeyCode::Char('v'), Action::ToggleCapture),
             (KeyCode::Char('['), Action::ResizePanel(false)),
             (KeyCode::Char(']'), Action::ResizePanel(true)),
             (KeyCode::Char('-'), Action::ResizeColumns(false)),
@@ -247,25 +280,32 @@ mod tests {
 
     #[test]
     fn scroll_keys_do_not_collide_with_moves() {
+        let shifted = |code| KeyEvent::new(code, KeyModifiers::SHIFT);
         let cases = [
-            (KeyCode::Char('J'), Scroll::Down(1)),
-            (KeyCode::Char('K'), Scroll::Up(1)),
-            (KeyCode::PageDown, Scroll::PageDown),
-            (KeyCode::PageUp, Scroll::PageUp),
-            (KeyCode::Home, Scroll::Top),
-            (KeyCode::End, Scroll::Bottom),
+            (press(KeyCode::Char('J')), Scroll::Down(1)),
+            (press(KeyCode::Char('K')), Scroll::Up(1)),
+            (shifted(KeyCode::Char('J')), Scroll::Down(1)),
+            (shifted(KeyCode::PageDown), Scroll::PageDown),
+            (shifted(KeyCode::PageUp), Scroll::PageUp),
+            (shifted(KeyCode::Home), Scroll::Top),
+            (shifted(KeyCode::End), Scroll::Bottom),
         ];
-        for (code, scroll) in cases {
-            assert_eq!(
-                map(press(code)),
-                Some(Action::ScrollDetails(scroll)),
-                "{code:?}"
-            );
+        for (key, scroll) in cases {
+            assert_eq!(map(key), Some(Action::ScrollDetails(scroll)), "{key:?}");
         }
-        assert_eq!(
-            map(KeyEvent::new(KeyCode::Char('J'), KeyModifiers::SHIFT)),
-            Some(Action::ScrollDetails(Scroll::Down(1)))
-        );
+    }
+
+    #[test]
+    fn paging_keys_page_whatever_has_focus() {
+        let cases = [
+            (KeyCode::PageDown, Action::Page(Scroll::PageDown)),
+            (KeyCode::PageUp, Action::Page(Scroll::PageUp)),
+            (KeyCode::Home, Action::Page(Scroll::Top)),
+            (KeyCode::End, Action::Page(Scroll::Bottom)),
+        ];
+        for (code, action) in cases {
+            assert_eq!(map(press(code)), Some(action), "{code:?}");
+        }
     }
 
     #[test]
@@ -365,6 +405,62 @@ mod tests {
         ] {
             assert_eq!(mouse(event(kind, 5, 4), &app), None, "{kind:?}");
         }
+    }
+
+    #[test]
+    fn a_drag_survives_a_resent_press_and_bare_motion() {
+        let mut app = app_with_regions();
+        app.dragging = true;
+        for kind in [
+            MouseEventKind::Drag(MouseButton::Left),
+            MouseEventKind::Down(MouseButton::Left),
+            MouseEventKind::Moved,
+        ] {
+            assert_eq!(
+                mouse(event(kind, 30, 7), &app),
+                Some(Action::DragTo(30, 7)),
+                "{kind:?}"
+            );
+        }
+        for kind in [
+            MouseEventKind::Up(MouseButton::Left),
+            MouseEventKind::Up(MouseButton::Right),
+            MouseEventKind::Down(MouseButton::Right),
+            MouseEventKind::Down(MouseButton::Middle),
+        ] {
+            assert_eq!(
+                mouse(event(kind, 30, 7), &app),
+                Some(Action::DragEnd),
+                "{kind:?}"
+            );
+        }
+        assert_eq!(mouse(event(MouseEventKind::ScrollDown, 30, 7), &app), None);
+    }
+
+    #[test]
+    fn a_press_a_cell_either_side_of_the_divider_starts_a_drag() {
+        let mut app = app_with_regions();
+        let left = MouseEventKind::Down(MouseButton::Left);
+        app.regions.divider = Some(Rect::new(60, 2, 1, 20));
+        for column in [59, 60, 61] {
+            assert_eq!(
+                mouse(event(left, column, 10), &app),
+                Some(Action::DragStart),
+                "column {column}"
+            );
+        }
+        assert_ne!(mouse(event(left, 62, 10), &app), Some(Action::DragStart));
+        assert_ne!(mouse(event(left, 60, 22), &app), Some(Action::DragStart));
+
+        app.regions.divider = Some(Rect::new(0, 15, 100, 1));
+        for row in [14, 15, 16] {
+            assert_eq!(
+                mouse(event(left, 30, row), &app),
+                Some(Action::DragStart),
+                "row {row}"
+            );
+        }
+        assert_ne!(mouse(event(left, 30, 17), &app), Some(Action::DragStart));
     }
 
     #[test]

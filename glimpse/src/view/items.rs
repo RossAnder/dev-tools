@@ -35,19 +35,28 @@ const AREA_MIN: usize = 10;
 /// The summary cells the anchor column gives way to.
 const SUMMARY_MIN: usize = 20;
 
+/// What a list render hands back: the drawn item rows, the list's scroll offset and how
+/// many list rows it drew.
+#[derive(Default)]
+pub(crate) struct Drawn {
+    pub(crate) targets: Vec<Target>,
+    pub(crate) scroll: usize,
+    pub(crate) page: usize,
+}
+
 /// Draws the current item surface into `area` of `buf`; a `Frame` caller passes
-/// `frame.buffer_mut()`. Returns the drawn item rows and the list's scroll offset.
-pub(crate) fn render(buf: &mut Buffer, area: Rect, app: &App) -> (Vec<Target>, usize) {
+/// `frame.buffer_mut()`.
+pub(crate) fn render(buf: &mut Buffer, area: Rect, app: &App) -> Drawn {
     render_at(buf, area, app, Instant::now())
 }
 
 /// `now` dates the flashes.
-fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> (Vec<Target>, usize) {
+fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> Drawn {
     if area.width == 0 || area.height == 0 {
-        return (Vec::new(), 0);
+        return Drawn::default();
     }
     let Some(state) = app.current_items() else {
-        return (Vec::new(), 0);
+        return Drawn::default();
     };
     let width = usize::from(area.width);
     buf.set_line(area.x, area.y, &facet_line(app, state), area.width);
@@ -68,7 +77,10 @@ fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> (Vec<Targ
         area.height.saturating_sub(1),
     );
     if list.height == 0 {
-        return (Vec::new(), state.scroll);
+        return Drawn {
+            scroll: state.scroll,
+            ..Drawn::default()
+        };
     }
 
     let visible = state.visible();
@@ -85,7 +97,7 @@ fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> (Vec<Targ
             &Line::from(Span::styled(text, app.theme.secondary)),
             list.width,
         );
-        return (Vec::new(), 0);
+        return Drawn::default();
     }
 
     let mut columns = Columns::measure(state, &visible);
@@ -124,7 +136,11 @@ fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> (Vec<Targ
             }
         })
         .collect();
-    (draw_rows(buf, list, &rows), offset)
+    Drawn {
+        targets: draw_rows(buf, list, &rows),
+        scroll: offset,
+        page: rows.len(),
+    }
 }
 
 /// The position in `visible` of the item row `cursor` names.
@@ -557,11 +573,11 @@ mod tests {
     fn draw(app: &App, width: u16, height: u16) -> (Vec<String>, Vec<Target>) {
         let area = Rect::new(0, 0, width, height);
         let mut buf = Buffer::empty(area);
-        let (targets, _) = render_at(&mut buf, area, app, Instant::now());
+        let drawn = render_at(&mut buf, area, app, Instant::now());
         let rows = (0..height)
             .map(|y| (0..width).map(|x| buf[(x, y)].symbol()).collect())
             .collect();
-        (rows, targets)
+        (rows, drawn.targets)
     }
 
     fn row_of<'a>(rows: &'a [String], needle: &str) -> (usize, &'a str) {
@@ -795,12 +811,12 @@ mod tests {
         // One frame, writing the offset back as `view::render` does.
         let frame = |app: &mut App| -> Vec<String> {
             let area = Rect::new(0, 0, 60, 5);
-            let (targets, offset) = render_at(&mut Buffer::empty(area), area, app, Instant::now());
+            let drawn = render_at(&mut Buffer::empty(area), area, app, Instant::now());
             app.items
                 .get_mut(&Surface::Backlog)
                 .expect("backlog")
-                .scroll = offset;
-            targets.into_iter().map(|(_, id)| id).collect()
+                .scroll = drawn.scroll;
+            drawn.targets.into_iter().map(|(_, id)| id).collect()
         };
         app.apply(Action::ScrollView(0, 3));
         assert_eq!(frame(&mut app), ["B-4", "B-5", "B-6", "B-7"]);

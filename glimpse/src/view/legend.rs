@@ -21,7 +21,11 @@ const KEYS: &[(&str, &str)] = &[
     ("hjkl ←↓↑→", "move the selection"),
     ("tab S-tab", "next / previous view"),
     ("enter", "details, full-screen, close"),
-    ("J K PgUp PgDn", "scroll details or legend"),
+    ("PgUp PgDn", "page the list, legend or full details"),
+    ("Home End", "first / last row or task"),
+    ("J K", "scroll the details panel"),
+    ("S-PgUp S-PgDn", "page the details panel"),
+    ("S-Home S-End", "details: top / bottom"),
     ("t", "activity panel"),
     ("o", "flip the layer orientation"),
     ("|", "panels beside / below"),
@@ -31,6 +35,9 @@ const KEYS: &[(&str, &str)] = &[
     ("f", "follow the frontier"),
     ("s  a", "flows / auto-follow flows"),
     ("d", "density: auto, compact, comfortable"),
+    ("H", "key hints: short, full, hidden"),
+    ("y", "copy the row's or the task's id"),
+    ("v", "release the mouse to select text, or take it back"),
     (
         "1-6",
         "surface: tasks review optimise plan-review backlog inbox",
@@ -423,7 +430,9 @@ mod tests {
     #[test]
     fn every_bound_letter_key_has_a_legend_row() {
         let keys: String = KEYS.iter().map(|(key, _)| format!(" {key} ")).collect();
-        for key in ["m", "e", "r", "n", "u", "/", "w", "c", "enter"] {
+        for key in [
+            "m", "e", "r", "n", "u", "/", "w", "c", "enter", "J", "K", "H", "y", "v",
+        ] {
             assert!(keys.contains(&format!(" {key} ")), "{key} is missing");
         }
     }

@@ -13,7 +13,7 @@ use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
-use super::items::{Target, cursor_at};
+use super::items::{Drawn, Target, cursor_at};
 use super::{Place, place, text_width, truncate};
 use crate::app::App;
 use crate::ledger::{InputRow, Seen};
@@ -22,15 +22,15 @@ use crate::surface::{InboxState, VisibleRow};
 use crate::theme::Theme;
 
 /// Draws the Inbox into `area` of `buf`; a `Frame` caller passes `frame.buffer_mut()`.
-/// Returns the drawn record rows and the list's scroll offset.
-pub(crate) fn render(buf: &mut Buffer, area: Rect, app: &App) -> (Vec<Target>, usize) {
+/// Returns the drawn record rows, the list's scroll offset and how many list rows it drew.
+pub(crate) fn render(buf: &mut Buffer, area: Rect, app: &App) -> Drawn {
     render_at(buf, area, app, Instant::now())
 }
 
 /// `now` dates the flashes.
-fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> (Vec<Target>, usize) {
+fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> Drawn {
     if area.width == 0 || area.height == 0 {
-        return (Vec::new(), 0);
+        return Drawn::default();
     }
     let state = &app.inbox;
     let width = usize::from(area.width);
@@ -42,7 +42,10 @@ fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> (Vec<Targ
         area.height.saturating_sub(1),
     );
     if list.height == 0 {
-        return (Vec::new(), state.scroll);
+        return Drawn {
+            scroll: state.scroll,
+            ..Drawn::default()
+        };
     }
 
     let visible = state.visible();
@@ -58,7 +61,7 @@ fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> (Vec<Targ
             &Line::from(Span::styled(text, app.theme.secondary)),
             list.width,
         );
-        return (Vec::new(), 0);
+        return Drawn::default();
     }
 
     let columns = Columns::measure(state, &visible);
@@ -101,7 +104,11 @@ fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> (Vec<Targ
             }
         })
         .collect();
-    (draw_rows(buf, list, &rows), offset)
+    Drawn {
+        targets: draw_rows(buf, list, &rows),
+        scroll: offset,
+        page: rows.len(),
+    }
 }
 
 /// A drawn row, the styles laid under and over its full width, and the record it shows.
@@ -428,11 +435,11 @@ mod tests {
     fn draw(app: &App, width: u16, height: u16) -> (Vec<String>, Vec<Target>) {
         let area = Rect::new(0, 0, width, height);
         let mut buf = Buffer::empty(area);
-        let (targets, _) = render_at(&mut buf, area, app, Instant::now());
+        let drawn = render_at(&mut buf, area, app, Instant::now());
         let rows = (0..height)
             .map(|y| (0..width).map(|x| buf[(x, y)].symbol()).collect())
             .collect();
-        (rows, targets)
+        (rows, drawn.targets)
     }
 
     fn row_of<'a>(rows: &'a [String], needle: &str) -> (usize, &'a str) {

@@ -17,7 +17,7 @@ use tui_input::backend::crossterm::EventHandler;
 
 use crate::actions::{self, InputForm, Overlay, Plan, Purpose, Selection, Transition};
 use crate::config::{
-    COLUMN_RANGE, Config, Density, DensityPref, ItemColumn, Orientation, OrientationPref,
+    COLUMN_RANGE, Config, Density, DensityPref, HintMode, ItemColumn, Orientation, OrientationPref,
     PANEL_PERCENT_RANGE, Split, ViewKind,
 };
 use crate::diff::{Changes, diff};
@@ -25,6 +25,7 @@ use crate::flows::{FlowEntry, ScopeEntry, Scopes};
 use crate::form::{FieldValue, Form, FormOutcome};
 use crate::ledger::{InputRow, Inputs, ItemRow, Ledger};
 use crate::model::{AgentStatus, Index, Snapshot, TaskStatus};
+use crate::scroll;
 use crate::surface::{InboxState, ItemsState, Surface};
 use crate::theme::Theme;
 use crate::writer::{WriteOutcome, WriteRequest};
@@ -147,12 +148,27 @@ pub(crate) enum Action {
     /// Inbox question it opens the answer form.
     Details,
     ScrollDetails(Scroll),
+    /// Pages or jumps whatever has focus: the legend, the selector, full-screen details,
+    /// the item or Inbox cursor, else the task view (Home/End select the first or last
+    /// task, PgUp/PgDn pan by a page).
+    Page(Scroll),
     /// Scrolls the view by `(columns, rows)` without touching the selection, which pins
     /// it there until the selection changes.
     ScrollView(i32, i32),
     /// Selects a task directly, as a click does; this turns follow off.
     Select(u32),
     CycleDensity,
+    /// Steps the footer's key hints through short, full and hidden.
+    CycleHints,
+    /// Copies the cursor row's id on an item surface or the Inbox, else the selected
+    /// task's id, by handing back [`Action::Copy`].
+    CopyId,
+    /// Releases mouse capture, or takes it back, by handing back [`Action::SetCapture`].
+    ToggleCapture,
+    /// Runtime only: puts the text on the clipboard.
+    Copy(String),
+    /// Runtime only: turns mouse capture on or off.
+    SetCapture(bool),
     /// Grows (`true`) or shrinks the docked panel by [`PANEL_STEP`].
     ResizePanel(bool),
     /// Widens (`true`) or narrows horizontal layer columns by [`COLUMN_STEP`].
@@ -242,6 +258,8 @@ pub(crate) struct App {
     pub(crate) scopes: Scopes,
     /// An index into [`App::selector_entries`].
     pub(crate) selector_cursor: usize,
+    /// The selector rows the last frame drew; a page move steps by it.
+    pub(crate) selector_page: usize,
     /// Task id to the instant its status last changed; live for [`FLASH`].
     pub(crate) flashes: HashMap<u32, Instant>,
     /// Changes that arrived while follow was paused.
@@ -282,6 +300,14 @@ pub(crate) struct App {
     /// A short footer message.
     pub(crate) notice: Option<(String, Instant)>,
     pub(crate) notice_duration: Duration,
+    /// How much of the footer's key hints shows.
+    pub(crate) hints: HintMode,
+    /// Whether the terminal is reporting the mouse to glimpse; while it is not, the
+    /// terminal's own selection works.
+    pub(crate) mouse_captured: bool,
+    /// Whether the user released capture with `v`; a session that starts uncaptured keeps
+    /// this clear.
+    pub(crate) capture_released: bool,
     pub(crate) surface: Surface,
     /// The config's `item_columns`.
     pub(crate) item_columns: Vec<ItemColumn>,
@@ -337,6 +363,7 @@ impl App {
             flows: Vec::new(),
             scopes: Scopes::default(),
             selector_cursor: 0,
+            selector_page: 1,
             flashes: HashMap::new(),
             pending_changes: 0,
             warning: None,
@@ -361,6 +388,9 @@ impl App {
             regions: Regions::default(),
             notice: None,
             notice_duration: NOTICE,
+            hints: config.hints,
+            mouse_captured: config.mouse,
+            capture_released: false,
             surface: Surface::Tasks,
             item_columns: config.item_columns.clone(),
             items: Surface::ALL
@@ -380,8 +410,8 @@ impl App {
         app
     }
 
-    /// Returns the action when only the runtime can carry it out: `Quit`, or
-    /// `SwitchFlow` to a flow other than the current one.
+    /// Returns the action when only the runtime can carry it out: `Quit`, `Copy`,
+    /// `SetCapture`, or `SwitchFlow` to a flow other than the current one.
     pub(crate) fn apply(&mut self, action: Action) -> Option<Action> {
         match action {
             Action::Move(dir) if self.legend_open => {
@@ -538,6 +568,32 @@ impl App {
                 }
                 None
             }
+            Action::Page(scroll) if self.legend_open => {
+                self.scroll_legend(scroll);
+                None
+            }
+            Action::Page(scroll) if self.selector_open => {
+                let len = self.selector_entries().len();
+                if let Some(to) =
+                    scroll::step(Some(self.selector_cursor), len, self.selector_page, scroll)
+                {
+                    self.selector_cursor = to;
+                }
+                None
+            }
+            Action::Page(scroll) if self.details_covers_body() => {
+                self.scroll_details(scroll);
+                None
+            }
+            Action::Page(scroll) if self.surface == Surface::Inbox => {
+                self.edit_inbox(|inbox| inbox.page_cursor(scroll));
+                None
+            }
+            Action::Page(scroll) if self.surface != Surface::Tasks => {
+                self.edit_items(|state| state.page_cursor(scroll));
+                None
+            }
+            Action::Page(scroll) => self.page_tasks(scroll),
             Action::ScrollView(_, rows) if self.surface == Surface::Inbox => {
                 self.inbox.scroll_by(rows);
                 None
@@ -570,6 +626,30 @@ impl App {
                 self.notify(format!("density {label}"));
                 None
             }
+            Action::CycleHints => {
+                self.hints = self.hints.next();
+                self.notify(format!("hints {}", self.hints.as_str()));
+                None
+            }
+            Action::CopyId => match self.copy_target() {
+                Some(id) => {
+                    self.notify(format!("copied {id}"));
+                    Some(Action::Copy(id))
+                }
+                None => {
+                    self.notify("nothing to copy".to_owned());
+                    None
+                }
+            },
+            Action::ToggleCapture => {
+                // A drag whose release goes uncaptured would otherwise never end.
+                self.dragging = false;
+                let on = !self.mouse_captured;
+                self.capture_released = !on;
+                Some(Action::SetCapture(on))
+            }
+            Action::Copy(text) => Some(Action::Copy(text)),
+            Action::SetCapture(on) => Some(Action::SetCapture(on)),
             Action::ResizePanel(grow) => {
                 let percent = if grow {
                     self.panel_percent.saturating_add(PANEL_STEP)
@@ -888,6 +968,19 @@ impl App {
         self.current_items()
             .and_then(ItemsState::cursor_row)
             .is_some()
+    }
+
+    /// The id `y` copies: the cursor row's on an item surface or the Inbox, the
+    /// selected task's on Tasks.
+    fn copy_target(&self) -> Option<String> {
+        match self.surface {
+            Surface::Tasks => self.selected.map(|id| id.to_string()),
+            Surface::Inbox => self.inbox.cursor_row().map(|row| row.id.clone()),
+            _ => self
+                .current_items()
+                .and_then(ItemsState::cursor_row)
+                .map(|row| row.id.clone()),
+        }
     }
 
     fn open_input(&mut self, input: InputForm) {
@@ -1296,32 +1389,64 @@ impl App {
 
     /// Clamped against the bounds the last frame recorded; a page keeps one row of overlap.
     fn scroll_details(&mut self, scroll: Scroll) {
-        let page = self.details_page.saturating_sub(1).max(1);
-        let at = self.details_scroll;
-        let to = match scroll {
-            Scroll::Up(n) => at.saturating_sub(n),
-            Scroll::Down(n) => at.saturating_add(n),
-            Scroll::PageUp => at.saturating_sub(page),
-            Scroll::PageDown => at.saturating_add(page),
-            Scroll::Top => 0,
-            Scroll::Bottom => u16::MAX,
-        };
-        self.details_scroll = to.min(self.details_max_scroll);
+        self.details_scroll = scroll::offset(
+            self.details_scroll,
+            self.details_max_scroll,
+            self.details_page,
+            scroll,
+        );
     }
 
     /// Clamped against the bounds the last legend frame recorded.
     fn scroll_legend(&mut self, scroll: Scroll) {
-        let page = self.legend_page.saturating_sub(1).max(1);
-        let at = self.legend_scroll;
+        self.legend_scroll = scroll::offset(
+            self.legend_scroll,
+            self.legend_max_scroll,
+            self.legend_page,
+            scroll,
+        );
+    }
+
+    /// Whether the details take the whole body: full-screen, or the compact modal.
+    fn details_covers_body(&self) -> bool {
+        self.details_open && (self.details_fullscreen || self.resolved_density == Density::Compact)
+    }
+
+    /// Home/End select the first or last task by (layer, id); the other moves pan the
+    /// view as the wheel does, a page being the view the last frame drew less one row.
+    fn page_tasks(&mut self, scroll: Scroll) -> Option<Action> {
         let to = match scroll {
-            Scroll::Up(n) => at.saturating_sub(n),
-            Scroll::Down(n) => at.saturating_add(n),
-            Scroll::PageUp => at.saturating_sub(page),
-            Scroll::PageDown => at.saturating_add(page),
-            Scroll::Top => 0,
-            Scroll::Bottom => u16::MAX,
+            Scroll::Top => self.first_task(),
+            Scroll::Bottom => self.last_task(),
+            Scroll::Up(_) | Scroll::Down(_) | Scroll::PageUp | Scroll::PageDown => {
+                let view = self.regions.view.unwrap_or_default();
+                let horizontal = self.view == ViewKind::Layers
+                    && self.resolved_orientation == Orientation::Horizontal;
+                let page = if horizontal {
+                    view.width / self.resolved_column.max(1)
+                } else {
+                    view.height.saturating_sub(1)
+                };
+                let by = i32::from(match scroll {
+                    Scroll::Up(n) | Scroll::Down(n) => n,
+                    _ => page.max(1),
+                });
+                let by = match scroll {
+                    Scroll::Up(_) | Scroll::PageUp => -by,
+                    _ => by,
+                };
+                return match (self.view, horizontal) {
+                    (ViewKind::Ego, _) => None,
+                    (_, true) => self.apply(Action::ScrollView(by, 0)),
+                    (_, false) => self.apply(Action::ScrollView(0, by)),
+                };
+            }
         };
-        self.legend_scroll = to.min(self.legend_max_scroll);
+        if to.is_some() && to != self.selected {
+            self.select(to);
+            self.follow = false;
+        }
+        None
     }
 
     fn expire_flashes(&mut self, now: Instant) {
@@ -1408,6 +1533,14 @@ impl App {
             .iter()
             .map(|task| task.id)
             .min_by_key(|id| (self.index.layer_of(*id).unwrap_or(usize::MAX), *id))
+    }
+
+    fn last_task(&self) -> Option<u32> {
+        self.snapshot
+            .tasks
+            .iter()
+            .map(|task| task.id)
+            .max_by_key(|id| (self.index.layer_of(*id).unwrap_or(usize::MAX), *id))
     }
 }
 
@@ -2096,6 +2229,149 @@ mod tests {
 
     fn cursor(app: &App) -> Option<&str> {
         app.current_items()?.cursor.as_deref()
+    }
+
+    #[test]
+    fn page_on_an_item_surface_moves_the_cursor() {
+        let mut app = review_app();
+        app.apply(Action::SwitchSurface(Surface::Review));
+        app.apply(Action::SelectItem("R1".to_string()));
+        app.details_scroll = 4;
+        app.apply(Action::Page(Scroll::Bottom));
+        assert_eq!(cursor(&app), Some("R2"), "the last visible row");
+        assert_eq!(app.details_scroll, 0, "a moved cursor starts details over");
+        app.apply(Action::Page(Scroll::Top));
+        assert_eq!(cursor(&app), Some("R1"));
+        app.apply(Action::Page(Scroll::PageDown));
+        assert_eq!(cursor(&app), Some("R2"), "an undrawn page moves one row");
+    }
+
+    #[test]
+    fn page_with_the_legend_open_scrolls_the_legend() {
+        let mut app = review_app();
+        app.apply(Action::SwitchSurface(Surface::Review));
+        app.apply(Action::SelectItem("R1".to_string()));
+        app.legend_open = true;
+        app.legend_max_scroll = 30;
+        app.legend_page = 10;
+        app.apply(Action::Page(Scroll::PageDown));
+        assert_eq!(app.legend_scroll, 9);
+        app.apply(Action::Page(Scroll::Bottom));
+        assert_eq!(app.legend_scroll, 30);
+        assert_eq!(cursor(&app), Some("R1"), "the list underneath stays put");
+    }
+
+    #[test]
+    fn y_copies_the_id_under_the_cursor_or_the_selected_task() {
+        let mut app = review_app();
+        app.apply(Action::SwitchSurface(Surface::Review));
+        app.apply(Action::SelectItem("R2".to_string()));
+        assert_eq!(
+            app.apply(Action::CopyId),
+            Some(Action::Copy("R2".to_string()))
+        );
+        assert_eq!(app.live_notice(Instant::now()), Some("copied R2"));
+
+        app.apply(Action::SwitchSurface(Surface::Tasks));
+        app.selected = Some(3);
+        assert_eq!(
+            app.apply(Action::CopyId),
+            Some(Action::Copy("3".to_string()))
+        );
+        app.selected = None;
+        assert_eq!(app.apply(Action::CopyId), None);
+        assert_eq!(app.live_notice(Instant::now()), Some("nothing to copy"));
+
+        let mut app = inbox_app();
+        app.apply(Action::SelectItem("I2".to_string()));
+        assert_eq!(
+            app.apply(Action::CopyId),
+            Some(Action::Copy("I2".to_string()))
+        );
+    }
+
+    #[test]
+    fn v_hands_back_the_opposite_capture_and_ends_a_drag() {
+        let mut app = app();
+        assert!(app.mouse_captured, "capture starts as the config's mouse");
+        app.dragging = true;
+        assert_eq!(
+            app.apply(Action::ToggleCapture),
+            Some(Action::SetCapture(false))
+        );
+        assert!(!app.dragging);
+        app.mouse_captured = false;
+        assert_eq!(
+            app.apply(Action::ToggleCapture),
+            Some(Action::SetCapture(true))
+        );
+    }
+
+    #[test]
+    fn h_cycles_the_hint_mode_with_a_notice() {
+        let mut app = app();
+        assert_eq!(app.hints, HintMode::Short);
+        app.apply(Action::CycleHints);
+        assert_eq!(app.hints, HintMode::Full);
+        assert_eq!(app.live_notice(Instant::now()), Some("hints full"));
+        app.apply(Action::CycleHints);
+        app.apply(Action::CycleHints);
+        assert_eq!(app.hints, HintMode::Short);
+    }
+
+    #[test]
+    fn page_on_the_selector_moves_its_cursor_by_its_page() {
+        let mut app = app();
+        app.flows = ["a", "b", "c", "d"].map(flow).to_vec();
+        app.apply(Action::ToggleSelector);
+        app.selector_cursor = 0;
+        app.apply(Action::Page(Scroll::PageDown));
+        assert_eq!(app.selector_cursor, 1, "an undrawn page moves one row");
+        app.selector_page = 2;
+        app.apply(Action::Page(Scroll::PageDown));
+        assert_eq!(app.selector_cursor, 3);
+        app.apply(Action::Page(Scroll::Top));
+        assert_eq!(app.selector_cursor, 0);
+    }
+
+    #[test]
+    fn end_on_tasks_selects_the_last_task() {
+        let mut app = app();
+        app.trail.push(Crossing {
+            origin: 1,
+            side: Side::Needs,
+        });
+        assert_eq!(app.selected, Some(4));
+        app.apply(Action::Page(Scroll::Bottom));
+        assert_eq!(app.selected, Some(8));
+        assert!(!app.follow, "a jump pauses follow");
+        assert!(app.trail.is_empty(), "the jump went through select");
+        app.apply(Action::Page(Scroll::Top));
+        assert_eq!(app.selected, Some(1));
+    }
+
+    #[test]
+    fn page_on_tasks_pans_the_view_by_a_page() {
+        let mut app = app();
+        app.regions.view = Some(Rect::new(0, 2, 60, 20));
+        app.apply(Action::Page(Scroll::PageDown));
+        assert_eq!(app.scroll_nudge, (0, 19));
+        assert!(app.scroll_pinned);
+        assert_eq!(app.selected, Some(4), "panning leaves the selection");
+    }
+
+    #[test]
+    fn full_screen_details_take_page_before_the_list() {
+        let mut app = review_app();
+        app.apply(Action::SwitchSurface(Surface::Review));
+        app.apply(Action::SelectItem("R1".to_string()));
+        app.details_open = true;
+        app.details_fullscreen = true;
+        app.details_max_scroll = 50;
+        app.details_page = 10;
+        app.apply(Action::Page(Scroll::PageDown));
+        assert_eq!(app.details_scroll, 9);
+        assert_eq!(cursor(&app), Some("R1"));
     }
 
     #[test]
