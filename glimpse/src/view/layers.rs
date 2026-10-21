@@ -15,6 +15,7 @@ use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
+use super::table::{Row, draw_rows};
 use super::{Place, initials, place, text_width, truncate};
 use crate::app::{App, Dir, ListScroll, Navigator};
 use crate::config::{COLUMN_RANGE, Orientation};
@@ -221,31 +222,12 @@ fn render_at(
     }
 }
 
-/// A drawn row, the styles laid under and over its full width, and the task it shows.
-struct Row {
-    line: Line<'static>,
-    fill: Option<Style>,
-    overlay: Option<Style>,
-    task: Option<u32>,
-}
-
-impl Row {
-    fn plain(line: Line<'static>) -> Row {
-        Row {
-            line,
-            fill: None,
-            overlay: None,
-            task: None,
-        }
-    }
-
-    fn task(ctx: &Ctx, task: &Task, line: Line<'static>) -> Row {
-        Row {
-            line,
-            fill: ctx.fill(task),
-            overlay: ctx.overlay(task),
-            task: Some(task.id),
-        }
+fn task_row(ctx: &Ctx, task: &Task, line: Line<'static>) -> Row<u32> {
+    Row {
+        line,
+        fill: ctx.fill(task),
+        overlay: ctx.overlay(task),
+        target: Some(task.id),
     }
 }
 
@@ -259,7 +241,7 @@ fn render_vertical(buf: &mut Buffer, area: Rect, ctx: &Ctx, groups: &[Group]) ->
         .map(|task| task.id.to_string().len())
         .max()
         .unwrap_or(1);
-    let mut rows = Vec::new();
+    let mut rows: Vec<Row<u32>> = Vec::new();
     let mut selected_row = None;
     for group in groups {
         rows.push(Row::plain(layer_rule(ctx, "── ", &group.label, width)));
@@ -270,7 +252,7 @@ fn render_vertical(buf: &mut Buffer, area: Rect, ctx: &Ctx, groups: &[Group]) ->
             if ctx.is_selected(*id) {
                 selected_row = Some(rows.len());
             }
-            rows.push(Row::task(
+            rows.push(task_row(
                 ctx,
                 task,
                 task_line(ctx, task, width, Some(id_width)),
@@ -331,7 +313,7 @@ fn render_horizontal(buf: &mut Buffer, area: Rect, ctx: &Ctx, groups: &[Group]) 
             if ctx.is_selected(*id) {
                 selected_row = Some(rows.len());
             }
-            rows.push(Row::task(ctx, task, task_line(ctx, task, cell, None)));
+            rows.push(task_row(ctx, task, task_line(ctx, task, cell, None)));
         }
         for pos in &group.closes {
             let checkpoint = &ctx.app.snapshot.checkpoints[*pos];
@@ -362,25 +344,6 @@ fn render_horizontal(buf: &mut Buffer, area: Rect, ctx: &Ctx, groups: &[Group]) 
         scroll,
         column: Some(natural),
     }
-}
-
-fn draw_rows(buf: &mut Buffer, area: Rect, rows: &[Row]) -> Vec<Target> {
-    let mut targets = Vec::new();
-    for (row, y) in rows.iter().zip(area.y..area.bottom()) {
-        let rect = Rect::new(area.x, y, area.width, 1);
-        // The fill goes under the spans so a chip keeps its own background.
-        if let Some(style) = row.fill {
-            buf.set_style(rect, style);
-        }
-        buf.set_line(area.x, y, &row.line, area.width);
-        if let Some(style) = row.overlay {
-            buf.set_style(rect, style);
-        }
-        if let Some(id) = row.task {
-            targets.push((rect, id));
-        }
-    }
-    targets
 }
 
 fn nudged(offset: usize, by: i32) -> usize {
@@ -604,7 +567,12 @@ fn task_parts(
         if !right.is_empty() {
             right.push(Span::raw(" "));
         }
-        let effort = super::notice_style(ctx.app, task).unwrap_or(theme.effort);
+        let muted = if ctx.is_selected(task.id) {
+            theme.selection_text
+        } else {
+            theme.effort
+        };
+        let effort = super::notice_style(ctx.app, task).unwrap_or(muted);
         right.push(Span::styled(task.effort.clone(), effort));
     }
     (left, right)
