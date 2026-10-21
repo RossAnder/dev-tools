@@ -20,9 +20,10 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Padding, Paragraph};
+use ratatui::widgets::Paragraph;
 
 use super::layers::Target;
+use super::panel;
 use crate::app::{App, Crossing, Dir, Navigator, Side};
 use crate::config::{Density, Orientation};
 use crate::model::{AgentStatus, Index, Snapshot};
@@ -529,10 +530,8 @@ fn draw_card(draw: &mut Draw, rect: Rect, traversal: &Traversal, lines: Vec<Line
     let theme = &draw.app.theme;
     let id = traversal.centre;
     let border = draw.task_style(id);
-    let mut block = Block::bordered()
-        .border_type(BorderType::Rounded)
+    let mut block = panel::block("", theme)
         .border_style(border)
-        .padding(Padding::horizontal(1))
         .title(Line::from(Span::styled(
             format!(" {id} "),
             theme.selection.patch(theme.selection_mark),
