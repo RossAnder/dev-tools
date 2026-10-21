@@ -1,8 +1,9 @@
 //! The Inbox surface: user input records and agent questions awaiting an answer.
 //!
-//! A facet row counts the unanswered questions above the list. A question row reads
-//! `▸ ? I5 review  review/demo R3 Which fix?… · a / b`: cursor, glyph, id, author,
-//! target, prompt and options. A record row reads `▸ ✓ I2 note handled  review R3
+//! A facet row counts the unanswered questions above the list, and a header row of
+//! column titles sits under it. A question row reads
+//! `▸  ? I5 review  review/demo R3 Which fix?… · a / b`: cursor, glyph, id, author,
+//! target, prompt and options. A record row reads `▸  ✓ I2 note handled  review R3
 //! text… → note ↻`: cursor, status glyph, id, kind, status, target, a text excerpt,
 //! the handling agent's note and the saving mark.
 
@@ -13,12 +14,13 @@ use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
-use super::items::{Drawn, Target, cursor_at};
+use super::items::{Drawn, cursor_at};
+use super::table::{Column, LEAD, Row, cell, draw_rows, header};
 use super::{Place, place, text_width, truncate};
 use crate::app::App;
 use crate::ledger::{InputRow, Seen};
 use crate::model::TaskStatus;
-use crate::surface::{InboxState, VisibleRow};
+use crate::surface::{HeaderKey, InboxColumn, InboxState, VisibleRow};
 use crate::theme::Theme;
 
 /// Draws the Inbox into `area` of `buf`; a `Frame` caller passes `frame.buffer_mut()`.
@@ -35,13 +37,13 @@ fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> Drawn {
     let state = &app.inbox;
     let width = usize::from(area.width);
     buf.set_line(area.x, area.y, &facet_line(app, state), area.width);
-    let list = Rect::new(
+    let body = Rect::new(
         area.x,
         area.y + 1,
         area.width,
         area.height.saturating_sub(1),
     );
-    if list.height == 0 {
+    if body.height == 0 {
         return Drawn {
             scroll: state.scroll,
             ..Drawn::default()
@@ -52,19 +54,42 @@ fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> Drawn {
     if visible.is_empty() {
         let text = match &state.revision {
             Seen::Unread => "reading the input store…",
-            _ if state.rows.is_empty() => "no input records yet",
-            _ => "no open records",
+            _ if state.rows.is_empty() => "no input records yet · n captures a note",
+            _ => "no open records · c shows closed",
         };
         buf.set_line(
-            list.x,
-            list.y,
+            body.x,
+            body.y,
             &Line::from(Span::styled(text, app.theme.secondary)),
-            list.width,
+            body.width,
         );
         return Drawn::default();
     }
 
     let columns = Columns::measure(state, &visible);
+    let table = columns.table(width);
+    let sorted = InboxColumn::ALL.iter().find_map(|column| {
+        state
+            .header_sort(*column)
+            .map(|dir| (column_index(*column), dir))
+    });
+    let headers: Vec<(Rect, HeaderKey)> = header(buf, body, &table, sorted, &app.theme)
+        .into_iter()
+        .filter_map(|(rect, at)| Some((rect, HeaderKey::Inbox(column_at(at)?))))
+        .collect();
+    let list = Rect::new(
+        body.x,
+        body.y + 1,
+        body.width,
+        body.height.saturating_sub(1),
+    );
+    if list.height == 0 {
+        return Drawn {
+            scroll: state.scroll,
+            headers,
+            ..Drawn::default()
+        };
+    }
     let view = usize::from(list.height);
     let offset = place(
         state.scroll,
@@ -73,19 +98,14 @@ fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> Drawn {
         view,
         Place::of_list(state.scroll_pinned),
     );
-    let rows: Vec<Row> = visible[offset..]
+    let rows: Vec<Row<String>> = visible[offset..]
         .iter()
         .take(view)
         .filter_map(|entry| match entry {
-            VisibleRow::Header { label, count } => Some(Row {
-                line: Line::from(Span::styled(
-                    format!("▾ {label} ({count})"),
-                    app.theme.group_header,
-                )),
-                fill: None,
-                overlay: None,
-                id: None,
-            }),
+            VisibleRow::Header { label, count } => Some(Row::plain(Line::from(Span::styled(
+                format!("▾ {label} ({count})"),
+                app.theme.group_header,
+            )))),
             VisibleRow::Item(id) => {
                 let row = state.row(id)?;
                 let is_cursor = state.cursor.as_deref() == Some(id.as_str());
@@ -99,43 +119,44 @@ fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> Drawn {
                     fill: is_cursor.then_some(app.theme.selection),
                     overlay: (!is_cursor && state.is_flashing(id, now))
                         .then(|| app.theme.flash(flash_status(row))),
-                    id: Some(id.clone()),
+                    target: Some(id.clone()),
                 })
             }
         })
         .collect();
+    let targets = draw_rows(buf, list, &rows);
+    let ids = targets
+        .iter()
+        .map(|(rect, id)| (cell(*rect, &table, ID_AT), id.clone()))
+        .filter(|(rect, _)| rect.width > 0)
+        .collect();
     Drawn {
-        targets: draw_rows(buf, list, &rows),
+        targets,
         scroll: offset,
         page: rows.len(),
+        headers,
+        ids,
     }
 }
 
-/// A drawn row, the styles laid under and over its full width, and the record it shows.
-struct Row {
-    line: Line<'static>,
-    fill: Option<Style>,
-    overlay: Option<Style>,
-    id: Option<String>,
+/// The index of the id column in [`Columns::table`]; the glyph column precedes it.
+const ID_AT: usize = 1;
+
+/// The header table's index for a sortable column.
+fn column_index(column: InboxColumn) -> usize {
+    match column {
+        InboxColumn::Id => ID_AT,
+        InboxColumn::Kind => 2,
+        InboxColumn::Status => 3,
+        InboxColumn::Text => 4,
+    }
 }
 
-fn draw_rows(buf: &mut Buffer, area: Rect, rows: &[Row]) -> Vec<Target> {
-    let mut targets = Vec::new();
-    for (row, y) in rows.iter().zip(area.y..area.bottom()) {
-        let rect = Rect::new(area.x, y, area.width, 1);
-        // The fill goes under the spans so a styled span keeps its own colours.
-        if let Some(style) = row.fill {
-            buf.set_style(rect, style);
-        }
-        buf.set_line(area.x, y, &row.line, area.width);
-        if let Some(style) = row.overlay {
-            buf.set_style(rect, style);
-        }
-        if let Some(id) = &row.id {
-            targets.push((rect, id.clone()));
-        }
-    }
-    targets
+/// The sortable column at a header table index; the glyph column has none.
+fn column_at(index: usize) -> Option<InboxColumn> {
+    InboxColumn::ALL
+        .into_iter()
+        .find(|column| column_index(*column) == index)
 }
 
 /// `2 unanswered · closed hidden`.
@@ -176,9 +197,37 @@ impl Columns {
         }
         columns
     }
+
+    /// The header's columns: the glyph, id, kind (a question's author when no record
+    /// has a kind), status and the text that takes the rest of a `width`-cell row.
+    fn table(&self, width: usize) -> Vec<Column> {
+        let kind = if self.kind > 0 {
+            self.kind
+        } else {
+            self.author
+        };
+        let fixed = [1, self.id, kind, self.status];
+        let used: usize = usize::from(LEAD)
+            + fixed
+                .iter()
+                .map(|w| if *w == 0 { 0 } else { w + 1 })
+                .sum::<usize>();
+        let text = width.saturating_sub(used + 2);
+        [
+            ("", fixed[0]),
+            ("id", fixed[1]),
+            ("kind", fixed[2]),
+            ("status", fixed[3]),
+            ("text", text),
+        ]
+        .into_iter()
+        .map(|(title, width)| Column { title, width })
+        .collect()
+    }
 }
 
-/// The cursor mark, a blank, the glyph and the padded id every row starts with.
+/// The cursor mark, two blanks, the glyph and the padded id every row starts with; the
+/// second blank is the gap the header's cells leave after the lead.
 fn lead(
     theme: &Theme,
     glyph: Span<'static>,
@@ -192,7 +241,7 @@ fn lead(
         } else {
             Span::raw(" ")
         },
-        Span::raw(" "),
+        Span::raw("  "),
         glyph,
         Span::raw(format!(" {id:<id_width$}")),
     ]
@@ -218,7 +267,7 @@ fn question_line(
         format!(" {:<w$}", row.author, w = columns.author),
         theme.question,
     ));
-    push_target(&mut left, row, theme);
+    push_target(&mut left, row, theme, is_cursor);
     left.push(Span::raw(" "));
     let options = row.options.join(" / ");
     finish(
@@ -229,6 +278,7 @@ fn question_line(
         width,
         (row.prompt.as_str(), theme.question),
         &options,
+        is_cursor,
     )
 }
 
@@ -254,7 +304,7 @@ fn record_line(
         format!(" {:<w$}", row.status, w = columns.status),
         style,
     ));
-    push_target(&mut left, row, theme);
+    push_target(&mut left, row, theme, is_cursor);
     left.push(Span::raw(" "));
     let excerpt = excerpt(row);
     let note = if row.status == "handled" {
@@ -270,12 +320,15 @@ fn record_line(
         width,
         (excerpt.as_str(), Style::default()),
         note,
+        is_cursor,
     )
 }
 
 /// Appends the body and its trailer in the room `left` leaves, then the saving mark.
 /// The trailer (options or the handled note) takes at most half the room, and the
-/// last cell stays blank so a highlight is padded on both sides.
+/// last cell stays blank so a highlight is padded on both sides. On the cursor row the
+/// trailer takes `selection_text`.
+#[allow(clippy::too_many_arguments)]
 fn finish(
     mut left: Vec<Span<'static>>,
     state: &InboxState,
@@ -284,6 +337,7 @@ fn finish(
     width: usize,
     (body, body_style): (&str, Style),
     trailer: &str,
+    is_cursor: bool,
 ) -> Line<'static> {
     let saving = state.saving.contains(&row.id);
     let tail = if saving { 2 } else { 0 };
@@ -306,7 +360,10 @@ fn finish(
         };
         let trailer = truncate(trailer, trailer_room - 3);
         used += 3 + text_width(&trailer);
-        left.push(Span::styled(format!("{sep}{trailer}"), theme.facet));
+        left.push(Span::styled(
+            format!("{sep}{trailer}"),
+            muted(theme, is_cursor),
+        ));
     }
     left.push(Span::raw(" ".repeat(room.saturating_sub(used))));
     if saving {
@@ -318,11 +375,21 @@ fn finish(
 }
 
 /// Two spaces then `review/demo-flow R3,R7`, dimmed; nothing for an untargeted record.
-fn push_target(left: &mut Vec<Span<'static>>, row: &InputRow, theme: &Theme) {
+fn push_target(left: &mut Vec<Span<'static>>, row: &InputRow, theme: &Theme, is_cursor: bool) {
     let target = target_text(row);
     if !target.is_empty() {
         left.push(Span::raw("  "));
-        left.push(Span::styled(target, theme.facet));
+        left.push(Span::styled(target, muted(theme, is_cursor)));
+    }
+}
+
+/// The dimmed style, lifted to `selection_text` on the cursor row so it stays legible
+/// on the selection fill.
+fn muted(theme: &Theme, is_cursor: bool) -> Style {
+    if is_cursor {
+        theme.selection_text
+    } else {
+        theme.facet
     }
 }
 
@@ -403,6 +470,7 @@ fn spans_width(spans: &[Span]) -> usize {
 
 #[cfg(test)]
 mod tests {
+    use super::super::items::Target;
     use super::*;
     use crate::app::Action;
     use crate::config::Config;
@@ -497,7 +565,7 @@ mod tests {
         let ids: Vec<&str> = targets.iter().map(|(_, id)| id.as_str()).collect();
         assert_eq!(ids, ["I4", "I1"]);
         assert_eq!(targets[0].0.y, u16::try_from(i4).expect("row"));
-        assert!(line.starts_with("  ●"), "the cursor stays on I4: {line:?}");
+        assert!(line.starts_with("   ●"), "the cursor stays on I4: {line:?}");
 
         app.inbox.show_closed = true;
         app.inbox.saving.insert("I1".to_string());
@@ -518,23 +586,95 @@ mod tests {
         let mut app = inbox_app(rows);
         app.inbox.move_cursor(7);
         assert_eq!(app.inbox.cursor.as_deref(), Some("I8"));
-        let (rows, targets) = draw(&app, 60, 5);
+        let (rows, targets) = draw(&app, 60, 6);
         let ids: Vec<&str> = targets.iter().map(|(_, id)| id.as_str()).collect();
         assert_eq!(ids, ["I6", "I7", "I8", "I9"], "the header scrolled off");
         let ys: Vec<u16> = targets.iter().map(|(rect, _)| rect.y).collect();
-        assert_eq!(ys, [1, 2, 3, 4]);
-        assert!(rows[3].starts_with("▸ ● I8"), "{rows:#?}");
+        assert_eq!(ys, [2, 3, 4, 5]);
+        assert!(rows[4].starts_with("▸  ● I8"), "{rows:#?}");
     }
 
     #[test]
     fn an_empty_store_says_so() {
         let app = inbox_app(Vec::new());
         let (rows, targets) = draw(&app, 60, 4);
-        assert!(rows[1].starts_with("no input records yet"), "{rows:#?}");
+        assert_eq!(
+            rows[1].trim_end(),
+            "no input records yet · n captures a note"
+        );
         assert!(targets.is_empty());
 
         let app = inbox_app(vec![record("I1", "note", "user", "withdrawn")]);
         let (rows, _) = draw(&app, 60, 4);
-        assert!(rows[1].starts_with("no open records"), "{rows:#?}");
+        assert_eq!(rows[1].trim_end(), "no open records · c shows closed");
+    }
+
+    #[test]
+    fn a_header_row_titles_the_columns_and_marks_the_sort() {
+        let mut app = inbox_app(vec![record("I1", "note", "user", "new")]);
+        let (rows, _) = draw(&app, 60, 4);
+        assert!(rows[1].contains(" id▲"), "{:?}", rows[1]);
+        for title in ["kind", "st…", "text"] {
+            assert!(rows[1].contains(title), "{title}: {:?}", rows[1]);
+        }
+        assert!(
+            rows[2].contains("▾ new"),
+            "the list starts under it: {rows:#?}"
+        );
+
+        app.inbox.cycle_header(InboxColumn::Kind);
+        let (rows, _) = draw(&app, 60, 4);
+        assert!(rows[1].contains("kind▲"), "{:?}", rows[1]);
+        assert!(!rows[1].contains("id▲"), "{:?}", rows[1]);
+    }
+
+    #[test]
+    fn header_and_id_cells_are_handed_back_for_clicks() {
+        let app = inbox_app(vec![
+            record("I1", "note", "user", "new"),
+            record("I2", "note", "user", "new"),
+        ]);
+        let area = Rect::new(0, 0, 60, 6);
+        let mut buf = Buffer::empty(area);
+        let drawn = render_at(&mut buf, area, &app, Instant::now());
+        let keys: Vec<HeaderKey> = drawn.headers.iter().map(|(_, key)| *key).collect();
+        assert_eq!(
+            keys,
+            InboxColumn::ALL.map(HeaderKey::Inbox),
+            "the glyph column sorts by nothing"
+        );
+        assert!(drawn.headers.iter().all(|(rect, _)| rect.y == 1));
+        let (id_header, _) = drawn
+            .headers
+            .iter()
+            .find(|(_, key)| *key == HeaderKey::Inbox(InboxColumn::Id))
+            .expect("id header");
+        let ids: Vec<&str> = drawn.ids.iter().map(|(_, id)| id.as_str()).collect();
+        assert_eq!(ids, ["I1", "I2"]);
+        for ((rect, id), (row, _)) in drawn.ids.iter().zip(&drawn.targets) {
+            assert_eq!((rect.x, rect.width), (id_header.x, id_header.width));
+            assert_eq!(rect.y, row.y);
+            let text: String = (rect.x..rect.right())
+                .map(|x| buf[(x, rect.y)].symbol())
+                .collect();
+            assert_eq!(&text, id);
+        }
+    }
+
+    #[test]
+    fn the_cursor_row_lifts_its_dimmed_spans() {
+        let row = InputRow {
+            ledger: "review".to_string(),
+            items: vec!["R3".to_string()],
+            ..record("I1", "note", "user", "new")
+        };
+        let app = inbox_app(vec![row, record("I2", "note", "user", "new")]);
+        let area = Rect::new(0, 0, 60, 5);
+        let mut buf = Buffer::empty(area);
+        render_at(&mut buf, area, &app, Instant::now());
+        let line: String = (0..60).map(|x| buf[(x, 3)].symbol()).collect();
+        let at = line.find("review R3").expect("target");
+        let x = u16::try_from(line[..at].chars().count()).expect("column");
+        assert_eq!(Some(buf[(x, 3)].fg), app.theme.selection_text.fg);
     }
 }

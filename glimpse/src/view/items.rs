@@ -17,13 +17,14 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget};
 use tui_input::Input;
 
+use super::table::{Column, LEAD, Row, cell, draw_rows, header};
 use super::{Place, initials, place, text_width, truncate};
 use crate::actions::Overlay;
 use crate::app::App;
 use crate::config::ItemColumn;
 use crate::ledger::{Anchor, ItemRow, Seen, StatusClass};
 use crate::model::{AgentStatus, TaskStatus};
-use crate::surface::{ItemsState, VisibleRow};
+use crate::surface::{HeaderKey, ItemsState, Surface, VisibleRow};
 
 /// An item row's on-screen rect and the id it shows, for mouse hits.
 pub(crate) type Target = (Rect, String);
@@ -35,13 +36,16 @@ const AREA_MIN: usize = 10;
 /// The summary cells the anchor column gives way to.
 const SUMMARY_MIN: usize = 20;
 
-/// What a list render hands back: the drawn item rows, the list's scroll offset and how
-/// many list rows it drew.
+/// What a list render hands back: the drawn item rows, the list's scroll offset, how
+/// many list rows it drew, the header cells a click sorts by and the id cells a click
+/// copies.
 #[derive(Default)]
 pub(crate) struct Drawn {
     pub(crate) targets: Vec<Target>,
     pub(crate) scroll: usize,
     pub(crate) page: usize,
+    pub(crate) headers: Vec<(Rect, HeaderKey)>,
+    pub(crate) ids: Vec<Target>,
 }
 
 /// Draws the current item surface into `area` of `buf`; a `Frame` caller passes
@@ -70,13 +74,13 @@ fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> Drawn {
                 .render(field, buf);
         }
     }
-    let list = Rect::new(
+    let body = Rect::new(
         area.x,
         area.y + 1,
         area.width,
         area.height.saturating_sub(1),
     );
-    if list.height == 0 {
+    if body.height == 0 {
         return Drawn {
             scroll: state.scroll,
             ..Drawn::default()
@@ -85,23 +89,40 @@ fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> Drawn {
 
     let visible = state.visible();
     if visible.is_empty() {
-        let text = match &state.revision {
-            Seen::Unread => "reading the ledger…",
-            Seen::Missing => "no ledger file",
-            Seen::At(_) if state.rows.is_empty() => "no items",
-            Seen::At(_) => "no items match",
-        };
         buf.set_line(
-            list.x,
-            list.y,
-            &Line::from(Span::styled(text, app.theme.secondary)),
-            list.width,
+            body.x,
+            body.y,
+            &Line::from(Span::styled(empty_text(state), app.theme.secondary)),
+            body.width,
         );
         return Drawn::default();
     }
 
     let mut columns = Columns::measure(state, &visible);
     columns.fit(&app.item_columns, width);
+    let table = columns.table(state, &app.item_columns, width);
+    let sorted = app
+        .item_columns
+        .iter()
+        .enumerate()
+        .find_map(|(at, column)| state.header_sort(*column).map(|dir| (at, dir)));
+    let headers = header(buf, body, &table, sorted, &app.theme)
+        .into_iter()
+        .map(|(rect, at)| (rect, HeaderKey::Item(app.item_columns[at])))
+        .collect();
+    let list = Rect::new(
+        body.x,
+        body.y + 1,
+        body.width,
+        body.height.saturating_sub(1),
+    );
+    if list.height == 0 {
+        return Drawn {
+            scroll: state.scroll,
+            headers,
+            ..Drawn::default()
+        };
+    }
     let view = usize::from(list.height);
     let offset = place(
         state.scroll,
@@ -110,19 +131,14 @@ fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> Drawn {
         view,
         Place::of_list(state.scroll_pinned),
     );
-    let rows: Vec<Row> = visible[offset..]
+    let rows: Vec<Row<String>> = visible[offset..]
         .iter()
         .take(view)
         .filter_map(|entry| match entry {
-            VisibleRow::Header { label, count } => Some(Row {
-                line: Line::from(Span::styled(
-                    format!("▾ {label} ({count})"),
-                    app.theme.group_header,
-                )),
-                fill: None,
-                overlay: None,
-                id: None,
-            }),
+            VisibleRow::Header { label, count } => Some(Row::plain(Line::from(Span::styled(
+                format!("▾ {label} ({count})"),
+                app.theme.group_header,
+            )))),
             VisibleRow::Item(id) => {
                 let row = state.row(id)?;
                 let is_cursor = state.cursor.as_deref() == Some(id.as_str());
@@ -131,15 +147,51 @@ fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> Drawn {
                     fill: is_cursor.then_some(app.theme.selection),
                     overlay: (!is_cursor && state.is_flashing(id, now))
                         .then(|| app.theme.flash(flash_status(row.class))),
-                    id: Some(id.clone()),
+                    target: Some(id.clone()),
                 })
             }
         })
         .collect();
+    let targets = draw_rows(buf, list, &rows);
+    let ids = match app
+        .item_columns
+        .iter()
+        .position(|column| *column == ItemColumn::Id)
+    {
+        Some(at) => targets
+            .iter()
+            .map(|(rect, id)| (cell(*rect, &table, at), id.clone()))
+            .filter(|(rect, _)| rect.width > 0)
+            .collect(),
+        None => Vec::new(),
+    };
     Drawn {
-        targets: draw_rows(buf, list, &rows),
+        targets,
         scroll: offset,
         page: rows.len(),
+        headers,
+        ids,
+    }
+}
+
+/// What an empty list says, naming the next step: the command that writes the ledger,
+/// or the key that widens what is shown.
+fn empty_text(state: &ItemsState) -> String {
+    let (name, command) = match state.surface {
+        Surface::Optimise => ("optimise", "/optimise"),
+        Surface::PlanReview => ("plan-review", "/review-plan"),
+        Surface::Backlog => ("backlog", "/backlog"),
+        _ => ("review", "/review"),
+    };
+    match &state.revision {
+        Seen::Unread => "reading the ledger…".to_string(),
+        Seen::Missing => format!("no {name} ledger · {command} writes one"),
+        Seen::At(_) if state.rows.is_empty() => format!("no items yet · {command} adds them"),
+        Seen::At(_) if !state.filter.is_empty() => {
+            "no items match · / edits the filter".to_string()
+        }
+        Seen::At(_) if !state.show_closed => "no open items · c shows closed".to_string(),
+        Seen::At(_) => "no items match".to_string(),
     }
 }
 
@@ -149,33 +201,6 @@ pub(crate) fn cursor_at(visible: &[VisibleRow], cursor: Option<&str>) -> Option<
     visible
         .iter()
         .position(|entry| matches!(entry, VisibleRow::Item(id) if id == cursor))
-}
-
-/// A drawn row, the styles laid under and over its full width, and the item it shows.
-struct Row {
-    line: Line<'static>,
-    fill: Option<Style>,
-    overlay: Option<Style>,
-    id: Option<String>,
-}
-
-fn draw_rows(buf: &mut Buffer, area: Rect, rows: &[Row]) -> Vec<Target> {
-    let mut targets = Vec::new();
-    for (row, y) in rows.iter().zip(area.y..area.bottom()) {
-        let rect = Rect::new(area.x, y, area.width, 1);
-        // The fill goes under the spans so a chip keeps its own background.
-        if let Some(style) = row.fill {
-            buf.set_style(rect, style);
-        }
-        buf.set_line(area.x, y, &row.line, area.width);
-        if let Some(style) = row.overlay {
-            buf.set_style(rect, style);
-        }
-        if let Some(id) = &row.id {
-            targets.push((rect, id.clone()));
-        }
-    }
-    targets
 }
 
 /// `group severity · sort id · closed hidden · /cache`; the filter shows only when set.
@@ -276,7 +301,7 @@ impl Columns {
                 },
             })
             .sum();
-        let spare = width.saturating_sub(LEAD + others + 1 + 1);
+        let spare = width.saturating_sub(usize::from(LEAD) + others + 1 + 1);
         let area = natural.min(AREA_MAX).min(spare);
         if area >= natural.min(AREA_MIN) {
             self.area = area;
@@ -295,10 +320,51 @@ impl Columns {
             ItemColumn::Summary => 0,
         }
     }
+
+    /// The summary's cells in a `width`-cell row laid out in `order`. The last cell
+    /// stays blank, so a highlight is padded on both sides.
+    fn summary_room(&self, order: &[ItemColumn], width: usize) -> usize {
+        let fixed: usize = usize::from(LEAD)
+            + 1
+            + order
+                .iter()
+                .map(|column| match self.width(*column) {
+                    _ if *column == ItemColumn::Summary => 1,
+                    0 => 0,
+                    w => w + 1,
+                })
+                .sum::<usize>();
+        width.saturating_sub(fixed)
+    }
+
+    /// The header's columns for `order`, sized as the rows draw them.
+    fn table(&self, state: &ItemsState, order: &[ItemColumn], width: usize) -> Vec<Column> {
+        order
+            .iter()
+            .map(|column| Column {
+                title: title(state.surface, *column),
+                width: match column {
+                    ItemColumn::Summary => self.summary_room(order, width),
+                    other => self.width(*other),
+                },
+            })
+            .collect()
+    }
 }
 
-/// The cursor and mark cells every row starts with.
-const LEAD: usize = 2;
+/// A column's header title on `surface`: the kind column shows a finding's severity,
+/// and the anchor column a file, a plan section or a backlog area.
+fn title(surface: Surface, column: ItemColumn) -> &'static str {
+    match (column, surface) {
+        (ItemColumn::Status, _) => "",
+        (ItemColumn::Kind, Surface::Backlog) => "kind",
+        (ItemColumn::Kind, _) => "severity",
+        (ItemColumn::Area, Surface::Backlog) => "area",
+        (ItemColumn::Area, Surface::PlanReview) => "section",
+        (ItemColumn::Area, _) => "file",
+        (other, _) => other.as_str(),
+    }
+}
 
 /// The severity of a finding, or the kind of a backlog row, and whether it is the kind.
 fn classifier(row: &ItemRow) -> (&str, bool) {
@@ -333,31 +399,20 @@ fn item_line(
     ];
     let marks = row_marks(app, state, &row.id);
     let has_summary = order.contains(&ItemColumn::Summary);
-    // The last cell stays blank, so a highlight is padded on both sides.
-    let fixed: usize = LEAD
-        + 1
-        + order
-            .iter()
-            .map(|column| match columns.width(*column) {
-                _ if *column == ItemColumn::Summary => 1,
-                0 => 0,
-                w => w + 1,
-            })
-            .sum::<usize>();
     for column in order {
         if *column == ItemColumn::Summary {
             spans.push(Span::raw(" "));
             spans.extend(summary_cell(
                 row,
                 marks.clone(),
-                width.saturating_sub(fixed),
+                columns.summary_room(order, width),
             ));
             continue;
         }
         let w = columns.width(*column);
         if w > 0 {
             spans.push(Span::raw(" "));
-            spans.push(cell(app, row, *column, w));
+            spans.push(value_cell(app, row, *column, w, is_cursor));
         }
     }
     if !has_summary && !marks.is_empty() {
@@ -368,24 +423,38 @@ fn item_line(
     Line::from(spans)
 }
 
-/// One fixed column's cell, padded to `w`.
-fn cell(app: &App, row: &ItemRow, column: ItemColumn, w: usize) -> Span<'static> {
+/// One fixed column's cell, padded to `w`. On the cursor row the muted columns take
+/// `selection_text`, so they stay legible on the selection fill.
+fn value_cell(
+    app: &App,
+    row: &ItemRow,
+    column: ItemColumn,
+    w: usize,
+    is_cursor: bool,
+) -> Span<'static> {
     let theme = &app.theme;
     let padded = |text: &str| format!("{text}{}", " ".repeat(w.saturating_sub(text_width(text))));
+    let muted = |style: Style| {
+        if is_cursor {
+            theme.selection_text
+        } else {
+            style
+        }
+    };
     match column {
         ItemColumn::Status => {
             Span::styled(glyph(row.class), theme.item_status(class_name(row.class)))
         }
-        ItemColumn::Id => Span::styled(padded(&row.id), theme.item_id),
+        ItemColumn::Id => Span::styled(padded(&row.id), muted(theme.item_id)),
         ItemColumn::Kind => match classifier(row) {
-            (kind, true) => Span::styled(padded(kind), theme.item_kind),
+            (kind, true) => Span::styled(padded(kind), muted(theme.item_kind)),
             (severity, false) => Span::styled(padded(severity), theme.severity(severity)),
         },
-        ItemColumn::Category => Span::styled(padded(&row.category), theme.facet),
-        ItemColumn::Effort => Span::styled(padded(&row.effort), theme.effort),
+        ItemColumn::Category => Span::styled(padded(&row.category), muted(theme.facet)),
+        ItemColumn::Effort => Span::styled(padded(&row.effort), muted(theme.effort)),
         ItemColumn::Area => Span::styled(
             padded(&shorten_path(&anchor_text(&row.anchor), w)),
-            theme.facet,
+            muted(theme.facet),
         ),
         ItemColumn::Summary => Span::raw(String::new()),
     }
@@ -686,9 +755,13 @@ mod tests {
         let mut app = review_app();
         app.apply(Action::ItemMove(crate::app::Dir::Down));
         app.apply(Action::ItemMove(crate::app::Dir::Down));
-        let (rows, targets) = draw(&app, 100, 3);
-        assert_eq!(targets.len(), 2, "two list rows under the facet row");
-        assert!(rows[2].starts_with("▸"), "{rows:#?}");
+        let (rows, targets) = draw(&app, 100, 4);
+        assert_eq!(
+            targets.len(),
+            2,
+            "two list rows under the facet and header rows"
+        );
+        assert!(rows[3].starts_with("▸"), "{rows:#?}");
     }
 
     fn backlog_app(rows: Vec<ItemRow>) -> App {
@@ -765,18 +838,111 @@ mod tests {
     }
 
     #[test]
-    fn ids_and_kinds_take_their_dimmed_tokens() {
-        let app = backlog_app(vec![capture("B-1", "debt", "Summary", "src/a.rs")]);
-        let area = Rect::new(0, 0, 60, 3);
+    fn ids_and_kinds_take_their_dimmed_tokens_and_lift_on_the_cursor_row() {
+        let app = backlog_app(vec![
+            capture("B-1", "debt", "Summary", "src/a.rs"),
+            capture("B-2", "debt", "Summary", "src/a.rs"),
+        ]);
+        let area = Rect::new(0, 0, 60, 4);
         let mut buf = Buffer::empty(area);
         render_at(&mut buf, area, &app, Instant::now());
-        let line: String = (0..60).map(|x| buf[(x, 1)].symbol()).collect();
-        let col = |needle: &str| {
+        let fg = |y: u16, needle: &str| {
+            let line: String = (0..60).map(|x| buf[(x, y)].symbol()).collect();
             let at = line.find(needle).expect("drawn");
-            u16::try_from(line[..at].chars().count()).expect("column")
+            let x = u16::try_from(line[..at].chars().count()).expect("column");
+            Some(buf[(x, y)].fg)
         };
-        assert_eq!(Some(buf[(col("B-1"), 1)].fg), app.theme.item_id.fg);
-        assert_eq!(Some(buf[(col("debt"), 1)].fg), app.theme.item_kind.fg);
+        assert_eq!(fg(3, "B-2"), app.theme.item_id.fg);
+        assert_eq!(fg(3, "debt"), app.theme.item_kind.fg);
+        assert_eq!(fg(3, "src/a.rs"), app.theme.facet.fg);
+        assert_eq!(fg(2, "B-1"), app.theme.selection_text.fg, "the cursor row");
+        assert_eq!(fg(2, "debt"), app.theme.selection_text.fg);
+        assert_eq!(fg(2, "src/a.rs"), app.theme.selection_text.fg);
+    }
+
+    #[test]
+    fn a_header_row_titles_the_columns_and_marks_the_sort() {
+        let mut app = review_app();
+        let (rows, _) = draw(&app, 100, 6);
+        assert!(rows[1].contains(" id▲"), "{:?}", rows[1]);
+        for title in ["severity", "category", "effo…", "summary", "file"] {
+            assert!(rows[1].contains(title), "{title}: {:?}", rows[1]);
+        }
+        assert!(
+            rows[2].contains("R1"),
+            "the list starts under it: {rows:#?}"
+        );
+
+        app.apply(Action::CycleSort);
+        let (rows, _) = draw(&app, 100, 6);
+        assert!(rows[1].contains("severity▲"), "{:?}", rows[1]);
+        assert!(!rows[1].contains("id▲"), "{:?}", rows[1]);
+
+        let backlog = backlog_app(vec![capture("B-1", "debt", "Summary", "src/a.rs")]);
+        let (rows, _) = draw(&backlog, 60, 3);
+        assert!(
+            rows[1].contains("kind") && rows[1].contains("area"),
+            "{:?}",
+            rows[1]
+        );
+    }
+
+    #[test]
+    fn header_and_id_cells_are_handed_back_for_clicks() {
+        let app = review_app();
+        let area = Rect::new(0, 0, 100, 6);
+        let mut buf = Buffer::empty(area);
+        let drawn = render_at(&mut buf, area, &app, Instant::now());
+        let keys: Vec<HeaderKey> = drawn.headers.iter().map(|(_, key)| *key).collect();
+        assert_eq!(
+            keys,
+            app.item_columns
+                .iter()
+                .map(|column| HeaderKey::Item(*column))
+                .collect::<Vec<_>>()
+        );
+        assert!(drawn.headers.iter().all(|(rect, _)| rect.y == 1));
+        let (id_header, _) = drawn
+            .headers
+            .iter()
+            .find(|(_, key)| *key == HeaderKey::Item(ItemColumn::Id))
+            .expect("id header");
+
+        let ids: Vec<&str> = drawn.ids.iter().map(|(_, id)| id.as_str()).collect();
+        assert_eq!(ids, ["R1", "R2", "R3"]);
+        for ((rect, id), (row, _)) in drawn.ids.iter().zip(&drawn.targets) {
+            assert_eq!((rect.x, rect.width), (id_header.x, id_header.width));
+            assert_eq!(rect.y, row.y);
+            let text: String = (rect.x..rect.right())
+                .map(|x| buf[(x, rect.y)].symbol())
+                .collect();
+            assert_eq!(&text, id);
+        }
+    }
+
+    #[test]
+    fn an_empty_list_names_the_next_step() {
+        let mut app = App::new(fixture(), &Config::default());
+        app.apply(Action::SwitchSurface(Surface::PlanReview));
+        if let Some(state) = app.items.get_mut(&Surface::PlanReview) {
+            state.revision = Seen::Missing;
+        }
+        let (rows, _) = draw(&app, 80, 4);
+        assert_eq!(
+            rows[1].trim_end(),
+            "no plan-review ledger · /review-plan writes one"
+        );
+
+        let mut app = backlog_app(Vec::new());
+        let (rows, _) = draw(&app, 80, 4);
+        assert_eq!(rows[1].trim_end(), "no items yet · /backlog adds them");
+
+        app = backlog_app(vec![capture("B-1", "debt", "Summary", "src/a.rs")]);
+        if let Some(state) = app.items.get_mut(&Surface::Backlog) {
+            state.filter = "zzz".to_string();
+        }
+        let (rows, _) = draw(&app, 80, 4);
+        assert_eq!(rows[1].trim_end(), "no items match · / edits the filter");
     }
 
     #[test]
@@ -810,7 +976,7 @@ mod tests {
         let mut app = backlog_app(rows);
         // One frame, writing the offset back as `view::render` does.
         let frame = |app: &mut App| -> Vec<String> {
-            let area = Rect::new(0, 0, 60, 5);
+            let area = Rect::new(0, 0, 60, 6);
             let drawn = render_at(&mut Buffer::empty(area), area, app, Instant::now());
             app.items
                 .get_mut(&Surface::Backlog)
@@ -854,12 +1020,12 @@ mod tests {
         for _ in 0..7 {
             app.apply(Action::ItemMove(crate::app::Dir::Down));
         }
-        let (rows, targets) = draw(&app, 80, 5);
+        let (rows, targets) = draw(&app, 80, 6);
         let ids: Vec<&str> = targets.iter().map(|(_, id)| id.as_str()).collect();
         assert_eq!(ids, ["R6", "R7", "R8", "R9"]);
         let ys: Vec<u16> = targets.iter().map(|(rect, _)| rect.y).collect();
-        assert_eq!(ys, [1, 2, 3, 4]);
-        assert!(rows[3].starts_with("▸  ○ R8"), "{rows:#?}");
-        assert!(rows[4].contains("R9 warning"), "{rows:#?}");
+        assert_eq!(ys, [2, 3, 4, 5]);
+        assert!(rows[4].starts_with("▸  ○ R8"), "{rows:#?}");
+        assert!(rows[5].contains("R9 warning"), "{rows:#?}");
     }
 }
