@@ -27,6 +27,8 @@ entries are written with `flow record`, documented in [flow.md](flow.md).
   - [`items sweep --update`](#items-sweep---update)
   - [`integrity refresh`](#integrity-refresh)
   - [Stdin input for large JSON payloads](#stdin-input-for-large-json-payloads)
+  - [TOML record files](#toml-record-files)
+  - [Owned stores](#owned-stores)
 - [Dry-run](#dry-run)
 - [Dedup fingerprint contract](#dedup-fingerprint-contract)
 
@@ -422,6 +424,61 @@ tomlctl items add-many .claude/flows/<slug>/review-ledger.toml --id-prefix R \
 **No multi-line heredocs.** On Windows they fail intermittently: the Bash-tool transport to Git Bash can append CR bytes to the terminator, so the body either aborts the whole command (`bash: -c: line N: unexpected EOF while looking for matching \`''`) or lands partly — tomlctl writes the first rows, then bash runs the rest of the body as shell commands (`/c/Users/ros…: Permission denied`), which surfaces as a "false interrupt". A PowerShell here-string or long string-array pipe fails the same way. A staged file avoids every one of these, so it is the form on Linux and macOS too.
 
 When `-` meets an interactive terminal instead of a pipe, tomlctl refuses rather than waiting; the error names the three ways out — stage the text in a file and redirect it in, use `--set-file` where the verb has field flags, or pass the value literally.
+
+### TOML record files
+
+A path ending `.toml` (any case) given to `--ndjson <path>`, `--json '@<path>'`, `--ops '@<path>'`, `--defaults-json '@<path>'` or any other `@path` JSON flag is read as TOML and converted to the JSON the flag expects. Literals, `-` stdin and every other extension are unchanged. TOML suits prose: a `'''` block needs no escaping, so quotes, backticks, `$` and backslashes arrive as typed.
+
+```toml
+[[record]]
+summary = "Retry loop swallows the final error"
+severity = "minor"
+status = "open"
+description = '''
+The loop in `retry()` drops the last `Err` and returns `Ok(())`,
+so a caller sees "$HOME/cache" as written, backslashes (C:\tmp) included.
+'''
+
+[[record]]
+summary = "Second finding"
+status = "open"
+```
+
+```bash
+tomlctl items add-many .claude/flows/foo/review-ledger.toml --id-prefix R --ndjson .claude/flows/foo/_batch.toml
+```
+
+- **Shape.** Any top-level `record` array is the rows, whether written `[[record]]` or `record = [{…}]` (the two cannot be told apart). A non-table element is refused naming `record N (line L)`. `record` beside any other top-level key is refused, pointing at `--defaults-json` / `--set` for shared values. Without a `record` array the whole table is one object.
+- **`line N` is record N.** An NDJSON consumer receives one line per row, so `line N` in a downstream error names the Nth record.
+- **Multi-line strings** (`'''` or `"""`, at any depth) get CRLF read as LF and exactly one trailing newline trimmed, as `--set-file` does, so a block whose closing delimiter sits on its own line reads back as typed. Single-line strings are kept as written. One leading byte-order mark is stripped. TOML dates become strings.
+- **Prose containing `'''`** falls back to `"""…"""`, where each `\` is written `\\`.
+- **Syntax errors** forward toml's line, column and caret, prefixed with the path.
+- **No `null`.** TOML cannot express it, so an [`items apply`](#items-apply) op's `expect` absent-field precondition needs the JSON form.
+- **No size cap** applies to a file payload.
+
+### Owned stores
+
+Each store below has a verb group that validates its writes, so the generic writers refuse it:
+
+| Store | Owning verbs |
+|---|---|
+| `.claude/backlog.toml` | `backlog` |
+| `.claude/inputs.toml` | `inputs` |
+| `.claude/flows/<slug>/tasks.toml` | `tasks` |
+| `.claude/flows/<slug>/execution-record.toml` | `flow record` |
+| `.claude/flows/<slug>/review-v2.toml`, `.claude/review-v2/<scope>.toml` | `review` |
+
+`set`, `set-json`, `array-append` and `items add|add-many|update|remove|apply|backfill-dedup-id` aimed at one fail with `kind=validation` before any lock or dry-run. The message names the owning verb and the replacement, then `pass --raw-store to write it generically`.
+
+- **Classification** uses the trailing path components after resolving `..`, junctions, symlinks and Windows case, so a detour reaches the same verdict.
+- **Unguarded.** Reads and `items sweep --update` are not refused.
+- **`--raw-store`** bypasses the refusal, for a repair the owning verbs cannot make:
+
+```bash
+tomlctl set .claude/flows/<slug>/tasks.toml last_updated 2026-04-18 --raw-store
+```
+
+- Library callers (glimpse) are unaffected.
 
 ## Dry-run
 
