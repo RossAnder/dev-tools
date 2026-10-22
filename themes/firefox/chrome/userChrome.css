@@ -1,0 +1,260 @@
+/* eggshell for Firefox: browser chrome, for Proton and Nova alike.
+ *
+ * Shared rules sit at top level; rules for one UI sit in
+ * `@media [not] -moz-pref("browser.nova.enabled")`, which parses here because
+ * Servo enables chrome-only rules for every non-author origin.
+ *
+ * Rules override Firefox's own custom properties, so they survive markup
+ * changes. A user-origin declaration loses to Firefox's author sheets and to
+ * the inline style a theme sets on the root unless it is !important.
+ *
+ * Every role is a light-dark() pair, resolved against the colour scheme of
+ * the element using it. Colours come only from themes/palette.toml; each
+ * value appears once, in the palette block below.
+ */
+
+:root {
+  /* ---- palette: dark ---- */
+  --egg-d-black: #000000;
+  --egg-d-base: #0a0a0a;
+  --egg-d-raised: #141414;
+  --egg-d-hairline: #1c1c1c;
+  --egg-d-active: #232323;
+  --egg-d-edge: #2e2e2e;
+  --egg-d-dim: #7a7a7a;
+  --egg-d-secondary: #9e9e9e;
+  --egg-d-soft: #c8c8c8;
+  --egg-d-primary: #f2f2f2;
+  --egg-d-white: #ffffff;
+  --egg-d-night: #0a1836;
+  --egg-d-field: #12276e;
+  --egg-d-cobalt: #1a3bb3;
+  --egg-d-lavender: #c4d5ff;
+
+  /* ---- palette: light ---- */
+  --egg-l-white: #ffffff;
+  --egg-l-raised: #f7f5f1;
+  --egg-l-base: #f1efed;
+  --egg-l-sunk: #e7e4e0;
+  --egg-l-hairline: #dad7d3;
+  --egg-l-edge: #cdcac6;
+  --egg-l-dim: #6b6865;
+  --egg-l-secondary: #4f4d49;
+  --egg-l-soft: #302d2b;
+  --egg-l-primary: #171717;
+  --egg-l-lavender: #c4d5ff;
+  --egg-l-wash: #dee8fd;
+  --egg-l-morpho: #092382;
+
+  --egg-transparent: #00000000;
+
+  /* ---- roles (themes/README.md "Roles"): light-dark(light, dark) ---- */
+  --egg-recessed: light-dark(var(--egg-l-sunk), var(--egg-d-black));
+  --egg-base: light-dark(var(--egg-l-base), var(--egg-d-base));
+  --egg-raised: light-dark(var(--egg-l-raised), var(--egg-d-raised));
+  --egg-hairline: light-dark(var(--egg-l-hairline), var(--egg-d-hairline));
+  --egg-edge: light-dark(var(--egg-l-edge), var(--egg-d-edge));
+  /* the current row inside a raised surface */
+  --egg-row: light-dark(var(--egg-l-sunk), var(--egg-d-active));
+  /* a hovered control on the recessed chrome (light: sunk is the surface) */
+  --egg-hover: light-dark(var(--egg-l-hairline), var(--egg-d-active));
+  /* the selected tab: a quiet blue tint (night, wash), the one place the
+   * identity hue fills the chrome */
+  --egg-tab-selected: light-dark(var(--egg-l-wash), var(--egg-d-night));
+  --egg-pressed: var(--egg-edge);
+
+  --egg-text-primary: light-dark(var(--egg-l-primary), var(--egg-d-primary));
+  --egg-text-soft: light-dark(var(--egg-l-soft), var(--egg-d-soft));
+  --egg-text-secondary: light-dark(var(--egg-l-secondary), var(--egg-d-secondary));
+  --egg-text-dim: light-dark(var(--egg-l-dim), var(--egg-d-dim));
+
+  /* the one identity hue */
+  --egg-focus: light-dark(var(--egg-l-morpho), var(--egg-d-lavender));
+  --egg-selection: light-dark(var(--egg-l-lavender), var(--egg-d-field));
+  --egg-strong: light-dark(var(--egg-l-morpho), var(--egg-d-cobalt));
+  --egg-on-strong: light-dark(var(--egg-l-white), var(--egg-d-white));
+}
+
+/* ======================================================================
+ * Shared: both UIs
+ * ====================================================================== */
+
+:root {
+  /* Frame and toolbars: the whole chrome is one recessed surface. */
+  --toolbox-background-color: var(--egg-recessed) !important;
+  --toolbox-background-color-inactive: var(--egg-recessed) !important;
+  --toolbox-text-color: var(--egg-text-secondary) !important;
+  --toolbox-text-color-inactive: var(--egg-text-dim) !important;
+  --toolbar-background-color: var(--egg-recessed) !important;
+  --toolbar-text-color: var(--egg-text-primary) !important;
+  --toolbarbutton-icon-fill: var(--egg-text-soft) !important;
+  --toolbarbutton-icon-fill-attention: var(--egg-focus) !important;
+  --toolbarbutton-background-color-hover: var(--egg-hover) !important;
+  --toolbarbutton-background-color-active: var(--egg-pressed) !important;
+  --toolbarseparator-color: var(--egg-hairline) !important;
+
+  /* Tabs and nav bar share the surface, so no line between them. */
+  --tabs-navbar-separator-color: var(--egg-transparent) !important;
+  --tabs-navbar-separator-style: none !important;
+
+  /* Tabs: the selected tab is a blue tint (the favicon disc when vertical
+   * tabs are collapsed, the full row when expanded) with primary text, and
+   * nothing else: no outline, no marker, no shadow. */
+  --tab-background-color-hover: var(--egg-hover) !important;
+  --tab-background-color-selected: var(--egg-tab-selected) !important;
+  --tab-text-color-selected: var(--egg-text-primary) !important;
+  --tab-border-color-selected: var(--egg-transparent) !important;
+  --tab-icon-fill-loading: var(--egg-focus) !important;
+  --tab-attention-dot-color: var(--egg-focus) !important;
+
+  /* Address bar: raised, edge hairline, lavender focus. */
+  --toolbar-field-background-color: var(--egg-raised) !important;
+  --toolbar-field-background-color-focus: var(--egg-raised) !important;
+  --toolbar-field-text-color: var(--egg-text-primary) !important;
+  --toolbar-field-text-color-focus: var(--egg-text-primary) !important;
+  --toolbar-field-border-color: var(--egg-edge) !important;
+  --toolbar-field-border-color-focus: var(--egg-focus) !important;
+  --urlbarview-background-color-hover: var(--egg-row) !important;
+  --urlbarview-background-color-selected: var(--egg-row) !important;
+  --urlbarview-text-color-selected: var(--egg-text-primary) !important;
+  --urlbarview-separator-color: var(--egg-hairline) !important;
+
+  /* Content area: a hairline where chrome meets the page, never a shadow. */
+  --chrome-content-separator-color: var(--egg-hairline) !important;
+  --content-area-shadow: none !important;
+  --tabpanel-background-color: var(--egg-base) !important;
+
+  /* Sidebar (and the vertical-tab launcher, which paints the toolbox):
+   * recessed. */
+  --sidebar-background-color: var(--egg-recessed) !important;
+  --sidebar-text-color: var(--egg-text-primary) !important;
+  --sidebar-border-color: var(--egg-hairline) !important;
+
+  /* Panels, popups, menus: raised, edge border, no shadow. */
+  --background-color-box: var(--egg-raised) !important;
+  --panel-background-color: var(--egg-raised) !important;
+  --panel-text-color: var(--egg-text-primary) !important;
+  --panel-border-color: var(--egg-edge) !important;
+  --popup-border-color: var(--egg-edge) !important;
+  --panel-box-shadow: none !important;
+  --panel-separator-color: var(--egg-hairline) !important;
+  --panel-separator-zap-gradient: none !important;
+  --button-background-color-menu-hover: var(--egg-row) !important;
+  --button-background-color-menu-active: var(--egg-pressed) !important;
+  --button-text-color-menu-hover: var(--egg-text-primary) !important;
+  --button-text-color-menu-active: var(--egg-text-primary) !important;
+
+  /* Focus, links, accent. Focus rings and links are lavender; the accent
+   * (primary buttons, checkboxes, toggles) is the strong focus fill. */
+  --focus-outline-color: var(--egg-focus) !important;
+  --link-color: var(--egg-focus) !important;
+  --link-color-hover: var(--egg-focus) !important;
+  --link-color-active: var(--egg-focus) !important;
+  --color-accent-primary: var(--egg-strong) !important;
+  --color-accent-primary-hover: color-mix(in srgb, var(--egg-strong) 88%, var(--egg-text-primary)) !important;
+  --color-accent-primary-active: color-mix(in srgb, var(--egg-strong) 76%, var(--egg-text-primary)) !important;
+  --color-accent-attention: var(--egg-focus) !important;
+  --button-text-color-primary: var(--egg-on-strong) !important;
+}
+
+/* The window root shows through before the toolbox paints; give it the chrome
+ * surface rather than the GTK theme's dialog grey (user.js covers the paint
+ * before this sheet applies). */
+:root {
+  background-color: var(--egg-recessed) !important;
+}
+
+/* No shadow under the selected tab: its colour is the whole mark. */
+#tabbrowser-tabs {
+  --tab-box-shadow-selected: none !important;
+}
+/* Popups redeclare the panel colours on themselves (context menus take the
+ * system Menu colours, and no theme reaches them), so set them here too. */
+menupopup,
+panel {
+  --panel-background-color: var(--egg-raised) !important;
+  --panel-text-color: var(--egg-text-primary) !important;
+  --panel-border-color: var(--egg-edge) !important;
+  --panel-box-shadow: none !important;
+}
+
+/* Context-menu and menu-bar rows use the system hover colours. */
+menupopup > :is(menuitem, menu)[_moz-menuactive]:not([disabled]) {
+  background-color: var(--egg-row) !important;
+  color: var(--egg-text-primary) !important;
+}
+
+menubar > menu[_moz-menuactive]:not([disabled]) {
+  background-color: var(--egg-hover) !important;
+  color: var(--egg-text-primary) !important;
+}
+
+/* The urlbar's open view and the search bar drop their shadow; the open
+ * view's border (an edge hairline) is what separates them from the page. */
+.urlbar,
+#searchbar {
+  --chrome-box-shadow: var(--egg-transparent) !important;
+}
+
+/* Find bar: it reads the toolbar and field tokens above; only the field's
+ * resting border needs setting. */
+.findbar-textbox:not(:focus) {
+  border-color: var(--egg-edge) !important;
+}
+
+/* Text selection in the address, search and find fields: the selection blue
+ * behind, the text keeping its own colour. */
+.urlbar-input::selection,
+.searchbar-textbox::selection,
+.findbar-textbox::selection {
+  background-color: var(--egg-selection) !important;
+  color: inherit !important;
+}
+
+/* ======================================================================
+ * Proton only
+ * ====================================================================== */
+
+@media not -moz-pref("browser.nova.enabled") {
+  /* Proton's find field focus adds a drop shadow under the ring. */
+  .findbar-textbox:focus {
+    box-shadow: none !important;
+  }
+}
+
+/* ======================================================================
+ * Nova only
+ * ====================================================================== */
+
+@media -moz-pref("browser.nova.enabled") {
+  :root {
+    /* Nova's violet-to-orange toolbox wash: eggshell is monochrome. */
+    --toolbox-background-gradient: image(var(--egg-transparent)) !important;
+    --toolbox-background-color-gradient-leading: var(--egg-transparent) !important;
+    --toolbox-background-color-gradient-trailing: var(--egg-transparent) !important;
+
+    /* The selected tab's gradient border (built-in themes only) goes, as
+     * Proton's outline does. */
+    --tab-border-color-selected-leading: var(--egg-transparent) !important;
+    --tab-border-color-selected-trailing: var(--egg-transparent) !important;
+
+    /* Nova tints text, buttons and the urlbar's inner boxes violet. */
+    --text-color: var(--egg-text-primary) !important;
+    --button-background-color-hover: color-mix(in srgb, currentColor 14%, transparent) !important;
+    --button-background-color-active: color-mix(in srgb, currentColor 21%, transparent) !important;
+    --urlbar-box-background-color-hover: var(--egg-hover) !important;
+    --urlbar-box-background-color-active: var(--egg-pressed) !important;
+    --urlbarview-text-color-secondary: var(--egg-text-secondary) !important;
+    --info-bar-border-color: var(--egg-hairline) !important;
+
+    /* Arrow panels: a moderate radius instead of Nova's 24 px. */
+    --panel-border-radius: var(--border-radius-medium) !important;
+  }
+
+  /* Nova draws no border round the open urlbar view, only a shadow, which
+   * is gone above; give it the edge hairline instead. */
+  .urlbar,
+  #searchbar {
+    --urlbar-background-border-open: var(--urlbar-input-container-border-width) solid var(--egg-edge) !important;
+  }
+}

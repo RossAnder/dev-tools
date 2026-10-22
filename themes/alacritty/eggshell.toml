@@ -1,0 +1,90 @@
+# eggshell (dark) for Alacritty: colours only, from themes/palette.toml.
+# `scripts/themes.sh deploy alacritty` links this file and eggshell-light.toml
+# into ~/.config/alacritty/; load one from alacritty.toml:
+#   [general]
+#   import = ["~/.config/alacritty/eggshell.toml"]
+# Fonts and padding stay in your own config. eggshell windows are opaque,
+# so leave window.opacity at 1 and add no niri opacity or blur rule.
+
+[colors]
+# Bold stays bold; brightening it would make bold text change hue.
+draw_bold_text_with_bright_colors = false
+
+[colors.primary]
+background = "#0a0a0a"
+foreground = "#c8c8c8"
+bright_foreground = "#f2f2f2"
+dim_foreground = "#7a7a7a"
+
+[colors.cursor]
+text = "#0a0a0a"
+cursor = "#f2f2f2"
+
+[colors.vi_mode_cursor]
+text = "#092382"
+cursor = "#c4d5ff"
+
+# Selection keeps each cell's own colour on the deep blue, as text selection
+# does everywhere in eggshell.
+[colors.selection]
+text = "CellForeground"
+background = "#12276e"
+
+[colors.search.matches]
+foreground = "#c4d5ff"
+background = "#0a1836"
+
+# The match under the cursor is a chip: lavender with morpho text.
+[colors.search.focused_match]
+foreground = "#092382"
+background = "#c4d5ff"
+
+[colors.hints.start]
+foreground = "#092382"
+background = "#c4d5ff"
+
+[colors.hints.end]
+foreground = "#c4d5ff"
+background = "#232323"
+
+[colors.footer_bar]
+foreground = "#9e9e9e"
+background = "#141414"
+
+[colors.line_indicator]
+foreground = "#9e9e9e"
+background = "#141414"
+
+# ANSI normal colours are the reference's hues (palette.toml): cyan is lavender
+# and magenta grey; black is the active grey so it shows on the base.
+[colors.normal]
+black = "#232323"
+red = "#e5715a"
+green = "#72bf89"
+yellow = "#f9cb92"
+blue = "#5884f8"
+magenta = "#c8c8c8"
+cyan = "#c4d5ff"
+white = "#c8c8c8"
+
+[colors.bright]
+black = "#5e5e5e"
+red = "#fb846c"
+green = "#77d695"
+yellow = "#fdd39c"
+blue = "#c4d5ff"
+magenta = "#f2f2f2"
+cyan = "#c4d5ff"
+white = "#ffffff"
+
+# Dim text (SGR 2) recedes toward the background; set here because
+# Alacritty's own x0.66 darkening gets that backwards on a light base.
+[colors.dim]
+black = "#1c1c1c"
+red = "#9a5143"
+green = "#4e7b5b"
+yellow = "#9a7a51"
+blue = "#4e66a3"
+magenta = "#7a7a7a"
+cyan = "#5e73a4"
+white = "#9e9e9e"

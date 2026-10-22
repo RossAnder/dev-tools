@@ -1,0 +1,289 @@
+/* eggshell for Firefox: built-in pages, in Proton and Nova alike.
+ *
+ * Every rule is scoped with @-moz-document to an about: page Firefox owns, so
+ * web pages are never touched. about:blank is left out: a page can embed it
+ * in a same-origin frame and read the palette from it. The PDF viewer is the
+ * one exception, matched by its stylesheet link (see its section). A
+ * user-origin declaration loses to the pages' author sheets unless it is
+ * !important.
+ *
+ * light-dark() resolves against each page's colour scheme (new tab, Settings,
+ * Add-ons and the PDF viewer follow the content scheme); reader view picks
+ * light or dark from its own menu, so it gets explicit values. Colours come
+ * only from themes/palette.toml; each value appears once per scope, in that
+ * scope's palette block.
+ */
+
+@-moz-document url-prefix("about:newtab"), url-prefix("about:home"), url-prefix("about:privatebrowsing"), url-prefix("about:preferences"), url-prefix("about:settings"), url-prefix("about:addons"), url-prefix("about:reader") {
+:root {
+  /* ---- palette: dark ---- */
+  --egg-d-black: #000000;
+  --egg-d-base: #0a0a0a;
+  --egg-d-raised: #141414;
+  --egg-d-hairline: #1c1c1c;
+  --egg-d-active: #232323;
+  --egg-d-edge: #2e2e2e;
+  --egg-d-secondary: #9e9e9e;
+  --egg-d-soft: #c8c8c8;
+  --egg-d-primary: #f2f2f2;
+  --egg-d-white: #ffffff;
+  --egg-d-night: #0a1836;
+  --egg-d-field: #12276e;
+  --egg-d-cobalt: #1a3bb3;
+  --egg-d-lavender: #c4d5ff;
+  --egg-d-blue: #5884f8;
+  /* the inverse panel; its secondary ink is --egg-l-secondary's value */
+  --egg-d-panel: #f1efed;
+  --egg-d-ink: #171717;
+  --egg-d-rule: #dad7d3;
+  --egg-d-accent: #092382;
+
+  /* ---- palette: light ---- */
+  --egg-l-white: #ffffff;
+  --egg-l-raised: #f7f5f1;
+  --egg-l-base: #f1efed;
+  --egg-l-sunk: #e7e4e0;
+  --egg-l-hairline: #dad7d3;
+  --egg-l-edge: #cdcac6;
+  --egg-l-secondary: #4f4d49;
+  --egg-l-soft: #302d2b;
+  --egg-l-primary: #171717;
+  --egg-l-lavender: #c4d5ff;
+  --egg-l-wash: #dee8fd;
+  --egg-l-blue: #1a3bb3;
+  --egg-l-morpho: #092382;
+
+  --egg-transparent: #00000000;
+
+  /* ---- roles: light-dark(light, dark) ---- */
+  --egg-base: light-dark(var(--egg-l-base), var(--egg-d-base));
+  --egg-raised: light-dark(var(--egg-l-raised), var(--egg-d-raised));
+  /* new-tab cards: white on base in light, raised in dark */
+  --egg-card: light-dark(var(--egg-l-white), var(--egg-d-raised));
+  --egg-hairline: light-dark(var(--egg-l-hairline), var(--egg-d-hairline));
+  /* a resting filled chip: the current-row grey */
+  --egg-row: light-dark(var(--egg-l-sunk), var(--egg-d-active));
+  --egg-text-primary: light-dark(var(--egg-l-primary), var(--egg-d-primary));
+  --egg-text-secondary: light-dark(var(--egg-l-secondary), var(--egg-d-secondary));
+  --egg-focus: light-dark(var(--egg-l-morpho), var(--egg-d-lavender));
+  --egg-info: light-dark(var(--egg-l-wash), var(--egg-d-night));
+  --egg-strong: light-dark(var(--egg-l-morpho), var(--egg-d-cobalt));
+  --egg-on-strong: light-dark(var(--egg-l-white), var(--egg-d-white));
+}
+}
+
+/* ---- New tab, home, Settings and Add-ons: the design-system accent ----
+ * Nova tints text, ghost-button hovers, info bars and the accent violet
+ * through these tokens. Toolkit components (panel-list menus, moz-button,
+ * message bars) read them inherited from :root inside their shadow trees,
+ * so setting them here reaches those too. */
+
+@-moz-document url-prefix("about:newtab"), url-prefix("about:home"), url-prefix("about:preferences"), url-prefix("about:settings"), url-prefix("about:addons") {
+  :root {
+    --text-color: var(--egg-text-primary) !important;
+    --button-text-color: var(--egg-text-primary) !important;
+    --button-background-color-hover: color-mix(in srgb, currentColor 14%, transparent) !important;
+    --button-background-color-active: color-mix(in srgb, currentColor 21%, transparent) !important;
+    --focus-outline-color: var(--egg-focus) !important;
+    --link-color: var(--egg-focus) !important;
+    --link-color-hover: var(--egg-focus) !important;
+    --link-color-active: var(--egg-focus) !important;
+    --color-accent-primary: var(--egg-strong) !important;
+    --color-accent-primary-hover: color-mix(in srgb, var(--egg-strong) 88%, var(--egg-text-primary)) !important;
+    --color-accent-primary-active: color-mix(in srgb, var(--egg-strong) 76%, var(--egg-text-primary)) !important;
+    --button-background-color-primary-disabled: var(--egg-strong) !important;
+    --button-text-color-primary: var(--egg-on-strong) !important;
+    --icon-color-accent-primary-desaturated: var(--egg-text-secondary) !important;
+    --icon-color-information: var(--egg-focus) !important;
+    --background-color-information: var(--egg-info) !important;
+  }
+}
+
+/* ---- New tab and home: Proton's and Nova's builds share these names ---- */
+
+@-moz-document url-prefix("about:newtab"), url-prefix("about:home") {
+  :root {
+    --newtab-background-color: var(--egg-base) !important;
+    --newtab-background-color-secondary: var(--egg-card) !important;
+    --newtab-text-primary-color: var(--egg-text-primary) !important;
+    --newtab-text-topic-label-color: var(--egg-text-secondary) !important;
+    --newtab-primary-action-background: var(--egg-strong) !important;
+    --newtab-primary-element-text-color: var(--egg-on-strong) !important;
+    --newtab-button-focus-border: var(--egg-focus) !important;
+    --newtab-wordmark-color: var(--egg-text-primary) !important;
+    --background-color-canvas: var(--egg-base) !important;
+    --background-color-box: var(--egg-raised) !important;
+    --card-border-color: var(--egg-hairline) !important;
+    /* Nova's violet-to-orange wash, which the new tab also declares */
+    --toolbox-background-gradient: image(var(--egg-transparent)) !important;
+  }
+
+  /* Widgets that declare their own violet on themselves, where a :root
+   * override cannot reach: the lists widget's add button, list text and
+   * celebration ring, and Nova's topic chips. */
+  .lists {
+    --lists-button-background: var(--color-accent-primary) !important;
+    --lists-text-color: var(--egg-text-secondary) !important;
+    --widget-celebration-orbit-color: color-mix(in srgb, var(--egg-focus) 70%, transparent) !important;
+  }
+
+  .topic-navigation moz-button {
+    --button-background-color-muted: var(--egg-row) !important;
+  }
+
+  /* Story cards in dark: the inverse panel, the page's one light surface.
+   * Firefox's own light-dark() colours inside a card resolve light with it.
+   * Top sites and the search box stay raised. */
+  @media (prefers-color-scheme: dark) {
+    .ds-card {
+      color-scheme: light !important;
+      --newtab-background-color-secondary: var(--egg-d-panel) !important;
+      --newtab-text-primary-color: var(--egg-d-ink) !important;
+      --newtab-text-secondary-color: var(--egg-l-secondary) !important;
+      --newtab-text-secondary-text: var(--egg-l-secondary) !important;
+      --text-color-deemphasized: var(--egg-l-secondary) !important;
+      --newtab-border-color: var(--egg-d-rule) !important;
+      --card-border-color: var(--egg-d-rule) !important;
+      --link-color: var(--egg-d-accent) !important;
+      --focus-outline-color: var(--egg-d-accent) !important;
+      /* Firefox's card radius, for the card and the image corners it rounds */
+      --border-radius-medium: var(--card-border-radius) !important;
+      border-radius: var(--card-border-radius) !important;
+      box-shadow: 0 0 0 1px var(--egg-d-rule) !important;
+      color: var(--egg-d-ink) !important;
+    }
+
+    .ds-card .excerpt {
+      color: var(--egg-l-secondary) !important;
+    }
+  }
+}
+
+/* ---- Private browsing: always dark, in both UIs ---- */
+
+@-moz-document url-prefix("about:privatebrowsing") {
+  html.private {
+    --background-color-canvas: var(--egg-d-base) !important;
+    --link-color: var(--egg-d-lavender) !important;
+    --link-color-hover: var(--egg-d-lavender) !important;
+    --link-color-active: var(--egg-d-lavender) !important;
+    --focus-outline-color: var(--egg-d-lavender) !important;
+    --color-accent-primary: var(--egg-d-cobalt) !important;
+    color: var(--egg-d-primary) !important;
+  }
+}
+
+/* ---- Settings and Add-ons: through the design-system tokens ---- */
+
+@-moz-document url-prefix("about:preferences"), url-prefix("about:settings"), url-prefix("about:addons") {
+  :root {
+    --background-color-canvas: var(--egg-base) !important;
+    --background-color-box: var(--egg-raised) !important;
+    --card-border-color: var(--egg-hairline) !important;
+  }
+
+  /* Set on the element as a literal violet, so no :root token reaches it. */
+  .ai-controls-description {
+    --ai-controls-description-background-color: var(--egg-info) !important;
+  }
+}
+
+/* ---- Reader view: only its Light and Dark themes; sepia, gray, contrast,
+ * custom and high-contrast are the reader's own choices and stay ---- */
+
+@-moz-document url-prefix("about:reader") {
+  body.dark {
+    --main-background: var(--egg-d-base) !important;
+    --main-foreground: var(--egg-d-soft) !important;
+    --primary-color: var(--egg-d-lavender) !important;
+    --link-foreground: var(--egg-d-lavender) !important;
+    --visited-link-foreground: var(--egg-d-blue) !important;
+    --selected-background: var(--egg-d-field) !important;
+    --link-selected-foreground: var(--egg-d-primary) !important;
+    --toolbar-border: var(--egg-d-hairline) !important;
+    --toolbar-button-background-hover: var(--egg-d-active) !important;
+    --toolbar-button-background-active: var(--egg-d-edge) !important;
+    --icon-fill: var(--egg-d-secondary) !important;
+    --popup-background: var(--egg-d-raised) !important;
+    --popup-border: var(--egg-d-edge) !important;
+    --popup-line: var(--egg-d-hairline) !important;
+    --popup-button-background: var(--egg-d-black) !important;
+    --popup-button-border: var(--egg-d-edge) !important;
+  }
+
+  body.light {
+    --main-background: var(--egg-l-base) !important;
+    --main-foreground: var(--egg-l-soft) !important;
+    --primary-color: var(--egg-l-morpho) !important;
+    --link-foreground: var(--egg-l-morpho) !important;
+    --visited-link-foreground: var(--egg-l-blue) !important;
+    --selected-background: var(--egg-l-lavender) !important;
+    --link-selected-foreground: var(--egg-l-primary) !important;
+    --toolbar-border: var(--egg-l-hairline) !important;
+    --toolbar-button-background-hover: var(--egg-l-sunk) !important;
+    --toolbar-button-background-active: var(--egg-l-edge) !important;
+    --icon-fill: var(--egg-l-secondary) !important;
+    --popup-background: var(--egg-l-raised) !important;
+    --popup-border: var(--egg-l-edge) !important;
+    --popup-line: var(--egg-l-hairline) !important;
+    --popup-button-background: var(--egg-l-sunk) !important;
+    --popup-button-border: var(--egg-l-edge) !important;
+  }
+}
+
+/* ---- PDF viewer (pdf.js) ----
+ * The viewer's document carries the PDF's own URL, so no @-moz-document
+ * function picks it out; the stylesheet link only the built-in viewer has
+ * does. A page that copies that link matches too and can read the palette.
+ * Nova's toolbar reads every token below; Proton's only the accent ones. */
+
+html:has(> head > link[rel="stylesheet"][href^="resource://pdf.js/"]) {
+  /* ---- palette ---- */
+  --egg-d-active: #232323;
+  --egg-d-edge: #2e2e2e;
+  --egg-d-soft: #c8c8c8;
+  --egg-d-primary: #f2f2f2;
+  --egg-d-white: #ffffff;
+  --egg-d-night: #0a1836;
+  --egg-d-cobalt: #1a3bb3;
+  --egg-d-lavender: #c4d5ff;
+  --egg-l-white: #ffffff;
+  --egg-l-hairline: #dad7d3;
+  --egg-l-edge: #cdcac6;
+  --egg-l-soft: #302d2b;
+  --egg-l-primary: #171717;
+  --egg-l-wash: #dee8fd;
+  --egg-l-morpho: #092382;
+
+  /* ---- roles: light-dark(light, dark) ---- */
+  --egg-hover: light-dark(var(--egg-l-hairline), var(--egg-d-active));
+  --egg-pressed: light-dark(var(--egg-l-edge), var(--egg-d-edge));
+  --egg-text-primary: light-dark(var(--egg-l-primary), var(--egg-d-primary));
+  --egg-text-soft: light-dark(var(--egg-l-soft), var(--egg-d-soft));
+  --egg-focus: light-dark(var(--egg-l-morpho), var(--egg-d-lavender));
+  --egg-info: light-dark(var(--egg-l-wash), var(--egg-d-night));
+  --egg-strong: light-dark(var(--egg-l-morpho), var(--egg-d-cobalt));
+  --egg-on-strong: light-dark(var(--egg-l-white), var(--egg-d-white));
+
+  /* Toolbar text, icons and their hover and toggled fills, as the chrome's. */
+  --text-color: var(--egg-text-primary) !important;
+  --button-text-color: var(--egg-text-primary) !important;
+  --toolbarbutton-icon-fill: var(--egg-text-soft) !important;
+  --toolbarbutton-background-color-hover: var(--egg-hover) !important;
+  --toolbarbutton-background-color-active: var(--egg-pressed) !important;
+  --button-background-color-hover: color-mix(in srgb, currentColor 14%, transparent) !important;
+  --button-background-color-active: color-mix(in srgb, currentColor 21%, transparent) !important;
+
+  /* Focus, links, accent: the progress bar, toggles, selection outlines and
+   * primary buttons take the strong fill. */
+  --focus-outline-color: var(--egg-focus) !important;
+  --link-color: var(--egg-focus) !important;
+  --link-color-hover: var(--egg-focus) !important;
+  --link-color-active: var(--egg-focus) !important;
+  --color-accent-primary: var(--egg-strong) !important;
+  --color-accent-primary-hover: color-mix(in srgb, var(--egg-strong) 88%, var(--egg-text-primary)) !important;
+  --color-accent-primary-active: color-mix(in srgb, var(--egg-strong) 76%, var(--egg-text-primary)) !important;
+  --button-text-color-primary: var(--egg-on-strong) !important;
+  --icon-color-information: var(--egg-focus) !important;
+  --background-color-information: var(--egg-info) !important;
+}

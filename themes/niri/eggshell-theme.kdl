@@ -1,0 +1,151 @@
+// eggshell theme for niri: window finish and motion. Colours come from
+// themes/palette.toml; `scripts/themes.sh deploy niri` links this file to
+// ~/.config/niri/eggshell/theme.kdl. Include it from config.kdl after any
+// other appearance include, so its values win niri's field-by-field merge:
+//   include optional=true "eggshell/theme.kdl"
+// Binds, the backdrop wallpaper and the island's layer rule stay in
+// niri/eggshell.kdl; this file only dresses windows. Windows are opaque: its
+// last window rule forces full opacity and no blur on every window, over any
+// rule included before it.
+
+layout {
+    // A window is a surface on black, separated the way the island is: a
+    // 1 px edge and a short, faint shadow, never a thick frame. Focus is the
+    // one blue: a lavender hairline on the focused window, a white 8% one on
+    // the rest.
+    focus-ring {
+        off
+    }
+    border {
+        on
+        width 1
+        active-color "#c4d5ff8c"
+        inactive-color "#ffffff14"
+        urgent-color "#ff453a"
+    }
+
+    // Light from straight above, kept tight: windows tile edge to edge, so
+    // a long shadow reads as haze across the neighbour.
+    shadow {
+        on
+        softness 20
+        spread 0
+        offset x=0 y=4
+        draw-behind-window false
+        color "#00000066"
+        inactive-color "#00000040"
+    }
+
+    tab-indicator {
+        hide-when-single-tab
+        place-within-column
+        gap 6
+        width 2
+        length total-proportion=1.0
+        position "left"
+        gaps-between-tabs 4
+        corner-radius 1
+        active-color "#c4d5ff"
+        inactive-color "#3d3d3d"
+        urgent-color "#ff453a"
+    }
+
+    insert-hint {
+        color "#c4d5ff33"
+    }
+}
+
+// The switcher's highlight is the inverse panel, haiqu's white card on
+// black, kept for the one item in focus: an eggshell plate behind the
+// chosen preview, its radius grown with its padding.
+recent-windows {
+    highlight {
+        active-color "#f1efed"
+        urgent-color "#ff453a"
+        padding 14
+        corner-radius 20
+    }
+}
+
+// Workspaces are transparent over the stationary backdrop wallpaper
+// (niri/eggshell.kdl), so a shadow under each would darken the wallpaper in a
+// box around every workspace.
+overview {
+    workspace-shadow {
+        off
+    }
+}
+
+// Firm corners: a window is a tool, not a card; the island's panels keep
+// their 24. geometry-corner-radius also tells niri where to clip and where
+// the shadow starts.
+window-rule {
+    geometry-corner-radius 8
+    clip-to-geometry true
+}
+
+// Opaque, unblurred windows, over any earlier rule that makes one glass
+// (later rules win property by property).
+window-rule {
+    opacity 1.0
+    background-effect {
+        blur false
+        xray false
+    }
+}
+
+// The shell's springs, converted: niri's stiffness is (2π / response)² for
+// Core/Motion.qml's response, and damping-ratio is its damping. Recompute
+// both here when Motion's presets change.
+//   settle 0.30 s, ζ 0.92 -> 439
+//   cover  0.34 s, ζ 0.86 -> 342
+// Window open uses the reference sites' exponential ease-out,
+// cubic-bezier(0.19, 1, 0.22, 1): an entrance that arrives and stops dead.
+animations {
+    // Scrolling and moving windows: settle, near-critical, so a run of
+    // keypresses never wobbles.
+    workspace-switch {
+        spring damping-ratio=0.92 stiffness=439 epsilon=0.0001
+    }
+    horizontal-view-movement {
+        spring damping-ratio=0.92 stiffness=439 epsilon=0.0001
+    }
+    window-movement {
+        spring damping-ratio=0.92 stiffness=439 epsilon=0.0001
+    }
+    window-resize {
+        spring damping-ratio=0.92 stiffness=439 epsilon=0.0001
+    }
+    recent-windows-close {
+        spring damping-ratio=0.92 stiffness=439 epsilon=0.001
+    }
+
+    // The overview zooms every window texture, which looks soft until the
+    // zoom lands, so it is short and critically damped: an overshoot would
+    // scale past the target and back, and a slow spring holds the soft
+    // frames on screen longer. niri's own default.
+    overview-open-close {
+        spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
+    }
+
+    window-open {
+        duration-ms 320
+        curve "cubic-bezier" 0.19 1 0.22 1
+    }
+    window-close {
+        duration-ms 180
+        curve "ease-out-quad"
+    }
+
+    // Small messages drop in like the island's cover slide.
+    config-notification-open-close {
+        spring damping-ratio=0.86 stiffness=342 epsilon=0.001
+    }
+    exit-confirmation-open-close {
+        spring damping-ratio=0.86 stiffness=342 epsilon=0.01
+    }
+    screenshot-ui-open {
+        duration-ms 240
+        curve "cubic-bezier" 0.19 1 0.22 1
+    }
+}

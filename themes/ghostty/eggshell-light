@@ -1,0 +1,27 @@
+# eggshell (light) for Ghostty and Ghostty-based terminals such as Rootshell
+# on iOS: haiqu.ai's warm light grey, an eggshell white. Colours from
+# themes/palette.toml, the same values as themes/alacritty/eggshell-light.toml.
+
+palette = 0=#302d2b
+palette = 1=#8d2816
+palette = 2=#0d542b
+palette = 3=#9c721c
+palette = 4=#1a3bb3
+palette = 5=#4f4d49
+palette = 6=#092382
+palette = 7=#a19e9a
+palette = 8=#6b6865
+palette = 9=#8d2816
+palette = 10=#0d542b
+palette = 11=#9c721c
+palette = 12=#092382
+palette = 13=#4f4d49
+palette = 14=#092382
+palette = 15=#e7e4e0
+
+background = #f1efed
+foreground = #302d2b
+cursor-color = #171717
+cursor-text = #f1efed
+selection-background = #c4d5ff
+selection-foreground = #171717

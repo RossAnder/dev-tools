@@ -1,0 +1,84 @@
+# eggshell (light) for Alacritty: colours only, from themes/palette.toml.
+# The base is haiqu.ai's warm light grey, an eggshell white. Load it in place
+# of eggshell.toml:
+#   [general]
+#   import = ["~/.config/alacritty/eggshell-light.toml"]
+
+[colors]
+draw_bold_text_with_bright_colors = false
+
+[colors.primary]
+background = "#f1efed"
+foreground = "#302d2b"
+bright_foreground = "#171717"
+dim_foreground = "#6b6865"
+
+[colors.cursor]
+text = "#f1efed"
+cursor = "#171717"
+
+[colors.vi_mode_cursor]
+text = "#ffffff"
+cursor = "#092382"
+
+[colors.selection]
+text = "CellForeground"
+background = "#c4d5ff"
+
+[colors.search.matches]
+foreground = "#092382"
+background = "#dee8fd"
+
+[colors.search.focused_match]
+foreground = "#ffffff"
+background = "#092382"
+
+[colors.hints.start]
+foreground = "#ffffff"
+background = "#092382"
+
+[colors.hints.end]
+foreground = "#092382"
+background = "#e7e4e0"
+
+[colors.footer_bar]
+foreground = "#4f4d49"
+background = "#f7f5f1"
+
+[colors.line_indicator]
+foreground = "#4f4d49"
+background = "#f7f5f1"
+
+# Light terminals print "white" as text too, so it is a mid grey, and
+# bright white is the sunk grey rather than the background.
+[colors.normal]
+black = "#302d2b"
+red = "#8d2816"
+green = "#0d542b"
+yellow = "#9c721c"
+blue = "#1a3bb3"
+magenta = "#4f4d49"
+cyan = "#092382"
+white = "#a19e9a"
+
+[colors.bright]
+black = "#6b6865"
+red = "#8d2816"
+green = "#0d542b"
+yellow = "#9c721c"
+blue = "#092382"
+magenta = "#4f4d49"
+cyan = "#092382"
+white = "#e7e4e0"
+
+# Dim text (SGR 2) recedes toward the background; set here because
+# Alacritty's own x0.66 darkening gets that backwards on a light base.
+[colors.dim]
+black = "#4f4d49"
+red = "#b9827b"
+green = "#739f7c"
+yellow = "#a98e60"
+blue = "#7e92be"
+magenta = "#a19e9a"
+cyan = "#7e92be"
+white = "#bab7b3"

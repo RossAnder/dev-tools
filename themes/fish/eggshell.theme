@@ -1,0 +1,114 @@
+# name: 'eggshell'
+# Colours from themes/palette.toml, written without '#' as fish theme files
+# take them. fish picks [dark] or [light] from the background the terminal
+# reports and [unknown] when it reports none. `scripts/themes.sh deploy fish`
+# links this file into ~/.config/fish/themes/; choose it in config.fish with
+#   fish_config theme choose eggshell
+# Commands are the brightest word on the line, keywords and options recede,
+# strings take the lavender, and the pager marks the current row in grey.
+
+[dark]
+# preferred_background: 0a0a0a
+fish_color_normal c8c8c8
+fish_color_command f2f2f2
+fish_color_keyword 9e9e9e
+fish_color_option 9e9e9e
+fish_color_param c8c8c8
+fish_color_quote c4d5ff
+fish_color_escape 5884f8
+fish_color_operator 9e9e9e
+fish_color_redirection 7a7a7a
+fish_color_end 7a7a7a
+fish_color_comment 7a7a7a --italics
+fish_color_error e5715a
+fish_color_valid_path --underline
+fish_color_autosuggestion 5e5e5e
+fish_color_selection --background=12276e
+fish_color_search_match --background=0a1836
+fish_color_history_current f2f2f2 --bold
+fish_color_cancel 7a7a7a
+fish_color_cwd 9e9e9e
+fish_color_cwd_root e5715a
+fish_color_user 9e9e9e
+fish_color_host 9e9e9e
+fish_color_host_remote f9cb92
+fish_color_status e5715a
+fish_pager_color_progress 9e9e9e --background=141414
+fish_pager_color_prefix c4d5ff --bold
+fish_pager_color_completion c8c8c8
+fish_pager_color_description 7a7a7a
+fish_pager_color_selected_background --background=232323
+fish_pager_color_selected_prefix c4d5ff --bold
+fish_pager_color_selected_completion f2f2f2
+fish_pager_color_selected_description 9e9e9e
+
+[light]
+# preferred_background: f1efed
+fish_color_normal 302d2b
+fish_color_command 171717
+fish_color_keyword 4f4d49
+fish_color_option 4f4d49
+fish_color_param 302d2b
+fish_color_quote 092382
+fish_color_escape 1a3bb3
+fish_color_operator 4f4d49
+fish_color_redirection 6b6865
+fish_color_end 6b6865
+fish_color_comment 6b6865 --italics
+fish_color_error 8d2816
+fish_color_valid_path --underline
+fish_color_autosuggestion a19e9a
+fish_color_selection --background=c4d5ff
+fish_color_search_match --background=dee8fd
+fish_color_history_current 171717 --bold
+fish_color_cancel 6b6865
+fish_color_cwd 4f4d49
+fish_color_cwd_root 8d2816
+fish_color_user 4f4d49
+fish_color_host 4f4d49
+fish_color_host_remote 9c721c
+fish_color_status 8d2816
+fish_pager_color_progress 4f4d49 --background=f7f5f1
+fish_pager_color_prefix 092382 --bold
+fish_pager_color_completion 302d2b
+fish_pager_color_description 6b6865
+fish_pager_color_selected_background --background=e7e4e0
+fish_pager_color_selected_prefix 092382 --bold
+fish_pager_color_selected_completion 171717
+fish_pager_color_selected_description 4f4d49
+
+# A terminal that reports no background gets ANSI names, which an eggshell
+# terminal theme maps to the same palette.
+[unknown]
+fish_color_normal normal
+fish_color_command brwhite
+fish_color_keyword white
+fish_color_option white
+fish_color_param normal
+fish_color_quote brblue
+fish_color_escape blue
+fish_color_operator white
+fish_color_redirection brblack
+fish_color_end brblack
+fish_color_comment brblack --italics
+fish_color_error red
+fish_color_valid_path --underline
+fish_color_autosuggestion brblack
+fish_color_selection --reverse
+fish_color_search_match --reverse
+fish_color_history_current --bold
+fish_color_cancel brblack
+fish_color_cwd white
+fish_color_cwd_root red
+fish_color_user white
+fish_color_host white
+fish_color_host_remote yellow
+fish_color_status red
+fish_pager_color_progress white --reverse
+fish_pager_color_prefix brblue --bold
+fish_pager_color_completion normal
+fish_pager_color_description brblack
+fish_pager_color_selected_background --reverse
+fish_pager_color_selected_prefix brblue --bold
+fish_pager_color_selected_completion brwhite
+fish_pager_color_selected_description white

@@ -1,0 +1,35 @@
+-- grug-far.nvim. Matches read as search results, not as a diff.
+
+return function(c)
+  return {
+    GrugFarHelpHeader = { fg = c.dim },
+    GrugFarHelpHeaderKey = { fg = c.secondary },
+    GrugFarHelpWinHeader = { fg = c.primary, bold = true },
+    GrugFarHelpWinActionPrefix = { fg = c.primary },
+    GrugFarHelpWinActionText = { fg = c.secondary },
+    GrugFarHelpWinActionKey = { fg = c.focus },
+    GrugFarHelpWinActionDescription = { link = "NormalFloat" },
+    GrugFarInputLabel = { fg = c.secondary, bold = true },
+    GrugFarInputPlaceholder = { fg = c.faint, italic = true },
+    GrugFarResultsHeader = { fg = c.dim },
+    GrugFarResultsStats = { fg = c.dim },
+    GrugFarResultsActionMessage = { fg = c.secondary },
+    GrugFarResultsMatch = { fg = c.search_fg, bg = c.search_bg },
+    GrugFarCurrentMatch = { fg = c.chip_fg, bg = c.chip_bg, bold = true },
+    GrugFarResultsMatchAdded = { fg = c.green, bg = c.tint.green },
+    GrugFarResultsMatchRemoved = { fg = c.red, bg = c.tint.red, strikethrough = true },
+    GrugFarResultsPath = { fg = c.primary, bold = true },
+    GrugFarResultsLineNr = { fg = c.faint },
+    GrugFarResultsCursorLineNo = { fg = c.primary },
+    GrugFarResultsColumnNr = { fg = c.faint },
+    GrugFarResultsNumbersSeparator = { fg = c.guide },
+    GrugFarResultsChangeIndicator = { fg = c.blue },
+    GrugFarResultsRemoveIndicator = { fg = c.red },
+    GrugFarResultsAddIndicator = { fg = c.green },
+    GrugFarResultsDiffSeparatorIndicator = { fg = c.guide },
+    GrugFarResultsCmdHeader = { fg = c.dim, underline = true },
+    GrugFarResultsNumberLabel = { fg = c.secondary },
+    GrugFarResultsLongLineStr = { fg = c.faint },
+    GrugFarVisualBufrange = { bg = c.selection },
+  }
+end

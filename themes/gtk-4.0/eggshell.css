@@ -1,0 +1,353 @@
+/* eggshell: GTK 4 / libadwaita colours.
+ *
+ * `scripts/themes.sh deploy gtk4` links this file to
+ * ~/.config/gtk-4.0/eggshell.css; your own ~/.config/gtk-4.0/gtk.css loads it
+ * with the line
+ *   @import url("eggshell.css");
+ * (a relative url resolves against gtk.css's directory). GTK loads gtk.css,
+ * and so this file, at GTK_STYLE_PROVIDER_PRIORITY_USER, above libadwaita's
+ * stylesheet and its system-accent provider, so these values win whatever
+ * accent the user has picked. Rules after the @import in gtk.css win over
+ * these.
+ *
+ * Light is the base and dark the override, as libadwaita does it. libadwaita
+ * apps follow the desktop's colour scheme; choose dark with
+ *   gsettings set org.gnome.desktop.interface color-scheme prefer-dark
+ *
+ * Colours only: this file does not touch fonts, and changes geometry nowhere
+ * but --window-radius. Every literal is a themes/palette.toml value; the roles
+ * follow themes/README.md.
+ *
+ * The scheme switch lives in the @define-color blocks below (GTK 4.22 honours
+ * @define-color inside @media, as libadwaita's own stylesheet relies on), and
+ * the :root block maps libadwaita's variables onto those names, so apps that
+ * read the legacy names and apps that read the variables see the same colour.
+ * A rule in this file beats every libadwaita rule for the same property,
+ * whatever their specificity, so each targeted rule restates every state of
+ * the selector it replaces.
+ */
+
+/* Palette ----------------------------------------------------------------- */
+
+@define-color egg_dark_black #000000;
+@define-color egg_dark_base #0a0a0a;
+@define-color egg_dark_raised #141414;
+@define-color egg_dark_hairline #1c1c1c;
+@define-color egg_dark_edge #2e2e2e;
+@define-color egg_dark_mute #3d3d3d;
+@define-color egg_dark_dim #7a7a7a;
+@define-color egg_dark_primary #f2f2f2;
+@define-color egg_dark_white #ffffff;
+@define-color egg_dark_shade #00000040;
+@define-color egg_dark_field #12276e;
+@define-color egg_dark_cobalt #1a3bb3;
+@define-color egg_dark_lavender #c4d5ff;
+@define-color egg_dark_red #e5715a;
+@define-color egg_dark_orange #fea450;
+@define-color egg_dark_green #72bf89;
+@define-color egg_dark_panel #f1efed;
+@define-color egg_dark_ink #171717;
+@define-color egg_dark_accent #092382;
+
+@define-color egg_light_white #ffffff;
+@define-color egg_light_raised #f7f5f1;
+@define-color egg_light_base #f1efed;
+@define-color egg_light_sunk #e7e4e0;
+@define-color egg_light_hairline #dad7d3;
+@define-color egg_light_edge #cdcac6;
+@define-color egg_light_dim #6b6865;
+@define-color egg_light_primary #171717;
+@define-color egg_light_shade #00000012;
+@define-color egg_light_lavender #c4d5ff;
+@define-color egg_light_morpho #092382;
+@define-color egg_light_red #8d2816;
+@define-color egg_light_orange #a66119;
+@define-color egg_light_green #0d542b;
+@define-color egg_light_panel #141414;
+@define-color egg_light_ink #f2f2f2;
+@define-color egg_light_accent #c4d5ff;
+
+/* Roles: light ------------------------------------------------------------ */
+
+/* State fills (the *_bg names) are the light accent tier in both schemes, so
+ * white text holds at least 4.8:1 on each (the orange; the rest 8.6:1 or
+ * more); the standalone *_color names are each scheme's own accent tier, for
+ * text and icons on its surfaces. */
+@define-color accent_bg_color @egg_light_morpho;
+@define-color accent_fg_color @egg_light_white;
+@define-color accent_color @egg_light_morpho;
+@define-color destructive_bg_color @egg_light_red;
+@define-color destructive_fg_color @egg_light_white;
+@define-color destructive_color @egg_light_red;
+@define-color success_bg_color @egg_light_green;
+@define-color success_fg_color @egg_light_white;
+@define-color success_color @egg_light_green;
+@define-color warning_bg_color @egg_light_orange;
+@define-color warning_fg_color @egg_light_white;
+@define-color warning_color @egg_light_orange;
+@define-color error_bg_color @egg_light_red;
+@define-color error_fg_color @egg_light_white;
+@define-color error_color @egg_light_red;
+
+@define-color window_bg_color @egg_light_base;
+@define-color window_fg_color @egg_light_primary;
+@define-color view_bg_color @egg_light_base;
+@define-color view_fg_color @egg_light_primary;
+@define-color headerbar_bg_color @egg_light_sunk;
+@define-color headerbar_fg_color @egg_light_primary;
+@define-color headerbar_border_color @egg_light_primary;
+@define-color headerbar_backdrop_color @egg_light_sunk;
+@define-color headerbar_shade_color @egg_light_hairline;
+@define-color headerbar_darker_shade_color @egg_light_edge;
+@define-color sidebar_bg_color @egg_light_sunk;
+@define-color sidebar_fg_color @egg_light_primary;
+@define-color sidebar_backdrop_color @egg_light_sunk;
+@define-color sidebar_shade_color @egg_light_shade;
+@define-color sidebar_border_color @egg_light_hairline;
+@define-color secondary_sidebar_bg_color @egg_light_sunk;
+@define-color secondary_sidebar_fg_color @egg_light_primary;
+@define-color secondary_sidebar_backdrop_color @egg_light_sunk;
+@define-color secondary_sidebar_shade_color @egg_light_shade;
+@define-color secondary_sidebar_border_color @egg_light_hairline;
+@define-color card_bg_color @egg_light_white;
+@define-color card_fg_color @egg_light_primary;
+@define-color card_shade_color @egg_light_hairline;
+@define-color dialog_bg_color @egg_light_raised;
+@define-color dialog_fg_color @egg_light_primary;
+@define-color popover_bg_color @egg_light_raised;
+@define-color popover_fg_color @egg_light_primary;
+@define-color popover_shade_color @egg_light_shade;
+@define-color thumbnail_bg_color @egg_light_white;
+@define-color thumbnail_fg_color @egg_light_primary;
+@define-color shade_color @egg_light_shade;
+@define-color scrollbar_outline_color @egg_light_white;
+@define-color borders @egg_light_edge;
+
+/* No legacy name in libadwaita; used only by the :root block and rules here. */
+@define-color egg_active_toggle_bg @egg_light_white;
+@define-color egg_overview_bg @egg_light_sunk;
+@define-color egg_banner @egg_light_dim;
+@define-color egg_selection @egg_light_lavender;
+@define-color egg_edge @egg_light_edge;
+@define-color egg_inverse_bg @egg_light_panel;
+@define-color egg_inverse_fg @egg_light_ink;
+@define-color egg_inverse_accent @egg_light_accent;
+@define-color egg_inverse_red @egg_dark_red;
+@define-color egg_inverse_orange @egg_dark_orange;
+@define-color egg_inverse_green @egg_dark_green;
+
+/* Roles: dark ------------------------------------------------------------- */
+
+@media (prefers-color-scheme: dark) {
+  @define-color accent_bg_color @egg_dark_cobalt;
+  @define-color accent_fg_color @egg_dark_white;
+  @define-color accent_color @egg_dark_lavender;
+  @define-color destructive_bg_color @egg_light_red;
+  @define-color destructive_fg_color @egg_dark_white;
+  @define-color destructive_color @egg_dark_red;
+  @define-color success_bg_color @egg_light_green;
+  @define-color success_fg_color @egg_dark_white;
+  @define-color success_color @egg_dark_green;
+  @define-color warning_bg_color @egg_light_orange;
+  @define-color warning_fg_color @egg_dark_white;
+  @define-color warning_color @egg_dark_orange;
+  @define-color error_bg_color @egg_light_red;
+  @define-color error_fg_color @egg_dark_white;
+  @define-color error_color @egg_dark_red;
+
+  @define-color window_bg_color @egg_dark_base;
+  @define-color window_fg_color @egg_dark_primary;
+  @define-color view_bg_color @egg_dark_base;
+  @define-color view_fg_color @egg_dark_primary;
+  @define-color headerbar_bg_color @egg_dark_black;
+  @define-color headerbar_fg_color @egg_dark_primary;
+  @define-color headerbar_border_color @egg_dark_primary;
+  @define-color headerbar_backdrop_color @egg_dark_black;
+  @define-color headerbar_shade_color @egg_dark_hairline;
+  @define-color headerbar_darker_shade_color @egg_dark_edge;
+  @define-color sidebar_bg_color @egg_dark_black;
+  @define-color sidebar_fg_color @egg_dark_primary;
+  @define-color sidebar_backdrop_color @egg_dark_black;
+  @define-color sidebar_shade_color @egg_dark_shade;
+  @define-color sidebar_border_color @egg_dark_hairline;
+  @define-color secondary_sidebar_bg_color @egg_dark_black;
+  @define-color secondary_sidebar_fg_color @egg_dark_primary;
+  @define-color secondary_sidebar_backdrop_color @egg_dark_black;
+  @define-color secondary_sidebar_shade_color @egg_dark_shade;
+  @define-color secondary_sidebar_border_color @egg_dark_hairline;
+  @define-color card_bg_color @egg_dark_raised;
+  @define-color card_fg_color @egg_dark_primary;
+  /* edge, not hairline: a hairline row divider on raised is 1.1:1, unseen. */
+  @define-color card_shade_color @egg_dark_edge;
+  @define-color dialog_bg_color @egg_dark_raised;
+  @define-color dialog_fg_color @egg_dark_primary;
+  @define-color popover_bg_color @egg_dark_raised;
+  @define-color popover_fg_color @egg_dark_primary;
+  @define-color popover_shade_color @egg_dark_shade;
+  @define-color thumbnail_bg_color @egg_dark_raised;
+  @define-color thumbnail_fg_color @egg_dark_primary;
+  @define-color shade_color @egg_dark_shade;
+  @define-color scrollbar_outline_color @egg_dark_black;
+  @define-color borders @egg_dark_edge;
+
+  @define-color egg_active_toggle_bg @egg_dark_mute;
+  @define-color egg_overview_bg @egg_dark_black;
+  @define-color egg_banner @egg_dark_dim;
+  @define-color egg_selection @egg_dark_field;
+  @define-color egg_edge @egg_dark_edge;
+  @define-color egg_inverse_bg @egg_dark_panel;
+  @define-color egg_inverse_fg @egg_dark_ink;
+  @define-color egg_inverse_accent @egg_dark_accent;
+  @define-color egg_inverse_red @egg_light_red;
+  @define-color egg_inverse_orange @egg_light_orange;
+  @define-color egg_inverse_green @egg_light_green;
+}
+
+/* GTK's own names, for GTK 4 apps on the Default theme rather than libadwaita
+ * (libadwaita derives the same names from the ones above). */
+@define-color theme_bg_color @window_bg_color;
+@define-color theme_fg_color @window_fg_color;
+@define-color theme_base_color @view_bg_color;
+@define-color theme_text_color @view_fg_color;
+@define-color theme_selected_bg_color @accent_bg_color;
+@define-color theme_selected_fg_color @accent_fg_color;
+@define-color theme_unfocused_bg_color @window_bg_color;
+@define-color theme_unfocused_fg_color @window_fg_color;
+@define-color theme_unfocused_base_color @view_bg_color;
+@define-color theme_unfocused_text_color @view_fg_color;
+@define-color theme_unfocused_selected_bg_color @accent_bg_color;
+@define-color theme_unfocused_selected_fg_color @accent_fg_color;
+@define-color unfocused_borders @borders;
+
+/* Variables --------------------------------------------------------------- */
+
+/* The standalone colours are set outright rather than derived from the fills
+ * through --standalone-color-oklab, so each is the exact palette value. */
+:root {
+  --accent-bg-color: @accent_bg_color;
+  --accent-fg-color: @accent_fg_color;
+  --accent-color: @accent_color;
+  --destructive-bg-color: @destructive_bg_color;
+  --destructive-fg-color: @destructive_fg_color;
+  --destructive-color: @destructive_color;
+  --success-bg-color: @success_bg_color;
+  --success-fg-color: @success_fg_color;
+  --success-color: @success_color;
+  --warning-bg-color: @warning_bg_color;
+  --warning-fg-color: @warning_fg_color;
+  --warning-color: @warning_color;
+  --error-bg-color: @error_bg_color;
+  --error-fg-color: @error_fg_color;
+  --error-color: @error_color;
+  --window-bg-color: @window_bg_color;
+  --window-fg-color: @window_fg_color;
+  --view-bg-color: @view_bg_color;
+  --view-fg-color: @view_fg_color;
+  --headerbar-bg-color: @headerbar_bg_color;
+  --headerbar-fg-color: @headerbar_fg_color;
+  --headerbar-border-color: @headerbar_border_color;
+  --headerbar-backdrop-color: @headerbar_backdrop_color;
+  --headerbar-shade-color: @headerbar_shade_color;
+  --headerbar-darker-shade-color: @headerbar_darker_shade_color;
+  --sidebar-bg-color: @sidebar_bg_color;
+  --sidebar-fg-color: @sidebar_fg_color;
+  --sidebar-backdrop-color: @sidebar_backdrop_color;
+  --sidebar-border-color: @sidebar_border_color;
+  --sidebar-shade-color: @sidebar_shade_color;
+  --secondary-sidebar-bg-color: @secondary_sidebar_bg_color;
+  --secondary-sidebar-fg-color: @secondary_sidebar_fg_color;
+  --secondary-sidebar-backdrop-color: @secondary_sidebar_backdrop_color;
+  --secondary-sidebar-border-color: @secondary_sidebar_border_color;
+  --secondary-sidebar-shade-color: @secondary_sidebar_shade_color;
+  --card-bg-color: @card_bg_color;
+  --card-fg-color: @card_fg_color;
+  --card-shade-color: @card_shade_color;
+  --dialog-bg-color: @dialog_bg_color;
+  --dialog-fg-color: @dialog_fg_color;
+  --popover-bg-color: @popover_bg_color;
+  --popover-fg-color: @popover_fg_color;
+  --popover-shade-color: @popover_shade_color;
+  --thumbnail-bg-color: @thumbnail_bg_color;
+  --thumbnail-fg-color: @thumbnail_fg_color;
+  --shade-color: @shade_color;
+  --scrollbar-outline-color: @scrollbar_outline_color;
+  --active-toggle-bg-color: @egg_active_toggle_bg;
+  --active-toggle-fg-color: @window_fg_color;
+  --overview-bg-color: @egg_overview_bg;
+  --overview-fg-color: @window_fg_color;
+  /* Matches niri's geometry-corner-radius (themes/niri), so CSD corners sit
+   * on niri's clip. */
+  --window-radius: 12px;
+}
+
+/* Targeted rules ---------------------------------------------------------- */
+
+/* Chrome is recessed and flat: a 1 px hairline under a title bar or raised
+ * top bar (and over a bottom bar) replaces libadwaita's blurred shade. */
+window:not(.ssd-frame) > .titlebar:not(.flat),
+toolbarview > .top-bar.raised {
+  box-shadow: 0 1px var(--headerbar-shade-color);
+}
+
+toolbarview > .top-bar.raised.border {
+  box-shadow: 0 1px var(--headerbar-darker-shade-color);
+}
+
+toolbarview > .bottom-bar.raised {
+  box-shadow: 0 -1px var(--headerbar-shade-color);
+}
+
+toolbarview > .bottom-bar.raised.border {
+  box-shadow: 0 -1px var(--headerbar-darker-shade-color);
+}
+
+/* Text selection is the palette's selection blue; unfocused, half of it. */
+selection {
+  background-color: color-mix(in srgb, @egg_selection 50%, transparent);
+}
+
+selection:focus-within {
+  background-color: @egg_selection;
+}
+
+/* Floats carry a visible edge rather than a black alpha border. */
+popover > arrow,
+popover > contents {
+  border-color: @egg_edge;
+}
+
+/* A tooltip is a raised float with an edge, not a dark translucent slab. */
+tooltip.background {
+  background-color: var(--popover-bg-color);
+  color: var(--popover-fg-color);
+  border: 1px solid @egg_edge;
+}
+
+/* A toast is the inverse panel, keeping libadwaita's pill: light on black in
+ * dark, near-black on eggshell in light. The title and the close button take
+ * the panel's ink by inheritance; the action button's text is the panel's
+ * accent. libadwaita sets no state colour on either button, and their hover
+ * and press fills mix currentColor into the panel, so they follow. The
+ * toast's --accent-color, which the buttons' focus ring reads, is the panel's
+ * accent too, in place of libadwaita's lightened OSD accent. The state
+ * colours libadwaita lightens for its dark OSD would be pale on a light
+ * panel, so they take the other scheme's tier, the one made for this panel's
+ * tone. */
+toast {
+  background-color: @egg_inverse_bg;
+  color: @egg_inverse_fg;
+  --accent-color: @egg_inverse_accent;
+  --destructive-color: @egg_inverse_red;
+  --error-color: @egg_inverse_red;
+  --warning-color: @egg_inverse_orange;
+  --success-color: @egg_inverse_green;
+}
+
+toast > button.text-button {
+  color: @egg_inverse_accent;
+}
+
+/* Banners tint from the neutral ramp, not libadwaita's blue-grey. */
+banner {
+  --banner-color: @egg_banner;
+}

@@ -1,0 +1,171 @@
+# eggshell palette: the one source of every colour in themes/.
+#
+# Every colour literal under themes/ must be a value listed here (an alpha
+# suffix on a listed #rrggbb is allowed); `scripts/themes.sh check` enforces it
+# and scripts/lint.sh runs that check. What each token is for is in
+# themes/README.md ("Roles"); the rationale, and where
+# each hue comes from, are in docs/DESIGN.md. Change a value here first, then
+# in each file using it.
+#
+# Two variants. `dark` is the default and the one the shell itself lives in;
+# `light` is for apps that follow the system colour scheme. The dark neutrals
+# extend Core/Theme.qml's greys exactly (surface, fill, hairline, fillActive,
+# textTertiary, textSecondary, textPrimary), so a terminal or editor sits on the
+# same ramp the island is drawn from. The inverse panel's panel, ink,
+# ink_secondary and rule extend it too (inverse, inverseInk, inverseInkSecondary,
+# inverseRule). The weather card's chart colours are light tokens marked the
+# same way (weatherRain, the weatherWind to weatherGale wind scale and the
+# weatherCold to weatherHot ramp): they draw on the inverse panel, which is light.
+#
+# Colour rule, inherited from the shell: neutrals carry structure and
+# hierarchy. The blue family (haiqu.ai's "morpho" blue and lavender) is the one
+# identity hue: selection, focus, links and literal values. Red, orange, yellow
+# and green mean state only (error, warning, caution, added); they are never
+# decoration. Hues may also encode a data scale on the weather card's charts
+# (rain, wind and a temperature ramp): that is meaning, not decoration. Every hue is one the reference uses: the brick red, the orange
+# and the deep green from haiqu.ai's CSS, and ultramarine between its cobalt
+# and lavender. Cyan folds into the blue family and magenta into the greys, so
+# a terminal shows no hue the reference does not.
+
+[dark.neutral]
+black     = "#000000" # canvas: desktop, island, niri background (Theme.surface)
+base      = "#0a0a0a" # app background: terminal, editor, GTK window
+raised    = "#141414" # floats, popups, cards, status bars (Theme.fill)
+hairline  = "#1c1c1c" # 1 px dividers between surfaces (Theme.hairline)
+active    = "#232323" # the current row in a list, hovered control (Theme.fillActive)
+edge      = "#2e2e2e" # borders that must be seen: floats, inputs, split separators
+mute      = "#3d3d3d" # indent guides, whitespace markers, disabled outlines
+faint     = "#5e5e5e" # tertiary text: line numbers, placeholders (Theme.textTertiary)
+dim       = "#7a7a7a" # comments, punctuation, captions (4.6:1 on base)
+secondary = "#9e9e9e" # keywords, labels, inactive tabs (Theme.textSecondary)
+soft      = "#c8c8c8" # body text: code, terminal foreground
+primary   = "#f2f2f2" # emphasis: definitions, titles, the cursor (Theme.textPrimary)
+white     = "#ffffff" # bright white; glow at low alpha
+
+[dark.blue]
+# Taken from haiqu.ai's CSS: --color-morpho-blue, --color-lavender and the
+# stops of its radial "field" gradients.
+night    = "#0a1836" # deepest blue: info and changed-line backgrounds
+field    = "#12276e" # text selection
+morpho   = "#092382" # chip text on lavender
+cobalt   = "#1a3bb3" # strong focus fill (buttons, the active switch)
+lavender = "#c4d5ff" # strings, links, focus rings, chips; also bright blue
+
+[dark.accent]
+# Accent tier (see docs/DESIGN.md): ANSI normal colours and state. Red is
+# haiqu's brick and green its green-900, both lifted to read on black; orange is
+# its orange as is, and yellow a pale apricot beside it. Cyan is lavender,
+# magenta is soft grey.
+red     = "#e5715a"
+orange  = "#fea450"
+yellow  = "#f9cb92"
+green   = "#72bf89"
+cyan    = "#c4d5ff"
+blue    = "#5884f8" # constants and numbers; ANSI blue
+magenta = "#c8c8c8"
+
+[dark.bright]
+# Bright tier: ANSI bright colours, one step lighter than the accents and as
+# saturated as sRGB allows at that lightness, never a pastel. Bright blue and
+# bright cyan are lavender, bright magenta is primary grey.
+red     = "#fb846c"
+orange  = "#fdb270"
+yellow  = "#fdd39c"
+green   = "#77d695"
+cyan    = "#c4d5ff"
+magenta = "#f2f2f2"
+
+[dark.tint]
+# Tint tier: backgrounds behind a state (diff lines, diagnostic
+# virtual text). Blue's and cyan's tint is night, magenta's raised grey.
+red     = "#33150f"
+orange  = "#2e1a07"
+yellow  = "#2a1c0b"
+green   = "#0c2515"
+cyan    = "#0a1836"
+magenta = "#141414"
+
+[dark.dim]
+# Dim tier: ANSI dim colours, which terminals draw for SGR 2 (faint): the
+# accent hues darkened, magenta the dim grey.
+red     = "#9a5143"
+orange  = "#a16d40"
+yellow  = "#9a7a51"
+green   = "#4e7b5b"
+cyan    = "#5e73a4"
+blue    = "#4e66a3"
+magenta = "#7a7a7a"
+
+[dark.inverse]
+# The inverse panel: one light panel on black (see themes/README.md).
+panel         = "#f1efed" # the panel: haiqu's eggshell white (Theme.inverse)
+ink           = "#171717" # text on the panel (Theme.inverseInk)
+ink_secondary = "#4f4d49" # secondary text on the panel (Theme.inverseInkSecondary)
+rule          = "#dad7d3" # dividers on the panel (Theme.inverseRule)
+accent        = "#092382" # links and focus on the panel
+
+[shell]
+# Core/Theme.qml's two non-grey tokens. Their uses are recorded in that
+# file's ledger; apps use the muted accents above for errors.
+critical = "#ff453a"
+success  = "#03d161"
+
+[light.neutral]
+# Warm greys around haiqu's --color-light-gray, which is literally an
+# eggshell white (see docs/DESIGN.md).
+white     = "#ffffff" # cards on base, inputs
+raised    = "#f7f5f1" # floats, popups, status bars
+base      = "#f1efed" # app background
+sunk      = "#e7e4e0" # sidebars, headers, the current row
+hairline  = "#dad7d3" # 1 px dividers
+edge      = "#cdcac6" # borders that must be seen
+mute      = "#bab7b3" # indent guides, disabled outlines
+faint     = "#a19e9a" # line numbers, placeholders
+dim       = "#6b6865" # comments, punctuation (4.8:1 on base)
+secondary = "#4f4d49" # keywords, labels
+soft      = "#302d2b" # body text
+primary   = "#171717" # emphasis, titles, the cursor
+black     = "#000000"
+
+[light.blue]
+lavender = "#c4d5ff" # text selection
+wash     = "#dee8fd" # info and changed-line backgrounds
+blue     = "#1a3bb3" # constants and numbers; ANSI blue (Theme.weatherRain)
+morpho   = "#092382" # strings, links, focus rings, chips (11.6:1 on base)
+
+[light.accent]
+# Accent tier (see docs/DESIGN.md). Red, green and cyan are the reference's
+# exact brick, green-900 and morpho; magenta is the secondary grey.
+red     = "#8d2816" # (Theme.weatherGale)
+orange  = "#a66119" # (Theme.weatherStrong)
+yellow  = "#9c721c" # (Theme.weatherBreeze)
+green   = "#0d542b" # (Theme.weatherWind)
+cyan    = "#092382"
+magenta = "#4f4d49"
+
+[light.tint]
+# Tint tier. Cyan's tint is wash, magenta's sunk.
+red     = "#fbe1db"
+orange  = "#fae3d1"
+yellow  = "#f4e6ce"
+green   = "#daeede"
+cyan    = "#dee8fd"
+magenta = "#e7e4e0"
+
+[light.dim]
+# Dim tier: ANSI dim colours (SGR 2).
+red     = "#b9827b" # (Theme.weatherHot)
+orange  = "#b28966" # (Theme.weatherWarm)
+yellow  = "#a98e60" # (Theme.weatherMild)
+green   = "#739f7c" # (Theme.weatherCool)
+cyan    = "#7e92be" # (Theme.weatherCold)
+blue    = "#7e92be"
+magenta = "#a19e9a"
+
+[light.inverse]
+# The inverse panel in light: one near-black panel on eggshell.
+panel         = "#141414" # the panel
+ink           = "#f2f2f2" # text on the panel
+ink_secondary = "#9e9e9e" # secondary text on the panel
+rule          = "#2e2e2e" # dividers on the panel
+accent        = "#c4d5ff" # links and focus on the panel
