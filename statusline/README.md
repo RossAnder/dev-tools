@@ -66,9 +66,8 @@ would read as a fourth usage bucket.
 
 Monotone in the strict sense: the line emits **no colour at all**, so every
 character lands in the terminal theme's own foreground rather than a mix of
-greys. Weight is uniform too — a single bold span wraps the whole line, so no
-segment shouts over its neighbours. Those two escapes (SGR 1 to open, SGR 22 to
-close) are the only ones in the output.
+greys. Weight is uniform too: the output carries no escape at all, so no segment
+shouts over its neighbours.
 
 As the terminal narrows it sheds the slowest-moving segment first, so `chat` is
 last out and the repo name never goes. Model and effort lead — that is the one
@@ -258,7 +257,7 @@ backslashes in a `command` path are consumed as escapes):
 - `min` emits no colour at all, and `subagent` none beyond the agent-type badge.
   Beyond looking uniform, this keeps subagent rows out of a real trap: Claude
   Code wraps unselected rows in its own `\x1b[2m`, and an SGR 0 in the row body
-  strips that for the remainder of the line. `min` ends its one bold span with SGR 22 for the same reason.
+  strips that for the remainder of the line.
 - **Choosing a glyph**: `scripts/preview-icons.ps1` dumps any codepoint range as
   a labelled grid, flags codepoints carrying the Unicode Emoji property (your
   terminal will render those from the colour-emoji font), and with `-Font`

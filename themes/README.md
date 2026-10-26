@@ -1,8 +1,8 @@
 # eggshell themes
 
 Configs that dress the apps around the shell in the shell's look: niri,
-Alacritty, Ghostty, Neovim, tmux, fish, Firefox, GTK 4 / libadwaita, Claude Code
-and herdr. The design reasoning behind them, and the reference it was distilled
+Alacritty, Ghostty, Neovim, tmux, fish, Firefox, GTK 4 / libadwaita, Claude Code,
+herdr and gitui. The design reasoning behind them, and the reference it was distilled
 from, is in [docs/DESIGN.md](../docs/DESIGN.md).
 
 | Path | Contents | Variants |
@@ -16,8 +16,10 @@ from, is in [docs/DESIGN.md](../docs/DESIGN.md).
 | `fish/eggshell.theme` | Syntax highlighting and the completion pager; fish picks the variant from the background the terminal reports | dark, light |
 | `firefox/` | `chrome/userChrome.css` and `chrome/userContent.css` for Firefox's Proton and Nova UIs (Nova rules sit under `@media -moz-pref("browser.nova.enabled")`), and a static theme add-on in `theme/` whose `dark_theme` follows the system scheme | dark, light |
 | `gtk-4.0/eggshell.css` | libadwaita colours (named variables and the legacy `@define-color` names), imported from your own `~/.config/gtk-4.0/gtk.css` | dark, light |
-| `claude/eggshell.json`, `eggshell-light.json` | Claude Code custom themes over its `dark` and `light` presets: text, accent (lavender, morpho in light), status, mode borders, diffs, message backgrounds, subagent and `ultrathink` colours. Chosen in `/theme`; Claude Code reloads them live | dark, light |
+| `claude/eggshell.json`, `eggshell-light.json` | Claude Code custom themes over its `dark` and `light` presets: near-black text with lighter greys for secondary content, the salmon spinner and a dark-red mascot, light-tier status glyphs, and diffs with no line background (only changed words tinted), subagent and `ultrathink` colours. Claude Code picks diff syntax colours from the preset (Monokai or GitHub), so `syntaxHighlightingDisabled` keeps diffs to these tints and grey text. Custom themes never follow the system; select `Eggshell (system)`, the copy `windows/follow-system.vbs` keeps current | dark, light |
 | `herdr/eggshell.toml` | herdr colour tokens for both variants, with `auto_switch` following the terminal's background. Not linked by `deploy`, because herdr reads its theme only from `config.toml`: copy the file into `~/.config/herdr/config.toml` in place of its `[theme]` table | dark, light |
+| `gitui/theme-dark.ron`, `theme-light.ron`, `eggshell-dark.tmTheme`, `eggshell-light.tmTheme` | gitui colours and syntax colours for its file view; `windows/follow-system.vbs` copies the matching pair to `theme.ron` and `eggshell.tmTheme` in gitui's config dir | dark, light |
+| `windows/follow-system.vbs`, `install-follow-system.ps1` | Copies the variant matching Windows' app mode over the files that cannot switch themselves (Claude Code's `eggshell-system.json`, gitui's `theme.ron` and `eggshell.tmTheme`) and keeps the variant-free copies current; the script registers it as the `Eggshell Follow System` task, at logon and every minute (`-Remove` unregisters) | dark, light |
 
 ## Deploying
 
@@ -44,6 +46,18 @@ the profile's `user.js`. Claude Code's themes go to `$CLAUDE_CONFIG_DIR/themes`
 holds that token's value, and that every token marked `(Theme.<name>)` in
 `palette.toml` equals `Core/Theme.qml`'s: the dark neutrals, `[dark.inverse]`,
 and the light tokens the weather card's charts draw with.
+
+## Following the system
+
+On Windows, Windows Terminal switches between its `Eggshell` and `Eggshell Light`
+schemes with the system's app mode (`colorScheme` and `theme` set as `{dark, light}`
+pairs). Everything inside it follows from that:
+
+- herdr's `auto_switch` picks its variant from the background the terminal reports.
+- glimpse's `eggshell` set watches the system setting itself and swaps at once.
+- Claude Code and gitui take RGB colours only, so `windows/follow-system.vbs` swaps
+  their files within a minute of the switch. Claude Code reloads its theme at once;
+  gitui reads its theme when it starts.
 
 ## Roles
 

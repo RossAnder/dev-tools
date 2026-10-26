@@ -143,6 +143,12 @@ green   = "#0d542b" # (Theme.weatherWind)
 cyan    = "#092382"
 magenta = "#4f4d49"
 
+[light.text]
+# The light orange reads below 4.5:1 on base, so apps that print it as text
+# (glimpse, Claude Code) take this: the same hue darkened in HSL lightness alone
+# until it clears 4.5:1 on sunk.
+orange = "#935616"
+
 [light.tint]
 # Tint tier. Cyan's tint is wash, magenta's sunk.
 red     = "#fbe1db"

@@ -562,7 +562,7 @@ mod tests {
 
     #[test]
     fn every_set_is_found_by_name() {
-        for name in ["kanso-zen", "kanso-pearl", "ansi", "mono"] {
+        for name in ["kanso-zen", "kanso-pearl", "eggshell", "ansi", "mono"] {
             assert_eq!(sets::by_name(name).map(|s| s.name), Some(name));
         }
         assert!(sets::by_name("kanso").is_none());
@@ -621,6 +621,48 @@ mod tests {
         assert_eq!(ansi.unrelated, Style::new().dim());
     }
 
+    #[test]
+    fn eggshell_keeps_text_neutral_and_colour_to_glyphs_and_swaps_to_its_light_twin() {
+        let dark = Theme::from_set(&sets::EGGSHELL, &HashMap::new(), &HashMap::new());
+        assert_eq!(dark.section.fg, Some(rgb("#f2f2f2")), "titles are neutral");
+        assert_eq!(
+            dark.pending.fg,
+            Some(rgb("#9e9e9e")),
+            "routine marks recede"
+        );
+        assert_eq!(dark.unrelated.fg, Some(Color::Reset), "rows are not faded");
+        assert_eq!(dark.selection_mark.fg, Some(rgb("#e5715a")));
+        assert_eq!(dark.selection.bg, Some(rgb("#12276e")));
+
+        assert!(std::ptr::eq(
+            sets::EGGSHELL.for_appearance(false),
+            &sets::EGGSHELL
+        ));
+        let twin = sets::EGGSHELL.for_appearance(true);
+        assert!(std::ptr::eq(twin, &sets::EGGSHELL_LIGHT));
+        let light = Theme::from_set(twin, &HashMap::new(), &HashMap::new());
+        assert_eq!(light.section.fg, Some(rgb("#171717")));
+        assert_eq!(
+            light.done.fg,
+            Some(rgb("#739f7c")),
+            "a glyph takes the light tier"
+        );
+        assert_eq!(
+            light.severity_critical.fg,
+            Some(rgb("#8d2816")),
+            "text the strong one"
+        );
+        assert_eq!(
+            light.selection.bg,
+            Some(rgb("#c4d5ff")),
+            "lavender, as everywhere"
+        );
+        assert!(
+            std::ptr::eq(sets::KANSO_ZEN.for_appearance(true), &sets::KANSO_ZEN),
+            "a set without a twin ignores the preference"
+        );
+    }
+
     /// WCAG 2 relative luminance of an RGB colour.
     fn luminance(c: Color) -> f64 {
         let Color::Rgb(r, g, b) = c else {
@@ -655,6 +697,16 @@ mod tests {
         "backdrop",
     ];
 
+    /// Colours a set keeps below 4.5:1 on its background by choice, as (background, colour):
+    /// eggshell's light-tier glyph colours on its light background.
+    const SOFT: &[(&str, &str)] = &[
+        ("#f1efed", "#e5715a"),
+        ("#f1efed", "#739f7c"),
+        ("#f1efed", "#7e92be"),
+        ("#f1efed", "#b28966"),
+        ("#f1efed", "#a19e9a"),
+    ];
+
     /// Backgrounds, and the foregrounds drawn only on them, checked as pairs instead.
     const FILLS: &[&str] = &[
         "accent_bg",
@@ -672,7 +724,8 @@ mod tests {
     fn rgb_sets_meet_text_contrast() {
         let empty = HashMap::new();
         let mut failures = Vec::new();
-        for set in sets::SETS {
+        let twins = sets::SETS.iter().filter_map(|set| set.light);
+        for set in sets::SETS.iter().chain(twins) {
             let (Some(bg), Some(fg)) = (set.bg, set.fg) else {
                 continue;
             };
@@ -688,10 +741,20 @@ mod tests {
             };
             let mut check = |text: &str, under: Option<&str>| {
                 let back = under.map_or(bg, colour);
+                if SOFT
+                    .iter()
+                    .any(|(b, c)| rgb(b) == back && rgb(c) == colour(text))
+                {
+                    return;
+                }
                 let ratio = contrast(colour(text), back);
                 if ratio < 4.5 {
                     let on = under.unwrap_or("bg");
-                    failures.push(format!("{}: {text} on {on} is {ratio:.2}", set.name));
+                    failures.push(format!(
+                        "{} on {}: {text} on {on} is {ratio:.2}",
+                        set.name,
+                        set.bg.unwrap_or_default()
+                    ));
                 }
             };
             for (name, _) in TOKENS {

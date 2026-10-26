@@ -83,6 +83,7 @@ pub(crate) fn run(opts: RunOpts) -> Result<(), String> {
     app.auto_flow = slug.is_none();
     app.warning = warning;
     let baseline = State::load().apply(&mut app, keep_view, keep_orientation, config.keeps_theme());
+    app.set_appearance(crate::appearance::prefers_light());
     if let Some(surface) = surface {
         app.apply(Action::SwitchSurface(surface));
     }
@@ -110,6 +111,7 @@ pub(crate) fn run(opts: RunOpts) -> Result<(), String> {
         set_capture(true);
     }
     spawn_input(events.clone());
+    crate::appearance::watch(events.clone());
     let source = Source::start(root, slug, &config, events);
 
     let mut screen = Screen::new(app, config, TailView::default());
@@ -607,6 +609,7 @@ fn handle(screen: &mut Screen, event: Event, host: &mut impl Host, pointed: &mut
             app.apply_written(outcome);
             Step::Redraw
         }
+        Event::Appearance(light) => redraw_if(app.set_appearance(light)),
     }
 }
 

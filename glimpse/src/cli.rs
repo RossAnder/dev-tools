@@ -27,8 +27,8 @@ VIEW OPTIONS
                                 flip, else the config's)
         --surface <S>           tasks, review, optimise, plan-review, backlog or inbox:
                                 the surface to open on (default: the last run's)
-        --theme <T>             kanso-zen, kanso-pearl, ansi or mono: the colour set,
-                                over the config's and the last run's
+        --theme <T>             kanso-zen, kanso-pearl, eggshell, ansi or mono: the
+                                colour set, over the config's and the last run's
         --once                  render one frame as plain text to stdout and exit
         --size <WxH>            --once only: frame size in cells (default: 120x40)
         --snapshot <FILE>       --once only: render a `tomlctl tasks snapshot` JSON
@@ -469,7 +469,7 @@ mod tests {
         let bad = fails(&["--theme", "nope"]);
         assert!(
             bad.contains(
-                "unknown theme `nope`: expected one of kanso-zen, kanso-pearl, ansi, mono"
+                "unknown theme `nope`: expected one of kanso-zen, kanso-pearl, eggshell, ansi, mono"
             ),
             "{bad}"
         );

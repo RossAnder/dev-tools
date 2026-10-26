@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- eggshell syntax colours for syntect (gitui). Generated from the Syntax table in themes/README.md. -->
+<plist version="1.0">
+<dict>
+  <key>name</key><string>eggshell light</string>
+  <key>settings</key>
+  <array>
+    <dict>
+      <key>settings</key>
+      <dict>
+        <key>background</key><string>#f1efed</string>
+        <key>foreground</key><string>#302d2b</string>
+        <key>caret</key><string>#171717</string>
+        <key>selection</key><string>#c4d5ff</string>
+        <key>lineHighlight</key><string>#e7e4e0</string>
+      </dict>
+    </dict>
+    <dict>
+      <key>name</key><string>Comment</string>
+      <key>scope</key><string>comment</string>
+      <key>settings</key>
+      <dict>
+        <key>foreground</key><string>#6b6865</string>
+        <key>fontStyle</key><string>italic</string>
+      </dict>
+    </dict>
+    <dict>
+      <key>name</key><string>Doc comment</string>
+      <key>scope</key><string>comment.block.documentation, comment.line.documentation</string>
+      <key>settings</key>
+      <dict>
+        <key>foreground</key><string>#4f4d49</string>
+        <key>fontStyle</key><string>italic</string>
+      </dict>
+    </dict>
+    <dict>
+      <key>name</key><string>Punctuation, operators</string>
+      <key>scope</key><string>punctuation, keyword.operator, meta.brace</string>
+      <key>settings</key>
+      <dict>
+        <key>foreground</key><string>#6b6865</string>
+      </dict>
+    </dict>
+    <dict>
+      <key>name</key><string>String</string>
+      <key>scope</key><string>string, markup.underline.link</string>
+      <key>settings</key>
+      <dict>
+        <key>foreground</key><string>#092382</string>
+      </dict>
+    </dict>
+    <dict>
+      <key>name</key><string>Literal</string>
+      <key>scope</key><string>constant, constant.numeric, constant.language, constant.character, constant.other, string.regexp</string>
+      <key>settings</key>
+      <dict>
+        <key>foreground</key><string>#1a3bb3</string>
+      </dict>
+    </dict>
+    <dict>
+      <key>name</key><string>Keyword, module, attribute</string>
+      <key>scope</key><string>keyword, storage, storage.type, storage.modifier, entity.name.namespace, meta.attribute, support.function.macro, entity.name.macro</string>
+      <key>settings</key>
+      <dict>
+        <key>foreground</key><string>#4f4d49</string>
+      </dict>
+    </dict>
+    <dict>
+      <key>name</key><string>self, builtins</string>
+      <key>scope</key><string>variable.language, support.constant, support.variable</string>
+      <key>settings</key>
+      <dict>
+        <key>foreground</key><string>#4f4d49</string>
+        <key>fontStyle</key><string>italic</string>
+      </dict>
+    </dict>
+    <dict>
+      <key>name</key><string>Function, type, tag</string>
+      <key>scope</key><string>entity.name.function, support.function, meta.function-call, entity.name.type, entity.name.class, entity.name.struct, entity.name.enum, entity.name.trait, support.type, support.class, entity.other.inherited-class, entity.name.tag</string>
+      <key>settings</key>
+      <dict>
+        <key>foreground</key><string>#171717</string>
+      </dict>
+    </dict>
+    <dict>
+      <key>name</key><string>Parameter</string>
+      <key>scope</key><string>variable.parameter</string>
+      <key>settings</key>
+      <dict>
+        <key>foreground</key><string>#302d2b</string>
+        <key>fontStyle</key><string>italic</string>
+      </dict>
+    </dict>
+    <dict>
+      <key>name</key><string>Variable, field</string>
+      <key>scope</key><string>variable, variable.other, entity.other.attribute-name</string>
+      <key>settings</key>
+      <dict>
+        <key>foreground</key><string>#302d2b</string>
+      </dict>
+    </dict>
+    <dict>
+      <key>name</key><string>Heading</string>
+      <key>scope</key><string>markup.heading, entity.name.section</string>
+      <key>settings</key>
+      <dict>
+        <key>foreground</key><string>#171717</string>
+        <key>fontStyle</key><string>bold</string>
+      </dict>
+    </dict>
+    <dict>
+      <key>name</key><string>Emphasis</string>
+      <key>scope</key><string>markup.bold</string>
+      <key>settings</key>
+      <dict>
+        <key>foreground</key><string>#171717</string>
+        <key>fontStyle</key><string>bold</string>
+      </dict>
+    </dict>
+    <dict>
+      <key>name</key><string>Italic</string>
+      <key>scope</key><string>markup.italic</string>
+      <key>settings</key>
+      <dict>
+        <key>foreground</key><string>#302d2b</string>
+        <key>fontStyle</key><string>italic</string>
+      </dict>
+    </dict>
+    <dict>
+      <key>name</key><string>Invalid</string>
+      <key>scope</key><string>invalid</string>
+      <key>settings</key>
+      <dict>
+        <key>foreground</key><string>#8d2816</string>
+      </dict>
+    </dict>
+  </array>
+</dict>
+</plist>

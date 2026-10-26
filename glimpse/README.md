@@ -87,7 +87,7 @@ error; `hook` always exits 0, logging even a usage error. `--harness` is
 `claude-code` (the default) or `codex`. `--surface` is `tasks`, `review`,
 `optimise`, `plan-review`, `backlog` or `inbox`, the surface to open on; without
 it glimpse opens on the one it was left on. `--theme` is `kanso-zen`,
-`kanso-pearl`, `ansi` or `mono`, the colour set to start in (see [Theme](#theme)).
+`kanso-pearl`, `eggshell`, `ansi` or `mono`, the colour set to start in (see [Theme](#theme)).
 
 `--once` renders through ratatui's test backend with no terminal and no escape
 sequences, at 120x40 unless `--size` says otherwise. With `--snapshot` it draws a
@@ -486,6 +486,7 @@ A theme set supplies the palette and how fills and faint elements are drawn:
 |---|---|
 | `kanso-zen` | the default: Kanso Zen hex colours, for a dark background |
 | `kanso-pearl` | kanso.nvim's light Pearl palette, darkened where needed to read on its `#f2f1ef` background |
+| `eggshell` | dev-tools' eggshell palette, switching between its dark and light variants with the system's light/dark setting (on Windows, the moment it changes): high-contrast neutral text, lighter greys for routine content, light colour tiers for glyphs and strong ones for coloured text |
 | `ansi` | ANSI names only, so the terminal's own palette decides every hue; selection and chips in reverse video, faint elements dimmed |
 | `mono` | no colour at all; highlights in reverse video and faint elements dimmed |
 

@@ -3,7 +3,7 @@
 //! It is **two vocabularies, and they must not mix**:
 //!
 //! * the modern set, at this module's top level, used by `min` and `agents`.
-//!   Spans close with SGR 22 / 39 / 49 ([`NOBOLD`], [`FG`], [`BG`]) and never
+//!   Spans close with SGR 39 / 49 ([`FG`], [`BG`]) and never
 //!   with SGR 0. Claude Code wraps unselected agent rows in its own `\x1b[2m`,
 //!   and a single SGR 0 in a row body cancels that wrapper for the remainder of
 //!   the line.
@@ -24,19 +24,13 @@ pub const WHITE: &str = "\x1b[37m";
 // so the `full` style's tier tables read the same as the script they mirror.
 pub const ORANGE: &str = "\x1b[33m";
 pub const DIM: &str = "\x1b[90m";
-pub const BOLD: &str = "\x1b[1m";
-/// End a bold span (SGR 22) without the collateral of a full reset. `min` emits
-/// no colour at all, so a `legacy::RESET` would be the only escape in the line
-/// capable of clobbering state the terminal set for itself.
-pub const NOBOLD: &str = "\x1b[22m";
 
 /// The legacy `full`-only vocabulary. Everything in here emits SGR 0.
 ///
 /// **Do not import this from `render::min` or `render::agents`.** Claude Code
 /// dims unselected agent rows with its own `\x1b[2m`; an SGR 0 anywhere in a row
 /// body cancels that for the rest of the line, so the modern styles close their
-/// spans with SGR 22 / 39 / 49 instead ([`NOBOLD`], [`FG`],
-/// [`BG`]). `full` is exempt only because it is a bug-for-bug port of the
+/// spans with SGR 39 / 49 instead ([`FG`], [`BG`]). `full` is exempt only because it is a bug-for-bug port of the
 /// ps1, which reset after every span.
 pub mod legacy {
     /// Reset all attributes (SGR 0).

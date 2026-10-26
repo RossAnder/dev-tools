@@ -1,0 +1,34 @@
+// eggshell light for gitui. themes/windows/follow-system.vbs copies the variant
+// matching Windows' light/dark setting to gitui's theme.ron, which gitui reads when
+// it starts. Every value must be wrapped in `Some(...)`: a bare value is a different
+// shape and gitui silently discards the whole file.
+//
+// Mostly neutral: file names and titles in the text colour, hashes and times in a
+// lighter grey, and colour only where it says something: added and removed lines and
+// files, renames, branches and tags. A selected row is drawn in selection_fg on the
+// blue text-selection fill; a selected folder header in command_fg.
+(
+    selected_tab:        Some("#171717"),
+    block_title_focused: Some("#171717"),
+    command_fg:          Some("#302d2b"),
+    cmdbar_bg:           Some("Reset"),
+    disabled_fg:         Some("#a19e9a"),
+    selection_bg:        Some("#c4d5ff"),
+    selection_fg:        Some("#171717"),
+    diff_line_add:       Some("#0d542b"),
+    diff_line_delete:    Some("#8d2816"),
+    diff_file_added:     Some("#0d542b"),
+    diff_file_removed:   Some("#8d2816"),
+    diff_file_modified:  Some("#302d2b"),
+    diff_file_moved:     Some("#092382"),
+    commit_hash:         Some("#a19e9a"),
+    commit_time:         Some("#a19e9a"),
+    commit_author:       Some("#6b6865"),
+    branch_fg:           Some("#092382"),
+    tag_fg:              Some("#8d2816"),
+    danger_fg:           Some("#8d2816"),
+    push_gauge_bg:       Some("#302d2b"),
+    push_gauge_fg:       Some("#f1efed"),
+    use_selection_fg:    Some(true),
+    syntax:              Some("eggshell"),
+)

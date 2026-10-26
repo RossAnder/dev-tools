@@ -70,6 +70,9 @@ pub(crate) enum Event {
     Input(ratatui::crossterm::event::Event),
     /// What became of one write; sent by the writer thread, never the poller.
     Written(WriteOutcome),
+    /// The system switched between light and dark (`true` is light); sent by
+    /// [`crate::appearance::watch`].
+    Appearance(bool),
 }
 
 /// A file the runtime asked the poller to keep reading.

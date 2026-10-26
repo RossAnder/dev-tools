@@ -13,15 +13,16 @@ dark_name = "terminal"
 light_name = "terminal"
 
 # Chrome is grey: the sidebar is recessed, panels are raised, and the active
-# and cursor rows step up a grey. Lavender is the one accent; agent states
-# take the state colours (done green, working yellow, blocked red,
-# interrupted orange).
+# and cursor rows step up a grey. Colour is kept to the accent and the status
+# dots: working blue (herdr draws its connecting and update notices in the same
+# token), done and unseen orange, idle green, blocked red. In light the dots take
+# the palette's light tier.
 [theme.custom.dark]
 accent = "#c4d5ff"        # active borders, highlights: lavender
 panel_bg = "#141414"      # tab bar, floating panels, modals: raised
 sidebar_bg = "#000000"    # recessed: black
 active_row_bg = "#232323" # active space, focused agent: active
-selection_bg = "#2e2e2e"  # Navigate-mode cursor row: edge
+selection_bg = "#12276e"  # Navigate-mode cursor row: field
 surface0 = "#232323"      # selected item on a panel: active
 surface1 = "#2e2e2e"      # hovered item on a panel: edge
 surface_dim = "#1c1c1c"   # separators: hairline
@@ -29,20 +30,20 @@ overlay0 = "#7a7a7a"      # muted text, numbers: dim
 overlay1 = "#c8c8c8"      # brighter overlay text: soft
 text = "#f2f2f2"          # UI text: primary
 subtext0 = "#9e9e9e"      # workspace numbers, labels: secondary
-mauve = "#c4d5ff"         # branch names: lavender
-green = "#72bf89"         # done, idle
-yellow = "#f9cb92"        # working
+mauve = "#9e9e9e"         # branch names: secondary
+green = "#72bf89"         # idle
+yellow = "#c4d5ff"        # working, connecting: lavender
 red = "#e5715a"           # needs attention, blocked
 blue = "#5884f8"          # unseen or done notification
-teal = "#c4d5ff"          # unseen markers: cyan is lavender
-peach = "#fea450"         # interrupted, warning
+teal = "#fea450"          # done, unseen: orange
+peach = "#fea450"         # no herdr element draws it
 
 [theme.custom.light]
 accent = "#092382"        # morpho
 panel_bg = "#f7f5f1"      # raised
 sidebar_bg = "#e7e4e0"    # recessed: sunk
 active_row_bg = "#dad7d3" # hairline, one step below the sunk sidebar
-selection_bg = "#cdcac6"  # edge
+selection_bg = "#c4d5ff"  # lavender
 surface0 = "#e7e4e0"      # sunk
 surface1 = "#dad7d3"      # hairline
 surface_dim = "#dad7d3"   # hairline
@@ -50,10 +51,10 @@ overlay0 = "#6b6865"      # dim
 overlay1 = "#302d2b"      # soft
 text = "#171717"          # primary
 subtext0 = "#4f4d49"      # secondary
-mauve = "#092382"         # morpho
-green = "#0d542b"
-yellow = "#9c721c"
-red = "#8d2816"
+mauve = "#6b6865"         # dim
+green = "#739f7c"         # light tier: status dots are glyphs
+yellow = "#7e92be"        # light tier
+red = "#e5715a"           # light tier
 blue = "#1a3bb3"
-teal = "#092382"
+teal = "#b28966"          # light tier
 peach = "#a66119"

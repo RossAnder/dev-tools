@@ -9,11 +9,10 @@
 //!
 //! Monotone in the strict sense: the line emits **no colour at all**, so every
 //! character lands in the terminal theme's own foreground rather than a mix of
-//! greys. Weight is uniform too — one bold span wraps the whole line, so no
+//! greys. Weight is uniform too: the line carries no escape at all, so no
 //! segment is louder than its neighbours. That holds for the leading icon as
 //! much as for the numbers: colouring it was tried and reverted.
 
-use crate::ansi::{BOLD, NOBOLD};
 use crate::fmt::{SEP, clean_model_name, ellipsize, format_tokens, width};
 use crate::payload::Payload;
 
@@ -160,10 +159,7 @@ fn paint(icon: &str, title: &str, buckets: &[Bucket]) -> String {
         out.push_str(SEP);
         out.push_str(&b.text);
     }
-    // One bold span around the lot: uniform weight, and the only escapes in the
-    // line. `NOBOLD` (SGR 22) rather than a reset, so nothing else the terminal
-    // has set for itself gets cleared on the way out.
-    format!("{BOLD}{out}{NOBOLD}")
+    out
 }
 
 #[cfg(test)]
@@ -322,16 +318,12 @@ mod tests {
     }
 
     #[test]
-    fn the_line_is_one_bold_span_and_no_colour_at_all() {
+    fn the_line_carries_no_escape_at_all() {
+        // Every character lands in the terminal theme's own foreground at its
+        // regular weight, the icon included, which is where a reverted
+        // experiment put a red span.
         let line = render(&payload(FULL), 120, DEFAULT_ICON);
-        assert!(line.starts_with("\u{1b}[1m"), "must open bold: {line:?}");
-        assert!(line.ends_with("\u{1b}[22m"), "must close with SGR 22: {line:?}");
-        assert_eq!(line.matches('\u{1b}').count(), 2, "no inner escapes: {line:?}");
-        // Every character lands in the terminal theme's own foreground — the
-        // icon included, which is where a reverted experiment put a red span.
-        for code in ["[30m", "[31m", "[32m", "[33m", "[36m", "[37m", "[39m", "[90m", "[0m"] {
-            assert!(!line.contains(code), "unexpected colour {code} in {line:?}");
-        }
+        assert!(!line.contains('\u{1b}'), "unexpected escape in {line:?}");
     }
 
     #[test]
@@ -378,6 +370,6 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         assert_eq!(escapes(&hot), escapes(&cool), "{hot:?} vs {cool:?}");
-        assert_eq!(escapes(&hot), ["[1m", "[22m"], "one bold span, nothing more: {hot:?}");
+        assert!(escapes(&hot).is_empty(), "no styling at all: {hot:?}");
     }
 }

@@ -26,6 +26,10 @@ tui-input = "0.15.5"
 # In-process snapshot, flow list and hook recording, without tomlctl's allocator.
 tomlctl = { path = "../tomlctl", default-features = false }
 
+[target.'cfg(windows)'.dependencies]
+# The light/dark preference and its change notification (`appearance.rs`).
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Registry"] }
+
 [profile.release]
 opt-level = 3
 lto = "fat"

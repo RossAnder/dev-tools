@@ -2,7 +2,8 @@
 //!
 //! A set supplies values for the palette tokens and the rules that decide how fills and
 //! the faint tiers are drawn. Element tokens keep their [`TOKENS`](super::TOKENS)
-//! defaults in every set, so they follow whichever palette the set provides.
+//! defaults, so they follow whichever palette the set provides, unless a set repoints one
+//! to spread its hues. A set may name a light twin, shown while the system prefers light.
 
 /// How a filled background — the selection, a chip, a status flash — is drawn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,13 +34,26 @@ pub(crate) struct Rules {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ThemeSet {
     pub(crate) name: &'static str,
-    /// Values for palette tokens; a token absent here keeps its `TOKENS` default.
+    /// Values for tokens, palette tokens first; a token absent here keeps its `TOKENS`
+    /// default.
     pub(crate) palette: &'static [(&'static str, &'static str)],
     pub(crate) rules: Rules,
     /// The background and foreground the palette was designed against, for the
     /// contrast test; `None` where the terminal's palette decides.
     pub(crate) bg: Option<&'static str>,
     pub(crate) fg: Option<&'static str>,
+    /// Shown in this set's place while the system prefers light; not offered on its own.
+    pub(crate) light: Option<&'static ThemeSet>,
+}
+
+impl ThemeSet {
+    /// The set to draw with: the light twin when `light` and there is one, else this set.
+    pub(crate) fn for_appearance(&'static self, light: bool) -> &'static ThemeSet {
+        match self.light {
+            Some(twin) if light => twin,
+            _ => self,
+        }
+    }
 }
 
 const COLOUR: Rules = Rules {
@@ -55,6 +69,7 @@ pub(crate) const KANSO_ZEN: ThemeSet = ThemeSet {
     rules: COLOUR,
     bg: Some("#090E13"),
     fg: Some("#C5C9C7"),
+    light: None,
 };
 
 /// kanso.nvim's pearl palette (`extras/ghostty/kanso-pearl`, MIT). Hues below 4.5:1 on
@@ -92,6 +107,7 @@ pub(crate) const KANSO_PEARL: ThemeSet = ThemeSet {
     rules: COLOUR,
     bg: Some("#f2f1ef"),
     fg: Some("#22262D"),
+    light: None,
 };
 
 /// ANSI colour names only, so the terminal's own palette decides every hue. Hues sit on
@@ -122,6 +138,108 @@ pub(crate) const ANSI: ThemeSet = ThemeSet {
     },
     bg: None,
     fg: None,
+    light: None,
+};
+
+/// dev-tools' eggshell palette (`themes/palette.toml`) for its dark background, with
+/// [`EGGSHELL_LIGHT`] as its light twin. Mostly neutral: text in high-contrast greys
+/// (rows unrelated to the selection are not faded), a mid grey for routine marks and
+/// edges, the blue text-selection fill for the cursor row, and colour kept to touches. Glyphs take the light colour tiers (status marks, the selection and item
+/// marks, needed-by edges); text that carries colour takes the strong tiers.
+pub(crate) const EGGSHELL: ThemeSet = ThemeSet {
+    name: "eggshell",
+    palette: &[
+        ("fg", "default"),
+        ("accent", "#c4d5ff"),
+        ("accent_bg", "#c8c8c8"),
+        ("success", "#72bf89"),
+        ("danger", "#e5715a"),
+        ("warning", "#fea450"),
+        ("info", "#c4d5ff"),
+        ("violet", "#c4d5ff"),
+        ("teal", "#fea450"),
+        ("idle", "#9e9e9e"),
+        ("muted", "#9e9e9e"),
+        ("faint", "#5e5e5e"),
+        ("subtle", "#2e2e2e"),
+        ("highlight", "#12276e"),
+        ("on_color", "#0a0a0a"),
+        ("status_in_progress", "#c4d5ff"),
+        ("unrelated", "default"),
+        ("selection_mark", "#e5715a"),
+        ("item_mark", "#e5715a"),
+        ("edge_needs", "#e5715a"),
+        ("badge", "#e5715a"),
+        ("edge", "#7a7a7a"),
+        ("slug", "#f2f2f2"),
+        ("strong", "#f2f2f2"),
+        ("section", "#f2f2f2"),
+        ("border_title", "#f2f2f2"),
+        ("table_header", "muted"),
+        ("sort_mark", "muted"),
+        ("selection_text", "#c8c8c8"),
+        ("agent_bg", "#33150f"),
+        ("agent_fg", "#fb846c"),
+        ("question", "warning"),
+    ],
+    rules: COLOUR,
+    bg: Some("#0a0a0a"),
+    fg: Some("#c8c8c8"),
+    light: Some(&EGGSHELL_LIGHT),
+};
+
+/// [`EGGSHELL`] on the light background, role for role: near-black text, the palette's
+/// light colour tiers for glyphs (below 4.5:1 by design, see the contrast test's `SOFT`),
+/// and its strong tiers wherever colour carries text.
+pub(crate) const EGGSHELL_LIGHT: ThemeSet = ThemeSet {
+    name: "eggshell",
+    palette: &[
+        ("fg", "default"),
+        ("accent", "#092382"),
+        ("accent_bg", "#302d2b"),
+        ("success", "#739f7c"),
+        ("danger", "#e5715a"),
+        ("warning", "#b28966"),
+        ("info", "#7e92be"),
+        ("violet", "#092382"),
+        ("teal", "#b28966"),
+        ("idle", "#6b6865"),
+        ("muted", "#6b6865"),
+        ("faint", "#a19e9a"),
+        ("subtle", "#cdcac6"),
+        ("highlight", "#c4d5ff"),
+        ("on_color", "#f1efed"),
+        ("status_in_progress", "#7e92be"),
+        ("status_pending", "#a19e9a"),
+        ("unrelated", "default"),
+        ("status_deferred", "#b28966"),
+        ("flash_fg", "#171717"),
+        ("selection_mark", "#e5715a"),
+        ("item_mark", "#e5715a"),
+        ("edge_needs", "#e5715a"),
+        ("badge", "#e5715a"),
+        ("edge", "#6b6865"),
+        ("slug", "#171717"),
+        ("strong", "#171717"),
+        ("section", "#171717"),
+        ("border_title", "#171717"),
+        ("table_header", "muted"),
+        ("sort_mark", "muted"),
+        ("selection_text", "#4f4d49"),
+        ("agent_bg", "#fbe1db"),
+        ("agent_fg", "#8d2816"),
+        ("severity_critical", "#8d2816"),
+        ("severity_warning", "#935616"),
+        ("severity_suggestion", "#1a3bb3"),
+        ("warning_text", "#935616"),
+        ("form_error", "#8d2816"),
+        ("question", "#935616"),
+        ("input_new", "#1a3bb3"),
+    ],
+    rules: COLOUR,
+    bg: Some("#f1efed"),
+    fg: Some("#302d2b"),
+    light: None,
 };
 
 /// No colour at all: what `NO_COLOR` forces.
@@ -135,9 +253,10 @@ pub(crate) const MONO: ThemeSet = ThemeSet {
     },
     bg: None,
     fg: None,
+    light: None,
 };
 
-pub(crate) const SETS: &[ThemeSet] = &[KANSO_ZEN, KANSO_PEARL, ANSI, MONO];
+pub(crate) const SETS: &[ThemeSet] = &[KANSO_ZEN, KANSO_PEARL, EGGSHELL, ANSI, MONO];
 
 pub(crate) fn by_name(name: &str) -> Option<&'static ThemeSet> {
     SETS.iter().find(|set| set.name == name)

@@ -323,8 +323,10 @@ pub(crate) struct App {
     pub(crate) stale_deadlines: HashMap<String, SystemTime>,
     pub(crate) stale_after: Duration,
     pub(crate) theme: Theme,
-    /// The set `theme` was built from.
+    /// The set `theme` was built from: the one chosen, even while its light twin is shown.
     pub(crate) theme_set: &'static ThemeSet,
+    /// The system asks for a light theme, so a set with a light twin shows the twin.
+    prefers_light: bool,
     /// The config's `[theme]` tokens, laid over whichever set is shown.
     theme_overrides: HashMap<String, String>,
     /// The config's `[theme.<set>]` tokens, keyed by set name.
@@ -437,6 +439,7 @@ impl App {
             stale_after: Duration::from_secs(config.stale_after_s),
             theme: Theme::default(),
             theme_set: set,
+            prefers_light: false,
             theme_overrides: config.theme.clone(),
             theme_per_set: config.theme_sets.clone(),
             no_color: config.no_color,
@@ -1602,8 +1605,21 @@ impl App {
     pub(crate) fn show_set(&mut self, set: &'static ThemeSet) {
         let none = HashMap::new();
         let per_set = self.theme_per_set.get(set.name).unwrap_or(&none);
-        self.theme = Theme::from_set(set, &self.theme_overrides, per_set);
+        let shown = set.for_appearance(self.prefers_light);
+        self.theme = Theme::from_set(shown, &self.theme_overrides, per_set);
         self.theme_set = set;
+    }
+
+    /// Records the system's light/dark preference, rebuilding the theme when the set on
+    /// show has a light twin; returns whether the theme changed.
+    pub(crate) fn set_appearance(&mut self, light: bool) -> bool {
+        if self.prefers_light == light {
+            return false;
+        }
+        self.prefers_light = light;
+        let before = self.theme.clone();
+        self.show_set(self.theme_set);
+        self.theme != before
     }
 
     /// Puts the picker's cursor on `cursor` and shows that set.
@@ -2781,7 +2797,10 @@ mod tests {
         app.apply(Action::Page(Scroll::Bottom));
         assert_eq!(app.theme, set_theme("mono"));
         app.apply(Action::Move(Dir::Down));
-        assert_eq!(app.theme_picker.as_ref().map(|p| p.cursor), Some(3));
+        assert_eq!(
+            app.theme_picker.as_ref().map(|p| p.cursor),
+            Some(sets::SETS.len() - 1)
+        );
 
         assert_eq!(
             app.apply(Action::Back),
@@ -2791,6 +2810,24 @@ mod tests {
         assert!(app.theme_picker.is_none());
         assert_eq!(app.theme_set.name, "kanso-zen");
         assert_eq!(app.theme, set_theme("kanso-zen"));
+    }
+
+    #[test]
+    fn a_light_preference_shows_the_light_twin_and_keeps_the_chosen_set() {
+        let mut app = app();
+        assert!(!app.set_appearance(true), "kanso-zen has no twin to show");
+        app.show_set(&sets::EGGSHELL);
+        assert_eq!(
+            app.theme,
+            Theme::from_set(&sets::EGGSHELL_LIGHT, &HashMap::new(), &HashMap::new())
+        );
+        assert!(app.set_appearance(false));
+        assert_eq!(app.theme, set_theme("eggshell"));
+        assert!(
+            std::ptr::eq(app.theme_set, &sets::EGGSHELL),
+            "the choice is unchanged"
+        );
+        assert!(!app.set_appearance(false), "no change, no redraw");
     }
 
     #[test]
@@ -2806,14 +2843,13 @@ mod tests {
         app.apply(Action::Details);
         assert!(app.theme_picker.is_none());
         assert!(!app.details_open, "Enter went to the picker");
-        assert_eq!(app.theme_set.name, "ansi");
-        let ansi = sets::by_name("ansi").expect("ansi");
+        assert_eq!(app.theme_set.name, "eggshell");
         assert_eq!(
             app.theme,
-            Theme::from_set(ansi, &config.theme, &HashMap::new()),
+            Theme::from_set(&sets::EGGSHELL, &config.theme, &HashMap::new()),
             "the config's overrides stay laid over the kept set"
         );
-        assert_eq!(app.live_notice(Instant::now()), Some("theme ansi"));
+        assert_eq!(app.live_notice(Instant::now()), Some("theme eggshell"));
     }
 
     #[test]

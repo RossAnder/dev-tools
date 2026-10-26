@@ -2,6 +2,7 @@
 
 mod actions;
 mod app;
+mod appearance;
 mod cli;
 mod clipboard;
 mod config;
