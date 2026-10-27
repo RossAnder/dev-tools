@@ -1,6 +1,6 @@
 {
   "name": "Eggshell Light",
-  "base": "light",
+  "base": "light-ansi",
   "overrides": {
     "claude": "#e5715a",
     "claudeShimmer": "#b9827b",
@@ -43,8 +43,8 @@
     "diffRemoved": "#f1efed",
     "diffAddedDimmed": "#f1efed",
     "diffRemovedDimmed": "#f1efed",
-    "diffAddedWord": "#daeede",
-    "diffRemovedWord": "#fbe1db",
+    "diffAddedWord": "#f1efed",
+    "diffRemovedWord": "#f1efed",
 
     "userMessageBackground": "#e7e4e0",
     "userMessageBackgroundHover": "#dad7d3",

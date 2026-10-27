@@ -1,6 +1,6 @@
 {
   "name": "Eggshell",
-  "base": "dark",
+  "base": "dark-ansi",
   "overrides": {
     "claude": "#e5715a",
     "claudeShimmer": "#fb846c",
@@ -43,8 +43,8 @@
     "diffRemoved": "#0a0a0a",
     "diffAddedDimmed": "#0a0a0a",
     "diffRemovedDimmed": "#0a0a0a",
-    "diffAddedWord": "#0c2515",
-    "diffRemovedWord": "#33150f",
+    "diffAddedWord": "#0a0a0a",
+    "diffRemovedWord": "#0a0a0a",
 
     "userMessageBackground": "#141414",
     "userMessageBackgroundHover": "#232323",
