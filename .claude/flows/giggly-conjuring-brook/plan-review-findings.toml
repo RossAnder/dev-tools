@@ -1,0 +1,442 @@
+schema_version = 1
+last_updated = 2026-10-29
+round = 1
+
+[[vet_events]]
+timestamp = "2026-10-29T18:36:45Z"
+command = "review-plan"
+lens = "feasibility"
+tier = "deep"
+agent_index = 1
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "Stale-claim checks: version pin at tests/capabilities.rs:1815 and README.md:321 confirmed; store_guard.rs:31-33 field list confirmed. Sampled F1, F10. All anchors held; no drops."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-29T18:36:45Z"
+command = "review-plan"
+lens = "completeness"
+tier = "deep"
+agent_index = 2
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = 'Sampled F2 (cli.rs:622 exact-string assert), F4 (writes.rs:191 applied-gated undo), F11 (ledgers.rs:611 restore bail), F15 (surface.rs:951 group_key -> &str), F8 (README.md:512 "only"). All confirmed; no drops.'
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-29T18:36:45Z"
+command = "review-plan"
+lens = "executability"
+tier = "deep"
+agent_index = 3
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled F1 (output_options.rs:1727 leaf gate), F2 (surface.rs:149 exhaustive column_sort), F4 (app.rs:1423 submitted match), F10 (skills.rs:853 CEILING 500). All confirmed; F5 independently reproduced by orchestrator positive control (count 4 > 3). No drops."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-29T18:36:45Z"
+command = "review-plan"
+lens = "risk"
+tier = "deep"
+agent_index = 4
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled F1 (query.rs:1514 to_string cmp), F2 (json_rows.rs:1-5 dates stay strings), F4 (writer.rs:112 Stale filter_map), F6 (state.rs:233 item_columns always saved). All confirmed; no drops."
+dedup_id = "45ca31c3315a5978"
+
+[[items]]
+id = "P1"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "executability"
+plan_section = "### 18. Keys and app actions: e tier, P, <, > [L]"
+summary = "Acceptance 'prints 3' is unsatisfiable: the keys::map tests the task must add repeat Char('P'/'<'/'>')"
+description = """glimpse/src/keys.rs keeps its tests inline (mod tests at keys.rs:242) and writes them as press(KeyCode::Char('J')) (keys.rs:327); Char('F') already counts 2 today. Task 18 requires "Tests: keys::map for P, <, >", so a correct implementation counts >= 6. Orchestrator positive control (bindings + one test line) printed 4. Anchor the grep on the match-arm shape instead. Raised by Step 2.6 probe, executability F5, completeness F7."""
+anchor_old = '''forward: `grep -c "Char('P')\|Char('<')\|Char('>')" glimpse/src/keys.rs` prints `3` (today: `0`).'''
+anchor_new = '''forward: `grep -c "KeyCode::Char('P') =>\|KeyCode::Char('<') =>\|KeyCode::Char('>') =>" glimpse/src/keys.rs` prints `3` (today: `0`).'''
+dedup_id = "cb63ccd5a5d20ff4"
+
+[[items]]
+id = "P2"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "feasibility"
+plan_section = "### 16. Tier and rank columns; titles count toward column width [M]"
+summary = "Task 16 cannot leave column_sort untouched: Surface::column_sort matches ItemColumn exhaustively"
+description = 'glimpse/src/surface.rs:149-160 `column_sort` is `let sort = match column { ItemColumn::Status => ..., ItemColumn::Area => Sort::Area }` with no `_` arm. Two new ItemColumn variants are E0004 in surface.rs, so "return None without editing surface.rs" cannot compile. Task 16 already depends on 14 (the only other surface.rs task) and runs beside 15/17/19, none touching surface.rs. Map Tier => Sort::Tier, Rank => Sort::Focus (both added by task 14). Raised by feasibility F3, completeness F1, executability F2.'
+anchor_old = "`column_sort` in `surface.rs` is out of this task's file set: leave `Rank`/`Tier` header clicks unmapped (return `None`) rather than editing `surface.rs`."
+anchor_new = "`Surface::column_sort` in `glimpse/src/surface.rs` matches `ItemColumn` exhaustively (no `_` arm), so add `glimpse/src/surface.rs` to this task's Files and give it `ItemColumn::Tier => Sort::Tier` and `ItemColumn::Rank => Sort::Focus` arms (both sorts land in task 14; its `sorts().contains` filter still yields `None` off Backlog)."
+dedup_id = "15c6970af60cbb6e"
+
+[[items]]
+id = "P3"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "feasibility"
+plan_section = "### 12. Bump tomlctl to 0.17.0 [S]"
+summary = "The 0.17.0 bump breaks two version-pinned tests no task updates, so checkpoint A's suite goes red"
+description = 'tomlctl/tests/capabilities.rs:1814-1815 `capabilities_version_matches_cargo_toml` asserts `version == "0.16.0"`; `readme_sample_version_matches_cargo_toml` (capabilities.rs:2520) compares CARGO_PKG_VERSION with the README capabilities sample, which reads `"version": "0.16.0"` (tomlctl/README.md:321). Task 12 edits neither. Both files belong to task 9, on which task 12 already depends, so adding them to task 12 is overlap-safe. (claude/skills/tomlctl/SKILL.md also shows "0.16.0" in an untested example.)'
+anchor_old = "- **Files**: `tomlctl/Cargo.toml`, `tomlctl/Cargo.lock`, `glimpse/Cargo.lock`"
+anchor_new = """- **Files**: `tomlctl/Cargo.toml`, `tomlctl/Cargo.lock`, `glimpse/Cargo.lock`, `tomlctl/README.md` — the `capabilities` sample's `"version"`, `tomlctl/tests/capabilities.rs` — `capabilities_version_matches_cargo_toml`'s pinned `"0.16.0"`"""
+dedup_id = "7124122420a0a1c9"
+
+[[items]]
+id = "P4"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "completeness"
+plan_section = "### 11. Integration tests for the queue verbs and datetimes [M]"
+summary = "No task adds output_options cases for backlog next/focus; every_leaf_command_has_a_case fails at checkpoint A"
+description = "tomlctl/tests/output_options.rs:1727 `every_leaf_command_has_a_case` walks the capabilities command tree and fails on any leaf missing from `cases()`; every backlog verb has one (lines 560-566). Task 8 adds leaves `backlog next` and `backlog focus`; no task lists output_options.rs. Task 11 (depends on 8, one file) is the natural owner. Optionally also add `backlog focus` to `write_subcommands_expose_all_integrity_flags_in_help` in tests/capabilities.rs (task 9's file). Raised by executability F1, feasibility F2."
+anchor_old = "- **Files**: `tomlctl/tests/backlog_queue.rs` (new)"
+anchor_new = "- **Files**: `tomlctl/tests/backlog_queue.rs` (new), `tomlctl/tests/output_options.rs` — a `cases()` entry for `backlog next` (read, `Top`) and `backlog focus` (write); `every_leaf_command_has_a_case` fails on any leaf without one"
+dedup_id = "c235472ca6a6cafd"
+
+[[items]]
+id = "P5"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "completeness"
+plan_section = "### 14. Backlog sorts, groups and the pinned focus block [L]"
+summary = "Widening Backlog groups() breaks an exact-string assertion in glimpse/src/cli.rs, outside task 14's Files"
+description = 'glimpse/src/cli.rs:622-625 (`the_arrangement_must_be_offered_by_the_surface`) does `assert_eq!(err, "--group severity: the backlog surface offers none, kind, area, status")`; `check_arrange` builds the message from `surface.groups()`. Appending Tags/Origin/Flow/Tier changes it, so the glimpse suite is red at checkpoint B unless task 14 also edits cli.rs.'
+anchor_old = "- **Files**: `glimpse/src/surface.rs`"
+anchor_new = "- **Files**: `glimpse/src/surface.rs`, `glimpse/src/cli.rs` — the backlog group list asserted in `the_arrangement_must_be_offered_by_the_surface`"
+dedup_id = "bacf4d14486ba316"
+
+[[items]]
+id = "P6"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "executability"
+plan_section = "### 21. tomlctl skill: queue reference, edit tier, skill index [M]"
+summary = "First acceptance is vacuous: cli::dispatch::tests already passes today (46/46), so it is a guard, not forward"
+description = "Baseline (verification agent, 2026-10-29): `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes 46/46 on the current tree. A forward criterion that already holds discriminates nothing; relabel it `guard:` (the grep for `backlog-queue.md` beside it discriminates)."
+anchor_old = "  - forward: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes with the new file present — **predicted, unverified**."
+anchor_new = "  - guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes with the new file present (passes today: 46/46) — **predicted, unverified**."
+dedup_id = "d96f67551c16cf44"
+
+[[items]]
+id = "P7"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### 8. CLI wiring for next, focus and edit --tier [M]"
+summary = "Wiring --tier needs edit::dispatch's positional signature changed in edit.rs, which no task owns explicitly"
+description = 'tomlctl/src/backlog/dispatch.rs calls `edit::dispatch(id, context, tags, add_tag, remove_tag, evidence, add_evidence, origin, flow, base_sha, dry_run, integrity)` (edit.rs:408), which builds the `Edit` literal itself. Task 5 only says "expose the field so task 8 can fill it". If task 5 adds the parameter, dispatch.rs breaks until task 8; if not, task 8 edits an undeclared file. Task 8 depends on 5, so giving it edit.rs is overlap-safe. Raised by executability F3, completeness F6, feasibility F7.'
+anchor_old = "- **Files**: `tomlctl/src/cli/types/backlog.rs`, `tomlctl/src/backlog/dispatch.rs`"
+anchor_new = "- **Files**: `tomlctl/src/cli/types/backlog.rs`, `tomlctl/src/backlog/dispatch.rs`, `tomlctl/src/backlog/edit.rs` — `edit::dispatch` gains the `tier` parameter, threaded into its `Edit` literal and `changes_nothing`"
+dedup_id = "30b0b44d38807a02"
+
+[[items]]
+id = "P8"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 17. Write requests for tier and the queue [M]"
+summary = "Purpose::Tier in task 17 makes App::submitted's exhaustive match non-exhaustive until task 18 lands"
+description = "glimpse/src/actions.rs `enum Purpose` is matched with no `_` arm in `App::submitted` (glimpse/src/app.rs:1423-1488), owned by task 18. Task 17's own tests and its clippy check cannot run, and a lite delegate will report the app.rs error as foreign breakage. Move the variant to task 18 (which owns app.rs, depends on 17, and then needs actions.rs on its Files), or give task 17 app.rs with the submission arm. Raised by executability F4, feasibility F4."
+anchor_old = "Add `Purpose::Tier(Selection)`, `tier_form`, `tier_plan`"
+anchor_new = "Add `tier_form`, `tier_plan` (the `Purpose::Tier(Selection)` variant lands in task 18 with its `App::submitted` arm, since that match is exhaustive; task 18 adds `glimpse/src/actions.rs` to its Files)"
+dedup_id = "dda45f091db46619"
+
+[[items]]
+id = "P9"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### Focus queue semantics"
+summary = "Facade abort comparison and result shapes are unspecified; glimpse drops non-StaleOp stale entries and undoes only applied ids"
+description = """(1) Comparison: glimpse sends every live row's (id, focus) as expect, Nones included. Comparing the full live set aborts on any concurrent capture; comparing only focused rows against an expect with Nones always differs. Define it: an expected id no longer live, a differing stored focus, or an unlisted live row carrying focus. (2) Shapes: glimpse `WriteOutcome::from_result` (glimpse/src/writer.rs:108-113) keeps skipped_stale entries only if they deserialise as `Stale {id, field, expected, found}` (filter_map ... .ok()); "every expected id" as bare ids vanishes, leaving rows marked saving with no notice. (3) `Writes::undo_last` restores only rows in `entry.applied` (glimpse/src/writes.rs:191), so `applied` must list every changed id including shifted/renumbered neighbours; task 6's output `{ok, changed, queue}` has no `applied`. Raised by risk F4, completeness F4, feasibility F5."""
+anchor_old = "writes nothing (reporting every listed row in `skipped_stale`) when the stored queue differs"
+anchor_new = """writes nothing when the stored queue differs — an expected id is no longer live, its stored `focus` differs from the expected one, or a live row absent from `expect` carries `focus` (a row captured or triaged meanwhile without a rank is not a difference) — reporting each mismatching row in `skipped_stale` as a `{id, field: "focus", expected, found}` object (the `StaleOp::to_json` shape glimpse's `writer::Stale` deserialises); on success `applied` lists every id in `changed`, shifted and renumbered neighbours included, because glimpse's undo restores only `applied` ids"""
+dedup_id = "2c2a9237ac69f1f1"
+
+[[items]]
+id = "P10"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### 18. Keys and app actions: e tier, P, <, > [L]"
+summary = "An end-of-queue move dispatches a no-op write that leaves the cursor row marked saving forever"
+description = """`Writes::dispatch` marks each request's ids saving (glimpse/src/writes.rs:104-110); a mark clears only on a stale/error outcome or when a read shows the row changed (surface.rs `saving_clears_only_for_rows_that_changed`). The plan makes an end-of-queue move "a no-op change set". classify_plan avoids this by leaving matching rows out (actions.rs:518). Dispatch nothing when `backlog_focus_plan` predicts an empty change set, and track the predicted changed ids rather than the targets. Raised by completeness F5, feasibility F5."""
+anchor_old = "`QueueUp`/`QueueDown` target the cursor row only, and keep the cursor on that row after the write lands."
+anchor_new = "`QueueUp`/`QueueDown` target the cursor row only, and keep the cursor on that row after the write lands. Dispatch nothing when `tomlctl::backlog_focus_plan` predicts an empty change set (a move at either end of the queue), and mark the predicted changed ids as saving rather than the targets: glimpse clears a saving mark only when a read shows the row changed."
+dedup_id = "ecf7dfd40bd7d44a"
+
+[[items]]
+id = "P11"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 7. backlog next read verb [M]"
+summary = "'Print through the path backlog list uses' is wrong (that path takes a TOML doc + Query), and same-day --where never reaches next's JSON rows"
+description = '`backlog list` prints via `output::print_query_list(&doc, ARRAY_BACKLOG, &q)` (tomlctl/src/backlog/query.rs:75; output.rs:1072), which needs a QueryArgs-built Query that `Next` does not carry. `select` returns Vec<JsonValue> with `position`, which fits `output::print_report(JsonValue::Array(rows), Rows::Top)` (output.rs:1252; as `backlog check` does). But row reports filter via `query::json_rows::filter` (output.rs:688), where "a JSON string that looks like a date stays a string" (query/json_rows.rs:1-5, test `date_string_compares_as_string`), so `backlog next --where created=<date>` matches no datetime row. Choose: print_report + document the limitation in backlog-queue.md, or print_query_list over a TOML array of the selected rows. Raised by risk F2, executability F6, feasibility F6.'
+anchor_old = "Print through the same row-report output path `backlog list` uses so the global output options (`--get`, `--template`, `--where`, `--limit`) apply."
+anchor_new = "Print with `crate::output::print_report(JsonValue::Array(rows), Rows::Top)` (the row-report path `backlog check` uses; `backlog list`'s `print_query_list` needs a `QueryArgs`-built `Query`, which `Next` does not carry), so the global output options (`--get`, `--template`, `--where`, `--limit`) apply. Row-report `--where` runs `query::json_rows::filter`, where a date is a plain string, so same-day matching does not apply to `next` output; task 21 states that in `backlog-queue.md` beside the `--where tier=T` strict form."
+dedup_id = "96fdcf6400d5b208"
+
+[[items]]
+id = "P12"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### 2. Same-day matching for a bare-date RHS in the query engine [M]"
+summary = "The ordered tests task 2 names already pass today; the operators that actually flip (--where-gt, --where-lte) are unstated and untested"
+description = """Today the ordered Datetime arm compares Display strings (tomlctl/src/query.rs:1514 `field_dt.to_string().cmp(&dt.to_string())`; convert.rs compare_typed likewise): "2026-10-29T14:03:11Z" > "2026-10-29", so --where-lt already excludes and --where-gte already includes a same-day row. Date-component comparison flips --where-gt (include -> exclude) and --where-lte (exclude -> include). It is engine-wide (inputs.toml created, --newer-than = --where-gt first_flagged=@date:D). State and test the flips; task 22's doc should mention them."""
+anchor_old = "`--where-lt created=2026-10-29` excludes it; `--where-gte` includes it;"
+anchor_new = "`--where-lt created=2026-10-29` excludes it; `--where-gte` includes it; `--where-gt` excludes it and `--where-lte` includes it (these two flip from today's `to_string()` order, so the falsifier rests on them; lt/gte pass before and after);"
+dedup_id = "482c1995c9e85967"
+
+[[items]]
+id = "P13"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### 6. Focus queue planner and writer [M]"
+summary = "A focus left on a resolved/dismissed row (old binary, merge, hand edit) bricks writes to that row and no verb can clear it"
+description = "`validate` runs on every touched row (edit.rs, triage.rs, relate.rs, add.rs, ledgers::write_guarded). The new rule rejects focus on terminal rows, but `backlog edit` refuses focus (task 5) and `backlog focus` refuses non-live rows. A pre-0.17 `clear_for_transition` (schema.rs) clears only MANAGED_FIELDS, so a 0.16 binary or a glimpse pane still linking the 0.16 library resolving a queued row, a git merge of backlog.toml, or a hand edit leaves exactly that state; edit/relate/set_tier then fail with ForeignTerminalField. Let `Remove` accept a terminal row still carrying focus, and name the version-skew case in Risks."
+anchor_old = "Errors (`kind=validation`): unknown id, a non-live row, `Add` of a queued row, `Remove`/`Move` of an unqueued row."
+anchor_new = "Errors (`kind=validation`): unknown id, a non-live row for `Add`/`Move` (`Remove` accepts a `resolved`/`dismissed` row still carrying `focus`, the only way to clear a stray rank an older binary or a merge left behind), `Add` of a queued row, `Remove`/`Move` of an unqueued row."
+dedup_id = "6221ea61983ee57f"
+
+[[items]]
+id = "P14"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### Focus queue semantics"
+summary = "Add never says what focus value inserted rows get; with gaps, focus = at misorders, and --at 0 is unspecified"
+description = "Gaps are by design (removals never renumber), so focus values and positions diverge. With focus [1, 2, 5], adding at the bottom (at = 4) and writing focus = 4 sorts before the row at 5. The Add bullet specifies only the shift. Specify: new rows take consecutive values from the focus of the row now at position `at` (max+1 at the bottom); refuse at = 0; planner tests include a gapped queue."
+anchor_old = "every queued row at position ≥ `at` shifts its `focus` by +len."
+anchor_new = "the new rows take consecutive `focus` values starting at the `focus` of the row now at position `at` (max `focus` + 1 at the bottom; never `at` itself, since gaps make position and `focus` differ), and every queued row at position ≥ `at` shifts its `focus` by +len. `at` = 0 is refused. Planner tests include a queue with a gap."
+dedup_id = "8f9c4651b9a299d2"
+
+[[items]]
+id = "P15"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "## Success Criteria"
+summary = "Every runnable success criterion is a symbol-count grep; none checks the Context's goals"
+description = '''Criteria 1-5 grep for FIELD_TIER, `Next {`, `pub fn backlog_set_tier`, `Sort::Focus`, `backlog next` — each passes on a stub. Unchecked goals: same-day ordering (glimpse Newest tie-break on file position, `--where created=<date>` matching datetime rows), glimpse details showing every field, an agent reading the queue (`backlog next --tier lite --fill` order and untiered pass-through). Add a predicted, unverified `forward: cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(backlog_queue)'` with a `success:` key, and a named glimpse test from tasks 14/15. Criterion 3 also differs from its success key (extra `pub fn backlog_focus\b` alternative).'''
+dedup_id = "e19bfa3c5e4c52e8"
+
+[[items]]
+id = "P16"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "## Tasks"
+summary = "Most task acceptances only grep for a symbol; tasks that add tests never run them, and B-00b994ba's fix is unchecked"
+description = """Grep/presence-only acceptance on tasks 1, 3, 4, 5, 6 (an empty focus.rs passes), 7, 8, 9, 10, 13, 14, 15, 16, 17; task 12 checks the version but not the glimpse/Cargo.lock refresh the pre-commit hook gates on. Each could carry its narrow test, e.g. `cargo test --manifest-path tomlctl/Cargo.toml --lib -- backlog::focus::` (6), `-- backlog::next::` (7), `-- backlog::schema::` (3), `cargo test --manifest-path glimpse/Cargo.toml -- surface::` (14), each with a falsifier. Task 16 closes B-00b994ba (Columns::measure counts titles) but only greps `Rank` in config.rs. Task 17's "focus in a backlog transition's undo" has no round-trip check, though writer.rs already has the facade harness."""
+dedup_id = "c5bca0083c952e59"
+
+[[items]]
+id = "P17"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### 15. Details show every backlog field [M]"
+summary = "The 'remaining raw keys' rule re-renders fields item_content already shows, failing the task's own 'each label once' test"
+description = "`item_content` (glimpse/src/view/details.rs:230-330) already renders status, the companions (resolution, dismiss_reason, promoted_to, reopen_rationale), kind, tags, area, context, evidence and the dates line (created ... closed). Task 15 adds `created` as a fact and renders every remaining raw key excluding only id/summary/context, so those appear twice."
+anchor_old = '"Remaining" means keys of `row.raw` not in the explicit list and not `id`/`summary`/`context`'
+anchor_new = '"Remaining" means keys of `row.raw` not in the explicit list and not already rendered by `item_content` — `id`, `summary`, `context`, `status`, `kind`, `area`, `tags`, `evidence`, the companions `resolution`/`dismiss_reason`/`promoted_to`/`reopen_rationale`, and the `promoted`/`dismissed`/`resolved` dates; `created` stays on the existing dates line rather than becoming a second fact'
+dedup_id = "e1a095f534e93878"
+
+[[items]]
+id = "P18"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### 9. Capabilities, feature list, README and version bump [M]"
+summary = "Enumerations of backlog edit's editable fields (several saying 'only') and the store-guard refusal go stale; no task updates them"
+description = """Still listing exactly context, tags, evidence, origin, flow, base_sha: tomlctl/README.md:512 (`backlog_edit` feature row, "... only"), README.md:66 (`backlog edit --ndjson` synopsis), claude/skills/tomlctl/SKILL.md:44 (Quick Reference row), claude/skills/tomlctl/references/backlog-recipes.md:91 (no task), tomlctl/src/cli/types/backlog.rs:342-345 and :415-417 (Edit / --ndjson --help text, task 8's file), and tomlctl/src/store_guard.rs:31-33 (`OwnedStore::Backlog` refusal names neither `backlog edit --tier` nor `backlog focus`; no task). Raised by completeness F8, feasibility F10."""
+anchor_old = "Keep each table row one line."
+anchor_new = """Keep each table row one line. Also amend the existing `backlog_edit` row and the `backlog edit --ndjson` synopsis, which list the editable fields and say "only"; task 8 updates the `Edit` and `--ndjson` doc comments, task 5 adds `tomlctl/src/store_guard.rs` (the backlog refusal names `tier` under `backlog edit` and `backlog focus` for `focus`), and task 21 fixes the SKILL.md Quick Reference "Edit a backlog row's…" row and adds `claude/skills/tomlctl/references/backlog-recipes.md` to its Files."""
+dedup_id = "87f5ad38259bc4d9"
+
+[[items]]
+id = "P19"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### 17. Write requests for tier and the queue [M]"
+summary = "Undoing a tier clear fails unless the clear stays in the fields map RowUndo::of receives"
+description = '`RowUndo::of(row, touched, written)` (glimpse/src/actions.rs:346-370) derives its expect from `written`; `ledgers::restore` bails "restore needs an `expect` precondition" on an empty expect (tomlctl/src/ledgers.rs:611) and a refused row refuses the whole batch. "a clear for none" is unspecified; if tier_plan copies classify_plan and omits the cleared key, undo errors. Represent the clear as {tier: null}.'
+anchor_old = "`fields = {tier}` or a clear for `none`"
+anchor_new = "`fields = {tier: value}`, or `{tier: null}` for `none` — the clear must stay in the map handed to `RowUndo::of`, whose `expect` becomes the restore precondition, and `ledgers::restore` refuses an empty one"
+dedup_id = "418fe515210005cb"
+
+[[items]]
+id = "P20"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "## Risks"
+summary = "Saved item_columns hide the new Tier/Rank columns on every existing install, not just customised ones"
+description = "`State::capture` writes `item_columns: Some(app.item_columns.clone())` on every quit (glimpse/src/state.rs:233), and `State::apply` replaces the default list. Every current user therefore has the seven-column list saved. Either accept and say so, or append new columns when the saved list equals the pre-0.17 default (adds glimpse/src/state.rs to task 16)."
+anchor_old = "**Saved glimpse column lists hide the new columns** — documented in the README;"
+anchor_new = "**Saved glimpse column lists hide the new columns** on every existing install, since `State::capture` saves `item_columns` on every quit, not only after a customisation — documented in the README;"
+dedup_id = "85dc850a07858424"
+
+[[items]]
+id = "P21"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "### Fields and validation"
+summary = "Refusing focus in backlog add payloads breaks the documented replay of a queued row's show/get output"
+description = '`unknown_payload_key` (tomlctl/src/backlog/add.rs:55-62) admits MINTED_FIELDS and MANAGED_FIELDS, and `request_from_payload` drops the minted five so "replaying a show output re-derives identity" (also claude/skills/tomlctl/references/backlog.md:76-77). Dropping focus like a minted field keeps replay working while still preventing a planted duplicate rank. No carrier currently replays queued rows.'
+anchor_old = "`focus` is refused in `backlog add` payloads and by `backlog edit` (both name `backlog focus` as the owner)"
+anchor_new = "`focus` is dropped from `backlog add` payloads like a minted field (so a replayed `show`/`get` of a queued row still adds) and refused by `backlog edit` (naming `backlog focus` as the owner)"
+dedup_id = "6486609b30e50b42"
+
+[[items]]
+id = "P22"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "### 13. Backlog rows carry every stored field [M]"
+summary = "Unspecified fixture rows: queuing the existing open row breaks writer.rs's dismissal round-trip until tasks 3, 10, 17 land"
+description = "glimpse/src/writer.rs:408 seeds its sandbox from tests/fixtures/backlog.toml; `a_backlog_dismissal_and_its_undo_leave_the_row_as_it_was` dismisses B-0a1b2c3d (the only open row) and asserts undo restores raw exactly. If task 13 puts focus there, that test is red until 3, 10 and 17 land. Add new rows instead."
+anchor_old = "Add fixture rows covering:"
+anchor_new = "Add new fixture rows (leave the existing four unchanged, so `writer.rs`'s `a_backlog_dismissal_and_its_undo_leave_the_row_as_it_was`, which dismisses `B-0a1b2c3d` through the facade, is unaffected) covering:"
+dedup_id = "471b347e1a243065"
+
+[[items]]
+id = "P23"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### 24. backlog-capture and /backlog: tier, queue, datetimes [M]"
+summary = "SKILL.md ceiling is 500, not 600; ItemRow.created doc comment goes stale"
+description = """`skill_bodies_under_line_ceiling` (tomlctl/src/cli/dispatch/tests/skills.rs:852-853) sets CEILING = 500 for every SKILL.md; 600 is the references ceiling. backlog-capture is 405 lines (95 lines headroom). Separately, glimpse/src/ledger.rs:219 doc comment on ItemRow.created ("as YYYY-MM-DD") is falsified by datetime captures; it sits in task 13's file. Raised by executability F10, completeness F16, feasibility F9."""
+anchor_old = "backlog-capture is 405 lines; stay under 600."
+anchor_new = "backlog-capture is 405 lines; stay under 500 (`skill_bodies_under_line_ceiling` caps a SKILL.md at 500)."
+dedup_id = "2e063ac11620684a"
+
+[[items]]
+id = "P24"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "### 14. Backlog sorts, groups and the pinned focus block [L]"
+summary = "Tasks 14 and 18 are tagged [L] but are neither cross-cutting nor 4+ inseparable files"
+description = "Contract: L is cross-cutting or 4+ inseparable files. Task 14 touches one file, task 18 two (three after the Purpose::Tier fix). If [L] is meant to force implement-deep, say so in Detail; M already goes deep whenever the lite gate fails. Also: group_key returns (GroupRank, &str) borrowed from the row (glimpse/src/surface.rs:951), but Group::Tags needs an owned joined string — state Cow<str> or a precomputed key."
+dedup_id = "6da4d9319a40bb5b"
+
+[[items]]
+id = "P25"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "### 6. Focus queue planner and writer [M]"
+summary = "Cross-task text disagrees: Move shape, unexported FocusChange/TIERS, task 9 title, Research Notes citation"
+description = """Approach "Focus queue semantics" says `Move { id, by: Up | Down }`; task 6 says `Move { id: String, up: bool }`. `backlog_focus_plan` returns Vec<FocusChange> from a pub(crate) module but only BacklogFocus is re-exported, so glimpse cannot name the type (re-export as BacklogFocusChange). The tier vocabulary lives in TIERS, BacklogTier and glimpse's sort rank/form with no parity test; consider re-exporting TIERS as BACKLOG_TIERS (like BACKLOG_MANAGED_FIELDS, lib.rs:52) and asserting BacklogTier variants equal it (then task 3's grep changes to `const TIERS`). Task 9's title says "and version bump" but the bump is task 12 (retitle via `tasks update --ref`, not prose, to avoid the renamed-heading trap). Task 8 cites "Research Notes' ValueEnum finding", which implementers never receive; its Detail already restates the facts."""
+dedup_id = "b0352c3ceda0a100"
+
+[[items]]
+id = "P26"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### 20. glimpse README and CLAUDE.md [S]"
+summary = "Other statements of glimpse's write set also go stale and no task updates them"
+description = """glimpse/README.md:10-17 ("glimpse writes two things and nothing else"; Control fields bullet), glimpse/README.md:470 (`item_columns` default list, which task 16 changes), claude/skills/backlog-capture/SKILL.md:109-110 ("triage rows in glimpse (dismiss, reopen, resolve)"; task 24's file), claude/skills/flow-contract-ledger-schema/SKILL.md:210 (glimpse writer list; no task), root CLAUDE.md Backlog capture ("The human triages in glimpse (dismiss, reopen, resolve)"; no task)."""
+anchor_old = 'CLAUDE.md "Control fields only" and the write-model paragraph say the same.'
+anchor_new = """CLAUDE.md "Control fields only" and the write-model paragraph say the same, as do the README's opening "glimpse writes two things and nothing else" **Control fields** bullet and its `item_columns` default row."""
+dedup_id = "29c3e34d7821d2b1"
+
+[[items]]
+id = "P27"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### 21. tomlctl skill: queue reference, edit tier, skill index [M]"
+summary = "backlog.md's authoritative Store shape table will omit tier and focus"
+description = "claude/skills/tomlctl/references/backlog.md:452-470 `## Store shape` (`| Field | Set by |`) is the one table listing every row field. It is at 600 lines (`skill_references_under_line_ceiling`, skills.rs:902), so trade a line: add one `tier`, `focus` row pointing at backlog-queue.md and fold one line elsewhere."
+anchor_old = "`backlog.md` is at the 600-line ceiling, so nothing goes there."
+anchor_new = "`backlog.md` is at the 600-line ceiling (`skill_references_under_line_ceiling`), so trade a line rather than skip it: its `## Store shape` table gains one `tier`, `focus` row pointing at `backlog-queue.md`, and one line elsewhere is folded (add `claude/skills/tomlctl/references/backlog.md` to Files)."
+dedup_id = "13492f6cae23d8a2"
+
+[[items]]
+id = "P28"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### 18. Keys and app actions: e tier, P, <, > [L]"
+summary = "Footer hints never show e (tier) or the queue keys on Backlog"
+description = 'glimpse/src/view/footer.rs:346-347 pushes `Hint::new("e", "classify")` only for Surface::Review | Surface::Optimise; no task touches footer.rs, so the always-visible hint row hides the new Backlog keys (legend and README only).'
+dedup_id = "e6a1433983eda178"
+
+[[items]]
+id = "P29"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### 24. backlog-capture and /backlog: tier, queue, datetimes [M]"
+summary = "/backlog lists dispositions in three places; the plan extends only one"
+description = "claude/commands/backlog.md:84 (interactive offer list) gets the new dispositions, but :86 (Empty-answer rule's question options) and :49 (Step 0 drain's Answers handling) do not. Either extend all three or state the new dispositions are interactive-only."
+dedup_id = "553f642c54444894"
+
+[[items]]
+id = "P30"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "### 9. Capabilities, feature list, README and version bump [M]"
+summary = "Task 9 advertises backlog_datetime_stamps (and 21/23/24 document datetimes) with no dependency path to task 4"
+description = "Task 9's closure is 3, 5, 6, 7, 8; task 4 (which mints datetimes) is not in it, and checkpoint C's closure omits 4. Per-task commits can advertise behaviour not yet landed. Adding 9 -> 4 closes the paths for 12, 21, 23 and 24."
+anchor_old = "- **Depends on**: 8"
+anchor_new = "- **Depends on**: 4, 8"
+dedup_id = "42d8820a832c046b"
+
+[[items]]
+id = "P31"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "## Risks"
+summary = "'checkpoint B builds glimpse against the bumped tomlctl' is not backed by any edge"
+description = "`tomlctl tasks closure --checkpoint B` gives 3, 6, 10, 13-20 — task 12 is absent and B can fire before A. glimpse path-depends on tomlctl, so every checkpoint builds against the in-tree tomlctl anyway; the risk is covered, the stated reason is false."
+anchor_old = "checkpoint B builds glimpse against the bumped tomlctl."
+anchor_new = "glimpse path-depends on tomlctl, so every checkpoint builds it against the in-tree tomlctl; the 0.17.0 bump and its `glimpse/Cargo.lock` refresh belong to checkpoint A."
+dedup_id = "aa85d9dc53c2a28f"

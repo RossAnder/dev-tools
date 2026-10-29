@@ -821,3 +821,34 @@ scope = [
     "glimpse/README.md",
     "glimpse/CLAUDE.md",
 ]
+
+[[active]]
+slug = "giggly-conjuring-brook"
+last_used = "2026-10-29T18:19:39.081567328Z"
+
+[active.binding]
+branch = "main"
+worktree = "/home/ross/Dev/dev-tools"
+scope = [
+    "tomlctl/src/backlog/**",
+    "tomlctl/src/time.rs",
+    "tomlctl/src/inputs.rs",
+    "tomlctl/src/query.rs",
+    "tomlctl/src/convert.rs",
+    "tomlctl/src/lib.rs",
+    "tomlctl/src/ledgers.rs",
+    "tomlctl/src/cli/types/**",
+    "tomlctl/tests/**",
+    "tomlctl/README.md",
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "glimpse/Cargo.lock",
+    "glimpse/src/**",
+    "glimpse/tests/fixtures/**",
+    "glimpse/README.md",
+    "glimpse/CLAUDE.md",
+    "claude/skills/tomlctl/**",
+    "claude/skills/backlog-clear/**",
+    "claude/skills/backlog-capture/**",
+    "claude/commands/backlog.md",
+]

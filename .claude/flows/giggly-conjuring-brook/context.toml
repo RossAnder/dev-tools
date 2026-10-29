@@ -1,0 +1,41 @@
+slug = "giggly-conjuring-brook"
+plan_path = "docs/plans/giggly-conjuring-brook.md"
+status = "review"
+created = 2026-10-29
+updated = 2026-10-29
+branch = "main"
+scope = [
+    "tomlctl/src/backlog/**",
+    "tomlctl/src/time.rs",
+    "tomlctl/src/inputs.rs",
+    "tomlctl/src/query.rs",
+    "tomlctl/src/convert.rs",
+    "tomlctl/src/lib.rs",
+    "tomlctl/src/ledgers.rs",
+    "tomlctl/src/cli/types/**",
+    "tomlctl/tests/**",
+    "tomlctl/README.md",
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "glimpse/Cargo.lock",
+    "glimpse/src/**",
+    "glimpse/tests/fixtures/**",
+    "glimpse/README.md",
+    "glimpse/CLAUDE.md",
+    "claude/skills/tomlctl/**",
+    "claude/skills/backlog-clear/**",
+    "claude/skills/backlog-capture/**",
+    "claude/commands/backlog.md",
+]
+
+[tasks]
+total = 27
+completed = 27
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/giggly-conjuring-brook/review-ledger.toml"
+optimise_findings = ".claude/flows/giggly-conjuring-brook/optimise-findings.toml"
+execution_record = ".claude/flows/giggly-conjuring-brook/execution-record.toml"
+plan_review_findings = ".claude/flows/giggly-conjuring-brook/plan-review-findings.toml"
+tasks = ".claude/flows/giggly-conjuring-brook/tasks.toml"

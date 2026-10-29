@@ -1,0 +1,878 @@
+schema_version = 1
+last_updated = 2026-10-29
+
+[[items]]
+id = "E1"
+agent = "implement"
+from_status = "draft"
+to_status = "in-progress"
+summary = "status draft -> in-progress"
+type = "status-transition"
+date = 2026-10-29
+
+[[items]]
+id = "E2"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = [
+    "tomlctl/src/time.rs",
+    "tomlctl/src/inputs.rs",
+]
+summary = "Moved inputs.rs now() to time.rs as pub(crate) now_toml_datetime(); inputs.rs calls it; added time::tests::now_toml_datetime_renders_whole_second_z."
+type = "task-completion"
+task_ref = "move-the-datetime-minting-helper-into-timers"
+date = 2026-10-29
+
+[[items]]
+id = "E3"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+files = ["tomlctl/src/backlog/schema.rs"]
+summary = "Added FIELD_TIER, FIELD_FOCUS, pub TIERS, UnknownTier/InvalidFocus errors, validate rules (tier vocabulary, focus integer >= 1, no focus on resolved/dismissed), clear_for_transition drops focus on terminal targets; rewrote the module header evidence sentence; tests added."
+type = "task-completion"
+task_ref = "backlog-schema-tier-and-focus-fields"
+date = 2026-10-29
+
+[[items]]
+id = "E4"
+agent = "implement"
+retries = 0
+status = "done"
+summary = "Every query-engine datetime comparison routes through convert::cmp_datetime: a bare-date RHS compares the field's date only. Sites: eq_typed, untyped Datetime arm and json_matches_toml (via datetime_eq_str), cmp_pred ordered arm, compare_typed. Four new query::tests; falsifier observed 2 failures."
+files = [
+    "tomlctl/src/query.rs",
+    "tomlctl/src/convert.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+type = "task-completion"
+task_ref = "same-day-matching-for-a-bare-date-rhs-in-the-query-engine"
+date = 2026-10-29
+
+[[items]]
+id = "E5"
+agent = "implement"
+retries = 0
+status = "done"
+summary = "BacklogRow deserialises 13 more stored fields; ItemRow gains tier, focus, last_seen, seen_count, origin, flow. Three fixture rows (datetime created, same-day pair, tiers, gapped queue, promoted queued row) and two ledger tests added."
+files = [
+    "glimpse/src/ledger.rs",
+    "glimpse/tests/fixtures/backlog.toml",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+type = "task-completion"
+task_ref = "backlog-rows-carry-every-stored-field"
+date = 2026-10-29
+
+[[items]]
+id = "E6"
+agent = "implement"
+retries = 0
+status = "done"
+summary = "Legend KEYS folded from 38 to 32 rows, added `P  < >` row, `m  e` row now says classify or tier; P < > added to the bound-key test; new test asserts KEYS.len() <= 32."
+files = ["glimpse/src/view/legend.rs"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+type = "task-completion"
+task_ref = "fold-the-legends-key-rows-and-add-the-queue-keys"
+date = 2026-10-29
+
+[[items]]
+id = "E7"
+agent = "implement"
+summary = "Key column `J K  S-PgUp/Dn`, with `S-Home S-End` moved into the description text, in glimpse/src/view/legend.rs"
+original_intent = "Fold `J K`, `S-PgUp S-PgDn` and `S-Home S-End` into one details-panel legend row with all three keys in the key column"
+rationale = "The `samples_share_one_column` test requires the legend key column to fit in 15 cells; the full three-key label was 32 wide."
+type = "deviation"
+task_ref = "fold-the-legends-key-rows-and-add-the-queue-keys"
+date = 2026-10-29
+
+[[items]]
+id = "E8"
+agent = "implement"
+retries = 0
+status = "done"
+summary = "AddRequest carries stamp (now_toml_datetime, resolved once per call in build_request and add_many::parse_rows); build_row writes created/last_seen and bump_row writes last_seen from it; tier accepted in add payloads, focus dropped. Three new add tests (narrow check blocked by a sibling's in-flight edit.rs; deferred to the checkpoint gate)."
+files = [
+    "tomlctl/src/backlog/add.rs",
+    "tomlctl/src/backlog/add_many.rs",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+type = "task-completion"
+task_ref = "captures-stamp-created-and-last_seen-as-datetimes"
+date = 2026-10-29
+
+[[items]]
+id = "E9"
+agent = "implement"
+retries = 0
+status = "done"
+summary = "tier editable in backlog edit (Edit.tier Option<Option<String>>, ndjson null clears); refusal_for(focus) names backlog focus; store_guard backlog refusal names tier under backlog edit and backlog focus for focus; four new edit tests."
+files = [
+    "tomlctl/src/backlog/edit.rs",
+    "tomlctl/src/store_guard.rs",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+type = "task-completion"
+task_ref = "backlog-edit-sets-and-clears-tier"
+date = 2026-10-29
+scope_warning = true
+
+[[items]]
+id = "E10"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+files = ["claude/skills/tomlctl/references/query.md"]
+summary = "Added a Same-day dates paragraph and one fenced items list example to the query reference Filters section; cli::dispatch::tests (command_lint) passed."
+type = "task-completion"
+task_ref = "query-reference-same-day-date-matching"
+date = 2026-10-29
+
+[[items]]
+id = "E11"
+agent = "implement"
+type = "deviation"
+summary = 'skipped_stale uses field "id" / "status" for gone / non-live expected rows, "focus" otherwise, in tomlctl/src/backlog/focus.rs'
+original_intent = 'Report every mismatching row in skipped_stale as {id, field: "focus", expected, found}'
+rationale = 'With field "focus", a resolved expected target with no focus reads expected:null, found:null and hides the mismatch. An expected id gone from the store reports {field:"id", expected:<id>, found:null} (as triage::filter_on_status does); an expected id no longer live reports {field:"status", expected:["open","promoted"], found:<status>}. Same StaleOp::to_json shape; glimpse writer::Stale takes expected/found as Value.'
+task_ref = "focus-queue-planner-and-writer"
+date = 2026-10-29
+
+[[items]]
+id = "E12"
+agent = "implement"
+type = "task-completion"
+retries = 0
+status = "done"
+summary = "New backlog/focus.rs: FocusOp, FocusChange, pure plan(), locked conditional apply() with Abort-stale semantics via one mutate_doc_conditional, run_focus CLI entry, queue_order helper; registered pub(crate) mod focus. 19 unit tests; falsifier observed 4 failures across 4 mutations."
+files = [
+    "tomlctl/src/backlog/focus.rs",
+    "tomlctl/src/backlog/mod.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+task_ref = "focus-queue-planner-and-writer"
+date = 2026-10-29
+
+[[items]]
+id = "E13"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+files = [
+    "tomlctl/src/backlog/next.rs",
+    "tomlctl/src/backlog/mod.rs",
+]
+summary = "New backlog/next.rs: dispatch_next(tier, fill, integrity) printing a row report via print_report, and pure select() reusing focus::queue_order (position over the whole live queue, open rows only), --fill appends unranked open rows oldest-first by created (stable), --tier keeps untiered rows; mod next registered. 4 unit tests; falsifier observed 1 failure."
+type = "task-completion"
+task_ref = "backlog-next-read-verb"
+date = 2026-10-29
+
+[[items]]
+id = "E14"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = [
+    "tomlctl/src/cli/types/backlog.rs",
+    "tomlctl/src/backlog/dispatch.rs",
+    "tomlctl/src/backlog/edit.rs",
+]
+summary = 'BacklogOp::Next and BacklogOp::Focus (--at/--remove/--up/--down mutually exclusive; --up/--down take exactly one id, kind=validation), --tier/--clear-tier on Edit, BacklogTier ValueEnum with a schema-vocabulary test; dispatch arms wired; edit::dispatch takes tier. Orchestrator corrected the Focus help ("At most one" of the mode flags) and removed the interim dead_code allows in focus.rs and next.rs.'
+type = "task-completion"
+task_ref = "cli-wiring-for-next-focus-and-edit-tier"
+date = 2026-10-29
+
+[[items]]
+id = "E15"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/lib.rs",
+    "tomlctl/src/ledgers.rs",
+    "tomlctl/tests/library_facade.rs",
+]
+summary = "Library facade: backlog_set_tier (ledgers::set_backlog_tier over write_guarded, per-row CAS expect Map), backlog_focus (focus::apply with Some(expect)), backlog_focus_plan; re-exports BacklogFocus, BacklogFocusChange, BACKLOG_TIERS; restorable(Backlog) gains tier and focus; shared backlog_facade_write helper. Five library_facade tests (31/31 binary pass); falsifier observed 2 failures."
+type = "task-completion"
+task_ref = "library-facade-tier-focus-and-restore"
+date = 2026-10-29
+
+[[items]]
+id = "E16"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = [
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/README.md",
+]
+summary = "Features backlog_next, backlog_focus, backlog_tier, backlog_datetime_stamps added to FEATURES and the capabilities test mirror; backlog next/focus added to the read/write help tests; README feature list, feature table (four rows, backlog_edit row gains tier) and backlog synopsis updated. capabilities binary 69/69."
+type = "task-completion"
+task_ref = "capabilities-feature-list-and-readme"
+date = 2026-10-29
+
+[[items]]
+id = "E17"
+agent = "implement"
+type = "task-completion"
+retries = 0
+status = "done"
+summary = "New tomlctl/tests/backlog_queue.rs (9 binary tests: focus add/at/up/down/remove, next --tier --fill ordering and untiered pass-through, edit --tier/--clear-tier, datetime created and same-day --where, resolve drops/promote keeps focus, capabilities tier values); two output_options cases(). 20/20 pass; falsifier observed 1 failure."
+files = [
+    "tomlctl/tests/backlog_queue.rs",
+    "tomlctl/tests/output_options.rs",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+task_ref = "integration-tests-for-the-queue-verbs-and-datetimes"
+date = 2026-10-29
+
+[[items]]
+id = "E18"
+agent = "implement"
+type = "deviation"
+summary = 'Case is read(&["backlog","next","--fill"], Top, "id") in tomlctl/tests/output_options.rs'
+original_intent = 'Add a read(&["backlog", "next"], Top, "id") case to output_options cases()'
+rationale = "The output_options fixture has no ranked rows, so plain `backlog next` returns [] and fails the Top-shape check; `--fill` returns the fixture's open rows."
+task_ref = "integration-tests-for-the-queue-verbs-and-datetimes"
+date = 2026-10-29
+
+[[items]]
+id = "E19"
+agent = "implement"
+type = "task-completion"
+retries = 0
+status = "done"
+summary = "New claude/skills/tomlctl/references/backlog-queue.md (tier field, queue semantics, backlog next and backlog focus flag tables, output shapes, strict --where tier=T, same-day caveat for next); backlog-edit.md gains --tier/--clear-tier, the tier row key and a focus owner row; SKILL.md gains the reference, two Quick Reference rows, the feature row and tier in the edit row. cli::dispatch::tests 46/46."
+files = [
+    "claude/skills/tomlctl/references/backlog-queue.md",
+    "claude/skills/tomlctl/references/backlog-edit.md",
+    "claude/skills/tomlctl/SKILL.md",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+task_ref = "tomlctl-skill-queue-reference-edit-tier-skill-index"
+date = 2026-10-29
+
+[[items]]
+id = "E20"
+agent = "implement"
+type = "task-completion"
+retries = 0
+status = "done"
+summary = "glimpse actions.rs gains tier_form, tier_plan (classify_plan grouping over tier, null clear kept in the restore expect), focus_plan (tomlctl::backlog_focus_plan prediction, one RowUndo per changed row), NO_TIER; writer.rs gains WriteRequest::{BacklogTier, BacklogFocus} and perform arms; backlog resolve/dismiss undo restores focus. 9 new tests, 36 pass; falsifier observed 2 failures."
+files = [
+    "glimpse/src/actions.rs",
+    "glimpse/src/writer.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+task_ref = "write-requests-for-tier-and-the-queue"
+date = 2026-10-29
+
+[[items]]
+id = "E21"
+agent = "implement"
+type = "deviation"
+summary = "focus_plan(queue, op, next: &mut RequestId) -> Result<Plan, String> in glimpse/src/actions.rs"
+original_intent = "focus_plan(queue, op) -> Plan"
+rationale = "A request id is needed to number the write, as every other plan builder takes; tomlctl::backlog_focus_plan can refuse an op (re-adding a queued row, at = 0, unknown id), so the refusal is returned as an error string for the caller to flash. An empty prediction returns Ok(Plan::default()) and consumes no id."
+task_ref = "write-requests-for-tier-and-the-queue"
+date = 2026-10-29
+
+[[items]]
+id = "E22"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "glimpse/Cargo.lock",
+    "tomlctl/README.md",
+    "tomlctl/tests/capabilities.rs",
+]
+summary = "tomlctl 0.16.0 -> 0.17.0: Cargo.toml, both lockfiles (cargo tree --offline; only the tomlctl version line moved), README capabilities sample pin, capabilities_version_matches_cargo_toml assertion and message. capabilities binary 69/69; falsifier observed 1 failure on the README pin."
+type = "task-completion"
+task_ref = "bump-tomlctl-to-0170"
+date = 2026-10-29
+
+[[items]]
+id = "E23"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "glimpse/src/surface.rs",
+    "glimpse/src/cli.rs",
+]
+summary = "glimpse Backlog surface: sorts last-seen, seen-count, closed, tier, focus; groups tags, origin, flow, tier (group_key returns Cow); Newest/LastSeen tie-break on file position via (index, &ItemRow) pairs; queued live rows pinned under a focus header above every sort/group; ItemsState::queue_positions(); cli.rs arrangement error lists all eight groups. 7 new tests, 53 pass; falsifier observed 5 + 2 failures."
+type = "task-completion"
+task_ref = "backlog-sorts-groups-and-the-pinned-focus-block"
+date = 2026-10-29
+
+[[items]]
+id = "E24"
+agent = "implement"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+summary = "checkpoint A: tomlctl fmt clean"
+duration_s = 1
+type = "verification"
+task_ref = "bump-tomlctl-to-0170"
+date = 2026-10-29
+
+[[items]]
+id = "E25"
+agent = "implement"
+command = "cargo fmt --manifest-path glimpse/Cargo.toml -- --check"
+outcome = "pass"
+summary = "checkpoint A: glimpse fmt clean"
+duration_s = 0
+type = "verification"
+task_ref = "bump-tomlctl-to-0170"
+date = 2026-10-29
+
+[[items]]
+id = "E26"
+agent = "implement"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+summary = "checkpoint A: tomlctl build"
+duration_s = 11
+type = "verification"
+task_ref = "bump-tomlctl-to-0170"
+date = 2026-10-29
+
+[[items]]
+id = "E27"
+agent = "implement"
+command = "cargo build --manifest-path glimpse/Cargo.toml"
+outcome = "pass"
+summary = "checkpoint A: glimpse build"
+duration_s = 17
+type = "verification"
+task_ref = "bump-tomlctl-to-0170"
+date = 2026-10-29
+
+[[items]]
+id = "E28"
+agent = "implement"
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+summary = "checkpoint A: 2302 tests run: 2302 passed, 1 skipped"
+duration_s = 15
+type = "verification"
+task_ref = "bump-tomlctl-to-0170"
+date = 2026-10-29
+
+[[items]]
+id = "E29"
+agent = "implement"
+command = "cargo test --manifest-path glimpse/Cargo.toml --no-fail-fast"
+outcome = "pass"
+summary = "checkpoint A: 639 passed; 0 failed"
+duration_s = 2
+type = "verification"
+task_ref = "bump-tomlctl-to-0170"
+date = 2026-10-29
+
+[[items]]
+id = "E30"
+agent = "implement"
+command = "cargo clippy --manifest-path glimpse/Cargo.toml --locked"
+outcome = "pass"
+summary = "checkpoint A: glimpse clippy --locked clean"
+duration_s = 2
+type = "verification"
+task_ref = "bump-tomlctl-to-0170"
+date = 2026-10-29
+
+[[items]]
+id = "E31"
+agent = "implement"
+kind = "commit-train"
+commits = [
+    "22050fe",
+    "bba13de",
+    "652144b",
+    "c856af4",
+    "41b6055",
+    "5d0eea0",
+    "eec6065",
+    "6c5b4d0",
+    "7baff2d",
+    "699282a",
+    "660656a",
+    "0fc621e",
+    "ae61d56",
+    "28ce97c",
+    "0b04d55",
+]
+summary = "22050fe: move-the-datetime-minting-helper-into-timers; bba13de: same-day-matching-for-a-bare-date-rhs-in-the-query-engine; 652144b: backlog-schema-tier-and-focus-fields; c856af4: backlog-rows-carry-every-stored-field; 41b6055: fold-the-legends-key-rows-and-add-the-queue-keys; 5d0eea0: captures-stamp-created-and-last_seen-as-datetimes; eec6065: focus-queue-planner-and-writer, backlog-next-read-verb; 6c5b4d0: query-reference-same-day-date-matching; 7baff2d: backlog-edit-sets-and-clears-tier, cli-wiring-for-next-focus-and-edit-tier; 699282a: library-facade-tier-focus-and-restore; 660656a: capabilities-feature-list-and-readme, bump-tomlctl-to-0170; 0fc621e: integration-tests-for-the-queue-verbs-and-datetimes; ae61d56: backlog-sorts-groups-and-the-pinned-focus-block; 28ce97c: write-requests-for-tier-and-the-queue; 0b04d55: tomlctl-skill-queue-reference-edit-tier-skill-index"
+type = "checkpoint"
+task_ref = "bump-tomlctl-to-0170"
+date = 2026-10-29
+
+[[items]]
+id = "E32"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+files = ["claude/skills/backlog-clear/SKILL.md"]
+summary = "backlog-clear Step 0 runs tomlctl backlog next --tier lite --fill (stop below 0.17); Step 1 takes every tier=lite row regardless of kind and applies the debt|annoyance default only to untiered rows; Step 2 compares the date part of a datetime created. cli::dispatch::tests 46/46."
+type = "task-completion"
+task_ref = "backlog-clear-picks-from-backlog-next"
+date = 2026-10-29
+
+[[items]]
+id = "E33"
+agent = "implement"
+retries = 0
+status = "done"
+summary = "backlog.md Store shape table gains a tier, focus row linking backlog-queue.md (reopen_rationale folded into the resolved row to hold 600 lines); backlog-recipes.md lists tier among backlog edit's fields. cli::dispatch::tests 46/46."
+files = [
+    "claude/skills/tomlctl/references/backlog.md",
+    "claude/skills/tomlctl/references/backlog-recipes.md",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+type = "task-completion"
+task_ref = "backlog-store-shape-row-and-recipe-field-list"
+date = 2026-10-29
+
+[[items]]
+id = "E34"
+agent = "implement"
+retries = 0
+status = "done"
+summary = "backlog-capture vocabularies gain tier, focus and UTC datetime created/last_seen; Who writes covers tiering and queueing in glimpse. /backlog Step 0 floor 0.17; Step 2 offers set a tier and queue it as interactive-only dispositions with fenced examples. cli::dispatch::tests 46/46."
+files = [
+    "claude/skills/backlog-capture/SKILL.md",
+    "claude/commands/backlog.md",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+type = "task-completion"
+task_ref = "backlog-capture-and-backlog-tier-queue-datetimes"
+date = 2026-10-29
+
+[[items]]
+id = "E35"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = ["glimpse/src/view/details.rs"]
+summary = "glimpse backlog details render tier, queue position (#k of N), last seen, seen count, origin, flow, base sha, related, duplicate of, supersedes, resolved flow/tasks/commits, then every other non-empty raw key; item_content takes backlog and queue parameters so other ledgers are unchanged. New test backlog_details_render_every_field; 14 details tests pass."
+type = "task-completion"
+task_ref = "details-show-every-backlog-field"
+date = 2026-10-29
+
+[[items]]
+id = "E36"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = [
+    "glimpse/src/config.rs",
+    "glimpse/src/view/items.rs",
+    "glimpse/src/surface.rs",
+]
+summary = "ItemColumn::Tier and ItemColumn::Rank (in ALL and the default list; rank cell #k from queue_positions); Columns::measure widens every non-empty column to its title width; column_sort maps Tier to Sort::Tier and Rank to Sort::Focus; queue_positions dead_code allow removed. New test column_width_counts_the_title (falsifier observed 1 failure); three items tests updated for the wider columns; 72 pass."
+type = "task-completion"
+task_ref = "tier-and-rank-columns-titles-count-toward-column-width"
+date = 2026-10-29
+
+[[items]]
+id = "E37"
+agent = "implement"
+type = "task-completion"
+retries = 0
+status = "done"
+summary = "P / < / > bound to ToggleQueue / QueueUp / QueueDown (Backlog only); Purpose::Tier(Selection) with its App::submitted arm; e on Backlog opens tier_form and submits tier_plan; queue keys run focus_plan over every live row's (id, focus), mark the predicted changed ids saving, dispatch nothing on an empty prediction, keep the cursor on the moved row; footer shows e tier and P queue on Backlog. 128 tests pass; falsifier observed 3 + 2 failures."
+files = [
+    "glimpse/src/keys.rs",
+    "glimpse/src/app.rs",
+    "glimpse/src/actions.rs",
+    "glimpse/src/view/footer.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+task_ref = "keys-and-app-actions-e-tier-p"
+date = 2026-10-29
+
+[[items]]
+id = "E38"
+agent = "implement"
+type = "deviation"
+summary = "Minted a task to open the tier form select with .opened() in glimpse/src/actions.rs"
+original_intent = "plan carries no task for opening the tier form's select straight away"
+rationale = "Task 18's agent found tier_form builds its lone select closed, so e on Backlog needs an extra Enter, unlike the action menu's .opened() select. Cheap, inside a file this run already touched, and covered by the glimpse suite, so minted as a same-run task in checkpoint B."
+task_ref = "keys-and-app-actions-e-tier-p"
+date = 2026-10-29
+
+[[items]]
+id = "E39"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+files = ["CLAUDE.md"]
+summary = 'Root CLAUDE.md Backlog capture: the human triages in glimpse (dismiss, reopen, resolve, set a pickup tier, queue and reorder rows for "do next").'
+type = "task-completion"
+task_ref = "glimpse-backlog-writes-in-the-root-claudemd"
+date = 2026-10-29
+scope_warning = true
+
+[[items]]
+id = "E40"
+agent = "implement"
+summary = "Widened the task's files to glimpse/src/actions.rs, glimpse/src/app.rs"
+original_intent = "Files line for open-the-tier-forms-select-straight-away omits glimpse/src/app.rs"
+rationale = 'With the tier select opened, app::tests::e_on_the_backlog_opens_the_tier_form_and_writes_the_pick fails ("an overlay is open for Up") because it still presses the Enter that used to open the select; the test needs one fewer Enter.'
+type = "deviation"
+task_ref = "open-the-tier-forms-select-straight-away"
+date = 2026-10-29
+
+[[items]]
+id = "E41"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+files = [
+    "glimpse/README.md",
+    "glimpse/CLAUDE.md",
+]
+summary = "glimpse README documents e tier, P / < / > queue keys, the new Backlog sorts and groups, the pinned focus block, the tier and rank columns (and that a saved item_columns hides them until C adds them), and names tier and focus as glimpse-written control fields; glimpse CLAUDE.md write model and Control fields gotcha name backlog tier and focus. README at 599 lines."
+type = "task-completion"
+task_ref = "glimpse-readme-and-claudemd"
+date = 2026-10-29
+
+[[items]]
+id = "E42"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+files = [
+    "glimpse/src/actions.rs",
+    "glimpse/src/app.rs",
+]
+summary = "tier_form builds its select with .opened(), so e on Backlog shows the tier list at once; actions test asserts the select starts open; the app tier-form test drops the Enter that used to open it. Files widened to app.rs after a cross-cut. actions:: app:: 95 pass; falsifier observed 2 failures."
+type = "task-completion"
+task_ref = "open-the-tier-forms-select-straight-away"
+date = 2026-10-29
+
+[[items]]
+id = "E43"
+agent = "implement"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+summary = "final: tomlctl build"
+duration_s = 11
+type = "verification"
+task_ref = "open-the-tier-forms-select-straight-away"
+date = 2026-10-29
+
+[[items]]
+id = "E44"
+agent = "implement"
+command = "cargo build --manifest-path glimpse/Cargo.toml"
+outcome = "pass"
+summary = "final: glimpse build"
+duration_s = 33
+type = "verification"
+task_ref = "open-the-tier-forms-select-straight-away"
+date = 2026-10-29
+
+[[items]]
+id = "E45"
+agent = "implement"
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+summary = "final: 2302 tests run: 2302 passed, 1 skipped"
+duration_s = 27
+type = "verification"
+task_ref = "open-the-tier-forms-select-straight-away"
+date = 2026-10-29
+
+[[items]]
+id = "E46"
+agent = "implement"
+command = "cargo test --manifest-path glimpse/Cargo.toml --no-fail-fast"
+outcome = "pass"
+summary = "final: 646 passed; 0 failed"
+duration_s = 8
+type = "verification"
+task_ref = "open-the-tier-forms-select-straight-away"
+date = 2026-10-29
+
+[[items]]
+id = "E47"
+agent = "implement"
+command = '''test "$(grep -c 'FIELD_TIER\|FIELD_FOCUS' tomlctl/src/backlog/schema.rs)" -ge 2'''
+outcome = "pass"
+summary = "success criterion: schema fields"
+duration_s = 0
+type = "verification"
+task_ref = "open-the-tier-forms-select-straight-away"
+date = 2026-10-29
+
+[[items]]
+id = "E48"
+agent = "implement"
+command = '''test "$(grep -c 'Next {\|Focus {' tomlctl/src/cli/types/backlog.rs)" -eq 2'''
+outcome = "pass"
+summary = "success criterion: CLI verbs"
+duration_s = 0
+type = "verification"
+task_ref = "open-the-tier-forms-select-straight-away"
+date = 2026-10-29
+
+[[items]]
+id = "E49"
+agent = "implement"
+command = '''test "$(grep -c 'pub fn backlog_set_tier\|pub fn backlog_focus(' tomlctl/src/lib.rs)" -ge 2'''
+outcome = "pass"
+summary = "success criterion: facade fns"
+duration_s = 0
+type = "verification"
+task_ref = "open-the-tier-forms-select-straight-away"
+date = 2026-10-29
+
+[[items]]
+id = "E50"
+agent = "implement"
+command = '''test "$(grep -c 'Sort::Focus\|Group::Tier' glimpse/src/surface.rs)" -ge 2'''
+outcome = "pass"
+summary = "success criterion: glimpse sort/group"
+duration_s = 0
+type = "verification"
+task_ref = "open-the-tier-forms-select-straight-away"
+date = 2026-10-29
+
+[[items]]
+id = "E51"
+agent = "implement"
+command = "grep -q 'backlog next' claude/skills/backlog-clear/SKILL.md"
+outcome = "pass"
+summary = "success criterion: backlog-clear uses next"
+duration_s = 0
+type = "verification"
+task_ref = "open-the-tier-forms-select-straight-away"
+date = 2026-10-29
+
+[[items]]
+id = "E52"
+agent = "implement"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+outcome = "pass"
+summary = "success criterion: 46 passed; 0 failed"
+duration_s = 1
+type = "verification"
+task_ref = "open-the-tier-forms-select-straight-away"
+date = 2026-10-29
+
+[[items]]
+id = "E53"
+agent = "implement"
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(backlog_queue)'"
+outcome = "pass"
+summary = "success criterion: 9 tests run: 9 passed"
+duration_s = 0
+type = "verification"
+task_ref = "open-the-tier-forms-select-straight-away"
+date = 2026-10-29
+
+[[items]]
+id = "E54"
+agent = "implement"
+command = "cargo test --manifest-path glimpse/Cargo.toml -- newest_breaks_same_day_ties_by_file_position backlog_details_render_every_field 2>&1 | grep -q 'test result: ok. 2 passed'"
+outcome = "pass"
+summary = "success criterion: glimpse goals, 2 passed"
+duration_s = 0
+type = "verification"
+task_ref = "open-the-tier-forms-select-straight-away"
+date = 2026-10-29
+
+[[items]]
+id = "E55"
+agent = "implement"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+summary = "final: exit 0, one cloned_ref_to_slice_refs warning in tests/backlog_queue.rs (fixed after)"
+duration_s = 8
+type = "verification"
+task_ref = "open-the-tier-forms-select-straight-away"
+date = 2026-10-29
+
+[[items]]
+id = "E56"
+agent = "implement"
+command = "cargo clippy --manifest-path glimpse/Cargo.toml --all-targets"
+outcome = "pass"
+summary = "final: exit 0, pre-existing unused Event::Appearance warning"
+duration_s = 8
+type = "verification"
+task_ref = "open-the-tier-forms-select-straight-away"
+date = 2026-10-29
+
+[[items]]
+id = "E57"
+agent = "implement"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+summary = "final: tomlctl fmt clean"
+duration_s = 1
+type = "verification"
+task_ref = "open-the-tier-forms-select-straight-away"
+date = 2026-10-29
+
+[[items]]
+id = "E58"
+agent = "implement"
+command = "cargo fmt --manifest-path glimpse/Cargo.toml -- --check"
+outcome = "pass"
+summary = "final: glimpse fmt clean"
+duration_s = 1
+type = "verification"
+task_ref = "open-the-tier-forms-select-straight-away"
+date = 2026-10-29
+
+[[items]]
+id = "E59"
+agent = "implement"
+command = "cargo clippy --manifest-path glimpse/Cargo.toml --locked"
+outcome = "pass"
+summary = "final: glimpse clippy --locked"
+duration_s = 0
+type = "verification"
+task_ref = "open-the-tier-forms-select-straight-away"
+date = 2026-10-29
+
+[[items]]
+id = "E60"
+agent = "implement"
+command = "cargo audit --file tomlctl/Cargo.lock"
+outcome = "pass"
+summary = "final: 85 dependencies, no advisories"
+duration_s = 2
+type = "verification"
+task_ref = "open-the-tier-forms-select-straight-away"
+date = 2026-10-29
+
+[[items]]
+id = "E61"
+agent = "implement"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+summary = "re-run after the backlog_queue slice fix: no warning in tests/backlog_queue.rs"
+duration_s = 10
+supersedes_entry = "E55"
+type = "verification"
+task_ref = "integration-tests-for-the-queue-verbs-and-datetimes"
+date = 2026-10-29
+
+[[items]]
+id = "E62"
+agent = "implement"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+summary = "re-run after cargo fmt on the backlog_queue fix: clean"
+duration_s = 2
+supersedes_entry = "E57"
+type = "verification"
+task_ref = "integration-tests-for-the-queue-verbs-and-datetimes"
+date = 2026-10-29
+
+[[items]]
+id = "E63"
+agent = "implement"
+kind = "commit-train"
+commits = [
+    "652a072",
+    "fceb378",
+    "a78a6e3",
+    "67b00e5",
+    "0f03e8b",
+    "0a38e1b",
+    "6764177",
+    "3728269",
+    "2b2a36f",
+]
+summary = "652a072: details-show-every-backlog-field; fceb378: tier-and-rank-columns-titles-count-toward-column-width; a78a6e3: keys-and-app-actions-e-tier-p, open-the-tier-forms-select-straight-away; 67b00e5: backlog-clear-picks-from-backlog-next; 0f03e8b: backlog-capture-and-backlog-tier-queue-datetimes; 0a38e1b: backlog-store-shape-row-and-recipe-field-list; 6764177: glimpse-readme-and-claudemd; 3728269: glimpse-backlog-writes-in-the-root-claudemd; 2b2a36f: clippy slice fix in tests/backlog_queue.rs (integration-tests-for-the-queue-verbs-and-datetimes, outside the train)"
+type = "checkpoint"
+task_ref = "open-the-tier-forms-select-straight-away"
+date = 2026-10-29
+
+[[items]]
+id = "E64"
+agent = "plan-update"
+from_status = "in-progress"
+to_status = "review"
+summary = "status in-progress -> review: all 27 tasks done"
+type = "status-transition"
+date = 2026-10-29

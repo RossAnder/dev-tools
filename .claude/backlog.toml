@@ -7121,7 +7121,7 @@ kind = "debt"
 summary = "backlog/schema.rs module header says the store carries no evidence field, but FIELD_EVIDENCE exists and backlog edit writes evidence"
 area = "tomlctl/src/backlog"
 tags = ["docs"]
-status = "open"
+status = "resolved"
 created = 2026-10-21
 last_seen = 2026-10-21
 seen_count = 1
@@ -7131,6 +7131,13 @@ flow = "federated-beaming-hollerith"
 context = "The module doc on backlog/schema.rs predates the evidence field; backlog edit (backlog/edit.rs) now writes evidence as a string array. Trust FIELD_EVIDENCE and edit.rs over the header; the fix is a header rewrite in schema.rs. Arrived cheap-in-file but the run never touched schema.rs."
 base_sha = "7fd4accaf0c55e657a404d4ec02036f0f9d19988"
 evidence = ["tomlctl/src/backlog/schema.rs:14"]
+promoted = 2026-10-29
+promoted_to = "giggly-conjuring-brook"
+resolved = 2026-10-29
+resolution = "resolved by flow `giggly-conjuring-brook` (tasks backlog-schema-tier-and-focus-fields)"
+resolved_flow = "giggly-conjuring-brook"
+resolved_tasks = ["backlog-schema-tier-and-focus-fields"]
+resolved_commits = ["652144b"]
 
 [[backlog]]
 id = "B-62578e1d"
@@ -7337,7 +7344,7 @@ tags = [
     "glimpse",
     "tables",
 ]
-status = "open"
+status = "resolved"
 created = 2026-10-21
 last_seen = 2026-10-21
 seen_count = 1
@@ -7348,6 +7355,13 @@ context = "Columns are measured from row content only. Measuring titles too wide
 base_sha = "480fedbb746f1504b46dd1e231488b89280c7aad"
 evidence = ["glimpse/src/view/items.rs"]
 related = ["B-5e571ecd"]
+promoted = 2026-10-29
+promoted_to = "giggly-conjuring-brook"
+resolved = 2026-10-29
+resolution = "resolved by flow `giggly-conjuring-brook` (tasks tier-and-rank-columns-titles-count-toward-column-width)"
+resolved_flow = "giggly-conjuring-brook"
+resolved_tasks = ["tier-and-rank-columns-titles-count-toward-column-width"]
+resolved_commits = ["fceb378"]
 
 [[backlog]]
 id = "B-be2797ef"
@@ -7358,7 +7372,7 @@ tags = [
     "glimpse",
     "legend",
 ]
-status = "open"
+status = "resolved"
 created = 2026-10-21
 last_seen = 2026-10-21
 seen_count = 1
@@ -7369,6 +7383,13 @@ context = "The legend scrolls (PgUp/PgDn), so nothing is unreachable, but every 
 base_sha = "480fedbb746f1504b46dd1e231488b89280c7aad"
 evidence = ["glimpse/src/view/legend.rs"]
 related = ["B-20481746"]
+promoted = 2026-10-29
+promoted_to = "giggly-conjuring-brook"
+resolved = 2026-10-29
+resolution = "resolved by flow `giggly-conjuring-brook` (tasks fold-the-legends-key-rows-and-add-the-queue-keys)"
+resolved_flow = "giggly-conjuring-brook"
+resolved_tasks = ["fold-the-legends-key-rows-and-add-the-queue-keys"]
+resolved_commits = ["41b6055"]
 
 [[backlog]]
 id = "B-7ffd9652"
@@ -7402,7 +7423,7 @@ tags = [
     "tomlctl",
     "glimpse",
 ]
-status = "open"
+status = "resolved"
 created = 2026-10-29
 last_seen = 2026-10-29
 seen_count = 1
@@ -7422,3 +7443,80 @@ related = [
     "B-00b994ba",
     "B-be2797ef",
 ]
+promoted = 2026-10-29
+promoted_to = "giggly-conjuring-brook"
+resolved = 2026-10-29
+resolution = "resolved by flow `giggly-conjuring-brook` (tasks integration-tests-for-the-queue-verbs-and-datetimes, glimpse-readme-and-claudemd, backlog-clear-picks-from-backlog-next, backlog-capture-and-backlog-tier-queue-datetimes)"
+resolved_flow = "giggly-conjuring-brook"
+resolved_tasks = [
+    "integration-tests-for-the-queue-verbs-and-datetimes",
+    "glimpse-readme-and-claudemd",
+    "backlog-clear-picks-from-backlog-next",
+    "backlog-capture-and-backlog-tier-queue-datetimes",
+]
+resolved_commits = [
+    "0fc621e",
+    "6764177",
+    "67b00e5",
+    "0f03e8b",
+]
+
+[[backlog]]
+id = "B-8d86ceb4"
+kind = "question"
+summary = "glimpse Backlog pinned focus header label can coincide with a real group named focus, showing two focus headers"
+area = "glimpse/src/surface.rs"
+tags = [
+    "glimpse",
+    "backlog",
+]
+status = "open"
+created = 2026-10-29
+last_seen = 2026-10-29
+seen_count = 1
+dedup_id = "8d86ceb43b1e50f5"
+origin = "implement"
+flow = "giggly-conjuring-brook"
+context = "visible() emits a Header labelled focus for the pinned queue block; with grouping on, a tag, origin or flow group literally named focus draws a second, unrelated focus header. Decide whether the pin header needs a distinct label or glyph. Probably acceptable as is."
+base_sha = "2b2a36f78d211d0869379788494c8d7cc9d14a9a"
+related = ["B-fa9da685"]
+
+[[backlog]]
+id = "B-a0ce71a9"
+kind = "debt"
+summary = "glimpse live-queue rule (open or promoted with a focus) is written twice: App::backlog_queue repeats surface.rs's private queue_rank"
+area = "glimpse/src"
+tags = [
+    "glimpse",
+    "backlog",
+]
+status = "open"
+created = 2026-10-29
+last_seen = 2026-10-29
+seen_count = 1
+dedup_id = "a0ce71a962251c4d"
+origin = "implement"
+flow = "giggly-conjuring-brook"
+context = "App::backlog_queue (app.rs) picks the rows sent as the focus expect by checking status is open or promoted, the same rule queue_rank in surface.rs applies for the pin and positions. If one changes alone, glimpse sends an expect that differs from what it displays and every queue write comes back stale. Expose one helper from surface.rs (or use tomlctl's own liveness rule) and call it from both."
+base_sha = "2b2a36f78d211d0869379788494c8d7cc9d14a9a"
+related = ["B-fa9da685"]
+
+[[backlog]]
+id = "B-1f1084a3"
+kind = "debt"
+summary = "glimpse README no longer says resolving or dismissing a backlog row drops its focus rank and undo restores it"
+area = "glimpse/README.md"
+tags = [
+    "glimpse",
+    "docs",
+]
+status = "open"
+created = 2026-10-29
+last_seen = 2026-10-29
+seen_count = 1
+dedup_id = "1f1084a3f2ff2b33"
+origin = "implement"
+flow = "giggly-conjuring-brook"
+context = "The sentence was cut to keep README.md under its 600-line ceiling. Behaviour: tomlctl's clear_for_transition drops focus on resolve/dismiss, and glimpse's transition undo lists focus among its touched fields so u puts the rank back. Restore it by trading another line."
+base_sha = "2b2a36f78d211d0869379788494c8d7cc9d14a9a"
+related = ["B-fa9da685"]
