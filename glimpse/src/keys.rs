@@ -84,6 +84,9 @@ pub(crate) fn map(event: KeyEvent) -> Option<Action> {
         KeyCode::Char('c') => Action::ToggleClosed,
         KeyCode::Char('m') => Action::OpenMenu,
         KeyCode::Char('e') => Action::OpenClassify,
+        KeyCode::Char('P') => Action::ToggleQueue,
+        KeyCode::Char('<') => Action::QueueUp,
+        KeyCode::Char('>') => Action::QueueDown,
         KeyCode::Char('u') => Action::Undo,
         KeyCode::Char('/') => Action::OpenFilter,
         KeyCode::Char('n') => Action::OpenCapture,
@@ -264,6 +267,17 @@ mod tests {
         let repeat =
             KeyEvent::new_with_kind(KeyCode::Char('j'), KeyModifiers::NONE, KeyEventKind::Repeat);
         assert_eq!(map(repeat), Some(Action::Move(Dir::Down)));
+    }
+
+    #[test]
+    fn queue_keys_map_and_b_stays_free() {
+        assert_eq!(map(press(KeyCode::Char('P'))), Some(Action::ToggleQueue));
+        assert_eq!(map(press(KeyCode::Char('<'))), Some(Action::QueueUp));
+        assert_eq!(map(press(KeyCode::Char('>'))), Some(Action::QueueDown));
+        // Some terminals set SHIFT on these; the character alone decides.
+        let shifted = KeyEvent::new(KeyCode::Char('>'), KeyModifiers::SHIFT);
+        assert_eq!(map(shifted), Some(Action::QueueDown));
+        assert_eq!(map(press(KeyCode::Char('b'))), None);
     }
 
     #[test]

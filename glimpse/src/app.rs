@@ -11,7 +11,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 use ratatui::crossterm::event::{Event as TermEvent, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::layout::Rect;
-use tomlctl::{LedgerKind, LedgerRef};
+use tomlctl::{BacklogFocus, LedgerKind, LedgerRef};
 use tui_input::Input;
 use tui_input::backend::crossterm::EventHandler;
 
@@ -220,8 +220,16 @@ pub(crate) enum Action {
     ToggleClosed,
     /// Opens the status moves offered for the marks, else the cursor row.
     OpenMenu,
-    /// Opens the severity, effort and category form; review and optimise only.
+    /// Opens the severity, effort and category form on review and optimise, and the tier
+    /// form on the backlog.
     OpenClassify,
+    /// Backlog only: takes the marks, else the cursor row, out of the focus queue when all
+    /// are queued, else adds the unqueued ones at its bottom.
+    ToggleQueue,
+    /// Backlog only: swaps the cursor row with its neighbour above in the focus queue.
+    QueueUp,
+    /// Backlog only: swaps the cursor row with its neighbour below in the focus queue.
+    QueueDown,
     /// Opens the form that captures a new backlog item as an input record.
     OpenCapture,
     /// Opens a request or note on the marks, else the cursor row; item surfaces only.
@@ -1032,15 +1040,34 @@ impl App {
                 None
             }
             Action::OpenClassify => {
-                if matches!(self.surface, Surface::Review | Surface::Optimise)
+                let backlog = self.surface == Surface::Backlog;
+                if (backlog || matches!(self.surface, Surface::Review | Surface::Optimise))
                     && let Some(selection) = self.selection()
                 {
-                    let form = actions::classify_form(&selection);
-                    self.overlay = Some(Overlay::Form {
-                        purpose: Purpose::Classify(selection),
-                        form,
+                    self.overlay = Some(if backlog {
+                        Overlay::Form {
+                            form: actions::tier_form(&selection),
+                            purpose: Purpose::Tier(selection),
+                        }
+                    } else {
+                        Overlay::Form {
+                            form: actions::classify_form(&selection),
+                            purpose: Purpose::Classify(selection),
+                        }
                     });
                 }
+                None
+            }
+            Action::ToggleQueue => {
+                self.toggle_queue();
+                None
+            }
+            Action::QueueUp => {
+                self.move_in_queue(true);
+                None
+            }
+            Action::QueueDown => {
+                self.move_in_queue(false);
                 None
             }
             Action::OpenCapture => {
@@ -1366,14 +1393,21 @@ impl App {
     /// The current item surface's targets as an action sees them, or `None` with a notice
     /// when nothing there can be written.
     fn selection(&mut self) -> Option<Selection> {
+        let targets = self.current_items()?.targets();
+        self.selection_of(&targets)
+    }
+
+    /// [`App::selection`] over the cursor row alone, ignoring the marks.
+    fn cursor_selection(&mut self) -> Option<Selection> {
+        let cursor = self.current_items()?.cursor.clone();
+        self.selection_of(cursor.as_slice())
+    }
+
+    fn selection_of(&mut self, ids: &[String]) -> Option<Selection> {
         let surface = self.surface;
         let kind = surface.ledger_kind()?;
         let state = self.items.get(&surface)?;
-        let rows: Vec<ItemRow> = state
-            .targets()
-            .iter()
-            .filter_map(|id| state.row(id).cloned())
-            .collect();
+        let rows: Vec<ItemRow> = ids.iter().filter_map(|id| state.row(id).cloned()).collect();
         let refusal = if rows.is_empty() {
             Some("nothing selected".to_owned())
         } else {
@@ -1470,11 +1504,12 @@ impl App {
             Purpose::Classify(selection) => {
                 let plan =
                     actions::classify_plan(&selection, values, &mut self.writes.next_request);
-                if plan.requests.is_empty() {
-                    self.notify("nothing to change".to_owned());
-                } else {
-                    self.dispatch(&selection, plan);
-                }
+                self.dispatch_unless_empty(&selection, plan);
+                None
+            }
+            Purpose::Tier(selection) => {
+                let plan = actions::tier_plan(&selection, values, &mut self.writes.next_request);
+                self.dispatch_unless_empty(&selection, plan);
                 None
             }
             Purpose::Columns => {
@@ -1506,6 +1541,86 @@ impl App {
             inbox: &mut self.inbox,
         };
         self.writes.dispatch(saving, selection, plan);
+    }
+
+    fn dispatch_unless_empty(&mut self, selection: &Selection, plan: Plan) {
+        if plan.requests.is_empty() {
+            self.notify("nothing to change".to_owned());
+        } else {
+            self.dispatch(selection, plan);
+        }
+    }
+
+    /// Every live backlog row's `(id, focus)`, the queue a write is planned over and guarded on.
+    fn backlog_queue(&self) -> Vec<(String, Option<i64>)> {
+        self.items
+            .get(&Surface::Backlog)
+            .map(|state| {
+                state
+                    .rows
+                    .iter()
+                    .filter(|r| matches!(r.status.as_str(), "open" | "promoted"))
+                    .map(|r| (r.id.clone(), r.focus))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Plans `op` over the displayed queue and dispatches it; a planner refusal shows as a
+    /// notice and a predicted no-op dispatches nothing.
+    fn dispatch_focus(&mut self, selection: &Selection, op: BacklogFocus, unchanged: &str) {
+        let queue = self.backlog_queue();
+        match actions::focus_plan(&queue, op, &mut self.writes.next_request) {
+            Ok(plan) if plan.requests.is_empty() => self.notify(unchanged.to_owned()),
+            Ok(plan) => self.dispatch(selection, plan),
+            Err(error) => self.notify_for(error, ERROR_NOTICE),
+        }
+    }
+
+    /// Removes the targets from the queue when every one is queued, else adds the live
+    /// unqueued ones at its bottom in target order.
+    fn toggle_queue(&mut self) {
+        if self.surface != Surface::Backlog {
+            return;
+        }
+        let Some(selection) = self.selection() else {
+            return;
+        };
+        let queued: HashMap<String, Option<i64>> = self.backlog_queue().into_iter().collect();
+        let in_queue = |id: &String| queued.get(id).is_some_and(Option::is_some);
+        let op = if selection.rows.iter().all(|r| in_queue(&r.id)) {
+            BacklogFocus::Remove {
+                ids: selection.rows.iter().map(|r| r.id.clone()).collect(),
+            }
+        } else {
+            let ids: Vec<String> = selection
+                .rows
+                .iter()
+                .filter(|r| queued.get(&r.id) == Some(&None))
+                .map(|r| r.id.clone())
+                .collect();
+            if ids.is_empty() {
+                self.notify("only open or promoted rows can be queued".to_owned());
+                return;
+            }
+            BacklogFocus::Add { ids, at: None }
+        };
+        self.dispatch_focus(&selection, op, "nothing to change");
+    }
+
+    /// Swaps the cursor row with its queue neighbour above (`up`) or below. The cursor
+    /// follows the row by id, so it stays on it once the write lands.
+    fn move_in_queue(&mut self, up: bool) {
+        if self.surface != Surface::Backlog {
+            return;
+        }
+        let Some(selection) = self.cursor_selection() else {
+            return;
+        };
+        let id = selection.rows[0].id.clone();
+        let end = if up { "first" } else { "last" };
+        let unchanged = format!("{id} is already {end} in the queue");
+        self.dispatch_focus(&selection, BacklogFocus::Move { id, up }, &unchanged);
     }
 
     /// Undoes the newest write; see [`Writes::undo_last`].
@@ -3715,6 +3830,170 @@ mod tests {
         app.apply(Action::SwitchSurface(Surface::Tasks));
         app.apply(Action::OpenRequest);
         assert!(app.overlay.is_none(), "Tasks has no rows to target");
+    }
+
+    /// A backlog surface on screen over `rows` of `(id, status, focus)`.
+    fn backlog_app(rows: &[(&str, &str, Option<i64>)]) -> App {
+        let mut app = app();
+        app.apply_ledger(backlog_read(rows, "v1"), Instant::now());
+        app.apply(Action::SwitchSurface(Surface::Backlog));
+        app
+    }
+
+    fn backlog_read(rows: &[(&str, &str, Option<i64>)], revision: &str) -> Ledger {
+        let rows = rows
+            .iter()
+            .map(|&(id, status, focus)| {
+                let mut raw = serde_json::json!({"id": id, "status": status});
+                if let Some(focus) = focus {
+                    raw["focus"] = focus.into();
+                }
+                ItemRow {
+                    id: id.to_string(),
+                    status: status.to_string(),
+                    class: StatusClass::of(status),
+                    focus,
+                    raw,
+                    ..ItemRow::default()
+                }
+            })
+            .collect();
+        Ledger {
+            kind: Kind::Backlog,
+            source: LedgerRef::Backlog,
+            revision: Some(revision.to_string()),
+            rows,
+        }
+    }
+
+    fn queue_rows() -> [(&'static str, &'static str, Option<i64>); 4] {
+        [
+            ("B-1", "open", Some(1)),
+            ("B-2", "open", Some(2)),
+            ("B-3", "open", None),
+            ("B-4", "promoted", None),
+        ]
+    }
+
+    type FocusWrite = (BacklogFocus, Vec<(String, Option<i64>)>);
+
+    fn focus_writes(app: &mut App) -> Vec<FocusWrite> {
+        app.take_writes()
+            .into_iter()
+            .map(|write| match write {
+                WriteRequest::BacklogFocus { op, expect, .. } => (op, expect),
+                other => panic!("expected a focus write, got {other:?}"),
+            })
+            .collect()
+    }
+
+    fn set_cursor(app: &mut App, id: &str) {
+        app.items.get_mut(&Surface::Backlog).unwrap().cursor = Some(id.to_string());
+    }
+
+    #[test]
+    fn e_on_the_backlog_opens_the_tier_form_and_writes_the_pick() {
+        let mut app = backlog_app(&[("B-1", "open", None), ("B-2", "open", None)]);
+        mark(&mut app, Surface::Backlog, &["B-1", "B-2"]);
+        app.apply(Action::OpenClassify);
+        assert!(
+            matches!(&app.overlay, Some(Overlay::Form { purpose: Purpose::Tier(s), .. }) if s.rows.len() == 2),
+            "expected the tier form, got {:?}",
+            app.overlay
+        );
+        key(&mut app, KeyCode::Up);
+        key(&mut app, KeyCode::Enter);
+        assert!(app.overlay.is_none(), "submitting closes the form");
+        let writes = app.take_writes();
+        let [
+            WriteRequest::BacklogTier {
+                ids, tier, expect, ..
+            },
+        ] = writes.as_slice()
+        else {
+            panic!("expected one tier write, got {writes:?}");
+        };
+        assert_eq!(ids, &vec!["B-1".to_string(), "B-2".to_string()]);
+        assert_eq!(tier.as_deref(), Some("human"));
+        assert_eq!(expect["tier"], serde_json::Value::Null);
+        assert_eq!(saving(&app), vec!["B-1", "B-2"]);
+    }
+
+    #[test]
+    fn queue_toggle_adds_only_the_unqueued_targets() {
+        let mut app = backlog_app(&queue_rows());
+        mark(&mut app, Surface::Backlog, &["B-1", "B-3", "B-4"]);
+        app.apply(Action::ToggleQueue);
+        let writes = focus_writes(&mut app);
+        let [(op, expect)] = writes.as_slice() else {
+            panic!("expected one focus write, got {writes:?}");
+        };
+        assert_eq!(
+            op,
+            &BacklogFocus::Add {
+                ids: vec!["B-3".to_string(), "B-4".to_string()],
+                at: None
+            }
+        );
+        assert_eq!(expect.len(), 4, "every live row is the guard: {expect:?}");
+        assert_eq!(saving(&app), vec!["B-3", "B-4"]);
+
+        let mut app = backlog_app(&queue_rows());
+        mark(&mut app, Surface::Backlog, &["B-1", "B-2"]);
+        app.apply(Action::ToggleQueue);
+        let writes = focus_writes(&mut app);
+        assert!(
+            matches!(writes.as_slice(), [(BacklogFocus::Remove { ids }, _)] if ids.len() == 2),
+            "{writes:?}"
+        );
+    }
+
+    #[test]
+    fn queue_moves_dispatch_nothing_at_the_ends_and_mark_both_swapped_rows() {
+        let mut app = backlog_app(&queue_rows());
+        set_cursor(&mut app, "B-1");
+        app.apply(Action::QueueUp);
+        assert!(app.take_writes().is_empty(), "the top row cannot move up");
+        assert!(saving(&app).is_empty());
+        assert_eq!(
+            app.live_notice(Instant::now()),
+            Some("B-1 is already first in the queue")
+        );
+
+        app.apply(Action::QueueDown);
+        let writes = focus_writes(&mut app);
+        assert!(
+            matches!(writes.as_slice(), [(BacklogFocus::Move { id, up: false }, _)] if id == "B-1"),
+            "{writes:?}"
+        );
+        assert_eq!(saving(&app), vec!["B-1", "B-2"]);
+        let mut swapped = queue_rows();
+        (swapped[0].2, swapped[1].2) = (Some(2), Some(1));
+        app.apply_ledger(backlog_read(&swapped, "v2"), Instant::now());
+        assert!(saving(&app).is_empty(), "the read shows both rows changed");
+        assert_eq!(
+            cursor(&app),
+            Some("B-1"),
+            "the cursor stays on the moved row"
+        );
+
+        set_cursor(&mut app, "B-3");
+        app.apply(Action::QueueUp);
+        assert!(
+            app.take_writes().is_empty(),
+            "an unqueued row has no neighbour"
+        );
+        assert!(app.live_notice(Instant::now()).is_some());
+    }
+
+    #[test]
+    fn queue_keys_do_nothing_off_the_backlog() {
+        let mut app = writable_review_app();
+        app.apply(Action::ToggleQueue);
+        app.apply(Action::QueueUp);
+        app.apply(Action::QueueDown);
+        assert!(app.take_writes().is_empty());
+        assert!(app.live_notice(Instant::now()).is_none());
     }
 
     #[test]

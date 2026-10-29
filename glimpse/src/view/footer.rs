@@ -343,8 +343,10 @@ fn surface_hints(app: &App, compact: bool) -> Vec<Hint> {
         hints.extend([Hint::new("g", "group"), Hint::new("q", "back")]);
         return hints;
     }
-    if matches!(app.surface, Surface::Review | Surface::Optimise) {
-        hints.push(Hint::new("e", "classify"));
+    match app.surface {
+        Surface::Review | Surface::Optimise => hints.push(Hint::new("e", "classify")),
+        Surface::Backlog => hints.extend([Hint::new("e", "tier"), Hint::new("P", "queue")]),
+        _ => {}
     }
     hints.extend([
         Hint::new("r", "request"),

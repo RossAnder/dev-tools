@@ -207,6 +207,8 @@ pub(crate) enum Purpose {
     Confirm(Selection, Transition),
     Transition(Selection, Transition),
     Classify(Selection),
+    /// The backlog tier select over the marks, else the cursor row.
+    Tier(Selection),
     Input(Box<InputForm>),
     /// The column picker; submitting it sets the item surfaces' columns.
     Columns,
@@ -614,7 +616,7 @@ pub(crate) fn tier_form(selection: &Selection) -> Form {
     if shared.is_none() {
         options.insert(0, KEEP.to_owned());
     }
-    let field = Field::select("tier", options);
+    let field = Field::select("tier", options).opened();
     let field = match shared {
         Some(value) => field.with_value(&[value]),
         None => field,
@@ -1146,6 +1148,7 @@ mod tests {
     #[test]
     fn a_tier_form_keeps_disagreeing_rows_and_prefills_a_shared_tier() {
         let form = tier_form(&backlog_rows());
+        assert!(matches!(form.fields[0], Field::Select { open: true, .. }));
         assert_eq!(form.fields[0].value(), FieldValue::One(KEEP.into()));
         let untiered = selection(
             Kind::Backlog,
