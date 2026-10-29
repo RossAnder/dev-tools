@@ -18,10 +18,10 @@ use toml::Value as TomlValue;
 use super::ids;
 use super::schema::{
     self, ARRAY_BACKLOG, ARRAY_COMPACTED, BacklogError, FIELD_AREA, FIELD_BASE_SHA, FIELD_CONTEXT,
-    FIELD_CREATED, FIELD_DEDUP_ID, FIELD_DUPLICATE_OF, FIELD_EVIDENCE, FIELD_FLOW, FIELD_ID,
-    FIELD_KIND, FIELD_LAST_SEEN, FIELD_LAST_UPDATED, FIELD_ORIGIN, FIELD_RELATED, FIELD_SEEN_COUNT,
-    FIELD_STATUS, FIELD_SUMMARY, FIELD_SUPERSEDES, FIELD_TAGS, KIND_OTHER, MANAGED_FIELDS,
-    MINTED_FIELDS, STATUS_OPEN, TERMINAL_DATE_FIELDS,
+    FIELD_CREATED, FIELD_DEDUP_ID, FIELD_DUPLICATE_OF, FIELD_EVIDENCE, FIELD_FLOW, FIELD_FOCUS,
+    FIELD_ID, FIELD_KIND, FIELD_LAST_SEEN, FIELD_LAST_UPDATED, FIELD_ORIGIN, FIELD_RELATED,
+    FIELD_SEEN_COUNT, FIELD_STATUS, FIELD_SUMMARY, FIELD_SUPERSEDES, FIELD_TAGS, FIELD_TIER,
+    KIND_OTHER, MANAGED_FIELDS, MINTED_FIELDS, STATUS_OPEN, TERMINAL_DATE_FIELDS,
 };
 use crate::cli::{OnDuplicate, WriteIntegrityArgs, write_integrity_opts};
 use crate::convert::{is_date_key, json_to_toml, json_type_name, toml_to_json};
@@ -57,7 +57,14 @@ fn unknown_payload_key(map: &JsonMap<String, JsonValue>) -> Option<&str> {
         !(CONSUMED_FIELDS.contains(key)
             || MINTED_FIELDS.contains(key)
             || MANAGED_FIELDS.contains(key)
-            || [FIELD_BASE_SHA, FIELD_DUPLICATE_OF, FIELD_SUPERSEDES].contains(key))
+            || [
+                FIELD_BASE_SHA,
+                FIELD_DUPLICATE_OF,
+                FIELD_SUPERSEDES,
+                FIELD_TIER,
+                FIELD_FOCUS,
+            ]
+            .contains(key))
     })
 }
 
@@ -111,6 +118,8 @@ pub(super) struct AddRequest {
     extra: toml::Table,
     on_duplicate: OnDuplicate,
     today: toml::value::Datetime,
+    /// Capture instant (UTC, `Z`) written to `created` and `last_seen`.
+    stamp: toml::value::Datetime,
 }
 
 pub(super) enum AddOutcome {
@@ -346,7 +355,7 @@ fn bump_row(doc: &mut TomlValue, idx: usize, req: &AddRequest) -> Result<i64> {
         .unwrap_or(1)
         .saturating_add(1);
     row.insert(FIELD_SEEN_COUNT.to_string(), TomlValue::Integer(seen_count));
-    row.insert(FIELD_LAST_SEEN.to_string(), TomlValue::Datetime(req.today));
+    row.insert(FIELD_LAST_SEEN.to_string(), TomlValue::Datetime(req.stamp));
     union_into(row, FIELD_TAGS, &req.tags);
     union_into(row, FIELD_EVIDENCE, &req.evidence);
     union_into(row, FIELD_RELATED, &req.related);
@@ -387,8 +396,8 @@ fn build_row(req: &AddRequest, id: &str, dedup_id: &str) -> TomlValue {
         FIELD_STATUS.to_string(),
         TomlValue::String(req.status.clone()),
     );
-    row.insert(FIELD_CREATED.to_string(), TomlValue::Datetime(req.today));
-    row.insert(FIELD_LAST_SEEN.to_string(), TomlValue::Datetime(req.today));
+    row.insert(FIELD_CREATED.to_string(), TomlValue::Datetime(req.stamp));
+    row.insert(FIELD_LAST_SEEN.to_string(), TomlValue::Datetime(req.stamp));
     row.insert(FIELD_SEEN_COUNT.to_string(), TomlValue::Integer(1));
     row.insert(
         FIELD_DEDUP_ID.to_string(),
@@ -510,6 +519,7 @@ fn build_request(
     json: Option<String>,
 ) -> Result<AddRequest> {
     let today = crate::time::today_toml_date()?;
+    let stamp = crate::time::now_toml_datetime()?;
     let req = match json {
         Some(raw) => {
             // Not clap `conflicts_with`: the clash has to reach the caller as a
@@ -549,6 +559,7 @@ fn build_request(
                 payload,
                 on_duplicate,
                 today,
+                stamp,
                 resolve_base_sha(None, auto_base_sha),
                 file,
             );
@@ -571,6 +582,7 @@ fn build_request(
             extra: toml::Table::new(),
             on_duplicate,
             today,
+            stamp,
         },
     };
     require_summary(req, file)
@@ -594,10 +606,11 @@ pub(super) fn payload_request(
     payload: JsonValue,
     on_duplicate: OnDuplicate,
     today: toml::value::Datetime,
+    stamp: toml::value::Datetime,
     base_sha: Option<String>,
     file: &Path,
 ) -> Result<AddRequest> {
-    let mut req = request_from_payload(payload, on_duplicate, today, file)?;
+    let mut req = request_from_payload(payload, on_duplicate, today, stamp, file)?;
     req.base_sha = base_sha;
     require_summary(req, file)
 }
@@ -609,6 +622,7 @@ fn request_from_payload(
     payload: JsonValue,
     on_duplicate: OnDuplicate,
     today: toml::value::Datetime,
+    stamp: toml::value::Datetime,
     file: &Path,
 ) -> Result<AddRequest> {
     let JsonValue::Object(map) = payload else {
@@ -626,7 +640,10 @@ fn request_from_payload(
     }
     let mut extra = toml::Table::new();
     for (field, value) in &map {
-        if CONSUMED_FIELDS.contains(&field.as_str()) || MINTED_FIELDS.contains(&field.as_str()) {
+        if CONSUMED_FIELDS.contains(&field.as_str())
+            || MINTED_FIELDS.contains(&field.as_str())
+            || field == FIELD_FOCUS
+        {
             continue;
         }
         extra.insert(field.clone(), payload_value(field, value)?);
@@ -655,6 +672,7 @@ fn request_from_payload(
         extra,
         on_duplicate,
         today,
+        stamp,
     })
 }
 
@@ -862,6 +880,53 @@ mod tests {
             // `validate` is what stands between a half-built row and the
             // store, so the written row must satisfy it.
             assert_eq!(schema::validate(&toml_to_json(&rows[0])), Ok(()));
+        });
+    }
+
+    #[test]
+    fn a_fresh_mint_stamps_created_and_last_seen_as_utc_datetimes() {
+        with_root(|root| {
+            run(capture("capture instants carry a time")).unwrap();
+            let rows = rows(root);
+            for field in [FIELD_CREATED, FIELD_LAST_SEEN] {
+                let rendered = rows[0][field].as_datetime().unwrap().to_string();
+                assert!(
+                    rendered.contains('T') && rendered.ends_with('Z'),
+                    "{field}: {rendered}"
+                );
+            }
+        });
+    }
+
+    #[test]
+    fn a_payload_tier_is_stored_and_an_invalid_one_is_refused() {
+        with_root(|root| {
+            run(Capture {
+                json: Some(r#"{"summary":"tiered capture","tier":"lite"}"#),
+                ..Capture::default()
+            })
+            .unwrap();
+            assert_eq!(rows(root)[0][FIELD_TIER].as_str(), Some("lite"));
+
+            let err = run(Capture {
+                json: Some(r#"{"summary":"badly tiered capture","tier":"cheap"}"#),
+                ..Capture::default()
+            })
+            .unwrap_err();
+            assert_eq!(kind_of(&err), "validation", "{err:#}");
+            assert_eq!(rows(root).len(), 1);
+        });
+    }
+
+    #[test]
+    fn a_payload_focus_does_not_reach_the_row() {
+        with_root(|root| {
+            run(Capture {
+                json: Some(r#"{"summary":"replayed queued row","focus":3}"#),
+                ..Capture::default()
+            })
+            .unwrap();
+            assert!(rows(root)[0].get(FIELD_FOCUS).is_none());
         });
     }
 
@@ -1087,6 +1152,7 @@ mod tests {
                 extra: toml::Table::new(),
                 on_duplicate: OnDuplicate::Bump,
                 today: "2026-09-02".parse().unwrap(),
+                stamp: "2026-09-02T00:00:00Z".parse().unwrap(),
             };
 
         let flagged = advisories(&req(

@@ -99,6 +99,7 @@ fn parse_rows(
     file: &Path,
 ) -> Result<Vec<Row>> {
     let today = crate::time::today_toml_date()?;
+    let stamp = crate::time::now_toml_datetime()?;
     let objects = crate::items::parse_ndjson_objects(text).map_err(|err| {
         match err.downcast::<TaggedError>() {
             Ok(mut tagged) => {
@@ -111,7 +112,7 @@ fn parse_rows(
     let mut rows = Vec::new();
     for (line, payload) in objects {
         let payload = JsonValue::Object(payload);
-        let req = add::payload_request(payload, on_duplicate, today, base_sha.clone(), file)
+        let req = add::payload_request(payload, on_duplicate, today, stamp, base_sha.clone(), file)
             .with_context(|| format!("line {line}"))?;
         let advisories = add::advisories(&req);
         rows.push(Row {
