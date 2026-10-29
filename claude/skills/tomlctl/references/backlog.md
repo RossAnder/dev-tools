@@ -468,8 +468,8 @@ TOML date, refreshed on every write) and two arrays of tables.
 | `related`, `duplicate_of`, `supersedes` | `add --related` and `relate` |
 | `promoted`, `promoted_to` | `triage --promote` — the promotion claim |
 | `dismissed`, `dismiss_reason` | `triage --dismiss`, and `relate --as duplicates` / `supersedes` |
-| `resolved`, `resolution` | `triage --resolve` and `reconcile --apply` |
-| `reopen_rationale` | `triage --reopen` |
+| `resolved`, `resolution`, `reopen_rationale` | `triage --resolve` and `reconcile --apply`; `triage --reopen` for `reopen_rationale` |
+| `tier`, `focus` | optional pickup tier and queue rank — see [backlog-queue.md](backlog-queue.md) |
 | `resolved_flow`, `resolved_tasks`, `resolved_commits` | `reconcile --apply` only — the flow slug, the task refs, and the commit SHAs (an array, possibly empty) that delivered the item |
 
 The statuses split into **live** — `open` and `promoted`, rows still asking for work — and

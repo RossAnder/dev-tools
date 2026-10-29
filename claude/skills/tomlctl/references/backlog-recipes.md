@@ -88,7 +88,7 @@ Ids that share one text go in a single flag-form call instead:
 
 ## Edit a stored row
 
-`backlog edit` rewrites `context`, `tags`, `evidence`, `origin`, `flow` and `base_sha` by id,
+`backlog edit` rewrites `context`, `tags`, `evidence`, `origin`, `flow`, `base_sha` and `tier` by id,
 keeping `dedup_id` and running the backlog validator. Stage agent-written `context` with the
 Write tool and pass it by file:
 
