@@ -24,8 +24,8 @@ use std::io::Write;
 use toml::Value as TomlValue;
 
 use crate::convert::{
-    TypeHint, WILDCARD, compare_typed, json_type_name, navigate, parse_typed_value, project,
-    split_type_hint, toml_to_json, validate_paths,
+    TypeHint, WILDCARD, cmp_datetime, compare_typed, json_type_name, navigate, parse_typed_value,
+    project, split_type_hint, toml_to_json, validate_paths,
 };
 use crate::errors::{ErrorKind, tagged_err};
 
@@ -1395,7 +1395,7 @@ fn eq_typed(field: Option<&TomlValue>, rhs: &str, key: &str, pre: &ParsedRhs) ->
         }
         ParsedRhs::Datetime(dt) => {
             return Ok(
-                matches!(field, TomlValue::Datetime(field_dt) if field_dt.to_string() == dt.to_string()),
+                matches!(field, TomlValue::Datetime(field_dt) if cmp_datetime(field_dt, dt).is_eq()),
             );
         }
         ParsedRhs::Str(body) => {
@@ -1429,7 +1429,7 @@ fn eq_typed(field: Option<&TomlValue>, rhs: &str, key: &str, pre: &ParsedRhs) ->
         TomlValue::Integer(i) => rhs.parse::<i64>().map(|r| r == *i).unwrap_or(false),
         TomlValue::Float(f) => rhs.parse::<f64>().map(|r| r == *f).unwrap_or(false),
         TomlValue::Boolean(b) => rhs.parse::<bool>().map(|r| r == *b).unwrap_or(false),
-        TomlValue::Datetime(dt) => dt.to_string() == rhs,
+        TomlValue::Datetime(dt) => datetime_eq_str(dt, rhs),
         _ => false,
     })
 }
@@ -1439,8 +1439,7 @@ fn json_matches_toml(parsed: &JsonValue, field: &TomlValue, hint: TypeHint) -> b
     match (parsed, field, hint) {
         (JsonValue::String(s), TomlValue::String(f), TypeHint::Str) => s == f,
         (JsonValue::String(s), TomlValue::Datetime(dt), TypeHint::Date | TypeHint::DateTime) => {
-            // Compare ISO-string form. TOML Datetime Display gives ISO-8601.
-            dt.to_string() == *s
+            datetime_eq_str(dt, s)
         }
         (JsonValue::Number(n), TomlValue::Integer(i), TypeHint::Int) => {
             n.as_i64().map(|v| v == *i).unwrap_or(false)
@@ -1453,6 +1452,16 @@ fn json_matches_toml(parsed: &JsonValue, field: &TomlValue, hint: TypeHint) -> b
         // `@string:42` against an Integer). Compare via stringified field.
         (JsonValue::String(s), other, TypeHint::Str) => stringify_scalar(other) == *s,
         _ => false,
+    }
+}
+
+/// Equality of a datetime field against a raw RHS string. A bare-date RHS
+/// matches any field on that day (see `cmp_datetime`); any other RHS must
+/// equal the field's Display form exactly.
+fn datetime_eq_str(field: &toml::value::Datetime, rhs: &str) -> bool {
+    match rhs.parse::<toml::value::Datetime>() {
+        Ok(parsed) if parsed.time.is_none() => cmp_datetime(field, &parsed).is_eq(),
+        _ => field.to_string() == rhs,
     }
 }
 
@@ -1511,7 +1520,7 @@ fn cmp_pred(
             ))),
         },
         ParsedRhs::Datetime(dt) => match f {
-            TomlValue::Datetime(field_dt) => Some(Ok(field_dt.to_string().cmp(&dt.to_string()))),
+            TomlValue::Datetime(field_dt) => Some(Ok(cmp_datetime(field_dt, dt))),
             _ => Some(Err(anyhow::anyhow!(
                 "invalid typed RHS `{}` for --where predicate on key `{}`: @date:/@datetime: requires a datetime field; the field's TOML type is not Datetime",
                 rhs,
@@ -3504,6 +3513,100 @@ category = "quality"
         let mut got = ids(&out);
         got.sort();
         assert_eq!(got, vec!["R2", "R3", "R5", "R6"]);
+    }
+
+    // -- bare-date RHS against datetime fields --------------------------
+
+    fn same_day_fixture() -> TomlValue {
+        toml::from_str(
+            r#"
+[[items]]
+id = "D"
+created = 2026-10-29T14:03:11Z
+
+[[items]]
+id = "E"
+created = 2026-10-28T23:59:59Z
+
+[[items]]
+id = "F"
+created = 2026-10-30T00:00:00Z
+"#,
+        )
+        .unwrap()
+    }
+
+    fn same_day_ids(p: Predicate) -> Vec<String> {
+        ids(&run(&same_day_fixture(), "items", &q_with(vec![p])).unwrap())
+    }
+
+    #[test]
+    fn bare_date_rhs_equality_matches_same_day_datetime() {
+        for rhs in ["2026-10-29", "@date:2026-10-29"] {
+            let got = same_day_ids(Predicate::Where {
+                key: "created".into(),
+                rhs: rhs.into(),
+            });
+            assert_eq!(got, vec!["D"], "rhs {rhs}");
+        }
+        let got = same_day_ids(Predicate::WhereIn {
+            key: "created".into(),
+            rhs: vec!["2026-10-29".into(), "2026-10-30".into()],
+        });
+        assert_eq!(got, vec!["D", "F"]);
+    }
+
+    #[test]
+    fn bare_date_rhs_gt_and_lte_treat_same_day_as_equal() {
+        for rhs in ["2026-10-29", "@date:2026-10-29"] {
+            let gt = same_day_ids(Predicate::WhereGt {
+                key: "created".into(),
+                rhs: rhs.into(),
+            });
+            assert_eq!(gt, vec!["F"], "gt rhs {rhs}");
+            let lte = same_day_ids(Predicate::WhereLte {
+                key: "created".into(),
+                rhs: rhs.into(),
+            });
+            assert_eq!(lte, vec!["D", "E"], "lte rhs {rhs}");
+        }
+    }
+
+    #[test]
+    fn bare_date_rhs_lt_and_gte_bound_the_day() {
+        for rhs in ["2026-10-29", "@date:2026-10-29"] {
+            let lt = same_day_ids(Predicate::WhereLt {
+                key: "created".into(),
+                rhs: rhs.into(),
+            });
+            assert_eq!(lt, vec!["E"], "lt rhs {rhs}");
+            let gte = same_day_ids(Predicate::WhereGte {
+                key: "created".into(),
+                rhs: rhs.into(),
+            });
+            assert_eq!(gte, vec!["D", "F"], "gte rhs {rhs}");
+        }
+    }
+
+    #[test]
+    fn full_datetime_rhs_still_matches_exactly() {
+        for rhs in ["2026-10-29T14:03:11Z", "@datetime:2026-10-29T14:03:11Z"] {
+            let got = same_day_ids(Predicate::Where {
+                key: "created".into(),
+                rhs: rhs.into(),
+            });
+            assert_eq!(got, vec!["D"], "rhs {rhs}");
+        }
+        let miss = same_day_ids(Predicate::Where {
+            key: "created".into(),
+            rhs: "2026-10-29T14:03:12Z".into(),
+        });
+        assert!(miss.is_empty());
+        let gt = same_day_ids(Predicate::WhereGt {
+            key: "created".into(),
+            rhs: "2026-10-29T14:03:10Z".into(),
+        });
+        assert_eq!(gt, vec!["D", "F"]);
     }
 
     // -- regex + typed-RHS regressions --------------------------------

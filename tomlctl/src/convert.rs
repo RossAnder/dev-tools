@@ -868,6 +868,21 @@ pub(crate) fn parse_typed_value(s: &str) -> Result<JsonValue> {
     }
 }
 
+/// Order a datetime field against a query RHS. A bare-date RHS compares the
+/// field's date component only, so every time on that day is `Equal`; any
+/// other pairing compares Display strings.
+pub(crate) fn cmp_datetime(
+    field: &toml::value::Datetime,
+    rhs: &toml::value::Datetime,
+) -> std::cmp::Ordering {
+    match (rhs.date, rhs.time, field.date) {
+        (Some(rhs_date), None, Some(field_date)) if rhs.offset.is_none() => {
+            field_date.cmp(&rhs_date)
+        }
+        _ => field.to_string().cmp(&rhs.to_string()),
+    }
+}
+
 /// Ordered comparison between a TOML field and a raw RHS string. Used by the
 /// query engine's Gt/Gte/Lt/Lte predicates.
 ///
@@ -875,8 +890,8 @@ pub(crate) fn parse_typed_value(s: &str) -> Result<JsonValue> {
 ///   * RHS has an `@type:` prefix → parse RHS per the prefix, coerce to the
 ///     field's native type if possible, compare.
 ///   * RHS has no prefix → use the field's native type to drive parsing
-///     (Integer → parse RHS as i64, Datetime → parse RHS as Datetime, etc.).
-///     Strings compare lexicographically.
+///     (Integer → parse RHS as i64, Datetime → parse RHS as Datetime via
+///     `cmp_datetime`, etc.). Strings compare lexicographically.
 pub(crate) fn compare_typed(field: &TomlValue, rhs_raw: &str) -> Result<std::cmp::Ordering> {
     use std::cmp::Ordering;
 
@@ -922,13 +937,10 @@ pub(crate) fn compare_typed(field: &TomlValue, rhs_raw: &str) -> Result<std::cmp
             Ok(b.cmp(&c))
         }
         TomlValue::Datetime(dt) => {
-            // Normalise RHS via a round-trip through toml::Datetime so that
-            // `2026-04-18` and `2026-04-18T00:00:00` both compare correctly
-            // against the stored value's Display form.
             let parsed: toml::value::Datetime = body
                 .parse()
                 .with_context(|| format!("`{}` is not a valid TOML datetime (expected ISO-8601 date `YYYY-MM-DD` or datetime `YYYY-MM-DDTHH:MM:SSZ`)", body))?;
-            Ok(dt.to_string().cmp(&parsed.to_string()))
+            Ok(cmp_datetime(dt, &parsed))
         }
         TomlValue::String(s) => Ok(s.as_str().cmp(body)),
         _ => bail!(
