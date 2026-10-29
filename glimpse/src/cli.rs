@@ -621,7 +621,7 @@ mod tests {
         .expect_err("backlog rows carry no severity");
         assert_eq!(
             err,
-            "--group severity: the backlog surface offers none, kind, area, status"
+            "--group severity: the backlog surface offers none, kind, area, status, tags, origin, flow, tier"
         );
         let err = check_arrange(
             Surface::PlanReview,

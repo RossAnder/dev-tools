@@ -1,7 +1,8 @@
 //! The surfaces switched with the digit keys, the per-surface item state (cursor, marks and
 //! arrivals), and the Inbox's state over the input store.
 
-use std::cmp::Ordering;
+use std::borrow::Cow;
+use std::cmp::{Ordering, Reverse};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::ops::{Deref, DerefMut};
 use std::time::Instant;
@@ -103,7 +104,16 @@ impl Surface {
                 Group::Status,
             ],
             Self::PlanReview => &[Group::None, Group::Severity, Group::Category, Group::Status],
-            Self::Backlog => &[Group::None, Group::Kind, Group::Area, Group::Status],
+            Self::Backlog => &[
+                Group::None,
+                Group::Kind,
+                Group::Area,
+                Group::Status,
+                Group::Tags,
+                Group::Origin,
+                Group::Flow,
+                Group::Tier,
+            ],
             Self::Tasks | Self::Inbox => &[Group::None],
         }
     }
@@ -138,6 +148,11 @@ impl Surface {
                 Sort::Status,
                 Sort::Summary,
                 Sort::Area,
+                Sort::LastSeen,
+                Sort::SeenCount,
+                Sort::Closed,
+                Sort::Tier,
+                Sort::Focus,
             ],
             Self::Tasks | Self::Inbox => &[Sort::Id],
         }
@@ -172,6 +187,11 @@ pub(crate) enum Group {
     Status,
     Kind,
     Area,
+    /// A row's tags, sorted and joined: a row with several sits in one group.
+    Tags,
+    Origin,
+    Flow,
+    Tier,
 }
 
 impl Group {
@@ -185,6 +205,10 @@ impl Group {
             Self::Status => "status",
             Self::Kind => "kind",
             Self::Area => "area",
+            Self::Tags => "tags",
+            Self::Origin => "origin",
+            Self::Flow => "flow",
+            Self::Tier => "tier",
         }
     }
 
@@ -199,6 +223,10 @@ impl Group {
             Self::Status => "status",
             Self::Kind => "kind",
             Self::Area => "area",
+            Self::Tags => "tags",
+            Self::Origin => "origin",
+            Self::Flow => "flow",
+            Self::Tier => "tier",
         }
     }
 }
@@ -215,6 +243,14 @@ pub(crate) enum Sort {
     Category,
     Summary,
     Area,
+    /// Most recently seen first.
+    LastSeen,
+    /// Most often seen first.
+    SeenCount,
+    /// Most recently closed first.
+    Closed,
+    Tier,
+    Focus,
 }
 
 impl Sort {
@@ -229,6 +265,11 @@ impl Sort {
             Self::Category => "category",
             Self::Summary => "summary",
             Self::Area => "area",
+            Self::LastSeen => "last-seen",
+            Self::SeenCount => "seen-count",
+            Self::Closed => "closed",
+            Self::Tier => "tier",
+            Self::Focus => "focus",
         }
     }
 
@@ -244,6 +285,11 @@ impl Sort {
             Self::Category => "category",
             Self::Summary => "summary",
             Self::Area => "area",
+            Self::LastSeen => "last-seen",
+            Self::SeenCount => "seen-count",
+            Self::Closed => "closed",
+            Self::Tier => "tier",
+            Self::Focus => "focus",
         }
     }
 }
@@ -567,38 +613,72 @@ impl ItemsState {
         self.tracking.cursor_row()
     }
 
-    /// The rows the list draws, after the filter and the closed toggle, grouped
-    /// and sorted. Group headers appear only when grouping is on.
+    /// The rows the list draws, after the filter and the closed toggle. Shown queued
+    /// rows come first, in queue order under a `focus` header, whatever the group and
+    /// sort; the rest follow grouped and sorted, with group headers only when grouping
+    /// is on.
     pub(crate) fn visible(&self) -> Vec<VisibleRow> {
         let needle = self.filter.to_lowercase();
-        let mut shown: Vec<&ItemRow> = self
+        let (mut pinned, mut shown): (Vec<Placed<'_>>, Vec<Placed<'_>>) = self
             .rows
             .iter()
-            .filter(|r| self.shows(r, &needle))
-            .collect();
-        shown.sort_by(|a, b| compare(self.sort, self.sort_dir, a, b));
-        if self.group == Group::None {
-            return shown
-                .into_iter()
-                .map(|r| VisibleRow::Item(r.id.clone()))
-                .collect();
+            .enumerate()
+            .filter(|(_, r)| self.shows(r, &needle))
+            .partition(|(_, r)| queue_rank(r).is_some());
+        let mut out = Vec::new();
+        if !pinned.is_empty() {
+            pinned.sort_by(|(_, a), (_, b)| queue_order(a, b));
+            out.push(VisibleRow::Header {
+                label: FOCUS_LABEL.to_owned(),
+                count: pinned.len(),
+            });
+            out.extend(
+                pinned
+                    .into_iter()
+                    .map(|(_, r)| VisibleRow::Item(r.id.clone())),
+            );
         }
-        let mut groups: BTreeMap<(GroupRank, &str), Vec<&ItemRow>> = BTreeMap::new();
-        for row in shown {
+        shown.sort_by(|a, b| compare(self.sort, self.sort_dir, *a, *b));
+        if self.group == Group::None {
+            out.extend(
+                shown
+                    .into_iter()
+                    .map(|(_, r)| VisibleRow::Item(r.id.clone())),
+            );
+            return out;
+        }
+        let mut groups: BTreeMap<(GroupRank, Cow<'_, str>), Vec<&ItemRow>> = BTreeMap::new();
+        for (_, row) in shown {
             groups
                 .entry(group_key(self.group, row))
                 .or_default()
                 .push(row);
         }
-        let mut out = Vec::new();
         for ((_, label), members) in groups {
             out.push(VisibleRow::Header {
-                label: label.to_owned(),
+                label: label.into_owned(),
                 count: members.len(),
             });
             out.extend(members.into_iter().map(|r| VisibleRow::Item(r.id.clone())));
         }
         out
+    }
+
+    /// Each queued row's 1-based queue position, counted over every live queued row
+    /// whether or not the filter shows it. A gap in `focus` values leaves no gap here.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn queue_positions(&self) -> HashMap<String, usize> {
+        let mut queued: Vec<&ItemRow> = self
+            .rows
+            .iter()
+            .filter(|r| queue_rank(r).is_some())
+            .collect();
+        queued.sort_by(|a, b| queue_order(a, b));
+        queued
+            .into_iter()
+            .enumerate()
+            .map(|(i, r)| (r.id.clone(), i + 1))
+            .collect()
     }
 
     /// Moves the cursor `delta` item rows through [`ItemsState::visible`],
@@ -948,7 +1028,10 @@ type GroupRank = u8;
 
 const EMPTY_LABEL: &str = "(none)";
 
-fn group_key(group: Group, row: &ItemRow) -> (GroupRank, &str) {
+/// The header the queued rows sit under, above every group.
+const FOCUS_LABEL: &str = "focus";
+
+fn group_key(group: Group, row: &ItemRow) -> (GroupRank, Cow<'_, str>) {
     let file = match &row.anchor {
         Anchor::Code { file, .. } => file.as_str(),
         _ => "",
@@ -958,20 +1041,46 @@ fn group_key(group: Group, row: &ItemRow) -> (GroupRank, &str) {
         _ => "",
     };
     let (rank, value) = match group {
-        Group::None => (0, ""),
-        Group::Severity => (severity_rank(&row.severity), row.severity.as_str()),
-        Group::Effort => (effort_rank(&row.effort), row.effort.as_str()),
-        Group::Status => (row.class as u8, row.status.as_str()),
-        Group::Category => (0, row.category.as_str()),
-        Group::File => (0, file),
-        Group::Kind => (0, row.kind.as_str()),
-        Group::Area => (0, area),
+        Group::None => (0, Cow::Borrowed("")),
+        Group::Severity => (severity_rank(&row.severity), row.severity.as_str().into()),
+        Group::Effort => (effort_rank(&row.effort), row.effort.as_str().into()),
+        Group::Status => (row.class as u8, row.status.as_str().into()),
+        Group::Category => (0, row.category.as_str().into()),
+        Group::File => (0, file.into()),
+        Group::Kind => (0, row.kind.as_str().into()),
+        Group::Area => (0, area.into()),
+        Group::Tags => (0, Cow::Owned(tag_set(&row.tags))),
+        Group::Origin => (0, row.origin.as_str().into()),
+        Group::Flow => (0, row.flow.as_str().into()),
+        Group::Tier => (tier_rank(&row.tier), row.tier.as_str().into()),
     };
     if value.is_empty() {
-        (u8::MAX, EMPTY_LABEL)
+        (u8::MAX, Cow::Borrowed(EMPTY_LABEL))
     } else {
         (rank, value)
     }
+}
+
+/// `tags` sorted, deduplicated and comma-joined, so the same set always names one group.
+fn tag_set(tags: &[String]) -> String {
+    let set: BTreeSet<&str> = tags
+        .iter()
+        .map(String::as_str)
+        .filter(|t| !t.is_empty())
+        .collect();
+    set.into_iter().collect::<Vec<_>>().join(", ")
+}
+
+/// A row's `focus` when it is in the queue: only an `open` or `promoted` row is,
+/// since a resolved or dismissed row can still carry a stray rank.
+fn queue_rank(row: &ItemRow) -> Option<i64> {
+    row.focus
+        .filter(|_| matches!(row.status.as_str(), "open" | "promoted"))
+}
+
+/// Queue order: by `focus`, then by id as plain text, the order tomlctl's queue uses.
+fn queue_order(a: &ItemRow, b: &ItemRow) -> Ordering {
+    (a.focus, &a.id).cmp(&(b.focus, &b.id))
 }
 
 /// A value's position in its ordered vocabulary; an unknown value ranks after every known one.
@@ -988,19 +1097,59 @@ fn effort_rank(effort: &str) -> u8 {
     rank_in(&EFFORTS, effort)
 }
 
-fn compare(sort: Sort, dir: SortDir, a: &ItemRow, b: &ItemRow) -> Ordering {
+fn tier_rank(tier: &str) -> u8 {
+    rank_in(tomlctl::BACKLOG_TIERS, tier)
+}
+
+/// A row with its index in the ledger.
+type Placed<'a> = (usize, &'a ItemRow);
+
+/// Newest and LastSeen order equal stamps by ledger index, later first, since a
+/// capture appends: same-day bare dates then order as their file positions do.
+fn compare(sort: Sort, dir: SortDir, (ia, a): Placed<'_>, (ib, b): Placed<'_>) -> Ordering {
     let primary = match sort {
         Sort::Id => dir.apply(id_key(&a.id).cmp(&id_key(&b.id))),
         Sort::Severity => dir.apply(severity_rank(&a.severity).cmp(&severity_rank(&b.severity))),
         Sort::Effort => dir.apply(effort_rank(&a.effort).cmp(&effort_rank(&b.effort))),
-        Sort::Newest => dir.apply(b.created.cmp(&a.created)),
+        Sort::Newest => dir.apply((&b.created, ib).cmp(&(&a.created, ia))),
+        Sort::LastSeen => dir.apply((&b.last_seen, ib).cmp(&(&a.last_seen, ia))),
         Sort::Status => dir.apply((a.class as u8, &a.status).cmp(&(b.class as u8, &b.status))),
         Sort::Kind => compare_text(&a.kind, &b.kind, dir),
         Sort::Category => compare_text(&a.category, &b.category, dir),
         Sort::Summary => compare_text(&a.summary, &b.summary, dir),
         Sort::Area => compare_text(place(&a.anchor), place(&b.anchor), dir),
+        Sort::SeenCount => {
+            compare_present(a.seen_count.map(Reverse), b.seen_count.map(Reverse), dir)
+        }
+        Sort::Closed => compare_present(
+            present(&a.closed).map(Reverse),
+            present(&b.closed).map(Reverse),
+            dir,
+        ),
+        Sort::Tier => compare_present(
+            present(&a.tier).map(|t| (tier_rank(t), t)),
+            present(&b.tier).map(|t| (tier_rank(t), t)),
+            dir,
+        ),
+        Sort::Focus => compare_present(
+            queue_rank(a).map(|f| (f, a.id.as_str())),
+            queue_rank(b).map(|f| (f, b.id.as_str())),
+            dir,
+        ),
     };
     primary.then_with(|| id_key(&a.id).cmp(&id_key(&b.id)))
+}
+
+fn present(text: &str) -> Option<&str> {
+    (!text.is_empty()).then_some(text)
+}
+
+/// With an absent value last whichever way `dir` runs.
+fn compare_present<T: Ord>(a: Option<T>, b: Option<T>, dir: SortDir) -> Ordering {
+    match (a, b) {
+        (Some(a), Some(b)) => dir.apply(a.cmp(&b)),
+        (a, b) => a.is_none().cmp(&b.is_none()),
+    }
 }
 
 fn compare_input(sort: InboxColumn, dir: SortDir, a: &InputRow, b: &InputRow) -> Ordering {
@@ -1157,12 +1306,17 @@ mod tests {
             Group::Status,
             Group::Kind,
             Group::Area,
+            Group::Tags,
+            Group::Origin,
+            Group::Flow,
+            Group::Tier,
         ]
         .map(Group::key);
         assert_eq!(
             groups,
             [
-                "none", "severity", "category", "effort", "file", "status", "kind", "area"
+                "none", "severity", "category", "effort", "file", "status", "kind", "area", "tags",
+                "origin", "flow", "tier"
             ]
         );
         let sorts = [
@@ -1175,13 +1329,30 @@ mod tests {
             Sort::Category,
             Sort::Summary,
             Sort::Area,
+            Sort::LastSeen,
+            Sort::SeenCount,
+            Sort::Closed,
+            Sort::Tier,
+            Sort::Focus,
         ]
         .map(Sort::key);
         assert_eq!(
             sorts,
             [
-                "id", "severity", "effort", "newest", "kind", "status", "category", "summary",
-                "area"
+                "id",
+                "severity",
+                "effort",
+                "newest",
+                "kind",
+                "status",
+                "category",
+                "summary",
+                "area",
+                "last-seen",
+                "seen-count",
+                "closed",
+                "tier",
+                "focus"
             ]
         );
     }
@@ -1535,13 +1706,25 @@ mod tests {
     fn group_and_sort_cycle_through_the_surface_options() {
         let mut state = ItemsState::new(Surface::Backlog);
         let mut seen = Vec::new();
-        for _ in 0..4 {
+        for _ in 0..8 {
             state.cycle_group();
             seen.push(state.group);
         }
-        assert_eq!(seen, [Group::Kind, Group::Area, Group::Status, Group::None]);
+        assert_eq!(
+            seen,
+            [
+                Group::Kind,
+                Group::Area,
+                Group::Status,
+                Group::Tags,
+                Group::Origin,
+                Group::Flow,
+                Group::Tier,
+                Group::None
+            ]
+        );
         let mut sorts = Vec::new();
-        for _ in 0..6 {
+        for _ in 0..11 {
             state.cycle_sort();
             sorts.push(state.sort);
         }
@@ -1553,6 +1736,11 @@ mod tests {
                 Sort::Status,
                 Sort::Summary,
                 Sort::Area,
+                Sort::LastSeen,
+                Sort::SeenCount,
+                Sort::Closed,
+                Sort::Tier,
+                Sort::Focus,
                 Sort::Id
             ]
         );
@@ -1750,5 +1938,250 @@ mod tests {
         state.page = 2;
         state.page_cursor(Scroll::PageDown);
         assert_eq!(state.cursor.as_deref(), Some("I3"));
+    }
+
+    fn entry(id: &str, status: &str) -> ItemRow {
+        ItemRow {
+            id: id.to_owned(),
+            status: status.to_owned(),
+            class: StatusClass::of(status),
+            ..ItemRow::default()
+        }
+    }
+
+    fn backlog(rows: Vec<ItemRow>) -> ItemsState {
+        let mut state = ItemsState::new(Surface::Backlog);
+        state.apply_ledger(rows, rev(0), true, Instant::now());
+        state
+    }
+
+    fn header(label: &str, count: usize) -> VisibleRow {
+        VisibleRow::Header {
+            label: label.to_owned(),
+            count,
+        }
+    }
+
+    fn row(id: &str) -> VisibleRow {
+        VisibleRow::Item(id.to_owned())
+    }
+
+    #[test]
+    fn newest_breaks_same_day_ties_by_file_position() {
+        let created = |id: &str, created: &str| ItemRow {
+            created: created.to_owned(),
+            last_seen: created.to_owned(),
+            ..entry(id, "open")
+        };
+        let mut state = backlog(vec![
+            created("B-1", "2026-10-29"),
+            created("B-2", "2026-10-28"),
+            created("B-3", "2026-10-29"),
+            created("B-4", "2026-10-29T08:00:00Z"),
+        ]);
+        state.sort = Sort::Newest;
+        assert_eq!(items(&state), ["B-4", "B-3", "B-1", "B-2"]);
+        state.sort = Sort::LastSeen;
+        assert_eq!(items(&state), ["B-4", "B-3", "B-1", "B-2"]);
+        state.flip_dir();
+        assert_eq!(items(&state), ["B-2", "B-1", "B-3", "B-4"]);
+    }
+
+    #[test]
+    fn backlog_sorts_put_blank_values_last() {
+        let mut state = backlog(vec![
+            ItemRow {
+                seen_count: Some(2),
+                closed: "2026-10-01".into(),
+                tier: "human".into(),
+                ..entry("B-1", "resolved")
+            },
+            ItemRow {
+                seen_count: Some(5),
+                tier: "lite".into(),
+                ..entry("B-2", "open")
+            },
+            entry("B-3", "open"),
+            ItemRow {
+                seen_count: Some(1),
+                closed: "2026-10-20".into(),
+                tier: "deep".into(),
+                ..entry("B-4", "dismissed")
+            },
+            ItemRow {
+                tier: "odd".into(),
+                ..entry("B-5", "open")
+            },
+        ]);
+        state.show_closed = true;
+        state.sort = Sort::SeenCount;
+        assert_eq!(items(&state), ["B-2", "B-1", "B-4", "B-3", "B-5"]);
+        state.sort = Sort::Closed;
+        assert_eq!(items(&state), ["B-4", "B-1", "B-2", "B-3", "B-5"]);
+        state.sort = Sort::Tier;
+        assert_eq!(items(&state), ["B-2", "B-4", "B-1", "B-5", "B-3"]);
+        state.flip_dir();
+        assert_eq!(items(&state), ["B-5", "B-1", "B-4", "B-2", "B-3"]);
+    }
+
+    #[test]
+    fn the_focus_sort_orders_a_stray_rank_with_the_unqueued() {
+        let mut state = backlog(vec![
+            ItemRow {
+                focus: Some(3),
+                ..entry("B-1", "resolved")
+            },
+            entry("B-2", "open"),
+        ]);
+        state.show_closed = true;
+        state.sort = Sort::Focus;
+        assert_eq!(
+            state.visible(),
+            [row("B-1"), row("B-2")],
+            "no live row is queued"
+        );
+        assert!(state.queue_positions().is_empty());
+    }
+
+    #[test]
+    fn backlog_groups_by_tags_origin_flow_and_tier() {
+        let mut state = backlog(vec![
+            ItemRow {
+                tags: vec!["ui".into(), "cli".into()],
+                origin: "review".into(),
+                flow: "alpha".into(),
+                tier: "deep".into(),
+                ..entry("B-1", "open")
+            },
+            ItemRow {
+                tags: vec!["cli".into(), "ui".into(), "ui".into()],
+                origin: "implement".into(),
+                tier: "lite".into(),
+                ..entry("B-2", "open")
+            },
+            ItemRow {
+                tier: "odd".into(),
+                ..entry("B-3", "open")
+            },
+        ]);
+        state.group = Group::Tags;
+        assert_eq!(
+            state.visible(),
+            [
+                header("cli, ui", 2),
+                row("B-1"),
+                row("B-2"),
+                header(EMPTY_LABEL, 1),
+                row("B-3")
+            ]
+        );
+        state.group = Group::Origin;
+        assert_eq!(
+            state.visible(),
+            [
+                header("implement", 1),
+                row("B-2"),
+                header("review", 1),
+                row("B-1"),
+                header(EMPTY_LABEL, 1),
+                row("B-3")
+            ]
+        );
+        state.group = Group::Flow;
+        assert_eq!(
+            state.visible(),
+            [
+                header("alpha", 1),
+                row("B-1"),
+                header(EMPTY_LABEL, 2),
+                row("B-2"),
+                row("B-3")
+            ]
+        );
+        state.group = Group::Tier;
+        assert_eq!(
+            state.visible(),
+            [
+                header("lite", 1),
+                row("B-2"),
+                header("deep", 1),
+                row("B-1"),
+                header("odd", 1),
+                row("B-3")
+            ]
+        );
+    }
+
+    fn queued() -> ItemsState {
+        let ranked = |id: &str, status: &str, focus: i64, kind: &str| ItemRow {
+            focus: Some(focus),
+            kind: kind.to_owned(),
+            ..entry(id, status)
+        };
+        backlog(vec![
+            ItemRow {
+                kind: "bug".into(),
+                ..entry("B-1", "open")
+            },
+            ranked("B-2", "open", 2, "debt"),
+            ranked("B-3", "open", 1, "debt"),
+            ranked("B-4", "promoted", 4, "bug"),
+            ranked("B-5", "resolved", 3, "bug"),
+            ItemRow {
+                kind: "debt".into(),
+                ..entry("B-6", "open")
+            },
+        ])
+    }
+
+    #[test]
+    fn queued_rows_pin_above_an_ungrouped_list() {
+        let mut state = queued();
+        state.sort = Sort::Id;
+        state.sort_dir = SortDir::Desc;
+        assert_eq!(
+            state.visible(),
+            [
+                header(FOCUS_LABEL, 3),
+                row("B-3"),
+                row("B-2"),
+                row("B-4"),
+                row("B-6"),
+                row("B-1"),
+            ]
+        );
+        state.filter = "B-2".into();
+        assert_eq!(state.visible(), [header(FOCUS_LABEL, 1), row("B-2")]);
+    }
+
+    #[test]
+    fn queued_rows_pin_above_every_group() {
+        let mut state = queued();
+        state.group = Group::Kind;
+        state.show_closed = true;
+        assert_eq!(
+            state.visible(),
+            [
+                header(FOCUS_LABEL, 3),
+                row("B-3"),
+                row("B-2"),
+                row("B-4"),
+                header("bug", 2),
+                row("B-1"),
+                row("B-5"),
+                header("debt", 1),
+                row("B-6"),
+            ]
+        );
+    }
+
+    #[test]
+    fn queue_positions_skip_a_gap_and_a_closed_row() {
+        let state = queued();
+        let positions = state.queue_positions();
+        assert_eq!(positions.len(), 3);
+        assert_eq!(positions["B-3"], 1);
+        assert_eq!(positions["B-2"], 2);
+        assert_eq!(positions["B-4"], 3);
     }
 }
