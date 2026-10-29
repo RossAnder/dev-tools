@@ -593,6 +593,8 @@ fn cases() -> Vec<Case> {
             ],
             "transition",
         ),
+        read(&["backlog", "next", "--fill"], Top, "id"),
+        write(&["backlog", "focus", "{B1}"], "ok"),
         read(&["backlog", "reconcile"], One, "ok"),
         read(&["backlog", "cluster"], One, "area"),
         write(&["backlog", "compact"], "remaining"),
