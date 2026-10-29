@@ -104,6 +104,12 @@ tomlctl items list .claude/flows/foo/review-ledger.toml --status open --strict-r
 
 **Typed RHS.** All `KEY=VAL` right-hand sides accept an optional `@type:` prefix to disambiguate native TOML types from string literals: `@date:`, `@datetime:`, `@int:`, `@float:`, `@bool:`, `@string:` / `@str:`. With no prefix the RHS is string, coerced to the field's native type when the field is typed.
 
+**Same-day dates.** A bare-date RHS (a date with no time) matches a datetime field by its date, for equality and ordering alike, so `--where created=2026-10-29` matches every row stamped that day, `--where-gt created=2026-10-29` excludes them and `--where-lte created=2026-10-29` includes them. This applies only to the list verbs' TOML engine, not to JSON row reports, where a date stays a plain string.
+
+```bash
+tomlctl items list ledger.toml --where created=2026-10-29 --count
+```
+
 **Array fields.** A field whose value is an array matches element by element, the way a
 backlog `tags` filter always has:
 
