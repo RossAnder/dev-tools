@@ -8,6 +8,7 @@
 //! anchor in a fixed-width column. The summary takes the width the others leave; the
 //! anchor column narrows, then drops, before the summary falls under [`SUMMARY_MIN`].
 
+use std::collections::HashMap;
 use std::time::Instant;
 
 use ratatui::buffer::Buffer;
@@ -258,6 +259,10 @@ struct Columns {
     category: usize,
     effort: usize,
     area: usize,
+    tier: usize,
+    rank: usize,
+    /// Queue positions keyed by id, for the rank cell.
+    positions: HashMap<String, usize>,
 }
 
 impl Columns {
@@ -268,6 +273,9 @@ impl Columns {
             category: 0,
             effort: 0,
             area: 0,
+            tier: 0,
+            rank: 0,
+            positions: state.queue_positions(),
         };
         for row in visible.iter().filter_map(|entry| match entry {
             VisibleRow::Item(id) => state.row(id),
@@ -278,6 +286,24 @@ impl Columns {
             columns.category = columns.category.max(text_width(&row.category));
             columns.effort = columns.effort.max(text_width(&row.effort));
             columns.area = columns.area.max(text_width(&anchor_text(&row.anchor)));
+            columns.tier = columns.tier.max(text_width(&row.tier));
+            if let Some(at) = columns.positions.get(&row.id) {
+                columns.rank = columns.rank.max(text_width(&rank_text(*at)));
+            }
+        }
+        let surface = state.surface;
+        for (width, column) in [
+            (&mut columns.id, ItemColumn::Id),
+            (&mut columns.class, ItemColumn::Kind),
+            (&mut columns.category, ItemColumn::Category),
+            (&mut columns.effort, ItemColumn::Effort),
+            (&mut columns.area, ItemColumn::Area),
+            (&mut columns.tier, ItemColumn::Tier),
+            (&mut columns.rank, ItemColumn::Rank),
+        ] {
+            if *width > 0 {
+                *width = (*width).max(text_width(title(surface, column)));
+            }
         }
         columns
     }
@@ -317,6 +343,8 @@ impl Columns {
             ItemColumn::Category => self.category,
             ItemColumn::Effort => self.effort,
             ItemColumn::Area => self.area,
+            ItemColumn::Tier => self.tier,
+            ItemColumn::Rank => self.rank,
             ItemColumn::Summary => 0,
         }
     }
@@ -412,7 +440,14 @@ fn item_line(
         let w = columns.width(*column);
         if w > 0 {
             spans.push(Span::raw(" "));
-            spans.push(value_cell(app, row, *column, w, is_cursor));
+            spans.push(value_cell(
+                app,
+                row,
+                *column,
+                w,
+                &columns.positions,
+                is_cursor,
+            ));
         }
     }
     if !has_summary && !marks.is_empty() {
@@ -430,6 +465,7 @@ fn value_cell(
     row: &ItemRow,
     column: ItemColumn,
     w: usize,
+    positions: &HashMap<String, usize>,
     is_cursor: bool,
 ) -> Span<'static> {
     let theme = &app.theme;
@@ -450,8 +486,20 @@ fn value_cell(
             padded(&shorten_path(&anchor_text(&row.anchor), w)),
             muted(theme.facet),
         ),
+        ItemColumn::Tier => Span::styled(padded(&row.tier), muted(theme.facet)),
+        ItemColumn::Rank => {
+            let text = positions
+                .get(&row.id)
+                .map(|at| rank_text(*at))
+                .unwrap_or_default();
+            Span::styled(padded(&text), muted(theme.facet))
+        }
         ItemColumn::Summary => Span::raw(String::new()),
     }
+}
+
+fn rank_text(position: usize) -> String {
+    format!("#{position}")
 }
 
 /// The summary in `room` cells, cut with `…` to leave the row's `marks` right-aligned
@@ -661,7 +709,7 @@ mod tests {
         let (warning, _) = row_of(&rows, "▾ warning (2)");
         let (r2, line) = row_of(&rows, "R2");
         assert!(critical < r2 && r2 < warning, "{rows:#?}");
-        assert!(line.contains("○ R2 critical correctness small Path escapes the root"));
+        assert!(line.contains("○ R2 critical correctness small  Path escapes the root"));
         assert!(line.trim_end().ends_with("src/b.rs:40"), "{line:?}");
         let (r1, _) = row_of(&rows, "R1");
         let (r3, _) = row_of(&rows, "R3");
@@ -859,7 +907,7 @@ mod tests {
         let mut app = review_app();
         let (rows, _) = draw(&app, 100, 6);
         assert!(rows[1].contains(" id▲"), "{:?}", rows[1]);
-        for title in ["severity", "category", "effo…", "summary", "file"] {
+        for title in ["severity", "category", "effort", "summary", "file"] {
             assert!(rows[1].contains(title), "{title}: {:?}", rows[1]);
         }
         assert!(
@@ -892,6 +940,7 @@ mod tests {
             keys,
             app.item_columns
                 .iter()
+                .filter(|column| !matches!(column, ItemColumn::Tier | ItemColumn::Rank))
                 .map(|column| HeaderKey::Item(*column))
                 .collect::<Vec<_>>()
         );
@@ -912,6 +961,19 @@ mod tests {
                 .collect();
             assert_eq!(&text, id);
         }
+    }
+
+    #[test]
+    fn column_width_counts_the_title() {
+        let mut row = capture("B-1", "debt", "Summary", "src/a.rs");
+        row.tier = "lite".to_string();
+        row.focus = Some(1);
+        let app = backlog_app(vec![row]);
+        let state = app.current_items().expect("backlog");
+        let columns = Columns::measure(state, &state.visible());
+        assert_eq!(columns.tier, 4, "tier title and cell are equal width");
+        assert_eq!(columns.rank, 4, "the `rank` title is wider than `#1`");
+        assert_eq!(columns.id, 3, "the cell is wider than the `id` title");
     }
 
     #[test]

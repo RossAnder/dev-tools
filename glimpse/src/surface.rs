@@ -171,6 +171,8 @@ impl Surface {
             ItemColumn::Effort => Sort::Effort,
             ItemColumn::Summary => Sort::Summary,
             ItemColumn::Area => Sort::Area,
+            ItemColumn::Tier => Sort::Tier,
+            ItemColumn::Rank => Sort::Focus,
         };
         self.sorts().contains(&sort).then_some(sort)
     }
@@ -666,7 +668,6 @@ impl ItemsState {
 
     /// Each queued row's 1-based queue position, counted over every live queued row
     /// whether or not the filter shows it. A gap in `focus` values leaves no gap here.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn queue_positions(&self) -> HashMap<String, usize> {
         let mut queued: Vec<&ItemRow> = self
             .rows

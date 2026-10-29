@@ -248,10 +248,14 @@ pub(crate) enum ItemColumn {
     /// A finding's `file:line`, a plan-review section or a backlog area, in a
     /// fixed-width column.
     Area,
+    /// A backlog item's pickup tier.
+    Tier,
+    /// A backlog item's place in the focus queue, shown `#k`.
+    Rank,
 }
 
 impl ItemColumn {
-    pub(crate) const ALL: [ItemColumn; 7] = [
+    pub(crate) const ALL: [ItemColumn; 9] = [
         ItemColumn::Status,
         ItemColumn::Id,
         ItemColumn::Kind,
@@ -259,6 +263,8 @@ impl ItemColumn {
         ItemColumn::Effort,
         ItemColumn::Summary,
         ItemColumn::Area,
+        ItemColumn::Tier,
+        ItemColumn::Rank,
     ];
 
     pub(crate) fn as_str(self) -> &'static str {
@@ -270,6 +276,8 @@ impl ItemColumn {
             ItemColumn::Effort => "effort",
             ItemColumn::Summary => "summary",
             ItemColumn::Area => "area",
+            ItemColumn::Tier => "tier",
+            ItemColumn::Rank => "rank",
         }
     }
 
