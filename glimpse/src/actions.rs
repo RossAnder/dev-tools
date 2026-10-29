@@ -6,7 +6,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Map, Value};
-use tomlctl::{BACKLOG_MANAGED_FIELDS, BacklogTriage, LedgerRef, RestoreRow, STATUS_COMPANIONS};
+use tomlctl::{
+    BACKLOG_MANAGED_FIELDS, BACKLOG_TIERS, BacklogFocus, BacklogTriage, LedgerRef, RestoreRow,
+    STATUS_COMPANIONS,
+};
 use tui_input::Input;
 
 use crate::config::ItemColumn;
@@ -485,8 +488,10 @@ pub(crate) fn transition_plan(
         let touched: Vec<&str> = if selection.ledger == LedgerRef::Backlog {
             // A backlog move rewrites every managed field, clearing those the new status
             // does not own, so undo has to know the whole set.
+            // Resolving or dismissing also drops `focus`, which undo puts back.
             let mut all: Vec<&str> = BACKLOG_MANAGED_FIELDS.to_vec();
             all.push("status");
+            all.push("focus");
             all
         } else {
             let mut all: Vec<&str> = vec!["status"];
@@ -585,6 +590,136 @@ pub(crate) fn classify_plan(
         ));
     }
     plan
+}
+
+/// The tier option that removes `tier`.
+pub(crate) const NO_TIER: &str = "none";
+
+fn tier_of(row: &ItemRow) -> &str {
+    row.raw
+        .get("tier")
+        .and_then(Value::as_str)
+        .filter(|t| !t.is_empty())
+        .unwrap_or(NO_TIER)
+}
+
+/// A single tier select, prefilled with the tier every target shares (`none` when all are
+/// untiered); targets that disagree start at [`KEEP`].
+pub(crate) fn tier_form(selection: &Selection) -> Form {
+    let mut tiers = selection.rows.iter().map(tier_of);
+    let first = tiers.next();
+    let shared = first.filter(|first| tiers.all(|t| t == *first));
+    let mut options: Vec<String> = BACKLOG_TIERS.iter().map(|t| (*t).to_owned()).collect();
+    options.push(NO_TIER.to_owned());
+    if shared.is_none() {
+        options.insert(0, KEEP.to_owned());
+    }
+    let field = Field::select("tier", options);
+    let field = match shared {
+        Some(value) => field.with_value(&[value]),
+        None => field,
+    };
+    Form::new(
+        format!("tier {}", selection.label()),
+        vec![field.required()],
+    )
+}
+
+/// One request per distinct displayed tier, each row guarded on its own `tier` (`null` for
+/// an untiered row). Rows already at the submitted tier are left out.
+pub(crate) fn tier_plan(
+    selection: &Selection,
+    values: &[FieldValue],
+    next: &mut RequestId,
+) -> Plan {
+    let target = match values.first() {
+        Some(FieldValue::One(v)) if v != KEEP && !v.trim().is_empty() => v.as_str(),
+        _ => return Plan::default(),
+    };
+    let tier = (target != NO_TIER).then(|| target.to_owned());
+    // A clear stays in the map as `null`: undo guards on it, and a restore needs a guard.
+    let mut written = Map::new();
+    written.insert(
+        "tier".into(),
+        tier.clone().map_or(Value::Null, Value::String),
+    );
+    let mut groups: Vec<(&str, Vec<&ItemRow>)> = Vec::new();
+    for row in &selection.rows {
+        let before = tier_of(row);
+        if before == target {
+            continue;
+        }
+        match groups.iter_mut().find(|(b, _)| *b == before) {
+            Some((_, rows)) => rows.push(row),
+            None => groups.push((before, vec![row])),
+        }
+    }
+    let mut plan = Plan::default();
+    for (before, rows) in groups {
+        let ids: Vec<String> = rows.iter().map(|r| r.id.clone()).collect();
+        let mut expect = Map::new();
+        let shown = (before != NO_TIER).then(|| Value::String(before.to_owned()));
+        expect.insert("tier".into(), shown.unwrap_or(Value::Null));
+        for row in rows {
+            plan.undo.push(RowUndo::of(row, &["tier"], &written));
+        }
+        plan.requests.push((
+            WriteRequest::BacklogTier {
+                request: take(next),
+                ids: ids.clone(),
+                tier: tier.clone(),
+                expect,
+            },
+            ids,
+        ));
+    }
+    plan
+}
+
+/// One queue write over `queue`, the live `(id, focus)` pairs on screen, sent as the write's
+/// guard. It tracks the rows the planner predicts will change, shifted neighbours included,
+/// with one undo per row; a prediction of no change is an empty plan.
+pub(crate) fn focus_plan(
+    queue: &[(String, Option<i64>)],
+    op: BacklogFocus,
+    next: &mut RequestId,
+) -> Result<Plan, String> {
+    let changes = tomlctl::backlog_focus_plan(queue, &op).map_err(|e| format!("{e:#}"))?;
+    if changes.is_empty() {
+        return Ok(Plan::default());
+    }
+    let mut plan = Plan::default();
+    let ids: Vec<String> = changes.iter().map(|c| c.id.clone()).collect();
+    for change in changes {
+        let mut set = Map::new();
+        let mut unset = Vec::new();
+        match change.before {
+            Some(before) => {
+                set.insert("focus".into(), Value::from(before));
+            }
+            None => unset.push("focus".to_owned()),
+        }
+        let mut expect = Map::new();
+        expect.insert(
+            "focus".into(),
+            change.after.map_or(Value::Null, Value::from),
+        );
+        plan.undo.push(RowUndo {
+            id: change.id,
+            set,
+            unset,
+            expect,
+        });
+    }
+    plan.requests.push((
+        WriteRequest::BacklogFocus {
+            request: take(next),
+            op,
+            expect: queue.to_vec(),
+        },
+        ids,
+    ));
+    Ok(plan)
 }
 
 /// One submitted write on the undo stack. `outstanding` holds the requests not yet reported;
@@ -993,6 +1128,164 @@ mod tests {
         assert_eq!(ids, &vec!["R2".to_string()]);
         assert_eq!(fields, json!({"category": "security"}).as_object().unwrap());
         assert_eq!(expect, json!({"category": "quality"}).as_object().unwrap());
+    }
+
+    fn backlog_rows() -> Selection {
+        selection(
+            Kind::Backlog,
+            LedgerRef::Backlog,
+            vec![
+                row("B-1", "open", json!({"id": "B-1", "tier": "lite"})),
+                row("B-2", "open", json!({"id": "B-2"})),
+                row("B-3", "open", json!({"id": "B-3", "tier": "deep"})),
+                row("B-4", "open", json!({"id": "B-4"})),
+            ],
+        )
+    }
+
+    #[test]
+    fn a_tier_form_keeps_disagreeing_rows_and_prefills_a_shared_tier() {
+        let form = tier_form(&backlog_rows());
+        assert_eq!(form.fields[0].value(), FieldValue::One(KEEP.into()));
+        let untiered = selection(
+            Kind::Backlog,
+            LedgerRef::Backlog,
+            vec![row("B-2", "open", json!({"id": "B-2"}))],
+        );
+        let form = tier_form(&untiered);
+        assert_eq!(form.fields[0].value(), FieldValue::One(NO_TIER.into()));
+    }
+
+    #[test]
+    fn a_tier_write_groups_rows_by_their_shown_tier() {
+        let plan = tier_plan(&backlog_rows(), &[FieldValue::One("deep".into())], &mut 0);
+        let requests: Vec<_> = plan
+            .requests
+            .iter()
+            .map(|(r, ids)| match r {
+                WriteRequest::BacklogTier { tier, expect, .. } => {
+                    (tier.clone(), Value::Object(expect.clone()), ids.clone())
+                }
+                other => panic!("expected a tier write, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            requests,
+            vec![
+                (
+                    Some("deep".into()),
+                    json!({"tier": "lite"}),
+                    vec!["B-1".to_string()]
+                ),
+                (
+                    Some("deep".into()),
+                    json!({"tier": null}),
+                    vec!["B-2".to_string(), "B-4".to_string()]
+                ),
+            ],
+            "the row already deep is left out"
+        );
+        let undo = &plan.undo[0];
+        assert_eq!(undo.set["tier"], "lite");
+        assert_eq!(undo.expect["tier"], "deep");
+        assert_eq!(plan.undo[1].unset, vec!["tier".to_string()]);
+        let keep = tier_plan(&backlog_rows(), &[FieldValue::One(KEEP.into())], &mut 0);
+        assert_eq!(keep, Plan::default());
+    }
+
+    #[test]
+    fn a_tier_clear_keeps_its_guard_for_undo() {
+        let plan = tier_plan(&backlog_rows(), &[FieldValue::One(NO_TIER.into())], &mut 0);
+        let (WriteRequest::BacklogTier { tier, .. }, ids) = &plan.requests[0] else {
+            panic!("expected a tier write");
+        };
+        assert_eq!((tier, ids), (&None, &vec!["B-1".to_string()]));
+        let undo = &plan.undo[0];
+        assert_eq!(undo.set["tier"], "lite");
+        assert_eq!(undo.expect, *json!({"tier": null}).as_object().unwrap());
+    }
+
+    fn queue() -> Vec<(String, Option<i64>)> {
+        vec![
+            ("B-1".into(), Some(1)),
+            ("B-2".into(), Some(3)),
+            ("B-3".into(), None),
+        ]
+    }
+
+    #[test]
+    fn a_queue_move_tracks_both_swapped_rows_and_undoes_each() {
+        let op = BacklogFocus::Move {
+            id: "B-2".into(),
+            up: true,
+        };
+        let plan = focus_plan(&queue(), op.clone(), &mut 4).expect("a valid move");
+        let [
+            (
+                WriteRequest::BacklogFocus {
+                    request,
+                    op: sent,
+                    expect,
+                },
+                ids,
+            ),
+        ] = plan.requests.as_slice()
+        else {
+            panic!("expected one focus write, got {:?}", plan.requests);
+        };
+        assert_eq!((*request, sent, expect), (4, &op, &queue()));
+        let mut tracked = ids.clone();
+        tracked.sort();
+        assert_eq!(tracked, vec!["B-1".to_string(), "B-2".to_string()]);
+        let b2 = plan.undo.iter().find(|u| u.id == "B-2").expect("B-2 undo");
+        assert_eq!(b2.set["focus"], 3);
+        assert_eq!(b2.expect["focus"], 1);
+    }
+
+    #[test]
+    fn a_queue_add_undo_removes_the_rank_it_gave() {
+        let op = BacklogFocus::Add {
+            ids: vec!["B-3".into()],
+            at: None,
+        };
+        let plan = focus_plan(&queue(), op, &mut 0).expect("a valid add");
+        let [undo] = plan.undo.as_slice() else {
+            panic!("expected one undo, got {:?}", plan.undo);
+        };
+        assert_eq!(undo.id, "B-3");
+        assert_eq!(undo.unset, vec!["focus".to_string()]);
+        assert_eq!(undo.expect["focus"], 4);
+    }
+
+    #[test]
+    fn a_queue_move_past_the_end_dispatches_nothing() {
+        let op = BacklogFocus::Move {
+            id: "B-1".into(),
+            up: true,
+        };
+        let mut next = 0;
+        assert_eq!(focus_plan(&queue(), op, &mut next), Ok(Plan::default()));
+        assert_eq!(next, 0, "no request id is spent");
+    }
+
+    #[test]
+    fn a_backlog_dismissal_undo_puts_back_the_rank() {
+        let sel = selection(
+            Kind::Backlog,
+            LedgerRef::Backlog,
+            vec![row(
+                "B-1",
+                "open",
+                json!({"id": "B-1", "status": "open", "focus": 2}),
+            )],
+        );
+        let dismiss = *offered(Kind::Backlog, "open")
+            .iter()
+            .find(|t| t.to == "dismissed")
+            .expect("dismiss is offered");
+        let fields = companions(dismiss, &[FieldValue::Text("dup".into())]);
+        let plan = transition_plan(&sel, dismiss, &fields, &mut 0);
+        assert_eq!(plan.undo[0].set["focus"], 2);
     }
 
     #[test]

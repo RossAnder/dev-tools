@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use serde::Deserialize;
 use serde_json::{Map, Value};
-use tomlctl::{BacklogTriage, LedgerRef, RestoreRow};
+use tomlctl::{BacklogFocus, BacklogTriage, LedgerRef, RestoreRow};
 
 use crate::source::{Event, with_reinstall_hint};
 
@@ -48,6 +48,19 @@ pub(crate) enum WriteRequest {
         triage: BacklogTriage,
         expect_status: String,
     },
+    /// Sets `tier` on `ids`, or removes it for `None`, guarded on `expect`.
+    BacklogTier {
+        request: RequestId,
+        ids: Vec<String>,
+        tier: Option<String>,
+        expect: Map<String, Value>,
+    },
+    /// One focus queue edit, refused whole unless the stored queue is still `expect`.
+    BacklogFocus {
+        request: RequestId,
+        op: BacklogFocus,
+        expect: Vec<(String, Option<i64>)>,
+    },
     /// Appends `record` to the input store as a `new` record.
     InputAdd { request: RequestId, record: Value },
     InputAnswer {
@@ -69,6 +82,8 @@ impl WriteRequest {
             | WriteRequest::Classify { request, .. }
             | WriteRequest::Restore { request, .. }
             | WriteRequest::BacklogTriage { request, .. }
+            | WriteRequest::BacklogTier { request, .. }
+            | WriteRequest::BacklogFocus { request, .. }
             | WriteRequest::InputAdd { request, .. }
             | WriteRequest::InputAnswer { request, .. }
             | WriteRequest::InputWithdraw { request, .. } => *request,
@@ -215,6 +230,10 @@ fn perform(root: &Path, request: WriteRequest) -> Result<Value, String> {
             expect_status,
             ..
         } => tomlctl::backlog_triage(root, &ids, triage, &expect_status),
+        WriteRequest::BacklogTier {
+            ids, tier, expect, ..
+        } => tomlctl::backlog_set_tier(root, &ids, tier.as_deref(), expect),
+        WriteRequest::BacklogFocus { op, expect, .. } => tomlctl::backlog_focus(root, op, expect),
         WriteRequest::InputAdd { record, .. } => tomlctl::inputs_add(root, &record).map(created),
         WriteRequest::InputAnswer {
             question,
@@ -565,6 +584,94 @@ mod tests {
             LedgerRef::Backlog,
             &[("B-0a1b2c3d", "dismissed")],
         );
+    }
+
+    #[test]
+    fn a_queued_backlog_dismissal_and_its_undo_put_its_focus_back() {
+        let sandbox = Sandbox::new("dismiss-queued");
+        round_trip(
+            &sandbox,
+            Kind::Backlog,
+            LedgerRef::Backlog,
+            &[("B-5f607182", "dismissed")],
+        );
+        let row = sandbox.row(&LedgerRef::Backlog, "B-5f607182");
+        assert_eq!(row.focus, Some(1));
+    }
+
+    /// Performs every request of `plan`, then its undo, checking each named row is back as
+    /// it was read.
+    fn write_and_undo(sandbox: &Sandbox, plan: &actions::Plan, ids: &[&str], next: &mut RequestId) {
+        let ledger = LedgerRef::Backlog;
+        let before: Vec<ItemRow> = ids.iter().map(|id| sandbox.row(&ledger, id)).collect();
+        for (request, _) in &plan.requests {
+            let outcome = WriteOutcome::from_result(
+                request.request(),
+                perform(&sandbox.root, request.clone()),
+            );
+            assert_eq!((outcome.skipped_stale, outcome.error), (Vec::new(), None));
+        }
+        for row in &before {
+            assert_ne!(
+                sandbox.row(&ledger, &row.id).raw,
+                row.raw,
+                "{} changed",
+                row.id
+            );
+        }
+        let restore = actions::restore(&plan.undo, &ledger, next);
+        let restored =
+            WriteOutcome::from_result(restore.request(), perform(&sandbox.root, restore));
+        assert_eq!((restored.skipped_stale, restored.error), (Vec::new(), None));
+        for row in before {
+            assert_eq!(
+                sandbox.row(&ledger, &row.id).raw,
+                row.raw,
+                "undo puts {} back",
+                row.id
+            );
+        }
+    }
+
+    #[test]
+    fn a_queue_move_and_its_undo_leave_the_queue_as_it_was() {
+        let sandbox = Sandbox::new("focus-move");
+        let queue: Vec<(String, Option<i64>)> = sandbox
+            .rows(&LedgerRef::Backlog)
+            .into_iter()
+            .filter(|row| matches!(row.status.as_str(), "open" | "promoted"))
+            .map(|row| (row.id, row.focus))
+            .collect();
+        let mut next = 0;
+        let plan = actions::focus_plan(
+            &queue,
+            BacklogFocus::Move {
+                id: "B-4e5f6071".into(),
+                up: true,
+            },
+            &mut next,
+        )
+        .expect("a valid move");
+        write_and_undo(&sandbox, &plan, &["B-4e5f6071", "B-5f607182"], &mut next);
+    }
+
+    #[test]
+    fn a_tier_clear_and_its_undo_leave_the_row_as_it_was() {
+        let sandbox = Sandbox::new("tier-clear");
+        let ledger = LedgerRef::Backlog;
+        let selection = Selection {
+            surface: Surface::of_kind(Kind::Backlog).expect("an item surface"),
+            kind: Kind::Backlog,
+            ledger: ledger.clone(),
+            rows: vec![sandbox.row(&ledger, "B-5f607182")],
+        };
+        let mut next = 0;
+        let plan = actions::tier_plan(
+            &selection,
+            &[crate::form::FieldValue::One(actions::NO_TIER.into())],
+            &mut next,
+        );
+        write_and_undo(&sandbox, &plan, &["B-5f607182"], &mut next);
     }
 
     #[test]
