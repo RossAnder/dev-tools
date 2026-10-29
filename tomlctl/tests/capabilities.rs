@@ -38,6 +38,7 @@ fn read_only_subcommands_hide_write_integrity_flags_in_help() {
         &["backlog", "check", "--help"],
         &["backlog", "list", "--help"],
         &["backlog", "show", "--help"],
+        &["backlog", "next", "--help"],
         &["backlog", "cluster", "--help"],
         &["backlog", "evidence", "audit", "--help"],
         // `backlog evidence dir` resolves its id against the store, so it
@@ -121,6 +122,7 @@ fn write_subcommands_expose_all_integrity_flags_in_help() {
         &["backlog", "add-many", "--help"],
         &["backlog", "relate", "--help"],
         &["backlog", "triage", "--help"],
+        &["backlog", "focus", "--help"],
         &["backlog", "compact", "--help"],
         &["backlog", "reconcile", "--help"],
         &["agents", "record", "--help"],
@@ -1777,6 +1779,10 @@ fn capabilities_features_contains_every_plan_feature() {
         "flow_record_row_task",
         "backlog_get",
         "backlog_edit",
+        "backlog_next",
+        "backlog_focus",
+        "backlog_tier",
+        "backlog_datetime_stamps",
         "owned_store_guard",
     ];
     for name in expected {
@@ -1812,8 +1818,8 @@ fn capabilities_version_matches_cargo_toml() {
         .and_then(|s| s.as_str())
         .expect("`version` must be a string");
     assert_eq!(
-        version, "0.16.0",
-        "expected version `0.16.0` (the minor bump for the `review` verb group); got `{version}`"
+        version, "0.17.0",
+        "expected version `0.17.0` (the minor bump for the backlog `tier`/`focus` fields and the `focus`/`next` verbs); got `{version}`"
     );
 }
 

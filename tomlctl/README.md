@@ -62,8 +62,10 @@ tomlctl backlog add-many --ndjson <src> [--auto-base-sha] [--on-duplicate bump|s
 tomlctl backlog list   [--open|--live] [--kind K] [--tag T]... [--area-prefix PATH]... [--has-evidence] [--count]   # --live is open or promoted; plus the full --where-* query surface
 tomlctl backlog show   <id>[,<id>...]                  # one item + its one-hop relations + its evidence listing; several ids print an array
 tomlctl backlog get    <id>[,<id>...]                  # the stored row only, with no relations or evidence listing; several ids print an array
-tomlctl backlog edit   <id> [--context <t>|--context-file <p>] [--tags T,...|--add-tag T|--remove-tag T] [--evidence R|--add-evidence R] [--origin O] [--flow S] [--base-sha SHA] [--dry-run]   # free-form fields only
-tomlctl backlog edit   --ndjson <src> [--dry-run]      # one {id, context?, tags?, evidence?, origin?, flow?, base_sha?} edit per line; all rows apply in one write, or none
+tomlctl backlog edit   <id> [--context <t>|--context-file <p>] [--tags T,...|--add-tag T|--remove-tag T] [--evidence R|--add-evidence R] [--origin O] [--flow S] [--base-sha SHA] [--tier T|--clear-tier] [--dry-run]   # free-form fields and tier only
+tomlctl backlog edit   --ndjson <src> [--dry-run]      # one {id, context?, tags?, evidence?, origin?, flow?, base_sha?, tier?} edit per line; all rows apply in one write, or none
+tomlctl backlog next   [--tier lite|deep|human] [--fill]   # ranked open rows in queue order; --fill appends unranked open rows oldest-first
+tomlctl backlog focus  <id>... [--at K|--remove|--up|--down] [--dry-run]   # add rows to the focus queue (bottom by default), drop them, or move one row a step
 tomlctl backlog relate B7 --to B3 --as relates-to|duplicates|supersedes   # duplicates dismisses B7, supersedes dismisses B3
 tomlctl backlog triage --promote --to <flow-slug> B7   # --to must name a flow or plan (see --external / --allow-closed); or --dismiss --reason / --resolve --resolution / --reopen --rationale
 tomlctl backlog triage --dismiss --reason <r> --expect-status open B7 B9   # move only ids still at that status; the rest land in skipped_stale
@@ -318,7 +320,7 @@ downstream flow-command templates can feature-gate at boot without parsing
 
 ```json
 {
-  "version": "0.16.0",
+  "version": "0.17.0",
   "features": ["count_distinct", "raw", "lines", "infer_prefix",
                "dedupe_by", "dedup_id_auto", "find_duplicates_across",
                "fingerprint", "capabilities", "error_format_json",
@@ -357,7 +359,8 @@ downstream flow-command templates can feature-gate at boot without parsing
                "list_grep", "reconcile_counts", "toml_records",
                "tasks_update_batch", "backlog_triage_batch",
                "flow_record_row_task", "backlog_get", "backlog_edit",
-               "owned_store_guard"],
+               "backlog_next", "backlog_focus", "backlog_tier",
+               "backlog_datetime_stamps", "owned_store_guard"],
   "subcommands": ["parse", "get", "set", "set-json", "validate",
                   "items", "blocks", "array-append", "capabilities",
                   "integrity", "flow", "json", "backlog", "tasks",
@@ -509,7 +512,11 @@ Feature meanings:
 | `backlog_triage_batch` | `backlog triage --ndjson <SRC>` — one transition per row, all in one write or none; `--dry-run` is accepted only with `--ndjson` |
 | `flow_record_row_task` | each `flow record --ndjson` row may carry its own `task`, overriding the `--task` default |
 | `backlog_get` | `backlog get <ID>[,<ID>...]` — the stored row only, with no relations or evidence listing |
-| `backlog_edit` | `backlog edit <ID>` with field flags, or `--ndjson` for a row per id — change `context`, `tags`, `evidence`, `origin`, `flow` and `base_sha` only; all rows apply in one write, or none |
+| `backlog_edit` | `backlog edit <ID>` with field flags, or `--ndjson` for a row per id — change `context`, `tags`, `evidence`, `origin`, `flow`, `base_sha` and `tier` only; all rows apply in one write, or none |
+| `backlog_next` | `backlog next [--tier T] [--fill]` — a read verb printing the ranked open rows in queue order, each with its `position`; `--fill` appends unranked open rows oldest-first |
+| `backlog_focus` | `backlog focus <ID>... [--at K\|--remove\|--up\|--down]` — add rows to the per-row `focus` queue, drop them, or move one row a step; gaps are kept except when duplicates force a renumber |
+| `backlog_tier` | `tier = lite\|deep\|human` on backlog rows, set by `backlog add` payloads and `backlog edit --tier` / `--clear-tier`, and used by `backlog next --tier` |
+| `backlog_datetime_stamps` | new `backlog add` / `add-many` captures stamp `created` and `last_seen` as UTC `Z` datetimes; date-only rows still read, and a bare-date filter matches a datetime field by its date |
 | `owned_store_guard` | the generic writers (`set`, `set-json`, `array-append`, `items ...`) refuse a verb-owned store (backlog, tasks, execution record, inputs, review-v2) unless `--raw-store` is given |
 | `backlog_check_batch` | `backlog check --ndjson <SRC>` — one `{summary,kind?,area?,tags?}` probe per line, read against one load of the store; one `results` row per probe with its `verdict`, `dedup_id` and up to five `candidates` |
 | `suggestions` | a mistyped subcommand or flag gets clap's `did you mean` hint; hidden aliases accept `read` for `parse`, `--as related` for `relates-to`, and `--id` / `--ids` beside the positional ids of `tasks show`, `tasks update`, `backlog show` and `backlog triage` |

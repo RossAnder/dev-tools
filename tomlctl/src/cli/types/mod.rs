@@ -160,6 +160,10 @@ pub(crate) const FEATURES: &[&str] = &[
     "flow_record_row_task",
     "backlog_get",
     "backlog_edit",
+    "backlog_next",
+    "backlog_focus",
+    "backlog_tier",
+    "backlog_datetime_stamps",
     "owned_store_guard",
 ];
 
