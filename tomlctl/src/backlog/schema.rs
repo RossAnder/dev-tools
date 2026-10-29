@@ -11,9 +11,9 @@
 //! `backlog` and `compacted` arrays and no single item can answer that.
 //! Neither runs implicitly — every write path calls them by hand.
 //!
-//! The store carries no evidence field of any kind. The evidence directory
-//! is the record and `show` lists it at read time, so a stored count, flag
-//! or path is wrong the moment a file is copied in.
+//! `evidence` holds refs written by `backlog add` and `backlog edit`; the
+//! evidence directory listing is computed by `show` at read time, so no stored
+//! count, flag or path can go stale when a file is copied in.
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -51,6 +51,9 @@ pub(crate) const FIELD_LAST_SEEN: &str = "last_seen";
 pub(crate) const FIELD_SEEN_COUNT: &str = "seen_count";
 pub(crate) const FIELD_DEDUP_ID: &str = "dedup_id";
 pub(crate) const FIELD_ORIGIN: &str = "origin";
+pub(crate) const FIELD_TIER: &str = "tier";
+/// Rank in the "do next" queue: an integer of 1 or more, present only on live rows.
+pub(crate) const FIELD_FOCUS: &str = "focus";
 /// Commit the capture was made against. Optional and absent on every row minted
 /// before it existed, so a reader treats absence as "unknown vintage", never as a
 /// claim about the tree. A consumer working in a worktree compares it with
@@ -98,6 +101,10 @@ pub(crate) const KINDS: &[&str] = &[
     KIND_QUESTION,
     KIND_OTHER,
 ];
+
+/// Who may pick a row up: `lite` and `deep` name agent tiers, `human` keeps it
+/// for the user.
+pub const TIERS: &[&str] = &["lite", "deep", "human"];
 
 pub(crate) const STATUS_OPEN: &str = "open";
 pub(crate) const STATUS_PROMOTED: &str = "promoted";
@@ -231,6 +238,7 @@ fn keeps_claim(status: &str) -> bool {
 /// owns `reopen_rationale` — and `resolved` and `dismissed` also keep the
 /// claim. The resolution link is always removed: a caller resolving with
 /// one writes it afterwards, so a bare resolve never inherits a stale link.
+/// A terminal target also drops `focus`; `tier` survives every transition.
 pub(crate) fn clear_for_transition(table: &mut toml::Table, target: &str) {
     let owned: &[&str] = match cluster_of(target) {
         Some(pair) => pair.as_slice(),
@@ -242,6 +250,9 @@ pub(crate) fn clear_for_transition(table: &mut toml::Table, target: &str) {
             continue;
         }
         table.remove(*field);
+    }
+    if keeps_claim(target) {
+        table.remove(FIELD_FOCUS);
     }
 }
 
@@ -344,6 +355,12 @@ pub(crate) enum BacklogError {
         present: &'static str,
         missing: &'static str,
     },
+    UnknownTier {
+        tier: String,
+    },
+    InvalidFocus {
+        found: String,
+    },
     DuplicateId {
         id: String,
     },
@@ -358,6 +375,8 @@ impl BacklogError {
             | Self::MissingStatusField { .. }
             | Self::ForeignTerminalField { .. }
             | Self::PartialClaim { .. }
+            | Self::UnknownTier { .. }
+            | Self::InvalidFocus { .. }
             | Self::DuplicateId { .. } => ErrorKind::Validation,
         }
     }
@@ -400,6 +419,15 @@ impl std::fmt::Display for BacklogError {
                 f,
                 "backlog item with status=\"{status}\" carries `{present}` without `{missing}`; \
                  the promotion claim is kept whole or not at all"
+            ),
+            Self::UnknownTier { tier } => write!(
+                f,
+                "backlog item has unknown tier \"{tier}\"; expected one of {}",
+                TIERS.join(", ")
+            ),
+            Self::InvalidFocus { found } => write!(
+                f,
+                "backlog item has invalid focus {found}; expected an integer of 1 or more"
             ),
             Self::DuplicateId { id } => {
                 write!(f, "backlog id \"{id}\" appears more than once")
@@ -508,6 +536,25 @@ pub(crate) fn validate(value: &JsonValue) -> std::result::Result<(), BacklogErro
             .find(|field| !missing(map, field))
     {
         return Err(foreign(field));
+    }
+    if let Some(tier) = map.get(FIELD_TIER).filter(|v| !v.is_null())
+        && !tier.as_str().is_some_and(|t| TIERS.contains(&t))
+    {
+        return Err(BacklogError::UnknownTier {
+            tier: tier
+                .as_str()
+                .map_or_else(|| tier.to_string(), str::to_string),
+        });
+    }
+    if let Some(focus) = map.get(FIELD_FOCUS).filter(|v| !v.is_null()) {
+        if !focus.as_i64().is_some_and(|n| n >= 1) {
+            return Err(BacklogError::InvalidFocus {
+                found: focus.to_string(),
+            });
+        }
+        if keeps_claim(status) {
+            return Err(foreign(FIELD_FOCUS));
+        }
     }
     Ok(())
 }
@@ -875,6 +922,96 @@ mod tests {
         }
     }
 
+    fn open_with(field: &str, value: JsonValue) -> JsonValue {
+        let mut v = open_item();
+        v.as_object_mut().unwrap().insert(field.into(), value);
+        v
+    }
+
+    #[test]
+    fn tier_must_be_in_the_vocabulary() {
+        for tier in TIERS {
+            assert_eq!(validate(&open_with(FIELD_TIER, json!(tier))), Ok(()));
+        }
+        assert_eq!(
+            validate(&open_with(FIELD_TIER, json!("cheap"))),
+            Err(BacklogError::UnknownTier {
+                tier: "cheap".into()
+            })
+        );
+        assert!(matches!(
+            validate(&open_with(FIELD_TIER, json!(3))),
+            Err(BacklogError::UnknownTier { .. })
+        ));
+    }
+
+    #[test]
+    fn focus_must_be_a_positive_integer() {
+        assert_eq!(validate(&open_with(FIELD_FOCUS, json!(1))), Ok(()));
+        for bad in [json!(0), json!(-2), json!(1.5), json!("2")] {
+            assert!(
+                matches!(
+                    validate(&open_with(FIELD_FOCUS, bad.clone())),
+                    Err(BacklogError::InvalidFocus { .. })
+                ),
+                "focus {bad} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn focus_is_refused_on_terminal_rows() {
+        for (status, date, companion) in [
+            (STATUS_RESOLVED, FIELD_RESOLVED, FIELD_RESOLUTION),
+            (STATUS_DISMISSED, FIELD_DISMISSED, FIELD_DISMISS_REASON),
+        ] {
+            let mut v = with(status, &[(date, "2026-09-01"), (companion, "why")]);
+            v.as_object_mut()
+                .unwrap()
+                .insert(FIELD_FOCUS.into(), json!(2));
+            assert_eq!(
+                validate(&v),
+                Err(BacklogError::ForeignTerminalField {
+                    status: status.into(),
+                    field: FIELD_FOCUS,
+                })
+            );
+        }
+        let mut promoted = with(
+            STATUS_PROMOTED,
+            &[
+                (FIELD_PROMOTED, "2026-09-01"),
+                (FIELD_PROMOTED_TO, "some-flow"),
+            ],
+        );
+        promoted
+            .as_object_mut()
+            .unwrap()
+            .insert(FIELD_FOCUS.into(), json!(2));
+        assert_eq!(validate(&promoted), Ok(()));
+    }
+
+    #[test]
+    fn clear_for_transition_drops_focus_only_on_terminal_targets() {
+        for (target, keeps_focus) in [
+            (STATUS_RESOLVED, false),
+            (STATUS_DISMISSED, false),
+            (STATUS_PROMOTED, true),
+            (STATUS_OPEN, true),
+        ] {
+            let mut table = json_to_table(&open_item());
+            table.insert(FIELD_FOCUS.into(), TomlValue::Integer(3));
+            table.insert(FIELD_TIER.into(), TomlValue::String("lite".into()));
+            clear_for_transition(&mut table, target);
+            assert_eq!(
+                table.contains_key(FIELD_FOCUS),
+                keeps_focus,
+                "target={target}"
+            );
+            assert!(table.contains_key(FIELD_TIER), "target={target} keeps tier");
+        }
+    }
+
     #[test]
     fn open_accepts_reopen_rationale() {
         let mut v = open_item();
@@ -1036,6 +1173,7 @@ status = "resolved"
                 "other"
             ]
         );
+        assert_eq!(TIERS, &["lite", "deep", "human"]);
         assert_eq!(STATUSES, &["open", "promoted", "dismissed", "resolved"]);
         assert_eq!(TERMINAL_DATE_FIELDS, &["promoted", "dismissed", "resolved"]);
         assert_eq!(RELATION_FIELDS, &["related", "duplicate_of", "supersedes"]);
