@@ -10,7 +10,8 @@ into glimpse, plus the transcript tail of the agent you are looking at.
 glimpse writes two things and nothing else (see [Writing](#writing)):
 
 - **Control fields**, through forms: status dispositions with their companion
-  text, and review/optimise severity, effort and category. Each write is
+  text, review/optimise severity, effort and category, and backlog `tier` and
+  focus-queue `focus`. Each write is
   compare-and-set guarded on the values glimpse showed, so one that changed
   underneath is skipped and reported, never overwritten.
 - **Input records** in the git-ignored `.claude/inputs.toml`: new-item captures,
@@ -147,9 +148,11 @@ cursor row and moves on, `V` marks every visible row, and `Esc` clears the marks
 before it closes anything. `g` cycles the grouping, each group under a
 `▾ <label> (n)` header: none, severity, category, effort, file and status on
 Review and Optimise; none, severity, category and status on Plan-review; none,
-kind, area and status on Backlog. `S` cycles the sort: id, severity, effort,
+kind, area, tags, origin, flow, tier and status on Backlog. `S` cycles the sort: id, severity, effort,
 newest, status, category, summary and area on Review and Optimise; the same less
-effort on Plan-review; id, newest, kind, status, summary and area on Backlog. `D`
+effort on Plan-review; id, newest, last-seen, seen-count, closed, kind, status, tier,
+focus, summary and area on Backlog. On Backlog, queued open and promoted rows are
+pinned in queue order under a `focus` header above every group and sort. `D`
 flips the direction. A click on a column header sorts by that column ascending,
 a second click descending, a third returns to id ascending; the status glyph's
 column has a blank title but sorts by status all the same. `c` shows or
@@ -187,7 +190,10 @@ marked:
   `fixed`, `applied` and `merged` stay with the apply flows and the plan merge.
 - `e` (Review and Optimise only) opens the classify form: severity, effort and
   category, prefilled with the value every target shares, else `(unchanged)`.
-  Category also takes a value of your own through `other…`.
+  Category also takes a value of your own through `other…`. On Backlog it sets
+  the tier: `lite`, `deep`, `human` or `none`.
+- `P`, `<`, `>` (Backlog) edit the focus queue: `P` adds the targets at the
+  bottom, or removes them when all are queued; `<` / `>` move the cursor row.
 - `r` files a request or note on the targets as an input record.
 - `n` files a capture, a new backlog item in your words with an optional kind
   hint, area and note, from any surface.
@@ -207,7 +213,7 @@ changed since glimpse showed it is skipped, never overwritten, and the footer
 names the skipped ids, as it does any error. A write is refused with
 `root mismatch` when tomlctl's repo root differs from glimpse's, since the two
 must agree on the lock directory. Item content, ids and every backlog field but
-its triage status are left to agents, who edit them in response to input records.
+its triage status, `tier` and `focus` are left to agents.
 
 ## Inbox
 
@@ -349,7 +355,8 @@ The legend's `Keys` section lists the same keys.
 | `c` | item surfaces and Inbox: show or hide closed items |
 | `/` | item surfaces: filter as you type; `Enter` keeps it, `Esc` restores the one before |
 | `m` | item surfaces: action menu, the status moves every target shares |
-| `e` | Review and Optimise: classify severity, effort and category |
+| `e` | Review and Optimise: classify severity, effort and category; Backlog: set the pickup tier |
+| `P`, `<` / `>` | Backlog: add or remove targets in the focus queue; move the cursor row in it |
 | `r` | item surfaces: file a request or note on the marked or cursor items |
 | `n` | capture a new item into the input store |
 | `u` | undo glimpse's own last write |
@@ -467,7 +474,7 @@ optional:
 | `panel_percent` | `40` | the docked panel's share of the body, 20 to 70 |
 | `column_max` | `40` | widest a horizontal layers column grows to fit its titles, 18 to 120 |
 | `mouse` | `true` | capture the mouse for wheel scrolling, click-to-select and dragging the divider |
-| `item_columns` | `["status", "id", "kind", "category", "effort", "summary", "area"]` | the columns of an item surface's rows, in order: any of those names, each at most once. `kind` is a finding's severity or a backlog item's kind; `summary` takes the width the others leave |
+| `item_columns` | `["status", "id", "kind", "category", "effort", "summary", "area", "tier", "rank"]` | the columns of an item surface's rows, in order: any of those names, each at most once. `kind` is a finding's severity or a backlog item's kind; `summary` takes the width the others leave; `tier` and `rank` are Backlog's pickup tier and queue place, and a saved list from before they existed hides them until `C` adds them |
 | `hints` | `"short"` | `short`, `full` or `hidden`: how much of the footer's key hints shows at start, until `H` picks another |
 | `[theme]` | | colour tokens and `base`, below |
 
