@@ -145,6 +145,7 @@ struct PlanReviewRow {
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(default)]
+#[allow(dead_code)] // mirrors the stored row; fields without an `ItemRow` slot are shown from `raw`
 struct BacklogRow {
     id: String,
     kind: String,
@@ -162,6 +163,19 @@ struct BacklogRow {
     resolved: String,
     resolution: String,
     reopen_rationale: String,
+    last_seen: String,
+    seen_count: Option<i64>,
+    origin: String,
+    flow: String,
+    base_sha: String,
+    related: Vec<String>,
+    duplicate_of: String,
+    supersedes: String,
+    resolved_flow: String,
+    resolved_tasks: Vec<String>,
+    resolved_commits: Vec<String>,
+    tier: String,
+    focus: Option<i64>,
 }
 
 /// Where a row points: code for findings, a plan heading for plan-review, an
@@ -216,8 +230,16 @@ pub(crate) struct ItemRow {
     pub(crate) category: String,
     pub(crate) effort: String,
     pub(crate) anchor: Anchor,
-    /// `first_flagged` or `created`, as `YYYY-MM-DD`.
+    /// `first_flagged` or `created`: a date or an RFC 3339 `Z` datetime.
     pub(crate) created: String,
+    /// The backlog pickup tier; empty when unset or for the other ledgers.
+    pub(crate) tier: String,
+    /// The backlog queue rank, `None` when the row is not queued.
+    pub(crate) focus: Option<i64>,
+    pub(crate) last_seen: String,
+    pub(crate) seen_count: Option<i64>,
+    pub(crate) origin: String,
+    pub(crate) flow: String,
     /// The date the row left `open`: `resolved`, `dismissed` or `promoted`.
     pub(crate) closed: String,
     /// The non-empty rationale and companion fields, by field name, in a fixed order.
@@ -371,6 +393,12 @@ impl ItemRow {
             kind: r.kind,
             anchor,
             created: r.created,
+            tier: r.tier,
+            focus: r.focus,
+            last_seen: r.last_seen,
+            seen_count: r.seen_count,
+            origin: r.origin,
+            flow: r.flow,
             closed,
             companions: companions([
                 ("resolution", r.resolution),
@@ -645,6 +673,24 @@ mod tests {
                     "tomlctl/tests".to_owned(),
                     StatusClass::Done
                 ),
+                (
+                    "B-4e5f6071",
+                    "bug",
+                    "glimpse/src/ledger.rs".to_owned(),
+                    StatusClass::Live
+                ),
+                (
+                    "B-5f607182",
+                    "debt",
+                    "glimpse/src/ledger.rs".to_owned(),
+                    StatusClass::Live
+                ),
+                (
+                    "B-60718293",
+                    "debt",
+                    "glimpse".to_owned(),
+                    StatusClass::Parked
+                ),
             ]
         );
         let dismissed = row(&ledger, "B-2c3d4e5f");
@@ -654,6 +700,50 @@ mod tests {
             dismissed.companions,
             [("dismiss_reason", "works as intended".to_owned())]
         );
+    }
+
+    #[test]
+    fn backlog_rows_carry_tier_queue_and_sighting_fields() {
+        let ledger = fixture("backlog.toml");
+        let first = row(&ledger, "B-4e5f6071");
+        assert_eq!(first.created, "2026-10-05T09:30:00Z");
+        assert_eq!(first.last_seen, "2026-10-06T08:00:00Z");
+        assert_eq!(first.seen_count, Some(3));
+        assert_eq!(
+            (first.origin.as_str(), first.flow.as_str()),
+            ("user", "backlog-queue")
+        );
+        assert_eq!((first.tier.as_str(), first.focus), ("lite", Some(2)));
+        let same_day = row(&ledger, "B-5f607182");
+        assert_eq!(&same_day.created[..10], &first.created[..10]);
+        assert_eq!((same_day.tier.as_str(), same_day.focus), ("deep", Some(1)));
+        let promoted = row(&ledger, "B-60718293");
+        assert_eq!((promoted.tier.as_str(), promoted.focus), ("human", Some(4)));
+        let queue: Vec<(&str, i64)> = ledger
+            .rows
+            .iter()
+            .filter_map(|row| Some((row.id.as_str(), row.focus?)))
+            .collect();
+        assert_eq!(
+            queue,
+            [("B-4e5f6071", 2), ("B-5f607182", 1), ("B-60718293", 4)]
+        );
+        let untiered = row(&ledger, "B-0a1b2c3d");
+        assert_eq!((untiered.tier.as_str(), untiered.focus), ("", None));
+        assert_eq!(untiered.seen_count, Some(2));
+    }
+
+    #[test]
+    fn a_non_integer_focus_reads_as_absent() {
+        let value = json!({
+            "path": "backlog.toml",
+            "kind": "backlog",
+            "revision": null,
+            "items": [{"id": "B-x", "status": "open", "focus": "soon", "tier": "lite"}],
+        });
+        let ledger = Ledger::from_value(value, by_path("backlog.toml")).expect("loads");
+        assert_eq!(ledger.rows[0].focus, None);
+        assert_eq!(ledger.rows[0].tier, "lite");
     }
 
     #[test]

@@ -60,3 +60,51 @@ origin = "implement"
 context = "The next run in the same tree fails on the leftover."
 resolved = 2026-09-28
 resolution = "fixed in def5678"
+
+[[backlog]]
+id = "B-4e5f6071"
+kind = "bug"
+summary = "a datetime-stamped row ranked second"
+area = "glimpse/src/ledger.rs"
+tags = ["queue", "ui"]
+status = "open"
+created = 2026-10-05T09:30:00Z
+last_seen = 2026-10-06T08:00:00Z
+seen_count = 3
+dedup_id = "4e5f607182930415"
+origin = "user"
+flow = "backlog-queue"
+tier = "lite"
+focus = 2
+
+[[backlog]]
+id = "B-5f607182"
+kind = "debt"
+summary = "a second row created the same day, ranked first"
+area = "glimpse/src/ledger.rs"
+tags = ["queue"]
+status = "open"
+created = 2026-10-05T11:00:00Z
+last_seen = 2026-10-05T11:00:00Z
+seen_count = 1
+dedup_id = "5f60718293041526"
+origin = "implement"
+tier = "deep"
+focus = 1
+
+[[backlog]]
+id = "B-60718293"
+kind = "debt"
+summary = "a promoted row that kept its rank"
+area = "glimpse"
+tags = []
+status = "promoted"
+created = 2026-10-05T12:15:00Z
+last_seen = 2026-10-05T12:15:00Z
+seen_count = 1
+dedup_id = "6071829304152637"
+origin = "review"
+promoted = 2026-10-07
+promoted_to = "docs/plans/backlog-queue.md"
+tier = "human"
+focus = 4
