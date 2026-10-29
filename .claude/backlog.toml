@@ -1,5 +1,5 @@
 schema_version = 1
-last_updated = 2026-10-21
+last_updated = 2026-10-29
 
 [[backlog]]
 id = "B-de0a0d87"
@@ -7390,3 +7390,35 @@ context = "Tight zoom lays each node out as one cell with a one-cell gap. TaskSt
 base_sha = "480fedbb746f1504b46dd1e231488b89280c7aad"
 evidence = ["glimpse/src/diagram/paint.rs"]
 related = ["B-5c5da7b8"]
+
+[[backlog]]
+id = "B-fa9da685"
+kind = "direction"
+summary = "Backlog triage and findability: pickup tier, focus queue with backlog next, datetime captures, and full-field sort/group/details in glimpse"
+area = "glimpse/src/surface.rs"
+tags = [
+    "backlog-triage",
+    "plan-paused",
+    "tomlctl",
+    "glimpse",
+]
+status = "open"
+created = 2026-10-29
+last_seen = 2026-10-29
+seen_count = 1
+dedup_id = "fa9da68588373701"
+origin = "plan-new"
+context = """
+User request (2026-10-29), planning paused at /plan-new Phase 6. Resume with /plan-new docs/plans/giggly-conjuring-brook.md: it holds the exploration notes, vetted research and every decision below (local, not yet committed).
+
+Problems: (1) backlog created/last_seen are date-only and glimpse's Newest sort breaks ties by hash id, so same-day rows come out unordered; (2) the glimpse Backlog surface sorts only on id/newest/kind/status/summary/area and groups only on kind/area/status (surface.rs Sort/Group); (3) glimpse BacklogRow (ledger.rs) drops last_seen, seen_count, origin, flow, base_sha, related, duplicate_of, supersedes and resolved_flow/tasks/commits from the details view; (4) there is no way to flag items for cheap-agent pickup or to keep a focus sequence near the surface for 'what shall we do next?'.
+
+Decisions: tier = lite|deep|human, a validated field (clap ValueEnum, which avoids the A/B/C fallback in the capabilities ENUM_VALUES), set in glimpse in bulk over marked rows (key e) and by agents through tomlctl. focus = a dense per-row integer rank: order by (focus, id) and display positions; --focus k inserts at k and shifts the rest; moves are all-or-nothing (StalePolicy::Abort, not write_guarded's Skip). Resolve and dismiss drop the rank; promote keeps it. glimpse pins ranked rows in a block above every group/sort, plus a Focus sort; P adds/removes rows to the queue and < / > move them. New `tomlctl backlog next [--tier T] [--fill]` prints the ranked queue, and --fill appends unranked open rows oldest-first. backlog-clear moves to `next --tier lite --fill`, and tier=lite overrides its debt|annoyance kind default. New captures write UTC Z datetimes (reuse inputs.rs now(), moved to time.rs); last_updated stays a date. In the shared query engine, --where equality against a bare date matches same-day datetime rows. New sorts: last_seen, seen_count, closed, tier, focus. New groups: tag set, origin, flow, tier. Details show every field, then any remaining non-empty raw field. Fold in B-ec0c911b, B-00b994ba and B-be2797ef. One plan, milestones (M1 tomlctl, M2 glimpse, M3 skills/docs), about 45 files.
+
+Gotchas found: backlog.md reference is at the 600-line ceiling, so document the new verb in a new references file. Adding focus to MANAGED_FIELDS would clear it on every transition. ledgers::restore only accepts MANAGED_FIELDS, so undo needs tier and focus added. glimpse CLAUDE.md and the README say glimpse writes no backlog field except triage status, so both need amending. After a tomlctl change, rebuild glimpse as well (cargo install --path glimpse)."""
+base_sha = "c18f34831b8aecc6304a2a1e23e0862c849554e4"
+related = [
+    "B-ec0c911b",
+    "B-00b994ba",
+    "B-be2797ef",
+]
