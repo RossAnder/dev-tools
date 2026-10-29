@@ -81,6 +81,17 @@ history; `reconcile --apply` also records `resolved_flow`, `resolved_tasks` and
 lands on. glimpse's dismiss, reopen and resolve actions call the same triage logic, guarded on
 the status they displayed.
 
+**`tier`** — `lite`, `deep` or `human`: who may pick the row up. Optional, survives every status
+transition, and is set by the user in glimpse or with `backlog edit --tier` (removed with
+`--clear-tier`); it is never part of the capture's fingerprint.
+
+**`focus`** — the row's rank in the "do next" queue, an integer of at least 1. Owned by
+`backlog focus` and glimpse's queue keys; `backlog add` drops it and `backlog edit` refuses it.
+Resolving or dismissing a row drops its `focus`.
+
+New rows stamp `created` and `last_seen` as UTC datetimes (`YYYY-MM-DDTHH:MM:SSZ`); older rows keep
+their bare dates, and readers accept both.
+
 ## Who writes
 
 **Sub-agents never write to the store.** Implementers, research agents and verification
@@ -107,7 +118,7 @@ of the three factors.
 what keeps parallel sub-agents from racing on one TOML file and its integrity sidecar.
 
 **The human writes too, without minting.** They triage rows in glimpse (dismiss, reopen,
-resolve) through the same triage logic, and leave new candidates as `capture` records in
+resolve) through the same triage logic, set a row's tier, queue rows and reorder the queue, and leave new candidates as `capture` records in
 `.claude/inputs.toml`. `/backlog` drains those captures through the same `check` gate before
 any `add`; the [`flow-contract-user-inputs`](../flow-contract-user-inputs/SKILL.md) skill owns
 that store and its writers.

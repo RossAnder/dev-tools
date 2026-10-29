@@ -29,7 +29,7 @@ Two gates, with the input drain between them:
 tomlctl --version
 ```
 
-This command needs 0.13 or later: the `backlog` group landed in 0.6, `backlog reconcile` and `backlog list --live` in 0.10, and the `inputs` group and `backlog triage --expect-status` in 0.13. Below that the verbs and flags used here do not exist and fail with a clap usage error; halt and tell the user to reinstall with `cargo install --path tomlctl`.
+This command needs 0.17 or later: the `backlog` group landed in 0.6, `backlog reconcile` and `backlog list --live` in 0.10, the `inputs` group and `backlog triage --expect-status` in 0.13, and `backlog edit --tier` and `backlog focus` in 0.17. Below that the verbs and flags used here do not exist and fail with a clap usage error; halt and tell the user to reinstall with `cargo install --path tomlctl`.
 
 ### Drain user inputs
 
@@ -81,7 +81,7 @@ tomlctl backlog list --open --select id,kind,area,summary
 
 **This is a user-engagement gate — the autonomy directive does not apply.** Never infer a disposition and never apply one the user did not give. An item they did not rule on stays `open`, and that is a valid outcome for the whole sweep.
 
-Offer, per cluster where the group holds together and per item otherwise, via `AskUserQuestion` (or plain prose on a harness without it): promote, dismiss, resolve, keep open, or relate to another item. Promote and relate need a follow-up value — the flow slug or repo-relative plan path for `--to`, the second id and the edge kind for a relation. Dismiss and resolve carry the user's own wording; do not draft a reason on their behalf.
+Offer, per cluster where the group holds together and per item otherwise, via `AskUserQuestion` (or plain prose on a harness without it): promote, dismiss, resolve, keep open, or relate to another item. Also offer, interactively only: set a tier (`lite`, `deep` or `human`) and queue it for pickup. These two are not added to the Empty-answer rule's options or the Step 0 drain's Answers handling. Promote and relate need a follow-up value — the flow slug or repo-relative plan path for `--to`, the second id and the edge kind for a relation. Dismiss and resolve carry the user's own wording; do not draft a reason on their behalf.
 
 **Empty-answer rule**: when `AskUserQuestion` comes back empty (an `acceptEdits`, skill-hosted or headless run), the cluster or item stays `open`. Then post the offer as one `question` record per the `flow-contract-user-inputs` contract — `ledger` `backlog`, `items` the cluster's ids, `choice` `single`, options `promote`, `dismiss`, `resolve`, `keep open`, and a `prompt` asking for the wording or `--to` target in the answer's text — unless a pending question already asks it for the same ids, or the drain declined an answer to one for them this run. The next run's drain acts on the answer, a `promote` included.
 
@@ -98,6 +98,18 @@ tomlctl backlog triage B-1a2b3c4d --dismiss --reason-file <reason-file> --expect
 ```bash
 tomlctl backlog triage B-1a2b3c4d --resolve --resolution-file <resolution-file> --expect-status open
 ```
+
+Setting a tier and queueing apply to an item that stays `open`, and take no wording:
+
+```bash
+tomlctl backlog edit B-1a2b3c4d --tier lite
+```
+
+```bash
+tomlctl backlog focus B-1a2b3c4d
+```
+
+`backlog focus` appends to the bottom of the queue; `--at <K>` enters it at position K.
 
 Write the user's wording to the file with the Write tool first; never paste it into the shell argument, where a backtick or `$(…)` executes and an apostrophe ends the quote. The envelope then carries `applied` and `skipped_stale`. Report every `skipped_stale` id, with the status it was found at, under a "changed during the run" line, and never retry it. `triage` accepts several ids in one call, which is how a whole cluster moves at once. A set mixing displayed statuses or dispositions is still one call: stage a TOML record file with the Write tool — one `[[record]]` per item, its `id`, one `resolve`, `dismiss`, `promote` or `reopen` key carrying the user's wording (a `'''` literal) or the promote target, and `expect_status` set to the status its offer displayed — and pass it as `tomlctl backlog triage --ndjson <triage.toml>`. A row whose status has moved is left untouched and reported under `skipped_stale` like any other; the remaining rows apply in one write, or none do. Relations are a separate verb, and `--as` takes `relates-to`, `duplicates` or `supersedes` — the latter two also dismiss an item, so confirm the user meant that transition before writing one:
 
