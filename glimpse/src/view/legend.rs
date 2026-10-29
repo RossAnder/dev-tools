@@ -21,23 +21,34 @@ const KEYS: &[(&str, &str)] = &[
     ("enter", "details, full-screen, close"),
     ("PgUp PgDn", "page the list, legend or full details"),
     ("Home End", "first / last row or task"),
-    ("J K", "scroll the details panel"),
-    ("S-PgUp S-PgDn", "page the details panel"),
-    ("S-Home S-End", "details: top / bottom"),
+    (
+        "J K  S-PgUp/Dn",
+        "details panel: scroll, page (S-Home S-End: top / bottom)",
+    ),
     ("t", "activity panel"),
-    ("o", "flip the layer orientation"),
-    ("|", "panels beside / below"),
-    ("[ ]", "shrink / grow the panel (or drag its edge)"),
-    ("- =", "narrow / widen layer columns"),
-    ("i", "diagram: show implied edges"),
-    ("F", "diagram focus: off, ancestry, subtree, both"),
-    ("z", "diagram: zoom out to status glyphs (or ctrl+wheel)"),
-    ("Z", "diagram: zoom in to titles (or ctrl+wheel)"),
+    (
+        "o  |",
+        "flip the layer orientation / panels beside or below",
+    ),
+    (
+        "[ ]  - =",
+        "shrink / grow the panel (or drag its edge) / narrow / widen layer columns",
+    ),
+    (
+        "i  F",
+        "diagram: show implied edges / focus: off, ancestry, subtree, both",
+    ),
+    (
+        "z  Z",
+        "diagram: zoom out to status glyphs / in to titles (or ctrl+wheel)",
+    ),
     ("x", "diagram: fit the view / show every task (drag pans)"),
     ("f", "follow the frontier"),
     ("s  a", "flows / auto-follow flows"),
-    ("d", "density: auto, compact, comfortable"),
-    ("H", "key hints: short, full, hidden"),
+    (
+        "H  d",
+        "key hints: short, full, hidden / density: auto, compact, comfortable",
+    ),
     ("y", "copy the row's or the task's id (or click an id)"),
     ("v", "release the mouse to select text, or take it back"),
     ("T", "themes: preview with j k, enter keeps, esc reverts"),
@@ -51,7 +62,8 @@ const KEYS: &[(&str, &str)] = &[
     ("D", "items, inbox: flip the sort direction"),
     ("C", "items: choose the columns"),
     ("c", "items, inbox: show / hide closed"),
-    ("m  e", "items: action menu / classify"),
+    ("m  e", "items: action menu / classify or tier"),
+    ("P  < >", "backlog: queue / move in the queue"),
     ("r  n", "request or note on the items / capture one"),
     ("u  /", "undo glimpse's last write / filter items"),
     ("w  enter", "inbox: withdraw your record / answer"),
@@ -445,9 +457,14 @@ mod tests {
         let keys: String = KEYS.iter().map(|(key, _)| format!(" {key} ")).collect();
         for key in [
             "m", "e", "r", "n", "u", "/", "w", "c", "enter", "J", "K", "H", "y", "v", "D", "C",
-            "T", "F", "z", "Z", "x",
+            "T", "F", "z", "Z", "x", "P", "<", ">",
         ] {
             assert!(keys.contains(&format!(" {key} ")), "{key} is missing");
         }
+    }
+
+    #[test]
+    fn the_key_table_stays_short_enough_to_scan() {
+        assert!(KEYS.len() <= 32, "{} rows", KEYS.len());
     }
 }
