@@ -710,6 +710,28 @@ fn reject_add_expect(obj: &serde_json::Map<String, JsonValue>) -> Result<()> {
     Ok(())
 }
 
+/// The "missing `json`" error for an `add`/`update` op. When row fields were written beside
+/// `op` rather than under `json` — the usual slip in a `[[record]]` ops file — it names them.
+fn missing_json_err(
+    op_name: &str,
+    shape: &str,
+    obj: &serde_json::Map<String, JsonValue>,
+) -> anyhow::Error {
+    let stray: Vec<String> = obj
+        .keys()
+        .filter(|k| !matches!(k.as_str(), "op" | "id" | "expect" | "unset"))
+        .map(|k| format!("`{k}`"))
+        .collect();
+    if stray.is_empty() {
+        anyhow!("{op_name} op missing `json` field; required shape is {shape}")
+    } else {
+        anyhow!(
+            "{op_name} op missing `json` field; required shape is {shape}. {} sit beside `op`: nest them under `json` (in a TOML ops file, a `[record.json]` table after `op`)",
+            stray.join(", ")
+        )
+    }
+}
+
 /// Post-parse sibling of `items_apply_to_opts`. Takes already-parsed
 /// `ops` (consumed by-value to feed the existing `.into_iter()` loop) so
 /// callers that have already validated the JSON shape — `compute_apply_mutation`
@@ -841,13 +863,9 @@ fn apply_op_indexed(
         .to_string();
     match op_name.as_str() {
         "add" => {
-            let json = obj
-                .remove("json")
-                .ok_or_else(|| {
-                    anyhow!(
-                        "add op missing `json` field; required shape is {{\"op\":\"add\",\"json\":{{<row fields>}}}}"
-                    )
-                })?;
+            let json = obj.remove("json").ok_or_else(|| {
+                missing_json_err("add", r#"{"op":"add","json":{<row fields>}}"#, &obj)
+            })?;
             reject_add_expect(&obj)?;
             // Capture the new entry's id (if present + a string) before the
             // value is consumed; on success append it to the index so a
@@ -879,13 +897,13 @@ fn apply_op_indexed(
                     )
                 })?
                 .to_string();
-            let json = obj
-                .remove("json")
-                .ok_or_else(|| {
-                    anyhow!(
-                        "update op missing `json` field; required shape is {{\"op\":\"update\",\"id\":\"<id>\",\"json\":{{<patch>}}}}"
-                    )
-                })?;
+            let json = obj.remove("json").ok_or_else(|| {
+                missing_json_err(
+                    "update",
+                    r#"{"op":"update","id":"<id>","json":{<patch>}}"#,
+                    &obj,
+                )
+            })?;
             let unset = take_unset(obj.remove("unset"))?;
             let expect = take_expect(obj.remove("expect"))?;
             // Lazy-rebuild the index if a previous remove invalidated it.
@@ -1071,13 +1089,9 @@ pub(crate) fn apply_single_op(
         .to_string();
     match op_name.as_str() {
         "add" => {
-            let json = obj
-                .remove("json")
-                .ok_or_else(|| {
-                    anyhow!(
-                        "add op missing `json` field; required shape is {{\"op\":\"add\",\"json\":{{<row fields>}}}}"
-                    )
-                })?;
+            let json = obj.remove("json").ok_or_else(|| {
+                missing_json_err("add", r#"{"op":"add","json":{<row fields>}}"#, &obj)
+            })?;
             reject_add_expect(&obj)?;
             items_add_value_to(doc, json, array_name).map(|()| None)
         }
@@ -1091,13 +1105,13 @@ pub(crate) fn apply_single_op(
                     )
                 })?
                 .to_string();
-            let json = obj
-                .remove("json")
-                .ok_or_else(|| {
-                    anyhow!(
-                        "update op missing `json` field; required shape is {{\"op\":\"update\",\"id\":\"<id>\",\"json\":{{<patch>}}}}"
-                    )
-                })?;
+            let json = obj.remove("json").ok_or_else(|| {
+                missing_json_err(
+                    "update",
+                    r#"{"op":"update","id":"<id>","json":{<patch>}}"#,
+                    &obj,
+                )
+            })?;
             // Share the `unset` parser with `apply_op_indexed` via the
             // `take_unset` helper so the two dispatch paths can't drift on
             // shape errors or `null` handling.
@@ -3370,6 +3384,27 @@ status = "open"
             msg.contains("expected one of: add, update, remove"),
             "expected enumeration of the valid op set, got: {msg}"
         );
+    }
+
+    /// Row fields written beside `op` (a flat `[[record]]` ops file) must be named in the
+    /// error with the `json` nesting fix; a bare missing `json` keeps the plain message.
+    #[test]
+    fn error_message_missing_json_names_stray_row_fields() {
+        let mut doc: TomlValue = toml::from_str("schema_version = 1\n").unwrap();
+        let err =
+            items_apply(&mut doc, r#"[{"op":"add","file":"a.ts","summary":"s"}]"#).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("add op missing `json` field"), "got: {msg}");
+        assert!(
+            msg.contains("`file`, `summary` sit beside `op`"),
+            "got: {msg}"
+        );
+        assert!(msg.contains("[record.json]"), "got: {msg}");
+
+        let err = items_apply(&mut doc, r#"[{"op":"update","id":"R1"}]"#).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("update op missing `json` field"), "got: {msg}");
+        assert!(!msg.contains("sit beside"), "got: {msg}");
     }
 
     /// Every "no item with id" site must include the

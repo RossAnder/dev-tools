@@ -9,7 +9,7 @@ row and when not to is the `backlog-capture` skill's job
 
 ## Contents
 
-- [Reading, searching and editing rows](backlog-recipes.md)
+- [Reading, searching and editing rows](backlog-recipes.md): output shapes, and printing fields with `--template` instead of a Python pipe
 - [`backlog get`, `backlog edit` and `triage --ndjson` rows](backlog-edit.md)
 - [`backlog add`](#backlog-add)
 - [`backlog add-many`](#backlog-add-many)

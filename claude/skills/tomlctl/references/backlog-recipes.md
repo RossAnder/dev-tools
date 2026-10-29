@@ -7,7 +7,8 @@ the `triage --ndjson` row shape are in [backlog-edit.md](backlog-edit.md).
 Never `grep`, `sed` or `cat` `.claude/backlog.toml`, and never pipe `tomlctl get
 .claude/backlog.toml backlog` into `jq` to find a row: rows run to twenty-odd lines, so a
 `grep -A<n>` cuts some and runs into the next, and the verbs below already return exactly the
-row. Output shapes, so no fallback chain is needed: `list` and `get` print a bare row or array of
+row. Don't pipe them into `python -c` or `jq` to print fields either; `--get` and `--template`
+do it in one call. Output shapes, so no fallback chain is needed: `list` and `get` print a bare row or array of
 rows (never `{"items":…}`); `show` prints `{item, evidence, neighbours}` for one id and an array
 of those for several, so its fields are `item.<field>`; `check` and `add-many` are row reports
 whose rows are `candidates` / `results` / `rows`. Fields are named `summary` and `context` —

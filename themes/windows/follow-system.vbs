@@ -2,6 +2,7 @@
 ' eggshell variant, by copying that variant over a file they read:
 '   Claude Code  <claude dir>\themes\eggshell-system.json   (select "Eggshell (system)")
 '   gitui        %APPDATA%\gitui\theme.ron, eggshell.tmTheme (read when gitui starts)
+'   Alacritty    %APPDATA%\alacritty\eggshell-system.toml (imported; live-reloaded)
 ' It also keeps the two fixed Claude Code variants equal to this repo's, since file
 ' symlinks need Developer Mode.
 ' Run every minute and at logon by the "Eggshell Follow System" scheduled task that
@@ -32,6 +33,8 @@ Sync themes & "\gitui\eggshell-dark.tmTheme", themes & "\gitui\eggshell-light.tm
     sh.ExpandEnvironmentStrings("%APPDATA%") & "\gitui\eggshell.tmTheme", ""
 Sync themes & "\gitui\theme-dark.ron", themes & "\gitui\theme-light.ron", _
     sh.ExpandEnvironmentStrings("%APPDATA%") & "\gitui\theme.ron", ""
+Sync themes & "\alacritty\eggshell.toml", themes & "\alacritty\eggshell-light.toml", _
+    sh.ExpandEnvironmentStrings("%APPDATA%") & "\alacritty\eggshell-system.toml", ""
 Copy themes & "\claude\eggshell.json", claudeDir & "\themes\eggshell.json"
 Copy themes & "\claude\eggshell-light.json", claudeDir & "\themes\eggshell-light.json"
 

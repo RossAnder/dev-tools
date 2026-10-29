@@ -19,7 +19,7 @@ from, is in [docs/DESIGN.md](../docs/DESIGN.md).
 | `claude/eggshell.json`, `eggshell-light.json` | Claude Code custom themes over its `dark-ansi` and `light-ansi` presets: near-black text with lighter greys for secondary content, the salmon spinner and a dark-red mascot, light-tier status glyphs, subagent and `ultrathink` colours, and diffs with no backgrounds at all. Every preset key is overridden, so the `-ansi` base only decides diffs and code blocks: their syntax colours and the green and red `+`/`-` gutters come from the terminal's ANSI slots, and no theme key sets them. Leave `syntaxHighlightingDisabled` off; with it on, Claude Code's plain diff renderer marks changes only through the background keys, which these themes keep at the page colour. Custom themes never follow the system; select `Eggshell (system)`, the copy `windows/follow-system.vbs` keeps current | dark, light |
 | `herdr/eggshell.toml` | herdr colour tokens for both variants, with `auto_switch` following the terminal's background. Not linked by `deploy`, because herdr reads its theme only from `config.toml`: copy the file into `~/.config/herdr/config.toml` in place of its `[theme]` table | dark, light |
 | `gitui/theme-dark.ron`, `theme-light.ron`, `eggshell-dark.tmTheme`, `eggshell-light.tmTheme` | gitui colours and syntax colours for its file view; `windows/follow-system.vbs` copies the matching pair to `theme.ron` and `eggshell.tmTheme` in gitui's config dir | dark, light |
-| `windows/follow-system.vbs`, `install-follow-system.ps1` | Copies the variant matching Windows' app mode over the files that cannot switch themselves (Claude Code's `eggshell-system.json`, gitui's `theme.ron` and `eggshell.tmTheme`) and keeps the variant-free copies current; the script registers it as the `Eggshell Follow System` task, at logon and every minute (`-Remove` unregisters) | dark, light |
+| `windows/follow-system.vbs`, `install-follow-system.ps1` | Copies the variant matching Windows' app mode over the files that cannot switch themselves (Claude Code's `eggshell-system.json`, gitui's `theme.ron` and `eggshell.tmTheme`, Alacritty's `eggshell-system.toml`) and keeps the variant-free copies current; the script registers it as the `Eggshell Follow System` task, at logon and every minute (`-Remove` unregisters) | dark, light |
 
 ## Deploying
 
@@ -55,9 +55,9 @@ pairs). Everything inside it follows from that:
 
 - herdr's `auto_switch` picks its variant from the background the terminal reports.
 - glimpse's `eggshell` set watches the system setting itself and swaps at once.
-- Claude Code and gitui take RGB colours only, so `windows/follow-system.vbs` swaps
-  their files within a minute of the switch. Claude Code reloads its theme at once;
-  gitui reads its theme when it starts.
+- Claude Code, gitui and Alacritty take RGB colours only, so `windows/follow-system.vbs`
+  swaps their files within a minute of the switch. Claude Code and Alacritty reload at
+  once; gitui reads its theme when it starts.
 
 ## Roles
 

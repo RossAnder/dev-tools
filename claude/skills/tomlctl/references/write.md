@@ -449,6 +449,16 @@ tomlctl items add-many .claude/flows/foo/review-ledger.toml --id-prefix R --ndjs
 ```
 
 - **Shape.** Any top-level `record` array is the rows, whether written `[[record]]` or `record = [{…}]` (the two cannot be told apart). A non-table element is refused naming `record N (line L)`. `record` beside any other top-level key is refused, pointing at `--defaults-json` / `--set` for shared values. Without a `record` array the whole table is one object.
+- **An ops file** (`--ops '@<path>.toml'`) has one `[[record]]` per op, and an `add` or `update` op's row fields go in a `[record.json]` table after `op` / `id`, never beside them:
+
+  ```toml
+  [[record]]
+  op = "add"
+  [record.json]
+  file = "src/a.ts"
+  summary = "…"
+  ```
+
 - **`line N` is record N.** An NDJSON consumer receives one line per row, so `line N` in a downstream error names the Nth record.
 - **Multi-line strings** (`'''` or `"""`, at any depth) get CRLF read as LF and exactly one trailing newline trimmed, as `--set-file` does, so a block whose closing delimiter sits on its own line reads back as typed. Single-line strings are kept as written. One leading byte-order mark is stripped. TOML dates become strings.
 - **Prose containing `'''`** falls back to `"""…"""`, where each `\` is written `\\`.
