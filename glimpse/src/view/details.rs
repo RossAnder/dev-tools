@@ -41,6 +41,12 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, app: &App, scroll: u16) -> u
         ),
         _ => match app.current_items().and_then(ItemsState::cursor_row) {
             Some(row) => {
+                let backlog = app.surface == Surface::Backlog;
+                let queue = app.current_items().and_then(|items| {
+                    let positions = items.queue_positions();
+                    let at = positions.get(&row.id).copied()?;
+                    Some((at, positions.len()))
+                });
                 let agents = app.index.agents_for_item(&app.snapshot, &row.id);
                 let inputs = app
                     .surface
@@ -49,7 +55,7 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, app: &App, scroll: u16) -> u
                     .unwrap_or_default();
                 (
                     Some(row.id.clone()),
-                    item_content(row, &agents, &inputs, &app.theme, now),
+                    item_content(row, &agents, &inputs, backlog, queue, &app.theme, now),
                 )
             }
             None => (
@@ -226,11 +232,14 @@ pub(crate) fn content(app: &App, now: SystemTime) -> Text<'static> {
 
 /// The panel's lines for one ledger row, unwrapped. `agents` are those working
 /// the row; `inputs` are the pending input records naming it; `now` dates their
-/// open segments.
+/// open segments. `backlog` adds every stored backlog field; `queue` is the
+/// row's 1-based position and the queue length.
 pub(crate) fn item_content(
     row: &ItemRow,
     agents: &[&Agent],
     inputs: &[&InputRow],
+    backlog: bool,
+    queue: Option<(usize, usize)>,
     theme: &Theme,
     now: SystemTime,
 ) -> Text<'static> {
@@ -331,6 +340,10 @@ pub(crate) fn item_content(
         out.push(Line::styled(dates.join("  "), theme.secondary));
     }
 
+    if backlog {
+        backlog_facts(&mut out, row, queue, theme);
+    }
+
     if !inputs.is_empty() {
         section(&mut out, "Inputs", theme);
         for input in inputs {
@@ -355,6 +368,97 @@ pub(crate) fn item_content(
     }
 
     Text::from(out)
+}
+
+/// Fields `item_content` already draws for a backlog row, so the catch-all
+/// pass skips them.
+const SHOWN_BACKLOG_KEYS: [&str; 17] = [
+    "id",
+    "summary",
+    "context",
+    "status",
+    "kind",
+    "area",
+    "tags",
+    "evidence",
+    "resolution",
+    "dismiss_reason",
+    "promoted_to",
+    "reopen_rationale",
+    "promoted",
+    "dismissed",
+    "resolved",
+    "created",
+    "tier",
+];
+
+/// The stored backlog fields beyond the header: the explicit ones in a fixed
+/// order, then every other non-empty key of the stored row.
+fn backlog_facts(
+    out: &mut Vec<Line<'static>>,
+    row: &ItemRow,
+    queue: Option<(usize, usize)>,
+    theme: &Theme,
+) {
+    let mut lines: Vec<(String, String)> = Vec::new();
+    lines.push(("tier".into(), row.tier.clone()));
+    if let Some((at, total)) = queue {
+        lines.push(("queue".into(), format!("#{at} of {total}")));
+    }
+    let explicit = [
+        "last_seen",
+        "seen_count",
+        "origin",
+        "flow",
+        "base_sha",
+        "related",
+        "duplicate_of",
+        "supersedes",
+        "resolved_flow",
+        "resolved_tasks",
+        "resolved_commits",
+    ];
+    let shown = |key: &str| {
+        SHOWN_BACKLOG_KEYS.contains(&key)
+            || explicit.contains(&key)
+            || (queue.is_some() && key == "focus")
+    };
+    if let Some(map) = row.raw.as_object() {
+        for key in explicit {
+            if let Some(value) = map.get(key) {
+                lines.push((key.replace('_', " "), json_text(value)));
+            }
+        }
+        for (key, value) in map {
+            if !shown(key) {
+                lines.push((key.replace('_', " "), json_text(value)));
+            }
+        }
+    }
+    for (label, value) in lines {
+        if value.is_empty() {
+            continue;
+        }
+        out.push(Line::from(vec![
+            Span::styled(format!("{label} "), theme.secondary),
+            Span::raw(value),
+        ]));
+    }
+}
+
+/// A stored value as text: scalars as written, arrays comma-joined.
+fn json_text(value: &Value) -> String {
+    match value {
+        Value::Null => String::new(),
+        Value::String(s) => s.clone(),
+        Value::Array(items) => items
+            .iter()
+            .map(json_text)
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join(", "),
+        other => other.to_string(),
+    }
 }
 
 fn class_style(class: StatusClass, theme: &Theme) -> Style {
@@ -842,7 +946,60 @@ mod tests {
             .and_then(ItemsState::cursor_row)
             .expect("a cursor row");
         let agents = app.index.agents_for_item(&app.snapshot, &row.id);
-        plain(&item_content(row, &agents, &[], &app.theme, now))
+        plain(&item_content(
+            row,
+            &agents,
+            &[],
+            false,
+            None,
+            &app.theme,
+            now,
+        ))
+    }
+
+    #[test]
+    fn backlog_details_render_every_field() {
+        let raw = serde_json::json!({
+            "id": "B-1", "kind": "bug", "summary": "s", "area": "a", "tags": ["t"],
+            "status": "open", "created": "2026-10-29T10:00:00Z",
+            "last_seen": "2026-10-29T11:00:00Z", "seen_count": 3, "origin": "review",
+            "flow": "some-flow", "base_sha": "abc123", "related": ["B-2", "B-3"],
+            "tier": "lite", "focus": 2, "custom": "x"
+        });
+        let row = ItemRow {
+            id: "B-1".into(),
+            summary: "s".into(),
+            status: "open".into(),
+            created: "2026-10-29T10:00:00Z".into(),
+            tier: "lite".into(),
+            focus: Some(2),
+            raw,
+            ..ItemRow::default()
+        };
+        let lines = plain(&item_content(
+            &row,
+            &[],
+            &[],
+            true,
+            Some((1, 4)),
+            &Theme::default(),
+            SystemTime::now(),
+        ));
+        for expected in [
+            "tier lite",
+            "queue #1 of 4",
+            "last seen 2026-10-29T11:00:00Z",
+            "seen count 3",
+            "origin review",
+            "flow some-flow",
+            "base sha abc123",
+            "related B-2, B-3",
+            "custom x",
+        ] {
+            let hits = lines.iter().filter(|l| l.as_str() == expected).count();
+            assert_eq!(hits, 1, "{expected}: {lines:?}");
+        }
+        assert!(!lines.iter().any(|l| l.starts_with("focus")), "{lines:?}");
     }
 
     #[test]
