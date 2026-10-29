@@ -73,6 +73,14 @@ pub(crate) fn today_toml_date() -> Result<toml::value::Datetime> {
         .with_context(|| format!("converting today ({date_str}) to TOML date"))
 }
 
+/// The current instant to whole seconds, as a TOML offset datetime in `Z`.
+pub(crate) fn now_toml_datetime() -> Result<toml::value::Datetime> {
+    let stamp = Timestamp::from_second(now().as_second()).context("truncating the current time")?;
+    let text = stamp.to_string();
+    text.parse::<toml::value::Datetime>()
+        .with_context(|| format!("converting {text} to a TOML datetime"))
+}
+
 /// Parse an ISO-8601-ish `updated` value (date-only `YYYY-MM-DD` or full
 /// RFC3339 timestamp) into a `Date`. Used by `flow::stale` and
 /// `flow::resolve::compute_staleness` to compute age-in-days against
@@ -204,6 +212,16 @@ mod tests {
         let _g = FixedNowGuard::pin(ts);
         assert_eq!(now_rfc3339(), "2026-05-08T00:00:00Z");
         assert_eq!(today_utc_iso().unwrap(), "2026-05-08");
+    }
+
+    #[test]
+    fn now_toml_datetime_renders_whole_second_z() {
+        let ts: Timestamp = "2026-05-08T12:34:56.789Z".parse().unwrap();
+        let _g = FixedNowGuard::pin(ts);
+        assert_eq!(
+            now_toml_datetime().unwrap().to_string(),
+            "2026-05-08T12:34:56Z"
+        );
     }
 
     /// Age is date-only: an `updated` from earlier the same calendar day

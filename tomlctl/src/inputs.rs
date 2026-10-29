@@ -538,7 +538,7 @@ fn write(
 ) -> Result<Vec<String>> {
     ensure_process_root(root)?;
     let path = path(root);
-    let now = now()?;
+    let now = crate::time::now_toml_datetime()?;
     let today = crate::time::today_toml_date()?;
     let mut seed = toml::Table::new();
     seed.insert("schema_version".into(), TomlValue::Integer(1));
@@ -786,15 +786,6 @@ fn next_id(rows: &[TomlValue]) -> String {
         .max()
         .unwrap_or(0);
     format!("I{}", max + 1)
-}
-
-/// The current instant to whole seconds, as a TOML offset datetime.
-fn now() -> Result<Datetime> {
-    let stamp = jiff::Timestamp::from_second(crate::time::now().as_second())
-        .context("truncating the current time")?;
-    let text = stamp.to_string();
-    text.parse::<Datetime>()
-        .with_context(|| format!("converting {text} to a TOML datetime"))
 }
 
 fn toml_field(fields: &Map<String, JsonValue>, key: &str) -> Result<TomlValue> {
