@@ -113,7 +113,10 @@ fn next_fill_appends_unranked_rows_and_tier_filters() {
     backlog(&root, &["edit", &c, "--tier", "human"]);
     backlog(&root, &["focus", &c, &a, &b]);
 
-    assert_eq!(next_ids(&root, &["--tier", "lite"]), [b.clone()]);
+    assert_eq!(
+        next_ids(&root, &["--tier", "lite"]),
+        std::slice::from_ref(&b)
+    );
     let all = backlog(&root, &["next", "--tier", "lite", "--fill"]);
     let ids: Vec<&str> = all
         .as_array()
