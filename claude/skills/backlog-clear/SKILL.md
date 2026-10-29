@@ -47,12 +47,16 @@ and `git`, which behave the same either way.
 ## Step 0: Pre-flight and the run record
 
 ```bash
-tomlctl --version                    # the backlog group landed in 0.6
-tomlctl backlog list --open
+tomlctl --version                    # backlog next landed in 0.17
+tomlctl backlog next --tier lite --fill
 git rev-parse HEAD                   # this run's base commit
 ```
 
-A missing store reads as zero rather than erroring. On an empty open set, say so and stop.
+`backlog next` prints the ranked queue first, then (with `--fill`) the unranked open rows
+oldest-first. `--tier lite` drops rows tiered `deep` or `human` and keeps untiered ones.
+Below 0.17 the verb is unknown: stop and say the installed tomlctl is too old.
+
+A missing store reads as zero rather than erroring. On an empty set, say so and stop.
 
 `BACKLOG-RUN.md` at the worktree root is your run record **and your skip list**. Read it
 first if it exists; create it if not. Record the base commit in its header, so a later
@@ -76,8 +80,12 @@ run resumes instead of repeating.
 
 ## Step 1: Eligibility
 
-Take only `kind = debt` or `kind = annoyance` unless the invocation names others.
-Skip `bug` — it needs root-cause judgement — and `question`, which needs a human answer.
+Take every row with `tier = lite`, whatever its `kind`. Rows tiered `deep` or `human` are
+already filtered out by `next --tier lite`; skip any that still appear.
+
+For untiered rows, take only `kind = debt` or `kind = annoyance` unless the invocation
+names others. Skip `bug` — it needs root-cause judgement — and `question`, which needs a
+human answer.
 
 ## Step 2: Is this item even judgeable here?
 
@@ -106,7 +114,8 @@ Return `unverifiable-here` — and change nothing — when any of these holds:
   working copy, file permissions, staged-vs-unstaged differences.
 - It concerns work that was in progress when it was captured and may not be committed
   yet — items whose `created` date is at or after this run's base commit deserve that
-  suspicion.
+  suspicion. `created` is a bare date on older rows and a `YYYY-MM-DDTHH:MM:SSZ` datetime
+  on newer ones; compare its date part.
 - You cannot locate what it describes at all. That is *ambiguous* between "already
   fixed" and "not in this tree yet", and you must not resolve the ambiguity by guessing.
 
