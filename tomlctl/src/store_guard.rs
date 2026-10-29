@@ -29,8 +29,9 @@ impl OwnedStore {
         match self {
             Self::Backlog => {
                 "the `backlog` verbs own it: use `backlog add` for new rows, `backlog edit` for \
-                 context, tags, evidence, origin, flow or base_sha, `backlog triage` for status, \
-                 and `backlog relate` for related, duplicate_of or supersedes"
+                 context, tags, evidence, origin, flow, base_sha or tier, `backlog triage` for \
+                 status, `backlog focus` for focus, and `backlog relate` for related, \
+                 duplicate_of or supersedes"
             }
             Self::Inputs => {
                 "the `inputs` verbs own it: use `inputs add`, `inputs ack`, `inputs handle`, \
@@ -282,6 +283,7 @@ mod tests {
             "backlog add",
             "backlog edit",
             "backlog triage",
+            "backlog focus",
             "backlog relate",
         ] {
             assert!(message.contains(verb), "{message}");

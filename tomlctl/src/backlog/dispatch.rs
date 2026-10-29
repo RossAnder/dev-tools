@@ -8,8 +8,10 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 
+use crate::backlog::focus::FocusOp;
 use crate::cli::{BacklogOp, EvidenceOp};
-use crate::io::read_flag_file;
+use crate::errors::{ErrorKind, tagged_arg_err};
+use crate::io::{read_flag_file, repo_or_cwd_root};
 
 /// Resolve a triage companion given as `--<flag>` or `--<flag>-file`. The
 /// file form is read through `read_flag_file`, which drops a leading BOM and
@@ -133,6 +135,8 @@ pub(crate) fn dispatch(op: BacklogOp) -> Result<()> {
             origin: _,
             flow: _,
             base_sha: _,
+            tier: _,
+            clear_tier: _,
             ndjson: Some(src),
             dry_run,
             integrity,
@@ -149,6 +153,8 @@ pub(crate) fn dispatch(op: BacklogOp) -> Result<()> {
             origin,
             flow,
             base_sha,
+            tier,
+            clear_tier,
             ndjson: None,
             dry_run,
             integrity,
@@ -163,9 +169,45 @@ pub(crate) fn dispatch(op: BacklogOp) -> Result<()> {
             origin,
             flow,
             base_sha,
+            if clear_tier {
+                Some(None)
+            } else {
+                tier.map(|t| Some(t.as_str().to_string()))
+            },
             dry_run,
             integrity,
         ),
+        BacklogOp::Next {
+            tier,
+            fill,
+            integrity,
+        } => crate::backlog::next::dispatch_next(tier.map(|t| t.as_str()), fill, integrity),
+        BacklogOp::Focus {
+            ids,
+            at,
+            remove,
+            up,
+            down,
+            dry_run,
+            integrity,
+        } => {
+            let ids = ids.into_ids();
+            let op = if up || down {
+                let [id] = <[String; 1]>::try_from(ids).map_err(|_| {
+                    tagged_arg_err(
+                        ErrorKind::Validation,
+                        "ids",
+                        "`backlog focus --up` and `--down` take exactly one id",
+                    )
+                })?;
+                FocusOp::Move { id, up }
+            } else if remove {
+                FocusOp::Remove { ids }
+            } else {
+                FocusOp::Add { ids, at }
+            };
+            crate::backlog::focus::run_focus(&repo_or_cwd_root()?, &op, &integrity, dry_run)
+        }
         BacklogOp::Relate {
             a,
             to,

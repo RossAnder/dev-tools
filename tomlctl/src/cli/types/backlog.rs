@@ -339,7 +339,7 @@ pub(crate) enum BacklogOp {
     },
 
     /// Change the free-form fields of existing captures: `context`, `tags`,
-    /// `evidence`, `origin`, `flow` and `base_sha`. One id with field flags,
+    /// `evidence`, `origin`, `flow`, `base_sha` and `tier`. One id with field flags,
     /// or with `--ndjson` a row per id; all rows apply in one write, or none
     /// do. Every other field is refused, naming the verb that owns it.
     Edit {
@@ -410,10 +410,25 @@ pub(crate) enum BacklogOp {
             help = "Replace the commit the capture was made against"
         )]
         base_sha: Option<String>,
+        #[arg(
+            long,
+            value_enum,
+            ignore_case = true,
+            conflicts_with_all = ["clear_tier", "ndjson"],
+            help = "Set the pickup tier"
+        )]
+        tier: Option<BacklogTier>,
+        #[arg(
+            long = "clear-tier",
+            conflicts_with_all = ["tier", "ndjson"],
+            help = "Remove the pickup tier"
+        )]
+        clear_tier: bool,
         /// Each row is `{"id", "context"?, "tags"?, "add_tags"?,
         /// "remove_tags"?, "evidence"?, "add_evidence"?, "origin"?, "flow"?,
-        /// "base_sha"?}`; a `tags` or `evidence` array replaces the stored
-        /// one, and the `add_`/`remove_` arrays amend it as the flags do.
+        /// "base_sha"?, "tier"?}`; a `tags` or `evidence` array replaces the
+        /// stored one, the `add_`/`remove_` arrays amend it as the flags do,
+        /// and a null `tier` removes it.
         #[arg(
             long = "ndjson",
             value_name = "SRC",
@@ -423,6 +438,64 @@ pub(crate) enum BacklogOp {
         #[arg(
             long = "dry-run",
             help = "Preview the edit without writing. Emits the envelope with dry_run: true; no file or sidecar touch."
+        )]
+        dry_run: bool,
+        #[command(flatten)]
+        integrity: WriteIntegrityArgs,
+    },
+
+    /// Print the rows an agent should pick up next: open queued rows in queue
+    /// order, then with `--fill` the unqueued open rows oldest-first. Rows
+    /// whose `tier` names another tier are dropped; untiered rows pass.
+    Next {
+        #[arg(
+            long,
+            value_enum,
+            ignore_case = true,
+            help = "Only rows not reserved for another tier"
+        )]
+        tier: Option<BacklogTier>,
+        #[arg(long, help = "Append unqueued open rows, oldest first")]
+        fill: bool,
+        #[command(flatten)]
+        integrity: ReadIntegrityArgs,
+    },
+
+    /// Maintain the focus queue: add rows at the bottom (or `--at K`),
+    /// `--remove` them, or move the one row `--up` or `--down`. At most one
+    /// of `--at`, `--remove`, `--up`, `--down` per call.
+    #[command(mut_args(ids_help("Item ids to queue, comma- or space-separated")))]
+    Focus {
+        #[command(flatten)]
+        ids: ItemIds,
+        #[arg(
+            long,
+            value_name = "K",
+            conflicts_with_all = ["remove", "up", "down"],
+            help = "Queue position (1-based) the new rows enter at"
+        )]
+        at: Option<usize>,
+        #[arg(
+            long,
+            conflicts_with_all = ["at", "up", "down"],
+            help = "Drop the rows from the queue"
+        )]
+        remove: bool,
+        #[arg(
+            long,
+            conflicts_with_all = ["at", "remove", "down"],
+            help = "Move the one row up the queue"
+        )]
+        up: bool,
+        #[arg(
+            long,
+            conflicts_with_all = ["at", "remove", "up"],
+            help = "Move the one row down the queue"
+        )]
+        down: bool,
+        #[arg(
+            long = "dry-run",
+            help = "Preview the operation without writing. Emits a would_change summary; no file or sidecar touch."
         )]
         dry_run: bool,
         #[command(flatten)]
@@ -627,6 +700,24 @@ pub(crate) enum OnDuplicate {
     Fail,
 }
 
+/// The pickup tier a backlog row is reserved for.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+pub(crate) enum BacklogTier {
+    Lite,
+    Deep,
+    Human,
+}
+
+impl BacklogTier {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Lite => "lite",
+            Self::Deep => "deep",
+            Self::Human => "human",
+        }
+    }
+}
+
 /// Typed relation written by `backlog relate`.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
 pub(crate) enum RelationKind {
@@ -650,4 +741,21 @@ pub(crate) enum ClusterBy {
     /// Connected components over the typed edge set.
     Relations,
     All,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn backlog_tier_names_match_the_schema_vocabulary() {
+        let names: Vec<String> = BacklogTier::value_variants()
+            .iter()
+            .map(|v| v.to_possible_value().unwrap().get_name().to_string())
+            .collect();
+        assert_eq!(names, crate::backlog::schema::TIERS);
+        for v in BacklogTier::value_variants() {
+            assert_eq!(v.as_str(), v.to_possible_value().unwrap().get_name());
+        }
+    }
 }

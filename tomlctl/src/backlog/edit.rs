@@ -1,7 +1,7 @@
 //! `backlog edit` — in-place edits of the free-form fields of a capture.
 //!
-//! Only `context`, `tags`, `evidence`, `origin`, `flow` and `base_sha` are
-//! editable. Every other field is owned by another verb, or minted, and an
+//! Only `context`, `tags`, `evidence`, `origin`, `flow`, `base_sha` and `tier`
+//! are editable. Every other field is owned by another verb, or minted, and an
 //! attempt to edit it is refused with the verb that does own it
 //! (`refusal_for`). `apply_edits` works on a clone and swaps it in only when
 //! every edited row and the whole document validate, so a failure leaves the
@@ -16,9 +16,9 @@ use toml::Value as TomlValue;
 use super::add::{field_advisory, preview_doc};
 use super::schema::{
     self, ARRAY_BACKLOG, ARRAY_COMPACTED, FIELD_AREA, FIELD_BASE_SHA, FIELD_COMPACTED_ON,
-    FIELD_CONTEXT, FIELD_EVIDENCE, FIELD_FLOW, FIELD_ID, FIELD_KIND, FIELD_LAST_UPDATED,
-    FIELD_ORIGIN, FIELD_STATUS, FIELD_SUMMARY, FIELD_TAGS, FIELD_TERMINAL_DATE,
-    FIELD_TERMINAL_REASON, MANAGED_FIELDS, MINTED_FIELDS, RELATION_FIELDS,
+    FIELD_CONTEXT, FIELD_EVIDENCE, FIELD_FLOW, FIELD_FOCUS, FIELD_ID, FIELD_KIND,
+    FIELD_LAST_UPDATED, FIELD_ORIGIN, FIELD_STATUS, FIELD_SUMMARY, FIELD_TAGS, FIELD_TERMINAL_DATE,
+    FIELD_TERMINAL_REASON, FIELD_TIER, MANAGED_FIELDS, MINTED_FIELDS, RELATION_FIELDS,
 };
 use crate::cli::{WriteIntegrityArgs, write_integrity_opts};
 use crate::convert::toml_to_json;
@@ -38,6 +38,7 @@ pub(crate) const EDITABLE_FIELDS: &[&str] = &[
     FIELD_ORIGIN,
     FIELD_FLOW,
     FIELD_BASE_SHA,
+    FIELD_TIER,
 ];
 
 const ROW_ADD_TAGS: &str = "add_tags";
@@ -59,7 +60,7 @@ const COMPACTED_ONLY_FIELDS: &[&str] = &[
 
 /// One row's edits. `None` / empty leaves the field alone. For `tags` and
 /// `evidence` a replacement is applied first, then additions, then (tags only)
-/// removals.
+/// removals. `tier` is `Some(None)` to remove the field.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct Edit {
     pub(crate) id: String,
@@ -72,6 +73,7 @@ pub(crate) struct Edit {
     pub(crate) origin: Option<String>,
     pub(crate) flow: Option<String>,
     pub(crate) base_sha: Option<String>,
+    pub(crate) tier: Option<Option<String>>,
 }
 
 impl Edit {
@@ -103,6 +105,9 @@ pub(crate) fn refusal_for(field: &str) -> Option<String> {
             "`{field}` is managed by `backlog triage` (resolve, dismiss, promote, reopen); \
              `backlog edit` cannot change it"
         ),
+        FIELD_FOCUS => {
+            format!("`{field}` is owned by `backlog focus`; `backlog edit` cannot change it")
+        }
         FIELD_SUMMARY | FIELD_KIND | FIELD_AREA => format!(
             "`{field}` feeds the item's `id` and `dedup_id`, so it cannot be edited; capture a \
              successor with `backlog add` and `supersedes`"
@@ -217,6 +222,13 @@ fn apply_to_row(row: &mut TomlValue, edit: &Edit) -> Result<()> {
     if let Some(base_sha) = &edit.base_sha {
         set_string(table, FIELD_BASE_SHA, base_sha);
     }
+    match &edit.tier {
+        Some(Some(tier)) => set_string(table, FIELD_TIER, tier),
+        Some(None) => {
+            table.remove(FIELD_TIER);
+        }
+        None => {}
+    }
     Ok(())
 }
 
@@ -310,6 +322,10 @@ fn parse_edit_rows(text: &str) -> Result<Vec<Edit>> {
             origin: string(FIELD_ORIGIN)?,
             flow: string(FIELD_FLOW)?,
             base_sha: string(FIELD_BASE_SHA)?,
+            tier: match row.get(FIELD_TIER) {
+                Some(JsonValue::Null) => Some(None),
+                _ => string(FIELD_TIER)?.map(Some),
+            },
         };
         if edit.changes_nothing() {
             return Err(row_err(
@@ -416,6 +432,7 @@ pub(crate) fn dispatch(
     origin: Option<String>,
     flow: Option<String>,
     base_sha: Option<String>,
+    tier: Option<Option<String>>,
     dry_run: bool,
     integrity: WriteIntegrityArgs,
 ) -> Result<()> {
@@ -432,6 +449,7 @@ pub(crate) fn dispatch(
         origin,
         flow,
         base_sha,
+        tier,
     };
     if edit.changes_nothing() {
         return Err(tagged_arg_err(
@@ -708,6 +726,67 @@ status = "bogus"
         for field in [FIELD_RELATED, FIELD_DUPLICATE_OF, FIELD_SUPERSEDES] {
             assert!(refusal_for(field).unwrap().contains("`backlog relate`"));
         }
+    }
+
+    fn tier_of(d: &TomlValue, id: &str) -> Option<String> {
+        row(d, id)
+            .get(FIELD_TIER)
+            .map(|v| v.as_str().unwrap().to_string())
+    }
+
+    #[test]
+    fn tier_is_set_replaced_and_cleared() {
+        let mut d = doc();
+        let set = |d: &mut TomlValue, tier: Option<&str>| {
+            apply_edits(
+                d,
+                &[Edit {
+                    tier: Some(tier.map(str::to_string)),
+                    ..edit("B-00000001")
+                }],
+            )
+            .unwrap()
+        };
+        assert!(set(&mut d, Some("lite"))[0].changed);
+        assert_eq!(tier_of(&d, "B-00000001").as_deref(), Some("lite"));
+        assert!(set(&mut d, Some("deep"))[0].changed);
+        assert_eq!(tier_of(&d, "B-00000001").as_deref(), Some("deep"));
+        assert!(set(&mut d, None)[0].changed);
+        assert_eq!(tier_of(&d, "B-00000001"), None);
+    }
+
+    #[test]
+    fn a_bad_tier_is_refused_and_leaves_the_document_untouched() {
+        let mut d = doc();
+        let before = d.clone();
+        let err = apply_edits(
+            &mut d,
+            &[Edit {
+                tier: Some(Some("nope".into())),
+                ..edit("B-00000001")
+            }],
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("tier"), "{err}");
+        assert_eq!(d, before);
+    }
+
+    #[test]
+    fn a_batch_row_sets_and_nulls_tier() {
+        let edits = parse_edit_rows(
+            "{\"id\":\"B-00000001\",\"tier\":\"human\"}\n{\"id\":\"B-00000002\",\"tier\":null}\n",
+        )
+        .unwrap();
+        assert_eq!(edits[0].tier, Some(Some("human".to_string())));
+        assert_eq!(edits[1].tier, Some(None));
+    }
+
+    #[test]
+    fn focus_is_refused_naming_backlog_focus() {
+        let msg = refusal_for(FIELD_FOCUS).unwrap();
+        assert!(msg.contains("`backlog focus`"), "{msg}");
+        let err = parse_edit_rows("{\"id\":\"B-00000001\",\"focus\":2}\n").unwrap_err();
+        assert!(err.to_string().contains("`backlog focus`"), "{err}");
     }
 
     #[test]
