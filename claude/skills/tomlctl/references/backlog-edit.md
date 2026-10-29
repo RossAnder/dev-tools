@@ -52,12 +52,15 @@ printf '%s\n' '{"id":"B-a1b2c3d4","origin":"implement"}' '{"id":"B-1a2b3c4d","ta
 | `--origin` | text | Replace `origin`. | none |
 | `--flow` | slug | Replace `flow`. | none |
 | `--base-sha` | sha | Replace `base_sha`. | none |
+| `--tier` | `lite`, `deep`, `human` | Set the pickup tier ([backlog-queue.md](backlog-queue.md#the-tier-field)). Conflicts with `--clear-tier`. | none |
+| `--clear-tier` | — | Remove `tier`. | off |
 | `--ndjson` | path, `@<path>` or `-` | One edit per line. Conflicts with the positional id and every field flag above. | — |
 | `--dry-run` | — | Emit the envelope with `dry_run: true`; touch neither file nor sidecar. | off |
 
 Each `--ndjson` row is `{id, context?, tags?, add_tags?, remove_tags?, evidence?, add_evidence?,
-origin?, flow?, base_sha?}`; a `tags` or `evidence` array replaces the stored one, and
-`add_tags`, `remove_tags` and `add_evidence` amend it as the matching flags do. A row naming
+origin?, flow?, base_sha?, tier?}`; a `tags` or `evidence` array replaces the stored one, and
+`add_tags`, `remove_tags` and `add_evidence` amend it as the matching flags do. A `null` `tier`
+removes it. A row naming
 nothing but `id`, or an id an earlier row already named, is refused before the write.
 
 Any other field is refused with `kind=validation`, naming the verb that owns it:
@@ -67,6 +70,7 @@ Any other field is refused with `kind=validation`, naming the verb that owns it:
 | `status` and the triage fields (`promoted*`, `dismissed`, `dismiss_reason`, `resolved*`, `resolution`, `reopen_rationale`) | `backlog triage` |
 | `summary`, `kind`, `area` | capture a successor with `backlog add` and `supersedes` |
 | `related`, `duplicate_of`, `supersedes` | `backlog relate` |
+| `focus` | `backlog focus` |
 | `created`, `last_seen`, `seen_count`, `id`, `dedup_id` | minted; never edited |
 
 The batch is validated whole before the write and is all-or-nothing. `last_updated` is stamped

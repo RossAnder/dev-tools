@@ -41,7 +41,9 @@ The highest-frequency patterns. Deeper treatment lives in the reference files li
 | Delete a key at path | `tomlctl json unset <file> <path>` |
 | Capture / triage the repo backlog (`.claude/backlog.toml`) | `tomlctl backlog add\|add-many\|check\|list\|show\|relate\|triage\|reconcile\|cluster\|compact\|evidence {dir\|audit}` |
 | Read stored backlog rows, no `item` wrapper | `tomlctl backlog get <id>[,<id>...]` |
-| Edit a backlog row's context, tags, evidence, origin, flow or base_sha | `tomlctl backlog edit <id> --context-file <path> --add-tag <t>` or `tomlctl backlog edit --ndjson <path>` |
+| Edit a backlog row's context, tags, evidence, origin, flow, base_sha or tier | `tomlctl backlog edit <id> --context-file <path> --add-tag <t>` or `tomlctl backlog edit --ndjson <path>` |
+| Read the rows an agent should pick up next | `tomlctl backlog next [--tier lite\|deep\|human] [--fill]` |
+| Add, remove or move backlog rows in the focus queue | `tomlctl backlog focus <id>[,<id>...] [--at <k> \| --remove \| --up \| --down]` |
 | Resolve / dismiss / promote / reopen many backlog rows | `tomlctl backlog triage --ndjson <path>` |
 | Manage active-flow registry | `tomlctl flow active list\|add\|remove\|touch [--slug <s>] [--branch <b>] [--worktree <w>] [--scope <glob>]...` |
 | Pre-flight envelope (resolve + doctor + plansDirectory in one dispatch) | `Task(subagent_type: "flow-bootstrap", prompt: <input-envelope-JSON>)` ([`claude/agents/flow-bootstrap.md`](../../agents/flow-bootstrap.md); entrypoint note below) |
@@ -71,6 +73,7 @@ The per-verb flag tables, recipes, and contract prose live in the sibling files 
 - [references/flow.md](references/flow.md) — the cross-cutting surface: the `--verify-integrity` support matrix, what the `.sha256` sidecar does and does not promise, the `--error-format json` envelope, the two emitting `flow` verbs, and the infrastructure-only `blocks` verbs.
 - [references/backlog.md](references/backlog.md) — the `backlog` group's flag tables, the `.claude/backlog.toml` store shape, id derivation, the `check` verdict ladder, and the evidence drop-box. When to mint a row is the `backlog-capture` skill's call, not this one's.
 - [references/backlog-edit.md](references/backlog-edit.md) — `backlog get`, `backlog edit` and `backlog triage --ndjson`: flag tables, the editable fields, the batch row shapes.
+- [references/backlog-queue.md](references/backlog-queue.md) — the `tier` field, the focus queue, `backlog next` and `backlog focus`: flag tables, queue semantics, output shapes.
 - [references/backlog-recipes.md](references/backlog-recipes.md) — reading, searching, batch-resolving and editing stored backlog rows without grepping the store or piping to `jq`, plus the output shapes and field names to template against.
 - [references/backlog-reconcile.md](references/backlog-reconcile.md) — `backlog reconcile`: its flags, the buckets it sorts promoted rows into, the `render_needed` duty, what `--apply` writes, and the output shape.
 - [references/tasks.md](references/tasks.md) — the `tasks` group's read verbs (`show` through `render`, and `snapshot`) with their flag tables, the `--slug` / `--file` target group, and the `check` finding classes. What the fields mean and which verb a carrier reaches for is the `flow-contract-task-store` skill's call, not this one's.
@@ -245,6 +248,7 @@ Representative entries:
 | `apply_id_prefix` / `id_high_water` | `items apply --id-prefix <P>`; a removed top id is never minted again |
 | `show_absent` / `update_ref` / `backlog_check_batch` | `tasks show --with absent`; `ref` in `tasks update` envelopes; `backlog check --ndjson` |
 | `review_store` / `review_add` / `review_survey` / `review_catalogue` | the `review` group over the v2 review store, one feature per verb family ([references/review.md](references/review.md)) |
+| `backlog_next` / `backlog_focus` / `backlog_tier` / `backlog_datetime_stamps` | `backlog next`; `backlog focus`; the `tier` field with `backlog edit --tier`; `Z` datetimes on new captures ([references/backlog-queue.md](references/backlog-queue.md)) |
 | `suggestions` | `did you mean` hints for a mistyped subcommand, flag or path |
 | `agent_context` | `tomlctl capabilities` (the `.commands` field of the JSON output) emits a per-subcommand flag schema (type/required/default/values/repeatable + mutex_groups) for runtime introspection without parsing --help prose. |
 
