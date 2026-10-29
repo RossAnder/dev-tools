@@ -998,6 +998,279 @@ fn backlog_triage_skips_a_changed_status() {
     );
 }
 
+/// Three live rows, two queued with a gap (1, 3), one tiered.
+const BACKLOG_QUEUE: &str = r#"schema_version = 1
+last_updated = 2026-09-30
+
+[[backlog]]
+id = "B-aaaaaaaa"
+kind = "bug"
+summary = "first"
+area = ""
+status = "open"
+created = 2026-09-01
+last_seen = 2026-09-01
+seen_count = 1
+dedup_id = "aaaaaaaaaaaaaaaa"
+focus = 1
+
+[[backlog]]
+id = "B-bbbbbbbb"
+kind = "debt"
+summary = "second"
+area = ""
+status = "open"
+created = 2026-09-01
+last_seen = 2026-09-01
+seen_count = 1
+dedup_id = "bbbbbbbbbbbbbbbb"
+focus = 3
+tier = "deep"
+
+[[backlog]]
+id = "B-cccccccc"
+kind = "question"
+summary = "third"
+area = ""
+status = "promoted"
+created = 2026-09-01
+last_seen = 2026-09-01
+seen_count = 1
+dedup_id = "cccccccccccccccc"
+promoted = 2026-09-02
+promoted_to = "some-flow"
+"#;
+
+fn queue(rows: &[(&str, Option<i64>)]) -> Vec<(String, Option<i64>)> {
+    rows.iter().map(|(id, f)| (id.to_string(), *f)).collect()
+}
+
+fn displayed_queue() -> Vec<(String, Option<i64>)> {
+    queue(&[
+        ("B-aaaaaaaa", Some(1)),
+        ("B-bbbbbbbb", Some(3)),
+        ("B-cccccccc", None),
+    ])
+}
+
+#[test]
+fn backlog_set_tier_sets_clears_and_skips_a_stale_row() {
+    let (_dir, root) = sandbox();
+    let path = seed_ledger_in(&root, "backlog.toml", BACKLOG_QUEUE);
+    let _env = pin_root(&root);
+    let backlog = tomlctl::LedgerRef::Backlog;
+
+    let out = tomlctl::backlog_set_tier(
+        &root,
+        &strings(&["B-aaaaaaaa", "B-bbbbbbbb", "B-zzzzzzzz"]),
+        Some("lite"),
+        obj(json!({"tier": null})),
+    )
+    .expect("the untiered row lands");
+    assert_eq!(out["applied"], json!(["B-aaaaaaaa"]));
+    assert_eq!(
+        out["skipped_stale"],
+        json!([
+            {"id": "B-zzzzzzzz", "field": "id", "expected": "B-zzzzzzzz", "found": null},
+            {"id": "B-bbbbbbbb", "field": "tier", "expected": null, "found": "deep"},
+        ])
+    );
+    assert_eq!(row(&root, &backlog, "B-aaaaaaaa")["tier"], "lite");
+    assert_eq!(row(&root, &backlog, "B-bbbbbbbb")["tier"], "deep");
+    assert_eq!(last_updated(&path), "2026-09-30");
+    assert_sidecar_matches(&path);
+
+    let out = tomlctl::backlog_set_tier(
+        &root,
+        &strings(&["B-bbbbbbbb"]),
+        None,
+        obj(json!({"tier": "deep"})),
+    )
+    .expect("clear the tier");
+    assert_eq!(out, json!({"applied": ["B-bbbbbbbb"], "skipped_stale": []}));
+    assert_eq!(row(&root, &backlog, "B-bbbbbbbb").get("tier"), None);
+
+    let before = fs::read(&path).unwrap();
+    let err = tomlctl::backlog_set_tier(
+        &root,
+        &strings(&["B-aaaaaaaa"]),
+        Some("cheap"),
+        obj(json!({"tier": "lite"})),
+    )
+    .expect_err("an off-vocabulary tier is refused");
+    assert!(format!("{err:#}").contains("lite, deep, human"), "{err:#}");
+    assert_eq!(fs::read(&path).unwrap(), before);
+}
+
+#[test]
+fn backlog_focus_moves_and_adds_with_a_matching_expect() {
+    let (_dir, root) = sandbox();
+    let path = seed_ledger_in(&root, "backlog.toml", BACKLOG_QUEUE);
+    let _env = pin_root(&root);
+    let backlog = tomlctl::LedgerRef::Backlog;
+
+    let op = tomlctl::BacklogFocus::Add {
+        ids: strings(&["B-cccccccc"]),
+        at: Some(1),
+    };
+    let predicted = tomlctl::backlog_focus_plan(&displayed_queue(), &op).expect("plan");
+    let out = tomlctl::backlog_focus(&root, op, displayed_queue()).expect("add at the top");
+    assert_eq!(
+        out,
+        json!({
+            "applied": ["B-cccccccc", "B-aaaaaaaa", "B-bbbbbbbb"],
+            "skipped_stale": [],
+            "changed": [
+                {"id": "B-cccccccc", "before": null, "after": 1},
+                {"id": "B-aaaaaaaa", "before": 1, "after": 2},
+                {"id": "B-bbbbbbbb", "before": 3, "after": 4},
+            ],
+        })
+    );
+    let predicted: Vec<Value> = predicted
+        .iter()
+        .map(|c| json!({"id": c.id, "before": c.before, "after": c.after}))
+        .collect();
+    assert_eq!(
+        out["changed"],
+        json!(predicted),
+        "the plan predicts the write"
+    );
+    assert_eq!(row(&root, &backlog, "B-cccccccc")["focus"], 1);
+    assert_sidecar_matches(&path);
+
+    let out = tomlctl::backlog_focus(
+        &root,
+        tomlctl::BacklogFocus::Move {
+            id: "B-bbbbbbbb".into(),
+            up: true,
+        },
+        queue(&[
+            ("B-cccccccc", Some(1)),
+            ("B-aaaaaaaa", Some(2)),
+            ("B-bbbbbbbb", Some(4)),
+        ]),
+    )
+    .expect("move up");
+    assert_eq!(out["applied"], json!(["B-bbbbbbbb", "B-aaaaaaaa"]));
+    assert_eq!(row(&root, &backlog, "B-bbbbbbbb")["focus"], 2);
+    assert_eq!(row(&root, &backlog, "B-aaaaaaaa")["focus"], 4);
+}
+
+#[test]
+fn backlog_focus_with_a_stale_expect_writes_nothing() {
+    let (_dir, root) = sandbox();
+    let path = seed_ledger_in(&root, "backlog.toml", BACKLOG_QUEUE);
+    let _env = pin_root(&root);
+    let before = fs::read(&path).unwrap();
+
+    let out = tomlctl::backlog_focus(
+        &root,
+        tomlctl::BacklogFocus::Move {
+            id: "B-bbbbbbbb".into(),
+            up: true,
+        },
+        queue(&[("B-aaaaaaaa", Some(1)), ("B-bbbbbbbb", Some(2))]),
+    )
+    .expect("a stale call succeeds");
+    assert_eq!(
+        out,
+        json!({
+            "applied": [],
+            "skipped_stale": [
+                {"id": "B-bbbbbbbb", "field": "focus", "expected": 2, "found": 3},
+            ],
+            "changed": [],
+        })
+    );
+
+    let out = tomlctl::backlog_focus(
+        &root,
+        tomlctl::BacklogFocus::Remove {
+            ids: strings(&["B-aaaaaaaa"]),
+        },
+        queue(&[("B-aaaaaaaa", Some(1))]),
+    )
+    .expect("a stale call succeeds");
+    assert_eq!(
+        out["skipped_stale"],
+        json!([{"id": "B-bbbbbbbb", "field": "focus", "expected": null, "found": 3}])
+    );
+    assert_eq!(
+        fs::read(&path).unwrap(),
+        before,
+        "a stale call writes nothing"
+    );
+}
+
+#[test]
+fn backlog_focus_refuses_a_missing_store_and_a_mismatched_root() {
+    let (_dir, root) = sandbox();
+    let _env = pin_root(&root);
+    let op = || tomlctl::BacklogFocus::Remove {
+        ids: strings(&["B-aaaaaaaa"]),
+    };
+    tomlctl::backlog_focus(&root, op(), Vec::new()).expect_err("no store to write");
+    assert!(!root.join(".claude").join("backlog.toml").exists());
+
+    let other = tempfile::tempdir().unwrap();
+    let err = tomlctl::backlog_focus(other.path(), op(), Vec::new())
+        .expect_err("another root is refused");
+    assert!(format!("{err:#}").contains("root mismatch"), "{err:#}");
+}
+
+#[test]
+fn ledger_restore_puts_back_focus_and_tier() {
+    let (_dir, root) = sandbox();
+    let path = seed_ledger_in(&root, "backlog.toml", BACKLOG_QUEUE);
+    let _env = pin_root(&root);
+    let backlog = tomlctl::LedgerRef::Backlog;
+
+    tomlctl::backlog_focus(
+        &root,
+        tomlctl::BacklogFocus::Remove {
+            ids: strings(&["B-bbbbbbbb"]),
+        },
+        displayed_queue(),
+    )
+    .expect("dequeue");
+    tomlctl::backlog_set_tier(
+        &root,
+        &strings(&["B-bbbbbbbb"]),
+        Some("human"),
+        obj(json!({"tier": "deep"})),
+    )
+    .expect("retier");
+
+    let out = tomlctl::ledger_restore(
+        &root,
+        &backlog,
+        "B-bbbbbbbb",
+        obj(json!({"focus": 3, "tier": "deep"})),
+        Vec::new(),
+        obj(json!({"focus": null, "tier": "human"})),
+    )
+    .expect("restore focus and tier");
+    assert_eq!(out, json!({"applied": ["B-bbbbbbbb"], "skipped_stale": []}));
+    let r = row(&root, &backlog, "B-bbbbbbbb");
+    assert_eq!(
+        (r["focus"].clone(), r["tier"].clone()),
+        (json!(3), json!("deep"))
+    );
+
+    let out = tomlctl::ledger_restore(
+        &root,
+        &backlog,
+        "B-aaaaaaaa",
+        Map::new(),
+        strings(&["focus"]),
+        obj(json!({"focus": 1})),
+    )
+    .expect("unset focus");
+    assert_eq!(out["applied"], json!(["B-aaaaaaaa"]));
+    assert_sidecar_matches(&path);
+}
+
 fn inputs_path(root: &Path) -> PathBuf {
     root.join(".claude").join("inputs.toml")
 }

@@ -4,8 +4,8 @@
 //! takes the repo root explicitly rather than resolving it from the process.
 //!
 //! The writes edit control fields only — status dispositions with their
-//! companions, and review/optimise classification — each guarded by a
-//! per-row compare-and-set. A stale row is skipped and reported, never
+//! companions, review/optimise classification and the backlog `tier` — each
+//! guarded by a per-row compare-and-set. A stale row is skipped and reported, never
 //! overwritten, and no write restamps the ledger's `last_updated`.
 
 use std::collections::BTreeSet;
@@ -344,7 +344,11 @@ fn restorable(ledger: &LedgerRef) -> Result<(&'static [&'static str], Vec<&'stat
                 backlog_schema::STATUS_DISMISSED,
                 backlog_schema::STATUS_RESOLVED,
             ],
-            backlog_schema::MANAGED_FIELDS.to_vec(),
+            {
+                let mut fields = backlog_schema::MANAGED_FIELDS.to_vec();
+                fields.extend([backlog_schema::FIELD_TIER, backlog_schema::FIELD_FOCUS]);
+                fields
+            },
         ),
         LedgerRef::Flow { kind, .. } | LedgerRef::Scope { kind, .. } => {
             let statuses: &[&str] = match kind {
@@ -577,6 +581,48 @@ pub(crate) fn classify(
         })
         .collect();
     write_guarded(root, ledger, edits, |_| Ok(()))
+}
+
+/// Sets `tier` (or removes it, for `None`) on each backlog row of `ids` whose
+/// fields still match `expect`; `{"tier": null}` expects an untiered row.
+pub(crate) fn set_backlog_tier(
+    root: &Path,
+    ids: &[String],
+    tier: Option<&str>,
+    expect: Map<String, JsonValue>,
+) -> Result<JsonValue> {
+    if let Some(tier) = tier
+        && !backlog_schema::TIERS.contains(&tier)
+    {
+        bail!(
+            "`{}` must be one of {}",
+            backlog_schema::FIELD_TIER,
+            backlog_schema::TIERS.join(", ")
+        );
+    }
+    if expect.is_empty() {
+        bail!("a tier write needs an `expect` precondition");
+    }
+    let (set, unset) = match tier {
+        Some(tier) => {
+            let mut set = Map::new();
+            set.insert(backlog_schema::FIELD_TIER.into(), json!(tier));
+            (set, Vec::new())
+        }
+        None => (Map::new(), vec![backlog_schema::FIELD_TIER.to_string()]),
+    };
+    let edits = unique(ids)
+        .into_iter()
+        .map(|id| RowEdit {
+            id,
+            set: set.clone(),
+            unset: unset.clone(),
+            expect: expect.clone(),
+        })
+        .collect();
+    write_guarded(root, &LedgerRef::Backlog, edits, |row| {
+        backlog_schema::validate(row).map_err(|e| e.into_tagged(None))
+    })
 }
 
 /// What to put back on one row: `set` restores values and `unset` removes

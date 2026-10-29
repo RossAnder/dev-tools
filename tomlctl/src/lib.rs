@@ -49,7 +49,9 @@ use crate::cli::{Cli, ErrorFormat, ReadIntegrityArgs, WriteIntegrityArgs};
 use crate::errors::TaggedError;
 use crate::ledgers::FACADE_WRITE;
 
+pub use crate::backlog::focus::{FocusChange as BacklogFocusChange, FocusOp as BacklogFocus};
 pub use crate::backlog::schema::MANAGED_FIELDS as BACKLOG_MANAGED_FIELDS;
+pub use crate::backlog::schema::TIERS as BACKLOG_TIERS;
 pub use crate::backlog::triage::BacklogTriage;
 pub use crate::items::STATUS_COMPANIONS;
 pub use crate::ledgers::{LedgerKind, LedgerRef, RestoreRow};
@@ -221,19 +223,70 @@ pub fn backlog_triage(
 ) -> anyhow::Result<serde_json::Value> {
     io::silence_advisories();
     io::ensure_process_root(root)?;
-    let write_opts = WriteIntegrityArgs {
-        allow_outside: false,
-        no_write_integrity: false,
-        verify_integrity: false,
-        strict_integrity: false,
-        no_create: true,
-    };
+    let write_opts = backlog_facade_write();
     let out =
         backlog::triage::triage_value(root, ids, &triage.into(), Some(expect_status), &write_opts)?;
     Ok(serde_json::json!({
         "applied": out["applied"],
         "skipped_stale": out["skipped_stale"],
     }))
+}
+
+/// The write options of a facade write to the backlog: sidecar kept current,
+/// never verified, and a missing store refused rather than created.
+fn backlog_facade_write() -> WriteIntegrityArgs {
+    WriteIntegrityArgs {
+        allow_outside: false,
+        no_write_integrity: false,
+        verify_integrity: false,
+        strict_integrity: false,
+        no_create: true,
+    }
+}
+
+/// Sets `tier` (removes it, for `None`) on each of `ids` in
+/// `<root>/.claude/backlog.toml` whose fields still match `expect`, with
+/// `{"tier": null}` expecting an untiered row. Returns what
+/// [`ledger_transition`] does and refuses a mismatched root the same way.
+pub fn backlog_set_tier(
+    root: &Path,
+    ids: &[String],
+    tier: Option<&str>,
+    expect: serde_json::Map<String, serde_json::Value>,
+) -> anyhow::Result<serde_json::Value> {
+    io::silence_advisories();
+    io::ensure_process_root(root)?;
+    ledgers::set_backlog_tier(root, ids, tier, expect)
+}
+
+/// Applies `op` to the backlog's focus queue in one locked write, as
+/// `backlog focus` does, provided the stored live queue is exactly `expect`
+/// (`(id, focus)` pairs; unqueued live rows may be omitted). Otherwise writes
+/// nothing and lists each difference in `skipped_stale`. Returns `{applied,
+/// skipped_stale, changed: [{id, before, after}]}`, `applied` naming every
+/// changed row, shifted neighbours included.
+pub fn backlog_focus(
+    root: &Path,
+    op: BacklogFocus,
+    expect: Vec<(String, Option<i64>)>,
+) -> anyhow::Result<serde_json::Value> {
+    io::silence_advisories();
+    io::ensure_process_root(root)?;
+    let out = backlog::focus::apply(root, &op, Some(&expect), &backlog_facade_write(), false)?;
+    Ok(serde_json::json!({
+        "applied": out["applied"],
+        "skipped_stale": out["skipped_stale"],
+        "changed": out["changed"],
+    }))
+}
+
+/// The `focus` changes [`backlog_focus`] would make to `queue`, the live rows
+/// as `(id, focus)` pairs, without touching any store.
+pub fn backlog_focus_plan(
+    queue: &[(String, Option<i64>)],
+    op: &BacklogFocus,
+) -> anyhow::Result<Vec<BacklogFocusChange>> {
+    backlog::focus::plan(queue, op)
 }
 
 /// Refuses `root` unless it is tomlctl's process root, with the `root
