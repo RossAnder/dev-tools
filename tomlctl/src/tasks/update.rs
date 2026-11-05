@@ -1,28 +1,30 @@
 //! The `update` write verb.
 //!
 //! Every assignment is compared against what the row already holds, so the
-//! returned field list is what actually moved rather than what was passed —
-//! a re-issued `--status done` reports no change.
+//! returned field list is what actually moved; a re-issued value reports nothing.
 //!
-//! `ref` is reachable only through `--ref`, never `--set ref=…`: it is the key
-//! the execution record's `task_ref` and the store's `last_import_refs` both
-//! join on, and a rename orphans a row in both. `import-plan` derives that key
-//! back off the title, so a `--set title=` deriving a different ref would make
-//! the next import mint a second row for the same task: it is refused unless
-//! `--ref` moves the key in the same command.
+//! `ref` moves only through `--ref`: the execution record and `last_import_refs`
+//! join on it. `import-plan` derives it off the title, so a `--set title=`
+//! deriving a different ref is refused unless `--ref` moves the key with it.
 //!
-//! `--unlock-import-fields` opens `files` and `needs` and records the value
-//! the plan stated as the patch's base. The import keeps the hand-patched
-//! value only while the plan still states that base.
+//! `--unlock-import-fields` opens `files` and `needs` and records the plan's
+//! value as the patch's base, which the import keeps only while the plan still
+//! states it. A v2 flow has no import, so both stay open with no stamp.
+//!
+//! On an audited store each moved plan field needs a `reason` and writes a
+//! `Change`. Only an `--ndjson` row can carry one, so the positional form is
+//! refused on those fields. A refusal on any row persists nothing.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 
-use super::add::reject_undeclared_checkpoint;
+use super::add::{
+    DEFAULT_ACTOR, SpecPatch, reject_undeclared_checkpoint, reject_unknown_premise_targets,
+};
 use super::graph::{Node, Tense, build_or_refuse, nodes_of};
-use super::schema::{Effort, ImportOverride, Status, Store, TaskRow};
+use super::schema::{Accept, Change, Effort, ImportOverride, Status, Store, TaskRow, TaskSpec};
 use super::{slug, store};
 use crate::cli::WriteIntegrityArgs;
 use crate::errors::{ErrorKind, tagged_err};
@@ -78,7 +80,42 @@ pub(crate) fn update(
     id: u32,
     fields: UpdateFields,
 ) -> Result<Vec<&'static str>> {
-    store::mutate(path, integrity, |store| patch(store, id, &fields, true))
+    let ids = [id];
+    let group = Patch::positional(&ids, &fields);
+    let v2 = store::is_v2_flow(path);
+    let mut outcomes = store::mutate(path, integrity, |store| apply(store, &[group], v2))?;
+    Ok(outcomes.remove(0).changed)
+}
+
+/// Rows patched alike. `line` is the `--ndjson` source line, and `None` marks
+/// the positional form, which has no `spec` or `reason` channel.
+struct Patch<'a> {
+    line: Option<usize>,
+    ids: &'a [u32],
+    fields: &'a UpdateFields,
+    spec: Option<&'a serde_json::Value>,
+    reason: &'a str,
+    actor: &'a str,
+}
+
+impl<'a> Patch<'a> {
+    fn positional(ids: &'a [u32], fields: &'a UpdateFields) -> Self {
+        Self {
+            line: None,
+            ids,
+            fields,
+            spec: None,
+            reason: "",
+            actor: "",
+        }
+    }
+}
+
+/// One field a patch moved, as an audit row records it.
+struct Move {
+    field: &'static str,
+    old: String,
+    new: String,
 }
 
 /// One patched row: its id, its `ref` as the write left it (so a `--ref`
@@ -106,21 +143,28 @@ pub(crate) fn update_many(
             "--ref names one row's key, so it takes a single task id".to_string(),
         ));
     }
+    let v2 = store::is_v2_flow(path);
     store::mutate(path, integrity, |store| {
-        apply(store, &[(None, unique.as_slice(), &fields)])
+        apply(store, &[Patch::positional(&unique, &fields)], v2)
     })
 }
 
 /// One `--ndjson` row: its source line, the ids it patches and the values it
-/// sets on each of them.
+/// sets on each of them. `spec` stays raw, already validated, because a row
+/// naming several ids applies it to each.
 pub(crate) struct BatchRow {
     pub(crate) line: usize,
     pub(crate) ids: Vec<u32>,
     pub(crate) fields: UpdateFields,
+    pub(crate) spec: Option<serde_json::Value>,
+    pub(crate) reason: String,
+    pub(crate) actor: String,
 }
 
 /// Keys an `--ndjson` row may carry, in the order the refusal lists them.
-const ROW_KEYS: [&str; 7] = ["ids", "id", "status", "agent", "commit", "ref", "set"];
+const ROW_KEYS: [&str; 10] = [
+    "ids", "id", "status", "agent", "commit", "ref", "set", "spec", "reason", "actor",
+];
 
 /// Applies every row in one write, reporting each id's outcome in row order.
 /// Every id of every row is resolved before any row moves, and a refusal on
@@ -132,9 +176,17 @@ pub(crate) fn update_rows(
 ) -> Result<Vec<Outcome>> {
     let patches: Vec<_> = rows
         .iter()
-        .map(|row| (Some(row.line), row.ids.as_slice(), &row.fields))
+        .map(|row| Patch {
+            line: Some(row.line),
+            ids: &row.ids,
+            fields: &row.fields,
+            spec: row.spec.as_ref(),
+            reason: &row.reason,
+            actor: &row.actor,
+        })
         .collect();
-    store::mutate(path, integrity, |store| apply(store, &patches))
+    let v2 = store::is_v2_flow(path);
+    store::mutate(path, integrity, |store| apply(store, &patches, v2))
 }
 
 /// Reads `update --ndjson` rows into [`BatchRow`]s. `unlock` and `relock`
@@ -240,7 +292,9 @@ fn batch_row(
                         "`{key}` was given both as a row key and in `set`"
                     )));
                 }
-                settable(key, unlock).with_context(|| format!("line {line}"))?;
+                // Whether `files` and `needs` are open depends on the store, so
+                // `patch` decides that once the path is known.
+                settable(key, true).map_err(|err| err.context(format!("line {line}")))?;
                 let value = match value {
                     Value::String(value) => value.clone(),
                     Value::Number(number) if number.is_u64() || number.is_i64() => {
@@ -282,6 +336,11 @@ fn batch_row(
         }
     };
 
+    let spec = object.get("spec").cloned();
+    if let Some(raw) = &spec {
+        SpecPatch::parse(line, raw)?;
+    }
+
     Ok(BatchRow {
         line,
         ids,
@@ -295,6 +354,9 @@ fn batch_row(
             relock,
             set,
         },
+        spec,
+        reason: text("reason")?.unwrap_or_default(),
+        actor: text("actor")?.unwrap_or_default(),
     })
 }
 
@@ -313,18 +375,15 @@ fn dedupe(ids: &[u32]) -> Vec<u32> {
     unique
 }
 
-/// Patches each `(line, ids, fields)` group in order once every id across
-/// all of them is known to exist. `line` prefixes a group's refusals.
+/// Patches each group in order once every id across all of them is known to
+/// exist. `line` prefixes a group's refusals.
 ///
 /// An `--ndjson` batch is judged on the graph it leaves, not row by row: a
 /// batch reversing an edge passes in either row order.
-fn apply(
-    store: &mut Store,
-    patches: &[(Option<usize>, &[u32], &UpdateFields)],
-) -> Result<Vec<Outcome>> {
+fn apply(store: &mut Store, patches: &[Patch<'_>], v2: bool) -> Result<Vec<Outcome>> {
     if let Some(absent) = patches
         .iter()
-        .flat_map(|(_, ids, _)| ids.iter())
+        .flat_map(|group| group.ids.iter())
         .find(|id| !store.items.iter().any(|row| row.id == **id))
     {
         return Err(tagged_err(
@@ -335,12 +394,23 @@ fn apply(
     }
     let mut outcomes = Vec::new();
     let mut deferred_edges = false;
-    for (line, ids, fields) in patches {
-        for &id in *ids {
-            let changed = match (patch(store, id, fields, line.is_none()), line) {
+    for group in patches {
+        let line = group.line;
+        for &id in group.ids {
+            let before = row_of(store, id)?.clone();
+            let mut changed = match (patch(store, id, group.fields, line.is_none(), v2), line) {
                 (Err(err), Some(line)) => return Err(err.context(format!("line {line}"))),
                 (result, _) => result?,
             };
+            let spec_moves = match (group.spec, line) {
+                (Some(raw), Some(line)) => patch_spec(store, id, line, raw)?,
+                _ => Vec::new(),
+            };
+            changed.extend(spec_moves.iter().map(|moved| moved.field));
+            changed.sort_unstable();
+            if store.audit {
+                record_changes(store, &before, &changed, spec_moves, group)?;
+            }
             if line.is_some()
                 && changed
                     .iter()
@@ -348,9 +418,7 @@ fn apply(
             {
                 deferred_edges = true;
             }
-            let r#ref = store.find(id).map(|row| row.r#ref.clone()).ok_or_else(|| {
-                anyhow::anyhow!("task {id} vanished from the store after its update")
-            })?;
+            let r#ref = row_of(store, id)?.r#ref.clone();
             outcomes.push(Outcome { id, r#ref, changed });
         }
     }
@@ -360,13 +428,221 @@ fn apply(
     Ok(outcomes)
 }
 
+fn row_of(store: &Store, id: u32) -> Result<&TaskRow> {
+    store
+        .find(id)
+        .ok_or_else(|| anyhow::anyhow!("task {id} vanished from the store during its update"))
+}
+
+/// Replaces the row's spec fields `raw` supplies. A patch moving nothing leaves
+/// a row with no spec still without one.
+fn patch_spec(
+    store: &mut Store,
+    id: u32,
+    line: usize,
+    raw: &serde_json::Value,
+) -> Result<Vec<Move>> {
+    let r#ref = row_of(store, id)?.r#ref.clone();
+    let position = store.specs.iter().position(|spec| spec.r#ref == r#ref);
+    let before = match position {
+        Some(position) => store.specs[position].clone(),
+        None => TaskSpec {
+            r#ref,
+            outcome: String::new(),
+            constraints: Vec::new(),
+            accept: Vec::new(),
+            premises: Vec::new(),
+            means: Vec::new(),
+            design: Vec::new(),
+            precedent: Vec::new(),
+            executor: String::new(),
+        },
+    };
+    let mut after = before.clone();
+    SpecPatch::parse(line, raw)?.apply_to(&mut after);
+    keep_probes(&before.accept, &mut after.accept);
+    if after.premises != before.premises {
+        let known: BTreeSet<u32> = store.items.iter().map(|row| row.id).collect();
+        reject_unknown_premise_targets(line, &after.premises, &known)?;
+    }
+    let moves = spec_moves(&before, &after);
+    if !moves.is_empty() {
+        match position {
+            Some(position) => store.specs[position] = after,
+            None => store.specs.push(after),
+        }
+    }
+    Ok(moves)
+}
+
+/// A supplied `accept` entry cannot carry a probe, so one matching a stored
+/// entry in every other field keeps that entry's: a re-issued list moves
+/// nothing. Any difference leaves it unprobed, since the record no longer
+/// describes what would run.
+fn keep_probes(before: &[Accept], after: &mut [Accept]) {
+    for entry in after.iter_mut().filter(|entry| entry.probe.is_none()) {
+        let probe = before
+            .iter()
+            .find(|stored| {
+                let unprobed = Accept {
+                    probe: None,
+                    ..(*stored).clone()
+                };
+                unprobed == *entry
+            })
+            .and_then(|stored| stored.probe.clone());
+        entry.probe = probe;
+    }
+}
+
+fn spec_moves(before: &TaskSpec, after: &TaskSpec) -> Vec<Move> {
+    let TaskSpec {
+        r#ref: _,
+        outcome,
+        constraints,
+        accept,
+        premises,
+        means,
+        design,
+        precedent,
+        executor,
+    } = before;
+    let mut moves = Vec::new();
+    let mut note = |field, old: String, new: String| {
+        if old != new {
+            moves.push(Move { field, old, new });
+        }
+    };
+    note("spec.outcome", outcome.clone(), after.outcome.clone());
+    note(
+        "spec.constraints",
+        format!("{constraints:?}"),
+        format!("{:?}", after.constraints),
+    );
+    note(
+        "spec.accept",
+        format!("{accept:?}"),
+        format!("{:?}", after.accept),
+    );
+    note(
+        "spec.premises",
+        format!("{premises:?}"),
+        format!("{:?}", after.premises),
+    );
+    note(
+        "spec.means",
+        format!("{means:?}"),
+        format!("{:?}", after.means),
+    );
+    note(
+        "spec.design",
+        format!("{design:?}"),
+        format!("{:?}", after.design),
+    );
+    note(
+        "spec.precedent",
+        format!("{precedent:?}"),
+        format!("{:?}", after.precedent),
+    );
+    note("spec.executor", executor.clone(), after.executor.clone());
+    moves
+}
+
+/// Writes one `Change` per moved plan field, or refuses when the group has no
+/// reason to give for them. Rows keyed on `ref` take the row's key as it now
+/// stands, so a rename's own rows sit with the trail it re-keyed.
+fn record_changes(
+    store: &mut Store,
+    before: &TaskRow,
+    changed: &[&'static str],
+    spec_moves: Vec<Move>,
+    group: &Patch<'_>,
+) -> Result<()> {
+    let id = before.id;
+    let row = row_of(store, id)?;
+    let r#ref = row.r#ref.clone();
+    let mut moves: Vec<Move> = changed
+        .iter()
+        .filter_map(|&field| {
+            Some(Move {
+                field,
+                old: audited_value(before, field)?,
+                new: audited_value(row, field)?,
+            })
+        })
+        .collect();
+    moves.extend(spec_moves);
+    let Some(first) = moves.first() else {
+        return Ok(());
+    };
+
+    let Some(line) = group.line else {
+        return Err(tagged_err(
+            ErrorKind::Validation,
+            None,
+            format!(
+                "task {id}: this store is audited and the positional form has no reason channel \
+                 for `{}` — use `tasks update --ndjson` with a `reason` on the row",
+                first.field
+            ),
+        ));
+    };
+    let reason = group.reason.trim();
+    if reason.is_empty() {
+        return Err(row_err(
+            line,
+            format!(
+                "task {id}: this store is audited, so changing `{}` needs a `reason`",
+                first.field
+            ),
+        ));
+    }
+
+    let at = Some(crate::time::now_toml_datetime()?);
+    let actor = match group.actor.trim() {
+        "" => DEFAULT_ACTOR,
+        actor => actor,
+    };
+    store.changes.extend(moves.into_iter().map(|moved| Change {
+        at,
+        r#ref: r#ref.clone(),
+        field: moved.field.to_string(),
+        old: moved.old,
+        new: moved.new,
+        actor: actor.to_string(),
+        reason: reason.to_string(),
+    }));
+    Ok(())
+}
+
+/// A row field as an audit row records it. `None` for a field the audit does
+/// not cover, which is every field not listed here.
+fn audited_value(row: &TaskRow, field: &str) -> Option<String> {
+    Some(match field {
+        "acceptance" => row.acceptance.clone(),
+        "action" => row.action.clone(),
+        "checkpoint" => row.checkpoint.clone(),
+        "coupling" => format!("{:?}", row.coupling),
+        "deps_note" => row.deps_note.clone(),
+        "detail" => row.detail.clone(),
+        "effort" => row.effort.as_str().to_string(),
+        "files" => format!("{:?}", row.files),
+        "needs" => format!("{:?}", row.needs),
+        "ref" => row.r#ref.clone(),
+        "title" => row.title.clone(),
+        _ => return None,
+    })
+}
+
 /// `check_graph` off leaves an edge change unvalidated, for a caller that
-/// validates the whole graph once every row has moved.
+/// validates the whole graph once every row has moved. `v2` opens the
+/// import-owned fields, with no stamp, on a flow that has no import.
 fn patch(
     store: &mut Store,
     id: u32,
     fields: &UpdateFields,
     check_graph: bool,
+    v2: bool,
 ) -> Result<Vec<&'static str>> {
     let UpdateFields {
         status,
@@ -413,7 +689,7 @@ fn patch(
                 format!("--set expects `KEY=VALUE`, got `{pair}`"),
             )
         })?;
-        let field = settable(key, *unlock)?;
+        let field = settable(key, *unlock || v2)?;
         if flagged.contains(field) {
             return Err(tagged_err(
                 ErrorKind::Validation,
@@ -466,9 +742,9 @@ fn patch(
             // No row holds `new_ref`, so anything keyed on it is a removed
             // row's leftover.
             store.drop_ref_entries(new_ref);
-            // The stamp, file notes and backlog links are keyed on `ref` like
-            // `last_import_refs`, so they follow the row rather than being
-            // stranded under the old key.
+            // The stamp, file notes, backlog links, spec and audit trail are
+            // keyed on `ref` like `last_import_refs`, so they follow the row
+            // rather than being stranded under the old key.
             if let Some(entry) = store
                 .import_overrides
                 .iter_mut()
@@ -489,6 +765,16 @@ fn patch(
                 .filter(|link| link.r#ref == previous)
             {
                 link.r#ref.clone_from(new_ref);
+            }
+            for spec in store.specs.iter_mut().filter(|spec| spec.r#ref == previous) {
+                spec.r#ref.clone_from(new_ref);
+            }
+            for change in store
+                .changes
+                .iter_mut()
+                .filter(|change| change.r#ref == previous)
+            {
+                change.r#ref.clone_from(new_ref);
             }
             store.items[index].r#ref.clone_from(new_ref);
             changed.insert("ref");
@@ -531,7 +817,7 @@ fn patch(
         changed.insert("files");
     }
 
-    if *unlock && stamp(store, index, &changed, base_files, base_needs) {
+    if *unlock && !v2 && stamp(store, index, &changed, base_files, base_needs) {
         changed.insert(OVERRIDE);
     }
     if *relock && drop_stamp(store, index) {
@@ -572,6 +858,10 @@ fn settable(key: &str, unlock: bool) -> Result<&'static str> {
             "`ref` is immutable here — pass `--ref <SLUG>` to rewrite it deliberately".to_string()
         }
         "id" => "`id` is minted by the store and cannot be reassigned".to_string(),
+        key if key == "spec" || key.starts_with("spec.") => {
+            "a spec changes only through `tasks update --ndjson`, as a `spec` table beside `id`"
+                .to_string()
+        }
         key if IMPORTED.contains(&key) => format!(
             "`{key}` is owned by `tasks import-plan` — pass `--unlock-import-fields` to patch \
              it by hand and stamp the row against the plan value it replaces"
