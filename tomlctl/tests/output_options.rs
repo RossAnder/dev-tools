@@ -277,6 +277,80 @@ citation = "src/a.rs:1"
 rationale = "read it"
 "#;
 
+/// A flow holding a `plan.toml` refuses `tasks import-plan` and `tasks render`,
+/// so plan verbs get slugs of their own: `PLAN_SLUG` is a committed draft that
+/// `plan check` passes and `APPROVED_SLUG` an approved plan with drift.
+const PLAN_SLUG: &str = "plan-fixture";
+const APPROVED_SLUG: &str = "plan-approved";
+const PROBE_CAPTURE: &str = "probe-capture.tsv";
+const PLAN_FILE: &str = "src/plan.rs";
+
+const PLAN_BRIEF: &str = "## Intent\nStop the retry storm.\n\n## Non-goals\nNo new helper.\n\n\
+                          ## Scope budget\nOne file.\n\n## Success criteria\nA retry waits.\n";
+
+/// `D1` gives `plan gate` a row, the open `investigate` run is what `plan run
+/// finish` closes, and `H1` is what `plan handover done` marks.
+const PLAN_STORE: &str = r#"schema_version = 1
+
+[binding]
+branch = "feat/retry"
+scope = ["src/**"]
+
+[[decision]]
+id = "D1"
+decision = "Use the helper."
+provenance = "agent-assumed"
+door = "two-way"
+binds = ["1"]
+
+[[run]]
+step = "investigate"
+workflow = "plan-v2-investigate"
+args_hash = "beef"
+run_id = "wf_1"
+started = 2026-11-05T12:00:00Z
+finished = ""
+
+[[handover]]
+id = "H1"
+command = "cargo install --path tomlctl"
+source_task = 1
+done = false
+"#;
+
+/// `writes_build = false` with no probe is a warning, so `plan check` has a row
+/// to report while still exiting 0, and the row is what `plan probes` covers.
+const PLAN_TASKS: &str = r#"schema_version = 2
+last_updated = 2026-11-05
+plan_path = ".claude/flows/{slug}/brief.md"
+last_import_refs = []
+
+[[checkpoints]]
+id = "A"
+rationale = "the guard"
+
+[[specs]]
+ref = "add-guard"
+outcome = "the guard holds"
+accept = [{ behaviour = "a retry waits", check = "grep -q guard src/plan.rs", kind = "forward", positive = "", writes_build = false }]
+executor = "lite"
+
+[[milestones]]
+id = "A"
+gates = ["cargo test"]
+elaboration = "upfront"
+defer_reason = ""
+
+[[items]]
+id = 1
+ref = "add-guard"
+title = "Add guard"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+files = ["src/plan.rs"]
+"#;
+
 /// Where a command's rows sit, mirroring the emitter it goes through.
 #[derive(Clone, Copy, Debug)]
 enum Shape {
@@ -834,6 +908,155 @@ fn cases() -> Vec<Case> {
             One,
             "title",
         ),
+        write(
+            &[
+                "plan",
+                "open",
+                "--slug",
+                "fresh-plan",
+                "--branch",
+                "feat/fresh",
+                "--scope",
+                "src/**",
+            ],
+            "slug",
+        ),
+        write(&["plan", "decide", "--slug", PLAN_SLUG, "--ndjson", "-"], "ids").stdin(
+            r#"{"decision":"Keep the guard.","provenance":"agent-assumed","door":"two-way","binds":["1"]}"#,
+        ),
+        write(
+            &["plan", "contract", "--slug", PLAN_SLUG, "--ndjson", "-"],
+            "ids",
+        )
+        .stdin(r#"{"kind":"invariant","claim":"Retries wait.","check":"true","tasks":[1]}"#),
+        write(
+            &[
+                "plan",
+                "handover",
+                "add",
+                "--slug",
+                PLAN_SLUG,
+                "--command",
+                "cargo install --path tomlctl",
+                "--source-task",
+                "1",
+            ],
+            "id",
+        ),
+        write(&["plan", "handover", "done", "H1", "--slug", PLAN_SLUG], "id"),
+        write(
+            &[
+                "plan",
+                "run",
+                "start",
+                "--slug",
+                PLAN_SLUG,
+                "--step",
+                "prove",
+                "--workflow",
+                "plan-v2-prove",
+                "--args-hash",
+                "beef",
+            ],
+            "ok",
+        ),
+        write(
+            &[
+                "plan",
+                "run",
+                "finish",
+                "--slug",
+                PLAN_SLUG,
+                "--step",
+                "investigate",
+            ],
+            "ok",
+        ),
+        write(
+            &[
+                "plan",
+                "run",
+                "skip",
+                "--slug",
+                PLAN_SLUG,
+                "--step",
+                "review",
+                "--reason",
+                "low risk",
+            ],
+            "ok",
+        ),
+        write(
+            &[
+                "plan",
+                "milestone",
+                "add",
+                "--slug",
+                PLAN_SLUG,
+                "--id",
+                "B",
+                "--goal",
+                "the rest",
+            ],
+            "id",
+        ),
+        write(
+            &[
+                "plan",
+                "milestone",
+                "update",
+                "--slug",
+                PLAN_SLUG,
+                "--id",
+                "A",
+                "--goal",
+                "the guard, sooner",
+            ],
+            "id",
+        ),
+        read(
+            &["plan", "check", "--slug", PLAN_SLUG],
+            Field("findings"),
+            "class",
+        ),
+        text(&["plan", "view", "--slug", PLAN_SLUG, "--for", "human"]),
+        read(
+            &["plan", "view", "--slug", PLAN_SLUG, "--for", "digest"],
+            One,
+            "slug",
+        ),
+        text(&[
+            "plan", "view", "--slug", PLAN_SLUG, "--for", "worker", "--task", "1",
+        ]),
+        text(&["plan", "probes", "--slug", PLAN_SLUG, "--emit"]),
+        write(
+            &[
+                "plan",
+                "probes",
+                "--slug",
+                PLAN_SLUG,
+                "--record",
+                PROBE_CAPTURE,
+            ],
+            "recorded",
+        ),
+        read(&["plan", "stage", "--slug", PLAN_SLUG], One, "stage"),
+        read(&["plan", "gate", "--slug", PLAN_SLUG], One, "assumptions"),
+        write(
+            &[
+                "plan",
+                "approve",
+                "--slug",
+                PLAN_SLUG,
+                "--review",
+                "skipped-low-risk",
+                "--reason",
+                "one file",
+            ],
+            "commit",
+        )
+        .git(),
+        read(&["plan", "drift", "--slug", APPROVED_SLUG], One, "affected").git(),
     ]
 }
 
@@ -904,6 +1127,77 @@ fn record_agent(root: &Path, projects: &Path) {
     assert_eq!(out["recorded"], true, "fixture agent not recorded: {out}");
 }
 
+/// Run git in the fixture tree, under an identity the machine may not configure.
+fn fixture_git(root: &Path, args: &[&str]) -> String {
+    let out = git_command(root)
+        .args([
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@example.com",
+            "-c",
+            "commit.gpgsign=false",
+        ])
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout).trim().to_string()
+}
+
+fn commit_flows(root: &Path, message: &str) {
+    fixture_git(root, &["add", "-f", ".claude/flows", "src"]);
+    fixture_git(root, &["commit", "-q", "-m", message]);
+}
+
+fn open_plan(root: &Path, slug: &str) {
+    setup(root, &["plan", "open", "--slug", slug], "");
+    let flow = root.join(".claude/flows").join(slug);
+    write_tasks_store(&flow.join("plan.toml"), PLAN_STORE);
+    write_tasks_store(
+        &flow.join("tasks.toml"),
+        &PLAN_TASKS.replace("{slug}", slug),
+    );
+    fs::write(flow.join("brief.md"), PLAN_BRIEF).unwrap();
+}
+
+/// The `plan` group's flows, added to its fixture alone so that no other group
+/// sees them in `flow list` or `flow resolve`. Approving a plan then committing
+/// `PLAN_FILE` is what gives `plan drift` an affected task.
+fn plan_flows(root: &Path) {
+    open_plan(root, PLAN_SLUG);
+    open_plan(root, APPROVED_SLUG);
+    put(
+        root,
+        PROBE_CAPTURE,
+        &format!("head\t{}\n1:0\tneg\trc=1\t\t\n", "0".repeat(40)),
+    );
+    if !git_available() {
+        return;
+    }
+    commit_flows(root, "plan");
+    setup(
+        root,
+        &[
+            "plan",
+            "approve",
+            "--slug",
+            APPROVED_SLUG,
+            "--review",
+            "skipped-flag",
+            "--reason",
+            "fixture",
+        ],
+        "",
+    );
+    put(root, PLAN_FILE, "fn guard() {}\n");
+    commit_flows(root, "later");
+}
+
 fn fixture() -> Fixture {
     let (dir, root) = sandbox();
     let projects = tempfile::tempdir().unwrap();
@@ -932,29 +1226,9 @@ fn fixture() -> Fixture {
     // `review run start --base HEAD` needs a commit to resolve.
     let mut base = "0".repeat(40);
     if git_available() {
-        let git = |args: &[&str]| {
-            let out = git_command(&root)
-                .args([
-                    "-c",
-                    "user.name=t",
-                    "-c",
-                    "user.email=t@example.com",
-                    "-c",
-                    "commit.gpgsign=false",
-                ])
-                .args(args)
-                .output()
-                .unwrap();
-            assert!(
-                out.status.success(),
-                "git {args:?}: {}",
-                String::from_utf8_lossy(&out.stderr)
-            );
-            String::from_utf8_lossy(&out.stdout).trim().to_string()
-        };
-        git(&["add", "src"]);
-        git(&["commit", "-q", "-m", "fixture"]);
-        base = git(&["rev-parse", "HEAD"]);
+        fixture_git(&root, &["add", "src"]);
+        fixture_git(&root, &["commit", "-q", "-m", "fixture"]);
+        base = fixture_git(&root, &["rev-parse", "HEAD"]);
     }
     setup(
         &root,
@@ -1732,8 +2006,6 @@ fn every_leaf_command_has_a_case() {
     for (name, node) in commands.as_object().unwrap() {
         leaves(name, node, &mut listed);
     }
-    // The `plan` group's verbs are not all implemented, and a stub cannot pass a case.
-    listed.retain(|leaf| !leaf.starts_with("plan "));
     let covered: BTreeSet<String> = cases().iter().map(|c| leaf_of(&commands, c.argv)).collect();
     let missing: Vec<_> = listed.difference(&covered).collect();
     let unknown: Vec<_> = covered.difference(&listed).collect();
@@ -1755,6 +2027,7 @@ fn group(case: &Case) -> &'static str {
         "tasks" => "tasks",
         "inputs" => "inputs",
         "review" => "review",
+        "plan" => "plan",
         _ => "core",
     }
 }
@@ -1774,7 +2047,7 @@ macro_rules! group_tests {
     };
 }
 
-group_tests!(core, items, flow, backlog, tasks, inputs, review);
+group_tests!(core, items, flow, backlog, tasks, inputs, review, plan);
 
 #[test]
 fn every_case_belongs_to_a_group_test() {
@@ -1799,6 +2072,9 @@ fn honours(name: &str) {
         .filter(|c| group(c) == name && (git || !c.git))
         .collect();
     let fx = fixture();
+    if name == "plan" {
+        plan_flows(&fx.root);
+    }
     let next = AtomicUsize::new(0);
     let fails = Mutex::new(Vec::new());
     // The group tests already run side by side, so each keeps its own fan-out

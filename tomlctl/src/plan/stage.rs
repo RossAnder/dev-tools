@@ -11,7 +11,7 @@ use super::check;
 use super::schema::PlanStore;
 use super::store;
 use crate::cli::PlanStageArgs;
-use crate::output::print_json_compact;
+use crate::output::print_json_line;
 use crate::tasks::finding::{ERROR, Finding};
 use crate::tasks::schema::{Status, Store};
 use crate::tasks::{load_store, resolve_store_path};
@@ -32,7 +32,7 @@ pub(super) fn run(args: PlanStageArgs) -> Result<()> {
     let reviewed = review_settled(flow_dir, &plan)?;
 
     let report = assess(&plan, &tasks, &findings, reviewed);
-    print_json_compact(&json!({
+    print_json_line(&json!({
         "stage": report.stage,
         "next": report.next,
         "blockers": report.blockers,

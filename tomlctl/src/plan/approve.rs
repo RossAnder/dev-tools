@@ -25,7 +25,7 @@ use crate::cli::{
 use crate::errors::{ErrorKind, tagged_err};
 use crate::flow::active::{build_entry, find_slug_index, mutate_active};
 use crate::io::{OnMissing, mutate_doc, read_toml, repo_or_cwd_root};
-use crate::output::print_json_compact;
+use crate::output::{print_json_compact, print_json_line};
 use crate::tasks::finding::ERROR;
 use crate::tasks::schema::Store;
 use crate::tasks::{load_store, mutate_store, resolve_store_path};
@@ -57,7 +57,7 @@ pub(super) fn gate(args: PlanGateArgs) -> Result<()> {
     let slug = &args.target.slug;
     let plan = store::load(&store::resolve(slug)?, &args.integrity)?;
     let tasks = load_store(&resolve_store_path(Some(slug), None)?, &args.integrity)?;
-    print_json_compact(&gate_report(&plan, &tasks))
+    print_json_line(&gate_report(&plan, &tasks))
 }
 
 fn gate_report(plan: &PlanStore, tasks: &Store) -> JsonValue {
