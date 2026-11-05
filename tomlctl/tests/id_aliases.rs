@@ -3,9 +3,9 @@
 //! the positional id list of `tasks show|update` and `backlog show|triage`, and
 //! a comma-separated `backlog triage` id list.
 //!
-//! Every case runs the guessed spelling and the canonical one in twin sandboxes
-//! seeded identically, then requires byte-identical stdout. Backlog ids are
-//! content-derived, so the twins mint the same ids.
+//! Every case runs the guessed spelling and the canonical one in twin sandboxes,
+//! the second a copy of the first's seeded tree, then requires byte-identical
+//! stdout. Seeding once keeps the one-second backlog timestamps identical.
 
 use std::path::{Path, PathBuf};
 
@@ -108,6 +108,21 @@ fn twin() -> (tempfile::TempDir, PathBuf, String, String) {
     (tmp, root, id(&first), id(&second))
 }
 
+/// Copy `from` into the existing directory `to`, so a second sandbox starts
+/// byte-identical to the first, timestamps included.
+fn copy_tree(from: &Path, to: &Path) {
+    for entry in std::fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let target = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            std::fs::create_dir_all(&target).unwrap();
+            copy_tree(&entry.path(), &target);
+        } else {
+            std::fs::copy(entry.path(), &target).unwrap();
+        }
+    }
+}
+
 fn stdout_of(root: &Path, args: &[&str]) -> String {
     let out = cli(root).args(args).write_stdin("").assert().success();
     String::from_utf8(out.get_output().stdout.clone()).expect("stdout must be UTF-8")
@@ -121,8 +136,10 @@ fn assert_same(
     canonical: impl Fn(&str, &str) -> Vec<String>,
 ) {
     let (_t1, guess_root, g1, g2) = twin();
-    let (_t2, canon_root, c1, c2) = twin();
-    assert_eq!((&g1, &g2), (&c1, &c2), "twins must mint the same ids");
+    let _t2 = tempfile::tempdir().unwrap();
+    let canon_root = _t2.path().canonicalize().unwrap();
+    copy_tree(&guess_root, &canon_root);
+    let (c1, c2) = (g1.clone(), g2.clone());
 
     let guessed = guessed(&g1, &g2);
     let canonical = canonical(&c1, &c2);
