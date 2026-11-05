@@ -38,3 +38,14 @@ scripts/** text eol=lf
 # The index is already LF; the CRLF copies on disk are rewritten in place.
 claude/commands/*.md text eol=lf
 .gitattributes text eol=lf
+
+# Pin flow state and tomlctl stores to LF. A .sha256 sidecar is a digest of the
+# store's exact bytes, so core.autocrlf rewriting a store on checkout fails a
+# sidecar over a change nobody made, and refreshing it there stamps CRLF bytes
+# that then fail on every LF checkout. `text=auto` on the flow directory keeps a
+# binary later added to a flow from being converted; the two typed patterns
+# reach the stores outside it, such as those under .claude/plans/ and
+# .claude/reviews/. Markdown outside flows and settings.local.json stay unpinned.
+.claude/flows/** text=auto eol=lf
+.claude/**/*.toml text eol=lf
+.claude/**/*.sha256 text eol=lf
