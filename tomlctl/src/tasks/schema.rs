@@ -5,15 +5,15 @@
 //! last_updated = 2026-09-07
 //! plan_path = "docs/plans/<slug>.md"
 //! last_import_refs = ["…"]
-//! [policy] / [[checkpoints]] / [[items]]
+//! audit = true
+//! [policy] / [[checkpoints]] / side tables / [[items]]
 //! ```
 //!
 //! `to_toml` inserts keys in that order and `preserve_order` holds it, so a
 //! write is byte-stable with no sort step. Bodies are LF-normalised on both
-//! read and write: `toml`'s writer picks its string form by scanning content,
-//! and a lone `\r` is an ASCII control character that forces the escaped
-//! `"""` form. Unknown keys are dropped — the store is tool-owned and every
-//! write re-emits it from this shape.
+//! read and write: a lone `\r` forces `toml`'s writer into the escaped `"""`
+//! form. Unknown keys are dropped — the store is tool-owned and every write
+//! re-emits it from this shape.
 
 use std::fmt;
 
@@ -22,7 +22,17 @@ use toml::Value as TomlValue;
 use toml::map::Map;
 use toml::value::Datetime;
 
-pub(crate) const SCHEMA_VERSION: i64 = 1;
+/// The newest version this binary reads, stamped on a store holding `specs`,
+/// `milestones`, `changes` or `audit`. A binary that only knows
+/// [`BASE_SCHEMA_VERSION`] refuses that stamp rather than dropping those keys.
+pub(crate) const SCHEMA_VERSION: i64 = 2;
+
+/// The stamp on a store holding none of those keys, so it stays readable by a
+/// binary that predates them.
+pub(crate) const BASE_SCHEMA_VERSION: i64 = 1;
+
+/// `elaboration` for a milestone recording none: detail upfront is the norm.
+pub(crate) const ELABORATION_UPFRONT: &str = "upfront";
 
 /// Depth a row's heading renders at when the store records none — the
 /// shallowest depth that still sits inside a `## ` section.
@@ -46,6 +56,7 @@ type Table = Map<String, TomlValue>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Store {
+    /// The version as read. `to_toml` stamps from the store's content instead.
     pub(crate) schema_version: i64,
     /// Bare TOML date, absent until the first mutation stamps it.
     pub(crate) last_updated: Option<Datetime>,
@@ -66,6 +77,14 @@ pub(crate) struct Store {
     /// Backlog items a row closes or references, keyed by `ref`. A link whose
     /// ref no row carries is kept until the next import.
     pub(crate) backlog_links: Vec<BacklogLink>,
+    /// Set by approval: from then on a plan field changes only with a reason,
+    /// and each change leaves a row in `changes`.
+    pub(crate) audit: bool,
+    pub(crate) specs: Vec<TaskSpec>,
+    pub(crate) milestones: Vec<MilestoneSpec>,
+    /// The audit trail, keyed by `ref` or `milestone:<id>`. Outlives the row it
+    /// records, so a removal stays visible as a tombstone.
+    pub(crate) changes: Vec<Change>,
     pub(crate) items: Vec<TaskRow>,
 }
 
@@ -183,6 +202,80 @@ impl BacklogLink {
     }
 }
 
+/// A row's spec, keyed by `ref`. Vocabulary fields here and below stay `String`
+/// so the writers, not the reader, decide what is out of vocabulary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct TaskSpec {
+    pub(crate) r#ref: String,
+    pub(crate) outcome: String,
+    pub(crate) constraints: Vec<String>,
+    pub(crate) accept: Vec<Accept>,
+    pub(crate) premises: Vec<Premise>,
+    pub(crate) means: Vec<Means>,
+    pub(crate) design: Vec<String>,
+    pub(crate) precedent: Vec<String>,
+    pub(crate) executor: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Accept {
+    pub(crate) behaviour: String,
+    /// Must exit non-zero when `behaviour` does not hold.
+    pub(crate) check: String,
+    pub(crate) kind: String,
+    /// The positive control's command; `""` when there is none.
+    pub(crate) positive: String,
+    /// An absent key reads as `true`, so only an explicit `false` is probed and
+    /// an unlabelled command never runs.
+    pub(crate) writes_build: bool,
+    pub(crate) probe: Option<Probe>,
+}
+
+/// One probe run against an `Accept`. An rc is `None` for a control that did
+/// not run, which a missing positive command makes the normal case for `pos_rc`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Probe {
+    pub(crate) at: String,
+    pub(crate) neg_rc: Option<i64>,
+    pub(crate) pos_rc: Option<i64>,
+    pub(crate) verdict: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Premise {
+    pub(crate) claim: String,
+    pub(crate) check: String,
+    /// `base` or `after:<id>`.
+    pub(crate) at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Means {
+    pub(crate) text: String,
+    pub(crate) binding: String,
+    pub(crate) detail: String,
+}
+
+/// A milestone's execution facts, keyed by a `[[checkpoints]]` id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct MilestoneSpec {
+    pub(crate) id: String,
+    pub(crate) gates: Vec<String>,
+    pub(crate) elaboration: String,
+    pub(crate) defer_reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Change {
+    pub(crate) at: Option<Datetime>,
+    pub(crate) r#ref: String,
+    pub(crate) field: String,
+    pub(crate) old: String,
+    pub(crate) new: String,
+    pub(crate) actor: String,
+    pub(crate) reason: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TaskRow {
     pub(crate) id: u32,
@@ -230,7 +323,7 @@ pub(crate) enum Effort {
 impl Default for Store {
     fn default() -> Self {
         Self {
-            schema_version: SCHEMA_VERSION,
+            schema_version: BASE_SCHEMA_VERSION,
             last_updated: None,
             plan_path: String::new(),
             last_import_refs: Vec::new(),
@@ -239,6 +332,10 @@ impl Default for Store {
             import_overrides: Vec::new(),
             file_notes: Vec::new(),
             backlog_links: Vec::new(),
+            audit: false,
+            specs: Vec::new(),
+            milestones: Vec::new(),
+            changes: Vec::new(),
             items: Vec::new(),
         }
     }
@@ -296,12 +393,13 @@ impl Store {
         self.backlog_links.iter().find(|entry| entry.r#ref == r#ref)
     }
 
-    /// Drops the file notes and backlog links keyed on `ref`. `tasks remove`
-    /// leaves both behind, so a row claiming a freed `ref` would otherwise read
-    /// the removed row's entries as its own.
+    /// Drops the file notes, backlog links and spec keyed on `ref`, so a row
+    /// claiming a freed `ref` does not read a removed row's entries as its own.
+    /// `changes` stays: a tombstone must outlive the row it records.
     pub(crate) fn drop_ref_entries(&mut self, r#ref: &str) {
         self.file_notes.retain(|entry| entry.r#ref != r#ref);
         self.backlog_links.retain(|entry| entry.r#ref != r#ref);
+        self.specs.retain(|entry| entry.r#ref != r#ref);
     }
 }
 
@@ -392,7 +490,7 @@ pub(crate) fn from_toml(doc: &TomlValue) -> Result<Store> {
     let schema_version = root
         .get("schema_version")
         .and_then(TomlValue::as_integer)
-        .unwrap_or(SCHEMA_VERSION);
+        .unwrap_or(BASE_SCHEMA_VERSION);
     // A newer store holds keys this shape drops, and the next write would
     // re-emit it still stamped with its own version — the loss is invisible
     // to the binary that wrote it.
@@ -431,6 +529,32 @@ pub(crate) fn from_toml(doc: &TomlValue) -> Result<Store> {
         .map(|(index, value)| backlog_link_from_toml(value, index))
         .collect::<Result<Vec<_>>>()?;
     backlog_links.retain(|entry| !entry.is_empty());
+    let mut specs = table_array(root, "specs")?
+        .iter()
+        .enumerate()
+        .map(|(index, value)| spec_from_toml(value, index))
+        .collect::<Result<Vec<_>>>()?;
+    specs.retain(|entry| !entry.r#ref.is_empty());
+    let mut milestones = table_array(root, "milestones")?
+        .iter()
+        .enumerate()
+        .map(|(index, value)| milestone_from_toml(value, index))
+        .collect::<Result<Vec<_>>>()?;
+    milestones.retain(|entry| !entry.id.is_empty());
+    let mut changes = table_array(root, "changes")?
+        .iter()
+        .enumerate()
+        .map(|(index, value)| change_from_toml(value, index))
+        .collect::<Result<Vec<_>>>()?;
+    changes.retain(|entry| !entry.r#ref.is_empty());
+    // Strict where a malformed `writes_build` is not: reading this flag as
+    // false would lift the audit requirement off an approved plan.
+    let audit = match root.get("audit") {
+        Some(raw) => raw
+            .as_bool()
+            .ok_or_else(|| anyhow!("`audit` is not a boolean"))?,
+        None => false,
+    };
 
     Ok(Store {
         schema_version,
@@ -445,13 +569,17 @@ pub(crate) fn from_toml(doc: &TomlValue) -> Result<Store> {
         import_overrides,
         file_notes,
         backlog_links,
+        audit,
+        specs,
+        milestones,
+        changes,
         items,
     })
 }
 
 pub(crate) fn to_toml(store: &Store) -> TomlValue {
     let Store {
-        schema_version,
+        schema_version: _,
         last_updated,
         plan_path,
         last_import_refs,
@@ -460,14 +588,35 @@ pub(crate) fn to_toml(store: &Store) -> TomlValue {
         import_overrides,
         file_notes,
         backlog_links,
+        audit,
+        specs,
+        milestones,
+        changes,
         items,
     } = store;
 
+    let specs: Vec<TomlValue> = specs
+        .iter()
+        .filter(|entry| !entry.r#ref.is_empty())
+        .map(spec_to_toml)
+        .collect();
+    let milestones: Vec<TomlValue> = milestones
+        .iter()
+        .filter(|entry| !entry.id.is_empty())
+        .map(milestone_to_toml)
+        .collect();
+    let changes: Vec<TomlValue> = changes
+        .iter()
+        .filter(|entry| !entry.r#ref.is_empty())
+        .map(change_to_toml)
+        .collect();
+    let stamp = match *audit || !specs.is_empty() || !milestones.is_empty() || !changes.is_empty() {
+        true => SCHEMA_VERSION,
+        false => BASE_SCHEMA_VERSION,
+    };
+
     let mut root = Table::new();
-    root.insert(
-        "schema_version".to_string(),
-        TomlValue::Integer(*schema_version),
-    );
+    root.insert("schema_version".to_string(), TomlValue::Integer(stamp));
     if let Some(date) = last_updated {
         root.insert("last_updated".to_string(), TomlValue::Datetime(*date));
     }
@@ -479,6 +628,9 @@ pub(crate) fn to_toml(store: &Store) -> TomlValue {
         "last_import_refs".to_string(),
         str_arr_value(last_import_refs),
     );
+    if *audit {
+        root.insert("audit".to_string(), TomlValue::Boolean(true));
+    }
     root.insert("policy".to_string(), policy_to_toml(policy));
     root.insert(
         "checkpoints".to_string(),
@@ -512,6 +664,16 @@ pub(crate) fn to_toml(store: &Store) -> TomlValue {
         .collect();
     if !links.is_empty() {
         root.insert("backlog_links".to_string(), TomlValue::Array(links));
+    }
+    // Omitted while empty, so a v1 store writes back byte-identical.
+    for (key, entries) in [
+        ("specs", specs),
+        ("milestones", milestones),
+        ("changes", changes),
+    ] {
+        if !entries.is_empty() {
+            root.insert(key.to_string(), TomlValue::Array(entries));
+        }
     }
     root.insert(
         "items".to_string(),
@@ -700,6 +862,248 @@ fn backlog_link_to_toml(entry: &BacklogLink) -> TomlValue {
     TomlValue::Table(table)
 }
 
+fn spec_from_toml(value: &TomlValue, index: usize) -> Result<TaskSpec> {
+    let context = format!("specs[{index}]");
+    let table = value
+        .as_table()
+        .ok_or_else(|| anyhow!("{context} is not a table"))?;
+    Ok(TaskSpec {
+        r#ref: str_or(table, "ref", ""),
+        outcome: lf(&str_or(table, "outcome", "")),
+        constraints: lf_array(table, "constraints"),
+        accept: sub_tables(table, "accept", &context)?
+            .into_iter()
+            .map(|entry| accept_from_toml(entry, &context))
+            .collect::<Result<Vec<_>>>()?,
+        premises: sub_tables(table, "premises", &context)?
+            .into_iter()
+            .map(premise_from_toml)
+            .collect(),
+        means: sub_tables(table, "means", &context)?
+            .into_iter()
+            .map(means_from_toml)
+            .collect(),
+        design: str_array(table, "design"),
+        precedent: str_array(table, "precedent"),
+        executor: str_or(table, "executor", ""),
+    })
+}
+
+fn spec_to_toml(entry: &TaskSpec) -> TomlValue {
+    let TaskSpec {
+        r#ref,
+        outcome,
+        constraints,
+        accept,
+        premises,
+        means,
+        design,
+        precedent,
+        executor,
+    } = entry;
+    let mut table = Table::new();
+    table.insert("ref".to_string(), TomlValue::String(r#ref.clone()));
+    table.insert("outcome".to_string(), TomlValue::String(lf(outcome)));
+    table.insert("constraints".to_string(), lf_arr_value(constraints));
+    table.insert(
+        "accept".to_string(),
+        TomlValue::Array(accept.iter().map(accept_to_toml).collect()),
+    );
+    table.insert(
+        "premises".to_string(),
+        TomlValue::Array(premises.iter().map(premise_to_toml).collect()),
+    );
+    table.insert(
+        "means".to_string(),
+        TomlValue::Array(means.iter().map(means_to_toml).collect()),
+    );
+    table.insert("design".to_string(), str_arr_value(design));
+    table.insert("precedent".to_string(), str_arr_value(precedent));
+    table.insert("executor".to_string(), TomlValue::String(executor.clone()));
+    TomlValue::Table(table)
+}
+
+fn accept_from_toml(table: &Table, context: &str) -> Result<Accept> {
+    let probe = match table.get("probe") {
+        Some(raw) => Some(probe_from_toml(raw.as_table().ok_or_else(|| {
+            anyhow!("{context}: an `accept` entry's `probe` is not a table")
+        })?)),
+        None => None,
+    };
+    Ok(Accept {
+        behaviour: lf(&str_or(table, "behaviour", "")),
+        check: lf(&str_or(table, "check", "")),
+        kind: str_or(table, "kind", ""),
+        positive: lf(&str_or(table, "positive", "")),
+        writes_build: table
+            .get("writes_build")
+            .and_then(TomlValue::as_bool)
+            .unwrap_or(true),
+        probe,
+    })
+}
+
+fn accept_to_toml(entry: &Accept) -> TomlValue {
+    let Accept {
+        behaviour,
+        check,
+        kind,
+        positive,
+        writes_build,
+        probe,
+    } = entry;
+    let mut table = Table::new();
+    table.insert("behaviour".to_string(), TomlValue::String(lf(behaviour)));
+    table.insert("check".to_string(), TomlValue::String(lf(check)));
+    table.insert("kind".to_string(), TomlValue::String(kind.clone()));
+    table.insert("positive".to_string(), TomlValue::String(lf(positive)));
+    table.insert(
+        "writes_build".to_string(),
+        TomlValue::Boolean(*writes_build),
+    );
+    if let Some(probe) = probe {
+        table.insert("probe".to_string(), probe_to_toml(probe));
+    }
+    TomlValue::Table(table)
+}
+
+fn probe_from_toml(table: &Table) -> Probe {
+    Probe {
+        at: str_or(table, "at", ""),
+        neg_rc: table.get("neg_rc").and_then(TomlValue::as_integer),
+        pos_rc: table.get("pos_rc").and_then(TomlValue::as_integer),
+        verdict: str_or(table, "verdict", ""),
+    }
+}
+
+fn probe_to_toml(entry: &Probe) -> TomlValue {
+    let Probe {
+        at,
+        neg_rc,
+        pos_rc,
+        verdict,
+    } = entry;
+    let mut table = Table::new();
+    table.insert("at".to_string(), TomlValue::String(at.clone()));
+    if let Some(rc) = neg_rc {
+        table.insert("neg_rc".to_string(), TomlValue::Integer(*rc));
+    }
+    if let Some(rc) = pos_rc {
+        table.insert("pos_rc".to_string(), TomlValue::Integer(*rc));
+    }
+    table.insert("verdict".to_string(), TomlValue::String(verdict.clone()));
+    TomlValue::Table(table)
+}
+
+fn premise_from_toml(table: &Table) -> Premise {
+    Premise {
+        claim: lf(&str_or(table, "claim", "")),
+        check: lf(&str_or(table, "check", "")),
+        at: str_or(table, "at", ""),
+    }
+}
+
+fn premise_to_toml(entry: &Premise) -> TomlValue {
+    let Premise { claim, check, at } = entry;
+    let mut table = Table::new();
+    table.insert("claim".to_string(), TomlValue::String(lf(claim)));
+    table.insert("check".to_string(), TomlValue::String(lf(check)));
+    table.insert("at".to_string(), TomlValue::String(at.clone()));
+    TomlValue::Table(table)
+}
+
+fn means_from_toml(table: &Table) -> Means {
+    Means {
+        text: lf(&str_or(table, "text", "")),
+        binding: str_or(table, "binding", ""),
+        detail: lf(&str_or(table, "detail", "")),
+    }
+}
+
+fn means_to_toml(entry: &Means) -> TomlValue {
+    let Means {
+        text,
+        binding,
+        detail,
+    } = entry;
+    let mut table = Table::new();
+    table.insert("text".to_string(), TomlValue::String(lf(text)));
+    table.insert("binding".to_string(), TomlValue::String(binding.clone()));
+    table.insert("detail".to_string(), TomlValue::String(lf(detail)));
+    TomlValue::Table(table)
+}
+
+fn milestone_from_toml(value: &TomlValue, index: usize) -> Result<MilestoneSpec> {
+    let table = value
+        .as_table()
+        .ok_or_else(|| anyhow!("milestones[{index}] is not a table"))?;
+    Ok(MilestoneSpec {
+        id: str_or(table, "id", ""),
+        gates: lf_array(table, "gates"),
+        elaboration: str_or(table, "elaboration", ELABORATION_UPFRONT),
+        defer_reason: lf(&str_or(table, "defer_reason", "")),
+    })
+}
+
+fn milestone_to_toml(entry: &MilestoneSpec) -> TomlValue {
+    let MilestoneSpec {
+        id,
+        gates,
+        elaboration,
+        defer_reason,
+    } = entry;
+    let mut table = Table::new();
+    table.insert("id".to_string(), TomlValue::String(id.clone()));
+    table.insert("gates".to_string(), lf_arr_value(gates));
+    table.insert(
+        "elaboration".to_string(),
+        TomlValue::String(elaboration.clone()),
+    );
+    table.insert(
+        "defer_reason".to_string(),
+        TomlValue::String(lf(defer_reason)),
+    );
+    TomlValue::Table(table)
+}
+
+fn change_from_toml(value: &TomlValue, index: usize) -> Result<Change> {
+    let table = value
+        .as_table()
+        .ok_or_else(|| anyhow!("changes[{index}] is not a table"))?;
+    Ok(Change {
+        at: table.get("at").and_then(as_date),
+        r#ref: str_or(table, "ref", ""),
+        field: str_or(table, "field", ""),
+        old: lf(&str_or(table, "old", "")),
+        new: lf(&str_or(table, "new", "")),
+        actor: str_or(table, "actor", ""),
+        reason: lf(&str_or(table, "reason", "")),
+    })
+}
+
+fn change_to_toml(entry: &Change) -> TomlValue {
+    let Change {
+        at,
+        r#ref,
+        field,
+        old,
+        new,
+        actor,
+        reason,
+    } = entry;
+    let mut table = Table::new();
+    if let Some(date) = at {
+        table.insert("at".to_string(), TomlValue::Datetime(*date));
+    }
+    table.insert("ref".to_string(), TomlValue::String(r#ref.clone()));
+    table.insert("field".to_string(), TomlValue::String(field.clone()));
+    table.insert("old".to_string(), TomlValue::String(lf(old)));
+    table.insert("new".to_string(), TomlValue::String(lf(new)));
+    table.insert("actor".to_string(), TomlValue::String(actor.clone()));
+    table.insert("reason".to_string(), TomlValue::String(lf(reason)));
+    TomlValue::Table(table)
+}
+
 fn row_from_toml(value: &TomlValue, index: usize) -> Result<TaskRow> {
     let table = value
         .as_table()
@@ -867,6 +1271,28 @@ fn str_array(table: &Table, key: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
+fn lf_array(table: &Table, key: &str) -> Vec<String> {
+    str_array(table, key).iter().map(|s| lf(s)).collect()
+}
+
+/// The tables under `key`, or none when absent. Refuses rather than skips a
+/// malformed entry, as `table_array` does, naming the spec that holds it.
+fn sub_tables<'a>(table: &'a Table, key: &str, context: &str) -> Result<Vec<&'a Table>> {
+    let Some(raw) = table.get(key) else {
+        return Ok(Vec::new());
+    };
+    raw.as_array()
+        .ok_or_else(|| anyhow!("{context}: `{key}` is not an array of tables"))?
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| {
+            entry
+                .as_table()
+                .ok_or_else(|| anyhow!("{context}: `{key}[{index}]` is not a table"))
+        })
+        .collect()
+}
+
 fn id_array(table: &Table, key: &str, context: &str) -> Result<Vec<u32>> {
     let Some(raw) = table.get(key) else {
         return Ok(Vec::new());
@@ -906,6 +1332,10 @@ fn str_arr_value(values: &[String]) -> TomlValue {
     )
 }
 
+fn lf_arr_value(values: &[String]) -> TomlValue {
+    TomlValue::Array(values.iter().map(|s| TomlValue::String(lf(s))).collect())
+}
+
 fn id_arr_value(values: &[u32]) -> TomlValue {
     TomlValue::Array(
         values
@@ -921,7 +1351,7 @@ mod tests {
 
     fn fixture() -> Store {
         Store {
-            schema_version: SCHEMA_VERSION,
+            schema_version: BASE_SCHEMA_VERSION,
             last_updated: Some("2026-09-07".parse().expect("bare date parses")),
             plan_path: "docs/plans/whimsical-hugging-puppy.md".to_string(),
             last_import_refs: vec![
@@ -957,6 +1387,10 @@ mod tests {
                 closes: vec!["B3".to_string()],
                 refs: vec!["B1".to_string(), "B7".to_string()],
             }],
+            audit: false,
+            specs: Vec::new(),
+            milestones: Vec::new(),
+            changes: Vec::new(),
             items: vec![
                 TaskRow {
                     id: 1,
@@ -1244,6 +1678,370 @@ mod tests {
                 TomlValue::Array(vec![TomlValue::Table(table)])
             });
         assert_eq!(from_toml(&raw).expect("parses").backlog_links, vec![]);
+    }
+
+    /// Every side table populated and `audit` set, with every optional shape
+    /// present at least once: a probe with and without a positive control, a
+    /// `writes_build = false` row, a dated change.
+    fn v2_fixture() -> Store {
+        Store {
+            schema_version: SCHEMA_VERSION,
+            audit: true,
+            specs: vec![TaskSpec {
+                r#ref: "wire-the-renderer".to_string(),
+                outcome: "the render round-trips\nacross two lines".to_string(),
+                constraints: vec!["must not change the public signature".to_string()],
+                accept: vec![
+                    Accept {
+                        behaviour: "a retry after 429 waits the header's delay".to_string(),
+                        check: "cargo nextest run -E 'test(retry_after)'".to_string(),
+                        kind: "forward".to_string(),
+                        positive: "printf ok".to_string(),
+                        writes_build: false,
+                        probe: Some(Probe {
+                            at: "0d1bf49".to_string(),
+                            neg_rc: Some(1),
+                            pos_rc: Some(0),
+                            verdict: "healthy".to_string(),
+                        }),
+                    },
+                    Accept {
+                        behaviour: "the guard still holds".to_string(),
+                        check: "true".to_string(),
+                        kind: "guard".to_string(),
+                        positive: String::new(),
+                        writes_build: false,
+                        probe: Some(Probe {
+                            at: "0d1bf49".to_string(),
+                            neg_rc: Some(0),
+                            pos_rc: None,
+                            verdict: "guard-alone".to_string(),
+                        }),
+                    },
+                    Accept {
+                        behaviour: "the suite passes".to_string(),
+                        check: "cargo test".to_string(),
+                        kind: "guard".to_string(),
+                        positive: String::new(),
+                        writes_build: true,
+                        probe: None,
+                    },
+                ],
+                premises: vec![Premise {
+                    claim: "fn parse exists in src/a.rs".to_string(),
+                    check: "grep -q 'fn parse' src/a.rs".to_string(),
+                    at: "after:1".to_string(),
+                }],
+                means: vec![Means {
+                    text: "use the backoff helper".to_string(),
+                    binding: "required".to_string(),
+                    detail: "why this is required".to_string(),
+                }],
+                design: vec!["design/store.md#locking".to_string()],
+                precedent: vec!["src/b.rs:40".to_string()],
+                executor: "lite".to_string(),
+            }],
+            milestones: vec![MilestoneSpec {
+                id: "A".to_string(),
+                gates: vec!["cargo nextest run --manifest-path x/Cargo.toml".to_string()],
+                elaboration: "deferred".to_string(),
+                defer_reason: "depends on what A produces".to_string(),
+            }],
+            changes: vec![Change {
+                at: Some("2026-11-05".parse().expect("bare date parses")),
+                r#ref: "wire-the-renderer".to_string(),
+                field: "spec.outcome".to_string(),
+                old: "before".to_string(),
+                new: "after".to_string(),
+                actor: "orchestrator".to_string(),
+                reason: "the probe failed".to_string(),
+            }],
+            ..fixture()
+        }
+    }
+
+    fn root_mut(doc: &mut TomlValue) -> &mut Table {
+        doc.as_table_mut().expect("root table")
+    }
+
+    /// The bytes a store with none of the v2 keys has always had on disk. Held
+    /// as a literal so an emitted empty table or a raised stamp cannot pass by
+    /// moving both sides of the comparison.
+    #[test]
+    fn a_v1_store_round_trips_byte_identical_at_version_1() {
+        const V1: &str = r#"schema_version = 1
+last_updated = 2026-09-07
+plan_path = "docs/plans/x.md"
+last_import_refs = ["seed-the-store"]
+
+[policy]
+checkpoints = "milestones"
+max_parallel = 6
+commit_granularity = "per-task"
+origin = "plan"
+note = ""
+
+[[checkpoints]]
+id = "A"
+rationale = "the store"
+
+[[items]]
+id = 1
+ref = "seed-the-store"
+title = "Seed the store"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/src/tasks/store.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Seed it."
+detail = ""
+acceptance = ""
+agent = ""
+commit = ""
+"#;
+        let doc: TomlValue = toml::from_str(V1).expect("the literal parses");
+        let store = from_toml(&doc).expect("parses");
+        assert_eq!(store.schema_version, BASE_SCHEMA_VERSION);
+        assert_eq!(
+            toml::to_string(&to_toml(&store)).expect("serialises"),
+            V1,
+            "a store holding no v2 key changed on the way through"
+        );
+    }
+
+    #[test]
+    fn a_store_with_every_v2_key_round_trips_exactly_at_version_2() {
+        let store = v2_fixture();
+        let text = toml::to_string(&to_toml(&store)).expect("serialises");
+        assert!(text.starts_with("schema_version = 2\n"), "{text}");
+        assert!(text.contains("\naudit = true\n"), "{text}");
+
+        let reparsed: TomlValue = toml::from_str(&text).expect("the output parses");
+        let read = from_toml(&reparsed).expect("parses");
+        assert_eq!(read, store);
+        assert_eq!(toml::to_string(&to_toml(&read)).expect("serialises"), text);
+    }
+
+    /// Any one of the four is enough: the older binary refuses version 2 but
+    /// drops each of these keys silently at version 1.
+    #[test]
+    fn each_v2_key_alone_raises_the_stamp() {
+        let full = v2_fixture();
+        let only: [(&str, Store); 4] = [
+            (
+                "specs",
+                Store {
+                    specs: full.specs.clone(),
+                    ..fixture()
+                },
+            ),
+            (
+                "milestones",
+                Store {
+                    milestones: full.milestones.clone(),
+                    ..fixture()
+                },
+            ),
+            (
+                "changes",
+                Store {
+                    changes: full.changes.clone(),
+                    ..fixture()
+                },
+            ),
+            (
+                "audit",
+                Store {
+                    audit: true,
+                    ..fixture()
+                },
+            ),
+        ];
+        for (key, store) in only {
+            let doc = to_toml(&store);
+            let root = doc.as_table().expect("root table");
+            assert_eq!(
+                root.get("schema_version"),
+                Some(&TomlValue::Integer(SCHEMA_VERSION)),
+                "`{key}` alone left the stamp at the base version"
+            );
+            assert!(root.contains_key(key), "`{key}` was not written");
+        }
+    }
+
+    /// The stamp follows the content, so a store emptied of its side tables
+    /// goes back to version 1 rather than keeping the version it was read at.
+    #[test]
+    fn a_store_emptied_of_v2_keys_stamps_the_base_version() {
+        let store = Store {
+            schema_version: SCHEMA_VERSION,
+            ..fixture()
+        };
+        let doc = to_toml(&store);
+        let root = doc.as_table().expect("root table");
+        assert_eq!(
+            root.get("schema_version"),
+            Some(&TomlValue::Integer(BASE_SCHEMA_VERSION))
+        );
+        for key in ["audit", "specs", "milestones", "changes"] {
+            assert!(!root.contains_key(key), "`{key}` was written while empty");
+        }
+    }
+
+    #[test]
+    fn the_default_store_stays_at_the_base_version() {
+        assert_eq!(Store::default().schema_version, BASE_SCHEMA_VERSION);
+        assert_eq!(
+            to_toml(&Store::default())
+                .as_table()
+                .expect("root table")
+                .get("schema_version"),
+            Some(&TomlValue::Integer(BASE_SCHEMA_VERSION))
+        );
+    }
+
+    /// An entry with no key can never be looked up, so it is dropped on read
+    /// and, on write, neither emitted nor counted toward the stamp.
+    #[test]
+    fn an_entry_with_no_key_is_dropped_on_both_sides() {
+        let mut raw = to_toml(&fixture());
+        for key in ["specs", "milestones", "changes"] {
+            let mut entry = Table::new();
+            entry.insert("outcome".to_string(), TomlValue::String("x".to_string()));
+            root_mut(&mut raw).insert(
+                key.to_string(),
+                TomlValue::Array(vec![TomlValue::Table(entry)]),
+            );
+        }
+        let read = from_toml(&raw).expect("parses");
+        assert_eq!(read.specs, vec![]);
+        assert_eq!(read.milestones, vec![]);
+        assert_eq!(read.changes, vec![]);
+
+        let mut keyless = v2_fixture();
+        keyless.audit = false;
+        keyless.specs[0].r#ref = String::new();
+        keyless.milestones[0].id = String::new();
+        keyless.changes[0].r#ref = String::new();
+        let doc = to_toml(&keyless);
+        let root = doc.as_table().expect("root table");
+        assert_eq!(
+            root.get("schema_version"),
+            Some(&TomlValue::Integer(BASE_SCHEMA_VERSION))
+        );
+        for key in ["specs", "milestones", "changes"] {
+            assert!(!root.contains_key(key), "`{key}` kept a keyless entry");
+        }
+    }
+
+    #[test]
+    fn an_absent_writes_build_reads_true_and_an_explicit_false_survives() {
+        let accept = |extra: &str| -> Accept {
+            let text = format!(
+                "[[specs]]\nref = \"r\"\n[[specs.accept]]\nbehaviour = \"b\"\n\
+                 check = \"c\"\n{extra}"
+            );
+            let doc: TomlValue = toml::from_str(&text).expect("the fixture parses");
+            from_toml(&doc)
+                .expect("parses")
+                .specs
+                .remove(0)
+                .accept
+                .remove(0)
+        };
+        assert!(accept("").writes_build);
+        assert!(accept("writes_build = true\n").writes_build);
+        assert!(!accept("writes_build = false\n").writes_build);
+        assert_eq!(accept("").probe, None);
+    }
+
+    /// A spec holding a bare string where a table belongs is a damaged store,
+    /// not an empty spec, and reading it as empty would let the next write
+    /// erase it.
+    #[test]
+    fn a_malformed_spec_entry_names_where_it_is() {
+        let refused = |text: &str| -> String {
+            let doc: TomlValue = toml::from_str(text).expect("the fixture parses");
+            from_toml(&doc)
+                .expect_err("malformed spec rejected")
+                .to_string()
+        };
+        let message = refused("[[specs]]\nref = \"r\"\naccept = \"nope\"\n");
+        assert!(message.contains("specs[0]"), "{message}");
+        assert!(message.contains("accept"), "{message}");
+        let message = refused("[[specs]]\nref = \"r\"\nmeans = [\"nope\"]\n");
+        assert!(message.contains("means[0]"), "{message}");
+        let message = refused("[[specs]]\nref = \"r\"\n[[specs.accept]]\nprobe = \"nope\"\n");
+        assert!(message.contains("probe"), "{message}");
+    }
+
+    /// Absent reads as off, but a value that is not a boolean must not: that
+    /// would silently lift auditing from an approved plan.
+    #[test]
+    fn a_non_boolean_audit_is_refused() {
+        let mut raw = to_toml(&fixture());
+        root_mut(&mut raw).insert("audit".to_string(), TomlValue::String("true".to_string()));
+        let message = from_toml(&raw).expect_err("rejected").to_string();
+        assert!(message.contains("audit"), "{message}");
+    }
+
+    #[test]
+    fn a_milestone_recording_no_elaboration_reads_upfront() {
+        let doc: TomlValue = toml::from_str("[[milestones]]\nid = \"A\"\n").expect("parses");
+        let read = from_toml(&doc).expect("parses");
+        assert_eq!(read.milestones[0].elaboration, ELABORATION_UPFRONT);
+        assert_eq!(read.milestones[0].gates, Vec::<String>::new());
+    }
+
+    #[test]
+    fn side_table_bodies_normalise_to_lf_on_write_and_read() {
+        let mut store = v2_fixture();
+        store.specs[0].outcome = "one\r\ntwo".to_string();
+        store.specs[0].constraints = vec!["three\r\nfour".to_string()];
+        store.specs[0].accept[0].behaviour = "five\rsix".to_string();
+        store.changes[0].old = "seven\r\neight".to_string();
+        let doc = to_toml(&store);
+        let read = from_toml(&doc).expect("parses");
+        assert_eq!(read.specs[0].outcome, "one\ntwo");
+        assert_eq!(read.specs[0].constraints, vec!["three\nfour".to_string()]);
+        assert_eq!(read.specs[0].accept[0].behaviour, "five\nsix");
+        assert_eq!(read.changes[0].old, "seven\neight");
+
+        let raw: TomlValue =
+            toml::from_str("[[specs]]\nref = \"r\"\noutcome = \"one\\r\\ntwo\"\n").expect("parses");
+        assert_eq!(
+            from_toml(&raw).expect("parses").specs[0].outcome,
+            "one\ntwo"
+        );
+    }
+
+    /// A row claiming a freed `ref` must not inherit the old spec, but the
+    /// tombstone for the removed row has to stay readable.
+    #[test]
+    fn dropping_a_ref_takes_its_spec_and_leaves_its_changes() {
+        let mut store = v2_fixture();
+        store.specs.push(TaskSpec {
+            r#ref: "seed-the-store".to_string(),
+            ..store.specs[0].clone()
+        });
+        store.drop_ref_entries("wire-the-renderer");
+        assert_eq!(
+            store
+                .specs
+                .iter()
+                .map(|entry| entry.r#ref.as_str())
+                .collect::<Vec<_>>(),
+            vec!["seed-the-store"]
+        );
+        assert_eq!(store.changes, v2_fixture().changes);
+        assert_eq!(store.file_notes, vec![]);
+        assert_eq!(store.backlog_links, vec![]);
     }
 
     #[test]
