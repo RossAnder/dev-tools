@@ -1,0 +1,585 @@
+schema_version = 1
+last_updated = 2026-11-05
+round = 1
+
+[[vet_events]]
+timestamp = "2026-11-05T12:01:22Z"
+command = "review-plan"
+lens = "feasibility"
+tier = "deep"
+agent_index = 1
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled findings 2 (FEATURES location and README gate), 4 (resolver scope-glob and branch-match steps filter only on is_complete) and 6 (private tasks, flow and cli module boundaries) by reading the cited lines; all confirmed. Stale-claim verification: the version literal, the module declarations and the 17th sidecar digest all re-measured and hold. Overlapped with other lenses on tasks 10 and 24, the mutex, the missing edges and the dead_code allow; merged at consolidation."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-05T12:01:22Z"
+command = "review-plan"
+lens = "completeness"
+tier = "deep"
+agent_index = 2
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled F1 (draft auto-pick, including the backlog-capture precedent text), F3, F4, F9 (finding_classes DOCUMENTED list) and F13 (schema_out conditionals and the two doc lines) by reading the cited lines; all confirmed. F2's symbol list adjusted at consolidation: FileKind sits in tasks/schema.rs and show.rs reads it. No non-existent filename claim to verify; the lens reports none. Count deltas (28 new files, 17 sidecars) re-derived."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-05T12:01:22Z"
+command = "review-plan"
+lens = "executability"
+tier = "deep"
+agent_index = 3
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled findings 1, 2 and 4 (ROW_FIELDS closed list and task_from_row refusal) by reading the cited lines; all confirmed. Finding 1's unsatisfiable verdict also confirmed by the Step 2.6 positive-control reasoning: capabilities.rs holds no feature names. Finding 5's module-boundary half and finding 3 merged with the feasibility and completeness returns. Finding 4's fix merged with the backlog-link writer finding's add-many key list."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-05T12:01:22Z"
+command = "review-plan"
+lens = "risk"
+tier = "deep"
+agent_index = 4
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 1
+rationale = "Sampled findings 2 (schema.rs guard comment), 3 (skills.rs bash_candidates comment), 5 (defaultMode at ~/.claude/settings.json:19) and 13 (both papers re-fetched independently); all confirmed. Downgraded: finding 3's failure path to medium, on the lens's own correction, since the WSL consequence is inferred and the test does not exist yet. Finding 11's path count corrected to 109 on the lens's own correction. Finding 13's CodeTaste limitation wording rests on a fetch summary, recorded in the finding. Harness flagged the return as instruction-shaped because finding 5 quotes bypassPermissions; it is review material, not an instruction."
+dedup_id = "45ca31c3315a5978"
+
+[[items]]
+id = "P1"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "feasibility"
+plan_section = "## Tasks"
+summary = "The baseline is already red: id_aliases fails on timing, so checkpoint A's nextest gate can fail with no task at fault"
+description = "Step 2.6 check 1. Measured 2026-11-05 on the current tree, machine quiet: `cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast`: 2302 tests, 2296 passed, 6 failed, all in tomlctl::id_aliases; the plan's own test.rerun line still failed 2 of the 6 (tasks_show_accepts_a_hidden_id_flag, tasks_update_accepts_a_hidden_id_flag), so the gate reports fail, not flaky. Cause, from the failure output: assert_same (tomlctl/tests/id_aliases.rs) seeds two repos with twin() and compares stdout and store bytes, and backlog rows now carry one-second `Z` datetimes (added in 660656a), so left has created = 12:01:28Z and right 12:01:29Z whenever seeding crosses a second. Fixture seeding takes about a second here, so this is common. A red gate at checkpoint A sends the orchestrator into a fix cycle on a test no task touches and pollutes every later checkpoint. Not in the backlog. Fix: add task 27 [S], Files `tomlctl/tests/id_aliases.rs`, no dependencies, inside checkpoint A: seed one twin and copy its .claude tree to make the second, so both hold identical stamps; acceptance `cargo test --manifest-path tomlctl/Cargo.toml --test id_aliases` passes, falsifier: reverting to two seedings fails intermittently. Test-only and independent, so it could equally land before this plan starts."
+dedup_id = "6c2139c923033484"
+
+[[items]]
+id = "P2"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "executability"
+plan_section = "#### 10. Advertise plan in capabilities [S]"
+summary = "Task 10 greps the wrong file and misses the README gate, so its acceptance cannot pass and checkpoint B goes red"
+description = """Two-control verdict: unsatisfiable. FEATURES lives at tomlctl/src/cli/types/mod.rs:38 ("review_store" at :136); tomlctl/src/capabilities.rs holds only MUTEX_GROUPS and reads the list through crate::cli, so `grep -c 'plan_store' tomlctl/src/capabilities.rs` prints 0 after a correct change. readme_feature_transcriptions_match_capabilities_features (tomlctl/tests/capabilities.rs:2470, a bare #[test]) requires any advertised feature in both the README sample block (tomlctl/README.md:353) and the Feature meanings table (:523), so tomlctl/README.md is a required edit. Corrected acceptance: `grep -c '"plan_store"' tomlctl/src/cli/types/mod.rs` prints 1 (today: 0). Also update the hand-listed subcommands sample at README.md:364-367 (ungated). Five inseparable files no longer fit the S tag: retag [L], which leaves the ref unchanged."""
+anchor_old = "- **Files**: `tomlctl/src/capabilities.rs`, `tomlctl/tests/capabilities.rs`, `tomlctl/tests/integration.rs`"
+anchor_new = "- **Files**: `tomlctl/src/cli/types/mod.rs`, `tomlctl/README.md`, `tomlctl/src/capabilities.rs`, `tomlctl/tests/capabilities.rs`, `tomlctl/tests/integration.rs`"
+dedup_id = "d1394bf1213f3cf0"
+
+[[items]]
+id = "P3"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "feasibility"
+plan_section = "#### 24. Bump the tomlctl version [S]"
+summary = "The version bump turns checkpoint E red: two version gates sit in files the task does not claim"
+description = """tomlctl/tests/capabilities.rs:1821-1822 asserts the literal "0.17.0" (with a message naming the last bump's reason), and readme_sample_version_matches_cargo_toml (:2526) compares tomlctl/README.md:323 with CARGO_PKG_VERSION. Those are the only non-lock sites besides Cargo.toml. The task's only guard is glimpse clippy, so neither failure shows until the full nextest at checkpoint E. Add a forward criterion: `cargo test --manifest-path tomlctl/Cargo.toml --test capabilities` passes. Five inseparable files: retag [L]."""
+anchor_old = "- **Files**: `tomlctl/Cargo.toml`, `tomlctl/Cargo.lock`, `glimpse/Cargo.lock`"
+anchor_new = "- **Files**: `tomlctl/Cargo.toml`, `tomlctl/Cargo.lock`, `glimpse/Cargo.lock`, `tomlctl/README.md`, `tomlctl/tests/capabilities.rs`"
+dedup_id = "80043b8815838eb0"
+
+[[items]]
+id = "P4"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "feasibility"
+plan_section = "#### 9. Scaffold the plan command group [L]"
+summary = "Three module-boundary files are on no Files line, so tasks 9, 11 and 13 to 19 cannot compile inside their file sets"
+description = "crate::plan is a sibling of tasks, flow and cli, and Rust privacy stops it naming their private leaves. tomlctl/src/cli/mod.rs:34-43 re-exports clap types by an explicit list (task 9 needs PlanOp there). tomlctl/src/flow/mod.rs keeps `mod active` and `mod init` private (tasks 11 and 18 need the extracted init callable, mutate_active, build_entry, find_slug_index). tomlctl/src/tasks/mod.rs keeps check, finding, schema, show, slug and store private and re-exports only BacklogLink, Status, Store, load_store, mutate_store, resolve_store_path (tasks 13 to 16 need Checkpoint, MilestoneSpec, check::check, exit_code, Finding, derive_ref, FileKind in schema.rs, Accept, Probe). Tasks 13, 14 and 16 have no path between them, so each would need the same undeclared file. Fix: task 9 claims all three and widens visibility up front (pub(crate) mod check, finding, schema, slug; flow's active and init), which raises no unused-import warning. Also: task 13's `tasks::store::mutate` does not resolve, the exported name is `tasks::mutate_store`; and `linked_backlog_findings` is pub(super) at tasks/backlog_refs.rs:69, called inline at dispatch.rs:291, so task 14 needs it widened to reach the backlog classes."
+anchor_old = "`tomlctl/src/cli/dispatch.rs`, `tomlctl/src/plan/mod.rs`"
+anchor_new = "`tomlctl/src/cli/dispatch.rs`, `tomlctl/src/cli/mod.rs`, `tomlctl/src/tasks/mod.rs`, `tomlctl/src/flow/mod.rs`, `tomlctl/src/plan/mod.rs`"
+dedup_id = "fe9c7626d1b732b5"
+
+[[items]]
+id = "P5"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "feasibility"
+plan_section = "#### 11. Implement plan open [M]"
+summary = "Removing the registry entry does not hide a draft: scope-glob and branch-match still auto-pick it and disturb v1 resolution"
+description = """Plan assumes "drafts have no registry entry, so automatic resolution does not pick them". Measured: tomlctl/src/flow/resolve.rs step 2 (scope-glob, :230-237) and step 5 (branch-match, :347-351) walk every on-disk flow and filter only on is_complete (:876). The precedent the task cites says so itself: claude/skills/backlog-capture/SKILL.md:272-274, "Pass no --scope or --branch to flow init ... flow resolution also reads every non-complete flow on disk, registered or not". So `plan open --scope/--branch` writes values that win or tie `flow resolve --path` for v1 carriers, breaking Context's "nothing here may change how a v1 flow behaves". Task 11's falsifier tests only the registry entry, so it stays green. Fix: hold --branch and --scope in plan.toml until approval. This touches Approach "Plan records" and "Verbs", task 7 (a [binding] table) and task 18 (approve writes them to context.toml and the registry)."""
+anchor_old = "Hide the draft the way seed flows are hidden, by removing its registry entry through the helpers in `tomlctl/src/flow/active.rs`."
+anchor_new = "Hide the draft the way seed flows are hidden: call `flow init` with no `--scope` or `--branch` and remove its registry entry through the helpers in `tomlctl/src/flow/active.rs`, because flow resolution reads every non-complete flow on disk, registered or not. Hold the given `--branch` and `--scope` in `plan.toml`'s `[binding]`; task 18's approve writes them to `context.toml` and the registry entry. Test that `flow resolve --path` matching the scope does not pick a draft."
+dedup_id = "3a1cadeb8be857c8"
+
+[[items]]
+id = "P6"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "#### 26. Pin flow stores to LF and repair their sidecars [L]"
+summary = "A 17th sidecar already mismatches, so step 3 hits its own stop-and-report on every run"
+description = 'Measured over all tracked .claude TOML with sidecars: 17 digests differ from LF bytes, the listed 16 (CRLF-stamped) plus .claude/flows/lumina-schema-deepening/plan-review-findings.toml. That one is i/lf w/lf, git-clean since fb10afc; sidecar 798a428c, file and blob 1b9be98a, a CRLF rendering fdb114d7, so it matches neither form. Step 3 selects "each tracked .toml with a sidecar whose digest now differs", and a path outside Files is stop-and-report. flow doctor checks no ledger sidecars, so the acceptance cannot see it. Lenses split between refreshing it and skipping it. Recommended: confine step 3 to files step 2 rewrote and report this one rather than bless an unexplained mismatch.'
+anchor_old = "For each tracked `.toml` under `.claude` with a sidecar whose digest now differs from the file:"
+anchor_new = "For each `.toml` step 2 rewrote, with a sidecar whose digest now differs from the file (this leaves `.claude/flows/lumina-schema-deepening/plan-review-findings.toml` alone: its sidecar matched neither its LF nor its CRLF bytes when measured, so report it rather than refresh it):"
+dedup_id = "de8a3c5ccfb42255"
+
+[[items]]
+id = "P7"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "#### 2. Let add-many carry a task spec [S]"
+summary = "Task 2 forbids the reason key it requires, and single-row tasks add bypasses the audit"
+description = """ROW_FIELDS (tomlctl/src/tasks/add.rs:55) is a closed list and task_from_row refuses anything else, so "add spec ... leave the other accepted keys alone" makes an audited add-many impossible. Approach "Approval" says tasks add needs a reason too, but it has no flag and no task handles it; add() and add_many() funnel into append, so a positional add under audit lands a row with no [[changes]]. The [[changes]] row's old and new are also unspecified here. Keep the new keys beside NewTask, because its literal at tasks/dispatch.rs:94 is in a file this task does not claim."""
+anchor_old = "Add `spec` to `ROW_FIELDS`, and leave the other accepted keys alone."
+anchor_new = 'Add `spec`, `reason` and `actor` to `ROW_FIELDS`, and leave the other accepted keys alone. Keep them beside `NewTask` rather than on it, so `tomlctl/src/tasks/dispatch.rs` stays untouched. `tasks add` carries no spec or reason, so on an audited store it is refused with a message naming `add-many`. The audit row has `old = ""` and `new` holding the title.'
+dedup_id = "ea0ca4c253750ee4"
+
+[[items]]
+id = "P8"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "#### 3. Let update reach specs and audit changes [M]"
+summary = "The audit misses plan-changing writes the Approach says it covers"
+description = """Approach "Approval" names only status, agent and commit as unaudited. Not audited as written: (1) checkpoint, coupling, deps_note and --ref, all reachable through SETTABLE (tomlctl/src/tasks/update.rs:32); (2) `tasks remove --force` rewires dependents' needs (remove.rs:87-93) but task 4 writes only the tombstone; (3) task 13's `plan milestone update` after approval writes [[checkpoints]] and [[milestones]] with no row; (4) a --ref rename re-keys the spec while earlier [[changes]] rows stay on the old ref, splitting a task's trail. drop_ref_entries (schema.rs:302) should gain specs and must never touch changes. Positional --set and --ref have no reason channel, so state that they refuse under audit."""
+anchor_old = "a change to `title`, `effort`, `action`, `detail`, `acceptance`, `files`, `needs` or `spec.*` without a `reason`"
+anchor_new = "a change to `title`, `effort`, `action`, `detail`, `acceptance`, `files`, `needs`, `coupling`, `deps_note`, `checkpoint`, `ref` or `spec.*` without a `reason`, which refuses every positional form too since it has no reason flag,"
+dedup_id = "333096778497b4bb"
+
+[[items]]
+id = "P9"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "#### 18. Implement plan gate and approve [M]"
+summary = "Nothing in a v2 flow writes [[backlog_links]] or [[file_notes]], so approve's promotion never fires and file kinds stay empty"
+description = """The only production writers are tomlctl/src/tasks/import_plan.rs:297-298, refused on a v2 flow by task 6, and backlog reconcile --adopt (backlog/reconcile.rs:348), which acts only on rows that already hold a claim. ROW_FIELDS has neither key and task 11's --from writes Intent, Background and a note but no link. Consequences: plan approve always promotes nothing, backlog reconcile never closes a row a v2 plan delivered, task 15's "each file's kind from show's derivation" has no note to read, and the (new)/(delete) annotations the Approach keeps [[file_notes]] for are unreachable. Task 20 opens from a backlog row but asserts no promotion, so every test passes. Fix: add `file_notes`, `closes` and `refs` keys to task 2's add-many rows (tomlctl/src/tasks/add.rs), and have task 20 assert the row reads promoted. Say also that [policy] stays at its defaults on a v2 flow, since no verb writes it."""
+dedup_id = "61a81bc8774223a2"
+
+[[items]]
+id = "P10"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "#### 3. Let update reach specs and audit changes [M]"
+summary = "Consumer edges are absent: 2 to 3; 2, 3, 5, 9 to 22; 13 to 17; 2, 13 to 18"
+description = """tasks check validates only the edges present; these are the missing ones (measured closures: task 3 {1,3}; task 22 {1,4,6,22}; task 17 {1,2,7,8,9,11,12,14,16,17}; task 18 {1,3,7,8,9,11,12,14,18}). Task 3's "validated as in task 2" names a function a parallel sibling is still writing in add.rs. Task 22 documents the spec row key, the audited update, --with spec and, through the refusal's replacement, plan view, and command_lint parses fenced commands against clap in the working tree, so it needs 2, 3, 5 and 9 beside 6. Task 17's design stage keys on milestones and task 18's gate lists them, so both need 13, and task 18's clean plan check needs specs from 2, unless their Detail says to seed fixtures on disk as task 14 does. Marker A's maximal set changes once 3 depends on 2: re-derive markers and the Checkpoint after bullet. Second edit: task 22's Depends on becomes 2, 3, 5, 6, 9."""
+anchor_old = "- **Depends on**: 1"
+anchor_new = "- **Depends on**: 1, 2"
+dedup_id = "20826592d55c439b"
+
+[[items]]
+id = "P11"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### Verbs"
+summary = "The Verbs table omits flags and output shapes that task 9 is told to read from it"
+description = """Task 9 says "Verbs and flags are in Approach, Verbs", and only task 9 owns tomlctl/src/cli/types/plan.rs and plan/dispatch.rs, so a verb task finding a missing flag must edit an undeclared file shared with parallel siblings. Missing flags: plan handover, plan run ([[run]] has no id, so finish's match key is undefined), plan milestone's id, goal and gates; whether --from is comma-separated or repeated. Missing output shapes: plan check, gate, approve, drift, open. Missing behaviour: whether approve --review ran must find a finished run, whether --reason is required for a skip, where gate item 7 gets its data, what the buckets in item 4 are. Task 13's S tag asserts "fully specified", which does not hold. Task 9 is the root of 13 tasks, so this is cheap to fix now. Add a flags column and one output line per verb."""
+anchor_old = '| `plan handover add\|done`, `plan run start\|finish` | Their records. `run start` is written immediately on launch |'
+anchor_new = "| `plan handover add --command <c> --source-task <n>`, `plan handover done <id>`, `plan run start --step <s> --workflow <w> --args-hash <h> [--run-id <id>]`, `plan run finish --step <s> [--run-id <id>]` | Their records. `run start` is written immediately on launch |"
+dedup_id = "7e04ee1c6f0834f3"
+
+[[items]]
+id = "P12"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "#### 16. Implement plan probes [M]"
+summary = 'The --record input format is undefined, and probe.at has no source under "tomlctl spawns nothing"'
+description = """The helper prints task, neg|pos, rc, stdout and stderr as tab-separated lines (acceptance-probing.md:40,47), and the task never says --record reads that. The probe record needs at = "<sha>", yet tomlctl spawns nothing, so the script must supply HEAD. The verdict list omits "permanently green" from the table at acceptance-probing.md:60-68. "A guard alone ... is reported" names no channel. Task 14's plan/probe-unhealthy is built in parallel and needs this vocabulary, so state it in Approach "Proving"."""
+anchor_old = "tomlctl spawns nothing."
+anchor_new = "tomlctl spawns nothing: the script's first output line is `head<TAB><sha from git rev-parse HEAD>`, and `--record` reads the script's captured stdout, that line plus the helper's five tab-separated columns, into `probe.at`, `neg_rc`, `pos_rc` and `verdict`."
+dedup_id = "9cfb7bdd8d3dd774"
+
+[[items]]
+id = "P13"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "#### 16. Implement plan probes [M]"
+summary = 'Mechanising the "broken" verdict makes healthy probes on planned files block approval'
+description = 'The verdict table was written for a human reading the output; here it feeds plan/probe-unhealthy, an error, and plan approve requires plan check clean. A forward check on a file its task creates (`grep -q x tomlctl/src/plan/mod.rs`) prints No such file at the negative control: healthy, but read as broken. And "uses the p helper shape" keeps a 100-byte stderr column, so one long git LF/CRLF warning pushes `fatal:` out of view and a broken pipeline reads as a healthy miss, a case acceptance-probing.md:47 warns about. Graded medium, since --record is unbuilt.'
+anchor_old = "stderr naming `No such file`, `command not found` or `fatal` is broken."
+anchor_new = "stderr naming `command not found` or `fatal`, or `No such file` for a path no row's `files` declares, is broken, judged on the whole stderr rather than the helper's 100-byte display column."
+dedup_id = "cd6e7a9973cf7b44"
+
+[[items]]
+id = "P14"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "#### 16. Implement plan probes [M]"
+summary = "writes_build fails open, so an unlabelled build command runs inside the probe batch"
+description = 'The existing method probes only read-only commands (acceptance-probing.md:21,70). --emit runs every stored string unless its author set a flag, and task 2 validates kind, binding, executor and at but not this one. An omitted flag on `cargo nextest run` runs a whole-crate build in the batch, against Build discipline in CLAUDE.md. Failing closed costs only plan/probe-absent, a warning. Update the sample under Approach "Task spec" to match.'
+anchor_old = "Rows with `writes_build` and rows with an empty `check` are skipped and listed in a comment."
+anchor_new = "Rows whose `writes_build` is not explicitly `false`, and rows with an empty `check`, are skipped and listed in a comment, so an unlabelled command never runs."
+dedup_id = "3ee53e5dcb0d389a"
+
+[[items]]
+id = "P15"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### Task spec"
+summary = "Spec fields that parallel tasks must agree on are ambiguous"
+description = """Tasks 1, 2, 14 and 16 run independently against this text. "required needs a reason in detail" sits beside a sample means with only text and binding, so detail reads as either a sub-key or the row's Detail; the choice decides whether task 2's unknown-key refusal rejects it and what plan/means-required-no-reason reads. accept.positive appears only in the sample, with no statement that it is a command. plan/decision-bind-unknown has no rule: binds = ["3", "src/a.rs"] could mean a path that exists, a path a task claims, or either. Whether a caller may supply accept.probe is unstated, though --record writes it."""
+anchor_old = 'means = [{ text = "use the backoff helper", binding = "required" }]'
+anchor_new = 'means = [{ text = "use the backoff helper", binding = "required", detail = "why this is required" }]'
+dedup_id = "5f51a2edb4a7361d"
+
+[[items]]
+id = "P16"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "#### 17. Implement plan stage [M]"
+summary = "plan stage cannot advance for normal plans: prove never clears and review has nowhere to record a skip"
+description = """Task 16 skips writes_build rows and rows with an empty check, so they never get a probe, but task 17's prove is "probes absent" with no exemption. A plan with a cargo test check, the Approach's own sample, stays at prove, and deferred milestones have no check at all. Task 14's plan/probe-absent needs the same exemption. review clears on a finished run "and no skip recorded", but the only skip record is [[approval]].review, stamped by the approval this stage precedes, so a low-risk plan sits at review until approved and plan gate has nothing to disclose. This needs a record shape, e.g. a [[run]] with step = "review" and a reason. running and done have no definitions. plan stage is the plan's resume mechanism and task 20 asserts it at each point."""
+anchor_old = "`prove` (check errors or probes absent)"
+anchor_new = "`prove` (check errors, or a probe absent on an `accept` with a non-empty `check` and `writes_build = false`)"
+dedup_id = "2a897294c374325d"
+
+[[items]]
+id = "P17"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "#### 10. Advertise plan in capabilities [S]"
+summary = "Task 10 declares --for and --task mutually exclusive, while task 15 requires them together"
+description = 'MUTEX_GROUPS (tomlctl/src/capabilities.rs:12-37) feeds the mutex_groups key agents read to decide what may combine. Task 15 says "--for worker requires --task" and the Verbs table has `plan view --for human|digest|worker [--task <id>]`, so capabilities would tell agents the one required combination is forbidden, on the view the engine must read specs through.'
+anchor_old = "`MUTEX_GROUPS` covers `--emit` and `--record` on `plan probes`, and `--for` with `--task`."
+anchor_new = "`MUTEX_GROUPS` covers `--emit` and `--record` on `plan probes`. `--for` and `--task` are not exclusive, since `--for worker` requires `--task`."
+dedup_id = "1e5fad793457ed09"
+
+[[items]]
+id = "P18"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "#### 23. Exempt plan cleanup rows from old [S]"
+summary = "Task 23 relaxes old in validate_row but leaves the family-blind published schema and the docs saying otherwise"
+description = 'tomlctl/src/review/schema_out.rs:145-148 emits an if/then requiring old for change and remove, and :129-131 carries the same note; neither sees the family, so `review schema` would contradict validate_row. claude/skills/tomlctl/references/review.md:96 and claude/skills/review-v2-method/SKILL.md:75 still say old is required for change and remove, and claude/agents/review-sweeper.md step 8 opens with "copy old byte for byte" before its plan clause. Graded medium on whether a consumer enforces the schema. Keep the code in task 23 (three files, still S); the two docs and the agent body need a task of their own or task 22.'
+anchor_old = "- **Files**: `tomlctl/src/review/fields.rs`, `tomlctl/tests/review_add.rs`"
+anchor_new = "- **Files**: `tomlctl/src/review/fields.rs`, `tomlctl/src/review/schema_out.rs`, `tomlctl/tests/review_add.rs`"
+dedup_id = "1be9701f6b4768aa"
+
+[[items]]
+id = "P19"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "#### 5. Show a task's spec [S]"
+summary = "Enumerations of --with values and owned stores go stale, and no task's Files line covers them"
+description = "Instances: claude/skills/tomlctl/references/tasks.md:69 lists the valid --with set as summary, body, files, deps, dependents, absent, and it owns the read verbs, yet task 22's Files omit it; flag_table_lint checks flag names, not enum values, so nothing catches it. Owned-store lists are stale in tomlctl/src/cli/types/shared.rs:118 (--raw-store help), tomlctl/README.md:520, claude/skills/tomlctl/SKILL.md:187 and claude/skills/tomlctl/references/write.md:472-479. Suggested owners: tasks.md on task 5 (three files, lands with the flag), shared.rs on task 8, the README row on task 10, SKILL.md and write.md on task 21."
+anchor_old = "- **Files**: `tomlctl/src/tasks/show.rs`, `tomlctl/src/cli/types/tasks.rs`"
+anchor_new = "- **Files**: `tomlctl/src/tasks/show.rs`, `tomlctl/src/cli/types/tasks.rs`, `claude/skills/tomlctl/references/tasks.md`"
+dedup_id = "2c5fd87d08c2fed6"
+
+[[items]]
+id = "P20"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "#### 21. Document the plan group [M]"
+summary = "The finding-class parity gate does not reach src/plan, so 17 new classes are ungated"
+description = "tomlctl/src/cli/dispatch/tests/finding_classes.rs reads src/tasks only and DOCUMENTED lists two task docs (:15-18), so the check-class table task 21 writes is the unguarded copy that gate exists to prevent. Add a second pair, src/plan against references/plan.md, rather than widening the first, or tasks.md would report 17 missing rows."
+anchor_old = "- **Files**: `claude/skills/tomlctl/references/plan.md` (new), `claude/skills/tomlctl/SKILL.md`"
+anchor_new = "- **Files**: `claude/skills/tomlctl/references/plan.md` (new), `claude/skills/tomlctl/SKILL.md`, `tomlctl/src/cli/dispatch/tests/finding_classes.rs`"
+dedup_id = "42a6e119418256f0"
+
+[[items]]
+id = "P21"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "#### 18. Implement plan gate and approve [M]"
+summary = "The obvious git query passes on a never-committed plan.toml, the case the check exists to catch"
+description = """"Ask git for that answer" leaves the command open. `git diff --quiet HEAD -- <path>` exits 0 on an untracked file (scratch repo, git 2.56.0.windows.4), and first approval is exactly that state, so the stamp would name a commit lacking the plan. The only falsifier in task 18's acceptance is the surfaced-decision check."""
+anchor_old = "Ask git for that answer rather than comparing bytes, since the working copy's line endings need not match the blob's."
+anchor_new = "Ask git rather than comparing bytes, since the working copy's line endings need not match the blob's: require empty `git status --porcelain -- <paths>`, because `git diff --quiet HEAD -- <path>` exits 0 on an untracked file. Test that a never-committed `plan.toml` is refused."
+dedup_id = "08e180d775577533"
+
+[[items]]
+id = "P22"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "#### 18. Implement plan gate and approve [M]"
+summary = "Task 18 names a context writer that does not exist, and the status transition goes unrecorded"
+description = "No such helper exists under tomlctl/src/flow or io.rs. Status moves today through the generic set path; the usable primitive is crate::io::mutate_doc (io.rs:1094), which stamps updated for context.toml. tomlctl/src/cli/mod.rs:29-32 forbids new re-exports for verb groups. The reconciler contract and claude/commands/implement.md:58-70 append a status-transition entry when the status differs, so state whether approve appends draft to in-progress through flow record, otherwise nothing ever records it."
+anchor_old = "Status moves through the context writer, which keeps `created`."
+anchor_new = "Status moves through `crate::io::mutate_doc` on `context.toml`, changing only `status`, which keeps `created`."
+dedup_id = "65973a4f236a0280"
+
+[[items]]
+id = "P23"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "#### 11. Implement plan open [M]"
+summary = '"Idempotent" plan open can flip a v1 flow to v2 and unregister an approved plan'
+description = "flow init is a no-op on an existing context and keeps its plan_path (tomlctl/src/flow/init.rs:440-455). Task 11 then seeds plan.toml, and is_v2_flow keys on that file alone, so `plan open --slug <v1-slug>` silently makes a live v1 flow refuse import-plan and render. Registry removal is unconditional, so a re-run after plan approve hides an in-progress flow from automatic resolution. No test named in task 11 covers either state."
+anchor_old = "Re-running keeps an existing `brief.md` and `created`."
+anchor_new = "Re-running keeps an existing `brief.md` and `created`. Refuse a slug whose `context.toml` records any `plan_path` other than this flow's `brief.md`, because seeding `plan.toml` would stop a v1 flow importing or rendering. Once `plan.toml` holds an `[[approval]]`, leave the registry entry alone."
+dedup_id = "d709a3998ec73fdc"
+
+[[items]]
+id = "P24"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "#### 1. Add the spec side tables to the task store [M]"
+summary = "New side tables keep schema version 1, so a stale binary silently deletes specs and the audit trail"
+description = 'from_toml and to_toml keep only known keys. tomlctl/src/tasks/schema.rs:396-404 states the hazard: "A newer store holds keys this shape drops, and the next write would re-emit it" and refuses a newer version, so the guard exists and the plan does not use it. Under version 1, any mutating tasks verb from an installed 0.17.0 drops [[specs]], [[milestones]], [[changes]] and audit = true, which erases the trail and turns auditing off. Carriers shell out to the installed binary, and there are other worktrees and clones. A conditional stamp keeps v1 stores byte-identical. Counter: earlier additive tables shipped without a bump, but losing an audit trail is worse than losing an annotation.'
+anchor_old = "Add `..Store::default()`-compatible defaults so existing struct literals still compile."
+anchor_new = "Add `..Store::default()`-compatible defaults so existing struct literals still compile. Raise `SCHEMA_VERSION` to 2 and have `to_toml` stamp 2 only when `specs`, `milestones`, `changes` or `audit` is present, otherwise 1, because the installed binary refuses a newer version but drops these keys silently at version 1. Inline test both stamps."
+dedup_id = "2d8e50cd28c71ed8"
+
+[[items]]
+id = "P25"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "#### 20. Add the lifecycle test [M]"
+summary = 'A bare bash on Windows resolves to the WSL launcher, so "skipping if bash is absent" never fires'
+description = """tomlctl/src/cli/dispatch/tests/skills.rs:196: "Windows resolves a bare bash to System32's WSL launcher ahead of PATH, and WSL bash cannot open the C:/ script path". This machine has that launcher and WSL distributions. The skip never fires, so the probes run in the wrong shell (failure path graded medium, the test not existing yet). The same trap applies to task 16's quoting test. bash_candidates sits in a lib test module that integration tests cannot reach, so put a helper in tomlctl/tests/common/mod.rs on task 16's Files; task 20 reaches it through its edge to 16."""
+anchor_old = "run the emitted probe script with `bash`, skipping if `bash` is absent"
+anchor_new = "run the emitted probe script with Git Bash, located as `bash_candidates` in `tomlctl/src/cli/dispatch/tests/skills.rs` does because a bare `bash` on Windows resolves to System32's WSL launcher ahead of PATH, skipping if none is found"
+dedup_id = "882e1c52617ed359"
+
+[[items]]
+id = "P26"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### Proving"
+summary = "Emitted probes do not get the permission prompt the plan names as their mitigation"
+description = """Keeping tomlctl spawn-free stays sound, since it avoids widening the `Bash(tomlctl *)` allow rule to arbitrary strings. As a control on what runs, the reasoning fails: ~/.claude/settings.json:19 sets defaultMode bypassPermissions, in any other mode the prompt shows `bash <file>` and never the checks, and the Flow table makes Prove a Workflow, which has no user hook, while this section says "the carrier runs" it. Stored check strings come from cold readers who read repo text and reach eval before approval. Correct Risks' "so the harness's permission prompt applies" too, and settle carrier versus Workflow in Slice 2. No code change in Slice 1."""
+anchor_old = "tomlctl deliberately does not execute the commands itself: `Bash(tomlctl *)` is pre-approved, so a verb running stored strings would bypass the permission prompt."
+anchor_new = "tomlctl deliberately does not execute the commands itself: `Bash(tomlctl *)` is pre-approved, so a verb running stored strings would widen that approval to arbitrary commands. This is not a control on what the script runs: Bash rules match command text, so `bash <file>` shows no check, and under `bypassPermissions` nothing prompts. A stored `check` is repo code run with the user's rights, on the same terms as a `success:` key."
+dedup_id = "bf60ec7babe358d6"
+
+[[items]]
+id = "P27"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "## Success Criteria"
+summary = "Stated goals go unchecked, and three criteria only show that tasks ran"
+description = """Scope names closing B-ef306556 and no criterion checks it. The guard says "a store with no specs must round-trip byte-identical", but that test is inline in schema.rs under --lib while the guard runs only --test tasks_render, tasks_import, tasks_read, tasks_write; add `cargo test --manifest-path tomlctl/Cargo.toml --lib tasks::schema`. `grep -q 'Plan {'`, `test -f ...plan.md` and the Planning flow grep only show tasks ran. Task 20's sequence drives no plan view, gate, contract, handover or run, though Later slices has the engine reading through plan view --for worker, so its falsifier "any verb returning the scaffold's stub error" overclaims. It also asserts neither draft exclusion from auto-pick nor the registry entry after approve, the behaviour the Approach adds to resolve a conflict."""
+anchor_old = "- forward: `test -f claude/skills/tomlctl/references/plan.md` exits 0 (today: exits 1)."
+anchor_new = """
+- forward: `test -f claude/skills/tomlctl/references/plan.md` exits 0 (today: exits 1).
+- forward: plan-family cleanup rows need no `old`. `cargo test --manifest-path tomlctl/Cargo.toml --test review_add plan_cleanup_row_needs_no_old` passes **predicted, unverified**; falsifier: removing the family check in `old_required` turns it red."""
+dedup_id = "1c39fccffc88e6e3"
+
+[[items]]
+id = "P28"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "## Verification Commands"
+summary = "The Planning flow criterion exits 0 when the idea doc is missing, and that doc is untracked today"
+description = """Probe: `! grep -q 'Planning flow: draft' /nonexistent/v2.md` and `test -z "$(grep -l 'Planning flow: draft' /nonexistent/v2.md)"` both exit 0. docs/ideas/v2-pipeline.md and this plan are untracked (`git ls-files --error-unmatch` fails on both), so a worktree cut from HEAD has no such file, and deleting the doc passes both the criterion and the success: key. Healthy on the current tree (rc=1), vacuous on those. Fix the Success Criteria bullet the same way."""
+anchor_old = """success: test -z "$(grep -l 'Planning flow: draft' docs/ideas/v2-pipeline.md)""""
+anchor_new = "success: test -f docs/ideas/v2-pipeline.md && ! grep -q 'Planning flow: draft' docs/ideas/v2-pipeline.md"
+dedup_id = "c80105a0e23cdfc5"
+
+[[items]]
+id = "P29"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "## Verification Commands"
+summary = "The test gates inherit a 540s budget the suite is close to, before this plan adds about a dozen test binaries"
+description = """Measured 2026-11-05: 322s of runner time and 351s wall on a quiet machine; under four concurrent research agents the same command reached only 1283 of 2302 tests in 300s, a rate that projects to about 540s. The verification agent's default budget is 540s and an overrun reports timeout, which stops the list. The plan sets no timeout on test: or checkpoint: and adds about 13 test files, mostly binary-spawning integration tests. Milestone gates drain agents first, so they run nearer the quiet figure, but B-edb20f98 records the wall as process-start throughput, so added spawns add time directly. CLAUDE.md's "about 10s" is stale and is already noted in B-edb20f98; do not size the budget from it."""
+anchor_old = "transient: rust-lld: failed to write output.*[Pp]ermission denied"
+anchor_new = """
+test.timeout: 900
+checkpoint.timeout: 900
+transient: rust-lld: failed to write output.*[Pp]ermission denied"""
+dedup_id = "30ab6dddaf0b9999"
+
+[[items]]
+id = "P30"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "#### 7. Add the plan store [L]"
+summary = "Task 9 removes the dead_code allow while nothing consumes the store yet"
+description = """Task 9's stubs return "not implemented", so plan::store, plan::schema and brief_digest stay unused until tasks 11 to 14 and clippy warns from checkpoint B onward. Warnings only: no -D warnings or dead_code deny applies. Move the removal to task 20, the join of every verb: task 20 gains tomlctl/src/lib.rs and task 9 drops it."""
+anchor_old = "Nothing consumes the store until task 9, so put `#[allow(dead_code)]` on the `plan` module declaration, and task 9 removes it."
+anchor_new = "Task 9's stubs consume nothing and the verb tasks land in parallel, so put `#[allow(dead_code)]` on the `plan` module declaration, and task 20, the join of every verb, removes it."
+dedup_id = "dd376b8752fe5630"
+
+[[items]]
+id = "P31"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "### Verbs"
+summary = "plan drift contradicts itself on exit status"
+description = """"Never exits non-zero" conflicts with task 19's "No approval is a kind=validation refusal", and validation errors exit 1. Task 21 has to document one of the two."""
+anchor_old = "Warns, never exits non-zero"
+anchor_new = "Warns and exits 0; only a plan with no approval is refused"
+dedup_id = "7615113d044796fe"
+
+[[items]]
+id = "P32"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### 4. Tombstone removals on an audited store [M]"
+summary = "Tasks 1, 4 and 5 specify inline tests but their acceptance only greps a word"
+description = """Check 3 (falsifiability). `grep -c 'reason' tomlctl/src/tasks/remove.rs` is satisfied by a comment and tasks_write is a guard, so tombstone shape and spec pruning are never gated by the task. Tasks 1 and 5 have the same gap (byte-identity; "both shapes"), and task 5's grep is its only criterion. Tasks 7 and 8 show the working form. Add --lib tasks::schema to task 1 and --lib tasks::show to task 5. The full nextest at checkpoint A still runs them, so the cost is attribution, not coverage."""
+anchor_old = "guard: `cargo test --manifest-path tomlctl/Cargo.toml --test tasks_write` passes **predicted, unverified**."
+anchor_new = """
+guard: `cargo test --manifest-path tomlctl/Cargo.toml --test tasks_write` passes **predicted, unverified**.
+  - forward: `cargo test --manifest-path tomlctl/Cargo.toml --lib tasks::remove` passes **predicted, unverified**; falsifier: skipping the tombstone write turns the audited-removal case red."""
+dedup_id = "9db6efb373aea23a"
+
+[[items]]
+id = "P33"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "#### 6. Refuse markdown import and render on a v2 flow [S]"
+summary = "tasks check --plan stays open on a v2 flow and reports drift against brief.md"
+description = "check_render_drift (tomlctl/src/tasks/dispatch.rs:295-298) renders the three sections into brief.md, finds them absent and raises render/drift, naming a remedy task 6 refuses. The module header at dispatch.rs:9-12 names check --plan as the third reader of the plan. Warning class, so noise rather than a gate failure."
+anchor_old = "call it at the two arms in `tomlctl/src/tasks/dispatch.rs`"
+anchor_new = "call it at the two arms in `tomlctl/src/tasks/dispatch.rs` and at the `--plan` branch of `tasks check`"
+dedup_id = "a66ba1e2f6ddea2b"
+
+[[items]]
+id = "P34"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "#### 3. Let update reach specs and audit changes [M]"
+summary = "The unlock exemption keys on audit, so v2 drafts still stamp [[import_overrides]]"
+description = 'The stated reason, "a v2 flow has no import", holds before approval too, which is when the orchestrator applies cold-reader changes to files and needs. So they still need --unlock-import-fields and write a stamp whose base came from no plan. batch_row calls settable while parsing (tomlctl/src/tasks/update.rs:243), before any store is read, so the check must move. Needs an edge 3 to 6 for is_v2_flow. Harmless but meaningless if left.'
+anchor_old = "Files and needs under audit need no `--unlock-import-fields`, since a v2 flow has no import."
+anchor_new = "Files and needs on a v2 flow (`is_v2_flow`, task 6), audited or not, need no `--unlock-import-fields` and write no `[[import_overrides]]` stamp, since it has no import. `batch_row` calls `settable` at parse time, so that check moves to where the store path is known."
+dedup_id = "898b16cba516c345"
+
+[[items]]
+id = "P35"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "#### 26. Pin flow stores to LF and repair their sidecars [L]"
+summary = "A plain text attribute over .claude/flows/** would corrupt any binary later added to a flow"
+description = "No tracked flow file is binary today, so this is a future hazard. In a scratch repo a PNG under `text eol=lf` lost its CR bytes in the blob; under `text=auto eol=lf` it stayed byte-identical while `git check-attr eol` still printed lf and the rm-and-checkout recipe still produced w/lf. The pattern is a directory glob over a tree the design opens to notes/*.md evidence, and the only signal is one stderr warning. Acceptance strings are unaffected."
+anchor_old = "`.claude/flows/** text eol=lf`"
+anchor_new = "`.claude/flows/** text=auto eol=lf`"
+dedup_id = "c314fb66d36b8661"
+
+[[items]]
+id = "P36"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "#### 26. Pin flow stores to LF and repair their sidecars [L]"
+summary = "Task 26's no-diff step has no rollback rule and commits late"
+description = "Step 2 leaves no diff, so /implement's rollback (claude/commands/implement.md:215, restricted to the failed task's declared files) restores .gitattributes and the 16 CRLF-digest sidecars while the stores stay LF: those 16 go from passing to failing and git status shows nothing. With no dependencies the task is eligible in the first wave yet commits only at checkpoint E, beside docs and the version bump. This is checkpoint placement, not cadence: have it depend on task 25 and sit in its own final checkpoint. Small blast radius: recovery is one integrity refresh pass."
+anchor_old = "Never run step 3 before step 2: refreshing against CRLF bytes is what caused the 16."
+anchor_new = "Never run step 3 before step 2: refreshing against CRLF bytes is what caused the 16. Step 2 leaves no diff, so a rollback that restores only **Files** leaves LF stores against CRLF digests; rerun step 3 after one."
+dedup_id = "b61b5f2740ee33f3"
+
+[[items]]
+id = "P37"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### 26. Pin flow stores to LF and repair their sidecars [L]"
+summary = "Task 26 does not tell its delegate that rm plus git checkout is licensed"
+description = "Step 2 rewrites 109 paths in the shared tree, none on Files, by an operation close to the forbidden-working-tree-ops block (claude/agents/implement-deep.md:77), with stash-required escalation at :82. A careful delegate may escalate rather than proceed, costing a dispatch cycle. The git diff --quiet guard is what makes it safe, and the Detail should say so."
+anchor_old = "- **Detail**: Inseparable: the pin alone rewrites nothing,"
+anchor_new = "- **Detail**: Step 2 is licensed for the delegate: its `git diff --quiet` guard discards no uncommitted work, so it is not a `stash-required` case. Inseparable: the pin alone rewrites nothing,"
+dedup_id = "ca87f8f0f7553d8d"
+
+[[items]]
+id = "P38"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "#### 26. Pin flow stores to LF and repair their sidecars [L]"
+summary = """"Leave .claude/plans/ alone" contradicts the step's own patterns"""
+description = ".claude/**/*.toml and .claude/**/*.sha256 reach .claude/plans/effervescent-hugging-mist-review-findings.toml and .claude/reviews/pty-worktree-trust-preseed.toml with their sidecars, all w/crlf, so step 2 rewrites them. The outcome is right, since it repairs them. An implementer honouring the sentence literally could add an exclusion. The count of paths step 2 touches is 109: 105 under flows, 2 under plans, 2 under reviews."
+anchor_old = "Leave `.claude/plans/`, `.claude/rules/`, `.claude/skills/` and `.claude/settings.local.json` alone."
+anchor_new = "Markdown under `.claude/plans/`, `.claude/rules/` and `.claude/skills/`, and `.claude/settings.local.json`, stay unpinned; TOML and sidecars under `.claude/plans/` and `.claude/reviews/` are pinned, which is what repairs them."
+dedup_id = "5e2dbd7daa2e04da"
+
+[[items]]
+id = "P39"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "### Structure challenge"
+summary = "Two design-bearing figures are numerically right but cited for claims they do not measure"
+description = """Independently re-fetched. CodeTaste: the 7.9% agent is "only tasked to improve a general focus area" and the score is alignment with the human refactoring, so it is neither an unprompted measure nor an experiment on noticing a need during an unrelated task. HiL-Bench: 34.6% and 26.3% (SWE block, Table 1) are recall and precision of the agent's own ask_human() calls against registered blockers, not self-rated uncertainty, and SQL reads 61.2 and 54.3. So Surfacing's "self-rated uncertainty is a poor trigger" needs the same correction, and the figure counts as much against surfacing by judgement as for it, which sharpens Risks' under-escalation bullet. The step survives on the user's own stated concern and the Slice 2 replay gate: this corrects the stated evidence and leaves the decision alone. CodeTaste's limitation wording rests on a fetch summary."""
+anchor_old = "agents rarely notice a restructuring need unprompted, but act when told (GPT-5.2 7.9% against 69.6% on CodeTaste)."
+anchor_new = "told only a focus area, agents rarely land the refactoring a human chose, but match it given the detail (GPT-5.2 7.9% against 69.6% on CodeTaste, an alignment score over refactoring tasks). That agents miss a restructuring need unprompted is inferred from this, not measured by it."
+dedup_id = "c9f0ed008d459cd8"
+
+[[items]]
+id = "P40"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "### Flow directory"
+summary = "Tracking notes/ puts agent evidence in a public repo with no stated decision"
+description = """"All of it is git-tracked" covers notes/*.md, which holds investigator output including command output and fetched text. The repo is public, and .gitignore:10 and :34 keep free text and backlog evidence out for that reason. Baseline comparison and task 18's check need only brief.md, plan.toml and tasks.toml. This is the user's call before Slice 2's carrier commits a flow directory: track notes/, ignore it, or set a rule on what notes may quote. Counter: plan documents with Research Notes are already public, so notes may add no new class of content."""
+dedup_id = "90bf0a9fb97467e8"
+
+[[items]]
+id = "P41"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "## Summary"
+summary = "Counts and small alignment claims have drifted"
+description = """Enumerated. New files are 28, not 23 (14 under src, 13 tests, 1 doc), and unique paths 73, not about 71; recompute after any merge that changes Files lines. Sidecar refreshes remain 16 once the 17th is excluded. "flow list --status draft still lists them with age": flow/list.rs emits status, updated and plan_path, no age, though a chooser can compute it. Task 25's "Mark topics 1 and 2 decided": topic 1 already reads Decided (docs/ideas/v2-pipeline.md:18). Scope's Affected areas omit store_guard.rs, io.rs, capabilities.rs, lib.rs and README.md; the flow's context.toml scope lists tomlctl/src/plan/mod.rs but no other file under tomlctl/src/plan/, so scope-glob resolution misses the plan's own new modules. No non-existent filename and no stale line citation was found."""
+anchor_old = "23 are new small modules and tests"
+anchor_new = "28 are new small modules, tests and one reference doc"
+dedup_id = "fa79e039db1875fb"

@@ -1,0 +1,1078 @@
+schema_version = 1
+last_updated = 2026-11-05
+plan_path = "docs/plans/v2-planning.md"
+last_import_refs = [
+    "fix-the-id_aliases-twin-timing-flake",
+    "add-the-spec-side-tables-to-the-task-store",
+    "let-add-many-carry-a-task-spec",
+    "let-update-reach-specs-and-audit-changes",
+    "tombstone-removals-on-an-audited-store",
+    "show-a-tasks-spec",
+    "refuse-markdown-import-and-render-on-a-v2-flow",
+    "add-the-plan-store",
+    "guard-and-seed-plantoml",
+    "scaffold-the-plan-command-group",
+    "advertise-plan-in-capabilities",
+    "implement-plan-open",
+    "implement-decide-contract-handover-and-run",
+    "implement-plan-milestone",
+    "implement-plan-check",
+    "implement-plan-view",
+    "implement-plan-probes",
+    "implement-plan-stage",
+    "implement-plan-gate-and-approve",
+    "implement-plan-drift",
+    "add-the-lifecycle-test",
+    "document-the-plan-group",
+    "document-the-task-store-additions",
+    "exempt-plan-cleanup-rows-from-old",
+    "bump-the-tomlctl-version",
+    "bring-the-idea-doc-into-line",
+    "pin-flow-stores-to-lf-and-repair-their-sidecars",
+    "say-plan-cleanup-rows-carry-no-old",
+    "list-plantoml-among-the-owned-stores",
+    "hold-plan-out-of-the-output-options-leaf-gate",
+    "give-every-plan-verb-an-output-options-case",
+]
+
+[policy]
+checkpoints = "milestones"
+max_parallel = 8
+commit_granularity = "per-task"
+origin = "plan"
+note = ""
+
+[[checkpoints]]
+id = "A"
+rationale = "Baseline repair and task-store additions, with v1 behaviour unchanged (buildable increment)"
+
+[[checkpoints]]
+id = "B"
+rationale = "Plan store, guard and the stubbed command group (buildable increment)"
+
+[[checkpoints]]
+id = "C"
+rationale = "Authoring verbs and the views over them"
+
+[[checkpoints]]
+id = "D"
+rationale = "Proving, approval and the lifecycle test"
+
+[[checkpoints]]
+id = "E"
+rationale = "Documents, the backlog item, version and the idea doc"
+
+[[checkpoints]]
+id = "F"
+rationale = "Line endings, alone, because step 2 leaves no diff to roll back"
+
+[[file_notes]]
+ref = "let-add-many-carry-a-task-spec"
+file = "tomlctl/tests/tasks_spec_add.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "let-update-reach-specs-and-audit-changes"
+file = "tomlctl/tests/tasks_audit.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "refuse-markdown-import-and-render-on-a-v2-flow"
+file = "tomlctl/tests/plan_refusals.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "add-the-plan-store"
+file = "tomlctl/src/plan/mod.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "add-the-plan-store"
+file = "tomlctl/src/plan/schema.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "add-the-plan-store"
+file = "tomlctl/src/plan/store.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "scaffold-the-plan-command-group"
+file = "tomlctl/src/cli/types/plan.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "scaffold-the-plan-command-group"
+file = "tomlctl/src/plan/dispatch.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "scaffold-the-plan-command-group"
+file = "tomlctl/src/plan/open.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "scaffold-the-plan-command-group"
+file = "tomlctl/src/plan/records.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "scaffold-the-plan-command-group"
+file = "tomlctl/src/plan/milestone.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "scaffold-the-plan-command-group"
+file = "tomlctl/src/plan/check.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "scaffold-the-plan-command-group"
+file = "tomlctl/src/plan/view.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "scaffold-the-plan-command-group"
+file = "tomlctl/src/plan/probes.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "scaffold-the-plan-command-group"
+file = "tomlctl/src/plan/stage.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "scaffold-the-plan-command-group"
+file = "tomlctl/src/plan/approve.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "scaffold-the-plan-command-group"
+file = "tomlctl/src/plan/drift.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "implement-plan-open"
+file = "tomlctl/tests/plan_open.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "implement-decide-contract-handover-and-run"
+file = "tomlctl/tests/plan_records.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "implement-plan-milestone"
+file = "tomlctl/tests/plan_milestone.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "implement-plan-check"
+file = "tomlctl/tests/plan_check.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "implement-plan-view"
+file = "tomlctl/tests/plan_view.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "implement-plan-probes"
+file = "tomlctl/tests/plan_probes.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "implement-plan-stage"
+file = "tomlctl/tests/plan_stage.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "implement-plan-gate-and-approve"
+file = "tomlctl/tests/plan_approve.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "implement-plan-drift"
+file = "tomlctl/tests/plan_drift.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "add-the-lifecycle-test"
+file = "tomlctl/tests/plan_lifecycle.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "document-the-plan-group"
+file = "claude/skills/tomlctl/references/plan.md"
+note = "(new)"
+
+[[backlog_links]]
+ref = "exempt-plan-cleanup-rows-from-old"
+closes = ["B-ef306556"]
+refs = []
+
+[[backlog_links]]
+ref = "pin-flow-stores-to-lf-and-repair-their-sidecars"
+closes = ["B-33df5eda"]
+refs = []
+
+[[items]]
+id = 27
+ref = "fix-the-id_aliases-twin-timing-flake"
+title = "Fix the id_aliases twin timing flake"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = "Phase 0: Repair the baseline"
+phase_depth = 3
+heading_depth = 4
+files = ["tomlctl/tests/id_aliases.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Make `assert_same` compare two twins built from one seeding, so they cannot differ in their timestamps."
+detail = "`twin()` runs `backlog add` twice and backlog rows carry one-second `Z` datetimes, so two separate seedings differ whenever seeding crosses a second boundary. Measured 2026-11-05: 6 of the binary's 7 tests failed in a full nextest run and 2 still failed at `-j 1`, so `test.rerun` does not absorb it. Seed one sandbox, copy its whole tree into a second temporary directory, and leave the rest of `assert_same` as it is. Test-only, and it comes first because every checkpoint gate runs this suite."
+acceptance = "forward: `cargo test --manifest-path tomlctl/Cargo.toml --test id_aliases` passes **predicted, unverified** (today: fails intermittently); falsifier: seeding the twins separately again fails whenever seeding crosses a second."
+agent = "implement-lite"
+commit = "7462f2a"
+
+[[items]]
+id = 1
+ref = "add-the-spec-side-tables-to-the-task-store"
+title = "Add the spec side tables to the task store"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Phase 1: Task store additions"
+phase_depth = 3
+heading_depth = 4
+files = ["tomlctl/src/tasks/schema.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add `TaskSpec`, `Accept`, `Probe`, `Premise`, `Means`, `MilestoneSpec` and `Change` types, and `specs`, `milestones`, `changes` and `audit` fields on `Store`, with `from_toml` and `to_toml` conversions."
+detail = 'Shapes are in Approach, "Task spec". Follow `FileNote` and `BacklogLink`: keyed by `ref` (`MilestoneSpec` by checkpoint id), omitted on write while empty, `audit` omitted while false, an entry with no key dropped on read. Keep unknown vocabulary as strings here; validation belongs to the writers, as with `Policy`. Add `..Store::default()`-compatible defaults so existing struct literals still compile. Raise `SCHEMA_VERSION` to 2 and have `to_toml` stamp 2 only when `specs`, `milestones`, `changes` or `audit` is present, otherwise 1, with `Store::default()` staying at 1, because the installed binary refuses a newer version but drops these keys silently at version 1. Add `specs` to `drop_ref_entries`, and never `changes`, since a tombstone must outlive the row it records. Inline tests: a store with none of these round-trips byte-identical at version 1, and one with all of them round-trips exactly at version 2.'
+acceptance = """
+- forward: `grep -c 'pub(crate) struct TaskSpec' tomlctl/src/tasks/schema.rs` prints `1` (today: `0`).
+- forward: `cargo test --manifest-path tomlctl/Cargo.toml --lib tasks::schema` passes **predicted, unverified**; falsifier: emitting empty side tables turns the byte-identical test red.
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --test tasks_render` passes **predicted, unverified**; falsifier: emitting empty side tables would make it red."""
+agent = "implement-deep"
+commit = "dbe271f"
+
+[[items]]
+id = 2
+ref = "let-add-many-carry-a-task-spec"
+title = "Let add-many carry a task spec"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Phase 1: Task store additions"
+phase_depth = 3
+heading_depth = 4
+files = [
+    "tomlctl/src/tasks/add.rs",
+    "tomlctl/tests/tasks_spec_add.rs",
+]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "Accept a `spec` key on `tasks add-many` rows, validate it, and store it in `[[specs]]` keyed by the minted `ref`, with `file_notes`, `closes` and `refs` keys stored in their side tables the same way."
+detail = """Add `spec`, `reason`, `actor`, `file_notes`, `closes` and `refs` to `ROW_FIELDS`, and leave the other accepted keys alone. Keep them beside `NewTask` rather than on it, so `tomlctl/src/tasks/dispatch.rs` stays untouched. `file_notes` maps a path on the row's `files` to its annotation, and `closes` and `refs` list backlog ids; they write `[[file_notes]]` and `[[backlog_links]]` because `import-plan` is the only other writer of either table and task 6 refuses it on a v2 flow. Refuse, with the row's index: `kind` outside forward, falsifier, guard; `binding` outside required, suggested; `executor` outside tool, clerk, lite, deep; `at` that is neither `base` nor `after:<id>` naming a row in the store or batch; a supplied `probe`; unknown keys inside `spec`. When `store.audit` is true, require a per-row `reason` and write a `[[changes]]` row with `field = "*"`, an empty `old` and the title as `new`, since a task added after approval is a plan change. `tasks add` carries no spec or reason, so on an audited store it is refused with a message naming `add-many`. Test that a `.toml` record file works through `--ndjson`, because that is how the orchestrator will author tasks with prose bodies."""
+acceptance = """
+- forward: `grep -c '"spec"' tomlctl/src/tasks/add.rs` prints at least `1` (today: `0`).
+- forward: `cargo test --manifest-path tomlctl/Cargo.toml --test tasks_spec_add` passes **predicted, unverified**; falsifier: removing the `kind` check leaves a bad-vocabulary case accepted, turning it red."""
+agent = "implement-deep"
+commit = "3666f98"
+
+[[items]]
+id = 3
+ref = "let-update-reach-specs-and-audit-changes"
+title = "Let update reach specs and audit changes"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Phase 1: Task store additions"
+phase_depth = 3
+heading_depth = 4
+files = [
+    "tomlctl/src/tasks/update.rs",
+    "tomlctl/tests/tasks_audit.rs",
+]
+needs = [
+    1,
+    2,
+    6,
+]
+coupling = []
+deps_note = ""
+action = "Let `tasks update --ndjson` rows carry `spec`, `reason` and `actor`, re-key a row's spec on `--ref`, and write `[[changes]]` under an audited store."
+detail = "Rows gain optional `spec` (each given sub-field replaces the stored one, validated as in task 2), `reason`, `actor` (default `orchestrator`). Under `audit = true`, a change to `title`, `effort`, `action`, `detail`, `acceptance`, `files`, `needs`, `coupling`, `deps_note`, `checkpoint`, `ref` or `spec.*` without a `reason` refuses the whole batch and names the row; each moved field writes one `Change`. A `ref` change also rewrites earlier `[[changes]]` rows to the new `ref`, so a task's trail stays whole. `status`, `agent`, `commit` stay unaudited. A spec change through the positional form, and any audited change there, is refused with a message naming `--ndjson`, since it has no reason channel. Files and needs on a v2 flow (`is_v2_flow`, task 6), audited or not, need no `--unlock-import-fields` and write no `[[import_overrides]]` stamp, since it has no import. `batch_row` calls `settable` at parse time, so that check moves to where the store path is known. Dates come from `crate::time`."
+acceptance = """
+- forward: `grep -c 'changes' tomlctl/src/tasks/update.rs` prints at least `1` (today: `0`).
+- forward: `cargo test --manifest-path tomlctl/Cargo.toml --test tasks_audit` passes **predicted, unverified**; falsifier: skipping the `reason` check turns the refused-without-reason case red."""
+agent = "implement-deep"
+commit = "46b8031"
+
+[[items]]
+id = 4
+ref = "tombstone-removals-on-an-audited-store"
+title = "Tombstone removals on an audited store"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Phase 1: Task store additions"
+phase_depth = 3
+heading_depth = 4
+files = [
+    "tomlctl/src/tasks/remove.rs",
+    "tomlctl/src/tasks/dispatch.rs",
+    "tomlctl/src/cli/types/tasks.rs",
+]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "Add `--reason` to `tasks remove`, require it under an audited store, write a tombstone `Change`, and prune the row's spec."
+detail = 'A tombstone is `field = "*"`, `new = ""`, with `old` holding the removed title, and a `--force` removal also writes one `needs` `Change` per row it rewires. Prune `[[specs]]` on any successful removal; `[[file_notes]]` and `[[backlog_links]]` stay as they are today. Without `audit`, behaviour is unchanged apart from the prune. Add inline tests in `tomlctl/src/tasks/remove.rs`.'
+acceptance = """
+- forward: `grep -c 'reason' tomlctl/src/tasks/remove.rs` prints at least `1` (today: `0`).
+- forward: `cargo test --manifest-path tomlctl/Cargo.toml --lib tasks::remove` passes **predicted, unverified**; falsifier: skipping the tombstone write turns the audited-removal case red.
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --test tasks_write` passes **predicted, unverified**."""
+agent = "implement-lite"
+commit = "1b99932"
+
+[[items]]
+id = 5
+ref = "show-a-tasks-spec"
+title = "Show a task's spec"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = "Phase 1: Task store additions"
+phase_depth = 3
+heading_depth = 4
+files = [
+    "tomlctl/src/tasks/show.rs",
+    "tomlctl/src/cli/types/tasks.rs",
+    "claude/skills/tomlctl/references/tasks.md",
+]
+needs = [
+    1,
+    4,
+]
+coupling = []
+deps_note = ""
+action = "Add a `spec` part to `tasks show --with`, reporting the row's `[[specs]]` entry."
+detail = "The `--with` selector enum lives in `tomlctl/src/cli/types/tasks.rs`. Follow how the `files` part reports `file_notes`. Absent spec prints no key, so existing output is unchanged. Add `spec` to the valid `--with` set in `claude/skills/tomlctl/references/tasks.md`, which enumerates it. Inline test both shapes."
+acceptance = """
+- forward: `grep -c '"spec"' tomlctl/src/tasks/show.rs` prints at least `1` (today: `0`).
+- forward: `cargo test --manifest-path tomlctl/Cargo.toml --lib tasks::show` passes **predicted, unverified**; falsifier: omitting the absent-spec case leaves it unasserted, and printing a key for it turns that case red."""
+agent = "implement-lite"
+commit = "1b99932"
+
+[[items]]
+id = 6
+ref = "refuse-markdown-import-and-render-on-a-v2-flow"
+title = "Refuse markdown import and render on a v2 flow"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = "Phase 1: Task store additions"
+phase_depth = 3
+heading_depth = 4
+files = [
+    "tomlctl/src/tasks/store.rs",
+    "tomlctl/src/tasks/dispatch.rs",
+    "tomlctl/tests/plan_refusals.rs",
+]
+needs = [4]
+coupling = []
+deps_note = ""
+action = "Refuse `tasks import-plan` and `tasks render` when the store's directory holds a `plan.toml`, and skip `tasks check --plan`'s render-drift comparison there."
+detail = "Add `is_v2_flow(store_path)` to `tomlctl/src/tasks/store.rs` and call it at the two arms in `tomlctl/src/tasks/dispatch.rs`, with `kind=validation` and a message naming `plan view`. Also call it at the `--plan` branch of `tasks check`, because `brief.md` holds no rendered sections and the drift it would report names a remedy this task refuses. Plan-mode `import-plan --plan --dry-run` has no store and is untouched. Why: an import would overwrite plan-owned row fields from a document that does not exist."
+acceptance = """
+- forward: `grep -c 'is_v2_flow' tomlctl/src/tasks/dispatch.rs` prints at least `2` (today: `0`).
+- forward: `cargo test --manifest-path tomlctl/Cargo.toml --test plan_refusals` passes **predicted, unverified**."""
+agent = "implement-lite"
+commit = "1b99932"
+
+[[items]]
+id = 7
+ref = "add-the-plan-store"
+title = "Add the plan store"
+effort = "L"
+status = "done"
+checkpoint = "B"
+phase = "Phase 2: Plan store and command group"
+phase_depth = 3
+heading_depth = 4
+files = [
+    "tomlctl/src/plan/mod.rs",
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/plan/store.rs",
+    "tomlctl/src/lib.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Create the `plan` module with typed `Binding`, `Decision`, `Contract`, `Approval`, `Run` and `Handover` records, and locked load and mutate over `.claude/flows/<slug>/plan.toml`."
+detail = """Shapes are in Approach, "Plan records". Model `tomlctl/src/tasks/store.rs` and `tomlctl/src/tasks/schema.rs`: `resolve` validates the slug through `crate::flow::validate_slug`, `mutate` restamps `last_updated`. Unknown keys are dropped, as in the task store, so copy its refusal of a newer `schema_version`. Add `brief_digest(bytes) -> String` to `tomlctl/src/plan/store.rs`: SHA-256 over the bytes with CRLF folded to LF, inline-tested so that LF and CRLF copies of one text digest alike and a changed word does not. Tasks 14 and 18 both call it, so one rule decides what counts as a changed brief. These edits are inseparable: the module must be declared in `tomlctl/src/lib.rs` to compile. Task 9's stubs consume nothing and the verb tasks land in parallel, so put `#[allow(dead_code)]` on the `plan` module declaration, and task 20, the join of every verb, removes it."""
+acceptance = """
+- forward: `grep -c '^mod plan;' tomlctl/src/lib.rs` prints `1` (today: `0`).
+- forward: inline round-trip tests pass under `cargo test --manifest-path tomlctl/Cargo.toml --lib plan::` **predicted, unverified**."""
+agent = "implement-deep"
+commit = "b3b5041"
+
+[[items]]
+id = 8
+ref = "guard-and-seed-plantoml"
+title = "Guard and seed plan.toml"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = "Phase 2: Plan store and command group"
+phase_depth = 3
+heading_depth = 4
+files = [
+    "tomlctl/src/store_guard.rs",
+    "tomlctl/src/io.rs",
+    "tomlctl/src/cli/types/shared.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add `.claude/flows/<slug>/plan.toml` to the owned stores and to the schema-seeded flow files."
+detail = "Add `OwnedStore::Plan` with a replacement message naming the `plan` verbs, extend the `store_guard_refuses_each_owned_store` list, and add `plan.toml` to the seeded basename list beside `tasks.toml` in `tomlctl/src/io.rs`. Reword `OwnedStore::Tasks`'s message, which says no verb but `tasks import-plan` writes `[[checkpoints]]`: `plan milestone` will too. Keep the words `tasks import-plan`, which `store_guard_message_names_the_replacement_and_bypass` asserts. Add `plan` to the store list in the `--raw-store` help in `tomlctl/src/cli/types/shared.rs`."
+acceptance = '''
+- forward: `grep -c 'OwnedStore::Plan\|Self::Plan' tomlctl/src/store_guard.rs` prints at least `1` (today: `0`).
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib store_guard` passes **predicted, unverified**.'''
+agent = "implement-lite"
+commit = "e7a4d73"
+
+[[items]]
+id = 9
+ref = "scaffold-the-plan-command-group"
+title = "Scaffold the plan command group"
+effort = "L"
+status = "done"
+checkpoint = "B"
+phase = "Phase 2: Plan store and command group"
+phase_depth = 3
+heading_depth = 4
+files = [
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/src/cli/types/cmd.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/src/cli/mod.rs",
+    "tomlctl/src/tasks/mod.rs",
+    "tomlctl/src/tasks/backlog_refs.rs",
+    "tomlctl/src/flow/mod.rs",
+    "tomlctl/src/plan/mod.rs",
+    "tomlctl/src/plan/dispatch.rs",
+    "tomlctl/src/plan/open.rs",
+    "tomlctl/src/plan/records.rs",
+    "tomlctl/src/plan/milestone.rs",
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/src/plan/probes.rs",
+    "tomlctl/src/plan/stage.rs",
+    "tomlctl/src/plan/approve.rs",
+    "tomlctl/src/plan/drift.rs",
+]
+needs = [7]
+coupling = []
+deps_note = ""
+action = "Add the `tomlctl plan` subcommand with every verb's clap arguments, and a dispatch to a stub in each verb module."
+detail = 'Verbs and flags are in Approach, "Verbs". Model `tomlctl/src/cli/types/review.rs` and `tomlctl/src/review/dispatch.rs`, and include `--error-format` behaviour through the existing global flags. Each stub returns a `kind=validation` "not implemented" error. Every later verb task then owns one module, which is what makes them parallel. Add `"plan"` to `SUBCOMMANDS`, and re-export `PlanOp` and its argument types from `tomlctl/src/cli/mod.rs`, whose list is explicit. `crate::plan` is a sibling of `tasks` and `flow`, whose leaves are private, so make `check`, `finding`, `schema`, `slug` and `backlog_refs` `pub(crate) mod` in `tomlctl/src/tasks/mod.rs`, widen `linked_backlog_findings` to `pub(crate)` in `tomlctl/src/tasks/backlog_refs.rs`, and make `active` and `init` `pub(crate) mod` in `tomlctl/src/flow/mod.rs`. A widened `mod` raises no unused-import warning, and the verb tasks then need none of these files. Inseparable: clap, dispatch and stubs must compile together.'
+acceptance = """
+- forward: `grep -c 'Plan {' tomlctl/src/cli/types/cmd.rs` prints `1` (today: `0`).
+- forward: `grep -c '"plan"' tomlctl/src/cli/types/mod.rs` prints `1` (today: `0`)."""
+agent = "implement-deep"
+commit = "b3b5041"
+
+[[items]]
+id = 10
+ref = "advertise-plan-in-capabilities"
+title = "Advertise plan in capabilities"
+effort = "L"
+status = "done"
+checkpoint = "B"
+phase = "Phase 2: Plan store and command group"
+phase_depth = 3
+heading_depth = 4
+files = [
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/README.md",
+    "tomlctl/src/capabilities.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/tests/integration.rs",
+]
+needs = [9]
+coupling = []
+deps_note = ""
+action = "Add a `plan_store` feature and any `MUTEX_GROUPS` the plan verbs declare, and assert the subcommand in the integration list."
+detail = "`FEATURES` is in `tomlctl/src/cli/types/mod.rs`, which also says a new subcommand needs one integration assertion. `readme_feature_transcriptions_match_capabilities_features` requires the feature in both the sample block and the Feature meanings table of `tomlctl/README.md`, and `tomlctl/tests/capabilities.rs` lists the expected features. Also update the README's hand-listed subcommands sample and add `plan` to the store list in its `owned_store_guard` row. `MUTEX_GROUPS` in `tomlctl/src/capabilities.rs` covers `--emit` and `--record` on `plan probes`. `--for` and `--task` are not exclusive, since `--for worker` requires `--task`. Inseparable: the README gate goes red on any advertised feature it does not list."
+acceptance = """
+- forward: `grep -c '"plan_store"' tomlctl/src/cli/types/mod.rs` prints `1` (today: `0`).
+- forward: `cargo test --manifest-path tomlctl/Cargo.toml --test capabilities` passes **predicted, unverified**; falsifier: omitting the feature from `tomlctl/README.md` turns `readme_feature_transcriptions_match_capabilities_features` red."""
+agent = "implement-deep"
+commit = "b3b5041"
+
+[[items]]
+id = 11
+ref = "implement-plan-open"
+title = "Implement plan open"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Phase 3: Authoring verbs"
+phase_depth = 3
+heading_depth = 4
+files = [
+    "tomlctl/src/plan/open.rs",
+    "tomlctl/src/flow/init.rs",
+    "tomlctl/tests/plan_open.rs",
+]
+needs = [
+    8,
+    9,
+]
+coupling = []
+deps_note = ""
+action = "Implement `plan open`: write the `brief.md` skeleton, bootstrap the flow, seed `plan.toml`, and leave the flow out of the active registry."
+detail = """Extract the body of `dispatch` in `tomlctl/src/flow/init.rs` into a callable returning the envelope, with `dispatch` printing it, so behaviour is unchanged. `--from` reads rows through the backlog library and fills Intent and Background; evidence becomes `notes/backlog-<id>.md` listing the pointers and the `.claude/backlog-evidence/<id>/` directory. Re-running keeps an existing `brief.md` and `created`. Refuse a slug whose `context.toml` records any `plan_path` other than this flow's `brief.md`, because seeding `plan.toml` would stop a v1 flow importing or rendering. Hide the draft the way seed flows are hidden: call `flow init` with no `--scope` or `--branch` and remove its registry entry through the helpers in `tomlctl/src/flow/active.rs`, because flow resolution reads every non-complete flow on disk, registered or not. Hold the given `--branch` and `--scope` in `plan.toml`'s `[binding]`; task 18's approve writes them to `context.toml` and the registry entry. Once `plan.toml` holds an `[[approval]]`, leave the registry entry alone. Headings are in Approach, "Flow directory"."""
+acceptance = """
+- forward: `cargo test --manifest-path tomlctl/Cargo.toml --test plan_open` passes **predicted, unverified**; falsifier: leaving the registry entry in place, or writing the scope to `context.toml`, turns the not-auto-picked case red, which asserts `flow resolve --path` on a path matching the scope picks no draft.
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --test flow_init` passes **predicted, unverified**."""
+agent = "implement-deep"
+commit = "b3b5041"
+
+[[items]]
+id = 12
+ref = "implement-decide-contract-handover-and-run"
+title = "Implement decide, contract, handover and run"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Phase 3: Authoring verbs"
+phase_depth = 3
+heading_depth = 4
+files = [
+    "tomlctl/src/plan/records.rs",
+    "tomlctl/tests/plan_records.rs",
+]
+needs = [9]
+coupling = []
+deps_note = ""
+action = "Implement the record verbs with id minting under the lock, add-or-update semantics, and vocabulary validation."
+detail = "A row with `id` updates; without one, it mints `D<n>`, `C<n>` or `H<n>`, and a removed top id is never reused. Validate `provenance`, `door`, `kind` and the `{option, because}` shape. Refuse unknown keys, as `tasks add-many` does. `binds` is checked by `plan check`, not here, because tasks may not exist yet. `plan run start` returns immediately so it can be written at launch; `plan run finish` closes the newest unfinished `[[run]]` for its step; `plan run skip` appends one with `skip_reason` set."
+acceptance = "- forward: `cargo test --manifest-path tomlctl/Cargo.toml --test plan_records` passes **predicted, unverified**; falsifier: dropping the vocabulary check turns the bad-provenance case red."
+agent = "implement-lite"
+commit = "b3b5041"
+
+[[items]]
+id = 13
+ref = "implement-plan-milestone"
+title = "Implement plan milestone"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Phase 3: Authoring verbs"
+phase_depth = 3
+heading_depth = 4
+files = [
+    "tomlctl/src/plan/milestone.rs",
+    "tomlctl/tests/plan_milestone.rs",
+]
+needs = [
+    1,
+    9,
+]
+coupling = []
+deps_note = ""
+action = "Implement `plan milestone add|update`, writing `[[checkpoints]]` (goal as `rationale`) and `[[milestones]]` in one `tasks::mutate_store`."
+detail = '`--defer` without `--reason` is refused. On an audited store, `update` requires `--reason` and writes a `[[changes]]` row with `ref = "milestone:<id>"`. `tasks add --checkpoint` then accepts the id through its existing declared-group check. Test that sequence, since that refusal is what blocks direct-to-store plans today.'
+acceptance = "- forward: `cargo test --manifest-path tomlctl/Cargo.toml --test plan_milestone` passes **predicted, unverified**; falsifier: writing only `[[milestones]]` turns the checkpoint-accepted case red."
+agent = "implement-lite"
+commit = "b3b5041"
+
+[[items]]
+id = 14
+ref = "implement-plan-check"
+title = "Implement plan check"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Phase 3: Authoring verbs"
+phase_depth = 3
+heading_depth = 4
+files = [
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/tests/plan_check.rs",
+]
+needs = [
+    1,
+    9,
+]
+coupling = []
+deps_note = ""
+action = """Implement `plan check`: run the task store's checks and add the classes in Approach, "Verbs", exiting 1 on any error."""
+detail = """Reuse `tomlctl/src/tasks/check.rs`'s engine and finding shape, plus `linked_backlog_findings`, as `tasks check` does. Approach, "Plan records" gives the `binds` rule `plan/decision-bind-unknown` applies, and Approach, "Verbs" the scope of `plan/probe-absent`. Export `design_section(root, "design/x.md#anchor") -> Option<String>` for `plan view`, using the slug rule from `tomlctl/src/tasks/slug.rs` for headings; dead anchors are errors, because a renamed heading is the renamed-heading trap one layer up. `plan/brief-changed` applies only after an approval and compares through `brief_digest`. Accept a seeded fixture directly on disk in tests so this has no dependency on other verbs."""
+acceptance = """
+- forward: `cargo test --manifest-path tomlctl/Cargo.toml --test plan_check` passes **predicted, unverified**; falsifier: a fixture with a dead anchor must report `plan/design-anchor-dead`, so removing that class turns it red.
+- forward: a CRLF copy of an approved brief reports no `plan/brief-changed` while an edited one does, in the same test **predicted, unverified**; falsifier: hashing raw bytes turns the CRLF case red."""
+agent = "implement-deep"
+commit = "b3b5041"
+
+[[items]]
+id = 15
+ref = "implement-plan-view"
+title = "Implement plan view"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Phase 3: Authoring verbs"
+phase_depth = 3
+heading_depth = 4
+files = [
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/tests/plan_view.rs",
+]
+needs = [
+    2,
+    12,
+    13,
+    14,
+]
+coupling = []
+deps_note = ""
+action = "Implement `plan view --for human|digest|worker [--task <id>]`."
+detail = "Human: the whole plan as one markdown document on stdout, never written. Digest: stage inputs, counts and open items for an orchestrator re-entering, capped by `--max-chars` as usual. Worker: Intent, Non-goals, decisions whose `binds` name the task or its files, contracts naming the task, the row and spec, cited design sections inlined, and each file's kind through `FileKind::of_note` in `tomlctl/src/tasks/schema.rs`, as `show` does. `--for worker` requires `--task`. A fixture test asserts a bound decision's `rejected` text reaches the worker and an unbound decision's does not."
+acceptance = "- forward: `cargo test --manifest-path tomlctl/Cargo.toml --test plan_view` passes **predicted, unverified**; falsifier: inlining every decision turns the unbound case red."
+agent = "implement-deep"
+commit = "eb28a4d"
+
+[[items]]
+id = 16
+ref = "implement-plan-probes"
+title = "Implement plan probes"
+effort = "M"
+status = "done"
+checkpoint = "D"
+phase = "Phase 4: Proving and approval"
+phase_depth = 3
+heading_depth = 4
+files = [
+    "tomlctl/src/plan/probes.rs",
+    "tomlctl/tests/plan_probes.rs",
+    "tomlctl/tests/common/mod.rs",
+]
+needs = [
+    2,
+    9,
+]
+coupling = []
+deps_note = ""
+action = "Implement `plan probes --emit`, which prints a Bash script, and `--record <path>`, which stores results and verdicts on each `accept`."
+detail = """See Approach, "Proving". The script uses the `p` helper shape from `claude/skills/flow-contract-plan-output-format/references/acceptance-probing.md`, keyed `<task id>:<accept index>`, with neg and optional pos lines, but carries stderr whole with newlines folded rather than cut to 100 bytes; quote every command safely, testing embedded single quotes. Rows whose `writes_build` is not explicitly `false`, and rows with an empty `check`, are skipped and listed in a comment, so an unlabelled command never runs. tomlctl spawns nothing: the script's first output line is `head<TAB><sha from git rev-parse HEAD>`, and `--record` reads the script's captured stdout, that line plus the helper's five tab-separated columns, into `probe.at`, `neg_rc`, `pos_rc` and `verdict`. Verdicts, from exit status: forward is `healthy` when neg fails and pos passes or is absent; forward that already holds is `vacuous`; forward with a failing pos is `unsatisfiable`; falsifier and guard must hold at neg, and a falsifier that does not is `permanently-green`; stderr naming `command not found` or `fatal`, or `No such file` for a path no row's `files` declares, is `broken`. A guard beside no discriminating check on the task records `guard-alone`. Put a `git_bash()` helper in `tomlctl/tests/common/mod.rs`, located as `bash_candidates` in `tomlctl/src/cli/dispatch/tests/skills.rs` does because a bare `bash` on Windows resolves to System32's WSL launcher, and run the quoting test through it."""
+acceptance = "- forward: `cargo test --manifest-path tomlctl/Cargo.toml --test plan_probes` passes **predicted, unverified**; falsifier: treating a passing forward as healthy turns the vacuous case red."
+agent = "implement-deep"
+commit = "b3b5041"
+
+[[items]]
+id = 17
+ref = "implement-plan-stage"
+title = "Implement plan stage"
+effort = "M"
+status = "done"
+checkpoint = "D"
+phase = "Phase 4: Proving and approval"
+phase_depth = 3
+heading_depth = 4
+files = [
+    "tomlctl/src/plan/stage.rs",
+    "tomlctl/tests/plan_stage.rs",
+]
+needs = [
+    11,
+    12,
+    13,
+    14,
+    16,
+]
+coupling = []
+deps_note = ""
+action = "Implement `plan stage`, computing `{stage, next, blockers}` from artefacts with nothing stored."
+detail = 'Stages: `open` (brief incomplete), `design` (no milestones or tasks), `write` (a task lacks a spec), `prove` (check errors, or a probe absent on an `accept` with a non-empty `check` and `writes_build = false`), `review` (no finished plan-family run in `review-v2.toml`, and no `[[run]]` with `step = "review"` and a `skip_reason`), `ready`, `approved` (an `[[approval]]` exists and every row is pending), `running` (a row is past pending), `done` (every row is done). Read `review-v2.toml` as a plain document for a finished run, since Slice 3 owns the rest. `next` names the next verb, not a procedure. No verb gates on this output.'
+acceptance = "- forward: `cargo test --manifest-path tomlctl/Cargo.toml --test plan_stage` passes **predicted, unverified**; falsifier: a parametrised case per stage turns red if any artefact is ignored."
+agent = "implement-lite"
+commit = "cccd463"
+
+[[items]]
+id = 18
+ref = "implement-plan-gate-and-approve"
+title = "Implement plan gate and approve"
+effort = "M"
+status = "done"
+checkpoint = "D"
+phase = "Phase 4: Proving and approval"
+phase_depth = 3
+heading_depth = 4
+files = [
+    "tomlctl/src/plan/approve.rs",
+    "tomlctl/tests/plan_approve.rs",
+]
+needs = [
+    2,
+    3,
+    11,
+    12,
+    13,
+    14,
+]
+coupling = []
+deps_note = ""
+action = 'Implement `plan gate` and `plan approve`, per Approach, "Approval".'
+detail = "Approve refuses on any `plan check` error or a surfaced decision still `agent-assumed`, and when `HEAD` does not contain the flow directory's current `tasks.toml`, `plan.toml` and `brief.md` content, so the stamp cannot name a commit lacking the plan. Ask git rather than comparing bytes, since the working copy's line endings need not match the blob's: require empty `git status --porcelain -- <paths>`, because `git diff --quiet HEAD -- <path>` exits 0 on an untracked file. Test that a never-committed `plan.toml` is refused. Stamp the brief through `brief_digest`. Promote `closes` backlog links through the same library path as `backlog triage`, with `--expect-status open` semantics, reporting skips. `--amend` appends and refuses without a prior approval. Status moves through `crate::io::mutate_doc` on `context.toml`, changing only `status`, `branch` and `scope`, which keeps `created`. The envelope reports `transition: {from, to}`, since the `status-transition` record is the carrier's to append through `flow record`. `plan gate` follows the order in that section; review-derived entries are empty until Slice 3 and say so."
+acceptance = "- forward: `cargo test --manifest-path tomlctl/Cargo.toml --test plan_approve` passes **predicted, unverified**; falsifier: approving with an unanswered surfaced decision must be refused, so removing that check turns it red."
+agent = "implement-deep"
+commit = "cad8df7"
+
+[[items]]
+id = 19
+ref = "implement-plan-drift"
+title = "Implement plan drift"
+effort = "S"
+status = "done"
+checkpoint = "D"
+phase = "Phase 4: Proving and approval"
+phase_depth = 3
+heading_depth = 4
+files = [
+    "tomlctl/src/plan/drift.rs",
+    "tomlctl/tests/plan_drift.rs",
+]
+needs = [18]
+coupling = []
+deps_note = ""
+action = "Implement `plan drift`: files changed from the last approval's commit to `HEAD`, minus commits recorded on the store's rows, intersected with each pending task's `files`, reported per task with its premises."
+detail = "Warning only, exit 0, because replaying over real histories comes before any blocking use. Shell out to `git` as `tomlctl/src/repo_files.rs` does. No approval is a `kind=validation` refusal."
+acceptance = "- forward: `cargo test --manifest-path tomlctl/Cargo.toml --test plan_drift` passes **predicted, unverified**; falsifier: not subtracting recorded commits turns the own-commit case red."
+agent = "implement-lite"
+commit = "d96c9a7"
+
+[[items]]
+id = 20
+ref = "add-the-lifecycle-test"
+title = "Add the lifecycle test"
+effort = "M"
+status = "done"
+checkpoint = "D"
+phase = "Phase 4: Proving and approval"
+phase_depth = 3
+heading_depth = 4
+files = [
+    "tomlctl/tests/plan_lifecycle.rs",
+    "tomlctl/src/lib.rs",
+]
+needs = [
+    4,
+    5,
+    6,
+    10,
+    13,
+    15,
+    16,
+    17,
+    18,
+    19,
+]
+coupling = []
+deps_note = ""
+action = "Drive one plan end to end through the binary against a temporary git repo, and remove the `#[allow(dead_code)]` task 7 left on the `plan` module declaration in `tomlctl/src/lib.rs`."
+detail = "Open from a backlog row with a scope; assert `flow resolve --path` picks no draft; decide with a surfaced decision; add a contract and a handover; start and finish a run; skip the review step; add milestones, one deferred; `tasks add-many` with specs, a `closes` link and a `(new)` file note from a TOML record file; run the emitted probe script with the `git_bash()` helper from `tomlctl/tests/common/mod.rs`, skipping if none is found; record; check; `plan view` for each audience; `plan gate`; approve; assert the backlog row reads promoted and the registry entry and scope are in place; `tasks update` with and without a reason; `tasks remove`; commit a change to a task's file; `plan drift`; assert `plan stage` at each point. Assert `tasks import-plan` is refused. This is the test the Success Criteria name, and it is the one place the record shape meets a realistic sequence before a carrier exists."
+acceptance = "- forward: `cargo test --manifest-path tomlctl/Cargo.toml --test plan_lifecycle` passes **predicted, unverified**; falsifier: any verb returning the scaffold's stub error turns it red."
+agent = "implement-deep"
+commit = "404b94e"
+
+[[items]]
+id = 21
+ref = "document-the-plan-group"
+title = "Document the plan group"
+effort = "M"
+status = "pending"
+checkpoint = "E"
+phase = "Phase 5: Documents and closure"
+phase_depth = 3
+heading_depth = 4
+files = [
+    "claude/skills/tomlctl/references/plan.md",
+    "claude/skills/tomlctl/SKILL.md",
+    "tomlctl/src/cli/dispatch/tests/finding_classes.rs",
+]
+needs = [20]
+coupling = []
+deps_note = ""
+action = "Write the `plan` reference (flag tables, store shape, check classes, output shapes) and add its Quick Reference row and References entry."
+detail = "`flag_table_lint` and `command_lint` under `tomlctl/src/cli/dispatch/tests/lint.rs` check these against the real CLI, so write them from the built verbs. Bodies stay under the 600-line reference ceiling. Say what the fields mean and leave orchestration to Slice 2's engine skill. Add `plan.toml` to the verb-owned stores bullet in `claude/skills/tomlctl/SKILL.md`. Add a second pair to `tomlctl/src/cli/dispatch/tests/finding_classes.rs`, `src/plan` against `references/plan.md`, rather than widening the first, which would make `tasks.md` report the new classes as missing."
+acceptance = """
+- forward: `test -f claude/skills/tomlctl/references/plan.md` exits 0 (today: exits 1).
+- forward: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes **predicted, unverified**."""
+agent = ""
+commit = ""
+
+[[items]]
+id = 22
+ref = "document-the-task-store-additions"
+title = "Document the task-store additions"
+effort = "S"
+status = "done"
+checkpoint = "E"
+phase = "Phase 5: Documents and closure"
+phase_depth = 3
+heading_depth = 4
+files = [
+    "claude/skills/tomlctl/references/tasks-store.md",
+    "claude/skills/tomlctl/references/tasks-write.md",
+    "claude/skills/flow-contract-task-store/SKILL.md",
+]
+needs = [
+    2,
+    3,
+    5,
+    6,
+    9,
+]
+coupling = []
+deps_note = ""
+action = "Document `[[specs]]`, `[[milestones]]`, `[[changes]]`, `audit`, the conditional `schema_version = 2` stamp, the `spec`, `reason`, `actor`, `file_notes`, `closes` and `refs` row keys, `--reason`, `tasks show --with spec`, and the v2-flow refusal."
+detail = "Update the task-store skill's field table, the `add-many` accepted-key list in its section 5, and the side-table count in its section 5a. Keep v1 semantics stated as unchanged."
+acceptance = "- forward: `grep -c 'specs' claude/skills/flow-contract-task-store/SKILL.md` prints at least `1` (today: `0`)."
+agent = "implement-lite"
+commit = "a6abe04"
+
+[[items]]
+id = 23
+ref = "exempt-plan-cleanup-rows-from-old"
+title = "Exempt plan cleanup rows from old"
+effort = "S"
+status = "done"
+checkpoint = "E"
+phase = "Phase 5: Documents and closure"
+phase_depth = 3
+heading_depth = 4
+files = [
+    "tomlctl/src/review/fields.rs",
+    "tomlctl/src/review/schema_out.rs",
+    "tomlctl/tests/review_add.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Make `old_required` return false for the plan family, and add test `plan_cleanup_row_needs_no_old`."
+detail = "`claude/agents/review-sweeper.md` step 8 already documents plan rows as anchor-only: `plan_section`, `anchor_old`, `anchor_new`. `old_required` takes `ctx`, whose `family` decides it. Code rows keep their rule. `conditionals` in `tomlctl/src/review/schema_out.rs` sees only the kind and a row carries no family, so its `if`/`then` for `Need::OldText` would refuse a valid plan row: remove that rule, leaving `validate_row` to enforce it, reword the matching note to except the plan family, and update any inline test pinning either. Task 28 carries the documents. Slice 3 replaces plan anchors with record targets; this rule stays correct until then."
+acceptance = """
+- forward: `grep -c 'plan_cleanup_row_needs_no_old' tomlctl/tests/review_add.rs` prints `1` (today: `0`).
+- forward: `cargo test --manifest-path tomlctl/Cargo.toml --test review_add` passes **predicted, unverified**; falsifier: removing the family check turns the new test red."""
+agent = "implement-lite"
+commit = "75193dd"
+
+[[items]]
+id = 24
+ref = "bump-the-tomlctl-version"
+title = "Bump the tomlctl version"
+effort = "L"
+status = "pending"
+checkpoint = "E"
+phase = "Phase 5: Documents and closure"
+phase_depth = 3
+heading_depth = 4
+files = [
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "glimpse/Cargo.lock",
+    "tomlctl/README.md",
+    "tomlctl/tests/capabilities.rs",
+]
+needs = [20]
+coupling = []
+deps_note = ""
+action = "Bump tomlctl to the next minor version and refresh both lockfiles."
+detail = "Run `cargo tree --manifest-path glimpse/Cargo.toml >/dev/null` to rewrite the glimpse lockfile, because the pre-commit hook's `--locked` clippy refuses a stale one. Derive the new version from the current one, a new verb group being a minor bump. Update the version literal and its message in `tomlctl/tests/capabilities.rs`, and the sample version in `tomlctl/README.md`, which `readme_sample_version_matches_cargo_toml` compares. Inseparable: the suite goes red until all three agree."
+acceptance = """
+- forward: `grep -c '^version = "0.17.0"' tomlctl/Cargo.toml` prints `0` (today: `1`).
+- forward: `cargo test --manifest-path tomlctl/Cargo.toml --test capabilities` passes **predicted, unverified**; falsifier: leaving the literal in `tomlctl/tests/capabilities.rs` at the old version turns it red.
+- guard: `cargo clippy --manifest-path glimpse/Cargo.toml --locked` passes **predicted, unverified**."""
+agent = ""
+commit = ""
+
+[[items]]
+id = 25
+ref = "bring-the-idea-doc-into-line"
+title = "Bring the idea doc into line"
+effort = "S"
+status = "done"
+checkpoint = "E"
+phase = "Phase 5: Documents and closure"
+phase_depth = 3
+heading_depth = 4
+files = ["docs/ideas/v2-pipeline.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = """Mark topic 2 decided by this plan (topic 1 already reads Decided), replace the "Planning flow: draft" section with a pointer to this plan's Approach, and correct the decisions in Approach, "What departs from the idea doc"."""
+detail = "The file is currently untracked, so the commit adds it whole. Keep its Evidence section, adding this plan's corrections: line 194's SkillsBench reading (comprehensive n=5, standard from a 19.8% baseline, no Haiku data) and line 206's 794 of 810 being a product of the merge path. Facts belong to one file, so point at the plan's Approach rather than restating it. Leave topics 4 to 8 open."
+acceptance = "- forward: `grep -c 'Planning flow: draft' docs/ideas/v2-pipeline.md` prints `0` (today: `1`)."
+agent = "implement-deep"
+commit = "7ad785a"
+
+[[items]]
+id = 26
+ref = "pin-flow-stores-to-lf-and-repair-their-sidecars"
+title = "Pin flow stores to LF and repair their sidecars"
+effort = "L"
+status = "pending"
+checkpoint = "F"
+phase = "Phase 5: Documents and closure"
+phase_depth = 3
+heading_depth = 4
+files = [
+    ".gitattributes",
+    ".claude/flows/binary-jumping-yao/context.toml.sha256",
+    ".claude/flows/binary-jumping-yao/execution-record.toml.sha256",
+    ".claude/flows/flow-tracking-overhaul/context.toml.sha256",
+    ".claude/flows/flow-tracking-overhaul/execution-record.toml.sha256",
+    ".claude/flows/full-slice-flow-dogfood/context.toml.sha256",
+    ".claude/flows/full-slice-flow-dogfood/execution-record.toml.sha256",
+    ".claude/flows/groovy-growing-yeti/context.toml.sha256",
+    ".claude/flows/groovy-growing-yeti/execution-record.toml.sha256",
+    ".claude/flows/lumina-story-planning-round-4/execution-record.toml.sha256",
+    ".claude/flows/lumina-story-planning-round-5/context.toml.sha256",
+    ".claude/flows/lumina-story-planning-round-5/execution-record.toml.sha256",
+    ".claude/flows/lumina-story-planning-workflow/execution-record.toml.sha256",
+    ".claude/flows/lumina-vertical-slice/context.toml.sha256",
+    ".claude/flows/lumina-vertical-slice/execution-record.toml.sha256",
+    ".claude/flows/snoopy-beaming-lecun/context.toml.sha256",
+    ".claude/flows/snoopy-beaming-lecun/execution-record.toml.sha256",
+]
+needs = [
+    21,
+    22,
+    24,
+    25,
+    28,
+    29,
+]
+coupling = []
+deps_note = ""
+action = "Pin `.claude` stores to LF, rewrite the CRLF working copies, and refresh the sidecars that were stamped against CRLF bytes."
+detail = """
+This task runs last, with nothing else in flight, and commits alone, because step 2 leaves no diff to roll back. Step 2 is licensed for the delegate: its `git diff --quiet` guard discards no uncommitted work, so it is not a `stash-required` case. Inseparable: the pin alone rewrites nothing, and rewriting alone fails the 16 sidecars listed above, whose committed digests match CRLF bytes rather than the LF blobs.
+1. Add to `.gitattributes`, with a why-comment in that file's style: `.claude/flows/** text=auto eol=lf`, `.claude/**/*.toml text eol=lf` and `.claude/**/*.sha256 text eol=lf`. `text=auto` keeps a binary later added to a flow from being converted. Markdown under `.claude/plans/`, `.claude/rules/` and `.claude/skills/`, and `.claude/settings.local.json`, stay unpinned; TOML and sidecars under `.claude/plans/` and `.claude/reviews/` are pinned, which is what repairs them. The patterns were tested with `git check-attr` in a scratch repo.
+2. For each path from `git ls-files --eol .claude` reading `w/crlf` whose `git check-attr eol` is `lf`: skip and report it if `git diff --quiet -- <path>` fails, otherwise `rm <path>` then `git checkout -- <path>`. A plain `git checkout` leaves the file CRLF, because git sees it as unchanged; this was tested in a scratch repo. These rewrites produce no diff, since the index is already LF, which is why those files are not on the **Files** line.
+3. For each `.toml` step 2 rewrote, with a sidecar whose digest now differs from the file: `tomlctl validate <path>` then `tomlctl integrity refresh <path>`. This leaves `.claude/flows/lumina-schema-deepening/plan-review-findings.toml` alone: it is already LF, its sidecar matched neither its LF nor its CRLF bytes when measured, and refreshing would bless an unexplained mismatch, so report it. Compare the refreshed set against **Files**. A path outside it is stop-and-report, because it means a digest matched neither form when measured.
+Never run step 3 before step 2: refreshing against CRLF bytes is what caused the 16. A rollback that restores only **Files** leaves LF stores against CRLF digests, so rerun step 3 after one."""
+acceptance = """
+- forward: `git check-attr eol -- .claude/flows/x/brief.md` prints `.claude/flows/x/brief.md: eol: lf` (today: `.claude/flows/x/brief.md: eol: unspecified`).
+- forward: `git ls-files --eol .claude/flows | grep -c 'w/crlf'` prints `0` (today: `105`).
+- forward: `tomlctl flow doctor --rows checks --where ok=false --where-suffix name=-sidecar --get name` prints nothing (today: 12 lines)."""
+agent = ""
+commit = ""
+
+[[items]]
+id = 28
+ref = "say-plan-cleanup-rows-carry-no-old"
+title = "Say plan cleanup rows carry no old"
+effort = "S"
+status = "done"
+checkpoint = "E"
+phase = "Phase 5: Documents and closure"
+phase_depth = 3
+heading_depth = 4
+files = [
+    "claude/skills/tomlctl/references/review.md",
+    "claude/skills/review-v2-method/SKILL.md",
+    "claude/agents/review-sweeper.md",
+]
+needs = [23]
+coupling = []
+deps_note = ""
+action = "State the plan-family exemption from `old` in the three places that describe the requirement."
+detail = 'In `claude/skills/tomlctl/references/review.md` and `claude/skills/review-v2-method/SKILL.md`, add the words "except on a plan review" to the statement requiring `old` for `change` and `remove`, which is what task 23 makes `old_required` do. In step 8 of `claude/agents/review-sweeper.md`, add "and carry no `old`" to the sentence listing what plan rows carry. Step 8 sits outside the shared blocks that file carries.'
+acceptance = """
+- forward: `grep -c 'except on a plan review' claude/skills/tomlctl/references/review.md` prints at least `1` (today: `0`).
+- forward: `grep -c 'except on a plan review' claude/skills/review-v2-method/SKILL.md` prints at least `1` (today: `0`).
+- forward: `grep -c 'carry no' claude/agents/review-sweeper.md` prints `1` (today: `0`)."""
+agent = "implement-lite"
+commit = "782e09f"
+
+[[items]]
+id = 29
+ref = "list-plantoml-among-the-owned-stores"
+title = "List plan.toml among the owned stores"
+effort = "S"
+status = "done"
+checkpoint = "E"
+phase = "Phase 5: Documents and closure"
+phase_depth = 3
+heading_depth = 4
+files = ["claude/skills/tomlctl/references/write.md"]
+needs = [8]
+coupling = []
+deps_note = ""
+action = "Add a `.claude/flows/<slug>/plan.toml` row, with `plan` as its owning verb, to the owned-store table in `claude/skills/tomlctl/references/write.md`."
+detail = "Task 8 makes `plan.toml` an owned store, and this table enumerates them. Follow the row for `.claude/flows/<slug>/tasks.toml`."
+acceptance = "- forward: `grep -c 'plan.toml' claude/skills/tomlctl/references/write.md` prints `1` (today: `0`)."
+agent = "implement-lite"
+commit = "506b416"
+
+[[items]]
+id = 30
+ref = "hold-plan-out-of-the-output-options-leaf-gate"
+title = "Hold plan out of the output-options leaf gate"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = "Phase 5: Documents and closure"
+phase_depth = 3
+heading_depth = 3
+files = ["tomlctl/tests/output_options.rs"]
+needs = [9]
+coupling = []
+deps_note = ""
+action = "Exclude `plan` leaves from `every_leaf_command_has_a_case` while the group's verbs are stubs, because a stub's validation error cannot pass a case and every checkpoint gate runs this suite."
+detail = ""
+acceptance = "forward: `cargo test --manifest-path tomlctl/Cargo.toml --test output_options every_leaf_command_has_a_case` passes; falsifier: removing the exclusion turns it red, naming the plan leaves."
+agent = "orchestrator"
+commit = "23c34f8"
+
+[[items]]
+id = 31
+ref = "give-every-plan-verb-an-output-options-case"
+title = "Give every plan verb an output-options case"
+effort = "M"
+status = "done"
+checkpoint = "D"
+phase = "Phase 5: Documents and closure"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/tests/output_options.rs",
+    "tomlctl/src/plan/stage.rs",
+    "tomlctl/src/plan/approve.rs",
+    "tomlctl/src/plan/drift.rs",
+]
+needs = [
+    15,
+    17,
+    18,
+    19,
+    30,
+]
+coupling = []
+deps_note = ""
+action = "Add a case for each `plan` leaf to `cases()` in `tomlctl/tests/output_options.rs`, add a `plan` group to `group()` and `group_tests!`, and remove the `listed.retain` exclusion from `every_leaf_command_has_a_case`."
+detail = ""
+acceptance = "forward: `cargo test --manifest-path tomlctl/Cargo.toml --test output_options` passes with the exclusion gone; falsifier: deleting any one plan case turns `every_leaf_command_has_a_case` red, naming that leaf."
+agent = "implement-deep"
+commit = "d96c9a7"

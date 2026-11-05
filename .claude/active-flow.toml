@@ -852,3 +852,30 @@ scope = [
     "claude/skills/backlog-capture/**",
     "claude/commands/backlog.md",
 ]
+
+[[active]]
+slug = "v2-planning"
+last_used = "2026-11-05T11:15:30.0163585Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "tomlctl/src/tasks/**",
+    "tomlctl/src/cli/**",
+    "tomlctl/tests/**",
+    "claude/skills/tomlctl/**",
+    "claude/skills/flow-contract-task-store/**",
+    "tomlctl/src/plan/mod.rs",
+    "tomlctl/src/flow/init.rs",
+    "tomlctl/src/review/fields.rs",
+    "tomlctl/src/lib.rs",
+    "tomlctl/src/store_guard.rs",
+    "tomlctl/src/io.rs",
+    "tomlctl/src/capabilities.rs",
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "glimpse/Cargo.lock",
+    "docs/ideas/v2-pipeline.md",
+    "docs/plans/v2-planning.md",
+]

@@ -1,0 +1,1019 @@
+schema_version = 1
+last_updated = 2026-11-05
+
+[[items]]
+id = "E1"
+agent = "implement"
+from_status = "draft"
+to_status = "in-progress"
+summary = "status draft -> in-progress"
+type = "status-transition"
+date = 2026-11-05
+
+[[items]]
+id = "E2"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = ["tomlctl/tests/id_aliases.rs"]
+summary = "assert_same now seeds one sandbox and copies its tree into a second, so the twins cannot differ in their one-second backlog timestamps. Falsifier count 0: a second-boundary crossing cannot be forced from the editor; the fix holds by construction."
+type = "task-completion"
+task_ref = "fix-the-id_aliases-twin-timing-flake"
+date = 2026-11-05
+
+[[items]]
+id = "E3"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+files = [
+    "tomlctl/src/store_guard.rs",
+    "tomlctl/src/io.rs",
+    "tomlctl/src/cli/types/shared.rs",
+]
+summary = "Added OwnedStore::Plan for .claude/flows/<slug>/plan.toml with a replacement message naming the plan verbs, plan.toml to the schema-seeded flow files, plan to the --raw-store help, and plan milestone to the Tasks message. Falsifier: disabling the classify branch fails 1 test."
+type = "task-completion"
+task_ref = "guard-and-seed-plantoml"
+date = 2026-11-05
+
+[[items]]
+id = "E4"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+files = ["claude/skills/tomlctl/references/write.md"]
+summary = "Added the plan.toml row, owned by the plan verbs, to the owned-store table in claude/skills/tomlctl/references/write.md."
+type = "task-completion"
+task_ref = "list-plantoml-among-the-owned-stores"
+date = 2026-11-05
+
+[[items]]
+id = "E5"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+files = [
+    "tomlctl/src/review/fields.rs",
+    "tomlctl/src/review/schema_out.rs",
+    "tomlctl/tests/review_add.rs",
+]
+summary = "old_required returns false for the plan family, conditionals no longer emits the OldText if/then rule, both notes except the plan family, and plan_cleanup_row_needs_no_old is added. Falsifier: disabling the family check fails 1 test. The edited inline schema test could not compile against a sibling's in-flight edit; the checkpoint gate covers it."
+type = "task-completion"
+task_ref = "exempt-plan-cleanup-rows-from-old"
+date = 2026-11-05
+
+[[items]]
+id = "E6"
+agent = "implement"
+summary = "Cited user decisions 5 and 6 at the corrected review bullets in docs/ideas/v2-pipeline.md"
+original_intent = "point at the plan's Approach rather than restating it"
+rationale = 'The tier and flag detail is stated in user decisions 5 and 6, and the Approach table row only names it. The Haiku line points at the "What departs" table for the same reason.'
+type = "deviation"
+task_ref = "bring-the-idea-doc-into-line"
+date = 2026-11-05
+
+[[items]]
+id = "E7"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-deep"
+vet = "sampled-fail"
+retries = 1
+escalation_reason = "vet-failed"
+files = ["docs/ideas/v2-pipeline.md"]
+summary = 'Topic 2 marked decided, the draft section replaced by a pointer, Evidence corrected, and each passage matching a "What departs from the idea doc" row corrected in place. First attempt left the superseded bullets standing behind a "plan wins" header and failed the vet; the deep retry corrected them. Two rows had no matching passage.'
+type = "task-completion"
+task_ref = "bring-the-idea-doc-into-line"
+date = 2026-11-05
+
+[[items]]
+id = "E8"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+files = [
+    "claude/skills/tomlctl/references/review.md",
+    "claude/skills/review-v2-method/SKILL.md",
+    "claude/agents/review-sweeper.md",
+]
+summary = "Stated the plan-family exemption from old in references/review.md, the review-v2-method skill and step 8 of review-sweeper.md. Orchestrator ran the three acceptance greps: each prints 1."
+type = "task-completion"
+task_ref = "say-plan-cleanup-rows-carry-no-old"
+date = 2026-11-05
+
+[[items]]
+id = "E9"
+agent = "implement"
+summary = "Added [id_high_water] and mint_id in tomlctl/src/plan/schema.rs"
+original_intent = 'Record shapes as listed in Approach, "Plan records"'
+rationale = "Task 12 must never reuse a removed top id but owns only records.rs, and unknown keys drop on write, so it could not persist a mark itself. Added a root [id_high_water] table and PlanStore::mint_id, the same table items remove already writes."
+type = "deviation"
+task_ref = "add-the-plan-store"
+date = 2026-11-05
+
+[[items]]
+id = "E10"
+agent = "implement"
+summary = "Plan store reader refuses bad or absent values in tomlctl/src/plan/schema.rs"
+original_intent = "Spec did not settle how the reader treats bad or absent values"
+rationale = """plan check has no vocabulary class, so nothing else would catch them, and surfaced = "true" read as false would get a decision past approval's answered check. The reader refuses unknown or absent provenance, door, kind and review, absent id, commit, at, step, started and source_task, and a non-boolean surfaced, vetoed or done."""
+type = "deviation"
+task_ref = "add-the-plan-store"
+date = 2026-11-05
+
+[[items]]
+id = "E11"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/plan/mod.rs",
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/plan/store.rs",
+    "tomlctl/src/lib.rs",
+]
+summary = "Created the plan module with typed Binding, Decision, Contract, Approval, Run and Handover records, locked load and mutate over plan.toml, and brief_digest, declared under allow(dead_code). 21 inline tests pass; falsifier rounds failed 16, 6 and 1 tests, so every test has failed at least once."
+type = "task-completion"
+task_ref = "add-the-plan-store"
+date = 2026-11-05
+
+[[items]]
+id = "E12"
+agent = "implement"
+summary = "Added BASE_SCHEMA_VERSION in tomlctl/src/tasks/schema.rs"
+original_intent = "Raise SCHEMA_VERSION to 2 and stamp 1 otherwise"
+rationale = "The stamp needs a second value to name. Added BASE_SCHEMA_VERSION = 1, and an absent schema_version now reads as 1."
+type = "deviation"
+task_ref = "add-the-spec-side-tables-to-the-task-store"
+date = 2026-11-05
+
+[[items]]
+id = "E13"
+agent = "implement"
+summary = "Reader refuses non-boolean audit and malformed spec shapes in tomlctl/src/tasks/schema.rs"
+original_intent = "Keep unknown vocabulary as strings; validation belongs to the writers"
+rationale = "Reading a non-boolean audit as false would silently lift auditing from an approved plan, so it is refused. Malformed accept, premises, means and probe shapes are refused with their location, matching table_array. Vocabulary values stay strings as specified."
+type = "deviation"
+task_ref = "add-the-spec-side-tables-to-the-task-store"
+date = 2026-11-05
+
+[[items]]
+id = "E14"
+agent = "implement"
+summary = "Absent elaboration reads as upfront in tomlctl/src/tasks/schema.rs"
+original_intent = "Spec gave no default for an absent elaboration"
+rationale = "A reader needs a value; upfront is the plan's stated norm."
+type = "deviation"
+task_ref = "add-the-spec-side-tables-to-the-task-store"
+date = 2026-11-05
+
+[[items]]
+id = "E15"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = ["tomlctl/src/tasks/schema.rs"]
+summary = "Added TaskSpec, Accept, Probe, Premise, Means, MilestoneSpec and Change, and specs, milestones, changes and audit on Store. SCHEMA_VERSION is 2, to_toml stamps 2 only when one of the four is present and 1 otherwise, drop_ref_entries prunes specs and keeps changes. 26 lib tests and 14 tasks_render tests pass; every new test failed under a falsifier round."
+type = "task-completion"
+task_ref = "add-the-spec-side-tables-to-the-task-store"
+date = 2026-11-05
+
+[[items]]
+id = "E16"
+agent = "implement"
+summary = "Added remove_with_reason in tomlctl/src/tasks/remove.rs, kept remove as a test-only form"
+original_intent = "Add --reason to tasks remove, implying one remove signature"
+rationale = "A test in tomlctl/src/tasks/update.rs calls the 4-argument remove, and update.rs is outside this task's files. Dispatch calls remove_with_reason, and the 4-argument form stays behind cfg(test)."
+type = "deviation"
+task_ref = "tombstone-removals-on-an-audited-store"
+date = 2026-11-05
+
+[[items]]
+id = "E17"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = [
+    "tomlctl/src/tasks/remove.rs",
+    "tomlctl/src/tasks/dispatch.rs",
+    "tomlctl/src/cli/types/tasks.rs",
+]
+summary = "tasks remove takes --reason, requires it on an audited store, writes a tombstone Change plus one needs Change per rewired row under --force, and prunes the row's spec on any successful removal. 12 lib tests and 26 tasks_write tests pass. Falsifier: disabling the tombstone write fails 2 tests."
+type = "task-completion"
+task_ref = "tombstone-removals-on-an-audited-store"
+date = 2026-11-05
+
+[[items]]
+id = "E18"
+agent = "implement"
+summary = "Left PlanTarget out of the re-exports in tomlctl/src/cli/mod.rs"
+original_intent = "Re-export PlanOp and its argument types from tomlctl/src/cli/mod.rs"
+rationale = "Re-exporting PlanTarget raises unused_imports, because verbs read args.target.slug without naming the type."
+type = "deviation"
+task_ref = "scaffold-the-plan-command-group"
+date = 2026-11-05
+
+[[items]]
+id = "E19"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/src/plan/dispatch.rs",
+    "tomlctl/src/plan/open.rs",
+    "tomlctl/src/plan/records.rs",
+    "tomlctl/src/plan/milestone.rs",
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/src/plan/probes.rs",
+    "tomlctl/src/plan/stage.rs",
+    "tomlctl/src/plan/approve.rs",
+    "tomlctl/src/plan/drift.rs",
+    "tomlctl/src/plan/mod.rs",
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/src/cli/types/cmd.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/src/cli/mod.rs",
+    "tomlctl/src/tasks/mod.rs",
+    "tomlctl/src/tasks/backlog_refs.rs",
+    "tomlctl/src/flow/mod.rs",
+]
+summary = "Added the tomlctl plan subcommand with clap arguments for all 18 leaf verbs, a PlanOp fan-out in plan/dispatch.rs, a kind=validation stub per verb, and widened the listed tasks and flow leaves and linked_backlog_findings to pub(crate). Stub behaviour checked on the built binary. No test assertions added."
+type = "task-completion"
+task_ref = "scaffold-the-plan-command-group"
+date = 2026-11-05
+
+[[items]]
+id = "E20"
+agent = "implement"
+summary = "Added a spec part to tasks show --with, reporting the row's [[specs]] entry, with no key when the row has none. 14 lib tests pass. Falsifier: nulling the insert fails the new test."
+status = "done"
+files = [
+    "tomlctl/src/tasks/show.rs",
+    "tomlctl/src/cli/types/tasks.rs",
+    "claude/skills/tomlctl/references/tasks.md",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+type = "task-completion"
+task_ref = "show-a-tasks-spec"
+date = 2026-11-05
+
+[[items]]
+id = "E21"
+agent = "implement"
+summary = "tasks import-plan and tasks render are refused on a flow holding a plan.toml, naming plan view, and tasks check --plan skips render drift there. 4 tests pass. Falsifier: forcing is_v2_flow false fails 3 of 4."
+status = "done"
+files = [
+    "tomlctl/src/tasks/store.rs",
+    "tomlctl/src/tasks/dispatch.rs",
+    "tomlctl/tests/plan_refusals.rs",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+type = "task-completion"
+task_ref = "refuse-markdown-import-and-render-on-a-v2-flow"
+date = 2026-11-05
+
+[[items]]
+id = "E22"
+agent = "implement"
+summary = "Absent kind allowed while check is empty in tomlctl/src/tasks/add.rs"
+original_intent = "Refuse kind outside forward, falsifier, guard"
+rationale = """Approach, "Task spec" has a deferred milestone's task carry behaviour before check exists, so an absent kind is allowed while check is empty. A check with no kind and a supplied empty kind are refused."""
+type = "deviation"
+task_ref = "let-add-many-carry-a-task-spec"
+date = 2026-11-05
+
+[[items]]
+id = "E23"
+agent = "implement"
+summary = "Unknown keys refused inside accept, premises and means in tomlctl/src/tasks/add.rs"
+original_intent = "Refuse unknown keys inside spec"
+rationale = "A mistyped writes_build would otherwise read as true with no error, so unknown keys inside accept, premises and means entries are refused too. A supplied ref inside spec is therefore refused."
+type = "deviation"
+task_ref = "let-add-many-carry-a-task-spec"
+date = 2026-11-05
+
+[[items]]
+id = "E24"
+agent = "implement"
+summary = "Non-canonical after: ids refused in tomlctl/src/tasks/add.rs"
+original_intent = "at is base or after:<id>"
+rationale = "A reader joining on the stored string would miss the row, so non-canonical ids such as after:+1 and after:01 are refused."
+type = "deviation"
+task_ref = "let-add-many-carry-a-task-spec"
+date = 2026-11-05
+
+[[items]]
+id = "E25"
+agent = "implement"
+summary = "Off-row and blank file_notes refused in tomlctl/src/tasks/add.rs"
+original_intent = "Spec did not cover file_notes on a path off the row, or a blank annotation"
+rationale = "The store silently drops a blank note on write, and a note on a path the row does not claim would never be read, so both are refused."
+type = "deviation"
+task_ref = "let-add-many-carry-a-task-spec"
+date = 2026-11-05
+
+[[items]]
+id = "E26"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/tasks/add.rs",
+    "tomlctl/tests/tasks_spec_add.rs",
+]
+summary = "tasks add-many rows accept spec, reason, actor, file_notes, closes and refs, stored in their side tables keyed by the minted ref, with row-indexed refusals. An audited store requires a reason and writes a Change row, and tasks add is refused there naming add-many. 22 tests pass; every test failed in a falsifier round."
+type = "task-completion"
+task_ref = "let-add-many-carry-a-task-spec"
+date = 2026-11-05
+
+[[items]]
+id = "E27"
+agent = "implement"
+summary = "plan milestone update creates a missing milestones row in tomlctl/src/plan/milestone.rs"
+original_intent = "Spec did not cover update on a checkpoint with no [[milestones]] row"
+rationale = "A checkpoint from import-plan has no milestone row, and a refusal would leave it unreachable by the verb, so update creates the row as upfront."
+type = "deviation"
+task_ref = "implement-plan-milestone"
+date = 2026-11-05
+
+[[items]]
+id = "E28"
+agent = "implement"
+summary = "Audited plan milestone add writes a change row with no required reason in tomlctl/src/plan/milestone.rs"
+original_intent = "Spec did not cover plan milestone add on an audited store"
+rationale = "Approach requires a reason only of update, so an audited add requires none and writes one change row with field *."
+type = "deviation"
+task_ref = "implement-plan-milestone"
+date = 2026-11-05
+
+[[items]]
+id = "E29"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = [
+    "tomlctl/src/plan/milestone.rs",
+    "tomlctl/tests/plan_milestone.rs",
+]
+summary = "plan milestone add and update write [[checkpoints]] and [[milestones]] in one mutate_store, refuse --defer without --reason, require --reason on an audited update, and write one milestone:<id> change row per changed field. 8 tests pass. Falsifier: discarding the checkpoint write fails 4 of 8."
+type = "task-completion"
+task_ref = "implement-plan-milestone"
+date = 2026-11-05
+
+[[items]]
+id = "E30"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+files = [
+    "tomlctl/src/plan/records.rs",
+    "tomlctl/tests/plan_records.rs",
+]
+summary = "Implemented plan decide, contract, handover add and done, and run start, finish and skip, with ids minted under the lock, add-or-update semantics, vocabulary and unknown-key refusals, and a bad row persisting nothing. 7 tests pass. Falsifier: ignoring bad vocabulary fails 2 tests."
+type = "task-completion"
+task_ref = "implement-decide-contract-handover-and-run"
+date = 2026-11-05
+
+[[items]]
+id = "E31"
+agent = "implement"
+summary = "Added capabilities_lists_the_plan_subcommand_beside_its_clap_tree in tomlctl/tests/integration.rs"
+original_intent = "Assert the subcommand in the integration list"
+rationale = "tomlctl/tests/integration.rs has no subcommand list, so a new test does it, as the doc comment on SUBCOMMANDS asks."
+type = "deviation"
+task_ref = "advertise-plan-in-capabilities"
+date = 2026-11-05
+
+[[items]]
+id = "E32"
+agent = "implement"
+summary = "Added a mutex guard test in tomlctl/tests/capabilities.rs"
+original_intent = "Spec did not ask for a test of the MUTEX_GROUPS entry"
+rationale = "A new advertised group had no guard, so plan_probes_advertises_the_one_mutex_clap_enforces checks it against clap's actual refusal."
+type = "deviation"
+task_ref = "advertise-plan-in-capabilities"
+date = 2026-11-05
+
+[[items]]
+id = "E33"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/README.md",
+    "tomlctl/src/capabilities.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/tests/integration.rs",
+]
+summary = "Added the plan_store feature, the plan probes MUTEX_GROUPS entry and a plan subcommand assertion, and updated the README sample, feature table and owned_store_guard row. capabilities 70 pass, integration assertion passes. Falsifier: withholding each value gave 5 failures."
+type = "task-completion"
+task_ref = "advertise-plan-in-capabilities"
+date = 2026-11-05
+
+[[items]]
+id = "E34"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/tests/plan_check.rs",
+]
+summary = "Implemented plan check with all 17 plan classes over the tasks check engine and linked_backlog_findings, exported design_section and findings, with brief digest comparison and contained design citations. 25 integration and 6 lib tests pass; removing each class turned tests red. One unexplained single failure of each_required_section_is_needed_and_the_others_are_not in a falsifier run, suspected sibling rebuild of the binary."
+type = "task-completion"
+task_ref = "implement-plan-check"
+date = 2026-11-05
+
+[[items]]
+id = "E35"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/plan/open.rs",
+    "tomlctl/src/flow/init.rs",
+    "tomlctl/tests/plan_open.rs",
+]
+summary = "plan open writes the brief.md skeleton, runs flow init with no branch or scope, removes the registry entry and holds branch and scope in [binding]; --from fills Intent and Background and writes a pointer note. flow init's body moved into init_flow, behaviour unchanged. 10 plan_open, 16 flow_init and 2 lib tests pass; falsifier batches each failed 6 of 10."
+type = "task-completion"
+task_ref = "implement-plan-open"
+date = 2026-11-05
+
+[[items]]
+id = "E36"
+agent = "implement"
+summary = "Added syntax error markers to the broken verdict in tomlctl/src/plan/probes.rs"
+original_intent = "broken from command not found, fatal or an undeclared No such file"
+rationale = "An unparseable check exits non-zero, which otherwise reads as a healthy forward's failing negative control, so syntax error and unexpected EOF also read as broken."
+type = "deviation"
+task_ref = "implement-plan-probes"
+date = 2026-11-05
+
+[[items]]
+id = "E37"
+agent = "implement"
+summary = "Emitted script changes to the repo root in tomlctl/src/plan/probes.rs"
+original_intent = "Spec did not ask for a cd in the emitted script"
+rationale = "Stored commands are repo-root-relative and the carrier's shell may start in a subdirectory, which would turn every check into broken. The script cds to the git top-level after its head line."
+type = "deviation"
+task_ref = "implement-plan-probes"
+date = 2026-11-05
+
+[[items]]
+id = "E38"
+agent = "implement"
+summary = "Helper also folds CR in tomlctl/src/plan/probes.rs"
+original_intent = "The helper folds newlines and tabs in stderr"
+rationale = "Windows tools print CRLF, and a stray CR would corrupt a capture column, so it folds CR too."
+type = "deviation"
+task_ref = "implement-plan-probes"
+date = 2026-11-05
+
+[[items]]
+id = "E39"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/plan/probes.rs",
+    "tomlctl/tests/plan_probes.rs",
+    "tomlctl/tests/common/mod.rs",
+]
+summary = "plan probes --emit prints the Bash probe script, single-quoting stored commands, and --record stores probe.at, neg_rc, pos_rc and verdict from the captured stdout; tomlctl spawns nothing and only an explicit writes_build = false runs. git_bash() added to the test helpers. 29 tests pass; four falsifier rounds failed 12, 8, 6 and the quoting test."
+type = "task-completion"
+task_ref = "implement-plan-probes"
+date = 2026-11-05
+
+[[items]]
+id = "E40"
+agent = "implement"
+summary = "Split the settable check between parse and patch in tomlctl/src/tasks/update.rs"
+original_intent = "The settable check moves to where the store path is known"
+rationale = "The unlock decision moved into patch, but the parser still refuses keys no store opens, so an unknown key fails before any id resolves."
+type = "deviation"
+task_ref = "let-update-reach-specs-and-audit-changes"
+date = 2026-11-05
+
+[[items]]
+id = "E41"
+agent = "implement"
+summary = "Unchanged accept entries keep their probe in tomlctl/src/tasks/update.rs"
+original_intent = "Spec did not mention recorded probes on a spec update"
+rationale = "A supplied accept entry cannot carry a probe, so a re-issued identical entry would drop the recorded probe and log a false change. An entry matching a stored one in every other field keeps its probe, and any difference drops it."
+type = "deviation"
+task_ref = "let-update-reach-specs-and-audit-changes"
+date = 2026-11-05
+
+[[items]]
+id = "E42"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/tasks/update.rs",
+    "tomlctl/tests/tasks_audit.rs",
+]
+summary = "tasks update --ndjson rows carry spec, reason and actor; a ref change re-keys the spec and earlier changes; an audited store writes one Change per moved field and refuses a batch with a moved plan field and no reason; the positional form is refused for audited or spec changes; files and needs on a v2 flow need no unlock. 26 tasks_audit and 50 lib tests pass; every test failed in a falsifier set."
+type = "task-completion"
+task_ref = "let-update-reach-specs-and-audit-changes"
+date = 2026-11-05
+
+[[items]]
+id = "E43"
+agent = "implement"
+summary = "Routed print_ok through the output module in tomlctl/src/plan/records.rs"
+original_intent = "Print each verb's envelope"
+rationale = "The checkpoint gate's stdout_is_written_only_by_the_output_module failed on a println! in print_ok, which bypasses the global output options. The lite vet missed it. Fixed directly by the orchestrator: print_ok routes through print_json_compact and callers propagate its Result."
+type = "deviation"
+task_ref = "implement-decide-contract-handover-and-run"
+date = 2026-11-05
+
+[[items]]
+id = "E44"
+agent = "implement"
+original_intent = "plan carries no task for tomlctl/tests/output_options.rs"
+rationale = "every_leaf_command_has_a_case requires a case per leaf, so task 9's clap tree turned it red, and five verbs stay stubs until tasks 15, 17, 18 and 19. Minted task 30 to hold plan out of the gate now, and task 31, needing those verbs, to add the cases and remove the hold."
+summary = "Minted tasks 30 and 31 for the output-options leaf gate"
+type = "deviation"
+date = 2026-11-05
+
+[[items]]
+id = "E45"
+agent = "orchestrator"
+status = "done"
+retries = 0
+files = ["tomlctl/tests/output_options.rs"]
+summary = "Orchestrator fix during the first gate: every_leaf_command_has_a_case excludes plan leaves while the group has stubs. The gate failure itself was the falsifier."
+type = "task-completion"
+task_ref = "hold-plan-out-of-the-output-options-leaf-gate"
+date = 2026-11-05
+
+[[items]]
+id = "E46"
+agent = "implement"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+duration_s = 3
+summary = "fmt clean"
+type = "verification"
+task_ref = "let-update-reach-specs-and-audit-changes"
+date = 2026-11-05
+
+[[items]]
+id = "E47"
+agent = "implement"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+duration_s = 33
+summary = "clippy clean"
+type = "verification"
+task_ref = "let-update-reach-specs-and-audit-changes"
+date = 2026-11-05
+
+[[items]]
+id = "E48"
+agent = "implement"
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 457
+summary = "2482 tests run: 2482 passed, 1 skipped"
+type = "verification"
+task_ref = "let-update-reach-specs-and-audit-changes"
+date = 2026-11-05
+
+[[items]]
+id = "E49"
+agent = "implement"
+command = "cargo clippy --manifest-path glimpse/Cargo.toml --locked"
+outcome = "pass"
+duration_s = 22
+summary = "clippy clean"
+type = "verification"
+task_ref = "let-update-reach-specs-and-audit-changes"
+date = 2026-11-05
+
+[[items]]
+id = "E50"
+agent = "implement"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+duration_s = 18
+summary = "shared blocks identical"
+type = "verification"
+task_ref = "let-update-reach-specs-and-audit-changes"
+date = 2026-11-05
+
+[[items]]
+id = "E51"
+agent = "implement"
+command = "bash scripts/verify-plan-story-blocks.sh"
+outcome = "pass"
+duration_s = 9
+summary = "plan story blocks clean"
+type = "verification"
+task_ref = "let-update-reach-specs-and-audit-changes"
+date = 2026-11-05
+
+[[items]]
+id = "E52"
+agent = "implement"
+kind = "commit-train"
+commits = [
+    "dbe271f",
+    "e7a4d73",
+    "75193dd",
+    "7ad785a",
+    "7462f2a",
+    "3666f98",
+    "1b99932",
+    "782e09f",
+    "506b416",
+    "46b8031",
+    "b3b5041",
+    "23c34f8",
+]
+summary = "Train for checkpoints A and B, tip gate-verified. dbe271f: add-the-spec-side-tables-to-the-task-store; e7a4d73: guard-and-seed-plantoml; 75193dd: exempt-plan-cleanup-rows-from-old; 7ad785a: bring-the-idea-doc-into-line; 7462f2a: fix-the-id_aliases-twin-timing-flake; 3666f98: let-add-many-carry-a-task-spec; 1b99932: tasks 4, 5, 6; 782e09f: say-plan-cleanup-rows-carry-no-old; 506b416: list-plantoml-among-the-owned-stores; 46b8031: let-update-reach-specs-and-audit-changes; b3b5041: tasks 7, 9, 10, 11, 12, 13, 14, 16; 23c34f8: hold-plan-out-of-the-output-options-leaf-gate."
+type = "checkpoint"
+task_ref = "let-update-reach-specs-and-audit-changes"
+date = 2026-11-05
+
+[[items]]
+id = "E53"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+files = [
+    "claude/skills/tomlctl/references/tasks-store.md",
+    "claude/skills/tomlctl/references/tasks-write.md",
+    "claude/skills/flow-contract-task-store/SKILL.md",
+]
+summary = "Documented the specs, milestones and changes tables, audit, the conditional schema_version stamp, the new add-many and update row keys, remove --reason, and the v2-flow refusal in the task-store skill, tasks-store.md and tasks-write.md, written from the shipped code. cli::dispatch::tests 46 pass."
+type = "task-completion"
+task_ref = "document-the-task-store-additions"
+date = 2026-11-05
+
+[[items]]
+id = "E54"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+files = [
+    "tomlctl/src/plan/stage.rs",
+    "tomlctl/tests/plan_stage.rs",
+]
+summary = "plan stage computes stage, next and blockers from plan.toml, the task store, brief.md and review-v2.toml, storing nothing. An existing approval is checked first, so an approved plan's changed brief does not read as open. 12 tests pass, one case per stage. Falsifier: forcing either review test false fails its case."
+type = "task-completion"
+task_ref = "implement-plan-stage"
+date = 2026-11-05
+
+[[items]]
+id = "E55"
+agent = "implement"
+summary = "Digest uses print_json_line in tomlctl/src/plan/view.rs"
+original_intent = "Print the digest with print_json_compact"
+rationale = "That emitter's doc comment reserves leniency for write envelopes, and review digest already uses print_json_line. A bad --get now fails the read rather than printing unshaped JSON with exit 0. The orchestrator's prompt named the wrong emitter; the plan named none."
+type = "deviation"
+task_ref = "implement-plan-view"
+date = 2026-11-05
+
+[[items]]
+id = "E56"
+agent = "implement"
+summary = "--task refused on human and digest in tomlctl/src/plan/view.rs"
+original_intent = "Only --for worker requires --task"
+rationale = "Ignoring --task on human and digest would suggest a filtered view that was not applied, so it is refused as kind=validation."
+type = "deviation"
+task_ref = "implement-plan-view"
+date = 2026-11-05
+
+[[items]]
+id = "E57"
+agent = "implement"
+summary = "Directory binds match files under them in tomlctl/src/plan/view.rs"
+original_intent = "Decisions whose binds name the task or its files"
+rationale = "plan check accepts any path under the repo root, so a directory bind would otherwise reach no worker. A directory entry matches every file under it at a component boundary."
+type = "deviation"
+task_ref = "implement-plan-view"
+date = 2026-11-05
+
+[[items]]
+id = "E58"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/tests/plan_view.rs",
+]
+summary = "plan view --for human|digest|worker implemented: human and worker print markdown, digest one JSON object. The worker inlines Intent, Non-goals, bound decisions, its contracts, the row and spec, cited design sections and file kinds. 32 tests pass. Falsifier: the named filter mutation fails its test, and a 13-mutation batch failed 14."
+type = "task-completion"
+task_ref = "implement-plan-view"
+date = 2026-11-05
+
+[[items]]
+id = "E59"
+agent = "implement"
+summary = "plan approve also sets updated in tomlctl/src/plan/approve.rs"
+original_intent = "Change only status, branch and scope in context.toml"
+rationale = "flow stale reads updated as last activity, and the verb-based context write already refreshes it, so a newly approved flow would otherwise read as stale. created is unchanged."
+type = "deviation"
+task_ref = "implement-plan-gate-and-approve"
+date = 2026-11-05
+
+[[items]]
+id = "E60"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/plan/approve.rs",
+    "tomlctl/tests/plan_approve.rs",
+]
+summary = "plan gate and plan approve implemented. Approve refuses on a plan check error, a surfaced decision still agent-assumed, or a dirty tasks.toml, plan.toml or brief.md, then promotes closes links, registers the flow, sets audit, moves context.toml and stamps [[approval]] last with HEAD and brief_digest. 20 tests pass; four falsifier rounds failed 7, 7, 3 and 2."
+type = "task-completion"
+task_ref = "implement-plan-gate-and-approve"
+date = 2026-11-05
+
+[[items]]
+id = "E61"
+agent = "implement"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+duration_s = 3
+summary = "fmt clean"
+type = "verification"
+task_ref = "implement-plan-view"
+date = 2026-11-05
+
+[[items]]
+id = "E62"
+agent = "implement"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+duration_s = 2
+summary = "clippy clean"
+type = "verification"
+task_ref = "implement-plan-view"
+date = 2026-11-05
+
+[[items]]
+id = "E63"
+agent = "implement"
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 445
+summary = "2546 tests run: 2546 passed, 1 skipped"
+type = "verification"
+task_ref = "implement-plan-view"
+date = 2026-11-05
+
+[[items]]
+id = "E64"
+agent = "implement"
+command = "cargo clippy --manifest-path glimpse/Cargo.toml --locked"
+outcome = "pass"
+duration_s = 21
+summary = "clippy clean"
+type = "verification"
+task_ref = "implement-plan-view"
+date = 2026-11-05
+
+[[items]]
+id = "E65"
+agent = "implement"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+duration_s = 23
+summary = "shared blocks identical"
+type = "verification"
+task_ref = "implement-plan-view"
+date = 2026-11-05
+
+[[items]]
+id = "E66"
+agent = "implement"
+kind = "commit-train"
+summary = "Train for checkpoint C, tip gate-verified. eb28a4d: implement-plan-view; cccd463: implement-plan-stage; cad8df7: implement-plan-gate-and-approve; a6abe04: document-the-task-store-additions."
+commits = [
+    "eb28a4d",
+    "cccd463",
+    "cad8df7",
+    "a6abe04",
+]
+type = "checkpoint"
+task_ref = "implement-plan-view"
+date = 2026-11-05
+
+[[items]]
+id = "E67"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+files = [
+    "tomlctl/src/plan/drift.rs",
+    "tomlctl/tests/plan_drift.rs",
+]
+summary = "plan drift reports files changed from the last approval's commit to HEAD, minus commits recorded on rows, intersected with pending and in-progress tasks, with each task's premises. No approval is a validation refusal, otherwise it exits 0. 4 tests pass; removing the subtraction fails 1. Orchestrator added --end-of-options because the commit comes from a tracked store."
+type = "task-completion"
+task_ref = "implement-plan-drift"
+date = 2026-11-05
+
+[[items]]
+id = "E68"
+agent = "implement"
+summary = "Moved plan stage, gate and drift to print_json_line, widening task 31"
+original_intent = "Files line for give-every-plan-verb-an-output-options-case omits tomlctl/src/plan/stage.rs, tomlctl/src/plan/approve.rs and tomlctl/src/plan/drift.rs"
+rationale = "The new cases showed plan stage, plan gate and plan drift, all reads, printing through print_json_compact, the lenient write-envelope emitter, so a bad --get exited 0 with unshaped output. The orchestrator's dispatch prompts for tasks 17, 18 and 19 had named that emitter. Each read now uses print_json_line; approve keeps the compact form. Orchestrator applied the three one-line changes."
+type = "deviation"
+task_ref = "give-every-plan-verb-an-output-options-case"
+date = 2026-11-05
+
+[[items]]
+id = "E69"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+escalation_reason = "cross-cut"
+files = [
+    "tomlctl/tests/output_options.rs",
+    "tomlctl/src/plan/stage.rs",
+    "tomlctl/src/plan/approve.rs",
+    "tomlctl/src/plan/drift.rs",
+]
+summary = "Added 20 plan cases across all 17 leaves on two slugs of their own, added the plan group, and removed the listed.retain hold. The cases exposed three reads on the write-envelope emitter, fixed in plan stage, gate and drift. Falsifier: removing the gate case and group arm fails 2 tests. Whole binary verified by the group D gate."
+type = "task-completion"
+task_ref = "give-every-plan-verb-an-output-options-case"
+date = 2026-11-05
+
+[[items]]
+id = "E70"
+agent = "implement"
+summary = "Review skip moved after probes --record in tomlctl/tests/plan_lifecycle.rs"
+original_intent = "Skip the review step before adding milestones"
+rationale = "Done that early, plan stage never reports review. Skipping it after probes --record reaches every stage and matches the Flow table's Prove then Review order."
+type = "deviation"
+task_ref = "add-the-lifecycle-test"
+date = 2026-11-05
+
+[[items]]
+id = "E71"
+agent = "implement"
+summary = "Only the script is skipped without bash in tomlctl/tests/plan_lifecycle.rs"
+original_intent = "Skip if no bash is found"
+rationale = "Skipping the whole test would lose every later verb on a machine with no bash, so only the script is skipped and the capture it would print is hand-written."
+type = "deviation"
+task_ref = "add-the-lifecycle-test"
+date = 2026-11-05
+
+[[items]]
+id = "E72"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/tests/plan_lifecycle.rs",
+    "tomlctl/src/lib.rs",
+]
+summary = "a_plan_runs_from_open_to_drift drives one plan through the binary in a temporary git repo, visiting every plan stage, and allow(dead_code) is gone from mod plan. No verb defect found. 33 of 35 mutations failed the test; the two survivors led to added run assertions and a removed needless commit."
+type = "task-completion"
+task_ref = "add-the-lifecycle-test"
+date = 2026-11-05
+
+[[items]]
+id = "E73"
+agent = "implement"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+duration_s = 4
+summary = "fmt clean"
+type = "verification"
+task_ref = "add-the-lifecycle-test"
+date = 2026-11-05
+
+[[items]]
+id = "E74"
+agent = "implement"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+duration_s = 2
+summary = "clippy clean"
+type = "verification"
+task_ref = "add-the-lifecycle-test"
+date = 2026-11-05
+
+[[items]]
+id = "E75"
+agent = "implement"
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 410
+summary = "2553 tests run: 2553 passed, 1 skipped"
+type = "verification"
+task_ref = "add-the-lifecycle-test"
+date = 2026-11-05
+
+[[items]]
+id = "E76"
+agent = "implement"
+command = "cargo clippy --manifest-path glimpse/Cargo.toml --locked"
+outcome = "pass"
+duration_s = 13
+summary = "clippy clean"
+type = "verification"
+task_ref = "add-the-lifecycle-test"
+date = 2026-11-05
+
+[[items]]
+id = "E77"
+agent = "implement"
+kind = "commit-train"
+summary = "Train for checkpoint D, tip gate-verified, by task ids. d96c9a7: 19,31; 404b94e: 20."
+commits = [
+    "d96c9a7",
+    "404b94e",
+]
+type = "checkpoint"
+task_ref = "add-the-lifecycle-test"
+date = 2026-11-05
