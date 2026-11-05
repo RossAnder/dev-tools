@@ -2650,3 +2650,32 @@ fn allow_outside_auto_create_with_existing_parent_writes_stray_file() {
         "stray file must carry the written content; got: {on_disk}"
     );
 }
+
+/// `SUBCOMMANDS` is kept by hand, apart from the clap tree the `commands` key
+/// reflects, so `plan` has to be asserted in both.
+#[test]
+fn capabilities_lists_the_plan_subcommand_beside_its_clap_tree() {
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .arg("capabilities")
+        .write_stdin("")
+        .assert()
+        .success();
+    let v: serde_json::Value = serde_json::from_slice(&out.get_output().stdout)
+        .expect("capabilities stdout must parse as JSON");
+    let subcommands: Vec<&str> = v["subcommands"]
+        .as_array()
+        .expect("`subcommands` must be a JSON array")
+        .iter()
+        .filter_map(|name| name.as_str())
+        .collect();
+    assert!(
+        subcommands.contains(&"plan"),
+        "subcommands must list `plan`; got {subcommands:?}"
+    );
+    assert!(
+        v["commands"]["plan"]["subcommands"].is_object(),
+        "commands must reflect the `plan` verbs; got {}",
+        v["commands"]["plan"]
+    );
+}

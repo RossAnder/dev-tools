@@ -364,6 +364,26 @@ fn bootstrap_tasks_store(file: &Path, integrity_args: &WriteIntegrityArgs) -> Re
     bootstrap_seeded_store(file, &crate::io::seed_doc_for(file)?, integrity_args)
 }
 
+/// Bootstrap a flow's `plan.toml` if missing; `Ok(true)` when this call wrote it.
+pub(crate) fn bootstrap_plan_store(
+    file: &Path,
+    integrity_args: &WriteIntegrityArgs,
+) -> Result<bool> {
+    bootstrap_seeded_store(file, &crate::io::seed_doc_for(file)?, integrity_args)
+}
+
+/// Drop `slug` from the active-flow registry. Absent entries are not an error.
+pub(crate) fn deregister(slug: &str, integrity_args: &WriteIntegrityArgs) -> Result<()> {
+    mutate_active(&active_flow_path()?, integrity_args, |doc| {
+        if let Some(arr) = doc.get_mut("active").and_then(TomlValue::as_array_mut)
+            && let Some(idx) = find_slug_index(arr, slug)
+        {
+            arr.remove(idx);
+        }
+        Ok(())
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn dispatch(
     slug: String,
@@ -374,6 +394,23 @@ pub(crate) fn dispatch(
     dry_run: bool,
     integrity: WriteIntegrityArgs,
 ) -> Result<()> {
+    print_json_compact(&init_flow(
+        slug, plan, branch, worktree, scope, dry_run, integrity,
+    )?)
+}
+
+/// Run `flow init` and return the envelope it reports, leaving the printing to
+/// the caller.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn init_flow(
+    slug: String,
+    plan: PathBuf,
+    branch: Option<String>,
+    worktree: Option<PathBuf>,
+    scope: Vec<String>,
+    dry_run: bool,
+    integrity: WriteIntegrityArgs,
+) -> Result<JsonValue> {
     validate_slug(&slug)?;
     let root = repo_or_cwd_root()?;
     let plan_path = recorded_plan_path(&root, &plan)?;
@@ -420,7 +457,7 @@ pub(crate) fn dispatch(
             doc_to_json(&seed)
         };
 
-        let envelope = json!({
+        return Ok(json!({
             "ok": true,
             "dry_run": true,
             "would_change": {
@@ -431,8 +468,7 @@ pub(crate) fn dispatch(
                 "tasks_store_bootstrap": seeds_tasks_store && !tasks_path.exists(),
                 "active_registration": active_entry_to_json(&new_active),
             },
-        });
-        return print_json_compact(&envelope);
+        }));
     }
 
     // Live path. Decide between init and noop based on whether
@@ -509,15 +545,14 @@ pub(crate) fn dispatch(
         &integrity,
     )?;
 
-    let envelope = json!({
+    Ok(json!({
         "ok": true,
         "slug": slug,
         "action": action,
         "created": created,
         "context_path": context_rel,
         "artifacts": artifacts.to_json(),
-    });
-    print_json_compact(&envelope)
+    }))
 }
 
 #[cfg(test)]

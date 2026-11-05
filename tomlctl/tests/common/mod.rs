@@ -434,6 +434,44 @@ pub fn git_available() -> bool {
         .is_ok_and(|o| o.status.success())
 }
 
+/// The first bash that runs: the `SHELL_GATE_BASH` override, `bash` from PATH
+/// (not on Windows, where a bare `bash` resolves to System32's WSL launcher),
+/// the Git for Windows bash found from `git --exec-path`, then its default
+/// install location.
+pub fn git_bash() -> Option<PathBuf> {
+    let mut candidates: Vec<PathBuf> = std::env::var_os("SHELL_GATE_BASH")
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+        .into_iter()
+        .collect();
+    if !cfg!(windows) {
+        candidates.push(PathBuf::from("bash"));
+    }
+    let exec_path = git_command(Path::new("."))
+        .arg("--exec-path")
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string());
+    // Git for Windows reports `<root>/mingw64/libexec/git-core`.
+    if let Some(root) = exec_path
+        .as_deref()
+        .map(Path::new)
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+    {
+        candidates.push(root.join("bin").join("bash.exe"));
+    }
+    candidates.push(PathBuf::from(r"C:\Program Files\Git\bin\bash.exe"));
+    candidates.into_iter().find(|exe| {
+        std::process::Command::new(exe)
+            .arg("--version")
+            .output()
+            .is_ok_and(|out| out.status.success())
+    })
+}
+
 /// Rewrite the row's terminal date to one far enough back that any realistic
 /// `--older-than` fires. The clock cannot be moved and a same-day terminal
 /// date is zero days old, so the fixture is aged instead.

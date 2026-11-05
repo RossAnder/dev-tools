@@ -35,6 +35,7 @@ const MUTEX_GROUPS: &[(&str, &[&[&str]])] = &[
     ("review triage", REVIEW_STORE),
     ("review export-v1", REVIEW_STORE),
     ("review stats", &[&["slug", "scope", "all"]]),
+    ("plan probes", &[&["emit", "record"]]),
 ];
 
 /// Every `review` verb but `catalogue` and `schema` names one store.

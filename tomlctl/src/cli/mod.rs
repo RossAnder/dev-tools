@@ -33,7 +33,11 @@ mod types;
 pub(crate) use dispatch::{read_integrity_opts, run, write_integrity_opts};
 pub(crate) use types::{
     ActiveOp, ArtifactKind, BacklogOp, Cli, ClusterBy, EdgeKind, EnvelopeOp, ErrorFormat,
-    EvidenceOp, FlowOp, JsonOp, LegacyShortcuts, OnDuplicate, QueryArgs, ReadIntegrityArgs,
+    EvidenceOp, FlowOp, JsonOp, LegacyShortcuts, OnDuplicate, PlanApproveArgs, PlanCheckArgs,
+    PlanContractArgs, PlanDecideArgs, PlanDriftArgs, PlanGateArgs, PlanHandoverAddArgs,
+    PlanHandoverDoneArgs, PlanHandoverOp, PlanMilestoneAddArgs, PlanMilestoneOp,
+    PlanMilestoneUpdateArgs, PlanOp, PlanOpenArgs, PlanProbesArgs, PlanRunFinishArgs, PlanRunOp,
+    PlanRunSkipArgs, PlanRunStartArgs, PlanStageArgs, PlanViewArgs, QueryArgs, ReadIntegrityArgs,
     RelationKind, ReviewAddArgs, ReviewCatalogueArgs, ReviewCoverArgs, ReviewDigestArgs,
     ReviewExportArgs, ReviewListArgs, ReviewOp, ReviewPlanArgs, ReviewReportArgs,
     ReviewResolveArgs, ReviewRunFinishArgs, ReviewRunOp, ReviewRunStartArgs, ReviewRunUpdateArgs,

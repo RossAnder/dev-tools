@@ -16,6 +16,7 @@ mod cmd;
 mod flow;
 mod inputs;
 mod items;
+mod plan;
 mod review;
 mod shared;
 mod tasks;
@@ -25,6 +26,7 @@ pub(crate) use cmd::*;
 pub(crate) use flow::*;
 pub(crate) use inputs::*;
 pub(crate) use items::*;
+pub(crate) use plan::*;
 pub(crate) use review::*;
 pub(crate) use shared::*;
 pub(crate) use tasks::*;
@@ -165,6 +167,8 @@ pub(crate) const FEATURES: &[&str] = &[
     "backlog_tier",
     "backlog_datetime_stamps",
     "owned_store_guard",
+    // The v2 plan store: the `plan` subcommand cluster.
+    "plan_store",
 ];
 
 /// User-facing top-level subcommand names, as they appear in
@@ -192,6 +196,7 @@ pub(crate) const SUBCOMMANDS: &[&str] = &[
     "inputs",
     "sweep",
     "review",
+    "plan",
 ];
 
 #[derive(Parser)]

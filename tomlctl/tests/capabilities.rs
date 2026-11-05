@@ -1784,6 +1784,8 @@ fn capabilities_features_contains_every_plan_feature() {
         "backlog_tier",
         "backlog_datetime_stamps",
         "owned_store_guard",
+        // The v2 plan store: the `plan` subcommand cluster.
+        "plan_store",
     ];
     for name in expected {
         assert!(
@@ -1850,6 +1852,53 @@ fn capabilities_subcommands_contains_capabilities_and_items() {
     assert!(
         subs.contains(&"items"),
         "subcommands must include `items`; got {subs:?}"
+    );
+}
+
+/// `MUTEX_GROUPS` is advertising only, so the one group `plan probes` publishes
+/// is checked against the refusal clap actually makes.
+#[test]
+fn plan_probes_advertises_the_one_mutex_clap_enforces() {
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .arg("capabilities")
+        .write_stdin("")
+        .assert()
+        .success();
+    let v: serde_json::Value = serde_json::from_slice(&out.get_output().stdout)
+        .expect("capabilities stdout must parse as JSON");
+    let groups: Vec<std::collections::BTreeSet<&str>> =
+        v["commands"]["plan"]["subcommands"]["probes"]["mutex_groups"]
+            .as_array()
+            .expect("plan probes must publish a mutex_groups array")
+            .iter()
+            .map(|group| {
+                group
+                    .as_array()
+                    .expect("a mutex group is an array of clap ids")
+                    .iter()
+                    .filter_map(|id| id.as_str())
+                    .collect()
+            })
+            .collect();
+    assert_eq!(
+        groups,
+        [std::collections::BTreeSet::from(["emit", "record"])],
+        "plan probes must publish exactly the --emit / --record group"
+    );
+
+    let dir = tempfile::tempdir().unwrap();
+    let refused = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .args(["plan", "probes", "--slug", "x", "--emit", "--record", "out"])
+        .write_stdin("")
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&refused.get_output().stderr);
+    assert!(
+        stderr.contains("cannot be used with"),
+        "--emit with --record must be a clap refusal; got stderr:\n{stderr}"
     );
 }
 

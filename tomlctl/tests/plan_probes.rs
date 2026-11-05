@@ -1,0 +1,711 @@
+//! Black-box coverage for `plan probes`: which rows the script runs, that a
+//! stored command reaches Bash unchanged, and the verdict `--record` computes
+//! from each capture.
+
+use serde_json::{Value, json};
+use std::fs;
+use std::path::{Path, PathBuf};
+
+mod common;
+use common::{
+    TASKS_SLUG, cli, git_bash, git_command, parse_json_error_envelope, sandbox, seed_tasks,
+};
+
+const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
+const FILE: &str = "src/declared.rs";
+
+fn store(accepts: Value) -> String {
+    let doc = json!({
+        "schema_version": 2,
+        "items": [{
+            "id": 1,
+            "ref": "the-row",
+            "title": "The row",
+            "effort": "S",
+            "files": [FILE],
+        }],
+        "specs": [{ "ref": "the-row", "outcome": "it holds", "accept": accepts }],
+    });
+    toml::to_string(&doc).expect("the fixture serialises")
+}
+
+fn accept(kind: &str, check: &str, positive: &str) -> Value {
+    json!({
+        "behaviour": "it holds",
+        "check": check,
+        "kind": kind,
+        "positive": positive,
+        "writes_build": false,
+    })
+}
+
+fn emit(root: &Path) -> String {
+    let out = cli(root)
+        .args(["plan", "probes", "--slug", TASKS_SLUG, "--emit"])
+        .assert()
+        .success();
+    String::from_utf8_lossy(&out.get_output().stdout).to_string()
+}
+
+fn record(root: &Path, capture: &str) -> assert_cmd::assert::Assert {
+    let path = root.join("capture.tsv");
+    fs::write(&path, capture).unwrap();
+    cli(root)
+        .args(["--error-format", "json"])
+        .args(["plan", "probes", "--slug", TASKS_SLUG, "--record"])
+        .arg(&path)
+        .assert()
+}
+
+fn probes(store_path: &Path) -> Vec<Option<toml::Value>> {
+    let doc: toml::Value = toml::from_str(&fs::read_to_string(store_path).unwrap()).unwrap();
+    doc["specs"][0]["accept"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| row.get("probe").cloned())
+        .collect()
+}
+
+fn verdict(probe: &Option<toml::Value>) -> &str {
+    probe.as_ref().expect("a recorded probe")["verdict"]
+        .as_str()
+        .expect("a string verdict")
+}
+
+fn row(key: &str, control: &str, rc: i64, stderr: &str) -> String {
+    format!("{key}\t{control}\trc={rc}\t\t{stderr}\n")
+}
+
+/// The verdict recorded for one row whose capture holds `rows`.
+fn verdict_of(accepts: Value, rows: &[String]) -> String {
+    let (_dir, root) = sandbox();
+    let path = seed_tasks(&root, &store(accepts));
+    record(&root, &format!("head\t{SHA}\n{}", rows.concat())).success();
+    verdict(&probes(&path)[0]).to_string()
+}
+
+fn assert_refused(root: &Path, store_path: &Path, capture: &str, expected: &str) {
+    let before = fs::read_to_string(store_path).unwrap();
+    let assert = record(root, capture).failure();
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    let error = parse_json_error_envelope(&stderr);
+    assert_eq!(error["kind"], "validation", "{stderr}");
+    assert!(
+        error["message"].as_str().unwrap().contains(expected),
+        "{stderr}"
+    );
+    assert_eq!(
+        fs::read_to_string(store_path).unwrap(),
+        before,
+        "a refused capture must write nothing"
+    );
+}
+
+#[test]
+fn a_failing_forward_with_no_positive_is_healthy() {
+    let verdict = verdict_of(
+        json!([accept("forward", "c", "")]),
+        &[row("1:0", "neg", 1, "")],
+    );
+    assert_eq!(verdict, "healthy");
+}
+
+#[test]
+fn a_forward_that_already_holds_is_vacuous() {
+    let verdict = verdict_of(
+        json!([accept("forward", "c", "")]),
+        &[row("1:0", "neg", 0, "")],
+    );
+    assert_eq!(verdict, "vacuous");
+}
+
+#[test]
+fn a_forward_whose_positive_passes_is_healthy() {
+    let verdict = verdict_of(
+        json!([accept("forward", "c", "p")]),
+        &[row("1:0", "neg", 1, ""), row("1:0", "pos", 0, "")],
+    );
+    assert_eq!(verdict, "healthy");
+}
+
+#[test]
+fn a_forward_whose_positive_fails_is_unsatisfiable() {
+    let verdict = verdict_of(
+        json!([accept("forward", "c", "p")]),
+        &[row("1:0", "neg", 1, ""), row("1:0", "pos", 1, "")],
+    );
+    assert_eq!(verdict, "unsatisfiable");
+}
+
+#[test]
+fn a_falsifier_that_holds_is_healthy() {
+    let verdict = verdict_of(
+        json!([accept("falsifier", "c", "")]),
+        &[row("1:0", "neg", 0, "")],
+    );
+    assert_eq!(verdict, "healthy");
+}
+
+#[test]
+fn a_falsifier_that_does_not_hold_is_permanently_green() {
+    let verdict = verdict_of(
+        json!([accept("falsifier", "c", "")]),
+        &[row("1:0", "neg", 1, "")],
+    );
+    assert_eq!(verdict, "permanently-green");
+}
+
+#[test]
+fn every_breakage_marker_is_broken_whatever_the_exit_status() {
+    for marker in [
+        "bash: nope: command not found",
+        "fatal: not a git repository",
+        "bash: eval: line 1: syntax error near unexpected token",
+        "bash: eval: line 1: unexpected EOF while looking for matching",
+    ] {
+        for rc in [0, 1] {
+            let verdict = verdict_of(
+                json!([accept("forward", "c", "")]),
+                &[row("1:0", "neg", rc, marker)],
+            );
+            assert_eq!(verdict, "broken", "rc {rc}, stderr {marker}");
+        }
+    }
+}
+
+#[test]
+fn a_breakage_on_the_positive_control_is_broken() {
+    let verdict = verdict_of(
+        json!([accept("forward", "c", "p")]),
+        &[
+            row("1:0", "neg", 1, ""),
+            row("1:0", "pos", 0, "bash: nope: command not found"),
+        ],
+    );
+    assert_eq!(verdict, "broken");
+}
+
+#[test]
+fn a_missing_undeclared_path_is_broken() {
+    let verdict = verdict_of(
+        json!([accept("forward", "c", "")]),
+        &[row(
+            "1:0",
+            "neg",
+            2,
+            "grep: src/typo.rs: No such file or directory",
+        )],
+    );
+    assert_eq!(verdict, "broken");
+}
+
+#[test]
+fn a_missing_declared_path_is_what_the_task_creates() {
+    for stderr in [
+        "grep: src/declared.rs: No such file or directory",
+        "ls: cannot access './src/declared.rs': No such file or directory",
+        "grep: declared.rs: No such file or directory",
+        "warning: nothing|grep: src/declared.rs: No such file or directory",
+    ] {
+        let verdict = verdict_of(
+            json!([accept("forward", "c", "")]),
+            &[row("1:0", "neg", 2, stderr)],
+        );
+        assert_eq!(verdict, "healthy", "{stderr}");
+    }
+}
+
+#[test]
+fn a_declared_path_does_not_excuse_an_undeclared_one_beside_it() {
+    let verdict = verdict_of(
+        json!([accept("forward", "c", "")]),
+        &[row(
+            "1:0",
+            "neg",
+            2,
+            "grep: src/declared.rs: No such file or directory|grep: src/typo.rs: No such file or directory",
+        )],
+    );
+    assert_eq!(verdict, "broken");
+}
+
+#[test]
+fn a_guard_with_no_check_beside_it_is_guard_alone() {
+    let verdict = verdict_of(
+        json!([accept("guard", "c", "")]),
+        &[row("1:0", "neg", 0, "")],
+    );
+    assert_eq!(verdict, "guard-alone");
+}
+
+#[test]
+fn a_guard_beside_a_healthy_forward_is_healthy() {
+    let (_dir, root) = sandbox();
+    let path = seed_tasks(
+        &root,
+        &store(json!([
+            accept("guard", "g", ""),
+            accept("forward", "c", ""),
+        ])),
+    );
+    record(
+        &root,
+        &format!(
+            "head\t{SHA}\n{}{}",
+            row("1:0", "neg", 0, ""),
+            row("1:1", "neg", 1, "")
+        ),
+    )
+    .success();
+    let probes = probes(&path);
+    assert_eq!(verdict(&probes[0]), "healthy");
+    assert_eq!(verdict(&probes[1]), "healthy");
+}
+
+#[test]
+fn a_guard_beside_a_vacuous_forward_stands_alone() {
+    let (_dir, root) = sandbox();
+    let path = seed_tasks(
+        &root,
+        &store(json!([
+            accept("guard", "g", ""),
+            accept("forward", "c", ""),
+        ])),
+    );
+    record(
+        &root,
+        &format!(
+            "head\t{SHA}\n{}{}",
+            row("1:0", "neg", 0, ""),
+            row("1:1", "neg", 0, "")
+        ),
+    )
+    .success();
+    let probes = probes(&path);
+    assert_eq!(verdict(&probes[0]), "guard-alone");
+    assert_eq!(verdict(&probes[1]), "vacuous");
+}
+
+#[test]
+fn a_guard_beside_an_unprobed_forward_is_healthy() {
+    let (_dir, root) = sandbox();
+    let path = seed_tasks(
+        &root,
+        &store(json!([
+            accept("guard", "g", ""),
+            { "kind": "forward", "check": "cargo test", "behaviour": "it holds" },
+        ])),
+    );
+    record(&root, &format!("head\t{SHA}\n{}", row("1:0", "neg", 0, ""))).success();
+    assert_eq!(verdict(&probes(&path)[0]), "healthy");
+}
+
+#[test]
+fn a_guard_that_does_not_hold_is_broken() {
+    let verdict = verdict_of(
+        json!([accept("guard", "g", ""), accept("forward", "c", "")]),
+        &[row("1:0", "neg", 1, ""), row("1:1", "neg", 1, "")],
+    );
+    assert_eq!(verdict, "broken");
+}
+
+#[test]
+fn record_stores_the_head_and_both_return_codes() {
+    let (_dir, root) = sandbox();
+    let path = seed_tasks(
+        &root,
+        &store(json!([
+            accept("forward", "c", "p"),
+            accept("forward", "d", ""),
+        ])),
+    );
+    let out = record(
+        &root,
+        &format!(
+            "head\t{SHA}\n{}{}{}",
+            row("1:0", "neg", 3, ""),
+            row("1:0", "pos", 0, ""),
+            row("1:1", "neg", 4, "")
+        ),
+    )
+    .success();
+    let report: Value = serde_json::from_slice(&out.get_output().stdout).unwrap();
+    assert_eq!(
+        report,
+        json!({
+            "ok": true,
+            "recorded": [
+                { "task": 1, "accept": 0, "verdict": "healthy" },
+                { "task": 1, "accept": 1, "verdict": "healthy" },
+            ],
+        })
+    );
+
+    let probes = probes(&path);
+    let first = probes[0].as_ref().unwrap();
+    assert_eq!(first["at"].as_str(), Some(SHA));
+    assert_eq!(first["neg_rc"].as_integer(), Some(3));
+    assert_eq!(first["pos_rc"].as_integer(), Some(0));
+    let second = probes[1].as_ref().unwrap();
+    assert_eq!(second["neg_rc"].as_integer(), Some(4));
+    assert!(
+        second.get("pos_rc").is_none(),
+        "a control that did not run has no return code: {second}"
+    );
+}
+
+#[test]
+fn record_replaces_an_earlier_probe() {
+    let (_dir, root) = sandbox();
+    let path = seed_tasks(&root, &store(json!([accept("forward", "c", "")])));
+    record(&root, &format!("head\t{SHA}\n{}", row("1:0", "neg", 0, ""))).success();
+    assert_eq!(verdict(&probes(&path)[0]), "vacuous");
+    record(&root, &format!("head\t{SHA}\n{}", row("1:0", "neg", 1, ""))).success();
+    assert_eq!(verdict(&probes(&path)[0]), "healthy");
+}
+
+#[test]
+fn a_crlf_capture_records_the_same_verdict() {
+    let (_dir, root) = sandbox();
+    let path = seed_tasks(&root, &store(json!([accept("forward", "c", "")])));
+    record(&root, &format!("head\t{SHA}\r\n1:0\tneg\trc=1\t\t\r\n")).success();
+    let probes = probes(&path);
+    assert_eq!(verdict(&probes[0]), "healthy");
+    assert_eq!(probes[0].as_ref().unwrap()["at"].as_str(), Some(SHA));
+}
+
+#[test]
+fn a_capture_that_does_not_match_the_store_is_refused_whole() {
+    let (_dir, root) = sandbox();
+    let path = seed_tasks(
+        &root,
+        &store(json!([
+            accept("forward", "c", "p"),
+            accept("forward", "d", ""),
+        ])),
+    );
+    let neg0 = row("1:0", "neg", 1, "");
+    let pos0 = row("1:0", "pos", 0, "");
+    let neg1 = row("1:1", "neg", 1, "");
+    let head = format!("head\t{SHA}\n");
+
+    assert_refused(&root, &path, &format!("{neg0}{pos0}{neg1}"), "head");
+    assert_refused(&root, &path, &format!("head\t\n{neg0}{pos0}{neg1}"), "head");
+    assert_refused(&root, &path, &format!("{head}{neg0}{neg1}"), "pos control");
+    assert_refused(&root, &path, &format!("{head}{pos0}{neg1}"), "neg control");
+    assert_refused(&root, &path, &format!("{head}{neg0}{pos0}"), "neg control");
+    assert_refused(
+        &root,
+        &path,
+        &format!("{head}{neg0}{pos0}{neg1}{}", row("1:1", "pos", 0, "")),
+        "pos control",
+    );
+    assert_refused(
+        &root,
+        &path,
+        &format!("{head}{neg0}{pos0}{neg1}{}", row("9:0", "neg", 0, "")),
+        "9:0",
+    );
+    assert_refused(
+        &root,
+        &path,
+        &format!("{head}{neg0}{neg0}{pos0}{neg1}"),
+        "repeats",
+    );
+    for malformed in [
+        "1:0\tneg\trc=1\n",
+        "1:0\tneg\trc=x\t\t\n",
+        "1\tneg\trc=1\t\t\n",
+        "1:0\tmid\trc=1\t\t\n",
+    ] {
+        assert_refused(
+            &root,
+            &path,
+            &format!("{head}{malformed}"),
+            "not a probe row",
+        );
+    }
+}
+
+#[test]
+fn record_on_a_missing_store_creates_nothing() {
+    let (_dir, root) = sandbox();
+    let path = root
+        .join(".claude")
+        .join("flows")
+        .join(TASKS_SLUG)
+        .join("tasks.toml");
+    record(&root, &format!("head\t{SHA}\n")).failure();
+    assert!(!path.exists(), "a capture must not create a store");
+}
+
+#[test]
+fn emit_runs_only_rows_explicitly_marked_and_names_the_rest_by_key() {
+    let (_dir, root) = sandbox();
+    seed_tasks(
+        &root,
+        &store(json!([
+            accept("forward", "echo marked", "echo positive"),
+            { "kind": "forward", "check": "echo unlabelled\ntouch pwned" },
+            {
+                "kind": "forward",
+                "check": "echo labelled-true",
+                "positive": "echo labelled-true-positive",
+                "writes_build": true,
+            },
+            accept("forward", "", "echo empty-check-positive"),
+            accept("forward", "   ", ""),
+        ])),
+    );
+    let script = emit(&root);
+    assert!(script.contains("\np 1:0 neg 'echo marked'\n"), "{script}");
+    assert!(script.contains("\np 1:0 pos 'echo positive'\n"), "{script}");
+    assert!(
+        script.contains("\n# skipped 1:1: writes_build is not false\n"),
+        "{script}"
+    );
+    assert!(
+        script.contains("\n# skipped 1:2: writes_build is not false\n"),
+        "{script}"
+    );
+    assert!(
+        script.contains("\n# skipped 1:3: empty check\n"),
+        "{script}"
+    );
+    assert!(
+        script.contains("\n# skipped 1:4: empty check\n"),
+        "{script}"
+    );
+    for absent in [
+        "unlabelled",
+        "pwned",
+        "labelled-true",
+        "empty-check-positive",
+    ] {
+        assert!(
+            !script.contains(absent),
+            "`{absent}` must not reach:\n{script}"
+        );
+    }
+}
+
+#[test]
+fn emit_refuses_a_command_a_script_cannot_carry() {
+    let (_dir, root) = sandbox();
+    seed_tasks(
+        &root,
+        &store(json!([accept("forward", "echo a\u{0}b", "")])),
+    );
+    let assert = cli(&root)
+        .args(["--error-format", "json"])
+        .args(["plan", "probes", "--slug", TASKS_SLUG, "--emit"])
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    let error = parse_json_error_envelope(&stderr);
+    assert_eq!(error["kind"], "validation", "{stderr}");
+}
+
+#[test]
+fn emit_on_a_missing_store_is_not_found() {
+    let (_dir, root) = sandbox();
+    let assert = cli(&root)
+        .args(["--error-format", "json"])
+        .args(["plan", "probes", "--slug", TASKS_SLUG, "--emit"])
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    assert_eq!(
+        parse_json_error_envelope(&stderr)["kind"],
+        "not_found",
+        "{stderr}"
+    );
+}
+
+/// A committed sandbox, its Git Bash, and the head commit; `None` when this
+/// machine has no bash to run a script with.
+fn repo(root: &Path) -> Option<(PathBuf, String)> {
+    let Some(bash) = git_bash() else {
+        eprintln!("skipping: no bash found");
+        return None;
+    };
+    let commit = git_command(root)
+        .args(["-c", "user.name=t", "-c", "user.email=t@example.invalid"])
+        .args(["-c", "commit.gpgsign=false"])
+        .args(["commit", "--allow-empty", "-q", "-m", "fixture"])
+        .output()
+        .unwrap();
+    assert!(
+        commit.status.success(),
+        "{}",
+        String::from_utf8_lossy(&commit.stderr)
+    );
+    let head = git_command(root)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .unwrap();
+    let head = String::from_utf8_lossy(&head.stdout).trim().to_string();
+    Some((bash, head))
+}
+
+/// Run the emitted script from `cwd` and return its stdout, the capture.
+fn run_script(bash: &Path, root: &Path, cwd: &Path) -> String {
+    fs::write(root.join("probes.sh"), emit(root)).unwrap();
+    let script = root.join("probes.sh").to_string_lossy().replace('\\', "/");
+    let script = script.trim_start_matches("//?/").to_string();
+    let out = std::process::Command::new(bash)
+        .arg(&script)
+        .current_dir(cwd)
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_INDEX_FILE")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "the script must not stop on a failing control: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout).to_string()
+}
+
+#[test]
+fn stored_commands_reach_bash_exactly_as_stored() {
+    let (_dir, root) = sandbox();
+    let Some((bash, head)) = repo(&root) else {
+        return;
+    };
+    let path = seed_tasks(
+        &root,
+        &store(json!([
+            // Each exits 0 only if Bash saw the text below unchanged. The calling
+            // script expanding anything, or a quote closing early, changes what
+            // it compares.
+            accept("falsifier", r#"test "it's" = 'it'\''s'"#, ""),
+            accept("falsifier", r#"test '$HOME' = "\$HOME""#, ""),
+            accept(
+                "falsifier",
+                r#"test "`echo a`" = a && test '`echo a`' != a"#,
+                ""
+            ),
+            accept("falsifier", r#"test 'a\b' = "a\\b""#, ""),
+            accept("falsifier", "false\ntrue", ""),
+            // Run by the helper's `eval`, this is one word and no command of that
+            // name exists. A quote that closed would run the `touch`.
+            accept("forward", "true' ; touch escaped ; '", ""),
+            accept("forward", "false", "true' ; touch escaped-positive ; '"),
+            accept("forward", "echo 'unterminated", ""),
+        ])),
+    );
+    let capture = run_script(&bash, &root, &root);
+    assert_eq!(
+        capture.lines().next(),
+        Some(&*format!("head\t{head}")),
+        "{capture}"
+    );
+    record(&root, &capture).success();
+
+    assert!(!root.join("escaped").exists(), "a quote broke out in check");
+    assert!(
+        !root.join("escaped-positive").exists(),
+        "a quote broke out in positive"
+    );
+    let probes = probes(&path);
+    let verdicts: Vec<&str> = probes.iter().map(verdict).collect();
+    assert_eq!(
+        verdicts,
+        [
+            "healthy", "healthy", "healthy", "healthy", "healthy", "broken", "broken", "broken"
+        ],
+        "{capture}"
+    );
+    assert_eq!(probes[0].as_ref().unwrap()["at"].as_str(), Some(&*head));
+}
+
+#[test]
+fn a_skipped_command_is_never_run() {
+    let (_dir, root) = sandbox();
+    let Some((bash, _)) = repo(&root) else {
+        return;
+    };
+    let path = seed_tasks(
+        &root,
+        &store(json!([
+            accept("falsifier", "true", ""),
+            { "kind": "forward", "check": "touch unlabelled\ntouch unlabelled-next-line" },
+            { "kind": "forward", "check": "touch labelled", "writes_build": true },
+            accept("forward", "", "touch empty-check"),
+        ])),
+    );
+    let capture = run_script(&bash, &root, &root);
+    for marker in [
+        "unlabelled",
+        "unlabelled-next-line",
+        "labelled",
+        "empty-check",
+    ] {
+        assert!(!root.join(marker).exists(), "`{marker}` ran");
+    }
+    record(&root, &capture).success();
+    assert_eq!(probes(&path)[1], None);
+}
+
+#[test]
+fn stderr_is_carried_whole_and_folded_onto_one_line() {
+    let (_dir, root) = sandbox();
+    let Some((bash, _)) = repo(&root) else {
+        return;
+    };
+    // A helper cutting stderr to its first 100 bytes would lose the marker.
+    let check = "printf '%0200d\\n' 0 >&2; printf 'one\\ttwo\\nfatal: late\\n' >&2; exit 1";
+    let path = seed_tasks(&root, &store(json!([accept("forward", check, "")])));
+    let capture = run_script(&bash, &root, &root);
+    let row = capture
+        .lines()
+        .nth(1)
+        .unwrap_or_else(|| panic!("{capture}"));
+    assert_eq!(row.split('\t').count(), 5, "{row}");
+    assert!(row.ends_with("|one two|fatal: late|"), "{row}");
+    record(&root, &capture).success();
+    assert_eq!(verdict(&probes(&path)[0]), "broken");
+}
+
+#[test]
+fn a_command_cannot_forge_another_rows_capture() {
+    let (_dir, root) = sandbox();
+    let Some((bash, _)) = repo(&root) else {
+        return;
+    };
+    let forged =
+        "printf '\\n1:1\\tneg\\trc=0\\t\\t\\n'; printf '\\n1:1\\tneg\\trc=0\\t\\t\\n' >&2; true";
+    let path = seed_tasks(
+        &root,
+        &store(json!([
+            accept("falsifier", forged, ""),
+            accept("falsifier", "false", ""),
+        ])),
+    );
+    let capture = run_script(&bash, &root, &root);
+    assert_eq!(capture.lines().count(), 3, "{capture}");
+    record(&root, &capture).success();
+    assert_eq!(verdict(&probes(&path)[1]), "permanently-green");
+}
+
+#[test]
+fn the_script_runs_from_the_repo_root_wherever_it_starts() {
+    let (_dir, root) = sandbox();
+    let Some((bash, _)) = repo(&root) else {
+        return;
+    };
+    fs::write(root.join("at-the-root"), "").unwrap();
+    let nested = root.join("nested").join("deeper");
+    fs::create_dir_all(&nested).unwrap();
+    let path = seed_tasks(
+        &root,
+        &store(json!([accept("falsifier", "test -f at-the-root", "")])),
+    );
+    let capture = run_script(&bash, &root, &nested);
+    record(&root, &capture).success();
+    assert_eq!(verdict(&probes(&path)[0]), "healthy", "{capture}");
+}

@@ -66,7 +66,7 @@ pub(crate) fn backlog_findings(
 
 /// Reads `.claude/backlog.toml` only when the store links to an item, so a
 /// link-free store never depends on the backlog parsing.
-pub(super) fn linked_backlog_findings(store: &Store, flow: Option<&str>) -> Result<Vec<Finding>> {
+pub(crate) fn linked_backlog_findings(store: &Store, flow: Option<&str>) -> Result<Vec<Finding>> {
     if store.backlog_links.is_empty() {
         return Ok(Vec::new());
     }

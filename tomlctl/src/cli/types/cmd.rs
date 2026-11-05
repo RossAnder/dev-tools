@@ -9,8 +9,8 @@ use crate::convert::ScalarType;
 use crate::sweep::{DEFAULT_MAX_FILE_BYTES, DEFAULT_MAX_HITS};
 
 use super::{
-    BacklogOp, FlowOp, InputsOp, ItemsOp, RawStoreArg, ReadIntegrityArgs, ReviewOp, StampArgs,
-    TasksOp, WriteIntegrityArgs,
+    BacklogOp, FlowOp, InputsOp, ItemsOp, PlanOp, RawStoreArg, ReadIntegrityArgs, ReviewOp,
+    StampArgs, TasksOp, WriteIntegrityArgs,
 };
 
 // The CLI subcommand enums carry a lot of `Vec<String>` / nested-struct
@@ -249,6 +249,14 @@ pub(crate) enum Cmd {
     Review {
         #[command(subcommand)]
         op: ReviewOp,
+    },
+
+    /// The v2 plan over `.claude/flows/<slug>/plan.toml`, `brief.md` and the
+    /// task store — decisions, contracts, approvals, runs and handovers, the
+    /// checks over them, and the projections agents read.
+    Plan {
+        #[command(subcommand)]
+        op: PlanOp,
     },
 
     /// Regex hits over the repo's tracked files, as sorted `file:line`

@@ -27,6 +27,8 @@ mod orphans;
 mod output;
 mod owner;
 mod payload;
+#[allow(dead_code)]
+mod plan;
 mod query;
 mod repo_files;
 mod repo_root;

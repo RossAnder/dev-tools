@@ -360,11 +360,12 @@ downstream flow-command templates can feature-gate at boot without parsing
                "tasks_update_batch", "backlog_triage_batch",
                "flow_record_row_task", "backlog_get", "backlog_edit",
                "backlog_next", "backlog_focus", "backlog_tier",
-               "backlog_datetime_stamps", "owned_store_guard"],
+               "backlog_datetime_stamps", "owned_store_guard",
+               "plan_store"],
   "subcommands": ["parse", "get", "set", "set-json", "validate",
                   "items", "blocks", "array-append", "capabilities",
                   "integrity", "flow", "json", "backlog", "tasks",
-                  "agents", "inputs", "sweep", "review"],
+                  "agents", "inputs", "sweep", "review", "plan"],
   "global_flags": {
     "--error-format": {"type": "enum", "required": false, "default": "text", "values": ["text","json"], "repeatable": false},
     "--select":       {"type": "string", "required": false, "repeatable": false},
@@ -517,7 +518,7 @@ Feature meanings:
 | `backlog_focus` | `backlog focus <ID>... [--at K\|--remove\|--up\|--down]` — add rows to the per-row `focus` queue, drop them, or move one row a step; gaps are kept except when duplicates force a renumber |
 | `backlog_tier` | `tier = lite\|deep\|human` on backlog rows, set by `backlog add` payloads and `backlog edit --tier` / `--clear-tier`, and used by `backlog next --tier` |
 | `backlog_datetime_stamps` | new `backlog add` / `add-many` captures stamp `created` and `last_seen` as UTC `Z` datetimes; date-only rows still read, and a bare-date filter matches a datetime field by its date |
-| `owned_store_guard` | the generic writers (`set`, `set-json`, `array-append`, `items ...`) refuse a verb-owned store (backlog, tasks, execution record, inputs, review-v2) unless `--raw-store` is given |
+| `owned_store_guard` | the generic writers (`set`, `set-json`, `array-append`, `items ...`) refuse a verb-owned store (backlog, tasks, execution record, inputs, review-v2, plan) unless `--raw-store` is given |
 | `backlog_check_batch` | `backlog check --ndjson <SRC>` — one `{summary,kind?,area?,tags?}` probe per line, read against one load of the store; one `results` row per probe with its `verdict`, `dedup_id` and up to five `candidates` |
 | `suggestions` | a mistyped subcommand or flag gets clap's `did you mean` hint; hidden aliases accept `read` for `parse`, `--as related` for `relates-to`, and `--id` / `--ids` beside the positional ids of `tasks show`, `tasks update`, `backlog show` and `backlog triage` |
 | `review_store` | the `review` group over the v2 review store, `.claude/flows/<SLUG>/review-v2.toml` (`--slug`) or `.claude/review-v2/<SCOPE>.toml` (`--scope`), exactly one per verb except `catalogue` and `schema`; `review run start` / `update` / `finish` mint, patch and close a run |
@@ -533,3 +534,4 @@ Feature meanings:
 | `review_export_v1` | `review export-v1 <ID>... \| --all --to <LEDGER>` — write open defect and cleanup findings into a v1 ledger for `/review-apply` or `/optimise-apply` |
 | `review_catalogue` | `review catalogue` — the merged lens catalogue's index; `--vocabulary`, `--owners`, and `--check` exiting 1 on a validation error |
 | `review_schema` | `review schema finding\|cell-return\|verdict-return` — JSON Schemas built from the field catalogue |
+| `plan_store` | the `plan` group over a v2 flow's `.claude/flows/<SLUG>/plan.toml`, `brief.md` and task store, each verb taking `--slug`: `open`, `decide`, `contract`, `handover`, `run`, `milestone`, `check`, `view`, `probes`, `stage`, `gate`, `approve` and `drift` |

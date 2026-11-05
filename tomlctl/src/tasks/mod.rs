@@ -10,12 +10,9 @@
 //! every read, never persisted.
 
 mod add;
-mod backlog_refs;
 mod batches;
-mod check;
 mod closure;
 mod edges;
-mod finding;
 mod graph;
 mod import_plan;
 mod list;
@@ -24,9 +21,7 @@ mod parse_tasks;
 mod ready;
 mod remove;
 mod render;
-mod schema;
 mod show;
-mod slug;
 mod snapshot;
 mod snapshot_record;
 mod store;
@@ -41,6 +36,14 @@ pub(crate) mod dispatch;
 // fence-aware scan the store's own parsers run on; a second scanner over the
 // same bytes drifts from this one on fence and heading edge cases.
 pub(crate) mod markdown;
+
+// `plan check` runs the same engine and reports the same finding shape, and the
+// plan verbs read rows and derive refs off the task store's own types.
+pub(crate) mod backlog_refs;
+pub(crate) mod check;
+pub(crate) mod finding;
+pub(crate) mod schema;
+pub(crate) mod slug;
 
 // `items clusters` layers ledger items and names a cycle through the same
 // positional passes the task graph runs; the graph itself stays private.

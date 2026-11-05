@@ -1,0 +1,392 @@
+//! The `plan` verb group over a flow's `plan.toml`, `brief.md` and task store.
+//!
+//! Companion rules that span flags (`--defer` needs `--reason`, `--for worker`
+//! needs `--task`, a skip needs `--reason`) and the vocabularies of `--for` and
+//! `--review` are left to the verbs, so a breach is a `kind=validation` refusal
+//! through `--error-format` rather than clap usage prose.
+
+use std::path::PathBuf;
+
+use clap::{Args, Subcommand};
+
+use super::{ReadIntegrityArgs, WriteIntegrityArgs};
+
+/// `plan` subcommand cluster.
+#[derive(Subcommand)]
+pub(crate) enum PlanOp {
+    /// Write the `brief.md` skeleton, bootstrap the flow and hold its binding
+    /// in `plan.toml`, leaving the draft out of the active-flow registry.
+    Open(PlanOpenArgs),
+
+    /// Add or update decisions, minting ids under the lock.
+    Decide(PlanDecideArgs),
+
+    /// Add or update cross-task contracts, minting ids under the lock.
+    Contract(PlanContractArgs),
+
+    /// Add a handover or mark one done.
+    Handover {
+        #[command(subcommand)]
+        op: PlanHandoverOp,
+    },
+
+    /// Record a step's run starting, finishing or being skipped.
+    Run {
+        #[command(subcommand)]
+        op: PlanRunOp,
+    },
+
+    /// Add or update a milestone: its `[[checkpoints]]` and `[[milestones]]`
+    /// rows in the task store, written in one lock.
+    Milestone {
+        #[command(subcommand)]
+        op: PlanMilestoneOp,
+    },
+
+    /// Run the task store's checks plus the plan classes. Exits 1 on any error.
+    Check(PlanCheckArgs),
+
+    /// Print the plan through a projection; nothing is written to disk.
+    View(PlanViewArgs),
+
+    /// Print the acceptance probe script, or record its captured results.
+    Probes(PlanProbesArgs),
+
+    /// Compute the plan's stage, next verb and blockers from its artefacts.
+    Stage(PlanStageArgs),
+
+    /// The approval screen's data, one object with an array per item.
+    Gate(PlanGateArgs),
+
+    /// Check the preconditions, then stamp the approval and activate the flow.
+    Approve(PlanApproveArgs),
+
+    /// Files changed since approval, minus this plan's commits, per affected
+    /// task. Warns and exits 0.
+    Drift(PlanDriftArgs),
+}
+
+/// `plan handover` leaves.
+#[derive(Subcommand)]
+pub(crate) enum PlanHandoverOp {
+    /// Record a command a person must run once a task lands.
+    Add(PlanHandoverAddArgs),
+    /// Mark a handover done.
+    Done(PlanHandoverDoneArgs),
+}
+
+/// `plan run` leaves.
+#[derive(Subcommand)]
+pub(crate) enum PlanRunOp {
+    /// Record a step's run at launch.
+    Start(PlanRunStartArgs),
+    /// Close the newest unfinished run of a step.
+    Finish(PlanRunFinishArgs),
+    /// Record a step not run, and why.
+    Skip(PlanRunSkipArgs),
+}
+
+/// `plan milestone` leaves.
+#[derive(Subcommand)]
+pub(crate) enum PlanMilestoneOp {
+    /// Add a milestone.
+    Add(PlanMilestoneAddArgs),
+    /// Change a milestone; on an audited store this needs `--reason`.
+    Update(PlanMilestoneUpdateArgs),
+}
+
+/// The flow a verb works on.
+#[derive(Args, Clone)]
+pub(crate) struct PlanTarget {
+    #[arg(long = "slug", value_name = "SLUG", help = "Flow whose plan is used")]
+    pub(crate) slug: String,
+}
+
+#[derive(Args)]
+pub(crate) struct PlanOpenArgs {
+    #[command(flatten)]
+    pub(crate) target: PlanTarget,
+    #[arg(
+        long = "from",
+        value_name = "ID,...",
+        value_delimiter = ',',
+        help = "Backlog items whose summary, context and evidence seed the brief"
+    )]
+    pub(crate) from: Vec<String>,
+    #[arg(
+        long = "branch",
+        value_name = "BRANCH",
+        help = "Branch held in `[binding]` until approval"
+    )]
+    pub(crate) branch: Option<String>,
+    #[arg(
+        long = "scope",
+        value_name = "GLOB",
+        help = "Scope glob held in `[binding]` until approval (repeatable)"
+    )]
+    pub(crate) scope: Vec<String>,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct PlanDecideArgs {
+    #[command(flatten)]
+    pub(crate) target: PlanTarget,
+    #[arg(
+        long = "ndjson",
+        value_name = "SRC",
+        help = "Decisions, one JSON object per line; a row with `id` updates: `-` for stdin, otherwise a file path (a leading `@` is accepted; a `.toml` path is a record file)"
+    )]
+    pub(crate) ndjson: String,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct PlanContractArgs {
+    #[command(flatten)]
+    pub(crate) target: PlanTarget,
+    #[arg(
+        long = "ndjson",
+        value_name = "SRC",
+        help = "Contracts, one JSON object per line; a row with `id` updates: `-` for stdin, otherwise a file path (a leading `@` is accepted; a `.toml` path is a record file)"
+    )]
+    pub(crate) ndjson: String,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct PlanHandoverAddArgs {
+    #[command(flatten)]
+    pub(crate) target: PlanTarget,
+    #[arg(long = "command", value_name = "COMMAND", help = "The command to run")]
+    pub(crate) command: String,
+    #[arg(
+        long = "source-task",
+        value_name = "N",
+        help = "Task id that makes the command necessary"
+    )]
+    pub(crate) source_task: u32,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct PlanHandoverDoneArgs {
+    #[arg(value_name = "ID")]
+    pub(crate) id: String,
+    #[command(flatten)]
+    pub(crate) target: PlanTarget,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct PlanRunStartArgs {
+    #[command(flatten)]
+    pub(crate) target: PlanTarget,
+    #[arg(long = "step", value_name = "STEP", help = "The flow step being run")]
+    pub(crate) step: String,
+    #[arg(
+        long = "workflow",
+        value_name = "WORKFLOW",
+        help = "The saved Workflow launched"
+    )]
+    pub(crate) workflow: String,
+    #[arg(
+        long = "args-hash",
+        value_name = "HASH",
+        help = "Digest of the Workflow's arguments"
+    )]
+    pub(crate) args_hash: String,
+    #[arg(
+        long = "run-id",
+        value_name = "ID",
+        help = "The Workflow's run id, when already known"
+    )]
+    pub(crate) run_id: Option<String>,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct PlanRunFinishArgs {
+    #[command(flatten)]
+    pub(crate) target: PlanTarget,
+    #[arg(long = "step", value_name = "STEP", help = "The flow step that ran")]
+    pub(crate) step: String,
+    #[arg(
+        long = "run-id",
+        value_name = "ID",
+        help = "The Workflow's run id, when learned after launch"
+    )]
+    pub(crate) run_id: Option<String>,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct PlanRunSkipArgs {
+    #[command(flatten)]
+    pub(crate) target: PlanTarget,
+    #[arg(long = "step", value_name = "STEP", help = "The flow step not run")]
+    pub(crate) step: String,
+    #[arg(long = "reason", value_name = "TEXT", help = "Why it was not run")]
+    pub(crate) reason: String,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct PlanMilestoneAddArgs {
+    #[command(flatten)]
+    pub(crate) target: PlanTarget,
+    #[arg(long = "id", value_name = "ID", help = "The milestone's id")]
+    pub(crate) id: String,
+    #[arg(
+        long = "goal",
+        value_name = "TEXT",
+        help = "What the milestone delivers"
+    )]
+    pub(crate) goal: String,
+    #[arg(
+        long = "gate",
+        value_name = "CMD",
+        help = "Command that must pass at the milestone's drain (repeatable)"
+    )]
+    pub(crate) gate: Vec<String>,
+    #[arg(
+        long = "defer",
+        help = "Elaborate the milestone's tasks just before it runs; takes --reason"
+    )]
+    pub(crate) defer: bool,
+    #[arg(long = "reason", value_name = "TEXT", help = "Why it is deferred")]
+    pub(crate) reason: Option<String>,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct PlanMilestoneUpdateArgs {
+    #[command(flatten)]
+    pub(crate) target: PlanTarget,
+    #[arg(long = "id", value_name = "ID", help = "The milestone's id")]
+    pub(crate) id: String,
+    #[arg(
+        long = "goal",
+        value_name = "TEXT",
+        help = "What the milestone delivers"
+    )]
+    pub(crate) goal: Option<String>,
+    #[arg(
+        long = "gate",
+        value_name = "CMD",
+        help = "Command that must pass at the milestone's drain (repeatable)"
+    )]
+    pub(crate) gate: Vec<String>,
+    #[arg(
+        long = "defer",
+        help = "Elaborate the milestone's tasks just before it runs; takes --reason"
+    )]
+    pub(crate) defer: bool,
+    #[arg(
+        long = "reason",
+        value_name = "TEXT",
+        help = "Why it is deferred, and why it changed on an audited store"
+    )]
+    pub(crate) reason: Option<String>,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct PlanCheckArgs {
+    #[command(flatten)]
+    pub(crate) target: PlanTarget,
+    #[command(flatten)]
+    pub(crate) integrity: ReadIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct PlanViewArgs {
+    #[command(flatten)]
+    pub(crate) target: PlanTarget,
+    #[arg(long = "for", value_name = "ROLE", help = "human|digest|worker")]
+    pub(crate) for_role: String,
+    #[arg(
+        long = "task",
+        value_name = "ID",
+        help = "The task a worker projection is for"
+    )]
+    pub(crate) task: Option<u32>,
+    #[command(flatten)]
+    pub(crate) integrity: ReadIntegrityArgs,
+}
+
+#[derive(Args)]
+#[command(group(clap::ArgGroup::new("probes_mode").required(true).multiple(false).args(["emit", "record"])))]
+pub(crate) struct PlanProbesArgs {
+    #[command(flatten)]
+    pub(crate) target: PlanTarget,
+    #[arg(long = "emit", help = "Print the probe script")]
+    pub(crate) emit: bool,
+    #[arg(
+        long = "record",
+        value_name = "PATH",
+        help = "Store the verdicts from the script's captured stdout"
+    )]
+    pub(crate) record: Option<PathBuf>,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct PlanStageArgs {
+    #[command(flatten)]
+    pub(crate) target: PlanTarget,
+    #[command(flatten)]
+    pub(crate) integrity: ReadIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct PlanGateArgs {
+    #[command(flatten)]
+    pub(crate) target: PlanTarget,
+    #[command(flatten)]
+    pub(crate) integrity: ReadIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct PlanApproveArgs {
+    #[command(flatten)]
+    pub(crate) target: PlanTarget,
+    #[arg(
+        long = "review",
+        value_name = "OUTCOME",
+        help = "ran|skipped-low-risk|skipped-flag"
+    )]
+    pub(crate) review: String,
+    #[arg(
+        long = "reason",
+        value_name = "TEXT",
+        help = "Why review was skipped; both skips need it"
+    )]
+    pub(crate) reason: Option<String>,
+    #[arg(
+        long = "amend",
+        help = "Append a new approval after a user-agreed change to intent"
+    )]
+    pub(crate) amend: bool,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct PlanDriftArgs {
+    #[command(flatten)]
+    pub(crate) target: PlanTarget,
+    #[command(flatten)]
+    pub(crate) integrity: ReadIntegrityArgs,
+}
