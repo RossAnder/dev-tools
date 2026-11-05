@@ -66,7 +66,7 @@ tomlctl tasks show 3,7 --slug <slug> --with absent --select id,absent --lines
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
 | *(positional)* | ids, comma- or space-separated | Tasks to print. At least one. | — |
-| `--with` | comma-separated, repeatable | `summary`, `body`, `files`, `deps`, `dependents`, `absent`. A clap `value_enum`: an unknown part exits `2` with usage prose naming it and listing the valid set, **outside** the `--error-format json` envelope — not the exit-`1` `kind=validation` error `--effort` and `--status` raise. | `summary` |
+| `--with` | comma-separated, repeatable | `summary`, `body`, `files`, `spec`, `deps`, `dependents`, `absent`. A clap `value_enum`: an unknown part exits `2` with usage prose naming it and listing the valid set, **outside** the `--error-format json` envelope — not the exit-`1` `kind=validation` error `--effort` and `--status` raise. | `summary` |
 
 One id prints that row's object. Several print an array of those objects in the order given,
 with `--with` applied to each, so the global `--get`, `--select` and `--lines` work per row.
@@ -80,6 +80,7 @@ positional ids; it is not listed in `--help`, so write the ids positionally.
 
 | Key | Value | Meaning |
 |---|---|---|
+| `spec` | object | The `spec` part: the row's `[[specs]]` entry (`outcome`, `constraints`, `accept`, `premises`, `means`, `design`, `precedent`, `executor`); the key is absent when the row has no spec. |
 | `id` | id | Always emitted, whatever `--with` selects, so a fetched row can be matched back to the id that was asked for. |
 | `ref`, `title`, `effort`, `status`, `checkpoint`, `needs`, `coupling` | row fields | The `summary` part; field meanings are the [store's](tasks-store.md#store-shape). |
 | `files` | paths | Under `summary` or `files`. |

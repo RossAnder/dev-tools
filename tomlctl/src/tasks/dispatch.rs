@@ -38,6 +38,11 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
             dry_run,
             integrity,
         } => {
+            if target.slug.is_some() || target.file.is_some() {
+                let path =
+                    store::resolve_store_path(target.slug.as_deref(), target.file.as_deref())?;
+                refuse_v2_flow(&path, "import-plan")?;
+            }
             let request = import_plan::ImportRequest {
                 slug: target.slug.as_deref(),
                 file: target.file.as_deref(),
@@ -202,10 +207,12 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
             id,
             target,
             force,
+            reason,
             integrity,
         } => {
             let path = store::resolve_store_path(target.slug.as_deref(), target.file.as_deref())?;
-            let outcome = remove::remove(&path, &integrity, id, force)?;
+            let outcome =
+                remove::remove_with_reason(&path, &integrity, id, force, reason.as_deref())?;
             print_json_compact(&json!({
                 "ok": true,
                 "id": outcome.id,
@@ -292,7 +299,7 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
                 &store,
                 target.slug.as_deref(),
             )?);
-            if plan {
+            if plan && !store::is_v2_flow(&path) {
                 let plan_path = plan_target(target.slug.as_deref(), &store)?;
                 findings.extend(render::check_render_drift(&store, &read_plan(&plan_path)?)?);
             }
@@ -318,6 +325,7 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
             integrity,
         } => {
             let path = store::resolve_store_path(target.slug.as_deref(), target.file.as_deref())?;
+            refuse_v2_flow(&path, "render")?;
             let store = store::load(&path, &integrity)?;
             let plan_path = plan_target(target.slug.as_deref(), &store)?;
             let source = read_plan(&plan_path)?;
@@ -426,6 +434,16 @@ fn closure_target(
             "no closure target: pass --checkpoint <ID> or --task <N> --up|--down".to_string(),
         )),
     }
+}
+
+/// A flow with a `plan.toml` has no plan document to import or render.
+fn refuse_v2_flow(store_path: &Path, verb: &str) -> Result<()> {
+    if store::is_v2_flow(store_path) {
+        return Err(refuse(format!(
+            "`tasks {verb}` does not apply to a flow with a plan.toml: it has no plan document; use `plan view`"
+        )));
+    }
+    Ok(())
 }
 
 fn refuse(message: String) -> anyhow::Error {

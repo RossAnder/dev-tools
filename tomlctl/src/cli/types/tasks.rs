@@ -87,6 +87,8 @@ pub(crate) enum ShowPart {
     Body,
     /// The row's `files` list, then `file_notes`, `new_files` and `deleted_files`.
     Files,
+    /// The row's `[[specs]]` entry under `spec`; no key when the row has none.
+    Spec,
     /// A summary per direct `needs` / `coupling` target of the row.
     Deps,
     /// Transitive dependents (successors) of the row.
@@ -317,6 +319,10 @@ pub(crate) enum TasksOp {
         /// ordering it stood for survives it.
         #[arg(long)]
         force: bool,
+        /// Why the row goes. Required on an audited store, where the removal is
+        /// recorded as a tombstone.
+        #[arg(long)]
+        reason: Option<String>,
         #[command(flatten)]
         integrity: WriteIntegrityArgs,
     },

@@ -18,10 +18,12 @@ use std::path::Path;
 use anyhow::Result;
 
 use super::finding::{NO_TASK, task_list};
-use super::schema::{ImportOverride, Status, Store};
+use super::schema::{Change, ImportOverride, Status, Store};
 use super::store;
 use crate::cli::WriteIntegrityArgs;
 use crate::errors::{ErrorKind, tagged_err};
+
+const AUDIT_ACTOR: &str = "orchestrator";
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct RemoveOutcome {
@@ -36,16 +38,35 @@ pub(crate) struct RemoveOutcome {
     pub(crate) pruned_override_fields: Vec<&'static str>,
 }
 
+#[cfg(test)]
 pub(crate) fn remove(
     path: &Path,
     integrity: &WriteIntegrityArgs,
     id: u32,
     force: bool,
 ) -> Result<RemoveOutcome> {
-    store::mutate(path, integrity, |store| retire(store, id, force))
+    remove_with_reason(path, integrity, id, force, None)
 }
 
-fn retire(store: &mut Store, id: u32, force: bool) -> Result<RemoveOutcome> {
+pub(crate) fn remove_with_reason(
+    path: &Path,
+    integrity: &WriteIntegrityArgs,
+    id: u32,
+    force: bool,
+    reason: Option<&str>,
+) -> Result<RemoveOutcome> {
+    store::mutate(path, integrity, |store| retire(store, id, force, reason))
+}
+
+/// An audited store records every removal as a tombstone, so it refuses one
+/// with no `reason`; a forced removal also records each dependent it rewires.
+fn retire(store: &mut Store, id: u32, force: bool, reason: Option<&str>) -> Result<RemoveOutcome> {
+    let reason = reason.map(str::trim).unwrap_or_default();
+    if store.audit && reason.is_empty() {
+        return Err(refuse(
+            "this store is audited: pass --reason <text> to remove a task".to_string(),
+        ));
+    }
     let index = store
         .items
         .iter()
@@ -78,6 +99,12 @@ fn retire(store: &mut Store, id: u32, force: bool) -> Result<RemoveOutcome> {
 
     let inherited = store.items[index].needs.clone();
     let mut rewired: Vec<u32> = Vec::new();
+    let mut needs_changes: Vec<Change> = Vec::new();
+    let at = if store.audit {
+        Some(crate::time::now_toml_datetime()?)
+    } else {
+        None
+    };
     for row in &mut store.items {
         if row.id == id {
             continue;
@@ -94,10 +121,34 @@ fn retire(store: &mut Store, id: u32, force: bool) -> Result<RemoveOutcome> {
         }
         if before != (row.needs.clone(), row.coupling.clone()) {
             rewired.push(row.id);
+            if at.is_some() && before.0 != row.needs {
+                needs_changes.push(Change {
+                    at,
+                    r#ref: row.r#ref.clone(),
+                    field: "needs".to_string(),
+                    old: format!("{:?}", before.0),
+                    new: format!("{:?}", row.needs),
+                    actor: AUDIT_ACTOR.to_string(),
+                    reason: reason.to_string(),
+                });
+            }
         }
     }
 
     let row = store.items.remove(index);
+    store.specs.retain(|spec| spec.r#ref != row.r#ref);
+    if at.is_some() {
+        store.changes.push(Change {
+            at,
+            r#ref: row.r#ref.clone(),
+            field: "*".to_string(),
+            old: row.title.clone(),
+            new: String::new(),
+            actor: AUDIT_ACTOR.to_string(),
+            reason: reason.to_string(),
+        });
+        store.changes.extend(needs_changes);
+    }
     // The next import would drop it anyway; leaving it until then holds an
     // entry keyed on a `ref` no row carries.
     let pruned = store
@@ -136,7 +187,7 @@ fn refuse(message: String) -> anyhow::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tasks::schema::{DEFAULT_HEADING_DEPTH, Effort, TaskRow};
+    use crate::tasks::schema::{DEFAULT_HEADING_DEPTH, Effort, TaskRow, TaskSpec};
 
     fn row(id: u32, needs: &[u32], coupling: &[u32]) -> TaskRow {
         TaskRow {
@@ -158,6 +209,31 @@ mod tests {
             acceptance: String::new(),
             agent: String::new(),
             commit: String::new(),
+        }
+    }
+
+    fn retire(store: &mut Store, id: u32, force: bool) -> Result<RemoveOutcome> {
+        super::retire(store, id, force, None)
+    }
+
+    fn spec(r#ref: &str) -> TaskSpec {
+        TaskSpec {
+            r#ref: r#ref.to_string(),
+            outcome: String::new(),
+            constraints: Vec::new(),
+            accept: Vec::new(),
+            premises: Vec::new(),
+            means: Vec::new(),
+            design: Vec::new(),
+            precedent: Vec::new(),
+            executor: String::new(),
+        }
+    }
+
+    fn audited(items: Vec<TaskRow>) -> Store {
+        Store {
+            audit: true,
+            ..store(items)
         }
     }
 
@@ -308,6 +384,68 @@ mod tests {
 
         retire(&mut store, 1, false).expect_err("a done row is refused");
         assert_eq!(store.import_overrides.len(), 1);
+    }
+
+    #[test]
+    fn an_audited_removal_needs_a_reason() {
+        let mut store = audited(vec![row(1, &[], &[])]);
+        for reason in [None, Some("  ")] {
+            let message = super::retire(&mut store, 1, false, reason)
+                .expect_err("no reason is refused")
+                .to_string();
+            assert!(message.contains("--reason"), "{message}");
+        }
+        assert_eq!(store.items.len(), 1);
+        assert!(store.changes.is_empty());
+    }
+
+    #[test]
+    fn an_audited_removal_writes_a_tombstone_and_prunes_the_spec() {
+        let mut store = audited(vec![row(1, &[], &[]), row(2, &[], &[])]);
+        store.specs = vec![spec("task-1"), spec("task-2")];
+
+        super::retire(&mut store, 2, false, Some("dropped from scope")).expect("retires");
+        assert_eq!(store.changes.len(), 1);
+        let change = &store.changes[0];
+        assert_eq!(change.r#ref, "task-2");
+        assert_eq!(change.field, "*");
+        assert_eq!(change.old, "Task 2");
+        assert_eq!(change.new, "");
+        assert_eq!(change.reason, "dropped from scope");
+        assert!(change.at.is_some());
+        assert_eq!(
+            store
+                .specs
+                .iter()
+                .map(|s| s.r#ref.as_str())
+                .collect::<Vec<_>>(),
+            vec!["task-1"]
+        );
+    }
+
+    #[test]
+    fn an_audited_forced_removal_records_each_rewired_needs() {
+        let mut store = audited(vec![row(1, &[], &[]), row(2, &[1], &[]), row(3, &[2], &[])]);
+        super::retire(&mut store, 2, true, Some("merged into 1")).expect("retires");
+
+        let needs: Vec<_> = store
+            .changes
+            .iter()
+            .filter(|c| c.field == "needs")
+            .collect();
+        assert_eq!(needs.len(), 1);
+        assert_eq!(needs[0].r#ref, "task-3");
+        assert_eq!(needs[0].old, "[2]");
+        assert_eq!(needs[0].new, "[1]");
+    }
+
+    #[test]
+    fn an_unaudited_removal_writes_no_change_but_still_prunes_the_spec() {
+        let mut store = store(vec![row(1, &[], &[])]);
+        store.specs = vec![spec("task-1")];
+        retire(&mut store, 1, false).expect("retires");
+        assert!(store.changes.is_empty());
+        assert!(store.specs.is_empty());
     }
 
     #[test]

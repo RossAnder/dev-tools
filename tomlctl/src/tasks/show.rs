@@ -13,7 +13,7 @@ use anyhow::{Result, anyhow};
 use serde_json::{Map as JsonMap, Value as JsonValue, json};
 
 use super::graph::{Graph, nodes_of};
-use super::schema::{FileKind, ImportOverride, Store, TaskRow};
+use super::schema::{FileKind, ImportOverride, Store, TaskRow, TaskSpec};
 use super::store;
 use crate::cli::{ReadIntegrityArgs, ShowPart, TasksTarget};
 use crate::errors::{ErrorKind, tagged_err};
@@ -67,6 +67,11 @@ pub(crate) fn show(store: &Store, id: u32, parts: &[ShowPart]) -> Result<JsonVal
         out.insert("files".to_string(), json!(row.files));
         insert_file_notes(&mut out, store, row);
     }
+    if parts.contains(&ShowPart::Spec)
+        && let Some(spec) = store.specs.iter().find(|entry| entry.r#ref == row.r#ref)
+    {
+        out.insert("spec".to_string(), spec_json(spec));
+    }
     if parts.contains(&ShowPart::Body) {
         out.insert("action".to_string(), json!(row.action));
         out.insert("detail".to_string(), json!(row.detail));
@@ -119,6 +124,54 @@ fn stamp(entry: &ImportOverride) -> JsonValue {
         map.insert("needs".to_string(), json!(needs));
     }
     JsonValue::Object(map)
+}
+
+fn spec_json(spec: &TaskSpec) -> JsonValue {
+    let accept: Vec<JsonValue> = spec
+        .accept
+        .iter()
+        .map(|entry| {
+            let mut map = JsonMap::new();
+            map.insert("behaviour".to_string(), json!(entry.behaviour));
+            map.insert("check".to_string(), json!(entry.check));
+            map.insert("kind".to_string(), json!(entry.kind));
+            map.insert("positive".to_string(), json!(entry.positive));
+            map.insert("writes_build".to_string(), json!(entry.writes_build));
+            if let Some(probe) = &entry.probe {
+                map.insert(
+                    "probe".to_string(),
+                    json!({
+                        "at": probe.at,
+                        "neg_rc": probe.neg_rc,
+                        "pos_rc": probe.pos_rc,
+                        "verdict": probe.verdict,
+                    }),
+                );
+            }
+            JsonValue::Object(map)
+        })
+        .collect();
+    let premises: Vec<JsonValue> = spec
+        .premises
+        .iter()
+        .map(|p| json!({"claim": p.claim, "check": p.check, "at": p.at}))
+        .collect();
+    let means: Vec<JsonValue> = spec
+        .means
+        .iter()
+        .map(|m| json!({"text": m.text, "binding": m.binding, "detail": m.detail}))
+        .collect();
+    json!({
+        "ref": spec.r#ref,
+        "outcome": spec.outcome,
+        "constraints": spec.constraints,
+        "accept": accept,
+        "premises": premises,
+        "means": means,
+        "design": spec.design,
+        "precedent": spec.precedent,
+        "executor": spec.executor,
+    })
 }
 
 /// All three keys are always present so a reader never has to tell an absent
@@ -456,6 +509,33 @@ mod tests {
         assert_eq!(bare["file_notes"], json!({}), "{bare}");
         assert_eq!(bare["new_files"], json!([]), "{bare}");
         assert_eq!(bare["deleted_files"], json!([]), "{bare}");
+    }
+
+    #[test]
+    fn spec_part_reports_the_rows_spec_and_nothing_for_a_row_without_one() {
+        let mut store = fixture();
+        store.specs = vec![TaskSpec {
+            r#ref: "task-12".to_string(),
+            outcome: "reads work".to_string(),
+            constraints: vec!["no new deps".to_string()],
+            accept: Vec::new(),
+            premises: Vec::new(),
+            means: Vec::new(),
+            design: Vec::new(),
+            precedent: Vec::new(),
+            executor: "lite".to_string(),
+        }];
+
+        let out = show(&store, 12, &[ShowPart::Spec]).expect("task 12 shows");
+        assert_eq!(out["spec"]["outcome"], "reads work", "{out}");
+        assert_eq!(out["spec"]["executor"], "lite", "{out}");
+        assert_eq!(out["spec"]["constraints"], json!(["no new deps"]), "{out}");
+
+        let bare = show(&store, 13, &[ShowPart::Spec]).expect("task 13 shows");
+        assert!(bare.get("spec").is_none(), "{bare}");
+
+        let unselected = show(&store, 12, &[ShowPart::Body]).expect("task 12 shows");
+        assert!(unselected.get("spec").is_none(), "{unselected}");
     }
 
     #[test]

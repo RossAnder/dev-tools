@@ -47,6 +47,14 @@ pub(crate) fn resolve_store_path(slug: Option<&str>, file: Option<&Path>) -> Res
         .join(STORE_FILE))
 }
 
+/// Whether the store's flow directory holds a `plan.toml`, which makes it a
+/// v2 flow with no rendered plan document to import from or render into.
+pub(crate) fn is_v2_flow(store_path: &Path) -> bool {
+    store_path
+        .parent()
+        .is_some_and(|dir| dir.join("plan.toml").is_file())
+}
+
 /// Read the store at `path`. Under `--verify-integrity` the sidecar check
 /// runs first, under a shared lock, so a write mid-swap cannot be read as a
 /// mismatch.
