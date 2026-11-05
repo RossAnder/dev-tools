@@ -1,5 +1,6 @@
-//! Parity between the `tasks` finding-class tables and the classes the engine
-//! emits, plus existence for the classes prose names in passing.
+//! Parity between the finding-class tables and the classes the engines emit, in
+//! two separate pairs (`src/tasks` and `src/plan`), plus existence for the
+//! classes prose names in passing.
 //!
 //! Nothing at runtime notices a table that has fallen behind: a class the docs
 //! omit is still raised, and a class they invent still reads as real to the
@@ -16,6 +17,10 @@ const DOCUMENTED: &[&str] = &[
     "claude/skills/flow-contract-task-store/SKILL.md",
     "claude/skills/tomlctl/references/tasks.md",
 ];
+
+/// The table covering `src/plan` alone. `plan check` also raises the `src/tasks`
+/// classes, which stay documented in `DOCUMENTED`.
+const PLAN_DOCUMENTED: &str = "claude/skills/tomlctl/references/plan.md";
 
 /// Documents naming a class or two in passing. Only existence is checked:
 /// holding them to a set would grow each into another copy of the table.
@@ -396,6 +401,12 @@ fn tasks_dir() -> PathBuf {
         .join("tasks")
 }
 
+fn plan_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("src")
+        .join("plan")
+}
+
 /// `None` without `claude/`, so a packaged checkout carrying only the crate
 /// does not fail on documents it was never shipped.
 fn repo_root(test: &str) -> Option<PathBuf> {
@@ -436,6 +447,52 @@ fn documented_finding_classes_match_the_source() {
          disagree with src/tasks, or a `Finding` there is built in a shape the \
          parser does not read:\n  {}",
         problems.join("\n  ")
+    );
+}
+
+#[test]
+fn documented_plan_classes_match_the_source() {
+    let Some(repo_root) = repo_root("documented_plan_classes_match_the_source") else {
+        return;
+    };
+    let bodies = source_bodies(&plan_dir());
+    let text = fs::read_to_string(repo_root.join(PLAN_DOCUMENTED))
+        .unwrap_or_else(|err| panic!("{PLAN_DOCUMENTED}: {err}"));
+
+    let mut problems = unresolved_sites(&bodies);
+    problems.extend(disagreements(
+        PLAN_DOCUMENTED,
+        &documented_classes(&text),
+        &classes_in(&bodies),
+    ));
+
+    assert!(
+        problems.is_empty(),
+        "documented_plan_classes_match_the_source: the finding-class table disagrees \
+         with src/plan, or a `Finding` there is built in a shape the parser does not \
+         read:\n  {}",
+        problems.join("\n  ")
+    );
+}
+
+/// An empty scan would agree with an empty table, so the plan pair's parity says
+/// nothing unless both construction sites are seen to resolve here.
+#[test]
+fn the_plan_scan_reads_both_construction_sites_and_no_tasks_class() {
+    let source = classes_in(&source_bodies(&plan_dir()));
+    assert_eq!(
+        source.get("plan/brief-missing").map(listed).as_deref(),
+        Some("error"),
+        "raised through the `error` helper"
+    );
+    assert_eq!(
+        source.get("plan/probe-absent").map(listed).as_deref(),
+        Some("warning"),
+        "raised as a `Finding` literal"
+    );
+    assert!(
+        !source.contains_key("plan/orphan-row"),
+        "a `src/tasks` class must not reach the plan pair"
     );
 }
 
