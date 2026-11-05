@@ -814,6 +814,7 @@ const SCHEMA_SEEDED_FLOW_FILES: &[&str] = &[
     // reached through `--file` from outside `.claude/flows/<slug>/` is seeded
     // too.
     "tasks.toml",
+    "plan.toml",
     "agents.toml",
 ];
 

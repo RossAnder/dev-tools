@@ -115,7 +115,7 @@ pub(crate) struct StampArgs {
 pub(crate) struct RawStoreArg {
     #[arg(
         long = "raw-store",
-        help = "Write a verb-owned store (backlog, tasks, execution record, inputs, review-v2) with this generic writer, bypassing its validator"
+        help = "Write a verb-owned store (backlog, tasks, plan, execution record, inputs, review-v2) with this generic writer, bypassing its validator"
     )]
     pub(crate) raw_store: bool,
 }

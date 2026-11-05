@@ -20,6 +20,7 @@ enum OwnedStore {
     Backlog,
     Inputs,
     Tasks,
+    Plan,
     ExecutionRecord,
     Review,
 }
@@ -39,7 +40,12 @@ impl OwnedStore {
             }
             Self::Tasks => {
                 "the `tasks` verbs own it: use `tasks update` or `tasks add` for rows, and \
-                 `tasks import-plan` for `[[checkpoints]]`, which no other verb writes"
+                 `tasks import-plan` or `plan milestone` for `[[checkpoints]]`, which no \
+                 other verb writes"
+            }
+            Self::Plan => {
+                "the `plan` verbs own it: use `plan decide`, `plan contract`, `plan handover`, \
+                 `plan run`, `plan milestone` and `plan approve`"
             }
             Self::ExecutionRecord => "`flow record` owns it: append entries with `flow record`",
             Self::Review => {
@@ -150,6 +156,9 @@ fn classify(resolved: &Path) -> Option<OwnedStore> {
         if same(file, "tasks.toml") {
             return Some(OwnedStore::Tasks);
         }
+        if same(file, "plan.toml") {
+            return Some(OwnedStore::Plan);
+        }
         if same(file, "execution-record.toml") {
             return Some(OwnedStore::ExecutionRecord);
         }
@@ -194,6 +203,7 @@ mod tests {
             ".claude/backlog.toml",
             ".claude/inputs.toml",
             ".claude/flows/x/tasks.toml",
+            ".claude/flows/x/plan.toml",
             ".claude/flows/x/execution-record.toml",
             ".claude/flows/x/review-v2.toml",
             ".claude/review-v2/scope.toml",
