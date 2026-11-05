@@ -66,7 +66,9 @@ commit = ""
 
 | Field | Owner | Meaning |
 |---|---|---|
-| `schema_version` | the tool | `1`. Seeded by `flow init` and by the auto-create write path alike. |
+| `schema_version` | the tool | `1`, or `2` while the store holds `specs`, `milestones`, `changes` or `audit`; every write re-stamps it from the content, so a v1 store stays `1`. Seeded by `flow init` and by the auto-create write path alike. A binary that knows only `1` refuses a `2` store rather than dropping those keys. |
+| `audit` | `plan approve` | `true` once the plan is approved, absent otherwise (§1a). Read strictly: a non-boolean is an error, not `false`. |
+| `[[specs]]`, `[[milestones]]`, `[[changes]]` | the v2 verbs | Additive side tables keyed on `ref`, `[[checkpoints]]` id and `ref` or `milestone:<id>` respectively (§1a). Omitted while empty. |
 | `last_updated` | the tool | Bare TOML date, restamped on every mutation. Nothing else writes it. |
 | `plan_path` | `import-plan` | Repo-relative plan the store was imported from, and `render`'s target under `--file`. |
 | `last_import_refs` | `import-plan` | Ref set the last import produced. Drives `plan/orphan-row`; empty means "never imported". |
@@ -102,6 +104,50 @@ Fields not in the table above are dropped on write. The store is tool-owned; a h
 ```
 
 A bare id is a `closes` link: the task delivers the item. The `refs` qualifier binds only the entry it opens, so `refs B-1, B-2` refs `B-1` and closes `B-2`; a `refs` link records the relation and gates nothing. As on `Files`, backticks and a trailing `(…)` or ` — ` annotation are stripped and a `none` or dash entry names nothing. Each linked row gets one `[[backlog_links]]` entry keyed by its final `ref` — after any `--reconcile-record` adoption — and an entry with no `ref` or no id is dropped on read and on write. The table is plan-owned: every import rebuilds it whole from the bullets, and a row the plan no longer names keeps no link. `tasks remove` leaves it alone, so until the next import a link can key on a `ref` no row carries; `tasks update --ref` re-keys the row's entry to the new `ref`.
+
+#### 1a. The v2 additions
+
+A flow whose directory holds a `plan.toml` is a **v2 flow**. Its store gains side tables below, all omitted while empty, so a store that holds none writes back byte-identical to a v1 store and every v1 rule above is unchanged. `audit`, `specs`, `milestones` and `changes` sit between `[[backlog_links]]` and `[[items]]`.
+
+```toml
+audit = true
+
+[[specs]]
+ref = "add-the-retry-guard"
+outcome = "what must be true afterwards"
+constraints = ["must not change the public signature"]
+accept = [{ behaviour = "a retry after 429 waits the header's delay", check = "cargo nextest run -E 'test(retry_after)'", kind = "forward", positive = "", writes_build = true }]
+premises = [{ claim = "fn parse exists in src/a.rs", check = "grep -q 'fn parse' src/a.rs", at = "base" }]
+means = [{ text = "use the backoff helper", binding = "required", detail = "why this is required" }]
+design = ["design/store.md#locking"]
+precedent = ["src/b.rs:40"]
+executor = "lite"
+
+[[milestones]]
+id = "A"
+gates = ["cargo nextest run --manifest-path x/Cargo.toml"]
+elaboration = "upfront"
+defer_reason = ""
+
+[[changes]]
+at = 2026-11-05T12:00:00Z
+ref = "add-the-retry-guard"
+field = "spec.outcome"
+old = "..."
+new = "..."
+actor = "orchestrator"
+reason = "..."
+```
+
+- **`[[specs]]`** is one entry per row, keyed on `ref`, a side table rather than row fields. An entry with no `ref` is dropped on read and write. `tasks remove` and a `ref` another row claims drop the spec keyed on it; `tasks update --ref` re-keys it with the row.
+- **`accept`** entries take `behaviour`, `check`, `kind` (`forward` \| `falsifier` \| `guard`), `positive` and `writes_build`. `kind` may be absent only while `check` is empty, so a deferred milestone's row can state a behaviour before anything exists to label; a `check` without a `kind` is refused. `writes_build` absent reads as `true`; only an explicit `false` is probed. A supplied `probe` key is refused, because only `plan probes --record` writes it. A re-issued `accept` list keeps the stored `probe` of every entry that matches in all its other fields, so it moves nothing, and any difference leaves that entry unprobed.
+- **`premises`** entries take `claim`, `check` and `at`, where `at` is `base` or `after:<id>`. The id must be written canonically (`after:3`, not `after:03` or `after:+3`) and name a row in the store or the same batch.
+- **`means`** entries take `text`, `binding` (`required` \| `suggested`, mandatory) and `detail`.
+- **`executor`** is `tool`, `clerk`, `lite` or `deep`.
+- **Unknown keys are refused** inside `spec`, `accept`, `premises` and `means`, each refusal naming the row's line and the accepted set. The store's own reader still drops unknown keys, as for every table.
+- **`[[milestones]]`** hold execution facts for a `[[checkpoints]]` id: `gates`, `elaboration` (`upfront` when absent, or `deferred`) and `defer_reason`. A `plan milestone` verb writes them.
+- **`audit`** is set by `plan approve`. From then on a plan field changes only with a reason, and each change appends a `[[changes]]` row (§5). `[[changes]]` outlives the row it records, so a removal remains as a tombstone (`field = "*"`, `old` the removed title, `new` empty). `actor` defaults to `orchestrator`. A milestone's rows use `ref = "milestone:<id>"`.
+- **v2 flows refuse `import-plan` and `render`.** A flow with a `plan.toml` has no plan document, so both fail with `kind=validation` naming `plan view`. `check --plan` skips the render-drift comparison there.
 
 ### 2. The `ref` rule
 
@@ -150,13 +196,13 @@ tomlctl tasks import-plan --slug <slug> --reconcile-record
 tomlctl tasks add --slug <slug> --title "Extract the token reader" --effort S --files src/auth/token.rs --needs 3,4 --checkpoint B --action "Move read_token out of session.rs" --acceptance-file <path>
 ```
 
-**`add-many`** — the same validation over NDJSON, one row object per line, all-or-nothing: a malformed line, a dangling target or a cycle aborts before the file is touched. Two rows in one batch may reference each other. An **unknown input key is a hard error** naming the row's 1-based index and listing the accepted key set (`title`, `effort`, `files`, `needs`, `coupling`, `deps_note`, `checkpoint`, `action`, `detail`, `acceptance`) — a mistyped `neds` would otherwise silently discard an edge. Returns `{ok, added, rows}` with per-row `id`, `ref` and `batch`.
+**`add-many`** — the same validation over NDJSON, one row object per line, all-or-nothing: a malformed line, a dangling target or a cycle aborts before the file is touched. Two rows in one batch may reference each other. An **unknown input key is a hard error** naming the row's 1-based index and listing the accepted key set (`title`, `effort`, `files`, `needs`, `coupling`, `deps_note`, `checkpoint`, `action`, `detail`, `acceptance`, plus the v2 keys `spec`, `reason`, `actor`, `file_notes`, `closes` and `refs`) — a mistyped `neds` would otherwise silently discard an edge. `spec` is the row's spec table (§1a); `file_notes` maps a path on the row's own `files` to its non-blank annotation, and `closes` and `refs` are backlog id lists — the three land in `[[specs]]`, `[[file_notes]]` and `[[backlog_links]]`, which `import-plan` writes on a v1 flow and nothing else did on a v2 one. `reason` and `actor` matter only on an audited store, where every row needs a non-blank `reason` and appends a `[[changes]]` row with `field = "*"`; `tasks add` has no reason channel and is refused there. Rows without those keys behave as before. Returns `{ok, added, rows}` with per-row `id`, `ref` and `batch`.
 
 ```bash
 printf '%s\n' '{"title":"Add the retry guard","effort":"S","files":["src/retry.rs"],"needs":[3]}' | tomlctl tasks add-many --slug <slug> --ndjson -
 ```
 
-**`update`** — patch the mutable fields of one row, or of several given as an id list (`8,9,14` or `8 9 14`). Several ids take the same patch under one lock and one write; every id is resolved and every row's patch validated first, so an unknown id or one refused row writes nothing. One id prints `{"ok":true,"id":…,"ref":…,"changed":[…]}`; several print `{"ok":true,"results":[{"id":…,"ref":…,"changed":[…]},…]}`. `ref` is the row's key as the write left it — the new one after `--ref` — so the orchestrator recording the outcome against the execution record's `task_ref` needs no second read. `--ref` names one row's key and so takes a single id. `--ndjson <SRC>` is the batch form: each row (`ids` or `id`, plus optional `status`, `agent`, `commit`, `ref` and `set`) carries its own patch, every row lands in one write, and the batch is all-or-nothing; it conflicts with the positional ids and the value flags, and prints the same `results[]` envelope. `changed[]` reports what actually moved, not what was passed, so a re-issued `--status done` reports no change. `--set` reaches `title`, `effort`, `status`, `checkpoint`, `agent`, `commit`, `deps_note`, `action`, `detail`, `acceptance` and `coupling`; `files` and `needs` are owned by `import-plan` and refused unless `--unlock-import-fields` rides along (§5a).
+**`update`** — patch the mutable fields of one row, or of several given as an id list (`8,9,14` or `8 9 14`). Several ids take the same patch under one lock and one write; every id is resolved and every row's patch validated first, so an unknown id or one refused row writes nothing. One id prints `{"ok":true,"id":…,"ref":…,"changed":[…]}`; several print `{"ok":true,"results":[{"id":…,"ref":…,"changed":[…]},…]}`. `ref` is the row's key as the write left it — the new one after `--ref` — so the orchestrator recording the outcome against the execution record's `task_ref` needs no second read. `--ref` names one row's key and so takes a single id. `--ndjson <SRC>` is the batch form: each row (`ids` or `id`, plus optional `status`, `agent`, `commit`, `ref` and `set`) carries its own patch, every row lands in one write, and the batch is all-or-nothing; it conflicts with the positional ids and the value flags, and prints the same `results[]` envelope. `changed[]` reports what actually moved, not what was passed, so a re-issued `--status done` reports no change. `--set` reaches `title`, `effort`, `status`, `checkpoint`, `agent`, `commit`, `deps_note`, `action`, `detail`, `acceptance` and `coupling`; `files` and `needs` are owned by `import-plan` and refused unless `--unlock-import-fields` rides along (§5a). On a v2 flow there is no import, so both are open without the flag and no stamp is written. A row's spec changes only through an `--ndjson` row carrying a `spec` table beside its id (`--set spec=` is refused); each supplied spec field replaces the stored one and the rest stay, and `changed[]` reports `spec.outcome`, `spec.accept` and so on. An `--ndjson` row also takes `reason` and `actor`. On an audited store every moved plan field needs the row's `reason` and writes a `[[changes]]` row per field; the positional form has no reason channel and is refused for those fields. `status`, `agent` and `commit` are unaudited. Refusal on any row persists nothing.
 
 ```bash
 tomlctl tasks update <id> --slug <slug> --status in-progress --agent implement-deep
@@ -181,17 +227,19 @@ So the stamp cannot pin a row past the document. The intended exit is `tasks ren
 
 `needs` is validated against the whole store like `coupling` — a dangling target or an edge closing a cycle is refused before the row moves. `--ref` re-keys the stamp to the new `ref`, together with the row's file notes and backlog links. `tasks remove` drops the stamp with the row but leaves the row's file notes and backlog links in place until the next import, or until `tasks add` or `tasks update --ref` claims that `ref`. An entry keying on a `ref` no row holds is dropped at the next import.
 
-`[[import_overrides]]`, `[[file_notes]]` and `[[backlog_links]]` are the store's three side tables, all keyed by `ref` rather than by id: the first holds what a hand patch replaced and is written by `--unlock-import-fields`, the second holds the annotations a plan's `Files` entries carried, and the third the backlog ids its `Backlog` bullets name (§1) — both rebuilt by the import. `tasks show` reports all three on the row it was asked for: the first and the third always, the second under `--with files`.
+`[[import_overrides]]`, `[[file_notes]]` and `[[backlog_links]]` are the store's three import-side tables (`[[specs]]`, `[[milestones]]` and `[[changes]]` are the v2 ones, §1a), all keyed by `ref` rather than by id: the first holds what a hand patch replaced and is written by `--unlock-import-fields`, the second holds the annotations a plan's `Files` entries carried, and the third the backlog ids its `Backlog` bullets name (§1) — both rebuilt by the import. `tasks show` reports all three on the row it was asked for: the first and the third always, the second under `--with files`.
 
 **`remove`** — hard-delete one row, the only path that takes a row out of the store. `import-plan` keeps every row it stops producing, so a task deleted from the plan is retired here or not at all. Two removals are refused unless `--force`: a row past `pending`, named with its `ref` (the execution record's `task_ref` and the commit train's SHA both join on it), and a row other rows depend on, named with its dependents. Under `--force` the removed id is pruned from every dependent's `needs` and `coupling` **and the removed row's own `needs` are spliced into each dependent's** — a dependent left one edge short would dispatch ahead of work it still waits on. `rewired[]` names the rows whose edges moved. There is no `--dry-run`, and a refusal writes nothing.
 
-A successful removal also drops the row's `[[import_overrides]]` entry, so the store never holds a stamp keyed on a `ref` no row carries. The prune is on the success path only — a refused removal still writes nothing — and `pruned_override_fields[]` names the stamped fields the entry was holding, a subset of `files`, `needs` in that order. It is always present, and empty when the row carried no stamp.
+A successful removal also drops the row's `[[import_overrides]]` entry, so the store never holds a stamp keyed on a `ref` no row carries, and the row's `[[specs]]` entry. On an audited store `--reason <text>` is required: the removal writes a tombstone `[[changes]]` row, and a forced one also writes a `needs` row for each dependent it rewires. The prune is on the success path only — a refused removal still writes nothing — and `pruned_override_fields[]` names the stamped fields the entry was holding, a subset of `files`, `needs` in that order. It is always present, and empty when the row carried no stamp.
 
 ```bash
 tomlctl tasks remove <id> --slug <slug> --force
 ```
 
 **`show`** — one row's object, or for an id list an array of row objects in the order given, `--with` applied to each; an unknown id fails the whole call. Without `--with` the output is the summary shape (`id`, `ref`, `title`, `effort`, `status`, `checkpoint`, `files`, `needs`, `coupling`). `id` is always emitted whatever `--with` selects, so a fetched row can be matched back to the id that was asked for. `deps` is the row's own direct targets; `dependents` is the transitive successor set. `absent` lists the row's `files` that do not exist under the repo root, in `files` order and `[]` when all exist — the dispatch-time file state §12 records.
+
+The `spec` part adds the row's `[[specs]]` entry under `spec`, and no key when the row has none.
 
 The `files` part adds three keys after `files`, always present when it is selected. `file_notes` maps each path the row claims that carries a `[[file_notes]]` entry to its note, `{}` when none does. `new_files` and `deleted_files` list the paths whose note marks a created or a removed file, in the row's `files` order and possibly empty. The kind is derived from the note on read, never stored: a note counts only when it opens with a parenthetical whose first word — after optional whitespace, case-insensitive — is `new`, `create` or `created` (a new file) or `delete`, `deleted`, `remove` or `removed` (a removed one), followed by optional whitespace and one of `)`, `,`, `;`, `:` or `—`. So `(NEW)`, `( created )` and `(new, generated)` mark a new file, while `(new thread)` describes an addition to an existing one and `(remove the call)` an edit. This is how an implementer sees the plan's per-file notes, and how a rollback learns which paths the task declared it creates.
 

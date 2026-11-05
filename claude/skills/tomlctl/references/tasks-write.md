@@ -40,6 +40,9 @@ tomlctl tasks import-plan --slug <slug> --reconcile-record
 | `--reconcile-record` | — | Also read the flow's execution record — the path `context.toml` records under `[artifacts].execution_record`, or `execution-record.toml` beside the store when it records none — mark matched rows `done`, and adopt the record's spelling of a `ref` on a unique normalised match. Requires `--slug`. | off |
 | `--dry-run` | — | Report the import without writing. File and sidecar stay byte-identical. | off |
 
+A flow whose directory holds a `plan.toml` is refused outright with `kind=validation`: it has no
+plan document to import from. `tasks render` refuses it the same way.
+
 An error-class finding **refuses a real import** before the file is touched; under `--dry-run`
 the same finding is reported in the envelope and the exit code stays `0`. A `plan_path` read
 from `context.toml` that is absolute, carries a `..` component, resolves outside the repo root,
@@ -130,9 +133,22 @@ printf '%s\n' '{"title":"Add the retry guard","effort":"S","files":["src/retry.r
 | `--ndjson` | `-`, path, or `@path` | NDJSON source; `-` reads stdin. Required. | — |
 
 Accepted row keys are exactly `title`, `effort`, `files`, `needs`, `coupling`, `deps_note`,
-`checkpoint`, `action`, `detail`, `acceptance`. **An unknown key is a hard error** naming the
+`checkpoint`, `action`, `detail`, `acceptance`, `spec`, `reason`, `actor`, `file_notes`, `closes`
+and `refs`. **An unknown key is a hard error** naming the
 row's 1-based index and listing that set — a mistyped `neds` would otherwise silently discard
 an edge. An absent key is the empty value; a wrong JSON type names the key and the type it got.
+
+The last six keys are the v2 additions; a row without them behaves as before.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `spec` | table | The row's `[[specs]]` entry: `outcome`, `constraints`, `accept`, `premises`, `means`, `design`, `precedent`, `executor`. An unknown key inside `spec`, an `accept` entry, a `premises` entry or a `means` entry is refused, naming the accepted set. An `accept` entry with a `check` needs a `kind` (`forward`, `falsifier` or `guard`); one with an empty `check` may omit it. A supplied `probe` is refused. A `means` entry needs `binding` (`required` or `suggested`). A premise's `at` is `base` or `after:<id>`, the id a row in the store or the batch. `executor` is `tool`, `clerk`, `lite` or `deep`. |
+| `file_notes` | object | Path → annotation. Each path must be on the row's `files` and each annotation non-blank; they land in `[[file_notes]]`. |
+| `closes`, `refs` | string lists | Backlog ids, landing in the row's `[[backlog_links]]` entry. |
+| `reason` | text | Required and non-blank on every row of an audited store, which also appends a `[[changes]]` row (`field = "*"`, `new` the title) per added task. |
+| `actor` | text | Names the author in that row; `orchestrator` when absent. |
+
+`tasks add` has no `reason` channel, so an audited store refuses it: use `add-many`.
 
 | Key | Value | Meaning |
 |---|---|---|
@@ -167,7 +183,11 @@ printf '%s\n' '{"ids":[8,9],"status":"done","commit":"<sha>"}' '{"id":14,"status
 | `--ndjson` | `-`, an NDJSON path, or a `.toml` record file | Batch form: each row patches its own ids with its own values, every row in one write. Conflicts with the positional ids and with `--status`, `--agent`, `--commit`, `--checkpoint`, `--ref` and `--set`. `--unlock-import-fields` and `--relock-import-fields` apply to every row. | — |
 
 `--ndjson` rows take `ids` (a list, or a string such as `"1,2"`) or `id` (a single task id), plus
-optional `status`, `agent`, `commit`, `ref` and `set` (an object of `--set` fields). `ref` is
+optional `status`, `agent`, `commit`, `ref`, `set` (an object of `--set` fields), `spec`, `reason`
+and `actor`. `spec` is the table `add-many` takes, validated the same way; each field it supplies
+replaces the stored one and the others stay, a row with no spec gains one only if something moves,
+and a re-issued `accept` list keeps the probes of entries it leaves unchanged. `changed[]` names
+each moved field as `spec.<field>`. A spec reaches the store only this way: `--set spec=` is refused. `ref` is
 accepted only on a single-id row. `set` keys go through the same allowlist as `--set`, and
 `checkpoint` is set as `set.checkpoint`. A key given both as a row key and inside `set`, an unknown
 key, and a task named by more than one row are each refused. The batch is all-or-nothing: every id
@@ -206,6 +226,12 @@ diverges from what its title derives.
 execution record — a rename orphans the row's `task_ref` there until the next
 `import-plan --reconcile-record` re-adopts it.
 
+On a store with `audit = true`, every plan field a call moves needs the row's `reason` and appends
+one `[[changes]]` row per field (`old`, `new`, `actor`, `reason`, a timestamp). The positional form
+and `--ndjson` rows without a `reason` are refused for those fields; `status`, `agent` and `commit`
+are unaudited. On a v2 flow `--set files=` and `--set needs=` need no `--unlock-import-fields` and
+leave no stamp, since there is no import to override.
+
 Several ids apply the same patch to each row under one lock and one sidecar write. Every id is
 resolved and every row's patch validated before anything changes, so an unknown id or a refusal
 on any row aborts the whole call and writes nothing. One id
@@ -239,6 +265,7 @@ tomlctl tasks remove <id> --slug <slug> --force
 |---|---|---|---|
 | *(positional)* | id | Task to remove. Required; an id no row carries is refused. | — |
 | `--force` | — | Remove a row past `pending`, or one other rows depend on. Re-points each dependent's edges at the removed row's own dependencies. | off |
+| `--reason` | text | Why the row goes. Required and non-blank on an audited store, where the removal appends a tombstone `[[changes]]` row (`field = "*"`, `old` the title) and, under `--force`, one `needs` row per rewired dependent. | — |
 
 Without `--force` two removals are refused, each naming what stands in the way: a row whose
 status is not `pending`, named with its `ref` — the execution record's `task_ref` and the commit
@@ -251,7 +278,7 @@ edge short would dispatch ahead of work it still waits on, and one left pointing
 id would make the store `dag/dangling-ref`. There is no `--dry-run`.
 
 A successful removal also drops the row's `[[import_overrides]]` entry, so no stamp outlives the
-row it keys on.
+row it keys on, and its `[[specs]]` entry.
 
 | Key | Value | Meaning |
 |---|---|---|

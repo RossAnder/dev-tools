@@ -19,12 +19,14 @@ adopting carriers are entitled to rely on. The flag surface of the verbs that re
 
 `.claude/flows/<slug>/tasks.toml` carries four top-level keys, a `[policy]` table, a
 `[[checkpoints]]` array, optional `[[import_overrides]]`, `[[file_notes]]` and `[[backlog_links]]`
-arrays and an `[[items]]` array. Keys are written in that order and the order is stable across writes, so a
+arrays and an `[[items]]` array. A v2 store adds `audit`, `[[specs]]`, `[[milestones]]` and
+`[[changes]]`, below. Keys are written in that order and the order is stable across writes, so a
 re-render is a clean diff.
 
 | Key | Set by |
 |---|---|
-| `schema_version` | seeded to `1` by `flow init` and by the auto-create write path |
+| `schema_version` | seeded to `1` by `flow init` and by the auto-create write path; every write re-stamps it `2` while the store holds `audit`, `specs`, `milestones` or `changes`, else `1`. A binary that knows only `1` refuses a `2` store. |
+| `audit` | `true` once the plan is approved; omitted otherwise. A non-boolean value is an error. Written between `last_import_refs` and `[policy]`. |
 | `last_updated` | a bare TOML date, restamped on every mutation |
 | `plan_path` | `import-plan`, from the flow context under `--slug` or `--plan` under `--file` |
 | `last_import_refs` | `import-plan` — the ref set the last import produced |
@@ -72,6 +74,24 @@ row's entry, as it does its `[[file_notes]]` and `[[import_overrides]]` entries;
 leaves the table alone, so until the next import an entry can key on a `ref` no row carries, and
 `tasks add` and `tasks update --ref` drop any entry already keyed on the `ref` they claim. An entry with no `ref` or no id is dropped on read and on write, and the table is omitted while
 empty on the same terms as `[[import_overrides]]`.
+
+`[[specs]]`: one entry per v2 row, keyed on `ref` — `outcome`, `constraints`, `accept`, `premises`,
+`means`, `design`, `precedent` and `executor`. `accept` entries carry `behaviour`, `check`, `kind`,
+`positive`, `writes_build` (absent reads `true`) and a `probe` only `plan probes --record` writes;
+`kind` is absent while `check` is empty. An entry with no `ref` is dropped on read and on write.
+`tasks remove` drops the spec keyed on the row, and `tasks add` and `tasks update --ref` drop any
+already keyed on the `ref` they claim.
+
+`[[milestones]]`: `id` (a `[[checkpoints]]` id), `gates`, `elaboration` (`upfront` when absent, or
+`deferred`) and `defer_reason`.
+
+`[[changes]]`: the audit trail an audited store appends — `at`, `ref` (or `milestone:<id>`), `field`
+(`*` for an added or removed row, `spec.<field>` for a spec field), `old`, `new`, `actor` and
+`reason`. It outlives the row it records, so a removal stays as a tombstone.
+
+`[[specs]]`, `[[milestones]]` and `[[changes]]` follow `[[backlog_links]]` and are omitted while
+empty, so a v1 store round-trips byte-identical. A flow directory holding a `plan.toml` is a v2
+flow: `import-plan` and `render` refuse it.
 
 `[[items]]`: `id`, `ref`, `title`, `effort`, `status`, `checkpoint`, `phase`, `phase_depth`,
 `heading_depth`, `files`, `needs`, `coupling`, `deps_note`, `action`, `detail`, `acceptance`,
