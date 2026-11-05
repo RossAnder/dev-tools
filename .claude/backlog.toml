@@ -1,5 +1,5 @@
 schema_version = 1
-last_updated = 2026-10-29
+last_updated = 2026-11-05
 
 [[backlog]]
 id = "B-de0a0d87"
@@ -6391,7 +6391,7 @@ kind = "question"
 summary = "Plan-family cleanup rows must carry both old and anchor_old because old_required ignores the finding family"
 area = "tomlctl/src/review/fields.rs"
 tags = ["review-v2"]
-status = "open"
+status = "promoted"
 created = 2026-10-13
 last_seen = 2026-10-13
 seen_count = 1
@@ -6401,6 +6401,8 @@ flow = "review-system-v2"
 context = "old_required (fields.rs) does not depend on family, so a plan cleanup row needs old as well as plan_section/anchor_old/anchor_new; review-sweeper step 8's plan clause now documents the anchor fields only. Decide whether plan rows should be exempt from old or the sweeper should say to fill both."
 base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
 evidence = ["tomlctl/src/review/fields.rs:690"]
+promoted = 2026-11-05
+promoted_to = "v2-planning"
 
 [[backlog]]
 id = "B-d8d355f4"
@@ -7056,26 +7058,26 @@ seen_count = 1
 dedup_id = "7b662012fe13e319"
 origin = "pi"
 context = """
-GOAL. A lean workflow layer that works any repo's .claude/backlog.toml end to end (research, triage, fix, design and build, enrich, or seed a mini-plan): a lean form of the full Claude Code flows, run under pi first.\r
-\r
-LAYOUT RULE. Harness-agnostic elements go under `mini/`; pi-specific glue goes under `pi/`. mini/ holds the skills, prompt templates and role specs written as prose contracts (purpose, inputs, return format, writer rules, topology). pi/ holds pi agent definitions (frontmatter name/description/tools/model wrapping a mini role), the subagent extension install, settings.json and the AGENTS.md adapter. Today the adapter sits in the pi agent dir, untracked; move it to pi/ and link it from there.\r
-\r
-IN PLACE. pi settings.json `skills` points at claude/skills/tomlctl and claude/skills/backlog-capture (single source, no copies). The AGENTS.md adapter maps Claude-isms: paths resolve under dev-tools, `write` = Write tool, ask in prose instead of AskUserQuestion, and the top-level agent is the orchestrator, so it may write the store behind `backlog check`.\r
-\r
-MINI (agnostic). (1) Skill `mini-backlog-work`: pick (by id, or ranked by seen_count/kind/area) -> judgeability gate reused from backlog-clear Step 2 (base_sha ancestry; absence is not evidence) -> investigate -> size -> fix | build (design, then implement) | enrich and leave open via `items update --array backlog` (context/tags/evidence only) | seed (stub carrying <!-- backlog-seed --> plus findings, options, task sketch and open questions; flow init without scope/branch, flow active remove, triage --promote) so /plan-new --backlog picks it up | dismiss/resolve in the user's wording. (2) Prompt templates /mini-backlog-next, /mini-backlog-sweep (claude/commands/backlog.md is already harness-portable) and /mini-capture. (3) Roles: mini-scout (read-only, wide research), mini-reviewer (reviews the diff before commit of a non-trivial build), mini-advisor (judgement only, see topology A). (4) Candidate imports: commit-conventions, research-methods (heavy and shaped for finding lenses; maybe distil a lean bar), flow-contract-user-inputs.\r
-\r
-PI (specific). No built-in subagents. The shipped example extension examples/extensions/subagent gives a `subagent` tool: single {agent,task}, parallel {tasks} (max 8, 4 concurrent), chain {chain} with {previous}. Each child is an isolated pi process and its final text returns, capped at 50 KB. Agents live in <agent-dir>/agents/*.md with a `model:` per agent; omitted means inherit. Dynamic workflows: prompt template or skill (prose loop) < subagent chain template (fixed pipeline, nearest to review-v2.js) < codemode (builtin:codemode; the model writes a JS script calling tools in parallel and only the output enters context; it can drive `subagent` itself). The extension API (docs/extensions.md) allows a dedicated tool or TUI later; not needed yet. Install mini-specific agents, not the generic scout/planner/reviewer/worker examples.\r
-\r
-DEFAULT SHAPE. Single agent per item: one item is one thread, and that is where the leanness comes from. Use subagents only for context-heavy reading and for review. No parallel implementers: that reintroduces the file-ownership and build-lock coordination the full flows exist for. An item needing it becomes a seed.\r
-\r
-TOPOLOGY A: haiku-tier orchestrator + opus-tier advisor. A cheap driver runs the mechanical loop (list, check, stage, mint, triage, test runs) and escalates judgement to an advisor subagent that returns a decision with rationale and makes no edits. Fits /mini-backlog-sweep and bulk capture, where most steps are mechanical. Risks: a weak driver does not know when it is out of its depth, so escalation must be rule-triggered, never self-assessed. Triggers: any sizing or route decision, any check verdict other than novel/duplicate, any design choice, any dismiss/resolve claim, any edit outside the item's named files, any failed verification. It also mis-summarises what it hands the advisor, so pass the advisor anchors (ids, file:line, the diff) and let it read them rather than relying on the driver's paraphrase. The user talks to the weaker model, so the advisor's rationale should be relayed verbatim. Cost win only holds when escalations are rare. Pi angle: also possible as same-session model switching (manual model cycling, or an extension switching on a trigger) instead of a subagent, which keeps one context but loses isolation. Verify the API before relying on it.\r
-\r
-TOPOLOGY B: opus-tier orchestrator + haiku-tier workers. The orchestrator holds the judgement and the user conversation; workers absorb context-heavy work (wide reads, log and test-output digestion, sweeps, call-site enumeration, dependency/doc lookups) and return lean results. Fits /mini-backlog-next on research-heavy items; likely the default. Return contract, fixed so it can be parsed: SUMMARY (a few lines); FINDINGS (each anchored file:line or URL plus version, graded, with the observation that would refute it); COVERAGE (what was read and searched, and what was not); TANGENTIAL lines; CONFIDENCE. Haiku failure modes to design against: confident absence claims (require the search used and treat 'not found' as unverified), stale or invented anchors (orchestrator spot-checks the anchors any decision rests on), scope creep. Direct tomlctl records instead of prose: workers must not write .claude/backlog.toml (orchestrator-only writer; parallel writers race on the file and its sidecar). Either (a) a worker writes staged NDJSON (probe or row payloads) to a per-run scratch dir, which the orchestrator gates with `backlog check --ndjson` and mints with `add-many`; or (b) workers write findings to a store built for concurrent agents (the v2 review store via `tomlctl review add`, whose agents already write their own rows) and the orchestrator reads `review digest` rather than raw rows. (a) keeps mini lean; (b) reuses review/report tooling. Decide per role.\r
-\r
-CROSS-CUTTING. Model and effort live only in agent frontmatter (pi/ side), never in mini prose or call sites, matching the lite/deep rule. Both topologies need the advisor/worker return to be self-sufficient, because there is no follow-up channel to a finished one-shot child. Measure before choosing: cost per item and the verdict reversal rate on review.\r
-\r
-OPEN DECISIONS. Git policy (mini commits via commit-conventions vs leaves the diff for review); approval cadence for builds and seeds; whether mini runs full verification (the build-discipline rule targets parallel agents); per-role worker output (staged NDJSON vs review store); A vs B as default, or A for sweep and B for next.\r
-\r
+GOAL. A lean workflow layer that works any repo's .claude/backlog.toml end to end (research, triage, fix, design and build, enrich, or seed a mini-plan): a lean form of the full Claude Code flows, run under pi first.\r\r
+\r\r
+LAYOUT RULE. Harness-agnostic elements go under `mini/`; pi-specific glue goes under `pi/`. mini/ holds the skills, prompt templates and role specs written as prose contracts (purpose, inputs, return format, writer rules, topology). pi/ holds pi agent definitions (frontmatter name/description/tools/model wrapping a mini role), the subagent extension install, settings.json and the AGENTS.md adapter. Today the adapter sits in the pi agent dir, untracked; move it to pi/ and link it from there.\r\r
+\r\r
+IN PLACE. pi settings.json `skills` points at claude/skills/tomlctl and claude/skills/backlog-capture (single source, no copies). The AGENTS.md adapter maps Claude-isms: paths resolve under dev-tools, `write` = Write tool, ask in prose instead of AskUserQuestion, and the top-level agent is the orchestrator, so it may write the store behind `backlog check`.\r\r
+\r\r
+MINI (agnostic). (1) Skill `mini-backlog-work`: pick (by id, or ranked by seen_count/kind/area) -> judgeability gate reused from backlog-clear Step 2 (base_sha ancestry; absence is not evidence) -> investigate -> size -> fix | build (design, then implement) | enrich and leave open via `items update --array backlog` (context/tags/evidence only) | seed (stub carrying <!-- backlog-seed --> plus findings, options, task sketch and open questions; flow init without scope/branch, flow active remove, triage --promote) so /plan-new --backlog picks it up | dismiss/resolve in the user's wording. (2) Prompt templates /mini-backlog-next, /mini-backlog-sweep (claude/commands/backlog.md is already harness-portable) and /mini-capture. (3) Roles: mini-scout (read-only, wide research), mini-reviewer (reviews the diff before commit of a non-trivial build), mini-advisor (judgement only, see topology A). (4) Candidate imports: commit-conventions, research-methods (heavy and shaped for finding lenses; maybe distil a lean bar), flow-contract-user-inputs.\r\r
+\r\r
+PI (specific). No built-in subagents. The shipped example extension examples/extensions/subagent gives a `subagent` tool: single {agent,task}, parallel {tasks} (max 8, 4 concurrent), chain {chain} with {previous}. Each child is an isolated pi process and its final text returns, capped at 50 KB. Agents live in <agent-dir>/agents/*.md with a `model:` per agent; omitted means inherit. Dynamic workflows: prompt template or skill (prose loop) < subagent chain template (fixed pipeline, nearest to review-v2.js) < codemode (builtin:codemode; the model writes a JS script calling tools in parallel and only the output enters context; it can drive `subagent` itself). The extension API (docs/extensions.md) allows a dedicated tool or TUI later; not needed yet. Install mini-specific agents, not the generic scout/planner/reviewer/worker examples.\r\r
+\r\r
+DEFAULT SHAPE. Single agent per item: one item is one thread, and that is where the leanness comes from. Use subagents only for context-heavy reading and for review. No parallel implementers: that reintroduces the file-ownership and build-lock coordination the full flows exist for. An item needing it becomes a seed.\r\r
+\r\r
+TOPOLOGY A: haiku-tier orchestrator + opus-tier advisor. A cheap driver runs the mechanical loop (list, check, stage, mint, triage, test runs) and escalates judgement to an advisor subagent that returns a decision with rationale and makes no edits. Fits /mini-backlog-sweep and bulk capture, where most steps are mechanical. Risks: a weak driver does not know when it is out of its depth, so escalation must be rule-triggered, never self-assessed. Triggers: any sizing or route decision, any check verdict other than novel/duplicate, any design choice, any dismiss/resolve claim, any edit outside the item's named files, any failed verification. It also mis-summarises what it hands the advisor, so pass the advisor anchors (ids, file:line, the diff) and let it read them rather than relying on the driver's paraphrase. The user talks to the weaker model, so the advisor's rationale should be relayed verbatim. Cost win only holds when escalations are rare. Pi angle: also possible as same-session model switching (manual model cycling, or an extension switching on a trigger) instead of a subagent, which keeps one context but loses isolation. Verify the API before relying on it.\r\r
+\r\r
+TOPOLOGY B: opus-tier orchestrator + haiku-tier workers. The orchestrator holds the judgement and the user conversation; workers absorb context-heavy work (wide reads, log and test-output digestion, sweeps, call-site enumeration, dependency/doc lookups) and return lean results. Fits /mini-backlog-next on research-heavy items; likely the default. Return contract, fixed so it can be parsed: SUMMARY (a few lines); FINDINGS (each anchored file:line or URL plus version, graded, with the observation that would refute it); COVERAGE (what was read and searched, and what was not); TANGENTIAL lines; CONFIDENCE. Haiku failure modes to design against: confident absence claims (require the search used and treat 'not found' as unverified), stale or invented anchors (orchestrator spot-checks the anchors any decision rests on), scope creep. Direct tomlctl records instead of prose: workers must not write .claude/backlog.toml (orchestrator-only writer; parallel writers race on the file and its sidecar). Either (a) a worker writes staged NDJSON (probe or row payloads) to a per-run scratch dir, which the orchestrator gates with `backlog check --ndjson` and mints with `add-many`; or (b) workers write findings to a store built for concurrent agents (the v2 review store via `tomlctl review add`, whose agents already write their own rows) and the orchestrator reads `review digest` rather than raw rows. (a) keeps mini lean; (b) reuses review/report tooling. Decide per role.\r\r
+\r\r
+CROSS-CUTTING. Model and effort live only in agent frontmatter (pi/ side), never in mini prose or call sites, matching the lite/deep rule. Both topologies need the advisor/worker return to be self-sufficient, because there is no follow-up channel to a finished one-shot child. Measure before choosing: cost per item and the verdict reversal rate on review.\r\r
+\r\r
+OPEN DECISIONS. Git policy (mini commits via commit-conventions vs leaves the diff for review); approval cadence for builds and seeds; whether mini runs full verification (the build-discipline rule targets parallel agents); per-role worker output (staged NDJSON vs review store); A vs B as default, or A for sweep and B for next.\r\r
+\r\r
 CLASSIFICATION (Jev). Owned by B-b9b7e4c1: a tomlctl `classify` service, built tomlctl-first with no pi prototype, and the harness-agnostic layer. mini consumes it through the binary; there is no pi classify tool and no mini/classifiers dir, because question sets live in tomlctl (built-ins plus .claude/classifiers/ overrides). Decision points move onto it one at a time as B-b9b7e4c1's increments land and their agreement stats hold. Until then each mini step decides as written above. Where mini will lean on it: sweep/pick ranking (route + size) first; then duplicate-candidate annotation, kind suggestion at capture, worker-finding filtering (topology B), an escalation trigger for a cheap orchestrator (topology A; adds to the hard rules, never replaces them). It never decides dismiss/resolve, design, already-fixed claims or publication safety. Pi-only remainder: a `mini/auto` virtual model on pi's jev-router.ts pattern could route Opus vs Haiku per item from the same `route`/`size` labels (read from tomlctl's cache), making topology A vs B per-item at one cache miss per switch. The pi codemode smoke-test baseline is recorded on B-b9b7e4c1."""
 base_sha = "ba376f43b2805114e8e91083b8abe5c70e9a93d6"
 
@@ -7097,20 +7099,20 @@ seen_count = 1
 dedup_id = "b9b7e4c1d7946fc1"
 origin = "pi"
 context = """
-DECISION. Classification lives in tomlctl from the start; no pi-first prototype. It is the harness-agnostic layer: Claude Code, Codex, pi and glimpse all reach it through the binary they already drive, so no harness-specific classify tool is built (this replaces the pi `mini_classify` extension tool once planned under B-7b662012). Decision handling is brought in incrementally: the service lands first, and each decision point is adopted one at a time, only after its question set measures well.\r
-\r
-PROTOCOL (from pi-ai's typesafe-system-one transport, not yet called directly from tomlctl). One HTTPS POST to <baseUrl>/systemone, baseUrl https://api.typesafe.ai/v1/, body {model, state, questions}; public `bool` is the wire type `noul`. OpenRouter serves the same protocol at its own base URL; llama.cpp decision models (OpenJev) answer on /v1/systemone too. Answers: choice -> {choice, probabilities, confidence}; score -> {score (expected level), confidence}; bool -> {probability}. Usage carries token counts. One request answers every question for one state, so classify N rows with N requests, bounded concurrency.\r
-\r
-INVARIANTS. (1) Deterministic and offline by default: no verb makes a network call unless asked, and the hooks and CI set TOMLCTL_NO_CLASSIFY=1. (2) Never in a gate or a write: `backlog check` verdicts, `tasks check`, triage and every mint stay classifier-free; a classification may annotate (a likely-duplicate candidate's same_problem probability) but never decides. (3) Results never enter tracked stores. They are nondeterministic, churn with the model, and the backlog is public; a label becomes a tag only by an explicit act. (4) Fail-soft: a timeout, a provider error, missing credentials or confidence below the floor all yield `unsure`, never a non-zero exit from the host verb. (5) Privacy: row text leaves the machine, so it is off unless a repo opts in through a tracked config. Credentials are user-level (env TYPESAFE_API_KEY / OPENROUTER_API_KEY, or a key_cmd for a secret manager), never read from another harness's auth file.\r
-\r
-SHAPE. Cargo feature `classify` (HTTP client plus TLS), on for the binary and off for library consumers: glimpse compiles the tomlctl lib and opts in only if it wants a route column. Watch the glimpse --locked rule and cargo audit surface. Generic verb `tomlctl classify --set <name> --file <toml> --array <a> [--ids ...]` plus store wrappers such as `backlog classify [--open|--ids] [--set route]`; output through the global output options (`{id} {route} {route_conf}` templates, --lines). Question sets are data: built-ins embedded in the binary, merged with per-project overrides under .claude/classifiers/, each carrying its instructions, criteria, confidence floor and version. `catalogue`-style listing and validation, as review-v2 does. Cache in git-ignored .claude/.cache/classify.toml keyed by row id + hash of the classified fields + question-set version + model id, so editing a row's context makes it stale. Provider `fixture` (canned answers) keeps the suites offline; capabilities advertises the feature. Agreement: when `backlog triage` (later the tasks/review dispositions) records a decision, it is compared to the cached label, and `classify stats` reports agreement per set and per confidence band. That is the evidence a decision point needs before adoption, and the basis for tuning floors.\r
-\r
-INCREMENTS. 1: provider client, `classify` generic verb, fixture provider, cache, config/opt-in, feature gate. 2: first decision point, backlog `route` (fix|build|enrich|seed|human) plus `size` for sweep ranking. kind=question routes to human deterministically before any call, and needs_human is reworded as a textual feature ('does the item ask someone to choose between options?'). 3: `--classify <set>` on backlog list/show; cache reads automatic and free on read verbs. 4..n, each adopted alone once stats support it: same-problem annotation on likely-duplicate/related check candidates; kind suggestion at capture and in the inputs drain (consistent kinds keep fingerprints aligned); TANGENTIAL/worker-finding filtering (mint|fold|drop); escalation trigger for a cheap orchestrator (adds to hard rules, never replaces them); tasks lite-vs-deep implementer routing; review/optimise finding pre-sort. Last: opt-in `auto = "refresh-stale"` letting read verbs classify missing or stale rows inline under a short timeout.\r
-\r
-NEVER DECIDES. Dismiss/resolve (the user's wording), design choices, already-fixed claims (need evidence), secret or publication safety, and anything git/tomlctl decides deterministically.\r
-\r
-BASELINE (pi codemode smoke test against this repo's store, jev-latest: 19 open items, one request each in parallel). 2.0 s wall, 15.5k Jev tokens, $0 on the direct typesafe provider. Labels came to about 1/6 of the input text. Route: 10/19 at confidence >= 0.7, all sensible. Low-confidence answers were the debatable cases. needs_human was uncalibrated (0.09-0.26 across the board, even for items saying 'Decide whether'). Size was coarse but ordered sensibly. Suggested starting floor for route: 0.7. Full notes under B-7b662012.\r
-\r
+DECISION. Classification lives in tomlctl from the start; no pi-first prototype. It is the harness-agnostic layer: Claude Code, Codex, pi and glimpse all reach it through the binary they already drive, so no harness-specific classify tool is built (this replaces the pi `mini_classify` extension tool once planned under B-7b662012). Decision handling is brought in incrementally: the service lands first, and each decision point is adopted one at a time, only after its question set measures well.\r\r
+\r\r
+PROTOCOL (from pi-ai's typesafe-system-one transport, not yet called directly from tomlctl). One HTTPS POST to <baseUrl>/systemone, baseUrl https://api.typesafe.ai/v1/, body {model, state, questions}; public `bool` is the wire type `noul`. OpenRouter serves the same protocol at its own base URL; llama.cpp decision models (OpenJev) answer on /v1/systemone too. Answers: choice -> {choice, probabilities, confidence}; score -> {score (expected level), confidence}; bool -> {probability}. Usage carries token counts. One request answers every question for one state, so classify N rows with N requests, bounded concurrency.\r\r
+\r\r
+INVARIANTS. (1) Deterministic and offline by default: no verb makes a network call unless asked, and the hooks and CI set TOMLCTL_NO_CLASSIFY=1. (2) Never in a gate or a write: `backlog check` verdicts, `tasks check`, triage and every mint stay classifier-free; a classification may annotate (a likely-duplicate candidate's same_problem probability) but never decides. (3) Results never enter tracked stores. They are nondeterministic, churn with the model, and the backlog is public; a label becomes a tag only by an explicit act. (4) Fail-soft: a timeout, a provider error, missing credentials or confidence below the floor all yield `unsure`, never a non-zero exit from the host verb. (5) Privacy: row text leaves the machine, so it is off unless a repo opts in through a tracked config. Credentials are user-level (env TYPESAFE_API_KEY / OPENROUTER_API_KEY, or a key_cmd for a secret manager), never read from another harness's auth file.\r\r
+\r\r
+SHAPE. Cargo feature `classify` (HTTP client plus TLS), on for the binary and off for library consumers: glimpse compiles the tomlctl lib and opts in only if it wants a route column. Watch the glimpse --locked rule and cargo audit surface. Generic verb `tomlctl classify --set <name> --file <toml> --array <a> [--ids ...]` plus store wrappers such as `backlog classify [--open|--ids] [--set route]`; output through the global output options (`{id} {route} {route_conf}` templates, --lines). Question sets are data: built-ins embedded in the binary, merged with per-project overrides under .claude/classifiers/, each carrying its instructions, criteria, confidence floor and version. `catalogue`-style listing and validation, as review-v2 does. Cache in git-ignored .claude/.cache/classify.toml keyed by row id + hash of the classified fields + question-set version + model id, so editing a row's context makes it stale. Provider `fixture` (canned answers) keeps the suites offline; capabilities advertises the feature. Agreement: when `backlog triage` (later the tasks/review dispositions) records a decision, it is compared to the cached label, and `classify stats` reports agreement per set and per confidence band. That is the evidence a decision point needs before adoption, and the basis for tuning floors.\r\r
+\r\r
+INCREMENTS. 1: provider client, `classify` generic verb, fixture provider, cache, config/opt-in, feature gate. 2: first decision point, backlog `route` (fix|build|enrich|seed|human) plus `size` for sweep ranking. kind=question routes to human deterministically before any call, and needs_human is reworded as a textual feature ('does the item ask someone to choose between options?'). 3: `--classify <set>` on backlog list/show; cache reads automatic and free on read verbs. 4..n, each adopted alone once stats support it: same-problem annotation on likely-duplicate/related check candidates; kind suggestion at capture and in the inputs drain (consistent kinds keep fingerprints aligned); TANGENTIAL/worker-finding filtering (mint|fold|drop); escalation trigger for a cheap orchestrator (adds to hard rules, never replaces them); tasks lite-vs-deep implementer routing; review/optimise finding pre-sort. Last: opt-in `auto = "refresh-stale"` letting read verbs classify missing or stale rows inline under a short timeout.\r\r
+\r\r
+NEVER DECIDES. Dismiss/resolve (the user's wording), design choices, already-fixed claims (need evidence), secret or publication safety, and anything git/tomlctl decides deterministically.\r\r
+\r\r
+BASELINE (pi codemode smoke test against this repo's store, jev-latest: 19 open items, one request each in parallel). 2.0 s wall, 15.5k Jev tokens, $0 on the direct typesafe provider. Labels came to about 1/6 of the input text. Route: 10/19 at confidence >= 0.7, all sensible. Low-confidence answers were the debatable cases. needs_human was uncalibrated (0.09-0.26 across the board, even for items saying 'Decide whether'). Size was coarse but ordered sensibly. Suggested starting floor for route: 0.7. Full notes under B-7b662012.\r\r
+\r\r
 SIZE. Multi-decision and cross-cutting (deps/feature gate, cache, config and privacy model, question-set catalogue, stats): a seed-plan candidate for /plan-new --backlog, not a mini build."""
 base_sha = "ba376f43b2805114e8e91083b8abe5c70e9a93d6"
 related = ["B-7b662012"]
@@ -7430,12 +7432,12 @@ seen_count = 1
 dedup_id = "fa9da68588373701"
 origin = "plan-new"
 context = """
-User request (2026-10-29), planning paused at /plan-new Phase 6. Resume with /plan-new docs/plans/giggly-conjuring-brook.md: it holds the exploration notes, vetted research and every decision below (local, not yet committed).
-
-Problems: (1) backlog created/last_seen are date-only and glimpse's Newest sort breaks ties by hash id, so same-day rows come out unordered; (2) the glimpse Backlog surface sorts only on id/newest/kind/status/summary/area and groups only on kind/area/status (surface.rs Sort/Group); (3) glimpse BacklogRow (ledger.rs) drops last_seen, seen_count, origin, flow, base_sha, related, duplicate_of, supersedes and resolved_flow/tasks/commits from the details view; (4) there is no way to flag items for cheap-agent pickup or to keep a focus sequence near the surface for 'what shall we do next?'.
-
-Decisions: tier = lite|deep|human, a validated field (clap ValueEnum, which avoids the A/B/C fallback in the capabilities ENUM_VALUES), set in glimpse in bulk over marked rows (key e) and by agents through tomlctl. focus = a dense per-row integer rank: order by (focus, id) and display positions; --focus k inserts at k and shifts the rest; moves are all-or-nothing (StalePolicy::Abort, not write_guarded's Skip). Resolve and dismiss drop the rank; promote keeps it. glimpse pins ranked rows in a block above every group/sort, plus a Focus sort; P adds/removes rows to the queue and < / > move them. New `tomlctl backlog next [--tier T] [--fill]` prints the ranked queue, and --fill appends unranked open rows oldest-first. backlog-clear moves to `next --tier lite --fill`, and tier=lite overrides its debt|annoyance kind default. New captures write UTC Z datetimes (reuse inputs.rs now(), moved to time.rs); last_updated stays a date. In the shared query engine, --where equality against a bare date matches same-day datetime rows. New sorts: last_seen, seen_count, closed, tier, focus. New groups: tag set, origin, flow, tier. Details show every field, then any remaining non-empty raw field. Fold in B-ec0c911b, B-00b994ba and B-be2797ef. One plan, milestones (M1 tomlctl, M2 glimpse, M3 skills/docs), about 45 files.
-
+User request (2026-10-29), planning paused at /plan-new Phase 6. Resume with /plan-new docs/plans/giggly-conjuring-brook.md: it holds the exploration notes, vetted research and every decision below (local, not yet committed).\r
+\r
+Problems: (1) backlog created/last_seen are date-only and glimpse's Newest sort breaks ties by hash id, so same-day rows come out unordered; (2) the glimpse Backlog surface sorts only on id/newest/kind/status/summary/area and groups only on kind/area/status (surface.rs Sort/Group); (3) glimpse BacklogRow (ledger.rs) drops last_seen, seen_count, origin, flow, base_sha, related, duplicate_of, supersedes and resolved_flow/tasks/commits from the details view; (4) there is no way to flag items for cheap-agent pickup or to keep a focus sequence near the surface for 'what shall we do next?'.\r
+\r
+Decisions: tier = lite|deep|human, a validated field (clap ValueEnum, which avoids the A/B/C fallback in the capabilities ENUM_VALUES), set in glimpse in bulk over marked rows (key e) and by agents through tomlctl. focus = a dense per-row integer rank: order by (focus, id) and display positions; --focus k inserts at k and shifts the rest; moves are all-or-nothing (StalePolicy::Abort, not write_guarded's Skip). Resolve and dismiss drop the rank; promote keeps it. glimpse pins ranked rows in a block above every group/sort, plus a Focus sort; P adds/removes rows to the queue and < / > move them. New `tomlctl backlog next [--tier T] [--fill]` prints the ranked queue, and --fill appends unranked open rows oldest-first. backlog-clear moves to `next --tier lite --fill`, and tier=lite overrides its debt|annoyance kind default. New captures write UTC Z datetimes (reuse inputs.rs now(), moved to time.rs); last_updated stays a date. In the shared query engine, --where equality against a bare date matches same-day datetime rows. New sorts: last_seen, seen_count, closed, tier, focus. New groups: tag set, origin, flow, tier. Details show every field, then any remaining non-empty raw field. Fold in B-ec0c911b, B-00b994ba and B-be2797ef. One plan, milestones (M1 tomlctl, M2 glimpse, M3 skills/docs), about 45 files.\r
+\r
 Gotchas found: backlog.md reference is at the 600-line ceiling, so document the new verb in a new references file. Adding focus to MANAGED_FIELDS would clear it on every transition. ledgers::restore only accepts MANAGED_FIELDS, so undo needs tier and focus added. glimpse CLAUDE.md and the README say glimpse writes no backlog field except triage status, so both need amending. After a tomlctl change, rebuild glimpse as well (cargo install --path glimpse)."""
 base_sha = "c18f34831b8aecc6304a2a1e23e0862c849554e4"
 related = [
@@ -7520,3 +7522,355 @@ flow = "giggly-conjuring-brook"
 context = "The sentence was cut to keep README.md under its 600-line ceiling. Behaviour: tomlctl's clear_for_transition drops focus on resolve/dismiss, and glimpse's transition undo lists focus among its touched fields so u puts the rank back. Restore it by trading another line."
 base_sha = "2b2a36f78d211d0869379788494c8d7cc9d14a9a"
 related = ["B-fa9da685"]
+
+[[backlog]]
+id = "B-74b4558b"
+kind = "bug"
+summary = "flow-bootstrap reports plans_directory null when its shell cwd is a repo subdirectory, because json get reads .claude/settings.json relative to cwd and treats the miss as unset"
+area = "claude/agents/flow-bootstrap.md"
+tags = [
+    "flow-bootstrap",
+    "plans-directory",
+]
+status = "open"
+created = 2026-11-05T11:22:58Z
+last_seen = 2026-11-05T11:22:58Z
+seen_count = 1
+dedup_id = "74b4558bf57c2d3f"
+origin = "plan-new"
+flow = "v2-planning"
+context = """
+Seen on a /plan-new started from tomlctl/: settings.json held plansDirectory = docs/plans/, yet the envelope returned null, which fires the first-use prompt the setting exists to prevent. Reproduced by hand: the same json get prints the value from the repo root and fails with os error 3 from tomlctl/. The agent treats not_found as "unset" and is forbidden to cd, so the envelope's own cwd field does not help, and the path is resolved against the shell's directory.
+
+Workaround: before prompting, read the key from the repo root yourself; a real value means skip the prompt. Fix direction: have flow-bootstrap read a root-resolved path, for example a verb or flag that resolves against the git top level, as flow resolve already does. Separately, the sentinel "__DONT_ASK__" also normalises to null, so a null envelope cannot distinguish "unset" from "don't ask". Not tested: what the prompt's json set write does from a subdirectory."""
+base_sha = "b4dadbdbd06f254891530f71cef42e7ccbc06ef6"
+evidence = [
+    "claude/agents/flow-bootstrap.md:79",
+    "claude/agents/flow-bootstrap.md:83",
+]
+
+[[backlog]]
+id = "B-33df5eda"
+kind = "bug"
+summary = "core.autocrlf checkouts rewrite tracked flow TOML stores to CRLF, so every .sha256 sidecar then fails its digest check though the content is unchanged"
+area = ".gitattributes"
+tags = [
+    "integrity",
+    "sidecar",
+    "windows",
+    "crlf",
+]
+status = "promoted"
+created = 2026-11-05T11:22:58Z
+last_seen = 2026-11-05T11:22:58Z
+seen_count = 1
+dedup_id = "33df5eda1225f99d"
+origin = "plan-new"
+flow = "v2-planning"
+context = """
+Measured 2026-11-05. core.autocrlf is true and flow stores have no eol attribute, so git checks them out as CRLF while tomlctl writes LF. 125 tracked files under .claude read i/lf w/crlf, 105 of them across 15 flows. The content is intact: no index entry is CRLF.
+
+Two sidecar states follow, and they need opposite handling. 32 sidecars match the LF blob, so they fail a digest check now. flow doctor reports 12 of them, on context, execution-record and tasks in eventual-churning-sunrise, giggly-conjuring-brook, proud-leaping-conway and whimsical-hugging-puppy; it does not check ledger sidecars. 16 sidecars match the CRLF bytes, so they pass here and are already wrong for any LF checkout: they will fail as soon as their stores turn LF. Doctor cannot see that second group today.
+
+Do not run integrity refresh on a CRLF store: it would stamp CRLF bytes, which is how the 16 arose. Repair order: pin .claude/flows/** and .claude/**/*.toml and .claude/**/*.sha256 to eol=lf, then rm and git checkout each CRLF path (a plain checkout leaves it CRLF, because git sees it as unchanged), then validate and refresh only sidecars that still differ. The pin patterns and the rm-then-checkout step were tested in a scratch repo. Delivered by task 26 of flow v2-planning.
+
+That plan inherits the same risk, since plan approve hashes brief.md; its brief_digest folds CRLF to LF so line endings alone never read as a change."""
+base_sha = "b4dadbdbd06f254891530f71cef42e7ccbc06ef6"
+evidence = [".gitattributes:1"]
+promoted = 2026-11-05
+promoted_to = "v2-planning"
+
+[[backlog]]
+id = "B-23c14a52"
+kind = "bug"
+summary = "plan-executor expects a plan path in its cell or prompt, but no cell field or cellPrompt line carries one"
+area = "claude/agents/plan-executor.md"
+tags = [
+    "review-v2",
+    "plan-review",
+]
+status = "open"
+created = 2026-11-05T11:22:58Z
+last_seen = 2026-11-05T11:22:58Z
+seen_count = 1
+dedup_id = "23c14a52ec4637e4"
+origin = "plan-new"
+flow = "v2-planning"
+context = """
+plan-executor.md says its cell "carries ... the plan path" and uses it for review list --in <plan path>. review/query.rs assignment adds only facet_paths, method_paths, pack or base, and baselines, and cellPrompt passes just the cell id; the plan: line in agent-waves.md goes to the surveyor prompt alone. Found by reading the code; the engine has never run, so the runtime symptom is unobserved, and the pack was not checked for an equivalent line.
+
+Likely symptom: the executor must guess the plan or read it from the flow's context, and may scope its prior-findings read wrongly. Fix direction: add the plan path to the plan-family assignment, or correct the agent body. v2-planning's Slice 3 rebinds this agent to a flow directory, so fix it there unless /review-plan-v2 runs first."""
+base_sha = "b4dadbdbd06f254891530f71cef42e7ccbc06ef6"
+evidence = [
+    "claude/agents/plan-executor.md:20",
+    "tomlctl/src/review/query.rs:228",
+    "claude/workflows/review-v2.js:58",
+]
+related = ["B-ef306556"]
+
+[[backlog]]
+id = "B-76f24d6a"
+kind = "annoyance"
+summary = "review-plan.md cites /plan-update complete step 6.5, but the reap step is now step 7"
+area = "claude/commands/review-plan.md"
+tags = [
+    "plan-review",
+    "docs",
+]
+status = "open"
+created = 2026-11-05T11:22:58Z
+last_seen = 2026-11-05T11:22:58Z
+seen_count = 1
+dedup_id = "76f24d6a0e49eb28"
+origin = "plan-new"
+flow = "v2-planning"
+context = 'The retention paragraph says /plan-update complete deletes .premerge.md "(step 6.5 there)". B-684379b8 renumbered that list, and reaping transient artefacts is now step 7. One-word edit in claude/commands/review-plan.md. Read the reference as step 7 until then.'
+base_sha = "b4dadbdbd06f254891530f71cef42e7ccbc06ef6"
+evidence = [
+    "claude/commands/review-plan.md:163",
+    "claude/commands/plan-update.md:135",
+]
+related = ["B-684379b8"]
+
+[[backlog]]
+id = "B-64a17353"
+kind = "bug"
+summary = "flow-bootstrap's required-artifact check tests relative paths from the agent's start directory, so a session started in a subdirectory fails the gate falsely"
+area = "claude/agents/flow-bootstrap.md"
+tags = []
+status = "open"
+created = 2026-11-05T14:20:33Z
+last_seen = 2026-11-05T14:20:33Z
+seen_count = 1
+dedup_id = "64a173530715a962"
+origin = "implement"
+flow = "v2-planning"
+context = "Seen on /implement started from tomlctl/: the envelope said execution_record was missing while flow doctor passed and the file existed. The agent's hard rules forbid cd, so a re-dispatch fails the same way. Workaround: run flow resolve and flow doctor from the repo root and proceed on those. Same root cause as the plansDirectory case in the related row."
+base_sha = "a6abe04bf774d65e050cc55cf882fa48ac686ff6"
+related = ["B-74b4558b"]
+
+[[backlog]]
+id = "B-64542872"
+kind = "bug"
+summary = "A task minted by tasks add and then settled reads as plan/orphan-row at error severity, so a resume halts at the tasks check gate until the plan is rendered and re-imported"
+area = "tomlctl/src/tasks"
+tags = []
+status = "open"
+created = 2026-11-05T14:20:33Z
+last_seen = 2026-11-05T14:20:33Z
+seen_count = 1
+dedup_id = "645428729de3360f"
+origin = "implement"
+flow = "v2-planning"
+context = "/implement step 3c mints with tasks add, which never touches last_import_refs, and Phase 4's re-import gate would also abort on a settled removed ref. Workaround: tasks render then tasks import-plan --reconcile-record straight after settling a minted task, which clears the finding. Either check should treat a row add created as not orphaned, or the carrier should say to render at mint time."
+base_sha = "a6abe04bf774d65e050cc55cf882fa48ac686ff6"
+
+[[backlog]]
+id = "B-02515e2e"
+kind = "bug"
+summary = "plan stage reports ready and names plan approve while plan approve refuses an unanswered surfaced decision, because no check class or stage blocker covers it"
+area = "tomlctl/src/plan/stage.rs"
+tags = []
+status = "open"
+created = 2026-11-05T14:20:33Z
+last_seen = 2026-11-05T14:20:33Z
+seen_count = 1
+dedup_id = "02515e2ee422f016"
+origin = "implement"
+flow = "v2-planning"
+context = "Arrived cheap-in-file and was deferred because the run paused. A carrier following next hits a refusal stage never warned about. Fix: add a blocker for a surfaced decision still agent-assumed, or a plan check class both verbs read."
+base_sha = "a6abe04bf774d65e050cc55cf882fa48ac686ff6"
+
+[[backlog]]
+id = "B-a70a9da3"
+kind = "debt"
+summary = "The idea doc still says a failed premise goes up a tier and lists decisions as a brief.md section, neither of which is a row in the plan's departures table"
+area = "docs/ideas/v2-pipeline.md"
+tags = []
+status = "open"
+created = 2026-11-05T14:20:33Z
+last_seen = 2026-11-05T14:20:33Z
+seen_count = 1
+dedup_id = "a70a9da3fa2ee596"
+origin = "implement"
+flow = "v2-planning"
+context = "Arrived cheap-in-file and was deferred because the run paused. The plan's Approach sends a failed premise to replanning, never up a tier, and holds decisions in plan.toml. The file's Status header says the plan wins, so nothing misleads a reader who starts at the top."
+base_sha = "a6abe04bf774d65e050cc55cf882fa48ac686ff6"
+
+[[backlog]]
+id = "B-6de82ea6"
+kind = "debt"
+summary = "plan/schema.rs carries copies of private TOML helpers from tasks/schema.rs, including the CR-folding rule"
+area = "tomlctl/src/plan/schema.rs"
+tags = []
+status = "open"
+created = 2026-11-05T14:20:33Z
+last_seen = 2026-11-05T14:20:33Z
+seen_count = 1
+dedup_id = "6de82ea655cd2e9b"
+origin = "implement"
+flow = "v2-planning"
+context = "lf, as_datetime, str_array, id_array and str_arr_value were copied because a sibling held tasks/schema.rs at the time. Widen them to pub(crate) and delete the copies, so the two stores cannot disagree on CR folding."
+base_sha = "a6abe04bf774d65e050cc55cf882fa48ac686ff6"
+
+[[backlog]]
+id = "B-81c1c53b"
+kind = "debt"
+summary = "The capabilities test's read and write help lists carry no plan verbs, so nothing pins the integrity flag bundles on them"
+area = "tomlctl/tests/capabilities.rs"
+tags = []
+status = "open"
+created = 2026-11-05T14:20:33Z
+last_seen = 2026-11-05T14:20:33Z
+seen_count = 1
+dedup_id = "81c1c53b4c7dcc7b"
+origin = "implement"
+flow = "v2-planning"
+context = "Arrived cheap-in-file and was deferred because the run paused. read_subs and write_subs cover every other group, so a plan verb could drop or gain an integrity flag with no test failing. Add the plan verbs to both lists."
+base_sha = "a6abe04bf774d65e050cc55cf882fa48ac686ff6"
+
+[[backlog]]
+id = "B-079a7625"
+kind = "debt"
+summary = "capabilities reports plan view --for and plan approve --review as plain strings because SCOPED_ENUM_VALUES has no entries for them"
+area = "tomlctl/src/capabilities.rs"
+tags = []
+status = "open"
+created = 2026-11-05T14:20:33Z
+last_seen = 2026-11-05T14:20:33Z
+seen_count = 1
+dedup_id = "079a7625a0c8413c"
+origin = "implement"
+flow = "v2-planning"
+context = "Both are validated after parsing, so agents cannot read those vocabularies from capabilities, though tasks update --status publishes its own this way. Add entries once the verb modules export their vocabulary constants."
+base_sha = "a6abe04bf774d65e050cc55cf882fa48ac686ff6"
+related = ["B-a0d884ec"]
+
+[[backlog]]
+id = "B-8ae87ad1"
+kind = "debt"
+summary = "plan/check.rs carries a copy of the private finding_json from tasks/dispatch.rs, though plan check promises the tasks check shape"
+area = "tomlctl/src/plan/check.rs"
+tags = []
+status = "open"
+created = 2026-11-05T14:20:33Z
+last_seen = 2026-11-05T14:20:33Z
+seen_count = 1
+dedup_id = "8ae87ad12c506900"
+origin = "implement"
+flow = "v2-planning"
+context = "Copied because a sibling held tasks/dispatch.rs. Move finding_json to tasks/finding.rs so one renderer serves both verbs."
+base_sha = "a6abe04bf774d65e050cc55cf882fa48ac686ff6"
+
+[[backlog]]
+id = "B-57df0409"
+kind = "debt"
+summary = "plan/view.rs copies check.rs's brief-section scan, so plan/brief-section-empty and the digest's empty_sections agree only through fixtures"
+area = "tomlctl/src/plan/view.rs"
+tags = []
+status = "open"
+created = 2026-11-05T14:20:33Z
+last_seen = 2026-11-05T14:20:33Z
+seen_count = 1
+dedup_id = "57df0409e0cb1e28"
+origin = "implement"
+flow = "v2-planning"
+context = "view.rs has its own atx_heading, strip_comments and section-is-filled rule because check.rs keeps them private. Export a brief_section and an empty-sections helper from check.rs and delete the copies."
+base_sha = "a6abe04bf774d65e050cc55cf882fa48ac686ff6"
+
+[[backlog]]
+id = "B-1ec5ebb6"
+kind = "debt"
+summary = "plan stage and plan approve each read review-v2.toml for a finished plan-family run, so the rule lives in two places"
+area = "tomlctl/src/plan"
+tags = []
+status = "open"
+created = 2026-11-05T14:20:33Z
+last_seen = 2026-11-05T14:20:33Z
+seen_count = 1
+dedup_id = "1ec5ebb6bbf522a4"
+origin = "implement"
+flow = "v2-planning"
+context = "stage::review_settled and approve::plan_review_finished could disagree once Slice 3 changes the review store. Share one helper in plan/store.rs."
+base_sha = "a6abe04bf774d65e050cc55cf882fa48ac686ff6"
+
+[[backlog]]
+id = "B-eeb72de6"
+kind = "other"
+summary = "The acceptance-probing doc judges commands on stdout and stderr and cuts stderr to 100 bytes, while plan probes judges on exit status and whole stderr"
+area = "claude/skills/flow-contract-plan-output-format/references/acceptance-probing.md"
+tags = []
+status = "open"
+created = 2026-11-05T14:20:33Z
+last_seen = 2026-11-05T14:20:33Z
+seen_count = 1
+dedup_id = "eeb72de63b3aaa60"
+origin = "implement"
+flow = "v2-planning"
+context = "A reader moving between /plan-new probing and plan probes will assume they share one rule. Slice 2's carrier is the natural point to reconcile them."
+base_sha = "a6abe04bf774d65e050cc55cf882fa48ac686ff6"
+
+[[backlog]]
+id = "B-6f16ace8"
+kind = "debt"
+summary = "An audit trail mixes bare dates and datetimes: tasks add-many stamps Change.at with a date while update, remove and plan milestone use a datetime"
+area = "tomlctl/src/tasks/add.rs"
+tags = []
+status = "open"
+created = 2026-11-05T14:20:33Z
+last_seen = 2026-11-05T14:20:33Z
+seen_count = 1
+dedup_id = "6f16ace8811848c9"
+origin = "implement"
+flow = "v2-planning"
+context = "RowExtras::land uses today_toml_date and the others use now_toml_datetime, so anything sorting or comparing at across a task's trail meets two shapes. Switch add.rs to the datetime."
+base_sha = "a6abe04bf774d65e050cc55cf882fa48ac686ff6"
+
+[[backlog]]
+id = "B-36e61c7b"
+kind = "debt"
+summary = "The audit actor default is defined separately in tasks add, tasks remove and plan milestone, so it can drift between verbs"
+area = "tomlctl/src/tasks"
+tags = []
+status = "open"
+created = 2026-11-05T14:20:33Z
+last_seen = 2026-11-05T14:20:33Z
+seen_count = 1
+dedup_id = "36e61c7be597cbea"
+origin = "implement"
+flow = "v2-planning"
+context = "DEFAULT_ACTOR in add.rs, AUDIT_ACTOR in remove.rs and milestone.rs all hold orchestrator. Keep one constant in tasks/schema.rs beside Change."
+base_sha = "a6abe04bf774d65e050cc55cf882fa48ac686ff6"
+
+[[backlog]]
+id = "B-5719fe0b"
+kind = "debt"
+summary = "tasks remove leaves a removed row's file_notes and backlog_links in place, and a v2 flow has no import to clear them, so they key on a ref no row carries"
+area = "tomlctl/src/tasks/remove.rs"
+tags = []
+status = "open"
+created = 2026-11-05T14:20:33Z
+last_seen = 2026-11-05T14:20:33Z
+seen_count = 1
+dedup_id = "5719fe0b3c394511"
+origin = "implement"
+flow = "v2-planning"
+context = "Arrived cheap-in-file and was deferred because the run paused. Keeping them matches v1, where the next import rebuilds both tables, but a v2 flow never imports. plan approve already ignores such a link. Prune them on a v2 flow, or add a plan check class."
+base_sha = "a6abe04bf774d65e050cc55cf882fa48ac686ff6"
+related = ["B-261df63a"]
+
+[[backlog]]
+id = "B-38b34e4d"
+kind = "annoyance"
+summary = "/implement asks for the plan's narrative sections inline in every agent prompt, which on a large plan is too much to repeat across parallel dispatches in one response"
+area = "claude/commands/implement.md"
+tags = []
+status = "open"
+created = 2026-11-05T14:20:33Z
+last_seen = 2026-11-05T14:20:33Z
+seen_count = 1
+dedup_id = "38b34e4d5006ea8a"
+origin = "implement"
+flow = "v2-planning"
+context = "On a 33 KB narrative with up to 8 agents in one response, inlining would be hundreds of kilobytes of orchestrator output. Worked around by extracting the sections to one scratch file and opening every prompt with a byte-identical instruction to read it. Worth stating as the rule above some size, since an agent has to choose to pull the file."
+base_sha = "a6abe04bf774d65e050cc55cf882fa48ac686ff6"
