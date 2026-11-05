@@ -776,7 +776,7 @@ pub(crate) fn validate_row(
             Need::RequiredFor(kinds) => (kind.is_some_and(|k| kinds.contains(k)), ""),
             Need::OldText => (
                 old_required(row, ctx),
-                " for direction change or remove, and for add unless target_file names a new file",
+                " for direction change or remove, and for add unless target_file names a new file, except in the plan family",
             ),
             Need::WhenChallenge => (
                 str_field(row, "angle") == Some("challenge"),
@@ -815,6 +815,9 @@ pub(crate) fn validate_row(
 }
 
 fn old_required(row: &Map<String, JsonValue>, ctx: &RowContext<'_>) -> bool {
+    if ctx.family == Family::Plan {
+        return false;
+    }
     match str_field(row, "direction").and_then(Direction::parse) {
         Some(Direction::Change | Direction::Remove) => true,
         Some(Direction::Add) => match str_field(row, "target_file") {

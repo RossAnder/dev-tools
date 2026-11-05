@@ -128,7 +128,7 @@ fn property(spec: &FieldSpec) -> JsonValue {
     }
     if spec.need == Need::OldText {
         notes.push(
-            "required for direction change or remove, and for add unless target_file names a new file"
+            "required for direction change or remove, and for add unless target_file names a new file, except in the plan family"
                 .to_string(),
         );
     }
@@ -142,10 +142,6 @@ fn property(spec: &FieldSpec) -> JsonValue {
 fn conditionals(kind: Kind) -> Vec<JsonValue> {
     input_fields(Some(kind))
         .filter_map(|s| match s.need {
-            Need::OldText => Some(json!({
-                "if": {"properties": {"direction": {"enum": ["change", "remove"]}}, "required": ["direction"]},
-                "then": {"required": [s.name]},
-            })),
             Need::WhenChallenge => Some(json!({
                 "if": {"properties": {"angle": {"const": "challenge"}}, "required": ["angle"]},
                 "then": {"required": [s.name]},
@@ -391,10 +387,14 @@ mod tests {
                 Family::Code,
             );
             assert!(demanded.contains("old"), "the validator demands old");
-            assert_eq!(
-                then_requires(&cleanup["allOf"], "direction", direction),
-                BTreeSet::from(["old".to_string()]),
-                "{direction}"
+            assert!(
+                cleanup.get("allOf").is_none_or(|rules| then_requires(
+                    rules,
+                    "direction",
+                    direction
+                )
+                .is_empty()),
+                "{direction}: the schema cannot see the family, so it leaves old to the validator"
             );
         }
         let advisory = finding(Some(Kind::Advisory));

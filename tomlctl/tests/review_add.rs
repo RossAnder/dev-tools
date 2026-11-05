@@ -605,3 +605,25 @@ fn plan_anchor_old_must_be_unique_in_section() {
     assert!(reasons(&out, 1).contains("names no heading"), "{out}");
     assert!(reasons(&out, 2).contains("does not occur under"), "{out}");
 }
+
+#[test]
+fn plan_cleanup_row_needs_no_old() {
+    let repo = Repo::new();
+    let row = json!({
+        "kind": "cleanup",
+        "lens": "plan-structure",
+        "file": "docs/plans/p.md",
+        "line": 5,
+        "symbol": "add-the-export-verb",
+        "summary": "a Files line is stale",
+        "edit": "name the right file",
+        "direction": "change",
+        "effort": "trivial",
+        "plan_section": "### 4. Add the export verb [M]",
+        "anchor_old": "`src/export.rs`",
+        "anchor_new": "`src/export/mod.rs`",
+    });
+    let out = repo.added("U3", "C4", &[row]);
+    assert_eq!(ids(&out), ["F3"], "{out}");
+    assert!(out["refused"].as_array().unwrap().is_empty(), "{out}");
+}
