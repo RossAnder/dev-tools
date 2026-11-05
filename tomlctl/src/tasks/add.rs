@@ -8,6 +8,11 @@
 //!
 //! A batch is one candidate graph, so two rows in the same `add-many` may
 //! reference each other; a cycle between them is still refused.
+//!
+//! An `add-many` row may also carry a `spec`, its `[[file_notes]]` and
+//! `[[backlog_links]]` entries, and the `reason` an audited store requires.
+//! Only row shape is checked before the lock; what depends on the store is
+//! checked inside `store::mutate`, so a refusal there also persists nothing.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -17,7 +22,10 @@ use anyhow::{Context, Result};
 use serde_json::{Map as JsonMap, Value as JsonValue};
 
 use super::graph::{Node, Tense, build_or_refuse};
-use super::schema::{DEFAULT_HEADING_DEPTH, Effort, Status, Store, TaskRow};
+use super::schema::{
+    Accept, BacklogLink, Change, DEFAULT_HEADING_DEPTH, Effort, FileNote, Means, Premise, Status,
+    Store, TaskRow, TaskSpec,
+};
 use super::{slug, store};
 use crate::cli::WriteIntegrityArgs;
 use crate::convert::json_type_name;
@@ -52,7 +60,7 @@ pub(crate) struct AddOutcome {
 
 /// Row fields an NDJSON line may carry. Anything else is refused rather than
 /// dropped: a mistyped `neds` would otherwise silently discard an edge.
-const ROW_FIELDS: [&str; 10] = [
+const ROW_FIELDS: [&str; 16] = [
     "title",
     "effort",
     "files",
@@ -63,14 +71,79 @@ const ROW_FIELDS: [&str; 10] = [
     "action",
     "detail",
     "acceptance",
+    "spec",
+    "reason",
+    "actor",
+    "file_notes",
+    "closes",
+    "refs",
 ];
+
+const SPEC_FIELDS: [&str; 8] = [
+    "outcome",
+    "constraints",
+    "accept",
+    "premises",
+    "means",
+    "design",
+    "precedent",
+    "executor",
+];
+const ACCEPT_FIELDS: [&str; 5] = ["behaviour", "check", "kind", "positive", "writes_build"];
+const PREMISE_FIELDS: [&str; 3] = ["claim", "check", "at"];
+const MEANS_FIELDS: [&str; 3] = ["text", "binding", "detail"];
+
+const ACCEPT_KINDS: [&str; 3] = ["forward", "falsifier", "guard"];
+const MEANS_BINDINGS: [&str; 2] = ["required", "suggested"];
+const EXECUTORS: [&str; 4] = ["tool", "clerk", "lite", "deep"];
+
+/// Who an audit row names when the caller gives no `actor`.
+pub(super) const DEFAULT_ACTOR: &str = "orchestrator";
+
+/// What an `add-many` row carries beside its `NewTask`, each landing outside
+/// `[[items]]`. `line` is the row's position for a refusal raised under the lock.
+#[derive(Default)]
+struct RowExtras {
+    line: usize,
+    spec: Option<SpecPatch>,
+    reason: String,
+    actor: String,
+    file_notes: Vec<(String, String)>,
+    closes: Vec<String>,
+    refs: Vec<String>,
+}
+
+/// A row's `spec` key, validated. A field left `None` was not supplied.
+pub(super) struct SpecPatch {
+    outcome: Option<String>,
+    constraints: Option<Vec<String>>,
+    accept: Option<Vec<Accept>>,
+    premises: Option<Vec<Premise>>,
+    means: Option<Vec<Means>>,
+    design: Option<Vec<String>>,
+    precedent: Option<Vec<String>>,
+    executor: Option<String>,
+}
 
 pub(crate) fn add(
     path: &Path,
     integrity: &WriteIntegrityArgs,
     task: NewTask,
 ) -> Result<AddOutcome> {
-    let mut outcomes = store::mutate(path, integrity, |store| append(store, vec![task]))?;
+    let mut outcomes = store::mutate(path, integrity, |store| {
+        if store.audit {
+            return Err(tagged_err(
+                ErrorKind::Validation,
+                None,
+                format!(
+                    "task `{}`: `tasks add` has no reason channel and this store is audited — \
+                     use `tasks add-many` with a `reason` on the row",
+                    task.title
+                ),
+            ));
+        }
+        append(store, vec![(task, RowExtras::default())])
+    })?;
     Ok(outcomes.remove(0))
 }
 
@@ -82,7 +155,11 @@ pub(crate) fn add_many(
     let rows = parse_ndjson_objects(ndjson)?;
     let tasks = rows
         .iter()
-        .map(|(line, row)| task_from_row(*line, row))
+        .map(|(line, row)| {
+            let task = task_from_row(*line, row)?;
+            let extras = extras_from_row(*line, row, &task.files)?;
+            Ok((task, extras))
+        })
         .collect::<Result<Vec<_>>>()?;
     store::mutate(path, integrity, |store| append(store, tasks))
 }
@@ -112,7 +189,7 @@ pub(crate) fn literal_or_file(
     read_flag_file(&path, &format!("{flag}-file")).map(Some)
 }
 
-fn append(store: &mut Store, tasks: Vec<NewTask>) -> Result<Vec<AddOutcome>> {
+fn append(store: &mut Store, tasks: Vec<(NewTask, RowExtras)>) -> Result<Vec<AddOutcome>> {
     let mut taken: BTreeSet<String> = store
         .items
         .iter()
@@ -121,7 +198,18 @@ fn append(store: &mut Store, tasks: Vec<NewTask>) -> Result<Vec<AddOutcome>> {
 
     let mut next = store.next_id();
     let mut minted = Vec::with_capacity(tasks.len());
-    for task in tasks {
+    let mut extras = Vec::with_capacity(tasks.len());
+    for (task, row_extras) in tasks {
+        if store.audit && row_extras.reason.trim().is_empty() {
+            return Err(row_err(
+                row_extras.line,
+                format!(
+                    "task `{}`: this store is audited, so adding a task needs a `reason`",
+                    task.title
+                ),
+            ));
+        }
+        extras.push(row_extras);
         reject_undeclared_checkpoint(store, &task.checkpoint, &format!("task `{}`", task.title))?;
         let row = build_row(task, next, &mut taken)?;
         next = next.checked_add(1).ok_or_else(|| {
@@ -157,13 +245,337 @@ fn append(store: &mut Store, tasks: Vec<NewTask>) -> Result<Vec<AddOutcome>> {
         })
         .collect();
 
+    let known: BTreeSet<u32> = store
+        .items
+        .iter()
+        .chain(minted.iter())
+        .map(|row| row.id)
+        .collect();
+    for row_extras in &extras {
+        if let Some(premises) = row_extras
+            .spec
+            .as_ref()
+            .and_then(|spec| spec.premises.as_deref())
+        {
+            reject_unknown_premise_targets(row_extras.line, premises, &known)?;
+        }
+    }
+
     // Each minted `ref` is free of rows, so anything keyed on it is a removed
     // row's leftover.
     for row in &minted {
         store.drop_ref_entries(&row.r#ref);
     }
+    for (row, row_extras) in minted.iter().zip(extras) {
+        row_extras.land(row, store)?;
+    }
     store.items.extend(minted);
     Ok(outcomes)
+}
+
+/// A premise's `after:<id>` must name a row. Ids only exist once a batch is
+/// minted, so this runs under the lock where `premise_entry`'s format check
+/// cannot.
+pub(super) fn reject_unknown_premise_targets(
+    line: usize,
+    premises: &[Premise],
+    known: &BTreeSet<u32>,
+) -> Result<()> {
+    for premise in premises {
+        if let Some(id) = premise_target(&premise.at)
+            && !known.contains(&id)
+        {
+            return Err(row_err(
+                line,
+                format!(
+                    "`spec.premises` entry `at = \"{}\"` names no row in the store or this batch",
+                    premise.at
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The id in a canonical `after:<id>`. `after:+3` and `after:007` read as
+/// nothing: a reader joining on the stored string would miss the row.
+fn premise_target(at: &str) -> Option<u32> {
+    let id = at.strip_prefix("after:")?;
+    id.parse::<u32>().ok().filter(|n| n.to_string() == id)
+}
+
+impl RowExtras {
+    /// Runs after `drop_ref_entries`, which would otherwise take these with
+    /// the leftovers under the same `ref`.
+    fn land(self, row: &TaskRow, store: &mut Store) -> Result<()> {
+        let Self {
+            line: _,
+            spec,
+            reason,
+            actor,
+            file_notes,
+            closes,
+            refs,
+        } = self;
+
+        if let Some(patch) = spec {
+            let mut entry = TaskSpec {
+                r#ref: row.r#ref.clone(),
+                outcome: String::new(),
+                constraints: Vec::new(),
+                accept: Vec::new(),
+                premises: Vec::new(),
+                means: Vec::new(),
+                design: Vec::new(),
+                precedent: Vec::new(),
+                executor: String::new(),
+            };
+            patch.apply_to(&mut entry);
+            store.specs.push(entry);
+        }
+        for (file, note) in file_notes {
+            store.file_notes.push(FileNote {
+                r#ref: row.r#ref.clone(),
+                file,
+                note,
+            });
+        }
+        if !closes.is_empty() || !refs.is_empty() {
+            store.backlog_links.push(BacklogLink {
+                r#ref: row.r#ref.clone(),
+                closes,
+                refs,
+            });
+        }
+        if store.audit {
+            store.changes.push(Change {
+                at: Some(crate::time::today_toml_date()?),
+                r#ref: row.r#ref.clone(),
+                field: "*".to_string(),
+                old: String::new(),
+                new: row.title.clone(),
+                actor: match actor.trim().is_empty() {
+                    true => DEFAULT_ACTOR.to_string(),
+                    false => actor,
+                },
+                reason,
+            });
+        }
+        Ok(())
+    }
+}
+
+impl SpecPatch {
+    pub(super) fn parse(line: usize, raw: &JsonValue) -> Result<Self> {
+        let spec = SpecObject::of(line, "spec".to_string(), raw)?;
+        spec.refuse_unknown(&SPEC_FIELDS)?;
+        Ok(Self {
+            outcome: spec.text("outcome")?,
+            constraints: spec.strings("constraints")?,
+            accept: spec.entries("accept", accept_entry)?,
+            premises: spec.entries("premises", premise_entry)?,
+            means: spec.entries("means", means_entry)?,
+            design: spec.strings("design")?,
+            precedent: spec.strings("precedent")?,
+            executor: spec.one_of("executor", &EXECUTORS)?,
+        })
+    }
+
+    /// Each supplied field replaces `spec`'s; the rest stay as they are.
+    pub(super) fn apply_to(self, spec: &mut TaskSpec) {
+        let Self {
+            outcome,
+            constraints,
+            accept,
+            premises,
+            means,
+            design,
+            precedent,
+            executor,
+        } = self;
+        replace(&mut spec.outcome, outcome);
+        replace(&mut spec.constraints, constraints);
+        replace(&mut spec.accept, accept);
+        replace(&mut spec.premises, premises);
+        replace(&mut spec.means, means);
+        replace(&mut spec.design, design);
+        replace(&mut spec.precedent, precedent);
+        replace(&mut spec.executor, executor);
+    }
+}
+
+fn replace<T>(slot: &mut T, value: Option<T>) {
+    if let Some(value) = value {
+        *slot = value;
+    }
+}
+
+/// A table inside a row's `spec`, carrying its row and its path for a refusal.
+/// `null` reads as absent, as it does on the row.
+struct SpecObject<'a> {
+    line: usize,
+    label: String,
+    map: &'a JsonMap<String, JsonValue>,
+}
+
+impl<'a> SpecObject<'a> {
+    fn of(line: usize, label: String, raw: &'a JsonValue) -> Result<Self> {
+        let map = raw.as_object().ok_or_else(|| {
+            row_err(
+                line,
+                format!("`{label}` must be a table, got {}", json_type_name(raw)),
+            )
+        })?;
+        Ok(Self { line, label, map })
+    }
+
+    fn get(&self, key: &str) -> Option<&'a JsonValue> {
+        self.map.get(key).filter(|value| !value.is_null())
+    }
+
+    fn path(&self, key: &str) -> String {
+        format!("{}.{key}", self.label)
+    }
+
+    fn refuse(&self, message: String) -> anyhow::Error {
+        row_err(self.line, message)
+    }
+
+    fn refuse_unknown(&self, accepted: &[&str]) -> Result<()> {
+        match self
+            .map
+            .keys()
+            .find(|key| !accepted.contains(&key.as_str()))
+        {
+            None => Ok(()),
+            Some(key) => Err(self.refuse(format!(
+                "unknown field `{key}` in `{}` — accepted fields are {}",
+                self.label,
+                accepted.join(", ")
+            ))),
+        }
+    }
+
+    fn text(&self, key: &str) -> Result<Option<String>> {
+        row_string(self.line, &self.path(key), self.get(key))
+    }
+
+    fn strings(&self, key: &str) -> Result<Option<Vec<String>>> {
+        row_strings(self.line, &self.path(key), self.get(key))
+    }
+
+    fn one_of(&self, key: &str, vocabulary: &[&str]) -> Result<Option<String>> {
+        let value = self.text(key)?;
+        match &value {
+            Some(raw) if !vocabulary.contains(&raw.as_str()) => Err(self.refuse(format!(
+                "`{}` is `{raw}` — expected one of {}",
+                self.path(key),
+                vocabulary.join(", ")
+            ))),
+            _ => Ok(value),
+        }
+    }
+
+    fn entries<T>(
+        &self,
+        key: &str,
+        parse: impl Fn(&SpecObject<'a>) -> Result<T>,
+    ) -> Result<Option<Vec<T>>> {
+        let Some(raw) = self.get(key) else {
+            return Ok(None);
+        };
+        let entries = raw.as_array().ok_or_else(|| {
+            self.refuse(format!(
+                "`{}` must be an array of tables, got {}",
+                self.path(key),
+                json_type_name(raw)
+            ))
+        })?;
+        entries
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| {
+                let label = format!("{}[{index}]", self.path(key));
+                parse(&SpecObject::of(self.line, label, entry)?)
+            })
+            .collect::<Result<Vec<_>>>()
+            .map(Some)
+    }
+}
+
+/// A `kind` may stay off only while `check` is empty: a deferred milestone's
+/// row states its behaviour before anything exists to label.
+fn accept_entry(entry: &SpecObject<'_>) -> Result<Accept> {
+    if entry.map.contains_key("probe") {
+        return Err(entry.refuse(format!(
+            "`{}` cannot be supplied — only `plan probes --record` writes it",
+            entry.path("probe")
+        )));
+    }
+    entry.refuse_unknown(&ACCEPT_FIELDS)?;
+    let check = entry.text("check")?.unwrap_or_default();
+    let kind = match entry.one_of("kind", &ACCEPT_KINDS)? {
+        Some(kind) => kind,
+        None if check.trim().is_empty() => String::new(),
+        None => {
+            return Err(entry.refuse(format!(
+                "`{}` has a `check` but no `kind` — expected one of {}",
+                entry.label,
+                ACCEPT_KINDS.join(", ")
+            )));
+        }
+    };
+    let writes_build = match entry.get("writes_build") {
+        None => true,
+        Some(JsonValue::Bool(flag)) => *flag,
+        Some(other) => {
+            return Err(entry.refuse(format!(
+                "`{}` must be a boolean, got {}",
+                entry.path("writes_build"),
+                json_type_name(other)
+            )));
+        }
+    };
+    Ok(Accept {
+        behaviour: entry.text("behaviour")?.unwrap_or_default(),
+        check,
+        kind,
+        positive: entry.text("positive")?.unwrap_or_default(),
+        writes_build,
+        probe: None,
+    })
+}
+
+fn premise_entry(entry: &SpecObject<'_>) -> Result<Premise> {
+    entry.refuse_unknown(&PREMISE_FIELDS)?;
+    let at = entry.text("at")?.unwrap_or_default();
+    if at != "base" && premise_target(&at).is_none() {
+        return Err(entry.refuse(format!(
+            "`{}` is `{at}` — expected `base` or `after:<id>`",
+            entry.path("at")
+        )));
+    }
+    Ok(Premise {
+        claim: entry.text("claim")?.unwrap_or_default(),
+        check: entry.text("check")?.unwrap_or_default(),
+        at,
+    })
+}
+
+fn means_entry(entry: &SpecObject<'_>) -> Result<Means> {
+    entry.refuse_unknown(&MEANS_FIELDS)?;
+    let Some(binding) = entry.one_of("binding", &MEANS_BINDINGS)? else {
+        return Err(entry.refuse(format!(
+            "`{}` has no `binding` — expected one of {}",
+            entry.label,
+            MEANS_BINDINGS.join(", ")
+        )));
+    };
+    Ok(Means {
+        text: entry.text("text")?.unwrap_or_default(),
+        binding,
+        detail: entry.text("detail")?.unwrap_or_default(),
+    })
 }
 
 /// A grouping key must denote a group that exists. Every checkpoint product
@@ -312,6 +724,67 @@ fn task_from_row(line: usize, row: &JsonMap<String, JsonValue>) -> Result<NewTas
         detail: text("detail")?,
         acceptance: text("acceptance")?,
     })
+}
+
+fn extras_from_row(
+    line: usize,
+    row: &JsonMap<String, JsonValue>,
+    files: &[String],
+) -> Result<RowExtras> {
+    let present = |key: &str| row.get(key).filter(|v| !v.is_null());
+    let text = |key: &str| row_string(line, key, present(key)).map(Option::unwrap_or_default);
+    let strings = |key: &str| row_strings(line, key, present(key)).map(Option::unwrap_or_default);
+    Ok(RowExtras {
+        line,
+        spec: present("spec")
+            .map(|raw| SpecPatch::parse(line, raw))
+            .transpose()?,
+        reason: text("reason")?,
+        actor: text("actor")?,
+        file_notes: file_notes_from_row(line, present("file_notes"), files)?,
+        closes: strings("closes")?,
+        refs: strings("refs")?,
+    })
+}
+
+/// A blank annotation is refused rather than stored, because the store drops
+/// such an entry on write and the caller would never learn it was lost.
+fn file_notes_from_row(
+    line: usize,
+    value: Option<&JsonValue>,
+    files: &[String],
+) -> Result<Vec<(String, String)>> {
+    let Some(raw) = value else {
+        return Ok(Vec::new());
+    };
+    let notes = raw.as_object().ok_or_else(|| {
+        row_err(
+            line,
+            format!(
+                "`file_notes` must map a path to its annotation, got {}",
+                json_type_name(raw)
+            ),
+        )
+    })?;
+    notes
+        .iter()
+        .map(|(file, note)| {
+            if !files.contains(file) {
+                return Err(row_err(
+                    line,
+                    format!("`file_notes` names `{file}`, which is not on the row's `files`"),
+                ));
+            }
+            let note = row_string(line, "file_notes", Some(note))?.unwrap_or_default();
+            if note.trim().is_empty() {
+                return Err(row_err(
+                    line,
+                    format!("`file_notes` gives `{file}` a blank annotation"),
+                ));
+            }
+            Ok((file.clone(), note))
+        })
+        .collect()
 }
 
 fn json_ids(line: usize, key: &str, value: Option<&JsonValue>) -> Result<Vec<u32>> {
