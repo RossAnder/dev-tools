@@ -475,6 +475,7 @@ Each store below has a verb group that validates its writes, so the generic writ
 | `.claude/backlog.toml` | `backlog` |
 | `.claude/inputs.toml` | `inputs` |
 | `.claude/flows/<slug>/tasks.toml` | `tasks` |
+| `.claude/flows/<slug>/plan.toml` | `plan` |
 | `.claude/flows/<slug>/execution-record.toml` | `flow record` |
 | `.claude/flows/<slug>/review-v2.toml`, `.claude/review-v2/<scope>.toml` | `review` |
 
