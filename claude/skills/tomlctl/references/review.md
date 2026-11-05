@@ -93,7 +93,7 @@ The finding fields an agent supplies, with their caps in characters. Every other
 |---|---|---|
 | every kind | `kind`, `lens` (one of the cell's concerns), `file`, `summary` (≤160) | `symbol`, `same_as`, `depends_on` |
 | `defect` | `line`, `severity` (`critical` \| `major` \| `minor`), `failure_scenario` (≤600), `fix` (≤800), `fix_shape` (`edits` \| `needs-plan`), `effort`, `counter` (≤300), `grade` (`high` \| `medium` \| `low`), `evidence` (≤5 × 300) | — |
-| `cleanup` | `line`, `edit` (≤800), `direction` (`add` \| `remove` \| `change`), `effort`; `old` (≤400) for `change` and `remove`, and for `add` unless `target_file` names a new file | `target_file`, `instances` (≤50 paths), `counter` |
+| `cleanup` | `line`, `edit` (≤800), `direction` (`add` \| `remove` \| `change`), `effort`; `old` (≤400) for `change` and `remove` except on a plan review, and for `add` unless `target_file` names a new file | `target_file`, `instances` (≤50 paths), `counter` |
 | `advisory` | `angle` (`risk` \| `challenge` \| `probe` \| `alternative` \| `direction`), `rationale` (≤800), `adoption_cost`; `challenges` when `angle = challenge` | `alternative`, `line` |
 | plan family | `plan_section` (≤200) on defect and cleanup | `anchor_old` (≤400), `anchor_new` (≤800) |
 
