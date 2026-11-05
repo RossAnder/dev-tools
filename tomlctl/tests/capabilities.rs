@@ -1820,8 +1820,8 @@ fn capabilities_version_matches_cargo_toml() {
         .and_then(|s| s.as_str())
         .expect("`version` must be a string");
     assert_eq!(
-        version, "0.17.0",
-        "expected version `0.17.0` (the minor bump for the backlog `tier`/`focus` fields and the `focus`/`next` verbs); got `{version}`"
+        version, "0.18.0",
+        "expected version `0.18.0` (the minor bump for the `plan` verb group and the task-store `specs`/`milestones`/`changes` tables); got `{version}`"
     );
 }
 
