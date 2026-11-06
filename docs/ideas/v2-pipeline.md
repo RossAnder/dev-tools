@@ -29,7 +29,7 @@ The goal is one v2 chain from planning through implementation, review and apply.
 ### Pipeline
 
 - Apply is native and shares one execution engine with implement. Selected findings become task rows linked to their finding, so finishing a task resolves the finding. `export-v1` and `sync-v1` leave the v2 path.
-- Workflows throughout, with no Agent-tool fallback in the new execution path.
+- Workflows throughout, with no Agent-tool fallback in the new execution path. That needs the launch rules and pre-flight stop in the plan's Approach, "After approval", because a relaunch replays agents that have side effects.
 - `/tdd` and `/plan-update` are not ported, and their v1 commands stay as they are. v2 is designed so nothing needs `/plan-update`.
 - Backlog commands are not ported as such, but the backlog is central to the design below.
 
@@ -128,7 +128,7 @@ Fixes and dismissals run without asking, because fixes are revertible commits an
 5. A second top-level run re-checks only what changed. Leftovers show at approval.
 
 - **Deferred milestones:** elaboration runs as its own top-level run before this review, with the orchestrator applying its proposals in between, so review reads specs that exist. An elaboration Workflow could not call this wrapper anyway, since that is two nesting levels (the plan's Approach, "After approval").
-- **Blind finders:** finders see `brief.md`, `design/` and the tasks, not `notes/` or the authoring conversation, so they check claims against the code.
+- **Blind finders:** finders see `brief.md`, `design/` and the tasks, not `notes/` or the authoring conversation, so they check claims against the code. Read still reaches `notes/`, so that exclusion is prompt-only unless a frontmatter `PreToolUse` hook is proven on Workflow agents (the plan's Approach, "Structure challenge").
 - **Notes after findings:** once a finding exists, notes and the other excluded detail become available to clarify, compare and measure it. The verifier records its verdict first, then rechecks with the notes. A changed verdict needs a citation and is recorded, so `review stats` can show what blind review catches and how often notes overturn it.
 - **Edits:** findings target a record (a task field, or a named section of a design file) rather than matching text. Edits are tiered by evidence: mechanical evidence applies automatically, a cited code reading applies and is disclosed at approval, anything else is an advisory even if a verifier agreed, and anything touching a decision, outcome or success criterion comes to the user (the plan's user decision 6).
 - **One review, one approval:** the gate leads with agent-assumed decisions and puts counts last, and approving freezes intent (the plan's Approach, "Approval"). This replaces the merge questions, `.premerge.md` and `.revised.md`.

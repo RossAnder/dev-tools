@@ -25,6 +25,10 @@ Once the fallback has fired, run the rest of this run's waves on it rather than 
 - **Background, then end the turn.** After the message, end your turn. Each agent reports by a completion notification; resume on each one, record its return, and dispatch the next work its return unlocks while the running count allows.
 - **The prompt is the assignment.** Never paste constraints, lens text, rows or prior findings into a prompt. Agents fetch their own assignment from the store, and the pack carries the rest.
 
+### What recovering a Workflow run costs
+
+A same-args relaunch in the same session replays through the Workflow's journal, as far as the prompts match. A fresh session has no earlier run to relaunch, so launching there reruns every agent. Idempotent store writes keep that rerun correct, but not cheap. To narrow it, pass only the unsealed cells in `args.cells`, then mop up the unverified rows of the sealed cells as under Mop-up.
+
 ### The wave barrier
 
 A cell wave is complete when either every dispatched agent has notified, or `review digest` shows every cell of the wave sealed. A verification wave is complete when every dispatched verifier and checker has notified, or the digest lists no unverified id from this wave's cells. Check the digest rather than waiting when an agent is overdue:

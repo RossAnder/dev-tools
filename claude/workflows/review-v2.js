@@ -9,8 +9,11 @@ export const meta = {
 }
 
 // Agents persist their own findings and verdicts in the store, so this returns
-// only an index. Every prompt is built from `args` alone: a relaunch with the
-// same args replays the same agent calls, and the store writes are idempotent.
+// only an index. Only cell prompts are built from `args` alone: verifier and
+// checker prompts embed the finding ids agents return, and checker batches fill
+// in completion order, so a same-args relaunch can miss the journal from the
+// first reshuffled batch. Store writes are idempotent either way. The review-v2-engine
+// skill's references/agent-waves.md states what recovery costs.
 const SCRIPT_VERSION = '1'
 const CELL_AGENTS = ['review-finder', 'review-finder-cf', 'review-sweeper', 'plan-executor']
 // The context-free correctness cell runs without the pack, so its prompt omits the `pack:` line.
@@ -60,8 +63,8 @@ cell: ${cell.id}
 
 Fetch your assignment with \`tomlctl review show ${cell.id} --for finder ${storeFlag}\`, then run the cell as your procedure says: write its full finding set with one \`tomlctl review add --run ${a.run} --cell ${cell.id} ${storeFlag}\` call, seal it with \`tomlctl review cover ${cell.id}\`, and return the cell-return object \`review add\` printed.`
 
-// A batch name doubles as the agent's payload file name, so it is derived from
-// args alone and a relaunch reuses it.
+// A batch name doubles as the agent's payload file name. It holds only a cell id,
+// or the wave and a launch count, so a relaunch can reuse a name for different rows.
 const verifierPrompt = (ids, seat, batch) => `${preamble}
 findings: ${ids.join(', ')}
 ${batch ? `batch: ${batch}\n` : ''}${seat ? `panel seat: ${seat} of ${PANEL_SEATS}\n` : ''}
