@@ -1,5 +1,5 @@
 schema_version = 1
-last_updated = 2026-11-05
+last_updated = 2026-11-06
 
 [[backlog]]
 id = "B-de0a0d87"
@@ -6391,7 +6391,7 @@ kind = "question"
 summary = "Plan-family cleanup rows must carry both old and anchor_old because old_required ignores the finding family"
 area = "tomlctl/src/review/fields.rs"
 tags = ["review-v2"]
-status = "promoted"
+status = "resolved"
 created = 2026-10-13
 last_seen = 2026-10-13
 seen_count = 1
@@ -6403,6 +6403,11 @@ base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
 evidence = ["tomlctl/src/review/fields.rs:690"]
 promoted = 2026-11-05
 promoted_to = "v2-planning"
+resolved = 2026-11-05
+resolution = "resolved by flow `v2-planning` (tasks exempt-plan-cleanup-rows-from-old)"
+resolved_flow = "v2-planning"
+resolved_tasks = ["exempt-plan-cleanup-rows-from-old"]
+resolved_commits = ["75193dd"]
 
 [[backlog]]
 id = "B-d8d355f4"
@@ -7560,7 +7565,7 @@ tags = [
     "windows",
     "crlf",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-11-05T11:22:58Z
 last_seen = 2026-11-05T11:22:58Z
 seen_count = 1
@@ -7579,6 +7584,11 @@ base_sha = "b4dadbdbd06f254891530f71cef42e7ccbc06ef6"
 evidence = [".gitattributes:1"]
 promoted = 2026-11-05
 promoted_to = "v2-planning"
+resolved = 2026-11-05
+resolution = "resolved by flow `v2-planning` (tasks pin-flow-stores-to-lf-and-repair-their-sidecars)"
+resolved_flow = "v2-planning"
+resolved_tasks = ["pin-flow-stores-to-lf-and-repair-their-sidecars"]
+resolved_commits = ["804dc62"]
 
 [[backlog]]
 id = "B-23c14a52"
@@ -7874,3 +7884,518 @@ origin = "implement"
 flow = "v2-planning"
 context = "On a 33 KB narrative with up to 8 agents in one response, inlining would be hundreds of kilobytes of orchestrator output. Worked around by extracting the sections to one scratch file and opening every prompt with a byte-identical instruction to read it. Worth stating as the rule above some size, since an agent has to choose to pull the file."
 base_sha = "a6abe04bf774d65e050cc55cf882fa48ac686ff6"
+
+[[backlog]]
+id = "B-3e764c0c"
+kind = "debt"
+summary = "clippy warns dead_code on Event::Appearance, which is never constructed in the Linux build"
+area = "glimpse/src/source.rs"
+tags = []
+status = "open"
+created = 2026-11-05T20:51:38Z
+last_seen = 2026-11-05T20:51:38Z
+seen_count = 1
+dedup_id = "3e764c0c92038aa9"
+origin = "implement"
+flow = "v2-planning"
+context = "Seen in cargo clippy --manifest-path glimpse/Cargo.toml --locked, which exits 0 regardless and which the pre-commit hook runs on tomlctl changes, so each such commit shows the warning. Not checked on other platforms: confirm whether the variant is only constructed elsewhere before gating it or removing it."
+base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
+evidence = ["glimpse/src/source.rs:75"]
+related = ["B-5e571ecd"]
+
+[[backlog]]
+id = "B-979cb5ce"
+kind = "bug"
+summary = "plan record verbs auto-create a stray flow directory holding only plan.toml when the slug is mistyped"
+area = "tomlctl/src/plan/records.rs"
+tags = []
+status = "open"
+created = 2026-11-05T20:51:38Z
+last_seen = 2026-11-05T20:51:38Z
+seen_count = 1
+dedup_id = "979cb5ce9e928aee"
+origin = "implement"
+flow = "v2-planning"
+context = "Observed with plan handover add and a wrong --slug: the other record verbs go through the same store mutate path. It leaves a flow directory with no context.toml or brief.md. --no-create prevents it today, and references/plan.md documents the behaviour. A fix would refuse a slug with no plan open, which Slice 2's carrier may want settled first."
+base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
+related = ["B-5f1ec4ff"]
+
+[[backlog]]
+id = "B-aca96d19"
+kind = "annoyance"
+summary = "plan drift lists the flow's own stores in changed_files when they land in a commit no row records"
+area = "tomlctl/src/plan/drift.rs"
+tags = []
+status = "open"
+created = 2026-11-05T20:51:38Z
+last_seen = 2026-11-05T20:51:38Z
+seen_count = 1
+dedup_id = "aca96d194d1be025"
+origin = "implement"
+flow = "v2-planning"
+context = "Seen when the commit holding what plan approve writes after the stamp is one no task row records. Only changed_files is noisy: the affected rows are correct unless a task claims those paths, so read affected rather than changed_files."
+base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
+related = ["B-85dd4b61"]
+
+[[backlog]]
+id = "B-9a39ad73"
+kind = "debt"
+summary = "the --verify-integrity support matrix has rows for the tasks verbs and none for the plan verbs"
+area = "claude/skills/tomlctl/references/flow.md"
+tags = []
+status = "open"
+created = 2026-11-05T20:51:38Z
+last_seen = 2026-11-05T20:51:38Z
+seen_count = 1
+dedup_id = "9a39ad739f1038c8"
+origin = "implement"
+flow = "v2-planning"
+context = "The matrix reads as complete, and the plan verbs do accept the flag, so an agent reading it would conclude they do not. Same gap B-3c59ed80 closed for the tasks read verbs. Add the plan rows from the clap args in tomlctl/src/cli/types."
+base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
+related = ["B-3c59ed80"]
+
+[[backlog]]
+id = "B-08c658a1"
+kind = "bug"
+summary = "integrity refresh and flow doctor --fix stamp a CRLF working copy's digest, re-creating the sidecars 804dc62 repaired"
+area = "tomlctl/src/integrity.rs"
+tags = [
+    "crlf",
+    "sidecar",
+]
+status = "open"
+created = 2026-11-05T21:08:37Z
+last_seen = 2026-11-05T21:08:37Z
+seen_count = 1
+dedup_id = "08c658a12517af9f"
+origin = "review"
+flow = "v2-planning"
+context = "Reproduced with integrity refresh in a core.autocrlf=true scratch repo: on a CRLF copy the verb exits 0 and --verify-integrity then passes locally, but the staged sidecar differs from the digest of the staged LF blob, so it fails on every LF checkout. Workaround: on a mismatch in such a clone, remove the store and sidecar and git checkout them; never refresh first. Fix either by folding CRLF in the digest (the related direction row) or by having refresh_sidecar refuse a .toml holding CRLF and name the re-checkout. The --fix path was run by the review's architecture lens rather than re-run in the vet."
+base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
+evidence = [
+    "tomlctl/src/integrity.rs:122",
+    "tomlctl/src/flow/doctor.rs:858",
+]
+related = [
+    "B-33df5eda",
+    "B-b58537a5",
+]
+
+[[backlog]]
+id = "B-2b7792e4"
+kind = "direction"
+summary = "sidecar digests hash raw bytes, so every repo using tomlctl needs its own LF pin, while brief_digest already folds CRLF"
+area = "tomlctl/src/integrity.rs"
+tags = [
+    "crlf",
+    "sidecar",
+]
+status = "open"
+created = 2026-11-05T21:08:37Z
+last_seen = 2026-11-05T21:08:37Z
+seen_count = 1
+dedup_id = "2b7792e4ffa917db"
+origin = "review"
+flow = "v2-planning"
+context = "804dc62 pins line endings in this repo's .gitattributes only. Five sibling repos track 155 sidecars with no such pin, and neither flow init nor flow doctor installs or checks one, so an autocrlf checkout there fails its sidecars the same way. Argued design: move brief_digest's CRLF fold into integrity.rs and call it from sha256_hex_of_file and sidecar_contents. LF stores keep their digest, so existing sidecars stay valid; the streaming read must carry a trailing CR across chunks. Cost: sha256sum -c no longer agrees on a CRLF store. Would also close the refresh re-stamp bug. Latent while those repos are not checked out under autocrlf."
+base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
+evidence = [
+    "tomlctl/src/integrity.rs:68",
+    "tomlctl/src/io.rs:2264",
+    "tomlctl/src/plan/store.rs:75",
+]
+related = [
+    "B-33df5eda",
+    "B-11359954",
+]
+
+[[backlog]]
+id = "B-791c122f"
+kind = "debt"
+summary = "no gate checks that a committed sidecar matches its committed store, and flow doctor sees only three sidecars per flow"
+area = ".githooks/pre-commit"
+tags = ["sidecar"]
+status = "open"
+created = 2026-11-05T21:08:37Z
+last_seen = 2026-11-05T21:08:37Z
+seen_count = 1
+dedup_id = "791c122f4df36293"
+origin = "review"
+flow = "v2-planning"
+context = "The hook and test suite never compare a tracked sidecar with its store, and doctor covers only context, execution-record and tasks, by design: 86 of 212 tracked sidecars, including ledgers and plan-review stores, are invisible to it. That is how the 16 CRLF stamps and the lumina-schema-deepening mismatch outlived normal use. Suggested: a path-gated hook step over staged pairs that hashes the index form with git cat-file blob :<store>, which is immune to autocrlf, and does not read the working tree. Staged pairs only, so the known bad pair blocks nothing; make it advisory if a --no-write-integrity commit turns out to matter."
+base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
+evidence = [
+    ".githooks/pre-commit:4",
+    "tomlctl/src/flow/doctor.rs:11",
+]
+related = [
+    "B-33df5eda",
+    "B-bcb545a2",
+]
+
+[[backlog]]
+id = "B-f058b706"
+kind = "annoyance"
+summary = "a sidecar mismatch reports two digests and never says the cause may be line endings"
+area = "tomlctl/src/integrity.rs"
+tags = [
+    "crlf",
+    "sidecar",
+]
+status = "open"
+created = 2026-11-05T21:08:37Z
+last_seen = 2026-11-05T21:08:37Z
+seen_count = 1
+dedup_id = "f058b706b33fe7d2"
+origin = "review"
+flow = "v2-planning"
+context = "Both messages name expected and actual digests only, so someone on a stale CRLF clone is steered toward the refresh that makes it worse. To tell whether a mismatch is line endings, compare the sidecar with the store's bytes after folding CRLF. Suggested: do that comparison in a helper and append a clause naming the re-checkout, keeping the one-line prefix that tests/flow_list.rs and tests/capabilities.rs assert on."
+base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
+evidence = [
+    "tomlctl/src/integrity.rs:200",
+    "tomlctl/src/flow/doctor.rs:278",
+]
+related = [
+    "B-33df5eda",
+    "B-079a7625",
+]
+
+[[backlog]]
+id = "B-c2570c84"
+kind = "debt"
+summary = "the CRLF remove-and-re-checkout recovery is documented only in a commit message and the v2-planning plan"
+area = "claude/skills/tomlctl/references/flow.md"
+tags = [
+    "crlf",
+    "sidecar",
+]
+status = "open"
+created = 2026-11-05T21:08:37Z
+last_seen = 2026-11-05T21:08:37Z
+seen_count = 1
+dedup_id = "c2570c84fb6dfada"
+origin = "review"
+flow = "v2-planning"
+context = "flow.md says only 'Resolve by a human', README.md gives two causes of a mismatch without line endings, and the task-store skill says to validate and then refresh, which passes on CRLF and stamps it. Add the third cause and the order to those docs and CLAUDE.md's Integrity sidecar section: if the store shows CRLF, rm the store and sidecar, git checkout them, and do not refresh or --fix first."
+base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
+evidence = [
+    "claude/skills/tomlctl/references/flow.md:81",
+    "tomlctl/README.md:135",
+    "claude/skills/flow-contract-task-store/SKILL.md:465",
+    "CLAUDE.md:105",
+]
+related = [
+    "B-33df5eda",
+    "B-0fb99230",
+]
+
+[[backlog]]
+id = "B-fe886ed0"
+kind = "debt"
+summary = "active-flow.toml is tracked in a public repo with machine-local worktree paths, though the flow-context skill calls it gitignored"
+area = ".claude/active-flow.toml"
+tags = ["publication"]
+status = "open"
+created = 2026-11-05T21:08:37Z
+last_seen = 2026-11-05T21:08:37Z
+seen_count = 1
+dedup_id = "fe886ed0b60f10a1"
+origin = "review"
+flow = "v2-planning"
+context = "The file is tracked and no ignore rule matches it, while flow-contract-flow-context describes the registry as gitignored per-clone state. 53 of its lines carry absolute worktree paths from a developer machine. settings.local.json holds similar paths; B-47120642 tracks that it is tracked but not the path exposure. Decide: untrack and ignore it as documented (the paths stay in history), or store repo-relative worktrees and correct the skill. No secrets were found in a token-pattern sweep of tracked .claude files."
+base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
+evidence = [".claude/active-flow.toml:9"]
+related = ["B-47120642"]
+
+[[backlog]]
+id = "B-b4d3206e"
+kind = "debt"
+summary = "the legacy .claude/active-flow file and a stray .o1-ops.json payload are still tracked"
+area = ".claude"
+tags = []
+status = "open"
+created = 2026-11-05T21:08:37Z
+last_seen = 2026-11-05T21:08:37Z
+seen_count = 1
+dedup_id = "b4d3206e36402b99"
+origin = "review"
+flow = "v2-planning"
+context = "The flow-context skill says the legacy single-line active-flow is no longer consulted, and nothing outside flow state names .o1-ops.json, which looks like a leftover ops payload from ac9aa85. Read both before removing them; git rm is the likely fix."
+base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
+evidence = [
+    ".claude/active-flow:1",
+    ".claude/optimise-findings/.o1-ops.json:1",
+]
+
+[[backlog]]
+id = "B-a162a412"
+kind = "debt"
+summary = "flow doctor has no plan.toml sidecar check, and its tasks-exists check reports the v1 wording on a v2 flow"
+area = "tomlctl/src/flow/doctor.rs"
+tags = [
+    "doctor",
+    "plan",
+]
+status = "open"
+created = 2026-11-05T22:29:56Z
+last_seen = 2026-11-05T22:29:56Z
+seen_count = 1
+dedup_id = "a162a41245897cbb"
+origin = "review"
+flow = "v2-planning"
+context = "plan.toml holds the approval stamp, yet a hand-corrupted one passes doctor while the same edit to tasks.toml fails tasks-sidecar. tasks-exists also says the plan declares no Tasks section on a v2 flow. Add a plan-sidecar check emitted only when plan.toml exists, so v1 output and tests/flow_doctor.rs stay unchanged. Doctor has no review-v2 check either, so omission has precedent. Until then pass --verify-integrity on plan reads."
+base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
+evidence = ["tomlctl/src/flow/doctor.rs:439"]
+related = ["B-791c122f"]
+
+[[backlog]]
+id = "B-2bff69af"
+kind = "bug"
+summary = "deploy-claude.ps1 ignores CLAUDE_CONFIG_DIR and builds Windows-only paths, so saved Workflows never reach a config dir set that way"
+area = "scripts/deploy-claude.ps1"
+tags = [
+    "deploy",
+    "workflows",
+]
+status = "open"
+created = 2026-11-05T22:29:56Z
+last_seen = 2026-11-05T22:29:56Z
+seen_count = 1
+dedup_id = "2bff69af08173c6a"
+origin = "review"
+flow = "v2-planning"
+context = "deploy-claude.ps1 now defaults ClaudeHome from CLAUDE_CONFIG_DIR, joins paths portably, and links directories with symlinks off Windows, but no line of it has been run: this machine has no pwsh. Slice 2's entry condition in the v2 plan requires a working deploy check, and review-v2-engine references/agent-waves.md names the config dir. Close this once deploy-claude.ps1 -Check has run on Linux and on Windows. The dangling-symlink path on Linux rests on recalled .NET behaviour, so check it on the first real run. Saved workflows load from workflows/ under CLAUDE_CONFIG_DIR, so review-v2-pipeline cannot resolve by name until the first real deploy."
+base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
+evidence = ["scripts/deploy-claude.ps1:16"]
+
+[[backlog]]
+id = "B-81b3ee0b"
+kind = "bug"
+summary = "--verify-integrity on a writer is accepted and never checked: mutate_doc does not verify, while the flag's doc comment says writers honour it"
+area = "tomlctl/src/io.rs"
+tags = ["integrity"]
+status = "open"
+created = 2026-11-05T22:29:56Z
+last_seen = 2026-11-05T22:29:56Z
+seen_count = 1
+dedup_id = "81b3ee0b16b33c15"
+origin = "review"
+flow = "v2-planning"
+context = "After appending to a store, plan run skip --verify-integrity succeeded and refreshed the sidecar, while plan stage --verify-integrity refused with kind=integrity. The lens saw the same on tasks update and set. A caller relying on a pre-write check gets none, and the write launders the mismatch. Either verify in mutate_doc or correct WriteIntegrityArgs and references/plan.md's write bundle. Until then run a read verb with the flag first."
+base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
+evidence = ["tomlctl/src/cli/types/shared.rs:50"]
+related = ["B-11359954"]
+
+[[backlog]]
+id = "B-05cfc36b"
+kind = "debt"
+summary = "review-v2.js header says prompts build from args alone, but verifier and checker prompts embed returned finding ids and pool batches by completion order"
+area = "claude/workflows/review-v2.js"
+tags = [
+    "workflows",
+    "review-v2",
+]
+status = "open"
+created = 2026-11-05T22:29:56Z
+last_seen = 2026-11-05T22:29:56Z
+seen_count = 1
+dedup_id = "05cfc36bc9087d8c"
+origin = "review"
+flow = "v2-planning"
+context = "Arrived cheap-in-file from a review lens and deferred, because /review does not edit. A resumeFromRunId relaunch can miss the cache from the first reshuffled batch onward, since the journal keys on prompt and options. This matters only if resume is ever wired up; correct the comment either way."
+base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
+evidence = ["claude/workflows/review-v2.js:1"]
+related = ["B-be44a578"]
+
+[[backlog]]
+id = "B-0a9dbbc0"
+kind = "debt"
+summary = "CLAUDE.md names the reinstall the review and tasks groups need, but not the one the plan group needs"
+area = "CLAUDE.md"
+tags = [
+    "docs",
+    "plan",
+]
+status = "open"
+created = 2026-11-05T22:29:56Z
+last_seen = 2026-11-05T22:29:56Z
+seen_count = 1
+dedup_id = "0a9dbbc0318025fb"
+origin = "review"
+flow = "v2-planning"
+context = "Arrived cheap-in-file from a review lens and deferred, because /review does not edit. Carriers shell out to the installed binary, so a stale one answers unrecognized subcommand 'plan' with no pointer. Run cargo install --path tomlctl after pulling; add the sentence beside the Task store section's."
+base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
+
+[[backlog]]
+id = "B-db9d459d"
+kind = "debt"
+summary = "the capabilities sample in the tomlctl skill still prints version 0.16.0"
+area = "claude/skills/tomlctl/SKILL.md"
+tags = ["docs"]
+status = "open"
+created = 2026-11-05T22:29:56Z
+last_seen = 2026-11-05T22:29:56Z
+seen_count = 1
+dedup_id = "db9d459d9d3ab228"
+origin = "review"
+flow = "v2-planning"
+context = "Arrived cheap-in-file from a review lens and deferred, because /review does not edit. The sample goes stale on every bump, as it did at 0.6.0, and the documentation rule says versions live in manifests. Elide the version from the sample rather than bumping it."
+base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
+evidence = ["claude/skills/tomlctl/SKILL.md:221"]
+related = ["B-54b2d71e"]
+
+[[backlog]]
+id = "B-756ba52d"
+kind = "debt"
+summary = "active_flow_path is defined separately in flow/active.rs, flow/init.rs and flow/resolve.rs"
+area = "tomlctl/src/flow"
+tags = ["dry"]
+status = "open"
+created = 2026-11-05T22:29:56Z
+last_seen = 2026-11-05T22:29:56Z
+seen_count = 1
+dedup_id = "756ba52dbe9f2037"
+origin = "review"
+flow = "v2-planning"
+context = "The registry path has three owners, and plan approve's register builds a fourth by hand. Keep one in flow/active.rs; the open review finding on plan approve's registry upsert removes the fourth."
+base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
+evidence = ["tomlctl/src/flow/active.rs:58"]
+related = ["B-36e61c7b"]
+
+[[backlog]]
+id = "B-4e42c741"
+kind = "annoyance"
+summary = "no verb removes an orphan spec, and tasks add-many on its ref discards it without saying so"
+area = "tomlctl/src/tasks/add.rs"
+tags = [
+    "plan",
+    "tasks",
+]
+status = "open"
+created = 2026-11-06T07:35:46Z
+last_seen = 2026-11-06T07:35:46Z
+seen_count = 1
+dedup_id = "4e42c74136aea878"
+origin = "review-apply"
+flow = "v2-planning"
+context = "plan stage now names tasks add-many for plan/spec-orphan because tasks update patches rows only. store.drop_ref_entries then drops the orphan's outcome and accept text. Copy the text out with tasks show first if it matters; a tasks spec removal verb, or a warning on the discard, would close this."
+base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
+evidence = ["tomlctl/src/tasks/add.rs:193"]
+related = ["B-6f16ace8"]
+
+[[backlog]]
+id = "B-8e08bd90"
+kind = "question"
+summary = "plan approve does not refuse a plan with an open run, though plan stage warns about one"
+area = "tomlctl/src/plan/approve.rs"
+tags = [
+    "plan",
+    "workflows",
+]
+status = "open"
+created = 2026-11-06T07:35:46Z
+last_seen = 2026-11-06T07:35:46Z
+seen_count = 1
+dedup_id = "8e08bd9028f2d24e"
+origin = "review-apply"
+flow = "v2-planning"
+context = "approve reads plan.runs only to list review skip reasons, so a step that is still running, or a dead run, can pass approval while plan stage's next asks to relaunch or abandon it. Decide whether an open run blocks approval or only appears among the gate's risks. Until then read plan stage's open_runs before approving."
+base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
+evidence = ["tomlctl/src/plan/approve.rs:85"]
+related = ["B-02515e2e"]
+
+[[backlog]]
+id = "B-cd31c8b8"
+kind = "bug"
+summary = "plan drift's normal_path folds a literal backslash, so a Unix row naming such a file never flags as affected"
+area = "tomlctl/src/plan/drift.rs"
+tags = ["plan"]
+status = "open"
+created = 2026-11-06T07:35:46Z
+last_seen = 2026-11-06T07:35:46Z
+seen_count = 1
+dedup_id = "cd31c8b84bdb596d"
+origin = "review-apply"
+flow = "v2-planning"
+context = "changed_files reports the path verbatim since drift reads git log with -z, but affected_tasks compares through normal_path, which turns a backslash into a slash for Windows-form rows. Fixing it needs a decision on whether folding applies only on Windows. The path appears in changed_files, so read that list when a repo holds such a file."
+base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
+evidence = ["tomlctl/src/plan/drift.rs:105"]
+related = ["B-96ebd760"]
+
+[[backlog]]
+id = "B-eb845c85"
+kind = "direction"
+summary = "Linux has no deployment path without pwsh, and the drift hook exits silently when pwsh is missing, so config dir copies go stale unnoticed"
+area = "scripts/deploy-claude.ps1"
+tags = ["deploy"]
+status = "open"
+created = 2026-11-06T07:35:46Z
+last_seen = 2026-11-06T07:35:46Z
+seen_count = 1
+dedup_id = "eb845c853afd4f39"
+origin = "review-apply"
+flow = "v2-planning"
+context = "On this kind of machine the config dir set by CLAUDE_CONFIG_DIR holds real copies of agents, commands and skills, not links, so edits under claude/ do not reach it, and it has no workflows directory. deploy-check.sh exits 0 when pwsh is absent. Install pwsh and run the deploy script, which backs the copies up and links in their place, or decide on a shell deployer and a hook warning."
+base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
+evidence = [".githooks/deploy-check.sh:6"]
+related = ["B-2bff69af"]
+
+[[backlog]]
+id = "B-e63ab1ac"
+kind = "question"
+summary = "review-v2-pipeline's recovery is a same-args relaunch, which in a fresh session reruns every agent"
+area = "claude/workflows/review-v2.js"
+tags = [
+    "workflows",
+    "review-v2",
+]
+status = "open"
+created = 2026-11-06T07:35:46Z
+last_seen = 2026-11-06T07:35:46Z
+seen_count = 1
+dedup_id = "e63ab1ac021fd1fd"
+origin = "review-apply"
+flow = "v2-planning"
+context = "The v2 planning doc now records that a fresh session has no earlier run to relaunch and that a work-list in args narrows the rerun; that plan does not cover review-v2-pipeline. Idempotent store writes keep a rerun correct but not cheap. Pass only unsealed cells in args if resume cost matters."
+base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
+evidence = ["docs/plans/v2-planning.md:675"]
+related = [
+    "B-be44a578",
+    "B-05cfc36b",
+]
+
+[[backlog]]
+id = "B-3a7d9e97"
+kind = "debt"
+summary = "backlog-capture stages payloads with the Write tool at .claude/_backlog-*, a protected path that prompts or is denied"
+area = "claude/skills/backlog-capture"
+tags = ["permissions"]
+status = "open"
+created = 2026-11-06T07:57:43Z
+last_seen = 2026-11-06T07:57:43Z
+seen_count = 1
+dedup_id = "3a7d9e97a16106a3"
+origin = "review-apply"
+flow = "v2-planning"
+context = "The idioms stage backlog rows under .claude/, which is never auto-approved: prompted in default and acceptEdits, denied in dontAsk, sent to the classifier in auto, and no allow rule pre-approves it. Flow authored files and review run payloads have already moved out of .claude for this reason. Change the idioms to a path outside .claude; until then a prompt's session-scoped .claude option covers an interactive run."
+base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
+evidence = ["claude/skills/backlog-capture/SKILL.md:290"]
+related = ["B-43bd7e29"]
+
+[[backlog]]
+id = "B-c94abace"
+kind = "annoyance"
+summary = "a refused review report --out suggests --allow-outside, a flag report does not take"
+area = "tomlctl/src/review/digest.rs"
+tags = ["review-v2"]
+status = "open"
+created = 2026-11-06T07:57:43Z
+last_seen = 2026-11-06T07:57:43Z
+seen_count = 1
+dedup_id = "c94abace20cbaa35"
+origin = "review-apply"
+flow = "v2-planning"
+context = "review report falls through to guard_write_path, whose message names --allow-outside, and clap rejects that flag on this verb. Use a path under .review-v2-runs or .claude instead. Either give report the flag or word the refusal for it."
+base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
+evidence = ["tomlctl/src/review/digest.rs:161"]
+related = ["B-e4c1a22a"]

@@ -1,6 +1,6 @@
 slug = "v2-planning"
 plan_path = "docs/plans/v2-planning.md"
-status = "in-progress"
+status = "review"
 created = 2026-11-05
 updated = 2026-11-05
 branch = "main"
@@ -33,7 +33,7 @@ scope = [
 
 [tasks]
 total = 31
-completed = 0
+completed = 31
 in_progress = 0
 
 [artifacts]

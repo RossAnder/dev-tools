@@ -800,7 +800,7 @@ id = 21
 ref = "document-the-plan-group"
 title = "Document the plan group"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "E"
 phase = "Phase 5: Documents and closure"
 phase_depth = 3
@@ -818,8 +818,8 @@ detail = "`flag_table_lint` and `command_lint` under `tomlctl/src/cli/dispatch/t
 acceptance = """
 - forward: `test -f claude/skills/tomlctl/references/plan.md` exits 0 (today: exits 1).
 - forward: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes **predicted, unverified**."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "a9961bc"
 
 [[items]]
 id = 22
@@ -882,7 +882,7 @@ id = 24
 ref = "bump-the-tomlctl-version"
 title = "Bump the tomlctl version"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "E"
 phase = "Phase 5: Documents and closure"
 phase_depth = 3
@@ -903,8 +903,8 @@ acceptance = """
 - forward: `grep -c '^version = "0.17.0"' tomlctl/Cargo.toml` prints `0` (today: `1`).
 - forward: `cargo test --manifest-path tomlctl/Cargo.toml --test capabilities` passes **predicted, unverified**; falsifier: leaving the literal in `tomlctl/tests/capabilities.rs` at the old version turns it red.
 - guard: `cargo clippy --manifest-path glimpse/Cargo.toml --locked` passes **predicted, unverified**."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "67be38e"
 
 [[items]]
 id = 25
@@ -931,7 +931,7 @@ id = 26
 ref = "pin-flow-stores-to-lf-and-repair-their-sidecars"
 title = "Pin flow stores to LF and repair their sidecars"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "F"
 phase = "Phase 5: Documents and closure"
 phase_depth = 3
@@ -976,8 +976,8 @@ acceptance = """
 - forward: `git check-attr eol -- .claude/flows/x/brief.md` prints `.claude/flows/x/brief.md: eol: lf` (today: `.claude/flows/x/brief.md: eol: unspecified`).
 - forward: `git ls-files --eol .claude/flows | grep -c 'w/crlf'` prints `0` (today: `105`).
 - forward: `tomlctl flow doctor --rows checks --where ok=false --where-suffix name=-sidecar --get name` prints nothing (today: 12 lines)."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "804dc62"
 
 [[items]]
 id = 28

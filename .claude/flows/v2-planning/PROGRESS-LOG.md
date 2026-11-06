@@ -36,6 +36,9 @@
 | E67 | implement-plan-drift | 2026-11-05 | | 2 files |
 | E69 | give-every-plan-verb-an-output-options-case | 2026-11-05 | | 4 files |
 | E72 | add-the-lifecycle-test | 2026-11-05 | | 2 files |
+| E78 | bump-the-tomlctl-version | 2026-11-05 | | 5 files |
+| E82 | document-the-plan-group | 2026-11-05 | | 3 files |
+| E92 | pin-flow-stores-to-lf-and-repair-their-sidecars | 2026-11-05 | | 17 files |
 
 ---
 
@@ -73,6 +76,11 @@
 | E68 | Moved plan stage, gate and drift to print_json_line, widening task 31 | 2026-11-05 | | The new cases showed plan stage, plan gate and plan drift, all reads, printing through print_json_compact, the lenient write-envelope emitter, so a bad --get exited 0 with unshaped output. The orchestrator's dispatch prompts for tasks 17, 18 and 19 had named that emitter. Each read now uses print_json_line; approve keeps the compact form. Orchestrator applied the three one-line changes. | — |
 | E70 | Review skip moved after probes --record in tomlctl/tests/plan_lifecycle.rs | 2026-11-05 | | Done that early, plan stage never reports review. Skipping it after probes --record reaches every stage and matches the Flow table's Prove then Review order. | — |
 | E71 | Only the script is skipped without bash in tomlctl/tests/plan_lifecycle.rs | 2026-11-05 | | Skipping the whole test would lose every later verb on a machine with no bash, so only the script is skipped and the capture it would print is hand-written. | — |
+| E79 | Documented promoted and skipped_stale for plan approve in claude/skills/tomlctl/references/plan.md | 2026-11-05 | | approve also emits promoted and skipped_stale, and the reference is written from the built verbs. | — |
+| E80 | Also added a plan check row to rows-and-header and named plan view and plan probes --emit under Text output in claude/skills/tomlctl/SKILL.md | 2026-11-05 | | The rows-and-header table and the Text output list are both stated as the full set, and both new entries match observed behaviour. | — |
+| E81 | Also added the_plan_scan_reads_both_construction_sites_and_no_tasks_class in tomlctl/src/cli/dispatch/tests/finding_classes.rs | 2026-11-05 | | An empty scan would agree with an empty table, so the parity test alone could pass without checking anything. | — |
+| E90 | Step 2 ran its query and rewrote nothing under .claude/flows | 2026-11-05 | | This Linux clone has no w/crlf copies, 512 rows all i/lf w/lf. A checkout under core.autocrlf still needs step 2 after pulling, which After Merge already names. | — |
+| E91 | Refreshed the 16 listed sidecars by matching each digest to the store's CRLF form under .claude/flows | 2026-11-05 | | Step 2's set was empty here, so step 3 as written would refresh nothing and the doctor acceptance would fail. Keyed instead on sidecars on the Files line whose digest equals the store's CRLF form and whose store is clean, which keeps the guard against blessing an unexplained mismatch. All 16 qualified. | — |
 
 ---
 
@@ -88,4 +96,4 @@
 
 | Date | Changes | Commits |
 |------|---------|---------|
-| 2026-11-05 | 77 entries: status-transition × 1, task-completion × 28, deviation × 30, verification × 15, checkpoint × 3 | 1b99932, 23c34f8, 3666f98, 404b94e, 46b8031, 506b416, 7462f2a, 75193dd, 782e09f, 7ad785a, a6abe04, b3b5041, cad8df7, cccd463, d96c9a7, dbe271f, e7a4d73, eb28a4d |
+| 2026-11-05 | 107 entries: status-transition × 2, task-completion × 31, deviation × 35, verification × 34, checkpoint × 5 | 1b99932, 23c34f8, 3666f98, 404b94e, 46b8031, 506b416, 67be38e, 7462f2a, 75193dd, 782e09f, 7ad785a, 804dc62, a6abe04, a9961bc, b3b5041, cad8df7, cccd463, d96c9a7, dbe271f, e7a4d73, eb28a4d |

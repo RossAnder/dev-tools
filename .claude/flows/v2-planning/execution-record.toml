@@ -1017,3 +1017,364 @@ commits = [
 type = "checkpoint"
 task_ref = "add-the-lifecycle-test"
 date = 2026-11-05
+
+[[items]]
+id = "E78"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "glimpse/Cargo.lock",
+    "tomlctl/README.md",
+    "tomlctl/tests/capabilities.rs",
+]
+summary = "Bumped tomlctl from 0.17.0 to 0.18.0 in the manifest, both lockfiles, the capabilities test literal and message, and the README sample version. Falsifier: with the manifest bumped and the literal and README stale, --test capabilities gave 68 passed, 2 failed."
+type = "task-completion"
+task_ref = "bump-the-tomlctl-version"
+date = 2026-11-05
+
+[[items]]
+id = "E79"
+agent = "implement"
+summary = "Documented promoted and skipped_stale for plan approve in claude/skills/tomlctl/references/plan.md"
+original_intent = "plan approve prints {ok, commit, transition}"
+rationale = "approve also emits promoted and skipped_stale, and the reference is written from the built verbs."
+type = "deviation"
+task_ref = "document-the-plan-group"
+date = 2026-11-05
+
+[[items]]
+id = "E80"
+agent = "implement"
+summary = "Also added a plan check row to rows-and-header and named plan view and plan probes --emit under Text output in claude/skills/tomlctl/SKILL.md"
+original_intent = "SKILL.md gets a Quick Reference row, a References entry and the verb-owned bullet"
+rationale = "The rows-and-header table and the Text output list are both stated as the full set, and both new entries match observed behaviour."
+type = "deviation"
+task_ref = "document-the-plan-group"
+date = 2026-11-05
+
+[[items]]
+id = "E81"
+agent = "implement"
+summary = "Also added the_plan_scan_reads_both_construction_sites_and_no_tasks_class in tomlctl/src/cli/dispatch/tests/finding_classes.rs"
+original_intent = "Add a second pair to finding_classes.rs, src/plan against references/plan.md"
+rationale = "An empty scan would agree with an empty table, so the parity test alone could pass without checking anything."
+type = "deviation"
+task_ref = "document-the-plan-group"
+date = 2026-11-05
+
+[[items]]
+id = "E82"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/skills/tomlctl/references/plan.md",
+    "claude/skills/tomlctl/SKILL.md",
+    "tomlctl/src/cli/dispatch/tests/finding_classes.rs",
+]
+summary = "Wrote references/plan.md (flag tables, store shape, field meanings, probe verdicts, check classes, output shapes), added its SKILL.md row, entry and owned-store mention, and a second parity pair for src/plan in finding_classes.rs. cli::dispatch::tests: 48 passed. Falsifiers observed: 1 failed per mutation."
+type = "task-completion"
+task_ref = "document-the-plan-group"
+date = 2026-11-05
+
+[[items]]
+id = "E83"
+agent = "implement"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+summary = "fmt clean"
+duration_s = 2
+type = "verification"
+task_ref = "document-the-plan-group"
+date = 2026-11-05
+
+[[items]]
+id = "E84"
+agent = "implement"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+summary = "clippy clean"
+duration_s = 0
+type = "verification"
+task_ref = "document-the-plan-group"
+date = 2026-11-05
+
+[[items]]
+id = "E85"
+agent = "implement"
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+summary = "2555 tests run: 2555 passed, 1 skipped"
+duration_s = 22
+type = "verification"
+task_ref = "document-the-plan-group"
+date = 2026-11-05
+
+[[items]]
+id = "E86"
+agent = "implement"
+command = "cargo clippy --manifest-path glimpse/Cargo.toml --locked"
+outcome = "pass"
+summary = "clippy clean apart from one dead_code warning"
+duration_s = 0
+type = "verification"
+task_ref = "document-the-plan-group"
+date = 2026-11-05
+
+[[items]]
+id = "E87"
+agent = "implement"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+summary = "shared blocks identical"
+duration_s = 1
+type = "verification"
+task_ref = "document-the-plan-group"
+date = 2026-11-05
+
+[[items]]
+id = "E88"
+agent = "implement"
+command = "bash scripts/verify-plan-story-blocks.sh"
+outcome = "pass"
+summary = "plan story blocks clean"
+duration_s = 0
+type = "verification"
+task_ref = "document-the-plan-group"
+date = 2026-11-05
+
+[[items]]
+id = "E89"
+agent = "implement"
+kind = "commit-train"
+summary = "Train for checkpoint E, tip gate-verified. a9961bc: document-the-plan-group; 67be38e: bump-the-tomlctl-version."
+commits = [
+    "a9961bc",
+    "67be38e",
+]
+type = "checkpoint"
+task_ref = "document-the-plan-group"
+date = 2026-11-05
+
+[[items]]
+id = "E90"
+agent = "implement"
+summary = "Step 2 ran its query and rewrote nothing under .claude/flows"
+original_intent = "Step 2 rewrites each w/crlf working copy under .claude, rm then git checkout"
+rationale = "This Linux clone has no w/crlf copies, 512 rows all i/lf w/lf. A checkout under core.autocrlf still needs step 2 after pulling, which After Merge already names."
+type = "deviation"
+task_ref = "pin-flow-stores-to-lf-and-repair-their-sidecars"
+date = 2026-11-05
+
+[[items]]
+id = "E91"
+agent = "implement"
+summary = "Refreshed the 16 listed sidecars by matching each digest to the store's CRLF form under .claude/flows"
+original_intent = "Step 3 refreshes each .toml step 2 rewrote whose sidecar digest differs"
+rationale = "Step 2's set was empty here, so step 3 as written would refresh nothing and the doctor acceptance would fail. Keyed instead on sidecars on the Files line whose digest equals the store's CRLF form and whose store is clean, which keeps the guard against blessing an unexplained mismatch. All 16 qualified."
+type = "deviation"
+task_ref = "pin-flow-stores-to-lf-and-repair-their-sidecars"
+date = 2026-11-05
+
+[[items]]
+id = "E92"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    ".gitattributes",
+    ".claude/flows/binary-jumping-yao/context.toml.sha256",
+    ".claude/flows/binary-jumping-yao/execution-record.toml.sha256",
+    ".claude/flows/flow-tracking-overhaul/context.toml.sha256",
+    ".claude/flows/flow-tracking-overhaul/execution-record.toml.sha256",
+    ".claude/flows/full-slice-flow-dogfood/context.toml.sha256",
+    ".claude/flows/full-slice-flow-dogfood/execution-record.toml.sha256",
+    ".claude/flows/groovy-growing-yeti/context.toml.sha256",
+    ".claude/flows/groovy-growing-yeti/execution-record.toml.sha256",
+    ".claude/flows/lumina-story-planning-round-4/execution-record.toml.sha256",
+    ".claude/flows/lumina-story-planning-round-5/context.toml.sha256",
+    ".claude/flows/lumina-story-planning-round-5/execution-record.toml.sha256",
+    ".claude/flows/lumina-story-planning-workflow/execution-record.toml.sha256",
+    ".claude/flows/lumina-vertical-slice/context.toml.sha256",
+    ".claude/flows/lumina-vertical-slice/execution-record.toml.sha256",
+    ".claude/flows/snoopy-beaming-lecun/context.toml.sha256",
+    ".claude/flows/snoopy-beaming-lecun/execution-record.toml.sha256",
+]
+summary = "Pinned .claude stores to LF in .gitattributes and refreshed the 16 sidecars stamped against CRLF bytes. Doctor's sidecar check went from 16 failing names to none; check-attr went from unspecified to lf. Step 2 found nothing to rewrite on this clone. lumina-schema-deepening/plan-review-findings.toml left alone and reported."
+type = "task-completion"
+task_ref = "pin-flow-stores-to-lf-and-repair-their-sidecars"
+date = 2026-11-05
+
+[[items]]
+id = "E93"
+agent = "implement"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+summary = "fmt clean"
+duration_s = 1
+type = "verification"
+task_ref = "pin-flow-stores-to-lf-and-repair-their-sidecars"
+date = 2026-11-05
+
+[[items]]
+id = "E94"
+agent = "implement"
+command = "CARGO_INCREMENTAL=0 cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+summary = "build clean"
+duration_s = 12
+type = "verification"
+task_ref = "pin-flow-stores-to-lf-and-repair-their-sidecars"
+date = 2026-11-05
+
+[[items]]
+id = "E95"
+agent = "implement"
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+summary = "2555 tests run: 2555 passed, 1 skipped"
+duration_s = 10
+type = "verification"
+task_ref = "pin-flow-stores-to-lf-and-repair-their-sidecars"
+date = 2026-11-05
+
+[[items]]
+id = "E96"
+agent = "implement"
+command = "grep -q 'Plan {' tomlctl/src/cli/types/cmd.rs"
+outcome = "pass"
+summary = "success criterion holds"
+duration_s = 0
+type = "verification"
+task_ref = "pin-flow-stores-to-lf-and-repair-their-sidecars"
+date = 2026-11-05
+
+[[items]]
+id = "E97"
+agent = "implement"
+command = "test -f claude/skills/tomlctl/references/plan.md"
+outcome = "pass"
+summary = "success criterion holds"
+duration_s = 0
+type = "verification"
+task_ref = "pin-flow-stores-to-lf-and-repair-their-sidecars"
+date = 2026-11-05
+
+[[items]]
+id = "E98"
+agent = "implement"
+command = "test -f docs/ideas/v2-pipeline.md && ! grep -q 'Planning flow: draft' docs/ideas/v2-pipeline.md"
+outcome = "pass"
+summary = "success criterion holds"
+duration_s = 0
+type = "verification"
+task_ref = "pin-flow-stores-to-lf-and-repair-their-sidecars"
+date = 2026-11-05
+
+[[items]]
+id = "E99"
+agent = "implement"
+command = """test -z "$(git ls-files --eol .claude/flows | grep 'w/crlf')""""
+outcome = "pass"
+summary = "success criterion holds"
+duration_s = 1
+type = "verification"
+task_ref = "pin-flow-stores-to-lf-and-repair-their-sidecars"
+date = 2026-11-05
+
+[[items]]
+id = "E100"
+agent = "implement"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+summary = "clippy clean"
+duration_s = 1
+type = "verification"
+task_ref = "pin-flow-stores-to-lf-and-repair-their-sidecars"
+date = 2026-11-05
+
+[[items]]
+id = "E101"
+agent = "implement"
+command = "cargo clippy --manifest-path glimpse/Cargo.toml --locked"
+outcome = "pass"
+summary = "clippy clean apart from one dead_code warning"
+duration_s = 0
+type = "verification"
+task_ref = "pin-flow-stores-to-lf-and-repair-their-sidecars"
+date = 2026-11-05
+
+[[items]]
+id = "E102"
+agent = "implement"
+command = "cargo doc --manifest-path tomlctl/Cargo.toml --lib --no-deps --document-private-items"
+outcome = "pass"
+summary = "rustdoc clean"
+duration_s = 1
+type = "verification"
+task_ref = "pin-flow-stores-to-lf-and-repair-their-sidecars"
+date = 2026-11-05
+
+[[items]]
+id = "E103"
+agent = "implement"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+summary = "shared blocks identical"
+duration_s = 0
+type = "verification"
+task_ref = "pin-flow-stores-to-lf-and-repair-their-sidecars"
+date = 2026-11-05
+
+[[items]]
+id = "E104"
+agent = "implement"
+command = "bash scripts/verify-plan-story-blocks.sh"
+outcome = "pass"
+summary = "plan story blocks clean"
+duration_s = 0
+type = "verification"
+task_ref = "pin-flow-stores-to-lf-and-repair-their-sidecars"
+date = 2026-11-05
+
+[[items]]
+id = "E105"
+agent = "implement"
+command = "cargo audit --file tomlctl/Cargo.lock"
+outcome = "pass"
+summary = "no advisories"
+duration_s = 2
+type = "verification"
+task_ref = "pin-flow-stores-to-lf-and-repair-their-sidecars"
+date = 2026-11-05
+
+[[items]]
+id = "E106"
+agent = "implement"
+kind = "commit-train"
+summary = "Final train, checkpoint F, tip gate-verified by the full pass. 804dc62: pin-flow-stores-to-lf-and-repair-their-sidecars."
+commits = ["804dc62"]
+type = "checkpoint"
+task_ref = "pin-flow-stores-to-lf-and-repair-their-sidecars"
+date = 2026-11-05
+
+[[items]]
+id = "E107"
+agent = "plan-update"
+from_status = "in-progress"
+to_status = "review"
+summary = "status in-progress -> review: all 31 tasks done"
+type = "status-transition"
+date = 2026-11-05

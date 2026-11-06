@@ -1,0 +1,1565 @@
+schema_version = 1
+last_updated = 2026-11-06
+
+[[vet_events]]
+timestamp = "2026-11-05T21:08:03Z"
+command = "review"
+lens = "quality"
+tier = "deep"
+agent_index = 1
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled both findings. .gitattributes:14, :23, :38 and :48 and json.rs:87 match. Re-ran the sweep: its hits match the instances, and the extra hit at plan-risk.md:20 is about data, not line endings. The first finding merged with Agent 4's second on the same file and lines."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-05T21:08:03Z"
+command = "review"
+lens = "security"
+tier = "deep"
+agent_index = 2
+sampled_count = 0
+dropped_count = 0
+downgraded_count = 0
+rationale = "No findings to sample. The tangential claim about machine-local paths was checked: active-flow.toml is tracked with 53 matching lines. settings.local.json is tracked with 4 lines under the narrower re-check pattern, against the agent's 6 under a wider one."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-05T21:08:03Z"
+command = "review"
+lens = "architecture"
+tier = "deep"
+agent_index = 3
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled all three. integrity.rs:68 and :122, doctor.rs:858 and store.rs brief_digest match. Sibling sidecar counts reproduce (76, 6, 4, 34, 35; eol unspecified). Reproduced the CRLF re-stamp with integrity refresh in a scratch repo: the staged sidecar differs from the staged blob's digest. All three anchor outside the review scope, so they route to the backlog rather than the ledger."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-05T21:08:03Z"
+command = "review"
+lens = "completeness"
+tier = "lite"
+agent_index = 4
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled both. README.md:135 and flow.md:81 match, and the CRLF grep over the named docs finds no recovery text. The first finding is outside the review scope and routes to the backlog; the second merged with Agent 1's first."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-05T21:08:03Z"
+command = "review"
+lens = "testability"
+tier = "lite"
+agent_index = 5
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 1
+rationale = "Sampled all four. One downgrade: the refresh_sidecar anchor integrity.rs:148 is wrong, the function is at line 122; corrected on routing. That finding's behaviour, which the agent had not executed, was then reproduced. pre-commit has no sidecar step, and integrity.rs:200, doctor.rs:278, flow.md:81 and the task-store section match. All four anchor outside the review scope and route to the backlog."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-05T22:27:00Z"
+command = "review"
+agent_index = 1
+lens = "quality"
+tier = "deep"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 1
+rationale = "Sampled Q1 (re-run: a ./a.rs row was missed by plan drift), Q3 and Q6 (sweeps re-run, sites match), Q7 and Q12 (anchors read). Q2 downgraded from warning to suggestion: a blank decision needs a caller to send one. Merged into other lenses' rows: Q3, Q6, Q8 and Q9 into the architecture rows that report the same defect."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-05T22:27:00Z"
+command = "review"
+agent_index = 2
+lens = "claude-code-systems"
+tier = "deep"
+sampled_count = 14
+dropped_count = 1
+downgraded_count = 3
+rationale = "This lens replaced Security for this run at the user's request. Doc quotes were re-fetched and matched in workflows, permission-modes, worktrees, sub-agents and tools-reference; nesting and the resume key were matched in the workflow-authoring skill. F4, F5, F6, F7, F9 and F13 re-run or read and confirmed. F17 dropped before minting: no worker view was measured, and v1 plan size is not a proxy for a one-task projection. F8 downgraded: `--run-id` on `run start` already allows the right order, leaving a doc sentence and the session field. F9 downgraded: the store divergence is observed, but no plan commits the engine to worktrees. F10 downgraded: Slice 2 would meet this on its first design pass. F11 routed to the backlog because its file is outside the review scope. The binary-strings evidence was not re-checked and no finding rests on it alone. F16 merged into the testability stage-hint row."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-05T22:27:00Z"
+command = "review"
+agent_index = 3
+lens = "architecture"
+tier = "deep"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled findings 1, 2 and 3 (re-run in scratch repos, all reproduced), 4 and 10 (anchors read). Finding 6 routed to the backlog because flow/doctor.rs is outside the review scope."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-05T22:27:00Z"
+command = "review"
+agent_index = 4
+lens = "completeness"
+tier = "lite"
+sampled_count = 6
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled F1 to F6: F1, F2, F4, F5 and F6 re-run and reproduced, F3 confirmed from ROW_KEYS. F8 merged into the quality row for the same defect."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-05T22:27:00Z"
+command = "review"
+agent_index = 5
+lens = "testability"
+tier = "lite"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled findings 1, 2 and 3, all re-run and reproduced. Findings 1, 2 and 4 merged with the systems lens's F16 into one row, since they share a cause and a fix site. The writer --verify-integrity tangential was reproduced and routed to the backlog."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-05T22:27:00Z"
+command = "review"
+agent_index = 6
+lens = "package-quality"
+tier = "lite"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled findings 1, 4 and 9 (re-run and reproduced), 2 and 3 (anchors read against old_required and the store shape). The tangential about the installed binary is machine state, reported to the user and not minted."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-06T07:32:48Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "R23 wording read against the old_required match arms; plan family returns false before direction is read."
+agent_index = 3
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-06T07:32:48Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "R11 const and test read; the design directory joins the same status pathspec and the test covers refusal then pass."
+agent_index = 6
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-06T07:32:48Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "R22 example and the tasks-write deltas read; the agent ran the gate example with the debug binary in a scratch repo."
+agent_index = 9
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-06T07:32:48Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "The approve require_open call and the new plan-store reference with its two links read; plan.md is 536 lines against the 600 ceiling."
+agent_index = 10
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[items]]
+id = "R1"
+file = ".gitattributes"
+line = 14
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Older stanzas say CRLF copies convert on their next checkout, which contradicts the removal and re-checkout that 804dc62 requires"
+description = "Lines 14 and 23 say CRLF copies convert on their next checkout. Commit 804dc62 says git sees such copies as unchanged, so they must be removed and checked out again, and its own stanza at lines 42-48 omits that remedy. Two scratch repos with core.autocrlf=true confirm it: git checkout -- <path> leaves i/lf w/crlf, a branch switch converts only the paths it rewrites, and rm then checkout gives w/lf. Line 38 ('rewritten in place') may only record what e728e7c did, so it can stay or be folded in. Fix: state the remedy once in the new stanza and correct lines 14 and 23. Comment-only."
+evidence = [
+    "git ls-files --eol in a core.autocrlf=true scratch repo: i/lf w/crlf after git checkout -- <path>; w/lf after rm then checkout (git 2.56.0)",
+    ".gitattributes:14",
+    ".gitattributes:23",
+]
+instances = [
+    ".gitattributes:14",
+    ".gitattributes:23",
+    ".gitattributes:38",
+]
+sweep = [
+    "next checkout",
+    "rewritten in place",
+    "convert on their",
+]
+enumeration = "complete"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+dedup_id = "2315dbbcc1f665c6"
+
+[[items]]
+id = "R2"
+file = ".gitattributes"
+line = 48
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "The stanza's unpinned list is partial, and a sidecar-bearing JSON store outside flows would keep the failure the stanza exists to stop"
+description = "Line 48 names markdown outside flows and settings.local.json as unpinned. It omits settings.json, active-flow and .o1-ops.json, which are equally unpinned. should_skip_sidecar exempts only the basename settings.json, so any other .claude/*.json written with tomlctl json set gets a pinned sidecar over an unpinned target. In a scratch repo with core.autocrlf=true that pair failed --verify-integrity after re-checkout. The gap is latent: every tracked sidecar targets a .toml. Fix: reword line 48 to say everything else under .claude stays unpinned because none of it carries a sidecar today; add a JSON pin only when such a store is tracked, since pinning now would catch settings.local.json, which task 26 leaves out."
+evidence = [
+    "tomlctl/src/json.rs:87",
+    "git ls-files --eol .claude shows empty attr/ on .claude/active-flow, .claude/optimise-findings/.o1-ops.json, .claude/settings.json and .claude/settings.local.json",
+]
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+dedup_id = "b8146471dc80beab"
+
+[[items]]
+id = "R3"
+first_flagged = 2026-11-05
+rounds = 1
+status = "fixed"
+flow = "v2-planning"
+file = "tomlctl/src/tasks/schema.rs"
+line = 363
+symbol = "next_id"
+severity = "warning"
+effort = "medium"
+category = "db"
+summary = "A removed task's id is re-minted, so plan records that name it silently bind the new, unrelated task"
+description = "Task ids are max + 1 over live rows. plan.toml refers to tasks by id (Decision.binds digits, Contract.tasks, Handover.source_task, Premise.at after:<id>). After tasks remove 3, plan check reports plan/decision-bind-unknown. After the next tasks add-many mints id 3, plan check is clean and plan view --for worker --task 3 hands the new task the old task's decision. PlanStore::mint_id keeps id_high_water for this reason, and B-b0357675 ruled the same class a bug for ledgers. Fix: persist a high-water mark on a v2 store, raised in retire and read by next_id, so a v1 store stays byte-identical. Files: tasks/schema.rs, tasks/remove.rs, tests/tasks_audit.rs, references/tasks-store.md, flow-contract-task-store."
+evidence = [
+    "re-run in a scratch repo: plan check ok=true after the re-mint, worker view count of the old decision = 1",
+    "tomlctl/src/plan/schema.rs:213 mint_id",
+    "backlog B-b0357675",
+]
+dedup_id = "e617aaf59770c9c8"
+resolved = 2026-11-06
+resolution = "Uncommitted. v2 task stores persist id_high_water, raised on every removal and read by next_id, so a removed id is never minted again; a v1 store gains no bytes. A store counts as v2 when its flow has plan.toml or it holds a v2 key."
+
+[[items]]
+id = "R4"
+first_flagged = 2026-11-05
+rounds = 1
+status = "fixed"
+flow = "v2-planning"
+file = "tomlctl/src/plan/store.rs"
+line = 54
+symbol = "mutate"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "Any plan record verb silently converts an existing v1 flow to v2, because every writer but plan open auto-creates plan.toml"
+description = "v2-ness is the presence of plan.toml. plan open refuses a v1 flow for that reason (refuse_foreign_plan), but plan decide on the same flow succeeds and seeds the file. tasks import-plan and tasks render are then refused, and the import-field lock falls away. The plan's Context says nothing here may change how a v1 flow behaves. B-979cb5ce records the mistyped-slug symptom; this is the correct-slug case. Fix: force OnMissing::Error in plan::store::mutate so only plan open creates the store, and refuse plan milestone when the flow is not v2. tests/plan_records.rs and references/plan.md:38-40 rely on auto-create and change with it."
+evidence = [
+    "re-run: plan open refused, plan decide ok, then tasks import-plan refused with `does not apply to a flow with a plan.toml`",
+    "tomlctl/src/plan/open.rs refuse_foreign_plan",
+    "docs/plans/v2-planning.md:12",
+]
+instances = [
+    "tomlctl/src/plan/records.rs:decide",
+    "tomlctl/src/plan/records.rs:contract",
+    "tomlctl/src/plan/records.rs:mutate_plan",
+    "tomlctl/src/plan/milestone.rs:add",
+    "tomlctl/src/plan/milestone.rs:update",
+]
+dedup_id = "baaa8bb322cb99fd"
+resolved = 2026-11-06
+resolution = "Uncommitted. Only plan open creates plan.toml; plan record verbs, plan milestone and plan approve go through store::require_open and refuse with kind=not_found naming plan open, writing nothing. --no-create is accepted but has no effect on these verbs; deviated: plan_milestone tests seed an empty plan.toml instead of calling plan open — their fixture records a foreign plan_path."
+
+[[items]]
+id = "R5"
+first_flagged = 2026-11-05
+rounds = 1
+status = "fixed"
+flow = "v2-planning"
+file = "tomlctl/src/plan/check.rs"
+line = 259
+symbol = "contract_findings"
+severity = "warning"
+effort = "small"
+category = "db"
+summary = "plan check validates task references from contracts and decisions, but not from after:<id> premises or Handover.source_task"
+description = "A premise with at = after:2 stays clean after tasks remove 2, and plan handover add --source-task 999 succeeds with no finding, though plan gate lists handovers under stops. A premise naming a removed task can never be scheduled. Fix: add a class for each, matching plan/contract-task-unknown. finding_classes requires the new classes in references/plan.md, and tests/plan_check.rs needs the cases."
+evidence = [
+    "re-run: both dangling references produce no plan check class",
+    "tomlctl/src/tasks/add.rs:279 reject_unknown_premise_targets runs at write time only",
+]
+dedup_id = "4cb711b4d0935636"
+resolved = 2026-11-06
+resolution = "Uncommitted. Added plan/premise-task-unknown and plan/handover-task-unknown as errors; a handover already done is exempt, so a finished record cannot block an amend. plan stage names a remedy for both."
+
+[[items]]
+id = "R6"
+first_flagged = 2026-11-05
+rounds = 1
+status = "fixed"
+flow = "v2-planning"
+file = "tomlctl/src/tasks/update.rs"
+line = 524
+symbol = "spec_moves"
+severity = "warning"
+effort = "small"
+category = "db"
+summary = "[[changes]] persists Rust Debug output as its durable format, so stored audit rows depend on struct field names"
+description = 'old and new for structured values are format!("{:?}") of internal types, for example [Accept { behaviour: ..., probe: None }], in a git-tracked store. Renaming a field changes new rows while old rows keep the old spelling, and no reader can parse either. std documents derived Debug as unstable across Rust versions. Fix: serialise as JSON, sharing the per-part mapping in tasks/show.rs spec_json. Multi-element pins in tests/tasks_audit.rs change, since JSON has no space in [1,2]. No real plan exists yet, so this is the cheap moment.'
+evidence = [
+    "grep of {:?} in the audit writers",
+    "rustc library/core/src/fmt/mod.rs: derived Debug formats are not stable",
+    "docs/plans/v2-planning.md:639",
+]
+instances = [
+    "tomlctl/src/tasks/update.rs:spec_moves",
+    "tomlctl/src/tasks/update.rs:audited_value",
+    "tomlctl/src/tasks/remove.rs:retire",
+    "tomlctl/src/plan/milestone.rs:update",
+]
+sweep = [
+    '\{:\?\}',
+    '\{old:\?\}',
+]
+enumeration = "complete"
+dedup_id = "26a57428a37456ba"
+resolved = 2026-11-06
+resolution = "Uncommitted. Structured old and new values in [[changes]] are compact JSON at spec_moves, audited_value, retire and milestone gates, sharing the mappings behind tasks show; plain scalars are unchanged."
+
+[[items]]
+id = "R7"
+first_flagged = 2026-11-05
+rounds = 1
+status = "fixed"
+flow = "v2-planning"
+file = "tomlctl/src/plan/probes.rs"
+line = 226
+symbol = "record"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "plan probes --record accepts a capture taken before a row's check was edited, storing a verdict for a command that never ran"
+description = "The capture carries only <task>:<index>, the control and the results, and record matches on those. references/plan.md:435-436 promises a store changed since --emit is refused, which holds only when the set of probeable controls changes. Fix: have --emit print a digest of each control's command and record refuse a mismatch. Files: plan/probes.rs, references/plan.md, tests/plan_probes.rs."
+evidence = ["re-run: capture with check=false (rc=1), update check to true, --record prints verdict healthy"]
+dedup_id = "a1bca8f865bbbf3e"
+resolved = 2026-11-06
+resolution = "Uncommitted. plan probes --emit writes a sha256 of each control's command into its capture line; --record refuses a mismatch or a missing digest with kind=validation. Catches a stale capture, not a forged one. The plan_lifecycle no-bash fixture digests are computed but that branch did not run here."
+
+[[items]]
+id = "R8"
+first_flagged = 2026-11-05
+rounds = 1
+status = "fixed"
+flow = "v2-planning"
+file = "tomlctl/src/plan/drift.rs"
+line = 70
+symbol = "changed_files"
+severity = "warning"
+effort = "trivial"
+category = "completeness"
+summary = "plan drift misses a task file renamed away and any non-ASCII path, because git log runs with rename detection and core.quotePath"
+description = "git log --name-only lists only a rename's destination, so the row's old path never intersects. core.quotePath returns cafe-with-accent paths as a quoted octal literal. Both under-report silently in the verb the replan step reads. Fix: pass --no-renames and -c core.quotePath=false, or -z. Files: plan/drift.rs, tests/plan_drift.rs."
+evidence = ["re-run: rows on old.rs, a non-ASCII path, ./a.rs and plain.rs; a foreign commit touched all four; affected held only plain.rs"]
+dedup_id = "77019ee1df061c15"
+resolved = 2026-11-06
+resolution = "Uncommitted. plan drift runs git log with --no-renames and -z, so renamed-away, non-ASCII and otherwise quoted paths arrive verbatim; deviated: -z instead of core.quotePath=false — git still quotes tabs, quotes and backslashes under that setting."
+
+[[items]]
+id = "R9"
+first_flagged = 2026-11-05
+rounds = 1
+status = "fixed"
+flow = "v2-planning"
+file = "tomlctl/src/plan/drift.rs"
+line = 105
+symbol = "affected_tasks"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "Each plan verb normalises a row's files differently, so plan check, plan view and plan drift disagree on one row"
+description = 'tasks add-many stores files raw, and ./src/a.rs and src\win.rs are accepted. drift compares raw strings, check folds backslashes on the row side and also strips ./ on the bind side, view normal_path does both on both sides, and probes normalises only the stderr token. A ./ row is missed by drift. plan check refused a decision that plan view showed as binding the same task. Fix: one helper in tasks/schema.rs called from all four, or canonicalise at write time.'
+evidence = [
+    "re-run: a ./a.rs row absent from drift's affected",
+    "tomlctl/src/plan/view.rs:547 normal_path",
+]
+instances = [
+    "tomlctl/src/plan/check.rs:decision_finding",
+    "tomlctl/src/plan/check.rs:bind_known",
+    "tomlctl/src/plan/view.rs:normal_path",
+    "tomlctl/src/plan/view.rs:bind_names",
+    "tomlctl/src/plan/drift.rs:affected_tasks",
+    "tomlctl/src/plan/probes.rs:names_declared_path",
+]
+sweep = [
+    '''replace\('\\\\', "/"\)''',
+    'strip_prefix\("\./"\)',
+    'trim_start_matches\("\./"\)',
+    'changed\.contains',
+]
+enumeration = "complete"
+dedup_id = "b22220eda4a7a188"
+resolved = 2026-11-06
+resolution = "Uncommitted. One normal_path helper in tasks/schema.rs, called on row and bind sides from plan check, view, drift and probes. Stored files stay raw and are reported as written."
+
+[[items]]
+id = "R10"
+first_flagged = 2026-11-05
+rounds = 1
+status = "fixed"
+flow = "v2-planning"
+file = "tomlctl/src/tasks/update.rs"
+line = 165
+symbol = "ROW_KEYS"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "Once a row exists on a v2 flow, no verb can change its file_notes, closes or refs"
+description = "tasks add-many is the only v2 writer of [[file_notes]] and [[backlog_links]], since import-plan is refused there. tasks update can change files, but a new file cannot be marked (new) and a removed file's note stays. A closes link cannot be corrected, so approval's promotion misses it. Elaborating a deferred milestone hits this directly. The workarounds are remove and re-add, or --raw-store. Fix: add the three keys to --ndjson rows with add-many's validation, audited. Files: tasks/update.rs, tests/tasks_audit.rs, references/tasks-write.md, flow-contract-task-store. Related backlog: B-5719fe0b."
+evidence = ["tomlctl/src/tasks/update.rs:165 ROW_KEYS: ids, id, status, agent, commit, ref, set, spec, reason, actor"]
+dedup_id = "09b2fad3fd1292c9"
+resolved = 2026-11-06
+resolution = "Uncommitted. tasks update --ndjson rows take file_notes, closes and refs with add-many's validation and replacement semantics, each audited with a required reason. A write that drops a path from files also drops that path's note."
+
+[[items]]
+id = "R11"
+first_flagged = 2026-11-05
+rounds = 1
+status = "fixed"
+flow = "v2-planning"
+file = "tomlctl/src/plan/approve.rs"
+line = 37
+symbol = "COMMITTED_FILES"
+severity = "warning"
+effort = "trivial"
+category = "completeness"
+summary = "plan approve stamps a commit lacking the design/*.md sections its tasks cite"
+description = "The uncommitted check names only tasks.toml, plan.toml and brief.md, and plan check reads design/ from the working tree, so an untracked design file passes both. The Approach says design/ is git-tracked to give a baseline diff, and task 18's goal is that the stamp cannot name a commit lacking the plan. From a clean checkout of that commit the citation reads plan/design-anchor-dead. Fix: add the design directory to the status pathspec. Files: plan/approve.rs, references/plan.md:517, tests/plan_approve.rs."
+evidence = [
+    "re-run: `?? .claude/flows/d/design/`, approve ok, git ls-tree of HEAD holds no design file",
+    "docs/plans/v2-planning.md:106",
+]
+dedup_id = "8325f0849894584d"
+resolved = 2026-11-06
+resolution = "Uncommitted. plan approve's uncommitted-work check also covers the flow's design/ directory, so an untracked, modified or ignored design file is refused."
+
+[[items]]
+id = "R12"
+first_flagged = 2026-11-05
+rounds = 1
+status = "fixed"
+flow = "v2-planning"
+file = "tomlctl/src/plan/milestone.rs"
+line = 71
+symbol = "add"
+severity = "warning"
+effort = "trivial"
+category = "completeness"
+summary = "On an audited store, plan milestone add writes a [[changes]] row with an empty reason"
+description = 'Task 2 treats a task added after approval as a plan change that requires a reason. Adding a milestone after approval is the same kind of change, but only update checks store.audit && reason.is_empty(). --reason on add is documented only as why it is deferred. Fix: refuse a blank reason on an audited store. Files: plan/milestone.rs, cli/types/plan.rs:265, references/plan.md:324, tests/plan_milestone.rs. Drops to wording if the omission from Approach, "Approval" is deliberate; no rationale is stated.'
+evidence = ["re-run: after approval, plan milestone add stored ref=milestone:B, field=*, reason empty"]
+dedup_id = "7bd6ddeb24fd16ca"
+resolved = 2026-11-06
+resolution = "Uncommitted. plan milestone add refuses a blank --reason on an audited store."
+
+[[items]]
+id = "R13"
+first_flagged = 2026-11-05
+rounds = 1
+status = "fixed"
+flow = "v2-planning"
+file = "tomlctl/src/plan/stage.rs"
+line = 109
+symbol = "assess"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "plan stage's next names a verb that cannot clear the blocker at the write, prove and review stages"
+description = "write: next = tasks add-many, but plan/task-no-spec means an existing row lacks a spec, and following it mints a duplicate row; only tasks update --ndjson attaches a spec. review: next = plan run start --step review, and starting and finishing that run never leaves the stage, since review_settled reads only a skip_reason or a finished plan-family row in review-v2.toml. prove: any error-class finding routes to plan probes --emit, including plan/spec-no-outcome, plan/contract-no-check, a recorded broken verdict and dag errors, so a carrier following next loops and pays for a probe run each time. The lifecycle test asserts these hints and then clears each blocker with a different verb. blockers is also uncapped, one line per finding. Fix: name the verb that clears the class, summarise blockers by class with a count. Files: plan/stage.rs, tests/plan_stage.rs, tests/plan_lifecycle.rs:446,474, references/plan.md:470-472."
+evidence = [
+    "re-run: stage stays review with the same next after run start and run finish",
+    "tomlctl/src/plan/stage.rs:109,118,122",
+    "tests/plan_lifecycle.rs:446-452,474-478",
+]
+dedup_id = "48df7f35c95fb46a"
+resolved = 2026-11-06
+resolution = "Uncommitted. plan stage next names a remedy by finding class, with probes last and plan check as the fallback; review points at /review-plan-v2 or plan run skip; blockers are one counted line per class; deviated: DAG and policy classes name tasks check, which diagnoses rather than clears — no store verb clears the policy classes."
+
+[[items]]
+id = "R14"
+first_flagged = 2026-11-05
+rounds = 1
+status = "fixed"
+flow = "v2-planning"
+file = "tomlctl/src/plan/drift.rs"
+line = 73
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "plan drift on an approval commit that no longer resolves exits 1 with raw git usage text, against a documented only-no-approval refusal"
+description = "A rebase or squash plus gc, or a shallow clone, leaves [[approval]].commit unresolvable, which is when a drift report matters most. The message never says the approved commit is the problem or how to recover, kind is other, and tests/plan_drift.rs has no case for it. Fix: check git cat-file -e <sha>^{commit} first and return a tagged refusal naming the commit and plan approve --amend. Correct references/plan.md:543."
+evidence = [
+    "re-run: kind=other, message `git log deadbeefdeadbeef..HEAD failed: fatal: ambiguous argument...`",
+    "claude/skills/tomlctl/references/plan.md:543",
+]
+dedup_id = "bb391486d416686f"
+resolved = 2026-11-06
+resolution = "Uncommitted. plan drift checks the approved commit with git cat-file first and refuses with kind=validation naming the commit and plan approve --amend; a test runs the refusal and the recovery. A non-repo directory gets the same refusal."
+
+[[items]]
+id = "R15"
+first_flagged = 2026-11-05
+rounds = 1
+status = "fixed"
+flow = "v2-planning"
+file = "docs/plans/v2-planning.md"
+line = 647
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "The plan calls Workflow survival unknown, but the docs settle it: a new session reruns every agent of a step"
+description = 'Docs: a run does not continue on its own after the session leaves, it continues only through a relaunch, and in a fresh session Claude has no earlier run to relaunch and starts over. Interruption is resumable in the same session. So "a plan resumes from files in a new session" (line 54) means a full rerun unless the carrier narrows the work. The script has no filesystem, so each Workflow should take a work-list in args (pending lenses, ready tasks) that the carrier computes from notes/ or the store before launch; the store then acts as the journal. Replace the risk row with the settled facts and three Slice 2 tests: kill a session mid-run and confirm a relaunch reruns only pending work; under claude --resume, relaunch after editing a file a prompt only points at and confirm the cached result is stale; repeat with a changed first prompt and confirm a miss from there on.'
+evidence = [
+    "https://code.claude.com/docs/en/workflows.md, Resume after you leave the session, fetched 2026-11-06",
+    "workflow-authoring skill, Resume",
+]
+dedup_id = "d872a3fe8b8ac21c"
+resolved = 2026-11-06
+resolution = "Uncommitted. The plan's risk row now states the documented Workflow rerun facts, the work-list-in-args mitigation and three Slice 2 tests; the Flow claim and Research Notes are corrected to match; deviated: the first test launches from a new session rather than relaunching — a fresh session has no earlier run to relaunch."
+
+[[items]]
+id = "R16"
+first_flagged = 2026-11-05
+rounds = 1
+status = "fixed"
+flow = "v2-planning"
+file = "docs/plans/v2-planning.md"
+line = 106
+severity = "warning"
+effort = "medium"
+category = "architecture"
+summary = "Needs a plan: authored flow files live under .claude/, so every Write to brief.md, design/ or notes/ is a protected-path write"
+description = "needs-plan. Writes under .claude are never auto-approved: prompted in default and acceptEdits (which pauses a background run), denied in dontAsk (the likely shape of the plan's Unattended path), routed to the classifier in auto, where a Workflow agent's prompt does not count as a request from the user. permissions.allow cannot pre-approve them, and shell redirects are checked too. tomlctl escapes this through Bash(tomlctl *); authored files do not. The plan never mentions it. The classifier's refusal rate is inferred, not run. Options: tomlctl verbs taking the body from stdin or a file (plan note, plan design), or moving authored files out of .claude/. The review-v2 run payloads have the same exposure: the never-run review-finder writes them with the Write tool under .claude/review-v2-runs/. Slice 2 has to decide this before its carrier."
+evidence = [
+    "https://code.claude.com/docs/en/permission-modes.md, Protected paths, fetched 2026-11-06",
+    "https://code.claude.com/docs/en/workflows.md:307 agent() prompt and the classifier",
+]
+instances = ["claude/agents/review-finder.md:46"]
+enumeration = "incomplete"
+dedup_id = "89a9ff0ba00cf620"
+resolved = 2026-11-06
+resolution = "Uncommitted. Authored flow files moved to docs/flows/<slug>/ (brief.md, design/, notes/), and review run payloads to a self-ignoring .review-v2-runs/ behind guard_run_write, so agents' Write and Edit calls no longer hit the protected-path rule. Verb-owned stores stay in .claude/flows/<slug>/. Brief and design reads refuse symlinks leaving the authored directory. Unattended dontAsk runs still need an allow rule for the new paths, which the plan assigns to Slice 2's carrier; deviated: moved the files instead of adding write verbs — verbs lose the Edit tool, need heredocs that fail on Windows, and route around a safety check; the rendered Task 18 detail still says the flow directory."
+
+[[items]]
+id = "R17"
+first_flagged = 2026-11-05
+rounds = 1
+status = "fixed"
+flow = "v2-planning"
+file = "docs/plans/v2-planning.md"
+line = 260
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "Elaboration and review cannot be one Workflow under the plan's one-writer rule, and the combination exceeds the nesting limit"
+description = "Review has to read the elaborated specs. Line 238 says agents never write the task store, and the orchestrator cannot act during a run, so those specs do not exist until the run returns. The idea doc's plan-review wrapper is already wrapper to child review-v2-pipeline, so calling it from an elaboration Workflow is two levels, which throws. The wrapper's step 4, a tool applying edits, has the same problem: a script has no shell. Better shape, which the docs recommend: two top-level runs with the orchestrator between them. Elaborate writes proposals to a file and returns a pointer, the orchestrator applies them with tasks update --ndjson and a reason, then the Review run starts. Reword After approval and the idea doc's Plan review steps."
+evidence = [
+    "workflow-authoring skill: nesting is one level only, workflow() inside a child throws",
+    "https://code.claude.com/docs/en/workflows.md:352-353, fetched 2026-11-06",
+    "docs/ideas/v2-pipeline.md:122-128",
+]
+dedup_id = "7a41ff8c7a3f1459"
+resolved = 2026-11-06
+resolution = "Uncommitted. Plan and idea doc now run elaboration and review as two top-level Workflows with the orchestrator applying proposals between them; deviated: the tool-applies-edits step moved to the orchestrator after the run rather than being dropped — the re-check has to see those edits."
+
+[[items]]
+id = "R18"
+first_flagged = 2026-11-05
+rounds = 1
+status = "fixed"
+flow = "v2-planning"
+file = "tomlctl/src/plan/probes.rs"
+line = 110
+symbol = "script"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "plan probes covers the whole store, so re-probing at a later milestone turns finished work red and blocks an amend"
+description = "--emit and --record take every row regardless of status or milestone, and --record insists on exactly the store's probeable controls. A done task's forward check now passes on the negative control, so it re-records as vacuous and plan check errors with plan/probe-unhealthy. plan approve --amend honours check errors. Deferred elaboration and the drain replan both need to probe new checks mid-run. Fix: skip rows not pending, and add --milestone <id>. Files: plan/probes.rs, cli/types/plan.rs, references/plan.md, tests/plan_probes.rs."
+evidence = [
+    "re-run: healthy before the work, vacuous after the row is done, plan check reports plan/probe-unhealthy",
+    "tomlctl/src/plan/approve.rs:291-304",
+]
+dedup_id = "b38a5bcb82d95dce"
+resolved = 2026-11-06
+resolution = "Uncommitted. plan probes --emit and --record cover only pending rows and leave other rows' verdicts in place, with --milestone to narrow further. plan/probe-absent now fires only on a pending row, which stops plan stage looping at prove on a finished row."
+
+[[items]]
+id = "R19"
+first_flagged = 2026-11-05
+rounds = 1
+status = "fixed"
+flow = "v2-planning"
+file = "tomlctl/src/plan/milestone.rs"
+line = 128
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "A deferred milestone can never record that it was elaborated, so plan/accept-no-check stays suppressed for good"
+description = 'elaboration only moves to deferred (references/plan.md:356), and check.rs treats elaborated as not deferred. After elaboration a blank check still passes plan check, a relaunch cannot tell from the store whether elaboration ran, and the audit trail has no event for it. Fix: add an audited --elaborated setting elaboration = "elaborated"; check.rs already reads an unrecognised value as the stricter case. Files: plan/milestone.rs, cli/types/plan.rs, references/plan.md, tests/plan_milestone.rs.'
+evidence = [
+    "re-run: plan milestone update --id B --reason elaborated returns `nothing to update: pass --goal, --gate or --defer`",
+    "tomlctl/src/plan/check.rs:356-368",
+    "docs/plans/v2-planning.md:147",
+]
+dedup_id = "903a47db3e496917"
+resolved = 2026-11-06
+resolution = "Uncommitted. Added plan milestone update --elaborated --reason, audited, setting elaboration = elaborated; refused unless the milestone is currently deferred. A test confirms plan check then requires each accept check."
+
+[[items]]
+id = "R20"
+first_flagged = 2026-11-05
+rounds = 1
+status = "fixed"
+flow = "v2-planning"
+file = "tomlctl/src/plan/records.rs"
+line = 414
+symbol = "run_finish"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "[[run]] cannot represent a dead run: a relaunch leaves a permanently open row, and finished says nothing about the outcome"
+description = "run finish closes only the newest open row for a step and nothing abandons an older one. Since a dead session is the normal crash case, open_items.open_runs stays non-empty for the life of the plan. A run that ended with errors reads like a clean one. The plan's stated mitigation at line 647 depends on these rows. Fix: plan run abandon --step --reason, or run start superseding open rows of its step, plus outcome = ok|errors|stopped on finish. Files: plan/records.rs, plan/schema.rs, cli/types/plan.rs, plan/view.rs, references/plan.md, tests/plan_records.rs."
+evidence = ["re-run: two run starts then run finish leave open_runs = [review]"]
+dedup_id = "23416b5681f88d48"
+resolved = 2026-11-06
+resolution = "Uncommitted. Added plan run abandon --step --reason and plan run finish --outcome ok|errors|stopped; outcome and reason are optional stored keys, and open_runs lists only rows still open. run start does not supersede open rows."
+
+[[items]]
+id = "R21"
+first_flagged = 2026-11-05
+rounds = 1
+status = "fixed"
+flow = "v2-planning"
+file = "tomlctl/src/plan/stage.rs"
+line = 62
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "plan stage ignores open runs, so re-entry can launch a second copy of a step that is still running"
+description = "assess never reads open runs. With an open step=review run, next is still plan run start --step review. The plan says this verb tells where a plan stands on re-entry (line 54), but an open or dead investigate run, or a skipped structure challenge, leaves no trace; only plan view --for digest shows them. Fix: include open_runs in the output and blockers, with next set to deciding between relaunch and abandon. Files: plan/stage.rs, references/plan.md, tests/plan_lifecycle.rs. Separate from B-02515e2e."
+evidence = [
+    "re-run: stage with an open review run reports next = plan run start --step review",
+    "docs/plans/v2-planning.md:54",
+]
+dedup_id = "46fbb79c29fdc9c7"
+resolved = 2026-11-06
+resolution = "Uncommitted. Run::is_open is the one open-run derivation for view, records and stage. plan stage always prints open_runs, adds a blocker per open row, and at every stage next offers relaunching the oldest open step or abandoning it. plan approve does not refuse an open run; tracked in the backlog."
+
+[[items]]
+id = "R22"
+first_flagged = 2026-11-05
+rounds = 1
+status = "fixed"
+flow = "v2-planning"
+file = "claude/skills/tomlctl/references/plan.md"
+line = 477
+severity = "warning"
+effort = "trivial"
+category = "package-quality"
+summary = "The documented way to read one plan gate array prints the whole object"
+description = "The doc says read one with --rows, as in plan gate --slug <slug> --rows stops. That command prints the full gate object, because --rows only re-roots the row options. Fix: show --rows stops --lines in the example. A carrier reading the approval screen otherwise gets every array."
+evidence = ['re-run: plan gate --rows stops prints {"ok":true,"assumptions":[],...}']
+dedup_id = "ddda88a39678ac7e"
+resolved = 2026-11-06
+resolution = "Uncommitted. plan.md shows plan gate --rows stops --lines and says the first line is the header; run against the debug binary in a scratch repo. All other plan verb changes are documented too, with the store shape moved to references/plan-store.md to stay under the line ceiling."
+
+[[items]]
+id = "R23"
+first_flagged = 2026-11-05
+rounds = 1
+status = "fixed"
+flow = "v2-planning"
+file = "claude/skills/review-v2-method/SKILL.md"
+line = 75
+severity = "warning"
+effort = "trivial"
+category = "package-quality"
+summary = "The method and review reference exempt only change and remove from old on a plan review, but the code and sweeper exempt add too"
+description = """Both docs attach "except on a plan review" to change and remove and leave add needing old. old_required returns false for Family::Plan before reading direction, and review-sweeper.md step 8 says plan rows carry no old, so the sweeper's preloaded method contradicts its own step. Fix: move the exception so it covers every direction, and split the sweeper's run-on sentence."""
+evidence = ["tomlctl/src/review/fields.rs:817 old_required"]
+instances = [
+    "claude/skills/review-v2-method/SKILL.md:75",
+    "claude/skills/tomlctl/references/review.md:96",
+    "claude/agents/review-sweeper.md:35",
+]
+enumeration = "complete"
+dedup_id = "349012765f26d521"
+resolved = 2026-11-06
+resolution = "Uncommitted. The method and review reference say old is never required on a plan review, for any direction, matching old_required; the sweeper's plan-review sentence is split."
+
+[[items]]
+id = "R24"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "claude/skills/tomlctl/references/plan.md"
+line = 273
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "The [[run]] contract treats the run id as maybe-unknown and records no session, which is what a resume depends on"
+description = "The Workflow tool result carries the run id, so the order should be stated: call Workflow, read the id, then plan run start --run-id. As worded, an open row can sit without an id until finish, and no verb sets it. Saved results live under the launching session's directory, so a run id without a session cannot drive claude --resume; CLAUDE_CODE_SESSION_ID is available in Bash. Add --session, and optionally the transcript directory, whose journal.jsonl gives a new session something to salvage. Audit value only if the carrier never resumes."
+evidence = [
+    "workflow-authoring skill: the tool result includes a runId",
+    "https://code.claude.com/docs/en/workflows.md:390, fetched 2026-11-06",
+    "claude/skills/tomlctl/references/plan.md:300",
+]
+dedup_id = "f68b074857fac0e8"
+
+[[items]]
+id = "R25"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "docs/plans/v2-planning.md"
+line = 296
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "Worktree isolation reads and writes a different plan store, under different locks, from a different base"
+description = "The engine contract says to read specs through plan view --for worker. In an isolation: worktree agent that reads the worktree's copy: plan run start there changed the worktree's plan.toml and its .claude/.locks and left the primary clean. Subagent worktrees branch from the default branch unless worktree.baseRef is head, so a feature-branch flow or unpushed approval commits give not_found or a stale plan. No plan commits the engine to worktrees yet. Contract lines for the engine plan: set baseRef to head, pre-render projections or pass TOMLCTL_ROOT (untested under isolation), keep store writes in the primary checkout."
+evidence = [
+    "re-run in a git worktree: worktree plan.toml modified, primary clean",
+    "https://code.claude.com/docs/en/worktrees.md:138, fetched 2026-11-06",
+    "tomlctl/src/io.rs repo_or_cwd_root",
+]
+dedup_id = "1dd9204c1f531a34"
+
+[[items]]
+id = "R26"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "docs/plans/v2-planning.md"
+line = 292
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "Slice 2's agent list has no agent that can write the notes/*.md its Investigate step promises"
+description = "Investigate promises notes on disk (line 59). Scripts have no filesystem, research-deep and research-lite declare no Edit/Write, and returning note bodies through the Workflow result breaks digest-and-pointers. Name a plan-investigator in the Slice 2 row, or pair a stdin note verb with investigators returning {verdict, anchors, note} by schema, which also answers the protected-path finding."
+evidence = [
+    "claude/agents/research-deep.md frontmatter",
+    "https://code.claude.com/docs/en/workflows.md:353, fetched 2026-11-06",
+]
+dedup_id = "d79bc72c6ee549e5"
+
+[[items]]
+id = "R27"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "docs/ideas/v2-pipeline.md"
+line = 32
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "No Agent-tool fallback passes opt-in, but Workflow rerun semantics are wrong for side-effecting implementers"
+description = "Carrier-launched Workflows satisfy the opt-in rule. The exposure is execution: on a relaunch, a failed agent reruns and so does every agent started after it, even completed ones, and a run cannot stop for the user. Add three rules to the engine contract: one Workflow per milestone, so the drain replan is possible; never resumeFromRunId for writers, each launch taking the ready set in args from tasks ready; and Interrupt (plan line 262) means a parked branch plus needs_human at run end, not a mid-run stop. disableWorkflows also exists, so no fallback needs a pre-flight hard stop. Run review-v2-pipeline once before committing further to it."
+evidence = ["https://code.claude.com/docs/en/workflows.md:352,378, fetched 2026-11-06"]
+dedup_id = "af33af47be790e3f"
+
+[[items]]
+id = "R28"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "tomlctl/src/cli/types/plan.rs"
+line = 193
+symbol = "PlanRunStartArgs"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "--args-hash is required but nothing reads it, the runtime does not key on args, and plan_rev was never built"
+description = "The journal keys on (prompt, opts), so a pointer prompt is unchanged when the file behind it changes, and the hash detects neither stale args nor changed files. args_hash appears only in the schema round trip and the writer. plan_rev, the research note's actual buster, appears only at plan line 771. Simplest form: a plan_rev digest over brief.md, plan.toml and tasks.toml in plan view --for digest, stored on the run row; the carrier starts a fresh run on a mismatch. Also make --workflow and --args-hash optional: the one-agent structure-challenge step cannot be recorded honestly today."
+evidence = [
+    "re-run: plan run start --step structure-challenge fails with required --workflow and --args-hash",
+    "grep args_hash in tomlctl/src",
+    "https://code.claude.com/docs/en/workflows.md:374, fetched 2026-11-06",
+]
+dedup_id = "cfc1e68507d38f6e"
+
+[[items]]
+id = "R29"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "docs/plans/v2-planning.md"
+line = 65
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "Prove's Tools, one Workflow is settled by the runtime: tools in the carrier, a Workflow only for cold readers"
+description = """A script cannot run tools, so running plan check and the probe script inside the Workflow needs a model agent per deterministic step, and in auto mode that agent's computed prompt does not count as a request from the user. This closes the Slice 2 open item at line 292: the probe script runs in the carrier, Bash to a scratch file, then --record. Line 645's "the user's default mode prompts for nothing" is also wrong under defaultMode auto, where the classifier reviews the call."""
+evidence = [
+    "https://code.claude.com/docs/en/workflows.md:307,353, fetched 2026-11-06",
+    "docs/plans/v2-planning.md:645",
+]
+dedup_id = "db3ffc65ebed5cc7"
+
+[[items]]
+id = "R30"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "docs/plans/v2-planning.md"
+line = 60
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "Fresh agents are not blind: they inherit CLAUDE.md and git status and can read every note"
+description = "The challenger receives only the intent, the expected future state and the code, but its context and tools do not enforce that. By default it gets every CLAUDE.md, including the conventions a structural challenge questions, plus a git status snapshot that cannot be turned off per agent, and Read reaches notes/ and plan.toml. The repo has already hit this class (B-c2c975d1, review-finder-cf). Give plan-challenger and blind finders omitClaudeMd: true, and either deny notes/ and plan.toml with a frontmatter PreToolUse hook (untested on Workflow agents) or state that the exclusion is prompt-only. Line 881 of sub-agents.md says CLAUDE.md still loads through the message flow even with omitClaudeMd, against lines 33 and 311, so test it directly in the replay."
+evidence = [
+    "https://code.claude.com/docs/en/sub-agents.md:33,311,881,1114, fetched 2026-11-06",
+    "claude/agents/review-finder-cf.md",
+    "backlog B-c2c975d1",
+]
+dedup_id = "762fa40e9b315276"
+
+[[items]]
+id = "R31"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "tomlctl/src/tasks/add.rs"
+line = 193
+symbol = "append"
+severity = "suggestion"
+effort = "small"
+category = "db"
+summary = "A recycled ref merges two tasks' audit trails, and a later --ref rename rewrites the dead row's tombstone too"
+description = "[[changes]] is keyed on ref, but append builds taken from live items only, so a new row can reclaim a tombstoned ref. update.rs:773 filters on the ref, so a rename takes both. Fix: treat a ref held by a [[changes]] row as taken, excluding milestone: refs, and have --ref refuse a tombstoned target. Files: tasks/add.rs, tasks/update.rs, tests/tasks_audit.rs. Same root as the re-minted id; the fixes differ."
+evidence = [
+    "lens run: removing and re-adding Third task left both rows under ref third-task",
+    "tomlctl/src/tasks/schema.rs:399 drop_ref_entries",
+]
+dedup_id = "90826459196a2563"
+
+[[items]]
+id = "R32"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "tomlctl/src/plan/approve.rs"
+line = 423
+symbol = "register"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "plan approve carries a third copy of the active-flow registry upsert"
+description = "register rebuilds the registry path and the find-or-push closure that flow already has at flow/active.rs and flow/init.rs:upsert_active_entry, and omits the schema_version backfill. The comment explains why flow init's wrapper cannot be used, not why the closure must repeat. The init module doc says these sites must agree byte for byte. Fix: one upsert_entry in flow/active.rs called from all three."
+evidence = [
+    "tomlctl/src/plan/approve.rs:433",
+    "tomlctl/src/flow/active.rs:393",
+    "tomlctl/src/flow/init.rs:279",
+]
+instances = [
+    "tomlctl/src/flow/active.rs:add",
+    "tomlctl/src/flow/init.rs:upsert_active_entry",
+    "tomlctl/src/plan/approve.rs:register",
+]
+sweep = ["find_slug_index"]
+enumeration = "complete"
+dedup_id = "a2130704f4c9e11e"
+
+[[items]]
+id = "R33"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "tomlctl/src/tasks/schema.rs"
+line = 35
+symbol = "ELABORATION_UPFRONT"
+severity = "suggestion"
+effort = "small"
+category = "db"
+summary = "Stored values for elaboration, kind, binding and verdict are private constants redeclared across modules"
+description = "The schema owns only upfront. deferred is declared four times, healthy twice, required twice, and the accept kinds in add.rs and probes.rs, so a fourth kind added to the writer alone reads broken through verdict's fallback arm. A typo in a const compares false silently: in check.rs a deferred milestone would read as upfront. The String fields are deliberate; this asks for shared constants, not enums. Add MilestoneSpec::is_deferred too."
+evidence = ["tomlctl sweep re-run at vet time: 36 sites"]
+instances = [
+    "tomlctl/src/plan/approve.rs:42",
+    "tomlctl/src/plan/check.rs:32",
+    "tomlctl/src/plan/check.rs:33",
+    "tomlctl/src/plan/check.rs:34",
+    "tomlctl/src/plan/milestone.rs:16",
+    "tomlctl/src/plan/probes.rs:24",
+    "tomlctl/src/plan/probes.rs:28",
+    "tomlctl/src/plan/view.rs:29",
+    "tomlctl/src/tasks/add.rs:96",
+    "tomlctl/src/tasks/add.rs:97",
+]
+sweep = ["ELABORATION_DEFERRED|VERDICT_HEALTHY|BINDING_REQUIRED|ACCEPT_KINDS|MEANS_BINDINGS|KIND_(FORWARD|FALSIFIER|GUARD)"]
+enumeration = "complete"
+dedup_id = "3cea15d94ebb49e4"
+
+[[items]]
+id = "R34"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "tomlctl/src/tasks/schema.rs"
+line = 391
+symbol = "links_for"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "Store has ref-keyed accessors for sibling side tables but not for specs, so the join is open-coded across modules"
+description = "file_note, links_for and find_override set the pattern, and plan/view.rs spec_of is the accessor living in the wrong module. Fix: add Store::spec_for(&ref) and use it at the read sites. plan/probes.rs:234 and tasks/update.rs:446 need a mutable or positional form and stay as they are; drift is the one reader that takes every match."
+evidence = ["tomlctl sweep re-run at vet time over spec.r#ref == and entry.r#ref == row.r#ref"]
+instances = [
+    "tomlctl/src/plan/approve.rs:154",
+    "tomlctl/src/plan/check.rs:345",
+    "tomlctl/src/plan/drift.rs:112",
+    "tomlctl/src/plan/probes.rs:111",
+    "tomlctl/src/plan/view.rs:431",
+    "tomlctl/src/plan/view.rs:553",
+    "tomlctl/src/tasks/show.rs:71",
+]
+sweep = [
+    'spec\.r#ref ==',
+    'entry\.r#ref == row\.r#ref',
+]
+enumeration = "complete"
+dedup_id = "ef7d77e3256c279b"
+
+[[items]]
+id = "R35"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "tomlctl/src/store_guard.rs"
+line = 47
+symbol = "message"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "The plan.toml guard message names plan milestone, which writes tasks.toml, and omits plan open, which seeds plan.toml"
+description = "The message exists to redirect an agent to the owning verb. plan/milestone.rs writes through mutate_store on the tasks path, and the Tasks message beside it correctly names plan milestone. Fix: replace plan milestone with plan open in the Plan arm. store_guard_message_names_the_replacement_and_bypass asserts only the tasks and backlog messages, so no test changes."
+evidence = [
+    "tomlctl/src/store_guard.rs:47-48",
+    "tomlctl/src/plan/milestone.rs:14,49",
+]
+dedup_id = "a46987bee66c33d7"
+
+[[items]]
+id = "R36"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "tomlctl/src/plan/milestone.rs"
+line = 107
+symbol = "update"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "plan milestone update writes an audit row even when the value did not change"
+description = "references/plan.md:344 promises one [[changes]] row per changed field, and tasks update skips unmoved values. The milestone verb pushes unconditionally. Fix: skip a row when old equals new. Files: plan/milestone.rs, tests/plan_milestone.rs."
+evidence = ["re-run: --goal g2 on a goal already g2 stored old=g2, new=g2"]
+dedup_id = "c9f3dc2c18757454"
+
+[[items]]
+id = "R37"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "tomlctl/src/plan/stage.rs"
+line = 63
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "After approval, plan stage reports no blockers even when the frozen brief has changed"
+description = "The approved branch returns before any finding is read. plan/brief-changed is an error in plan check, but the re-entry verb neither shows it nor points at plan approve --amend. The stage table defines the approved rows by row status alone, so this is a gap in the contract. Fix: add the finding to blockers and set next to the amend, without changing the stage name. Falls away if the engine always runs plan check."
+evidence = ["lens run: with a line appended to an approved brief.md, stage prints next=none, blockers=[]"]
+dedup_id = "86429dd2b75bcfe5"
+
+[[items]]
+id = "R38"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "tomlctl/src/plan/schema.rs"
+line = 105
+symbol = "id_high_water"
+severity = "suggestion"
+effort = "medium"
+category = "completeness"
+summary = "Needs a plan: no verb removes a decision, contract, handover or milestone, and --gate cannot clear a gate list"
+description = "needs-plan. references/plan.md:139 and the field's doc comment describe removed ids, yet items remove is refused on plan.toml and --raw-store is for repairs only. A milestone added by mistake cannot be dropped, and an empty --gate means keep, so plan gate keeps listing obsolete commands under stops. Decisions needed: which records are removable, tombstones on an audited store, and what happens to rows naming a removed milestone. Drop this if records are meant to be permanent, retired by vetoed or done."
+evidence = ["lens run: items remove on plan.toml refused as a verb-owned store; with --raw-store the next mint skips the id"]
+dedup_id = "a92bc30709dd2bcc"
+
+[[items]]
+id = "R39"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "tomlctl/README.md"
+line = 91
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "The README's command tour omits the plan group"
+description = "The tour has lines for tasks, inputs and review, and tomlctl plan appears only in the feature row. Add a line."
+evidence = ["grep of `tomlctl plan` in tomlctl/README.md at vet time: no tour line"]
+dedup_id = "8c8764492d7aa5df"
+
+[[items]]
+id = "R40"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "tomlctl/src/plan/records.rs"
+line = 209
+symbol = "upsert_decision"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "The non-empty rule on decision and claim holds only when creating, and only for the exact empty string"
+description = '{"id":"D1","decision":""} blanks a decision and "   " mints one. The checks at lines 249 and 338 run only on creation with is_empty(), the update arms assign unchecked, and siblings handover_add and run_skip use trim().is_empty(). No plan check class catches it, so an empty record reaches plan gate and the worker view. Fix: one trimmed check on both arms.'
+evidence = ["lens runs: both rows returned ok and plan view rendered an empty heading"]
+instances = [
+    "tomlctl/src/plan/records.rs:upsert_decision",
+    "tomlctl/src/plan/records.rs:upsert_contract",
+]
+enumeration = "complete"
+dedup_id = "ba5bc8c017c7b714"
+
+[[items]]
+id = "R41"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "tomlctl/src/plan/view.rs"
+line = 458
+symbol = "run_state"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "Run and decision states are re-derived at call sites, with two spellings of skipped"
+description = "run_state and records.rs read skipped as !skip_reason.is_empty(), while approve.rs and stage.rs use trim(). surfaced && AgentAssumed lives at approve.rs:279 and view.rs:413. Fix: Run::state() returning an enum and Decision::is_unanswered() in plan/schema.rs. The B-02515e2e stage fix would otherwise add a third copy of the predicate."
+evidence = [
+    "tomlctl/src/plan/approve.rs:88",
+    "tomlctl/src/plan/stage.rs:139",
+    "tomlctl/src/plan/records.rs:421",
+]
+instances = [
+    "tomlctl/src/plan/approve.rs:gate_report",
+    "tomlctl/src/plan/approve.rs:refuse_unanswered",
+    "tomlctl/src/plan/stage.rs:review_settled",
+    "tomlctl/src/plan/view.rs:run_state",
+    "tomlctl/src/plan/view.rs:open_items",
+    "tomlctl/src/plan/records.rs:run_finish",
+]
+sweep = [
+    "skip_reason",
+    "surfaced &&",
+]
+enumeration = "complete"
+dedup_id = "bd074b938a239edd"
+
+[[items]]
+id = "R42"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "tomlctl/src/plan/schema.rs"
+line = 135
+symbol = "binds"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "Decision.binds is an untyped sum, with all-digit-means-task parsed at three sites"
+description = "The rule is written out in check.rs bind_known and decision_finding and in view.rs bind_names. Add Bind::parse(&str) returning Task(u32) or Path(String), keeping the stored Vec<String>. Pairs with the row-path normalisation finding, whose helper sits on the Path arm."
+evidence = [
+    "tomlctl/src/plan/check.rs:304-307,327",
+    "tomlctl/src/plan/view.rs:533",
+]
+instances = [
+    "tomlctl/src/plan/check.rs:bind_known",
+    "tomlctl/src/plan/check.rs:decision_finding",
+    "tomlctl/src/plan/view.rs:bind_names",
+]
+sweep = [
+    "is_ascii_digit",
+    'entry\.parse::<u32>',
+]
+enumeration = "complete"
+dedup_id = "fb9a1a12661066e6"
+
+[[items]]
+id = "R43"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "tomlctl/src/tasks/update.rs"
+line = 341
+symbol = "batch_row"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "tasks update --ndjson validates a spec, discards the result, then re-parses the raw JSON per id"
+description = "Line 341 calls SpecPatch::parse and drops it, and patch_spec re-parses at line 462 with a ? that cannot fire on a validated value. The comment justifying raw JSON does not hold, since Accept, Premise and Means derive Clone. Patch also lets line: None coexist with spec: Some, and the fallback arm at lines 406-407 drops that silently. Fix: hold Option<SpecPatch> on BatchRow and Patch, and group line, spec, reason and actor into one Option."
+evidence = ["tomlctl/src/tasks/update.rs:341,462"]
+dedup_id = "8d3d3dd25195b89d"
+
+[[items]]
+id = "R44"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "tomlctl/src/plan/open.rs"
+line = 82
+symbol = "run"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "plan open reads init_flow's result by JSON key, so a renamed key silently yields an empty created list"
+description = 'flow["created"].as_array().into_iter().flatten() turns a renamed key, or the dry-run envelope init_flow also returns, into nothing. init_flow was extracted for this one consumer. Fix: a typed live path out of init_flow, with dispatch rendering the envelope.'
+evidence = [
+    "tomlctl/src/plan/open.rs:82",
+    "tomlctl/src/flow/init.rs init_flow",
+]
+dedup_id = "f75084a05c999da8"
+
+[[items]]
+id = "R45"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "tomlctl/src/plan/stage.rs"
+line = 28
+symbol = "run"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "The flow-directory derivation and brief filename are repeated across src/plan"
+description = "The .parent().expect(...) derivation appears in check.rs, approve.rs, stage.rs and view.rs. BRIEF_FILE is declared in approve.rs, check.rs and view.rs, with the literal in open.rs. Fix: expose store::flow_dir and BRIEF_FILE from plan/store.rs."
+evidence = [
+    "tomlctl/src/plan/check.rs:57-59",
+    "tomlctl/src/plan/approve.rs:33,182-184",
+    "tomlctl/src/plan/view.rs:27,71-73",
+]
+instances = [
+    "tomlctl/src/plan/check.rs:findings",
+    "tomlctl/src/plan/approve.rs:approve",
+    "tomlctl/src/plan/stage.rs:run",
+    "tomlctl/src/plan/view.rs:run",
+    "tomlctl/src/plan/open.rs:run",
+]
+sweep = [
+    "a resolved store path sits",
+    'brief\.md',
+]
+enumeration = "complete"
+dedup_id = "85f77eb8e829f6bd"
+
+[[items]]
+id = "R46"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "tomlctl/src/tasks/remove.rs"
+line = 41
+symbol = "remove_with_reason"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "tasks remove keeps a test-only remove beside the real remove_with_reason"
+description = "The only production caller is tasks/dispatch.rs, through remove_with_reason. The #[cfg(test)] wrapper survives for two inline tests in tasks/update.rs. Fix: make the production function remove(path, integrity, id, force, reason) and drop the wrapper."
+evidence = [
+    "tomlctl/src/tasks/remove.rs:41-49",
+    "tomlctl/src/tasks/dispatch.rs:215",
+    "tomlctl/src/tasks/update.rs:1690",
+]
+dedup_id = "7a8edfe0ef060de8"
+
+[[items]]
+id = "R47"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "tomlctl/src/plan/schema.rs"
+line = 705
+symbol = "vocab"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "The vocabulary macro makes callers pass parse and VOCABULARY as an unchecked pair"
+description = 'vocab(table, "door", &context, Door::parse, Provenance::VOCABULARY) type-checks and prints the wrong choices. No call site does this today. Fix: generate a Vocabulary trait impl from the macro and make vocab and vocab_value generic over it, which also shrinks the seven call sites.'
+evidence = ["tomlctl/src/plan/schema.rs:705"]
+instances = [
+    "tomlctl/src/plan/schema.rs:389",
+    "tomlctl/src/plan/schema.rs:396",
+    "tomlctl/src/plan/schema.rs:484",
+    "tomlctl/src/plan/schema.rs:538",
+    "tomlctl/src/plan/records.rs:193",
+    "tomlctl/src/plan/records.rs:200",
+    "tomlctl/src/plan/records.rs:303",
+]
+sweep = [
+    'vocab\(',
+    'vocab_value\(',
+]
+enumeration = "complete"
+dedup_id = "7efd3c6c6b491924"
+
+[[items]]
+id = "R48"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "tomlctl/tests/common/mod.rs"
+line = 388
+symbol = "cli"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Helpers repeat across the new plan test binaries, and the NDJSON id-array parser has two copies"
+description = "stdout_json has 4 copies and hex_digest 2, with the digest inlined again in plan_stage.rs. plan_refusals.rs hand-parses the envelope common::parse_json_error_envelope provides. records.rs row_ids and add.rs json_ids differ only in wrapping Option and belong beside row_string in items.rs. tests/common/mod.rs allows dead code, so sharing has no lint cost."
+evidence = [
+    "tomlctl/tests/plan_refusals.rs:41",
+    "tomlctl/src/plan/records.rs:74",
+    "tomlctl/src/tasks/add.rs:790",
+]
+instances = [
+    "tomlctl/tests/review_finish.rs:153",
+    "tomlctl/tests/plan_open.rs:34",
+    "tomlctl/tests/plan_approve.rs:215",
+    "tomlctl/tests/plan_records.rs:43",
+    "tomlctl/tests/plan_check.rs:79",
+    "tomlctl/tests/plan_stage.rs:67",
+    "tomlctl/tests/plan_refusals.rs:38",
+    "tomlctl/src/plan/records.rs:row_ids",
+    "tomlctl/src/tasks/add.rs:json_ids",
+]
+sweep = [
+    "fn stdout_json",
+    "fn hex_digest",
+    'as_u64\(\)',
+    "Sha256::digest",
+]
+enumeration = "complete"
+dedup_id = "334791b9a6598030"
+
+[[items]]
+id = "R49"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "tomlctl/src/plan/probes.rs"
+line = 267
+symbol = "verdict"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "plan probes --record reports broken with no cause, though the verdict has several and the evidence is discarded"
+description = "broken covers a stderr marker on either control, an undeclared missing path, a failing guard and an unknown kind. verdict returns only the string, and plan/probe-unhealthy repeats it with the sha. Fix: add a reason to each recorded row in the output only, naming the control and rule hit, leaving the store shape unchanged."
+evidence = ["lens run: cat src/undeclared recorded verdict broken, with no cause in output or plan check detail"]
+dedup_id = "c86627600df05243"
+
+[[items]]
+id = "R50"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "tomlctl/src/plan/check.rs"
+line = 122
+symbol = "design_path"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "Two path-boundary checks whose comments state a security reason have no test"
+description = "design_path canonicalises because a symlink could inline any file into a worker prompt, and open.rs backlog_rows refuses a hand-edited row id naming a file outside notes/. Both behave correctly when driven by hand, but no test reaches either, so deleting one would pass the suite. Add a Unix-gated symlink case and a traversal case to tests/plan_open.rs."
+evidence = [
+    "grep of symlink in tomlctl/tests lists no plan test",
+    "lens run: ../evil refused as not a single path component",
+]
+instances = [
+    "tomlctl/src/plan/check.rs:design_path",
+    "tomlctl/src/plan/open.rs:backlog_rows",
+]
+sweep = [
+    "symlink",
+    "path component",
+]
+enumeration = "complete"
+dedup_id = "772bfc724e2d4558"
+
+[[items]]
+id = "R51"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "tomlctl/src/plan/probes.rs"
+line = 187
+symbol = "parse_capture"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "A bad capture line names neither the expected shape nor the content, and a missing capture path has no file field"
+description = '"capture line N is not a probe row" states neither side, though the sibling refusal for line 1 gives the expected head<TAB><sha>. read_capture uses an untagged with_context, so a missing path is kind=other with file null, though plan decide --ndjson does the same, so the kind half may be left. Fix: include a truncated line and the column shape, and tag the read.'
+evidence = ['lens run: {"kind":"validation","message":"capture line 2 is not a probe row"}']
+dedup_id = "df01f05d844beffc"
+
+[[items]]
+id = "R52"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "tomlctl/src/plan/store.rs"
+line = 42
+symbol = "load"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "Every read verb on an unopened flow returns a raw IO message, so plan stage cannot say plan open"
+description = "plan stage, check, gate and drift report reading <path>/plan.toml: No such file. Keep kind=not_found and name the flow and plan open, allowing for a v1 flow, which plan open refuses, and a mistyped slug. plan probes --emit words the same condition differently."
+evidence = ["lens run: plan stage --slug nope gives kind=not_found with an os error 2 message"]
+dedup_id = "ed1c7d6c5427189d"
+
+[[items]]
+id = "R53"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "tomlctl/src/plan/schema.rs"
+line = 232
+symbol = "from_toml"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "A plan store that parses but fails schema validation is kind=other with no file, while a syntax error has both"
+description = "A hand-edited vocabulary value fires on every verb, writers included, and a caller cannot tell which store failed. Fix: wrap schema errors as kind=parse with the path in store::load and store::mutate. The tasks store behaves the same, so this may be accepted convention for tool-owned stores."
+evidence = ["lens run: decision D1: unknown provenance, kind=other, file null"]
+dedup_id = "02d5c16dac6b0782"
+
+[[items]]
+id = "R54"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "tomlctl/src/cli/types/plan.rs"
+line = 284
+symbol = "PlanMilestoneUpdateArgs"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "--help for repeatable flags hides that they replace rather than append, and --step help omits the one value any verb reads"
+description = "plan milestone update --gate has the same help as add, yet milestone.rs:125 replaces the list, so --gate new silently drops the others. plan open --scope does the same. --step help on run start and run skip never says review is what plan stage and plan gate read, matched exactly. The reference states all three."
+evidence = [
+    "tomlctl/src/plan/milestone.rs:125",
+    "claude/skills/tomlctl/references/plan.md:178,205,355",
+]
+instances = [
+    "tomlctl/src/cli/types/plan.rs:PlanMilestoneUpdateArgs",
+    "tomlctl/src/cli/types/plan.rs:PlanOpenArgs",
+    "tomlctl/src/cli/types/plan.rs:PlanRunStartArgs",
+    "tomlctl/src/cli/types/plan.rs:PlanRunSkipArgs",
+]
+sweep = [
+    "repeatable",
+    "flow step",
+]
+enumeration = "complete"
+dedup_id = "69b9701d3d189665"
+
+[[items]]
+id = "R55"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "claude/skills/flow-contract-task-store/SKILL.md"
+line = 110
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "The contract puts audit between [[backlog_links]] and [[items]], which contradicts the reference and the store"
+description = "audit is a root scalar, so it must precede every table. Only the three side tables sit there. Fix: drop audit from that sentence and state its real position, as references/tasks-store.md does."
+evidence = [
+    "tomlctl/src/tasks/schema.rs:8-9",
+    "claude/skills/tomlctl/references/tasks-store.md",
+]
+dedup_id = "e98c6501e334e1b7"
+
+[[items]]
+id = "R56"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "claude/skills/tomlctl/references/plan.md"
+line = 42
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "A refused call exits 1 is false for the --emit/--record rule, which exits 2 outside the JSON envelope"
+description = "Line 411 says exactly one of the two is required, with no exception, and clap reports it as a usage error with no kind. tasks.md spells this distinction out for --with. Fix: note on line 411 that the rule is a clap usage error, exit 2. Clap-required flags such as a missing --slug follow the same path."
+evidence = ["re-run: plan probes --slug d --error-format json exits 2"]
+dedup_id = "c3a882108d471281"
+
+[[items]]
+id = "R57"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "claude/skills/tomlctl/SKILL.md"
+line = 145
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "Two SKILL enumerations were not extended to the plan verbs"
+description = "The -q list of verbs whose verdict lives in the payload omits plan drift and plan stage. Verbs without field flags omits plan decide and plan contract, which take only --ndjson. Other enumerations were updated. Add these verbs to both lists."
+evidence = ["claude/skills/tomlctl/SKILL.md:145,188"]
+instances = [
+    "claude/skills/tomlctl/SKILL.md:145",
+    "claude/skills/tomlctl/SKILL.md:188",
+]
+enumeration = "complete"
+dedup_id = "b0532788d71a089b"
+
+[[items]]
+id = "R58"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "claude/skills/tomlctl/SKILL.md"
+line = 3
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "The skill's trigger list of stores omits plan.toml"
+description = "The description enumerates context, ledgers, execution records, tasks, backlog, inputs and review-v2 stores, and When to use this skill never mentions the plan store or brief.md. The list reads as closed. Add plan to the description and plan.toml to line 14."
+evidence = ["claude/skills/tomlctl/SKILL.md:3,14"]
+dedup_id = "436a0fafcc63d56c"
+
+[[items]]
+id = "R59"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "claude/skills/flow-contract-task-store/SKILL.md"
+line = 8
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "The task-store contract uses plan verbs but never links their reference, and the reference does not link back"
+description = 'Line 8 points only at tasks.md and tasks-write.md, though section 1a names plan approve, plan probes --record, plan milestone and plan view. plan.md:8-9 says only "not settled here" with no owner, and section 7 never points at the plan check classes. Add both links.'
+evidence = [
+    "claude/skills/flow-contract-task-store/SKILL.md:8",
+    "claude/skills/tomlctl/references/plan.md:8-9",
+]
+dedup_id = "2a7dad1091111de2"
+
+[[items]]
+id = "R60"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "claude/skills/tomlctl/references/tasks.md"
+line = 301
+severity = "suggestion"
+effort = "small"
+category = "package-quality"
+summary = "Three v2 behaviours are missing from the verb sections an agent would read for them"
+description = "The tasks render refusal appears only under import-plan. The check --plan skip of render drift appears only in the contract skill. The tasks add audited-store refusal appears only under add-many. Add one sentence to each verb's own section."
+evidence = [
+    "tomlctl/src/tasks/dispatch.rs:302,328",
+    "tomlctl/src/tasks/add.rs:134-140",
+]
+instances = [
+    "claude/skills/tomlctl/references/tasks.md:301",
+    "claude/skills/tomlctl/references/tasks.md:273",
+    "claude/skills/tomlctl/references/tasks-write.md:84",
+]
+enumeration = "complete"
+dedup_id = "9874aed846f0ae46"
+
+[[items]]
+id = "R61"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "claude/skills/tomlctl/references/plan.md"
+line = 132
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "Keys are written in that order is false for rejected"
+description = "The sample shows an inline rejected between binds and evidence. The writer emits [[decision.rejected]] last in the row. Move rejected to the end of the sample in that form, or narrow the sentence to root keys."
+evidence = ["re-run: plan decide wrote evidence through vetoed, then [[decision.rejected]]"]
+dedup_id = "a1a929306195cd55"
+
+[[items]]
+id = "R62"
+first_flagged = 2026-11-05
+rounds = 1
+status = "open"
+flow = "v2-planning"
+file = "claude/skills/tomlctl/references/plan.md"
+line = 253
+severity = "suggestion"
+effort = "small"
+category = "package-quality"
+summary = "The templates single-quote commands that commonly contain single quotes, and these flags have no file form"
+description = "--command '<command>' and --gate '<command>' break on a command like the contract's own example, cargo nextest run -E 'test(retry_after)'. The Guidance canon says prose goes through a file, but these flags have no such channel. Doc-only fix: a quoting warning in plan.md. A code fix adds --command-file and --gate-file, a maintainer choice."
+evidence = [
+    "tomlctl/src/cli/types/plan.rs has no *-file argument",
+    "claude/skills/tomlctl/references/plan.md:253,327,348",
+]
+dedup_id = "d57f45c46ac9f47f"
