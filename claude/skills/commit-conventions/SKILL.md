@@ -187,4 +187,4 @@ When opening a PR (`gh pr create` or equivalent): open with one sentence on user
 
 ## Installation
 
-This skill activates at `~/.claude/skills/commit-conventions/` (user-level) or `<repo>/.claude/skills/commit-conventions/` (project-level, overrides user-level on naming collision). Symlink or copy the directory; the frontmatter is identical in both cases.
+This skill activates at `skills/commit-conventions/` in the Claude config dir (`CLAUDE_CONFIG_DIR`, default `~/.claude`; user-level) or `<repo>/.claude/skills/commit-conventions/` (project-level, overrides user-level on naming collision). Symlink or copy the directory; the frontmatter is identical in both cases.

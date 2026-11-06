@@ -13,7 +13,8 @@ downstream phases. Canonical input/output envelope shapes: see `flow-bootstrap.m
 section.
 
 All `.claude/...` paths resolve to the project-local `.claude/` at the git top-level. No
-fallback to `~/.claude/`. **Status vocabulary**: `status ∈ {draft, in-progress, review,
+fallback to the Claude config dir (`CLAUDE_CONFIG_DIR`, default `~/.claude`).
+**Status vocabulary**: `status ∈ {draft, in-progress, review,
 complete}`; auto-transitions to `complete` from non-`plan-update-complete` ops are
 forbidden (route through `review`); unknown values fail-soft to `in-progress` on read.
 **Slug derivation**: filename minus `.md` (multi-file plan: parent directory name); no

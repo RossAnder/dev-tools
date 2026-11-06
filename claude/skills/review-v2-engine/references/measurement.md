@@ -97,7 +97,7 @@ v1's orchestrator vet sampled each lens's output after it returned and dropped w
 | `/review` + `/review-apply` | 401k tokens |
 | `/review-plan` | 329k tokens |
 
-Measured 2026-10-12 over the 60 most recent flow transcripts. The scripts that produced these were scratch and never committed, so the method is recorded here and is the method of record: for each session, take its top-level transcript `~/.claude/projects/<project dir>/<session>.jsonl` (subagent transcripts live under `<session>/subagents/` and are excluded), sum the characters of every main-thread tool input and tool result, and divide by 4 for tokens. The peak is the largest such total among the sessions that ran the command. Measure a v2 run's orchestrator context the same way, over the session that ran it, and record it with its date.
+Measured 2026-10-12 over the 60 most recent flow transcripts. The scripts that produced these were scratch and never committed, so the method is recorded here and is the method of record: for each session, take its top-level transcript `projects/<project dir>/<session>.jsonl` in the Claude config dir (`CLAUDE_CONFIG_DIR`, default `~/.claude`; subagent transcripts live under `<session>/subagents/` and are excluded), sum the characters of every main-thread tool input and tool result, and divide by 4 for tokens. The peak is the largest such total among the sessions that ran the command. Measure a v2 run's orchestrator context the same way, over the session that ran it, and record it with its date.
 
 ## Thresholds
 

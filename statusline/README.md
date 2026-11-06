@@ -35,8 +35,8 @@ raw stdin payload to that path before rendering, so a bad line replays offline.
 ### `--style full` (main, default)
 
 The original two-line colour-coded layout, a faithful port of
-`~/.claude/statusline.ps1`. Unchanged, and still what an unflagged invocation
-renders, so an old `settings.json` keeps working.
+`statusline.ps1` in the Claude config dir (`CLAUDE_CONFIG_DIR`, default
+`~/.claude`). Unchanged, and still what an unflagged invocation renders, so an old `settings.json` keeps working.
 
 ```
 dev-tools@main (+98 -483) | Opus 5 | xhigh | 31k/200k (16%)
@@ -222,8 +222,9 @@ cargo test --manifest-path statusline/Cargo.toml
 cargo install --path statusline
 ```
 
-Then in `~/.claude/settings.json` (forward slashes — under Git Bash on Windows,
-backslashes in a `command` path are consumed as escapes):
+Then in `settings.json` in the Claude config dir (`CLAUDE_CONFIG_DIR`, default
+`~/.claude`), with forward slashes — under Git Bash on Windows, backslashes in a
+`command` path are consumed as escapes:
 
 ```json
 "statusLine": {

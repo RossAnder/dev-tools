@@ -1,6 +1,6 @@
 # Agent waves — the stage 4 fallback
 
-Stage 4 runs on the saved Workflow `review-v2-pipeline` (`claude/workflows/review-v2.js`, deployed under `~/.claude/workflows/`). This reference is its fallback: the same cells, the same prompts, the same routing and the same persistence contract, driven by the orchestrator with the Agent tool. Because every agent persists its own output to the store and every store write is idempotent, a wave run here leaves the store exactly as the Workflow would.
+Stage 4 runs on the saved Workflow `review-v2-pipeline` (`claude/workflows/review-v2.js`, deployed under `workflows/` in the Claude config dir, which is `CLAUDE_CONFIG_DIR`, default `~/.claude`). This reference is its fallback: the same cells, the same prompts, the same routing and the same persistence contract, driven by the orchestrator with the Agent tool. Because every agent persists its own output to the store and every store write is idempotent, a wave run here leaves the store exactly as the Workflow would.
 
 It also owns the one dispatch the Workflow never makes, the stage 2 surveyor (below), because that dispatch goes through the Agent tool on both substrates.
 

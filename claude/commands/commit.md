@@ -51,7 +51,7 @@ Present the drafted message via `AskUserQuestion` with three options:
 - **Revise** — accept user free-text feedback via the `Other` slot; redraft ONCE and re-present. This is a single revision round; do not loop.
 - **Cancel** — halt with no commit.
 
-On **Approve**, invoke `git commit -F -` with the drafted message on stdin. Pin this literal HEREDOC pattern verbatim — neither `~/.claude/CLAUDE.md` nor the repo `CLAUDE.md` documents it, so the pattern lives here:
+On **Approve**, invoke `git commit -F -` with the drafted message on stdin. Pin this literal HEREDOC pattern verbatim — neither the `CLAUDE.md` in the Claude config dir (`CLAUDE_CONFIG_DIR`, default `~/.claude`) nor the repo `CLAUDE.md` documents it, so the pattern lives here:
 
 ```bash
 git commit -F - <<'COMMIT_MSG'
@@ -84,5 +84,5 @@ On success:
 ## Notes
 
 - `/commit` never writes to `execution-record.toml` — the active-flow warning makes any commit-history vs execution-record divergence visible rather than silent.
-- The skill is required. If `commit-conventions/` is not installed (neither at `~/.claude/skills/` nor at `<repo>/.claude/skills/`), halt with installation instructions per the skill's `## Installation` section rather than drafting unguided.
+- The skill is required. If `commit-conventions/` is not installed (neither under `skills/` in the Claude config dir — `CLAUDE_CONFIG_DIR`, default `~/.claude` — nor at `<repo>/.claude/skills/`), halt with installation instructions per the skill's `## Installation` section rather than drafting unguided.
 - Convention rules, the Conventional Commits type table, anti-pattern enumeration, breaking-change format, and PR-description rules all live in `claude/skills/commit-conventions/SKILL.md` — this command does not redefine them.
