@@ -65,15 +65,18 @@ files = [
   "claude/agents/implement-lite.md",
   "claude/agents/research-deep.md",
   "claude/agents/research-lite.md",
+  "claude/agents/plan-investigator.md",
 ]
 
-# The research agents share their method-load, read-only contract, finding
-# record and delivery block; the lite/deep split lives in the sections between.
+# Method-load, read-only contract, finding record and delivery. The research
+# agents carry all four, with their lite/deep split in the sections between;
+# other agents carry a subset, so each block's `files` list is the full set.
 [[block]]
 name = "research-method"
 files = [
   "claude/agents/research-deep.md",
   "claude/agents/research-lite.md",
+  "claude/agents/plan-investigator.md",
 ]
 
 [[block]]
@@ -81,6 +84,9 @@ name = "research-read-only"
 files = [
   "claude/agents/research-deep.md",
   "claude/agents/research-lite.md",
+  "claude/agents/plan-investigator.md",
+  "claude/agents/plan-challenger.md",
+  "claude/agents/plan-cold-reader.md",
 ]
 
 [[block]]
@@ -88,6 +94,7 @@ name = "research-finding-record"
 files = [
   "claude/agents/research-deep.md",
   "claude/agents/research-lite.md",
+  "claude/agents/plan-investigator.md",
 ]
 
 [[block]]
@@ -102,6 +109,19 @@ files = [
   "claude/agents/review-surveyor.md",
   "claude/agents/review-sweeper.md",
   "claude/agents/review-checker.md",
+  "claude/agents/plan-investigator.md",
+  "claude/agents/plan-challenger.md",
+  "claude/agents/plan-cold-reader.md",
+]
+
+# The single note a v2 planning agent writes, the one exception to the read-only
+# contract those agents otherwise hold.
+[[block]]
+name = "plan-v2-note-writer"
+files = [
+  "claude/agents/plan-investigator.md",
+  "claude/agents/plan-challenger.md",
+  "claude/agents/plan-cold-reader.md",
 ]
 
 # The store-writer contract the seven v2 review agents share.
