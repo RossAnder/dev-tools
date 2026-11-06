@@ -287,7 +287,9 @@ tomlctl tasks check --slug <slug> --in-flight 3,4
 [the check finding classes](#the-check-finding-classes) for the full list. Under `--plan` the plan is resolved exactly as `render` resolves it, and the same
 containment refusal applies. `render/drift` is a warning, so it is reported without moving the
 exit code: `check --plan` still exits `0` on a drifted plan, and
-[`tasks render --check`](#tasks-render) is the mode to gate on instead.
+[`tasks render --check`](#tasks-render) is the mode to gate on instead. On a v2 flow (one whose
+directory holds a `plan.toml`) `--plan` skips the render-drift comparison, since there is no
+plan document to render.
 
 A store holding any `[[backlog_links]]` entry is also joined against `.claude/backlog.toml` for
 the `backlog/*` classes; a link-free store never reads it. Under `--file` there is no slug, so
@@ -301,7 +303,8 @@ the `backlog/*` classes; a link-free store never reads it. Under `--file` there 
 ## `tasks render`
 
 Rewrites the plan's `## Execution Policy`, `## Tasks` and `## Dependency Graph` sections from
-the store. Every other byte of the document is preserved.
+the store. Every other byte of the document is preserved. A v2 flow (its directory holds a
+`plan.toml`) is refused with `kind=validation`, `--check` and `--stdout` included.
 
 ```bash
 tomlctl tasks render --slug <slug>

@@ -7,7 +7,7 @@ description: "Contract for a flow's task DAG at `.claude/flows/<slug>/tasks.toml
 
 `.claude/flows/<slug>/tasks.toml` is a flow's task DAG: one row per plan task, the two stored edge sets, the execution policy, and the checkpoint groups. From `/plan-new` Phase 9 onward it is canonical and the plan document's `## Execution Policy`, `## Tasks` and `## Dependency Graph` sections are *rendered* from it — the same derive-don't-author pattern `PROGRESS-LOG.md` already follows. Everything a carrier used to re-derive in prose (the frontier, file-claim intersections, checkpoint closures, Kahn batches) is a verb.
 
-The flag tables for every verb live in [`claude/skills/tomlctl/references/tasks.md`](../tomlctl/references/tasks.md) (the read verbs) and [`tasks-write.md`](../tomlctl/references/tasks-write.md) (the mutating verbs). This document is the contract: what the fields mean, which verb a carrier reaches for, and the rules that bind all four carriers.
+The flag tables for every verb live in [`claude/skills/tomlctl/references/tasks.md`](../tomlctl/references/tasks.md) (the read verbs) and [`tasks-write.md`](../tomlctl/references/tasks-write.md) (the mutating verbs); the `plan` verbs that write a v2 flow's side tables are in [`plan.md`](../tomlctl/references/plan.md). This document is the contract: what the fields mean, which verb a carrier reaches for, and the rules that bind all four carriers.
 
 ### 1. Store schema
 
@@ -336,6 +336,8 @@ tomlctl flow ensure-artifact --slug <slug> --kind tasks
 ```
 
 ### 7. `check` classes and exit policy
+
+`plan check` reports these classes plus the v2 plan classes, which [`plan.md`](../tomlctl/references/plan.md#check-classes) lists.
 
 | Class | Severity | Meaning |
 |---|---|---|

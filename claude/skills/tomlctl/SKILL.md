@@ -1,6 +1,6 @@
 ---
 name: tomlctl
-description: "Read, write, query and validate the TOML files Claude Code flows use (context, ledgers, execution records, tasks, backlog, inputs, review-v2 stores) and their `[[items]]` arrays; also `sweep`, the `file:line` enumerator over tracked files. Use for any flow TOML mutation — never line-edit ledger arrays-of-tables."
+description: "Read, write, query and validate the TOML files Claude Code flows use (context, ledgers, execution records, tasks, plan, backlog, inputs, review-v2 stores) and their `[[items]]` arrays; also `sweep`, the `file:line` enumerator over tracked files. Use for any flow TOML mutation — never line-edit ledger arrays-of-tables."
 ---
 
 # tomlctl
@@ -11,7 +11,7 @@ A small Rust CLI that reads and writes the TOML files used by the `/plan-new`, `
 
 ## When to use this skill
 
-Every flow-TOML mutation routes through `tomlctl` — no Python, no line-level `Edit`, no `jq` for TOML parsing. Reach for it whenever a flow command needs to read, filter, or mutate `context.toml`, the review / optimise ledgers, `plan-review-findings.toml`, or their sidecar array-of-tables (`rollback_events`, task-completion records). Shell-level post-processing of tomlctl's JSON output is not needed either — use the in-tool primitives (`--get` / `--select` / `--omit` / `--template` / `--lines` / `--limit` / `--where*` / `--rows` / `--header` / `--max-chars`, see [Output options](#output-options), and `--raw` / `--count-distinct` / `--count`) instead of a pipe through `python`, `node`, `jq`, `head` or `sort -u | wc -l`. The [Guidance canon](#guidance-canon) is the full rule set.
+Every flow-TOML mutation routes through `tomlctl` — no Python, no line-level `Edit`, no `jq` for TOML parsing. Reach for it whenever a flow command needs to read, filter, or mutate `context.toml`, `plan.toml`, the review / optimise ledgers, `plan-review-findings.toml`, or their sidecar array-of-tables (`rollback_events`, task-completion records). Shell-level post-processing of tomlctl's JSON output is not needed either — use the in-tool primitives (`--get` / `--select` / `--omit` / `--template` / `--lines` / `--limit` / `--where*` / `--rows` / `--header` / `--max-chars`, see [Output options](#output-options), and `--raw` / `--count-distinct` / `--count`) instead of a pipe through `python`, `node`, `jq`, `head` or `sort -u | wc -l`. The [Guidance canon](#guidance-canon) is the full rule set.
 
 ## Quick Reference
 
@@ -143,7 +143,7 @@ tomlctl set .claude/flows/auth-overhaul/context.toml status review -q  # nothing
 
 **Text output.** `get --raw`, `json get --raw`, `items next-id`, `tasks render --stdout`, `flow render-progress-log --stdout`, `tasks edges --dot`, `plan view --for human|worker` and `plan probes --emit` print text, not JSON: they honour `-q` and refuse every other output flag with one shared message (`` `--lines` does not apply to this command's text output ``). `items sweep --update` prints a write envelope, so `--lines` there gives one compact line.
 
-**`-q` and payload verdicts.** Most commands signal failure through a non-zero exit, so `-q` loses nothing. These carry their verdict in the payload and exit 0 regardless, so under `-q` they report only that they ran — read the payload instead: `flow stale`, `flow doctor`, `backlog check`, `items find-duplicates`, and `backlog evidence audit` without `--strict`.
+**`-q` and payload verdicts.** Most commands signal failure through a non-zero exit, so `-q` loses nothing. These carry their verdict in the payload and exit 0 regardless, so under `-q` they report only that they ran — read the payload instead: `flow stale`, `flow doctor`, `backlog check`, `items find-duplicates`, `plan drift`, `plan stage`, and `backlog evidence audit` without `--strict`.
 
 ### Rows and header per command
 
@@ -186,7 +186,7 @@ One rule set for every skill, command and agent that drives tomlctl. Other docum
 
 - **Shaping output**: the [output options](#output-options) only. Never pipe tomlctl's stdout into `python`, `node`, `jq`, `head`, `tail`, `tr`, `cut`, `sed`, `awk` or `grep`.
 - **One entry**: field flags — `--set K=V` (a string; a date key still lands as a TOML date), `--set-json K=JSON` (`--set-json KEY=@<path>` reads the JSON from a file staged with the Write tool, instead of inlining `$(cat …)`), `--set-file K=PATH` — on `items add` / `update`, `array-append` and `flow record`. On `set`, `--set PATH=VALUE` infers its type like the positional pair, and `--set-json` / `--set-file` are not accepted. Write prose to a file with the Write tool and pass it with `--set-file`. Git Bash rewrites a `--set` value that starts with `/` into a Windows path, so pass such a value through `--set-file`, or prefix the call with `MSYS_NO_PATHCONV=1`.
-- **Verbs without field flags** (`backlog add` / `check`, `json set`, `inputs`, `tasks add-many`): inline single-line JSON for a short machine-built value; otherwise stage the payload with the Write tool and pass `--json '@<path>'` or `--ndjson <path>`. Several backlog probes go through one `backlog check --ndjson <path>`.
+- **Verbs without field flags** (`backlog add` / `check`, `json set`, `inputs`, `tasks add-many`, `plan decide`, `plan contract`): inline single-line JSON for a short machine-built value; otherwise stage the payload with the Write tool and pass `--json '@<path>'` or `--ndjson <path>`. Several backlog probes go through one `backlog check --ndjson <path>`.
 - **Several prose records**: stage one TOML record file with the Write tool (`[[record]]` rows, prose in `'''` literals) and pass it to any `--ndjson <path>`, `--json '@<path>'` or `--ops '@<path>'` flag whose path ends `.toml`; one file replaces a scratch file per prose field. `--set-file` stays for a single field. TOML has no `null`, so an `items apply` `expect` absent-field precondition needs the JSON form. The authoring form is in [write.md](references/write.md).
 - **Verb-owned stores**: `set`, `set-json`, `array-append` and the `items` writers refuse `backlog.toml`, `inputs.toml`, `tasks.toml`, `plan.toml`, `execution-record.toml` and the review-v2 stores, naming the owning verb. Use that verb; `--raw-store` is for a repair the verbs cannot make, never for routine writes.
 - **Many entries or whole payloads**: stage them with the Write tool and pass `--ndjson <path>`, or `--json '@<path>'` — quoted, because PowerShell drops an unquoted `@path`. The single-line `printf '%s\n' '<row>' … | tomlctl … -` pipe stays legal for a few short machine-built rows.

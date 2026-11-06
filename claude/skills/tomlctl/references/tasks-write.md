@@ -111,7 +111,12 @@ argument executes, and an apostrophe ends the quote. Stage it with the Write too
 `--title-file`, `--action-file` and so on.
 
 A title colliding with a stored `ref` takes the first free `-2` / `-3` suffix rather than
-replaying the document-order numbering, which would re-derive a suffix another row holds.
+replaying the document-order numbering, which would re-derive a suffix another row holds. A
+`ref` held by a live row or by a `[[changes]]` row counts as taken (a `milestone:` key does not),
+so a removed task's audited `ref` is never handed to a new row.
+
+On an audited store `tasks add` is refused with `kind=validation`, since it has no `reason`
+channel; use `add-many`.
 
 | Key | Value | Meaning |
 |---|---|---|
@@ -235,7 +240,12 @@ against new, deliberately not against the stored `ref` — a duplicate title is 
 ref and `import-plan --reconcile-record` adopts a record's ref, so a stored ref legitimately
 diverges from what its title derives.
 
-`--ref` refuses an empty slug and a slug another row already holds. It does **not** rewrite the
+`--ref` refuses an empty slug, a slug starting `milestone:`, which keys a milestone's audit trail,
+and a slug another row already holds (``ref `<target>` already belongs to another task``). A slug
+held only by a removed task's `[[changes]]` trail is refused
+too, with ``ref `<target>` holds a removed task's audit trail, so it stays retired`` and nothing
+written; on an `--ndjson` row the message is prefixed `line N`. A rename moves the row's trail
+with it, so the `ref` it left is free to claim again. It does **not** rewrite the
 execution record — a rename orphans the row's `task_ref` there until the next
 `import-plan --reconcile-record` re-adopts it.
 

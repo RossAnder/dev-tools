@@ -27,13 +27,16 @@ why = "one line"
 provenance = "agent-assumed"
 door = "two-way"
 binds = ["3", "src/a.rs"]
-rejected = [{ option = "the alternative", because = "the fact that sank it" }]
 evidence = "what was read"
 if_false = "what changes"
 revisit_if = ""
 check = ""
 surfaced = false
 vetoed = false
+
+[[decision.rejected]]
+option = "the alternative"
+because = "the fact that sank it"
 
 [[contract]]
 id = "C1"

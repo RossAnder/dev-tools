@@ -6,7 +6,7 @@ The `tomlctl plan` verbs over a v2 flow's `.claude/flows/<slug>/plan.toml`,
 `[[milestones]]`, `[[changes]]`, `audit`) are [tasks-store.md](tasks-store.md), and the `spec`,
 `reason` and `file_notes` row keys that fill them are
 [`tasks add-many`](tasks-write.md#tasks-add-many). Which verb a carrier reaches for at which step
-of planning is not settled here.
+of planning is owned by the [task-store contract](../../flow-contract-task-store/SKILL.md).
 
 ## Contents
 
@@ -41,10 +41,19 @@ creates a `plan.toml`, because its presence is what makes a flow v2. `plan decid
 one with `kind=not_found`, naming `tomlctl plan open --slug <slug>`, and write nothing, not even a
 directory. `--no-create` is accepted on them but has no effect.
 
-A refused call exits 1. The rules that span flags (`--defer` needs `--reason`, `--elaborated` needs
+A refused call exits 1, except a clap usage error (a missing required flag such as `--slug`, or the
+`plan probes` `--emit`/`--record` rule), which exits 2 with usage prose outside the JSON envelope. The rules that span flags (`--defer` needs `--reason`, `--elaborated` needs
 `--reason`, `--for worker` needs `--task`) and the `--for`, `--review` and `--outcome` vocabularies
-are `kind=validation` refusals through `--error-format json`, not clap usage errors. A read verb on a flow with no `plan.toml` is
-`kind=not_found`.
+are `kind=validation` refusals through `--error-format json`, not clap usage errors. Every plan verb on a flow with no `plan.toml` is
+`kind=not_found`, with `file` set to the `plan.toml` path and a message naming the flow and
+`tomlctl plan open --slug <slug>`; for a mistyped slug, check the spelling with `flow list`, and a v1 flow stays v1.
+`plan probes --emit` gives the same message when neither `tasks.toml` nor `plan.toml` exists; a flow with
+`tasks.toml` and no `plan.toml` still emits, and a `plan.toml` with no `tasks.toml` keeps
+`file does not exist: <path>`. `--record` on a missing store is unchanged.
+
+Commands in `--command` and `--gate` values are single-quoted in the templates below. A command that
+itself holds single quotes, such as `cargo nextest run -E 'test(retry_after)'`, breaks that quoting:
+wrap it in double quotes, or write each inner quote as `'\''`. These flags have no file form.
 
 ## Flow directory
 
@@ -324,7 +333,8 @@ an outcome.
 ## `plan probes`
 
 `--emit` prints a Bash script that runs each probeable `accept` row's controls. `--record` turns that
-script's captured stdout into each row's `probe`. Exactly one of the two is required. Both cover only
+script's captured stdout into each row's `probe`. Exactly one of the two is required; neither or both
+is a clap usage error, exit `2` outside the `--error-format json` envelope. Both cover only
 rows with status `pending`.
 
 ```bash
@@ -361,8 +371,11 @@ stored probes stay as they were. The digest catches a stale capture, not a forge
 row's `probe` as `at` (the capture's `head`), `neg_rc`, `pos_rc` and `verdict`, and prints:
 
 ```json
-{"ok":true,"recorded":[{"task":1,"accept":0,"verdict":"healthy"}]}
+{"ok":true,"recorded":[{"task":1,"accept":0,"verdict":"healthy","reason":""}]}
 ```
+
+Each row's `reason` is `""` when healthy and otherwise names the control and the rule it hit. It is
+printed only and never stored.
 
 | Verdict | Read from |
 |---|---|
@@ -388,9 +401,9 @@ to diagnose a DAG or policy error.
 
 | Stage | Applies when | `next` |
 |---|---|---|
-| `done` | Approved, with at least one row and every row `done` | `none` |
-| `approved` | Approved, with every row still `pending` | `none` |
-| `running` | Approved, otherwise | `plan drift` |
+| `done` | Approved, with at least one row and every row `done` | `none`, or `plan approve --amend --review <outcome>` when `brief.md` has changed |
+| `approved` | Approved, with every row still `pending` | `none`, or `plan approve --amend --review <outcome>` when `brief.md` has changed |
+| `running` | Approved, otherwise | `plan drift`, or `plan approve --amend --review <outcome>` when `brief.md` has changed |
 | `open` | `plan/brief-missing` or `plan/brief-section-empty` | `plan open` when missing, else `edit docs/flows/<slug>/brief.md` |
 | `design` | No milestones or no tasks | `plan milestone add` when no milestones, else `tasks add-many` |
 | `write` | `plan/task-no-spec` | `tasks update --ndjson` |
@@ -421,6 +434,13 @@ row's step, and `stage` does not change. After the abandon, `next` returns to th
 Each open row adds `open run: step <s>, started <at>` to `blockers`, ahead of the class lines, so
 stages past approval can show blockers. `open_runs` lists the step of each open row in store order,
 with duplicates kept.
+
+On `approved`, `running` and `done`, when `brief.md` differs from the newest approval's digest, `stage`
+keeps its name, adds the blocker ``plan/brief-changed (1): `brief.md` differs from the brief approved at `<commit>` ``
+and sets `next` to `plan approve --amend --review <outcome>`. With an open run, `next` stays the
+relaunch-or-abandon hint above, and the `open run: ...` blocker comes before the brief blocker. A
+matching brief leaves `next` at `none` or `plan drift` with empty blockers. A deleted brief raises
+`plan/brief-missing`, which this does not cover.
 
 ## `plan gate`
 

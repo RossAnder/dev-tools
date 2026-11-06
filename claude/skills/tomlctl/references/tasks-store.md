@@ -64,7 +64,8 @@ paths for the file-claim comparisons to read. Lines nested under a bulleted path
 as further `\n`-separated lines of the same `note`. Rebuilt from the plan at each import for the rows
 the plan names, kept only for paths the merged row still claims, and kept whole for a row the
 plan no longer names. `tasks remove` leaves a row's notes in place, `tasks add` and
-`tasks update --ref` drop any already keyed on the `ref` they claim, and a `tasks update` taking a
+`tasks update --ref` drop any already keyed on the `ref` they claim (a `ref` with no `[[changes]]`
+row; one with a trail cannot be claimed), and a `tasks update` taking a
 path off `files` drops that path's note in the same write. Omitted while empty on the
 same terms as `[[import_overrides]]`.
 
@@ -74,7 +75,8 @@ the rest. Plan-owned whole: every import rebuilds the table from the bullets, ke
 final `ref`, and a row the plan no longer names keeps no link. `tasks update --ref` re-keys the
 row's entry, as it does its `[[file_notes]]` and `[[import_overrides]]` entries; `tasks remove`
 leaves the table alone, so until the next import an entry can key on a `ref` no row carries, and
-`tasks add` and `tasks update --ref` drop any entry already keyed on the `ref` they claim. An entry with no `ref` or no id is dropped on read and on write, and the table is omitted while
+`tasks add` and `tasks update --ref` drop any entry already keyed on the `ref` they claim, which
+is never a `ref` holding a `[[changes]]` trail. An entry with no `ref` or no id is dropped on read and on write, and the table is omitted while
 empty on the same terms as `[[import_overrides]]`.
 
 `[[specs]]`: one entry per v2 row, keyed on `ref` — `outcome`, `constraints`, `accept`, `premises`,
@@ -82,7 +84,7 @@ empty on the same terms as `[[import_overrides]]`.
 `positive`, `writes_build` (absent reads `true`) and a `probe` only `plan probes --record` writes;
 `kind` is absent while `check` is empty. An entry with no `ref` is dropped on read and on write.
 `tasks remove` drops the spec keyed on the row, and `tasks add` and `tasks update --ref` drop any
-already keyed on the `ref` they claim.
+already keyed on the `ref` they claim, which is never a `ref` holding a `[[changes]]` trail.
 
 `[[milestones]]`: `id` (a `[[checkpoints]]` id), `gates`, `elaboration` (`upfront` when absent,
 `deferred`, or `elaborated` once a deferred milestone's tasks exist) and `defer_reason`.
@@ -91,7 +93,9 @@ already keyed on the `ref` they claim.
 `old`, `new`, `actor` and `reason`. `field` is a row field, `*` for an added or removed row,
 `spec.<field>` for a spec field, or `file_notes`, `closes` or `refs`. `old` and `new` hold a plain
 scalar as it stands and a structured value as compact JSON, so a reader can parse them. The trail
-outlives the row it records, so a removal stays as a tombstone.
+outlives the row it records, so a removal stays as a tombstone, and its `ref` (a `milestone:` key
+excepted) stays retired: `tasks add` suffixes past it and `tasks update --ref` refuses it. A rename
+moves the row's trail to the new `ref`, freeing the old key.
 
 `[[specs]]`, `[[milestones]]` and `[[changes]]` follow `[[backlog_links]]` and are omitted while
 empty, so a v1 store round-trips byte-identical. A flow directory holding a `plan.toml` is a v2
