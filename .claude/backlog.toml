@@ -8399,3 +8399,21 @@ context = "review report falls through to guard_write_path, whose message names 
 base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
 evidence = ["tomlctl/src/review/digest.rs:161"]
 related = ["B-e4c1a22a"]
+
+[[backlog]]
+id = "B-66abc1d9"
+kind = "bug"
+summary = "An approved flow whose brief.md was deleted raises plan/brief-missing, so post-approval plan stage still reports no blockers"
+area = "tomlctl/src/plan/stage.rs"
+tags = []
+status = "open"
+created = 2026-11-06T08:39:52Z
+last_seen = 2026-11-06T08:39:52Z
+seen_count = 1
+dedup_id = "66abc1d944e83564"
+origin = "review-apply"
+flow = "v2-planning"
+context = "Arrived cheap-in-file and was deferred because the next hint needs a decision: plan open recreates a skeleton, which then differs from the stamp and needs an amend, so the hint may have to name restoring the brief from git. plan check errors on this case and plan view reports it as changed, so run plan check on re-entry until this is fixed."
+base_sha = "14bdb096e53bb8505d1ecaee68b13ba4874a0ab7"
+evidence = ["tomlctl/src/plan/stage.rs:179"]
+related = ["B-02515e2e"]

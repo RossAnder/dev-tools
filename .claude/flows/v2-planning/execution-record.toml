@@ -1,5 +1,5 @@
 schema_version = 1
-last_updated = 2026-11-05
+last_updated = 2026-11-06
 
 [[items]]
 id = "E1"
@@ -1378,3 +1378,33 @@ to_status = "review"
 summary = "status in-progress -> review: all 31 tasks done"
 type = "status-transition"
 date = 2026-11-05
+
+[[items]]
+id = "E108"
+agent = "plan-update"
+summary = "A ref held by a [[changes]] row now counts as taken in tasks add and add-many, and tasks update --ref refuses a tombstoned or milestone: target. A rename still moves its own trail, which frees the old key."
+original_intent = "Removals tombstone into [[changes]], with refs free to be claimed again by a later row."
+rationale = "A recycled ref merged two tasks' audit trails, and a later rename rewrote the dead row's tombstone too."
+type = "deviation"
+task_ref = "tombstone-removals-on-an-audited-store"
+date = 2026-11-06
+
+[[items]]
+id = "E109"
+agent = "plan-update"
+summary = "On approved, running and done, plan stage now adds the plan/brief-changed blocker and sets next to plan approve --amend --review <outcome> when brief.md differs from the newest approval digest. The stage name is unchanged, and an open run keeps its own next."
+original_intent = "Post-approval stages were defined by row status alone, with no blockers read from findings."
+rationale = "plan check treats a changed brief as an error, but the re-entry verb neither showed it nor pointed at the amend."
+type = "deviation"
+task_ref = "implement-plan-stage"
+date = 2026-11-06
+
+[[items]]
+id = "E110"
+agent = "plan-update"
+summary = "plan probes --record output rows gain a reason naming the control and rule hit, empty when healthy. The store shape and plan check detail are unchanged."
+original_intent = "--record printed each row's task, accept and verdict only."
+rationale = "A broken verdict has several causes, and the evidence for which one was discarded."
+type = "deviation"
+task_ref = "implement-plan-probes"
+date = 2026-11-06

@@ -1,5 +1,5 @@
 schema_version = 1
-last_updated = 2026-11-05
+last_updated = 2026-11-06
 plan_path = "docs/plans/v2-planning.md"
 last_import_refs = [
     "fix-the-id_aliases-twin-timing-flake",

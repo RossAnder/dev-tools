@@ -177,6 +177,94 @@ dropped_count = 0
 downgraded_count = 0
 dedup_id = "45ca31c3315a5978"
 
+[[vet_events]]
+timestamp = "2026-11-06T08:22:26Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "R1 and R2 diff read; comment-only, attribute lines unchanged"
+agent_index = 1
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-06T08:22:26Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "R29 diff read; all three edits outside rendered sections"
+agent_index = 2
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-06T08:22:26Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "R35 diff read; Plan arm only"
+agent_index = 4
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-06T08:22:26Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "R39 diff read; one tour line, denser than neighbours but accurate"
+agent_index = 5
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-06T08:22:26Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "R54 agent skipped the code reads; orchestrator confirmed gate and scope replace semantics and exact review-step match in milestone.rs, open.rs, stage.rs and approve.rs"
+agent_index = 8
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-06T08:22:26Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "R57 and R58 diff read; description within the 1024-char cap"
+agent_index = 11
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-06T08:34:19Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "All diffs read for merged c9+c10; R55 already-in-place confirmed at SKILL.md:111; check-classes anchor and plan check claim confirmed; not_found wording matches require_open"
+agent_index = 9
+sampled_count = 8
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-06T08:34:19Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "R60 and R31 doc diffs read; matches c3 reported wording; is_v2_flow gate confirmed at dispatch.rs:302"
+agent_index = 12
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
 [[items]]
 id = "R1"
 file = ".gitattributes"
@@ -204,9 +292,11 @@ sweep = [
 enumeration = "complete"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 dedup_id = "2315dbbcc1f665c6"
+resolved = 2026-11-06
+resolution = "403310e: Remedy (remove then re-check out) stated once in the last .gitattributes stanza; the *.rs, claude/agents and claude/commands comments point to it."
 
 [[items]]
 id = "R2"
@@ -223,9 +313,11 @@ evidence = [
 ]
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 dedup_id = "b8146471dc80beab"
+resolved = 2026-11-06
+resolution = "403310e: Partial list replaced: everything else under .claude stays unpinned because none of it carries a sidecar today; no pin added.; deviated: says add a pin instead of a JSON pin — the stanza's pins cover .toml and .sha256 stores"
 
 [[items]]
 id = "R3"
@@ -807,7 +899,7 @@ dedup_id = "cfc1e68507d38f6e"
 id = "R29"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "docs/plans/v2-planning.md"
 line = 65
@@ -821,6 +913,8 @@ evidence = [
     "docs/plans/v2-planning.md:645",
 ]
 dedup_id = "db3ffc65ebed5cc7"
+resolved = 2026-11-06
+resolution = "9914376: Prove row now says tools in the carrier and a Workflow only for cold readers; Slice 2 open item settled; defaultMode auto sentence corrected."
 
 [[items]]
 id = "R30"
@@ -846,7 +940,7 @@ dedup_id = "762fa40e9b315276"
 id = "R31"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "tomlctl/src/tasks/add.rs"
 line = 193
@@ -861,12 +955,14 @@ evidence = [
     "tomlctl/src/tasks/schema.rs:399 drop_ref_entries",
 ]
 dedup_id = "90826459196a2563"
+resolved = 2026-11-06
+resolution = "b2b9ed1: tasks add treats a ref in [[changes]] as taken, except milestone: keys; --ref refuses a tombstoned target and any milestone: slug. Store::trail_refs added; tests in tasks_audit.rs; tasks-write.md and tasks-store.md updated."
 
 [[items]]
 id = "R32"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "tomlctl/src/plan/approve.rs"
 line = 423
@@ -889,12 +985,14 @@ instances = [
 sweep = ["find_slug_index"]
 enumeration = "complete"
 dedup_id = "a2130704f4c9e11e"
+resolved = 2026-11-06
+resolution = "b2b9ed1: flow::active::upsert_entry is the one upsert for active add, flow init and plan approve.; deviated: only plan approve gains the schema_version stamp instead of two sites — active add already stamped it"
 
 [[items]]
 id = "R33"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "tomlctl/src/tasks/schema.rs"
 line = 35
@@ -920,12 +1018,14 @@ instances = [
 sweep = ["ELABORATION_DEFERRED|VERDICT_HEALTHY|BINDING_REQUIRED|ACCEPT_KINDS|MEANS_BINDINGS|KIND_(FORWARD|FALSIFIER|GUARD)"]
 enumeration = "complete"
 dedup_id = "3cea15d94ebb49e4"
+resolved = 2026-11-06
+resolution = "b2b9ed1: Shared elaboration, kind, binding and healthy-verdict constants in tasks/schema.rs; MilestoneSpec::is_deferred added.; deviated: only VERDICT_HEALTHY moved of the verdicts instead of all — the other five have one reader"
 
 [[items]]
 id = "R34"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "tomlctl/src/tasks/schema.rs"
 line = 391
@@ -951,12 +1051,14 @@ sweep = [
 ]
 enumeration = "complete"
 dedup_id = "ef7d77e3256c279b"
+resolved = 2026-11-06
+resolution = "b2b9ed1: Store::spec_for added and used at the read sites; view.rs spec_of removed; drift, probes record and update patch_spec left as they were."
 
 [[items]]
 id = "R35"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "tomlctl/src/store_guard.rs"
 line = 47
@@ -971,12 +1073,14 @@ evidence = [
     "tomlctl/src/plan/milestone.rs:14,49",
 ]
 dedup_id = "a46987bee66c33d7"
+resolved = 2026-11-06
+resolution = "b2b9ed1: Plan arm of the store-guard message names plan open rather than plan milestone."
 
 [[items]]
 id = "R36"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "tomlctl/src/plan/milestone.rs"
 line = 107
@@ -988,12 +1092,14 @@ summary = "plan milestone update writes an audit row even when the value did not
 description = "references/plan.md:344 promises one [[changes]] row per changed field, and tasks update skips unmoved values. The milestone verb pushes unconditionally. Fix: skip a row when old equals new. Files: plan/milestone.rs, tests/plan_milestone.rs."
 evidence = ["re-run: --goal g2 on a goal already g2 stored old=g2, new=g2"]
 dedup_id = "c9f3dc2c18757454"
+resolved = 2026-11-06
+resolution = "b2b9ed1: plan milestone update skips the audit row when old equals new; test in plan_milestone.rs."
 
 [[items]]
 id = "R37"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "tomlctl/src/plan/stage.rs"
 line = 63
@@ -1004,6 +1110,8 @@ summary = "After approval, plan stage reports no blockers even when the frozen b
 description = "The approved branch returns before any finding is read. plan/brief-changed is an error in plan check, but the re-entry verb neither shows it nor points at plan approve --amend. The stage table defines the approved rows by row status alone, so this is a gap in the contract. Fix: add the finding to blockers and set next to the amend, without changing the stage name. Falls away if the engine always runs plan check."
 evidence = ["lens run: with a line appended to an approved brief.md, stage prints next=none, blockers=[]"]
 dedup_id = "86429dd2b75bcfe5"
+resolved = 2026-11-06
+resolution = "b2b9ed1: Post-approval plan stage adds the plan/brief-changed blocker and points next at plan approve --amend --review <outcome>; an open run keeps next. plan.md updated.; deviated: CLASS_BRIEF_CHANGED moved to check.rs instead of staying in approve.rs — stage reads it too, and the construction site keeps a literal for the finding-class gate"
 
 [[items]]
 id = "R38"
@@ -1026,7 +1134,7 @@ dedup_id = "a92bc30709dd2bcc"
 id = "R39"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "tomlctl/README.md"
 line = 91
@@ -1037,12 +1145,14 @@ summary = "The README's command tour omits the plan group"
 description = "The tour has lines for tasks, inputs and review, and tomlctl plan appears only in the feature row. Add a line."
 evidence = ["grep of `tomlctl plan` in tomlctl/README.md at vet time: no tour line"]
 dedup_id = "8c8764492d7aa5df"
+resolved = 2026-11-06
+resolution = "4705b18: Added a tomlctl plan line to the README command tour."
 
 [[items]]
 id = "R40"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "tomlctl/src/plan/records.rs"
 line = 209
@@ -1059,12 +1169,14 @@ instances = [
 ]
 enumeration = "complete"
 dedup_id = "ba5bc8c017c7b714"
+resolved = 2026-11-06
+resolution = "b2b9ed1: One trimmed non-empty check on the create and update arms for decision and claim; test in plan_records.rs."
 
 [[items]]
 id = "R41"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "tomlctl/src/plan/view.rs"
 line = 458
@@ -1093,12 +1205,14 @@ sweep = [
 ]
 enumeration = "complete"
 dedup_id = "bd074b938a239edd"
+resolved = 2026-11-06
+resolution = "b2b9ed1: Run::state() returning RunState and Decision::is_unanswered() added and used at the listed sites.; deviated: a hand-edited whitespace-only skip_reason now reads as not skipped instead of skipped in plan view — one trimmed spelling"
 
 [[items]]
 id = "R42"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "tomlctl/src/plan/schema.rs"
 line = 135
@@ -1123,12 +1237,14 @@ sweep = [
 ]
 enumeration = "complete"
 dedup_id = "fb9a1a12661066e6"
+resolved = 2026-11-06
+resolution = "b2b9ed1: Bind::parse added and used in check and view; stored binds unchanged.; deviated: returns Option instead of a bare Bind — an empty entry or u32 overflow names nothing; an unknown +3 now reads as a path rather than id 3"
 
 [[items]]
 id = "R43"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "tomlctl/src/tasks/update.rs"
 line = 341
@@ -1140,6 +1256,8 @@ summary = "tasks update --ndjson validates a spec, discards the result, then re-
 description = "Line 341 calls SpecPatch::parse and drops it, and patch_spec re-parses at line 462 with a ? that cannot fire on a validated value. The comment justifying raw JSON does not hold, since Accept, Premise and Means derive Clone. Patch also lets line: None coexist with spec: Some, and the fallback arm at lines 406-407 drops that silently. Fix: hold Option<SpecPatch> on BatchRow and Patch, and group line, spec, reason and actor into one Option."
 evidence = ["tomlctl/src/tasks/update.rs:341,462"]
 dedup_id = "8d3d3dd25195b89d"
+resolved = 2026-11-06
+resolution = "b2b9ed1: BatchRow and Patch hold one RowChannel with Option<SpecPatch>; re-parse and fallback arm removed; inputs and error text unchanged.; deviated: links joined the group as well as line, spec, reason and actor — same line-only condition"
 
 [[items]]
 id = "R44"
@@ -1165,7 +1283,7 @@ dedup_id = "f75084a05c999da8"
 id = "R45"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "tomlctl/src/plan/stage.rs"
 line = 28
@@ -1193,6 +1311,8 @@ sweep = [
 ]
 enumeration = "complete"
 dedup_id = "85f77eb8e829f6bd"
+resolved = 2026-11-06
+resolution = "b2b9ed1: store::flow_dir used in stage, view and approve; BRIEF_FILE used for the literals in stage and open. check.rs and the other BRIEF_FILE sites had already moved."
 
 [[items]]
 id = "R46"
@@ -1250,7 +1370,7 @@ dedup_id = "7efd3c6c6b491924"
 id = "R48"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "tomlctl/tests/common/mod.rs"
 line = 388
@@ -1284,12 +1404,14 @@ sweep = [
 ]
 enumeration = "complete"
 dedup_id = "334791b9a6598030"
+resolved = 2026-11-06
+resolution = "b2b9ed1: stdout_json and hex_digest moved to tests/common; plan_refusals uses parse_json_error_envelope; crate::items::row_ids replaces both NDJSON id parsers.; deviated: one error text for tasks add-many and plan contract instead of two — the wording differed; no test pinned the old"
 
 [[items]]
 id = "R49"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "tomlctl/src/plan/probes.rs"
 line = 267
@@ -1301,12 +1423,14 @@ summary = "plan probes --record reports broken with no cause, though the verdict
 description = "broken covers a stderr marker on either control, an undeclared missing path, a failing guard and an unknown kind. verdict returns only the string, and plan/probe-unhealthy repeats it with the sha. Fix: add a reason to each recorded row in the output only, naming the control and rule hit, leaving the store shape unchanged."
 evidence = ["lens run: cat src/undeclared recorded verdict broken, with no cause in output or plan check detail"]
 dedup_id = "c86627600df05243"
+resolved = 2026-11-06
+resolution = "b2b9ed1: plan probes --record rows gain reason, empty when healthy and never stored; exact-shape tests updated, per-verdict and store-exclusion tests added; plan.md updated."
 
 [[items]]
 id = "R50"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "tomlctl/src/plan/check.rs"
 line = 122
@@ -1330,12 +1454,14 @@ sweep = [
 ]
 enumeration = "complete"
 dedup_id = "772bfc724e2d4558"
+resolved = 2026-11-06
+resolution = "b2b9ed1: Traversal test for backlog_rows added to plan_open.rs; design_path already had traversal and symlink tests in plan_check.rs, so nothing was added for it."
 
 [[items]]
 id = "R51"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "tomlctl/src/plan/probes.rs"
 line = 187
@@ -1347,12 +1473,14 @@ summary = "A bad capture line names neither the expected shape nor the content, 
 description = '"capture line N is not a probe row" states neither side, though the sibling refusal for line 1 gives the expected head<TAB><sha>. read_capture uses an untagged with_context, so a missing path is kind=other with file null, though plan decide --ndjson does the same, so the kind half may be left. Fix: include a truncated line and the column shape, and tag the read.'
 evidence = ['lens run: {"kind":"validation","message":"capture line 2 is not a probe row"}']
 dedup_id = "df01f05d844beffc"
+resolved = 2026-11-06
+resolution = "b2b9ed1: Bad capture lines report the column shape and a truncated copy of the line; a missing capture path is kind=not_found with file set; tests in plan_probes.rs."
 
 [[items]]
 id = "R52"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "tomlctl/src/plan/store.rs"
 line = 42
@@ -1364,6 +1492,8 @@ summary = "Every read verb on an unopened flow returns a raw IO message, so plan
 description = "plan stage, check, gate and drift report reading <path>/plan.toml: No such file. Keep kind=not_found and name the flow and plan open, allowing for a v1 flow, which plan open refuses, and a mistyped slug. plan probes --emit words the same condition differently."
 evidence = ["lens run: plan stage --slug nope gives kind=not_found with an os error 2 message"]
 dedup_id = "ed1c7d6c5427189d"
+resolved = 2026-11-06
+resolution = "b2b9ed1: store::load goes through require_open, so every plan verb on an unopened flow gives one kind=not_found message naming the flow and plan open; probes --emit aligned; plan.md updated."
 
 [[items]]
 id = "R53"
@@ -1386,7 +1516,7 @@ dedup_id = "02d5c16dac6b0782"
 id = "R54"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "tomlctl/src/cli/types/plan.rs"
 line = 284
@@ -1412,12 +1542,14 @@ sweep = [
 ]
 enumeration = "complete"
 dedup_id = "69b9701d3d189665"
+resolved = 2026-11-06
+resolution = "b2b9ed1: Help now states replace-not-append for plan open --scope and plan milestone update --gate, and that review is the one --step value plan stage and plan gate read."
 
 [[items]]
 id = "R55"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "verified-clean"
 flow = "v2-planning"
 file = "claude/skills/flow-contract-task-store/SKILL.md"
 line = 110
@@ -1431,12 +1563,13 @@ evidence = [
     "claude/skills/tomlctl/references/tasks-store.md",
 ]
 dedup_id = "e98c6501e334e1b7"
+verified_note = "Category package-quality (tier-2). flow-contract-task-store/SKILL.md:111 already places specs, milestones and changes between [[backlog_links]] and [[items]], and audit and id_high_water between last_import_refs and [policy], matching tasks-store.md and tasks/schema.rs. No sentence misplaces audit — audited during /review-apply 2026-11-06"
 
 [[items]]
 id = "R56"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "claude/skills/tomlctl/references/plan.md"
 line = 42
@@ -1447,12 +1580,14 @@ summary = "A refused call exits 1 is false for the --emit/--record rule, which e
 description = "Line 411 says exactly one of the two is required, with no exception, and clap reports it as a usage error with no kind. tasks.md spells this distinction out for --with. Fix: note on line 411 that the rule is a clap usage error, exit 2. Clap-required flags such as a missing --slug follow the same path."
 evidence = ["re-run: plan probes --slug d --error-format json exits 2"]
 dedup_id = "c3a882108d471281"
+resolved = 2026-11-06
+resolution = "4705b18: plan.md exit rule now excepts clap usage errors, and the probes --emit/--record sentence states exit 2 outside the envelope."
 
 [[items]]
 id = "R57"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "claude/skills/tomlctl/SKILL.md"
 line = 145
@@ -1468,12 +1603,14 @@ instances = [
 ]
 enumeration = "complete"
 dedup_id = "b0532788d71a089b"
+resolved = 2026-11-06
+resolution = "4705b18: Added plan drift and plan stage to the -q verdict list, and plan decide and plan contract to Verbs without field flags."
 
 [[items]]
 id = "R58"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "claude/skills/tomlctl/SKILL.md"
 line = 3
@@ -1484,12 +1621,14 @@ summary = "The skill's trigger list of stores omits plan.toml"
 description = "The description enumerates context, ledgers, execution records, tasks, backlog, inputs and review-v2 stores, and When to use this skill never mentions the plan store or brief.md. The list reads as closed. Add plan to the description and plan.toml to line 14."
 evidence = ["claude/skills/tomlctl/SKILL.md:3,14"]
 dedup_id = "436a0fafcc63d56c"
+resolved = 2026-11-06
+resolution = "4705b18: Added plan to the skill description and plan.toml to When to use this skill."
 
 [[items]]
 id = "R59"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "claude/skills/flow-contract-task-store/SKILL.md"
 line = 8
@@ -1503,12 +1642,14 @@ evidence = [
     "claude/skills/tomlctl/references/plan.md:8-9",
 ]
 dedup_id = "2a7dad1091111de2"
+resolved = 2026-11-06
+resolution = "4705b18: Task-store contract links plan.md and its check classes; plan.md names the contract as owner."
 
 [[items]]
 id = "R60"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "claude/skills/tomlctl/references/tasks.md"
 line = 301
@@ -1528,12 +1669,14 @@ instances = [
 ]
 enumeration = "complete"
 dedup_id = "9874aed846f0ae46"
+resolved = 2026-11-06
+resolution = "4705b18: Added the tasks render refusal and the check --plan drift skip to tasks.md, and the tasks add audited-store refusal to tasks-write.md."
 
 [[items]]
 id = "R61"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "claude/skills/tomlctl/references/plan.md"
 line = 132
@@ -1544,12 +1687,14 @@ summary = "Keys are written in that order is false for rejected"
 description = "The sample shows an inline rejected between binds and evidence. The writer emits [[decision.rejected]] last in the row. Move rejected to the end of the sample in that form, or narrow the sentence to root keys."
 evidence = ["re-run: plan decide wrote evidence through vetoed, then [[decision.rejected]]"]
 dedup_id = "a1a929306195cd55"
+resolved = 2026-11-06
+resolution = "4705b18: Sample moved to [[decision.rejected]] at the end of the row, in references/plan-store.md, where the sample and sentence now live."
 
 [[items]]
 id = "R62"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "claude/skills/tomlctl/references/plan.md"
 line = 253
@@ -1563,3 +1708,5 @@ evidence = [
     "claude/skills/tomlctl/references/plan.md:253,327,348",
 ]
 dedup_id = "d57f45c46ac9f47f"
+resolved = 2026-11-06
+resolution = "4705b18: One quoting warning for --command and --gate added to plan.md; no flags added."

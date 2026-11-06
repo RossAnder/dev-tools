@@ -81,6 +81,9 @@
 | E81 | Also added the_plan_scan_reads_both_construction_sites_and_no_tasks_class in tomlctl/src/cli/dispatch/tests/finding_classes.rs | 2026-11-05 | | An empty scan would agree with an empty table, so the parity test alone could pass without checking anything. | — |
 | E90 | Step 2 ran its query and rewrote nothing under .claude/flows | 2026-11-05 | | This Linux clone has no w/crlf copies, 512 rows all i/lf w/lf. A checkout under core.autocrlf still needs step 2 after pulling, which After Merge already names. | — |
 | E91 | Refreshed the 16 listed sidecars by matching each digest to the store's CRLF form under .claude/flows | 2026-11-05 | | Step 2's set was empty here, so step 3 as written would refresh nothing and the doctor acceptance would fail. Keyed instead on sidecars on the Files line whose digest equals the store's CRLF form and whose store is clean, which keeps the guard against blessing an unexplained mismatch. All 16 qualified. | — |
+| E108 | A ref held by a [[changes]] row now counts as taken in tasks add and add-many, and tasks update --ref refuses a tombstoned or milestone: target. A rename still moves its own trail, which frees the old key. | 2026-11-06 | | A recycled ref merged two tasks' audit trails, and a later rename rewrote the dead row's tombstone too. | — |
+| E109 | On approved, running and done, plan stage now adds the plan/brief-changed blocker and sets next to plan approve --amend --review <outcome> when brief.md differs from the newest approval digest. The stage name is unchanged, and an open run keeps its own next. | 2026-11-06 | | plan check treats a changed brief as an error, but the re-entry verb neither showed it nor pointed at the amend. | — |
+| E110 | plan probes --record output rows gain a reason naming the control and rule hit, empty when healthy. The store shape and plan check detail are unchanged. | 2026-11-06 | | A broken verdict has several causes, and the evidence for which one was discarded. | — |
 
 ---
 
@@ -97,3 +100,4 @@
 | Date | Changes | Commits |
 |------|---------|---------|
 | 2026-11-05 | 107 entries: status-transition × 2, task-completion × 31, deviation × 35, verification × 34, checkpoint × 5 | 1b99932, 23c34f8, 3666f98, 404b94e, 46b8031, 506b416, 67be38e, 7462f2a, 75193dd, 782e09f, 7ad785a, 804dc62, a6abe04, a9961bc, b3b5041, cad8df7, cccd463, d96c9a7, dbe271f, e7a4d73, eb28a4d |
+| 2026-11-06 | 3 entries: deviation × 3 | |
