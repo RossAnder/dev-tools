@@ -17,8 +17,8 @@ adopting carriers are entitled to rely on. The flag surface of the verbs that re
 
 ## Store shape
 
-`.claude/flows/<slug>/tasks.toml` carries four top-level keys, a `[policy]` table, a
-`[[checkpoints]]` array, optional `[[import_overrides]]`, `[[file_notes]]` and `[[backlog_links]]`
+`.claude/flows/<slug>/tasks.toml` carries four top-level keys, an optional `minted_refs`, a
+`[policy]` table, a `[[checkpoints]]` array, optional `[[import_overrides]]`, `[[file_notes]]` and `[[backlog_links]]`
 arrays and an `[[items]]` array. A v2 store adds `audit`, `id_high_water`, `[[specs]]`,
 `[[milestones]]` and `[[changes]]`, below. Keys are written in that order and the order is stable across writes, so a
 re-render is a clean diff.
@@ -31,6 +31,7 @@ re-render is a clean diff.
 | `last_updated` | a bare TOML date, restamped on every mutation |
 | `plan_path` | `import-plan`, from the flow context under `--slug` or `--plan` under `--file` |
 | `last_import_refs` | `import-plan` — the ref set the last import produced |
+| `minted_refs` | `tasks add` and `add-many`, on a store with a non-empty `last_import_refs`: refs minted that no import has produced yet. Such a row is exempt from `plan/orphan-row` and absent from `removed_refs`. Every write prunes an entry the last import produced or no row holds, `tasks update --ref` re-keys one, and the key is omitted while empty, with no `schema_version` bump. Written after `last_import_refs`. |
 
 `[policy]`: `checkpoints` (`single` \| `milestones` \| `per-batch`), `max_parallel` (1–8),
 `commit_granularity` (`per-task` \| `per-checkpoint` \| `single-commit`), `origin`
@@ -63,7 +64,8 @@ keying on a `ref` no row holds, is dropped on read and on write.
 paths for the file-claim comparisons to read. Lines nested under a bulleted path follow the first
 as further `\n`-separated lines of the same `note`. Rebuilt from the plan at each import for the rows
 the plan names, kept only for paths the merged row still claims, and kept whole for a row the
-plan no longer names. `tasks remove` leaves a row's notes in place, `tasks add` and
+plan no longer names. `tasks remove` leaves a row's notes in place on a v1 flow and drops them on
+a v2 store, `tasks add` and
 `tasks update --ref` drop any already keyed on the `ref` they claim (a `ref` with no `[[changes]]`
 row; one with a trail cannot be claimed), and a `tasks update` taking a
 path off `files` drops that path's note in the same write. Omitted while empty on the
@@ -73,8 +75,9 @@ same terms as `[[import_overrides]]`.
 `- **Backlog**:` bullet names, `refs` holding the entries the `refs` qualifier opened and `closes`
 the rest. Plan-owned whole: every import rebuilds the table from the bullets, keyed by each row's
 final `ref`, and a row the plan no longer names keeps no link. `tasks update --ref` re-keys the
-row's entry, as it does its `[[file_notes]]` and `[[import_overrides]]` entries; `tasks remove`
-leaves the table alone, so until the next import an entry can key on a `ref` no row carries, and
+row's entry, as it does its `[[file_notes]]` and `[[import_overrides]]` entries; on a v1 flow
+`tasks remove` leaves the table alone, so until the next import an entry can key on a `ref` no row
+carries, while on a v2 store it drops the row's entry, and
 `tasks add` and `tasks update --ref` drop any entry already keyed on the `ref` they claim, which
 is never a `ref` holding a `[[changes]]` trail. An entry with no `ref` or no id is dropped on read and on write, and the table is omitted while
 empty on the same terms as `[[import_overrides]]`.
@@ -230,7 +233,8 @@ four adopting commands, not a refactor.
   `task_ref` joins on it, `last_import_refs` is a set of them.
 - **Import never deletes.** A row the plan stopped naming is kept and reported in
   `removed_refs`, and `plan/orphan-row` keeps naming it until `tasks remove` retires it —
-  the one verb that deletes, and never implicitly.
+  the one verb that deletes, and never implicitly. A row `minted_refs` holds has yet to reach
+  the plan, so neither names it.
 - **A renamed heading is a refusal, not a swap.** The old row keeps the task number, the
   renamed heading arrives with the same number and a new ref, and the import raises
   `dag/duplicate-number` at error severity and writes nothing. Recovery is

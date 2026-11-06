@@ -46,6 +46,8 @@ p 9 pos 'printf "+/* Why:\n+   bare prose\n+ */\n" | grep -E "^[+-][^+-]" | grep
 
 Quote each command with the quote style it does not itself contain; inside double quotes a literal `$` is `\$` — the quotes are the *caller's*, so an unescaped `awk '{print $1}'` expands `$1` against the calling shell and almost always yields the empty string, silently turning the probe into a different program rather than erroring. Prefix `cd <dir> &&` when the **Acceptance** line names a working directory — the subshell discards it. Every probe prints one tab-separated line — `task`, `neg|pos`, `rc`, stdout, stderr (each stream's first 100 bytes, newlines folded to `|`) — and nothing short-circuits. Judge an acceptance command on the stdout and stderr columns, not the rc (a [`success:` key](#success-keys) is the exception): a pipeline's exit status is its last stage's, so an `awk: fatal` first stage still reports `rc=1` like a healthy miss, and git's `LF will be replaced by CRLF` warning lands in the stderr column without touching the verdict.
 
+`tomlctl plan probes` judges by a different rule: its verdict rests on the exit status of each control, after checking the whole, uncut stderr for breakage markers first. Do not carry the stdout/stderr-column rule over to it, or its rc-based verdicts back to this helper.
+
 ## `success:` keys
 
 A `success:` key under `## Verification Commands` is probed for its exit status alone, since

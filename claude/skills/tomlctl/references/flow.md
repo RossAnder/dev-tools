@@ -4,7 +4,8 @@ The cross-cutting half of the tomlctl surface: what `--verify-integrity` is acce
 what the `.sha256` sidecar does and does not promise, the machine-readable error envelope,
 `flow record` (the one write path into a flow's execution record), the two `flow` verbs that
 emit rather than mutate flow state (`render-progress-log` and `envelope build`), the envelopes
-`flow init` and `flow list` return, and the infrastructure-only `blocks` verbs. The read verbs live in
+`flow init` and `flow list` return, how the registry stores `binding.worktree`, what
+`flow doctor --fix` repairs, and the infrastructure-only `blocks` verbs. The read verbs live in
 [query.md](query.md) and the mutating ones in [write.md](write.md); the flow registry's own
 verbs (`flow active|init|list|resolve|stale|doctor|find-plans|ensure-artifact`) are listed in
 the Quick Reference table of [../SKILL.md](../SKILL.md).
@@ -13,9 +14,12 @@ the Quick Reference table of [../SKILL.md](../SKILL.md).
 
 - [`--verify-integrity` support matrix](#--verify-integrity-support-matrix)
 - [Sidecar files](#sidecar-files)
+  - [Line endings](#line-endings)
 - [Error format (`--error-format json`)](#error-format---error-format-json)
 - [Flow verbs](#flow-verbs)
   - [`flow init`](#flow-init)
+  - [`flow active add`](#flow-active-add)
+  - [`flow doctor --fix`](#flow-doctor---fix)
   - [`flow list`](#flow-list)
   - [`flow record`](#flow-record)
   - [`flow render-progress-log`](#flow-render-progress-log)
@@ -25,7 +29,7 @@ the Quick Reference table of [../SKILL.md](../SKILL.md).
 
 ## `--verify-integrity` support matrix
 
-`--verify-integrity` is a **per-subcommand flag**, not a global. Every write verb carries it in the write bundle and verifies the target before the read that precedes its write; the read verbs that take it are listed below. Any verb absent from both rejects it at the clap layer. See [Sidecar files](#sidecar-files) for what it checks.
+`--verify-integrity` is a **per-subcommand flag**, not a global. A read verb that takes it verifies the target before reading. Every write verb carries it in the write bundle: when the target exists, the verb verifies it inside the write lock, before the read that precedes its write, and a mismatch or a missing sidecar is `kind=integrity` with nothing written. A target not created yet has nothing to verify. The table lists the read verbs and the `plan` writers, whose notes name the stores they check, since a `plan` verb takes a slug rather than a file. Any verb neither listed nor in the write bundle rejects the flag at the clap layer. See [Sidecar files](#sidecar-files) for what it checks.
 
 | Subcommand | `--verify-integrity` |
 |---|---|
@@ -50,6 +54,24 @@ the Quick Reference table of [../SKILL.md](../SKILL.md).
 | `tomlctl tasks check` | yes |
 | `tomlctl tasks render` | yes |
 | `tomlctl tasks snapshot` | yes — checks `tasks.toml` and each of `execution-record.toml`, `agents.toml`, `context.toml` that is present |
+| `tomlctl plan check` | yes — checks `plan.toml` and `tasks.toml` |
+| `tomlctl plan view` | yes — checks `plan.toml` and `tasks.toml` when present |
+| `tomlctl plan stage` | yes — checks `plan.toml` and `tasks.toml` |
+| `tomlctl plan gate` | yes — checks `plan.toml` and `tasks.toml` |
+| `tomlctl plan drift` | yes — checks `plan.toml` and `tasks.toml` |
+| `tomlctl plan open` | yes — checks an existing `plan.toml`, and `backlog.toml` under `--from` |
+| `tomlctl plan decide` | yes — checks `plan.toml` |
+| `tomlctl plan contract` | yes — checks `plan.toml` |
+| `tomlctl plan handover add` | yes — checks `plan.toml` |
+| `tomlctl plan handover done` | yes — checks `plan.toml` |
+| `tomlctl plan run start` | yes — checks `plan.toml` |
+| `tomlctl plan run finish` | yes — checks `plan.toml` |
+| `tomlctl plan run abandon` | yes — checks `plan.toml` |
+| `tomlctl plan run skip` | yes — checks `plan.toml` |
+| `tomlctl plan milestone add` | yes — checks `tasks.toml` |
+| `tomlctl plan milestone update` | yes — checks `tasks.toml` |
+| `tomlctl plan probes` | yes — checks `tasks.toml`, under `--emit` and `--record` alike |
+| `tomlctl plan approve` | yes — checks `plan.toml` and `tasks.toml` first, then each store it writes |
 | `tomlctl agents list` | yes |
 | `tomlctl flow list` | yes |
 | `tomlctl flow render-progress-log` | yes — checks `execution-record.toml` only |
@@ -77,13 +99,24 @@ tomlctl json set .claude/config.json key --json '"value"' --strict-integrity
 tomlctl items list ledger.toml --where status=open --verify-integrity
 ```
 
-- **Missing sidecar under `--verify-integrity`** → hard error naming the expected path; never auto-regenerated. Run `tomlctl integrity refresh` to materialise it.
-- **Digest mismatch** → hard error naming both expected (from sidecar) and actual (from current bytes). Resolve by a human; `tomlctl` never auto-repairs.
+- **Missing sidecar under `--verify-integrity`** → hard error naming the expected path; never auto-regenerated. Run `tomlctl integrity refresh` to materialise it, unless the file holds CRLF, which it refuses: see [Line endings](#line-endings).
+- **Digest mismatch** → hard error naming both expected (from sidecar) and actual (from current bytes). The cause is an out-of-band edit, a corrupted sidecar, or line endings; when the CRLF-folded bytes match the sidecar, the error adds a clause saying only the line endings differ, and [Line endings](#line-endings) applies. Resolve by a human; `tomlctl` never auto-repairs.
 - **Sidecar write failure on a TOML write** (`set`, `set-json`, and the `items`, `tasks`, `backlog` and `flow` writers) → always a hard error. The sidecar is persisted first, so its failure leaves the TOML untouched; a TOML persist that fails after it points the sidecar back at the unchanged file and errors too. `--strict-integrity` has no effect here.
 - **Sidecar refresh failure after a successful primary write** — `json set`, `json unset` and `flow ensure-artifact --bootstrap`, which write the primary first → stderr warning and exit 0 by default (the data is durable; the next write rebuilds the sidecar). `--strict-integrity` flips this to a hard error.
 - **`--allow-outside`** applies identically — the sidecar lands next to the target wherever that is.
+- **`flow doctor`** checks the sidecars of `context.toml`, the execution record and `tasks.toml`, plus `plan.toml`'s through a `plan-sidecar` check that appears only when that file exists.
 
 > `.sha256` is not a MAC — it detects accidental corruption and out-of-band edits, not an adversary with write access. Hostile-actor threat models still require auditing the ledger's git history.
+
+### Line endings
+
+Digests cover a file's raw bytes. A checkout that rewrites a store to CRLF therefore fails its sidecar over a change nobody made, and a digest stamped over those CRLF bytes would fail on every LF checkout of the same commit. So `integrity refresh`, `flow doctor --fix`, and `flow init` / `flow ensure-artifact` over a store its sidecar does not cover all refuse a `.toml` holding CRLF, naming the fix below.
+
+If the store shows CRLF (`git ls-files --eol <store>` reports `w/crlf`), recover in this order, and do not run `integrity refresh` or `flow doctor --fix` first:
+
+1. Pin `.claude/**/*.toml` and `.claude/**/*.sha256` to `text eol=lf` in that repo's `.gitattributes`.
+2. Remove the store and its `.sha256` sidecar. Git treats a CRLF working copy of a file whose index form is LF as unchanged, so a checkout alone leaves it CRLF.
+3. `git checkout -- <store> <store>.sha256`. This restores the index form, so a write to the store not yet staged is lost.
 
 ## Error format (`--error-format json`)
 
@@ -114,7 +147,7 @@ Prefer `--error-format json` + `.error.kind` switching over regex-matching stder
 
 ## Flow verbs
 
-`flow init` and `flow record` carry the shared write bundle — `--allow-outside`, `--no-create`,
+`flow init`, `flow active add`, `flow doctor` and `flow record` carry the shared write bundle — `--allow-outside`, `--no-create`,
 `--no-write-integrity`, `--strict-integrity`, `--verify-integrity`, plus `--no-stamp` on
 `flow record` — and `flow list` and
 `flow render-progress-log` the read bundle, `--verify-integrity` and `--strict-read`. A table
@@ -137,7 +170,7 @@ tomlctl flow init --slug <slug> --plan docs/plans/<slug>.md
 | `--slug` | slug | Flow slug, matching `^[a-z0-9][a-z0-9-]{0,63}$`. | required |
 | `--plan` | path | Plan markdown the flow tracks, recorded as `plan_path` repo-relative with forward slashes: an absolute path under the repo root is relativised, and a relative one resolves against the working directory when it names a file there, the repo root otherwise. A path outside the root, one escaping it with `..`, or one not ending `.md` is refused with `kind=validation` before anything is written, `--dry-run` included. | required |
 | `--branch` | name | `branch` recorded in `context.toml` and on the active-flow entry. | omitted |
-| `--worktree` | absolute path | `worktree` recorded on the active-flow entry. | omitted |
+| `--worktree` | path | `worktree` recorded on the active-flow entry, [relative to the main worktree](#flow-active-add). | omitted |
 | `--scope` | glob | Scope glob recorded in `context.toml` and on the active-flow entry. Repeatable. | `[]` |
 | `--dry-run` | — | Write nothing; emit `{"ok":true,"dry_run":true,"would_change":{…}}` in place of the envelope. | off |
 
@@ -145,6 +178,46 @@ tomlctl flow init --slug <slug> --plan docs/plans/<slug>.md
 - **`created`** — the repo-relative stores this run materialised, in creation order; `[]` when every store was already there. Sidecars are excluded: refreshing a `.sha256` beside an existing store is a repair, not a creation.
 
 Branch on `created`, not on `action`, to detect a freshly-seeded store. `flow init` is the only sanctioned route that seeds `tasks.toml` — `flow ensure-artifact --bootstrap --kind tasks` is deliberately a no-op — so a legacy flow carrying only `context.toml` returns `action: "noop"` with `created` naming the `execution-record.toml` and `tasks.toml` it just minted.
+
+### `flow active add`
+
+Adds a row to `.claude/active-flow.toml`, the tracked registry of active flows, or replaces the row that slug already has. The `[active.binding]` fields are advisory hints for `flow resolve`, not part of the row's identity:
+
+```toml
+schema_version = 1
+[[active]]
+slug = "feature-x"
+last_used = "2026-05-08T14:32:00Z"
+[active.binding]
+branch = "feat/x"
+worktree = "."
+scope = ["src/foo/**"]
+```
+
+| Flag | Value | Meaning | Default |
+|---|---|---|---|
+| `--slug` | slug | The row's key. | required |
+| `--branch` | name | `binding.branch`. | omitted |
+| `--worktree` | path | `binding.worktree`, stored as described below. | omitted |
+| `--scope` | glob | `binding.scope`. Repeatable. | `[]` |
+| `--dry-run` | — | Write nothing; emit `{"ok":true,"dry_run":true,"would_change":{…}}`. | off |
+
+Every clone and linked worktree holds a copy of this file, so `binding.worktree` is stored relative to the main worktree's root, with `/` separators: `.` for the primary checkout, `sub` for a path under it, `../x` for a sibling linked worktree. The main worktree is the parent of the git common dir. The repo root stands in for it when git cannot answer, when that root is not a git top level (`TOMLCTL_ROOT` inside a repo), and in a submodule or bare repo.
+
+- **Writes.** `flow active add` and `flow init` turn an absolute `--worktree` into that spelling. An absolute path with no relative spelling, on another drive or in another platform's form, is stored as given. A relative `--worktree` is read as already relative to the main worktree, not to the working directory, so `--worktree .` in a linked worktree names the primary checkout.
+- **Reads.** `flow resolve --worktree` accepts relative and legacy absolute values, on the flag and in the file alike, and compares the paths they resolve to. An absolute value from another machine neither errors nor matches.
+- **Normalising.** `flow active touch` (for its own row) and [`flow doctor --fix`](#flow-doctor---fix) rewrite an absolute value at or under the main worktree to its relative spelling, and leave every other value as it is.
+
+### `flow doctor --fix`
+
+Applies the repairs below and lists each in the envelope's `fixes_applied`, by `name`, with its `scope`, `action` and `ok`. With `--dry-run` it writes nothing and reports what it would do. It never creates a missing artifact.
+
+| Fix `name` | Repairs | Leaves alone |
+|---|---|---|
+| `sidecar-refresh` | A missing or mismatched `.sha256` sidecar, regenerated from the file's current bytes. | A `.toml` holding CRLF, refused with `ok: false`; see [Line endings](#line-endings). |
+| `active-prune` | A registry row whose flow directory no longer exists, removed. | Rows whose flow exists. |
+| `active-worktree-relative` | A surviving row's absolute `binding.worktree` at or under the main worktree, rewritten to its relative spelling. | Relative values, absolute values outside the main worktree (a sibling path or another machine's), and values in another platform's form. |
+| `artifacts-tasks-backfill` | An absent `[artifacts].tasks` key in `context.toml`, inserted with its canonical value. | A key already present, canonical or not. |
 
 ### `flow list`
 

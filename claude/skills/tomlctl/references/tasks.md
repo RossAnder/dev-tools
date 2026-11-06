@@ -427,8 +427,8 @@ it.
 The four `backlog/*` classes are joined from the store's `[[backlog_links]]` and
 `.claude/backlog.toml`, read only when the store holds a link — a backlog that does not parse
 then fails the verb. Each linked id raises at most one of them. A link keyed on a `ref` no row
-carries — `tasks remove` leaves links in place until the next import, while `tasks update --ref`
-re-keys them to the new `ref` —
+carries — on a v1 flow `tasks remove` leaves links in place until the next import, while on a v2
+flow it drops them, and `tasks update --ref` re-keys them to the new `ref` —
 contributes no id to `ids`; its `detail` names the `ref`.
 
 A duplicate id and an edge to an absent task are scanned for *before* any graph is built, which
@@ -436,7 +436,10 @@ is what lets one run report every defect instead of dying on the first, and is w
 them suppresses `dag/unbuildable` rather than doubling it.
 
 `plan/orphan-row` fires only when `last_import_refs` is non-empty — an empty ref set means the
-store has never been imported, not that every row is orphaned.
+store has never been imported, not that every row is orphaned. It also passes over a row in
+`minted_refs`: `tasks add` or `add-many` created it and no import has produced it yet, so it is
+new to the plan rather than gone from it. The import that first produces the ref ends that, and a
+plan dropping the row afterwards raises the class as usual.
 
 `files/closure` and `dag/symbol-without-edge` are heuristics over a row's prose, and both are
 scoped by what an earlier attempt measured. `files/closure` as a gate flagged 80 of 117 path

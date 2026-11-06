@@ -46,4 +46,5 @@ Substitute `no flow resolved (<source>);` for the flow clause when
 carrier proceeds without the doctor gate but the user sees the omission explicitly rather
 than silently. **Legacy `.claude/active-flow` ignore**: the pre-overhaul
 single-line slug file is no longer consulted; the registry lives at
-`.claude/active-flow.toml` (multi-entry, gitignored per-clone state).
+`.claude/active-flow.toml` (multi-entry and tracked; each `binding.worktree` is stored
+relative to the main worktree's root, so an entry means the same in every clone and checkout).

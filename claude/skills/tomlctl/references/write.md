@@ -401,7 +401,7 @@ tomlctl integrity refresh .claude/flows/<slug>/review-ledger.toml
 # → {"ok":true}
 ```
 
-Acquires the same exclusive lock a write path would, so it serialises correctly with concurrent writers. Subject to the same `.claude/` containment guard as other write paths — pass `--allow-outside` to refresh a sidecar for a file outside `.claude/`. Calling this on a file that already has a valid sidecar rewrites the same bytes, so it is idempotent.
+Acquires the same exclusive lock a write path would, so it serialises correctly with concurrent writers. Subject to the same `.claude/` containment guard as other write paths — pass `--allow-outside` to refresh a sidecar for a file outside `.claude/`. Calling this on a file that already has a valid sidecar rewrites the same bytes, so it is idempotent. It refuses a `.toml` holding CRLF and leaves that file's sidecar as it is; the recovery is in [Line endings](flow.md#line-endings).
 
 ### Stdin input for large JSON payloads
 

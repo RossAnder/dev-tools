@@ -60,6 +60,7 @@ step = "investigate"
 workflow = "plan-v2-investigate"
 args_hash = "<hash>"
 run_id = "wf_1"
+session = "<session id>"
 started = 2026-11-05T12:00:00Z
 finished = ""
 skip_reason = ""
@@ -78,8 +79,10 @@ LF-normalises free text. A `schema_version` newer than the binary's is refused r
 `[binding]` holds the branch and scope a draft keeps here until approval, so that it matches no
 flow-resolver step before then.
 
-`[id_high_water]` is the highest number each prefix has been assigned, so a removed top id is never
-minted again. Decisions mint `D<n>`, contracts `C<n>` and handovers `H<n>`.
+`[id_high_water]` is the highest number each prefix has been assigned. Decisions mint `D<n>`, contracts
+`C<n>` and handovers `H<n>`. Records are permanent and no plan verb removes one: a decision is retired
+by `vetoed` and a handover by `done`. The mark matters after a `--raw-store` repair deletes a row, whose
+id is then never minted again.
 
 | `[[decision]]` key | Meaning |
 |---|---|
@@ -118,7 +121,9 @@ minted again. Decisions mint `D<n>`, contracts `C<n>` and handovers `H<n>`.
 | `[[run]]` key | Meaning |
 |---|---|
 | `step` | The flow step, a free-form name. `plan stage` and `plan gate` read `review`. |
-| `workflow` / `args_hash` / `run_id` | The saved Workflow launched, a digest of its arguments, and its run id. Empty on a skip. |
+| `workflow` / `args_hash` | The saved Workflow launched and a digest of its arguments. Absent while empty: on a skip, on a one-agent step, and whenever `plan run start` was not given them. A stored `""` reads the same and is dropped by the next write. |
+| `run_id` | The run id from the Workflow's result. `""` on a skip and on a one-agent step, which has none. |
+| `session` | The session that launched the step, from `CLAUDE_CODE_SESSION_ID`. With `run_id` it locates an open run's Workflow results. Absent while empty. |
 | `started` | When the row was written. |
 | `finished` | A datetime, or `""` while open. A skip stays `""`. An abandoned row carries the time it was abandoned. |
 | `skip_reason` | Set when the step was not run. |

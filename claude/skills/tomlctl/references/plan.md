@@ -170,16 +170,22 @@ Marks the handover done, which is repeatable. An unknown id is refused. Prints `
 Appends an open `[[run]]`, stamped with the current time. It is meant to land at launch, so a session
 that dies leaves the record behind.
 
+For a Workflow step, call Workflow first, read the run id from its result, then run
+`plan run start --run-id <id> --session <id>`. The tool returns immediately, so the record still lands
+at launch, and an open row names what a resume needs to find the Workflow's results. A one-agent step
+has no run id, and passes none of `--workflow`, `--args-hash` or `--run-id`.
+
 ```bash
-tomlctl plan run start --slug <slug> --step <step> --workflow <workflow> --args-hash <hash> [--run-id <id>]
+tomlctl plan run start --slug <slug> --step <step> [--workflow <workflow>] [--args-hash <hash>] [--run-id <id>] [--session <id>]
 ```
 
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
 | `--step` | name | The flow step being run. | required |
-| `--workflow` | name | The saved Workflow launched. | required |
-| `--args-hash` | hash | Digest of the Workflow's arguments. | required |
-| `--run-id` | id | The Workflow's run id, when already known. | `""` |
+| `--workflow` | name | The saved Workflow launched. | absent |
+| `--args-hash` | hash | Digest of the Workflow's arguments. | absent |
+| `--run-id` | id | The run id from the Workflow's result. | `""` |
+| `--session` | id | The session launching the step; a carrier passes `CLAUDE_CODE_SESSION_ID`. | absent |
 
 Prints `{"ok":true}`.
 
@@ -203,7 +209,7 @@ Prints `{"ok":true}`.
 
 Closes every open, unskipped row of the step, setting `finished`, `outcome = "abandoned"` and
 `reason`. It is for a session that died. A row is open when it has no `finished`, no `skip_reason`
-and no `outcome`, and `plan view --for digest`, `plan run finish` and `plan stage` use the same
+and no `outcome`, and `plan view --for digest`, `plan run finish`, `plan stage` and `plan approve` use the same
 definition. Other steps and closed rows are untouched, `run start` never supersedes open rows, and
 an abandoned review run does not settle the review stage. It is refused when no row of the step is
 open.
@@ -265,7 +271,7 @@ with `ref = "milestone:<id>"`: `goal`, `gates`, `elaboration`, `defer_reason`. A
 and `new` are compact JSON, such as `["a","b"]`.
 
 ```bash
-tomlctl plan milestone update --slug <slug> --id <id> [--goal '<text>'] [--gate '<command>']... [--defer] [--elaborated] [--reason '<text>']
+tomlctl plan milestone update --slug <slug> --id <id> [--goal '<text>'] [--gate '<command>']... [--clear-gate] [--defer] [--elaborated] [--reason '<text>']
 ```
 
 | Flag | Value | Meaning | Default |
@@ -273,6 +279,7 @@ tomlctl plan milestone update --slug <slug> --id <id> [--goal '<text>'] [--gate 
 | `--id` | id | The milestone's id. | required |
 | `--goal` | text | Replaces the goal. | keeps it |
 | `--gate` | command, repeatable | Replaces the whole gate list. | keeps it |
+| `--clear-gate` | — | Empties the gate list, which `plan check` then reports as `plan/milestone-no-gate`. Refused with `kind=validation` alongside `--gate`. | keeps it |
 | `--defer` | — | Sets `elaboration = "deferred"` and `defer_reason`. Needs `--reason`. No flag moves a milestone back to `upfront`. | keeps it |
 | `--elaborated` | — | Sets `elaboration = "elaborated"` on a milestone currently `deferred`, keeping `defer_reason`. Needs `--reason`. Refused on an `upfront` or already `elaborated` milestone, and alongside `--defer`. | keeps it |
 | `--reason` | text | Why it is deferred or elaborated, and why it changed on an audited store. | `""` |
@@ -322,7 +329,7 @@ tomlctl plan view --slug <slug> --for worker --task <id>
 | `stage_inputs.tasks_store` / `review_store` | Whether `tasks.toml` and `review-v2.toml` exist. |
 | `stage_inputs.audit` | The task store's `audit`. |
 | `stage_inputs.approval` | The newest stamp's `commit`, `at` and `review`, or `null`. |
-| `stage_inputs.runs[]` | `step`, `state` (`open`, `finished`, `abandoned`, `skipped`), `workflow`, `run_id`, `skip_reason`, `outcome` (a string, or `null`), `reason`. |
+| `stage_inputs.runs[]` | `step`, `state` (`open`, `finished`, `abandoned`, `skipped`), `workflow`, `run_id`, `session`, `skip_reason`, `outcome` (a string, or `null`), `reason`. |
 | `stage_inputs.check` | `errors`, `warnings` and `classes`, or `null` with no `tasks.toml`. |
 | `counts` | Totals for `decisions` (`surfaced`, `vetoed`, `agent_assumed`, `one_way`), `contracts`, `tasks` by status, `specs`, `milestones` (`deferred`), `runs`, `handovers` (`undone`), `approvals`, `changes`. |
 | `open_items` | `unanswered_decisions`, `open_runs`, `undone_handovers`, `tasks_without_spec`, `failed_tasks`, `deferred_milestones`. `open_runs` lists one step per row still open, so finished, abandoned and skipped rows are excluded. |
@@ -395,19 +402,19 @@ tomlctl plan stage --slug <slug>
 ```
 
 Prints `{"stage":"prove","next":"tasks update --ndjson","blockers":["<class> (<count>): <first finding's detail>"],"open_runs":["<step>"]}`.
-`blockers` holds one line per class, and `open_runs` is always present. The first row that applies
+`blockers` holds one line per class, plus one naming any unanswered surfaced decisions, and `open_runs` is always present. The first row that applies
 wins. `next` is a hint, not a command line: it names a verb that clears the blocker, or `tasks check`
 to diagnose a DAG or policy error.
 
 | Stage | Applies when | `next` |
 |---|---|---|
-| `done` | Approved, with at least one row and every row `done` | `none`, or `plan approve --amend --review <outcome>` when `brief.md` has changed |
-| `approved` | Approved, with every row still `pending` | `none`, or `plan approve --amend --review <outcome>` when `brief.md` has changed |
-| `running` | Approved, otherwise | `plan drift`, or `plan approve --amend --review <outcome>` when `brief.md` has changed |
+| `done` | Approved, with at least one row and every row `done` | `none`, or the brief hint below when `brief.md` has changed or is gone |
+| `approved` | Approved, with every row still `pending` | `none`, or the brief hint below when `brief.md` has changed or is gone |
+| `running` | Approved, otherwise | `plan drift`, or the brief hint below when `brief.md` has changed or is gone |
 | `open` | `plan/brief-missing` or `plan/brief-section-empty` | `plan open` when missing, else `edit docs/flows/<slug>/brief.md` |
 | `design` | No milestones or no tasks | `plan milestone add` when no milestones, else `tasks add-many` |
 | `write` | `plan/task-no-spec` | `tasks update --ndjson` |
-| `prove` | Any error-class finding, or `plan/probe-absent` | By class, below |
+| `prove` | Any error-class finding, `plan/probe-absent`, or a surfaced decision still `agent-assumed` | By class, below |
 | `review` | No finished plan-family run in `review-v2.toml` and no `[[run]]` for step `review` with a skip reason | `/review-plan-v2 or plan run skip --step review --reason <why>` |
 | `ready` | Otherwise | `plan approve` |
 
@@ -420,7 +427,7 @@ unprobes the entry it changes.
 | `plan/spec-orphan` | `tasks add-many` (the new row replaces the orphan spec and then needs its own) |
 | `plan/spec-no-outcome`, `plan/spec-no-accept`, `plan/accept-no-check`, `plan/means-required-no-reason`, `plan/design-anchor-dead`, `plan/premise-task-unknown`, `backlog/unknown-id` | `tasks update --ndjson` |
 | `plan/contract-no-check`, `plan/contract-task-unknown` | `plan contract` |
-| `plan/decision-bind-unknown` | `plan decide` |
+| `plan/decision-bind-unknown`, or a surfaced decision still `agent-assumed`, which no class reports but `plan approve` refuses | `plan decide` |
 | `plan/handover-task-unknown` | `plan handover add --command <same> --source-task <live id>, then plan handover done <old id>` |
 | `plan/deferred-no-reason` | `plan milestone update --defer --reason <why>` |
 | Any other error class | `plan check` |
@@ -439,8 +446,12 @@ On `approved`, `running` and `done`, when `brief.md` differs from the newest app
 keeps its name, adds the blocker ``plan/brief-changed (1): `brief.md` differs from the brief approved at `<commit>` ``
 and sets `next` to `plan approve --amend --review <outcome>`. With an open run, `next` stays the
 relaunch-or-abandon hint above, and the `open run: ...` blocker comes before the brief blocker. A
-matching brief leaves `next` at `none` or `plan drift` with empty blockers. A deleted brief raises
-`plan/brief-missing`, which this does not cover.
+matching brief leaves `next` at `none` or `plan drift` with empty blockers.
+
+A deleted brief on those stages keeps the stage name, adds the `plan/brief-missing` blocker and sets
+`next` to `git restore --source <commit> -- docs/flows/<slug>/brief.md`, `<commit>` being the newest
+approval's. `plan open` writes nothing on an approved plan and `plan approve --amend` refuses a
+missing brief, so restoring the approved bytes is what clears it. An open run outranks this hint too.
 
 ## `plan gate`
 
@@ -481,6 +492,9 @@ tomlctl plan approve --slug <slug> --review skipped-low-risk --reason '<text>'
 
 Each precondition is a `kind=validation` refusal, and nothing is written until all pass:
 
+- Without `--amend`, no run is open. The refusal names the open steps and the oldest one's
+  `relaunch step <s> or plan run abandon --step <s> --reason <why>` choice. `--amend` does not refuse an
+  open run, because it runs at the `running` stage, where an open run may be live execution.
 - Every surfaced decision is answered, meaning no longer `agent-assumed`.
 - `plan check` reports no error. Under `--amend`, `plan/brief-changed` does not count.
 - `--review ran` needs a `[[runs]]` row in `review-v2.toml` with `family = "plan"` and a non-empty

@@ -27,7 +27,8 @@ outside `.claude/` does. Each prints JSON keyed as its `| Key |` table lists, re
 Parses a plan's `## Tasks`, `## Execution Policy` and `## Dependency Graph` sections and
 upserts the store keyed on each row's `ref`. Existing rows keep `status`, `agent`, `commit`
 and `coupling`; new rows arrive `pending`; **nothing is deleted** — a row the plan no longer
-produces stays put and is named in `removed_refs`.
+produces stays put and is named in `removed_refs`, unless it is a `minted_refs` row the plan
+has not rendered yet.
 
 ```bash
 tomlctl tasks import-plan --slug <slug> --reconcile-record
@@ -74,11 +75,11 @@ never raises `backlog/claimed-elsewhere`.
 | `added` | count | Plan tasks no stored row matched. `added` + `updated` + `unchanged` counts the *plan's* tasks. |
 | `updated` | count | Plan tasks whose stored row the import changed, an adopted `ref` included. |
 | `unchanged` | count | Plan tasks whose stored row already matched. |
-| `removed_refs` | refs | Stored rows the plan no longer produces. Kept, not deleted. |
+| `removed_refs` | refs | Stored rows the plan no longer produces, excluding rows in `minted_refs`. Kept, not deleted. |
 | `added_refs` | refs | The rows `added` counts. |
 | `adopted_refs` | refs | Refs whose spelling came from the execution record rather than the heading. Empty without `--reconcile-record`. |
 | `unmatched_refs` | refs | Record `task_ref`s no plan task claimed. Empty without `--reconcile-record`. |
-| `cleared_checkpoint_refs` | refs | The subset of `removed_refs` whose `checkpoint` named a group this plan no longer declares: membership is recomputed for every row the plan produces, so a retained row was the one way an undeclared group id stayed in the store. The row survives; the id is blanked. |
+| `cleared_checkpoint_refs` | refs | Retained rows, in `removed_refs` or `minted_refs`, whose `checkpoint` named a group this plan no longer declares: membership is recomputed for every row the plan produces, so a retained row was the one way an undeclared group id stayed in the store. The row survives; the id is blanked. |
 | `findings[]` | [findings](tasks.md#finding-shape) | The import's own classes and the store check's. |
 
 ## `tasks add`
@@ -162,6 +163,7 @@ The last six keys are the v2 additions; a row without them behaves as before.
 | `ok` | `true` | Success path only; any refusal lands nothing. |
 | `added` | count | Rows appended — every row, since the batch is all-or-nothing. |
 | `rows[]` | objects | One per NDJSON row, in input order. |
+| `advisories` | strings | Present only when a row's `ref` took over an orphan `[[specs]]` entry, which the row discards: one line per such row, naming the `ref`, quoting the outcome and accept behaviours and naming the other fields it held. `tasks add` carries the same key. Echoed to stderr on a terminal. |
 | `rows[].id` | id | The minted id, ascending with the input. |
 | `rows[].ref` | slug | The derived `ref`, as [`tasks add`](#tasks-add) derives it. |
 | `rows[].batch` | integer | Zero-based Kahn round the row lands in once the whole batch is stored. |
@@ -297,6 +299,10 @@ Without `--force` two removals are refused, each naming what stands in the way: 
 status is not `pending`, named with its `ref` — the execution record's `task_ref` and the commit
 train's SHA both join on it — and a row other rows depend on, named with those dependents. A
 refusal writes nothing.
+
+On a v2 flow (a `plan.toml` in the flow directory, or a store already holding a v2 key) the removal
+also drops the row's `[[file_notes]]` and `[[backlog_links]]` entries, since no import follows to
+clear them. On a v1 flow they stay until the next import rebuilds both tables.
 
 Under `--force` the removed id is pruned from every dependent's `needs` and `coupling`, **and
 the removed row's own `needs` are spliced into each dependent's `needs`**: a dependent left one

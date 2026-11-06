@@ -63,7 +63,7 @@ The highest-frequency patterns. Deeper treatment lives in the reference files li
 | List a flow's agent records (`.claude/flows/<slug>/agents.toml`; written by `glimpse hook` in-process, never by a carrier; `agents record` is the manual form) | `tomlctl agents list --slug <s>` |
 | Refresh integrity sidecar | `tomlctl integrity refresh <file>` |
 
-<a id="flow-bootstrap-agent-entrypoint"></a>**`flow-bootstrap` agent entrypoint**: per-command pre-flight is delegated to the `flow-bootstrap` sub-agent (`claude/agents/flow-bootstrap.md`), which composes `tomlctl flow resolve --with-staleness`, `tomlctl flow doctor`, and (for `plan-new` / `plan-update` / `review-plan`) `tomlctl json get .claude/settings.json plansDirectory` into a single JSON envelope. Each carrier's `## Step 0: Pre-flight (flow resolution + doctor)` section dispatches via `Task` with `subagent_type: "flow-bootstrap"` and a JSON-encoded input envelope; downstream phases consume `envelope.resolved.{slug,context_path,artifacts.*,status,plan_path,scope,stale}` plus `envelope.doctor.ok` instead of running the resolve / doctor primitives inline. The agent is read-only — never passes `--fix` to doctor — so auto-repair stays an orchestrator decision.
+<a id="flow-bootstrap-agent-entrypoint"></a>**`flow-bootstrap` agent entrypoint**: per-command pre-flight is delegated to the `flow-bootstrap` sub-agent (`claude/agents/flow-bootstrap.md`), which composes `tomlctl flow resolve --with-staleness`, `tomlctl flow doctor`, and (for `plan-new` / `plan-update` / `review-plan`) `tomlctl json get "<worktree>/.claude/settings.json" plansDirectory` into a single JSON envelope. Each carrier's `## Step 0: Pre-flight (flow resolution + doctor)` section dispatches via `Task` with `subagent_type: "flow-bootstrap"` and a JSON-encoded input envelope; downstream phases consume `envelope.resolved.{slug,context_path,artifacts.*,status,plan_path,scope,stale}` plus `envelope.doctor.ok` instead of running the resolve / doctor primitives inline. The agent is read-only — never passes `--fix` to doctor — so auto-repair stays an orchestrator decision.
 
 ## References
 
@@ -219,7 +219,7 @@ tomlctl --version
 
 ```bash
 tomlctl capabilities
-# {"version":"0.16.0","features":["raw","lines","dedupe_by","dry_run","agent_context","output_options",...],"global_flags":{...},"commands":{...}}
+# {"version":"…","features":["raw","lines","dedupe_by","dry_run","agent_context","output_options",...],"global_flags":{...},"commands":{...}}
 ```
 
 Representative entries:

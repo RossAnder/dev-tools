@@ -286,11 +286,15 @@ through `-` and a `<` redirect: `backlog check` refuses an `@<path>` naming an e
 `kind=validation`, pointing at `--summary - < <path>`, while an `@mention` naming no file is
 probed as literal text.
 
+`<scratch>` below is the session's scratchpad directory, or the system temp directory where none
+exists. It sits outside the repository, so no repo needs an ignore rule for it, and outside
+`.claude/`, a protected path where a Write prompts or is denied and no allow rule can pre-approve it.
+
 Probe before minting — same `--kind` and `--area` the mint will use, with the summary written to
-`.claude/_backlog-summary.txt` rather than typed into an argument:
+`<scratch>/backlog-summary.txt` rather than typed into an argument:
 
 ```bash
-tomlctl backlog check --summary - --kind flaky-test --area lumina/server/src/pty --tag pty --lines < .claude/_backlog-summary.txt
+tomlctl backlog check --summary - --kind flaky-test --area lumina/server/src/pty --tag pty --lines < <scratch>/backlog-summary.txt
 ```
 
 The first line is the header carrying `verdict`; each line after it is one whole candidate,
@@ -301,10 +305,10 @@ options (`--select`, `--get`, `--template`, `--lines`, `--header`, `--max-chars`
 
 Harvesting a run's `TANGENTIAL:` lines, probe them all in one call: write one
 `{"summary":…,"kind":…,"area":…,"tags":[…]}` object per line (only `summary` is required, and
-those four are the only keys a probe line takes) to `.claude/_backlog-probes.ndjson`, then:
+those four are the only keys a probe line takes) to `<scratch>/backlog-probes.ndjson`, then:
 
 ```bash
-tomlctl backlog check --ndjson .claude/_backlog-probes.ndjson --template '{line} {verdict} {summary}'
+tomlctl backlog check --ndjson <scratch>/backlog-probes.ndjson --template '{line} {verdict} {summary}'
 ```
 
 The store is read once, and each probe gets its own verdict row under `results`, numbered by
@@ -313,14 +317,14 @@ themselves without their full `context`. Each probe's `kind` and `area` are the 
 must reuse.
 
 Mint with provenance and a workaround, the whole item staged as JSON in
-`.claude/_backlog-row.json`, always with `--auto-base-sha`:
+`<scratch>/backlog-row.json`, always with `--auto-base-sha`:
 
 ```json
 {"summary":"conpty spawn intermittently fails with CreateProcessW error 5","kind":"flaky-test","area":"lumina/server/src/pty","tags":["pty"],"context":"Empty PATH entry in HKLM; set LUMINA_CLAUDE_BIN to an absolute path to work around it.","evidence":["lumina/server/src/pty/spawn.rs:214"],"related":["B-1a2b3c4d"],"origin":"implement","flow":"lumina-pty-hardening"}
 ```
 
 ```bash
-tomlctl backlog add --json '@.claude/_backlog-row.json' --auto-base-sha --template '{action} {id} {advisories}'
+tomlctl backlog add --json '@<scratch>/backlog-row.json' --auto-base-sha --template '{action} {id} {advisories}'
 ```
 
 Quote the `@<path>`: PowerShell drops an unquoted `@name` as splatting syntax. To preview the
@@ -328,18 +332,18 @@ mint first, run the same command with `--dry-run`: the template reads the would-
 `id` (`added`, `bumped` or `skipped`) and writes nothing.
 
 Minting several — the survivors of one run's `TANGENTIAL:` lines — put one such payload per
-line in `.claude/_backlog-batch.ndjson` and mint them in one call, which takes one lock and one
+line in `<scratch>/backlog-batch.ndjson` and mint them in one call, which takes one lock and one
 write instead of one per row. The batch replaces the `add` calls, not the gate: every candidate
 still passes its own `backlog check` verdict first (the batch probe above counts), and only the
 ones its verdict allows go into the batch.
 
 ```bash
-tomlctl backlog add-many --ndjson .claude/_backlog-batch.ndjson --auto-base-sha --template '{line} {action} {id} {advisories}'
+tomlctl backlog add-many --ndjson <scratch>/backlog-batch.ndjson --auto-base-sha --template '{line} {action} {id} {advisories}'
 ```
 
 The batch is all-or-nothing: a malformed line, an unknown key or a refused row aborts it before
-anything is written, naming the line. Fix that line and rerun the whole batch. The staged
-`.claude/_backlog-*` files are scratch; delete them once the mint has landed.
+anything is written, naming the line. Fix that line and rerun the whole batch. Delete the staged
+`<scratch>/backlog-*` files once the mint has landed.
 
 ## Always record the base commit
 
