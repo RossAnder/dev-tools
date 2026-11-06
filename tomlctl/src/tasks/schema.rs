@@ -5,6 +5,7 @@
 //! last_updated = 2026-09-07
 //! plan_path = "docs/plans/<slug>.md"
 //! last_import_refs = ["…"]
+//! minted_refs = ["…"]
 //! audit = true
 //! id_high_water = 12
 //! [policy] / [[checkpoints]] / side tables / [[items]]
@@ -52,6 +53,9 @@ pub(crate) const VERDICT_HEALTHY: &str = "healthy";
 /// Opens the `[[changes]]` key of a milestone's rows, which no task's trail shares.
 pub(crate) const MILESTONE_REF_PREFIX: &str = "milestone:";
 
+/// Who a `[[changes]]` row names when the caller gives no `actor`.
+pub(crate) const DEFAULT_ACTOR: &str = "orchestrator";
+
 /// Depth a row's heading renders at when the store records none — the
 /// shallowest depth that still sits inside a `## ` section.
 pub(crate) const DEFAULT_HEADING_DEPTH: u32 = 3;
@@ -82,6 +86,10 @@ pub(crate) struct Store {
     /// Ref set of the last import; a row outside it has been renamed or
     /// deleted in the plan.
     pub(crate) last_import_refs: Vec<String>,
+    /// Refs `tasks add` minted that no import has produced yet. Such a row is new
+    /// to the plan rather than gone from it, so `plan/orphan-row` passes it over,
+    /// and the import that first produces the ref ends the exemption.
+    pub(crate) minted_refs: Vec<String>,
     pub(crate) policy: Policy,
     pub(crate) checkpoints: Vec<Checkpoint>,
     /// Hand-patched import-owned fields and the plan values they were taken
@@ -92,8 +100,8 @@ pub(crate) struct Store {
     /// compares them — so an annotation the author wrote has nowhere else to
     /// live and the render would drop it.
     pub(crate) file_notes: Vec<FileNote>,
-    /// Backlog items a row closes or references, keyed by `ref`. A link whose
-    /// ref no row carries is kept until the next import.
+    /// Backlog items a row closes or references, keyed by `ref`. On a v1 flow a
+    /// link whose ref no row carries is kept until the next import.
     pub(crate) backlog_links: Vec<BacklogLink>,
     /// Set by approval: from then on a plan field changes only with a reason,
     /// and each change leaves a row in `changes`.
@@ -355,6 +363,7 @@ impl Default for Store {
             last_updated: None,
             plan_path: String::new(),
             last_import_refs: Vec::new(),
+            minted_refs: Vec::new(),
             policy: Policy::default(),
             checkpoints: Vec::new(),
             import_overrides: Vec::new(),
@@ -452,6 +461,20 @@ impl Store {
         self.file_notes.retain(|entry| entry.r#ref != r#ref);
         self.backlog_links.retain(|entry| entry.r#ref != r#ref);
         self.specs.retain(|entry| entry.r#ref != r#ref);
+    }
+
+    /// Run on every write, so a row an import has produced is judged like any
+    /// other from then on, whichever verb removed or re-keyed its row meanwhile.
+    pub(crate) fn prune_minted_refs(&mut self) {
+        let Self {
+            minted_refs,
+            last_import_refs,
+            items,
+            ..
+        } = self;
+        minted_refs.retain(|minted| {
+            !last_import_refs.contains(minted) && items.iter().any(|row| row.r#ref == *minted)
+        });
     }
 }
 
@@ -628,6 +651,7 @@ pub(crate) fn from_toml(doc: &TomlValue) -> Result<Store> {
         last_updated: root.get("last_updated").and_then(as_date),
         plan_path: str_or(root, "plan_path", ""),
         last_import_refs: str_array(root, "last_import_refs"),
+        minted_refs: str_array(root, "minted_refs"),
         policy: match root.get("policy") {
             Some(value) => policy_from_toml(value)?,
             None => Policy::default(),
@@ -651,6 +675,7 @@ pub(crate) fn to_toml(store: &Store) -> TomlValue {
         last_updated,
         plan_path,
         last_import_refs,
+        minted_refs,
         policy,
         checkpoints,
         import_overrides,
@@ -702,6 +727,11 @@ pub(crate) fn to_toml(store: &Store) -> TomlValue {
         "last_import_refs".to_string(),
         str_arr_value(last_import_refs),
     );
+    // Omitted while empty, and no version stamp: a binary that predates the key
+    // only loses the exemption, and an imported store writes back byte-identical.
+    if !minted_refs.is_empty() {
+        root.insert("minted_refs".to_string(), str_arr_value(minted_refs));
+    }
     if *audit {
         root.insert("audit".to_string(), TomlValue::Boolean(true));
     }
@@ -1302,7 +1332,7 @@ fn row_to_toml(row: &TaskRow) -> TomlValue {
 }
 
 /// Collapse CRLF and lone CR to LF.
-fn lf(body: &str) -> String {
+pub(crate) fn lf(body: &str) -> String {
     if body.contains('\r') {
         body.replace("\r\n", "\n").replace('\r', "\n")
     } else {
@@ -1310,9 +1340,10 @@ fn lf(body: &str) -> String {
     }
 }
 
-/// A bare-date `last_updated`, also accepting the quoted form a hand edit
-/// leaves behind. Anything else reads as absent and the next write restamps.
-fn as_date(value: &TomlValue) -> Option<Datetime> {
+/// A bare TOML date or datetime, also accepting the quoted form a hand edit
+/// leaves behind. Anything else reads as absent, for the caller to default or
+/// refuse.
+pub(crate) fn as_date(value: &TomlValue) -> Option<Datetime> {
     match value {
         TomlValue::Datetime(date) => Some(*date),
         TomlValue::String(raw) => raw.parse().ok(),
@@ -1338,7 +1369,7 @@ fn u32_or(table: &Table, key: &str, fallback: u32) -> u32 {
         .unwrap_or(fallback)
 }
 
-fn str_array(table: &Table, key: &str) -> Vec<String> {
+pub(crate) fn str_array(table: &Table, key: &str) -> Vec<String> {
     table
         .get(key)
         .and_then(TomlValue::as_array)
@@ -1373,7 +1404,7 @@ fn sub_tables<'a>(table: &'a Table, key: &str, context: &str) -> Result<Vec<&'a 
         .collect()
 }
 
-fn id_array(table: &Table, key: &str, context: &str) -> Result<Vec<u32>> {
+pub(crate) fn id_array(table: &Table, key: &str, context: &str) -> Result<Vec<u32>> {
     let Some(raw) = table.get(key) else {
         return Ok(Vec::new());
     };
@@ -1403,7 +1434,7 @@ fn table_array<'a>(table: &'a Table, key: &str) -> Result<&'a [TomlValue]> {
     }
 }
 
-fn str_arr_value(values: &[String]) -> TomlValue {
+pub(crate) fn str_arr_value(values: &[String]) -> TomlValue {
     TomlValue::Array(
         values
             .iter()
@@ -1438,6 +1469,7 @@ mod tests {
                 "seed-the-store".to_string(),
                 "wire-the-renderer".to_string(),
             ],
+            minted_refs: Vec::new(),
             policy: Policy {
                 checkpoints: "milestones".to_string(),
                 max_parallel: 6,

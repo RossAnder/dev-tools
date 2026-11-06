@@ -83,6 +83,7 @@ pub(crate) fn mutate<T>(
         |doc| {
             let mut store = schema::from_toml(doc)?;
             outcome = Some(f(&mut store)?);
+            store.prune_minted_refs();
             store.last_updated = Some(today);
             *doc = schema::to_toml(&store);
             Ok(())

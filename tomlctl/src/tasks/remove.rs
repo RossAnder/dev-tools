@@ -19,12 +19,10 @@ use anyhow::Result;
 use serde_json::json;
 
 use super::finding::{NO_TASK, task_list};
-use super::schema::{Change, ImportOverride, Status, Store};
+use super::schema::{Change, DEFAULT_ACTOR, ImportOverride, Status, Store};
 use super::store;
 use crate::cli::WriteIntegrityArgs;
 use crate::errors::{ErrorKind, tagged_err};
-
-const AUDIT_ACTOR: &str = "orchestrator";
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct RemoveOutcome {
@@ -39,17 +37,7 @@ pub(crate) struct RemoveOutcome {
     pub(crate) pruned_override_fields: Vec<&'static str>,
 }
 
-#[cfg(test)]
 pub(crate) fn remove(
-    path: &Path,
-    integrity: &WriteIntegrityArgs,
-    id: u32,
-    force: bool,
-) -> Result<RemoveOutcome> {
-    remove_with_reason(path, integrity, id, force, None)
-}
-
-pub(crate) fn remove_with_reason(
     path: &Path,
     integrity: &WriteIntegrityArgs,
     id: u32,
@@ -142,18 +130,23 @@ fn retire(
                     field: "needs".to_string(),
                     old: json!(before.0).to_string(),
                     new: json!(row.needs).to_string(),
-                    actor: AUDIT_ACTOR.to_string(),
+                    actor: DEFAULT_ACTOR.to_string(),
                     reason: reason.to_string(),
                 });
             }
         }
     }
 
-    if v2_flow || store.holds_v2_keys() {
+    let v2 = v2_flow || store.holds_v2_keys();
+    if v2 {
         store.id_high_water = store.id_high_water.max(id);
     }
     let row = store.items.remove(index);
-    store.specs.retain(|spec| spec.r#ref != row.r#ref);
+    // A v2 flow never imports, so nothing later would clear these. Elsewhere the
+    // next import rebuilds the notes and links, and a store holding a spec is v2.
+    if v2 {
+        store.drop_ref_entries(&row.r#ref);
+    }
     if at.is_some() {
         store.changes.push(Change {
             at,
@@ -161,7 +154,7 @@ fn retire(
             field: "*".to_string(),
             old: row.title.clone(),
             new: String::new(),
-            actor: AUDIT_ACTOR.to_string(),
+            actor: DEFAULT_ACTOR.to_string(),
             reason: reason.to_string(),
         });
         store.changes.extend(needs_changes);
@@ -204,7 +197,9 @@ fn refuse(message: String) -> anyhow::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tasks::schema::{DEFAULT_HEADING_DEPTH, Effort, TaskRow, TaskSpec};
+    use crate::tasks::schema::{
+        BacklogLink, DEFAULT_HEADING_DEPTH, Effort, FileNote, TaskRow, TaskSpec,
+    };
 
     fn row(id: u32, needs: &[u32], coupling: &[u32]) -> TaskRow {
         TaskRow {
@@ -509,6 +504,50 @@ mod tests {
         retire(&mut store, 2, false).expect("the row retires");
         assert_eq!(store.id_high_water, 0);
         assert_eq!(store.next_id(), 2);
+    }
+
+    /// Each of the two rows carries one note and one link.
+    fn store_with_side_tables() -> Store {
+        let mut store = store(vec![row(1, &[], &[]), row(2, &[], &[])]);
+        for r#ref in ["task-1", "task-2"] {
+            store.file_notes.push(FileNote {
+                r#ref: r#ref.to_string(),
+                file: "src/a.rs".to_string(),
+                note: "(new)".to_string(),
+            });
+            store.backlog_links.push(BacklogLink {
+                r#ref: r#ref.to_string(),
+                closes: vec!["B1".to_string()],
+                refs: Vec::new(),
+            });
+        }
+        store
+    }
+
+    #[test]
+    fn a_v2_removal_prunes_the_rows_own_file_notes_and_backlog_links() {
+        let mut store = store_with_side_tables();
+
+        super::retire(&mut store, 2, false, None, true).expect("the row retires");
+
+        let note_refs: Vec<&str> = store.file_notes.iter().map(|n| n.r#ref.as_str()).collect();
+        let link_refs: Vec<&str> = store
+            .backlog_links
+            .iter()
+            .map(|l| l.r#ref.as_str())
+            .collect();
+        assert_eq!(note_refs, ["task-1"]);
+        assert_eq!(link_refs, ["task-1"]);
+    }
+
+    #[test]
+    fn a_v1_removal_leaves_file_notes_and_backlog_links_for_the_next_import() {
+        let mut store = store_with_side_tables();
+
+        retire(&mut store, 2, false).expect("the row retires");
+
+        assert_eq!(store.file_notes.len(), 2);
+        assert_eq!(store.backlog_links.len(), 2);
     }
 
     #[test]

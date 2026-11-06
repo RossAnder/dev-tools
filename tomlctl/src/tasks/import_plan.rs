@@ -70,7 +70,8 @@ pub(crate) struct ImportRequest<'a> {
 }
 
 /// `added` + `updated` + `unchanged` counts the plan's tasks; `removed_refs`
-/// names store rows the plan no longer produces, which stay in the store.
+/// names store rows the plan no longer produces, which stay in the store. A row
+/// `minted_refs` holds has yet to reach the plan, so it is not among them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ImportOutcome {
     pub(crate) added: usize,
@@ -81,7 +82,8 @@ pub(crate) struct ImportOutcome {
     pub(crate) adopted_refs: Vec<String>,
     pub(crate) unmatched_refs: Vec<String>,
     /// Retained rows whose `checkpoint` named a group this plan no longer
-    /// declares. A subset of `removed_refs`.
+    /// declares. A mint `removed_refs` passes over can be one: the store row
+    /// loses the id all the same, so the write is still reported.
     pub(crate) cleared_checkpoint_refs: Vec<String>,
     pub(crate) findings: Vec<Finding>,
 }
@@ -289,7 +291,9 @@ impl Import {
                 retained.checkpoint.clear();
                 outcome.cleared_checkpoint_refs.push(retained.r#ref.clone());
             }
-            outcome.removed_refs.push(retained.r#ref.clone());
+            if !store.minted_refs.contains(&retained.r#ref) {
+                outcome.removed_refs.push(retained.r#ref.clone());
+            }
             rows.push(retained);
         }
 
@@ -2179,6 +2183,39 @@ mod tests {
                 "wire-the-renderer",
                 "the row survives the id it carried"
             );
+        });
+    }
+
+    #[test]
+    fn a_mint_loses_an_undeclared_checkpoint_without_reading_as_removed() {
+        with_root(|root| {
+            let plan = write_plan(root, PLAN);
+            import(&request(&plan, true, false));
+            store::mutate(&store_path(root), &write_args(), |store| {
+                let mut mint = store.items[2].clone();
+                mint.id = 4;
+                mint.r#ref = "repair-the-seam".to_string();
+                mint.files = Vec::new();
+                mint.needs = Vec::new();
+                store.minted_refs.push(mint.r#ref.clone());
+                store.items.push(mint);
+                Ok(())
+            })
+            .expect("the mint lands");
+
+            let renamed = write_plan(
+                root,
+                &PLAN.replace("— CHECKPOINT A after", "— CHECKPOINT B after"),
+            );
+            let outcome = import(&request(&renamed, true, false));
+
+            assert!(outcome.removed_refs.is_empty(), "{outcome:?}");
+            assert_eq!(
+                outcome.cleared_checkpoint_refs,
+                vec!["repair-the-seam".to_string()],
+                "{outcome:?}"
+            );
+            assert_eq!(checkpoints_of(root), vec!["B", "B", "B", ""]);
         });
     }
 

@@ -5,6 +5,8 @@
 //! cannot and `render` raises one of its own, so the type all four share lives
 //! under none of them.
 
+use serde_json::json;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Finding {
     pub(crate) class: &'static str,
@@ -22,6 +24,15 @@ pub(crate) const INFO: &str = "info";
 /// What an empty id list reads as mid-sentence, where a plan's `—` would
 /// leave the clause around it truncated.
 pub(crate) const NO_TASK: &str = "no task";
+
+pub(crate) fn finding_json(finding: &Finding) -> serde_json::Value {
+    json!({
+        "class": finding.class,
+        "severity": finding.severity,
+        "ids": finding.ids,
+        "detail": finding.detail,
+    })
+}
 
 /// The three list formatters below take their empty marker rather than
 /// choosing one: a plan bullet needs a marker the importer reads back as no

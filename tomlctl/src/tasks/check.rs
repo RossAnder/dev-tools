@@ -278,7 +278,8 @@ fn orphan_task_findings(store: &Store) -> Vec<Finding> {
 }
 
 /// An empty `last_import_refs` means no import has happened yet, not that
-/// every row is orphaned.
+/// every row is orphaned. A row in `minted_refs` has yet to reach the plan, so
+/// it cannot have left it.
 fn orphan_row_findings(store: &Store) -> Vec<Finding> {
     if store.last_import_refs.is_empty() {
         return Vec::new();
@@ -286,6 +287,7 @@ fn orphan_row_findings(store: &Store) -> Vec<Finding> {
     let imported: BTreeSet<&str> = store
         .last_import_refs
         .iter()
+        .chain(store.minted_refs.iter())
         .map(String::as_str)
         .collect::<BTreeSet<&str>>();
     let orphaned = store
@@ -830,6 +832,28 @@ mod tests {
         assert_eq!(findings[1].ids, vec![3]);
         assert_eq!(findings[1].severity, WARNING);
         assert_eq!(exit_code(&findings), 1);
+    }
+
+    #[test]
+    fn a_minted_row_is_no_orphan_while_an_unminted_one_beside_it_still_is() {
+        let mut store = store(
+            vec![
+                row(1, &[], &["a.rs"], "A"),
+                row(2, &[], &["b.rs"], "A"),
+                row(3, &[], &["c.rs"], "A"),
+                row(4, &[], &["d.rs"], "A"),
+            ],
+            &["A"],
+        );
+        store.last_import_refs = vec!["task-1".to_string()];
+        store.minted_refs = vec!["task-2".to_string(), "task-3".to_string()];
+        store.items[1].status = Status::Done;
+        store.items[3].status = Status::Done;
+        let findings = check(&store, &[]);
+
+        assert_eq!(classes(&findings), vec!["plan/orphan-row"], "{findings:?}");
+        assert_eq!(findings[0].ids, vec![4]);
+        assert_eq!(findings[0].severity, ERROR);
     }
 
     #[test]

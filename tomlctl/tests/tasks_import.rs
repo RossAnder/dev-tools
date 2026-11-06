@@ -633,6 +633,113 @@ fn an_error_class_finding_aborts_the_write() {
     );
 }
 
+/// `tasks check` run for its exit status: `true` when it reports no error class.
+fn check_passes(root: &Path) -> bool {
+    cli(root)
+        .args(["tasks", "check", "--slug", SLUG])
+        .output()
+        .expect("the check runs")
+        .status
+        .success()
+}
+
+/// Imported, then a task minted and settled with the plan still behind it.
+fn stage_a_settled_mint() -> (tempfile::TempDir, PathBuf) {
+    let (dir, root) = stage(FIXTURE_PLAN);
+    import(&root, &["--slug", SLUG]);
+    let added = cli(&root)
+        .args(["tasks", "add", "--slug", SLUG])
+        .args(["--title", "Repair the seam", "--effort", "S"])
+        .assert()
+        .success();
+    let added: serde_json::Value =
+        serde_json::from_slice(&added.get_output().stdout).expect("add stdout is JSON");
+    let id = added["id"].as_u64().expect("add mints an id").to_string();
+    cli(&root)
+        .args(["tasks", "update", &id, "--slug", SLUG, "--status", "done"])
+        .assert()
+        .success();
+    (dir, root)
+}
+
+fn store_doc(root: &Path) -> toml::Value {
+    toml::from_str(&fs::read_to_string(store_path(root)).expect("the store is on disk"))
+        .expect("the store parses")
+}
+
+/// What the ref-set gate aborts on: a removed ref whose row is past `pending`.
+fn settled_removals(root: &Path, envelope: &serde_json::Value) -> Vec<String> {
+    let store = store_doc(root);
+    let items = store["items"].as_array().expect("the store holds rows");
+    refs(envelope, "removed_refs")
+        .into_iter()
+        .filter(|removed| {
+            items.iter().any(|item| {
+                item["ref"].as_str() == Some(removed.as_str())
+                    && item["status"].as_str() != Some("pending")
+            })
+        })
+        .collect()
+}
+
+#[test]
+fn a_settled_mint_the_plan_is_behind_on_passes_the_ref_set_gate() {
+    let (_dir, root) = stage_a_settled_mint();
+
+    let envelope = import(&root, &["--slug", SLUG, "--dry-run"]);
+
+    assert!(refs(&envelope, "removed_refs").is_empty(), "{envelope}");
+    assert!(settled_removals(&root, &envelope).is_empty(), "{envelope}");
+    assert!(error_finding_classes(&envelope).is_empty(), "{envelope}");
+}
+
+/// A resume imports before it reads a row status, so the mint has to survive
+/// that import as well as the check, with the plan still not naming it.
+#[test]
+fn a_settled_mint_passes_the_check_and_a_re_import_ahead_of_any_render() {
+    let (_dir, root) = stage_a_settled_mint();
+    assert!(check_passes(&root));
+
+    let envelope = import(&root, &["--slug", SLUG]);
+
+    assert!(error_finding_classes(&envelope).is_empty(), "{envelope}");
+    assert!(check_passes(&root), "the exemption survives the import");
+    assert_eq!(
+        store_doc(&root)["minted_refs"],
+        toml::Value::Array(vec![toml::Value::String("repair-the-seam".to_string())])
+    );
+}
+
+/// Once an import has produced the ref the row is an ordinary one, so a later
+/// plan that drops it is an orphan like any other.
+#[test]
+fn a_mint_the_plan_has_named_and_then_dropped_is_an_orphan() {
+    let (_dir, root) = stage_a_settled_mint();
+    cli(&root)
+        .args(["tasks", "render", "--slug", SLUG])
+        .assert()
+        .success();
+    import(&root, &["--slug", SLUG]);
+    assert!(
+        store_doc(&root).get("minted_refs").is_none(),
+        "an import that produced the ref ends the exemption"
+    );
+
+    write_plan(&root, FIXTURE_PLAN);
+
+    let preview = import(&root, &["--slug", SLUG, "--dry-run"]);
+    assert_eq!(
+        settled_removals(&root, &preview),
+        vec!["repair-the-seam".to_string()],
+        "{preview}"
+    );
+
+    let error = import_err(&root, &["--slug", SLUG]);
+    let message = error["message"].as_str().unwrap_or_default();
+    assert!(message.contains("plan/orphan-row"), "{message}");
+    assert!(message.contains("repair-the-seam"), "{message}");
+}
+
 /// The checkpoint table and the policy are assigned whole on every import, so
 /// a plan the grammar reads as taskless would replace both with what an empty
 /// parse yields while reporting an import of nothing. What the refusal

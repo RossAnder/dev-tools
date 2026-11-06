@@ -18,7 +18,7 @@ use anyhow::{Context, Result};
 use serde_json::json;
 
 use super::closure::{Direction, Target};
-use super::finding::Finding;
+use super::finding::finding_json;
 use super::schema::Store;
 use super::{
     add, backlog_refs, batches, check, closure, edges, import_plan, list, ready, remove, render,
@@ -26,7 +26,7 @@ use super::{
 };
 use crate::cli::TasksOp;
 use crate::errors::{ErrorKind, tagged_err};
-use crate::io::{atomic_write, read_ndjson_source, relativise, repo_or_cwd_root};
+use crate::io::{advise, atomic_write, read_ndjson_source, relativise, repo_or_cwd_root};
 use crate::output::{Rows, print_json, print_json_compact, print_report, print_rows_compact};
 
 pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
@@ -109,12 +109,15 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
                 acceptance: add::body(acceptance, acceptance_file)?,
             };
             let outcome = add::add(&path, &integrity, task)?;
-            print_json_compact(&json!({
-                "ok": true,
-                "id": outcome.id,
-                "ref": outcome.r#ref,
-                "batch": outcome.batch,
-            }))
+            print_json_compact(&with_advisories(
+                json!({
+                    "ok": true,
+                    "id": outcome.id,
+                    "ref": outcome.r#ref,
+                    "batch": outcome.batch,
+                }),
+                std::slice::from_ref(&outcome),
+            ))
         }
 
         TasksOp::AddMany {
@@ -134,11 +137,14 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
                     })
                 })
                 .collect();
-            print_json_compact(&json!({
-                "ok": true,
-                "added": rows.len(),
-                "rows": rows,
-            }))
+            print_json_compact(&with_advisories(
+                json!({
+                    "ok": true,
+                    "added": rows.len(),
+                    "rows": rows,
+                }),
+                &outcomes,
+            ))
         }
 
         TasksOp::Update {
@@ -211,8 +217,7 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
             integrity,
         } => {
             let path = store::resolve_store_path(target.slug.as_deref(), target.file.as_deref())?;
-            let outcome =
-                remove::remove_with_reason(&path, &integrity, id, force, reason.as_deref())?;
+            let outcome = remove::remove(&path, &integrity, id, force, reason.as_deref())?;
             print_json_compact(&json!({
                 "ok": true,
                 "id": outcome.id,
@@ -383,13 +388,23 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
     }
 }
 
-fn finding_json(finding: &Finding) -> serde_json::Value {
-    json!({
-        "class": finding.class,
-        "severity": finding.severity,
-        "ids": finding.ids,
-        "detail": finding.detail,
-    })
+/// `advisories` is present only when a row raised one. A captured stderr never
+/// shows the line, so the envelope is what reaches a carrier.
+fn with_advisories(
+    mut envelope: serde_json::Value,
+    outcomes: &[add::AddOutcome],
+) -> serde_json::Value {
+    let advisories: Vec<&str> = outcomes
+        .iter()
+        .filter_map(|outcome| outcome.advisory.as_deref())
+        .collect();
+    for advisory in &advisories {
+        advise!("tomlctl: {advisory}");
+    }
+    if !advisories.is_empty() {
+        envelope["advisories"] = json!(advisories);
+    }
+    envelope
 }
 
 fn read_plan(path: &Path) -> Result<String> {

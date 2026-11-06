@@ -58,7 +58,9 @@ pub(crate) use parse_policy::CommitGranularity;
 pub(crate) use schema::Effort;
 pub(crate) use schema::{BacklogLink, Status, Store};
 pub(crate) use snapshot::snapshot;
-pub(crate) use store::{load as load_store, mutate as mutate_store, resolve_store_path};
+pub(crate) use store::{
+    is_v2_flow, load as load_store, mutate as mutate_store, resolve_store_path,
+};
 
 /// The plan document `context.toml` binds `slug` to, through the plan-path
 /// seam's containment and `.md` validation — a recorded value is

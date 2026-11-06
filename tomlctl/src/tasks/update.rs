@@ -26,13 +26,13 @@ use anyhow::Result;
 use serde_json::json;
 
 use super::add::{
-    DEFAULT_ACTOR, SpecPatch, file_notes_from_row, reject_unclaimed_notes,
-    reject_undeclared_checkpoint, reject_unknown_premise_targets,
+    SpecPatch, file_notes_from_row, reject_unclaimed_notes, reject_undeclared_checkpoint,
+    reject_unknown_premise_targets,
 };
 use super::graph::{Node, Tense, build_or_refuse, nodes_of};
 use super::schema::{
-    Accept, BacklogLink, Change, Effort, FileNote, ImportOverride, MILESTONE_REF_PREFIX, Status,
-    Store, TaskRow, TaskSpec,
+    Accept, BacklogLink, Change, DEFAULT_ACTOR, Effort, FileNote, ImportOverride,
+    MILESTONE_REF_PREFIX, Status, Store, TaskRow, TaskSpec,
 };
 use super::show::{accept_json, means_json, premises_json};
 use super::{slug, store};
@@ -928,6 +928,9 @@ fn patch(
             }
             for spec in store.specs.iter_mut().filter(|spec| spec.r#ref == previous) {
                 spec.r#ref.clone_from(new_ref);
+            }
+            for minted in store.minted_refs.iter_mut().filter(|r| **r == previous) {
+                minted.clone_from(new_ref);
             }
             for change in store
                 .changes
@@ -1843,8 +1846,8 @@ mod tests {
         });
     }
 
-    /// `tasks remove` leaves a row's notes and links behind, so a rename onto
-    /// the freed `ref` must not adopt them beside its own.
+    /// `tasks remove` on a v1 flow leaves a row's notes and links behind, so a
+    /// rename onto the freed `ref` must not adopt them beside its own.
     #[test]
     fn a_rename_onto_a_removed_rows_ref_drops_that_rows_leftovers() {
         use crate::tasks::remove::remove;
@@ -1872,7 +1875,7 @@ mod tests {
                 Ok(())
             })
             .expect("the seed lands");
-            remove(&path, &write_args(), 2, false).expect("the pending row is removed");
+            remove(&path, &write_args(), 2, false, None).expect("the pending row is removed");
 
             update(
                 &path,

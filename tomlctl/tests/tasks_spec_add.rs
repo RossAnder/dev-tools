@@ -491,13 +491,49 @@ fn an_audited_store_writes_a_change_for_each_added_row() {
     assert_eq!(text(first, "new"), "Default actor");
     assert_eq!(text(first, "actor"), "orchestrator");
     assert_eq!(text(first, "reason"), "scope grew");
-    assert!(
-        first.get("at").is_some_and(toml::Value::is_datetime),
-        "{first}"
-    );
+    let at = first["at"].as_datetime().expect("`at` is a datetime");
+    assert!(at.time.is_some(), "`at` carries the time of day: {at}");
 
     assert_eq!(text(&changes[1], "actor"), "user");
     assert_sidecar_matches(&store);
+}
+
+#[test]
+fn a_row_taking_over_an_orphan_spec_names_what_it_discarded() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(
+        &root,
+        &format!(
+            "{FIXTURE}\n[[specs]]\nref = \"orphaned-work\"\noutcome = \"the lost outcome\"\n\n\
+             [[specs.accept]]\nbehaviour = \"the lost behaviour\"\n"
+        ),
+    );
+
+    let envelope = add_many(
+        &root,
+        &format!("{}\n", json!({"title": "Orphaned work", "effort": "S"})),
+    );
+
+    let advisories = envelope["advisories"].as_array().expect("one advisory");
+    assert_eq!(advisories.len(), 1, "{envelope}");
+    let advisory = advisories[0].as_str().unwrap();
+    for needle in ["`orphaned-work`", "the lost outcome", "the lost behaviour"] {
+        assert!(advisory.contains(needle), "`{needle}` not in: {advisory}");
+    }
+    assert!(
+        side_table(&read_store(&store), "specs").is_empty(),
+        "the discard itself stands"
+    );
+}
+
+#[test]
+fn a_row_discarding_nothing_raises_no_advisory() {
+    let (_tmp, root) = sandbox();
+    seed_tasks(&root, FIXTURE);
+
+    let envelope = add_many(&root, &format!("{PLAIN_ROW}\n"));
+
+    assert!(envelope.get("advisories").is_none(), "{envelope}");
 }
 
 #[test]

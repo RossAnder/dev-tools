@@ -23,8 +23,8 @@ use serde_json::{Map as JsonMap, Value as JsonValue};
 
 use super::graph::{Node, Tense, build_or_refuse};
 use super::schema::{
-    ACCEPT_KINDS, Accept, BacklogLink, Change, DEFAULT_HEADING_DEPTH, Effort, FileNote,
-    MEANS_BINDINGS, Means, Premise, Status, Store, TaskRow, TaskSpec,
+    ACCEPT_KINDS, Accept, BacklogLink, Change, DEFAULT_ACTOR, DEFAULT_HEADING_DEPTH, Effort,
+    FileNote, MEANS_BINDINGS, Means, Premise, Status, Store, TaskRow, TaskSpec,
 };
 use super::{slug, store};
 use crate::cli::WriteIntegrityArgs;
@@ -56,6 +56,8 @@ pub(crate) struct AddOutcome {
     /// Zero-based index into `Graph::kahn_rounds` — the round the row lands in
     /// once it is stored.
     pub(crate) batch: usize,
+    /// What the row's `ref` cost, when it took over an orphan spec.
+    pub(crate) advisory: Option<String>,
 }
 
 /// Row fields an NDJSON line may carry. Anything else is refused rather than
@@ -94,9 +96,6 @@ const PREMISE_FIELDS: [&str; 3] = ["claim", "check", "at"];
 const MEANS_FIELDS: [&str; 3] = ["text", "binding", "detail"];
 
 const EXECUTORS: [&str; 4] = ["tool", "clerk", "lite", "deep"];
-
-/// Who an audit row names when the caller gives no `actor`.
-pub(super) const DEFAULT_ACTOR: &str = "orchestrator";
 
 /// What an `add-many` row carries beside its `NewTask`, each landing outside
 /// `[[items]]`. `line` is the row's position for a refusal raised under the lock.
@@ -243,6 +242,7 @@ fn append(store: &mut Store, tasks: Vec<(NewTask, RowExtras)>) -> Result<Vec<Add
                 .iter()
                 .position(|round| round.contains(&row.id))
                 .expect("an acyclic graph emits every task in a round"),
+            advisory: store.spec_for(&row.r#ref).and_then(discarded_spec_advisory),
         })
         .collect();
 
@@ -270,8 +270,51 @@ fn append(store: &mut Store, tasks: Vec<(NewTask, RowExtras)>) -> Result<Vec<Add
     for (row, row_extras) in minted.iter().zip(extras) {
         row_extras.land(row, store)?;
     }
+    // A store no import has written has no ref set to be absent from.
+    if !store.last_import_refs.is_empty() {
+        store
+            .minted_refs
+            .extend(minted.iter().map(|row| row.r#ref.clone()));
+    }
     store.items.extend(minted);
     Ok(outcomes)
+}
+
+/// No row holds a minted `ref`, so a spec keyed on it is an orphan. Its outcome
+/// and accept text are quoted because this line is their last copy.
+fn discarded_spec_advisory(spec: &TaskSpec) -> Option<String> {
+    let mut discarded = Vec::new();
+    if !spec.outcome.trim().is_empty() {
+        discarded.push(format!("outcome \"{}\"", spec.outcome));
+    }
+    if !spec.accept.is_empty() {
+        let behaviours: Vec<String> = spec
+            .accept
+            .iter()
+            .map(|accept| format!("\"{}\"", accept.behaviour))
+            .collect();
+        discarded.push(format!("accept {}", behaviours.join(", ")));
+    }
+    for (field, empty) in [
+        ("constraints", spec.constraints.is_empty()),
+        ("premises", spec.premises.is_empty()),
+        ("means", spec.means.is_empty()),
+        ("design", spec.design.is_empty()),
+        ("precedent", spec.precedent.is_empty()),
+        ("executor", spec.executor.is_empty()),
+    ] {
+        if !empty {
+            discarded.push(field.to_string());
+        }
+    }
+    if discarded.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "`{}` took over an orphan spec and discarded its {}",
+        spec.r#ref,
+        discarded.join("; ")
+    ))
 }
 
 /// A premise's `after:<id>` must name a row. Ids only exist once a batch is
@@ -350,7 +393,7 @@ impl RowExtras {
         }
         if store.audit {
             store.changes.push(Change {
-                at: Some(crate::time::today_toml_date()?),
+                at: Some(crate::time::now_toml_datetime()?),
                 r#ref: row.r#ref.clone(),
                 field: "*".to_string(),
                 old: String::new(),
