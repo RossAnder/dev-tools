@@ -7537,7 +7537,7 @@ tags = [
     "flow-bootstrap",
     "plans-directory",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-05T11:22:58Z
 last_seen = 2026-11-05T11:22:58Z
 seen_count = 1
@@ -7553,6 +7553,8 @@ evidence = [
     "claude/agents/flow-bootstrap.md:79",
     "claude/agents/flow-bootstrap.md:83",
 ]
+resolved = 2026-11-06
+resolution = "95886c8: flow-bootstrap roots the settings read on the envelope's worktree. The __DONT_ASK__ sentinel half is captured separately."
 
 [[backlog]]
 id = "B-33df5eda"
@@ -7599,7 +7601,7 @@ tags = [
     "review-v2",
     "plan-review",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-05T11:22:58Z
 last_seen = 2026-11-05T11:22:58Z
 seen_count = 1
@@ -7617,6 +7619,8 @@ evidence = [
     "claude/workflows/review-v2.js:58",
 ]
 related = ["B-ef306556"]
+resolved = 2026-11-06
+resolution = "95886c8: plan-executor takes the plan path from flow resolve. The case of a reviewed plan other than the flow's is captured separately."
 
 [[backlog]]
 id = "B-76f24d6a"
@@ -7627,7 +7631,7 @@ tags = [
     "plan-review",
     "docs",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-05T11:22:58Z
 last_seen = 2026-11-05T11:22:58Z
 seen_count = 1
@@ -7641,6 +7645,8 @@ evidence = [
     "claude/commands/plan-update.md:135",
 ]
 related = ["B-684379b8"]
+resolved = 2026-11-06
+resolution = "e7f00d2: review-plan.md cites step 7."
 
 [[backlog]]
 id = "B-64a17353"
@@ -7648,7 +7654,7 @@ kind = "bug"
 summary = "flow-bootstrap's required-artifact check tests relative paths from the agent's start directory, so a session started in a subdirectory fails the gate falsely"
 area = "claude/agents/flow-bootstrap.md"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-05T14:20:33Z
 last_seen = 2026-11-05T14:20:33Z
 seen_count = 1
@@ -7658,6 +7664,8 @@ flow = "v2-planning"
 context = "Seen on /implement started from tomlctl/: the envelope said execution_record was missing while flow doctor passed and the file existed. The agent's hard rules forbid cd, so a re-dispatch fails the same way. Workaround: run flow resolve and flow doctor from the repo root and proceed on those. Same root cause as the plansDirectory case in the related row."
 base_sha = "a6abe04bf774d65e050cc55cf882fa48ac686ff6"
 related = ["B-74b4558b"]
+resolved = 2026-11-06
+resolution = "95886c8: flow-bootstrap roots the artifact existence test on the envelope's worktree."
 
 [[backlog]]
 id = "B-64542872"
@@ -7665,7 +7673,7 @@ kind = "bug"
 summary = "A task minted by tasks add and then settled reads as plan/orphan-row at error severity, so a resume halts at the tasks check gate until the plan is rendered and re-imported"
 area = "tomlctl/src/tasks"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-05T14:20:33Z
 last_seen = 2026-11-05T14:20:33Z
 seen_count = 1
@@ -7674,6 +7682,8 @@ origin = "implement"
 flow = "v2-planning"
 context = "/implement step 3c mints with tasks add, which never touches last_import_refs, and Phase 4's re-import gate would also abort on a settled removed ref. Workaround: tasks render then tasks import-plan --reconcile-record straight after settling a minted task, which clears the finding. Either check should treat a row add created as not orphaned, or the carrier should say to render at mint time."
 base_sha = "a6abe04bf774d65e050cc55cf882fa48ac686ff6"
+resolved = 2026-11-06
+resolution = "eb51067: a new optional minted_refs store key exempts a minted row from plan/orphan-row and from removed_refs until an import produces it. A mint the plan named and then dropped still reports."
 
 [[backlog]]
 id = "B-02515e2e"
@@ -7681,7 +7691,7 @@ kind = "bug"
 summary = "plan stage reports ready and names plan approve while plan approve refuses an unanswered surfaced decision, because no check class or stage blocker covers it"
 area = "tomlctl/src/plan/stage.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-05T14:20:33Z
 last_seen = 2026-11-05T14:20:33Z
 seen_count = 1
@@ -7690,6 +7700,8 @@ origin = "implement"
 flow = "v2-planning"
 context = "Arrived cheap-in-file and was deferred because the run paused. A carrier following next hits a refusal stage never warned about. Fix: add a blocker for a surfaced decision still agent-assumed, or a plan check class both verbs read."
 base_sha = "a6abe04bf774d65e050cc55cf882fa48ac686ff6"
+resolved = 2026-11-06
+resolution = "e2a53fb: plan stage holds at prove with next plan decide while a surfaced decision is unanswered, sharing approve's predicate."
 
 [[backlog]]
 id = "B-a70a9da3"
@@ -7697,7 +7709,7 @@ kind = "debt"
 summary = "The idea doc still says a failed premise goes up a tier and lists decisions as a brief.md section, neither of which is a row in the plan's departures table"
 area = "docs/ideas/v2-pipeline.md"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-05T14:20:33Z
 last_seen = 2026-11-05T14:20:33Z
 seen_count = 1
@@ -7706,6 +7718,8 @@ origin = "implement"
 flow = "v2-planning"
 context = "Arrived cheap-in-file and was deferred because the run paused. The plan's Approach sends a failed premise to replanning, never up a tier, and holds decisions in plan.toml. The file's Status header says the plan wins, so nothing misleads a reader who starts at the top."
 base_sha = "a6abe04bf774d65e050cc55cf882fa48ac686ff6"
+resolved = 2026-11-06
+resolution = "448af31: two rows added to the plan's departures table."
 
 [[backlog]]
 id = "B-6de82ea6"
@@ -7713,7 +7727,7 @@ kind = "debt"
 summary = "plan/schema.rs carries copies of private TOML helpers from tasks/schema.rs, including the CR-folding rule"
 area = "tomlctl/src/plan/schema.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-05T14:20:33Z
 last_seen = 2026-11-05T14:20:33Z
 seen_count = 1
@@ -7722,6 +7736,8 @@ origin = "implement"
 flow = "v2-planning"
 context = "lf, as_datetime, str_array, id_array and str_arr_value were copied because a sibling held tasks/schema.rs at the time. Widen them to pub(crate) and delete the copies, so the two stores cannot disagree on CR folding."
 base_sha = "a6abe04bf774d65e050cc55cf882fa48ac686ff6"
+resolved = 2026-11-06
+resolution = "e2a53fb: the helpers are pub(crate) in tasks/schema.rs and the plan copies are deleted."
 
 [[backlog]]
 id = "B-81c1c53b"
@@ -7729,7 +7745,7 @@ kind = "debt"
 summary = "The capabilities test's read and write help lists carry no plan verbs, so nothing pins the integrity flag bundles on them"
 area = "tomlctl/tests/capabilities.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-05T14:20:33Z
 last_seen = 2026-11-05T14:20:33Z
 seen_count = 1
@@ -7738,6 +7754,8 @@ origin = "implement"
 flow = "v2-planning"
 context = "Arrived cheap-in-file and was deferred because the run paused. read_subs and write_subs cover every other group, so a plan verb could drop or gain an integrity flag with no test failing. Add the plan verbs to both lists."
 base_sha = "a6abe04bf774d65e050cc55cf882fa48ac686ff6"
+resolved = 2026-11-06
+resolution = "e2a53fb: plan verbs added to read_subs and write_subs."
 
 [[backlog]]
 id = "B-079a7625"
@@ -7745,7 +7763,7 @@ kind = "debt"
 summary = "capabilities reports plan view --for and plan approve --review as plain strings because SCOPED_ENUM_VALUES has no entries for them"
 area = "tomlctl/src/capabilities.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-05T14:20:33Z
 last_seen = 2026-11-05T14:20:33Z
 seen_count = 1
@@ -7755,6 +7773,8 @@ flow = "v2-planning"
 context = "Both are validated after parsing, so agents cannot read those vocabularies from capabilities, though tasks update --status publishes its own this way. Add entries once the verb modules export their vocabulary constants."
 base_sha = "a6abe04bf774d65e050cc55cf882fa48ac686ff6"
 related = ["B-a0d884ec"]
+resolved = 2026-11-06
+resolution = "e2a53fb: SCOPED_ENUM_VALUES entries added for plan view --for and plan approve --review."
 
 [[backlog]]
 id = "B-8ae87ad1"
@@ -7762,7 +7782,7 @@ kind = "debt"
 summary = "plan/check.rs carries a copy of the private finding_json from tasks/dispatch.rs, though plan check promises the tasks check shape"
 area = "tomlctl/src/plan/check.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-05T14:20:33Z
 last_seen = 2026-11-05T14:20:33Z
 seen_count = 1
@@ -7771,6 +7791,8 @@ origin = "implement"
 flow = "v2-planning"
 context = "Copied because a sibling held tasks/dispatch.rs. Move finding_json to tasks/finding.rs so one renderer serves both verbs."
 base_sha = "a6abe04bf774d65e050cc55cf882fa48ac686ff6"
+resolved = 2026-11-06
+resolution = "e2a53fb: finding_json moved to tasks/finding.rs; both verbs use it."
 
 [[backlog]]
 id = "B-57df0409"
@@ -7778,7 +7800,7 @@ kind = "debt"
 summary = "plan/view.rs copies check.rs's brief-section scan, so plan/brief-section-empty and the digest's empty_sections agree only through fixtures"
 area = "tomlctl/src/plan/view.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-05T14:20:33Z
 last_seen = 2026-11-05T14:20:33Z
 seen_count = 1
@@ -7787,6 +7809,8 @@ origin = "implement"
 flow = "v2-planning"
 context = "view.rs has its own atx_heading, strip_comments and section-is-filled rule because check.rs keeps them private. Export a brief_section and an empty-sections helper from check.rs and delete the copies."
 base_sha = "a6abe04bf774d65e050cc55cf882fa48ac686ff6"
+resolved = 2026-11-06
+resolution = "e2a53fb: view.rs uses check.rs's atx_heading and a shared body_is_filled; the copies are gone."
 
 [[backlog]]
 id = "B-1ec5ebb6"
@@ -7794,7 +7818,7 @@ kind = "debt"
 summary = "plan stage and plan approve each read review-v2.toml for a finished plan-family run, so the rule lives in two places"
 area = "tomlctl/src/plan"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-05T14:20:33Z
 last_seen = 2026-11-05T14:20:33Z
 seen_count = 1
@@ -7803,6 +7827,8 @@ origin = "implement"
 flow = "v2-planning"
 context = "stage::review_settled and approve::plan_review_finished could disagree once Slice 3 changes the review store. Share one helper in plan/store.rs."
 base_sha = "a6abe04bf774d65e050cc55cf882fa48ac686ff6"
+resolved = 2026-11-06
+resolution = "e2a53fb: store::plan_review_finished is the one reader and predicate; stage keeps its skip check."
 
 [[backlog]]
 id = "B-eeb72de6"
@@ -7810,7 +7836,7 @@ kind = "other"
 summary = "The acceptance-probing doc judges commands on stdout and stderr and cuts stderr to 100 bytes, while plan probes judges on exit status and whole stderr"
 area = "claude/skills/flow-contract-plan-output-format/references/acceptance-probing.md"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-05T14:20:33Z
 last_seen = 2026-11-05T14:20:33Z
 seen_count = 1
@@ -7819,6 +7845,8 @@ origin = "implement"
 flow = "v2-planning"
 context = "A reader moving between /plan-new probing and plan probes will assume they share one rule. Slice 2's carrier is the natural point to reconcile them."
 base_sha = "a6abe04bf774d65e050cc55cf882fa48ac686ff6"
+resolved = 2026-11-06
+resolution = "993087d: acceptance-probing.md notes that plan probes judges by a different rule."
 
 [[backlog]]
 id = "B-6f16ace8"
@@ -7826,7 +7854,7 @@ kind = "debt"
 summary = "An audit trail mixes bare dates and datetimes: tasks add-many stamps Change.at with a date while update, remove and plan milestone use a datetime"
 area = "tomlctl/src/tasks/add.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-05T14:20:33Z
 last_seen = 2026-11-05T14:20:33Z
 seen_count = 1
@@ -7835,6 +7863,8 @@ origin = "implement"
 flow = "v2-planning"
 context = "RowExtras::land uses today_toml_date and the others use now_toml_datetime, so anything sorting or comparing at across a task's trail meets two shapes. Switch add.rs to the datetime."
 base_sha = "a6abe04bf774d65e050cc55cf882fa48ac686ff6"
+resolved = 2026-11-06
+resolution = "eb51067: tasks add-many stamps Change.at with a datetime."
 
 [[backlog]]
 id = "B-36e61c7b"
@@ -7842,7 +7872,7 @@ kind = "debt"
 summary = "The audit actor default is defined separately in tasks add, tasks remove and plan milestone, so it can drift between verbs"
 area = "tomlctl/src/tasks"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-05T14:20:33Z
 last_seen = 2026-11-05T14:20:33Z
 seen_count = 1
@@ -7851,6 +7881,8 @@ origin = "implement"
 flow = "v2-planning"
 context = "DEFAULT_ACTOR in add.rs, AUDIT_ACTOR in remove.rs and milestone.rs all hold orchestrator. Keep one constant in tasks/schema.rs beside Change."
 base_sha = "a6abe04bf774d65e050cc55cf882fa48ac686ff6"
+resolved = 2026-11-06
+resolution = "eb51067: one DEFAULT_ACTOR in tasks/schema.rs."
 
 [[backlog]]
 id = "B-5719fe0b"
@@ -7858,7 +7890,7 @@ kind = "debt"
 summary = "tasks remove leaves a removed row's file_notes and backlog_links in place, and a v2 flow has no import to clear them, so they key on a ref no row carries"
 area = "tomlctl/src/tasks/remove.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-05T14:20:33Z
 last_seen = 2026-11-05T14:20:33Z
 seen_count = 1
@@ -7868,6 +7900,8 @@ flow = "v2-planning"
 context = "Arrived cheap-in-file and was deferred because the run paused. Keeping them matches v1, where the next import rebuilds both tables, but a v2 flow never imports. plan approve already ignores such a link. Prune them on a v2 flow, or add a plan check class."
 base_sha = "a6abe04bf774d65e050cc55cf882fa48ac686ff6"
 related = ["B-261df63a"]
+resolved = 2026-11-06
+resolution = "eb51067: tasks remove prunes file_notes and backlog_links on a v2 flow; v1 is unchanged."
 
 [[backlog]]
 id = "B-38b34e4d"
@@ -7875,7 +7909,7 @@ kind = "annoyance"
 summary = "/implement asks for the plan's narrative sections inline in every agent prompt, which on a large plan is too much to repeat across parallel dispatches in one response"
 area = "claude/commands/implement.md"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-05T14:20:33Z
 last_seen = 2026-11-05T14:20:33Z
 seen_count = 1
@@ -7884,6 +7918,8 @@ origin = "implement"
 flow = "v2-planning"
 context = "On a 33 KB narrative with up to 8 agents in one response, inlining would be hundreds of kilobytes of orchestrator output. Worked around by extracting the sections to one scratch file and opening every prompt with a byte-identical instruction to read it. Worth stating as the rule above some size, since an agent has to choose to pull the file."
 base_sha = "a6abe04bf774d65e050cc55cf882fa48ac686ff6"
+resolved = 2026-11-06
+resolution = "e7f00d2: implement.md inlines narrative sections up to about 8 KB and uses one scratch file with a byte-identical read instruction above that."
 
 [[backlog]]
 id = "B-3e764c0c"
@@ -7891,7 +7927,7 @@ kind = "debt"
 summary = "clippy warns dead_code on Event::Appearance, which is never constructed in the Linux build"
 area = "glimpse/src/source.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-05T20:51:38Z
 last_seen = 2026-11-05T20:51:38Z
 seen_count = 1
@@ -7902,6 +7938,8 @@ context = "Seen in cargo clippy --manifest-path glimpse/Cargo.toml --locked, whi
 base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
 evidence = ["glimpse/src/source.rs:75"]
 related = ["B-5e571ecd"]
+resolved = 2026-11-06
+resolution = "bc31a53: the variant carries cfg_attr(not(windows), allow(dead_code))."
 
 [[backlog]]
 id = "B-979cb5ce"
@@ -7909,7 +7947,7 @@ kind = "bug"
 summary = "plan record verbs auto-create a stray flow directory holding only plan.toml when the slug is mistyped"
 area = "tomlctl/src/plan/records.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-05T20:51:38Z
 last_seen = 2026-11-05T20:51:38Z
 seen_count = 1
@@ -7919,6 +7957,8 @@ flow = "v2-planning"
 context = "Observed with plan handover add and a wrong --slug: the other record verbs go through the same store mutate path. It leaves a flow directory with no context.toml or brief.md. --no-create prevents it today, and references/plan.md documents the behaviour. A fix would refuse a slug with no plan open, which Slice 2's carrier may want settled first."
 base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
 related = ["B-5f1ec4ff"]
+resolved = 2026-11-06
+resolution = "Already fixed before this run: require_open runs before the store is created, and tests/plan_records.rs a_mistyped_slug_creates_no_flow_directory covers it."
 
 [[backlog]]
 id = "B-aca96d19"
@@ -7926,7 +7966,7 @@ kind = "annoyance"
 summary = "plan drift lists the flow's own stores in changed_files when they land in a commit no row records"
 area = "tomlctl/src/plan/drift.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-05T20:51:38Z
 last_seen = 2026-11-05T20:51:38Z
 seen_count = 1
@@ -7936,6 +7976,8 @@ flow = "v2-planning"
 context = "Seen when the commit holding what plan approve writes after the stamp is one no task row records. Only changed_files is noisy: the affected rows are correct unless a task claims those paths, so read affected rather than changed_files."
 base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
 related = ["B-85dd4b61"]
+resolved = 2026-11-06
+resolution = "e2a53fb: plan drift drops the flow's own directory from changed_files."
 
 [[backlog]]
 id = "B-9a39ad73"
@@ -7943,7 +7985,7 @@ kind = "debt"
 summary = "the --verify-integrity support matrix has rows for the tasks verbs and none for the plan verbs"
 area = "claude/skills/tomlctl/references/flow.md"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-05T20:51:38Z
 last_seen = 2026-11-05T20:51:38Z
 seen_count = 1
@@ -7953,6 +7995,8 @@ flow = "v2-planning"
 context = "The matrix reads as complete, and the plan verbs do accept the flag, so an agent reading it would conclude they do not. Same gap B-3c59ed80 closed for the tasks read verbs. Add the plan rows from the clap args in tomlctl/src/cli/types."
 base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
 related = ["B-3c59ed80"]
+resolved = 2026-11-06
+resolution = "993087d: 18 plan rows added to the --verify-integrity matrix."
 
 [[backlog]]
 id = "B-08c658a1"
@@ -7963,7 +8007,7 @@ tags = [
     "crlf",
     "sidecar",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-05T21:08:37Z
 last_seen = 2026-11-05T21:08:37Z
 seen_count = 1
@@ -7980,6 +8024,8 @@ related = [
     "B-33df5eda",
     "B-b58537a5",
 ]
+resolved = 2026-11-06
+resolution = "5069414: refresh_sidecar refuses a .toml holding CRLF and names the per-repo fix; doctor --fix reports it and continues."
 
 [[backlog]]
 id = "B-2b7792e4"
@@ -7990,7 +8036,7 @@ tags = [
     "crlf",
     "sidecar",
 ]
-status = "open"
+status = "dismissed"
 created = 2026-11-05T21:08:37Z
 last_seen = 2026-11-05T21:08:37Z
 seen_count = 1
@@ -8008,6 +8054,8 @@ related = [
     "B-33df5eda",
     "B-11359954",
 ]
+dismissed = 2026-11-06
+dismiss_reason = "User decided: digests stay over raw bytes. tomlctl refuses to stamp CRLF and each repo resolves it with its own LF pin; flow.md's Line endings section holds the recovery."
 
 [[backlog]]
 id = "B-791c122f"
@@ -8015,7 +8063,7 @@ kind = "debt"
 summary = "no gate checks that a committed sidecar matches its committed store, and flow doctor sees only three sidecars per flow"
 area = ".githooks/pre-commit"
 tags = ["sidecar"]
-status = "open"
+status = "resolved"
 created = 2026-11-05T21:08:37Z
 last_seen = 2026-11-05T21:08:37Z
 seen_count = 1
@@ -8032,6 +8080,8 @@ related = [
     "B-33df5eda",
     "B-bcb545a2",
 ]
+resolved = 2026-11-06
+resolution = "477614a: a blocking pre-commit step compares staged sidecar and store pairs from the index. The doctor coverage half remains by design; plan.toml gained a plan-sidecar check."
 
 [[backlog]]
 id = "B-f058b706"
@@ -8042,7 +8092,7 @@ tags = [
     "crlf",
     "sidecar",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-05T21:08:37Z
 last_seen = 2026-11-05T21:08:37Z
 seen_count = 1
@@ -8059,6 +8109,8 @@ related = [
     "B-33df5eda",
     "B-079a7625",
 ]
+resolved = 2026-11-06
+resolution = "5069414: a mismatch whose CRLF-folded bytes match the sidecar appends a clause naming line endings and the fix."
 
 [[backlog]]
 id = "B-c2570c84"
@@ -8069,7 +8121,7 @@ tags = [
     "crlf",
     "sidecar",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-05T21:08:37Z
 last_seen = 2026-11-05T21:08:37Z
 seen_count = 1
@@ -8088,6 +8140,8 @@ related = [
     "B-33df5eda",
     "B-0fb99230",
 ]
+resolved = 2026-11-06
+resolution = "993087d: flow.md's Line endings section holds the recovery; README, the task-store and execution-record skills, write.md and CLAUDE.md point to it."
 
 [[backlog]]
 id = "B-fe886ed0"
@@ -8095,7 +8149,7 @@ kind = "debt"
 summary = "active-flow.toml is tracked in a public repo with machine-local worktree paths, though the flow-context skill calls it gitignored"
 area = ".claude/active-flow.toml"
 tags = ["publication"]
-status = "open"
+status = "resolved"
 created = 2026-11-05T21:08:37Z
 last_seen = 2026-11-05T21:08:37Z
 seen_count = 1
@@ -8106,6 +8160,8 @@ context = "The file is tracked and no ignore rule matches it, while flow-contrac
 base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
 evidence = [".claude/active-flow.toml:9"]
 related = ["B-47120642"]
+resolved = 2026-11-06
+resolution = "317314f: user chose relative worktrees. Writes store paths relative to the main worktree, legacy absolute values still read, the 53 tracked rows now hold a dot, and the skill is corrected. The old paths remain in git history."
 
 [[backlog]]
 id = "B-b4d3206e"
@@ -8113,7 +8169,7 @@ kind = "debt"
 summary = "the legacy .claude/active-flow file and a stray .o1-ops.json payload are still tracked"
 area = ".claude"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-05T21:08:37Z
 last_seen = 2026-11-05T21:08:37Z
 seen_count = 1
@@ -8126,6 +8182,8 @@ evidence = [
     ".claude/active-flow:1",
     ".claude/optimise-findings/.o1-ops.json:1",
 ]
+resolved = 2026-11-06
+resolution = "d729ca3: git rm of .claude/active-flow and .claude/optimise-findings/.o1-ops.json is staged."
 
 [[backlog]]
 id = "B-a162a412"
@@ -8136,7 +8194,7 @@ tags = [
     "doctor",
     "plan",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-05T22:29:56Z
 last_seen = 2026-11-05T22:29:56Z
 seen_count = 1
@@ -8147,6 +8205,8 @@ context = "plan.toml holds the approval stamp, yet a hand-corrupted one passes d
 base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
 evidence = ["tomlctl/src/flow/doctor.rs:439"]
 related = ["B-791c122f"]
+resolved = 2026-11-06
+resolution = "317314f: flow doctor has a plan-sidecar check when plan.toml exists, and tasks-exists is v2-aware."
 
 [[backlog]]
 id = "B-2bff69af"
@@ -8174,7 +8234,7 @@ kind = "bug"
 summary = "--verify-integrity on a writer is accepted and never checked: mutate_doc does not verify, while the flag's doc comment says writers honour it"
 area = "tomlctl/src/io.rs"
 tags = ["integrity"]
-status = "open"
+status = "resolved"
 created = 2026-11-05T22:29:56Z
 last_seen = 2026-11-05T22:29:56Z
 seen_count = 1
@@ -8185,6 +8245,8 @@ context = "After appending to a store, plan run skip --verify-integrity succeede
 base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
 evidence = ["tomlctl/src/cli/types/shared.rs:50"]
 related = ["B-11359954"]
+resolved = 2026-11-06
+resolution = "5069414: the mutate_doc family verifies before the write when --verify-integrity is set and the file exists."
 
 [[backlog]]
 id = "B-05cfc36b"
@@ -8195,7 +8257,7 @@ tags = [
     "workflows",
     "review-v2",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-05T22:29:56Z
 last_seen = 2026-11-05T22:29:56Z
 seen_count = 1
@@ -8206,6 +8268,8 @@ context = "Arrived cheap-in-file from a review lens and deferred, because /revie
 base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
 evidence = ["claude/workflows/review-v2.js:1"]
 related = ["B-be44a578"]
+resolved = 2026-11-06
+resolution = "448af31: the review-v2.js comments say only cell prompts build from args alone."
 
 [[backlog]]
 id = "B-0a9dbbc0"
@@ -8216,7 +8280,7 @@ tags = [
     "docs",
     "plan",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-05T22:29:56Z
 last_seen = 2026-11-05T22:29:56Z
 seen_count = 1
@@ -8225,6 +8289,8 @@ origin = "review"
 flow = "v2-planning"
 context = "Arrived cheap-in-file from a review lens and deferred, because /review does not edit. Carriers shell out to the installed binary, so a stale one answers unrecognized subcommand 'plan' with no pointer. Run cargo install --path tomlctl after pulling; add the sentence beside the Task store section's."
 base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
+resolved = 2026-11-06
+resolution = "993087d: CLAUDE.md names the reinstall the plan group needs."
 
 [[backlog]]
 id = "B-db9d459d"
@@ -8232,7 +8298,7 @@ kind = "debt"
 summary = "the capabilities sample in the tomlctl skill still prints version 0.16.0"
 area = "claude/skills/tomlctl/SKILL.md"
 tags = ["docs"]
-status = "open"
+status = "resolved"
 created = 2026-11-05T22:29:56Z
 last_seen = 2026-11-05T22:29:56Z
 seen_count = 1
@@ -8243,6 +8309,8 @@ context = "Arrived cheap-in-file from a review lens and deferred, because /revie
 base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
 evidence = ["claude/skills/tomlctl/SKILL.md:221"]
 related = ["B-54b2d71e"]
+resolved = 2026-11-06
+resolution = "993087d: the sample elides the version."
 
 [[backlog]]
 id = "B-756ba52d"
@@ -8250,7 +8318,7 @@ kind = "debt"
 summary = "active_flow_path is defined separately in flow/active.rs, flow/init.rs and flow/resolve.rs"
 area = "tomlctl/src/flow"
 tags = ["dry"]
-status = "open"
+status = "resolved"
 created = 2026-11-05T22:29:56Z
 last_seen = 2026-11-05T22:29:56Z
 seen_count = 1
@@ -8261,6 +8329,8 @@ context = "The registry path has three owners, and plan approve's register build
 base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
 evidence = ["tomlctl/src/flow/active.rs:58"]
 related = ["B-36e61c7b"]
+resolved = 2026-11-06
+resolution = "317314f: one active_flow_path(root) in flow/active.rs; init, resolve, doctor and list use it."
 
 [[backlog]]
 id = "B-4e42c741"
@@ -8271,7 +8341,7 @@ tags = [
     "plan",
     "tasks",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-06T07:35:46Z
 last_seen = 2026-11-06T07:35:46Z
 seen_count = 1
@@ -8282,6 +8352,8 @@ context = "plan stage now names tasks add-many for plan/spec-orphan because task
 base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
 evidence = ["tomlctl/src/tasks/add.rs:193"]
 related = ["B-6f16ace8"]
+resolved = 2026-11-06
+resolution = "eb51067: minting onto an orphan spec's ref raises an advisory naming what was discarded. No removal verb was added."
 
 [[backlog]]
 id = "B-8e08bd90"
@@ -8292,7 +8364,7 @@ tags = [
     "plan",
     "workflows",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-06T07:35:46Z
 last_seen = 2026-11-06T07:35:46Z
 seen_count = 1
@@ -8303,6 +8375,8 @@ context = "approve reads plan.runs only to list review skip reasons, so a step t
 base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
 evidence = ["tomlctl/src/plan/approve.rs:85"]
 related = ["B-02515e2e"]
+resolved = 2026-11-06
+resolution = "e2a53fb: user decided plan approve refuses a first approval while a run is open. --amend stays unrefused because it exists for use during execution."
 
 [[backlog]]
 id = "B-cd31c8b8"
@@ -8310,7 +8384,7 @@ kind = "bug"
 summary = "plan drift's normal_path folds a literal backslash, so a Unix row naming such a file never flags as affected"
 area = "tomlctl/src/plan/drift.rs"
 tags = ["plan"]
-status = "open"
+status = "resolved"
 created = 2026-11-06T07:35:46Z
 last_seen = 2026-11-06T07:35:46Z
 seen_count = 1
@@ -8321,6 +8395,8 @@ context = "changed_files reports the path verbatim since drift reads git log wit
 base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
 evidence = ["tomlctl/src/plan/drift.rs:105"]
 related = ["B-96ebd760"]
+resolved = 2026-11-06
+resolution = "e2a53fb: affected_tasks matches on the raw or normalised path, in drift only."
 
 [[backlog]]
 id = "B-eb845c85"
@@ -8349,7 +8425,7 @@ tags = [
     "workflows",
     "review-v2",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-06T07:35:46Z
 last_seen = 2026-11-06T07:35:46Z
 seen_count = 1
@@ -8363,6 +8439,8 @@ related = [
     "B-be44a578",
     "B-05cfc36b",
 ]
+resolved = 2026-11-06
+resolution = "448af31: agent-waves.md states the recovery cost and that passing only unsealed cells narrows it. No work-list mechanism was built."
 
 [[backlog]]
 id = "B-3a7d9e97"
@@ -8370,7 +8448,7 @@ kind = "debt"
 summary = "backlog-capture stages payloads with the Write tool at .claude/_backlog-*, a protected path that prompts or is denied"
 area = "claude/skills/backlog-capture"
 tags = ["permissions"]
-status = "open"
+status = "resolved"
 created = 2026-11-06T07:57:43Z
 last_seen = 2026-11-06T07:57:43Z
 seen_count = 1
@@ -8381,6 +8459,8 @@ context = "The idioms stage backlog rows under .claude/, which is never auto-app
 base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
 evidence = ["claude/skills/backlog-capture/SKILL.md:290"]
 related = ["B-43bd7e29"]
+resolved = 2026-11-06
+resolution = "993087d: the backlog-capture idioms stage payloads in the session scratchpad or system temp directory."
 
 [[backlog]]
 id = "B-c94abace"
@@ -8388,7 +8468,7 @@ kind = "annoyance"
 summary = "a refused review report --out suggests --allow-outside, a flag report does not take"
 area = "tomlctl/src/review/digest.rs"
 tags = ["review-v2"]
-status = "open"
+status = "resolved"
 created = 2026-11-06T07:57:43Z
 last_seen = 2026-11-06T07:57:43Z
 seen_count = 1
@@ -8399,6 +8479,8 @@ context = "review report falls through to guard_write_path, whose message names 
 base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
 evidence = ["tomlctl/src/review/digest.rs:161"]
 related = ["B-e4c1a22a"]
+resolved = 2026-11-06
+resolution = "675109b: a refused review report --out names the allowed roots rather than --allow-outside."
 
 [[backlog]]
 id = "B-66abc1d9"
@@ -8406,7 +8488,7 @@ kind = "bug"
 summary = "An approved flow whose brief.md was deleted raises plan/brief-missing, so post-approval plan stage still reports no blockers"
 area = "tomlctl/src/plan/stage.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-06T08:39:52Z
 last_seen = 2026-11-06T08:39:52Z
 seen_count = 1
@@ -8417,3 +8499,203 @@ context = "Arrived cheap-in-file and was deferred because the next hint needs a 
 base_sha = "14bdb096e53bb8505d1ecaee68b13ba4874a0ab7"
 evidence = ["tomlctl/src/plan/stage.rs:179"]
 related = ["B-02515e2e"]
+resolved = 2026-11-06
+resolution = "e2a53fb: post-approval plan stage blocks on plan/brief-missing and next names restoring the brief from the newest approval commit with git restore."
+
+[[backlog]]
+id = "B-ffe0feea"
+kind = "bug"
+summary = "flow-bootstrap normalises the __DONT_ASK__ sentinel to null, so the plansDirectory prompt cannot tell unset from don't ask"
+area = "claude/agents/flow-bootstrap.md"
+tags = []
+status = "open"
+created = 2026-11-06T09:41:06Z
+last_seen = 2026-11-06T09:41:06Z
+seen_count = 1
+dedup_id = "ffe0feeaa86bdc79"
+origin = "review-apply"
+flow = "v2-planning"
+context = "Read from the prompt skill's gate, not run: Don't ask again would re-fire the first-use prompt every run. A fix needs a distinct envelope value or a gate change across carriers."
+base_sha = "8a1f066989e22c774d837bda2794b14e520ebd6c"
+related = ["B-74b4558b"]
+
+[[backlog]]
+id = "B-9411e167"
+kind = "bug"
+summary = "plan-executor resolves the flow's plan_path, which differs from the reviewed plan when /review-plan-v2 is given another document"
+area = "claude/agents/plan-executor.md"
+tags = []
+status = "open"
+created = 2026-11-06T09:41:06Z
+last_seen = 2026-11-06T09:41:06Z
+seen_count = 1
+dedup_id = "9411e167a2ed3a02"
+origin = "review-apply"
+flow = "v2-planning"
+context = "The run's scope holds the reviewed path but the finder cell view does not expose it, so prior findings and preamble reads would target the flow's plan. A fix needs the path in the plan-family assignment or the cell prompt."
+base_sha = "8a1f066989e22c774d837bda2794b14e520ebd6c"
+related = ["B-23c14a52"]
+
+[[backlog]]
+id = "B-f8768506"
+kind = "debt"
+summary = "The Cold readers paragraph says a cold reader gets only the worker projection and the code, the same unenforced claim the challenger paragraph now qualifies"
+area = "docs/plans/v2-planning.md"
+tags = []
+status = "open"
+created = 2026-11-06T09:41:06Z
+last_seen = 2026-11-06T09:41:06Z
+seen_count = 1
+dedup_id = "f87685065e64a3f8"
+origin = "review-apply"
+flow = "v2-planning"
+context = "Arrived cheap-in-file and was deferred, because whether a cold reader should drop CLAUDE.md is a design call. Slice 2 should settle it."
+base_sha = "8a1f066989e22c774d837bda2794b14e520ebd6c"
+
+[[backlog]]
+id = "B-2222979c"
+kind = "debt"
+summary = "agents/schema.rs vocab takes parse and VOCABULARY as an unchecked pair, the shape removed from the plan store"
+area = "tomlctl/src/agents/schema.rs"
+tags = []
+status = "open"
+created = 2026-11-06T09:41:06Z
+last_seen = 2026-11-06T09:41:06Z
+seen_count = 1
+dedup_id = "2222979c8831829c"
+origin = "review-apply"
+flow = "v2-planning"
+context = "Three call sites can pair the wrong list with a parser. It defaults on absence through T: Default, so it needs its own bound rather than the plan store's Vocabulary trait."
+base_sha = "8a1f066989e22c774d837bda2794b14e520ebd6c"
+
+[[backlog]]
+id = "B-0a6a54c2"
+kind = "debt"
+summary = "flow doctor --fix --verify-integrity accepts the flag and its registry and artifacts repairs ignore it"
+area = "tomlctl/src/flow/doctor.rs"
+tags = []
+status = "open"
+created = 2026-11-06T09:41:06Z
+last_seen = 2026-11-06T09:41:06Z
+seen_count = 1
+dedup_id = "0a6a54c27fa13300"
+origin = "review-apply"
+flow = "v2-planning"
+context = "apply_active_prune and apply_tasks_key_backfill read and rewrite without verifying, so the writer contract on the flag does not hold for this verb. A repair verb may legitimately be exempt, which needs deciding; document the exemption or verify."
+base_sha = "8a1f066989e22c774d837bda2794b14e520ebd6c"
+related = ["B-81b3ee0b"]
+
+[[backlog]]
+id = "B-328e2b03"
+kind = "question"
+summary = "write_serialized_with_sidecar's recovery branch stamps the on-disk TOML and bypasses the CRLF refusal"
+area = "tomlctl/src/io.rs"
+tags = []
+status = "open"
+created = 2026-11-06T09:41:06Z
+last_seen = 2026-11-06T09:41:06Z
+seen_count = 1
+dedup_id = "328e2b0316310a74"
+origin = "review-apply"
+flow = "v2-planning"
+context = "After a failed TOML persist on a CRLF copy it can stamp a CRLF digest. It is rare and restores a verifiable pair, but it is one stamping path outside the policy. Decide whether it should refuse too."
+base_sha = "8a1f066989e22c774d837bda2794b14e520ebd6c"
+related = ["B-08c658a1"]
+
+[[backlog]]
+id = "B-cdd3e005"
+kind = "debt"
+summary = "README says the sidecar is written after the primary rename, while flow.md and the task-store skill say it is persisted first"
+area = "tomlctl/README.md"
+tags = []
+status = "open"
+created = 2026-11-06T09:41:06Z
+last_seen = 2026-11-06T09:41:06Z
+seen_count = 1
+dedup_id = "cdd3e005c9be688b"
+origin = "review-apply"
+flow = "v2-planning"
+context = "One description of the write order is wrong, and recovery reasoning depends on it. Read write_serialized_with_sidecar in tomlctl/src/io.rs and correct the wrong document."
+base_sha = "8a1f066989e22c774d837bda2794b14e520ebd6c"
+
+[[backlog]]
+id = "B-326ca3d6"
+kind = "debt"
+summary = "the --verify-integrity matrix has no rows for the backlog, inputs and review read verbs"
+area = "claude/skills/tomlctl/references/flow.md"
+tags = []
+status = "open"
+created = 2026-11-06T09:41:06Z
+last_seen = 2026-11-06T09:41:06Z
+seen_count = 1
+dedup_id = "326ca3d66ae61b74"
+origin = "review-apply"
+flow = "v2-planning"
+context = "The matrix reads as complete, and tests/backlog_write.rs shows the backlog read verbs thread the flag. Add the rows from the clap args in tomlctl/src/cli/types."
+base_sha = "8a1f066989e22c774d837bda2794b14e520ebd6c"
+related = ["B-3c59ed80"]
+
+[[backlog]]
+id = "B-3611ef0d"
+kind = "bug"
+summary = "After approval, a changed brief makes plan stage name plan approve --amend even when an unanswered decision or another check error means amend will refuse"
+area = "tomlctl/src/plan/stage.rs"
+tags = []
+status = "open"
+created = 2026-11-06T09:41:06Z
+last_seen = 2026-11-06T09:41:06Z
+seen_count = 1
+dedup_id = "3611ef0db38f91cf"
+origin = "review-apply"
+flow = "v2-planning"
+context = "Same shape as the first-approval case, which is fixed only before approval. A carrier following next hits a refusal stage never warned about. Run plan check before acting on the amend hint."
+base_sha = "8a1f066989e22c774d837bda2794b14e520ebd6c"
+related = ["B-02515e2e"]
+
+[[backlog]]
+id = "B-bffce507"
+kind = "debt"
+summary = "flow/active.rs canonical_or_given repeats the nearest-existing-ancestor walk of the private io::canonical_anchored"
+area = "tomlctl/src/flow/active.rs"
+tags = []
+status = "open"
+created = 2026-11-06T09:41:06Z
+last_seen = 2026-11-06T09:41:06Z
+seen_count = 1
+dedup_id = "bffce507a57e6a91"
+origin = "review-apply"
+flow = "v2-planning"
+context = "io.rs was outside the cluster that added it. Exposing canonical_anchored as pub(crate) would remove the copy."
+base_sha = "8a1f066989e22c774d837bda2794b14e520ebd6c"
+
+[[backlog]]
+id = "B-507f9885"
+kind = "direction"
+summary = "flow doctor without --fix says nothing about machine-local registry worktrees, so foreign rows surface only when someone runs --fix"
+area = "tomlctl/src/flow/doctor.rs"
+tags = []
+status = "open"
+created = 2026-11-06T09:41:06Z
+last_seen = 2026-11-06T09:41:06Z
+seen_count = 1
+dedup_id = "507f988579ae0b79"
+origin = "review-apply"
+flow = "v2-planning"
+context = "An aggregated advisory on warnings would make remaining absolute rows visible. It was left out to avoid noise in every bootstrap envelope, and a pre-commit check on the registry is the alternative."
+base_sha = "8a1f066989e22c774d837bda2794b14e520ebd6c"
+
+[[backlog]]
+id = "B-18f4652c"
+kind = "debt"
+summary = "the tomlctl skill and README call flow resolve a 5-step algorithm while its clap help says 6-step"
+area = "claude/skills/tomlctl/SKILL.md"
+tags = []
+status = "open"
+created = 2026-11-06T09:41:06Z
+last_seen = 2026-11-06T09:41:06Z
+seen_count = 1
+dedup_id = "18f4652c0d0added"
+origin = "review-apply"
+flow = "v2-planning"
+context = "Readers get two step counts for one verb. Which is right was not checked; read tomlctl/src/flow/resolve.rs and correct the wrong text, or drop the count."
+base_sha = "8a1f066989e22c774d837bda2794b14e520ebd6c"

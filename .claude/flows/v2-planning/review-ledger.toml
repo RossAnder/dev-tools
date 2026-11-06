@@ -265,6 +265,72 @@ dropped_count = 0
 downgraded_count = 0
 dedup_id = "45ca31c3315a5978"
 
+[[vet_events]]
+timestamp = "2026-11-06T09:41:06Z"
+command = "review-apply"
+agent_index = 3
+lens = "implement-lite"
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "Backlog rows B-aca96d19, B-cd31c8b8: read both diffs; both match the row and the surrounding style."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-06T09:41:06Z"
+command = "review-apply"
+agent_index = 4
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "Backlog row B-3e764c0c: read the diff; the attribute keeps the variant the ungated match needs."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-06T09:41:06Z"
+command = "review-apply"
+agent_index = 5
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "Backlog row B-c94abace: read the diff; the rewording is scoped to report. It matches on the shared message's text, which the test pins."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-06T09:41:06Z"
+command = "review-apply"
+agent_index = 7
+lens = "implement-lite"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Backlog rows B-76f24d6a, B-db9d459d, B-eeb72de6: read all three doc diffs; each is the specified edit."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-06T09:41:06Z"
+command = "review-apply"
+agent_index = 13
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "Backlog row B-81c1c53b: read the test list diff; bundles confirmed by the passing tests. B-079a7625 escalated cleanly as a cross-cut."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-06T09:41:06Z"
+command = "review-apply"
+agent_index = 16
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "Backlog row B-079a7625: read the diff; both entries read the validators' own constants."
+dedup_id = "45ca31c3315a5978"
+
 [[items]]
 id = "R1"
 file = ".gitattributes"
@@ -803,7 +869,7 @@ resolution = "Uncommitted. The method and review reference say old is never requ
 id = "R24"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "claude/skills/tomlctl/references/plan.md"
 line = 273
@@ -818,12 +884,14 @@ evidence = [
     "claude/skills/tomlctl/references/plan.md:300",
 ]
 dedup_id = "f68b074857fac0e8"
+resolved = 2026-11-06
+resolution = "e2a53fb: plan run start takes optional --session, stored on the run row and exposed in plan view --for digest; plan.md states the order: call Workflow, read the run id, then record it. A one-agent step has no run id."
 
 [[items]]
 id = "R25"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "docs/plans/v2-planning.md"
 line = 296
@@ -838,12 +906,14 @@ evidence = [
     "tomlctl/src/io.rs repo_or_cwd_root",
 ]
 dedup_id = "1dd9204c1f531a34"
+resolved = 2026-11-06
+resolution = "448af31: v2-planning.md gained a Worktree isolation rule: baseRef head, pre-rendered projections or TOMLCTL_ROOT (marked untested), store writes in the primary checkout."
 
 [[items]]
 id = "R26"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "docs/plans/v2-planning.md"
 line = 292
@@ -857,12 +927,14 @@ evidence = [
     "https://code.claude.com/docs/en/workflows.md:353, fetched 2026-11-06",
 ]
 dedup_id = "d79bc72c6ee549e5"
+resolved = 2026-11-06
+resolution = "448af31: Slice 2 now names plan-investigator and a stdin plan note verb. ; deviated: justified by needing no Write tool under Bash(tomlctl *) instead of the protected path — notes live under docs/flows, outside .claude."
 
 [[items]]
 id = "R27"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "docs/ideas/v2-pipeline.md"
 line = 32
@@ -873,12 +945,14 @@ summary = "No Agent-tool fallback passes opt-in, but Workflow rerun semantics ar
 description = "Carrier-launched Workflows satisfy the opt-in rule. The exposure is execution: on a relaunch, a failed agent reruns and so does every agent started after it, even completed ones, and a run cannot stop for the user. Add three rules to the engine contract: one Workflow per milestone, so the drain replan is possible; never resumeFromRunId for writers, each launch taking the ready set in args from tasks ready; and Interrupt (plan line 262) means a parked branch plus needs_human at run end, not a mid-run stop. disableWorkflows also exists, so no fallback needs a pre-flight hard stop. Run review-v2-pipeline once before committing further to it."
 evidence = ["https://code.claude.com/docs/en/workflows.md:352,378, fetched 2026-11-06"]
 dedup_id = "af33af47be790e3f"
+resolved = 2026-11-06
+resolution = "448af31: v2-planning.md states one Workflow per milestone, no resumeFromRunId for writers, Interrupt as a parked branch plus needs_human at run end; v2-pipeline.md points to it. ; deviated: added that a writer's task must tolerate an earlier partial attempt — the runtime restarts a stalled agent with its file changes left in place."
 
 [[items]]
 id = "R28"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "tomlctl/src/cli/types/plan.rs"
 line = 193
@@ -894,6 +968,8 @@ evidence = [
     "https://code.claude.com/docs/en/workflows.md:374, fetched 2026-11-06",
 ]
 dedup_id = "cfc1e68507d38f6e"
+resolved = 2026-11-06
+resolution = "partial: --workflow and --args-hash are optional on plan run start, omitted from the row when empty, with existing stores readable / pending: plan_rev digest on the run row, excluding run rows from its input"
 
 [[items]]
 id = "R29"
@@ -920,7 +996,7 @@ resolution = "9914376: Prove row now says tools in the carrier and a Workflow on
 id = "R30"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "docs/plans/v2-planning.md"
 line = 60
@@ -935,6 +1011,8 @@ evidence = [
     "backlog B-c2c975d1",
 ]
 dedup_id = "762fa40e9b315276"
+resolved = 2026-11-06
+resolution = "448af31: v2-planning.md states omitClaudeMd for the challenger and blind finders, the git status snapshot, prompt-only exclusion unless a hook is proven, and a direct replay test. ; deviated: the docs do not conflict as the finding said; the test stays because Workflow agents are undocumented and subdirectory CLAUDE.md files still load."
 
 [[items]]
 id = "R31"
@@ -1117,7 +1195,7 @@ resolution = "b2b9ed1: Post-approval plan stage adds the plan/brief-changed bloc
 id = "R38"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "tomlctl/src/plan/schema.rs"
 line = 105
@@ -1129,6 +1207,8 @@ summary = "Needs a plan: no verb removes a decision, contract, handover or miles
 description = "needs-plan. references/plan.md:139 and the field's doc comment describe removed ids, yet items remove is refused on plan.toml and --raw-store is for repairs only. A milestone added by mistake cannot be dropped, and an empty --gate means keep, so plan gate keeps listing obsolete commands under stops. Decisions needed: which records are removable, tombstones on an audited store, and what happens to rows naming a removed milestone. Drop this if records are meant to be permanent, retired by vetoed or done."
 evidence = ["lens run: items remove on plan.toml refused as a verb-owned store; with --raw-store the next mint skips the id"]
 dedup_id = "a92bc30709dd2bcc"
+resolved = 2026-11-06
+resolution = "e2a53fb: User decided plan records are permanent, retired by vetoed or done, so no removal verbs; the id_high_water doc and plan-store.md now say so. Added plan milestone update --clear-gate."
 
 [[items]]
 id = "R39"
@@ -1263,7 +1343,7 @@ resolution = "b2b9ed1: BatchRow and Patch hold one RowChannel with Option<SpecPa
 id = "R44"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "tomlctl/src/plan/open.rs"
 line = 82
@@ -1278,6 +1358,8 @@ evidence = [
     "tomlctl/src/flow/init.rs init_flow",
 ]
 dedup_id = "f75084a05c999da8"
+resolved = 2026-11-06
+resolution = "317314f: init_flow returns a typed InitOutcome for the live path, with dispatch rendering the envelope; plan open reads flow.created. flow init's JSON is unchanged."
 
 [[items]]
 id = "R45"
@@ -1318,7 +1400,7 @@ resolution = "b2b9ed1: store::flow_dir used in stage, view and approve; BRIEF_FI
 id = "R46"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "tomlctl/src/tasks/remove.rs"
 line = 41
@@ -1334,12 +1416,14 @@ evidence = [
     "tomlctl/src/tasks/update.rs:1690",
 ]
 dedup_id = "7a8edfe0ef060de8"
+resolved = 2026-11-06
+resolution = "eb51067: remove(path, integrity, id, force, reason) is the one production function; the test-only wrapper is gone."
 
 [[items]]
 id = "R47"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "tomlctl/src/plan/schema.rs"
 line = 705
@@ -1358,6 +1442,13 @@ instances = [
     "tomlctl/src/plan/records.rs:193",
     "tomlctl/src/plan/records.rs:200",
     "tomlctl/src/plan/records.rs:303",
+    "tomlctl/src/plan/records.rs:183",
+    "tomlctl/src/plan/records.rs:190",
+    "tomlctl/src/plan/records.rs:294",
+    "tomlctl/src/plan/schema.rs:485",
+    "tomlctl/src/plan/schema.rs:573",
+    "tomlctl/src/plan/schema.rs:627",
+    "tomlctl/src/plan/schema.rs:682",
 ]
 sweep = [
     'vocab\(',
@@ -1365,6 +1456,8 @@ sweep = [
 ]
 enumeration = "complete"
 dedup_id = "7efd3c6c6b491924"
+resolved = 2026-11-06
+resolution = "e2a53fb: vocabulary! generates a Vocabulary impl and vocab and vocab_value are generic over it; all eight plan call sites converted. agents/schema.rs has its own helper, captured separately in the backlog."
 
 [[items]]
 id = "R48"
@@ -1499,7 +1592,7 @@ resolution = "b2b9ed1: store::load goes through require_open, so every plan verb
 id = "R53"
 first_flagged = 2026-11-05
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "v2-planning"
 file = "tomlctl/src/plan/schema.rs"
 line = 232
@@ -1511,6 +1604,8 @@ summary = "A plan store that parses but fails schema validation is kind=other wi
 description = "A hand-edited vocabulary value fires on every verb, writers included, and a caller cannot tell which store failed. Fix: wrap schema errors as kind=parse with the path in store::load and store::mutate. The tasks store behaves the same, so this may be accepted convention for tool-owned stores."
 evidence = ["lens run: decision D1: unknown provenance, kind=other, file null"]
 dedup_id = "02d5c16dac6b0782"
+resolved = 2026-11-06
+resolution = "e2a53fb: plan store load and mutate tag schema failures kind=parse with the path. The tasks store is unchanged."
 
 [[items]]
 id = "R54"
@@ -1710,3 +1805,20 @@ evidence = [
 dedup_id = "d57f45c46ac9f47f"
 resolved = 2026-11-06
 resolution = "4705b18: One quoting warning for --command and --gate added to plan.md; no flags added."
+
+[[items]]
+id = "R63"
+file = "tomlctl/src/cli/types/plan.rs"
+line = 193
+symbol = "PlanRunStartArgs"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "pending parts of R28: plan_rev digest stored on the run row, excluding run rows from its input"
+description = "A digest over plan.toml changes whenever a run row is written, so plan_rev needs a defined input set before it can detect stale work. A carrier would compare it on re-entry and start a fresh run on a mismatch."
+first_flagged = 2026-11-06
+rounds = 1
+related = ["R28"]
+status = "open"
+flow = "v2-planning"
+dedup_id = "51a479e209c7dab6"

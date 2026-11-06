@@ -1408,3 +1408,13 @@ rationale = "A broken verdict has several causes, and the evidence for which one
 type = "deviation"
 task_ref = "implement-plan-probes"
 date = 2026-11-06
+
+[[items]]
+id = "E111"
+agent = "plan-update"
+task_ref = "add-the-plan-store"
+summary = "A /review-apply run changed verbs the plan's tasks delivered, on branch v2-planning-apply-fixes, uncommitted when recorded. plan run start gained optional --session and made --workflow and --args-hash optional. plan milestone update gained --clear-gate. plan approve refuses a first approval while a run is open, with --amend exempt. plan stage blocks on an unanswered surfaced decision and on a missing brief after approval. Writers honour --verify-integrity. refresh_sidecar refuses a .toml holding CRLF. The active-flow registry stores worktrees relative to the main worktree. tasks.toml gained an optional minted_refs key. The plan document gained engine-contract rules for worktree isolation, one Workflow per milestone, plan-investigator with a plan note verb, and omitClaudeMd."
+original_intent = "Run records required a workflow and args hash and could not name a session; plan records had no stated retirement rule; approve and stage could disagree; the registry held absolute paths; digests and refusals had no line-endings policy."
+rationale = "Review findings and backlog rows from this flow. The user decided plan records are permanent, sidecar digests stay over raw bytes with each repo resolving CRLF through its own LF pin, registry worktrees are relative, and approve refuses an open run while --amend stays exempt because it is used during execution. minted_refs was confirmed because extending last_import_refs only moved the failure to the re-import, and tasks add refuses audited stores, so a v1 flow has no audit trail to read. plan_rev stays open as R63, since a digest over plan.toml would change whenever a run row is written."
+type = "deviation"
+date = 2026-11-06
