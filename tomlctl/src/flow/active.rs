@@ -9,9 +9,15 @@
 //! last_used = "2026-05-08T14:32:00Z"
 //! [active.binding]
 //! branch = "feat/x"
-//! worktree = "/home/user/dev/repo"
+//! worktree = "."
 //! scope = ["src/foo/**"]
 //! ```
+//!
+//! The registry is tracked, so `binding.worktree` is stored relative to the
+//! main worktree's root (`registry_anchor`) with `/` separators: `.` for the
+//! primary checkout, `../x` for a sibling linked worktree. Legacy absolute
+//! values stay readable. One from another machine matches nothing, and a value
+//! under the anchor is rewritten by `touch` or `flow doctor --fix`.
 //!
 //! Upserts go through `io::with_exclusive_lock` + `read_toml_with_source` +
 //! `write_doc_unless_unchanged` so the lock-held read+write window matches
@@ -35,6 +41,7 @@
 use anyhow::{Context, Result};
 use serde_json::{Value as JsonValue, json};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use toml::Value as TomlValue;
 
 use crate::cli::{
@@ -51,13 +58,173 @@ use crate::io::{
 use crate::output::{print_json_compact, print_json_line};
 use crate::time::now_rfc3339;
 
-/// Resolve `<repo-or-cwd-root>/.claude/active-flow.toml`. The root honours
-/// `TOMLCTL_ROOT` first (test sandbox), then the repository top level, then
-/// CWD — `io::repo_or_cwd_root` decides how the top level is found, for every
-/// other write path too.
-fn active_flow_path() -> Result<PathBuf> {
-    let root = repo_or_cwd_root()?;
-    Ok(root.join(".claude").join("active-flow.toml"))
+/// `<root>/.claude/active-flow.toml`, for a `root` from `io::repo_or_cwd_root`.
+pub(crate) fn active_flow_path(root: &Path) -> PathBuf {
+    root.join(".claude").join("active-flow.toml")
+}
+
+/// What stored worktrees are relative to: the main worktree, the parent of the
+/// git common dir, because every linked worktree holds a copy of the tracked
+/// registry. `root` itself when git cannot answer, `root` is not a top level
+/// (`TOMLCTL_ROOT` inside a repo), or the common dir is no `.git` (submodule, bare).
+pub(crate) fn registry_anchor(root: &Path) -> PathBuf {
+    main_worktree(root).unwrap_or_else(|| root.to_path_buf())
+}
+
+fn main_worktree(root: &Path) -> Option<PathBuf> {
+    let out = Command::new("git")
+        .current_dir(root)
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_COMMON_DIR")
+        .args(["rev-parse", "--show-toplevel", "--git-common-dir"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8(out.stdout).ok()?;
+    let mut lines = text.lines();
+    let top = Path::new(lines.next()?).canonicalize().ok()?;
+    if top != root.canonicalize().ok()? {
+        return None;
+    }
+    let common = root.join(lines.next()?).canonicalize().ok()?;
+    if common.file_name()? != ".git" {
+        return None;
+    }
+    common.parent().map(Path::to_path_buf)
+}
+
+/// Absolute on some platform but not this one, which `Path::is_absolute` calls
+/// relative: joining `C:/x` onto a Linux anchor would name a path under it.
+fn is_foreign_absolute(raw: &str) -> bool {
+    if Path::new(raw).is_absolute() {
+        return false;
+    }
+    let bytes = raw.as_bytes();
+    raw.starts_with(['/', '\\'])
+        || (bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':')
+}
+
+/// `path` with its links resolved, tolerating a tail that does not exist yet;
+/// `path` as given when no ancestor resolves.
+fn canonical_or_given(path: &Path) -> PathBuf {
+    let mut missing = Vec::new();
+    let mut existing = path;
+    loop {
+        if let Ok(mut resolved) = existing.canonicalize() {
+            resolved.extend(missing.iter().rev());
+            return resolved;
+        }
+        let (Some(name), Some(parent)) = (existing.file_name(), existing.parent()) else {
+            return path.to_path_buf();
+        };
+        missing.push(name);
+        existing = parent;
+    }
+}
+
+/// `path` relative to `base`, both canonical, `/`-separated. `None` across
+/// drives, where no relative spelling exists.
+fn relative_from(base: &Path, path: &Path) -> Option<String> {
+    if base.components().next() != path.components().next() {
+        return None;
+    }
+    let shared = base
+        .components()
+        .zip(path.components())
+        .take_while(|(a, b)| a == b)
+        .count();
+    let mut parts: Vec<&str> = vec![".."; base.components().count() - shared];
+    for part in path.components().skip(shared) {
+        parts.push(part.as_os_str().to_str()?);
+    }
+    if parts.is_empty() {
+        return Some(".".to_string());
+    }
+    Some(parts.join("/"))
+}
+
+/// A `--worktree` value as the registry stores it. A relative value is taken as
+/// already relative to the anchor, as `io::relativise_under` treats a relative
+/// path. A value with no relative spelling stays as given.
+pub(crate) fn stored_worktree(root: &Path, given: &Path) -> String {
+    let raw = given.to_string_lossy();
+    if is_foreign_absolute(&raw) {
+        return raw.into_owned();
+    }
+    if given.is_absolute() {
+        let anchor = canonical_or_given(&registry_anchor(root));
+        return relative_from(&anchor, &canonical_or_given(given))
+            .unwrap_or_else(|| raw.into_owned());
+    }
+    let slashed = raw.replace('\\', "/");
+    let trimmed = slashed.trim_start_matches("./").trim_end_matches('/');
+    if trimmed.is_empty() {
+        ".".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+/// What a `flow resolve --worktree` value is compared against each entry as.
+pub(crate) struct WorktreeQuery {
+    anchor: PathBuf,
+    want: Option<PathBuf>,
+}
+
+impl WorktreeQuery {
+    pub(crate) fn new(root: &Path, want: &Path) -> Self {
+        let anchor = registry_anchor(root);
+        let want = resolve_worktree(&anchor, want);
+        Self { anchor, want }
+    }
+
+    pub(crate) fn matches(&self, stored: &Path) -> bool {
+        self.want.is_some() && resolve_worktree(&self.anchor, stored) == self.want
+    }
+}
+
+/// `None` for a foreign absolute value, which names nothing on this machine.
+fn resolve_worktree(anchor: &Path, value: &Path) -> Option<PathBuf> {
+    if is_foreign_absolute(&value.to_string_lossy()) {
+        return None;
+    }
+    Some(canonical_or_given(&anchor.join(value)))
+}
+
+/// The relative spelling of a stored absolute value resolving at or under
+/// `anchor`. `None` for anything else, so a value from another machine, or a
+/// sibling path this machine cannot vouch for, is left as it is.
+pub(crate) fn normalised_worktree(anchor: &Path, stored: &str) -> Option<String> {
+    if !Path::new(stored).is_absolute() {
+        return None;
+    }
+    let relative = relative_from(
+        &canonical_or_given(anchor),
+        &canonical_or_given(Path::new(stored)),
+    )?;
+    (relative != ".." && !relative.starts_with("../")).then_some(relative)
+}
+
+/// Rewrites one `[[active]]` row's `binding.worktree` per `normalised_worktree`;
+/// `true` when the row changed.
+pub(crate) fn normalise_entry_worktree(entry: &mut TomlValue, anchor: &Path) -> bool {
+    let Some(slot) = entry
+        .get_mut("binding")
+        .and_then(|binding| binding.get_mut("worktree"))
+    else {
+        return false;
+    };
+    let Some(relative) = slot
+        .as_str()
+        .and_then(|stored| normalised_worktree(anchor, stored))
+    else {
+        return false;
+    };
+    *slot = TomlValue::String(relative);
+    true
 }
 
 /// Resolve the legacy single-line pointer at `<root>/.claude/active-flow`
@@ -219,14 +386,15 @@ pub(crate) fn find_slug_index(arr: &[TomlValue], slug: &str) -> Option<usize> {
 /// paths agree on the same value). Empty-string optionals are omitted; an
 /// absent binding (no branch / no worktree / no scope) yields a row with
 /// no `[active.binding]` table, matching the schema's "binding fields are
-/// all optional" contract. `pub(crate)` so `flow::init`'s
+/// all optional" contract. `worktree` is already the stored spelling, from
+/// `stored_worktree`. `pub(crate)` so `flow::init`'s
 /// active-flow-registration path uses the same builder rather than a
 /// duplicate.
 pub(crate) fn build_entry(
     slug: &str,
     last_used: &str,
     branch: Option<&str>,
-    worktree: Option<&Path>,
+    worktree: Option<&str>,
     scope: &[String],
 ) -> TomlValue {
     let mut entry = toml::map::Map::new();
@@ -240,13 +408,7 @@ pub(crate) fn build_entry(
         binding.insert("branch".to_string(), TomlValue::String(b.to_string()));
     }
     if let Some(w) = worktree {
-        // Display-form path is fine — the schema specifies "absolute path of
-        // git top-level"; we surface whatever the caller passed without
-        // canonicalising (tests rely on byte-identical input/output).
-        binding.insert(
-            "worktree".to_string(),
-            TomlValue::String(w.display().to_string()),
-        );
+        binding.insert("worktree".to_string(), TomlValue::String(w.to_string()));
     }
     if !scope.is_empty() {
         let arr: Vec<TomlValue> = scope.iter().map(|s| TomlValue::String(s.clone())).collect();
@@ -305,7 +467,8 @@ pub(crate) fn upsert_entry(
     entry: TomlValue,
     integrity_args: &WriteIntegrityArgs,
 ) -> Result<()> {
-    mutate_active(&active_flow_path()?, integrity_args, |doc| {
+    let file = active_flow_path(&repo_or_cwd_root()?);
+    mutate_active(&file, integrity_args, |doc| {
         let arr = active_array_mut(doc)?;
         match find_slug_index(arr, slug) {
             Some(idx) => arr[idx] = entry,
@@ -365,7 +528,7 @@ pub(crate) fn dispatch(op: ActiveOp) -> Result<()> {
 }
 
 fn list(integrity: ReadIntegrityArgs) -> Result<()> {
-    let file = active_flow_path()?;
+    let file = active_flow_path(&repo_or_cwd_root()?);
     let legacy_pointer = maybe_warn_legacy(&file)?;
     let opts = read_integrity_opts(&integrity);
     let doc = read_doc_or_default(&file, opts)?;
@@ -393,7 +556,9 @@ fn add(
 ) -> Result<()> {
     validate_slug(&slug)?;
     let now = now_rfc3339();
-    let new_entry = build_entry(&slug, &now, branch.as_deref(), worktree.as_deref(), &scope);
+    let root = repo_or_cwd_root()?;
+    let stored = worktree.as_deref().map(|w| stored_worktree(&root, w));
+    let new_entry = build_entry(&slug, &now, branch.as_deref(), stored.as_deref(), &scope);
     if dry_run {
         let envelope = json!({
             "ok": true,
@@ -418,7 +583,7 @@ fn add(
 
 fn remove(slug: String, dry_run: bool, integrity: WriteIntegrityArgs) -> Result<()> {
     validate_slug(&slug)?;
-    let file = active_flow_path()?;
+    let file = active_flow_path(&repo_or_cwd_root()?);
     if dry_run {
         // Compute the would-be-removed entry by reading the doc without
         // touching disk. Use an empty default when the file is missing,
@@ -469,7 +634,9 @@ fn remove(slug: String, dry_run: bool, integrity: WriteIntegrityArgs) -> Result<
 
 fn touch(slug: String, dry_run: bool, integrity: WriteIntegrityArgs) -> Result<()> {
     validate_slug(&slug)?;
-    let file = active_flow_path()?;
+    let root = repo_or_cwd_root()?;
+    let file = active_flow_path(&root);
+    let anchor = registry_anchor(&root);
     let now = now_rfc3339();
     if dry_run {
         let read_opts = IntegrityOpts {
@@ -487,11 +654,12 @@ fn touch(slug: String, dry_run: bool, integrity: WriteIntegrityArgs) -> Result<(
             .map(|e| {
                 // Project the entry forward to what touch WOULD produce,
                 // so the dry-run's `new_entry` reflects the post-touch
-                // shape rather than the pre-touch one. Other fields are
-                // preserved byte-for-byte from the existing entry.
+                // shape rather than the pre-touch one.
                 let mut tbl = e.as_table().cloned().unwrap_or_default();
                 tbl.insert("last_used".to_string(), TomlValue::String(now.clone()));
-                entry_to_json(&TomlValue::Table(tbl))
+                let mut projected = TomlValue::Table(tbl);
+                normalise_entry_worktree(&mut projected, &anchor);
+                entry_to_json(&projected)
             })
             .unwrap_or(JsonValue::Null);
         let envelope = json!({
@@ -513,6 +681,7 @@ fn touch(slug: String, dry_run: bool, integrity: WriteIntegrityArgs) -> Result<(
             && let Some(tbl) = arr[idx].as_table_mut()
         {
             tbl.insert("last_used".to_string(), TomlValue::String(now.clone()));
+            normalise_entry_worktree(&mut arr[idx], &anchor);
             touched = true;
         }
         Ok(())

@@ -84,6 +84,45 @@ fn tasks_store_path(dir: &tempfile::TempDir, slug: &str) -> PathBuf {
 }
 
 // ---------------------------------------------------------------------------
+// registry worktree
+// ---------------------------------------------------------------------------
+
+/// `--worktree` reaches the tracked registry relative to the root, and the
+/// dry-run reports the spelling the live path writes.
+#[test]
+fn init_stores_the_worktree_relative_to_the_root() {
+    let (dir, plan, _context) = fresh_root("feature-x");
+    let plan_str = plan.to_string_lossy().to_string();
+    let worktree = dir.path().to_string_lossy().to_string();
+    let args = [
+        "--slug",
+        "feature-x",
+        "--plan",
+        &plan_str,
+        "--worktree",
+        &worktree,
+    ];
+
+    let mut dry = args.to_vec();
+    dry.push("--dry-run");
+    let preview = json_stdout(&run_init(&dir, &dry).success());
+    assert_eq!(
+        preview["would_change"]["active_registration"]["binding"]["worktree"],
+        serde_json::json!("."),
+        "{preview}"
+    );
+
+    run_init(&dir, &args).success();
+    let raw = fs::read_to_string(dir.path().join(".claude").join("active-flow.toml")).unwrap();
+    let doc: toml::Value = toml::from_str(&raw).unwrap();
+    assert_eq!(
+        doc["active"][0]["binding"]["worktree"].as_str(),
+        Some("."),
+        "{raw}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // fresh init
 // ---------------------------------------------------------------------------
 

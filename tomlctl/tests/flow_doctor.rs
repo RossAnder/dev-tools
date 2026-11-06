@@ -951,6 +951,211 @@ fn tampered_sidecar_regenerated_under_fix() {
 }
 
 // ---------------------------------------------------------------------------
+// Acceptance: a CRLF working copy is reported and never stamped.
+// ---------------------------------------------------------------------------
+
+/// Rewrite `file` with CRLF line endings while its sidecar keeps the LF digest,
+/// the state a CRLF checkout of an LF-stamped commit leaves behind.
+fn convert_to_crlf(file: &Path) {
+    let lf = fs::read_to_string(file).unwrap();
+    fs::write(file, lf.replace('\n', "\r\n")).unwrap();
+}
+
+#[test]
+fn a_crlf_store_matching_once_folded_names_line_endings_in_the_detail() {
+    let (_g, root) = fresh_root();
+    seed_clean_flow(&root, "feature-x");
+    seed_active_flow_registry(&root, &["feature-x"]);
+    convert_to_crlf(&context_path(&root, "feature-x"));
+
+    let v = run_doctor(&root, &["--slug", "feature-x"]);
+    let chk = find_check(&v, "context-sidecar", Some("feature-x"));
+    assert_eq!(chk["ok"], JsonValue::Bool(false), "{chk}");
+    let detail = chk["detail"].as_str().unwrap();
+    assert!(detail.starts_with("sidecar digest mismatch"), "{detail}");
+    assert!(detail.contains("line endings"), "{detail}");
+    assert!(detail.contains(".gitattributes"), "{detail}");
+    assert!(!detail.contains('\n'), "{detail}");
+
+    // Control: an LF store with a wrong digest is the same failure with no clause.
+    let record = execution_record_path(&root, "feature-x");
+    fs::write(
+        sidecar_path(&record),
+        format!("{}  execution-record.toml\n", "0".repeat(64)),
+    )
+    .unwrap();
+    let v = run_doctor(&root, &["--slug", "feature-x"]);
+    let chk = find_check(&v, "execution-record-sidecar", Some("feature-x"));
+    assert!(
+        !chk["detail"].as_str().unwrap().contains("line endings"),
+        "{chk}"
+    );
+}
+
+/// The refused store's fix fails alone: the next stale store is still repaired,
+/// and the process still exits 0 with its envelope.
+#[test]
+fn fix_reports_the_refused_crlf_store_and_continues_to_the_next() {
+    let (_g, root) = fresh_root();
+    seed_clean_flow(&root, "feature-x");
+    seed_active_flow_registry(&root, &["feature-x"]);
+
+    let context = context_path(&root, "feature-x");
+    convert_to_crlf(&context);
+    let context_sidecar = fs::read(sidecar_path(&context)).unwrap();
+    let record = execution_record_path(&root, "feature-x");
+    fs::remove_file(sidecar_path(&record)).unwrap();
+
+    let v = run_doctor(&root, &["--slug", "feature-x", "--fix"]);
+    let fixes = v["fixes_applied"].as_array().expect("fixes must be array");
+    let about = |name: &str| {
+        fixes
+            .iter()
+            .find(|f| f["action"].as_str().unwrap_or("").contains(name))
+            .unwrap_or_else(|| panic!("no fix about {name}: {v}"))
+    };
+
+    let refused = about("context.toml");
+    assert_eq!(refused["ok"], JsonValue::Bool(false), "{refused}");
+    let action = refused["action"].as_str().unwrap();
+    assert!(action.contains(".gitattributes"), "{action}");
+    assert!(action.contains("git checkout"), "{action}");
+    assert_eq!(
+        fs::read(sidecar_path(&context)).unwrap(),
+        context_sidecar,
+        "a refused fix must leave the sidecar as it was"
+    );
+
+    assert_eq!(
+        about("execution-record.toml")["ok"],
+        JsonValue::Bool(true),
+        "{v}"
+    );
+    assert!(sidecar_path(&record).exists());
+}
+
+#[test]
+fn fix_dry_run_previews_the_crlf_refusal_without_writing() {
+    let (_g, root) = fresh_root();
+    seed_clean_flow(&root, "feature-x");
+    seed_active_flow_registry(&root, &["feature-x"]);
+    let context = context_path(&root, "feature-x");
+    convert_to_crlf(&context);
+    let before = fs::read(sidecar_path(&context)).unwrap();
+
+    let v = run_doctor(&root, &["--slug", "feature-x", "--fix", "--dry-run"]);
+    let fixes = v["fixes_applied"].as_array().expect("fixes must be array");
+    assert_eq!(fixes.len(), 1, "{v}");
+    assert_eq!(fixes[0]["ok"], JsonValue::Bool(false), "{v}");
+    assert!(
+        fixes[0]["action"]
+            .as_str()
+            .unwrap()
+            .starts_with("would fail to refresh"),
+        "{v}"
+    );
+    assert_eq!(fs::read(sidecar_path(&context)).unwrap(), before);
+}
+
+// ---------------------------------------------------------------------------
+// Acceptance: a flow holding plan.toml.
+// ---------------------------------------------------------------------------
+
+const PLAN_STORE: &str = "schema_version = 1\n";
+
+fn plan_store_path(root: &Path, slug: &str) -> PathBuf {
+    root.join(".claude")
+        .join("flows")
+        .join(slug)
+        .join("plan.toml")
+}
+
+#[test]
+fn the_plan_sidecar_check_appears_only_for_a_flow_holding_plan_toml() {
+    let (_g, root) = fresh_root();
+    seed_clean_flow(&root, "v1-flow");
+    seed_clean_flow(&root, "v2-flow");
+    write_artifact_with_sidecar(&plan_store_path(&root, "v2-flow"), PLAN_STORE);
+    seed_active_flow_registry(&root, &["v1-flow", "v2-flow"]);
+
+    let v = run_doctor(&root, &[]);
+    assert_eq!(v["ok"], JsonValue::Bool(true), "{v}");
+    let scopes: Vec<&str> = v["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|c| c["name"] == "plan-sidecar")
+        .filter_map(|c| c["scope"].as_str())
+        .collect();
+    assert_eq!(scopes, vec!["v2-flow"], "{v}");
+}
+
+#[test]
+fn a_tampered_plan_store_sidecar_fails_and_is_regenerated_under_fix() {
+    let (_g, root) = fresh_root();
+    seed_clean_flow(&root, "v2-flow");
+    seed_active_flow_registry(&root, &["v2-flow"]);
+    let plan = plan_store_path(&root, "v2-flow");
+    write_artifact_with_sidecar(&plan, PLAN_STORE);
+    fs::write(
+        sidecar_path(&plan),
+        format!("{}  plan.toml\n", "0".repeat(64)),
+    )
+    .unwrap();
+
+    let v = run_doctor(&root, &["--slug", "v2-flow"]);
+    assert_eq!(v["ok"], JsonValue::Bool(false), "{v}");
+    let chk = find_check(&v, "plan-sidecar", Some("v2-flow"));
+    assert_eq!(chk["ok"], JsonValue::Bool(false), "{chk}");
+
+    let fixed = run_doctor(&root, &["--slug", "v2-flow", "--fix"]);
+    assert!(
+        fixed["fixes_applied"].as_array().unwrap().iter().any(|f| {
+            f["ok"] == JsonValue::Bool(true)
+                && f["action"].as_str().unwrap_or("").contains("plan.toml")
+        }),
+        "{fixed}"
+    );
+    assert_eq!(
+        run_doctor(&root, &["--slug", "v2-flow"])["ok"],
+        JsonValue::Bool(true)
+    );
+}
+
+/// A `plan.toml` flow has no plan document, so `tasks-exists` reports the store
+/// itself and never the document's `## Tasks` section or `import-plan`.
+#[test]
+fn tasks_exists_reports_the_store_for_a_flow_holding_plan_toml() {
+    let (_g, root) = fresh_root();
+    seed_clean_flow(&root, "v2-flow");
+    write_artifact_with_sidecar(&plan_store_path(&root, "v2-flow"), PLAN_STORE);
+    seed_active_flow_registry(&root, &["v2-flow"]);
+
+    let absent = run_doctor(&root, &["--slug", "v2-flow"]);
+    let chk = find_check(&absent, "tasks-exists", Some("v2-flow"));
+    assert_eq!(chk["ok"], JsonValue::Bool(true), "{chk}");
+    let detail = chk["detail"].as_str().unwrap();
+    assert!(detail.starts_with("missing:"), "{detail}");
+    assert!(!detail.contains("## Tasks"), "{detail}");
+    assert!(
+        !absent["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|w| w.as_str().unwrap_or("").contains("import-plan")),
+        "{absent}"
+    );
+
+    write_artifact_with_sidecar(&tasks_store_path(&root, "v2-flow"), EMPTY_RECORD);
+    let present = run_doctor(&root, &["--slug", "v2-flow"]);
+    assert_eq!(
+        find_check(&present, "tasks-exists", Some("v2-flow"))["detail"],
+        JsonValue::Null,
+        "{present}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Acceptance: missing artifact reports without fixing.
 // ---------------------------------------------------------------------------
 
@@ -992,7 +1197,10 @@ fn missing_context_reports_without_creation_under_fix() {
         assert!(
             matches!(
                 name,
-                "sidecar-refresh" | "active-prune" | "artifacts-tasks-backfill"
+                "sidecar-refresh"
+                    | "active-prune"
+                    | "active-worktree-relative"
+                    | "artifacts-tasks-backfill"
             ),
             "doctor must never emit a create-action fix; got: {f}"
         );
@@ -1057,11 +1265,74 @@ fn stale_active_flow_entry_pruned_under_fix() {
 }
 
 // ---------------------------------------------------------------------------
+// Machine-local worktrees in the tracked registry
+// ---------------------------------------------------------------------------
+
+/// `--fix` rewrites what resolves under the root and leaves a value from
+/// another machine readable; `--dry-run` previews the same rows and writes
+/// nothing.
+#[test]
+fn fix_rewrites_worktrees_under_the_root_and_leaves_foreign_ones() {
+    let (_g, root) = fresh_root();
+    for slug in ["primary", "nested", "foreign", "settled"] {
+        seed_clean_flow(&root, slug);
+    }
+    let abs = root.canonicalize().unwrap();
+    let abs = abs.to_string_lossy().replace('\\', "/");
+    let foreign = if cfg!(windows) {
+        "/home/someone/repo"
+    } else {
+        "C:/Users/someone/repo"
+    };
+    let registry = root.join(".claude").join("active-flow.toml");
+    let row = |slug: &str, worktree: &str| {
+        format!(
+            "\n[[active]]\nslug = \"{slug}\"\nlast_used = \"2026-05-08T12:00:00Z\"\n\
+             [active.binding]\nworktree = \"{worktree}\"\n"
+        )
+    };
+    let body = format!(
+        "schema_version = 1\n{}{}{}{}",
+        row("primary", &abs),
+        row("nested", &format!("{abs}/.claude/worktrees/x")),
+        row("foreign", foreign),
+        row("settled", "."),
+    );
+    write_artifact_with_sidecar(&registry, &body);
+
+    let preview = run_doctor(&root, &["--fix", "--dry-run"]);
+    let scopes = |v: &JsonValue| -> Vec<String> {
+        v["fixes_applied"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|f| f["name"] == "active-worktree-relative")
+            .map(|f| f["scope"].as_str().unwrap().to_string())
+            .collect()
+    };
+    assert_eq!(scopes(&preview), ["primary", "nested"], "{preview}");
+    assert_eq!(fs::read_to_string(&registry).unwrap(), body);
+
+    let applied = run_doctor(&root, &["--fix"]);
+    assert_eq!(scopes(&applied), ["primary", "nested"], "{applied}");
+    common::assert_sidecar_matches(&registry);
+
+    let doc: toml::Value = toml::from_str(&fs::read_to_string(&registry).unwrap()).unwrap();
+    let stored: Vec<&str> = doc["active"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["binding"]["worktree"].as_str().unwrap())
+        .collect();
+    assert_eq!(stored, [".", ".claude/worktrees/x", foreign, "."]);
+}
+
+// ---------------------------------------------------------------------------
 // Acceptance: gitignored-`.claude` warning fires when matched.
 // ---------------------------------------------------------------------------
 
-/// `.gitignore` listing `.claude/` triggers a warning AND a non-passing
-/// `gitignore-claude` check.
+/// `.gitignore` listing `.claude/` or `.claude` triggers a warning while the
+/// `gitignore-claude` check stays `ok=true`.
 #[test]
 fn gitignored_claude_emits_warning() {
     let (_g, root) = fresh_root();
@@ -1081,7 +1352,7 @@ fn gitignored_claude_emits_warning() {
     assert_eq!(
         chk["ok"],
         JsonValue::Bool(true),
-        "gitignore-claude is a non-failing check post-R31 — the warning is the actionable surface, the check entry stays ok=true so envelope.ok is not flipped"
+        "gitignore-claude is a non-failing check — the warning is the actionable surface, the check entry stays ok=true so envelope.ok is not flipped"
     );
 
     // Plain `.claude` (no trailing slash) also matches.
@@ -1090,7 +1361,7 @@ fn gitignored_claude_emits_warning() {
     assert_eq!(
         find_check(&v2, "gitignore-claude", Some("global"))["ok"],
         JsonValue::Bool(true),
-        "gitignore-claude check is non-failing post-R31"
+        "gitignore-claude check is non-failing"
     );
     let warnings2 = v2["warnings"].as_array().expect("warnings must be array");
     assert!(
@@ -1103,11 +1374,12 @@ fn gitignored_claude_emits_warning() {
     // Comments and blank lines are NOT matches.
     fs::write(root.join(".gitignore"), "# .claude/\n\nnode_modules/\n").unwrap();
     let v3 = run_doctor(&root, &["--slug", "feature-x"]);
-    let chk3 = find_check(&v3, "gitignore-claude", Some("global"));
-    assert_eq!(
-        chk3["ok"],
-        JsonValue::Bool(true),
-        "comments / unrelated entries must NOT fire the warning"
+    let warnings3 = v3["warnings"].as_array().expect("warnings must be array");
+    assert!(
+        !warnings3
+            .iter()
+            .any(|w| w.as_str().unwrap_or("").contains(".gitignore")),
+        "comments / unrelated entries must NOT fire the warning; got: {warnings3:?}"
     );
 }
 

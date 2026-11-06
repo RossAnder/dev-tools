@@ -39,6 +39,7 @@ use toml::Value as TomlValue;
 
 use crate::cli::{ReadIntegrityArgs, read_integrity_opts};
 use crate::errors::{ErrorKind, tagged_err};
+use crate::flow::active::{WorktreeQuery, active_flow_path};
 use crate::flow::artifacts::CanonicalArtifacts;
 use crate::flow::schema::{ActiveDoc, ActiveEntry, FlowProjection};
 use crate::integrity::{IntegrityOpts, maybe_verify_integrity};
@@ -294,7 +295,8 @@ fn resolve(
                 "step-3 binding-match skipped: no --branch or --worktree provided".to_string(),
             );
         }
-        if let Some(best) = best_binding_match(&registry_entries, branch, worktree) {
+        let worktree_query = worktree.map(|want| WorktreeQuery::new(root, want));
+        if let Some(best) = best_binding_match(&registry_entries, branch, worktree_query.as_ref()) {
             // Confirm the resolved flow's context.toml actually exists; if
             // not, surface a warning and fall through.
             let ctx = context_path_for(root, &best.slug);
@@ -734,10 +736,6 @@ fn declares_tasks_section(plan: &Path) -> bool {
 // typed projection).
 // ---------------------------------------------------------------------------
 
-fn active_flow_path(root: &Path) -> PathBuf {
-    root.join(".claude").join("active-flow.toml")
-}
-
 fn load_active_entries(file: &Path, warnings: &mut Vec<String>) -> Result<Vec<ActiveEntry>> {
     // Align with `flow::doctor`'s silent-zero behaviour on a malformed
     // registry: surface zero entries (as a breadcrumb) so resolve falls
@@ -764,7 +762,7 @@ fn load_active_entries(file: &Path, warnings: &mut Vec<String>) -> Result<Vec<Ac
 fn best_binding_match(
     entries: &[ActiveEntry],
     want_branch: Option<&str>,
-    want_worktree: Option<&Path>,
+    want_worktree: Option<&WorktreeQuery>,
 ) -> Option<ActiveEntry> {
     if want_branch.is_none() && want_worktree.is_none() {
         return None;
@@ -779,7 +777,7 @@ fn best_binding_match(
         }
         if let Some(want) = want_worktree
             && let Some(wt) = entry.binding.worktree_path()
-            && wt == want
+            && want.matches(wt)
         {
             score += 1;
         }

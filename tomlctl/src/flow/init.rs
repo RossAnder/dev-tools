@@ -36,7 +36,8 @@ use toml::Value as TomlValue;
 use crate::cli::{WriteIntegrityArgs, write_integrity_opts};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::flow::active::{
-    build_entry as build_active_entry, find_slug_index, mutate_active, upsert_entry,
+    active_flow_path, build_entry as build_active_entry, find_slug_index, mutate_active,
+    stored_worktree, upsert_entry,
 };
 use crate::flow::artifacts::CanonicalArtifacts;
 use crate::flow::schema::ActiveEntry as SchemaEntry;
@@ -115,12 +116,6 @@ fn tasks_path_for(slug: &str) -> Result<PathBuf> {
         .join("flows")
         .join(slug)
         .join("tasks.toml"))
-}
-
-/// Resolve `<root>/.claude/active-flow.toml` — the active-flow registry.
-fn active_flow_path() -> Result<PathBuf> {
-    let root = repo_or_cwd_root()?;
-    Ok(root.join(".claude").join("active-flow.toml"))
 }
 
 /// Build the seed `context.toml` document for a fresh init. Field order
@@ -268,7 +263,7 @@ fn active_entry_to_json(entry: &TomlValue) -> JsonValue {
 fn upsert_active_entry(
     slug: &str,
     branch: Option<&str>,
-    worktree: Option<&Path>,
+    worktree: Option<&str>,
     scope: &[String],
     integrity_args: &WriteIntegrityArgs,
 ) -> Result<(TomlValue, String)> {
@@ -356,7 +351,8 @@ pub(crate) fn bootstrap_plan_store(
 
 /// Drop `slug` from the active-flow registry. Absent entries are not an error.
 pub(crate) fn deregister(slug: &str, integrity_args: &WriteIntegrityArgs) -> Result<()> {
-    mutate_active(&active_flow_path()?, integrity_args, |doc| {
+    let file = active_flow_path(&repo_or_cwd_root()?);
+    mutate_active(&file, integrity_args, |doc| {
         if let Some(arr) = doc.get_mut("active").and_then(TomlValue::as_array_mut)
             && let Some(idx) = find_slug_index(arr, slug)
         {
@@ -376,84 +372,147 @@ pub(crate) fn dispatch(
     dry_run: bool,
     integrity: WriteIntegrityArgs,
 ) -> Result<()> {
-    print_json_compact(&init_flow(
-        slug, plan, branch, worktree, scope, dry_run, integrity,
-    )?)
+    if dry_run {
+        return print_json_compact(&dry_run_envelope(&slug, &plan, branch, worktree, &scope)?);
+    }
+    print_json_compact(&init_flow(slug, plan, branch, worktree, scope, integrity)?.to_json())
 }
 
-/// Run `flow init` and return the envelope it reports, leaving the printing to
-/// the caller.
-#[allow(clippy::too_many_arguments)]
+/// What a live `flow init` did.
+pub(crate) struct InitOutcome {
+    action: &'static str,
+    slug: String,
+    /// Repo-relative, forward-slashed to match the `artifacts` map, in the
+    /// order this run materialised them.
+    pub(crate) created: Vec<String>,
+    context_path: String,
+    artifacts: CanonicalArtifacts,
+}
+
+impl InitOutcome {
+    fn to_json(&self) -> JsonValue {
+        json!({
+            "ok": true,
+            "slug": self.slug,
+            "action": self.action,
+            "created": self.created,
+            "context_path": self.context_path,
+            "artifacts": self.artifacts.to_json(),
+        })
+    }
+}
+
+/// The paths and state both the dry-run and the live path start from.
+struct InitTarget {
+    root: PathBuf,
+    plan_path: String,
+    context_path: PathBuf,
+    execution_record_path: PathBuf,
+    tasks_path: PathBuf,
+    seeds_tasks_store: bool,
+    artifacts: CanonicalArtifacts,
+    existing: Option<TomlValue>,
+    today: toml::value::Datetime,
+}
+
+fn init_target(slug: &str, plan: &Path) -> Result<InitTarget> {
+    validate_slug(slug)?;
+    let root = repo_or_cwd_root()?;
+    let plan_path = recorded_plan_path(&root, plan)?;
+    let context_path = context_path_for(slug)?;
+    // Try to load an existing context — drives the idempotent branch.
+    let existing = try_load_existing_context(&context_path)?;
+    Ok(InitTarget {
+        plan_path,
+        execution_record_path: execution_record_path_for(slug)?,
+        tasks_path: tasks_path_for(slug)?,
+        seeds_tasks_store: !is_tdd_subflow_slug(slug),
+        artifacts: CanonicalArtifacts::for_slug(slug),
+        today: today_toml_date()?,
+        root,
+        context_path,
+        existing,
+    })
+}
+
+/// The `would_change` envelope of `flow init --dry-run`, which writes nothing.
+fn dry_run_envelope(
+    slug: &str,
+    plan: &Path,
+    branch: Option<String>,
+    worktree: Option<PathBuf>,
+    scope: &[String],
+) -> Result<JsonValue> {
+    let target = init_target(slug, plan)?;
+    // Build the would-be new entry (active-flow registration) for the
+    // dry-run envelope. We don't need to read the on-disk active-flow
+    // doc here — the dry-run output describes WHAT WOULD CHANGE, not
+    // what's currently there.
+    let last_used = now_rfc3339();
+    let stored = worktree
+        .as_deref()
+        .map(|w| stored_worktree(&target.root, w));
+    let new_active = build_active_entry(
+        slug,
+        &last_used,
+        branch.as_deref(),
+        stored.as_deref(),
+        scope,
+    );
+
+    // For an existing flow, the `seed` shows the existing doc rather
+    // than a re-derived seed (the live path would NOT overwrite it).
+    let seed_json = if let Some(ref existing_doc) = target.existing {
+        doc_to_json(existing_doc)
+    } else {
+        let seed = build_seed_doc(
+            slug,
+            &target.plan_path,
+            branch.as_deref(),
+            scope,
+            target.today,
+            &target.artifacts,
+        );
+        doc_to_json(&seed)
+    };
+
+    Ok(json!({
+        "ok": true,
+        "dry_run": true,
+        "would_change": {
+            "action": if target.existing.is_some() { "noop" } else { "init" },
+            "slug": slug,
+            "seed": seed_json,
+            "execution_record_bootstrap": !target.execution_record_path.exists(),
+            "tasks_store_bootstrap": target.seeds_tasks_store && !target.tasks_path.exists(),
+            "active_registration": active_entry_to_json(&new_active),
+        },
+    }))
+}
+
+/// Run `flow init` for real, leaving the rendering and printing to the caller.
 pub(crate) fn init_flow(
     slug: String,
     plan: PathBuf,
     branch: Option<String>,
     worktree: Option<PathBuf>,
     scope: Vec<String>,
-    dry_run: bool,
     integrity: WriteIntegrityArgs,
-) -> Result<JsonValue> {
-    validate_slug(&slug)?;
-    let root = repo_or_cwd_root()?;
-    let plan_path = recorded_plan_path(&root, &plan)?;
-
-    let context_path = context_path_for(&slug)?;
+) -> Result<InitOutcome> {
+    let InitTarget {
+        root,
+        plan_path,
+        context_path,
+        execution_record_path,
+        tasks_path,
+        seeds_tasks_store,
+        artifacts,
+        existing,
+        today,
+    } = init_target(&slug, &plan)?;
     let context_rel = relativise(&root, &context_path);
-    let execution_record_path = execution_record_path_for(&slug)?;
-    let tasks_path = tasks_path_for(&slug)?;
-    let seeds_tasks_store = !is_tdd_subflow_slug(&slug);
-    let artifacts = CanonicalArtifacts::for_slug(&slug);
 
-    // Try to load an existing context — drives the idempotent branch.
-    let existing = try_load_existing_context(&context_path)?;
-
-    let today = today_toml_date()?;
-
-    if dry_run {
-        // Build the would-be new entry (active-flow registration) for the
-        // dry-run envelope. We don't need to read the on-disk active-flow
-        // doc here — the dry-run output describes WHAT WOULD CHANGE, not
-        // what's currently there.
-        let last_used = now_rfc3339();
-        let new_active = build_active_entry(
-            &slug,
-            &last_used,
-            branch.as_deref(),
-            worktree.as_deref(),
-            &scope,
-        );
-
-        // For an existing flow, the `seed` shows the existing doc rather
-        // than a re-derived seed (the live path would NOT overwrite it).
-        let seed_json = if let Some(ref existing_doc) = existing {
-            doc_to_json(existing_doc)
-        } else {
-            let seed = build_seed_doc(
-                &slug,
-                &plan_path,
-                branch.as_deref(),
-                &scope,
-                today,
-                &artifacts,
-            );
-            doc_to_json(&seed)
-        };
-
-        return Ok(json!({
-            "ok": true,
-            "dry_run": true,
-            "would_change": {
-                "action": if existing.is_some() { "noop" } else { "init" },
-                "slug": slug,
-                "seed": seed_json,
-                "execution_record_bootstrap": !execution_record_path.exists(),
-                "tasks_store_bootstrap": seeds_tasks_store && !tasks_path.exists(),
-                "active_registration": active_entry_to_json(&new_active),
-            },
-        }));
-    }
-
-    // Live path. Decide between init and noop based on whether
+    // Decide between init and noop based on whether
     // `context.toml` already exists with a valid `created` field.
     let action: &'static str = if existing.is_some() {
         // Idempotent re-init: leave the file untouched. Verify `created`
@@ -497,8 +556,6 @@ pub(crate) fn init_flow(
         "init"
     };
 
-    // Repo-relative, forward-slashed to match the `artifacts` map, in the
-    // order this run materialises them.
     let mut created: Vec<String> = Vec::new();
     if action == "init" {
         created.push(context_rel.clone());
@@ -519,22 +576,22 @@ pub(crate) fn init_flow(
     // case where the registry got out of sync (file-level removal,
     // partial migration, etc.) without forcing the user through a
     // separate `flow active add`.
+    let stored = worktree.as_deref().map(|w| stored_worktree(&root, w));
     upsert_active_entry(
         &slug,
         branch.as_deref(),
-        worktree.as_deref(),
+        stored.as_deref(),
         &scope,
         &integrity,
     )?;
 
-    Ok(json!({
-        "ok": true,
-        "slug": slug,
-        "action": action,
-        "created": created,
-        "context_path": context_rel,
-        "artifacts": artifacts.to_json(),
-    }))
+    Ok(InitOutcome {
+        action,
+        slug,
+        created,
+        context_path: context_rel,
+        artifacts,
+    })
 }
 
 #[cfg(test)]

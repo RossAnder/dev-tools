@@ -11,7 +11,7 @@ use std::fs;
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use serde_json::{Value as JsonValue, json};
+use serde_json::json;
 use toml::Value as TomlValue;
 
 use super::schema::Binding;
@@ -77,17 +77,10 @@ pub(super) fn run(args: PlanOpenArgs) -> Result<()> {
         None,
         None,
         Vec::new(),
-        false,
         integrity.clone(),
     )?;
     init::deregister(&slug, &integrity)?;
-    let mut created: Vec<String> = flow["created"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(JsonValue::as_str)
-        .map(str::to_string)
-        .collect();
+    let mut created = flow.created;
 
     for row in &rows {
         let note = authored

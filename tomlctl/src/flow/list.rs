@@ -50,6 +50,7 @@ use serde_json::Value as JsonValue;
 
 use crate::cli::ReadIntegrityArgs;
 use crate::errors::{ErrorKind, tagged_err};
+use crate::flow::active::active_flow_path;
 use crate::flow::schema::{ActiveDoc, FlowProjection};
 use crate::integrity::verify_integrity;
 use crate::io::{
@@ -257,7 +258,7 @@ fn read_context_record(path: &Path, slug: &str) -> std::result::Result<FlowRecor
 /// breakage as "no active flows" here keeps `flow list --active-only` from
 /// becoming a second warning channel for the same condition.
 fn load_active_slug_set(root: &Path) -> Result<std::collections::HashSet<String>> {
-    let registry = root.join(".claude").join("active-flow.toml");
+    let registry = active_flow_path(root);
     let mut set = std::collections::HashSet::new();
     if !registry.exists() {
         return Ok(set);

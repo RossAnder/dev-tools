@@ -13,7 +13,7 @@
 //! last_used = "2026-05-08T14:32:00Z"
 //! [active.binding]
 //! branch = "feat/x"
-//! worktree = "/home/user/dev/repo"
+//! worktree = "."
 //! scope = ["src/foo/**"]
 //! ```
 //!

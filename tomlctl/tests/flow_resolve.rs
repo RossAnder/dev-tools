@@ -370,6 +370,138 @@ branch = "feat/y"
     assert_eq!(v["slug"], serde_json::json!("feature-x"));
 }
 
+/// A registry of `(slug, worktree)` rows, later rows more recently used, so a
+/// worktree miss falls through to `active-latest` on the last row.
+fn registry_of(rows: &[(&str, &str)]) -> String {
+    let mut body = String::from("schema_version = 1\n");
+    for (i, (slug, worktree)) in rows.iter().enumerate() {
+        let worktree = worktree.replace('\\', "/");
+        body.push_str(&format!(
+            "\n[[active]]\nslug = \"{slug}\"\nlast_used = \"2026-05-08T1{i}:00:00Z\"\n\
+             [active.binding]\nworktree = \"{worktree}\"\n"
+        ));
+    }
+    body
+}
+
+fn seed_binding_flows(root: &Path, slugs: &[&str]) {
+    for slug in slugs {
+        seed_flow_context(root, slug, &make_context(slug, "in-progress", None, &[]));
+        seed_all_canonical_artifacts(root, slug);
+    }
+}
+
+/// A stored `.` resolves against the root and matches the absolute query.
+#[test]
+fn active_binding_matches_a_relative_entry() {
+    let (dir, _claude) = fresh_root();
+    seed_binding_flows(dir.path(), &["here", "there"]);
+    seed_active_registry(
+        dir.path(),
+        &registry_of(&[("here", "."), ("there", "elsewhere")]),
+    );
+
+    let v = run_resolve(&dir, &["--worktree", dir.path().to_str().unwrap()]);
+    assert_eq!(v["source"], serde_json::json!("active-binding"), "{v}");
+    assert_eq!(v["slug"], serde_json::json!("here"));
+}
+
+#[test]
+fn active_binding_matches_a_legacy_absolute_entry() {
+    let (dir, _claude) = fresh_root();
+    seed_binding_flows(dir.path(), &["here", "there"]);
+    seed_active_registry(
+        dir.path(),
+        &registry_of(&[
+            ("here", dir.path().to_str().unwrap()),
+            ("there", "elsewhere"),
+        ]),
+    );
+
+    let v = run_resolve(&dir, &["--worktree", dir.path().to_str().unwrap()]);
+    assert_eq!(v["source"], serde_json::json!("active-binding"), "{v}");
+    assert_eq!(v["slug"], serde_json::json!("here"));
+}
+
+/// A foreign absolute entry neither errors nor matches, not even a query
+/// spelled the same way.
+#[test]
+fn active_binding_never_matches_a_foreign_absolute_entry() {
+    let foreign = if cfg!(windows) {
+        "/home/someone/repo"
+    } else {
+        "C:/Users/someone/repo"
+    };
+    let (dir, _claude) = fresh_root();
+    seed_binding_flows(dir.path(), &["foreign", "latest"]);
+    seed_active_registry(
+        dir.path(),
+        &registry_of(&[("foreign", foreign), ("latest", "elsewhere")]),
+    );
+
+    for query in [dir.path().to_str().unwrap(), foreign] {
+        let v = run_resolve(&dir, &["--worktree", query]);
+        assert_eq!(v["source"], serde_json::json!("active-latest"), "{v}");
+        assert_eq!(v["slug"], serde_json::json!("latest"));
+    }
+}
+
+/// The registry is read from the linked worktree's own copy, yet `.` there
+/// still names the primary checkout.
+#[test]
+fn active_binding_from_a_linked_worktree_anchors_on_the_main_worktree() {
+    if !common::git_available() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let main = dir.path().join("main");
+    let linked = dir.path().join("linked");
+    fs::create_dir_all(&main).unwrap();
+    let git = |args: &[&str]| {
+        let out = common::git_command(&main).args(args).output().unwrap();
+        assert!(out.status.success(), "git {args:?}: {out:?}");
+    };
+    git(&["init", "-q"]);
+    git(&[
+        "-c",
+        "user.email=t@example.invalid",
+        "-c",
+        "user.name=t",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-q",
+        "--no-verify",
+        "--allow-empty",
+        "-m",
+        "init",
+    ]);
+    git(&["worktree", "add", "-q", linked.to_str().unwrap()]);
+    seed_binding_flows(&linked, &["primary", "sibling"]);
+    seed_active_registry(
+        &linked,
+        &registry_of(&[("primary", "."), ("sibling", "../linked")]),
+    );
+
+    for (query, slug) in [(&main, "primary"), (&linked, "sibling")] {
+        let out = Command::cargo_bin("tomlctl")
+            .unwrap()
+            .current_dir(&linked)
+            .env_remove("TOMLCTL_ROOT")
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .env_remove("GIT_COMMON_DIR")
+            .args(["flow", "resolve", "--worktree"])
+            .arg(query)
+            .write_stdin("")
+            .assert()
+            .success();
+        let v: serde_json::Value = serde_json::from_slice(&out.get_output().stdout).unwrap();
+        assert_eq!(v["source"], serde_json::json!("active-binding"), "{v}");
+        assert_eq!(v["slug"], serde_json::json!(slug), "query {query:?}");
+    }
+}
+
 // ---------------------------------------------------------------------------
 // 4. active-latest
 // ---------------------------------------------------------------------------

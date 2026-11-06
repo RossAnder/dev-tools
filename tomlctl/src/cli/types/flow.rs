@@ -55,7 +55,8 @@ pub(crate) enum FlowOp {
         /// Optional `branch` to record in `context.toml` and the active-flow registry.
         #[arg(long = "branch")]
         branch: Option<String>,
-        /// Optional `worktree` (absolute path) recorded on the active-flow entry.
+        /// Optional `worktree` recorded on the active-flow entry, stored relative
+        /// to the main worktree. A relative value is read as relative to it.
         #[arg(long = "worktree")]
         worktree: Option<PathBuf>,
         /// Scope-glob patterns recorded on the active-flow entry. Repeatable.
@@ -146,7 +147,9 @@ pub(crate) enum FlowOp {
         /// under `.claude/flows/` is checked.
         #[arg(long = "slug")]
         slug: Option<String>,
-        /// Auto-repair sidecar mismatches and prune stale active-flow entries.
+        /// Auto-repair sidecar mismatches, prune stale active-flow entries,
+        /// rewrite an absolute `binding.worktree` at or under the main worktree
+        /// to its relative spelling, and backfill an absent `[artifacts].tasks`.
         #[arg(long = "fix")]
         fix: bool,
         /// Accepted no-op (compat). `flow doctor` always emits JSON on stdout —
@@ -260,7 +263,8 @@ pub(crate) enum ActiveOp {
         /// Branch to record on the entry's `[active.binding]` table.
         #[arg(long = "branch")]
         branch: Option<String>,
-        /// Worktree absolute path (per-clone) recorded on the binding.
+        /// Worktree recorded on the binding, stored relative to the main
+        /// worktree. A relative value is read as relative to it.
         #[arg(long = "worktree")]
         worktree: Option<PathBuf>,
         /// Scope-glob pattern (repeatable) recorded on the binding.

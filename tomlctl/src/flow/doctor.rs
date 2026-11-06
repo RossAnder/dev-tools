@@ -10,10 +10,12 @@
 //!   names, else the sibling `execution-record.toml`.
 //! - All three sidecars (`<file>.sha256`, for `context.toml`, the execution
 //!   record and `tasks.toml`) exist and their digests match
-//!   a fresh recompute of the file's bytes.
+//!   a fresh recompute of the file's bytes. So does `plan.toml`'s, whose
+//!   `plan-sidecar` check appears only for a flow holding that file.
 //! - `tasks.toml` exists when the flow's plan declares a `## Tasks` section.
 //!   An absent store is advisory (a warning): doctor never creates
-//!   artifacts, so the route out is `tomlctl tasks import-plan`.
+//!   artifacts, so the route out is `tomlctl tasks import-plan`. A `plan.toml`
+//!   flow has no plan document, so its check reports the store's presence alone.
 //! - The `[artifacts]` table inside `context.toml` lists paths that match
 //!   the canonical computation for the slug (the same map that
 //!   `flow init` writes). A missing `tasks` key is advisory (a warning),
@@ -32,7 +34,9 @@
 //! Global (run once):
 //! - `active-flow.toml` registry entries point at flow dirs that exist on
 //!   disk. Stale entries (pointing at a deleted flow) are reported; the
-//!   `--fix` path prunes them.
+//!   `--fix` path prunes them, and rewrites each surviving absolute
+//!   `binding.worktree` that resolves under the main worktree to its relative
+//!   spelling. A value from another machine is left as it is.
 //! - `.gitignore` does NOT have a top-level entry that masks `.claude/`.
 //!   This is a warning (not a check failure) because gitignored `.claude/`
 //!   has historically caused silent flow-state loss when an agent hooks
@@ -81,8 +85,14 @@ use serde_json::{Value as JsonValue, json};
 use toml::Value as TomlValue;
 
 use crate::cli::{WriteIntegrityArgs, write_integrity_opts};
+use crate::flow::active::{
+    active_flow_path, mutate_active, normalise_entry_worktree, normalised_worktree, registry_anchor,
+};
 use crate::flow::artifacts::CanonicalArtifacts;
-use crate::integrity::{refresh_sidecar, sha256_hex_of_file, sidecar_path};
+use crate::flow::schema::ActiveDoc;
+use crate::integrity::{
+    crlf_mismatch_clause, refresh_sidecar, refuse_crlf_stamp, sha256_hex_of_file, sidecar_path,
+};
 use crate::io::{
     guard_write_path, read_dir_sorted, read_toml, read_toml_with_source,
     recheck_claude_containment, relativise, repo_or_cwd_root, with_exclusive_lock,
@@ -275,10 +285,11 @@ fn push_sidecar_check(
                 name,
                 slug.to_string(),
                 format!(
-                    "sidecar digest mismatch for {}: expected {}, actual {}",
+                    "sidecar digest mismatch for {}: expected {}, actual {}{}",
                     relativise(root, file),
                     expected,
-                    actual
+                    actual,
+                    crlf_mismatch_clause(file, &expected)
                 ),
             ));
             stale_sidecars.push((file.to_path_buf(), slug.to_string()));
@@ -319,6 +330,8 @@ fn check_one_flow(
     let flow_dir = root.join(".claude").join("flows").join(slug);
     let context_file = flow_dir.join("context.toml");
     let tasks_file = flow_dir.join("tasks.toml");
+    let plan_file = flow_dir.join("plan.toml");
+    let v2_flow = crate::tasks::is_v2_flow(&tasks_file);
     let mut stale_sidecars: Vec<(PathBuf, String)> = Vec::new();
 
     // 1. context.toml exists.
@@ -404,8 +417,21 @@ fn check_one_flow(
     //    absent store where one is expected stays advisory: doctor creates
     //    no artifacts, so a failing check would have no route out. A `/tdd`
     //    sub-flow is exempt: `flow init` seeds no store for one, so its
-    //    absence there is the expected state rather than a missed import.
-    if !plan_declares_tasks {
+    //    absence there is the expected state rather than a missed import. A
+    //    `plan.toml` flow has no plan document to probe or import from.
+    if v2_flow {
+        checks.push(Check {
+            name: "tasks-exists",
+            scope: slug.to_string(),
+            ok: true,
+            detail: (!tasks_file.exists()).then(|| {
+                format!(
+                    "missing: {} (a plan.toml flow has no plan document to import from)",
+                    relativise(root, &tasks_file)
+                )
+            }),
+        });
+    } else if !plan_declares_tasks {
         checks.push(Check {
             name: "tasks-exists",
             scope: slug.to_string(),
@@ -444,6 +470,17 @@ fn check_one_flow(
         checks,
         &mut stale_sidecars,
     )?;
+
+    if v2_flow {
+        push_sidecar_check(
+            root,
+            slug,
+            "plan-sidecar",
+            &plan_file,
+            checks,
+            &mut stale_sidecars,
+        )?;
+    }
 
     // 7 & 8 — only meaningful when context.toml parses. A parse failure on
     // a present context.toml emits a single fail-check covering both, with
@@ -768,7 +805,7 @@ fn check_tasks_counters(
 /// exist on disk. Returns the list of stale slugs in registry order.
 /// Missing registry → empty list (no entries → no stale entries).
 fn collect_stale_active_slugs(root: &Path) -> Result<Vec<String>> {
-    let registry = root.join(".claude").join("active-flow.toml");
+    let registry = active_flow_path(root);
     if !registry.exists() {
         return Ok(Vec::new());
     }
@@ -892,7 +929,7 @@ fn apply_active_prune(
     if stale_slugs.is_empty() {
         return Ok(());
     }
-    let registry = root.join(".claude").join("active-flow.toml");
+    let registry = active_flow_path(root);
     if !registry.exists() {
         // Nothing to prune — registry was deleted between the check and
         // the apply phase. Surface as a no-op ok-fix so callers don't
@@ -940,6 +977,65 @@ fn apply_active_prune(
             name: "active-prune",
             scope: slug.clone(),
             action: format!("pruned active-flow registry entry `{slug}`"),
+            ok: true,
+        });
+    }
+    Ok(())
+}
+
+/// Slugs whose `binding.worktree` `--fix` would rewrite, in registry order, the
+/// prune's `stale_slugs` excepted. An unreadable or malformed registry yields
+/// none, as in `collect_stale_active_slugs`.
+fn collect_worktree_rewrites(root: &Path, anchor: &Path, stale_slugs: &[String]) -> Vec<String> {
+    let Ok(text) = fs::read_to_string(active_flow_path(root)) else {
+        return Vec::new();
+    };
+    let Ok(doc) = ActiveDoc::from_toml_str(&text) else {
+        return Vec::new();
+    };
+    doc.active
+        .into_iter()
+        .filter(|entry| !stale_slugs.contains(&entry.slug))
+        .filter(|entry| {
+            entry
+                .binding
+                .worktree
+                .as_deref()
+                .is_some_and(|stored| normalised_worktree(anchor, stored).is_some())
+        })
+        .map(|entry| entry.slug)
+        .collect()
+}
+
+/// Rewrite the absolute `binding.worktree` values under `anchor` to their stored
+/// spelling. One fix entry per rewritten row.
+fn apply_worktree_rewrites(
+    root: &Path,
+    anchor: &Path,
+    slugs: &[String],
+    integrity_args: &WriteIntegrityArgs,
+    fixes: &mut Vec<Fix>,
+) -> Result<()> {
+    if slugs.is_empty() {
+        return Ok(());
+    }
+    let mut rewritten = Vec::new();
+    mutate_active(&active_flow_path(root), integrity_args, |doc| {
+        let rows = doc.get_mut("active").and_then(TomlValue::as_array_mut);
+        for entry in rows.into_iter().flatten() {
+            if normalise_entry_worktree(entry, anchor)
+                && let Some(slug) = entry.get("slug").and_then(TomlValue::as_str)
+            {
+                rewritten.push(slug.to_string());
+            }
+        }
+        Ok(())
+    })?;
+    for slug in rewritten {
+        fixes.push(Fix {
+            name: "active-worktree-relative",
+            action: format!("rewrote registry entry `{slug}`'s worktree as repo-relative"),
+            scope: slug,
             ok: true,
         });
     }
@@ -1002,21 +1098,32 @@ fn apply_tasks_key_backfill(
 }
 
 /// Render the would-be fixes plan for `--fix --dry-run`. No FS mutation —
-/// each entry is reported as `ok=true` and the live-path "what would have
-/// happened" prose.
+/// each entry is reported with the live-path "what would have happened" prose,
+/// `ok=true` except a sidecar refresh the live path would refuse over CRLF.
 fn dry_run_fix_plan(
     root: &Path,
     stale_sidecars: &[(PathBuf, String)],
     stale_slugs: &[String],
+    worktree_rewrites: &[String],
     tasks_backfills: &[String],
     fixes: &mut Vec<Fix>,
 ) {
     for (file, scope) in stale_sidecars {
+        let refusal = fs::read(file)
+            .ok()
+            .and_then(|bytes| refuse_crlf_stamp(file, &bytes).err());
+        let action = match &refusal {
+            Some(e) => format!(
+                "would fail to refresh sidecar for {}: {e:#}",
+                relativise(root, file)
+            ),
+            None => format!("would refresh sidecar for {}", relativise(root, file)),
+        };
         fixes.push(Fix {
             name: "sidecar-refresh",
             scope: scope.clone(),
-            action: format!("would refresh sidecar for {}", relativise(root, file)),
-            ok: true,
+            action,
+            ok: refusal.is_none(),
         });
     }
     for slug in stale_slugs {
@@ -1024,6 +1131,14 @@ fn dry_run_fix_plan(
             name: "active-prune",
             scope: slug.clone(),
             action: format!("would prune active-flow registry entry `{slug}`"),
+            ok: true,
+        });
+    }
+    for slug in worktree_rewrites {
+        fixes.push(Fix {
+            name: "active-worktree-relative",
+            scope: slug.clone(),
+            action: format!("would rewrite registry entry `{slug}`'s worktree as repo-relative"),
             ok: true,
         });
     }
@@ -1111,17 +1226,21 @@ pub(crate) fn dispatch(
     // 5. Optional --fix pass.
     let mut fixes: Vec<Fix> = Vec::new();
     if fix {
+        let anchor = registry_anchor(&root);
+        let worktree_rewrites = collect_worktree_rewrites(&root, &anchor, &stale_slugs);
         if dry_run {
             dry_run_fix_plan(
                 &root,
                 &stale_sidecars,
                 &stale_slugs,
+                &worktree_rewrites,
                 &tasks_backfills,
                 &mut fixes,
             );
         } else {
             apply_sidecar_fixes(&root, &stale_sidecars, &integrity, &mut fixes)?;
             apply_active_prune(&root, &stale_slugs, &integrity, &mut fixes)?;
+            apply_worktree_rewrites(&root, &anchor, &worktree_rewrites, &integrity, &mut fixes)?;
             // Last: the backfill rewrites context.toml and its sidecar
             // together, so a sidecar refreshed above stays consistent.
             apply_tasks_key_backfill(&root, &tasks_backfills, &integrity, &mut fixes)?;

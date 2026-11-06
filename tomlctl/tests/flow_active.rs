@@ -207,6 +207,182 @@ fn add_accumulates_repeated_scope_globs() {
 }
 
 // ---------------------------------------------------------------------------
+// worktree spelling
+// ---------------------------------------------------------------------------
+
+/// Absolute on some other platform, and never a path on this one.
+fn foreign_absolute() -> &'static str {
+    if cfg!(windows) {
+        "/home/someone/repo"
+    } else {
+        "C:/Users/someone/repo"
+    }
+}
+
+fn stored_worktree(registry: &Path) -> String {
+    let doc: toml::Value = toml::from_str(&fs::read_to_string(registry).unwrap()).unwrap();
+    doc["active"][0]["binding"]["worktree"]
+        .as_str()
+        .unwrap()
+        .to_string()
+}
+
+fn seed_worktree(registry: &Path, worktree: &str) {
+    let worktree = worktree.replace('\\', "/");
+    fs::write(
+        registry,
+        format!(
+            "schema_version = 1\n\n[[active]]\nslug = \"x\"\n\
+             last_used = \"2026-05-08T12:00:00Z\"\n\n[active.binding]\nworktree = \"{worktree}\"\n"
+        ),
+    )
+    .unwrap();
+}
+
+#[test]
+fn add_stores_a_worktree_relative_to_the_root() {
+    let (dir, registry) = fresh_root();
+    let root = dir.path();
+    let sibling = root.parent().unwrap().join("a-sibling-checkout");
+    let nested = root.join("nested");
+    let cases: [(&Path, &str); 5] = [
+        (root, "."),
+        (&nested, "nested"),
+        (&sibling, "../a-sibling-checkout"),
+        (Path::new("./nested/"), "nested"),
+        (Path::new("."), "."),
+    ];
+    for (given, want) in cases {
+        run_active(
+            &dir,
+            &["add", "--slug", "x", "--worktree", given.to_str().unwrap()],
+        )
+        .success();
+        assert_eq!(stored_worktree(&registry), want, "given {given:?}");
+    }
+    let listed = json_stdout(&run_active(&dir, &["list"]).success());
+    assert_eq!(
+        listed["active"][0]["binding"]["worktree"],
+        serde_json::json!(".")
+    );
+}
+
+#[test]
+fn add_dry_run_reports_the_stored_spelling() {
+    let (dir, _registry) = fresh_root();
+    let root = dir.path().to_str().unwrap();
+    let v = json_stdout(
+        &run_active(
+            &dir,
+            &["add", "--slug", "x", "--worktree", root, "--dry-run"],
+        )
+        .success(),
+    );
+    assert_eq!(
+        v["would_change"]["new_entry"]["binding"]["worktree"],
+        serde_json::json!(".")
+    );
+}
+
+/// A legacy absolute entry lists as written, and the next write of that row
+/// normalises it.
+#[test]
+fn touch_normalises_a_legacy_absolute_entry_under_the_root() {
+    let (dir, registry) = fresh_root();
+    let legacy = dir.path().to_str().unwrap();
+    seed_worktree(&registry, legacy);
+
+    let listed = json_stdout(&run_active(&dir, &["list"]).success());
+    assert_eq!(
+        listed["active"][0]["binding"]["worktree"],
+        serde_json::json!(legacy.replace('\\', "/"))
+    );
+
+    let preview = json_stdout(&run_active(&dir, &["touch", "--slug", "x", "--dry-run"]).success());
+    assert_eq!(
+        preview["would_change"]["new_entry"]["binding"]["worktree"],
+        serde_json::json!(".")
+    );
+
+    run_active(&dir, &["touch", "--slug", "x"]).success();
+    assert_eq!(stored_worktree(&registry), ".");
+}
+
+#[test]
+fn a_foreign_absolute_entry_stays_readable_and_unchanged() {
+    let (dir, registry) = fresh_root();
+    seed_worktree(&registry, foreign_absolute());
+
+    let listed = json_stdout(&run_active(&dir, &["list"]).success());
+    assert_eq!(
+        listed["active"][0]["binding"]["worktree"],
+        serde_json::json!(foreign_absolute())
+    );
+
+    run_active(&dir, &["touch", "--slug", "x"]).success();
+    assert_eq!(stored_worktree(&registry), foreign_absolute());
+
+    run_active(
+        &dir,
+        &["add", "--slug", "x", "--worktree", foreign_absolute()],
+    )
+    .success();
+    assert_eq!(stored_worktree(&registry), foreign_absolute());
+}
+
+/// From a linked worktree, `.` still names the primary checkout: the tracked
+/// file is copied into every checkout, so its entries must read the same in each.
+#[test]
+fn a_linked_worktree_stores_relative_to_the_main_worktree() {
+    if !common::git_available() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let main = dir.path().join("main");
+    let linked = dir.path().join("linked");
+    fs::create_dir_all(&main).unwrap();
+    let git = |args: &[&str]| {
+        let out = common::git_command(&main).args(args).output().unwrap();
+        assert!(out.status.success(), "git {args:?}: {out:?}");
+    };
+    git(&["init", "-q"]);
+    git(&[
+        "-c",
+        "user.email=t@example.invalid",
+        "-c",
+        "user.name=t",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-q",
+        "--no-verify",
+        "--allow-empty",
+        "-m",
+        "init",
+    ]);
+    git(&["worktree", "add", "-q", linked.to_str().unwrap()]);
+    fs::create_dir_all(linked.join(".claude")).unwrap();
+    let registry = linked.join(".claude").join("active-flow.toml");
+
+    for (given, want) in [(&linked, "../linked"), (&main, ".")] {
+        Command::cargo_bin("tomlctl")
+            .unwrap()
+            .current_dir(&linked)
+            .env_remove("TOMLCTL_ROOT")
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .env_remove("GIT_COMMON_DIR")
+            .env("TOMLCTL_LOCK_TIMEOUT", "5")
+            .args(["flow", "active", "add", "--slug", "x", "--worktree"])
+            .arg(given)
+            .write_stdin("")
+            .assert()
+            .success();
+        assert_eq!(stored_worktree(&registry), want, "given {given:?}");
+    }
+}
+
+// ---------------------------------------------------------------------------
 // remove
 // ---------------------------------------------------------------------------
 
