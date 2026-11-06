@@ -734,6 +734,8 @@ fn extras_from_row(
     let present = |key: &str| row.get(key).filter(|v| !v.is_null());
     let text = |key: &str| row_string(line, key, present(key)).map(Option::unwrap_or_default);
     let strings = |key: &str| row_strings(line, key, present(key)).map(Option::unwrap_or_default);
+    let file_notes = file_notes_from_row(line, present("file_notes"))?;
+    reject_unclaimed_notes(line, &file_notes, files)?;
     Ok(RowExtras {
         line,
         spec: present("spec")
@@ -741,7 +743,7 @@ fn extras_from_row(
             .transpose()?,
         reason: text("reason")?,
         actor: text("actor")?,
-        file_notes: file_notes_from_row(line, present("file_notes"), files)?,
+        file_notes,
         closes: strings("closes")?,
         refs: strings("refs")?,
     })
@@ -749,10 +751,9 @@ fn extras_from_row(
 
 /// A blank annotation is refused rather than stored, because the store drops
 /// such an entry on write and the caller would never learn it was lost.
-fn file_notes_from_row(
+pub(super) fn file_notes_from_row(
     line: usize,
     value: Option<&JsonValue>,
-    files: &[String],
 ) -> Result<Vec<(String, String)>> {
     let Some(raw) = value else {
         return Ok(Vec::new());
@@ -769,12 +770,6 @@ fn file_notes_from_row(
     notes
         .iter()
         .map(|(file, note)| {
-            if !files.contains(file) {
-                return Err(row_err(
-                    line,
-                    format!("`file_notes` names `{file}`, which is not on the row's `files`"),
-                ));
-            }
             let note = row_string(line, "file_notes", Some(note))?.unwrap_or_default();
             if note.trim().is_empty() {
                 return Err(row_err(
@@ -785,6 +780,20 @@ fn file_notes_from_row(
             Ok((file.clone(), note))
         })
         .collect()
+}
+
+pub(super) fn reject_unclaimed_notes(
+    line: usize,
+    notes: &[(String, String)],
+    files: &[String],
+) -> Result<()> {
+    match notes.iter().find(|(file, _)| !files.contains(file)) {
+        Some((file, _)) => Err(row_err(
+            line,
+            format!("`file_notes` names `{file}`, which is not on the row's `files`"),
+        )),
+        None => Ok(()),
+    }
 }
 
 fn json_ids(line: usize, key: &str, value: Option<&JsonValue>) -> Result<Vec<u32>> {

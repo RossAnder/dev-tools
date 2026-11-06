@@ -6,6 +6,7 @@
 //! plan_path = "docs/plans/<slug>.md"
 //! last_import_refs = ["…"]
 //! audit = true
+//! id_high_water = 12
 //! [policy] / [[checkpoints]] / side tables / [[items]]
 //! ```
 //!
@@ -23,7 +24,7 @@ use toml::map::Map;
 use toml::value::Datetime;
 
 /// The newest version this binary reads, stamped on a store holding `specs`,
-/// `milestones`, `changes` or `audit`. A binary that only knows
+/// `milestones`, `changes`, `audit` or `id_high_water`. A binary that only knows
 /// [`BASE_SCHEMA_VERSION`] refuses that stamp rather than dropping those keys.
 pub(crate) const SCHEMA_VERSION: i64 = 2;
 
@@ -80,6 +81,10 @@ pub(crate) struct Store {
     /// Set by approval: from then on a plan field changes only with a reason,
     /// and each change leaves a row in `changes`.
     pub(crate) audit: bool,
+    /// The highest id a removal retired from a v2 store, `0` while none has.
+    /// Plan records and premises name tasks by id, so a retired id must never
+    /// be minted for another task.
+    pub(crate) id_high_water: u32,
     pub(crate) specs: Vec<TaskSpec>,
     pub(crate) milestones: Vec<MilestoneSpec>,
     /// The audit trail, keyed by `ref` or `milestone:<id>`. Outlives the row it
@@ -333,6 +338,7 @@ impl Default for Store {
             file_notes: Vec::new(),
             backlog_links: Vec::new(),
             audit: false,
+            id_high_water: 0,
             specs: Vec::new(),
             milestones: Vec::new(),
             changes: Vec::new(),
@@ -364,8 +370,17 @@ impl Store {
         self.items
             .iter()
             .map(|row| row.id)
-            .max()
-            .map_or(1, |max| max.saturating_add(1))
+            .fold(self.id_high_water, u32::max)
+            .saturating_add(1)
+    }
+
+    /// Whether the store holds any key that stamps it [`SCHEMA_VERSION`].
+    pub(crate) fn holds_v2_keys(&self) -> bool {
+        self.audit
+            || self.id_high_water > 0
+            || !self.specs.is_empty()
+            || !self.milestones.is_empty()
+            || !self.changes.is_empty()
     }
 
     pub(crate) fn find(&self, id: u32) -> Option<&TaskRow> {
@@ -482,6 +497,12 @@ impl fmt::Display for Effort {
     }
 }
 
+/// The form a row's `files` path and a path naming it are compared in, with
+/// backslashes folded and any leading `./` gone. Stored paths stay as written.
+pub(crate) fn normal_path(path: &str) -> String {
+    path.replace('\\', "/").trim_start_matches("./").to_string()
+}
+
 pub(crate) fn from_toml(doc: &TomlValue) -> Result<Store> {
     let root = doc
         .as_table()
@@ -555,6 +576,15 @@ pub(crate) fn from_toml(doc: &TomlValue) -> Result<Store> {
             .ok_or_else(|| anyhow!("`audit` is not a boolean"))?,
         None => false,
     };
+    // Strict on the same terms: reading a damaged mark as `0` would mint a
+    // retired id and erase the mark at the next write.
+    let id_high_water = match root.get("id_high_water") {
+        Some(raw) => raw
+            .as_integer()
+            .and_then(|n| u32::try_from(n).ok())
+            .ok_or_else(|| anyhow!("`id_high_water` is not a non-negative integer"))?,
+        None => 0,
+    };
 
     Ok(Store {
         schema_version,
@@ -570,6 +600,7 @@ pub(crate) fn from_toml(doc: &TomlValue) -> Result<Store> {
         file_notes,
         backlog_links,
         audit,
+        id_high_water,
         specs,
         milestones,
         changes,
@@ -589,6 +620,7 @@ pub(crate) fn to_toml(store: &Store) -> TomlValue {
         file_notes,
         backlog_links,
         audit,
+        id_high_water,
         specs,
         milestones,
         changes,
@@ -610,7 +642,12 @@ pub(crate) fn to_toml(store: &Store) -> TomlValue {
         .filter(|entry| !entry.r#ref.is_empty())
         .map(change_to_toml)
         .collect();
-    let stamp = match *audit || !specs.is_empty() || !milestones.is_empty() || !changes.is_empty() {
+    let holds_v2_keys = *audit
+        || *id_high_water > 0
+        || !specs.is_empty()
+        || !milestones.is_empty()
+        || !changes.is_empty();
+    let stamp = match holds_v2_keys {
         true => SCHEMA_VERSION,
         false => BASE_SCHEMA_VERSION,
     };
@@ -630,6 +667,12 @@ pub(crate) fn to_toml(store: &Store) -> TomlValue {
     );
     if *audit {
         root.insert("audit".to_string(), TomlValue::Boolean(true));
+    }
+    if *id_high_water > 0 {
+        root.insert(
+            "id_high_water".to_string(),
+            TomlValue::Integer(i64::from(*id_high_water)),
+        );
     }
     root.insert("policy".to_string(), policy_to_toml(policy));
     root.insert(
@@ -1388,6 +1431,7 @@ mod tests {
                 refs: vec!["B1".to_string(), "B7".to_string()],
             }],
             audit: false,
+            id_high_water: 0,
             specs: Vec::new(),
             milestones: Vec::new(),
             changes: Vec::new(),
@@ -1687,6 +1731,7 @@ mod tests {
         Store {
             schema_version: SCHEMA_VERSION,
             audit: true,
+            id_high_water: 40,
             specs: vec![TaskSpec {
                 r#ref: "wire-the-renderer".to_string(),
                 outcome: "the render round-trips\nacross two lines".to_string(),
@@ -1828,12 +1873,12 @@ commit = ""
         assert_eq!(toml::to_string(&to_toml(&read)).expect("serialises"), text);
     }
 
-    /// Any one of the four is enough: the older binary refuses version 2 but
+    /// Any one of the five is enough: the older binary refuses version 2 but
     /// drops each of these keys silently at version 1.
     #[test]
     fn each_v2_key_alone_raises_the_stamp() {
         let full = v2_fixture();
-        let only: [(&str, Store); 4] = [
+        let only: [(&str, Store); 5] = [
             (
                 "specs",
                 Store {
@@ -1859,6 +1904,13 @@ commit = ""
                 "audit",
                 Store {
                     audit: true,
+                    ..fixture()
+                },
+            ),
+            (
+                "id_high_water",
+                Store {
+                    id_high_water: 40,
                     ..fixture()
                 },
             ),
@@ -1889,7 +1941,7 @@ commit = ""
             root.get("schema_version"),
             Some(&TomlValue::Integer(BASE_SCHEMA_VERSION))
         );
-        for key in ["audit", "specs", "milestones", "changes"] {
+        for key in ["audit", "id_high_water", "specs", "milestones", "changes"] {
             assert!(!root.contains_key(key), "`{key}` was written while empty");
         }
     }
@@ -1926,6 +1978,7 @@ commit = ""
 
         let mut keyless = v2_fixture();
         keyless.audit = false;
+        keyless.id_high_water = 0;
         keyless.specs[0].r#ref = String::new();
         keyless.milestones[0].id = String::new();
         keyless.changes[0].r#ref = String::new();
@@ -1989,6 +2042,32 @@ commit = ""
         root_mut(&mut raw).insert("audit".to_string(), TomlValue::String("true".to_string()));
         let message = from_toml(&raw).expect_err("rejected").to_string();
         assert!(message.contains("audit"), "{message}");
+    }
+
+    /// Reading a damaged mark as `0` would hand a retired id to the next task.
+    #[test]
+    fn a_malformed_id_high_water_is_refused() {
+        for bad in [TomlValue::Integer(-1), TomlValue::String("7".to_string())] {
+            let mut raw = to_toml(&fixture());
+            root_mut(&mut raw).insert("id_high_water".to_string(), bad);
+            let message = from_toml(&raw).expect_err("rejected").to_string();
+            assert!(message.contains("id_high_water"), "{message}");
+        }
+    }
+
+    #[test]
+    fn a_mark_above_every_row_sets_the_next_id_and_one_below_does_not() {
+        let mark = |id_high_water| Store {
+            id_high_water,
+            ..fixture()
+        };
+        assert_eq!(mark(40).next_id(), 41);
+        assert_eq!(mark(3).next_id(), 13);
+        let emptied = Store {
+            id_high_water: 40,
+            ..Store::default()
+        };
+        assert_eq!(emptied.next_id(), 41);
     }
 
     #[test]

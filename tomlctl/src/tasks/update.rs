@@ -12,23 +12,32 @@
 //! states it. A v2 flow has no import, so both stay open with no stamp.
 //!
 //! On an audited store each moved plan field needs a `reason` and writes a
-//! `Change`. Only an `--ndjson` row can carry one, so the positional form is
-//! refused on those fields. A refusal on any row persists nothing.
+//! `Change`, whose `old` and `new` hold a structured value as compact JSON. Only
+//! an `--ndjson` row can carry a reason, so the positional form is refused on
+//! those fields. A refusal on any row persists nothing.
+//!
+//! A patch taking a path off `files` drops the row's note on it in the same
+//! write, audited as a `file_notes` move.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use anyhow::Result;
+use serde_json::json;
 
 use super::add::{
-    DEFAULT_ACTOR, SpecPatch, reject_undeclared_checkpoint, reject_unknown_premise_targets,
+    DEFAULT_ACTOR, SpecPatch, file_notes_from_row, reject_unclaimed_notes,
+    reject_undeclared_checkpoint, reject_unknown_premise_targets,
 };
 use super::graph::{Node, Tense, build_or_refuse, nodes_of};
-use super::schema::{Accept, Change, Effort, ImportOverride, Status, Store, TaskRow, TaskSpec};
+use super::schema::{
+    Accept, BacklogLink, Change, Effort, FileNote, ImportOverride, Status, Store, TaskRow, TaskSpec,
+};
+use super::show::{accept_json, means_json, premises_json};
 use super::{slug, store};
 use crate::cli::WriteIntegrityArgs;
 use crate::errors::{ErrorKind, tagged_err};
-use crate::items::{parse_ndjson_batch, row_err, row_string};
+use crate::items::{parse_ndjson_batch, row_err, row_string, row_strings};
 
 /// Row fields `--set` reaches, in the order the refusal message lists them.
 const SETTABLE: [&str; 11] = [
@@ -94,6 +103,7 @@ struct Patch<'a> {
     ids: &'a [u32],
     fields: &'a UpdateFields,
     spec: Option<&'a serde_json::Value>,
+    links: Option<&'a RowLinks>,
     reason: &'a str,
     actor: &'a str,
 }
@@ -105,6 +115,7 @@ impl<'a> Patch<'a> {
             ids,
             fields,
             spec: None,
+            links: None,
             reason: "",
             actor: "",
         }
@@ -157,13 +168,34 @@ pub(crate) struct BatchRow {
     pub(crate) ids: Vec<u32>,
     pub(crate) fields: UpdateFields,
     pub(crate) spec: Option<serde_json::Value>,
+    pub(crate) links: RowLinks,
     pub(crate) reason: String,
     pub(crate) actor: String,
 }
 
+/// A row's replacements for what it holds in `[[file_notes]]` and
+/// `[[backlog_links]]`. `None` leaves the stored value; an empty value clears it.
+pub(crate) struct RowLinks {
+    file_notes: Option<Vec<(String, String)>>,
+    closes: Option<Vec<String>>,
+    refs: Option<Vec<String>>,
+}
+
 /// Keys an `--ndjson` row may carry, in the order the refusal lists them.
-const ROW_KEYS: [&str; 10] = [
-    "ids", "id", "status", "agent", "commit", "ref", "set", "spec", "reason", "actor",
+const ROW_KEYS: [&str; 13] = [
+    "ids",
+    "id",
+    "status",
+    "agent",
+    "commit",
+    "ref",
+    "set",
+    "spec",
+    "file_notes",
+    "closes",
+    "refs",
+    "reason",
+    "actor",
 ];
 
 /// Applies every row in one write, reporting each id's outcome in row order.
@@ -181,6 +213,7 @@ pub(crate) fn update_rows(
             ids: &row.ids,
             fields: &row.fields,
             spec: row.spec.as_ref(),
+            links: Some(&row.links),
             reason: &row.reason,
             actor: &row.actor,
         })
@@ -341,6 +374,17 @@ fn batch_row(
         SpecPatch::parse(line, raw)?;
     }
 
+    // Whether a note's path is on the row's `files` waits for `patch_links`,
+    // since the same row may move `files` and may name several tasks.
+    let present = |key: &str| object.get(key).filter(|value| !value.is_null());
+    let links = RowLinks {
+        file_notes: present("file_notes")
+            .map(|raw| file_notes_from_row(line, Some(raw)))
+            .transpose()?,
+        closes: row_strings(line, "closes", present("closes"))?,
+        refs: row_strings(line, "refs", present("refs"))?,
+    };
+
     Ok(BatchRow {
         line,
         ids,
@@ -355,6 +399,7 @@ fn batch_row(
             set,
         },
         spec,
+        links,
         reason: text("reason")?.unwrap_or_default(),
         actor: text("actor")?.unwrap_or_default(),
     })
@@ -402,14 +447,18 @@ fn apply(store: &mut Store, patches: &[Patch<'_>], v2: bool) -> Result<Vec<Outco
                 (Err(err), Some(line)) => return Err(err.context(format!("line {line}"))),
                 (result, _) => result?,
             };
-            let spec_moves = match (group.spec, line) {
+            let mut side_moves = match (group.spec, line) {
                 (Some(raw), Some(line)) => patch_spec(store, id, line, raw)?,
                 _ => Vec::new(),
             };
-            changed.extend(spec_moves.iter().map(|moved| moved.field));
+            if let (Some(links), Some(line)) = (group.links, line) {
+                side_moves.extend(patch_links(store, id, line, links)?);
+            }
+            side_moves.extend(prune_dropped_notes(store, id, &before.files)?);
+            changed.extend(side_moves.iter().map(|moved| moved.field));
             changed.sort_unstable();
             if store.audit {
-                record_changes(store, &before, &changed, spec_moves, group)?;
+                record_changes(store, &before, &changed, side_moves, group)?;
             }
             if line.is_some()
                 && changed
@@ -516,36 +565,138 @@ fn spec_moves(before: &TaskSpec, after: &TaskSpec) -> Vec<Move> {
     note("spec.outcome", outcome.clone(), after.outcome.clone());
     note(
         "spec.constraints",
-        format!("{constraints:?}"),
-        format!("{:?}", after.constraints),
+        json!(constraints).to_string(),
+        json!(after.constraints).to_string(),
     );
     note(
         "spec.accept",
-        format!("{accept:?}"),
-        format!("{:?}", after.accept),
+        accept_json(accept).to_string(),
+        accept_json(&after.accept).to_string(),
     );
     note(
         "spec.premises",
-        format!("{premises:?}"),
-        format!("{:?}", after.premises),
+        premises_json(premises).to_string(),
+        premises_json(&after.premises).to_string(),
     );
     note(
         "spec.means",
-        format!("{means:?}"),
-        format!("{:?}", after.means),
+        means_json(means).to_string(),
+        means_json(&after.means).to_string(),
     );
     note(
         "spec.design",
-        format!("{design:?}"),
-        format!("{:?}", after.design),
+        json!(design).to_string(),
+        json!(after.design).to_string(),
     );
     note(
         "spec.precedent",
-        format!("{precedent:?}"),
-        format!("{:?}", after.precedent),
+        json!(precedent).to_string(),
+        json!(after.precedent).to_string(),
     );
     note("spec.executor", executor.clone(), after.executor.clone());
     moves
+}
+
+/// Replaces the row's file notes and backlog ids `links` supplies. A note must
+/// name a path on the row's `files` as this row's `set` left them. Notes compare
+/// by path, so a reordered object moves nothing; id lists compare in order, as
+/// `files` and `needs` do.
+fn patch_links(store: &mut Store, id: u32, line: usize, links: &RowLinks) -> Result<Vec<Move>> {
+    let row = row_of(store, id)?;
+    let r#ref = row.r#ref.clone();
+    let mut moves = Vec::new();
+
+    if let Some(notes) = &links.file_notes {
+        reject_unclaimed_notes(line, notes, &row.files)?;
+        let old = stored_notes_json(store, &r#ref);
+        let new = notes_json(
+            notes
+                .iter()
+                .map(|(file, note)| (file.as_str(), note.as_str())),
+        );
+        if old != new {
+            store.file_notes.retain(|note| note.r#ref != r#ref);
+            store
+                .file_notes
+                .extend(notes.iter().map(|(file, note)| FileNote {
+                    r#ref: r#ref.clone(),
+                    file: file.clone(),
+                    note: note.clone(),
+                }));
+            moves.push(Move {
+                field: "file_notes",
+                old,
+                new,
+            });
+        }
+    }
+
+    let (old_closes, old_refs) = store
+        .links_for(&r#ref)
+        .map(|link| (link.closes.clone(), link.refs.clone()))
+        .unwrap_or_default();
+    let closes = links.closes.clone().unwrap_or_else(|| old_closes.clone());
+    let refs = links.refs.clone().unwrap_or_else(|| old_refs.clone());
+    if closes != old_closes || refs != old_refs {
+        store.backlog_links.retain(|link| link.r#ref != r#ref);
+        if !closes.is_empty() || !refs.is_empty() {
+            store.backlog_links.push(BacklogLink {
+                r#ref,
+                closes: closes.clone(),
+                refs: refs.clone(),
+            });
+        }
+    }
+    for (field, old, new) in [("closes", old_closes, closes), ("refs", old_refs, refs)] {
+        if old != new {
+            moves.push(Move {
+                field,
+                old: json!(old).to_string(),
+                new: json!(new).to_string(),
+            });
+        }
+    }
+    Ok(moves)
+}
+
+/// Drops the row's notes on paths in `before` its `files` no longer hold, so a
+/// path added back later does not regain a stale annotation. A row supplying
+/// `file_notes` has already replaced them with notes on paths it claims.
+fn prune_dropped_notes(store: &mut Store, id: u32, before: &[String]) -> Result<Option<Move>> {
+    let row = row_of(store, id)?;
+    let r#ref = row.r#ref.clone();
+    let dropped: Vec<String> = before
+        .iter()
+        .filter(|file| !row.files.contains(file))
+        .cloned()
+        .collect();
+    let old = stored_notes_json(store, &r#ref);
+    store
+        .file_notes
+        .retain(|note| note.r#ref != r#ref || !dropped.contains(&note.file));
+    let new = stored_notes_json(store, &r#ref);
+    Ok((old != new).then_some(Move {
+        field: "file_notes",
+        old,
+        new,
+    }))
+}
+
+fn stored_notes_json(store: &Store, r#ref: &str) -> String {
+    notes_json(
+        store
+            .file_notes
+            .iter()
+            .filter(|note| note.r#ref == r#ref)
+            .map(|note| (note.file.as_str(), note.note.as_str())),
+    )
+}
+
+/// Sorted by path, so the text stored in `[[changes]]` does not depend on the
+/// order the notes arrived in.
+fn notes_json<'a>(notes: impl Iterator<Item = (&'a str, &'a str)>) -> String {
+    let sorted: BTreeMap<&str, &str> = notes.collect();
+    json!(sorted).to_string()
 }
 
 /// Writes one `Change` per moved plan field, or refuses when the group has no
@@ -555,7 +706,7 @@ fn record_changes(
     store: &mut Store,
     before: &TaskRow,
     changed: &[&'static str],
-    spec_moves: Vec<Move>,
+    side_moves: Vec<Move>,
     group: &Patch<'_>,
 ) -> Result<()> {
     let id = before.id;
@@ -571,7 +722,7 @@ fn record_changes(
             })
         })
         .collect();
-    moves.extend(spec_moves);
+    moves.extend(side_moves);
     let Some(first) = moves.first() else {
         return Ok(());
     };
@@ -622,12 +773,12 @@ fn audited_value(row: &TaskRow, field: &str) -> Option<String> {
         "acceptance" => row.acceptance.clone(),
         "action" => row.action.clone(),
         "checkpoint" => row.checkpoint.clone(),
-        "coupling" => format!("{:?}", row.coupling),
+        "coupling" => json!(row.coupling).to_string(),
         "deps_note" => row.deps_note.clone(),
         "detail" => row.detail.clone(),
         "effort" => row.effort.as_str().to_string(),
-        "files" => format!("{:?}", row.files),
-        "needs" => format!("{:?}", row.needs),
+        "files" => json!(row.files).to_string(),
+        "needs" => json!(row.needs).to_string(),
         "ref" => row.r#ref.clone(),
         "title" => row.title.clone(),
         _ => return None,

@@ -16,6 +16,7 @@
 use std::path::Path;
 
 use anyhow::Result;
+use serde_json::json;
 
 use super::finding::{NO_TASK, task_list};
 use super::schema::{Change, ImportOverride, Status, Store};
@@ -55,12 +56,25 @@ pub(crate) fn remove_with_reason(
     force: bool,
     reason: Option<&str>,
 ) -> Result<RemoveOutcome> {
-    store::mutate(path, integrity, |store| retire(store, id, force, reason))
+    let v2_flow = store::is_v2_flow(path);
+    store::mutate(path, integrity, |store| {
+        retire(store, id, force, reason, v2_flow)
+    })
 }
 
 /// An audited store records every removal as a tombstone, so it refuses one
 /// with no `reason`; a forced removal also records each dependent it rewires.
-fn retire(store: &mut Store, id: u32, force: bool, reason: Option<&str>) -> Result<RemoveOutcome> {
+///
+/// A v2 store raises its id mark past the removed row. That is a store in a
+/// flow with a `plan.toml` or one already holding a v2 key, whose premises can
+/// name ids with no `plan.toml` present.
+fn retire(
+    store: &mut Store,
+    id: u32,
+    force: bool,
+    reason: Option<&str>,
+    v2_flow: bool,
+) -> Result<RemoveOutcome> {
     let reason = reason.map(str::trim).unwrap_or_default();
     if store.audit && reason.is_empty() {
         return Err(refuse(
@@ -126,8 +140,8 @@ fn retire(store: &mut Store, id: u32, force: bool, reason: Option<&str>) -> Resu
                     at,
                     r#ref: row.r#ref.clone(),
                     field: "needs".to_string(),
-                    old: format!("{:?}", before.0),
-                    new: format!("{:?}", row.needs),
+                    old: json!(before.0).to_string(),
+                    new: json!(row.needs).to_string(),
                     actor: AUDIT_ACTOR.to_string(),
                     reason: reason.to_string(),
                 });
@@ -135,6 +149,9 @@ fn retire(store: &mut Store, id: u32, force: bool, reason: Option<&str>) -> Resu
         }
     }
 
+    if v2_flow || store.holds_v2_keys() {
+        store.id_high_water = store.id_high_water.max(id);
+    }
     let row = store.items.remove(index);
     store.specs.retain(|spec| spec.r#ref != row.r#ref);
     if at.is_some() {
@@ -213,7 +230,11 @@ mod tests {
     }
 
     fn retire(store: &mut Store, id: u32, force: bool) -> Result<RemoveOutcome> {
-        super::retire(store, id, force, None)
+        super::retire(store, id, force, None, false)
+    }
+
+    fn retire_with_reason(store: &mut Store, id: u32, force: bool, reason: &str) {
+        super::retire(store, id, force, Some(reason), false).expect("the row retires");
     }
 
     fn spec(r#ref: &str) -> TaskSpec {
@@ -390,7 +411,7 @@ mod tests {
     fn an_audited_removal_needs_a_reason() {
         let mut store = audited(vec![row(1, &[], &[])]);
         for reason in [None, Some("  ")] {
-            let message = super::retire(&mut store, 1, false, reason)
+            let message = super::retire(&mut store, 1, false, reason, false)
                 .expect_err("no reason is refused")
                 .to_string();
             assert!(message.contains("--reason"), "{message}");
@@ -404,7 +425,7 @@ mod tests {
         let mut store = audited(vec![row(1, &[], &[]), row(2, &[], &[])]);
         store.specs = vec![spec("task-1"), spec("task-2")];
 
-        super::retire(&mut store, 2, false, Some("dropped from scope")).expect("retires");
+        retire_with_reason(&mut store, 2, false, "dropped from scope");
         assert_eq!(store.changes.len(), 1);
         let change = &store.changes[0];
         assert_eq!(change.r#ref, "task-2");
@@ -426,7 +447,7 @@ mod tests {
     #[test]
     fn an_audited_forced_removal_records_each_rewired_needs() {
         let mut store = audited(vec![row(1, &[], &[]), row(2, &[1], &[]), row(3, &[2], &[])]);
-        super::retire(&mut store, 2, true, Some("merged into 1")).expect("retires");
+        retire_with_reason(&mut store, 2, true, "merged into 1");
 
         let needs: Vec<_> = store
             .changes
@@ -446,6 +467,57 @@ mod tests {
         retire(&mut store, 1, false).expect("retires");
         assert!(store.changes.is_empty());
         assert!(store.specs.is_empty());
+    }
+
+    #[test]
+    fn a_v2_removal_retires_its_id_and_a_lower_one_keeps_the_mark() {
+        let mut store = audited(vec![row(1, &[], &[]), row(2, &[], &[]), row(3, &[], &[])]);
+
+        retire_with_reason(&mut store, 3, false, "dropped");
+        assert_eq!(store.id_high_water, 3);
+        assert_eq!(store.next_id(), 4);
+
+        retire_with_reason(&mut store, 1, false, "dropped");
+        assert_eq!(store.id_high_water, 3);
+        assert_eq!(store.next_id(), 4);
+    }
+
+    /// A spec's premise can name an id with no `plan.toml` in the flow, and the
+    /// row's own spec counts even though this removal drops it.
+    #[test]
+    fn a_spec_alone_makes_the_store_v2() {
+        let mut store = store(vec![row(1, &[], &[]), row(2, &[], &[])]);
+        store.specs = vec![spec("task-2")];
+
+        retire(&mut store, 2, false).expect("the row retires");
+        assert_eq!(store.next_id(), 3);
+    }
+
+    #[test]
+    fn a_plan_toml_alone_makes_the_store_v2() {
+        let mut store = store(vec![row(1, &[], &[]), row(2, &[], &[])]);
+
+        super::retire(&mut store, 2, false, None, true).expect("the row retires");
+        assert_eq!(store.id_high_water, 2);
+        assert_eq!(store.next_id(), 3);
+    }
+
+    #[test]
+    fn a_v1_removal_keeps_no_mark() {
+        let mut store = store(vec![row(1, &[], &[]), row(2, &[], &[])]);
+
+        retire(&mut store, 2, false).expect("the row retires");
+        assert_eq!(store.id_high_water, 0);
+        assert_eq!(store.next_id(), 2);
+    }
+
+    #[test]
+    fn a_refused_removal_leaves_the_mark() {
+        let mut store = audited(vec![row(1, &[], &[])]);
+        store.items[0].status = Status::Done;
+
+        super::retire(&mut store, 1, false, Some("dropped"), false).expect_err("needs --force");
+        assert_eq!(store.id_high_water, 0);
     }
 
     #[test]

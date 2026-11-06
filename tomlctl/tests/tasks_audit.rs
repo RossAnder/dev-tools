@@ -1,6 +1,7 @@
 //! Black-box coverage for what `tasks update` adds on top of its row fields: a
-//! row's `spec`, `reason` and `actor`, the `[[changes]]` an audited store
-//! writes, and `files` and `needs` on a flow with a `plan.toml`.
+//! row's `spec`, `file_notes`, `closes`, `refs`, `reason` and `actor`, the
+//! `[[changes]]` an audited store writes, and `files` and `needs` on a flow with
+//! a `plan.toml`.
 //!
 //! Every refusal asserts untouched store bytes, because a batch is
 //! all-or-nothing.
@@ -280,6 +281,104 @@ fn list_fields_and_the_checkpoint_are_audited() {
 }
 
 #[test]
+fn multi_element_lists_are_stored_as_compact_json() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, &audited());
+    mark_v2(&store);
+
+    update(
+        &root,
+        &NDJSON,
+        "{\"id\":2,\"set\":{\"files\":[\"src/a.rs\",\"src/b.rs\"]},\"reason\":\"split\"}\n",
+    );
+    update(
+        &root,
+        &NDJSON,
+        "{\"id\":2,\"set\":{\"files\":[\"src/c.rs\",\"src/d.rs\"]},\"reason\":\"moved\"}\n",
+    );
+
+    assert_eq!(
+        trail(&store)[1],
+        entry(
+            "wire-the-renderer",
+            "files",
+            "[\"src/a.rs\",\"src/b.rs\"]",
+            "[\"src/c.rs\",\"src/d.rs\"]"
+        )
+    );
+}
+
+/// Each entry parses as JSON carrying the field names `tasks show` emits, with
+/// the recorded probe included.
+#[test]
+fn a_structured_spec_change_stores_json_a_reader_can_parse() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, &with_spec(&audited()));
+
+    update(
+        &root,
+        &NDJSON,
+        "{\"id\":1,\"spec\":{\
+         \"accept\":[{\"behaviour\":\"b\",\"check\":\"c\",\"kind\":\"guard\"}],\
+         \"premises\":[{\"claim\":\"p\",\"at\":\"base\"}],\
+         \"means\":[{\"text\":\"t\",\"binding\":\"required\"}],\
+         \"design\":[\"d1\",\"d2\"]\
+         },\"reason\":\"sharpened\"}\n",
+    );
+
+    let rows = changes(&store);
+    let parsed = |field: &str, column: &str| -> Value {
+        let row = rows
+            .iter()
+            .find(|row| text(row, "field") == field)
+            .unwrap_or_else(|| panic!("no `{field}` row"));
+        serde_json::from_str(text(row, column)).expect("the column parses as JSON")
+    };
+
+    let old_accept = parsed("spec.accept", "old");
+    assert_eq!(old_accept[0]["behaviour"], json!("the seed loads"));
+    assert_eq!(old_accept[0]["probe"]["verdict"], json!("healthy"));
+    assert_eq!(parsed("spec.accept", "new")[0]["kind"], json!("guard"));
+    assert_eq!(parsed("spec.premises", "old"), json!([]));
+    assert_eq!(parsed("spec.premises", "new")[0]["claim"], json!("p"));
+    assert_eq!(parsed("spec.means", "new")[0]["binding"], json!("required"));
+    assert_eq!(parsed("spec.design", "new"), json!(["d1", "d2"]));
+}
+
+#[test]
+fn a_forced_removal_stores_each_rewired_needs_list_as_compact_json() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, &audited());
+    mark_v2(&store);
+    update(
+        &root,
+        &NDJSON,
+        "{\"id\":2,\"set\":{\"needs\":[1]},\"reason\":\"ordered\"}\n",
+    );
+    cli(&root)
+        .args(["tasks", "add-many", "--slug", TASKS_SLUG, "--ndjson", "-"])
+        .write_stdin(
+            "{\"title\":\"Third\",\"effort\":\"S\",\"needs\":[1,2],\"reason\":\"added\"}\n\
+             {\"title\":\"Fourth\",\"effort\":\"S\",\"needs\":[3],\"reason\":\"added\"}\n",
+        )
+        .assert()
+        .success();
+
+    cli(&root)
+        .args(["tasks", "remove", "3", "--slug", TASKS_SLUG])
+        .args(["--force", "--reason", "merged"])
+        .assert()
+        .success();
+
+    let rewired = changes(&store)
+        .into_iter()
+        .find(|row| text(row, "ref") == "fourth" && text(row, "field") == "needs")
+        .expect("a needs row for the dependent");
+    assert_eq!(text(&rewired, "old"), "[3]");
+    assert_eq!(text(&rewired, "new"), "[1,2]");
+}
+
+#[test]
 fn status_agent_and_commit_need_no_reason_and_write_no_change() {
     let (_tmp, root) = sandbox();
     let store = seed_tasks(&root, &audited());
@@ -516,6 +615,495 @@ fn a_probe_survives_a_re_issued_accept_entry_and_not_a_changed_one() {
     );
     assert_eq!(out["changed"], json!(["spec.accept"]), "{out}");
     assert_eq!(probe_of(&store), None);
+}
+
+// ---------------------------------------------------------------------------
+// A row's file notes and backlog links
+// ---------------------------------------------------------------------------
+
+const LINKED: &str = r#"
+[[file_notes]]
+ref = "seed-the-store"
+file = "src/seed.rs"
+note = "(new)"
+
+[[backlog_links]]
+ref = "seed-the-store"
+closes = ["B-aaaa1111"]
+refs = ["B-bbbb2222"]
+"#;
+
+fn linked(store: &str) -> String {
+    format!("{store}{LINKED}")
+}
+
+fn notes_of<'a>(doc: &'a toml::Value, r#ref: &str) -> Vec<(&'a str, &'a str)> {
+    side_table(doc, "file_notes")
+        .iter()
+        .filter(|row| text(row, "ref") == r#ref)
+        .map(|row| (text(row, "file"), text(row, "note")))
+        .collect()
+}
+
+fn link_of<'a>(doc: &'a toml::Value, r#ref: &str) -> Option<&'a toml::Value> {
+    side_table(doc, "backlog_links")
+        .iter()
+        .find(|row| text(row, "ref") == r#ref)
+}
+
+fn ids_at(link: &toml::Value, key: &str) -> Vec<String> {
+    link[key]
+        .as_array()
+        .unwrap_or_else(|| panic!("`{key}` must be an array in {link}"))
+        .iter()
+        .map(|id| id.as_str().expect("a string id").to_string())
+        .collect()
+}
+
+#[test]
+fn file_notes_replace_the_rows_whole_set_and_touch_no_other_row() {
+    let (_tmp, root) = sandbox();
+    let extra = "\n[[file_notes]]\nref = \"wire-the-renderer\"\nfile = \"src/render.rs\"\nnote = \"keep\"\n";
+    let store = seed_tasks(&root, &format!("{}{extra}", linked(FIXTURE)));
+
+    let out = update(
+        &root,
+        &NDJSON,
+        "{\"id\":1,\"file_notes\":{\"src/seed.rs\":\"(delete)\"}}\n",
+    );
+    assert_eq!(out["changed"], json!(["file_notes"]), "{out}");
+    let doc = read_store(&store);
+    assert_eq!(
+        notes_of(&doc, "seed-the-store"),
+        [("src/seed.rs", "(delete)")]
+    );
+    assert_eq!(
+        notes_of(&doc, "wire-the-renderer"),
+        [("src/render.rs", "keep")]
+    );
+
+    let out = update(&root, &NDJSON, "{\"id\":1,\"file_notes\":{}}\n");
+    assert_eq!(out["changed"], json!(["file_notes"]), "{out}");
+    assert!(notes_of(&read_store(&store), "seed-the-store").is_empty());
+}
+
+#[test]
+fn a_note_may_name_a_path_the_same_row_adds_to_files() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, FIXTURE);
+    mark_v2(&store);
+
+    let out = update(
+        &root,
+        &NDJSON,
+        "{\"id\":1,\"set\":{\"files\":[\"src/seed.rs\",\"src/new.rs\"]},\
+         \"file_notes\":{\"src/new.rs\":\"(new)\"}}\n",
+    );
+
+    assert_eq!(out["changed"], json!(["file_notes", "files"]), "{out}");
+    assert_eq!(
+        notes_of(&read_store(&store), "seed-the-store"),
+        [("src/new.rs", "(new)")]
+    );
+}
+
+#[test]
+fn file_notes_are_validated_as_add_many_validates_them() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, FIXTURE);
+    let before = fs::read(&store).unwrap();
+
+    for (notes, expected) in [
+        (r#"{"src/other.rs":"(new)"}"#, "not on the row's `files`"),
+        (r#"{"src/seed.rs":"  "}"#, "blank annotation"),
+        (r#"["src/seed.rs"]"#, "must map a path"),
+        (r#"{"src/seed.rs":1}"#, "file_notes"),
+    ] {
+        let err = update_err(
+            &root,
+            &NDJSON,
+            &format!("{{\"id\":1,\"file_notes\":{notes}}}\n"),
+        );
+        assert_eq!(err["kind"], json!("validation"), "{notes}: {err}");
+        assert!(message(&err).contains("line 1"), "{notes}: {err}");
+        assert!(message(&err).contains(expected), "{notes}: {err}");
+    }
+    assert_eq!(fs::read(&store).unwrap(), before);
+}
+
+/// A row naming several ids checks its notes against each row's own `files`.
+#[test]
+fn a_note_absent_from_one_named_rows_files_refuses_the_batch() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, FIXTURE);
+    let before = fs::read(&store).unwrap();
+
+    let err = update_err(
+        &root,
+        &NDJSON,
+        "{\"ids\":[1,2],\"file_notes\":{\"src/seed.rs\":\"(new)\"}}\n",
+    );
+
+    assert!(message(&err).contains("src/seed.rs"), "{err}");
+    assert_eq!(fs::read(&store).unwrap(), before);
+}
+
+#[test]
+fn closes_and_refs_replace_independently_and_a_link_emptied_is_dropped() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, &linked(FIXTURE));
+
+    let out = update(&root, &NDJSON, "{\"id\":1,\"closes\":[\"B-cccc3333\"]}\n");
+    assert_eq!(out["changed"], json!(["closes"]), "{out}");
+    let doc = read_store(&store);
+    let link = link_of(&doc, "seed-the-store").expect("the link stays");
+    assert_eq!(ids_at(link, "closes"), ["B-cccc3333"]);
+    assert_eq!(ids_at(link, "refs"), ["B-bbbb2222"]);
+
+    let out = update(&root, &NDJSON, "{\"id\":1,\"closes\":[],\"refs\":[]}\n");
+    assert_eq!(out["changed"], json!(["closes", "refs"]), "{out}");
+    assert!(link_of(&read_store(&store), "seed-the-store").is_none());
+}
+
+#[test]
+fn closes_and_refs_land_on_a_row_with_no_link_and_refuse_a_wrong_type() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, FIXTURE);
+
+    update(&root, &NDJSON, "{\"id\":2,\"refs\":[\"B-dddd4444\"]}\n");
+    let doc = read_store(&store);
+    let link = link_of(&doc, "wire-the-renderer").expect("a new link");
+    assert_eq!(ids_at(link, "refs"), ["B-dddd4444"]);
+    assert!(ids_at(link, "closes").is_empty());
+
+    let before = fs::read(&store).unwrap();
+    let err = update_err(&root, &NDJSON, "{\"id\":2,\"closes\":\"B-1\"}\n");
+    assert!(message(&err).contains("closes"), "{err}");
+    assert_eq!(fs::read(&store).unwrap(), before);
+}
+
+#[test]
+fn re_issued_notes_and_links_move_nothing_and_need_no_reason() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, &linked(&audited()));
+
+    let out = update(
+        &root,
+        &NDJSON,
+        "{\"id\":1,\"file_notes\":{\"src/seed.rs\":\"(new)\"},\
+         \"closes\":[\"B-aaaa1111\"],\"refs\":[\"B-bbbb2222\"]}\n",
+    );
+
+    assert_eq!(out["changed"], json!([]), "{out}");
+    assert!(changes(&store).is_empty());
+    let doc = read_store(&store);
+    assert_eq!(notes_of(&doc, "seed-the-store").len(), 1, "{doc}");
+}
+
+#[test]
+fn audited_notes_and_links_need_a_reason_and_write_one_row_each() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, &linked(&audited()));
+    let before = fs::read(&store).unwrap();
+
+    for key in ["file_notes", "closes", "refs"] {
+        let value = match key {
+            "file_notes" => r#"{"src/seed.rs":"(delete)"}"#,
+            _ => r#"["B-eeee5555"]"#,
+        };
+        let err = update_err(&root, &NDJSON, &format!("{{\"id\":1,\"{key}\":{value}}}\n"));
+        assert!(message(&err).contains(&format!("`{key}`")), "{key}: {err}");
+        assert!(message(&err).contains("reason"), "{key}: {err}");
+    }
+    assert_eq!(fs::read(&store).unwrap(), before);
+
+    update(
+        &root,
+        &NDJSON,
+        "{\"id\":1,\"file_notes\":{\"src/seed.rs\":\"(delete)\"},\
+         \"closes\":[\"B-aaaa1111\",\"B-eeee5555\"],\"refs\":[],\"reason\":\"re-linked\"}\n",
+    );
+
+    assert_eq!(
+        trail(&store),
+        [
+            entry(
+                "seed-the-store",
+                "file_notes",
+                "{\"src/seed.rs\":\"(new)\"}",
+                "{\"src/seed.rs\":\"(delete)\"}"
+            ),
+            entry(
+                "seed-the-store",
+                "closes",
+                "[\"B-aaaa1111\"]",
+                "[\"B-aaaa1111\",\"B-eeee5555\"]"
+            ),
+            entry("seed-the-store", "refs", "[\"B-bbbb2222\"]", "[]"),
+        ]
+    );
+    assert_eq!(text(&changes(&store)[0], "reason"), "re-linked");
+}
+
+#[test]
+fn notes_and_links_land_under_a_ref_the_same_row_renames() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, &linked(FIXTURE));
+
+    update(
+        &root,
+        &NDJSON,
+        "{\"id\":1,\"ref\":\"reseed\",\"closes\":[\"B-cccc3333\"]}\n",
+    );
+
+    let doc = read_store(&store);
+    assert!(link_of(&doc, "seed-the-store").is_none(), "{doc}");
+    let link = link_of(&doc, "reseed").expect("the link followed the rename");
+    assert_eq!(ids_at(link, "closes"), ["B-cccc3333"]);
+    assert_eq!(ids_at(link, "refs"), ["B-bbbb2222"]);
+    assert_eq!(notes_of(&doc, "reseed"), [("src/seed.rs", "(new)")]);
+}
+
+// ---------------------------------------------------------------------------
+// A file note on a path the row stops claiming
+// ---------------------------------------------------------------------------
+
+#[test]
+fn dropping_a_path_drops_its_note_so_adding_it_back_starts_clean() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, &linked(FIXTURE));
+    mark_v2(&store);
+
+    let out = update(
+        &root,
+        &NDJSON,
+        "{\"id\":1,\"set\":{\"files\":[\"src/other.rs\"]}}\n",
+    );
+    assert_eq!(out["changed"], json!(["file_notes", "files"]), "{out}");
+    assert!(notes_of(&read_store(&store), "seed-the-store").is_empty());
+
+    let out = update(
+        &root,
+        &NDJSON,
+        "{\"id\":1,\"set\":{\"files\":[\"src/other.rs\",\"src/seed.rs\"]}}\n",
+    );
+    assert_eq!(out["changed"], json!(["files"]), "{out}");
+    assert!(notes_of(&read_store(&store), "seed-the-store").is_empty());
+}
+
+#[test]
+fn only_the_dropped_paths_note_goes_and_no_other_rows() {
+    let (_tmp, root) = sandbox();
+    let extra =
+        "\n[[file_notes]]\nref = \"wire-the-renderer\"\nfile = \"src/seed.rs\"\nnote = \"keep\"\n";
+    let store = seed_tasks(&root, &format!("{}{extra}", linked(FIXTURE)));
+    mark_v2(&store);
+    update(
+        &root,
+        &NDJSON,
+        "{\"id\":1,\"set\":{\"files\":[\"src/seed.rs\",\"src/gone.rs\"]},\
+         \"file_notes\":{\"src/seed.rs\":\"(new)\",\"src/gone.rs\":\"(delete)\"}}\n",
+    );
+
+    update(&root, &["1", "--set", "files=src/seed.rs"], "");
+
+    let doc = read_store(&store);
+    assert_eq!(notes_of(&doc, "seed-the-store"), [("src/seed.rs", "(new)")]);
+    assert_eq!(
+        notes_of(&doc, "wire-the-renderer"),
+        [("src/seed.rs", "keep")]
+    );
+}
+
+#[test]
+fn an_audited_drop_records_the_note_under_the_rows_reason() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, &linked(&audited()));
+    mark_v2(&store);
+
+    update(
+        &root,
+        &NDJSON,
+        "{\"id\":1,\"set\":{\"files\":[\"src/other.rs\"]},\"reason\":\"moved\"}\n",
+    );
+
+    assert_eq!(
+        trail(&store),
+        [
+            entry(
+                "seed-the-store",
+                "files",
+                "[\"src/seed.rs\"]",
+                "[\"src/other.rs\"]"
+            ),
+            entry(
+                "seed-the-store",
+                "file_notes",
+                "{\"src/seed.rs\":\"(new)\"}",
+                "{}"
+            ),
+        ]
+    );
+    assert!(
+        changes(&store)
+            .iter()
+            .all(|row| text(row, "reason") == "moved")
+    );
+}
+
+/// One write, one audit row: a supplied set replaces the notes before the prune
+/// looks, so it finds nothing left to drop.
+#[test]
+fn a_row_supplying_notes_while_dropping_a_path_records_one_note_move() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, &linked(&audited()));
+    mark_v2(&store);
+
+    update(
+        &root,
+        &NDJSON,
+        "{\"id\":1,\"set\":{\"files\":[\"src/other.rs\"]},\
+         \"file_notes\":{\"src/other.rs\":\"(new)\"},\"reason\":\"moved\"}\n",
+    );
+
+    let moves: Vec<_> = trail(&store)
+        .into_iter()
+        .filter(|(_, field, _, _)| field == "file_notes")
+        .collect();
+    assert_eq!(
+        moves,
+        [entry(
+            "seed-the-store",
+            "file_notes",
+            "{\"src/seed.rs\":\"(new)\"}",
+            "{\"src/other.rs\":\"(new)\"}"
+        )]
+    );
+}
+
+// ---------------------------------------------------------------------------
+// A removed task's id
+// ---------------------------------------------------------------------------
+
+const PLAN_BINDING_TASK_2: &str = r#"schema_version = 1
+
+[[decision]]
+id = "D1"
+decision = "Use the helper."
+provenance = "agent-assumed"
+door = "two-way"
+binds = ["2"]
+"#;
+
+fn remove(root: &Path, id: &str, reason: &str) {
+    cli(root)
+        .args([
+            "tasks", "remove", id, "--slug", TASKS_SLUG, "--reason", reason,
+        ])
+        .assert()
+        .success();
+}
+
+fn add(root: &Path, title: &str) -> u64 {
+    let out = cli(root)
+        .args(["tasks", "add-many", "--slug", TASKS_SLUG, "--ndjson", "-"])
+        .write_stdin(format!(
+            "{{\"title\":\"{title}\",\"effort\":\"S\",\"reason\":\"added\"}}\n"
+        ))
+        .assert()
+        .success();
+    let report: Value = serde_json::from_slice(&out.get_output().stdout).expect("stdout is JSON");
+    report["rows"][0]["id"].as_u64().expect("a minted id")
+}
+
+/// The ids `plan check` reports under the unknown-bind class, or `None` when it
+/// raises no such finding.
+fn unknown_bind_ids(root: &Path) -> Option<Value> {
+    let output = cli(root)
+        .args(["plan", "check", "--slug", TASKS_SLUG])
+        .write_stdin("")
+        .output()
+        .expect("the binary runs");
+    let report: Value = serde_json::from_slice(&output.stdout).expect("stdout is JSON");
+    report["findings"]
+        .as_array()
+        .expect("a findings array")
+        .iter()
+        .find(|finding| finding["class"] == json!("plan/decision-bind-unknown"))
+        .map(|finding| finding["ids"].clone())
+}
+
+/// A decision bound to the removed task stays dangling, where a re-mint would
+/// hand it to the new one and read clean.
+#[test]
+fn a_removed_tasks_id_is_never_minted_again_and_its_bind_stays_dangling() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, &audited());
+    fs::write(
+        store.parent().expect("flow dir").join("plan.toml"),
+        PLAN_BINDING_TASK_2,
+    )
+    .expect("plan.toml");
+    assert_eq!(unknown_bind_ids(&root), None, "task 2 still exists");
+
+    remove(&root, "2", "dropped");
+    assert_eq!(unknown_bind_ids(&root), Some(json!([2])));
+
+    assert_eq!(add(&root, "Third"), 3);
+    assert_eq!(unknown_bind_ids(&root), Some(json!([2])));
+    assert_eq!(read_store(&store)["id_high_water"].as_integer(), Some(2));
+    assert_sidecar_matches(&store);
+}
+
+#[test]
+fn a_plan_toml_makes_a_store_holding_no_v2_key_keep_the_mark() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, FIXTURE);
+    mark_v2(&store);
+
+    remove(&root, "2", "dropped");
+
+    let doc = read_store(&store);
+    assert_eq!(doc["schema_version"].as_integer(), Some(2), "{doc}");
+    assert_eq!(doc["id_high_water"].as_integer(), Some(2), "{doc}");
+    assert_eq!(add(&root, "Third"), 3);
+}
+
+#[test]
+fn a_spec_makes_a_store_with_no_plan_toml_keep_the_mark() {
+    let (_tmp, root) = sandbox();
+    seed_tasks(&root, &with_spec(FIXTURE));
+
+    remove(&root, "2", "dropped");
+
+    assert_eq!(add(&root, "Third"), 3);
+}
+
+/// Removing a row a v1 store just gained returns it to the bytes it had, with no
+/// mark and no raised stamp, and its next add takes the freed id as it always has.
+/// `last_updated` is left out so the test cannot fail across midnight.
+#[test]
+fn a_v1_store_gains_no_bytes_from_a_removal() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, FIXTURE);
+    let body = |store: &Path| -> Vec<String> {
+        fs::read_to_string(store)
+            .unwrap()
+            .lines()
+            .filter(|line| !line.starts_with("last_updated"))
+            .map(str::to_string)
+            .collect()
+    };
+    update(&root, &["1", "--status", "done"], "");
+    let before = body(&store);
+
+    assert_eq!(add(&root, "Third"), 3);
+    remove(&root, "3", "dropped");
+
+    let after = body(&store);
+    assert_eq!(after, before);
+    assert_eq!(after[0], "schema_version = 1");
+    assert_eq!(add(&root, "Fourth"), 3);
 }
 
 // ---------------------------------------------------------------------------

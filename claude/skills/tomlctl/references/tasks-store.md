@@ -19,14 +19,15 @@ adopting carriers are entitled to rely on. The flag surface of the verbs that re
 
 `.claude/flows/<slug>/tasks.toml` carries four top-level keys, a `[policy]` table, a
 `[[checkpoints]]` array, optional `[[import_overrides]]`, `[[file_notes]]` and `[[backlog_links]]`
-arrays and an `[[items]]` array. A v2 store adds `audit`, `[[specs]]`, `[[milestones]]` and
-`[[changes]]`, below. Keys are written in that order and the order is stable across writes, so a
+arrays and an `[[items]]` array. A v2 store adds `audit`, `id_high_water`, `[[specs]]`,
+`[[milestones]]` and `[[changes]]`, below. Keys are written in that order and the order is stable across writes, so a
 re-render is a clean diff.
 
 | Key | Set by |
 |---|---|
-| `schema_version` | seeded to `1` by `flow init` and by the auto-create write path; every write re-stamps it `2` while the store holds `audit`, `specs`, `milestones` or `changes`, else `1`. A binary that knows only `1` refuses a `2` store. |
+| `schema_version` | seeded to `1` by `flow init` and by the auto-create write path; every write re-stamps it `2` while the store holds `audit`, `id_high_water`, `specs`, `milestones` or `changes`, else `1`. A binary that knows only `1` refuses a `2` store. |
 | `audit` | `true` once the plan is approved; omitted otherwise. A non-boolean value is an error. Written between `last_import_refs` and `[policy]`. |
+| `id_high_water` | `tasks remove`, on a store in a flow with a `plan.toml` or already holding a v2 key: the highest id a removal retired. `tasks add` and `add-many` mint past it, so an id never names a second task. A bare integer, omitted while `0`; anything but a non-negative integer is an error. Written after `audit`. |
 | `last_updated` | a bare TOML date, restamped on every mutation |
 | `plan_path` | `import-plan`, from the flow context under `--slug` or `--plan` under `--file` |
 | `last_import_refs` | `import-plan` — the ref set the last import produced |
@@ -62,8 +63,9 @@ keying on a `ref` no row holds, is dropped on read and on write.
 paths for the file-claim comparisons to read. Lines nested under a bulleted path follow the first
 as further `\n`-separated lines of the same `note`. Rebuilt from the plan at each import for the rows
 the plan names, kept only for paths the merged row still claims, and kept whole for a row the
-plan no longer names. `tasks remove` leaves a row's notes in place, and `tasks add` and
-`tasks update --ref` drop any already keyed on the `ref` they claim. Omitted while empty on the
+plan no longer names. `tasks remove` leaves a row's notes in place, `tasks add` and
+`tasks update --ref` drop any already keyed on the `ref` they claim, and a `tasks update` taking a
+path off `files` drops that path's note in the same write. Omitted while empty on the
 same terms as `[[import_overrides]]`.
 
 `[[backlog_links]]`: `ref`, `closes` and `refs` — the `.claude/backlog.toml` ids a task's
@@ -82,12 +84,14 @@ empty on the same terms as `[[import_overrides]]`.
 `tasks remove` drops the spec keyed on the row, and `tasks add` and `tasks update --ref` drop any
 already keyed on the `ref` they claim.
 
-`[[milestones]]`: `id` (a `[[checkpoints]]` id), `gates`, `elaboration` (`upfront` when absent, or
-`deferred`) and `defer_reason`.
+`[[milestones]]`: `id` (a `[[checkpoints]]` id), `gates`, `elaboration` (`upfront` when absent,
+`deferred`, or `elaborated` once a deferred milestone's tasks exist) and `defer_reason`.
 
-`[[changes]]`: the audit trail an audited store appends — `at`, `ref` (or `milestone:<id>`), `field`
-(`*` for an added or removed row, `spec.<field>` for a spec field), `old`, `new`, `actor` and
-`reason`. It outlives the row it records, so a removal stays as a tombstone.
+`[[changes]]`: the audit trail an audited store appends — `at`, `ref` (or `milestone:<id>`), `field`,
+`old`, `new`, `actor` and `reason`. `field` is a row field, `*` for an added or removed row,
+`spec.<field>` for a spec field, or `file_notes`, `closes` or `refs`. `old` and `new` hold a plain
+scalar as it stands and a structured value as compact JSON, so a reader can parse them. The trail
+outlives the row it records, so a removal stays as a tombstone.
 
 `[[specs]]`, `[[milestones]]` and `[[changes]]` follow `[[backlog_links]]` and are omitted while
 empty, so a v1 store round-trips byte-identical. A flow directory holding a `plan.toml` is a v2

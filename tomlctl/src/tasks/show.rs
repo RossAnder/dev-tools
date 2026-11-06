@@ -13,7 +13,7 @@ use anyhow::{Result, anyhow};
 use serde_json::{Map as JsonMap, Value as JsonValue, json};
 
 use super::graph::{Graph, nodes_of};
-use super::schema::{FileKind, ImportOverride, Store, TaskRow, TaskSpec};
+use super::schema::{Accept, FileKind, ImportOverride, Means, Premise, Store, TaskRow, TaskSpec};
 use super::store;
 use crate::cli::{ReadIntegrityArgs, ShowPart, TasksTarget};
 use crate::errors::{ErrorKind, tagged_err};
@@ -127,8 +127,21 @@ fn stamp(entry: &ImportOverride) -> JsonValue {
 }
 
 fn spec_json(spec: &TaskSpec) -> JsonValue {
-    let accept: Vec<JsonValue> = spec
-        .accept
+    json!({
+        "ref": spec.r#ref,
+        "outcome": spec.outcome,
+        "constraints": spec.constraints,
+        "accept": accept_json(&spec.accept),
+        "premises": premises_json(&spec.premises),
+        "means": means_json(&spec.means),
+        "design": spec.design,
+        "precedent": spec.precedent,
+        "executor": spec.executor,
+    })
+}
+
+pub(super) fn accept_json(entries: &[Accept]) -> JsonValue {
+    let entries: Vec<JsonValue> = entries
         .iter()
         .map(|entry| {
             let mut map = JsonMap::new();
@@ -151,27 +164,21 @@ fn spec_json(spec: &TaskSpec) -> JsonValue {
             JsonValue::Object(map)
         })
         .collect();
-    let premises: Vec<JsonValue> = spec
-        .premises
+    JsonValue::Array(entries)
+}
+
+pub(super) fn premises_json(premises: &[Premise]) -> JsonValue {
+    premises
         .iter()
         .map(|p| json!({"claim": p.claim, "check": p.check, "at": p.at}))
-        .collect();
-    let means: Vec<JsonValue> = spec
-        .means
+        .collect()
+}
+
+pub(super) fn means_json(means: &[Means]) -> JsonValue {
+    means
         .iter()
         .map(|m| json!({"text": m.text, "binding": m.binding, "detail": m.detail}))
-        .collect();
-    json!({
-        "ref": spec.r#ref,
-        "outcome": spec.outcome,
-        "constraints": spec.constraints,
-        "accept": accept,
-        "premises": premises,
-        "means": means,
-        "design": spec.design,
-        "precedent": spec.precedent,
-        "executor": spec.executor,
-    })
+        .collect()
 }
 
 /// All three keys are always present so a reader never has to tell an absent
