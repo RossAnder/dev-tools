@@ -72,6 +72,7 @@ pub(crate) enum Event {
     Written(WriteOutcome),
     /// The system switched between light and dark (`true` is light); sent by
     /// [`crate::appearance::watch`].
+    #[cfg_attr(not(windows), allow(dead_code))]
     Appearance(bool),
 }
 
