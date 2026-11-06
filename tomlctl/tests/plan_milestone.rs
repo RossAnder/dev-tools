@@ -595,3 +595,51 @@ fn audited_gates_are_stored_as_compact_json() {
     assert_eq!(text(gates, "old"), "[\"a\",\"b\"]");
     assert_eq!(text(gates, "new"), "[\"c\",\"d\"]");
 }
+
+#[test]
+fn clear_gate_empties_the_list_and_counts_as_a_change() {
+    let (_tmp, root) = sandbox();
+    let store = seed_v2(&root, &audited_fixture());
+    milestone(
+        &root,
+        "add",
+        &["--id", "A", "--goal", "g", "--gate", "a", "--reason", "r"],
+    )
+    .success();
+
+    milestone(
+        &root,
+        "update",
+        &["--id", "A", "--clear-gate", "--reason", "moved"],
+    )
+    .success();
+
+    let doc = read_store(&store);
+    let gates = table(&doc, "milestones")[0]
+        .get("gates")
+        .and_then(toml::Value::as_array);
+    assert!(gates.is_none_or(Vec::is_empty), "{doc}");
+    let change = table(&doc, "changes")
+        .iter()
+        .find(|row| text(row, "field") == "gates")
+        .expect("a gates change row");
+    assert_eq!(text(change, "old"), "[\"a\"]");
+    assert_eq!(text(change, "new"), "[]");
+}
+
+#[test]
+fn clear_gate_beside_gate_is_refused_and_writes_nothing() {
+    let (_tmp, root) = sandbox();
+    let store = seed_v2(&root, FIXTURE);
+    milestone(&root, "add", &["--id", "A", "--goal", "g", "--gate", "a"]).success();
+    let before = fs::read(&store).unwrap();
+
+    let err = refused(
+        &root,
+        "update",
+        &["--id", "A", "--clear-gate", "--gate", "b"],
+    );
+
+    assert_eq!(err["kind"], json!("validation"), "{err}");
+    assert_eq!(fs::read(&store).unwrap(), before);
+}

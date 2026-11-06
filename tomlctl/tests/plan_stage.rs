@@ -494,6 +494,42 @@ fn an_unknown_decision_bind_names_plan_decide_and_plan_decide_clears_it() {
 }
 
 #[test]
+fn an_unanswered_surfaced_decision_holds_the_plan_at_prove_until_plan_decide_answers_it() {
+    let flow = clean(REVIEW_STORE_FINISHED);
+    let seed = json!({
+        "decision": "Use the lock.",
+        "provenance": "agent-assumed",
+        "door": "two-way",
+        "binds": ["1"],
+        "surfaced": true,
+    });
+    flow.verb(&["plan", "decide", "--ndjson", "-"], &format!("{seed}\n"));
+    let report = assert_stage(&flow, "prove", "plan decide");
+    assert_eq!(
+        report["blockers"],
+        json!(["surfaced decisions still agent-assumed, so unanswered: D1"]),
+        "{report}"
+    );
+
+    let answer = json!({ "id": "D1", "provenance": "user-confirmed" });
+    flow.verb(&["plan", "decide", "--ndjson", "-"], &format!("{answer}\n"));
+    assert_stage(&flow, "ready", "plan approve");
+}
+
+#[test]
+fn an_unsurfaced_assumption_does_not_hold_the_plan() {
+    let flow = clean(REVIEW_STORE_FINISHED);
+    let seed = json!({
+        "decision": "Use the lock.",
+        "provenance": "agent-assumed",
+        "door": "two-way",
+        "binds": ["1"],
+    });
+    flow.verb(&["plan", "decide", "--ndjson", "-"], &format!("{seed}\n"));
+    assert_stage(&flow, "ready", "plan approve");
+}
+
+#[test]
 fn a_deferred_milestone_with_no_reason_names_milestone_update_which_clears_it() {
     let tasks = swap(
         TASKS,
@@ -935,6 +971,37 @@ fn a_brief_changed_since_approval_asks_for_an_amend_and_keeps_the_stage() {
         assert_eq!(report["stage"], stage, "{report}");
         assert_eq!(report["next"], AMEND_NEXT, "{report}");
         assert_eq!(report["blockers"], json!([BRIEF_CHANGED]), "{report}");
+    }
+}
+
+#[test]
+fn a_brief_deleted_since_approval_names_restoring_it_from_the_approved_commit() {
+    let plan = format!("{PLAN}{}", approval());
+    for (status, stage) in [
+        ("pending", "approved"),
+        ("in-progress", "running"),
+        ("done", "done"),
+    ] {
+        let tasks = swap(
+            TASKS,
+            "status = \"pending\"",
+            &format!("status = \"{status}\""),
+        );
+        let report = Flow::seeded(&tasks, &plan, None, None).stage();
+        assert_eq!(report["stage"], stage, "{report}");
+        assert_eq!(
+            report["next"], "git restore --source abc -- docs/flows/plan-stage/brief.md",
+            "{report}"
+        );
+        let blockers = report["blockers"].as_array().expect("a blockers array");
+        assert_eq!(blockers.len(), 1, "{report}");
+        assert!(
+            blockers[0]
+                .as_str()
+                .expect("a string")
+                .starts_with("plan/brief-missing (1): "),
+            "{report}"
+        );
     }
 }
 

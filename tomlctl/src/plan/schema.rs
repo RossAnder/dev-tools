@@ -20,11 +20,21 @@ use toml::Value as TomlValue;
 use toml::map::Map;
 use toml::value::Datetime;
 
-use crate::tasks::schema::normal_path;
+use crate::tasks::schema::{
+    as_date as as_datetime, id_array, lf, normal_path, str_arr_value, str_array,
+};
 
 pub(crate) const SCHEMA_VERSION: i64 = 1;
 
 type Table = Map<String, TomlValue>;
+
+/// A closed set of string values. Bounding the read helpers on it ties a
+/// parser to its own list, so the error cannot name another vocabulary's values.
+pub(crate) trait Vocabulary: Sized {
+    const VOCABULARY: &'static [&'static str];
+
+    fn parse(raw: &str) -> Option<Self>;
+}
 
 macro_rules! vocabulary {
     ($(#[$meta:meta])* $name:ident { $($variant:ident => $text:literal),+ $(,)? }) => {
@@ -49,6 +59,14 @@ macro_rules! vocabulary {
                     $($text => Some(Self::$variant),)+
                     _ => None,
                 }
+            }
+        }
+
+        impl Vocabulary for $name {
+            const VOCABULARY: &'static [&'static str] = $name::VOCABULARY;
+
+            fn parse(raw: &str) -> Option<Self> {
+                $name::parse(raw)
             }
         }
     };
@@ -114,8 +132,9 @@ pub(crate) struct PlanStore {
     /// Bare TOML date, absent until the first mutation stamps it.
     pub(crate) last_updated: Option<Datetime>,
     pub(crate) binding: Binding,
-    /// The highest number ever assigned per id prefix, in the root table
-    /// `items remove` raises, so a removed top id is never minted again.
+    /// The highest number ever assigned per id prefix. No plan verb removes a
+    /// record, so the mark matters after a `--raw-store` repair deletes a row:
+    /// that row's id is never minted again.
     pub(crate) id_high_water: BTreeMap<String, u64>,
     pub(crate) decisions: Vec<Decision>,
     pub(crate) contracts: Vec<Contract>,
@@ -216,9 +235,13 @@ pub(crate) struct Approval {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Run {
     pub(crate) step: String,
+    /// Empty on a step with no Workflow, and omitted from the TOML while empty.
     pub(crate) workflow: String,
+    /// Omitted from the TOML while empty.
     pub(crate) args_hash: String,
     pub(crate) run_id: String,
+    /// The launching session. Omitted from the TOML while empty.
+    pub(crate) session: String,
     pub(crate) started: Datetime,
     /// `None` writes `finished = ""`: an open run keeps the key it will fill.
     pub(crate) finished: Option<Datetime>,
@@ -475,14 +498,8 @@ fn decision_from_toml(table: &Table, context: &str) -> Result<Decision> {
     Ok(Decision {
         decision: lf(&str_or(table, "decision")),
         why: lf(&str_or(table, "why")),
-        provenance: vocab(
-            table,
-            "provenance",
-            &context,
-            Provenance::parse,
-            Provenance::VOCABULARY,
-        )?,
-        door: vocab(table, "door", &context, Door::parse, Door::VOCABULARY)?,
+        provenance: vocab(table, "provenance", &context)?,
+        door: vocab(table, "door", &context)?,
         binds: str_array(table, "binds"),
         rejected: rejected_from_toml(table, &context)?,
         evidence: lf(&str_or(table, "evidence")),
@@ -570,13 +587,7 @@ fn contract_from_toml(table: &Table, context: &str) -> Result<Contract> {
     let id = required_str(table, "id", context)?;
     let context = format!("contract {id}");
     Ok(Contract {
-        kind: vocab(
-            table,
-            "kind",
-            &context,
-            ContractKind::parse,
-            ContractKind::VOCABULARY,
-        )?,
+        kind: vocab(table, "kind", &context)?,
         claim: lf(&str_or(table, "claim")),
         check: str_or(table, "check"),
         tasks: id_array(table, "tasks", &context)?,
@@ -624,13 +635,7 @@ fn approval_from_toml(table: &Table, context: &str) -> Result<Approval> {
         at: required_datetime(table, "at", context)?,
         brief_sha256: str_or(table, "brief_sha256"),
         by: str_or(table, "by"),
-        review: vocab(
-            table,
-            "review",
-            context,
-            ReviewOutcome::parse,
-            ReviewOutcome::VOCABULARY,
-        )?,
+        review: vocab(table, "review", context)?,
         reason: lf(&str_or(table, "reason")),
         commit,
     })
@@ -667,6 +672,7 @@ fn run_from_toml(table: &Table, context: &str) -> Result<Run> {
         workflow: str_or(table, "workflow"),
         args_hash: str_or(table, "args_hash"),
         run_id: str_or(table, "run_id"),
+        session: str_or(table, "session"),
         started: required_datetime(table, "started", context)?,
         finished: match table.get("finished") {
             None => None,
@@ -679,13 +685,7 @@ fn run_from_toml(table: &Table, context: &str) -> Result<Run> {
         skip_reason: lf(&str_or(table, "skip_reason")),
         outcome: match table.get("outcome") {
             None => None,
-            Some(_) => Some(vocab(
-                table,
-                "outcome",
-                context,
-                RunOutcome::parse,
-                RunOutcome::VOCABULARY,
-            )?),
+            Some(_) => Some(vocab(table, "outcome", context)?),
         },
         reason: lf(&str_or(table, "reason")),
     })
@@ -697,6 +697,7 @@ fn run_to_toml(run: &Run) -> TomlValue {
         workflow,
         args_hash,
         run_id,
+        session,
         started,
         finished,
         skip_reason,
@@ -705,12 +706,19 @@ fn run_to_toml(run: &Run) -> TomlValue {
     } = run;
     let mut table = Table::new();
     table.insert("step".to_string(), TomlValue::String(step.clone()));
-    table.insert("workflow".to_string(), TomlValue::String(workflow.clone()));
-    table.insert(
-        "args_hash".to_string(),
-        TomlValue::String(args_hash.clone()),
-    );
+    if !workflow.is_empty() {
+        table.insert("workflow".to_string(), TomlValue::String(workflow.clone()));
+    }
+    if !args_hash.is_empty() {
+        table.insert(
+            "args_hash".to_string(),
+            TomlValue::String(args_hash.clone()),
+        );
+    }
     table.insert("run_id".to_string(), TomlValue::String(run_id.clone()));
+    if !session.is_empty() {
+        table.insert("session".to_string(), TomlValue::String(session.clone()));
+    }
     table.insert("started".to_string(), TomlValue::Datetime(*started));
     table.insert(
         "finished".to_string(),
@@ -769,25 +777,6 @@ fn handover_to_toml(handover: &Handover) -> TomlValue {
     TomlValue::Table(table)
 }
 
-/// Collapse CRLF and lone CR to LF.
-fn lf(body: &str) -> String {
-    if body.contains('\r') {
-        body.replace("\r\n", "\n").replace('\r', "\n")
-    } else {
-        body.to_string()
-    }
-}
-
-/// A bare TOML datetime, also accepting the quoted form a hand edit leaves
-/// behind.
-fn as_datetime(value: &TomlValue) -> Option<Datetime> {
-    match value {
-        TomlValue::Datetime(at) => Some(*at),
-        TomlValue::String(raw) => raw.parse().ok(),
-        _ => None,
-    }
-}
-
 fn str_or(table: &Table, key: &str) -> String {
     table
         .get(key)
@@ -813,22 +802,16 @@ fn required_datetime(table: &Table, key: &str, context: &str) -> Result<Datetime
 
 /// An absent vocabulary field is refused rather than defaulted: a store cannot
 /// claim who stated a decision, or how reversible it is, without having said.
-fn vocab<T>(
-    table: &Table,
-    key: &str,
-    context: &str,
-    parse: fn(&str) -> Option<T>,
-    vocabulary: &[&str],
-) -> Result<T> {
+fn vocab<T: Vocabulary>(table: &Table, key: &str, context: &str) -> Result<T> {
     let raw = table
         .get(key)
         .ok_or_else(|| anyhow!("{context}: `{key}` is missing"))?
         .as_str()
         .ok_or_else(|| anyhow!("{context}: `{key}` is not a string"))?;
-    parse(raw).ok_or_else(|| {
+    T::parse(raw).ok_or_else(|| {
         anyhow!(
             "{context}: unknown {key} `{raw}` — expected one of {}",
-            vocabulary.join(", ")
+            T::VOCABULARY.join(", ")
         )
     })
 }
@@ -842,45 +825,6 @@ fn bool_or_false(table: &Table, key: &str, context: &str) -> Result<bool> {
             .as_bool()
             .ok_or_else(|| anyhow!("{context}: `{key}` is not a boolean")),
     }
-}
-
-fn str_array(table: &Table, key: &str) -> Vec<String> {
-    table
-        .get(key)
-        .and_then(TomlValue::as_array)
-        .map(|arr| {
-            arr.iter()
-                .filter_map(TomlValue::as_str)
-                .map(str::to_string)
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-fn id_array(table: &Table, key: &str, context: &str) -> Result<Vec<u32>> {
-    let Some(raw) = table.get(key) else {
-        return Ok(Vec::new());
-    };
-    let arr = raw
-        .as_array()
-        .ok_or_else(|| anyhow!("{context}: `{key}` is not an array"))?;
-    arr.iter()
-        .map(|entry| {
-            entry
-                .as_integer()
-                .and_then(|n| u32::try_from(n).ok())
-                .ok_or_else(|| anyhow!("{context}: `{key}` holds a non-id entry `{entry}`"))
-        })
-        .collect()
-}
-
-fn str_arr_value(values: &[String]) -> TomlValue {
-    TomlValue::Array(
-        values
-            .iter()
-            .map(|s| TomlValue::String(s.clone()))
-            .collect(),
-    )
 }
 
 #[cfg(test)]
@@ -941,6 +885,7 @@ pub(crate) mod tests {
                     workflow: "plan-v2-investigate".to_string(),
                     args_hash: "beef".to_string(),
                     run_id: "wf_1".to_string(),
+                    session: "sess_1".to_string(),
                     started: at("2026-11-05T12:00:00Z"),
                     finished: Some(at("2026-11-05T12:30:00Z")),
                     skip_reason: String::new(),
@@ -952,6 +897,7 @@ pub(crate) mod tests {
                     workflow: String::new(),
                     args_hash: String::new(),
                     run_id: String::new(),
+                    session: String::new(),
                     started: at("2026-11-05T13:00:00Z"),
                     finished: None,
                     skip_reason: "Low risk.".to_string(),
@@ -1142,6 +1088,27 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_run_omits_workflow_args_hash_and_session_while_empty() {
+        let doc = to_toml(&fixture());
+        for key in ["workflow", "args_hash", "session"] {
+            assert!(doc["run"][0].get(key).is_some(), "{key}: {doc}");
+            assert!(doc["run"][1].get(key).is_none(), "{key}: {doc}");
+        }
+    }
+
+    #[test]
+    fn empty_workflow_keys_in_a_stored_run_read_as_unset() {
+        let mut raw = to_toml(&fixture());
+        let row = record_mut(&mut raw, "run");
+        row.insert("workflow".to_string(), TomlValue::String(String::new()));
+        row.insert("args_hash".to_string(), TomlValue::String(String::new()));
+        let read = from_toml(&raw).expect("parses");
+        assert_eq!(read.runs[0].workflow, "");
+        assert_eq!(read.runs[0].args_hash, "");
+        assert!(to_toml(&read)["run"][0].get("workflow").is_none());
+    }
+
+    #[test]
     fn a_run_is_open_only_with_no_finished_time_skip_reason_or_outcome() {
         let open = Run {
             skip_reason: String::new(),
@@ -1245,8 +1212,8 @@ pub(crate) mod tests {
         assert_eq!(reread.mint_id(RecordKind::Handover), "H2");
     }
 
-    /// `items remove` writes this table, so a plan write dropping it would
-    /// lose the mark that removal left.
+    /// `items remove --raw-store` writes this table, so a plan write dropping
+    /// it would lose the mark that repair left.
     #[test]
     fn a_mark_left_by_the_items_verbs_survives_a_write() {
         let mut raw = TomlValue::Table(Table::new());

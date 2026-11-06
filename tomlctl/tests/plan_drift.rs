@@ -328,6 +328,48 @@ fn a_row_path_is_compared_in_normal_form_and_reported_as_written() {
     assert_eq!(report["affected"][1]["files"], json!(["src\\c.rs"]));
 }
 
+/// Windows refuses a backslash in a file name.
+#[cfg(unix)]
+#[test]
+fn a_row_naming_a_file_with_a_literal_backslash_is_affected() {
+    let flow = Flow::new();
+    flow.write_flow(
+        "tasks.toml",
+        &TASKS.replace("src/c.rs", "src/back\\\\slash.rs"),
+    );
+    flow.write_src("back\\slash", "fn parse() {}\n");
+    let approved = flow.commit("approved");
+    flow.approve_at(&approved);
+    flow.commit("stamp");
+
+    flow.write_src("back\\slash", "fn parse() { /* changed */ }\n");
+    flow.commit("outside work");
+
+    let report = flow.drift();
+    assert_eq!(affected_ids(&report), [3], "{report}");
+    assert_eq!(
+        report["affected"][0]["files"],
+        json!(["src/back\\slash.rs"])
+    );
+}
+
+#[test]
+fn the_flows_own_stores_are_not_reported_as_changed() {
+    let flow = Flow::new();
+    let approved = flow.commit("approved");
+    flow.approve_at(&approved);
+    flow.commit("stamp");
+
+    flow.write_flow("tasks.toml", &format!("{TASKS}\n"));
+    flow.write_src("c", "fn parse() { /* outside */ }\n");
+    flow.commit("outside work and store edit");
+
+    let report = flow.drift();
+    let changed = report["changed_files"].as_array().expect("an array");
+    assert_eq!(changed, &[json!("src/c.rs")], "{report}");
+    assert_eq!(affected_ids(&report), [3]);
+}
+
 const BRIEF: &str = "## Intent\nA.\n\n## Non-goals\nB.\n\n## Scope budget\nC.\n\n\
                      ## Success criteria\nD.\n";
 

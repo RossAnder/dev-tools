@@ -318,6 +318,98 @@ fn an_unanswered_surfaced_decision_is_refused() {
     assert!(message.contains("surfaced"), "{message}");
 }
 
+const OPEN_RUN: &str = "\n[[run]]\nstep = \"prove\"\nstarted = 2026-11-05T12:00:00Z\n\
+                        finished = \"\"\n";
+
+#[test]
+fn an_open_run_is_refused_naming_the_step_and_the_choice_until_abandoned() {
+    let plan = format!("{BINDING}{OPEN_RUN}");
+    let flow = Flow::committed(&plan, TASKS, BRIEF.as_bytes());
+    let (message, kind) = flow.refused(&skip_args());
+    assert_eq!(kind, "validation");
+    assert!(
+        message.contains("relaunch step prove or plan run abandon --step prove"),
+        "{message}"
+    );
+
+    flow.tomlctl(&[
+        "plan",
+        "run",
+        "abandon",
+        "--slug",
+        SLUG,
+        "--step",
+        "prove",
+        "--reason",
+        "The session died.",
+    ])
+    .assert()
+    .success();
+    flow.commit();
+    flow.approve(&skip_args());
+}
+
+#[test]
+fn an_open_run_does_not_refuse_an_amendment() {
+    let flow = Flow::clean();
+    flow.approve(&skip_args());
+    flow.tomlctl(&[
+        "plan",
+        "run",
+        "start",
+        "--slug",
+        SLUG,
+        "--step",
+        "build",
+        "--workflow",
+        "w",
+        "--args-hash",
+        "h",
+    ])
+    .assert()
+    .success();
+    flow.commit();
+
+    let (message, _) = flow.refused(&skip_args());
+    assert!(message.contains("already approved"), "{message}");
+
+    let mut args = skip_args().to_vec();
+    args.push("--amend");
+    flow.approve(&args);
+    let plan = flow.toml(&flow.path("plan.toml"));
+    assert_eq!(plan["approval"].as_array().map(Vec::len), Some(2));
+}
+
+#[test]
+fn a_deleted_brief_refuses_an_amendment_and_the_stage_hint_restores_it() {
+    let flow = Flow::clean();
+    flow.approve(&skip_args());
+    flow.commit();
+    fs::remove_file(flow.authored_path("brief.md")).expect("the brief exists");
+
+    let mut args = skip_args().to_vec();
+    args.push("--amend");
+    let (message, _) = flow.refused(&args);
+    assert!(message.contains("plan/brief-missing"), "{message}");
+
+    let stage = |flow: &Flow| {
+        let assert = flow
+            .tomlctl(&["plan", "stage", "--slug", SLUG])
+            .assert()
+            .success();
+        stdout_json(&assert)
+    };
+    let report = stage(&flow);
+    let next = report["next"].as_str().expect("a next hint");
+    let words: Vec<&str> = next.split_whitespace().collect();
+    assert_eq!(words[0], "git", "{report}");
+    flow.git(&words[1..]);
+
+    let report = stage(&flow);
+    assert_eq!(report["next"], "none", "{report}");
+    assert_eq!(report["blockers"], serde_json::json!([]), "{report}");
+}
+
 #[test]
 fn an_answered_surfaced_decision_passes() {
     let plan =

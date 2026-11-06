@@ -35,7 +35,7 @@ pub(super) fn run(args: PlanDriftArgs) -> Result<()> {
 
     refuse_unresolved(&root, &approval.commit)?;
     let owned = recorded_commits(&tasks);
-    let changed = changed_files(&root, &approval.commit, &owned)?;
+    let changed = changed_files(&root, &approval.commit, &owned, slug)?;
     let affected = affected_tasks(&tasks, &changed);
 
     print_json_line(&json!({
@@ -88,7 +88,12 @@ fn is_owned(owned: &[String], sha: &str) -> bool {
 /// `--no-renames` lists a rename's source too, which is the path a row names, and
 /// `-z` hands over every path verbatim, where the line form C-quotes a tab, a
 /// newline, a quote or a backslash whatever `core.quotePath` says.
-fn changed_files(root: &Path, since: &str, owned: &[String]) -> Result<BTreeSet<String>> {
+fn changed_files(
+    root: &Path,
+    since: &str,
+    owned: &[String],
+    slug: &str,
+) -> Result<BTreeSet<String>> {
     let range = format!("{since}..HEAD");
     let format = format!("--format={COMMIT_MARK}%H");
     let out = Command::new("git")
@@ -115,14 +120,20 @@ fn changed_files(root: &Path, since: &str, owned: &[String]) -> Result<BTreeSet<
             ),
         ));
     }
-    Ok(parse_log(&String::from_utf8_lossy(&out.stdout), owned))
+    let flow_dir = format!(".claude/flows/{slug}/");
+    Ok(parse_log(
+        &String::from_utf8_lossy(&out.stdout),
+        owned,
+        &flow_dir,
+    ))
 }
 
 /// Each token is NUL-terminated: `<mark><sha>`, then a commit's paths, the first
 /// of them after one newline git puts there. That newline alone is stripped,
 /// since any other edge byte belongs to the path. A mark must carry a hex sha, so
-/// a path that merely opens with the mark byte stays a path.
-fn parse_log(log: &str, owned: &[String]) -> BTreeSet<String> {
+/// a path that merely opens with the mark byte stays a path. Paths under
+/// `flow_dir` are the flow's own stores, which are never drift.
+fn parse_log(log: &str, owned: &[String], flow_dir: &str) -> BTreeSet<String> {
     let mut files = BTreeSet::new();
     let mut counted = false;
     let mut first_path = false;
@@ -141,7 +152,7 @@ fn parse_log(log: &str, owned: &[String]) -> BTreeSet<String> {
             token
         };
         first_path = false;
-        if counted && !path.is_empty() {
+        if counted && !path.is_empty() && !path.starts_with(flow_dir) {
             files.insert(path.to_string());
         }
     }
@@ -157,7 +168,9 @@ fn affected_tasks(tasks: &Store, changed: &BTreeSet<String>) -> Vec<JsonValue> {
             let hit: Vec<&String> = row
                 .files
                 .iter()
-                .filter(|file| changed.contains(&normal_path(file)))
+                .filter(|file| {
+                    changed.contains(file.as_str()) || changed.contains(&normal_path(file))
+                })
                 .collect();
             if hit.is_empty() {
                 return None;
@@ -183,24 +196,36 @@ fn affected_tasks(tasks: &Store, changed: &BTreeSet<String>) -> Vec<JsonValue> {
 mod tests {
     use super::*;
 
+    const FLOW_DIR: &str = ".claude/flows/s/";
+
     #[test]
     fn owned_commits_contribute_no_files() {
         let log = "\u{1}aaa111\0\nsrc/a.rs\0\u{1}bbb222\0\nsrc/b.rs\0";
-        let files = parse_log(log, &["aaa".to_string()]);
+        let files = parse_log(log, &["aaa".to_string()], FLOW_DIR);
         assert_eq!(files.into_iter().collect::<Vec<_>>(), ["src/b.rs"]);
+    }
+
+    #[test]
+    fn the_flows_own_stores_are_not_changed_files() {
+        let log = "\u{1}aaa111\0\n.claude/flows/s/tasks.toml\0.claude/flows/s2/x.toml\0src/a.rs\0";
+        let files = parse_log(log, &[], FLOW_DIR);
+        assert_eq!(
+            files.into_iter().collect::<Vec<_>>(),
+            [".claude/flows/s2/x.toml", "src/a.rs"]
+        );
     }
 
     #[test]
     fn a_commit_with_no_files_leaves_the_next_commit_readable() {
         let log = "\u{1}aaa111\0\u{1}bbb222\0\nsrc/b.rs\0";
-        let files = parse_log(log, &[]);
+        let files = parse_log(log, &[], FLOW_DIR);
         assert_eq!(files.into_iter().collect::<Vec<_>>(), ["src/b.rs"]);
     }
 
     #[test]
     fn only_the_newline_git_adds_is_stripped_from_a_path() {
         let log = "\u{1}aaa111\0\n\nlead.rs\0 edge \0nl\nname\0\u{1}odd name\0";
-        let files = parse_log(log, &[]);
+        let files = parse_log(log, &[], FLOW_DIR);
         assert_eq!(
             files.into_iter().collect::<Vec<_>>(),
             ["\u{1}odd name", "\nlead.rs", " edge ", "nl\nname"]

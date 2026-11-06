@@ -201,21 +201,27 @@ pub(crate) struct PlanRunStartArgs {
     #[arg(
         long = "workflow",
         value_name = "WORKFLOW",
-        help = "The saved Workflow launched"
+        help = "The saved Workflow launched; a one-agent step has none"
     )]
-    pub(crate) workflow: String,
+    pub(crate) workflow: Option<String>,
     #[arg(
         long = "args-hash",
         value_name = "HASH",
         help = "Digest of the Workflow's arguments"
     )]
-    pub(crate) args_hash: String,
+    pub(crate) args_hash: Option<String>,
     #[arg(
         long = "run-id",
         value_name = "ID",
-        help = "The Workflow's run id, when already known"
+        help = "The run id from the Workflow's result; a one-agent step has none"
     )]
     pub(crate) run_id: Option<String>,
+    #[arg(
+        long = "session",
+        value_name = "ID",
+        help = "The session launching the step, from CLAUDE_CODE_SESSION_ID"
+    )]
+    pub(crate) session: Option<String>,
     #[command(flatten)]
     pub(crate) integrity: WriteIntegrityArgs,
 }
@@ -326,6 +332,8 @@ pub(crate) struct PlanMilestoneUpdateArgs {
         help = "Command that must pass at the milestone's drain (repeatable; the flags given replace the whole gate list, unlike add)"
     )]
     pub(crate) gate: Vec<String>,
+    #[arg(long = "clear-gate", help = "Empty the gate list; refused with --gate")]
+    pub(crate) clear_gate: bool,
     #[arg(
         long = "defer",
         help = "Elaborate the milestone's tasks just before it runs; takes --reason"

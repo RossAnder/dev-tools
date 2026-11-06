@@ -19,7 +19,9 @@ use crate::io::repo_or_cwd_root;
 use crate::output::{Rows, print_report};
 use crate::tasks::backlog_refs::linked_backlog_findings;
 use crate::tasks::check::{check, exit_code};
-use crate::tasks::finding::{ERROR, Finding, NO_TASK, WARNING, quoted_list, task_list};
+use crate::tasks::finding::{
+    ERROR, Finding, NO_TASK, WARNING, finding_json, quoted_list, task_list,
+};
 use crate::tasks::markdown::FenceState;
 use crate::tasks::schema::{
     BINDING_REQUIRED, Premise, Status, Store, TaskRow, TaskSpec, VERDICT_HEALTHY, normal_path,
@@ -28,7 +30,8 @@ use crate::tasks::slug::{dedupe_refs, derive_ref};
 use crate::tasks::{load_store, resolve_store_path};
 
 const DESIGN_DIR: &str = "design";
-const REQUIRED_SECTIONS: [&str; 4] = ["Intent", "Non-goals", "Scope budget", "Success criteria"];
+pub(super) const REQUIRED_SECTIONS: [&str; 4] =
+    ["Intent", "Non-goals", "Scope budget", "Success criteria"];
 
 /// An approved brief differs from its stamp exactly when `--amend` is needed.
 pub(super) const CLASS_BRIEF_CHANGED: &str = "plan/brief-changed";
@@ -181,7 +184,7 @@ impl<'a> Outline<'a> {
 
 /// The depth and title of an ATX heading. A closing `#` run needs no stripping,
 /// since the slug rule drops it.
-fn atx_heading(line: &str) -> Option<(usize, &str)> {
+pub(super) fn atx_heading(line: &str) -> Option<(usize, &str)> {
     let rest = line.trim_start_matches(' ');
     if line.len() - rest.len() > 3 {
         return None;
@@ -194,13 +197,18 @@ fn atx_heading(line: &str) -> Option<(usize, &str)> {
     (title.is_empty() || title.starts_with([' ', '\t'])).then_some((depth, title))
 }
 
-/// The heading level is not part of the contract, only the title: a section
-/// counts as filled by anything but blank lines, sub-headings and HTML comments.
+/// The heading level is not part of the contract, only the title.
 fn section_has_content(outline: &Outline<'_>, title: &str) -> bool {
     let Some(section) = outline.section(&derive_ref(title)) else {
         return false;
     };
-    strip_comments(&section[1..].join("\n"))
+    body_is_filled(&section[1..].join("\n"))
+}
+
+/// A section body counts as filled by anything but blank lines, sub-headings and
+/// HTML comments.
+pub(super) fn body_is_filled(body: &str) -> bool {
+    strip_comments(body)
         .lines()
         .any(|line| !line.trim().is_empty() && atx_heading(line).is_none())
 }
@@ -552,15 +560,6 @@ fn error(class: &'static str, ids: Vec<u32>, detail: String) -> Finding {
         ids,
         detail,
     }
-}
-
-fn finding_json(finding: &Finding) -> serde_json::Value {
-    json!({
-        "class": finding.class,
-        "severity": finding.severity,
-        "ids": finding.ids,
-        "detail": finding.detail,
-    })
 }
 
 #[cfg(test)]

@@ -15,3 +15,5 @@ mod view;
 pub(crate) mod dispatch;
 pub(crate) mod schema;
 pub(crate) mod store;
+
+pub(crate) use view::VIEW_ROLES;

@@ -71,6 +71,11 @@ fn read_only_subcommands_hide_write_integrity_flags_in_help() {
         &["review", "stats", "--help"],
         &["review", "catalogue", "--help"],
         &["review", "schema", "--help"],
+        &["plan", "check", "--help"],
+        &["plan", "view", "--help"],
+        &["plan", "stage", "--help"],
+        &["plan", "gate", "--help"],
+        &["plan", "drift", "--help"],
     ];
     for path in read_subs {
         let mut cmd = Command::cargo_bin("tomlctl").unwrap();
@@ -144,6 +149,19 @@ fn write_subcommands_expose_all_integrity_flags_in_help() {
         &["review", "resolve", "--help"],
         &["review", "triage", "--help"],
         &["review", "export-v1", "--help"],
+        &["plan", "open", "--help"],
+        &["plan", "decide", "--help"],
+        &["plan", "contract", "--help"],
+        &["plan", "handover", "add", "--help"],
+        &["plan", "handover", "done", "--help"],
+        &["plan", "run", "start", "--help"],
+        &["plan", "run", "finish", "--help"],
+        &["plan", "run", "abandon", "--help"],
+        &["plan", "run", "skip", "--help"],
+        &["plan", "milestone", "add", "--help"],
+        &["plan", "milestone", "update", "--help"],
+        &["plan", "probes", "--help"],
+        &["plan", "approve", "--help"],
     ];
     for path in write_subs {
         let mut cmd = Command::cargo_bin("tomlctl").unwrap();

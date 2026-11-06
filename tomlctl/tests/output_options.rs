@@ -279,8 +279,10 @@ rationale = "read it"
 
 /// A flow holding a `plan.toml` refuses `tasks import-plan` and `tasks render`,
 /// so plan verbs get slugs of their own: `PLAN_SLUG` is a committed draft that
-/// `plan check` passes and `APPROVED_SLUG` an approved plan with drift.
+/// `plan check` passes, `READY_SLUG` the same draft with its run closed, which
+/// `plan approve` needs, and `APPROVED_SLUG` an approved plan with drift.
 const PLAN_SLUG: &str = "plan-fixture";
+const READY_SLUG: &str = "plan-ready";
 const APPROVED_SLUG: &str = "plan-approved";
 const PROBE_CAPTURE: &str = "probe-capture.tsv";
 const PLAN_FILE: &str = "src/plan.rs";
@@ -1062,7 +1064,7 @@ fn cases() -> Vec<Case> {
                 "plan",
                 "approve",
                 "--slug",
-                PLAN_SLUG,
+                READY_SLUG,
                 "--review",
                 "skipped-low-risk",
                 "--reason",
@@ -1189,7 +1191,25 @@ fn open_plan(root: &Path, slug: &str) {
 /// `PLAN_FILE` is what gives `plan drift` an affected task.
 fn plan_flows(root: &Path) {
     open_plan(root, PLAN_SLUG);
+    open_plan(root, READY_SLUG);
     open_plan(root, APPROVED_SLUG);
+    for slug in [READY_SLUG, APPROVED_SLUG] {
+        setup(
+            root,
+            &[
+                "plan",
+                "run",
+                "abandon",
+                "--slug",
+                slug,
+                "--step",
+                "investigate",
+                "--reason",
+                "fixture",
+            ],
+            "",
+        );
+    }
     put(
         root,
         PROBE_CAPTURE,

@@ -404,6 +404,65 @@ fn runs_start_finish_and_skip() {
 }
 
 #[test]
+fn a_one_agent_step_starts_with_only_its_step_and_closes() {
+    let (_dir, root) = opened();
+    plan(&root, &["run", "start", "--step", "solo"]).success();
+
+    let row = run_row(&root, 0);
+    assert!(row.get("workflow").is_none(), "{row}");
+    assert!(row.get("args_hash").is_none(), "{row}");
+    assert!(row.get("session").is_none(), "{row}");
+    assert_eq!(row["run_id"].as_str(), Some(""), "{row}");
+    assert_eq!(open_runs(&root), serde_json::json!(["solo"]));
+
+    plan(&root, &["run", "finish", "--step", "solo"]).success();
+    assert_eq!(open_runs(&root), serde_json::json!([]));
+}
+
+#[test]
+fn an_open_run_keeps_its_run_id_and_session_for_a_resume() {
+    let (_dir, root) = opened();
+    plan(
+        &root,
+        &[
+            "run",
+            "start",
+            "--step",
+            "s",
+            "--workflow",
+            "w",
+            "--args-hash",
+            "h",
+            "--run-id",
+            "wf_1",
+            "--session",
+            "sess_1",
+        ],
+    )
+    .success();
+
+    // Another verb's write re-emits the store, so the row must survive it.
+    plan(
+        &root,
+        &["run", "skip", "--step", "t", "--reason", "low risk"],
+    )
+    .success();
+
+    let row = run_row(&root, 0);
+    assert_eq!(row["workflow"].as_str(), Some("w"), "{row}");
+    assert_eq!(row["args_hash"].as_str(), Some("h"), "{row}");
+    assert_eq!(row["run_id"].as_str(), Some("wf_1"), "{row}");
+    assert_eq!(row["session"].as_str(), Some("sess_1"), "{row}");
+}
+
+#[test]
+fn an_empty_session_is_not_stored() {
+    let (_dir, root) = opened();
+    plan(&root, &["run", "start", "--step", "s", "--session", ""]).success();
+    assert!(run_row(&root, 0).get("session").is_none());
+}
+
+#[test]
 fn finish_records_its_outcome_defaulting_to_ok() {
     let (_dir, root) = opened();
     start_run(&root, "a");

@@ -14,8 +14,8 @@ use serde_json::{Value as JsonValue, json};
 use toml::Value as TomlValue;
 
 use super::check::{self, CLASS_BRIEF_CHANGED};
-use super::schema::{Approval, Decision, Door, PlanStore, Provenance, ReviewOutcome, RunState};
-use super::store::{self, BRIEF_FILE, brief_digest};
+use super::schema::{Approval, Decision, Door, PlanStore, Provenance, ReviewOutcome};
+use super::store::{self, BRIEF_FILE, REVIEW_STORE_FILE, brief_digest};
 use crate::backlog::schema::STATUS_OPEN;
 use crate::backlog::triage::{Transition, triage_value};
 use crate::cli::{
@@ -30,7 +30,6 @@ use crate::tasks::schema::Store;
 use crate::tasks::{load_store, mutate_store, resolve_store_path};
 
 const CONTEXT_FILE: &str = "context.toml";
-const REVIEW_STORE_FILE: &str = "review-v2.toml";
 /// What `HEAD` must hold for a stamp to name a commit carrying the plan: these in
 /// the flow directory, and `COMMITTED_AUTHORED` in the authored directory.
 const COMMITTED_STORES: [&str; 2] = ["tasks.toml", "plan.toml"];
@@ -39,8 +38,6 @@ const COMMITTED_AUTHORED: [&str; 2] = [BRIEF_FILE, "design/"];
 const STATUS_DRAFT: &str = "draft";
 const STATUS_IN_PROGRESS: &str = "in-progress";
 const APPROVED_BY: &str = "user";
-const REVIEW_STEP: &str = "review";
-const PLAN_FAMILY: &str = "plan";
 
 const FILE_BUCKETS: [&str; 3] = ["1", "2-3", "4+"];
 const REVIEW_NOTE: &str = "review findings do not reach this screen yet: `risks` holds only \
@@ -79,10 +76,7 @@ fn gate_report(plan: &PlanStore, tasks: &Store) -> JsonValue {
         })
         .collect();
 
-    let risks: Vec<JsonValue> = plan
-        .runs
-        .iter()
-        .filter(|run| run.step == REVIEW_STEP && run.state() == RunState::Skipped)
+    let risks: Vec<JsonValue> = store::skipped_reviews(plan)
         .map(|run| json!({ "kind": "skip-reason", "detail": run.skip_reason }))
         .collect();
 
@@ -183,9 +177,14 @@ pub(super) fn approve(args: PlanApproveArgs) -> Result<()> {
     let plan = store::load(&plan_path, &read_integrity)?;
     let tasks = load_store(&tasks_path, &read_integrity)?;
     refuse_approval_state(&plan.approvals, amend)?;
-    refuse_unanswered(&plan)?;
+    if !amend {
+        refuse_open_runs(&plan)?;
+    }
+    if let Some(unanswered) = store::unanswered_decisions(&plan) {
+        return Err(refuse(unanswered));
+    }
     refuse_check_errors(&slug, &read_integrity, amend)?;
-    if review == ReviewOutcome::Ran && !plan_review_finished(flow_dir)? {
+    if review == ReviewOutcome::Ran && !store::plan_review_finished(flow_dir)? {
         return Err(refuse(format!(
             "`--review ran` needs a finished plan-family run in `{REVIEW_STORE_FILE}`"
         )));
@@ -265,19 +264,18 @@ fn refuse_approval_state(approvals: &[Approval], amend: bool) -> Result<()> {
     }
 }
 
-fn refuse_unanswered(plan: &PlanStore) -> Result<()> {
-    let unanswered: Vec<&str> = plan
-        .decisions
-        .iter()
-        .filter(|d| d.is_unanswered())
-        .map(|d| d.id.as_str())
-        .collect();
-    if unanswered.is_empty() {
+/// Only a first approval: `--amend` runs at the `running` stage, where an open run
+/// may be execution that is alive and cannot honestly be abandoned.
+fn refuse_open_runs(plan: &PlanStore) -> Result<()> {
+    let open_runs = store::open_runs(plan);
+    let Some(oldest) = open_runs.first() else {
         return Ok(());
-    }
+    };
+    let steps: Vec<&str> = open_runs.iter().map(|run| run.step.as_str()).collect();
     Err(refuse(format!(
-        "surfaced decisions still agent-assumed, so unanswered: {}",
-        unanswered.join(", ")
+        "open run for step {}: {}",
+        steps.join(", "),
+        store::relaunch_or_abandon(&oldest.step)
     )))
 }
 
@@ -294,23 +292,6 @@ fn refuse_check_errors(slug: &str, integrity: &ReadIntegrityArgs, amend: bool) -
         "`plan check` reports errors: {}",
         errors.join("; ")
     )))
-}
-
-fn plan_review_finished(flow_dir: &Path) -> Result<bool> {
-    let path = flow_dir.join(REVIEW_STORE_FILE);
-    if !path.exists() {
-        return Ok(false);
-    }
-    let doc = read_toml(&path)?;
-    Ok(doc
-        .get("runs")
-        .and_then(TomlValue::as_array)
-        .is_some_and(|runs| {
-            runs.iter().any(|run| {
-                let text = |key| run.get(key).and_then(TomlValue::as_str).unwrap_or("");
-                text("family") == PLAN_FAMILY && !text("finished").is_empty()
-            })
-        }))
 }
 
 fn context_status(context_path: &Path) -> Result<String> {

@@ -12,12 +12,10 @@ use crate::cli::{PlanMilestoneAddArgs, PlanMilestoneUpdateArgs};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::output::print_json_compact;
 use crate::tasks::schema::{
-    Change, Checkpoint, ELABORATION_DEFERRED, ELABORATION_ELABORATED, ELABORATION_UPFRONT,
-    MILESTONE_REF_PREFIX, MilestoneSpec, Store,
+    Change, Checkpoint, DEFAULT_ACTOR, ELABORATION_DEFERRED, ELABORATION_ELABORATED,
+    ELABORATION_UPFRONT, MILESTONE_REF_PREFIX, MilestoneSpec, Store,
 };
 use crate::tasks::{mutate_store, resolve_store_path};
-
-const AUDIT_ACTOR: &str = "orchestrator";
 
 fn refuse(message: String) -> anyhow::Error {
     tagged_err(ErrorKind::Validation, None, message)
@@ -34,7 +32,7 @@ fn change(id: &str, field: &str, old: String, new: String, reason: &str) -> Resu
         field: field.to_string(),
         old,
         new,
-        actor: AUDIT_ACTOR.to_string(),
+        actor: DEFAULT_ACTOR.to_string(),
         reason: reason.to_string(),
     })
 }
@@ -89,9 +87,20 @@ pub(super) fn add(args: PlanMilestoneAddArgs) -> Result<()> {
 
 pub(super) fn update(args: PlanMilestoneUpdateArgs) -> Result<()> {
     let id = args.id.trim().to_string();
-    if args.goal.is_none() && args.gate.is_empty() && !args.defer && !args.elaborated {
+    if args.goal.is_none()
+        && args.gate.is_empty()
+        && !args.clear_gate
+        && !args.defer
+        && !args.elaborated
+    {
         return Err(refuse(
-            "nothing to update: pass `--goal`, `--gate`, `--defer` or `--elaborated`".to_string(),
+            "nothing to update: pass `--goal`, `--gate`, `--clear-gate`, `--defer` or `--elaborated`"
+                .to_string(),
+        ));
+    }
+    if args.clear_gate && !args.gate.is_empty() {
+        return Err(refuse(
+            "`--clear-gate` and `--gate` set the gate list two different ways".to_string(),
         ));
     }
     if args.defer && args.elaborated {
@@ -139,7 +148,7 @@ pub(super) fn update(args: PlanMilestoneUpdateArgs) -> Result<()> {
             }
         };
         let spec = &mut store.milestones[index];
-        if !args.gate.is_empty() {
+        if !args.gate.is_empty() || args.clear_gate {
             let old = std::mem::replace(&mut spec.gates, args.gate.clone());
             changes.push((
                 "gates",

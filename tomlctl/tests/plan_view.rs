@@ -86,6 +86,7 @@ finished = 2026-11-05T12:30:00Z
 [[run]]
 step = "prove"
 workflow = "plan-v2-prove"
+session = "sess_prove"
 started = 2026-11-05T13:00:00Z
 finished = ""
 
@@ -598,6 +599,8 @@ fn digest_carries_the_stage_inputs() {
         .map(|run| run["state"].as_str().expect("a state"))
         .collect();
     assert_eq!(states, ["finished", "open", "skipped"]);
+    assert_eq!(inputs["runs"][1]["session"], json!("sess_prove"));
+    assert_eq!(inputs["runs"][0]["session"], json!(""));
     assert!(
         inputs["check"]["errors"].as_u64().expect("a count") > 0,
         "task 2 has no spec: {inputs}"

@@ -1,14 +1,13 @@
 //! `plan stage`: where a plan stands, computed from what exists on disk and
 //! never stored. No verb gates on the result.
 
-use std::fs;
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde_json::json;
 
 use super::check::{self, CLASS_BRIEF_CHANGED};
-use super::schema::{PlanStore, Run, RunState};
+use super::schema::{PlanStore, Run};
 use super::store;
 use crate::cli::PlanStageArgs;
 use crate::io::{relativise, repo_or_cwd_root};
@@ -16,10 +15,6 @@ use crate::output::print_json_line;
 use crate::tasks::finding::{ERROR, Finding};
 use crate::tasks::schema::{Status, Store};
 use crate::tasks::{load_store, resolve_store_path};
-
-const REVIEW_STORE_FILE: &str = "review-v2.toml";
-const REVIEW_STEP: &str = "review";
-const PLAN_FAMILY: &str = "plan";
 
 const TASKS_UPDATE: &str = "tasks update --ndjson";
 const TASKS_ADD_MANY: &str = "tasks add-many";
@@ -62,7 +57,7 @@ pub(super) fn run(args: PlanStageArgs) -> Result<()> {
         &store::authored_dir(slug)?.join(store::BRIEF_FILE),
     );
 
-    let open_runs: Vec<&Run> = plan.runs.iter().filter(|run| run.is_open()).collect();
+    let open_runs = store::open_runs(&plan);
     let report = with_open_runs(
         assess(&plan, &tasks, &findings, reviewed, &brief),
         &open_runs,
@@ -90,14 +85,11 @@ fn report(stage: &'static str, next: &str, blockers: Vec<String>) -> Report {
     }
 }
 
-/// An open run may be alive or dead, and only the caller can tell, so `next` asks
-/// about it ahead of the stage's own hint rather than launching a second copy.
-/// Several steps clear one at a time, the oldest row first.
+/// `next` asks about an open run ahead of the stage's own hint rather than launching
+/// a second copy. Several steps clear one at a time, the oldest row first.
 fn with_open_runs(mut report: Report, open_runs: &[&Run]) -> Report {
     if let Some(oldest) = open_runs.first() {
-        let step = &oldest.step;
-        report.next =
-            format!("relaunch step {step} or plan run abandon --step {step} --reason <why>");
+        report.next = store::relaunch_or_abandon(&oldest.step);
     }
     report.blockers.splice(
         0..0,
@@ -151,10 +143,15 @@ fn remedy(class: &str) -> &'static str {
     }
 }
 
-fn prove_next(blocking: &[&Finding]) -> &'static str {
+/// `unanswered` is a blocker with no finding class, because `plan decide` clears it
+/// whether or not `plan check` reports anything.
+fn prove_next(blocking: &[&Finding], unanswered: bool) -> &'static str {
     PROVE_ORDER
         .into_iter()
-        .find(|next| blocking.iter().any(|f| remedy(f.class) == *next))
+        .find(|next| {
+            (unanswered && *next == PLAN_DECIDE)
+                || blocking.iter().any(|f| remedy(f.class) == *next)
+        })
         .unwrap_or(PLAN_CHECK)
 }
 
@@ -167,7 +164,7 @@ fn assess(
 ) -> Report {
     let of = |classes: &'static [&'static str]| move |f: &&Finding| classes.contains(&f.class);
 
-    if !plan.approvals.is_empty() {
+    if let Some(approval) = plan.approvals.last() {
         let all = |status: Status| tasks.items.iter().all(|row| row.status == status);
         let (stage, next) = if !tasks.items.is_empty() && all(Status::Done) {
             ("done", "none")
@@ -176,13 +173,21 @@ fn assess(
         } else {
             ("running", "plan drift")
         };
-        let changed: Vec<&Finding> = findings.iter().filter(of(&[CLASS_BRIEF_CHANGED])).collect();
-        let next = if changed.is_empty() {
-            next
-        } else {
-            AMEND_APPROVAL
+        let brief: Vec<&Finding> = findings
+            .iter()
+            .filter(of(&["plan/brief-missing", CLASS_BRIEF_CHANGED]))
+            .collect();
+        // Only the approved bytes clear a deleted brief: `plan open` writes nothing on
+        // an approved plan, and `--amend` refuses `plan/brief-missing`.
+        return match brief.first().map(|f| f.class) {
+            Some("plan/brief-missing") => report(
+                stage,
+                &format!("git restore --source {} -- {brief_rel}", approval.commit),
+                summarise(&brief),
+            ),
+            Some(_) => report(stage, AMEND_APPROVAL, summarise(&brief)),
+            None => report(stage, next, Vec::new()),
         };
-        return report(stage, next, summarise(&changed));
     }
 
     let brief: Vec<&Finding> = findings
@@ -224,8 +229,12 @@ fn assess(
         .iter()
         .filter(|f| f.severity == ERROR || f.class == "plan/probe-absent")
         .collect();
-    if !proving.is_empty() {
-        return report("prove", prove_next(&proving), summarise(&proving));
+    let unanswered = store::unanswered_decisions(plan);
+    if !proving.is_empty() || unanswered.is_some() {
+        let next = prove_next(&proving, unanswered.is_some());
+        let mut blockers = summarise(&proving);
+        blockers.extend(unanswered);
+        return report("prove", next, blockers);
     }
 
     if !reviewed {
@@ -239,34 +248,13 @@ fn assess(
     report("ready", "plan approve", Vec::new())
 }
 
-/// A review is settled by a finished plan-family run in `review-v2.toml`, read
-/// as a plain document, or by a `[[run]]` for the review step carrying a skip
-/// reason.
+/// A review is settled by a finished plan-family run or by a `[[run]]` for the
+/// review step carrying a skip reason.
 fn review_settled(flow_dir: &Path, plan: &PlanStore) -> Result<bool> {
-    if plan
-        .runs
-        .iter()
-        .any(|run| run.step == REVIEW_STEP && run.state() == RunState::Skipped)
-    {
+    if store::skipped_reviews(plan).next().is_some() {
         return Ok(true);
     }
-    let path = flow_dir.join(REVIEW_STORE_FILE);
-    let text = match fs::read_to_string(&path) {
-        Ok(text) => text,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(err) => return Err(err).with_context(|| format!("reading {}", path.display())),
-    };
-    let doc: toml::Value =
-        toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
-    Ok(doc
-        .get("runs")
-        .and_then(toml::Value::as_array)
-        .is_some_and(|runs| {
-            runs.iter().any(|run| {
-                let text = |key| run.get(key).and_then(toml::Value::as_str).unwrap_or("");
-                text("family") == PLAN_FAMILY && !text("finished").is_empty()
-            })
-        }))
+    store::plan_review_finished(flow_dir)
 }
 
 #[cfg(test)]
@@ -285,7 +273,7 @@ mod tests {
     fn next_for(classes: &[&'static str]) -> &'static str {
         let findings: Vec<Finding> = classes.iter().map(|class| finding(class, "")).collect();
         let blocking: Vec<&Finding> = findings.iter().collect();
-        prove_next(&blocking)
+        prove_next(&blocking, false)
     }
 
     #[test]
@@ -344,6 +332,17 @@ mod tests {
             next_for(&["plan/spec-no-outcome", "dag/cycle"]),
             TASKS_CHECK
         );
+    }
+
+    #[test]
+    fn an_unanswered_decision_ranks_with_plan_decide_in_the_prove_order() {
+        assert_eq!(prove_next(&[], true), PLAN_DECIDE);
+
+        let probe = finding("plan/probe-absent", "");
+        assert_eq!(prove_next(&[&probe], true), PLAN_DECIDE);
+
+        let cycle = finding("dag/cycle", "");
+        assert_eq!(prove_next(&[&cycle], true), TASKS_CHECK);
     }
 
     #[test]

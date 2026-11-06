@@ -11,7 +11,7 @@ use std::path::Path;
 use anyhow::Result;
 use serde_json::{Value as JsonValue, json};
 
-use super::check;
+use super::check::{self, REQUIRED_SECTIONS, atx_heading};
 use super::schema::{Bind, Contract, Decision, Door, PlanStore, Provenance, RunOutcome, RunState};
 use super::store::{self, BRIEF_FILE, brief_digest};
 use crate::cli::{PlanViewArgs, ReadIntegrityArgs};
@@ -23,7 +23,8 @@ use crate::tasks::schema::{FileKind, Status, Store, TaskRow, TaskSpec, normal_pa
 use crate::tasks::slug::derive_ref;
 use crate::tasks::{load_store, resolve_store_path};
 
-const REQUIRED_SECTIONS: [&str; 4] = ["Intent", "Non-goals", "Scope budget", "Success criteria"];
+/// The `--for` vocabulary, shared by validation and the capabilities report.
+pub(crate) const VIEW_ROLES: &[&str] = &["human", "digest", "worker"];
 
 #[derive(Clone, Copy)]
 enum Audience {
@@ -94,7 +95,8 @@ fn audience(role: &str, task: Option<u32>) -> Result<Audience> {
         "worker" => Audience::Worker(task.ok_or_else(|| refusal("`--for worker` needs `--task`"))?),
         other => {
             return Err(refusal(format!(
-                "unknown `--for` value `{other}`: expected human, digest or worker"
+                "unknown `--for` value `{other}`: expected one of {}",
+                VIEW_ROLES.join(", ")
             )));
         }
     };
@@ -321,6 +323,7 @@ fn stage_inputs(view: &Plan<'_>, integrity: &ReadIntegrityArgs) -> Result<JsonVa
                 "state": run.state().as_str(),
                 "workflow": run.workflow,
                 "run_id": run.run_id,
+                "session": run.session,
                 "skip_reason": run.skip_reason,
                 "outcome": run.outcome.map(RunOutcome::as_str),
                 "reason": run.reason,
@@ -337,7 +340,7 @@ fn stage_inputs(view: &Plan<'_>, integrity: &ReadIntegrityArgs) -> Result<JsonVa
     Ok(json!({
         "brief": brief,
         "tasks_store": view.tasks_exist,
-        "review_store": view.flow_dir.join("review-v2.toml").exists(),
+        "review_store": view.flow_dir.join(store::REVIEW_STORE_FILE).exists(),
         "audit": view.tasks.audit,
         "approval": approval,
         "runs": runs,
@@ -772,44 +775,12 @@ fn brief_section(brief: &str, title: &str) -> Option<String> {
     start.map(|(from, _)| lines[from..].join("\n").trim().to_string())
 }
 
-fn atx_heading(line: &str) -> Option<(usize, &str)> {
-    let rest = line.trim_start_matches(' ');
-    if line.len() - rest.len() > 3 {
-        return None;
-    }
-    let depth = rest.bytes().take_while(|byte| *byte == b'#').count();
-    if !(1..=6).contains(&depth) {
-        return None;
-    }
-    let title = &rest[depth..];
-    (title.is_empty() || title.starts_with([' ', '\t'])).then_some((depth, title))
-}
-
-/// The required sections `plan check` would report empty: a section counts as
-/// filled by anything but blank lines, sub-headings and HTML comments.
+/// The required sections `plan check` would report empty.
 fn empty_sections(brief: &str) -> Vec<&'static str> {
     REQUIRED_SECTIONS
         .into_iter()
         .filter(|title| {
-            brief_section(brief, title).is_none_or(|body| {
-                strip_comments(&body)
-                    .lines()
-                    .all(|line| line.trim().is_empty() || atx_heading(line).is_some())
-            })
+            brief_section(brief, title).is_none_or(|body| !check::body_is_filled(&body))
         })
         .collect()
-}
-
-fn strip_comments(text: &str) -> String {
-    let mut kept = String::with_capacity(text.len());
-    let mut rest = text;
-    while let Some(open) = rest.find("<!--") {
-        kept.push_str(&rest[..open]);
-        rest = match rest[open..].find("-->") {
-            Some(close) => &rest[open + close + 3..],
-            None => "",
-        };
-    }
-    kept.push_str(rest);
-    kept
 }

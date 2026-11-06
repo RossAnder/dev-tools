@@ -457,8 +457,31 @@ fn a_plan_runs_from_open_to_drift() {
         "id": 4,
         "spec": { "outcome": "Spare-outcome.", "accept": [{ "behaviour": "the spare holds" }] },
     }));
-    let report = flow.assert_stage("prove", "plan probes --emit");
+    let report = flow.assert_stage("prove", "plan decide");
     assert!(blockers(&report).contains("plan/probe-absent"), "{report}");
+    assert!(blockers(&report).contains("unanswered: D1"), "{report}");
+
+    // Approve is refused until the surfaced decision is answered, which is what the
+    // stage asks for ahead of the probes.
+    let approve = [
+        "plan",
+        "approve",
+        "--slug",
+        SLUG,
+        "--review",
+        "skipped-low-risk",
+        "--reason",
+        "Low risk.",
+    ];
+    let (kind, message) = flow.refused(&approve);
+    assert_eq!(kind, "validation", "{message}");
+    assert!(message.contains("D1"), "{message}");
+    let answer = flow.payload(
+        "answer.ndjson",
+        "{\"id\":\"D1\",\"provenance\":\"user-confirmed\"}\n",
+    );
+    flow.plan(&["decide", "--ndjson", &answer]);
+    flow.assert_stage("prove", "plan probes --emit");
 
     // Prove.
     let script = flow.text(&["plan", "probes", "--slug", SLUG, "--emit"]);
@@ -533,8 +556,7 @@ fn a_plan_runs_from_open_to_drift() {
 
     // Gate.
     let gate = flow.plan(&["gate"]);
-    assert_eq!(gate["assumptions"][0]["id"], "D1", "{gate}");
-    assert_eq!(gate["assumptions"][1]["revisit_if"], "It widens.", "{gate}");
+    assert_eq!(gate["assumptions"][0]["revisit_if"], "It widens.", "{gate}");
     assert_eq!(gate["one_way_doors"][0]["id"], "D1", "{gate}");
     assert_eq!(
         gate["risks"],
@@ -565,26 +587,7 @@ fn a_plan_runs_from_open_to_drift() {
         ])
     );
 
-    // Approve: refused until the surfaced decision is answered and the flow is
-    // committed.
-    let approve = [
-        "plan",
-        "approve",
-        "--slug",
-        SLUG,
-        "--review",
-        "skipped-low-risk",
-        "--reason",
-        "Low risk.",
-    ];
-    let (kind, message) = flow.refused(&approve);
-    assert_eq!(kind, "validation", "{message}");
-    assert!(message.contains("D1"), "{message}");
-    let answer = flow.payload(
-        "answer.ndjson",
-        "{\"id\":\"D1\",\"provenance\":\"user-confirmed\"}\n",
-    );
-    flow.plan(&["decide", "--ndjson", &answer]);
+    // Approve: refused until the flow is committed.
     let (kind, message) = flow.refused(&approve);
     assert_eq!(kind, "validation", "{message}");
     assert!(message.contains("plan.toml"), "{message}");

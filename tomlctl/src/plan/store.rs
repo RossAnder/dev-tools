@@ -14,18 +14,21 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use sha2::{Digest, Sha256};
+use toml::Value as TomlValue;
 
-use super::schema::{self, PlanStore};
+use super::schema::{self, PlanStore, Run, RunState};
 use crate::cli::{
     ReadIntegrityArgs, WriteIntegrityArgs, read_integrity_opts, write_integrity_opts,
 };
 use crate::errors::{ErrorKind, tagged_err};
-use crate::integrity::hex_lower;
-use crate::io::{OnMissing, mutate_doc, read_doc, repo_or_cwd_root, strict_read_check};
+use crate::integrity::sha256_hex_crlf_folded;
+use crate::io::{OnMissing, mutate_doc, read_doc, read_toml, repo_or_cwd_root, strict_read_check};
 
 const STORE_FILE: &str = "plan.toml";
 pub(super) const BRIEF_FILE: &str = "brief.md";
+pub(super) const REVIEW_STORE_FILE: &str = "review-v2.toml";
+const PLAN_FAMILY: &str = "plan";
+const REVIEW_STEP: &str = "review";
 
 /// `<root>/.claude/flows/<slug>/plan.toml`. The flow-init slug rule admits
 /// neither a separator nor a `..`, which is the only thing keeping `--slug`
@@ -89,13 +92,81 @@ pub(super) fn flow_dir(plan_path: &Path) -> &Path {
         .expect("a resolved store path sits in its flow directory")
 }
 
+/// Whether `review-v2.toml` holds a finished plan-family run. It is read as a plain
+/// document, since the review group owns its shape, and a flow without one has none.
+pub(super) fn plan_review_finished(flow_dir: &Path) -> Result<bool> {
+    let path = flow_dir.join(REVIEW_STORE_FILE);
+    if !path.exists() {
+        return Ok(false);
+    }
+    let doc = read_toml(&path)?;
+    Ok(doc
+        .get("runs")
+        .and_then(TomlValue::as_array)
+        .is_some_and(|runs| {
+            runs.iter().any(|run| {
+                let text = |key| run.get(key).and_then(TomlValue::as_str).unwrap_or("");
+                text("family") == PLAN_FAMILY && !text("finished").is_empty()
+            })
+        }))
+}
+
+/// The review step's runs recorded as skipped, in store order.
+pub(super) fn skipped_reviews(plan: &PlanStore) -> impl Iterator<Item = &Run> {
+    plan.runs
+        .iter()
+        .filter(|run| run.step == REVIEW_STEP && run.state() == RunState::Skipped)
+}
+
+/// Why `plan approve` would refuse the plan's surfaced decisions, `None` when every
+/// one is answered.
+pub(super) fn unanswered_decisions(plan: &PlanStore) -> Option<String> {
+    let unanswered: Vec<&str> = plan
+        .decisions
+        .iter()
+        .filter(|d| d.is_unanswered())
+        .map(|d| d.id.as_str())
+        .collect();
+    (!unanswered.is_empty()).then(|| {
+        format!(
+            "surfaced decisions still agent-assumed, so unanswered: {}",
+            unanswered.join(", ")
+        )
+    })
+}
+
+/// The plan's open runs in store order, so the oldest row comes first.
+pub(super) fn open_runs(plan: &PlanStore) -> Vec<&Run> {
+    plan.runs.iter().filter(|run| run.is_open()).collect()
+}
+
+/// An open run may be alive or dead, and only the caller can tell, so the choice is
+/// the caller's.
+pub(super) fn relaunch_or_abandon(step: &str) -> String {
+    format!("relaunch step {step} or plan run abandon --step {step} --reason <why>")
+}
+
 /// Read the store at `path`. Under `--verify-integrity` the sidecar check
 /// runs first, under a shared lock, so a write mid-swap cannot be read as a
 /// mismatch.
 pub(crate) fn load(path: &Path, integrity: &ReadIntegrityArgs) -> Result<PlanStore> {
     require_open(path)?;
     strict_read_check(path, integrity.strict_read)?;
-    read_doc(path, read_integrity_opts(integrity), schema::from_toml)
+    read_doc(path, read_integrity_opts(integrity), |doc| {
+        parse_store(path, doc)
+    })
+}
+
+/// `schema::from_toml` with its failure tagged `kind=parse` and carrying the path,
+/// so a store that parses but fails validation reports like one that does not parse.
+fn parse_store(path: &Path, doc: &TomlValue) -> Result<PlanStore> {
+    schema::from_toml(doc).map_err(|err| {
+        tagged_err(
+            ErrorKind::Parse,
+            Some(path.to_path_buf()),
+            format!("parsing {}: {err:#}", path.display()),
+        )
+    })
 }
 
 /// Refuses a flow with no `plan.toml`, for readers and writers alike. Nothing here
@@ -139,7 +210,7 @@ pub(crate) fn mutate<T>(
         write_integrity_opts(integrity),
         OnMissing::Error,
         |doc| {
-            let mut store = schema::from_toml(doc)?;
+            let mut store = parse_store(path, doc)?;
             outcome = Some(f(&mut store)?);
             store.last_updated = Some(today);
             *doc = schema::to_toml(&store);
@@ -152,23 +223,17 @@ pub(crate) fn mutate<T>(
 /// SHA-256 of a brief with CRLF folded to LF, so that a checkout's line endings
 /// never read as a change to intent. Lone CRs are content and stay.
 pub(crate) fn brief_digest(bytes: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    let mut rest = bytes;
-    while let Some(at) = rest.windows(2).position(|pair| pair == b"\r\n") {
-        hasher.update(&rest[..at]);
-        hasher.update(b"\n");
-        rest = &rest[at + 2..];
-    }
-    hasher.update(rest);
-    hex_lower(&hasher.finalize())
+    sha256_hex_crlf_folded(bytes)
 }
 
 #[cfg(test)]
 mod tests {
     use super::super::schema::tests::fixture;
     use super::*;
-    use crate::integrity::{sidecar_path, verify_integrity};
+    use crate::errors::TaggedError;
+    use crate::integrity::{hex_lower, sidecar_path, verify_integrity};
     use crate::test_support::with_root;
+    use sha2::{Digest, Sha256};
 
     const SLUG: &str = "whimsical-hugging-puppy";
 
@@ -287,6 +352,46 @@ mod tests {
                 .expect_err("a newer store is refused");
             assert!(format!("{err:#}").contains("upgrade tomlctl"), "{err:#}");
             assert_eq!(std::fs::read_to_string(&path).unwrap(), body);
+        });
+    }
+
+    fn assert_tagged_parse(err: &anyhow::Error, path: &Path) {
+        let tagged = err
+            .downcast_ref::<TaggedError>()
+            .unwrap_or_else(|| panic!("a tagged error, got: {err:#}"));
+        assert!(matches!(tagged.kind, ErrorKind::Parse), "{tagged:?}");
+        assert_eq!(tagged.file.as_deref(), Some(path));
+    }
+
+    /// Syntactically valid TOML whose root fails the schema: a newer version.
+    #[test]
+    fn a_store_failing_schema_validation_reports_kind_parse_with_its_path() {
+        with_root(|root| {
+            let path = store_path(root);
+            std::fs::create_dir_all(path.parent().expect("a flow dir")).unwrap();
+            let body = format!("schema_version = {}\n", schema::SCHEMA_VERSION + 1);
+            std::fs::write(&path, &body).unwrap();
+
+            let err = load(&path, &read_args(false)).expect_err("load validates");
+            assert_tagged_parse(&err, &path);
+            assert!(format!("{err:#}").contains("upgrade tomlctl"), "{err:#}");
+
+            let err = mutate(&path, &write_args(), |_store| Ok(())).expect_err("mutate validates");
+            assert_tagged_parse(&err, &path);
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), body);
+        });
+    }
+
+    #[test]
+    fn a_closure_error_keeps_its_own_kind() {
+        with_root(|root| {
+            let path = store_path(root);
+            seed_store(&path);
+            let err = mutate(&path, &write_args(), |_store| {
+                Err::<(), _>(anyhow::anyhow!("refused"))
+            })
+            .expect_err("the closure's error propagates");
+            assert!(err.downcast_ref::<TaggedError>().is_none(), "{err:#}");
         });
     }
 

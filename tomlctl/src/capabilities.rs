@@ -101,6 +101,12 @@ const SCOPED_ENUM_VALUES: &[(&str, &str, &[&str])] = &[
         &["pending", "in-progress", "done", "failed", "deferred"],
     ),
     ("tasks add", "effort", &["S", "M", "L"]),
+    ("plan view", "for_role", crate::plan::VIEW_ROLES),
+    (
+        "plan approve",
+        "review",
+        crate::plan::schema::ReviewOutcome::VOCABULARY,
+    ),
 ];
 
 const BACKLOG_KINDS: &[&str] = &[
@@ -524,6 +530,8 @@ mod tests {
                 ("backlog list", "status") => crate::backlog::schema::STATUSES,
                 ("tasks update", "status") => crate::tasks::Status::VOCABULARY,
                 ("tasks add", "effort") => crate::tasks::Effort::VOCABULARY,
+                ("plan view", "for_role") => crate::plan::VIEW_ROLES,
+                ("plan approve", "review") => crate::plan::schema::ReviewOutcome::VOCABULARY,
                 other => panic!(
                     "SCOPED_ENUM_VALUES references `{other:?}` — add a branch naming its validator's vocabulary"
                 ),

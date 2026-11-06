@@ -9,7 +9,7 @@ use serde_json::{Map, Value as JsonValue, json};
 
 use super::schema::{
     Contract, ContractKind, Decision, Door, Handover, PlanStore, Provenance, RecordKind, Rejected,
-    Run, RunOutcome,
+    Run, RunOutcome, Vocabulary,
 };
 use super::store;
 use crate::cli::{
@@ -106,22 +106,16 @@ fn row_rejected(line: usize, row: &Row) -> Result<Option<Vec<Rejected>>> {
         .map(Some)
 }
 
-fn vocab_value<T>(
-    line: usize,
-    key: &str,
-    row: &Row,
-    parse: fn(&str) -> Option<T>,
-    vocabulary: &[&str],
-) -> Result<Option<T>> {
+fn vocab_value<T: Vocabulary>(line: usize, key: &str, row: &Row) -> Result<Option<T>> {
     let Some(raw) = row_string(line, key, row.get(key))? else {
         return Ok(None);
     };
-    parse(&raw).map(Some).ok_or_else(|| {
+    T::parse(&raw).map(Some).ok_or_else(|| {
         row_err(
             line,
             format!(
                 "unknown {key} `{raw}` — expected one of {}",
-                vocabulary.join(", ")
+                T::VOCABULARY.join(", ")
             ),
         )
     })
@@ -180,14 +174,8 @@ fn upsert_decision(plan: &mut PlanStore, line: usize, row: &Row) -> Result<Strin
     };
 
     let text = |key: &str| row_string(line, key, row.get(key));
-    let provenance = vocab_value(
-        line,
-        "provenance",
-        row,
-        Provenance::parse,
-        Provenance::VOCABULARY,
-    )?;
-    let door = vocab_value(line, "door", row, Door::parse, Door::VOCABULARY)?;
+    let provenance = vocab_value::<Provenance>(line, "provenance", row)?;
+    let door = vocab_value::<Door>(line, "door", row)?;
     let binds = row_strings(line, "binds", row.get("binds"))?;
     let rejected = row_rejected(line, row)?;
     let surfaced = row_bool(line, "surfaced", row)?;
@@ -291,13 +279,7 @@ fn upsert_contract(plan: &mut PlanStore, line: usize, row: &Row) -> Result<Strin
     };
 
     let text = |key: &str| row_string(line, key, row.get(key));
-    let kind = vocab_value(
-        line,
-        "kind",
-        row,
-        ContractKind::parse,
-        ContractKind::VOCABULARY,
-    )?;
+    let kind = vocab_value::<ContractKind>(line, "kind", row)?;
     let tasks = row_ids(line, "tasks", row.get("tasks"))?;
 
     match existing {
@@ -386,9 +368,10 @@ pub(super) fn run_start(args: PlanRunStartArgs) -> Result<()> {
     mutate_plan(&args.target.slug, &args.integrity, |plan| {
         plan.runs.push(Run {
             step: args.step.clone(),
-            workflow: args.workflow.clone(),
-            args_hash: args.args_hash.clone(),
+            workflow: args.workflow.clone().unwrap_or_default(),
+            args_hash: args.args_hash.clone().unwrap_or_default(),
             run_id: args.run_id.clone().unwrap_or_default(),
+            session: args.session.clone().unwrap_or_default(),
             started,
             finished: None,
             skip_reason: String::new(),
@@ -480,6 +463,7 @@ pub(super) fn run_skip(args: PlanRunSkipArgs) -> Result<()> {
             workflow: String::new(),
             args_hash: String::new(),
             run_id: String::new(),
+            session: String::new(),
             started,
             finished: None,
             skip_reason: args.reason.clone(),
