@@ -48,7 +48,7 @@ pub(super) fn run(args: PlanOpenArgs) -> Result<()> {
     let plan_file = store::resolve(&slug)?;
     let authored = store::authored_dir(&slug)?;
     let root = repo_or_cwd_root()?;
-    let brief = authored.join("brief.md");
+    let brief = authored.join(store::BRIEF_FILE);
     let brief_rel = relativise(&root, &brief);
     refuse_foreign_plan(&plan_file.with_file_name("context.toml"), &brief_rel)?;
 

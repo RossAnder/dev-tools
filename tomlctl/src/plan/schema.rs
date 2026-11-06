@@ -20,6 +20,8 @@ use toml::Value as TomlValue;
 use toml::map::Map;
 use toml::value::Datetime;
 
+use crate::tasks::schema::normal_path;
+
 pub(crate) const SCHEMA_VERSION: i64 = 1;
 
 type Table = Map<String, TomlValue>;
@@ -143,7 +145,7 @@ pub(crate) struct Decision {
     pub(crate) why: String,
     pub(crate) provenance: Provenance,
     pub(crate) door: Door,
-    /// An all-digit entry names a task id; any other entry names a path.
+    /// Read through [`Bind::parse`].
     pub(crate) binds: Vec<String>,
     pub(crate) rejected: Vec<Rejected>,
     pub(crate) evidence: String,
@@ -152,6 +154,36 @@ pub(crate) struct Decision {
     pub(crate) check: String,
     pub(crate) surfaced: bool,
     pub(crate) vetoed: bool,
+}
+
+impl Decision {
+    /// A surfaced decision stays unanswered while it is still `agent-assumed`.
+    pub(crate) fn is_unanswered(&self) -> bool {
+        self.surfaced && self.provenance == Provenance::AgentAssumed
+    }
+}
+
+/// What one `Decision::binds` entry names.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Bind {
+    Task(u32),
+    /// Normalised through `normal_path`, the form a row's `files` compare in.
+    Path(String),
+}
+
+impl Bind {
+    /// An all-digit entry names a task and nothing else, so a file named `3`
+    /// cannot satisfy it. `None` for an entry naming nothing: an empty one, or
+    /// digits too large for a task id.
+    pub(crate) fn parse(entry: &str) -> Option<Self> {
+        if entry.is_empty() {
+            return None;
+        }
+        if entry.bytes().all(|byte| byte.is_ascii_digit()) {
+            return entry.parse().ok().map(Self::Task);
+        }
+        Some(Self::Path(normal_path(entry)))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -199,11 +231,44 @@ pub(crate) struct Run {
     pub(crate) reason: String,
 }
 
+/// Where a `[[run]]` row stands, derived from its fields and never stored.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RunState {
+    Skipped,
+    Abandoned,
+    Open,
+    Finished,
+}
+
+impl RunState {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Skipped => "skipped",
+            Self::Abandoned => "abandoned",
+            Self::Open => "open",
+            Self::Finished => "finished",
+        }
+    }
+}
+
 impl Run {
-    /// Any one of the three closes a row, so a hand-edited row carrying an
-    /// outcome and no `finished` reads as closed everywhere.
+    /// A skip reason, a finish time or an outcome each closes a row, so a
+    /// hand-edited row carrying an outcome and no `finished` reads as closed
+    /// everywhere. A whitespace-only skip reason skips nothing.
+    pub(crate) fn state(&self) -> RunState {
+        if !self.skip_reason.trim().is_empty() {
+            RunState::Skipped
+        } else if self.outcome == Some(RunOutcome::Abandoned) {
+            RunState::Abandoned
+        } else if self.finished.is_none() && self.outcome.is_none() {
+            RunState::Open
+        } else {
+            RunState::Finished
+        }
+    }
+
     pub(crate) fn is_open(&self) -> bool {
-        self.finished.is_none() && self.skip_reason.is_empty() && self.outcome.is_none()
+        self.state() == RunState::Open
     }
 }
 

@@ -34,6 +34,23 @@ pub(crate) const BASE_SCHEMA_VERSION: i64 = 1;
 
 /// `elaboration` for a milestone recording none: detail upfront is the norm.
 pub(crate) const ELABORATION_UPFRONT: &str = "upfront";
+pub(crate) const ELABORATION_DEFERRED: &str = "deferred";
+pub(crate) const ELABORATION_ELABORATED: &str = "elaborated";
+
+pub(crate) const KIND_FORWARD: &str = "forward";
+pub(crate) const KIND_FALSIFIER: &str = "falsifier";
+pub(crate) const KIND_GUARD: &str = "guard";
+pub(crate) const ACCEPT_KINDS: [&str; 3] = [KIND_FORWARD, KIND_FALSIFIER, KIND_GUARD];
+
+pub(crate) const BINDING_REQUIRED: &str = "required";
+pub(crate) const BINDING_SUGGESTED: &str = "suggested";
+pub(crate) const MEANS_BINDINGS: [&str; 2] = [BINDING_REQUIRED, BINDING_SUGGESTED];
+
+/// The one probe verdict that clears `plan/probe-unhealthy`.
+pub(crate) const VERDICT_HEALTHY: &str = "healthy";
+
+/// Opens the `[[changes]]` key of a milestone's rows, which no task's trail shares.
+pub(crate) const MILESTONE_REF_PREFIX: &str = "milestone:";
 
 /// Depth a row's heading renders at when the store records none — the
 /// shallowest depth that still sits inside a `## ` section.
@@ -270,6 +287,12 @@ pub(crate) struct MilestoneSpec {
     pub(crate) defer_reason: String,
 }
 
+impl MilestoneSpec {
+    pub(crate) fn is_deferred(&self) -> bool {
+        self.elaboration == ELABORATION_DEFERRED
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Change {
     pub(crate) at: Option<Datetime>,
@@ -406,6 +429,20 @@ impl Store {
 
     pub(crate) fn links_for(&self, r#ref: &str) -> Option<&BacklogLink> {
         self.backlog_links.iter().find(|entry| entry.r#ref == r#ref)
+    }
+
+    pub(crate) fn spec_for(&self, r#ref: &str) -> Option<&TaskSpec> {
+        self.specs.iter().find(|entry| entry.r#ref == r#ref)
+    }
+
+    /// The refs a task's audit trail is keyed on, live or tombstoned. A ref names
+    /// one task's trail for the life of the store, so none of these can be claimed
+    /// by a row that does not already hold it.
+    pub(crate) fn trail_refs(&self) -> impl Iterator<Item = &str> {
+        self.changes
+            .iter()
+            .map(|change| change.r#ref.as_str())
+            .filter(|r#ref| !r#ref.starts_with(MILESTONE_REF_PREFIX))
     }
 
     /// Drops the file notes, backlog links and spec keyed on `ref`, so a row
@@ -2151,5 +2188,23 @@ commit = ""
         assert_eq!(store.find(99), None);
         assert_eq!(store.find_ref("seed-the-store").map(|row| row.id), Some(1));
         assert_eq!(Store::default().next_id(), 1);
+    }
+
+    #[test]
+    fn a_milestones_audit_rows_hold_no_tasks_ref() {
+        let change = |r#ref: &str| Change {
+            at: None,
+            r#ref: r#ref.to_string(),
+            field: "*".to_string(),
+            old: String::new(),
+            new: String::new(),
+            actor: String::new(),
+            reason: String::new(),
+        };
+        let store = Store {
+            changes: vec![change("milestone:A"), change("gone")],
+            ..Store::default()
+        };
+        assert_eq!(store.trail_refs().collect::<Vec<_>>(), ["gone"]);
     }
 }

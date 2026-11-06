@@ -12,7 +12,7 @@ use anyhow::Result;
 use serde_json::{Value as JsonValue, json};
 
 use super::check;
-use super::schema::{Contract, Decision, Door, PlanStore, Provenance, RunOutcome};
+use super::schema::{Bind, Contract, Decision, Door, PlanStore, Provenance, RunOutcome, RunState};
 use super::store::{self, BRIEF_FILE, brief_digest};
 use crate::cli::{PlanViewArgs, ReadIntegrityArgs};
 use crate::errors::{ErrorKind, tagged_err};
@@ -24,7 +24,6 @@ use crate::tasks::slug::derive_ref;
 use crate::tasks::{load_store, resolve_store_path};
 
 const REQUIRED_SECTIONS: [&str; 4] = ["Intent", "Non-goals", "Scope budget", "Success criteria"];
-const ELABORATION_DEFERRED: &str = "deferred";
 
 #[derive(Clone, Copy)]
 enum Audience {
@@ -67,9 +66,7 @@ pub(super) fn run(args: PlanViewArgs) -> Result<()> {
     } else {
         Store::default()
     };
-    let flow_dir = plan_path
-        .parent()
-        .expect("a resolved store path sits in its flow directory");
+    let flow_dir = store::flow_dir(&plan_path);
     let authored_dir = store::authored_dir(slug)?;
     let view = Plan {
         slug,
@@ -226,8 +223,9 @@ fn records_block(out: &mut String, plan: &PlanStore) {
     if !plan.runs.is_empty() {
         out.push_str("## Runs\n\n");
         for run in &plan.runs {
-            let mut line = format!("- `{}`: {}", run.step, run_state(run));
-            if !run.skip_reason.is_empty() {
+            let state = run.state();
+            let mut line = format!("- `{}`: {}", run.step, state.as_str());
+            if state == RunState::Skipped {
                 line.push_str(&format!(" ({})", run.skip_reason));
             }
             if !run.reason.is_empty() {
@@ -320,7 +318,7 @@ fn stage_inputs(view: &Plan<'_>, integrity: &ReadIntegrityArgs) -> Result<JsonVa
         .map(|run| {
             json!({
                 "step": run.step,
-                "state": run_state(run),
+                "state": run.state().as_str(),
                 "workflow": run.workflow,
                 "run_id": run.run_id,
                 "skip_reason": run.skip_reason,
@@ -391,7 +389,7 @@ fn counts(plan: &PlanStore, tasks: &Store) -> JsonValue {
             "deferred": tasks
                 .milestones
                 .iter()
-                .filter(|m| m.elaboration == ELABORATION_DEFERRED)
+                .filter(|m| m.is_deferred())
                 .count(),
         },
         "runs": plan.runs.len(),
@@ -404,13 +402,11 @@ fn counts(plan: &PlanStore, tasks: &Store) -> JsonValue {
     })
 }
 
-/// A surfaced decision is unanswered while it is still `agent-assumed`, the same
-/// reading `plan approve` refuses on.
 fn open_items(plan: &PlanStore, tasks: &Store) -> JsonValue {
     let unanswered: Vec<JsonValue> = plan
         .decisions
         .iter()
-        .filter(|d| d.surfaced && d.provenance == Provenance::AgentAssumed)
+        .filter(|d| d.is_unanswered())
         .map(|d| json!({"id": d.id, "decision": d.decision}))
         .collect();
     let open_runs: Vec<&str> = plan
@@ -428,7 +424,7 @@ fn open_items(plan: &PlanStore, tasks: &Store) -> JsonValue {
     let without_spec: Vec<u32> = tasks
         .items
         .iter()
-        .filter(|row| !tasks.specs.iter().any(|spec| spec.r#ref == row.r#ref))
+        .filter(|row| tasks.spec_for(&row.r#ref).is_none())
         .map(|row| row.id)
         .collect();
     let failed: Vec<u32> = tasks
@@ -440,7 +436,7 @@ fn open_items(plan: &PlanStore, tasks: &Store) -> JsonValue {
     let deferred: Vec<JsonValue> = tasks
         .milestones
         .iter()
-        .filter(|m| m.elaboration == ELABORATION_DEFERRED)
+        .filter(|m| m.is_deferred())
         .map(|m| json!({"id": m.id, "reason": m.defer_reason}))
         .collect();
     json!({
@@ -451,18 +447,6 @@ fn open_items(plan: &PlanStore, tasks: &Store) -> JsonValue {
         "failed_tasks": failed,
         "deferred_milestones": deferred,
     })
-}
-
-fn run_state(run: &super::schema::Run) -> &'static str {
-    if !run.skip_reason.is_empty() {
-        "skipped"
-    } else if run.outcome == Some(RunOutcome::Abandoned) {
-        "abandoned"
-    } else if run.is_open() {
-        "open"
-    } else {
-        "finished"
-    }
 }
 
 fn worker(view: &Plan<'_>, id: u32) -> Result<String> {
@@ -513,7 +497,7 @@ fn worker(view: &Plan<'_>, id: u32) -> Result<String> {
 
     out.push_str("## Task\n\n");
     task_block(&mut out, tasks, row);
-    if let Some(spec) = spec_of(tasks, row) {
+    if let Some(spec) = tasks.spec_for(&row.r#ref) {
         let cited: Vec<&str> = spec.design.iter().map(String::as_str).collect();
         design_block(&mut out, view.authored_dir, &cited);
     }
@@ -523,29 +507,23 @@ fn worker(view: &Plan<'_>, id: u32) -> Result<String> {
     Ok(out)
 }
 
-/// An all-digit entry names a task and nothing else, as `plan check` reads it. Any
-/// other entry is a path, and one naming a directory reaches every file under it,
-/// since `plan check` accepts any path under the repo root.
+/// A path naming a directory reaches every file under it, since `plan check`
+/// accepts any path under the repo root.
 fn bind_names(entry: &str, row: &TaskRow) -> bool {
-    if entry.is_empty() {
-        return false;
+    match Bind::parse(entry) {
+        None => false,
+        Some(Bind::Task(id)) => id == row.id,
+        Some(Bind::Path(bound)) => {
+            let bound = bound.trim_end_matches('/');
+            row.files.iter().any(|file| {
+                let file = normal_path(file);
+                file == bound
+                    || file
+                        .strip_prefix(bound)
+                        .is_some_and(|rest| rest.starts_with('/'))
+            })
+        }
     }
-    if entry.bytes().all(|byte| byte.is_ascii_digit()) {
-        return entry.parse::<u32>().is_ok_and(|id| id == row.id);
-    }
-    let bound = normal_path(entry);
-    let bound = bound.trim_end_matches('/');
-    row.files.iter().any(|file| {
-        let file = normal_path(file);
-        file == bound
-            || file
-                .strip_prefix(bound)
-                .is_some_and(|rest| rest.starts_with('/'))
-    })
-}
-
-fn spec_of<'a>(tasks: &'a Store, row: &TaskRow) -> Option<&'a TaskSpec> {
-    tasks.specs.iter().find(|spec| spec.r#ref == row.r#ref)
 }
 
 fn decision_block(out: &mut String, decision: &Decision) {
@@ -624,7 +602,7 @@ fn task_block(out: &mut String, tasks: &Store, row: &TaskRow) {
         bullets(out, "Refs", &link.refs);
     }
     bullets(out, "Files", &file_lines(tasks, row));
-    match spec_of(tasks, row) {
+    match tasks.spec_for(&row.r#ref) {
         Some(spec) => spec_block(out, spec),
         None => out.push_str("_No spec._\n\n"),
     }

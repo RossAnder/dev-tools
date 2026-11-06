@@ -3,12 +3,11 @@
 
 use assert_cmd::Command;
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::PathBuf;
 
 mod common;
-use common::stage_tasks_flow;
+use common::{hex_digest, stage_tasks_flow};
 
 const SLUG: &str = "plan-check";
 
@@ -74,13 +73,6 @@ const PROBE: &str = r#", probe = { at = "abc", neg_rc = 1, pos_rc = 0, verdict =
 fn swap(text: &str, from: &str, to: &str) -> String {
     assert!(text.contains(from), "the fixture has no `{from}`");
     text.replace(from, to)
-}
-
-fn hex_digest(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
 }
 
 fn approval(digest: &str, commit: &str) -> String {

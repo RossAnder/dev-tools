@@ -127,7 +127,7 @@ pub(crate) struct PlanOpenArgs {
     #[arg(
         long = "scope",
         value_name = "GLOB",
-        help = "Scope glob held in `[binding]` until approval (repeatable)"
+        help = "Scope glob held in `[binding]` until approval (repeatable; the flags given replace the held list, not append)"
     )]
     pub(crate) scope: Vec<String>,
     #[command(flatten)]
@@ -192,7 +192,11 @@ pub(crate) struct PlanHandoverDoneArgs {
 pub(crate) struct PlanRunStartArgs {
     #[command(flatten)]
     pub(crate) target: PlanTarget,
-    #[arg(long = "step", value_name = "STEP", help = "The flow step being run")]
+    #[arg(
+        long = "step",
+        value_name = "STEP",
+        help = "The flow step being run; `review` is the one value read elsewhere, matched exactly by plan stage and plan gate"
+    )]
     pub(crate) step: String,
     #[arg(
         long = "workflow",
@@ -259,7 +263,11 @@ pub(crate) struct PlanRunAbandonArgs {
 pub(crate) struct PlanRunSkipArgs {
     #[command(flatten)]
     pub(crate) target: PlanTarget,
-    #[arg(long = "step", value_name = "STEP", help = "The flow step not run")]
+    #[arg(
+        long = "step",
+        value_name = "STEP",
+        help = "The flow step not run; `review` is the one value read elsewhere, matched exactly by plan stage and plan gate"
+    )]
     pub(crate) step: String,
     #[arg(long = "reason", value_name = "TEXT", help = "Why it was not run")]
     pub(crate) reason: String,
@@ -315,7 +323,7 @@ pub(crate) struct PlanMilestoneUpdateArgs {
     #[arg(
         long = "gate",
         value_name = "CMD",
-        help = "Command that must pass at the milestone's drain (repeatable)"
+        help = "Command that must pass at the milestone's drain (repeatable; the flags given replace the whole gate list, unlike add)"
     )]
     pub(crate) gate: Vec<String>,
     #[arg(

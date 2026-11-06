@@ -5,6 +5,9 @@ use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+mod common;
+use common::stdout_json;
+
 const SLUG: &str = "draft-flow";
 
 fn root() -> (tempfile::TempDir, PathBuf) {
@@ -29,12 +32,6 @@ fn open(root: &Path, extra: &[&str]) -> Value {
     let mut args = vec!["plan", "open", "--slug", SLUG];
     args.extend_from_slice(extra);
     stdout_json(&tomlctl(root, &args).success())
-}
-
-fn stdout_json(assert: &assert_cmd::assert::Assert) -> Value {
-    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
-    serde_json::from_str(stdout.trim())
-        .unwrap_or_else(|e| panic!("stdout must be JSON: {e}; stdout:\n{stdout}"))
 }
 
 fn error_kind(assert: &assert_cmd::assert::Assert) -> String {
@@ -456,6 +453,28 @@ fn an_unknown_backlog_id_writes_nothing() {
         !root.join(".claude").join("flows").join(SLUG).exists(),
         "a refused open must create no flow"
     );
+}
+
+/// The id names a file under `notes/`, so a hand-edited row must not reach outside it.
+#[test]
+fn a_backlog_id_naming_a_path_outside_notes_writes_nothing() {
+    for id in ["../evil", "..", "sub/evil", "sub\\\\evil"] {
+        let (_dir, root) = root();
+        fs::write(
+            root.join(".claude").join("backlog.toml"),
+            format!("schema_version = 1\n\n[[backlog]]\nid = \"{id}\"\nsummary = \"s\"\n"),
+        )
+        .expect("backlog store");
+        let id = id.replace("\\\\", "\\");
+        let refused = tomlctl(&root, &["plan", "open", "--slug", SLUG, "--from", &id]).failure();
+        assert_eq!(error_kind(&refused), "validation", "{id}");
+        let stderr = String::from_utf8_lossy(&refused.get_output().stderr).to_string();
+        assert!(stderr.contains("single path component"), "{id}: {stderr}");
+        assert!(
+            !root.join("docs").exists(),
+            "{id}: a refused open must write nothing"
+        );
+    }
 }
 
 #[test]

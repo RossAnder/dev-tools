@@ -4,6 +4,9 @@ use assert_cmd::Command;
 use std::fs;
 use std::path::Path;
 
+mod common;
+use common::{parse_json_error_envelope, stdout_json};
+
 const SLUG: &str = "rec-flow";
 
 fn plan(root: &Path, args: &[&str]) -> assert_cmd::assert::Assert {
@@ -73,10 +76,6 @@ fn store_text(root: &Path) -> String {
     .unwrap_or_default()
 }
 
-fn stdout_json(assert: &assert_cmd::assert::Assert) -> serde_json::Value {
-    serde_json::from_slice(&assert.get_output().stdout).expect("stdout is JSON")
-}
-
 fn stderr(assert: &assert_cmd::assert::Assert) -> String {
     String::from_utf8_lossy(&assert.get_output().stderr).to_string()
 }
@@ -126,6 +125,46 @@ fn every_record_verb_refuses_a_flow_with_no_plan_toml() {
             stderr(&out)
         );
         assert!(!flow.join("plan.toml").exists(), "{verb:?} seeded a store");
+    }
+}
+
+#[test]
+fn every_read_verb_on_an_unopened_flow_names_the_flow_and_plan_open() {
+    let (_dir, root) = sandbox();
+    let verbs: [&[&str]; 5] = [
+        &["stage"],
+        &["check"],
+        &["gate"],
+        &["drift"],
+        &["view", "--for", "digest"],
+    ];
+    for verb in verbs {
+        let out = Command::cargo_bin("tomlctl")
+            .expect("the binary builds")
+            .env("TOMLCTL_ROOT", &root)
+            .args(["--error-format", "json", "plan"])
+            .args(verb)
+            .args(["--slug", SLUG])
+            .write_stdin("")
+            .assert()
+            .failure();
+        let error = parse_json_error_envelope(&stderr(&out));
+        assert_eq!(error["kind"], "not_found", "{verb:?}: {error}");
+        let message = error["message"].as_str().expect("a message");
+        assert!(
+            message.contains(&format!("flow `{SLUG}`")),
+            "{verb:?}: {error}"
+        );
+        assert!(
+            message.contains(&format!("tomlctl plan open --slug {SLUG}")),
+            "{verb:?}: {error}"
+        );
+        assert!(message.contains("mistyped"), "{verb:?}: {error}");
+        assert!(message.contains("v1 flow"), "{verb:?}: {error}");
+        assert!(
+            !root.join(".claude").join("flows").join(SLUG).exists(),
+            "{verb:?} created the flow"
+        );
     }
 }
 
@@ -185,6 +224,62 @@ fn bad_vocabulary_unknown_keys_and_bad_rejected_are_refused() {
         before,
         "a refused batch persists nothing"
     );
+}
+
+#[test]
+fn a_blank_decision_or_claim_is_refused_on_create_and_on_update() {
+    let (_dir, root) = opened();
+    ndjson(&root, "decide", &format!("{GOOD}\n")).success();
+    ndjson(
+        &root,
+        "contract",
+        "{\"kind\":\"invariant\",\"claim\":\"both agree\"}\n",
+    )
+    .success();
+    let before = store_text(&root);
+    let cases = [
+        (
+            "decide",
+            r#"{"decision":"","provenance":"agent-assumed","door":"two-way"}"#,
+            "`decision` is empty",
+        ),
+        (
+            "decide",
+            r#"{"decision":"   ","provenance":"agent-assumed","door":"two-way"}"#,
+            "`decision` is empty",
+        ),
+        (
+            "decide",
+            r#"{"id":"D1","decision":""}"#,
+            "`decision` is empty",
+        ),
+        (
+            "decide",
+            r#"{"id":"D1","decision":"  "}"#,
+            "`decision` is empty",
+        ),
+        (
+            "contract",
+            r#"{"kind":"invariant","claim":""}"#,
+            "`claim` is empty",
+        ),
+        (
+            "contract",
+            r#"{"kind":"invariant","claim":"  "}"#,
+            "`claim` is empty",
+        ),
+        ("contract", r#"{"id":"C1","claim":""}"#, "`claim` is empty"),
+        (
+            "contract",
+            r#"{"id":"C1","claim":"  "}"#,
+            "`claim` is empty",
+        ),
+    ];
+    for (verb, row, needle) in cases {
+        let out = ndjson(&root, verb, &format!("{row}\n")).failure();
+        assert!(stderr(&out).contains(needle), "{row}: {}", stderr(&out));
+    }
+    assert_eq!(store_text(&root), before, "a refused row persists nothing");
 }
 
 #[test]

@@ -7,8 +7,8 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use serde_json::json;
 
-use super::check;
-use super::schema::{PlanStore, Run};
+use super::check::{self, CLASS_BRIEF_CHANGED};
+use super::schema::{PlanStore, Run, RunState};
 use super::store;
 use crate::cli::PlanStageArgs;
 use crate::io::{relativise, repo_or_cwd_root};
@@ -33,6 +33,7 @@ const MILESTONE_UPDATE: &str = "plan milestone update --defer --reason <why>";
 const FIX_AND_REPROBE: &str = "tasks update --ndjson, then plan probes --emit";
 const PROBES_EMIT: &str = "plan probes --emit";
 const PLAN_REVIEW: &str = "/review-plan-v2 or plan run skip --step review --reason <why>";
+const AMEND_APPROVAL: &str = "plan approve --amend --review <outcome>";
 
 /// The order `prove` works through its blockers. Probes come last because any
 /// spec edit unprobes the entry it changes, so an earlier probe run is wasted.
@@ -54,14 +55,11 @@ pub(super) fn run(args: PlanStageArgs) -> Result<()> {
     let plan_path = store::resolve(slug)?;
     let plan = store::load(&plan_path, &args.integrity)?;
     let tasks = load_store(&resolve_store_path(Some(slug), None)?, &args.integrity)?;
-    let flow_dir = plan_path
-        .parent()
-        .expect("a resolved store path sits in its flow directory");
     let findings = check::findings(slug, &args.integrity)?;
-    let reviewed = review_settled(flow_dir, &plan)?;
+    let reviewed = review_settled(store::flow_dir(&plan_path), &plan)?;
     let brief = relativise(
         &repo_or_cwd_root()?,
-        &store::authored_dir(slug)?.join("brief.md"),
+        &store::authored_dir(slug)?.join(store::BRIEF_FILE),
     );
 
     let open_runs: Vec<&Run> = plan.runs.iter().filter(|run| run.is_open()).collect();
@@ -167,18 +165,25 @@ fn assess(
     reviewed: bool,
     brief_rel: &str,
 ) -> Report {
+    let of = |classes: &'static [&'static str]| move |f: &&Finding| classes.contains(&f.class);
+
     if !plan.approvals.is_empty() {
         let all = |status: Status| tasks.items.iter().all(|row| row.status == status);
-        return if !tasks.items.is_empty() && all(Status::Done) {
-            report("done", "none", Vec::new())
+        let (stage, next) = if !tasks.items.is_empty() && all(Status::Done) {
+            ("done", "none")
         } else if all(Status::Pending) {
-            report("approved", "none", Vec::new())
+            ("approved", "none")
         } else {
-            report("running", "plan drift", Vec::new())
+            ("running", "plan drift")
         };
+        let changed: Vec<&Finding> = findings.iter().filter(of(&[CLASS_BRIEF_CHANGED])).collect();
+        let next = if changed.is_empty() {
+            next
+        } else {
+            AMEND_APPROVAL
+        };
+        return report(stage, next, summarise(&changed));
     }
-
-    let of = |classes: &'static [&'static str]| move |f: &&Finding| classes.contains(&f.class);
 
     let brief: Vec<&Finding> = findings
         .iter()
@@ -241,7 +246,7 @@ fn review_settled(flow_dir: &Path, plan: &PlanStore) -> Result<bool> {
     if plan
         .runs
         .iter()
-        .any(|run| run.step == REVIEW_STEP && !run.skip_reason.trim().is_empty())
+        .any(|run| run.step == REVIEW_STEP && run.state() == RunState::Skipped)
     {
         return Ok(true);
     }

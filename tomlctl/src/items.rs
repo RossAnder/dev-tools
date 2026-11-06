@@ -1534,6 +1534,36 @@ pub(crate) fn row_strings(
     }
 }
 
+/// A row's optional task-id array, under [`row_string`]'s `value` rule.
+pub(crate) fn row_ids(
+    line: usize,
+    key: &str,
+    value: Option<&JsonValue>,
+) -> Result<Option<Vec<u32>>> {
+    let Some(raw) = value else {
+        return Ok(None);
+    };
+    let entries = raw.as_array().ok_or_else(|| {
+        row_err(
+            line,
+            format!(
+                "`{key}` must be an array of task ids, got {}",
+                json_type_name(raw)
+            ),
+        )
+    })?;
+    entries
+        .iter()
+        .map(|entry| {
+            entry
+                .as_u64()
+                .and_then(|n| u32::try_from(n).ok())
+                .ok_or_else(|| row_err(line, format!("`{key}` holds a non-id entry `{entry}`")))
+        })
+        .collect::<Result<Vec<_>>>()
+        .map(Some)
+}
+
 /// Validate `defaults` as a JSON object (or return an empty map when
 /// `None`) and clone into an owned `Map` the caller can reuse per row.
 /// Shared by `items_add_many` and `items_add_many_with_dedupe` so the two

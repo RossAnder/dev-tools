@@ -11,11 +11,12 @@ use super::store;
 use crate::cli::{PlanMilestoneAddArgs, PlanMilestoneUpdateArgs};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::output::print_json_compact;
-use crate::tasks::schema::{Change, Checkpoint, ELABORATION_UPFRONT, MilestoneSpec, Store};
+use crate::tasks::schema::{
+    Change, Checkpoint, ELABORATION_DEFERRED, ELABORATION_ELABORATED, ELABORATION_UPFRONT,
+    MILESTONE_REF_PREFIX, MilestoneSpec, Store,
+};
 use crate::tasks::{mutate_store, resolve_store_path};
 
-const ELABORATION_DEFERRED: &str = "deferred";
-const ELABORATION_ELABORATED: &str = "elaborated";
 const AUDIT_ACTOR: &str = "orchestrator";
 
 fn refuse(message: String) -> anyhow::Error {
@@ -29,7 +30,7 @@ fn trimmed(raw: Option<&str>) -> &str {
 fn change(id: &str, field: &str, old: String, new: String, reason: &str) -> Result<Change> {
     Ok(Change {
         at: Some(crate::time::now_toml_datetime()?),
-        r#ref: format!("milestone:{id}"),
+        r#ref: format!("{MILESTONE_REF_PREFIX}{id}"),
         field: field.to_string(),
         old,
         new,
@@ -153,7 +154,7 @@ pub(super) fn update(args: PlanMilestoneUpdateArgs) -> Result<()> {
             changes.push(("defer_reason", old, reason.clone()));
         }
         if args.elaborated {
-            if spec.elaboration != ELABORATION_DEFERRED {
+            if !spec.is_deferred() {
                 return Err(refuse(format!(
                     "milestone `{id}` is `{}`, and only a deferred milestone can be elaborated",
                     spec.elaboration
@@ -163,7 +164,7 @@ pub(super) fn update(args: PlanMilestoneUpdateArgs) -> Result<()> {
             changes.push(("elaboration", old, ELABORATION_ELABORATED.to_string()));
         }
         if store.audit {
-            for (field, old, new) in changes {
+            for (field, old, new) in changes.into_iter().filter(|(_, old, new)| old != new) {
                 store.changes.push(change(&id, field, old, new, &reason)?);
             }
         }

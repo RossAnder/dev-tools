@@ -18,7 +18,7 @@ use crate::cli::{
 };
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::read_ndjson_source;
-use crate::items::{parse_ndjson_batch, row_err, row_string, row_strings};
+use crate::items::{parse_ndjson_batch, row_err, row_ids, row_string, row_strings};
 
 type Row = Map<String, JsonValue>;
 
@@ -69,25 +69,6 @@ fn row_bool(line: usize, key: &str, row: &Row) -> Result<Option<bool>> {
         Some(JsonValue::Bool(value)) => Ok(Some(*value)),
         Some(_) => Err(row_err(line, format!("`{key}` must be a boolean"))),
     }
-}
-
-fn row_ids(line: usize, key: &str, row: &Row) -> Result<Option<Vec<u32>>> {
-    let Some(value) = row.get(key) else {
-        return Ok(None);
-    };
-    let entries = value
-        .as_array()
-        .ok_or_else(|| row_err(line, format!("`{key}` must be an array of task ids")))?;
-    entries
-        .iter()
-        .map(|entry| {
-            entry
-                .as_u64()
-                .and_then(|n| u32::try_from(n).ok())
-                .ok_or_else(|| row_err(line, format!("`{key}` holds a non-id entry `{entry}`")))
-        })
-        .collect::<Result<Vec<_>>>()
-        .map(Some)
 }
 
 fn row_rejected(line: usize, row: &Row) -> Result<Option<Vec<Rejected>>> {
@@ -150,6 +131,15 @@ fn require<T>(line: usize, key: &str, value: Option<T>) -> Result<T> {
     value.ok_or_else(|| row_err(line, format!("a new record needs `{key}`")))
 }
 
+/// The value as given, once it holds more than whitespace. The record's heading
+/// and the gate screen are built from it, so no later check would catch a blank.
+fn non_empty(line: usize, key: &str, value: String) -> Result<String> {
+    if value.trim().is_empty() {
+        return Err(row_err(line, format!("`{key}` is empty")));
+    }
+    Ok(value)
+}
+
 fn row_id(line: usize, row: &Row) -> Result<Option<String>> {
     let id = row_string(line, "id", row.get("id"))?;
     if id.as_deref() == Some("") {
@@ -207,7 +197,7 @@ fn upsert_decision(plan: &mut PlanStore, line: usize, row: &Row) -> Result<Strin
         Some(index) => {
             let d = &mut plan.decisions[index];
             if let Some(v) = text("decision")? {
-                d.decision = v;
+                d.decision = non_empty(line, "decision", v)?;
             }
             if let Some(v) = text("why")? {
                 d.why = v;
@@ -245,10 +235,11 @@ fn upsert_decision(plan: &mut PlanStore, line: usize, row: &Row) -> Result<Strin
             Ok(d.id.clone())
         }
         None => {
-            let decision = require(line, "decision", text("decision")?)?;
-            if decision.is_empty() {
-                return Err(row_err(line, "`decision` is empty"));
-            }
+            let decision = non_empty(
+                line,
+                "decision",
+                require(line, "decision", text("decision")?)?,
+            )?;
             let provenance = require(line, "provenance", provenance)?;
             let door = require(line, "door", door)?;
             let id = plan.mint_id(RecordKind::Decision);
@@ -307,7 +298,7 @@ fn upsert_contract(plan: &mut PlanStore, line: usize, row: &Row) -> Result<Strin
         ContractKind::parse,
         ContractKind::VOCABULARY,
     )?;
-    let tasks = row_ids(line, "tasks", row)?;
+    let tasks = row_ids(line, "tasks", row.get("tasks"))?;
 
     match existing {
         Some(index) => {
@@ -316,7 +307,7 @@ fn upsert_contract(plan: &mut PlanStore, line: usize, row: &Row) -> Result<Strin
                 c.kind = v;
             }
             if let Some(v) = text("claim")? {
-                c.claim = v;
+                c.claim = non_empty(line, "claim", v)?;
             }
             if let Some(v) = text("check")? {
                 c.check = v;
@@ -334,10 +325,7 @@ fn upsert_contract(plan: &mut PlanStore, line: usize, row: &Row) -> Result<Strin
         }
         None => {
             let kind = require(line, "kind", kind)?;
-            let claim = require(line, "claim", text("claim")?)?;
-            if claim.is_empty() {
-                return Err(row_err(line, "`claim` is empty"));
-            }
+            let claim = non_empty(line, "claim", require(line, "claim", text("claim")?)?)?;
             let id = plan.mint_id(RecordKind::Contract);
             plan.contracts.push(Contract {
                 id: id.clone(),

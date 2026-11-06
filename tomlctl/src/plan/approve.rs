@@ -13,8 +13,8 @@ use anyhow::{Context, Result};
 use serde_json::{Value as JsonValue, json};
 use toml::Value as TomlValue;
 
-use super::check;
-use super::schema::{Approval, Decision, Door, PlanStore, Provenance, ReviewOutcome};
+use super::check::{self, CLASS_BRIEF_CHANGED};
+use super::schema::{Approval, Decision, Door, PlanStore, Provenance, ReviewOutcome, RunState};
 use super::store::{self, BRIEF_FILE, brief_digest};
 use crate::backlog::schema::STATUS_OPEN;
 use crate::backlog::triage::{Transition, triage_value};
@@ -22,7 +22,7 @@ use crate::cli::{
     PlanApproveArgs, PlanGateArgs, ReadIntegrityArgs, WriteIntegrityArgs, write_integrity_opts,
 };
 use crate::errors::{ErrorKind, tagged_err};
-use crate::flow::active::{build_entry, find_slug_index, mutate_active};
+use crate::flow::active::{build_entry, upsert_entry};
 use crate::io::{OnMissing, mutate_doc, read_toml, relativise, repo_or_cwd_root};
 use crate::output::{print_json_compact, print_json_line};
 use crate::tasks::finding::ERROR;
@@ -39,11 +39,8 @@ const COMMITTED_AUTHORED: [&str; 2] = [BRIEF_FILE, "design/"];
 const STATUS_DRAFT: &str = "draft";
 const STATUS_IN_PROGRESS: &str = "in-progress";
 const APPROVED_BY: &str = "user";
-const ELABORATION_DEFERRED: &str = "deferred";
 const REVIEW_STEP: &str = "review";
 const PLAN_FAMILY: &str = "plan";
-/// An approved brief differs from its stamp exactly when `--amend` is needed.
-const CLASS_BRIEF_CHANGED: &str = "plan/brief-changed";
 
 const FILE_BUCKETS: [&str; 3] = ["1", "2-3", "4+"];
 const REVIEW_NOTE: &str = "review findings do not reach this screen yet: `risks` holds only \
@@ -85,14 +82,14 @@ fn gate_report(plan: &PlanStore, tasks: &Store) -> JsonValue {
     let risks: Vec<JsonValue> = plan
         .runs
         .iter()
-        .filter(|run| run.step == REVIEW_STEP && !run.skip_reason.trim().is_empty())
+        .filter(|run| run.step == REVIEW_STEP && run.state() == RunState::Skipped)
         .map(|run| json!({ "kind": "skip-reason", "detail": run.skip_reason }))
         .collect();
 
     let deferred: Vec<JsonValue> = tasks
         .milestones
         .iter()
-        .filter(|m| m.elaboration == ELABORATION_DEFERRED)
+        .filter(|m| m.is_deferred())
         .map(|m| json!({ "id": m.id, "reason": m.defer_reason }))
         .collect();
 
@@ -149,9 +146,7 @@ fn task_mix(tasks: &Store) -> Vec<JsonValue> {
             _ => 2,
         };
         let executor = tasks
-            .specs
-            .iter()
-            .find(|spec| spec.r#ref == row.r#ref)
+            .spec_for(&row.r#ref)
             .map_or("", |spec| spec.executor.as_str());
         *mix.entry((bucket, executor)).or_default() += 1;
     }
@@ -180,9 +175,7 @@ pub(super) fn approve(args: PlanApproveArgs) -> Result<()> {
     };
     let plan_path = store::resolve(&slug)?;
     store::require_open(&plan_path)?;
-    let flow_dir = plan_path
-        .parent()
-        .expect("a resolved store path sits in its flow directory");
+    let flow_dir = store::flow_dir(&plan_path);
     let tasks_path = resolve_store_path(Some(&slug), None)?;
     let context_path = flow_dir.join(CONTEXT_FILE);
     let root = repo_or_cwd_root()?;
@@ -276,7 +269,7 @@ fn refuse_unanswered(plan: &PlanStore) -> Result<()> {
     let unanswered: Vec<&str> = plan
         .decisions
         .iter()
-        .filter(|d| d.surfaced && d.provenance == Provenance::AgentAssumed)
+        .filter(|d| d.is_unanswered())
         .map(|d| d.id.as_str())
         .collect();
     if unanswered.is_empty() {
@@ -422,8 +415,8 @@ fn promote_closed_items(
     )
 }
 
-/// Written here rather than through `flow init`, whose registry upsert would
-/// discard the entry's branch and scope.
+/// Builds the row here rather than going through `flow init`, which would discard
+/// the entry's branch and scope.
 fn register(slug: &str, plan: &PlanStore, integrity: &WriteIntegrityArgs) -> Result<()> {
     let binding = &plan.binding;
     let branch = (!binding.branch.is_empty()).then_some(binding.branch.as_str());
@@ -434,22 +427,7 @@ fn register(slug: &str, plan: &PlanStore, integrity: &WriteIntegrityArgs) -> Res
         None,
         &binding.scope,
     );
-    let file = repo_or_cwd_root()?.join(".claude").join("active-flow.toml");
-    mutate_active(&file, integrity, |doc| {
-        let root = doc
-            .as_table_mut()
-            .context("active-flow.toml root is not a table")?;
-        let rows = root
-            .entry("active".to_string())
-            .or_insert_with(|| TomlValue::Array(Vec::new()))
-            .as_array_mut()
-            .context("`active` is not an array of tables in active-flow.toml")?;
-        match find_slug_index(rows, slug) {
-            Some(index) => rows[index] = entry,
-            None => rows.push(entry),
-        }
-        Ok(())
-    })
+    upsert_entry(slug, entry, integrity)
 }
 
 /// `updated` moves with `status` because `flow stale` and the flow chooser read

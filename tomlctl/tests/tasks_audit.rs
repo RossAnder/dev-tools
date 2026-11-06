@@ -1107,6 +1107,90 @@ fn a_v1_store_gains_no_bytes_from_a_removal() {
 }
 
 // ---------------------------------------------------------------------------
+// A removed task's ref
+// ---------------------------------------------------------------------------
+
+/// Reusing the ref would merge the two trails, and a later rename would rewrite
+/// the dead row's tombstone with the live row's.
+#[test]
+fn a_new_row_does_not_reclaim_a_tombstoned_ref() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, &audited());
+    remove(&root, "2", "dropped");
+
+    assert_eq!(add(&root, "Wire the renderer"), 3);
+
+    let doc = read_store(&store);
+    let items = side_table(&doc, "items");
+    assert_eq!(
+        text(items.last().expect("a row"), "ref"),
+        "wire-the-renderer-2"
+    );
+    let refs: Vec<String> = trail(&store).into_iter().map(|row| row.0).collect();
+    assert_eq!(refs, ["wire-the-renderer", "wire-the-renderer-2"]);
+}
+
+#[test]
+fn a_rename_onto_a_tombstoned_ref_is_refused() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, &audited());
+    remove(&root, "2", "dropped");
+    let before = fs::read(&store).unwrap();
+
+    let err = update_err(
+        &root,
+        &NDJSON,
+        "{\"id\":1,\"ref\":\"wire-the-renderer\",\"reason\":\"rename\"}\n",
+    );
+
+    assert_eq!(err["kind"], json!("validation"));
+    assert!(message(&err).contains("line 1"), "{err}");
+    assert!(message(&err).contains("wire-the-renderer"), "{err}");
+    assert!(message(&err).contains("audit trail"), "{err}");
+    assert_eq!(fs::read(&store).unwrap(), before);
+}
+
+#[test]
+fn a_rename_onto_a_milestone_key_is_refused() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, &audited());
+    let before = fs::read(&store).unwrap();
+
+    let err = update_err(
+        &root,
+        &NDJSON,
+        "{\"id\":1,\"ref\":\"milestone:m1\",\"reason\":\"rename\"}\n",
+    );
+
+    assert_eq!(err["kind"], json!("validation"));
+    assert!(message(&err).contains("milestone:"), "{err}");
+    assert_eq!(fs::read(&store).unwrap(), before);
+}
+
+/// A rename re-keys its own trail, so the key it left behind holds nothing.
+#[test]
+fn a_ref_a_rename_left_behind_can_be_claimed_again() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, &audited());
+
+    update(
+        &root,
+        &NDJSON,
+        "{\"id\":2,\"ref\":\"the-renderer\",\"reason\":\"rename\"}\n",
+    );
+    update(
+        &root,
+        &NDJSON,
+        "{\"id\":1,\"ref\":\"wire-the-renderer\",\"reason\":\"rename\"}\n",
+    );
+
+    let doc = read_store(&store);
+    let items = side_table(&doc, "items");
+    assert_eq!(text(&items[0], "ref"), "wire-the-renderer");
+    assert_eq!(text(&items[1], "ref"), "the-renderer");
+}
+
+// ---------------------------------------------------------------------------
 // Re-keying
 // ---------------------------------------------------------------------------
 

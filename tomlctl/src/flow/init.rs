@@ -20,22 +20,24 @@
 //! re-init that mints a legacy flow's absent `tasks.toml` stays visible to a
 //! caller even though `action` is still `"noop"`.
 //!
-//! The registry helpers (`build_entry` / `find_slug_index` / `mutate_active`,
-//! plus `now_rfc3339` and `write_integrity_opts`) are consumed from
-//! `flow::active`, `crate::time` and `crate::cli` rather than reimplemented —
-//! the two modules must agree byte-for-byte on the entry shape.
+//! The registry helpers (`build_entry` / `upsert_entry` / `find_slug_index` /
+//! `mutate_active`, plus `now_rfc3339` and `write_integrity_opts`) are consumed
+//! from `flow::active`, `crate::time` and `crate::cli` rather than reimplemented,
+//! so every writer of a registry row agrees byte-for-byte on its shape.
 
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use regex::Regex;
 use serde_json::{Value as JsonValue, json};
 use toml::Value as TomlValue;
 
 use crate::cli::{WriteIntegrityArgs, write_integrity_opts};
 use crate::errors::{ErrorKind, tagged_err};
-use crate::flow::active::{build_entry as build_active_entry, find_slug_index, mutate_active};
+use crate::flow::active::{
+    build_entry as build_active_entry, find_slug_index, mutate_active, upsert_entry,
+};
 use crate::flow::artifacts::CanonicalArtifacts;
 use crate::flow::schema::ActiveEntry as SchemaEntry;
 use crate::integrity::refresh_sidecar;
@@ -261,9 +263,8 @@ fn active_entry_to_json(entry: &TomlValue) -> JsonValue {
     JsonValue::Object(out)
 }
 
-/// Upsert the active-flow registry entry for `slug` via the shared
-/// `flow::active::mutate_active` pipeline, which owns the lock + bootstrap +
-/// write sequence. This helper only builds the entry and forwards.
+/// Upsert the active-flow registry entry for `slug`, handing back the row written
+/// and its `last_used` for the response.
 fn upsert_active_entry(
     slug: &str,
     branch: Option<&str>,
@@ -271,29 +272,10 @@ fn upsert_active_entry(
     scope: &[String],
     integrity_args: &WriteIntegrityArgs,
 ) -> Result<(TomlValue, String)> {
-    let file = active_flow_path()?;
     let last_used = now_rfc3339();
     let new_entry = build_active_entry(slug, &last_used, branch, worktree, scope);
-    let entry_for_return = new_entry.clone();
-
-    mutate_active(&file, integrity_args, |doc| {
-        let root = doc
-            .as_table_mut()
-            .context("active-flow.toml root is not a table")?;
-        root.entry("schema_version".to_string())
-            .or_insert(TomlValue::Integer(1));
-        let arr = root
-            .entry("active".to_string())
-            .or_insert_with(|| TomlValue::Array(Vec::new()))
-            .as_array_mut()
-            .context("`active` is not an array of tables in active-flow.toml")?;
-        match find_slug_index(arr, slug) {
-            Some(idx) => arr[idx] = new_entry.clone(),
-            None => arr.push(new_entry.clone()),
-        }
-        Ok(())
-    })?;
-    Ok((entry_for_return, last_used))
+    upsert_entry(slug, new_entry.clone(), integrity_args)?;
+    Ok((new_entry, last_used))
 }
 
 /// Materialise `seed` at `file` if missing, plus its sidecar. Idempotent: an

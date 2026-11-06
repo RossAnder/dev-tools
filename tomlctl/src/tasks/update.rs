@@ -31,7 +31,8 @@ use super::add::{
 };
 use super::graph::{Node, Tense, build_or_refuse, nodes_of};
 use super::schema::{
-    Accept, BacklogLink, Change, Effort, FileNote, ImportOverride, Status, Store, TaskRow, TaskSpec,
+    Accept, BacklogLink, Change, Effort, FileNote, ImportOverride, MILESTONE_REF_PREFIX, Status,
+    Store, TaskRow, TaskSpec,
 };
 use super::show::{accept_json, means_json, premises_json};
 use super::{slug, store};
@@ -96,28 +97,20 @@ pub(crate) fn update(
     Ok(outcomes.remove(0).changed)
 }
 
-/// Rows patched alike. `line` is the `--ndjson` source line, and `None` marks
-/// the positional form, which has no `spec` or `reason` channel.
+/// Rows patched alike. `row` is `None` for the positional form, which has no
+/// `spec` or `reason` channel.
 struct Patch<'a> {
-    line: Option<usize>,
     ids: &'a [u32],
     fields: &'a UpdateFields,
-    spec: Option<&'a serde_json::Value>,
-    links: Option<&'a RowLinks>,
-    reason: &'a str,
-    actor: &'a str,
+    row: Option<&'a RowChannel>,
 }
 
 impl<'a> Patch<'a> {
     fn positional(ids: &'a [u32], fields: &'a UpdateFields) -> Self {
         Self {
-            line: None,
             ids,
             fields,
-            spec: None,
-            links: None,
-            reason: "",
-            actor: "",
+            row: None,
         }
     }
 }
@@ -160,22 +153,26 @@ pub(crate) fn update_many(
     })
 }
 
-/// One `--ndjson` row: its source line, the ids it patches and the values it
-/// sets on each of them. `spec` stays raw, already validated, because a row
-/// naming several ids applies it to each.
+/// One `--ndjson` row: the ids it patches and the values it sets on each of them.
 pub(crate) struct BatchRow {
-    pub(crate) line: usize,
     pub(crate) ids: Vec<u32>,
     pub(crate) fields: UpdateFields,
-    pub(crate) spec: Option<serde_json::Value>,
-    pub(crate) links: RowLinks,
-    pub(crate) reason: String,
-    pub(crate) actor: String,
+    channel: RowChannel,
+}
+
+/// What only an `--ndjson` row can carry, against the source line a refusal names.
+/// A row naming several ids applies `spec` to each.
+struct RowChannel {
+    line: usize,
+    spec: Option<SpecPatch>,
+    links: RowLinks,
+    reason: String,
+    actor: String,
 }
 
 /// A row's replacements for what it holds in `[[file_notes]]` and
 /// `[[backlog_links]]`. `None` leaves the stored value; an empty value clears it.
-pub(crate) struct RowLinks {
+struct RowLinks {
     file_notes: Option<Vec<(String, String)>>,
     closes: Option<Vec<String>>,
     refs: Option<Vec<String>>,
@@ -209,13 +206,9 @@ pub(crate) fn update_rows(
     let patches: Vec<_> = rows
         .iter()
         .map(|row| Patch {
-            line: Some(row.line),
             ids: &row.ids,
             fields: &row.fields,
-            spec: row.spec.as_ref(),
-            links: Some(&row.links),
-            reason: &row.reason,
-            actor: &row.actor,
+            row: Some(&row.channel),
         })
         .collect();
     let v2 = store::is_v2_flow(path);
@@ -369,10 +362,10 @@ fn batch_row(
         }
     };
 
-    let spec = object.get("spec").cloned();
-    if let Some(raw) = &spec {
-        SpecPatch::parse(line, raw)?;
-    }
+    let spec = object
+        .get("spec")
+        .map(|raw| SpecPatch::parse(line, raw))
+        .transpose()?;
 
     // Whether a note's path is on the row's `files` waits for `patch_links`,
     // since the same row may move `files` and may name several tasks.
@@ -386,7 +379,6 @@ fn batch_row(
     };
 
     Ok(BatchRow {
-        line,
         ids,
         fields: UpdateFields {
             status,
@@ -398,10 +390,13 @@ fn batch_row(
             relock,
             set,
         },
-        spec,
-        links,
-        reason: text("reason")?.unwrap_or_default(),
-        actor: text("actor")?.unwrap_or_default(),
+        channel: RowChannel {
+            line,
+            spec,
+            links,
+            reason: text("reason")?.unwrap_or_default(),
+            actor: text("actor")?.unwrap_or_default(),
+        },
     })
 }
 
@@ -440,19 +435,19 @@ fn apply(store: &mut Store, patches: &[Patch<'_>], v2: bool) -> Result<Vec<Outco
     let mut outcomes = Vec::new();
     let mut deferred_edges = false;
     for group in patches {
-        let line = group.line;
         for &id in group.ids {
             let before = row_of(store, id)?.clone();
-            let mut changed = match (patch(store, id, group.fields, line.is_none(), v2), line) {
-                (Err(err), Some(line)) => return Err(err.context(format!("line {line}"))),
+            let moved = patch(store, id, group.fields, group.row.is_none(), v2);
+            let mut changed = match (moved, group.row) {
+                (Err(err), Some(row)) => return Err(err.context(format!("line {}", row.line))),
                 (result, _) => result?,
             };
-            let mut side_moves = match (group.spec, line) {
-                (Some(raw), Some(line)) => patch_spec(store, id, line, raw)?,
-                _ => Vec::new(),
-            };
-            if let (Some(links), Some(line)) = (group.links, line) {
-                side_moves.extend(patch_links(store, id, line, links)?);
+            let mut side_moves = Vec::new();
+            if let Some(row) = group.row {
+                if let Some(spec) = &row.spec {
+                    side_moves.extend(patch_spec(store, id, row.line, spec)?);
+                }
+                side_moves.extend(patch_links(store, id, row.line, &row.links)?);
             }
             side_moves.extend(prune_dropped_notes(store, id, &before.files)?);
             changed.extend(side_moves.iter().map(|moved| moved.field));
@@ -460,7 +455,7 @@ fn apply(store: &mut Store, patches: &[Patch<'_>], v2: bool) -> Result<Vec<Outco
             if store.audit {
                 record_changes(store, &before, &changed, side_moves, group)?;
             }
-            if line.is_some()
+            if group.row.is_some()
                 && changed
                     .iter()
                     .any(|field| ["coupling", "needs"].contains(field))
@@ -483,16 +478,11 @@ fn row_of(store: &Store, id: u32) -> Result<&TaskRow> {
         .ok_or_else(|| anyhow::anyhow!("task {id} vanished from the store during its update"))
 }
 
-/// Replaces the row's spec fields `raw` supplies. A patch moving nothing leaves
+/// Replaces the row's spec fields `spec` supplies. A patch moving nothing leaves
 /// a row with no spec still without one.
-fn patch_spec(
-    store: &mut Store,
-    id: u32,
-    line: usize,
-    raw: &serde_json::Value,
-) -> Result<Vec<Move>> {
+fn patch_spec(store: &mut Store, id: u32, line: usize, spec: &SpecPatch) -> Result<Vec<Move>> {
     let r#ref = row_of(store, id)?.r#ref.clone();
-    let position = store.specs.iter().position(|spec| spec.r#ref == r#ref);
+    let position = store.specs.iter().position(|entry| entry.r#ref == r#ref);
     let before = match position {
         Some(position) => store.specs[position].clone(),
         None => TaskSpec {
@@ -508,7 +498,7 @@ fn patch_spec(
         },
     };
     let mut after = before.clone();
-    SpecPatch::parse(line, raw)?.apply_to(&mut after);
+    spec.clone().apply_to(&mut after);
     keep_probes(&before.accept, &mut after.accept);
     if after.premises != before.premises {
         let known: BTreeSet<u32> = store.items.iter().map(|row| row.id).collect();
@@ -727,7 +717,7 @@ fn record_changes(
         return Ok(());
     };
 
-    let Some(line) = group.line else {
+    let Some(channel) = group.row else {
         return Err(tagged_err(
             ErrorKind::Validation,
             None,
@@ -738,10 +728,10 @@ fn record_changes(
             ),
         ));
     };
-    let reason = group.reason.trim();
+    let reason = channel.reason.trim();
     if reason.is_empty() {
         return Err(row_err(
-            line,
+            channel.line,
             format!(
                 "task {id}: this store is audited, so changing `{}` needs a `reason`",
                 first.field
@@ -750,7 +740,7 @@ fn record_changes(
     }
 
     let at = Some(crate::time::now_toml_datetime()?);
-    let actor = match group.actor.trim() {
+    let actor = match channel.actor.trim() {
         "" => DEFAULT_ACTOR,
         actor => actor,
     };
@@ -877,6 +867,16 @@ fn patch(
                 "--ref needs a non-empty slug".to_string(),
             ));
         }
+        if new_ref.starts_with(MILESTONE_REF_PREFIX) {
+            return Err(tagged_err(
+                ErrorKind::Validation,
+                None,
+                format!(
+                    "ref `{new_ref}` starts `{MILESTONE_REF_PREFIX}`, which keys a milestone's \
+                     audit trail"
+                ),
+            ));
+        }
         if store
             .items
             .iter()
@@ -889,9 +889,18 @@ fn patch(
             ));
         }
         if store.items[index].r#ref != *new_ref {
+            if store.trail_refs().any(|held| held == new_ref) {
+                return Err(tagged_err(
+                    ErrorKind::Validation,
+                    None,
+                    format!(
+                        "ref `{new_ref}` holds a removed task's audit trail, so it stays retired"
+                    ),
+                ));
+            }
             let previous = store.items[index].r#ref.clone();
-            // No row holds `new_ref`, so anything keyed on it is a removed
-            // row's leftover.
+            // No row or audit trail holds `new_ref`, so anything keyed on it is
+            // a removed row's leftover.
             store.drop_ref_entries(new_ref);
             // The stamp, file notes, backlog links, spec and audit trail are
             // keyed on `ref` like `last_import_refs`, so they follow the row

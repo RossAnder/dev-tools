@@ -3,13 +3,13 @@
 //! from each capture.
 
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 mod common;
 use common::{
-    TASKS_SLUG, cli, git_bash, git_command, parse_json_error_envelope, sandbox, seed_tasks,
+    TASKS_SLUG, cli, git_bash, git_command, hex_digest, parse_json_error_envelope, sandbox,
+    seed_tasks,
 };
 
 const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
@@ -18,10 +18,7 @@ const FILE: &str = "src/declared.rs";
 const UNSTAMPED: &str = "sha256=unstamped";
 
 fn digest(command: &str) -> String {
-    Sha256::digest(command.as_bytes())
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+    hex_digest(command.as_bytes())
 }
 
 fn store(accepts: Value) -> String {
@@ -378,8 +375,8 @@ fn record_stores_the_head_and_both_return_codes() {
         json!({
             "ok": true,
             "recorded": [
-                { "task": 1, "accept": 0, "verdict": "healthy" },
-                { "task": 1, "accept": 1, "verdict": "healthy" },
+                { "task": 1, "accept": 0, "verdict": "healthy", "reason": "" },
+                { "task": 1, "accept": 1, "verdict": "healthy", "reason": "" },
             ],
         })
     );
@@ -469,6 +466,165 @@ fn a_capture_that_does_not_match_the_store_is_refused_whole() {
             "not a probe row",
         );
     }
+}
+
+#[test]
+fn a_bad_capture_line_shows_the_expected_shape_and_a_cut_copy_of_the_line() {
+    let (_dir, root) = sandbox();
+    let path = seed_tasks(&root, &store(json!([accept("forward", "c", "")])));
+    let long = format!("1:0\tmid\t{}\n", "x".repeat(200));
+    let assert = record(&root, &format!("head\t{SHA}\n{long}")).failure();
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    let error = parse_json_error_envelope(&stderr);
+    let message = error["message"].as_str().expect("a message");
+    assert!(
+        message.contains("capture line 2 is not a probe row"),
+        "{message}"
+    );
+    assert!(message.contains("<task>:<accept><TAB>neg|pos"), "{message}");
+    assert!(message.contains("1:0\\tmid\\t"), "{message}");
+    assert!(message.ends_with("..."), "{message}");
+    assert!(!message.contains(&"x".repeat(100)), "{message}");
+    assert!(probes(&path)[0].is_none());
+}
+
+#[test]
+fn a_capture_with_no_head_line_shows_what_it_opens_with() {
+    let (_dir, root) = sandbox();
+    let path = seed_tasks(&root, &store(json!([accept("forward", "c", "")])));
+    assert_refused(&root, &path, "not a head\n", "got \"not a head\"");
+    assert_refused(&root, &path, "", "got nothing");
+}
+
+#[test]
+fn a_missing_capture_path_is_not_found_and_names_the_file() {
+    let (_dir, root) = sandbox();
+    let store_path = seed_tasks(&root, &store(json!([accept("forward", "c", "")])));
+    let before = fs::read(&store_path).unwrap();
+    let capture = root.join("absent.tsv");
+
+    let assert = cli(&root)
+        .args(["--error-format", "json"])
+        .args(["plan", "probes", "--slug", TASKS_SLUG, "--record"])
+        .arg(&capture)
+        .assert()
+        .failure();
+
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    let error = parse_json_error_envelope(&stderr);
+    assert_eq!(error["kind"], "not_found", "{stderr}");
+    assert_eq!(error["file"], capture.display().to_string(), "{stderr}");
+    assert_eq!(fs::read(&store_path).unwrap(), before);
+}
+
+#[test]
+fn emit_on_a_flow_with_no_stores_names_plan_open() {
+    let (_dir, root) = sandbox();
+    let assert = cli(&root)
+        .args(["--error-format", "json"])
+        .args(["plan", "probes", "--slug", TASKS_SLUG, "--emit"])
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    let error = parse_json_error_envelope(&stderr);
+    assert_eq!(error["kind"], "not_found", "{stderr}");
+    assert!(
+        error["message"]
+            .as_str()
+            .is_some_and(|m| m.contains(&format!("tomlctl plan open --slug {TASKS_SLUG}"))),
+        "{stderr}"
+    );
+}
+
+/// The `reason` of the one row `rows` records.
+fn reason_of(accepts: Value, rows: &[String]) -> (String, String) {
+    let (_dir, root) = sandbox();
+    seed_tasks(&root, &store(accepts));
+    let out = record(&root, &format!("head\t{SHA}\n{}", rows.concat())).success();
+    let report: Value = serde_json::from_slice(&out.get_output().stdout).unwrap();
+    let row = &report["recorded"][0];
+    (
+        row["verdict"].as_str().expect("a verdict").to_string(),
+        row["reason"].as_str().expect("a reason").to_string(),
+    )
+}
+
+#[test]
+fn each_unhealthy_verdict_names_the_control_and_the_rule() {
+    let forward = || json!([accept("forward", "c", "p")]);
+    let cases = [
+        (
+            forward(),
+            vec![
+                row("1:0", "neg", 0, ""),
+                row("1:0", "pos", 0, "bash: nope: command not found"),
+            ],
+            "broken",
+            "pos: stderr holds the marker `command not found`",
+        ),
+        (
+            json!([accept("forward", "c", "")]),
+            vec![row(
+                "1:0",
+                "neg",
+                2,
+                "warn|grep: src/typo.rs: No such file or directory",
+            )],
+            "broken",
+            "neg: stderr names a missing path no row declares: \"grep: src/typo.rs: No such file \
+             or directory\"",
+        ),
+        (
+            json!([accept("guard", "c", "")]),
+            vec![row("1:0", "neg", 3, "")],
+            "broken",
+            "neg: a guard must pass today, and this exited 3",
+        ),
+        (
+            json!([accept("other", "c", "")]),
+            vec![row("1:0", "neg", 0, "")],
+            "broken",
+            "kind: `other` is not an accept kind",
+        ),
+        (
+            forward(),
+            vec![row("1:0", "neg", 0, ""), row("1:0", "pos", 0, "")],
+            "vacuous",
+            "neg: a forward check must fail before the work, and this exited 0",
+        ),
+        (
+            forward(),
+            vec![row("1:0", "neg", 1, ""), row("1:0", "pos", 4, "")],
+            "unsatisfiable",
+            "pos: the positive control must pass, and this exited 4",
+        ),
+        (
+            json!([accept("falsifier", "c", "")]),
+            vec![row("1:0", "neg", 5, "")],
+            "permanently-green",
+            "neg: a falsifier check must pass today, and this exited 5",
+        ),
+        (
+            json!([accept("guard", "c", "")]),
+            vec![row("1:0", "neg", 0, "")],
+            "guard-alone",
+            "neg: this guard passes, and no forward or falsifier row beside it discriminates",
+        ),
+    ];
+    for (accepts, rows, verdict, reason) in cases {
+        let got = reason_of(accepts, &rows);
+        assert_eq!(got, (verdict.to_string(), reason.to_string()));
+    }
+}
+
+#[test]
+fn the_reason_stays_out_of_the_store() {
+    let (_dir, root) = sandbox();
+    let path = seed_tasks(&root, &store(json!([accept("guard", "c", "")])));
+    record(&root, &format!("head\t{SHA}\n{}", row("1:0", "neg", 3, ""))).success();
+    let probe = probes(&path)[0].clone().expect("a recorded probe");
+    assert_eq!(probe["verdict"].as_str(), Some("broken"));
+    assert!(probe.get("reason").is_none(), "{probe}");
 }
 
 #[test]

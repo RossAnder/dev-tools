@@ -469,8 +469,8 @@ fn a_plan_runs_from_open_to_drift() {
     assert_eq!(
         flow.plan(&["probes", "--record", &capture])["recorded"],
         json!([
-            { "task": 1, "accept": 0, "verdict": "healthy" },
-            { "task": 2, "accept": 0, "verdict": "healthy" },
+            { "task": 1, "accept": 0, "verdict": "healthy", "reason": "" },
+            { "task": 2, "accept": 0, "verdict": "healthy", "reason": "" },
         ])
     );
     let store = flow.doc(&flow.flow_path("tasks.toml"));

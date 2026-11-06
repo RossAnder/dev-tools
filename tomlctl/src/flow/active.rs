@@ -297,6 +297,24 @@ where
     })
 }
 
+/// Replaces `slug`'s `[[active]]` row with `entry`, or appends it, in the
+/// registry at its usual path. The one writer of a whole row, so every caller
+/// leaves the same document.
+pub(crate) fn upsert_entry(
+    slug: &str,
+    entry: TomlValue,
+    integrity_args: &WriteIntegrityArgs,
+) -> Result<()> {
+    mutate_active(&active_flow_path()?, integrity_args, |doc| {
+        let arr = active_array_mut(doc)?;
+        match find_slug_index(arr, slug) {
+            Some(idx) => arr[idx] = entry,
+            None => arr.push(entry),
+        }
+        Ok(())
+    })
+}
+
 /// Emit the legacy-pointer warning if the new registry is absent AND the
 /// old single-line file is present. The warning goes to stderr (one line,
 /// plain prose) so structured stdout JSON stays machine-readable.
@@ -374,7 +392,6 @@ fn add(
     integrity: WriteIntegrityArgs,
 ) -> Result<()> {
     validate_slug(&slug)?;
-    let file = active_flow_path()?;
     let now = now_rfc3339();
     let new_entry = build_entry(&slug, &now, branch.as_deref(), worktree.as_deref(), &scope);
     if dry_run {
@@ -390,18 +407,7 @@ fn add(
         });
         return print_json_compact(&envelope);
     }
-    mutate_active(&file, &integrity, |doc| {
-        let arr = active_array_mut(doc)?;
-        match find_slug_index(arr, &slug) {
-            Some(idx) => {
-                arr[idx] = new_entry.clone();
-            }
-            None => {
-                arr.push(new_entry.clone());
-            }
-        }
-        Ok(())
-    })?;
+    upsert_entry(&slug, new_entry, &integrity)?;
     print_json_compact(&json!({
         "ok": true,
         "slug": slug,

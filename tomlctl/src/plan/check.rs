@@ -12,7 +12,7 @@ use std::path::{Component, Path, PathBuf};
 use anyhow::Result;
 use serde_json::json;
 
-use super::schema::{Contract, Decision, Handover, PlanStore};
+use super::schema::{Bind, Contract, Decision, Handover, PlanStore};
 use super::store::{self, BRIEF_FILE, brief_digest};
 use crate::cli::{PlanCheckArgs, ReadIntegrityArgs};
 use crate::io::repo_or_cwd_root;
@@ -21,16 +21,17 @@ use crate::tasks::backlog_refs::linked_backlog_findings;
 use crate::tasks::check::{check, exit_code};
 use crate::tasks::finding::{ERROR, Finding, NO_TASK, WARNING, quoted_list, task_list};
 use crate::tasks::markdown::FenceState;
-use crate::tasks::schema::{Premise, Status, Store, TaskRow, TaskSpec, normal_path};
+use crate::tasks::schema::{
+    BINDING_REQUIRED, Premise, Status, Store, TaskRow, TaskSpec, VERDICT_HEALTHY, normal_path,
+};
 use crate::tasks::slug::{dedupe_refs, derive_ref};
 use crate::tasks::{load_store, resolve_store_path};
 
 const DESIGN_DIR: &str = "design";
 const REQUIRED_SECTIONS: [&str; 4] = ["Intent", "Non-goals", "Scope budget", "Success criteria"];
 
-const ELABORATION_DEFERRED: &str = "deferred";
-const BINDING_REQUIRED: &str = "required";
-const VERDICT_HEALTHY: &str = "healthy";
+/// An approved brief differs from its stamp exactly when `--amend` is needed.
+pub(super) const CLASS_BRIEF_CHANGED: &str = "plan/brief-changed";
 
 pub(super) fn run(args: PlanCheckArgs) -> Result<()> {
     let findings = findings(&args.target.slug, &args.integrity)?;
@@ -244,6 +245,7 @@ fn brief_findings(authored: &Path, plan: &PlanStore) -> Result<Vec<Finding>> {
     if let Some(approval) = plan.approvals.last()
         && brief_digest(&bytes) != approval.brief_sha256
     {
+        // The finding-class gate reads a literal here; keep it equal to `CLASS_BRIEF_CHANGED`.
         findings.push(error(
             "plan/brief-changed",
             Vec::new(),
@@ -340,7 +342,10 @@ fn decision_finding(decision: &Decision, tasks: &Store, root: &Path) -> Option<F
     }
     let ids: BTreeSet<u32> = unknown
         .iter()
-        .filter_map(|entry| entry.parse::<u32>().ok())
+        .filter_map(|entry| match Bind::parse(entry) {
+            Some(Bind::Task(id)) => Some(id),
+            _ => None,
+        })
         .collect();
     Some(error(
         "plan/decision-bind-unknown",
@@ -354,31 +359,27 @@ fn decision_finding(decision: &Decision, tasks: &Store, root: &Path) -> Option<F
     ))
 }
 
-/// An all-digit entry names a task and nothing else, so a file named `3` cannot
-/// satisfy it. Any other entry must be claimed or sit under the repo root, which
-/// a `..` or an absolute path does not.
+/// A path must be claimed or sit under the repo root, which a `..` or an absolute
+/// path does not.
 fn bind_known(entry: &str, tasks: &Store, claimed: &BTreeSet<String>, root: &Path) -> bool {
-    if entry.is_empty() {
-        return false;
+    match Bind::parse(entry) {
+        None => false,
+        Some(Bind::Task(id)) => tasks.find(id).is_some(),
+        Some(Bind::Path(normal)) => {
+            if claimed.contains(&normal) {
+                return true;
+            }
+            let relative = Path::new(&normal);
+            relative
+                .components()
+                .all(|part| matches!(part, Component::Normal(_)))
+                && root.join(relative).exists()
+        }
     }
-    if entry.bytes().all(|byte| byte.is_ascii_digit()) {
-        return entry
-            .parse::<u32>()
-            .is_ok_and(|id| tasks.find(id).is_some());
-    }
-    let normal = normal_path(entry);
-    if claimed.contains(&normal) {
-        return true;
-    }
-    let relative = Path::new(&normal);
-    relative
-        .components()
-        .all(|part| matches!(part, Component::Normal(_)))
-        && root.join(relative).exists()
 }
 
 fn no_spec_finding(row: &TaskRow, tasks: &Store) -> Option<Finding> {
-    if tasks.specs.iter().any(|spec| spec.r#ref == row.r#ref) {
+    if tasks.spec_for(&row.r#ref).is_some() {
         return None;
     }
     Some(error(
@@ -392,7 +393,7 @@ fn spec_findings(tasks: &Store, authored: &Path) -> Vec<Finding> {
     let deferred: BTreeSet<&str> = tasks
         .milestones
         .iter()
-        .filter(|milestone| milestone.elaboration == ELABORATION_DEFERRED)
+        .filter(|milestone| milestone.is_deferred())
         .map(|milestone| milestone.id.as_str())
         .collect();
 
@@ -533,8 +534,7 @@ fn milestone_findings(tasks: &Store) -> Vec<Finding> {
         }
     }
     for milestone in &tasks.milestones {
-        if milestone.elaboration == ELABORATION_DEFERRED && milestone.defer_reason.trim().is_empty()
-        {
+        if milestone.is_deferred() && milestone.defer_reason.trim().is_empty() {
             findings.push(error(
                 "plan/deferred-no-reason",
                 members(&milestone.id),

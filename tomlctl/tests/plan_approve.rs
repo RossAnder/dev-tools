@@ -3,12 +3,11 @@
 
 use assert_cmd::Command;
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 mod common;
-use common::{assert_sidecar_matches, git_command};
+use common::{assert_sidecar_matches, git_command, hex_digest, stdout_json};
 
 const SLUG: &str = "plan-approve";
 
@@ -220,21 +219,8 @@ impl Flow {
     }
 }
 
-fn stdout_json(assert: &assert_cmd::assert::Assert) -> Value {
-    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
-    serde_json::from_str(stdout.trim())
-        .unwrap_or_else(|e| panic!("stdout must be JSON: {e}; stdout:\n{stdout}"))
-}
-
 fn skip_args<'a>() -> [&'a str; 4] {
     ["--review", "skipped-low-risk", "--reason", "One-file fix."]
-}
-
-fn hex_digest(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
 }
 
 #[test]

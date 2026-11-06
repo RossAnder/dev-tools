@@ -248,6 +248,67 @@ fn update_on_an_audited_store_demands_a_reason_and_records_the_change() {
 }
 
 #[test]
+fn an_update_to_the_same_value_writes_no_audit_row() {
+    let (_tmp, root) = sandbox();
+    let store = seed_v2(&root, &audited_fixture());
+    milestone(
+        &root,
+        "add",
+        &[
+            "--id",
+            "A",
+            "--goal",
+            "g",
+            "--gate",
+            "cargo test",
+            "--defer",
+            "--reason",
+            "later",
+        ],
+    )
+    .success();
+    let rows_before = table(&read_store(&store), "changes").len();
+
+    milestone(
+        &root,
+        "update",
+        &[
+            "--id",
+            "A",
+            "--goal",
+            "g",
+            "--gate",
+            "cargo test",
+            "--defer",
+            "--reason",
+            "later",
+        ],
+    )
+    .success();
+    assert_eq!(table(&read_store(&store), "changes").len(), rows_before);
+
+    milestone(
+        &root,
+        "update",
+        &[
+            "--id",
+            "A",
+            "--goal",
+            "new",
+            "--gate",
+            "cargo test",
+            "--reason",
+            "moved",
+        ],
+    )
+    .success();
+    let doc = read_store(&store);
+    let added = &table(&doc, "changes")[rows_before..];
+    assert_eq!(added.len(), 1, "{doc}");
+    assert_eq!(text(&added[0], "field"), "goal");
+}
+
+#[test]
 fn updating_an_unknown_milestone_is_not_found() {
     let (_tmp, root) = sandbox();
     seed_v2(&root, FIXTURE);

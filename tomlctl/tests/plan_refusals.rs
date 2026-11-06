@@ -6,7 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 mod common;
-use common::stage_tasks_flow;
+use common::{parse_json_error_envelope, stage_tasks_flow};
 
 const SLUG: &str = "v2-flow";
 const PLAN_REL: &str = "docs/plans/v2-flow.md";
@@ -38,9 +38,7 @@ fn run(root: &Path, args: &[&str]) -> assert_cmd::assert::Assert {
 fn assert_refused(root: &Path, args: &[&str]) {
     let assert = run(root, args).failure();
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
-    let json: serde_json::Value = serde_json::from_str(stderr.trim())
-        .unwrap_or_else(|e| panic!("expected an error envelope: {e}; got: {stderr}"));
-    let error = &json["error"];
+    let error = parse_json_error_envelope(&stderr);
     assert_eq!(error["kind"], "validation", "{stderr}");
     assert!(
         error["message"]

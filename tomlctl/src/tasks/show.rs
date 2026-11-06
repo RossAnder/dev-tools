@@ -68,7 +68,7 @@ pub(crate) fn show(store: &Store, id: u32, parts: &[ShowPart]) -> Result<JsonVal
         insert_file_notes(&mut out, store, row);
     }
     if parts.contains(&ShowPart::Spec)
-        && let Some(spec) = store.specs.iter().find(|entry| entry.r#ref == row.r#ref)
+        && let Some(spec) = store.spec_for(&row.r#ref)
     {
         out.insert("spec".to_string(), spec_json(spec));
     }

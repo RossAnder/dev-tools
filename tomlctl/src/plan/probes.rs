@@ -13,22 +13,21 @@ use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
+use super::store;
 use crate::cli::{PlanProbesArgs, ReadIntegrityArgs};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::integrity::hex_lower;
 use crate::output::{print_json_compact, print_text};
-use crate::tasks::schema::{Accept, Probe, Status, Store, TaskRow, normal_path};
+use crate::tasks::schema::{
+    Accept, KIND_FALSIFIER, KIND_FORWARD, KIND_GUARD, Probe, Status, Store, TaskRow,
+    VERDICT_HEALTHY, normal_path,
+};
 use crate::tasks::{load_store, mutate_store, resolve_store_path};
 
-const KIND_FORWARD: &str = "forward";
-const KIND_FALSIFIER: &str = "falsifier";
-const KIND_GUARD: &str = "guard";
-
-const VERDICT_HEALTHY: &str = "healthy";
 const VERDICT_VACUOUS: &str = "vacuous";
 const VERDICT_UNSATISFIABLE: &str = "unsatisfiable";
 const VERDICT_PERMANENTLY_GREEN: &str = "permanently-green";
@@ -50,6 +49,11 @@ const BROKEN_MARKERS: [&str; 4] = [
 ];
 const MISSING_PATH_MARKER: &str = "No such file";
 
+/// What a capture row holds, for the refusal of one that holds anything else.
+const ROW_SHAPE: &str = "<task>:<accept><TAB>neg|pos<TAB>sha256=<digest><TAB>rc=<code>\
+                         <TAB><stdout><TAB><stderr>";
+const QUOTED_CHARS: usize = 80;
+
 /// Every column is folded onto one line with its tabs gone, so a command's
 /// output cannot forge a row of the capture. Stderr stays whole, because a
 /// breakage marker may sit past any prefix.
@@ -62,6 +66,11 @@ fn refuse(message: String) -> anyhow::Error {
 pub(super) fn run(mut args: PlanProbesArgs) -> Result<()> {
     let path = resolve_store_path(Some(&args.target.slug), None)?;
     let Some(capture) = args.record.take() else {
+        // A flow with tasks and no `plan.toml` can still be probed, so only a
+        // missing task store asks whether the flow was ever opened.
+        if !path.exists() {
+            store::require_open(&store::resolve(&args.target.slug)?)?;
+        }
         let store = load_store(
             &path,
             &ReadIntegrityArgs {
@@ -79,12 +88,17 @@ pub(super) fn run(mut args: PlanProbesArgs) -> Result<()> {
     let mut recorded = mutate_store(&path, &args.integrity, |store| {
         record(store, capture, milestone)
     })?;
-    recorded.sort_unstable();
+    recorded.sort_unstable_by_key(|(task, accept, _)| (*task, *accept));
     let recorded: Vec<_> = recorded
         .into_iter()
-        .map(
-            |(task, accept, verdict)| json!({ "task": task, "accept": accept, "verdict": verdict }),
-        )
+        .map(|(task, accept, verdict)| {
+            json!({
+                "task": task,
+                "accept": accept,
+                "verdict": verdict.name,
+                "reason": verdict.reason,
+            })
+        })
         .collect();
     print_json_compact(&json!({ "ok": true, "recorded": recorded }))
 }
@@ -212,8 +226,26 @@ struct Capture {
 /// Non-UTF-8 is read lossily: a tool's stderr may be in any encoding, and only
 /// the ASCII markers are read out of it.
 fn read_capture(path: &Path) -> Result<Capture> {
-    let bytes = fs::read(path).with_context(|| format!("reading {}", path.display()))?;
+    let bytes = fs::read(path).map_err(|err| {
+        let kind = match err.kind() {
+            std::io::ErrorKind::NotFound => ErrorKind::NotFound,
+            _ => ErrorKind::Other,
+        };
+        tagged_err(
+            kind,
+            Some(path.to_path_buf()),
+            format!("reading capture {}: {err}", path.display()),
+        )
+    })?;
     parse_capture(&String::from_utf8_lossy(&bytes))
+}
+
+/// A line as a refusal quotes it: cut short, with its tabs and control characters
+/// escaped so that the columns show.
+fn quoted(line: &str) -> String {
+    let kept: String = line.chars().take(QUOTED_CHARS).collect();
+    let ellipsis = if kept.len() < line.len() { "..." } else { "" };
+    format!("{kept:?}{ellipsis}")
 }
 
 fn parse_capture(text: &str) -> Result<Capture> {
@@ -221,21 +253,27 @@ fn parse_capture(text: &str) -> Result<Capture> {
         .lines()
         .enumerate()
         .filter(|(_, line)| !line.is_empty());
-    let head = lines
-        .next()
-        .and_then(|(_, line)| line.strip_prefix("head\t"))
+    let first = lines.next().map(|(_, line)| line);
+    let head = first
+        .and_then(|line| line.strip_prefix("head\t"))
         .filter(|sha| !sha.is_empty() && sha.chars().all(|ch| ch.is_ascii_hexdigit()))
         .ok_or_else(|| {
-            refuse(
-                "the capture does not open with `head<TAB><sha>`: pass the script's own stdout, \
-                 from a repository with a commit"
-                    .to_string(),
-            )
+            refuse(format!(
+                "the capture does not open with `head<TAB><sha>`, got {}: pass the script's own \
+                 stdout, from a repository with a commit",
+                first.map_or_else(|| "nothing".to_string(), quoted)
+            ))
         })?
         .to_string();
     let mut controls: BTreeMap<(u32, usize), Controls> = BTreeMap::new();
     for (number, line) in lines {
-        let malformed = || refuse(format!("capture line {} is not a probe row", number + 1));
+        let malformed = || {
+            refuse(format!(
+                "capture line {} is not a probe row: expected `{ROW_SHAPE}`, got {}",
+                number + 1,
+                quoted(line)
+            ))
+        };
         let no_digest = |key: &str| {
             refuse(format!(
                 "capture line {} for {key} has no command digest: re-run `plan probes --emit`",
@@ -285,6 +323,23 @@ fn parse_capture(text: &str) -> Result<Capture> {
     Ok(Capture { head, controls })
 }
 
+/// A probe's verdict and, unless it is healthy, why: the control or field read and
+/// the rule it broke. Only the name reaches the store.
+struct Verdict {
+    name: &'static str,
+    reason: String,
+}
+
+impl Verdict {
+    fn new(name: &'static str, reason: String) -> Self {
+        Self { name, reason }
+    }
+
+    fn healthy() -> Self {
+        Self::new(VERDICT_HEALTHY, String::new())
+    }
+}
+
 /// Stores the capture's probes, returning `(task, accept, verdict)` for each. A
 /// capture must cover exactly the probeable controls of the tasks in scope, each
 /// carrying the digest of the command the store holds now: anything else is a
@@ -296,7 +351,7 @@ fn record(
     store: &mut Store,
     mut capture: Capture,
     milestone: Option<&str>,
-) -> Result<Vec<(u32, usize, &'static str)>> {
+) -> Result<Vec<(u32, usize, Verdict)>> {
     refuse_unknown_milestone(store, milestone)?;
     let declared: Vec<String> = store
         .items
@@ -343,7 +398,7 @@ fn record(
                     at: capture.head.clone(),
                     neg_rc: Some(neg.rc),
                     pos_rc: controls.pos.map(|pos| pos.rc),
-                    verdict: verdict.to_string(),
+                    verdict: verdict.name.to_string(),
                 });
                 recorded.push((row.id, index, verdict));
             }
@@ -402,33 +457,75 @@ fn verdict(
     pos: Option<&Control>,
     declared: &[String],
     discriminated: bool,
-) -> &'static str {
-    let is_broken = |control: &Control| stderr_names_breakage(&control.stderr, declared);
-    if is_broken(neg) || pos.is_some_and(is_broken) {
-        return VERDICT_BROKEN;
+) -> Verdict {
+    let controls = [(CONTROL_NEG, Some(neg)), (CONTROL_POS, pos)];
+    for (name, control) in controls {
+        let breakage = control.and_then(|control| stderr_breakage(&control.stderr, declared));
+        if let Some(rule) = breakage {
+            return Verdict::new(VERDICT_BROKEN, format!("{name}: {rule}"));
+        }
     }
-    let holds = neg.rc == 0;
-    match (kind, holds) {
-        (KIND_FORWARD, true) => VERDICT_VACUOUS,
+    let rc = neg.rc;
+    match (kind, rc == 0) {
+        (KIND_FORWARD, true) => Verdict::new(
+            VERDICT_VACUOUS,
+            format!("{CONTROL_NEG}: a forward check must fail before the work, and this exited 0"),
+        ),
         (KIND_FORWARD, false) => match pos {
-            Some(pos) if pos.rc != 0 => VERDICT_UNSATISFIABLE,
-            _ => VERDICT_HEALTHY,
+            Some(pos) if pos.rc != 0 => Verdict::new(
+                VERDICT_UNSATISFIABLE,
+                format!(
+                    "{CONTROL_POS}: the positive control must pass, and this exited {}",
+                    pos.rc
+                ),
+            ),
+            _ => Verdict::healthy(),
         },
-        (KIND_FALSIFIER, true) => VERDICT_HEALTHY,
-        (KIND_FALSIFIER, false) => VERDICT_PERMANENTLY_GREEN,
-        (KIND_GUARD, true) if discriminated => VERDICT_HEALTHY,
-        (KIND_GUARD, true) => VERDICT_GUARD_ALONE,
-        _ => VERDICT_BROKEN,
+        (KIND_FALSIFIER, true) => Verdict::healthy(),
+        (KIND_FALSIFIER, false) => Verdict::new(
+            VERDICT_PERMANENTLY_GREEN,
+            format!("{CONTROL_NEG}: a falsifier check must pass today, and this exited {rc}"),
+        ),
+        (KIND_GUARD, true) if discriminated => Verdict::healthy(),
+        (KIND_GUARD, true) => Verdict::new(
+            VERDICT_GUARD_ALONE,
+            format!(
+                "{CONTROL_NEG}: this guard passes, and no forward or falsifier row beside it \
+                 discriminates"
+            ),
+        ),
+        (KIND_GUARD, false) => Verdict::new(
+            VERDICT_BROKEN,
+            format!("{CONTROL_NEG}: a guard must pass today, and this exited {rc}"),
+        ),
+        _ => Verdict::new(
+            VERDICT_BROKEN,
+            format!("kind: `{kind}` is not an accept kind"),
+        ),
     }
 }
 
-/// A missing path a row declares is what the task will create, so only an
-/// undeclared one is a broken command. `|` is the helper's folded newline.
-fn stderr_names_breakage(stderr: &str, declared: &[String]) -> bool {
-    BROKEN_MARKERS.iter().any(|marker| stderr.contains(marker))
-        || stderr.split('|').any(|line| {
+/// The rule a control's stderr breaks, if any. A missing path a row declares is
+/// what the task will create, so only an undeclared one is a broken command. `|` is
+/// the helper's folded newline.
+fn stderr_breakage(stderr: &str, declared: &[String]) -> Option<String> {
+    if let Some(marker) = BROKEN_MARKERS
+        .iter()
+        .find(|marker| stderr.contains(*marker))
+    {
+        return Some(format!("stderr holds the marker `{marker}`"));
+    }
+    stderr
+        .split('|')
+        .find(|line| {
             line.split_once(MISSING_PATH_MARKER)
                 .is_some_and(|(before, _)| !names_declared_path(before, declared))
+        })
+        .map(|line| {
+            format!(
+                "stderr names a missing path no row declares: {}",
+                quoted(line)
+            )
         })
 }
 

@@ -6,8 +6,7 @@ mod common;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use common::{cli, git_available, git_command, sandbox};
-use serde_json::Value as JsonValue;
+use common::{cli, git_available, git_command, sandbox, stdout_json};
 
 const SCOPE: &str = "t";
 
@@ -148,10 +147,6 @@ fn finding(id: &str, run: &str, seen_in: &str, kind: &str, status: &str, extra: 
 
 fn stderr(assert: &assert_cmd::assert::Assert) -> String {
     String::from_utf8_lossy(&assert.get_output().stderr).to_string()
-}
-
-fn stdout_json(assert: &assert_cmd::assert::Assert) -> JsonValue {
-    serde_json::from_slice(&assert.get_output().stdout).expect("finish prints JSON")
 }
 
 fn assert_unfinished(path: &Path) {

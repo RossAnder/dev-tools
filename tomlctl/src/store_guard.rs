@@ -45,7 +45,7 @@ impl OwnedStore {
             }
             Self::Plan => {
                 "the `plan` verbs own it: use `plan decide`, `plan contract`, `plan handover`, \
-                 `plan run`, `plan milestone` and `plan approve`"
+                 `plan run`, `plan open` and `plan approve`"
             }
             Self::ExecutionRecord => "`flow record` owns it: append entries with `flow record`",
             Self::Review => {

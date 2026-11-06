@@ -82,16 +82,26 @@ pub(super) fn read_brief(authored: &Path) -> Result<Option<Vec<u8>>> {
         .with_context(|| format!("reading {}", path.display()))
 }
 
+/// The flow directory holding a store path `resolve` built.
+pub(super) fn flow_dir(plan_path: &Path) -> &Path {
+    plan_path
+        .parent()
+        .expect("a resolved store path sits in its flow directory")
+}
+
 /// Read the store at `path`. Under `--verify-integrity` the sidecar check
 /// runs first, under a shared lock, so a write mid-swap cannot be read as a
 /// mismatch.
 pub(crate) fn load(path: &Path, integrity: &ReadIntegrityArgs) -> Result<PlanStore> {
+    require_open(path)?;
     strict_read_check(path, integrity.strict_read)?;
     read_doc(path, read_integrity_opts(integrity), schema::from_toml)
 }
 
-/// Refuses a flow with no `plan.toml`, naming the verb that creates one. Runs
-/// ahead of the write pipeline, so a mistyped slug leaves no directory behind.
+/// Refuses a flow with no `plan.toml`, for readers and writers alike. Nothing here
+/// can tell a mistyped slug from a v1 flow or a flow not yet opened, so the message
+/// covers all three. Runs ahead of the write pipeline, so a mistyped slug leaves no
+/// directory behind.
 pub(crate) fn require_open(path: &Path) -> Result<()> {
     if path.is_file() {
         return Ok(());
@@ -106,7 +116,8 @@ pub(crate) fn require_open(path: &Path) -> Result<()> {
         Some(path.to_path_buf()),
         format!(
             "flow `{slug}` has no plan.toml; run `tomlctl plan open --slug {slug}` first, the \
-             only verb that makes a flow v2"
+             only verb that makes a flow v2. If the slug is mistyped, correct it; a v1 flow \
+             stays v1, because `plan open` refuses one"
         ),
     ))
 }

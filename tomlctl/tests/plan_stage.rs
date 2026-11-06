@@ -3,12 +3,11 @@
 
 use assert_cmd::Command;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::PathBuf;
 
 mod common;
-use common::{git_available, git_bash, git_command, stage_tasks_flow};
+use common::{git_available, git_bash, git_command, hex_digest, stage_tasks_flow};
 
 const SLUG: &str = "plan-stage";
 
@@ -77,10 +76,7 @@ fn swap(text: &str, from: &str, to: &str) -> String {
 }
 
 fn approval() -> String {
-    let digest: String = Sha256::digest(BRIEF.as_bytes())
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
+    let digest = hex_digest(BRIEF.as_bytes());
     format!(
         "\n[[approval]]\ncommit = \"abc\"\nat = 2026-11-05T12:00:00Z\n\
          brief_sha256 = \"{digest}\"\nby = \"user\"\nreview = \"ran\"\n"
@@ -915,4 +911,54 @@ fn an_approved_row_past_pending_is_running_and_all_done_is_done() {
     let done = swap(TASKS, "status = \"pending\"", "status = \"done\"");
     let flow = Flow::seeded(&done, &plan, Some(BRIEF), None);
     assert_stage(&flow, "done", "none");
+}
+
+const AMEND_NEXT: &str = "plan approve --amend --review <outcome>";
+const BRIEF_CHANGED: &str =
+    "plan/brief-changed (1): `brief.md` differs from the brief approved at `abc`";
+
+#[test]
+fn a_brief_changed_since_approval_asks_for_an_amend_and_keeps_the_stage() {
+    let plan = format!("{PLAN}{}", approval());
+    let edited = format!("{BRIEF}Added later.\n");
+    for (status, stage) in [
+        ("pending", "approved"),
+        ("in-progress", "running"),
+        ("done", "done"),
+    ] {
+        let tasks = swap(
+            TASKS,
+            "status = \"pending\"",
+            &format!("status = \"{status}\""),
+        );
+        let report = Flow::seeded(&tasks, &plan, Some(&edited), None).stage();
+        assert_eq!(report["stage"], stage, "{report}");
+        assert_eq!(report["next"], AMEND_NEXT, "{report}");
+        assert_eq!(report["blockers"], json!([BRIEF_CHANGED]), "{report}");
+    }
+}
+
+#[test]
+fn an_open_run_outranks_a_changed_brief_and_both_block() {
+    let plan = format!(
+        "{PLAN}{}\n[[run]]\nstep = \"build\"\nstarted = 2026-11-05T13:00:00Z\nfinished = \"\"\n",
+        approval()
+    );
+    let edited = format!("{BRIEF}Added later.\n");
+    let report = Flow::seeded(TASKS, &plan, Some(&edited), None).stage();
+    assert_eq!(report["stage"], "approved", "{report}");
+    assert_eq!(
+        report["next"], "relaunch step build or plan run abandon --step build --reason <why>",
+        "{report}"
+    );
+    let blockers = report["blockers"].as_array().expect("a blockers array");
+    assert_eq!(blockers.len(), 2, "{report}");
+    assert!(
+        blockers[0]
+            .as_str()
+            .expect("a string")
+            .starts_with("open run: step build"),
+        "{report}"
+    );
+    assert_eq!(blockers[1], BRIEF_CHANGED, "{report}");
 }

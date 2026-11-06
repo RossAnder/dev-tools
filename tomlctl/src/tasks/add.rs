@@ -23,15 +23,15 @@ use serde_json::{Map as JsonMap, Value as JsonValue};
 
 use super::graph::{Node, Tense, build_or_refuse};
 use super::schema::{
-    Accept, BacklogLink, Change, DEFAULT_HEADING_DEPTH, Effort, FileNote, Means, Premise, Status,
-    Store, TaskRow, TaskSpec,
+    ACCEPT_KINDS, Accept, BacklogLink, Change, DEFAULT_HEADING_DEPTH, Effort, FileNote,
+    MEANS_BINDINGS, Means, Premise, Status, Store, TaskRow, TaskSpec,
 };
 use super::{slug, store};
 use crate::cli::WriteIntegrityArgs;
 use crate::convert::json_type_name;
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::read_flag_file;
-use crate::items::{parse_ndjson_objects, row_err, row_string, row_strings};
+use crate::items::{parse_ndjson_objects, row_err, row_ids, row_string, row_strings};
 
 /// One row as the caller supplies it. `effort` is still the raw flag string:
 /// the schema's vocabulary refusal is what the user should see, not clap's
@@ -93,8 +93,6 @@ const ACCEPT_FIELDS: [&str; 5] = ["behaviour", "check", "kind", "positive", "wri
 const PREMISE_FIELDS: [&str; 3] = ["claim", "check", "at"];
 const MEANS_FIELDS: [&str; 3] = ["text", "binding", "detail"];
 
-const ACCEPT_KINDS: [&str; 3] = ["forward", "falsifier", "guard"];
-const MEANS_BINDINGS: [&str; 2] = ["required", "suggested"];
 const EXECUTORS: [&str; 4] = ["tool", "clerk", "lite", "deep"];
 
 /// Who an audit row names when the caller gives no `actor`.
@@ -114,6 +112,7 @@ struct RowExtras {
 }
 
 /// A row's `spec` key, validated. A field left `None` was not supplied.
+#[derive(Clone)]
 pub(super) struct SpecPatch {
     outcome: Option<String>,
     constraints: Option<Vec<String>>,
@@ -193,8 +192,10 @@ fn append(store: &mut Store, tasks: Vec<(NewTask, RowExtras)>) -> Result<Vec<Add
     let mut taken: BTreeSet<String> = store
         .items
         .iter()
-        .map(|row| row.r#ref.clone())
-        .collect::<BTreeSet<_>>();
+        .map(|row| row.r#ref.as_str())
+        .chain(store.trail_refs())
+        .map(str::to_string)
+        .collect();
 
     let mut next = store.next_id();
     let mut minted = Vec::with_capacity(tasks.len());
@@ -711,7 +712,7 @@ fn task_from_row(line: usize, row: &JsonMap<String, JsonValue>) -> Result<NewTas
     // A row reads `null` as an absent field.
     let present = |key: &str| row.get(key).filter(|v| !v.is_null());
     let text = |key: &str| row_string(line, key, present(key)).map(Option::unwrap_or_default);
-    let ids = |key: &str| json_ids(line, key, present(key));
+    let ids = |key: &str| row_ids(line, key, present(key)).map(Option::unwrap_or_default);
     Ok(NewTask {
         title: text("title")?,
         effort: text("effort")?,
@@ -794,27 +795,6 @@ pub(super) fn reject_unclaimed_notes(
         )),
         None => Ok(()),
     }
-}
-
-fn json_ids(line: usize, key: &str, value: Option<&JsonValue>) -> Result<Vec<u32>> {
-    let Some(raw) = value else {
-        return Ok(Vec::new());
-    };
-    let array = raw.as_array().ok_or_else(|| {
-        row_err(
-            line,
-            format!("`{key}` must be an array, got {}", json_type_name(raw)),
-        )
-    })?;
-    array
-        .iter()
-        .map(|entry| {
-            entry
-                .as_u64()
-                .and_then(|n| u32::try_from(n).ok())
-                .ok_or_else(|| row_err(line, format!("`{key}` holds a non-id entry `{entry}`")))
-        })
-        .collect()
 }
 
 #[cfg(test)]

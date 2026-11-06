@@ -392,6 +392,20 @@ pub fn cli(root: &Path) -> Command {
     cmd
 }
 
+pub fn stdout_json(assert: &assert_cmd::assert::Assert) -> serde_json::Value {
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("stdout must be JSON: {e}; stdout:\n{stdout}"))
+}
+
+pub fn hex_digest(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
 /// Run `tomlctl backlog <args…>`, require success, and hand back stdout.
 pub fn backlog_stdout(root: &Path, args: &[&str]) -> String {
     let out = cli(root)
