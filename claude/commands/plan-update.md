@@ -33,7 +33,7 @@ The block above is complete and copy-pasteable as-is — do NOT look up `--help`
 
 ## Step 0.5: First-use `plansDirectory` prompt (per-carrier)
 
-Gate: fire ONLY when `envelope.plans_directory == null` (the bootstrap agent normalises both the unset case AND the literal `"__DONT_ASK__"` sentinel to `null`); when non-null, skip entirely and use the bound value. Invoke the `flow-contract-plansdirectory-prompt` skill to load the first-use prompt contract (option-list construction, recommended-first single-select AUQ ordering, headless empty-answer in-memory binding, `Don't ask again` sentinel arbitration, the free-text follow-up, the `tomlctl json set` persist idiom, and the downstream binding). The wording is shared verbatim across `/plan-new`, `/plan-update`, and `/review-plan` — the skill is the single source.
+Gate: fire ONLY when `envelope.plans_directory == null` (null means unset: the bootstrap agent binds the literal `"__DONT_ASK__"` sentinel to `docs/plans/`); when non-null, skip entirely and use the bound value. Invoke the `flow-contract-plansdirectory-prompt` skill to load the first-use prompt contract (option-list construction, recommended-first single-select AUQ ordering, headless empty-answer in-memory binding, `Don't ask again` sentinel arbitration, the free-text follow-up, the `tomlctl json set` persist idiom, and the downstream binding). The wording is shared verbatim across `/plan-new`, `/plan-update`, and `/review-plan` — the skill is the single source.
 
 ## Execution record
 

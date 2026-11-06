@@ -412,6 +412,30 @@ fn show_cell_carries_bound_catalogue_paths() {
 }
 
 #[test]
+fn show_cell_names_the_reviewed_documents_on_a_plan_run_only() {
+    let repo = Repo::new();
+    let cell = repo.json(&["show", "C1", "--for", "finder"]);
+    assert!(cell["items"][0].get("plan_documents").is_none(), "{cell}");
+
+    let store = repo.root.join(".claude/review-v2/t.toml");
+    let text = fs::read_to_string(&store).expect("store");
+    let plan_run = text.replacen(
+        "family = \"code\"\ndepth",
+        "family = \"plan\"\nscope = [\"docs/other/outline.md\", \"docs/other/detail.md\"]\ndepth",
+        1,
+    );
+    assert_ne!(plan_run, text, "the fixture's run row moved");
+    fs::write(&store, plan_run).expect("store");
+
+    let cell = repo.json(&["show", "C1", "--for", "finder"]);
+    assert_eq!(
+        cell["items"][0]["plan_documents"],
+        serde_json::json!(["docs/other/outline.md", "docs/other/detail.md"]),
+        "{cell}"
+    );
+}
+
+#[test]
 fn show_for_finder_cf_omits_the_pack() {
     let repo = Repo::new();
     let path = repo.root.join(".claude/review-v2/t.toml");

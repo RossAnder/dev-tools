@@ -17,7 +17,7 @@ If the `review-v2-method` skill is not loaded in your context, invoke it first w
 
 ## Fetch the assignment
 
-Your prompt names the run, the cell, the store (`--slug` or `--scope`), the flow slug and the run directory. Read the cell with `tomlctl review show <cell> --for finder` against that store. It carries the slice (the task refs), the bound `plan-executor` lens and the `dry-run` method with their absolute paths, and the pack path. Read the lens and the method from those paths, and `pack.md` for its `STORE CHECK` and `FORMAT CONTRACT` fences. Neither the cell nor the pack names the plan, so take its path from the flow with `tomlctl flow resolve --flow <flow slug> --get plan_path`. Read the slice's prior findings with `tomlctl review list --in <that path> --for finder` against the same store, so a fault already recorded is named in `same_as` rather than raised twice.
+Your prompt names the run, the cell, the store (`--slug` or `--scope`), the flow slug and the run directory. Read the cell with `tomlctl review show <cell> --for finder` against that store. It carries the slice (the task refs), the bound `plan-executor` lens and the `dry-run` method with their absolute paths, and the pack path. Read the lens and the method from those paths, and `pack.md` for its `STORE CHECK` and `FORMAT CONTRACT` fences. The cell's `plan_documents` holds the documents under review, the plan first, and may name a plan other than the flow's own. Read the slice's prior findings with `tomlctl review list --in <the plan's path> --for finder` against the same store, so a fault already recorded is named in `same_as` rather than raised twice.
 
 ## Hold an implementer's context, no more
 

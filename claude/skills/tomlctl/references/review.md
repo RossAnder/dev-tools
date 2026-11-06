@@ -107,7 +107,7 @@ A cell row takes `slice`, `concerns` (1–3), `agent` and `reason`, plus `questi
 
 | Role | Sees |
 |---|---|
-| `finder` | The identity fields and status, for a slice's `PRIOR`. A cell carries its assignment: slice, concerns with bound paths, facet and method paths, `pack`, `baselines`. A `review-finder-cf` cell carries no `pack`; it carries the run's `base` instead, to read the slice as `git diff <base>`. |
+| `finder` | The identity fields and status, for a slice's `PRIOR`. A cell carries its assignment: slice, concerns with bound paths, facet and method paths, `pack`, `baselines`. A `review-finder-cf` cell carries no `pack`; it carries the run's `base` instead, to read the slice as `git diff <base>`. A plan-family cell adds `plan_documents`, the run's scope, with the plan first. |
 | `verifier` | The claim to refute (`failure_scenario`, `counter`, `evidence`) and the `same_as` target; never `grade` or `fix`; the edit fields only when routed to it. |
 | `checker` | The cleanup edit fields and the `same_as` target. |
 | `implementer` | The fix, what done means, and the latest citation. |

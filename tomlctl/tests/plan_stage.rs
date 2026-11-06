@@ -975,6 +975,56 @@ fn a_brief_changed_since_approval_asks_for_an_amend_and_keeps_the_stage() {
 }
 
 #[test]
+fn a_changed_brief_clears_an_unanswered_decision_before_naming_the_amend_it_would_refuse() {
+    let plan = format!("{PLAN}{}", approval());
+    let edited = format!("{BRIEF}Added later.\n");
+    let flow = Flow::seeded(TASKS, &plan, Some(&edited), None);
+    let seed = json!({
+        "decision": "Use the lock.",
+        "provenance": "agent-assumed",
+        "door": "two-way",
+        "binds": ["1"],
+        "surfaced": true,
+    });
+    flow.verb(&["plan", "decide", "--ndjson", "-"], &format!("{seed}\n"));
+
+    let report = flow.stage();
+    assert_eq!(report["next"], "plan decide", "{report}");
+    assert_eq!(
+        report["blockers"],
+        json!([
+            BRIEF_CHANGED,
+            "surfaced decisions still agent-assumed, so unanswered: D1",
+        ]),
+        "{report}"
+    );
+}
+
+#[test]
+fn a_changed_brief_clears_another_check_error_before_naming_the_amend_it_would_refuse() {
+    let plan = format!("{PLAN}{}", approval());
+    let edited = format!("{BRIEF}Added later.\n");
+    let flow = Flow::seeded(TASKS, &plan, Some(&edited), None);
+    let seed = json!({
+        "decision": "Use the lock.",
+        "provenance": "agent-assumed",
+        "door": "two-way",
+        "binds": ["no/such/path.rs"],
+    });
+    flow.verb(&["plan", "decide", "--ndjson", "-"], &format!("{seed}\n"));
+
+    let report = flow.stage();
+    assert_eq!(report["next"], "plan decide", "{report}");
+    assert_eq!(report["blockers"][0], json!(BRIEF_CHANGED), "{report}");
+    assert!(
+        report["blockers"][1]
+            .as_str()
+            .is_some_and(|line| line.starts_with("plan/decision-bind-unknown")),
+        "{report}"
+    );
+}
+
+#[test]
 fn a_brief_deleted_since_approval_names_restoring_it_from_the_approved_commit() {
     let plan = format!("{PLAN}{}", approval());
     for (status, stage) in [

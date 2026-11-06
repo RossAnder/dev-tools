@@ -23,6 +23,8 @@ use toml::Value as TomlValue;
 use toml::map::Map;
 use toml::value::Datetime;
 
+use crate::plan::schema::Vocabulary;
+
 pub(crate) const SCHEMA_VERSION: i64 = 1;
 
 /// Basename of the per-flow store, beside the flow's `tasks.toml`.
@@ -221,6 +223,20 @@ pub(crate) fn item_set(item_ids: &[String]) -> Vec<String> {
     ids
 }
 
+macro_rules! impl_vocabulary {
+    ($($name:ident),+) => {$(
+        impl Vocabulary for $name {
+            const VOCABULARY: &'static [&'static str] = $name::VOCABULARY;
+
+            fn parse(raw: &str) -> Option<Self> {
+                $name::parse(raw)
+            }
+        }
+    )+};
+}
+
+impl_vocabulary!(Harness, AgentKind, AgentStatus);
+
 impl Harness {
     pub(crate) const VOCABULARY: &'static [&'static str] = &["claude-code", "codex", "manual"];
 
@@ -371,32 +387,14 @@ fn record_from_toml(value: &TomlValue, index: usize) -> Result<AgentRecord> {
         .collect::<Result<Vec<_>>>()?;
 
     Ok(AgentRecord {
-        harness: vocab(
-            table,
-            "harness",
-            &context,
-            Harness::parse,
-            Harness::VOCABULARY,
-        )?,
+        harness: vocab(table, "harness", &context)?,
         session_id: str_or(table, "session_id", ""),
         agent_id: str_or(table, "agent_id", ""),
         agent_type: str_or(table, "agent_type", ""),
-        kind: vocab(
-            table,
-            "kind",
-            &context,
-            AgentKind::parse,
-            AgentKind::VOCABULARY,
-        )?,
+        kind: vocab(table, "kind", &context)?,
         name: str_or(table, "name", ""),
         team: str_or(table, "team", ""),
-        status: vocab(
-            table,
-            "status",
-            &context,
-            AgentStatus::parse,
-            AgentStatus::VOCABULARY,
-        )?,
+        status: vocab(table, "status", &context)?,
         started_at: str_or(table, "started_at", ""),
         updated_at: str_or(table, "updated_at", ""),
         ended_at: str_or(table, "ended_at", ""),
@@ -541,23 +539,17 @@ fn segment_to_toml(segment: &Segment) -> TomlValue {
 
 /// A vocabulary field: absent reads as the type's default, and a present value
 /// outside the vocabulary refuses the store, naming the row.
-fn vocab<T: Default>(
-    table: &Table,
-    key: &str,
-    context: &str,
-    parse: fn(&str) -> Option<T>,
-    vocabulary: &[&str],
-) -> Result<T> {
+fn vocab<T: Vocabulary + Default>(table: &Table, key: &str, context: &str) -> Result<T> {
     let Some(raw) = table.get(key) else {
         return Ok(T::default());
     };
     let raw = raw
         .as_str()
         .ok_or_else(|| anyhow!("{context}: `{key}` is not a string"))?;
-    parse(raw).ok_or_else(|| {
+    T::parse(raw).ok_or_else(|| {
         anyhow!(
             "{context}: unknown {key} `{raw}` — expected one of {}",
-            vocabulary.join(", ")
+            T::VOCABULARY.join(", ")
         )
     })
 }

@@ -110,19 +110,7 @@ fn is_foreign_absolute(raw: &str) -> bool {
 /// `path` with its links resolved, tolerating a tail that does not exist yet;
 /// `path` as given when no ancestor resolves.
 fn canonical_or_given(path: &Path) -> PathBuf {
-    let mut missing = Vec::new();
-    let mut existing = path;
-    loop {
-        if let Ok(mut resolved) = existing.canonicalize() {
-            resolved.extend(missing.iter().rev());
-            return resolved;
-        }
-        let (Some(name), Some(parent)) = (existing.file_name(), existing.parent()) else {
-            return path.to_path_buf();
-        };
-        missing.push(name);
-        existing = parent;
-    }
+    crate::io::canonical_anchored(path).unwrap_or_else(|| path.to_path_buf())
 }
 
 /// `path` relative to `base`, both canonical, `/`-separated. `None` across
@@ -206,6 +194,14 @@ pub(crate) fn normalised_worktree(anchor: &Path, stored: &str) -> Option<String>
         &canonical_or_given(Path::new(stored)),
     )?;
     (relative != ".." && !relative.starts_with("../")).then_some(relative)
+}
+
+/// Whether a stored worktree names one machine's disk: absolute here, or a
+/// Windows spelling, which reads as relative on any other platform.
+pub(crate) fn is_machine_local_worktree(stored: &str) -> bool {
+    Path::new(stored).is_absolute()
+        || stored.starts_with('\\')
+        || stored.as_bytes().get(1) == Some(&b':')
 }
 
 /// Rewrites one `[[active]]` row's `binding.worktree` per `normalised_worktree`;

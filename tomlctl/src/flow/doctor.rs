@@ -85,8 +85,10 @@ use serde_json::{Value as JsonValue, json};
 use toml::Value as TomlValue;
 
 use crate::cli::{WriteIntegrityArgs, write_integrity_opts};
+use crate::errors::{ErrorKind, tagged_err};
 use crate::flow::active::{
-    active_flow_path, mutate_active, normalise_entry_worktree, normalised_worktree, registry_anchor,
+    active_flow_path, is_machine_local_worktree, mutate_active, normalise_entry_worktree,
+    normalised_worktree, registry_anchor,
 };
 use crate::flow::artifacts::CanonicalArtifacts;
 use crate::flow::schema::ActiveDoc;
@@ -983,6 +985,37 @@ fn apply_active_prune(
     Ok(())
 }
 
+/// One aggregated line for registry rows holding a machine-local worktree. The
+/// registry is tracked, so such a row publishes its path and misses on other
+/// clones. Silent once every row is relative, so it adds nothing to a healthy
+/// envelope.
+fn machine_local_worktree_warning(root: &Path) -> Option<JsonValue> {
+    let text = fs::read_to_string(active_flow_path(root)).ok()?;
+    let doc = ActiveDoc::from_toml_str(&text).ok()?;
+    let slugs: Vec<String> = doc
+        .active
+        .into_iter()
+        .filter(|entry| {
+            entry
+                .binding
+                .worktree
+                .as_deref()
+                .is_some_and(is_machine_local_worktree)
+        })
+        .map(|entry| entry.slug)
+        .collect();
+    let (first, rest) = slugs.split_first()?;
+    let others = if rest.is_empty() {
+        String::new()
+    } else {
+        format!(" and {} more", rest.len())
+    };
+    Some(JsonValue::String(format!(
+        "registry worktree is machine-local for `{first}`{others}; `flow doctor --fix` rewrites \
+         values under the main worktree and leaves the rest"
+    )))
+}
+
 /// Slugs whose `binding.worktree` `--fix` would rewrite, in registry order, the
 /// prune's `stale_slugs` excepted. An unreadable or malformed registry yields
 /// none, as in `collect_stale_active_slugs`.
@@ -1161,6 +1194,15 @@ pub(crate) fn dispatch(
     dry_run: bool,
     integrity: WriteIntegrityArgs,
 ) -> Result<()> {
+    if fix && integrity.verify_integrity {
+        return Err(tagged_err(
+            ErrorKind::Validation,
+            None,
+            "--fix repairs the mismatches --verify-integrity refuses, so the two cannot combine; \
+             run `flow doctor` alone to see every sidecar check"
+                .to_string(),
+        ));
+    }
     let root = repo_or_cwd_root()?;
     let flows_dir = root.join(".claude").join("flows");
 
@@ -1246,6 +1288,9 @@ pub(crate) fn dispatch(
             apply_tasks_key_backfill(&root, &tasks_backfills, &integrity, &mut fixes)?;
         }
     }
+
+    // Read after the fix pass, so a `--fix` reports only the rows it left.
+    warnings.extend(machine_local_worktree_warning(&root));
 
     // 6. Compose and emit the final envelope.
     let ok = checks.iter().all(|c| c.ok);

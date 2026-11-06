@@ -73,6 +73,23 @@ the Quick Reference table of [../SKILL.md](../SKILL.md).
 | `tomlctl plan probes` | yes — checks `tasks.toml`, under `--emit` and `--record` alike |
 | `tomlctl plan approve` | yes — checks `plan.toml` and `tasks.toml` first, then each store it writes |
 | `tomlctl agents list` | yes |
+| `tomlctl backlog check` | yes |
+| `tomlctl backlog list` | yes |
+| `tomlctl backlog show` | yes |
+| `tomlctl backlog get` | yes |
+| `tomlctl backlog next` | yes |
+| `tomlctl backlog cluster` | yes |
+| `tomlctl backlog evidence dir` | yes |
+| `tomlctl backlog evidence audit` | yes |
+| `tomlctl inputs list` | yes |
+| `tomlctl review list` | yes |
+| `tomlctl review show` | yes |
+| `tomlctl review digest` | yes |
+| `tomlctl review report` | yes |
+| `tomlctl review stats` | yes |
+| `tomlctl review catalogue` | yes |
+| `tomlctl review schema` | yes |
+| `tomlctl flow doctor` | accepted without `--fix`, where its sidecar checks run regardless; refused with `--fix`, which repairs what the flag refuses |
 | `tomlctl flow list` | yes |
 | `tomlctl flow render-progress-log` | yes — checks `execution-record.toml` only |
 
@@ -101,7 +118,7 @@ tomlctl items list ledger.toml --where status=open --verify-integrity
 
 - **Missing sidecar under `--verify-integrity`** → hard error naming the expected path; never auto-regenerated. Run `tomlctl integrity refresh` to materialise it, unless the file holds CRLF, which it refuses: see [Line endings](#line-endings).
 - **Digest mismatch** → hard error naming both expected (from sidecar) and actual (from current bytes). The cause is an out-of-band edit, a corrupted sidecar, or line endings; when the CRLF-folded bytes match the sidecar, the error adds a clause saying only the line endings differ, and [Line endings](#line-endings) applies. Resolve by a human; `tomlctl` never auto-repairs.
-- **Sidecar write failure on a TOML write** (`set`, `set-json`, and the `items`, `tasks`, `backlog` and `flow` writers) → always a hard error. The sidecar is persisted first, so its failure leaves the TOML untouched; a TOML persist that fails after it points the sidecar back at the unchanged file and errors too. `--strict-integrity` has no effect here.
+- **Sidecar write failure on a TOML write** (`set`, `set-json`, and the `items`, `tasks`, `backlog` and `flow` writers) → always a hard error. The sidecar is persisted first, so its failure leaves the TOML untouched; a TOML persist that fails after it puts the previous sidecar back, or removes it if there was none, and errors too. `--strict-integrity` has no effect here.
 - **Sidecar refresh failure after a successful primary write** — `json set`, `json unset` and `flow ensure-artifact --bootstrap`, which write the primary first → stderr warning and exit 0 by default (the data is durable; the next write rebuilds the sidecar). `--strict-integrity` flips this to a hard error.
 - **`--allow-outside`** applies identically — the sidecar lands next to the target wherever that is.
 - **`flow doctor`** checks the sidecars of `context.toml`, the execution record and `tasks.toml`, plus `plan.toml`'s through a `plan-sidecar` check that appears only when that file exists.
@@ -210,7 +227,7 @@ Every clone and linked worktree holds a copy of this file, so `binding.worktree`
 
 ### `flow doctor --fix`
 
-Applies the repairs below and lists each in the envelope's `fixes_applied`, by `name`, with its `scope`, `action` and `ok`. With `--dry-run` it writes nothing and reports what it would do. It never creates a missing artifact.
+Applies the repairs below and lists each in the envelope's `fixes_applied`, by `name`, with its `scope`, `action` and `ok`. With `--dry-run` it writes nothing and reports what it would do. It never creates a missing artifact, and `--verify-integrity` is refused with `kind=validation`. A row still holding a machine-local worktree after the pass, or on a run without `--fix`, raises one aggregated line on `warnings`.
 
 | Fix `name` | Repairs | Leaves alone |
 |---|---|---|

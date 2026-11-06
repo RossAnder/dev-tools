@@ -444,9 +444,11 @@ with duplicates kept.
 
 On `approved`, `running` and `done`, when `brief.md` differs from the newest approval's digest, `stage`
 keeps its name, adds the blocker ``plan/brief-changed (1): `brief.md` differs from the brief approved at `<commit>` ``
-and sets `next` to `plan approve --amend --review <outcome>`. With an open run, `next` stays the
-relaunch-or-abandon hint above, and the `open run: ...` blocker comes before the brief blocker. A
-matching brief leaves `next` at `none` or `plan drift` with empty blockers.
+and sets `next` to `plan approve --amend --review <outcome>`. When an unanswered decision or another
+`plan check` error would refuse that amend, those join the blockers and `next` names the verb that
+clears them first. With an open run, `next` stays the relaunch-or-abandon hint above, and the
+`open run: ...` blocker comes before the brief blocker. A matching brief leaves `next` at `none` or
+`plan drift` with empty blockers.
 
 A deleted brief on those stages keeps the stage name, adds the `plan/brief-missing` blocker and sets
 `next` to `git restore --source <commit> -- docs/flows/<slug>/brief.md`, `<commit>` being the newest

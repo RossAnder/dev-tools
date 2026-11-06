@@ -2129,7 +2129,7 @@ fn canonical_strip(root: &Path, path: &Path) -> Option<String> {
 /// Canonical form of `path`, anchored on its nearest EXISTING ancestor with
 /// the trailing components rejoined — canonicalising a missing leaf errors,
 /// and callers relativise paths they are about to create.
-fn canonical_anchored(path: &Path) -> Option<PathBuf> {
+pub(crate) fn canonical_anchored(path: &Path) -> Option<PathBuf> {
     let mut trailing: Vec<std::ffi::OsString> = Vec::new();
     let mut anchor = path;
     loop {
@@ -2352,6 +2352,15 @@ fn write_serialized_with_sidecar(
     // a reader observing the mid-swap state lands on the recoverable
     // combinations documented above.
     let sidecar = sidecar_path(path);
+    let previous_sidecar = match fs::read(&sidecar) {
+        Ok(previous) => Some(previous),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => {
+            return Err(
+                anyhow::Error::from(e).context(format!("failed to read {}", sidecar.display()))
+            );
+        }
+    };
     let staged_sidecar = stage(&sidecar, sidecar_contents(path, bytes)?.as_bytes())?;
     let staged_toml = stage(path, bytes)?;
     commit(staged_sidecar, &sidecar)?;
@@ -2359,13 +2368,15 @@ fn write_serialized_with_sidecar(
         return Ok(());
     };
     // The exclusive lock means no other writer touched the TOML, so the pair
-    // is now OLD TOML + NEW sidecar. Point the sidecar back at the bytes on
-    // disk.
-    let recovery = fs::read(path)
-        .map_err(anyhow::Error::from)
-        .and_then(|on_disk| write_sidecar_for(path, &on_disk));
+    // is now OLD TOML + NEW sidecar. Put the old sidecar back byte for byte:
+    // re-digesting the file would stamp CRLF bytes `refresh_sidecar` refuses
+    // and would turn an out-of-band edit's mismatch into a pass.
+    let recovery = match &previous_sidecar {
+        Some(previous) => atomic_write(&sidecar, previous),
+        None => fs::remove_file(&sidecar).map_err(anyhow::Error::from),
+    };
     let note = match recovery {
-        Ok(()) => "the sidecar still covers the unchanged file".to_string(),
+        Ok(()) => "the sidecar is back as it was".to_string(),
         Err(re) => format!(
             "the sidecar could not be restored ({re:#}), so --verify-integrity fails until the next successful write"
         ),
@@ -2517,6 +2528,48 @@ fn commit(staged: Staged, path: &Path) -> Result<()> {
         })?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod sidecar_recovery_tests {
+    use super::*;
+
+    const OPTS: IntegrityOpts = IntegrityOpts {
+        write_sidecar: true,
+        verify_on_read: false,
+        strict: false,
+    };
+
+    /// A directory at the store's path makes the final rename fail after the
+    /// sidecar has already been committed.
+    fn unpersistable_store(dir: &Path) -> PathBuf {
+        let store = dir.join("store.toml");
+        fs::create_dir(&store).unwrap();
+        store
+    }
+
+    #[test]
+    fn a_failed_persist_puts_the_previous_sidecar_back_byte_for_byte() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = unpersistable_store(dir.path());
+        let sidecar = sidecar_path(&store);
+        fs::write(&sidecar, b"not a digest of anything\n").unwrap();
+
+        let err = write_serialized_with_sidecar(&store, b"new = 1\n", OPTS).unwrap_err();
+
+        assert_eq!(fs::read(&sidecar).unwrap(), b"not a digest of anything\n");
+        assert!(format!("{err:#}").contains("back as it was"), "{err:#}");
+    }
+
+    #[test]
+    fn a_failed_persist_removes_a_sidecar_that_did_not_exist() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = unpersistable_store(dir.path());
+
+        write_serialized_with_sidecar(&store, b"new = 1\n", OPTS).unwrap_err();
+
+        assert!(!sidecar_path(&store).exists());
+    }
 }
 
 #[cfg(test)]

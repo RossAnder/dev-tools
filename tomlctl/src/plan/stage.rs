@@ -185,7 +185,7 @@ fn assess(
                 &format!("git restore --source {} -- {brief_rel}", approval.commit),
                 summarise(&brief),
             ),
-            Some(_) => report(stage, AMEND_APPROVAL, summarise(&brief)),
+            Some(_) => amend_report(stage, plan, findings, &brief),
             None => report(stage, next, Vec::new()),
         };
     }
@@ -246,6 +246,29 @@ fn assess(
     }
 
     report("ready", "plan approve", Vec::new())
+}
+
+/// A changed brief asks for `--amend`, unless `plan approve` would refuse it: an
+/// unanswered decision or any other check error clears first.
+fn amend_report(
+    stage: &'static str,
+    plan: &PlanStore,
+    findings: &[Finding],
+    brief: &[&Finding],
+) -> Report {
+    let refusing: Vec<&Finding> = findings
+        .iter()
+        .filter(|f| f.severity == ERROR && f.class != CLASS_BRIEF_CHANGED)
+        .collect();
+    let unanswered = store::unanswered_decisions(plan);
+    let mut blockers = summarise(brief);
+    if refusing.is_empty() && unanswered.is_none() {
+        return report(stage, AMEND_APPROVAL, blockers);
+    }
+    let next = prove_next(&refusing, unanswered.is_some());
+    blockers.extend(summarise(&refusing));
+    blockers.extend(unanswered);
+    report(stage, next, blockers)
 }
 
 /// A review is settled by a finished plan-family run or by a `[[run]]` for the

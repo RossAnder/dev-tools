@@ -8217,16 +8217,18 @@ tags = [
     "deploy",
     "workflows",
 ]
-status = "open"
+status = "dismissed"
 created = 2026-11-05T22:29:56Z
 last_seen = 2026-11-05T22:29:56Z
 seen_count = 1
 dedup_id = "2bff69af08173c6a"
 origin = "review"
 flow = "v2-planning"
-context = "deploy-claude.ps1 now defaults ClaudeHome from CLAUDE_CONFIG_DIR, joins paths portably, and links directories with symlinks off Windows, but no line of it has been run: this machine has no pwsh. Slice 2's entry condition in the v2 plan requires a working deploy check, and review-v2-engine references/agent-waves.md names the config dir. Close this once deploy-claude.ps1 -Check has run on Linux and on Windows. The dangling-symlink path on Linux rests on recalled .NET behaviour, so check it on the first real run. Saved workflows load from workflows/ under CLAUDE_CONFIG_DIR, so review-v2-pipeline cannot resolve by name until the first real deploy."
+context = "deploy-claude.ps1 defaults ClaudeHome from CLAUDE_CONFIG_DIR, joins paths portably, and links directories with symlinks off Windows. -Check ran on Linux on 2026-11-06 through nix's PowerShell (the command is in CLAUDE.md): it read the configured config dir, listed real copies as not links and workflows as missing, and exited 1 as designed. Close this once -Check has also run on Windows and one real deploy has run on Linux: the linking and dangling-symlink paths are still unrun, and rest on recalled .NET behaviour. Saved workflows load from workflows/ under CLAUDE_CONFIG_DIR, so review-v2-pipeline cannot resolve by name until that deploy."
 base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
 evidence = ["scripts/deploy-claude.ps1:16"]
+dismissed = 2026-11-06
+dismiss_reason = "User decided to drop the deploy scripts: scripts/deploy-claude.ps1 and the post-merge and post-checkout drift hooks are removed, so the repo no longer deploys claude/ and this no longer applies."
 
 [[backlog]]
 id = "B-81b3ee0b"
@@ -8404,17 +8406,19 @@ kind = "direction"
 summary = "Linux has no deployment path without pwsh, and the drift hook exits silently when pwsh is missing, so config dir copies go stale unnoticed"
 area = "scripts/deploy-claude.ps1"
 tags = ["deploy"]
-status = "open"
+status = "dismissed"
 created = 2026-11-06T07:35:46Z
 last_seen = 2026-11-06T07:35:46Z
 seen_count = 1
 dedup_id = "eb845c853afd4f39"
 origin = "review-apply"
 flow = "v2-planning"
-context = "On this kind of machine the config dir set by CLAUDE_CONFIG_DIR holds real copies of agents, commands and skills, not links, so edits under claude/ do not reach it, and it has no workflows directory. deploy-check.sh exits 0 when pwsh is absent. Install pwsh and run the deploy script, which backs the copies up and links in their place, or decide on a shell deployer and a hook warning."
+context = "The drift hook now warns rather than exiting silently when pwsh is absent, and CLAUDE.md gives a nix command that runs the script without installing PowerShell. What remains is the deploy itself: the config dir set by CLAUDE_CONFIG_DIR still holds real copies of agents, commands and skills, not links, and has no workflows directory, so edits under claude/ do not reach it. Running the script backs the copies up and links in their place. That changes the live config, so it is the user's to run. A shell deployer is no longer needed for machines with nix."
 base_sha = "804dc620e3b7b980080b94a4700b15aece073e20"
 evidence = [".githooks/deploy-check.sh:6"]
 related = ["B-2bff69af"]
+dismissed = 2026-11-06
+dismiss_reason = "User decided to drop the deploy scripts: scripts/deploy-claude.ps1 and the post-merge and post-checkout drift hooks are removed, so the repo no longer deploys claude/ and this no longer applies."
 
 [[backlog]]
 id = "B-e63ab1ac"
@@ -8508,7 +8512,7 @@ kind = "bug"
 summary = "flow-bootstrap normalises the __DONT_ASK__ sentinel to null, so the plansDirectory prompt cannot tell unset from don't ask"
 area = "claude/agents/flow-bootstrap.md"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-06T09:41:06Z
 last_seen = 2026-11-06T09:41:06Z
 seen_count = 1
@@ -8518,6 +8522,8 @@ flow = "v2-planning"
 context = "Read from the prompt skill's gate, not run: Don't ask again would re-fire the first-use prompt every run. A fix needs a distinct envelope value or a gate change across carriers."
 base_sha = "8a1f066989e22c774d837bda2794b14e520ebd6c"
 related = ["B-74b4558b"]
+resolved = 2026-11-06
+resolution = "Uncommitted on v2-planning-apply-fixes: flow-bootstrap binds the __DONT_ASK__ sentinel to docs/plans/, the default the prompt binds for that answer, so null means unset and a declined prompt stays declined. The carriers' gate is unchanged. Read from the contract, not run through a carrier."
 
 [[backlog]]
 id = "B-9411e167"
@@ -8525,7 +8531,7 @@ kind = "bug"
 summary = "plan-executor resolves the flow's plan_path, which differs from the reviewed plan when /review-plan-v2 is given another document"
 area = "claude/agents/plan-executor.md"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-06T09:41:06Z
 last_seen = 2026-11-06T09:41:06Z
 seen_count = 1
@@ -8535,6 +8541,8 @@ flow = "v2-planning"
 context = "The run's scope holds the reviewed path but the finder cell view does not expose it, so prior findings and preamble reads would target the flow's plan. A fix needs the path in the plan-family assignment or the cell prompt."
 base_sha = "8a1f066989e22c774d837bda2794b14e520ebd6c"
 related = ["B-23c14a52"]
+resolved = 2026-11-06
+resolution = "Uncommitted on v2-planning-apply-fixes: a plan-family finder cell now carries plan_documents, the run's scope with the plan first, and plan-executor reads it instead of the flow's plan_path. review-plan-v2 records the outline first."
 
 [[backlog]]
 id = "B-f8768506"
@@ -8542,7 +8550,7 @@ kind = "debt"
 summary = "The Cold readers paragraph says a cold reader gets only the worker projection and the code, the same unenforced claim the challenger paragraph now qualifies"
 area = "docs/plans/v2-planning.md"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-06T09:41:06Z
 last_seen = 2026-11-06T09:41:06Z
 seen_count = 1
@@ -8551,6 +8559,8 @@ origin = "review-apply"
 flow = "v2-planning"
 context = "Arrived cheap-in-file and was deferred, because whether a cold reader should drop CLAUDE.md is a design call. Slice 2 should settle it."
 base_sha = "8a1f066989e22c774d837bda2794b14e520ebd6c"
+resolved = 2026-11-06
+resolution = "Uncommitted on v2-planning-apply-fixes: settled in the plan: a cold reader keeps CLAUDE.md, because a worker loads it too, and excluding the rest of the plan and notes is prompt-only."
 
 [[backlog]]
 id = "B-2222979c"
@@ -8558,7 +8568,7 @@ kind = "debt"
 summary = "agents/schema.rs vocab takes parse and VOCABULARY as an unchecked pair, the shape removed from the plan store"
 area = "tomlctl/src/agents/schema.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-06T09:41:06Z
 last_seen = 2026-11-06T09:41:06Z
 seen_count = 1
@@ -8567,6 +8577,8 @@ origin = "review-apply"
 flow = "v2-planning"
 context = "Three call sites can pair the wrong list with a parser. It defaults on absence through T: Default, so it needs its own bound rather than the plan store's Vocabulary trait."
 base_sha = "8a1f066989e22c774d837bda2794b14e520ebd6c"
+resolved = 2026-11-06
+resolution = "Uncommitted on v2-planning-apply-fixes: agents/schema.rs vocab is bounded on the plan store's Vocabulary trait plus Default, so a parser cannot pair with another list."
 
 [[backlog]]
 id = "B-0a6a54c2"
@@ -8574,7 +8586,7 @@ kind = "debt"
 summary = "flow doctor --fix --verify-integrity accepts the flag and its registry and artifacts repairs ignore it"
 area = "tomlctl/src/flow/doctor.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-06T09:41:06Z
 last_seen = 2026-11-06T09:41:06Z
 seen_count = 1
@@ -8584,6 +8596,8 @@ flow = "v2-planning"
 context = "apply_active_prune and apply_tasks_key_backfill read and rewrite without verifying, so the writer contract on the flag does not hold for this verb. A repair verb may legitimately be exempt, which needs deciding; document the exemption or verify."
 base_sha = "8a1f066989e22c774d837bda2794b14e520ebd6c"
 related = ["B-81b3ee0b"]
+resolved = 2026-11-06
+resolution = "Uncommitted on v2-planning-apply-fixes: flow doctor --fix --verify-integrity is refused with kind=validation, dry run included, since the repair contradicts the check. Without --fix the flag stays accepted because the sidecar checks run regardless."
 
 [[backlog]]
 id = "B-328e2b03"
@@ -8591,7 +8605,7 @@ kind = "question"
 summary = "write_serialized_with_sidecar's recovery branch stamps the on-disk TOML and bypasses the CRLF refusal"
 area = "tomlctl/src/io.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-06T09:41:06Z
 last_seen = 2026-11-06T09:41:06Z
 seen_count = 1
@@ -8601,6 +8615,8 @@ flow = "v2-planning"
 context = "After a failed TOML persist on a CRLF copy it can stamp a CRLF digest. It is rare and restores a verifiable pair, but it is one stamping path outside the policy. Decide whether it should refuse too."
 base_sha = "8a1f066989e22c774d837bda2794b14e520ebd6c"
 related = ["B-08c658a1"]
+resolved = 2026-11-06
+resolution = "Uncommitted on v2-planning-apply-fixes: decided against stamping: a failed TOML persist now puts the previous sidecar back byte for byte, or removes one that did not exist, so the path neither stamps CRLF nor launders an out-of-band edit."
 
 [[backlog]]
 id = "B-cdd3e005"
@@ -8608,7 +8624,7 @@ kind = "debt"
 summary = "README says the sidecar is written after the primary rename, while flow.md and the task-store skill say it is persisted first"
 area = "tomlctl/README.md"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-06T09:41:06Z
 last_seen = 2026-11-06T09:41:06Z
 seen_count = 1
@@ -8617,6 +8633,8 @@ origin = "review-apply"
 flow = "v2-planning"
 context = "One description of the write order is wrong, and recovery reasoning depends on it. Read write_serialized_with_sidecar in tomlctl/src/io.rs and correct the wrong document."
 base_sha = "8a1f066989e22c774d837bda2794b14e520ebd6c"
+resolved = 2026-11-06
+resolution = "Uncommitted on v2-planning-apply-fixes: the README had it wrong; it now says the sidecar renames just before the target."
 
 [[backlog]]
 id = "B-326ca3d6"
@@ -8624,7 +8642,7 @@ kind = "debt"
 summary = "the --verify-integrity matrix has no rows for the backlog, inputs and review read verbs"
 area = "claude/skills/tomlctl/references/flow.md"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-06T09:41:06Z
 last_seen = 2026-11-06T09:41:06Z
 seen_count = 1
@@ -8634,6 +8652,8 @@ flow = "v2-planning"
 context = "The matrix reads as complete, and tests/backlog_write.rs shows the backlog read verbs thread the flag. Add the rows from the clap args in tomlctl/src/cli/types."
 base_sha = "8a1f066989e22c774d837bda2794b14e520ebd6c"
 related = ["B-3c59ed80"]
+resolved = 2026-11-06
+resolution = "Uncommitted on v2-planning-apply-fixes: the matrix gained the backlog, inputs and review read verbs, taken from the clap args, plus flow doctor."
 
 [[backlog]]
 id = "B-3611ef0d"
@@ -8641,7 +8661,7 @@ kind = "bug"
 summary = "After approval, a changed brief makes plan stage name plan approve --amend even when an unanswered decision or another check error means amend will refuse"
 area = "tomlctl/src/plan/stage.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-06T09:41:06Z
 last_seen = 2026-11-06T09:41:06Z
 seen_count = 1
@@ -8651,6 +8671,8 @@ flow = "v2-planning"
 context = "Same shape as the first-approval case, which is fixed only before approval. A carrier following next hits a refusal stage never warned about. Run plan check before acting on the amend hint."
 base_sha = "8a1f066989e22c774d837bda2794b14e520ebd6c"
 related = ["B-02515e2e"]
+resolved = 2026-11-06
+resolution = "Uncommitted on v2-planning-apply-fixes: after approval, plan stage adds an unanswered decision or other check error to the blockers and names the verb that clears it before the amend."
 
 [[backlog]]
 id = "B-bffce507"
@@ -8658,7 +8680,7 @@ kind = "debt"
 summary = "flow/active.rs canonical_or_given repeats the nearest-existing-ancestor walk of the private io::canonical_anchored"
 area = "tomlctl/src/flow/active.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-06T09:41:06Z
 last_seen = 2026-11-06T09:41:06Z
 seen_count = 1
@@ -8667,6 +8689,8 @@ origin = "review-apply"
 flow = "v2-planning"
 context = "io.rs was outside the cluster that added it. Exposing canonical_anchored as pub(crate) would remove the copy."
 base_sha = "8a1f066989e22c774d837bda2794b14e520ebd6c"
+resolved = 2026-11-06
+resolution = "Uncommitted on v2-planning-apply-fixes: canonical_anchored is pub(crate) and canonical_or_given wraps it."
 
 [[backlog]]
 id = "B-507f9885"
@@ -8674,7 +8698,7 @@ kind = "direction"
 summary = "flow doctor without --fix says nothing about machine-local registry worktrees, so foreign rows surface only when someone runs --fix"
 area = "tomlctl/src/flow/doctor.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-06T09:41:06Z
 last_seen = 2026-11-06T09:41:06Z
 seen_count = 1
@@ -8683,6 +8707,8 @@ origin = "review-apply"
 flow = "v2-planning"
 context = "An aggregated advisory on warnings would make remaining absolute rows visible. It was left out to avoid noise in every bootstrap envelope, and a pre-commit check on the registry is the alternative."
 base_sha = "8a1f066989e22c774d837bda2794b14e520ebd6c"
+resolved = 2026-11-06
+resolution = "Uncommitted on v2-planning-apply-fixes: flow doctor raises one aggregated warning while any registry row holds a machine-local worktree, and stays silent when all are relative, so a healthy envelope gains nothing."
 
 [[backlog]]
 id = "B-18f4652c"
@@ -8690,7 +8716,7 @@ kind = "debt"
 summary = "the tomlctl skill and README call flow resolve a 5-step algorithm while its clap help says 6-step"
 area = "claude/skills/tomlctl/SKILL.md"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-06T09:41:06Z
 last_seen = 2026-11-06T09:41:06Z
 seen_count = 1
@@ -8699,3 +8725,5 @@ origin = "review-apply"
 flow = "v2-planning"
 context = "Readers get two step counts for one verb. Which is right was not checked; read tomlctl/src/flow/resolve.rs and correct the wrong text, or drop the count."
 base_sha = "8a1f066989e22c774d837bda2794b14e520ebd6c"
+resolved = 2026-11-06
+resolution = "Uncommitted on v2-planning-apply-fixes: resolve.rs holds six steps; the skill and README now say 6-step."

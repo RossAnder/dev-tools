@@ -19,7 +19,7 @@ Invoke the `review-v2-engine` skill before anything else and run its stages in o
 | `review run start --command` | `review-plan-v2` |
 | envelope `--command` | `review-plan` |
 | base | `HEAD` |
-| scope | the plan documents bound at stage 0 |
+| scope | the plan documents bound at stage 0, `<plan>` first |
 | depth | `--depth`, default `standard` |
 
 ## Stage 0 — pre-flight
@@ -31,7 +31,7 @@ Invoke the `tomlctl` skill and the `flow-contract-flow-context` skill as the eng
 **2. Plan resolution.** Bind `<plan>` before the task store is touched, because the store's skip rule compares it with the flow's plan:
 
 1. an argument naming a file — that file;
-2. an argument naming a directory — a multi-file plan: read every markdown file in it and classify each by role (outline or master, numbered detail documents, progress or status, supporting). The outline is `<plan>`; the scope lists every document;
+2. an argument naming a directory — a multi-file plan: read every markdown file in it and classify each by role (outline or master, numbered detail documents, progress or status, supporting). The outline is `<plan>`; the scope lists every document, the outline first;
 3. no path argument — the plan produced earlier in this conversation; then the resolved flow's `plan_path` (read it with `tomlctl get <context_path> plan_path`, and flag it when `envelope.resolved.stale` is true); then the most recently modified file in the plans directory, asking when several are equally recent; then ask the user.
 
 Note the plan's age from its header or git history. Triage reports it, flagged past 14 days.

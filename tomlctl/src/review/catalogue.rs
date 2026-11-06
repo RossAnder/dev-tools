@@ -2111,8 +2111,7 @@ fn claude_dir_from(
     Some(PathBuf::from(user_profile.or(home)?).join(".claude"))
 }
 
-/// `<claude dir>/skills/review-v2-lenses`, where `deploy-claude.ps1` links the
-/// built-in catalogue.
+/// `<claude dir>/skills/review-v2-lenses`, where the built-in catalogue is expected.
 pub(crate) fn default_builtin_root() -> Option<PathBuf> {
     claude_dir().map(|d| d.join("skills").join("review-v2-lenses"))
 }

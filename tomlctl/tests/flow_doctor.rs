@@ -1312,6 +1312,23 @@ fn fix_rewrites_worktrees_under_the_root_and_leaves_foreign_ones() {
     };
     assert_eq!(scopes(&preview), ["primary", "nested"], "{preview}");
     assert_eq!(fs::read_to_string(&registry).unwrap(), body);
+    let machine_local = |v: &JsonValue| -> Vec<String> {
+        v["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(JsonValue::as_str)
+            .filter(|line| line.contains("machine-local"))
+            .map(str::to_string)
+            .collect()
+    };
+    let plain = run_doctor(&root, &[]);
+    let lines = machine_local(&plain);
+    assert_eq!(lines.len(), 1, "{plain}");
+    assert!(
+        lines[0].contains("`primary` and 2 more"),
+        "aggregates the three absolute rows: {plain}"
+    );
 
     let applied = run_doctor(&root, &["--fix"]);
     assert_eq!(scopes(&applied), ["primary", "nested"], "{applied}");
@@ -1325,6 +1342,50 @@ fn fix_rewrites_worktrees_under_the_root_and_leaves_foreign_ones() {
         .map(|entry| entry["binding"]["worktree"].as_str().unwrap())
         .collect();
     assert_eq!(stored, [".", ".claude/worktrees/x", foreign, "."]);
+
+    let lines = machine_local(&applied);
+    assert_eq!(lines.len(), 1, "{applied}");
+    assert!(
+        lines[0].contains("`foreign`;"),
+        "only what --fix left: {applied}"
+    );
+
+    let body = "schema_version = 1\n\n[[active]]\nslug = \"settled\"\n\
+                last_used = \"2026-05-08T12:00:00Z\"\n[active.binding]\nworktree = \".\"\n";
+    write_artifact_with_sidecar(&registry, body);
+    let clean = run_doctor(&root, &[]);
+    assert!(machine_local(&clean).is_empty(), "{clean}");
+}
+
+#[test]
+fn fix_refuses_verify_integrity_and_writes_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    fs::create_dir_all(root.join(".claude")).unwrap();
+    let registry = root.join(".claude").join("active-flow.toml");
+    let body = "schema_version = 1\n";
+    fs::write(&registry, body).unwrap();
+
+    for extra in [&[][..], &["--dry-run"][..]] {
+        let out = Command::cargo_bin("tomlctl")
+            .unwrap()
+            .env("TOMLCTL_ROOT", &root)
+            .args([
+                "--error-format",
+                "json",
+                "flow",
+                "doctor",
+                "--fix",
+                "--verify-integrity",
+            ])
+            .args(extra)
+            .assert()
+            .failure();
+        let stderr = String::from_utf8_lossy(&out.get_output().stderr).into_owned();
+        assert!(stderr.contains("validation"), "{stderr}");
+    }
+    assert_eq!(fs::read_to_string(&registry).unwrap(), body);
+    assert!(!sidecar_path(&registry).exists());
 }
 
 // ---------------------------------------------------------------------------

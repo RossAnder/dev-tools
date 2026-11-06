@@ -53,7 +53,7 @@ The highest-frequency patterns. Deeper treatment lives in the reference files li
 | Locate plan files | `tomlctl flow find-plans [--dirs <d>...] [--strict-read]` |
 | Seed a new flow (context.toml + execution-record.toml + active entry) | `tomlctl flow init --slug <s> --plan <path> [--branch <b>] [--scope <glob>]...` |
 | Enumerate flows under .claude/flows/ | `tomlctl flow list [--status <s>] [--branch <b>] [--active-only]` |
-| Resolve the active flow (5-step algorithm, emits artifacts + scope) | `tomlctl flow resolve [--flow <s>] [--path <p>]... [--branch <b>] [--worktree <w>] [--with-staleness]` |
+| Resolve the active flow (6-step algorithm, emits artifacts + scope) | `tomlctl flow resolve [--flow <s>] [--path <p>]... [--branch <b>] [--worktree <w>] [--with-staleness]` |
 | Check whether a flow is stale | `tomlctl flow stale --slug <s> [--threshold <duration>]` |
 | Regenerate PROGRESS-LOG.md from the execution record | `tomlctl flow render-progress-log --slug <s> [--stdout] [--verify-integrity]` |
 | Import a plan's tasks into the flow's task DAG | `tomlctl tasks import-plan --slug <s> [--plan <p>] [--reconcile-record] [--dry-run]` |

@@ -14,7 +14,9 @@ use globset::{GlobBuilder, GlobMatcher};
 use serde_json::{Map, Value as JsonValue, json};
 
 use super::catalogue::{self, Catalogue, EntryType, run_catalogue};
-use super::fields::{self, FIELDS, FindingStatus, Kind, ProjectCtx, Record, Role, Route, Vis};
+use super::fields::{
+    self, FIELDS, Family, FindingStatus, Kind, ProjectCtx, Record, Role, Route, Vis,
+};
 use super::invalid;
 use super::store::{self, Cell, Finding, Row, Run, Store, Target, View};
 use crate::cli::{ReviewListArgs, ReviewShowArgs};
@@ -274,6 +276,10 @@ fn assignment(
     } else {
         let pack = target.run_dir(&run.id)?.join("pack.md");
         row.insert("pack".into(), json!(relativise(root, &pack)));
+    }
+    // A plan-family agent reviews these documents, which need not be the flow's plan.
+    if run.family == Family::Plan {
+        row.insert("plan_documents".into(), json!(run.scope));
     }
     let baselines = run
         .rest
