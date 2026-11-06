@@ -10,8 +10,8 @@
 # a checkout would otherwise write CRLF while rustfmt rewrites the files it
 # touches as LF -- leaving the tree mixed and making every later git command
 # over the crate print a line-ending warning per file. The index is already LF
-# throughout, so this changes no committed content; the CRLF files still on
-# disk convert on their next checkout.
+# throughout, so this changes no committed content; CRLF copies still on disk
+# are not converted by themselves (see the remedy in the last stanza below).
 *.rs text eol=lf
 
 # Pin the flow agent definitions to LF. Two of them carry the shared blocks
@@ -20,7 +20,8 @@
 # gawk strips it) both blocks extract empty and the empty-block guard fails
 # every commit. Directory-scoped so a later agent carrier is covered too.
 # Nothing committed changes: both extractors strip the CR before hashing, so
-# the block hashes are unaffected and the files convert on their next checkout.
+# the block hashes are unaffected. CRLF copies still on disk need the remedy in
+# the last stanza below.
 claude/agents/*.md text eol=lf
 
 # Pin the git hook and its scripts to LF. .githooks/pre-commit runs each
@@ -35,7 +36,8 @@ claude/agents/*.md text eol=lf
 scripts/** text eol=lf
 
 # Pin the flow command carriers and this file to LF, like claude/agents above.
-# The index is already LF; the CRLF copies on disk are rewritten in place.
+# The index is already LF; CRLF copies on disk need the remedy in the last
+# stanza below.
 claude/commands/*.md text eol=lf
 .gitattributes text eol=lf
 
@@ -45,9 +47,15 @@ claude/commands/*.md text eol=lf
 # that then fail on every LF checkout. `text=auto` on the flow directory keeps a
 # binary later added to a flow from being converted; the two typed patterns
 # reach the stores outside it, such as those under .claude/plans/ and
-# .claude/reviews/. Markdown outside flows and settings.local.json stay unpinned.
+# .claude/reviews/. Everything else under .claude stays unpinned because none of
+# it carries a sidecar today; add a pin only when such a store becomes tracked.
 # docs/flows holds the same flows' authored files, pinned alike so that one flow's
 # files do not differ in line endings by directory.
+#
+# Remedy for every stanza above: git treats a CRLF working copy of a file whose
+# index form is LF as unchanged, so a new eol pin does not rewrite it, and
+# `git checkout -- <path>` leaves it CRLF. Remove the file, then check it out
+# again, to get the LF working copy.
 .claude/flows/** text=auto eol=lf
 docs/flows/** text=auto eol=lf
 .claude/**/*.toml text eol=lf
