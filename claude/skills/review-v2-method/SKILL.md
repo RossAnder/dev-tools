@@ -72,7 +72,7 @@ Never supply `id`, `status`, `route`, `anchor`, `related`, `outcome`, `cell`, `r
 | `edit` | ≤800; the exact edit |
 | `direction` | `add` \| `remove` \| `change` |
 | `effort` | `trivial` \| `small` \| `medium` \| `large` |
-| `old` | ≤400; the exact text at the anchor, copied byte for byte. Required for `change` and `remove` except on a plan review; for `add`, the adjacent anchor text, unless `target_file` names a file that does not exist yet |
+| `old` | ≤400; the exact text at the anchor, copied byte for byte. Required for `change` and `remove`; for `add`, the adjacent anchor text, unless `target_file` names a file that does not exist yet. Never required on a plan review, for any direction |
 | `target_file` | optional; where the edit lands when that is not `file` |
 | `instances` | optional, ≤50 paths; every other site of the same pattern |
 | `counter` | optional, ≤300 |
