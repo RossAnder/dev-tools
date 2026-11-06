@@ -5,7 +5,7 @@
 
 ## Summary
 
-This plan settles how v2 planning works and builds its first slice. The design gives the planner as much agency as possible and stops for the user only when their answer would change the plan: zero to three vetoable assumptions, shown before tasks are elaborated, with dependency choices, scoping and restructuring as the prompts. A fresh-context structure challenge handles what agents measurably miss unprompted, the need to restructure. The orchestrator writes intent, tools fill facts, cold readers challenge; tasks are fully elaborated upfront by default, and a milestone may defer detail and review to a Workflow just before it runs. Approval freezes intent, not tasks. Later changes go through audited verbs, and a replan step at each milestone drain owns them. This plan delivers Slice 1 only: `[[specs]]` in the task store, a new `plan.toml`, and the `tomlctl plan` verbs; Slices 2 to 4 are scoped under Approach, "Later slices". Scrutinise Approach, "What departs from the idea doc" first, then "Surfacing" and "Structure challenge". The file count is 88, past the 25-file guide: 28 are new small modules, tests and one reference doc, 16 are sidecar refreshes, and no task exceeds 3 files except five inseparable ones.
+This plan settles how v2 planning works and builds its first slice. The design gives the planner as much agency as possible and stops for the user only when their answer would change the plan: zero to three vetoable assumptions, shown before tasks are elaborated, with dependency choices, scoping and restructuring as the prompts. A fresh-context structure challenge handles what agents measurably miss unprompted, the need to restructure. The orchestrator writes intent, tools fill facts, cold readers challenge; tasks are fully elaborated upfront by default, and a milestone may defer detail and review to separate Workflow runs just before it implements. Approval freezes intent, not tasks. Later changes go through audited verbs, and a replan step at each milestone drain owns them. This plan delivers Slice 1 only: `[[specs]]` in the task store, a new `plan.toml`, and the `tomlctl plan` verbs; Slices 2 to 4 are scoped under Approach, "Later slices". Scrutinise Approach, "What departs from the idea doc" first, then "Surfacing" and "Structure challenge". The file count is 88, past the 25-file guide: 28 are new small modules, tests and one reference doc, 16 are sidecar refreshes, and no task exceeds 3 files except five inseparable ones.
 
 ## Context
 
@@ -51,19 +51,19 @@ Answer 4 introduced status-quo bias, restructuring detection and escalation judg
 
 ### Flow
 
-The conversation owns dialogue and gates, because a Workflow has no user hook and `AskUserQuestion` is unavailable in subagents. Each fan-out is one saved Workflow that returns a digest and pointers, and every step writes to disk, so a plan resumes from files in a new session. `tomlctl plan stage` says where a plan stands on re-entry.
+The conversation owns dialogue and gates, because a Workflow has no user hook and `AskUserQuestion` is unavailable in subagents. Each fan-out is one saved Workflow that takes its work-list in `args` and returns a digest and pointers, and every step writes to disk. A new session resumes the plan from those files but not an interrupted run, which it has no way to relaunch, so the carrier computes what is still pending before launch (see Risks). `tomlctl plan stage` says where a plan stands on re-entry.
 
 | Step | Who | Output | Skipped when |
 |---|---|---|---|
-| Open | Orchestrator, tool | `brief.md` distilled from the discussion and any named backlog items | Never |
-| Investigate | Workflow | `notes/*.md`, each opening with a one-line verdict and `file:line` anchors; index returned | No unknowns, or backlog evidence answers them |
+| Open | Orchestrator, tool | `docs/flows/<slug>/brief.md` distilled from the discussion and any named backlog items | Never |
+| Investigate | Workflow | `docs/flows/<slug>/notes/*.md`, each opening with a one-line verdict and `file:line` anchors; index returned | No unknowns, or backlog evidence answers them |
 | Structure challenge | One fresh agent | A target structure drafted without seeing the planner's thinking | Reason recorded, such as a one-file fix |
 | Surface | Orchestrator, with the user | Zero to three vetoable assumptions | Nothing passes the tests, which is normal |
-| Design | Orchestrator | Decisions, contracts, milestones, `design/*.md` only where prose is needed | Never for decisions; `design/` when unneeded |
+| Design | Orchestrator | Decisions, contracts, milestones, `docs/flows/<slug>/design/*.md` only where prose is needed | Never for decisions; `design/` when unneeded |
 | Surface again | Orchestrator, with the user | Anything design itself raised | As above |
 | Write | Orchestrator, one continuous pass | Task specs | Never |
 | Prove | Tools, one Workflow | Cold-read results, probes, store checks | Cold read skipped for a plan of a few deep tasks |
-| Review | Workflow (Slice 3) | Digest and tiered edits | Low risk, by planner judgement, disclosed at approval |
+| Review | Workflow (Slice 3), then the orchestrator | Digest and proposed edits, which the orchestrator applies by tier after the run | Low risk, by planner judgement, disclosed at approval |
 | Approve | User | Frozen intent and a commit stamp | Never |
 
 Depth is not classified upfront. A plan starts minimal and grows on observed results: located files, a failed probe, a failed premise, a one-way door. The research found self-classification the weakest scaling signal, and each row above carries its own skip instead. `--depth` overrides, and investigators are capped at 6.
@@ -95,15 +95,18 @@ Evidence here is adjacent and small, so Slice 2 opens with a replay over 5 to 10
 ### Flow directory
 
 ```
-.claude/flows/<slug>/
+docs/flows/<slug>/
   brief.md      Intent, Non-goals, Scope budget, Success criteria, Background, Unknowns
-  plan.toml     decisions, contracts, approvals, runs, handover (verb-owned)
-  tasks.toml    the existing task store plus additive side tables (verb-owned)
   design/*.md   optional, cited by tasks as design/x.md#anchor
   notes/*.md    evidence; a newer note replaces an older one, with no chain
+.claude/flows/<slug>/
+  plan.toml     decisions, contracts, approvals, runs, handover (verb-owned)
+  tasks.toml    the existing task store plus additive side tables (verb-owned)
 ```
 
-`brief.md`, `plan.toml`, `tasks.toml` and `design/` are git-tracked, as `tasks.toml` already is, so `git diff <approved_commit>..HEAD` gives baseline comparison for free. Whether `notes/*.md` is tracked is open: it holds investigator output, this repo is public, and `.gitignore` keeps free text and backlog evidence out on that ground. Slice 2's carrier settles it before it commits a flow directory; nothing in this slice reads notes from git. `context.toml` `plan_path` points at `brief.md`, which keeps flow resolution and doctor working unchanged. `.claude/flows/**` is pinned to LF in `.gitattributes`, because `core.autocrlf` otherwise rewrites stores on checkout and fails their sidecars.
+A flow spans two directories because writes under `.claude/` are protected paths: they prompt in `default` and `acceptEdits`, are denied in `dontAsk`, go to the classifier in `auto`, and `permissions.allow` cannot pre-approve them. tomlctl's stores escape this through `Bash(tomlctl *)`, but files agents author with Write and Edit do not, so those live in `docs/flows/<slug>/`, a fixed repo-relative path since `plansDirectory` may be unset or an array. Unattended `dontAsk` runs still need an `Edit(docs/flows/**)` allow rule, which Slice 2's carrier must document.
+
+`brief.md`, `plan.toml`, `tasks.toml` and `design/` are git-tracked, as `tasks.toml` already is, so `git diff <approved_commit>..HEAD` gives baseline comparison for free. Whether `notes/*.md` is tracked is open: it holds investigator output, this repo is public, and `.gitignore` keeps free text and backlog evidence out on that ground. Slice 2's carrier settles it before it commits a flow directory; nothing in this slice reads notes from git. `context.toml` `plan_path` points at `docs/flows/<slug>/brief.md`, which keeps flow resolution and doctor working unchanged. `.claude/flows/**` is pinned to LF in `.gitattributes`, because `core.autocrlf` otherwise rewrites stores on checkout and fails their sidecars.
 
 `tasks.toml` keeps its verbs: `ready`, `train`, `closure`, `check`, `snapshot` and glimpse all carry over. `import-plan` and `render` refuse a flow that has a `plan.toml`, since a v2 flow has no markdown to import. There is one read-only human view, printed by `plan view`, never written to disk, so nothing can edit it by mistake.
 
@@ -257,7 +260,7 @@ From then on `tasks add-many`, `update`, `remove` and `plan milestone update` ne
 
 Specified here for the engine's own plan to build; none of it is built in this plan.
 
-- **Deferred elaboration.** Upfront is the norm. The planner may defer a later milestone, with a stated reason, when its detail depends on what earlier milestones will produce; its high-level shape is reviewed upfront. The engine runs elaboration and review as a Workflow just before that milestone implements. A resulting change to an outcome or success criterion goes to the user.
+- **Deferred elaboration.** Upfront is the norm. The planner may defer a later milestone, with a stated reason, when its detail depends on what earlier milestones will produce; its high-level shape is reviewed upfront. Just before that milestone implements, the engine runs elaboration and review as two top-level Workflow runs with the orchestrator between them, because review reads the elaborated specs, agents never write the task store, the orchestrator cannot act during a run, and `workflow()` nests one level only. The Elaborate run writes its proposals to a file and returns a pointer; the orchestrator applies them with `tasks update --ndjson` and a reason, then starts the Review run. A resulting change to an outcome or success criterion goes to the user.
 - **Replan at each milestone drain.** The orchestrator owns it. Inputs are deviations, failed premises, worker handoffs and `plan drift`. Output is task changes through audited verbs. A digest at the end cannot help tasks that already ran on a falsified assumption.
 - **Tripwires.** Interrupt only for a one-way door no decision covers, a contradiction of a decision or outcome, a failed premise that replanning cannot settle, or a budget breach. Park that branch and continue disjoint work. Everything else goes in the milestone digest.
 - **Task contract freezes at dispatch.** Mid-task change is where Devin reports weakness.
@@ -289,7 +292,7 @@ Each becomes its own `/plan-new` once the slice before it lands, because each on
 
 | Slice | Delivers | Files, estimated | Enters when |
 |---|---|---|---|
-| 2 | `claude/commands/plan-v2.md`, `claude/skills/plan-v2-engine/`, agents `plan-challenger` and `plan-cold-reader`, Workflows `plan-v2-investigate` and `plan-v2-prove`, the challenger replay, `VALID_COMMANDS` and `carrier_invokes_required_skills`; settling whether `notes/` is tracked, whether the probe script runs in the carrier or a Workflow, and appending the `status-transition` record `plan approve` reports | ~12 | Slice 1 merged and installed |
+| 2 | `claude/commands/plan-v2.md`, `claude/skills/plan-v2-engine/`, agents `plan-challenger` and `plan-cold-reader`, Workflows `plan-v2-investigate` and `plan-v2-prove`, the challenger replay, the three Workflow resume tests under Risks, `VALID_COMMANDS` and `carrier_invokes_required_skills`; settling whether `notes/` is tracked, whether the probe script runs in the carrier or a Workflow, and appending the `status-transition` record `plan approve` reports | ~12 | Slice 1 merged and installed, and a working deploy check passes: saved Workflows resolve by name from `workflows/` under the active Claude config dir (`CLAUDE_CONFIG_DIR`, default `~/.claude`). `deploy-claude.ps1` does not read that variable today, so where it is set, a default `-Check` reports on a directory the session does not read |
 | 3 | `/review-plan-v2` bound to a flow directory, findings targeting records, tiered edit application, the review wrapper Workflow, plan-review outcome logging | ~15 | Slice 2 can open a real plan |
 | 4 | glimpse shows `brief.md`, decisions, stage and approval state | ~6 | Slice 3 merged |
 
@@ -641,10 +644,10 @@ Per-task `Depends on` lines are authoritative; this section states only the chec
 - **The structure challenge may add cost and no signal.** The evidence is adjacent. Mitigation: replay over past goals opens Slice 2, and the step has an off-switch.
 - **Surfacing by judgement may under-escalate,** since an agent's own decisions to ask reached only 34.6% recall on HiL-Bench's software tasks. Mitigation: the three tests are concrete, `agent-assumed` decisions stay visible at approval, and `vetoed` gives a measure. Dogfooding decides whether a stronger prompt is needed.
 - **Plan-level contracts rest on low-grade evidence.** Mitigation: optional records, watched in early plans.
-- **`plan approve`'s committed-content check may annoy,** because it requires committing the flow directory first. Mitigation: the refusal names the files, and the carrier commits as a step in Slice 2.
+- **`plan approve`'s committed-content check may annoy,** because it requires committing the flow's stores, brief and design files first. Mitigation: the refusal names the files, and the carrier commits as a step in Slice 2.
 - **`--emit` scripts carry stored strings into Bash.** The harness's permission prompt does not review them: Bash rules match command text, a prompt would show `bash <file>`, and the user's default mode prompts for nothing. A stored `check` is repo code run with the user's rights, on the same terms as a `success:` key, and only rows marked `writes_build = false` run. Quoting is tested in task 16.
 - **Task 26 rewrites other flows' working copies and refreshes their sidecars.** Mitigation: it runs last and commits alone, skips any path with real local edits, validates each store before refreshing it, and stops on any sidecar outside the measured 16. A set that drifted before execution shows up there.
-- **Workflow survival when its launching session dies is unknown,** and stale-journal reuse is inferred, not tested. Mitigation: `[[run]]` records are written at launch; Slice 2 tests both before relying on them.
+- **A new session reruns a whole Workflow step unless the carrier narrows it.** The [docs](https://code.claude.com/docs/en/workflows.md) ("Resume after you leave the session", fetched 2026-11-06) settle the runtime: a run does not continue on its own after the session leaves, and continues only through a relaunch. Interruption is resumable in the same session, `claude --resume` included, but a fresh session has no earlier run to relaunch and starts over. Mitigation: a script has no filesystem, so each Workflow takes a work-list in `args` (pending lenses, ready tasks) that the carrier computes from `notes/` or the store before launch, and the store acts as the journal; `[[run]]` records are written at launch. Slice 2 runs three tests before relying on this: kill a session mid-run, launch again from a new session, and confirm only pending work reruns; under `claude --resume`, relaunch after editing a file a prompt only points at, and confirm the cached result is stale; repeat with a changed first prompt, and confirm a miss from there on.
 
 ## After Merge
 
@@ -768,7 +771,7 @@ Searched: format study, Beads, Kiro, Spec Kit, Taskmaster, Temporal, LangGraph, 
 - **Frozen plan cannot be the working plan.** 433 `deviation` entries on 484 tasks (0.89 per task); sample of 28: 23 local, 5 structural. All prose, so unfoldable. `tasks remove` leaves no tombstone. Plan tasks.toml is git-tracked, so `git diff <approved>..HEAD` gives baseline comparison. Impact: freeze `brief.md` and success criteria, stamp `approved_commit`, verbs append `{field, old, new, actor, reason}` with tombstones. Not fold-based.
 - **Render-only supported; add a route back.** `plan amend` writes the store with an audit row; `tasks check` fails on dead `design/...#anchor` citations; render to stdout or an uneditable path.
 - **Pull-only notes mostly go unread.** Fan: 36 of 64 settings never call `recall_event`, mean -0.36 (elided history, not research notes). Used links: `task_ref` on deviations. Ceremony: Lumina supersession, option branches, epoch stamps; `supersedes_entry` 34/1,330. Impact: inline decisive lines into projections; keep task to brief/design anchor and deviation to task; three projections (worker, orchestrator digest, human render); no field-catalogue copy yet.
-- **Orchestration split.** Conversation owns dialogue and gates; one Workflow per stage returns a digest and pointers. Temporal, LangGraph, Inngest suspend in-run; Workflows cannot, and `AskUserQuestion` is unavailable in subagents. Record `{stage, workflow, args_hash, run_id}` at launch; `plan_rev` in args and prompts to bust stale journal hits (inferred, not run); scripts return null agents; agents raise durable questions and return `needs_human`. Whether a Workflow survives its launching session is unknown.
+- **Orchestration split.** Conversation owns dialogue and gates; one Workflow per stage returns a digest and pointers. Temporal, LangGraph, Inngest suspend in-run; Workflows cannot, and `AskUserQuestion` is unavailable in subagents. Record `{stage, workflow, args_hash, run_id}` at launch; `plan_rev` in args and prompts to bust stale journal hits (inferred, not run); scripts return null agents; agents raise durable questions and return `needs_human`. Correction: whether a Workflow survives its launching session is settled by the docs, as Risks records.
 - **Orchestrator context.** 36 sessions, 17.80M chars: skill and command bodies 28.0%, agent returns 12.8%, dispatch prompts 11.4%, Bash 15.3%, Read 7.5%, Write 7.0%. Only one compaction summary, so session end is the likelier loss. Impact: thin carrier, saved Workflows by name, capped digests.
 - **Derive stage, do not store it.** 50 of 54 flows `review`, 2 `complete`; 15 fully done stores all still `review`; 47 of 54 idle 30 days. Line 175 targets drafts (1) not unclosed plans (50), and conflicts with line 159. Impact: stage computed from artefacts; drafts excluded from auto-pick, listed with age in the chooser; auto-close when rows done and verification passed. Lumina's gated stages deadlocked.
 - **Staleness measures age, not code.** `compute_staleness` hardcodes 7 days. Nothing records a plan's base. Impact: `approved_commit`, warning-first `tasks drift` (diff since approval minus own commits, intersect `files`), replayed over the 15 stores before any blocking.

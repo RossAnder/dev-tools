@@ -35,7 +35,7 @@ The goal is one v2 chain from planning through implementation, review and apply.
 
 ### Plan format
 
-- A plan is a flow directory: a short `brief.md` (intent, scope, decisions, success criteria), `design/*.md` that tasks cite, `notes/` for exploration and research evidence, and tasks written directly to the store with no markdown import.
+- A plan spans two flow directories: `docs/flows/<slug>/` holds a short `brief.md` (intent, scope, decisions, success criteria), `design/*.md` that tasks cite and `notes/` for exploration and research evidence; `.claude/flows/<slug>/` holds the stores, with tasks written directly to the store and no markdown import.
 - Each role fetches a projection. People read one rendered, read-only view that never feeds back in.
 - Approval freezes intent, not tasks: tasks then change only through audited verbs, with no event fold, and counts and status are computed (the plan's Approach, "Approval").
 - No plan mode. Approval is an explicit gate.
@@ -119,14 +119,15 @@ Fixes and dismissals run without asking, because fixes are revertible commits an
 
 ### Plan review
 
-`/plan-v2` launches a wrapper Workflow when authoring finishes, and the authoring session gets back a digest only:
+`/plan-v2` launches a wrapper Workflow when authoring finishes, and the authoring session gets back a digest and a pointer only. The orchestrator applies edits between runs, because it cannot act during a run and a script has no shell:
 
 1. A fresh `plan-review-lead` agent runs the survey and coverage proposal, then returns the cells.
-2. `review-v2-pipeline` runs the wave as a child workflow.
-3. Verification runs in two steps, below, and the lead audits the sample and settles contested findings.
-4. A tool applies the edits their evidence tier allows to the plan records (see **Edits** below).
-5. One targeted wave re-checks only what changed. Leftovers show at approval.
+2. `review-v2-pipeline` runs the wave as a child workflow, which uses the one nesting level `workflow()` allows.
+3. Verification runs in two steps, below, and the lead audits the sample, settles contested findings, and writes the proposed edits to a file.
+4. After the run returns, the orchestrator applies the edits their evidence tier allows to the plan records through their verbs (see **Edits** below).
+5. A second top-level run re-checks only what changed. Leftovers show at approval.
 
+- **Deferred milestones:** elaboration runs as its own top-level run before this review, with the orchestrator applying its proposals in between, so review reads specs that exist. An elaboration Workflow could not call this wrapper anyway, since that is two nesting levels (the plan's Approach, "After approval").
 - **Blind finders:** finders see `brief.md`, `design/` and the tasks, not `notes/` or the authoring conversation, so they check claims against the code.
 - **Notes after findings:** once a finding exists, notes and the other excluded detail become available to clarify, compare and measure it. The verifier records its verdict first, then rechecks with the notes. A changed verdict needs a citation and is recorded, so `review stats` can show what blind review catches and how often notes overturn it.
 - **Edits:** findings target a record (a task field, or a named section of a design file) rather than matching text. Edits are tiered by evidence: mechanical evidence applies automatically, a cited code reading applies and is disclosed at approval, anything else is an advisory even if a verifier agreed, and anything touching a decision, outcome or success criterion comes to the user (the plan's user decision 6).
