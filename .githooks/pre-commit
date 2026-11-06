@@ -15,6 +15,29 @@ ROOT="$(git rev-parse --show-toplevel)"
 # (measure it with `scripts/doc-diff-gate.sh --range A..B`).
 "$ROOT/scripts/doc-diff-gate.sh"
 
+# A sidecar must digest the bytes being committed, so both sides come from the
+# index, which autocrlf leaves LF. Raw hash, no line-ending folding: a digest stamped
+# over CRLF fails here rather than on the next checkout. `:0:` keeps a path such as
+# `1:x` from reading as a merge stage; `-b` is sha256sum's binary mode.
+SIDECAR_MISMATCH=0
+while IFS= read -r -d '' sidecar; do
+  store=${sidecar%.sha256}
+  case "$store" in '' | */) continue ;; esac
+  [ -n "$(git diff --cached --name-only --diff-filter=d -- ":(top,literal)$store")" ] || continue
+  sidecar_text=$(git cat-file blob ":0:$sidecar")
+  expected=${sidecar_text%%[[:space:]]*}
+  actual=$(git cat-file blob ":0:$store" | sha256sum -b)
+  actual=${actual%% *}
+  if [ "$expected" != "$actual" ]; then
+    printf 'pre-commit: blocked. The staged sidecar does not match its staged store: %s\n  sidecar %s, store %s\n  Re-stage both after the last write to the store.\n' \
+      "$store" "$expected" "$actual" >&2
+    SIDECAR_MISMATCH=1
+  fi
+done < <(git diff --cached --name-only -z --diff-filter=d -- ':(top,glob)**/*.sha256')
+if [ "$SIDECAR_MISMATCH" -ne 0 ]; then
+  exit 1
+fi
+
 # Runs the command given; on failure blocks the commit and names it for a rerun.
 gate() {
   if ! "$@"; then
