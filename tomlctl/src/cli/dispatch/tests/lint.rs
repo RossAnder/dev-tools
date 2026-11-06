@@ -648,6 +648,385 @@ fn command_lint_checks_workflow_script_spans() {
     );
 }
 
+const JS_META_OPEN: &str = "export const meta = {";
+
+fn is_js_ident(c: char) -> bool {
+    c.is_alphanumeric() || c == '_' || c == '$'
+}
+
+/// A quoted JS string at the start of `text`: its raw contents and what follows
+/// it. `None` when it never closes.
+fn js_string(text: &str) -> Option<(&str, &str)> {
+    let quote = text.chars().next()?;
+    let body = &text[quote.len_utf8()..];
+    let mut chars = body.char_indices();
+    while let Some((at, c)) = chars.next() {
+        if c == '\\' {
+            chars.next();
+        } else if c == quote {
+            return Some((&body[..at], &body[at + quote.len_utf8()..]));
+        }
+    }
+    None
+}
+
+/// `text` past a comment it opens with, so an apostrophe in prose cannot read
+/// as a string opener.
+fn js_skip_comment(text: &str) -> Option<&str> {
+    if text.starts_with("//") {
+        Some(text.find('\n').map_or("", |end| &text[end..]))
+    } else if text.starts_with("/*") {
+        Some(text.find("*/").map_or("", |end| &text[end + 2..]))
+    } else {
+        None
+    }
+}
+
+#[derive(Default)]
+struct JsMeta {
+    name: Option<String>,
+    spread: bool,
+    interpolated: bool,
+    closed: bool,
+}
+
+/// Walks a `meta` literal from just inside its opening brace. Only a top-level
+/// `name:` names the script, and a `...` inside a string is not a spread.
+fn js_meta_scan(after_open: &str) -> JsMeta {
+    let mut meta = JsMeta::default();
+    let mut depth = 1usize;
+    let mut after_ident = false;
+    let mut rest = after_open;
+    while let Some(c) = rest.chars().next() {
+        if let Some(past) = js_skip_comment(rest) {
+            rest = past;
+            after_ident = false;
+            continue;
+        }
+        if rest.starts_with("...") {
+            meta.spread = true;
+            rest = &rest[3..];
+            after_ident = false;
+            continue;
+        }
+        if matches!(c, '\'' | '"' | '`') {
+            let Some((body, past)) = js_string(rest) else {
+                return meta;
+            };
+            meta.interpolated |= body.contains("${");
+            rest = past;
+            after_ident = false;
+            continue;
+        }
+        if depth == 1
+            && !after_ident
+            && meta.name.is_none()
+            && let Some(key_rest) = rest.strip_prefix("name")
+            && let Some(value) = key_rest.trim_start().strip_prefix(':')
+        {
+            let value = value.trim_start();
+            if value.starts_with(['\'', '"', '`'])
+                && let Some((body, _)) = js_string(value)
+            {
+                meta.name = Some(body.to_string());
+            }
+        }
+        match c {
+            '{' | '[' | '(' => depth += 1,
+            '}' | ']' | ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    meta.closed = true;
+                    return meta;
+                }
+            }
+            _ => {}
+        }
+        after_ident = is_js_ident(c);
+        rest = &rest[c.len_utf8()..];
+    }
+    meta
+}
+
+/// Agent names a script spawns, from `agentType:` values and `<NAME>_AGENTS`
+/// tables, then the `agentType:` values that are neither a lone string literal
+/// nor a path ending `.agentType`. A shorthand `{ agentType }` has no value to read.
+fn js_agent_names(source: &str) -> (Vec<String>, Vec<String>) {
+    const KEY: &str = "agentType";
+    let mut names = Vec::new();
+    let mut opaque = Vec::new();
+
+    for (at, _) in source.match_indices(KEY) {
+        let before = &source[..at];
+        let before = before.strip_suffix(['\'', '"']).unwrap_or(before);
+        // `x.agentType : 'y'` and `x ? agentType : 'y'` are ternaries, not keys.
+        if before.ends_with(|c| is_js_ident(c) || c == '.') || before.trim_end().ends_with('?') {
+            continue;
+        }
+        let after = &source[at + KEY.len()..];
+        let after = after.strip_prefix(['\'', '"']).unwrap_or(after);
+        if after.starts_with(is_js_ident) {
+            continue;
+        }
+        let Some(value) = after.trim_start().strip_prefix(':') else {
+            continue;
+        };
+        let value = value.trim_start();
+        let literal = if value.starts_with(['\'', '"']) {
+            js_string(value)
+        } else {
+            None
+        };
+        let rest = match literal {
+            Some((_, past)) => past,
+            None => value.trim_start_matches(|c| is_js_ident(c) || c == '.' || c == '?'),
+        };
+        let path = &value[..value.len() - rest.len()];
+        let ends_value = matches!(rest.trim_start().chars().next(), None | Some(',' | '}'));
+        match literal {
+            Some((name, _)) if ends_value => names.push(name.to_string()),
+            None if ends_value && path.ends_with(".agentType") => {}
+            _ => opaque.push(value.lines().next().unwrap_or_default().to_string()),
+        }
+    }
+
+    for (at, _) in source.match_indices("const ") {
+        let decl = &source[at + "const ".len()..];
+        let ident_len = decl.find(|c| !is_js_ident(c)).unwrap_or(decl.len());
+        if !decl[..ident_len].ends_with("_AGENTS") {
+            continue;
+        }
+        let Some(mut rest) = decl[ident_len..]
+            .trim_start()
+            .strip_prefix('=')
+            .and_then(|r| r.trim_start().strip_prefix('['))
+        else {
+            continue;
+        };
+        while let Some(c) = rest.chars().next() {
+            if c == ']' {
+                break;
+            }
+            if let Some(past) = js_skip_comment(rest) {
+                rest = past;
+            } else if matches!(c, '\'' | '"' | '`') {
+                let Some((name, past)) = js_string(rest) else {
+                    break;
+                };
+                names.push(name.to_string());
+                rest = past;
+            } else {
+                rest = &rest[c.len_utf8()..];
+            }
+        }
+    }
+
+    names.sort();
+    names.dedup();
+    (names, opaque)
+}
+
+fn md_stems(dir: &Path) -> Vec<String> {
+    fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("md"))
+        .filter_map(|p| p.file_stem()?.to_str().map(str::to_string))
+        .collect()
+}
+
+/// What the Workflow runtime and the agent registry require of one script: a
+/// literal `meta` it can read, a name no command holds (a saved Workflow becomes
+/// a command of that name), and agents that exist. It validates no JS syntax,
+/// because a script's top-level `return` fails `node --check`.
+fn workflow_script_problems(source: &str, claude_dir: &Path) -> Vec<String> {
+    let mut problems = Vec::new();
+
+    if let Some(after_open) = source.strip_prefix(JS_META_OPEN) {
+        let meta = js_meta_scan(after_open);
+        if !meta.closed {
+            problems.push("the meta block never closes".to_string());
+        }
+        if meta.spread {
+            problems.push("meta holds a `...` spread, so the runtime skips the file".to_string());
+        }
+        if meta.interpolated {
+            problems.push("meta holds a `${`, so the runtime skips the file".to_string());
+        }
+        match meta.name {
+            None => problems.push("meta has no top-level `name:` string".to_string()),
+            Some(name) if md_stems(&claude_dir.join("commands")).contains(&name) => {
+                problems.push(format!("meta name `{name}` is already a command"));
+            }
+            Some(_) => {}
+        }
+    } else {
+        problems.push(format!("the script must open with `{JS_META_OPEN}`"));
+    }
+
+    let agents = md_stems(&claude_dir.join("agents"));
+    let (names, opaque) = js_agent_names(source);
+    for name in names {
+        if !agents.contains(&name) {
+            problems.push(format!("agent `{name}` has no file under agents/"));
+        }
+    }
+    for value in opaque {
+        problems.push(format!(
+            "agentType value `{value}` is neither a string literal nor a path ending `.agentType`"
+        ));
+    }
+    problems
+}
+
+#[test]
+fn workflow_scripts_name_real_agents() {
+    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let claude_dir = crate_dir.parent().expect("repo root").join("claude");
+    if !claude_dir.exists() {
+        eprintln!("workflow_scripts: claude/ dir not found, skipping");
+        return;
+    }
+    let scripts = command_lint_workflow_scripts(&claude_dir);
+    assert!(!scripts.is_empty(), "the walk must find the saved scripts");
+    let problems: Vec<String> = scripts
+        .iter()
+        .flat_map(|script| {
+            let source = fs::read_to_string(script).unwrap();
+            workflow_script_problems(&source, &claude_dir)
+                .into_iter()
+                .map(move |p| format!("{}: {p}", script.display()))
+        })
+        .collect();
+    assert!(problems.is_empty(), "{problems:#?}");
+}
+
+fn workflow_scripts_fixture_dir() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let agents = dir.path().join("agents");
+    let commands = dir.path().join("commands");
+    fs::create_dir_all(&agents).unwrap();
+    fs::create_dir_all(&commands).unwrap();
+    for agent in ["real-agent", "other-agent", "table-agent"] {
+        fs::write(agents.join(format!("{agent}.md")), "x").unwrap();
+    }
+    fs::write(commands.join("taken.md"), "x").unwrap();
+    dir
+}
+
+/// Each accepted shape is one that a naive substring match would reject.
+#[test]
+fn workflow_scripts_accept_every_real_shape() {
+    let dir = workflow_scripts_fixture_dir();
+    let source = "export const meta = {\n\
+         \x20 // it's a comment holding ... and ${x} and name: 'taken'\n\
+         \x20 name: 'free-name',\n\
+         \x20 description: 'a } brace, an ellipsis... and more',\n\
+         \x20 phases: [{ title: 'A', name: 'taken' }],\n\
+         }\n\
+         const CELL_AGENTS = ['table-agent', // it's real\n\
+         ]\n\
+         const NOTES = ['not-an-agent']\n\
+         await agent(p, { agentType: 'real-agent', label: 'x' })\n\
+         await agent(p, { agentType:\"other-agent\" })\n\
+         await agent(p, { agentType: cell.agentType, schema })\n\
+         await agent(p, { agentType: cell?.agentType })\n\
+         const row = { id, agentType }\n\
+         log(`agentType ${cell.agentType ? cell.agentType : '(none)'}`)\n\
+         const t = c ? agentType : 'also-not-an-agent'\n\
+         return r.agentType === 'real-agent'\n";
+    assert_eq!(
+        workflow_script_problems(source, dir.path()),
+        Vec::<String>::new()
+    );
+}
+
+/// Each case must raise exactly its own problem, so no check hides behind another.
+#[test]
+fn workflow_scripts_reject_each_violation() {
+    let dir = workflow_scripts_fixture_dir();
+    let meta = "export const meta = { name: 'free-name' }\n";
+    let cases: Vec<(String, &str)> = vec![
+        (format!("// lead\n{meta}"), "must open with"),
+        (
+            "export const meta = { description: 'd' }\n".to_string(),
+            "no top-level",
+        ),
+        (
+            "export const meta = { phases: [{ name: 'nested' }] }\n".to_string(),
+            "no top-level",
+        ),
+        (
+            "export const meta = { rename: 'r' }\n".to_string(),
+            "no top-level",
+        ),
+        (
+            "export const meta = { name: NAME }\n".to_string(),
+            "no top-level",
+        ),
+        (
+            "export const meta = { name: 'taken' }\n".to_string(),
+            "already a command",
+        ),
+        (
+            "export const meta = { name: 'n', description: `a ${b}` }\n".to_string(),
+            "`${`",
+        ),
+        (
+            "export const meta = { name: 'n', ...base }\n".to_string(),
+            "spread",
+        ),
+        (
+            "export const meta = { name: 'n',\n".to_string(),
+            "never closes",
+        ),
+        (
+            format!("{meta}agent(p, {{ agentType: 'no-such-agent' }})\n"),
+            "`no-such-agent`",
+        ),
+        (
+            format!("{meta}agent(p, {{ agentType:\"no-such-agent\" }})\n"),
+            "`no-such-agent`",
+        ),
+        (
+            format!("{meta}agent(p, {{ 'agentType': 'no-such-agent' }})\n"),
+            "`no-such-agent`",
+        ),
+        (
+            format!("{meta}const CELL_AGENTS = ['real-agent', 'no-such-agent']\n"),
+            "`no-such-agent`",
+        ),
+        (
+            format!("{meta}const CELL_AGENTS=[\n  \"no-such-agent\",\n]\n"),
+            "`no-such-agent`",
+        ),
+        (format!("{meta}agent(p, {{ agentType: kind }})\n"), "`kind"),
+        (
+            format!("{meta}agent(p, {{ agentType: cell.kind }})\n"),
+            "`cell.kind",
+        ),
+        (
+            format!("{meta}agent(p, {{ agentType: `real-agent` }})\n"),
+            "neither",
+        ),
+        (
+            format!("{meta}agent(p, {{ agentType: cell.agentType || 'x' }})\n"),
+            "neither",
+        ),
+        (
+            format!("{meta}agent(p, {{ agentType: 'real-agent' + s }})\n"),
+            "neither",
+        ),
+    ];
+    for (source, needle) in &cases {
+        let problems = workflow_script_problems(source, dir.path());
+        assert_eq!(problems.len(), 1, "{source}: {problems:#?}");
+        assert!(problems[0].contains(needle), "{source}: {problems:#?}");
+    }
+}
+
 /// Only a bare fence line closes a bash fence: a close carrying trailing
 /// prose leaves the block open, so the lines after it are still scanned.
 #[test]
