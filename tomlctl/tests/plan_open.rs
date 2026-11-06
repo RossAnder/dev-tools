@@ -51,6 +51,10 @@ fn flow_file(root: &Path, name: &str) -> PathBuf {
     root.join(".claude").join("flows").join(SLUG).join(name)
 }
 
+fn authored_file(root: &Path, name: &str) -> PathBuf {
+    root.join("docs").join("flows").join(SLUG).join(name)
+}
+
 fn read_toml(path: &Path) -> toml::Value {
     toml::from_str(&fs::read_to_string(path).expect("readable")).expect("valid TOML")
 }
@@ -108,7 +112,7 @@ fn a_fresh_open_writes_the_brief_and_the_stores() {
     let (_dir, root) = root();
     let envelope = open(&root, &[]);
 
-    let brief_rel = format!(".claude/flows/{SLUG}/brief.md");
+    let brief_rel = format!("docs/flows/{SLUG}/brief.md");
     assert_eq!(envelope["ok"], true);
     assert_eq!(envelope["slug"], SLUG);
     assert_eq!(envelope["brief"], brief_rel.as_str());
@@ -122,15 +126,23 @@ fn a_fresh_open_writes_the_brief_and_the_stores() {
         "context.toml",
         "execution-record.toml",
         "tasks.toml",
-        "brief.md",
         "plan.toml",
     ] {
         let rel = format!(".claude/flows/{SLUG}/{name}");
         assert!(created.contains(&rel.as_str()), "{rel} in {created:?}");
         assert!(flow_file(&root, name).exists(), "{name} on disk");
     }
+    assert!(
+        created.contains(&brief_rel.as_str()),
+        "{brief_rel} in {created:?}"
+    );
+    assert!(authored_file(&root, "brief.md").is_file());
+    assert!(
+        !flow_file(&root, "brief.md").exists(),
+        "no authored file may sit under .claude/"
+    );
 
-    let brief = fs::read_to_string(flow_file(&root, "brief.md")).expect("brief");
+    let brief = fs::read_to_string(authored_file(&root, "brief.md")).expect("brief");
     let positions: Vec<usize> = [
         "## Intent",
         "## Non-goals",
@@ -209,7 +221,7 @@ fn a_rerun_keeps_the_brief_the_created_date_and_the_binding() {
     let (_dir, root) = root();
     open(&root, &["--branch", "main", "--scope", "src/**"]);
 
-    let brief_path = flow_file(&root, "brief.md");
+    let brief_path = authored_file(&root, "brief.md");
     fs::write(&brief_path, "# edited\n").expect("edit brief");
     let context_path = flow_file(&root, "context.toml");
     let context = fs::read_to_string(&context_path).expect("context");
@@ -280,7 +292,7 @@ fn a_flow_recording_another_plan_is_refused_untouched() {
 
     assert_eq!(error_kind(&refused), "validation");
     assert!(!flow_file(&root, "plan.toml").exists());
-    assert!(!flow_file(&root, "brief.md").exists());
+    assert!(!authored_file(&root, "brief.md").exists());
     assert!(registered(&root), "a refused open must leave the v1 entry");
 }
 
@@ -304,7 +316,7 @@ fn an_approved_plan_keeps_its_registry_entry_and_writes_nothing() {
     .success();
     let registry = root.join(".claude").join("active-flow.toml");
     let registry_before = fs::read(&registry).expect("registry");
-    fs::remove_file(flow_file(&root, "brief.md")).expect("remove brief");
+    fs::remove_file(authored_file(&root, "brief.md")).expect("remove brief");
 
     let envelope = open(&root, &["--branch", "other"]);
 
@@ -312,7 +324,7 @@ fn an_approved_plan_keeps_its_registry_entry_and_writes_nothing() {
     assert_eq!(fs::read(&registry).expect("registry"), registry_before);
     assert_eq!(fs::read_to_string(&plan_path).expect("plan.toml"), plan);
     assert!(
-        !flow_file(&root, "brief.md").exists(),
+        !authored_file(&root, "brief.md").exists(),
         "an approved plan's brief is not re-seeded"
     );
 }
@@ -323,7 +335,7 @@ fn from_fills_intent_background_and_a_pointer_note() {
     stage_backlog(&root);
     let envelope = open(&root, &["--from", "B-aaaa1111,B-bbbb2222,B-aaaa1111"]);
 
-    let brief = fs::read_to_string(flow_file(&root, "brief.md")).expect("brief");
+    let brief = fs::read_to_string(authored_file(&root, "brief.md")).expect("brief");
     let section = |from: &str, to: &str| {
         let start = brief.find(from).expect("start heading");
         let end = brief.find(to).expect("end heading");
@@ -344,19 +356,21 @@ fn from_fills_intent_background_and_a_pointer_note() {
         "{background}"
     );
 
-    let note = fs::read_to_string(flow_file(&root, "notes/backlog-B-aaaa1111.md")).expect("note");
+    let note =
+        fs::read_to_string(authored_file(&root, "notes/backlog-B-aaaa1111.md")).expect("note");
     assert!(note.contains("`src/retry.rs:40`"), "{note}");
     assert!(note.contains("`the 429 log`"), "{note}");
     assert!(
         note.contains(".claude/backlog-evidence/B-aaaa1111/"),
         "{note}"
     );
-    let bare = fs::read_to_string(flow_file(&root, "notes/backlog-B-bbbb2222.md")).expect("note");
+    let bare =
+        fs::read_to_string(authored_file(&root, "notes/backlog-B-bbbb2222.md")).expect("note");
     assert!(
         bare.contains(".claude/backlog-evidence/B-bbbb2222/"),
         "{bare}"
     );
-    let rel = format!(".claude/flows/{SLUG}/notes/backlog-B-aaaa1111.md");
+    let rel = format!("docs/flows/{SLUG}/notes/backlog-B-aaaa1111.md");
     assert!(
         envelope["created"]
             .as_array()
@@ -365,6 +379,51 @@ fn from_fills_intent_background_and_a_pointer_note() {
             .any(|path| path.as_str() == Some(rel.as_str())),
         "{envelope}"
     );
+    assert!(
+        !flow_file(&root, "notes").exists(),
+        "no authored file may sit under .claude/"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn an_authored_directory_linked_out_of_the_repo_is_refused() {
+    let (_dir, root) = root();
+    let outside = tempfile::tempdir().expect("tempdir");
+    fs::create_dir_all(root.join("docs")).expect("docs dir");
+    std::os::unix::fs::symlink(outside.path(), root.join("docs").join("flows")).expect("link");
+
+    let refused = tomlctl(&root, &["plan", "open", "--slug", SLUG]).failure();
+
+    assert_eq!(error_kind(&refused), "validation");
+    assert_eq!(
+        fs::read_dir(outside.path()).expect("readable").count(),
+        0,
+        "nothing may be written through the link"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_notes_directory_linked_out_of_the_repo_is_refused() {
+    let (_dir, root) = root();
+    stage_backlog(&root);
+    open(&root, &[]);
+    let outside = tempfile::tempdir().expect("tempdir");
+    std::os::unix::fs::symlink(outside.path(), authored_file(&root, "notes")).expect("link");
+
+    let refused = tomlctl(
+        &root,
+        &["plan", "open", "--slug", SLUG, "--from", "B-aaaa1111"],
+    )
+    .failure();
+
+    assert_eq!(error_kind(&refused), "validation");
+    assert_eq!(
+        fs::read_dir(outside.path()).expect("readable").count(),
+        0,
+        "nothing may be written through the link"
+    );
 }
 
 #[test]
@@ -372,7 +431,7 @@ fn from_reads_a_compacted_row() {
     let (_dir, root) = root();
     stage_backlog(&root);
     open(&root, &["--from", "B-cccc3333"]);
-    let brief = fs::read_to_string(flow_file(&root, "brief.md")).expect("brief");
+    let brief = fs::read_to_string(authored_file(&root, "brief.md")).expect("brief");
     assert!(brief.contains("- B-cccc3333: Folded away"), "{brief}");
 }
 

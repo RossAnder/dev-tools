@@ -7,9 +7,10 @@
 //! moves them across, and from then on this verb writes nothing, because
 //! `flow init`'s registry upsert would discard the entry's binding.
 
+use std::fs;
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde_json::{Value as JsonValue, json};
 use toml::Value as TomlValue;
 
@@ -23,8 +24,8 @@ use crate::cli::{PlanOpenArgs, ReadIntegrityArgs};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::flow::init;
 use crate::io::{
-    advise, atomic_write, guard_write_path, items_array, read_toml, recheck_claude_containment,
-    relativise, repo_or_cwd_root, with_exclusive_lock,
+    advise, atomic_write, items_array, read_toml, recorded_under_root, relativise,
+    repo_or_cwd_root, with_exclusive_lock,
 };
 use crate::output::print_json_compact;
 
@@ -45,8 +46,10 @@ pub(super) fn run(args: PlanOpenArgs) -> Result<()> {
     } = args;
     let slug = target.slug;
     let plan_file = store::resolve(&slug)?;
-    let brief_rel = format!(".claude/flows/{slug}/brief.md");
-    let brief = plan_file.with_file_name("brief.md");
+    let authored = store::authored_dir(&slug)?;
+    let root = repo_or_cwd_root()?;
+    let brief = authored.join("brief.md");
+    let brief_rel = relativise(&root, &brief);
     refuse_foreign_plan(&plan_file.with_file_name("context.toml"), &brief_rel)?;
 
     let read_integrity = ReadIntegrityArgs {
@@ -68,7 +71,6 @@ pub(super) fn run(args: PlanOpenArgs) -> Result<()> {
     }
     let rows = backlog_rows(&from, &read_integrity)?;
 
-    let root = repo_or_cwd_root()?;
     let flow = init::init_flow(
         slug.clone(),
         brief.clone(),
@@ -87,16 +89,15 @@ pub(super) fn run(args: PlanOpenArgs) -> Result<()> {
         .map(str::to_string)
         .collect();
 
-    let allow_outside = integrity.allow_outside;
     for row in &rows {
-        let note = plan_file
-            .with_file_name("notes")
+        let note = authored
+            .join("notes")
             .join(format!("backlog-{}.md", row.id));
-        if write_if_absent(&note, &evidence_note(row), allow_outside)? {
+        if write_if_absent(&root, &note, &evidence_note(row))? {
             created.push(relativise(&root, &note));
         }
     }
-    if write_if_absent(&brief, &brief_skeleton(&slug, &rows), allow_outside)? {
+    if write_if_absent(&root, &brief, &brief_skeleton(&slug, &rows))? {
         created.push(brief_rel.clone());
     } else if !rows.is_empty() {
         advise!("tomlctl: {brief_rel} exists and is kept; --from did not change it");
@@ -289,18 +290,38 @@ fn evidence_note(row: &BacklogRow) -> String {
 }
 
 /// `Ok(true)` when this call wrote `file`. An existing file is never replaced.
-fn write_if_absent(file: &Path, body: &str, allow_outside: bool) -> Result<bool> {
+/// `guard_write_path` only admits `.claude/`, so `refuse_outside_root` holds an
+/// authored file to the repo. It runs ahead of the `mkdir`, which would otherwise
+/// follow a link out of the repo, and again under the lock.
+fn write_if_absent(root: &Path, file: &Path, body: &str) -> Result<bool> {
+    refuse_outside_root(root, file)?;
+    if let Some(parent) = file.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
+    }
     with_exclusive_lock(file, || {
-        guard_write_path(file, allow_outside)?;
         if file.exists() {
             return Ok(false);
         }
-        if !allow_outside {
-            recheck_claude_containment(file)?;
-        }
+        refuse_outside_root(root, file)?;
         atomic_write(file, body.as_bytes())?;
         Ok(true)
     })
+}
+
+/// Symlinks resolved, including those above a directory that does not exist yet.
+fn refuse_outside_root(root: &Path, file: &Path) -> Result<()> {
+    let relative = file.strip_prefix(root).unwrap_or(file);
+    if recorded_under_root(root, relative) {
+        return Ok(());
+    }
+    Err(tagged_err(
+        ErrorKind::Validation,
+        Some(file.to_path_buf()),
+        format!(
+            "refusing to write {}: it resolves outside the repo root",
+            file.display()
+        ),
+    ))
 }
 
 #[cfg(test)]

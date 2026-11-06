@@ -46,6 +46,14 @@ fn audited_fixture() -> String {
     )
 }
 
+/// The fixture context records a plan document, which `plan open` refuses, so
+/// the marker file makes the flow v2 directly.
+fn seed_v2(root: &Path, toml: &str) -> std::path::PathBuf {
+    let store = seed_tasks(root, toml);
+    fs::write(store.with_file_name("plan.toml"), "").unwrap();
+    store
+}
+
 fn read_store(store: &Path) -> toml::Value {
     toml::from_str(&fs::read_to_string(store).unwrap()).unwrap()
 }
@@ -78,7 +86,7 @@ fn refused(root: &Path, op: &str, args: &[&str]) -> Value {
 #[test]
 fn add_writes_the_checkpoint_and_the_milestone_together() {
     let (_tmp, root) = sandbox();
-    let store = seed_tasks(&root, FIXTURE);
+    let store = seed_v2(&root, FIXTURE);
 
     let out = milestone(
         &root,
@@ -111,7 +119,7 @@ fn add_writes_the_checkpoint_and_the_milestone_together() {
 #[test]
 fn a_declared_milestone_is_accepted_as_a_task_checkpoint() {
     let (_tmp, root) = sandbox();
-    let store = seed_tasks(&root, FIXTURE);
+    let store = seed_v2(&root, FIXTURE);
     let add_task = |root: &Path| {
         cli(root)
             .args(["tasks", "add", "--slug", TASKS_SLUG])
@@ -142,7 +150,7 @@ fn a_declared_milestone_is_accepted_as_a_task_checkpoint() {
 #[test]
 fn deferring_without_a_reason_is_refused_and_writes_nothing() {
     let (_tmp, root) = sandbox();
-    let store = seed_tasks(&root, FIXTURE);
+    let store = seed_v2(&root, FIXTURE);
     let before = fs::read(&store).unwrap();
 
     let err = refused(&root, "add", &["--id", "B", "--goal", "g", "--defer"]);
@@ -155,7 +163,7 @@ fn deferring_without_a_reason_is_refused_and_writes_nothing() {
 #[test]
 fn a_deferred_add_records_its_reason() {
     let (_tmp, root) = sandbox();
-    let store = seed_tasks(&root, FIXTURE);
+    let store = seed_v2(&root, FIXTURE);
 
     milestone(
         &root,
@@ -181,7 +189,7 @@ fn a_deferred_add_records_its_reason() {
 #[test]
 fn a_duplicate_id_is_refused() {
     let (_tmp, root) = sandbox();
-    seed_tasks(&root, FIXTURE);
+    seed_v2(&root, FIXTURE);
     milestone(&root, "add", &["--id", "A", "--goal", "g"]).success();
 
     let err = refused(&root, "add", &["--id", "A", "--goal", "again"]);
@@ -192,7 +200,7 @@ fn a_duplicate_id_is_refused() {
 #[test]
 fn update_on_an_unaudited_store_needs_no_reason_and_writes_no_change() {
     let (_tmp, root) = sandbox();
-    let store = seed_tasks(&root, FIXTURE);
+    let store = seed_v2(&root, FIXTURE);
     milestone(&root, "add", &["--id", "A", "--goal", "old"]).success();
 
     milestone(&root, "update", &["--id", "A", "--goal", "new"]).success();
@@ -205,8 +213,13 @@ fn update_on_an_unaudited_store_needs_no_reason_and_writes_no_change() {
 #[test]
 fn update_on_an_audited_store_demands_a_reason_and_records_the_change() {
     let (_tmp, root) = sandbox();
-    let store = seed_tasks(&root, &audited_fixture());
-    milestone(&root, "add", &["--id", "A", "--goal", "old"]).success();
+    let store = seed_v2(&root, &audited_fixture());
+    milestone(
+        &root,
+        "add",
+        &["--id", "A", "--goal", "old", "--reason", "scope grew"],
+    )
+    .success();
     let before = fs::read(&store).unwrap();
 
     let err = refused(&root, "update", &["--id", "A", "--goal", "new"]);
@@ -237,9 +250,287 @@ fn update_on_an_audited_store_demands_a_reason_and_records_the_change() {
 #[test]
 fn updating_an_unknown_milestone_is_not_found() {
     let (_tmp, root) = sandbox();
-    seed_tasks(&root, FIXTURE);
+    seed_v2(&root, FIXTURE);
 
     let err = refused(&root, "update", &["--id", "Z", "--goal", "g"]);
 
     assert_eq!(err["kind"], json!("not_found"), "{err}");
+}
+
+#[test]
+fn both_verbs_refuse_a_flow_with_no_plan_toml_and_write_nothing() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, FIXTURE);
+    let before = fs::read(&store).unwrap();
+
+    for (op, args) in [
+        ("add", &["--id", "A", "--goal", "g"][..]),
+        ("update", &["--id", "A", "--goal", "g"][..]),
+    ] {
+        let err = refused(&root, op, args);
+        let message = err["message"].as_str().expect("a message");
+        assert!(
+            message.contains(&format!("tomlctl plan open --slug {TASKS_SLUG}")),
+            "{op}: {err}"
+        );
+    }
+    assert_eq!(fs::read(&store).unwrap(), before);
+    assert!(!store.with_file_name("plan.toml").exists());
+}
+
+#[test]
+fn adding_on_an_audited_store_demands_a_reason_and_records_it() {
+    let (_tmp, root) = sandbox();
+    let store = seed_v2(&root, &audited_fixture());
+    let before = fs::read(&store).unwrap();
+
+    for args in [
+        &["--id", "A", "--goal", "g"][..],
+        &["--id", "A", "--goal", "g", "--reason", "   "][..],
+    ] {
+        let err = refused(&root, "add", args);
+        assert_eq!(err["kind"], json!("validation"), "{err}");
+        assert!(
+            err["message"].as_str().unwrap().contains("--reason"),
+            "{err}"
+        );
+    }
+    assert_eq!(fs::read(&store).unwrap(), before);
+
+    milestone(
+        &root,
+        "add",
+        &["--id", "A", "--goal", "g", "--reason", "scope grew"],
+    )
+    .success();
+    let doc = read_store(&store);
+    let row = &table(&doc, "changes")[0];
+    assert_eq!(text(row, "ref"), "milestone:A");
+    assert_eq!(text(row, "field"), "*");
+    assert_eq!(text(row, "reason"), "scope grew");
+}
+
+#[test]
+fn elaborating_a_deferred_milestone_moves_it_and_keeps_its_defer_reason() {
+    let (_tmp, root) = sandbox();
+    let store = seed_v2(&root, FIXTURE);
+    milestone(
+        &root,
+        "add",
+        &[
+            "--id",
+            "B",
+            "--goal",
+            "g",
+            "--defer",
+            "--reason",
+            "waits on A",
+        ],
+    )
+    .success();
+
+    milestone(
+        &root,
+        "update",
+        &["--id", "B", "--elaborated", "--reason", "A landed"],
+    )
+    .success();
+
+    let doc = read_store(&store);
+    let spec = &table(&doc, "milestones")[0];
+    assert_eq!(text(spec, "elaboration"), "elaborated");
+    assert_eq!(text(spec, "defer_reason"), "waits on A");
+}
+
+#[test]
+fn elaborating_on_an_audited_store_writes_one_change_row() {
+    let (_tmp, root) = sandbox();
+    let store = seed_v2(&root, &audited_fixture());
+    milestone(
+        &root,
+        "add",
+        &[
+            "--id",
+            "B",
+            "--goal",
+            "g",
+            "--defer",
+            "--reason",
+            "waits on A",
+        ],
+    )
+    .success();
+
+    milestone(
+        &root,
+        "update",
+        &["--id", "B", "--elaborated", "--reason", "A landed"],
+    )
+    .success();
+
+    let doc = read_store(&store);
+    let changes: Vec<_> = table(&doc, "changes")
+        .iter()
+        .filter(|row| text(row, "field") == "elaboration")
+        .collect();
+    assert_eq!(changes.len(), 1, "{doc}");
+    assert_eq!(text(changes[0], "ref"), "milestone:B");
+    assert_eq!(text(changes[0], "old"), "deferred");
+    assert_eq!(text(changes[0], "new"), "elaborated");
+    assert_eq!(text(changes[0], "reason"), "A landed");
+}
+
+#[test]
+fn elaborating_is_refused_unless_the_milestone_is_deferred() {
+    let (_tmp, root) = sandbox();
+    let store = seed_v2(&root, FIXTURE);
+    milestone(&root, "add", &["--id", "A", "--goal", "g"]).success();
+    milestone(
+        &root,
+        "add",
+        &[
+            "--id",
+            "B",
+            "--goal",
+            "g",
+            "--defer",
+            "--reason",
+            "waits on A",
+        ],
+    )
+    .success();
+    milestone(
+        &root,
+        "update",
+        &["--id", "B", "--elaborated", "--reason", "A landed"],
+    )
+    .success();
+    let before = fs::read(&store).unwrap();
+
+    for id in ["A", "B"] {
+        let err = refused(
+            &root,
+            "update",
+            &["--id", id, "--elaborated", "--reason", "again"],
+        );
+        assert_eq!(err["kind"], json!("validation"), "{id}: {err}");
+        assert!(
+            err["message"].as_str().unwrap().contains("deferred"),
+            "{err}"
+        );
+    }
+    assert_eq!(fs::read(&store).unwrap(), before);
+}
+
+/// A deferred milestone's blank `check` passes; once elaborated it is an error.
+#[test]
+fn elaborating_makes_plan_check_require_each_accept_check() {
+    let (_tmp, root) = sandbox();
+    seed_v2(&root, FIXTURE);
+    milestone(
+        &root,
+        "add",
+        &[
+            "--id",
+            "B",
+            "--goal",
+            "g",
+            "--defer",
+            "--reason",
+            "waits on A",
+        ],
+    )
+    .success();
+    cli(&root)
+        .args(["tasks", "add-many", "--slug", TASKS_SLUG, "--ndjson", "-"])
+        .write_stdin(
+            "{\"title\":\"Later\",\"effort\":\"S\",\"checkpoint\":\"B\",\
+             \"spec\":{\"outcome\":\"o\",\"accept\":[{\"behaviour\":\"b\"}]}}\n",
+        )
+        .assert()
+        .success();
+    let reports_blank_check = |root: &Path| {
+        let out = cli(root)
+            .args(["plan", "check", "--slug", TASKS_SLUG])
+            .assert();
+        String::from_utf8_lossy(&out.get_output().stdout).contains("plan/accept-no-check")
+    };
+    assert!(!reports_blank_check(&root));
+
+    milestone(
+        &root,
+        "update",
+        &["--id", "B", "--elaborated", "--reason", "A landed"],
+    )
+    .success();
+
+    assert!(reports_blank_check(&root));
+}
+
+#[test]
+fn elaborating_needs_a_reason_and_conflicts_with_deferring() {
+    let (_tmp, root) = sandbox();
+    let store = seed_v2(&root, FIXTURE);
+    milestone(
+        &root,
+        "add",
+        &[
+            "--id",
+            "B",
+            "--goal",
+            "g",
+            "--defer",
+            "--reason",
+            "waits on A",
+        ],
+    )
+    .success();
+    let before = fs::read(&store).unwrap();
+
+    let err = refused(&root, "update", &["--id", "B", "--elaborated"]);
+    assert!(
+        err["message"].as_str().unwrap().contains("--reason"),
+        "{err}"
+    );
+    let err = refused(
+        &root,
+        "update",
+        &["--id", "B", "--elaborated", "--defer", "--reason", "r"],
+    );
+    assert!(
+        err["message"].as_str().unwrap().contains("--defer"),
+        "{err}"
+    );
+    assert_eq!(fs::read(&store).unwrap(), before);
+}
+
+#[test]
+fn audited_gates_are_stored_as_compact_json() {
+    let (_tmp, root) = sandbox();
+    let store = seed_v2(&root, &audited_fixture());
+    milestone(
+        &root,
+        "add",
+        &[
+            "--id", "A", "--goal", "g", "--gate", "a", "--gate", "b", "--reason", "r",
+        ],
+    )
+    .success();
+
+    milestone(
+        &root,
+        "update",
+        &[
+            "--id", "A", "--gate", "c", "--gate", "d", "--reason", "moved",
+        ],
+    )
+    .success();
+
+    let doc = read_store(&store);
+    let gates = table(&doc, "changes")
+        .iter()
+        .find(|row| text(row, "field") == "gates")
+        .expect("a gates change row");
+    assert_eq!(text(gates, "old"), "[\"a\",\"b\"]");
+    assert_eq!(text(gates, "new"), "[\"c\",\"d\"]");
 }

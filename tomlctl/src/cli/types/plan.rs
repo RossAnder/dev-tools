@@ -1,9 +1,11 @@
-//! The `plan` verb group over a flow's `plan.toml`, `brief.md` and task store.
+//! The `plan` verb group over a flow's `plan.toml`, `docs/flows/<slug>/brief.md`
+//! and task store.
 //!
 //! Companion rules that span flags (`--defer` needs `--reason`, `--for worker`
-//! needs `--task`, a skip needs `--reason`) and the vocabularies of `--for` and
-//! `--review` are left to the verbs, so a breach is a `kind=validation` refusal
-//! through `--error-format` rather than clap usage prose.
+//! needs `--task`, a skip needs `--reason`) and the vocabularies of `--for`,
+//! `--review` and `--outcome` are left to the verbs, so a breach is a
+//! `kind=validation` refusal through `--error-format` rather than clap usage
+//! prose.
 
 use std::path::PathBuf;
 
@@ -14,8 +16,9 @@ use super::{ReadIntegrityArgs, WriteIntegrityArgs};
 /// `plan` subcommand cluster.
 #[derive(Subcommand)]
 pub(crate) enum PlanOp {
-    /// Write the `brief.md` skeleton, bootstrap the flow and hold its binding
-    /// in `plan.toml`, leaving the draft out of the active-flow registry.
+    /// Write the `docs/flows/<slug>/brief.md` skeleton, bootstrap the flow and
+    /// hold its binding in `plan.toml`, leaving the draft out of the active-flow
+    /// registry.
     Open(PlanOpenArgs),
 
     /// Add or update decisions, minting ids under the lock.
@@ -82,6 +85,8 @@ pub(crate) enum PlanRunOp {
     Start(PlanRunStartArgs),
     /// Close the newest unfinished run of a step.
     Finish(PlanRunFinishArgs),
+    /// Close every unfinished run of a step, for a session that died.
+    Abandon(PlanRunAbandonArgs),
     /// Record a step not run, and why.
     Skip(PlanRunSkipArgs),
 }
@@ -223,6 +228,29 @@ pub(crate) struct PlanRunFinishArgs {
         help = "The Workflow's run id, when learned after launch"
     )]
     pub(crate) run_id: Option<String>,
+    #[arg(
+        long = "outcome",
+        value_name = "OUTCOME",
+        default_value = "ok",
+        help = "ok|errors|stopped"
+    )]
+    pub(crate) outcome: String,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct PlanRunAbandonArgs {
+    #[command(flatten)]
+    pub(crate) target: PlanTarget,
+    #[arg(
+        long = "step",
+        value_name = "STEP",
+        help = "The flow step whose open runs are dead"
+    )]
+    pub(crate) step: String,
+    #[arg(long = "reason", value_name = "TEXT", help = "Why they were abandoned")]
+    pub(crate) reason: String,
     #[command(flatten)]
     pub(crate) integrity: WriteIntegrityArgs,
 }
@@ -262,7 +290,11 @@ pub(crate) struct PlanMilestoneAddArgs {
         help = "Elaborate the milestone's tasks just before it runs; takes --reason"
     )]
     pub(crate) defer: bool,
-    #[arg(long = "reason", value_name = "TEXT", help = "Why it is deferred")]
+    #[arg(
+        long = "reason",
+        value_name = "TEXT",
+        help = "Why it is deferred, and why it was added on an audited store, which requires it"
+    )]
     pub(crate) reason: Option<String>,
     #[command(flatten)]
     pub(crate) integrity: WriteIntegrityArgs,
@@ -292,9 +324,14 @@ pub(crate) struct PlanMilestoneUpdateArgs {
     )]
     pub(crate) defer: bool,
     #[arg(
+        long = "elaborated",
+        help = "Record that a deferred milestone's tasks are now elaborated; takes --reason"
+    )]
+    pub(crate) elaborated: bool,
+    #[arg(
         long = "reason",
         value_name = "TEXT",
-        help = "Why it is deferred, and why it changed on an audited store"
+        help = "Why it is deferred or elaborated, and why it changed on an audited store"
     )]
     pub(crate) reason: Option<String>,
     #[command(flatten)]
@@ -338,6 +375,12 @@ pub(crate) struct PlanProbesArgs {
         help = "Store the verdicts from the script's captured stdout"
     )]
     pub(crate) record: Option<PathBuf>,
+    #[arg(
+        long = "milestone",
+        value_name = "ID",
+        help = "Cover only this checkpoint's pending rows, in either mode"
+    )]
+    pub(crate) milestone: Option<String>,
     #[command(flatten)]
     pub(crate) integrity: WriteIntegrityArgs,
 }

@@ -37,7 +37,7 @@ tasks = [1]
 
 const TASKS: &str = r#"schema_version = 2
 last_updated = 2026-11-05
-plan_path = ".claude/flows/plan-check/brief.md"
+plan_path = "docs/flows/plan-check/brief.md"
 last_import_refs = []
 
 [[checkpoints]]
@@ -94,6 +94,7 @@ struct Flow {
     _dir: tempfile::TempDir,
     root: PathBuf,
     flow: PathBuf,
+    authored: PathBuf,
 }
 
 impl Flow {
@@ -104,21 +105,18 @@ impl Flow {
             .canonicalize()
             .expect("canonical root")
             .join("repo");
-        let store = stage_tasks_flow(
-            &root,
-            SLUG,
-            ".claude/flows/plan-check/brief.md",
-            Some(tasks),
-        );
+        let store = stage_tasks_flow(&root, SLUG, "docs/flows/plan-check/brief.md", Some(tasks));
         let flow = store.parent().expect("flow dir").to_path_buf();
         fs::write(flow.join("plan.toml"), plan).expect("plan.toml");
-        fs::write(flow.join("brief.md"), brief).expect("brief.md");
-        fs::create_dir_all(flow.join("design")).expect("design dir");
-        fs::write(flow.join("design").join("store.md"), DESIGN).expect("design doc");
+        let authored = root.join("docs").join("flows").join(SLUG);
+        fs::create_dir_all(authored.join("design")).expect("design dir");
+        fs::write(authored.join("brief.md"), brief).expect("brief.md");
+        fs::write(authored.join("design").join("store.md"), DESIGN).expect("design doc");
         Self {
             _dir: dir,
             root,
             flow,
+            authored,
         }
     }
 
@@ -239,8 +237,43 @@ fn a_flow_with_no_plan_store_is_refused() {
 #[test]
 fn a_missing_brief_is_reported_alone() {
     let flow = Flow::with_tasks(TASKS);
-    fs::remove_file(flow.flow.join("brief.md")).expect("removed");
+    fs::remove_file(flow.authored.join("brief.md")).expect("removed");
     assert_reports_error(&flow, "plan/brief-missing");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_brief_link_leaving_the_authored_directory_is_missing() {
+    let flow = Flow::with_tasks(TASKS);
+    let brief = flow.authored.join("brief.md");
+    let beside = flow.root.join("elsewhere.md");
+    fs::rename(&brief, &beside).expect("moved");
+    std::os::unix::fs::symlink(&beside, &brief).expect("link");
+    assert_reports_error(&flow, "plan/brief-missing");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_brief_under_an_authored_directory_linked_elsewhere_is_missing() {
+    let flow = Flow::with_tasks(TASKS);
+    let moved = flow.root.join("elsewhere");
+    fs::rename(&flow.authored, &moved).expect("moved");
+    std::os::unix::fs::symlink(&moved, &flow.authored).expect("link");
+    let classes = flow.class_names();
+    assert!(
+        classes.contains(&"plan/brief-missing".to_string()),
+        "{classes:?}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_brief_link_staying_in_the_authored_directory_reads() {
+    let flow = Flow::with_tasks(TASKS);
+    let brief = flow.authored.join("brief.md");
+    fs::rename(&brief, flow.authored.join("kept.md")).expect("moved");
+    std::os::unix::fs::symlink("kept.md", &brief).expect("link");
+    assert_clean(&flow);
 }
 
 #[test]
@@ -337,10 +370,65 @@ fn a_renamed_design_heading_kills_its_citation() {
     let flow = Flow::with_tasks(TASKS);
     assert_clean(&flow);
     fs::write(
-        flow.flow.join("design").join("store.md"),
+        flow.authored.join("design").join("store.md"),
         swap(DESIGN, "## Locking", "## Latching"),
     )
     .expect("design doc");
+    assert_reports_error(&flow, "plan/design-anchor-dead");
+}
+
+#[test]
+fn a_design_citation_reads_the_authored_directory_and_not_the_flow_directory() {
+    let flow = Flow::with_tasks(TASKS);
+    assert_clean(&flow);
+    let design = flow.authored.join("design");
+    fs::create_dir_all(flow.flow.join("design")).expect("design dir");
+    fs::rename(
+        design.join("store.md"),
+        flow.flow.join("design").join("store.md"),
+    )
+    .expect("moved");
+    assert_reports_error(&flow, "plan/design-anchor-dead");
+}
+
+#[test]
+fn a_citation_climbing_out_of_the_authored_design_directory_is_dead() {
+    let tasks = swap(
+        TASKS,
+        "design/store.md#locking",
+        "design/../../other/design/store.md#locking",
+    );
+    let flow = Flow::with_tasks(&tasks);
+    let other = flow.root.join("docs").join("flows").join("other");
+    fs::create_dir_all(other.join("design")).expect("design dir");
+    fs::write(other.join("design").join("store.md"), DESIGN).expect("design doc");
+    assert_reports_error(&flow, "plan/design-anchor-dead");
+
+    let tasks = swap(TASKS, "design/store.md#locking", "store.md#locking");
+    let flow = Flow::with_tasks(&tasks);
+    fs::write(flow.authored.join("store.md"), DESIGN).expect("beside the design directory");
+    assert_reports_error(&flow, "plan/design-anchor-dead");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_design_link_leaving_the_authored_design_directory_is_dead() {
+    let flow = Flow::with_tasks(TASKS);
+    let design = flow.authored.join("design");
+    let beside = flow.authored.join("store.md");
+    fs::rename(design.join("store.md"), &beside).expect("moved");
+    std::os::unix::fs::symlink(&beside, design.join("store.md")).expect("link");
+    assert_reports_error(&flow, "plan/design-anchor-dead");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_design_directory_linked_elsewhere_is_dead() {
+    let flow = Flow::with_tasks(TASKS);
+    let design = flow.authored.join("design");
+    let moved = flow.authored.join("elsewhere");
+    fs::rename(&design, &moved).expect("moved");
+    std::os::unix::fs::symlink(&moved, &design).expect("link");
     assert_reports_error(&flow, "plan/design-anchor-dead");
 }
 
@@ -357,6 +445,66 @@ fn a_contract_naming_an_absent_task_is_an_error() {
     assert_reports_error(&flow, "plan/contract-task-unknown");
     let (_, report) = flow.run();
     assert_eq!(report["findings"][0]["ids"], serde_json::json!([7]));
+}
+
+#[test]
+fn a_handover_naming_an_absent_task_is_an_error() {
+    let handover = |task: u32| {
+        format!(
+            "{PLAN}\n[[handover]]\nid = \"H1\"\ncommand = \"c\"\nsource_task = {task}\ndone = false\n"
+        )
+    };
+    assert_clean(&Flow::with_plan(&handover(1)));
+
+    let flow = Flow::with_plan(&handover(7));
+    assert_reports_error(&flow, "plan/handover-task-unknown");
+    let (_, report) = flow.run();
+    assert_eq!(report["findings"][0]["ids"], serde_json::json!([7]));
+}
+
+#[test]
+fn a_done_handover_may_name_an_absent_task() {
+    let plan = format!(
+        "{PLAN}\n[[handover]]\nid = \"H1\"\ncommand = \"c\"\nsource_task = 7\ndone = true\n"
+    );
+    assert_clean(&Flow::with_plan(&plan));
+}
+
+#[test]
+fn a_premise_after_an_absent_task_is_an_error() {
+    let premise = |at: &str| {
+        swap(
+            TASKS,
+            "design = [",
+            &format!(
+                "premises = [{{ claim = \"c\", check = \"true\", at = \"{at}\" }}]\ndesign = ["
+            ),
+        )
+    };
+    assert_clean(&Flow::with_tasks(&premise("base")));
+    assert_clean(&Flow::with_tasks(&premise("after:1")));
+
+    let flow = Flow::with_tasks(&premise("after:7"));
+    assert_reports_error(&flow, "plan/premise-task-unknown");
+    let (_, report) = flow.run();
+    assert_eq!(report["findings"][0]["ids"], serde_json::json!([7]));
+
+    for at in ["after:01", "after:x", "after:"] {
+        let flow = Flow::with_tasks(&premise(at));
+        assert_reports_error(&flow, "plan/premise-task-unknown");
+        let (_, report) = flow.run();
+        assert_eq!(report["findings"][0]["ids"], serde_json::json!([]));
+    }
+}
+
+#[test]
+fn a_row_and_a_bind_naming_one_path_differently_agree() {
+    let tasks = swap(
+        TASKS,
+        r#"files = ["src/a.rs"]"#,
+        r#"files = ["./src\\a.rs"]"#,
+    );
+    assert_clean(&Flow::seeded(&tasks, PLAN, BRIEF.as_bytes()));
 }
 
 #[test]
@@ -517,6 +665,19 @@ fn a_probe_is_absent_only_on_a_checked_row_marked_as_not_writing_the_build() {
         vec!["plan/accept-no-check".to_string()],
         "a row with no check has nothing to probe"
     );
+}
+
+#[test]
+fn a_probe_is_absent_only_on_a_pending_row() {
+    let unprobed = swap(TASKS, PROBE, "");
+    for status in ["in-progress", "done", "failed", "deferred"] {
+        let tasks = swap(
+            &unprobed,
+            "status = \"pending\"",
+            &format!("status = \"{status}\""),
+        );
+        assert_clean(&Flow::with_tasks(&tasks));
+    }
 }
 
 #[test]

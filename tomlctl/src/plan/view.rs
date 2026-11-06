@@ -6,25 +6,23 @@
 //! `binds` and a contract only through `tasks`.
 
 use std::collections::BTreeSet;
-use std::fs;
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde_json::{Value as JsonValue, json};
 
 use super::check;
-use super::schema::{Contract, Decision, Door, PlanStore, Provenance};
-use super::store::{self, brief_digest};
+use super::schema::{Contract, Decision, Door, PlanStore, Provenance, RunOutcome};
+use super::store::{self, BRIEF_FILE, brief_digest};
 use crate::cli::{PlanViewArgs, ReadIntegrityArgs};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::output::{print_json_line, print_text};
 use crate::tasks::finding::{ERROR, WARNING};
 use crate::tasks::markdown::FenceState;
-use crate::tasks::schema::{FileKind, Status, Store, TaskRow, TaskSpec};
+use crate::tasks::schema::{FileKind, Status, Store, TaskRow, TaskSpec, normal_path};
 use crate::tasks::slug::derive_ref;
 use crate::tasks::{load_store, resolve_store_path};
 
-const BRIEF_FILE: &str = "brief.md";
 const REQUIRED_SECTIONS: [&str; 4] = ["Intent", "Non-goals", "Scope budget", "Success criteria"];
 const ELABORATION_DEFERRED: &str = "deferred";
 
@@ -40,6 +38,7 @@ enum Audience {
 struct Plan<'a> {
     slug: &'a str,
     flow_dir: &'a Path,
+    authored_dir: &'a Path,
     plan: PlanStore,
     tasks: Store,
     tasks_exist: bool,
@@ -71,13 +70,15 @@ pub(super) fn run(args: PlanViewArgs) -> Result<()> {
     let flow_dir = plan_path
         .parent()
         .expect("a resolved store path sits in its flow directory");
+    let authored_dir = store::authored_dir(slug)?;
     let view = Plan {
         slug,
         flow_dir,
+        authored_dir: &authored_dir,
         plan,
         tasks,
         tasks_exist,
-        brief: read_brief(flow_dir)?,
+        brief: store::read_brief(&authored_dir)?,
     };
 
     match audience {
@@ -110,15 +111,6 @@ fn audience(role: &str, task: Option<u32>) -> Result<Audience> {
 
 fn refusal(message: impl Into<String>) -> anyhow::Error {
     tagged_err(ErrorKind::Validation, None, message)
-}
-
-fn read_brief(flow_dir: &Path) -> Result<Option<Vec<u8>>> {
-    let path = flow_dir.join(BRIEF_FILE);
-    match fs::read(&path) {
-        Ok(bytes) => Ok(Some(bytes)),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(err) => Err(err).with_context(|| format!("reading {}", path.display())),
-    }
 }
 
 fn human(view: &Plan<'_>) -> String {
@@ -180,7 +172,7 @@ fn human(view: &Plan<'_>) -> String {
         .map(String::as_str)
         .filter(|citation| seen.insert(*citation))
         .collect();
-    design_block(&mut out, view.flow_dir, &cited);
+    design_block(&mut out, view.authored_dir, &cited);
     records_block(&mut out, plan);
     changes_block(&mut out, tasks);
 
@@ -238,9 +230,15 @@ fn records_block(out: &mut String, plan: &PlanStore) {
             if !run.skip_reason.is_empty() {
                 line.push_str(&format!(" ({})", run.skip_reason));
             }
+            if !run.reason.is_empty() {
+                line.push_str(&format!(" ({})", run.reason));
+            }
             line.push_str(&format!(", started {}", run.started));
             if let Some(finished) = run.finished {
                 line.push_str(&format!(", finished {finished}"));
+            }
+            if let Some(outcome) = run.outcome.filter(|o| *o != RunOutcome::Abandoned) {
+                line.push_str(&format!(", outcome {}", outcome.as_str()));
             }
             out.push_str(&line);
             out.push('\n');
@@ -326,6 +324,8 @@ fn stage_inputs(view: &Plan<'_>, integrity: &ReadIntegrityArgs) -> Result<JsonVa
                 "workflow": run.workflow,
                 "run_id": run.run_id,
                 "skip_reason": run.skip_reason,
+                "outcome": run.outcome.map(RunOutcome::as_str),
+                "reason": run.reason,
             })
         })
         .collect();
@@ -416,7 +416,7 @@ fn open_items(plan: &PlanStore, tasks: &Store) -> JsonValue {
     let open_runs: Vec<&str> = plan
         .runs
         .iter()
-        .filter(|run| run_state(run) == RUN_OPEN)
+        .filter(|run| run.is_open())
         .map(|run| run.step.as_str())
         .collect();
     let handovers: Vec<JsonValue> = plan
@@ -453,15 +453,15 @@ fn open_items(plan: &PlanStore, tasks: &Store) -> JsonValue {
     })
 }
 
-const RUN_OPEN: &str = "open";
-
 fn run_state(run: &super::schema::Run) -> &'static str {
     if !run.skip_reason.is_empty() {
         "skipped"
-    } else if run.finished.is_some() {
-        "finished"
+    } else if run.outcome == Some(RunOutcome::Abandoned) {
+        "abandoned"
+    } else if run.is_open() {
+        "open"
     } else {
-        RUN_OPEN
+        "finished"
     }
 }
 
@@ -515,7 +515,7 @@ fn worker(view: &Plan<'_>, id: u32) -> Result<String> {
     task_block(&mut out, tasks, row);
     if let Some(spec) = spec_of(tasks, row) {
         let cited: Vec<&str> = spec.design.iter().map(String::as_str).collect();
-        design_block(&mut out, view.flow_dir, &cited);
+        design_block(&mut out, view.authored_dir, &cited);
     }
 
     out.truncate(out.trim_end().len());
@@ -542,11 +542,6 @@ fn bind_names(entry: &str, row: &TaskRow) -> bool {
                 .strip_prefix(bound)
                 .is_some_and(|rest| rest.starts_with('/'))
     })
-}
-
-fn normal_path(path: &str) -> String {
-    let path = path.replace('\\', "/");
-    path.strip_prefix("./").unwrap_or(&path).to_string()
 }
 
 fn spec_of<'a>(tasks: &'a Store, row: &TaskRow) -> Option<&'a TaskSpec> {
@@ -703,14 +698,14 @@ fn spec_block(out: &mut String, spec: &TaskSpec) {
 
 /// A citation that resolves to nothing stays visible, because a reader told of a
 /// design section it cannot see would otherwise take the silence for no guidance.
-fn design_block(out: &mut String, flow_dir: &Path, citations: &[&str]) {
+fn design_block(out: &mut String, authored_dir: &Path, citations: &[&str]) {
     if citations.is_empty() {
         return;
     }
     out.push_str("## Design\n\n");
     for citation in citations {
         out.push_str(&format!("### {}\n\n", code(citation)));
-        match check::design_section(flow_dir, citation) {
+        match check::design_section(authored_dir, citation) {
             Some(section) => {
                 out.push_str(&section);
                 out.push_str("\n\n");

@@ -9,7 +9,7 @@ use serde_json::{Map, Value as JsonValue, json};
 
 use super::schema::{
     Contract, ContractKind, Decision, Door, Handover, PlanStore, Provenance, RecordKind, Rejected,
-    Run,
+    Run, RunOutcome,
 };
 use super::store;
 use crate::cli::{
@@ -404,6 +404,8 @@ pub(super) fn run_start(args: PlanRunStartArgs) -> Result<()> {
             started,
             finished: None,
             skip_reason: String::new(),
+            outcome: None,
+            reason: String::new(),
         });
         Ok(())
     })?;
@@ -411,22 +413,71 @@ pub(super) fn run_start(args: PlanRunStartArgs) -> Result<()> {
     Ok(())
 }
 
+fn is_open_run_of(run: &Run, step: &str) -> bool {
+    run.step == step && run.is_open()
+}
+
+fn finish_outcome(raw: &str) -> Result<RunOutcome> {
+    let vocabulary = [RunOutcome::Ok, RunOutcome::Errors, RunOutcome::Stopped];
+    RunOutcome::parse(raw)
+        .filter(|outcome| vocabulary.contains(outcome))
+        .ok_or_else(|| {
+            let expected: Vec<&str> = vocabulary.iter().map(|o| o.as_str()).collect();
+            refusal(format!(
+                "unknown `--outcome` value `{raw}`: expected one of {}",
+                expected.join(", ")
+            ))
+        })
+}
+
 pub(super) fn run_finish(args: PlanRunFinishArgs) -> Result<()> {
+    let outcome = finish_outcome(&args.outcome)?;
     let finished = crate::time::now_toml_datetime()?;
     mutate_plan(&args.target.slug, &args.integrity, |plan| {
         let run = plan
             .runs
             .iter_mut()
             .rev()
-            .find(|r| r.step == args.step && r.finished.is_none() && r.skip_reason.is_empty())
+            .find(|r| is_open_run_of(r, &args.step))
             .ok_or_else(|| refusal(format!("no unfinished run of step `{}`", args.step)))?;
         run.finished = Some(finished);
+        run.outcome = Some(outcome);
         if let Some(run_id) = &args.run_id {
             run.run_id = run_id.clone();
         }
         Ok(())
     })?;
     print_ok(json!({"ok": true}))?;
+    Ok(())
+}
+
+/// Closes every open row of the step. The reason stays out of `skip_reason`,
+/// which reads as a step that never ran and settles the review stage.
+pub(super) fn run_abandon(
+    slug: &str,
+    step: &str,
+    reason: &str,
+    integrity: &WriteIntegrityArgs,
+) -> Result<()> {
+    let reason = reason.trim();
+    if reason.is_empty() {
+        return Err(refusal("`--reason` is empty"));
+    }
+    let finished = crate::time::now_toml_datetime()?;
+    let abandoned = mutate_plan(slug, integrity, |plan| {
+        let mut abandoned = 0usize;
+        for run in plan.runs.iter_mut().filter(|r| is_open_run_of(r, step)) {
+            run.finished = Some(finished);
+            run.outcome = Some(RunOutcome::Abandoned);
+            run.reason = reason.to_string();
+            abandoned += 1;
+        }
+        if abandoned == 0 {
+            return Err(refusal(format!("no unfinished run of step `{step}`")));
+        }
+        Ok(abandoned)
+    })?;
+    print_ok(json!({"ok": true, "abandoned": abandoned}))?;
     Ok(())
 }
 
@@ -444,6 +495,8 @@ pub(super) fn run_skip(args: PlanRunSkipArgs) -> Result<()> {
             started,
             finished: None,
             skip_reason: args.reason.clone(),
+            outcome: None,
+            reason: String::new(),
         });
         Ok(())
     })?;

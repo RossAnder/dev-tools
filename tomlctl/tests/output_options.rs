@@ -289,7 +289,8 @@ const PLAN_BRIEF: &str = "## Intent\nStop the retry storm.\n\n## Non-goals\nNo n
                           ## Scope budget\nOne file.\n\n## Success criteria\nA retry waits.\n";
 
 /// `D1` gives `plan gate` a row, the open `investigate` run is what `plan run
-/// finish` closes, and `H1` is what `plan handover done` marks.
+/// finish` and `plan run abandon` close, and `H1` is what `plan handover done`
+/// marks.
 const PLAN_STORE: &str = r#"schema_version = 1
 
 [binding]
@@ -322,7 +323,7 @@ done = false
 /// to report while still exiting 0, and the row is what `plan probes` covers.
 const PLAN_TASKS: &str = r#"schema_version = 2
 last_updated = 2026-11-05
-plan_path = ".claude/flows/{slug}/brief.md"
+plan_path = "docs/flows/{slug}/brief.md"
 last_import_refs = []
 
 [[checkpoints]]
@@ -989,6 +990,20 @@ fn cases() -> Vec<Case> {
         write(
             &[
                 "plan",
+                "run",
+                "abandon",
+                "--slug",
+                PLAN_SLUG,
+                "--step",
+                "investigate",
+                "--reason",
+                "session died",
+            ],
+            "abandoned",
+        ),
+        write(
+            &[
+                "plan",
                 "milestone",
                 "add",
                 "--slug",
@@ -1150,7 +1165,7 @@ fn fixture_git(root: &Path, args: &[&str]) -> String {
 }
 
 fn commit_flows(root: &Path, message: &str) {
-    fixture_git(root, &["add", "-f", ".claude/flows", "src"]);
+    fixture_git(root, &["add", "-f", ".claude/flows", "docs/flows", "src"]);
     fixture_git(root, &["commit", "-q", "-m", message]);
 }
 
@@ -1162,7 +1177,11 @@ fn open_plan(root: &Path, slug: &str) {
         &flow.join("tasks.toml"),
         &PLAN_TASKS.replace("{slug}", slug),
     );
-    fs::write(flow.join("brief.md"), PLAN_BRIEF).unwrap();
+    fs::write(
+        root.join("docs/flows").join(slug).join("brief.md"),
+        PLAN_BRIEF,
+    )
+    .unwrap();
 }
 
 /// The `plan` group's flows, added to its fixture alone so that no other group
@@ -1174,7 +1193,10 @@ fn plan_flows(root: &Path) {
     put(
         root,
         PROBE_CAPTURE,
-        &format!("head\t{}\n1:0\tneg\trc=1\t\t\n", "0".repeat(40)),
+        &format!(
+            "head\t{}\n1:0\tneg\tsha256=58cce3241ea33c3d2476803cf12819d0dd3cf5a11e3a2d8239dddb244507a155\trc=1\t\t\n",
+            "0".repeat(40)
+        ),
     );
     if !git_available() {
         return;

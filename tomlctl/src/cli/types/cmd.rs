@@ -251,8 +251,8 @@ pub(crate) enum Cmd {
         op: ReviewOp,
     },
 
-    /// The v2 plan over `.claude/flows/<slug>/plan.toml`, `brief.md` and the
-    /// task store — decisions, contracts, approvals, runs and handovers, the
+    /// The v2 plan over `.claude/flows/<slug>/plan.toml`,
+    /// `docs/flows/<slug>/brief.md` and the task store — decisions, contracts, approvals, runs and handovers, the
     /// checks over them, and the projections agents read.
     Plan {
         #[command(subcommand)]

@@ -534,4 +534,4 @@ Feature meanings:
 | `review_export_v1` | `review export-v1 <ID>... \| --all --to <LEDGER>` — write open defect and cleanup findings into a v1 ledger for `/review-apply` or `/optimise-apply` |
 | `review_catalogue` | `review catalogue` — the merged lens catalogue's index; `--vocabulary`, `--owners`, and `--check` exiting 1 on a validation error |
 | `review_schema` | `review schema finding\|cell-return\|verdict-return` — JSON Schemas built from the field catalogue |
-| `plan_store` | the `plan` group over a v2 flow's `.claude/flows/<SLUG>/plan.toml`, `brief.md` and task store, each verb taking `--slug`: `open`, `decide`, `contract`, `handover`, `run`, `milestone`, `check`, `view`, `probes`, `stage`, `gate`, `approve` and `drift` |
+| `plan_store` | the `plan` group over a v2 flow's `.claude/flows/<SLUG>/plan.toml`, `docs/flows/<SLUG>/brief.md` and task store, each verb taking `--slug`: `open`, `decide`, `contract`, `handover`, `run`, `milestone`, `check`, `view`, `probes`, `stage`, `gate`, `approve` and `drift` |

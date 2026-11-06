@@ -46,6 +46,9 @@ claude/commands/*.md text eol=lf
 # binary later added to a flow from being converted; the two typed patterns
 # reach the stores outside it, such as those under .claude/plans/ and
 # .claude/reviews/. Markdown outside flows and settings.local.json stay unpinned.
+# docs/flows holds the same flows' authored files, pinned alike so that one flow's
+# files do not differ in line endings by directory.
 .claude/flows/** text=auto eol=lf
+docs/flows/** text=auto eol=lf
 .claude/**/*.toml text eol=lf
 .claude/**/*.sha256 text eol=lf

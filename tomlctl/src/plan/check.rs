@@ -9,11 +9,11 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde_json::json;
 
-use super::schema::{Contract, Decision, PlanStore};
-use super::store::{self, brief_digest};
+use super::schema::{Contract, Decision, Handover, PlanStore};
+use super::store::{self, BRIEF_FILE, brief_digest};
 use crate::cli::{PlanCheckArgs, ReadIntegrityArgs};
 use crate::io::repo_or_cwd_root;
 use crate::output::{Rows, print_report};
@@ -21,11 +21,10 @@ use crate::tasks::backlog_refs::linked_backlog_findings;
 use crate::tasks::check::{check, exit_code};
 use crate::tasks::finding::{ERROR, Finding, NO_TASK, WARNING, quoted_list, task_list};
 use crate::tasks::markdown::FenceState;
-use crate::tasks::schema::{Store, TaskRow, TaskSpec};
+use crate::tasks::schema::{Premise, Status, Store, TaskRow, TaskSpec, normal_path};
 use crate::tasks::slug::{dedupe_refs, derive_ref};
 use crate::tasks::{load_store, resolve_store_path};
 
-const BRIEF_FILE: &str = "brief.md";
 const DESIGN_DIR: &str = "design";
 const REQUIRED_SECTIONS: [&str; 4] = ["Intent", "Non-goals", "Scope budget", "Success criteria"];
 
@@ -54,18 +53,26 @@ pub(super) fn findings(slug: &str, integrity: &ReadIntegrityArgs) -> Result<Vec<
     let plan_path = store::resolve(slug)?;
     let plan = store::load(&plan_path, integrity)?;
     let tasks = load_store(&resolve_store_path(Some(slug), None)?, integrity)?;
-    let flow_dir = plan_path
-        .parent()
-        .expect("a resolved store path sits in its flow directory");
+    let authored = store::authored_dir(slug)?;
 
     let mut found = check(&tasks, &[]);
     found.extend(linked_backlog_findings(&tasks, Some(slug))?);
-    found.extend(brief_findings(flow_dir, &plan)?);
+    found.extend(brief_findings(&authored, &plan)?);
     found.extend(
         plan.contracts
             .iter()
             .flat_map(|c| contract_findings(c, &tasks)),
     );
+    found.extend(
+        plan.handovers
+            .iter()
+            .filter_map(|h| handover_finding(h, &tasks)),
+    );
+    found.extend(tasks.specs.iter().flat_map(|spec| {
+        spec.premises
+            .iter()
+            .filter_map(|p| premise_finding(p, &spec.r#ref, &tasks))
+    }));
     let root = repo_or_cwd_root()?;
     found.extend(
         plan.decisions
@@ -78,16 +85,16 @@ pub(super) fn findings(slug: &str, integrity: &ReadIntegrityArgs) -> Result<Vec<
             .iter()
             .filter_map(|row| no_spec_finding(row, &tasks)),
     );
-    found.extend(spec_findings(&tasks, flow_dir));
+    found.extend(spec_findings(&tasks, &authored));
     found.extend(milestone_findings(&tasks));
     found.sort_by(|a, b| (a.class, &a.ids).cmp(&(b.class, &b.ids)));
     Ok(found)
 }
 
 /// The section a `design/x.md#anchor` citation names, LF-joined with its heading
-/// line, up to the next heading no deeper than its own. `root` is the flow
-/// directory. A citation is file-controlled input, so one that leaves `design/`
-/// or names no anchor reads as absent.
+/// line, up to the next heading no deeper than its own. `root` is the flow's
+/// authored directory, `store::authored_dir`. A citation is file-controlled input,
+/// so one that leaves `design/` or names no anchor reads as absent.
 pub(super) fn design_section(root: &Path, citation: &str) -> Option<String> {
     let (relative, anchor) = citation.split_once('#')?;
     if anchor.is_empty() {
@@ -104,7 +111,7 @@ pub(super) fn design_section(root: &Path, citation: &str) -> Option<String> {
     Some(section[..end].join("\n"))
 }
 
-/// Containment is checked after resolving symlinks, because a link inside
+/// Containment is checked after resolving symlinks, because a link at or inside
 /// `design/` could otherwise inline any file on the machine into a worker prompt.
 fn design_path(root: &Path, relative: &str) -> Option<PathBuf> {
     let relative = Path::new(relative);
@@ -119,7 +126,7 @@ fn design_path(root: &Path, relative: &str) -> Option<PathBuf> {
     if relative.extension().is_none_or(|ext| ext != "md") {
         return None;
     }
-    let contained = root.join(DESIGN_DIR).canonicalize().ok()?;
+    let contained = store::authored_anchor(root).ok()?.join(DESIGN_DIR);
     let resolved = root.join(relative).canonicalize().ok()?;
     resolved.starts_with(contained).then_some(resolved)
 }
@@ -211,20 +218,13 @@ fn strip_comments(text: &str) -> String {
     kept
 }
 
-fn brief_findings(flow_dir: &Path, plan: &PlanStore) -> Result<Vec<Finding>> {
-    let path = flow_dir.join(BRIEF_FILE);
-    let bytes = match fs::read(&path) {
-        Ok(bytes) => bytes,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(vec![error(
-                "plan/brief-missing",
-                Vec::new(),
-                format!("`{BRIEF_FILE}` does not exist in the flow directory"),
-            )]);
-        }
-        Err(err) => {
-            return Err(err).with_context(|| format!("reading {}", path.display()));
-        }
+fn brief_findings(authored: &Path, plan: &PlanStore) -> Result<Vec<Finding>> {
+    let Some(bytes) = store::read_brief(authored)? else {
+        return Ok(vec![error(
+            "plan/brief-missing",
+            Vec::new(),
+            format!("`{BRIEF_FILE}` does not exist in `{}`", authored.display()),
+        )]);
     };
 
     let text = String::from_utf8_lossy(&bytes);
@@ -285,12 +285,49 @@ fn contract_findings(contract: &Contract, tasks: &Store) -> Vec<Finding> {
     findings
 }
 
+/// A done handover has nothing left to run, so the task it came from no longer
+/// matters and must not block `plan approve --amend`.
+fn handover_finding(handover: &Handover, tasks: &Store) -> Option<Finding> {
+    if handover.done || tasks.find(handover.source_task).is_some() {
+        return None;
+    }
+    Some(error(
+        "plan/handover-task-unknown",
+        vec![handover.source_task],
+        format!(
+            "handover {} names task {}, which no row carries",
+            handover.id, handover.source_task
+        ),
+    ))
+}
+
+/// A premise at `after:<id>` waits on that row, so one naming no row can never be
+/// scheduled. A non-canonical id such as `after:007` names none, as at write time.
+fn premise_finding(premise: &Premise, spec_ref: &str, tasks: &Store) -> Option<Finding> {
+    let target = premise.at.strip_prefix("after:")?;
+    let id = target
+        .parse::<u32>()
+        .ok()
+        .filter(|id| id.to_string() == target);
+    if id.is_some_and(|id| tasks.find(id).is_some()) {
+        return None;
+    }
+    Some(error(
+        "plan/premise-task-unknown",
+        id.into_iter().collect(),
+        format!(
+            "a premise of `{spec_ref}` is at `{}`, which no row carries",
+            premise.at
+        ),
+    ))
+}
+
 fn decision_finding(decision: &Decision, tasks: &Store, root: &Path) -> Option<Finding> {
     let claimed: BTreeSet<String> = tasks
         .items
         .iter()
         .flat_map(|row| row.files.iter())
-        .map(|file| file.replace('\\', "/"))
+        .map(|file| normal_path(file))
         .collect();
     let unknown: Vec<&str> = decision
         .binds
@@ -329,12 +366,11 @@ fn bind_known(entry: &str, tasks: &Store, claimed: &BTreeSet<String>, root: &Pat
             .parse::<u32>()
             .is_ok_and(|id| tasks.find(id).is_some());
     }
-    let normal = entry.replace('\\', "/");
-    let normal = normal.strip_prefix("./").unwrap_or(&normal);
-    if claimed.contains(normal) {
+    let normal = normal_path(entry);
+    if claimed.contains(&normal) {
         return true;
     }
-    let relative = Path::new(normal);
+    let relative = Path::new(&normal);
     relative
         .components()
         .all(|part| matches!(part, Component::Normal(_)))
@@ -352,7 +388,7 @@ fn no_spec_finding(row: &TaskRow, tasks: &Store) -> Option<Finding> {
     ))
 }
 
-fn spec_findings(tasks: &Store, flow_dir: &Path) -> Vec<Finding> {
+fn spec_findings(tasks: &Store, authored: &Path) -> Vec<Finding> {
     let deferred: BTreeSet<&str> = tasks
         .milestones
         .iter()
@@ -365,7 +401,7 @@ fn spec_findings(tasks: &Store, flow_dir: &Path) -> Vec<Finding> {
         match tasks.find_ref(&spec.r#ref) {
             Some(row) => {
                 let elaborated = !deferred.contains(row.checkpoint.as_str());
-                findings.extend(row_spec_findings(spec, row.id, elaborated, flow_dir));
+                findings.extend(row_spec_findings(spec, row, elaborated, authored));
             }
             None => findings.push(error(
                 "plan/spec-orphan",
@@ -379,8 +415,15 @@ fn spec_findings(tasks: &Store, flow_dir: &Path) -> Vec<Finding> {
 
 /// `elaborated` is false for a task in a deferred milestone, whose `check`
 /// arrives when that milestone is elaborated. An unrecognised `elaboration`
-/// counts as elaborated, which is the stricter reading.
-fn row_spec_findings(spec: &TaskSpec, id: u32, elaborated: bool, flow_dir: &Path) -> Vec<Finding> {
+/// counts as elaborated, which is the stricter reading. `plan/probe-absent` needs
+/// a pending row because `plan probes` covers no other, so no verb could clear it.
+fn row_spec_findings(
+    spec: &TaskSpec,
+    row: &TaskRow,
+    elaborated: bool,
+    authored: &Path,
+) -> Vec<Finding> {
+    let id = row.id;
     let mut findings = Vec::new();
     if spec.outcome.trim().is_empty() {
         findings.push(error(
@@ -405,6 +448,7 @@ fn row_spec_findings(spec: &TaskSpec, id: u32, elaborated: bool, flow_dir: &Path
                 format!("task {id}'s `accept[{index}]` has no `check`"),
             ));
         }
+        let probeable = has_check && !accept.writes_build && row.status == Status::Pending;
         match &accept.probe {
             Some(probe) if probe.verdict != VERDICT_HEALTHY => findings.push(error(
                 "plan/probe-unhealthy",
@@ -414,7 +458,7 @@ fn row_spec_findings(spec: &TaskSpec, id: u32, elaborated: bool, flow_dir: &Path
                     probe.verdict, probe.at
                 ),
             )),
-            None if has_check && !accept.writes_build => findings.push(Finding {
+            None if probeable => findings.push(Finding {
                 class: "plan/probe-absent",
                 severity: WARNING,
                 ids: vec![id],
@@ -436,7 +480,7 @@ fn row_spec_findings(spec: &TaskSpec, id: u32, elaborated: bool, flow_dir: &Path
         }
     }
     for citation in &spec.design {
-        if design_section(flow_dir, citation).is_none() {
+        if design_section(authored, citation).is_none() {
             findings.push(error(
                 "plan/design-anchor-dead",
                 vec![id],

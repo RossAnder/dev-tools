@@ -1,6 +1,7 @@
 //! `plan probes`: `--emit` prints a Bash script running each probeable `accept`
 //! row's controls, and `--record` turns that script's captured stdout into each
-//! row's `probe`.
+//! row's `probe`. Both cover only pending tasks, so re-probing later leaves the
+//! verdicts of work already started or finished as they were recorded.
 //!
 //! tomlctl never runs a stored command: `Bash(tomlctl *)` is pre-approved, so a
 //! verb executing stored strings would widen that approval to arbitrary
@@ -14,11 +15,13 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use serde_json::json;
+use sha2::{Digest, Sha256};
 
 use crate::cli::{PlanProbesArgs, ReadIntegrityArgs};
 use crate::errors::{ErrorKind, tagged_err};
+use crate::integrity::hex_lower;
 use crate::output::{print_json_compact, print_text};
-use crate::tasks::schema::{Accept, Probe, Store};
+use crate::tasks::schema::{Accept, Probe, Status, Store, TaskRow, normal_path};
 use crate::tasks::{load_store, mutate_store, resolve_store_path};
 
 const KIND_FORWARD: &str = "forward";
@@ -34,6 +37,7 @@ const VERDICT_GUARD_ALONE: &str = "guard-alone";
 
 const CONTROL_NEG: &str = "neg";
 const CONTROL_POS: &str = "pos";
+const DIGEST_PREFIX: &str = "sha256=";
 
 /// The stderr markers of a control that never tested its behaviour, whatever it
 /// exited with. A syntax error exits non-zero, which would read as a healthy
@@ -49,7 +53,7 @@ const MISSING_PATH_MARKER: &str = "No such file";
 /// Every column is folded onto one line with its tabs gone, so a command's
 /// output cannot forge a row of the capture. Stderr stays whole, because a
 /// breakage marker may sit past any prefix.
-const HELPER: &str = r#"p(){ e=$(mktemp); o=$(eval "$3" 2>"$e" </dev/null); r=$?; printf '%s\t%s\trc=%s\t%s\t%s\n' "$1" "$2" "$r" "$(printf %s "$o" | tr '\r\n\t' ' | ' | cut -c1-100)" "$(tr '\r\n\t' ' | ' <"$e")"; rm -f "$e"; }"#;
+const HELPER: &str = r#"p(){ e=$(mktemp); o=$(eval "$4" 2>"$e" </dev/null); r=$?; printf '%s\t%s\tsha256=%s\trc=%s\t%s\t%s\n' "$1" "$2" "$3" "$r" "$(printf %s "$o" | tr '\r\n\t' ' | ' | cut -c1-100)" "$(tr '\r\n\t' ' | ' <"$e")"; rm -f "$e"; }"#;
 
 fn refuse(message: String) -> anyhow::Error {
     tagged_err(ErrorKind::Validation, None, message)
@@ -65,13 +69,16 @@ pub(super) fn run(mut args: PlanProbesArgs) -> Result<()> {
                 strict_read: true,
             },
         )?;
-        return print_text(&script(&store)?);
+        return print_text(&script(&store, args.milestone.as_deref())?);
     };
     let capture = read_capture(&capture)?;
     // A capture can only describe rows of a store that already exists, so a
     // mistyped slug must not leave an empty one behind.
     args.integrity.no_create = true;
-    let mut recorded = mutate_store(&path, &args.integrity, |store| record(store, capture))?;
+    let milestone = args.milestone.as_deref();
+    let mut recorded = mutate_store(&path, &args.integrity, |store| {
+        record(store, capture, milestone)
+    })?;
     recorded.sort_unstable();
     let recorded: Vec<_> = recorded
         .into_iter()
@@ -98,10 +105,43 @@ fn has_positive(accept: &Accept) -> bool {
     !accept.positive.trim().is_empty()
 }
 
+/// Why a task's rows are out of this run. The reason reaches the script, so it
+/// holds no stored string.
+fn task_skip_reason(row: &TaskRow, milestone: Option<&str>) -> Option<&'static str> {
+    if row.status != Status::Pending {
+        Some("status is not pending")
+    } else if milestone.is_some_and(|id| row.checkpoint != id) {
+        Some("not in the requested milestone")
+    } else {
+        None
+    }
+}
+
+fn refuse_unknown_milestone(store: &Store, milestone: Option<&str>) -> Result<()> {
+    let Some(id) = milestone else {
+        return Ok(());
+    };
+    let declared =
+        store.checkpoints.iter().any(|c| c.id == id) || store.milestones.iter().any(|m| m.id == id);
+    if declared {
+        return Ok(());
+    }
+    Err(refuse(format!(
+        "`--milestone {id}` names no checkpoint or milestone in the store"
+    )))
+}
+
+/// Binds a recorded verdict to the command that produced it. It catches a stale
+/// capture, not a forged one: whoever can edit a capture can edit its digests.
+fn command_digest(command: &str) -> String {
+    hex_lower(&Sha256::digest(command.as_bytes()))
+}
+
 /// The script. The `cd` is what lets it run from anywhere, since stored commands
 /// are repo-root-relative. Nothing sets `errexit`, because a healthy negative
 /// control exits non-zero and every later row must still run.
-fn script(store: &Store) -> Result<String> {
+fn script(store: &Store, milestone: Option<&str>) -> Result<String> {
+    refuse_unknown_milestone(store, milestone)?;
     let mut out = String::from("#!/usr/bin/env bash\n");
     out.push_str("printf 'head\\t%s\\n' \"$(git rev-parse HEAD)\"\n");
     out.push_str("cd \"$(git rev-parse --show-toplevel)\" || exit 1\n");
@@ -111,17 +151,27 @@ fn script(store: &Store) -> Result<String> {
         let Some(spec) = store.specs.iter().find(|spec| spec.r#ref == row.r#ref) else {
             continue;
         };
+        if let Some(reason) = task_skip_reason(row, milestone) {
+            writeln!(out, "# skipped task {}: {reason}", row.id)?;
+            continue;
+        }
         for (index, accept) in spec.accept.iter().enumerate() {
             let key = format!("{}:{index}", row.id);
             if let Some(reason) = skip_reason(accept) {
                 writeln!(out, "# skipped {key}: {reason}")?;
                 continue;
             }
-            writeln!(out, "p {key} {CONTROL_NEG} {}", quote(&key, &accept.check)?)?;
+            writeln!(
+                out,
+                "p {key} {CONTROL_NEG} {} {}",
+                command_digest(&accept.check),
+                quote(&key, &accept.check)?
+            )?;
             if has_positive(accept) {
                 writeln!(
                     out,
-                    "p {key} {CONTROL_POS} {}",
+                    "p {key} {CONTROL_POS} {} {}",
+                    command_digest(&accept.positive),
                     quote(&key, &accept.positive)?
                 )?;
             }
@@ -143,6 +193,7 @@ fn quote(key: &str, command: &str) -> Result<String> {
 }
 
 struct Control {
+    digest: String,
     rc: i64,
     stderr: String,
 }
@@ -185,16 +236,33 @@ fn parse_capture(text: &str) -> Result<Capture> {
     let mut controls: BTreeMap<(u32, usize), Controls> = BTreeMap::new();
     for (number, line) in lines {
         let malformed = || refuse(format!("capture line {} is not a probe row", number + 1));
-        let columns: Vec<&str> = line.splitn(5, '\t').collect();
-        let &[key, control, rc, _stdout, stderr] = columns.as_slice() else {
+        let no_digest = |key: &str| {
+            refuse(format!(
+                "capture line {} for {key} has no command digest: re-run `plan probes --emit`",
+                number + 1
+            ))
+        };
+        let columns: Vec<&str> = line.splitn(6, '\t').collect();
+        if columns
+            .get(2)
+            .is_some_and(|column| column.starts_with("rc="))
+        {
+            return Err(no_digest(columns[0]));
+        }
+        let &[raw_key, control, digest, rc, _stdout, stderr] = columns.as_slice() else {
             return Err(malformed());
         };
-        let (task, index) = key.split_once(':').ok_or_else(malformed)?;
+        let (task, index) = raw_key.split_once(':').ok_or_else(malformed)?;
         let key = (
             task.parse::<u32>().map_err(|_| malformed())?,
             index.parse::<usize>().map_err(|_| malformed())?,
         );
         let parsed = Control {
+            digest: digest
+                .strip_prefix(DIGEST_PREFIX)
+                .filter(|digest| !digest.is_empty())
+                .ok_or_else(|| no_digest(raw_key))?
+                .to_string(),
             rc: rc
                 .strip_prefix("rc=")
                 .and_then(|raw| raw.parse::<i64>().ok())
@@ -218,12 +286,18 @@ fn parse_capture(text: &str) -> Result<Capture> {
 }
 
 /// Stores the capture's probes, returning `(task, accept, verdict)` for each. A
-/// capture must cover exactly the store's probeable controls: anything else is a
+/// capture must cover exactly the probeable controls of the tasks in scope, each
+/// carrying the digest of the command the store holds now: anything else is a
 /// truncated run or a store changed since `--emit`, and writes nothing.
 ///
 /// Guards go after the rest of their task, since whether one stands alone
 /// depends on the verdicts beside it.
-fn record(store: &mut Store, mut capture: Capture) -> Result<Vec<(u32, usize, &'static str)>> {
+fn record(
+    store: &mut Store,
+    mut capture: Capture,
+    milestone: Option<&str>,
+) -> Result<Vec<(u32, usize, &'static str)>> {
+    refuse_unknown_milestone(store, milestone)?;
     let declared: Vec<String> = store
         .items
         .iter()
@@ -231,6 +305,9 @@ fn record(store: &mut Store, mut capture: Capture) -> Result<Vec<(u32, usize, &'
         .collect();
     let mut recorded = Vec::new();
     for row in &store.items {
+        if task_skip_reason(row, milestone).is_some() {
+            continue;
+        }
         let Some(spec) = store.specs.iter_mut().find(|spec| spec.r#ref == row.r#ref) else {
             continue;
         };
@@ -250,6 +327,10 @@ fn record(store: &mut Store, mut capture: Capture) -> Result<Vec<(u32, usize, &'
                 let neg = controls.neg.ok_or_else(|| stale(&key, CONTROL_NEG))?;
                 if has_positive(accept) != controls.pos.is_some() {
                     return Err(stale(&key, CONTROL_POS));
+                }
+                refuse_edited(row.id, index, CONTROL_NEG, &neg, &accept.check)?;
+                if let Some(pos) = &controls.pos {
+                    refuse_edited(row.id, index, CONTROL_POS, pos, &accept.positive)?;
                 }
                 let verdict = verdict(
                     &accept.kind,
@@ -282,6 +363,22 @@ fn stale(key: &str, control: &str) -> anyhow::Error {
         "the capture and the store disagree on {key}'s {control} control: re-run `plan probes \
          --emit`"
     ))
+}
+
+fn refuse_edited(
+    task: u32,
+    index: usize,
+    name: &str,
+    control: &Control,
+    command: &str,
+) -> Result<()> {
+    if control.digest == command_digest(command) {
+        return Ok(());
+    }
+    Err(refuse(format!(
+        "the capture's {name} control for task {task}'s `accept[{index}]` ran a different command \
+         than the store holds: re-run `plan probes --emit`"
+    )))
 }
 
 /// A forward or falsifier with a check, unless a probe has shown it does not
@@ -339,9 +436,9 @@ fn stderr_names_breakage(stderr: &str, declared: &[String]) -> bool {
 /// at a component boundary: stored commands may `cd` into a subdirectory, and a
 /// tool may print an absolute path.
 fn names_declared_path(text: &str, declared: &[String]) -> bool {
+    let declared: Vec<String> = declared.iter().map(|path| normal_path(path)).collect();
     text.split(|ch: char| ch.is_whitespace() || "':\"`(),;".contains(ch))
-        .map(|token| token.replace('\\', "/"))
-        .map(|token| token.trim_start_matches("./").to_string())
+        .map(normal_path)
         .filter(|token| !token.is_empty())
         .any(|token| {
             declared.iter().any(|path| {

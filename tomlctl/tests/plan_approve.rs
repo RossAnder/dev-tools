@@ -33,7 +33,7 @@ binds = ["1"]
 
 const TASKS: &str = r#"schema_version = 2
 last_updated = 2026-11-05
-plan_path = ".claude/flows/plan-approve/brief.md"
+plan_path = "docs/flows/plan-approve/brief.md"
 last_import_refs = []
 
 [[checkpoints]]
@@ -80,7 +80,7 @@ impl Flow {
             .success();
         flow.write("plan.toml", plan.as_bytes());
         flow.write("tasks.toml", tasks.as_bytes());
-        flow.write("brief.md", brief);
+        flow.write_authored("brief.md", brief);
         flow
     }
 
@@ -153,6 +153,14 @@ impl Flow {
 
     fn write(&self, name: &str, bytes: &[u8]) {
         fs::write(self.path(name), bytes).expect("writable");
+    }
+
+    fn authored_path(&self, name: &str) -> PathBuf {
+        self.root.join("docs").join("flows").join(SLUG).join(name)
+    }
+
+    fn write_authored(&self, name: &str, bytes: &[u8]) {
+        fs::write(self.authored_path(name), bytes).expect("writable");
     }
 
     fn registry(&self) -> PathBuf {
@@ -340,6 +348,18 @@ fn an_unsurfaced_assumption_does_not_block_approval() {
 }
 
 #[test]
+fn a_flow_with_no_plan_store_is_refused_naming_plan_open() {
+    let flow = Flow::staged(BINDING, TASKS, BRIEF.as_bytes());
+    fs::remove_file(flow.path("plan.toml")).expect("plan.toml exists");
+    let (message, kind) = flow.refused(&skip_args());
+    assert_eq!(kind, "not_found");
+    assert!(
+        message.contains(&format!("tomlctl plan open --slug {SLUG}")),
+        "{message}"
+    );
+}
+
+#[test]
 fn a_plan_check_error_is_refused() {
     let brief = BRIEF.replace("Stop the retry storm.\n", "");
     let flow = Flow::committed(BINDING, TASKS, brief.as_bytes());
@@ -348,11 +368,25 @@ fn a_plan_check_error_is_refused() {
     assert!(message.contains("plan/brief-section-empty"), "{message}");
 }
 
+#[cfg(unix)]
+#[test]
+fn a_brief_link_leaving_the_authored_directory_is_refused() {
+    let flow = Flow::clean();
+    let brief = flow.authored_path("brief.md");
+    let beside = flow.root.join("elsewhere.md");
+    fs::rename(&brief, &beside).expect("moved");
+    std::os::unix::fs::symlink(&beside, &brief).expect("link");
+    flow.commit();
+    let (message, kind) = flow.refused(&skip_args());
+    assert_eq!(kind, "validation");
+    assert!(message.contains("plan/brief-missing"), "{message}");
+}
+
 #[test]
 fn a_never_committed_plan_store_is_refused_by_name() {
     let flow = Flow::staged(BINDING, TASKS, BRIEF.as_bytes());
     flow.git(&["add", "-f", ".claude/flows/plan-approve/tasks.toml"]);
-    flow.git(&["add", "-f", ".claude/flows/plan-approve/brief.md"]);
+    flow.git(&["add", "-f", "docs/flows/plan-approve/brief.md"]);
     flow.commit_index();
     // A repo configured to hide untracked files must not hide this one.
     flow.git(&["config", "status.showUntrackedFiles", "no"]);
@@ -365,9 +399,42 @@ fn a_never_committed_plan_store_is_refused_by_name() {
 #[test]
 fn an_uncommitted_edit_is_refused_by_name() {
     let flow = Flow::clean();
-    flow.write("brief.md", format!("{BRIEF}\nA late thought.\n").as_bytes());
+    flow.write_authored("brief.md", format!("{BRIEF}\nA late thought.\n").as_bytes());
     let (message, _) = flow.refused(&skip_args());
-    assert!(message.contains("brief.md"), "{message}");
+    assert!(
+        message.contains("docs/flows/plan-approve/brief.md"),
+        "{message}"
+    );
+}
+
+#[test]
+fn an_uncommitted_design_file_is_refused_until_committed() {
+    let flow = Flow::clean();
+    fs::create_dir_all(flow.authored_path("design")).expect("design dir");
+    flow.write_authored("design/notes.md", b"A design note.\n");
+    let (message, kind) = flow.refused(&skip_args());
+    assert_eq!(kind, "validation");
+    assert!(
+        message.contains("docs/flows/plan-approve/design/notes.md"),
+        "{message}"
+    );
+    flow.commit();
+    flow.approve(&skip_args());
+}
+
+#[test]
+fn a_flow_with_no_design_directory_still_approves() {
+    let flow = Flow::clean();
+    assert!(!flow.authored_path("design").exists());
+    flow.approve(&skip_args());
+}
+
+#[test]
+fn notes_stay_out_of_the_committed_set() {
+    let flow = Flow::clean();
+    fs::create_dir_all(flow.authored_path("notes")).expect("notes dir");
+    flow.write_authored("notes/evidence.md", b"Investigator output.\n");
+    flow.approve(&skip_args());
 }
 
 #[test]
@@ -469,7 +536,7 @@ fn a_second_approval_needs_amend_and_keeps_the_first_stamp() {
 
     // The changed brief is what `--amend` exists for, so it must not refuse it.
     let revised = format!("{BRIEF}\nA user-agreed change.\n");
-    flow.write("brief.md", revised.as_bytes());
+    flow.write_authored("brief.md", revised.as_bytes());
     let approved = fs::read_to_string(flow.path("tasks.toml")).expect("the task store");
     let aged: Vec<&str> = approved
         .lines()
@@ -540,7 +607,7 @@ fn a_run_that_failed_before_stamping_can_be_rerun() {
 fn another_check_error_still_refuses_an_amendment() {
     let flow = Flow::clean();
     flow.approve(&skip_args());
-    flow.write(
+    flow.write_authored(
         "brief.md",
         BRIEF.replace("Stop the retry storm.\n", "").as_bytes(),
     );
@@ -672,7 +739,7 @@ done = true
 "#;
 
 const GATE_TASKS: &str = r#"schema_version = 2
-plan_path = ".claude/flows/plan-approve/brief.md"
+plan_path = "docs/flows/plan-approve/brief.md"
 last_import_refs = []
 
 [[specs]]

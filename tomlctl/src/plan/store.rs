@@ -2,25 +2,30 @@
 //! and the digest that decides whether a brief has changed.
 //!
 //! `mutate` converts through `schema::from_toml` / `schema::to_toml` inside
-//! the `io::mutate_doc` closure, so the exclusive lock, the sidecar write and
-//! the auto-create all apply unchanged. Every mutation restamps `last_updated`;
-//! nothing else writes it.
+//! the `io::mutate_doc` closure, so the exclusive lock and the sidecar write
+//! apply unchanged. Every mutation restamps `last_updated`; nothing else writes
+//! it.
+//!
+//! A flow is v2 because `plan.toml` exists, so `mutate` never creates the file:
+//! seeding it would silently turn a v1 flow into a v2 one. Only `plan open`
+//! bootstraps it.
 
+use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
 
 use super::schema::{self, PlanStore};
 use crate::cli::{
     ReadIntegrityArgs, WriteIntegrityArgs, read_integrity_opts, write_integrity_opts,
 };
+use crate::errors::{ErrorKind, tagged_err};
 use crate::integrity::hex_lower;
-use crate::io::{
-    mutate_doc, on_missing_for, read_doc, repo_or_cwd_root, strict_read_check, warn_if_created,
-};
+use crate::io::{OnMissing, mutate_doc, read_doc, repo_or_cwd_root, strict_read_check};
 
 const STORE_FILE: &str = "plan.toml";
+pub(super) const BRIEF_FILE: &str = "brief.md";
 
 /// `<root>/.claude/flows/<slug>/plan.toml`. The flow-init slug rule admits
 /// neither a separator nor a `..`, which is the only thing keeping `--slug`
@@ -34,6 +39,49 @@ pub(crate) fn resolve(slug: &str) -> Result<PathBuf> {
         .join(STORE_FILE))
 }
 
+/// `<root>/docs/flows/<slug>`, holding the files agents author with Write and
+/// Edit: `brief.md`, `design/` and `notes/`. Writes under `.claude/` are protected
+/// paths that no allow rule can pre-approve, so these live outside it. The slug
+/// rule keeps `--slug` from reaching outside `docs/flows/`.
+pub(crate) fn authored_dir(slug: &str) -> Result<PathBuf> {
+    crate::flow::validate_slug(slug)?;
+    Ok(repo_or_cwd_root()?.join("docs").join("flows").join(slug))
+}
+
+/// The containment anchor for authored files: the root's real path joined with
+/// `authored`'s spelling, so a symlink at any directory below the root cannot move
+/// the anchor along with the files it contains. A path outside the root, which only
+/// a unit test builds, anchors on its own real path.
+pub(super) fn authored_anchor(authored: &Path) -> Result<PathBuf> {
+    let root = repo_or_cwd_root()?;
+    match authored.strip_prefix(&root) {
+        Ok(relative) => Ok(root
+            .canonicalize()
+            .with_context(|| format!("resolving {}", root.display()))?
+            .join(relative)),
+        Err(_) => authored
+            .canonicalize()
+            .with_context(|| format!("resolving {}", authored.display())),
+    }
+}
+
+/// The brief's bytes, `None` when it is absent or resolves outside `authored`, so a
+/// symlink cannot inline another file into a `plan view` prompt.
+pub(super) fn read_brief(authored: &Path) -> Result<Option<Vec<u8>>> {
+    let path = authored.join(BRIEF_FILE);
+    let resolved = match path.canonicalize() {
+        Ok(resolved) => resolved,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(err).with_context(|| format!("resolving {}", path.display())),
+    };
+    if !resolved.starts_with(authored_anchor(authored)?) {
+        return Ok(None);
+    }
+    fs::read(&resolved)
+        .map(Some)
+        .with_context(|| format!("reading {}", path.display()))
+}
+
 /// Read the store at `path`. Under `--verify-integrity` the sidecar check
 /// runs first, under a shared lock, so a write mid-swap cannot be read as a
 /// mismatch.
@@ -42,22 +90,43 @@ pub(crate) fn load(path: &Path, integrity: &ReadIntegrityArgs) -> Result<PlanSto
     read_doc(path, read_integrity_opts(integrity), schema::from_toml)
 }
 
+/// Refuses a flow with no `plan.toml`, naming the verb that creates one. Runs
+/// ahead of the write pipeline, so a mistyped slug leaves no directory behind.
+pub(crate) fn require_open(path: &Path) -> Result<()> {
+    if path.is_file() {
+        return Ok(());
+    }
+    let slug = path
+        .parent()
+        .and_then(Path::file_name)
+        .map(|name| name.to_string_lossy())
+        .unwrap_or_default();
+    Err(tagged_err(
+        ErrorKind::NotFound,
+        Some(path.to_path_buf()),
+        format!(
+            "flow `{slug}` has no plan.toml; run `tomlctl plan open --slug {slug}` first, the \
+             only verb that makes a flow v2"
+        ),
+    ))
+}
+
 /// Run `f` over the parsed store inside the write pipeline's exclusive lock
 /// and write the result back with `last_updated` restamped. `f` returning
-/// `Err` persists nothing.
+/// `Err` persists nothing, and a missing store is refused (`require_open`).
 pub(crate) fn mutate<T>(
     path: &Path,
     integrity: &WriteIntegrityArgs,
     f: impl FnOnce(&mut PlanStore) -> Result<T>,
 ) -> Result<T> {
+    require_open(path)?;
     let today = crate::time::today_toml_date()?;
-    let on_missing = on_missing_for(path, integrity.no_create)?;
     let mut outcome = None;
-    let created = mutate_doc(
+    mutate_doc(
         path,
         integrity.allow_outside,
         write_integrity_opts(integrity),
-        on_missing,
+        OnMissing::Error,
         |doc| {
             let mut store = schema::from_toml(doc)?;
             outcome = Some(f(&mut store)?);
@@ -66,7 +135,6 @@ pub(crate) fn mutate<T>(
             Ok(())
         },
     )?;
-    warn_if_created(path, created);
     Ok(outcome.expect("mutate_doc reports success only after running the closure"))
 }
 
@@ -117,16 +185,22 @@ mod tests {
             .join(STORE_FILE)
     }
 
+    fn seed_store(path: &Path) {
+        std::fs::create_dir_all(path.parent().expect("a flow dir")).unwrap();
+        std::fs::write(path, "schema_version = 1\n").unwrap();
+    }
+
     #[test]
     fn load_reads_back_every_record_mutate_wrote() {
         with_root(|root| {
             let path = store_path(root);
+            seed_store(&path);
             let written = fixture();
             mutate(&path, &write_args(), |store| {
                 *store = written.clone();
                 Ok(())
             })
-            .expect("the missing store is created");
+            .expect("the existing store is written");
 
             assert!(
                 sidecar_path(&path).exists(),
@@ -151,15 +225,39 @@ mod tests {
     }
 
     #[test]
-    fn a_failing_closure_leaves_no_store_behind() {
+    fn a_failing_closure_leaves_the_store_untouched() {
         with_root(|root| {
             let path = store_path(root);
+            seed_store(&path);
+            let before = std::fs::read(&path).unwrap();
             let err = mutate(&path, &write_args(), |_store| {
                 Err::<(), _>(anyhow::anyhow!("refused"))
             })
             .expect_err("the closure's error propagates");
             assert!(err.to_string().contains("refused"), "{err}");
-            assert!(!path.exists(), "a refused mutation must persist nothing");
+            assert_eq!(
+                std::fs::read(&path).unwrap(),
+                before,
+                "a refused mutation must persist nothing"
+            );
+        });
+    }
+
+    #[test]
+    fn a_missing_store_is_refused_naming_plan_open_and_creates_nothing() {
+        with_root(|root| {
+            let path = store_path(root);
+            let err = mutate(&path, &write_args(), |_store| Ok(()))
+                .expect_err("only `plan open` creates the store");
+            let message = format!("{err:#}");
+            assert!(
+                message.contains(&format!("tomlctl plan open --slug {SLUG}")),
+                "{message}"
+            );
+            assert!(
+                !path.parent().expect("a flow dir").exists(),
+                "the refusal must not create the flow directory"
+            );
         });
     }
 
@@ -187,6 +285,19 @@ mod tests {
             assert_eq!(resolve(SLUG).expect("slug resolves"), store_path(root));
             for bad in ["..", "../escape", "a/b", "a\\b", "", "Upper", "-lead"] {
                 assert!(resolve(bad).is_err(), "slug `{bad}` must be refused");
+            }
+        });
+    }
+
+    #[test]
+    fn authored_dir_sits_under_docs_and_refuses_traversal() {
+        with_root(|root| {
+            assert_eq!(
+                authored_dir(SLUG).expect("slug resolves"),
+                root.join("docs").join("flows").join(SLUG)
+            );
+            for bad in ["..", "../escape", "a/b", "a\\b", "", "Upper", "-lead"] {
+                assert!(authored_dir(bad).is_err(), "slug `{bad}` must be refused");
             }
         });
     }

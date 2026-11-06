@@ -77,6 +77,17 @@ vocabulary!(
     }
 );
 
+vocabulary!(
+    /// How a run closed. `plan run finish` writes the first three and
+    /// `plan run abandon` the last.
+    RunOutcome {
+        Ok => "ok",
+        Errors => "errors",
+        Stopped => "stopped",
+        Abandoned => "abandoned",
+    }
+);
+
 /// The record kinds whose ids are minted, each under its own number sequence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RecordKind {
@@ -181,6 +192,19 @@ pub(crate) struct Run {
     pub(crate) finished: Option<Datetime>,
     /// Set when the step was not run.
     pub(crate) skip_reason: String,
+    /// `None` on an open or skipped row, and on one closed before the key
+    /// existed. Omitted from the TOML while `None`.
+    pub(crate) outcome: Option<RunOutcome>,
+    /// Why the run was abandoned. Omitted from the TOML while empty.
+    pub(crate) reason: String,
+}
+
+impl Run {
+    /// Any one of the three closes a row, so a hand-edited row carrying an
+    /// outcome and no `finished` reads as closed everywhere.
+    pub(crate) fn is_open(&self) -> bool {
+        self.finished.is_none() && self.skip_reason.is_empty() && self.outcome.is_none()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -588,6 +612,17 @@ fn run_from_toml(table: &Table, context: &str) -> Result<Run> {
             ),
         },
         skip_reason: lf(&str_or(table, "skip_reason")),
+        outcome: match table.get("outcome") {
+            None => None,
+            Some(_) => Some(vocab(
+                table,
+                "outcome",
+                context,
+                RunOutcome::parse,
+                RunOutcome::VOCABULARY,
+            )?),
+        },
+        reason: lf(&str_or(table, "reason")),
     })
 }
 
@@ -600,6 +635,8 @@ fn run_to_toml(run: &Run) -> TomlValue {
         started,
         finished,
         skip_reason,
+        outcome,
+        reason,
     } = run;
     let mut table = Table::new();
     table.insert("step".to_string(), TomlValue::String(step.clone()));
@@ -621,6 +658,15 @@ fn run_to_toml(run: &Run) -> TomlValue {
         "skip_reason".to_string(),
         TomlValue::String(lf(skip_reason)),
     );
+    if let Some(outcome) = outcome {
+        table.insert(
+            "outcome".to_string(),
+            TomlValue::String(outcome.as_str().to_string()),
+        );
+    }
+    if !reason.is_empty() {
+        table.insert("reason".to_string(), TomlValue::String(lf(reason)));
+    }
     TomlValue::Table(table)
 }
 
@@ -833,6 +879,8 @@ pub(crate) mod tests {
                     started: at("2026-11-05T12:00:00Z"),
                     finished: Some(at("2026-11-05T12:30:00Z")),
                     skip_reason: String::new(),
+                    outcome: None,
+                    reason: String::new(),
                 },
                 Run {
                     step: "review".to_string(),
@@ -842,6 +890,8 @@ pub(crate) mod tests {
                     started: at("2026-11-05T13:00:00Z"),
                     finished: None,
                     skip_reason: "Low risk.".to_string(),
+                    outcome: None,
+                    reason: String::new(),
                 },
             ],
             handovers: vec![Handover {
@@ -1009,6 +1059,62 @@ pub(crate) mod tests {
             .expect("a row table");
         table.remove("finished");
         assert_eq!(from_toml(&doc).expect("parses").runs[1].finished, None);
+    }
+
+    #[test]
+    fn a_run_outcome_and_reason_round_trip_and_stay_absent_while_unset() {
+        let mut store = fixture();
+        let doc = to_toml(&store);
+        assert!(doc["run"][0].get("outcome").is_none(), "{doc}");
+        assert!(doc["run"][0].get("reason").is_none(), "{doc}");
+        assert_eq!(from_toml(&doc).expect("parses").runs[0].outcome, None);
+
+        store.runs[0].outcome = Some(RunOutcome::Abandoned);
+        store.runs[0].reason = "The session died.".to_string();
+        let read = from_toml(&to_toml(&store)).expect("parses");
+        assert_eq!(read.runs[0].outcome, Some(RunOutcome::Abandoned));
+        assert_eq!(read.runs[0].reason, "The session died.");
+    }
+
+    #[test]
+    fn a_run_is_open_only_with_no_finished_time_skip_reason_or_outcome() {
+        let open = Run {
+            skip_reason: String::new(),
+            ..fixture().runs[1].clone()
+        };
+        assert!(open.is_open());
+        assert!(
+            !Run {
+                finished: Some(at("2026-11-05T13:30:00Z")),
+                ..open.clone()
+            }
+            .is_open()
+        );
+        assert!(
+            !Run {
+                skip_reason: "Low risk.".to_string(),
+                ..open.clone()
+            }
+            .is_open()
+        );
+        assert!(
+            !Run {
+                outcome: Some(RunOutcome::Abandoned),
+                ..open
+            }
+            .is_open()
+        );
+    }
+
+    #[test]
+    fn an_unknown_run_outcome_is_refused() {
+        let mut raw = to_toml(&fixture());
+        record_mut(&mut raw, "run").insert(
+            "outcome".to_string(),
+            TomlValue::String("exploded".to_string()),
+        );
+        let message = from_toml(&raw).expect_err("refused").to_string();
+        assert!(message.contains("exploded"), "{message}");
     }
 
     #[test]

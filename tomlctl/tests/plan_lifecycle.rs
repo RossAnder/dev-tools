@@ -219,6 +219,10 @@ impl Flow {
         self.git(&["rev-parse", "HEAD"])
     }
 
+    fn authored_path(&self, name: &str) -> PathBuf {
+        self.root.join("docs").join("flows").join(SLUG).join(name)
+    }
+
     fn flow_path(&self, name: &str) -> PathBuf {
         self.root
             .join(".claude")
@@ -278,7 +282,10 @@ impl Flow {
         let Some(bash) = git_bash() else {
             eprintln!("skipping the probe script: no bash found");
             return format!(
-                "head\t{head}\n1:0\tneg\trc=1\t\t\n1:0\tpos\trc=0\t\t\n2:0\tneg\trc=0\t\t\n"
+                "head\t{head}\n\
+                 1:0\tneg\tsha256=ef603698972a5dc824b5864d95804c1ad92413cca0f6cf8be393d7155faf896f\trc=1\t\t\n\
+                 1:0\tpos\tsha256=252dd783619f56e288730573bac5c85965cb66c66303d0b5d7debe2f5151a3d5\trc=0\t\t\n\
+                 2:0\tneg\tsha256=bc4424d58aeb860208c996eaec8def374f78362a5ae901676c85e34c79261682\trc=0\t\t\n"
             );
         };
         let path = self.payload("probes.sh", script).replace('\\', "/");
@@ -348,14 +355,14 @@ fn a_plan_runs_from_open_to_drift() {
         flow.ok(&["flow", "list", "--status", "draft"])["flows"][0]["slug"] == SLUG,
         "a draft stays listed"
     );
-    let brief = fs::read_to_string(flow.flow_path("brief.md")).expect("the brief");
+    let brief = fs::read_to_string(flow.authored_path("brief.md")).expect("the brief");
     assert!(brief.contains("The retry storm"), "{brief}");
     assert!(brief.contains("Seen under load."), "{brief}");
     assert!(
-        flow.flow_path(&format!("notes/backlog-{BACKLOG_ID}.md"))
+        flow.authored_path(&format!("notes/backlog-{BACKLOG_ID}.md"))
             .is_file()
     );
-    let report = flow.assert_stage("open", "edit brief.md");
+    let report = flow.assert_stage("open", "edit docs/flows/plan-lifecycle/brief.md");
     assert!(blockers(&report).contains("Non-goals"), "{report}");
 
     let filled = brief
@@ -365,7 +372,7 @@ fn a_plan_runs_from_open_to_drift() {
             "## Success criteria\n\n",
             "## Success criteria\n\nA retry waits.\n\n",
         );
-    fs::write(flow.flow_path("brief.md"), filled).expect("the brief");
+    fs::write(flow.authored_path("brief.md"), filled).expect("the brief");
     let report = flow.assert_stage("design", "plan milestone add");
     assert!(blockers(&report).contains("no milestones"), "{report}");
 
@@ -443,7 +450,7 @@ fn a_plan_runs_from_open_to_drift() {
         array(&store, "backlog_links")[0]["closes"][0].as_str(),
         Some(BACKLOG_ID)
     );
-    let report = flow.assert_stage("write", "tasks add-many");
+    let report = flow.assert_stage("write", "tasks update --ndjson");
     assert!(blockers(&report).contains("plan/task-no-spec"), "{report}");
 
     flow.update(&json!({
@@ -471,7 +478,10 @@ fn a_plan_runs_from_open_to_drift() {
         array(&store, "specs")[0]["accept"][0]["probe"]["at"].as_str(),
         Some(base.as_str())
     );
-    let report = flow.assert_stage("review", "plan run start --step review");
+    let report = flow.assert_stage(
+        "review",
+        "/review-plan-v2 or plan run skip --step review --reason <why>",
+    );
     assert!(blockers(&report).contains("plan review"), "{report}");
 
     flow.plan(&["run", "skip", "--step", "review", "--reason", "Low risk."]);

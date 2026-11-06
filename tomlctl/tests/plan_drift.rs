@@ -1,7 +1,7 @@
 //! `plan drift` over a flow `plan open` created, in a throwaway repository.
 
 use assert_cmd::Command;
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::fs;
 use std::path::PathBuf;
 
@@ -11,7 +11,7 @@ use common::{git_command, parse_json_error_envelope};
 const SLUG: &str = "plan-drift";
 
 const TASKS: &str = r#"schema_version = 2
-plan_path = ".claude/flows/plan-drift/brief.md"
+plan_path = "docs/flows/plan-drift/brief.md"
 last_import_refs = []
 
 [[specs]]
@@ -236,6 +236,162 @@ fn a_commit_recorded_on_a_row_is_not_drift() {
         !changed.iter().any(|f| f == "src/a.rs"),
         "the recorded commit's files are subtracted: {changed:?}"
     );
+}
+
+#[test]
+fn a_file_renamed_away_is_drift_on_the_row_naming_its_old_path() {
+    let flow = Flow::new();
+    let approved = flow.commit("approved");
+    flow.approve_at(&approved);
+    flow.commit("stamp");
+
+    fs::rename(
+        flow.root.join("src").join("a.rs"),
+        flow.root.join("src").join("moved.rs"),
+    )
+    .expect("renamed");
+    flow.commit("outside rename");
+
+    let report = flow.drift();
+    assert_eq!(affected_ids(&report), [1], "{report}");
+    let changed = report["changed_files"].as_array().expect("an array");
+    for path in ["src/a.rs", "src/moved.rs"] {
+        assert!(changed.iter().any(|f| f == path), "{changed:?}");
+    }
+}
+
+#[test]
+fn a_non_ascii_path_is_matched_unquoted() {
+    let flow = Flow::new();
+    flow.write_flow("tasks.toml", &TASKS.replace("src/c.rs", "src/caf\u{e9}.rs"));
+    flow.write_src("caf\u{e9}", "fn parse() {}\n");
+    let approved = flow.commit("approved");
+    flow.approve_at(&approved);
+    flow.commit("stamp");
+
+    flow.write_src("caf\u{e9}", "fn parse() { /* changed */ }\n");
+    flow.commit("outside work");
+
+    let report = flow.drift();
+    assert_eq!(affected_ids(&report), [3], "{report}");
+    assert_eq!(report["affected"][0]["files"], json!(["src/caf\u{e9}.rs"]));
+}
+
+/// Windows refuses a tab or a quote in a file name.
+#[cfg(unix)]
+#[test]
+fn a_path_git_would_c_quote_is_matched_verbatim() {
+    let flow = Flow::new();
+    flow.write_flow(
+        "tasks.toml",
+        &TASKS.replace("src/c.rs", "src/tab\\there \\\"quoted\\\".rs"),
+    );
+    flow.write_src("tab\there \"quoted\"", "fn parse() {}\n");
+    let approved = flow.commit("approved");
+    flow.approve_at(&approved);
+    flow.commit("stamp");
+
+    flow.write_src("tab\there \"quoted\"", "fn parse() { /* changed */ }\n");
+    fs::write(flow.root.join(" edge "), "outside\n").expect("writable");
+    flow.commit("outside work");
+
+    let report = flow.drift();
+    assert_eq!(affected_ids(&report), [3], "{report}");
+    assert_eq!(
+        report["affected"][0]["files"],
+        json!(["src/tab\there \"quoted\".rs"])
+    );
+    let changed = report["changed_files"].as_array().expect("an array");
+    assert!(changed.iter().any(|f| f == " edge "), "{changed:?}");
+}
+
+#[test]
+fn a_row_path_is_compared_in_normal_form_and_reported_as_written() {
+    let flow = Flow::new();
+    flow.write_flow(
+        "tasks.toml",
+        &TASKS
+            .replace("src/a.rs\"]", "./src/a.rs\"]")
+            .replace("src/c.rs\"]", "src\\\\c.rs\"]"),
+    );
+    let approved = flow.commit("approved");
+    flow.approve_at(&approved);
+    flow.commit("stamp");
+
+    flow.write_src("a", "fn parse() { /* changed */ }\n");
+    flow.write_src("c", "fn parse() { /* changed */ }\n");
+    flow.commit("outside work");
+
+    let report = flow.drift();
+    assert_eq!(affected_ids(&report), [1, 3], "{report}");
+    assert_eq!(report["affected"][0]["files"], json!(["./src/a.rs"]));
+    assert_eq!(report["affected"][1]["files"], json!(["src\\c.rs"]));
+}
+
+const BRIEF: &str = "## Intent\nA.\n\n## Non-goals\nB.\n\n## Scope budget\nC.\n\n\
+                     ## Success criteria\nD.\n";
+
+/// One row and nothing `plan check` reports as an error, so `plan approve` can run.
+const CLEAN_TASKS: &str = r#"schema_version = 2
+plan_path = "docs/flows/plan-drift/brief.md"
+last_import_refs = []
+
+[[specs]]
+ref = "edit-a"
+outcome = "a holds"
+accept = [{ behaviour = "a holds", check = "cargo test a", kind = "forward", positive = "", writes_build = true }]
+executor = "lite"
+
+[[items]]
+id = 1
+ref = "edit-a"
+title = "Edit a"
+effort = "S"
+status = "pending"
+files = ["src/a.rs"]
+"#;
+
+#[test]
+fn an_approved_commit_that_no_longer_resolves_is_refused_until_amended() {
+    let flow = Flow::new();
+    fs::write(
+        flow.root.join("docs/flows").join(SLUG).join("brief.md"),
+        BRIEF,
+    )
+    .expect("writable");
+    flow.write_flow("tasks.toml", CLEAN_TASKS);
+    let gone = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+    flow.approve_at(gone);
+    flow.commit("stamp");
+
+    let assert = flow
+        .tomlctl(&["plan", "drift", "--slug", SLUG])
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    let error = parse_json_error_envelope(&stderr);
+    assert_eq!(error["kind"], "validation", "{stderr}");
+    let message = error["message"].as_str().expect("a message");
+    assert!(message.contains(gone), "{stderr}");
+    assert!(message.contains("plan approve --amend"), "{stderr}");
+
+    flow.tomlctl(&[
+        "plan",
+        "approve",
+        "--slug",
+        SLUG,
+        "--amend",
+        "--review",
+        "skipped-low-risk",
+        "--reason",
+        "The approved commit was rewritten.",
+    ])
+    .assert()
+    .success();
+    let head = flow.git(&["rev-parse", "HEAD"]);
+    let report = flow.drift();
+    assert_eq!(report["approved_commit"], head.as_str());
+    assert_eq!(affected_ids(&report), Vec::<u64>::new());
 }
 
 #[test]

@@ -3,6 +3,7 @@
 //! from each capture.
 
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -13,6 +14,15 @@ use common::{
 
 const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
 const FILE: &str = "src/declared.rs";
+/// What `row` writes in place of a digest, until `record` looks up the real one.
+const UNSTAMPED: &str = "sha256=unstamped";
+
+fn digest(command: &str) -> String {
+    Sha256::digest(command.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
 
 fn store(accepts: Value) -> String {
     let doc = json!({
@@ -47,13 +57,45 @@ fn emit(root: &Path) -> String {
     String::from_utf8_lossy(&out.get_output().stdout).to_string()
 }
 
+/// Gives each `row` the digest `--emit` prints for its control, so a case varies
+/// only what it names. A control the script does not run stays unstamped.
+fn stamped(root: &Path, capture: &str) -> String {
+    if !capture.contains(UNSTAMPED) {
+        return capture.to_string();
+    }
+    let script = emit(root);
+    capture
+        .split_inclusive('\n')
+        .map(|line| {
+            let mut columns = line.split('\t');
+            let (Some(key), Some(control)) = (columns.next(), columns.next()) else {
+                return line.to_string();
+            };
+            let prefix = format!("p {key} {control} ");
+            let emitted = script
+                .lines()
+                .find_map(|l| l.strip_prefix(&prefix))
+                .and_then(|rest| rest.split(' ').next());
+            match emitted {
+                Some(hex) => line.replacen(UNSTAMPED, &format!("sha256={hex}"), 1),
+                None => line.to_string(),
+            }
+        })
+        .collect()
+}
+
 fn record(root: &Path, capture: &str) -> assert_cmd::assert::Assert {
+    record_with(root, capture, &[])
+}
+
+fn record_with(root: &Path, capture: &str, flags: &[&str]) -> assert_cmd::assert::Assert {
     let path = root.join("capture.tsv");
-    fs::write(&path, capture).unwrap();
+    fs::write(&path, stamped(root, capture)).unwrap();
     cli(root)
         .args(["--error-format", "json"])
         .args(["plan", "probes", "--slug", TASKS_SLUG, "--record"])
         .arg(&path)
+        .args(flags)
         .assert()
 }
 
@@ -74,7 +116,7 @@ fn verdict(probe: &Option<toml::Value>) -> &str {
 }
 
 fn row(key: &str, control: &str, rc: i64, stderr: &str) -> String {
-    format!("{key}\t{control}\trc={rc}\t\t{stderr}\n")
+    format!("{key}\t{control}\t{UNSTAMPED}\trc={rc}\t\t{stderr}\n")
 }
 
 /// The verdict recorded for one row whose capture holds `rows`.
@@ -369,7 +411,8 @@ fn record_replaces_an_earlier_probe() {
 fn a_crlf_capture_records_the_same_verdict() {
     let (_dir, root) = sandbox();
     let path = seed_tasks(&root, &store(json!([accept("forward", "c", "")])));
-    record(&root, &format!("head\t{SHA}\r\n1:0\tneg\trc=1\t\t\r\n")).success();
+    let capture = format!("head\t{SHA}\n{}", row("1:0", "neg", 1, "")).replace('\n', "\r\n");
+    record(&root, &capture).success();
     let probes = probes(&path);
     assert_eq!(verdict(&probes[0]), "healthy");
     assert_eq!(probes[0].as_ref().unwrap()["at"].as_str(), Some(SHA));
@@ -414,10 +457,10 @@ fn a_capture_that_does_not_match_the_store_is_refused_whole() {
         "repeats",
     );
     for malformed in [
-        "1:0\tneg\trc=1\n",
-        "1:0\tneg\trc=x\t\t\n",
-        "1\tneg\trc=1\t\t\n",
-        "1:0\tmid\trc=1\t\t\n",
+        "1:0\tneg\tsha256=a\trc=1\n",
+        "1:0\tneg\tsha256=a\trc=x\t\t\n",
+        "1\tneg\tsha256=a\trc=1\t\t\n",
+        "1:0\tmid\tsha256=a\trc=1\t\t\n",
     ] {
         assert_refused(
             &root,
@@ -426,6 +469,245 @@ fn a_capture_that_does_not_match_the_store_is_refused_whole() {
             "not a probe row",
         );
     }
+}
+
+#[test]
+fn a_capture_taken_before_a_command_was_edited_is_refused() {
+    let (_dir, root) = sandbox();
+    let before = store(json!([accept("forward", "false", "true")]));
+    let path = seed_tasks(&root, &before);
+    let capture = stamped(
+        &root,
+        &format!(
+            "head\t{SHA}\n{}{}",
+            row("1:0", "neg", 1, ""),
+            row("1:0", "pos", 0, "")
+        ),
+    );
+
+    seed_tasks(&root, &store(json!([accept("forward", "true", "true")])));
+    assert_refused(
+        &root,
+        &path,
+        &capture,
+        "neg control for task 1's `accept[0]`",
+    );
+    assert_refused(&root, &path, &capture, "plan probes --emit");
+
+    seed_tasks(&root, &store(json!([accept("forward", "false", "false")])));
+    assert_refused(
+        &root,
+        &path,
+        &capture,
+        "pos control for task 1's `accept[0]`",
+    );
+
+    seed_tasks(&root, &before);
+    record(&root, &capture).success();
+    assert_eq!(verdict(&probes(&path)[0]), "healthy");
+}
+
+#[test]
+fn a_capture_with_no_digest_is_refused() {
+    let (_dir, root) = sandbox();
+    let path = seed_tasks(&root, &store(json!([accept("forward", "c", "")])));
+    let head = format!("head\t{SHA}\n");
+    for line in [
+        "1:0\tneg\trc=1\t\t\n",
+        "1:0\tneg\t\trc=1\t\t\n",
+        "1:0\tneg\tsha256=\trc=1\t\t\n",
+        "1:0\tneg\tc0ffee\trc=1\t\t\n",
+    ] {
+        assert_refused(&root, &path, &format!("{head}{line}"), "1:0");
+        assert_refused(&root, &path, &format!("{head}{line}"), "no command digest");
+    }
+}
+
+/// Task 1 holds a healthy probe, and task 2 is pending at a later milestone.
+fn two_tasks(first_status: &str) -> String {
+    let probed = json!({
+        "behaviour": "it holds",
+        "check": "already-true",
+        "kind": "forward",
+        "positive": "",
+        "writes_build": false,
+        "probe": { "at": SHA, "neg_rc": 1, "verdict": "healthy" },
+    });
+    let doc = json!({
+        "schema_version": 2,
+        "checkpoints": [
+            { "id": "A", "rationale": "first" },
+            { "id": "B", "rationale": "second" },
+        ],
+        "milestones": [
+            { "id": "A", "gates": ["true"], "elaboration": "upfront", "defer_reason": "" },
+            { "id": "B", "gates": ["true"], "elaboration": "upfront", "defer_reason": "" },
+        ],
+        "items": [
+            {
+                "id": 1,
+                "ref": "first",
+                "title": "First",
+                "effort": "S",
+                "status": first_status,
+                "checkpoint": "A",
+                "files": [FILE],
+            },
+            {
+                "id": 2,
+                "ref": "second",
+                "title": "Second",
+                "effort": "S",
+                "checkpoint": "B",
+                "files": [FILE],
+                "needs": [1],
+            },
+        ],
+        "specs": [
+            { "ref": "first", "outcome": "it holds", "accept": [probed] },
+            {
+                "ref": "second",
+                "outcome": "it holds",
+                "accept": [accept("forward", "later-check", "")],
+            },
+        ],
+    });
+    toml::to_string(&doc).expect("the fixture serialises")
+}
+
+fn second_probe(store_path: &Path) -> Option<toml::Value> {
+    let doc: toml::Value = toml::from_str(&fs::read_to_string(store_path).unwrap()).unwrap();
+    doc["specs"][1]["accept"][0].get("probe").cloned()
+}
+
+#[test]
+fn re_probing_leaves_a_finished_rows_verdict_in_place_and_plan_check_clean() {
+    let (_dir, root) = sandbox();
+    let path = seed_tasks(&root, &two_tasks("done"));
+    let flow = path.parent().unwrap();
+    fs::write(flow.join("plan.toml"), "schema_version = 1\n").unwrap();
+    let authored = root.join("docs/flows").join(TASKS_SLUG);
+    fs::create_dir_all(&authored).unwrap();
+    fs::write(
+        authored.join("brief.md"),
+        "## Intent\nA.\n\n## Non-goals\nB.\n\n## Scope budget\nC.\n\n## Success criteria\nD.\n",
+    )
+    .unwrap();
+
+    let script = emit(&root);
+    assert!(
+        script.contains("\n# skipped task 1: status is not pending\n"),
+        "{script}"
+    );
+    assert!(!script.contains("already-true"), "{script}");
+    assert!(script.contains("later-check"), "{script}");
+
+    record(&root, &format!("head\t{SHA}\n{}", row("2:0", "neg", 1, ""))).success();
+    let kept = probes(&path);
+    let kept = kept[0].as_ref().expect("the stored probe stays");
+    assert_eq!(kept["verdict"].as_str(), Some("healthy"));
+    assert_eq!(kept["at"].as_str(), Some(SHA));
+    assert_eq!(verdict(&second_probe(&path)), "healthy");
+
+    let out = cli(&root)
+        .args(["plan", "check", "--slug", TASKS_SLUG])
+        .assert()
+        .success();
+    let report: Value = serde_json::from_slice(&out.get_output().stdout).unwrap();
+    assert_eq!(report["findings"], json!([]), "{report}");
+}
+
+#[test]
+fn a_capture_naming_a_row_no_longer_pending_is_refused() {
+    let (_dir, root) = sandbox();
+    let path = seed_tasks(&root, &two_tasks("in-progress"));
+    let capture = format!(
+        "head\t{SHA}\n1:0\tneg\tsha256={}\trc=0\t\t\n{}",
+        digest("already-true"),
+        row("2:0", "neg", 1, "")
+    );
+    assert_refused(&root, &path, &capture, "1:0");
+}
+
+#[test]
+fn a_milestone_restricts_both_modes_to_its_checkpoint() {
+    let (_dir, root) = sandbox();
+    let path = seed_tasks(&root, &two_tasks("pending"));
+
+    let out = cli(&root)
+        .args(["plan", "probes", "--slug", TASKS_SLUG, "--emit"])
+        .args(["--milestone", "B"])
+        .assert()
+        .success();
+    let script = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    assert!(script.contains("\np 2:0 neg "), "{script}");
+    assert!(
+        script.contains("\n# skipped task 1: not in the requested milestone\n"),
+        "{script}"
+    );
+    assert!(!script.contains("already-true"), "{script}");
+
+    let second = format!("head\t{SHA}\n{}", row("2:0", "neg", 1, ""));
+    let before = fs::read_to_string(&path).unwrap();
+    record(&root, &second).failure();
+    assert_eq!(
+        fs::read_to_string(&path).unwrap(),
+        before,
+        "with no flag the capture is short of task 1"
+    );
+    record_with(&root, &second, &["--milestone", "B"]).success();
+    assert_eq!(verdict(&second_probe(&path)), "healthy");
+
+    let first = format!(
+        "head\t{SHA}\n1:0\tneg\tsha256={}\trc=0\t\t\n",
+        digest("already-true")
+    );
+    record_with(&root, &first, &["--milestone", "B"]).failure();
+}
+
+#[test]
+fn an_unknown_milestone_is_refused_in_both_modes() {
+    let (_dir, root) = sandbox();
+    let path = seed_tasks(&root, &two_tasks("pending"));
+    let before = fs::read_to_string(&path).unwrap();
+
+    let emit = cli(&root)
+        .args(["--error-format", "json"])
+        .args(["plan", "probes", "--slug", TASKS_SLUG, "--emit"])
+        .args(["--milestone", "Z"])
+        .assert()
+        .failure();
+    let record = record_with(&root, &format!("head\t{SHA}\n"), &["--milestone", "Z"]).failure();
+    for assert in [emit, record] {
+        let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+        let error = parse_json_error_envelope(&stderr);
+        assert_eq!(error["kind"], "validation", "{stderr}");
+        assert!(error["message"].as_str().unwrap().contains('Z'), "{stderr}");
+    }
+    assert_eq!(fs::read_to_string(&path).unwrap(), before);
+}
+
+#[test]
+fn a_dot_slash_declared_path_still_excuses_its_missing_file() {
+    let (_dir, root) = sandbox();
+    let path = seed_tasks(
+        &root,
+        &store(json!([accept("forward", "c", "")])).replace(FILE, "./src\\\\declared.rs"),
+    );
+    record(
+        &root,
+        &format!(
+            "head\t{SHA}\n{}",
+            row(
+                "1:0",
+                "neg",
+                2,
+                "grep: src/declared.rs: No such file or directory"
+            )
+        ),
+    )
+    .success();
+    assert_eq!(verdict(&probes(&path)[0]), "healthy");
 }
 
 #[test]
@@ -459,8 +741,10 @@ fn emit_runs_only_rows_explicitly_marked_and_names_the_rest_by_key() {
         ])),
     );
     let script = emit(&root);
-    assert!(script.contains("\np 1:0 neg 'echo marked'\n"), "{script}");
-    assert!(script.contains("\np 1:0 pos 'echo positive'\n"), "{script}");
+    let marked = format!("\np 1:0 neg {} 'echo marked'\n", digest("echo marked"));
+    assert!(script.contains(&marked), "{script}");
+    let positive = format!("\np 1:0 pos {} 'echo positive'\n", digest("echo positive"));
+    assert!(script.contains(&positive), "{script}");
     assert!(
         script.contains("\n# skipped 1:1: writes_build is not false\n"),
         "{script}"
@@ -665,7 +949,12 @@ fn stderr_is_carried_whole_and_folded_onto_one_line() {
         .lines()
         .nth(1)
         .unwrap_or_else(|| panic!("{capture}"));
-    assert_eq!(row.split('\t').count(), 5, "{row}");
+    assert_eq!(row.split('\t').count(), 6, "{row}");
+    assert_eq!(
+        row.split('\t').nth(2),
+        Some(&*format!("sha256={}", digest(check))),
+        "{row}"
+    );
     assert!(row.ends_with("|one two|fatal: late|"), "{row}");
     record(&root, &capture).success();
     assert_eq!(verdict(&probes(&path)[0]), "broken");

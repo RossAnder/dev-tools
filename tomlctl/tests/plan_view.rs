@@ -110,7 +110,7 @@ done = true
 
 const TASKS: &str = r#"schema_version = 2
 last_updated = 2026-11-05
-plan_path = ".claude/flows/plan-view/brief.md"
+plan_path = "docs/flows/plan-view/brief.md"
 last_import_refs = []
 
 [[checkpoints]]
@@ -188,6 +188,7 @@ struct Flow {
     _dir: tempfile::TempDir,
     root: PathBuf,
     flow: PathBuf,
+    authored: PathBuf,
 }
 
 impl Flow {
@@ -198,18 +199,20 @@ impl Flow {
             .canonicalize()
             .expect("canonical root")
             .join("repo");
-        let store = stage_tasks_flow(&root, SLUG, ".claude/flows/plan-view/brief.md", tasks);
+        let store = stage_tasks_flow(&root, SLUG, "docs/flows/plan-view/brief.md", tasks);
         let flow = store.parent().expect("flow dir").to_path_buf();
         fs::write(flow.join("plan.toml"), plan).expect("plan.toml");
+        let authored = root.join("docs").join("flows").join(SLUG);
+        fs::create_dir_all(authored.join("design")).expect("design dir");
         if let Some(brief) = brief {
-            fs::write(flow.join("brief.md"), brief).expect("brief.md");
+            fs::write(authored.join("brief.md"), brief).expect("brief.md");
         }
-        fs::create_dir_all(flow.join("design")).expect("design dir");
-        fs::write(flow.join("design").join("store.md"), DESIGN).expect("design doc");
+        fs::write(authored.join("design").join("store.md"), DESIGN).expect("design doc");
         Self {
             _dir: dir,
             root,
             flow,
+            authored,
         }
     }
 
@@ -260,6 +263,7 @@ impl Flow {
     fn snapshot(&self) -> BTreeMap<PathBuf, Vec<u8>> {
         let mut files = BTreeMap::new();
         walk(&self.flow, &mut files);
+        walk(&self.authored, &mut files);
         files
     }
 }
@@ -338,6 +342,23 @@ fn a_brief_that_is_absent_says_so_to_the_worker() {
     let flow = Flow::seeded(Some(TASKS), PLAN, None);
     let worker = flow.view(&["--for", "worker", "--task", "1"]);
     assert_eq!(worker.matches("`brief.md` states nothing").count(), 2);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_brief_link_leaving_the_authored_directory_inlines_nothing() {
+    let flow = Flow::seeded(Some(TASKS), PLAN, None);
+    let secret = flow.root.join("elsewhere.md");
+    fs::write(&secret, "## Intent\nOutside-marker.\n").expect("outside file");
+    std::os::unix::fs::symlink(&secret, flow.authored.join("brief.md")).expect("link");
+
+    let worker = flow.view(&["--for", "worker", "--task", "1"]);
+    assert!(!worker.contains("Outside-marker"), "{worker}");
+    assert_eq!(worker.matches("`brief.md` states nothing").count(), 2);
+
+    let human = flow.view(&["--for", "human"]);
+    assert!(!human.contains("Outside-marker"), "{human}");
+    assert!(human.contains("`brief.md` does not exist"), "{human}");
 }
 
 #[test]

@@ -2,11 +2,10 @@
 //!
 //! Approval writes five stores with no transaction across them, so the stamp
 //! goes last: a failure anywhere leaves a plan with no approval, which a re-run
-//! can still approve once the flow directory is committed again. The commit it
+//! can still approve once the flow's files are committed again. The commit it
 //! names must hold the plan, so `HEAD` is asked about the flow's own files.
 
 use std::collections::BTreeMap;
-use std::fs;
 use std::path::Path;
 use std::process::Command;
 
@@ -16,7 +15,7 @@ use toml::Value as TomlValue;
 
 use super::check;
 use super::schema::{Approval, Decision, Door, PlanStore, Provenance, ReviewOutcome};
-use super::store::{self, brief_digest};
+use super::store::{self, BRIEF_FILE, brief_digest};
 use crate::backlog::schema::STATUS_OPEN;
 use crate::backlog::triage::{Transition, triage_value};
 use crate::cli::{
@@ -24,17 +23,18 @@ use crate::cli::{
 };
 use crate::errors::{ErrorKind, tagged_err};
 use crate::flow::active::{build_entry, find_slug_index, mutate_active};
-use crate::io::{OnMissing, mutate_doc, read_toml, repo_or_cwd_root};
+use crate::io::{OnMissing, mutate_doc, read_toml, relativise, repo_or_cwd_root};
 use crate::output::{print_json_compact, print_json_line};
 use crate::tasks::finding::ERROR;
 use crate::tasks::schema::Store;
 use crate::tasks::{load_store, mutate_store, resolve_store_path};
 
-const BRIEF_FILE: &str = "brief.md";
 const CONTEXT_FILE: &str = "context.toml";
 const REVIEW_STORE_FILE: &str = "review-v2.toml";
-/// What `HEAD` must hold for a stamp to name a commit carrying the plan.
-const COMMITTED_FILES: [&str; 3] = ["tasks.toml", "plan.toml", BRIEF_FILE];
+/// What `HEAD` must hold for a stamp to name a commit carrying the plan: these in
+/// the flow directory, and `COMMITTED_AUTHORED` in the authored directory.
+const COMMITTED_STORES: [&str; 2] = ["tasks.toml", "plan.toml"];
+const COMMITTED_AUTHORED: [&str; 2] = [BRIEF_FILE, "design/"];
 
 const STATUS_DRAFT: &str = "draft";
 const STATUS_IN_PROGRESS: &str = "in-progress";
@@ -179,6 +179,7 @@ pub(super) fn approve(args: PlanApproveArgs) -> Result<()> {
         strict_read: false,
     };
     let plan_path = store::resolve(&slug)?;
+    store::require_open(&plan_path)?;
     let flow_dir = plan_path
         .parent()
         .expect("a resolved store path sits in its flow directory");
@@ -204,9 +205,8 @@ pub(super) fn approve(args: PlanApproveArgs) -> Result<()> {
     }
     refuse_uncommitted(&root, &slug)?;
     let commit = head_commit(&root)?;
-    let brief_path = flow_dir.join(BRIEF_FILE);
-    let brief =
-        fs::read(&brief_path).with_context(|| format!("reading {}", brief_path.display()))?;
+    let brief = store::read_brief(&store::authored_dir(&slug)?)?
+        .ok_or_else(|| refuse(format!("`{BRIEF_FILE}` does not exist")))?;
 
     let backlog = promote_closed_items(&root, &slug, &tasks, &integrity)?;
     let to = if amend {
@@ -330,9 +330,12 @@ fn context_status(context_path: &Path) -> Result<String> {
 
 /// `--ignored` because an ignored file is as absent from `HEAD` as an untracked
 /// one yet reads as clean, and `--untracked-files=all` because
-/// `status.showUntrackedFiles` could otherwise hide the untracked ones.
+/// `status.showUntrackedFiles` could otherwise hide the untracked ones. A pathspec
+/// matching nothing, such as a flow with no `design/`, reports nothing.
 fn refuse_uncommitted(root: &Path, slug: &str) -> Result<()> {
-    let paths = COMMITTED_FILES.map(|file| format!(".claude/flows/{slug}/{file}"));
+    let authored = relativise(root, &store::authored_dir(slug)?);
+    let stores = COMMITTED_STORES.map(|file| format!(".claude/flows/{slug}/{file}"));
+    let authored = COMMITTED_AUTHORED.map(|file| format!("{authored}/{file}"));
     let out = git_stdout(
         Command::new("git")
             .arg("-C")
@@ -344,7 +347,8 @@ fn refuse_uncommitted(root: &Path, slug: &str) -> Result<()> {
                 "--ignored",
                 "--",
             ])
-            .args(&paths),
+            .args(&stores)
+            .args(&authored),
         "git status",
     )?;
     let dirty: Vec<&str> = out
@@ -356,7 +360,7 @@ fn refuse_uncommitted(root: &Path, slug: &str) -> Result<()> {
         return Ok(());
     }
     Err(refuse(format!(
-        "commit the flow directory first, since the approval names a commit that holds the \
+        "commit the flow's files first, since the approval names a commit that holds the \
          plan; `git status` reports: {}",
         dirty.join(", ")
     )))
