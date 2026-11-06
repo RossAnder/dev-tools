@@ -8,6 +8,8 @@
 //!   - `verify_integrity` + `maybe_verify_integrity` — the read-side check
 //!   - `refresh_sidecar` — regenerate a sidecar against current on-disk bytes
 //!     without touching the TOML file itself
+//!   - `refuse_crlf_stamp` + `crlf_mismatch_clause` — the line-endings refusal
+//!     and diagnosis; digests themselves stay over raw bytes
 //!
 //! Deliberately stays free of `Cli`-coupling: `IntegrityOpts` has public
 //! fields (no `from_cli` constructor here), so the root module constructs
@@ -83,6 +85,65 @@ pub(crate) fn sha256_hex_of_file(file: &Path) -> Result<String> {
     Ok(hex_lower(&h.finalize()))
 }
 
+/// SHA-256 hex of `bytes` with CRLF folded to LF. Lone CRs are content and stay.
+/// Never a sidecar digest: those cover raw bytes.
+pub(crate) fn sha256_hex_crlf_folded(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    let mut rest = bytes;
+    while let Some(at) = rest.windows(2).position(|pair| pair == b"\r\n") {
+        hasher.update(&rest[..at]);
+        hasher.update(b"\n");
+        rest = &rest[at + 2..];
+    }
+    hasher.update(rest);
+    hex_lower(&hasher.finalize())
+}
+
+/// The per-repo fix for a store whose working copy holds CRLF.
+const CRLF_REMEDY: &str = "pin `.claude/**/*.toml` and `.claude/**/*.sha256` to `text eol=lf` in \
+                           this repo's .gitattributes, remove the file and its .sha256 sidecar, \
+                           then `git checkout` both, without refreshing first";
+
+fn holds_crlf(bytes: &[u8]) -> bool {
+    bytes.windows(2).any(|pair| pair == b"\r\n")
+}
+
+/// Refuse to stamp a digest over a `.toml` holding CRLF: it would fail on every
+/// LF checkout of the same commit. Other file types sit outside the `.toml` pins,
+/// so they pass.
+pub(crate) fn refuse_crlf_stamp(file: &Path, bytes: &[u8]) -> Result<()> {
+    let is_toml = file
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("toml"));
+    if !is_toml || !holds_crlf(bytes) {
+        return Ok(());
+    }
+    Err(tagged_err(
+        ErrorKind::Integrity,
+        Some(file.to_owned()),
+        format!(
+            "refusing to stamp a sidecar for {}: it holds CRLF line endings, and the digest would fail on every LF checkout; {CRLF_REMEDY}",
+            file.display()
+        ),
+    ))
+}
+
+/// The clause a digest-mismatch message appends when `file` holds CRLF and its
+/// CRLF-folded bytes hash to the sidecar's `expected`, empty otherwise. Starts
+/// with its own separator and spans no line break.
+pub(crate) fn crlf_mismatch_clause(file: &Path, expected: &str) -> String {
+    let Ok(bytes) = fs::read(file) else {
+        return String::new();
+    };
+    if holds_crlf(&bytes) && expected.eq_ignore_ascii_case(&sha256_hex_crlf_folded(&bytes)) {
+        format!(
+            "; the file matches that digest once its CRLF line endings fold to LF, so only the line endings differ: {CRLF_REMEDY}"
+        )
+    } else {
+        String::new()
+    }
+}
+
 /// If `--verify-integrity` was set, verify the target against its sidecar.
 /// Errors if the sidecar is missing or the digest disagrees.
 pub(crate) fn maybe_verify_integrity(file: &Path, integrity: IntegrityOpts) -> Result<()> {
@@ -117,6 +178,9 @@ pub(crate) fn maybe_verify_integrity(file: &Path, integrity: IntegrityOpts) -> R
 /// running `tomlctl validate <path>` before `integrity refresh` so
 /// syntactic corruption surfaces before the sidecar papers over it.
 ///
+/// A `.toml` holding CRLF is refused and its sidecar left as it is
+/// (`refuse_crlf_stamp`).
+///
 /// The caller MUST wrap the call in `with_exclusive_lock(file, ...)` so
 /// a concurrent writer observes a consistent (TOML, sidecar) pair.
 pub(crate) fn refresh_sidecar(file: &Path) -> Result<()> {
@@ -145,6 +209,7 @@ pub(crate) fn refresh_sidecar(file: &Path) -> Result<()> {
                 .with_context(|| format!("reading {} for sidecar refresh", file.display()));
         }
     };
+    refuse_crlf_stamp(file, &bytes)?;
     crate::io::write_sidecar_for(file, &bytes)
 }
 
@@ -197,11 +262,12 @@ pub(crate) fn verify_integrity(file: &Path) -> Result<()> {
             ErrorKind::Integrity,
             Some(file.to_owned()),
             format!(
-                "integrity check failed for {}: expected {}, actual {} (sidecar: {})",
+                "integrity check failed for {}: expected {}, actual {} (sidecar: {}){}",
                 file.display(),
                 expected,
                 actual,
-                sidecar.display()
+                sidecar.display(),
+                crlf_mismatch_clause(file, expected)
             ),
         ));
     }

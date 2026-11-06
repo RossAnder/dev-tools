@@ -1092,6 +1092,7 @@ fn is_not_found(err: &anyhow::Error) -> bool {
 /// the mutation starts from the seed; with `OnMissing::Error` the original
 /// error propagates unchanged. Any non-`NotFound` read failure propagates
 /// regardless of `on_missing`, so an unreadable/corrupt file is never seeded.
+/// `--verify-integrity` runs inside the lock, before the read (`verify_before_write`).
 pub(crate) fn mutate_doc<F>(
     file: &Path,
     allow_outside: bool,
@@ -1111,6 +1112,7 @@ where
         // inside the critical section closes that window for any actor that
         // respects our lock.
         guard_write_path(file, allow_outside)?;
+        verify_before_write(file, integrity)?;
         // Read, or seed on a NotFound miss. `read_or_seed` resolves the
         // `on_missing` policy; no source text means the doc was seeded.
         let (mut doc, on_disk) = read_or_seed(file, on_missing)?;
@@ -1128,6 +1130,17 @@ where
         write_doc_unless_unchanged(file, &doc, integrity, on_disk.as_deref())?;
         Ok(created)
     })
+}
+
+/// The writer's `--verify-integrity` check, with the read path's error kinds and
+/// missing-sidecar refusal. It must precede the read: the write re-digests what
+/// was read, which would launder a mismatch. A target not created yet has nothing
+/// to verify.
+fn verify_before_write(file: &Path, integrity: IntegrityOpts) -> Result<()> {
+    if integrity.verify_on_read && file.exists() {
+        crate::integrity::verify_integrity(file)?;
+    }
+    Ok(())
 }
 
 /// Shared read-or-seed step for the `mutate_doc*` family. Attempts
@@ -1219,6 +1232,7 @@ where
 {
     with_exclusive_lock(file, || {
         guard_write_path(file, allow_outside)?;
+        verify_before_write(file, integrity)?;
         // Read, or seed on a NotFound miss. `seeded` tracks whether the
         // doc started from the seed; it only graduates to a reported
         // `created=true` if the closure also asks to persist (below).
@@ -1274,6 +1288,7 @@ where
     with_exclusive_lock(file, || {
         // In-lock guard, same as `mutate_doc`.
         guard_write_path(file, allow_outside)?;
+        verify_before_write(file, integrity)?;
         // Read, or seed on a NotFound miss.
         let (doc, on_disk) = read_or_seed(file, on_missing)?;
         let created = on_disk.is_none();

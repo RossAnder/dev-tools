@@ -46,10 +46,10 @@ pub(crate) struct ReadIntegrityArgs {
     pub(crate) strict_read: bool,
 }
 
-/// Write-side integrity/containment flags. Writers
-/// still honour `--verify-integrity` because an update is often preceded
-/// by a pre-read verify; the other three flags only have a semantic hook
-/// on write paths.
+/// Write-side integrity/containment flags. `--verify-integrity` checks an
+/// existing target under the writer's lock before it is read, because the
+/// write would otherwise re-digest the bytes and launder a mismatch; the other
+/// flags only have a semantic hook on write paths.
 #[derive(Args, Clone)]
 #[command(next_help_heading = "Integrity options")]
 pub(crate) struct WriteIntegrityArgs {
@@ -67,9 +67,9 @@ pub(crate) struct WriteIntegrityArgs {
     #[arg(long = "no-write-integrity")]
     pub(crate) no_write_integrity: bool,
 
-    /// Before any read operation, verify the target file against its
+    /// Before reading an existing target, verify it against its
     /// `<file>.sha256` sidecar. Errors if the sidecar is missing or the
-    /// digest disagrees. Never auto-repairs.
+    /// digest disagrees, and writes nothing. Never auto-repairs.
     #[arg(long = "verify-integrity")]
     pub(crate) verify_integrity: bool,
 
