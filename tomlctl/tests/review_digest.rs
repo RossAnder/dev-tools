@@ -458,6 +458,7 @@ fn report_refuses_an_out_beside_the_runs_root() {
         .failure();
     let stderr = String::from_utf8_lossy(&out.get_output().stderr);
     assert!(stderr.contains(".review-v2-runs/"), "{stderr}");
+    assert!(!stderr.contains("--allow-outside"), "{stderr}");
     assert!(!repo.root.join("docs/report.md").exists());
 }
 
