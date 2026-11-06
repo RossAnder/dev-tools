@@ -27,9 +27,7 @@ use super::fields::{
 use super::invalid;
 use super::store::{self, Minted, Run, Store, Target};
 use crate::cli::{ReadIntegrityArgs, ReviewCoverArgs, ReviewPlanArgs};
-use crate::io::{
-    atomic_write, guard_write_path, read_ndjson_source, read_prose, relativise, repo_or_cwd_root,
-};
+use crate::io::{atomic_write, read_ndjson_source, read_prose, relativise, repo_or_cwd_root};
 use crate::output::{print_json_compact, print_text};
 
 const PROPOSED: &str = "proposed";
@@ -915,7 +913,7 @@ fn propose(target: &Target, args: &ReviewPlanArgs) -> Result<()> {
     match &args.out {
         None => print_text(&ndjson),
         Some(out) => {
-            guard_write_path(out, args.integrity.allow_outside)?;
+            store::guard_run_write(out, args.integrity.allow_outside)?;
             atomic_write(out, ndjson.as_bytes())?;
             let mut envelope = json!({"ok": true, "out": relativise(&root, out)});
             if let (Some(env), Some(sum)) = (envelope.as_object_mut(), summary.as_object()) {

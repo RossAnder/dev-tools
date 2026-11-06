@@ -17,7 +17,7 @@ use super::fields::{FindingStatus, Kind, Role, Route, SWEEPER, Severity};
 use super::store::{self, Cell, Finding, Row, Run, Store, Target, Verdict, View};
 use crate::cli::{ReviewDigestArgs, ReviewReportArgs};
 use crate::errors::{ErrorKind, tagged_err};
-use crate::io::{atomic_write, guard_write_path, relativise, repo_or_cwd_root};
+use crate::io::{atomic_write, relativise, repo_or_cwd_root};
 use crate::output::print_json_line;
 
 /// Rows of each audit-sample group.
@@ -158,7 +158,7 @@ pub(crate) fn report(target: &Target, args: ReviewReportArgs) -> Result<()> {
     let run = find_run(&stored, &args.run, target, "review report")?;
     let root = repo_or_cwd_root()?;
     let (markdown, counts) = render(&stored, run);
-    guard_write_path(&args.out, false)?;
+    store::guard_run_write(&args.out, false)?;
     atomic_write(&args.out, markdown.as_bytes())?;
     // The markdown is a pure function of the store, so a retry after a
     // shaping failure rewrites the same bytes; a read verb's printer fits.

@@ -19,7 +19,7 @@ The flag surface of the `tomlctl review` group and the shape of the v2 review st
 ## Shared behaviour
 
 - **Store target.** Every verb except `catalogue` and `schema` takes exactly one of `--slug` (the flow store) or `--scope` (the flow-less store); `stats` also accepts `--all`. Both names are validated like a flow slug. The store stamps its own `last_updated`, so no verb takes `--no-stamp`.
-- **Run directory.** `.claude/review-v2-runs/<store-key>/U<n>/`, where `<store-key>` is the slug or `scope-<scope>`. `run start` creates it with a `payloads/` subdirectory, where agents stage their NDJSON payloads, and writes a `.gitignore` holding `*` at `.claude/review-v2-runs/` when none is there.
+- **Run directory.** `.review-v2-runs/<store-key>/U<n>/` at the repo root, where `<store-key>` is the slug or `scope-<scope>`. `run start` creates it with a `payloads/` subdirectory, where agents stage their NDJSON payloads, and writes a `.gitignore` holding `*` at `.review-v2-runs/` when none is there. It and every `--out` must resolve, symlinks followed, under `.review-v2-runs/` or `.claude/`; `run start` and `plan --propose` take `--allow-outside` to override that.
 - **Catalogue drift.** A verb that reads a run's catalogue — `survey`, `plan`, `add`, `run finish` and the others that bind or route against it — reloads it from the roots the run recorded and fails `kind=validation` naming `tree_sha` or `config_sha` when either no longer matches the value `run start` recorded; start a new run. A run recorded without `tree_sha` is not checked.
 - **Integrity flags.** The writing verbs (`sync-v1`, `run *`, `survey`, `plan`, `cover`, `add`, `verdict`, `resolve`, `triage`, `export-v1`) carry the write bundle — `--allow-outside`, `--no-write-integrity`, `--verify-integrity`, `--strict-integrity`, `--no-create`. The reading verbs (`list`, `show`, `digest`, `report`, `stats`, `catalogue`, `schema`) carry `--verify-integrity` and `--strict-read`. The flag tables below leave both bundles out.
 - **Missing store.** `sync-v1` and `stats` read an absent store as empty and create nothing; `run start` seeds one; every other verb fails `kind=not_found`.
@@ -373,7 +373,7 @@ tomlctl review digest --slug <slug> --run U1 --since-wave 2
 
 ### `tomlctl review report`
 
-Writes the run's markdown report — defects by severity, the Needs-a-plan group, cleanup by file, advisory with dispositions, the coverage map — from the store alone, so one store always writes the same bytes. The report is derived and has no sidecar; `--out` must lie under the repo's `.claude/`. Prints `{path, counts}`, where `counts` is the report's counts line (`defect n · cleanup n · advisory n · refuted n · suppressed n · unverified n · cells n · uncovered n`).
+Writes the run's markdown report — defects by severity, the Needs-a-plan group, cleanup by file, advisory with dispositions, the coverage map — from the store alone, so one store always writes the same bytes. The report is derived and has no sidecar. Prints `{path, counts}`, where `counts` is the report's counts line (`defect n · cleanup n · advisory n · refuted n · suppressed n · unverified n · cells n · uncovered n`).
 
 ```bash
 tomlctl review report --slug <slug> --run U1 --out <run-dir>/report.md

@@ -16,7 +16,7 @@ use super::store::{self, Minted, Run, Signal, Store, Target, Waiver};
 use crate::cli::{ReviewRunFinishArgs, ReviewRunStartArgs, ReviewRunUpdateArgs};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::fields::FieldArgs;
-use crate::io::{guard_write_path, read_prose, relativise, relativise_under, repo_or_cwd_root};
+use crate::io::{read_prose, relativise, relativise_under, repo_or_cwd_root};
 use crate::output::print_json_compact;
 
 /// The run fields `run start` takes through `--set` / `--set-json`.
@@ -100,7 +100,7 @@ pub(crate) fn start(target: &Target, args: ReviewRunStartArgs) -> Result<()> {
             let id = ids.into_iter().next().expect("one row minted one id");
             let dir = target.run_dir(&id)?;
             // Inside the write: a directory that cannot be made leaves no run behind.
-            guard_write_path(&dir, allow_outside)?;
+            store::guard_run_write(&dir, allow_outside)?;
             fs::create_dir_all(dir.join("payloads")).map_err(|e| {
                 tagged_err(
                     ErrorKind::Other,
@@ -122,13 +122,14 @@ pub(crate) fn start(target: &Target, args: ReviewRunStartArgs) -> Result<()> {
 }
 
 /// Writes `.gitignore` holding `*` at the runs root above `runs_parent` when
-/// absent, so run artifacts stay out of git in a repo that ignores nothing.
+/// absent, so run artifacts stay out of git in a repo that ignores nothing. A
+/// dangling link counts as present: writing through one creates its target.
 fn ignore_runs_root(runs_parent: &Path) -> Result<()> {
     let Some(runs_root) = runs_parent.parent() else {
         return Ok(());
     };
     let ignore = runs_root.join(".gitignore");
-    if ignore.exists() {
+    if fs::symlink_metadata(&ignore).is_ok() {
         return Ok(());
     }
     fs::write(&ignore, "*\n").map_err(|e| {

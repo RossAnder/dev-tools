@@ -394,7 +394,7 @@ fn show_cell_carries_bound_catalogue_paths() {
         cell["method_paths"][0]["path"],
         format!("{builtin}/methods/trace.md")
     );
-    assert_eq!(cell["pack"], ".claude/review-v2-runs/scope-t/U1/pack.md");
+    assert_eq!(cell["pack"], ".review-v2-runs/scope-t/U1/pack.md");
     assert_eq!(cell["baselines"]["lint-baseline"], "logs/lint.txt");
     assert_eq!(cell["baselines"]["profile-baseline"], "none — no profiler");
     assert!(cell.get("agent").is_none(), "{cell}");

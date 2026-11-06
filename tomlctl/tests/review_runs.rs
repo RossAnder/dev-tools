@@ -191,7 +191,7 @@ impl Repo {
 
     fn runs_dir(&self) -> PathBuf {
         self.root
-            .join(".claude/review-v2-runs")
+            .join(".review-v2-runs")
             .join(format!("scope-{SCOPE}"))
     }
 
@@ -211,7 +211,11 @@ fn run_start_mints_sequential_ids_and_creates_run_dir() {
     let two = repo.start(&repo.first, &[]);
     assert_eq!(one["run"], "U1");
     assert_eq!(two["run"], "U2");
-    assert_eq!(one["dir"], ".claude/review-v2-runs/scope-t/U1");
+    assert_eq!(one["dir"], ".review-v2-runs/scope-t/U1");
+    assert!(
+        !repo.root.join(".claude/review-v2-runs").exists(),
+        "nothing lands under .claude/"
+    );
     for run in ["U1", "U2"] {
         assert!(
             repo.runs_dir().join(run).join("payloads").is_dir(),
@@ -287,7 +291,7 @@ fn run_start_records_catalogue_and_changed_lines() {
 #[test]
 fn run_start_ignores_the_runs_root() {
     let Some(repo) = repo() else { return };
-    let ignore = repo.root.join(".claude/review-v2-runs/.gitignore");
+    let ignore = repo.root.join(".review-v2-runs/.gitignore");
     repo.start(&repo.first, &[]);
     assert_eq!(fs::read_to_string(&ignore).unwrap(), "*\n");
 
@@ -425,6 +429,53 @@ fn run_start_halts_on_invalid_project_catalogue() {
     );
     assert!(!repo.store().exists(), "no run is minted");
     assert!(!repo.runs_dir().exists(), "no run directory is made");
+}
+
+#[cfg(unix)]
+#[test]
+fn run_start_refuses_a_runs_root_linked_outside_the_repo() {
+    let Some(repo) = repo() else { return };
+    let outside = tempfile::tempdir().unwrap();
+    std::os::unix::fs::symlink(outside.path(), repo.root.join(".review-v2-runs")).unwrap();
+    let stderr = repo.start_fails(&repo.first, &[]);
+    assert!(stderr.contains(".review-v2-runs/"), "{stderr}");
+    assert_eq!(fs::read_dir(outside.path()).unwrap().count(), 0);
+    assert!(!repo.store().exists(), "no run is minted");
+}
+
+#[cfg(unix)]
+#[test]
+fn run_start_refuses_a_dangling_runs_root_link() {
+    let Some(repo) = repo() else { return };
+    let outside = tempfile::tempdir().unwrap();
+    let absent = outside.path().join("absent");
+    std::os::unix::fs::symlink(&absent, repo.root.join(".review-v2-runs")).unwrap();
+    repo.start_fails(&repo.first, &[]);
+    assert!(!absent.exists());
+    assert!(!repo.store().exists(), "no run is minted");
+}
+
+#[cfg(unix)]
+#[test]
+fn run_start_refuses_a_store_key_directory_linked_outside_the_repo() {
+    let Some(repo) = repo() else { return };
+    let outside = tempfile::tempdir().unwrap();
+    fs::create_dir_all(repo.runs_dir().parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(outside.path(), repo.runs_dir()).unwrap();
+    repo.start_fails(&repo.first, &[]);
+    assert_eq!(fs::read_dir(outside.path()).unwrap().count(), 0);
+}
+
+#[cfg(unix)]
+#[test]
+fn run_start_never_writes_through_a_dangling_ignore_link() {
+    let Some(repo) = repo() else { return };
+    let outside = tempfile::tempdir().unwrap();
+    let absent = outside.path().join("absent");
+    fs::create_dir_all(repo.root.join(".review-v2-runs")).unwrap();
+    std::os::unix::fs::symlink(&absent, repo.root.join(".review-v2-runs/.gitignore")).unwrap();
+    repo.start(&repo.first, &[]);
+    assert!(!absent.exists());
 }
 
 #[test]

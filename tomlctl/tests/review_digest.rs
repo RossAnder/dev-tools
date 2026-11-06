@@ -12,7 +12,7 @@ use serde_json::{Value as JsonValue, json};
 
 const SCOPE: &str = "t";
 const STORE: &[&str] = &["--scope", SCOPE];
-const REPORT: &str = ".claude/review-v2-runs/scope-t/U1/report.md";
+const REPORT: &str = ".review-v2-runs/scope-t/U1/report.md";
 
 const VOCABULARY: &str = r#"
 [signals."trust-boundary"]
@@ -442,6 +442,40 @@ fn report_writes_file_and_prints_counts() {
         !text.contains("**F4**"),
         "a refuted defect is counted, not listed:\n{text}"
     );
+}
+
+#[test]
+fn report_refuses_an_out_beside_the_runs_root() {
+    let Some(repo) = Repo::new(&["src/a.rs"]) else {
+        return;
+    };
+    repo.seed(ALL_WAIVED, &report_rows());
+    let out = repo
+        .tomlctl()
+        .args(["review", "report", "--run", "U1", "--out", "docs/report.md"])
+        .args(STORE)
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr);
+    assert!(stderr.contains(".review-v2-runs/"), "{stderr}");
+    assert!(!repo.root.join("docs/report.md").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn report_refuses_a_runs_root_linked_outside_the_repo() {
+    let Some(repo) = Repo::new(&["src/a.rs"]) else {
+        return;
+    };
+    repo.seed(ALL_WAIVED, &report_rows());
+    let outside = tempfile::tempdir().unwrap();
+    std::os::unix::fs::symlink(outside.path(), repo.root.join(".review-v2-runs")).unwrap();
+    repo.tomlctl()
+        .args(["review", "report", "--run", "U1", "--out", REPORT])
+        .args(STORE)
+        .assert()
+        .failure();
+    assert_eq!(fs::read_dir(outside.path()).unwrap().count(), 0);
 }
 
 #[test]

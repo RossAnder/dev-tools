@@ -434,6 +434,42 @@ fn strings(value: &JsonValue) -> Vec<String> {
 
 const STORE: &[&str] = &["--scope", SCOPE];
 
+#[cfg(unix)]
+#[test]
+fn propose_out_lands_in_the_runs_root_and_refuses_one_linked_outside() {
+    const OUT: &str = ".review-v2-runs/scope-t/U1/proposal.ndjson";
+    let Some(repo) = Repo::new(&["src/a.rs"]) else {
+        return;
+    };
+    repo.seed(&[RunSpec {
+        id: "U1",
+        family: "code",
+        depth: "quick",
+        changed_lines: Some(10),
+        scope: &["src/**"],
+        signals: "[]",
+    }]);
+    let propose = || {
+        let mut cmd = repo.tomlctl();
+        cmd.args(["review", "plan", "--run", "U1", "--propose", "--out", OUT])
+            .args(STORE);
+        cmd
+    };
+
+    propose().assert().success();
+    assert!(repo.root.join(OUT).is_file());
+
+    fs::remove_dir_all(repo.root.join(".review-v2-runs")).unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    std::os::unix::fs::symlink(outside.path(), repo.root.join(".review-v2-runs")).unwrap();
+    propose().assert().failure();
+    assert_eq!(fs::read_dir(outside.path()).unwrap().count(), 0);
+
+    fs::create_dir_all(outside.path().join("scope-t/U1")).unwrap();
+    propose().arg("--allow-outside").assert().success();
+    assert!(outside.path().join("scope-t/U1/proposal.ndjson").is_file());
+}
+
 #[test]
 fn propose_includes_floor_and_matched_signal_lenses() {
     let Some(repo) = Repo::new(&["src/a.rs", "src/b.rs"]) else {

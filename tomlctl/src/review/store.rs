@@ -17,6 +17,7 @@
 //! fully typed and drop keys they do not know.
 
 use std::collections::HashMap;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
@@ -33,7 +34,10 @@ use crate::cli::{
 };
 use crate::convert::toml_to_json;
 use crate::errors::{ErrorKind, tagged_err};
-use crate::io::{OnMissing, mutate_doc, read_doc, repo_or_cwd_root, schema_seed, warn_if_created};
+use crate::io::{
+    OnMissing, guard_write_path, mutate_doc, read_doc, repo_or_cwd_root, schema_seed,
+    warn_if_created,
+};
 
 pub(crate) const SCHEMA_VERSION: i64 = 1;
 
@@ -41,8 +45,10 @@ pub(crate) const SCHEMA_VERSION: i64 = 1;
 const STORE_FILE: &str = "review-v2.toml";
 /// Directory under `.claude/` holding the flow-less `<scope>.toml` stores.
 const SCOPE_DIR: &str = "review-v2";
-/// Directory under `.claude/` holding each store's run artifacts.
-const RUNS_DIR: &str = "review-v2-runs";
+/// Directory at the repo root holding each store's run artifacts. Agents write them
+/// with the Write tool, and writes under `.claude/` are protected paths that no allow
+/// rule can pre-approve.
+const RUNS_DIR: &str = ".review-v2-runs";
 
 type Table = Map<String, TomlValue>;
 
@@ -994,7 +1000,7 @@ pub(crate) fn resolve(slug: Option<&str>, scope: Option<&str>) -> Result<Target>
 }
 
 impl Target {
-    /// `.claude/review-v2-runs/<key>/<run>/`, not created. `run` must be a
+    /// `<root>/.review-v2-runs/<key>/<run>/`, not created. `run` must be a
     /// minted run id, which keeps it from naming anything outside the key's
     /// directory.
     pub(crate) fn run_dir(&self, run: &str) -> Result<PathBuf> {
@@ -1008,13 +1014,47 @@ impl Target {
                 format!("invalid run id: {run} (expected U<n>)"),
             ));
         }
-        Ok(self
-            .root
-            .join(".claude")
-            .join(RUNS_DIR)
-            .join(&self.key)
-            .join(run))
+        Ok(self.root.join(RUNS_DIR).join(&self.key).join(run))
     }
+}
+
+/// Admits a run-artifact write that resolves below `<root>/.review-v2-runs/`, making
+/// its parent; anything else goes to `guard_write_path`, which holds it to `.claude/`
+/// unless `allow_outside`. The runs root is matched by its real spelling, so a symlink
+/// there or below it is judged by where it leads, and refused when that is outside.
+pub(crate) fn guard_run_write(file: &Path, allow_outside: bool) -> Result<()> {
+    let runs = repo_or_cwd_root()?.canonicalize()?.join(RUNS_DIR);
+    let below_runs = resolve_for_write(file)
+        .is_some_and(|resolved| resolved != runs && resolved.starts_with(&runs));
+    if !below_runs {
+        return guard_write_path(file, allow_outside).with_context(|| {
+            format!(
+                "review output {} must resolve under .claude/ or {RUNS_DIR}/",
+                file.display()
+            )
+        });
+    }
+    if let Some(parent) = file.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
+    }
+    Ok(())
+}
+
+/// `file` with symlinks resolved through its deepest existing ancestor and the absent
+/// remainder re-attached. `None` when that cannot be established: a dangling link, or
+/// a `..` in the absent remainder. A dangling link counts as existing here, since
+/// stepping over it would judge the path by its spelling.
+fn resolve_for_write(file: &Path) -> Option<PathBuf> {
+    let absolute = std::path::absolute(file).ok()?;
+    let mut anchor = absolute.as_path();
+    let mut absent = Vec::new();
+    while fs::symlink_metadata(anchor).is_err() {
+        absent.push(anchor.file_name()?);
+        anchor = anchor.parent()?;
+    }
+    let mut resolved = anchor.canonicalize().ok()?;
+    resolved.extend(absent.into_iter().rev());
+    Some(resolved)
 }
 
 /// The one error every verb reports for an absent store.
@@ -1443,7 +1483,7 @@ rationale = "reproduced"
     #[test]
     fn run_dir_uses_slug_or_scope_key() {
         with_root(|root| {
-            let runs = root.join(".claude").join("review-v2-runs");
+            let runs = root.join(".review-v2-runs");
 
             let flow = resolve(Some("my-flow"), None).expect("slug resolves");
             assert_eq!(
