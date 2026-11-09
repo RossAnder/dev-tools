@@ -5909,7 +5909,7 @@ tags = [
     "review-v2",
     "containment",
 ]
-status = "open"
+status = "resolved"
 created = 2026-10-13
 last_seen = 2026-10-13
 seen_count = 1
@@ -5918,6 +5918,8 @@ origin = "implement"
 flow = "review-system-v2"
 context = "report calls guard_write_path(out, false) and its read bundle carries no --allow-outside, so a report cannot be written outside .claude/. Decide whether the two --out verbs should share one containment rule; the reference doc states report's as built."
 base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+resolved = 2026-11-09
+resolution = "e296f01: review report takes --allow-outside and passes it to guard_run_write, so report and plan share one --out containment rule."
 
 [[backlog]]
 id = "B-be44a578"
@@ -6241,7 +6243,7 @@ tags = [
     "review-v2",
     "security",
 ]
-status = "open"
+status = "resolved"
 created = 2026-10-13
 last_seen = 2026-10-13
 seen_count = 1
@@ -6250,6 +6252,8 @@ origin = "implement"
 flow = "review-system-v2"
 context = "Install hooks, build.rs and package scripts run unsandboxed; no concern in vocabulary.toml routes them to the security lens. Add a concern and a detector."
 base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+resolved = 2026-11-09
+resolution = "e296f01: concern supply-chain-execution, owned by the security lens, with signals build-script-change and package-lifecycle-change."
 
 [[backlog]]
 id = "B-c6fcfb97"
@@ -6260,7 +6264,7 @@ tags = [
     "review-v2",
     "waivers",
 ]
-status = "open"
+status = "resolved"
 created = 2026-10-13
 last_seen = 2026-10-13
 seen_count = 1
@@ -6269,6 +6273,8 @@ origin = "implement"
 flow = "review-system-v2"
 context = "run finish demands a waiver only for unselected matched concerns; these lenses never match, so their omission is invisible to stats --escapes. Decide whether they should carry signals."
 base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+resolved = 2026-11-09
+resolution = "e296f01: decided as narrow signals only. seams and architecture carry new-seam and test-gaps carries finding-hotspot; idioms and duplication stay unsignalled until run data says otherwise."
 
 [[backlog]]
 id = "B-e922f5cb"
@@ -6454,7 +6460,7 @@ kind = "debt"
 summary = "Survey's uncompilable-regex branch is reachable only from legacy runs recorded without tree_sha, so no integration test covers it"
 area = "tomlctl/src/review/survey.rs"
 tags = ["review-v2"]
-status = "open"
+status = "resolved"
 created = 2026-10-13
 last_seen = 2026-10-13
 seen_count = 1
@@ -6463,6 +6469,8 @@ origin = "review-apply"
 flow = "review-system-v2"
 context = "run start rejects an uncompilable contains pattern and the catalogue drift check refuses a later edit, so the survey's 'does not compile' branch serves only legacy stores. The integration test that exercised it was reworked when the drift check landed. Either unit-test the branch inside survey.rs or decide it only needs to serve legacy stores."
 base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+resolved = 2026-11-09
+resolution = "e296f01: in-module unit test covers the uncompilable contains pattern being recorded unknown with its reason."
 
 [[backlog]]
 id = "B-8a4b923f"
@@ -9057,7 +9065,7 @@ kind = "bug"
 summary = "review add section_bodies splits on LF only, so a CRLF brief or plan section never matches its heading"
 area = "tomlctl/src/review"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-09T13:45:26Z
 last_seen = 2026-11-09T13:45:26Z
 seen_count = 1
@@ -9068,6 +9076,8 @@ context = 'section_bodies in review/add.rs cuts on \n, leaving a trailing \r on 
 base_sha = "6205e298590c4d917c4ebcbcab601185f4626788"
 evidence = ["tomlctl/src/review/add.rs:436"]
 related = ["B-57df0409"]
+resolved = 2026-11-09
+resolution = "e296f01: section_bodies converts CRLF to LF before cutting sections, so bodies come back LF and an empty-title heading parses. Headings already matched; the defect was CRLF bodies missing LF needles."
 
 [[backlog]]
 id = "B-10cbeccd"
@@ -9094,7 +9104,7 @@ kind = "annoyance"
 summary = "review triage --convert does not default the replacement's target from a flow-mode advisory"
 area = "tomlctl/src/review"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-09T13:45:26Z
 last_seen = 2026-11-09T13:45:26Z
 seen_count = 1
@@ -9104,6 +9114,8 @@ flow = "shimmying-marinating-bumblebee"
 context = "--convert defaults file, line, symbol and summary from the advisory but not target, so converting a flow-mode advisory that carries a target makes the caller repeat it. Arrived cheap-in-file; deferred so the verified run was not re-opened."
 base_sha = "6205e298590c4d917c4ebcbcab601185f4626788"
 related = ["B-4a72f1a6"]
+resolved = 2026-11-09
+resolution = "e296f01: triage --convert defaults the replacement's target from the advisory's stored target; documented in references/review.md and tested in review_plan_records."
 
 [[backlog]]
 id = "B-2d735ad5"
@@ -9111,7 +9123,7 @@ kind = "bug"
 summary = "review verdict refuses a row on a tier stamp error after its verdict was already upserted"
 area = "tomlctl/src/review"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-09T13:45:26Z
 last_seen = 2026-11-09T13:45:26Z
 seen_count = 1
@@ -9121,6 +9133,8 @@ flow = "shimmying-marinating-bumblebee"
 context = "verdict.rs apply_one stamps the tier after set_status(Open) and returns a stamp error as a refusal reason, but the verdict and status change are already in the store copy that mutate writes back. resolve.rs and triage.rs ignore stamp errors instead. Only reachable with an unparseable target, which review add refuses. Align verdict with the ignore-and-leave-tier-absent behaviour."
 base_sha = "6205e298590c4d917c4ebcbcab601185f4626788"
 related = ["B-e77ba495"]
+resolved = 2026-11-09
+resolution = "e296f01: verdict apply_one discards a tier stamp error and leaves the tier absent, as resolve and triage do."
 
 [[backlog]]
 id = "B-037256f6"
@@ -9128,7 +9142,7 @@ kind = "bug"
 summary = "review apply can read a short brief or design new value as already applied by coincidence"
 area = "tomlctl/src/review"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-09T13:45:26Z
 last_seen = 2026-11-09T13:45:26Z
 seen_count = 1
@@ -9138,6 +9152,8 @@ flow = "shimmying-marinating-bumblebee"
 context = "For prose edits, already-made means new occurs once in the section and every expect occurrence lies inside it; a very short new (the unit test hit new = x inside next) can match when the section has drifted, resolving the finding as applied with recovered = true though nothing landed. Consider a minimum new length or a position check."
 base_sha = "6205e298590c4d917c4ebcbcab601185f4626788"
 related = ["B-1da78375"]
+resolved = 2026-11-09
+resolution = "e296f01: review apply writes applying = true on a finding before each prose write and clears it on stamp. Without the mark a prose edit is already applied only when expect is part of new, so a chance match reads stale. An unmarked deletion or near-miss made by hand also reads stale."
 
 [[backlog]]
 id = "B-860bfbc1"
@@ -9145,7 +9161,7 @@ kind = "bug"
 summary = "plan-v2-review recheck mode leaves the re-check run directory without pack.md"
 area = "claude/workflows"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-09T13:45:26Z
 last_seen = 2026-11-09T13:45:26Z
 seen_count = 1
@@ -9155,6 +9171,8 @@ flow = "shimmying-marinating-bumblebee"
 context = "Recheck mode runs no survey, so the re-check run directory has no pack.md, yet the waves pass pack_path <run_dir>/pack.md to finders. plan-flow.md section 10 works around it by copying the first run's pack.md and profile.md. Better: have the wrapper or review run start --set rechecks carry the pack over."
 base_sha = "6205e298590c4d917c4ebcbcab601185f4626788"
 related = ["B-be44a578"]
+resolved = 2026-11-09
+resolution = "e296f01: plan-flow.md section 10 makes copying pack.md and profile.md into the re-check run directory the contract. The wrapper cannot pass the first run's pack path, because the pipeline takes its run directory from that path's parent. Dropping the copy would need review run start to carry them over."
 
 [[backlog]]
 id = "B-62d3d197"
@@ -9162,7 +9180,7 @@ kind = "debt"
 summary = "command_lint stops checking a line at a placeholder containing a space, so later flags go unlinted"
 area = "tomlctl/src/cli/dispatch"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-09T13:45:26Z
 last_seen = 2026-11-09T13:45:26Z
 seen_count = 1
@@ -9172,6 +9190,8 @@ flow = "shimmying-marinating-bumblebee"
 context = "Residual of the resolved placeholder fix: a placeholder holding a space (e.g. <ids, comma-separated>) still ends linting for the rest of the line; a --dry-runx after it passed. triage-and-close.md uses that form. plan-flow.md avoids it by writing <ids>."
 base_sha = "6205e298590c4d917c4ebcbcab601185f4626788"
 related = ["B-de0a0d87"]
+resolved = 2026-11-09
+resolution = "e296f01: command_lint joins a placeholder holding a space into one argv slot and keeps linting the rest of the line; the live carrier corpus still passes."
 
 [[backlog]]
 id = "B-59118332"
@@ -9179,7 +9199,7 @@ kind = "question"
 summary = "no review read verb lists a store's runs or their finished state"
 area = "tomlctl/src/review"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-09T13:45:26Z
 last_seen = 2026-11-09T13:45:26Z
 seen_count = 1
@@ -9189,6 +9209,8 @@ flow = "shimmying-marinating-bumblebee"
 context = "plan-flow.md section 13 re-entry reads tomlctl items list --array runs on review-v2.toml directly because no review verb projects runs. A review run list would keep re-entry on a projection."
 base_sha = "6205e298590c4d917c4ebcbcab601185f4626788"
 related = ["B-1ec5ebb6"]
+resolved = 2026-11-09
+resolution = "e296f01: new read verb review run list --slug|--scope [--open|--finished] projects a store's runs; plan-flow.md section 13 re-entry uses it. Needs tomlctl 0.20.0 installed."
 
 [[backlog]]
 id = "B-651f0ed2"
@@ -9196,7 +9218,7 @@ kind = "annoyance"
 summary = "plan-v2 approve gate's v1-carrier warning does not name /review-plan-v2 as the safe reviewer for a v2 flow"
 area = "claude/skills/plan-v2-engine"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-09T13:45:26Z
 last_seen = 2026-11-09T13:45:26Z
 seen_count = 1
@@ -9206,6 +9228,8 @@ flow = "shimmying-marinating-bumblebee"
 context = "approve.md still warns that no engine can run the plan and that /review-plan can overwrite brief.md; now that /review-plan-v2 has a flow mode, the warning should point at it. Arrived cheap-in-file; deferred so the verified run was not re-opened."
 base_sha = "6205e298590c4d917c4ebcbcab601185f4626788"
 related = ["B-70b64580"]
+resolved = 2026-11-09
+resolution = "e296f01: the approve warning names /review-plan-v2 as the reviewer for a v2 flow."
 
 [[backlog]]
 id = "B-6a0b8f4f"
@@ -9213,7 +9237,7 @@ kind = "annoyance"
 summary = "tasks show --with short help omits spec, which it accepts and lists under possible values"
 area = "tomlctl/src/cli"
 tags = ["help-text"]
-status = "open"
+status = "resolved"
 created = 2026-11-09T18:04:10Z
 last_seen = 2026-11-09T18:04:10Z
 seen_count = 1
@@ -9222,6 +9246,8 @@ origin = "review"
 flow = "shimmying-marinating-bumblebee"
 context = "The short help reads 'Sections to include (summary,body,files,deps,dependents,absent)'; spec is accepted and appears only under possible values. plan-records.md and three review-v2 check files tell agents to use --with spec, so an agent reading only the short help misses it. Add spec to the doc string."
 base_sha = "d0ab8fef3ebdf74048d3ece131e90d4f3e3bbd31"
+resolved = 2026-11-09
+resolution = "e296f01: tasks show --with short help lists spec."
 
 [[backlog]]
 id = "B-f0558729"
@@ -9232,7 +9258,7 @@ tags = [
     "deploy",
     "review-v2",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-09T18:04:10Z
 last_seen = 2026-11-09T18:04:10Z
 seen_count = 1
@@ -9242,6 +9268,8 @@ flow = "shimmying-marinating-bumblebee"
 context = "The script uses WindowsIdentity, HKLM registry reads and Junction items, so under pwsh on Linux it most likely aborts before linking anything (not run). CLAUDE.md Review v2 Deploy names it as the link mechanism. On Linux, link the entries by hand with ln -s into the Claude config dir, or decide whether the script should grow a POSIX branch or a sibling shell script."
 base_sha = "d0ab8fef3ebdf74048d3ece131e90d4f3e3bbd31"
 evidence = ["scripts/link-v2-review.ps1:1"]
+resolved = 2026-11-09
+resolution = "e296f01: scripts/link-v2-review.sh links the same entries with ln -s on Linux and macOS, with --dry-run; it refuses anything that is not already a link to its source."
 
 [[backlog]]
 id = "B-466a423b"
@@ -9269,7 +9297,7 @@ kind = "question"
 summary = "review stats first_approval reads plan.toml from the real repo root, so its in-crate unit test depends on whether a demo flow exists"
 area = "tomlctl/src/review"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-09T19:59:13Z
 last_seen = 2026-11-09T19:59:13Z
 seen_count = 1
@@ -9280,6 +9308,8 @@ context = "stats.rs first_approval (added for R18) resolves plan.toml through re
 base_sha = "d0ab8fef3ebdf74048d3ece131e90d4f3e3bbd31"
 evidence = ["tomlctl/src/review/stats.rs:1015"]
 related = ["B-66abc1d9"]
+resolved = 2026-11-09
+resolution = "e296f01: plan_outcomes takes the approval lookup as a parameter; run passes first_approval and the unit test passes a stub, so it reads no real checkout."
 
 [[backlog]]
 id = "B-dc8f8cdb"
@@ -9287,7 +9317,7 @@ kind = "debt"
 summary = "review triage --convert accepts a question-tier advisory and mints a defect or cleanup that is stamped user tier, undocumented"
 area = "tomlctl/src/review"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-09T19:59:13Z
 last_seen = 2026-11-09T19:59:13Z
 seen_count = 1
@@ -9298,6 +9328,8 @@ context = "After R3 added the question tier, --park refuses question rows but --
 base_sha = "d0ab8fef3ebdf74048d3ece131e90d4f3e3bbd31"
 evidence = ["tomlctl/src/review/triage.rs:643"]
 related = ["B-50b2b7a2"]
+resolved = 2026-11-09
+resolution = "e296f01: decided as allowed. plan-flow.md section 7 and references/review.md say --convert accepts a question-tier advisory; a replacement with a new tiers user and still needs review apply --user-accepted, which a test now checks."
 
 [[backlog]]
 id = "B-e803af5c"
@@ -9305,7 +9337,7 @@ kind = "question"
 summary = "review tier.rs probe and check-class proofs match expect with exact match_entry, not the normalising form review add and apply use"
 area = "tomlctl/src/review"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-09T19:59:13Z
 last_seen = 2026-11-09T19:59:13Z
 seen_count = 1
@@ -9316,6 +9348,8 @@ context = "R23 made review add judge a record expect through apply's Validate pa
 base_sha = "d0ab8fef3ebdf74048d3ece131e90d4f3e3bbd31"
 evidence = ["tomlctl/src/review/tier.rs:1"]
 related = ["B-466a423b"]
+resolved = 2026-11-09
+resolution = "e296f01: tier.rs probe and check_class normalise expect and new through tasks review_stored_form before matching, the form review add and apply use; a short-form accept expect is now proved mechanical."
 
 [[backlog]]
 id = "B-735ed4dd"
