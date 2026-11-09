@@ -879,3 +879,37 @@ scope = [
     "docs/ideas/v2-pipeline.md",
     "docs/plans/v2-planning.md",
 ]
+
+[[active]]
+slug = "we-ve-just-implement-the-shimmying-kettle"
+last_used = "2026-11-06T14:42:54.6522369Z"
+
+[active.binding]
+branch = "main"
+worktree = "."
+scope = [
+    "claude/commands/plan-v2.md",
+    "claude/skills/plan-v2-engine/SKILL.md",
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md",
+    "claude/skills/plan-v2-engine/references/approve.md",
+    "claude/agents/plan-investigator.md",
+    "claude/agents/plan-challenger.md",
+    "claude/agents/plan-cold-reader.md",
+    "claude/workflows/**",
+    "claude/skills/research-methods/references/supply-chain-intel.md",
+    "claude/skills/tomlctl/references/plan.md",
+    "scripts/shared-blocks.toml",
+    ".githooks/pre-commit",
+    "tomlctl/src/cli/dispatch/tests/**",
+    "docs/ideas/**",
+    "docs/plans/v2-planning.md",
+    "CLAUDE.md",
+]
+
+[[active]]
+slug = "human-only-handovers"
+last_used = "2026-11-09T08:01:12.9295852Z"
+
+[active.binding]
+branch = "main"

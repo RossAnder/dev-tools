@@ -1,5 +1,5 @@
 schema_version = 1
-last_updated = 2026-11-06
+last_updated = 2026-11-09
 
 [[backlog]]
 id = "B-de0a0d87"
@@ -8727,3 +8727,141 @@ context = "Readers get two step counts for one verb. Which is right was not chec
 base_sha = "8a1f066989e22c774d837bda2794b14e520ebd6c"
 resolved = 2026-11-06
 resolution = "Uncommitted on v2-planning-apply-fixes: resolve.rs holds six steps; the skill and README now say 6-step."
+
+[[backlog]]
+id = "B-233309f2"
+kind = "bug"
+summary = "flow doctor test fix_rewrites_worktrees_under_the_root_and_leaves_foreign_ones fails on Windows"
+area = "tomlctl/src/flow/active.rs"
+tags = ["windows"]
+status = "resolved"
+created = 2026-11-06T16:06:50Z
+last_seen = 2026-11-06T16:06:50Z
+seen_count = 1
+dedup_id = "233309f2dffaad0a"
+origin = "implement"
+flow = "we-ve-just-implement-the-shimmying-kettle"
+context = """Deterministic, not flaky: it fails on a narrow rerun too. On Windows the test's foreign worktree is /home/someone/repo, which is_machine_local_worktree does not count: Path::is_absolute is false there, there is no leading backslash and no colon at byte 1. So doctor reports "`primary` and 1 more" where the test asserts 2 more. Decide which is wrong: a POSIX absolute path read on Windows is another machine's disk, so a leading '/' probably belongs in is_machine_local_worktree. It keeps cargo nextest red on Windows until fixed. Fails at flow_doctor.rs's aggregate assertion, in code from 317314f and 6e5afff; seen during the we-ve-just-implement-the-shimmying-kettle final pass, which changed only lint.rs under tomlctl/."""
+base_sha = "b1984dcee2c3eaa86c225d54d3a05ec2a3e8de2b"
+evidence = [
+    "tomlctl/src/flow/active.rs:201",
+    "tomlctl/tests/flow_doctor.rs:1328",
+]
+related = ["B-507f9885"]
+resolved = 2026-11-09
+resolution = "Uncommitted: is_machine_local_worktree now counts a leading / as rooted on either platform, as it already did a leading backslash; flow_doctor passes on Windows."
+
+[[backlog]]
+id = "B-d6828e06"
+kind = "debt"
+summary = "shared-blocks.toml header comment says blocks span only implement agents, Rust sources or hook verifiers"
+area = "scripts/shared-blocks.toml"
+tags = ["docs"]
+status = "resolved"
+created = 2026-11-06T16:06:50Z
+last_seen = 2026-11-06T16:06:50Z
+seen_count = 1
+dedup_id = "d6828e067d97d847"
+origin = "implement"
+flow = "we-ve-just-implement-the-shimmying-kettle"
+context = "Research, review and planning agents carry blocks too, so the comment misdescribes the manifest to anyone adding a block. Arrived cheap-in-file and was deferred: no verifier reads a comment's accuracy, and an edit here would have re-opened the final pass. Fix it with the next edit to that file."
+base_sha = "b1984dcee2c3eaa86c225d54d3a05ec2a3e8de2b"
+resolved = 2026-11-09
+resolution = "Uncommitted: scripts/shared-blocks.toml header now says the blocks span agents, Rust sources or the hook verifiers."
+
+[[backlog]]
+id = "B-90cd710d"
+kind = "question"
+summary = "research-method block does not say whether plan-investigator may use scholarly-sources"
+area = "claude/agents/plan-investigator.md"
+tags = ["plan-v2"]
+status = "resolved"
+created = 2026-11-06T16:06:50Z
+last_seen = 2026-11-06T16:06:50Z
+seen_count = 1
+dedup_id = "90cd710d0e540ab4"
+origin = "implement"
+flow = "we-ve-just-implement-the-shimmying-kettle"
+context = "The copied block gates references/scholarly-sources.md as research-deep only, with research-lite escalating, which names neither case for plan-investigator. An investigator on an architecture lens has to guess. The wording lives in a shared block, so a fix touches every carrier."
+base_sha = "b1984dcee2c3eaa86c225d54d3a05ec2a3e8de2b"
+resolved = 2026-11-09
+resolution = "Uncommitted: plan-investigator.md, outside the shared block, says the research-deep gates are its own, so it reads scholarly-sources under the same lens rule."
+
+[[backlog]]
+id = "B-83da6296"
+kind = "question"
+summary = "plan-v2-investigate accepts lens ids that claim the challenger's or a cold reader's note path"
+area = "claude/workflows/plan-v2-investigate.js"
+tags = ["plan-v2"]
+status = "resolved"
+created = 2026-11-06T16:06:50Z
+last_seen = 2026-11-06T16:06:50Z
+seen_count = 1
+dedup_id = "83da6296bb5e1e88"
+origin = "implement"
+flow = "we-ve-just-implement-the-shimmying-kettle"
+context = "A lens id of structure-challenge or cold-read-<id> passes the id regex. A lens run first would take that note path, and the later step would find it occupied and refuse. Either reject those ids in the script or reserve them in the plan-v2 open-and-challenge reference, whose task has not run yet. Arrived cheap-in-file and was deferred: no check this run runs executes the script's validation, only a throwaway stub harness did."
+base_sha = "b1984dcee2c3eaa86c225d54d3a05ec2a3e8de2b"
+resolved = 2026-11-09
+resolution = "Settled by the open-and-challenge reference, which reserves structure-challenge, cold-read-* and backlog-* ids so a lens never takes one; the script check was the alternative."
+
+[[backlog]]
+id = "B-cab4905f"
+kind = "question"
+summary = "a plan-v2 relaunch that misses makes later agents refuse their existing notes"
+area = "claude/workflows/plan-v2-investigate.js"
+tags = ["plan-v2"]
+status = "resolved"
+created = 2026-11-06T16:06:50Z
+last_seen = 2026-11-06T16:06:50Z
+seen_count = 1
+dedup_id = "cab4905f02d068b9"
+origin = "implement"
+flow = "we-ve-just-implement-the-shimmying-kettle"
+context = "plan-investigator neither reads nor overwrites a file at its note path, so a resumeFromRunId relaunch that misses the journal returns no-note for every later lens. The open-run relaunch branch must clear notes from the changed prompt onward, and the plan's re-entry rule does not say so. Whoever writes the open-and-challenge reference should state it, if the relaunch branch survives probes T2 and T3."
+base_sha = "b1984dcee2c3eaa86c225d54d3a05ec2a3e8de2b"
+related = ["B-e63ab1ac"]
+resolved = 2026-11-09
+resolution = "Settled by the open-and-challenge reference: a relaunch must pass the launch args unchanged, and after it the pending lenses are recomputed from notes/, where a rerun agent no-note over its own Verdict: note still counts as done."
+
+[[backlog]]
+id = "B-a29c9ad8"
+kind = "question"
+summary = "plan-v2 After Merge links need an elevated window when Developer Mode is off"
+area = "docs/ideas/plan-v2-probes.md"
+tags = [
+    "plan-v2",
+    "windows",
+]
+status = "resolved"
+created = 2026-11-06T16:06:50Z
+last_seen = 2026-11-06T16:06:50Z
+seen_count = 1
+dedup_id = "a29c9ad890bf14ef"
+origin = "implement"
+flow = "we-ve-just-implement-the-shimmying-kettle"
+context = "New-Item -ItemType SymbolicLink fails without elevation on this machine. The probe runbook says so for milestone A's links, but the plan's After Merge step for the milestone B entries does not, so its operator meets the refusal there. Use an elevated window, or enable Developer Mode."
+base_sha = "b1984dcee2c3eaa86c225d54d3a05ec2a3e8de2b"
+resolved = 2026-11-09
+resolution = "Uncommitted: the plan After Merge link step now says the two file symlinks need an elevated window unless Developer Mode is on; met there 2026-11-09."
+
+[[backlog]]
+id = "B-5e5bdea4"
+kind = "annoyance"
+summary = "plan probes --record on a truncated capture reports a capture/store disagreement on a neg control instead of saying the capture is missing rows"
+area = "tomlctl/src/plan"
+tags = [
+    "plan-v2",
+    "probes",
+]
+status = "resolved"
+created = 2026-11-09T05:52:16Z
+last_seen = 2026-11-09T05:52:16Z
+seen_count = 1
+dedup_id = "5e5bdea4d0b71e83"
+origin = "implement"
+flow = "we-ve-just-implement-the-shimmying-kettle"
+context = "Seen while exercising the write-and-prove reference's probe cycle in a throwaway repo: a capture cut short (as after a timed-out probe script) is refused, but the message names a per-entry disagreement, which reads like command drift. When --record refuses after a timeout, suspect truncation first and rerun the emitted script under a longer limit. The fix is a row-count check before the per-entry comparison."
+base_sha = "f391ce5321f3e4f6d1a96b32f0c29ab658c2f0e8"
+resolved = 2026-11-09
+resolution = "Uncommitted: plan probes --record counts the capture rows against the probeable rows in scope first and refuses a short capture as cut short, naming both counts; plan_probes covers it."

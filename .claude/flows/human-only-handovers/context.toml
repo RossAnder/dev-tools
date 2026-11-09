@@ -1,9 +1,10 @@
 slug = "human-only-handovers"
 plan_path = "docs/flows/human-only-handovers/brief.md"
-status = "draft"
+status = "in-progress"
 created = 2026-11-09
 updated = 2026-11-09
 scope = []
+branch = "main"
 
 [tasks]
 total = 0
