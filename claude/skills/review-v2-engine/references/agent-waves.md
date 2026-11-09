@@ -101,7 +101,8 @@ Stage 2 dispatches one `review-surveyor` after `review survey` has run. `review 
 ```text
 family: <code|perf|plan>
 scope: <the run's scope globs, comma-separated>
-plan: <plan path — plan family only>
+plan: <plan path — plan family on a markdown plan only>
+flow: <slug>
 signals:
 - <name> — roots: <root>, <root>
 - <name> — roots: <root>
@@ -109,7 +110,7 @@ signals:
 Run the survey for this run as your procedure says and return your digest.
 ```
 
-It follows the preamble, so it also carries the run, the store flag and the run directory. Copy each signal's `name` and `roots` from `review survey`'s output as printed. The surveyor counts toward the 16 running agents.
+The `flow: <slug>` line is for the plan family on a v2 flow only; it replaces `plan:`, and the surveyor reads the flow's records instead of a plan file. It follows the preamble, so it also carries the run, the store flag and the run directory. Copy each signal's `name` and `roots` from `review survey`'s output as printed. The surveyor counts toward the 16 running agents.
 
 ## Routing
 
