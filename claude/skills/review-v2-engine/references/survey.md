@@ -9,6 +9,8 @@ The survey profiles the change and the project so stage 3 can compose coverage f
 
 Pass `--scope <scope>` in place of `--slug <slug>` for a flow-less store in every command below. `<run>` and `<run-dir>` are the run id and the `dir` that `review run start` printed.
 
+A plan-family run on a v2 flow, one whose `.claude/flows/<slug>/plan.toml` exists, is in **flow mode**. Its scope is `docs/flows/<slug>/brief.md` plus every `docs/flows/<slug>/design/*.md`, not a plan file, and its records live in the flow's `tasks.toml` and `plan.toml`. No task-store import runs, because the store is already canonical and `tasks import-plan` refuses a v2 flow. The sections below mark what changes in flow mode; the rest holds as written.
+
 ## 1. Detectors
 
 ```bash
@@ -27,7 +29,7 @@ The detector semantics — glob and regex rules, `count` literals, windows, thre
 
 ## 2. The surveyor dispatch
 
-Dispatch one `review-surveyor` with the preamble and surveyor prompt from `agent-waves.md` (The prompts; Surveyor prompt): the `ledger:` line for a flow-bound run, the run, `wave: 0` (no cell wave has run yet), the store flag, the pack and run-directory paths, then the family, the scope, the plan path for the plan family, and the `signals:` block copied from step 1's output. Dispatch it one-shot in the background and end your turn; it counts toward the 16 running agents.
+Dispatch one `review-surveyor` with the preamble and surveyor prompt from `agent-waves.md` (The prompts; Surveyor prompt): the `ledger:` line for a flow-bound run, the run, `wave: 0` (no cell wave has run yet), the store flag, the pack and run-directory paths, then the family, the scope, for the plan family either the `plan:` path of a markdown plan or, in flow mode, a `flow: <slug>` line in its place, and the `signals:` block copied from step 1's output. Dispatch it one-shot in the background and end your turn; it counts toward the 16 running agents.
 
 The surveyor works only inside the run directory and the store:
 
@@ -51,7 +53,7 @@ The digest has six parts. Each feeds a later decision:
 | `unmeasured:` | a gap in the profile; consider a probe or a waiver that names it at stage 3 |
 | `refused:` | a store write the surveyor could not land; a refused judged signal is simply not a candidate |
 
-Read `profile.md` too: files by role and subsystem, signals with roots and measurements, the candidates' evidence, hotspots, and for the plan family the task list with effort tags. Do not read `pack.md`; it is the agents' preamble, not your input.
+Read `profile.md` too: files by role and subsystem, signals with roots and measurements, the candidates' evidence, hotspots, and for the plan family the task list with effort tags, from `tomlctl tasks list --slug <slug>`. In flow mode the profile also lists the brief and design files and the flow's decisions and contracts, read from `tomlctl plan view --slug <slug> --for human`. Do not read `pack.md`; it is the agents' preamble, not your input.
 
 ## 4. Checks by executor
 
@@ -75,6 +77,15 @@ The built-in checks:
 | `profile-baseline` | verification | perf | `PROFILE BASELINE` |
 | `break-set-baseline` | verification | plan | `BREAK-SET BASELINE` — commands from the plan's predicted break sets |
 | `two-control-probe`, `falsifiability`, `acceptance-contradiction` | cell | plan | findings from the `plan-checks` cell |
+
+In flow mode the plan checks change as follows:
+
+- `store-check` runs `tomlctl plan check --slug <slug>` and `tomlctl tasks check --slug <slug>`, in place of the import dry run and `tasks check --plan`.
+- `format-contract` is not run, and its fence says so.
+- `break-set-baseline` resolves `none — <reason>`, since task rows carry no predicted break sets, so no baseline is dispatched for it.
+- `two-control-probe` reads the recorded probe verdicts rather than running its helper, and `falsifiability` and `acceptance-contradiction` read the specs and contracts.
+
+Each check file's own v2 flow section is authoritative.
 
 A project's `[[checks]]` in `.claude/review-lenses/config.toml` are always `verification` checks with their command given, run when the run's family is in their `families` and their `paths` meet the scope; in this repo that is `harness-gates`. The surveyor lists them under `verification:` with the built-in ones. The authoritative set for a run is the catalogue the run validated, so treat these tables as the expected shape: when the digest lists a check this table does not, run it by its executor all the same.
 
@@ -102,7 +113,7 @@ What each carrier expects to dispatch:
 |---|---|
 | `/review-v2` | `lint-baseline`, plus every project check for `code` whose `paths` meet the scope |
 | `/optimise-v2` | `profile-baseline`, plus every project check for `perf` |
-| `/review-plan-v2` | `break-set-baseline`, plus every project check for `plan` |
+| `/review-plan-v2` | `break-set-baseline` (a `none — <reason>` line in flow mode), plus every project check for `plan` |
 
 The digest's `verification:` lines are the actual list: dispatch one per line that resolved to a command, in the order listed. A check can resolve to more than one command — an ecosystem rung yields one per stack root that meets the scope, and `break-set-baseline` one per predicted break set — so each line carries a key: the check id for its first command, then `<id>-2`, `<id>-3` and so on, in ladder or plan order.
 
