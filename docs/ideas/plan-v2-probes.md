@@ -463,23 +463,24 @@ Commit this file before starting milestone B, which reads it. If the first `/imp
 
 Replace each `<...>`. Write `not run` on any line whose probe could not run. The `Surprises:` line is `none` or the text.
 
-Verdict: <keep|remove> <n> of 6
-Intents: <reviewed>
-Lookup: <symlink|copy>
-omitClaudeMd: <held|leaked|inconclusive>
-T1: <true|false>
-T2: <stale|fresh>
-T3: <miss|hit>
-Surprises: <none, or the text>
-Nested memory: <what step 3f showed>
-Auto-memory: <the replay ran from a directory with none, and real runs keep theirs; add anything the agents' transcripts show>
-Tally: <r> of 3 restructure goals, <c> of 3 control goals
+Verdict: keep 6 of 6
+Intents: reviewed
+Lookup: symlink
+omitClaudeMd: held
+T1: true
+T2: stale
+T3: miss
+Surprises: none
+Method: agents linked into the config dir reached an already-running session without a restart. Step 4 ran from one session, and T1 stopped its run with TaskStop instead of ending a session; no note landed in the 60 s after the stop. The rater answered "would I accept this route" rather than "would it have changed the ask", and the controls drew restructure verdicts too, so 6 of 6 measures agreement, not discrimination. Both were accepted by the user.
+Nested memory: four of six challengers loaded their base's own CLAUDE.md (2 to 3 nested_memory rows each), two loaded none; investigators showed 1 row each
+Auto-memory: the replay ran from a directory with none, and real runs keep theirs; transcripts not inspected for auto-memory beyond that
+Tally: 3 of 3 restructure goals, 3 of 3 control goals
 
 | Sheet letter | Goal | Kind | Would it have changed what was asked for? |
 |---|---|---|---|
-| A | <slug> | <restructure or control> | <yes or no> |
-| B | <slug> | <restructure or control> | <yes or no> |
-| C | <slug> | <restructure or control> | <yes or no> |
-| D | <slug> | <restructure or control> | <yes or no> |
-| E | <slug> | <restructure or control> | <yes or no> |
-| F | <slug> | <restructure or control> | <yes or no> |
+| A | whimsical-hugging-puppy | control | yes |
+| B | unified-singing-gem | control | yes |
+| C | eventual-churning-sunrise | control | yes |
+| D | toasty-wobbling-stonebraker | restructure | yes |
+| E | polymorphic-wondering-magpie | restructure | yes |
+| F | twinkling-hopping-otter | restructure | yes |
