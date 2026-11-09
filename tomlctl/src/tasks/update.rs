@@ -23,7 +23,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use anyhow::Result;
-use serde_json::json;
+use serde_json::{Value as JsonValue, json};
 
 use super::add::{
     SpecPatch, file_notes_from_row, reject_unclaimed_notes, reject_undeclared_checkpoint,
@@ -36,7 +36,7 @@ use super::schema::{
 };
 use super::show::{accept_json, means_json, premises_json};
 use super::{slug, store};
-use crate::cli::WriteIntegrityArgs;
+use crate::cli::{ReadIntegrityArgs, WriteIntegrityArgs};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::items::{parse_ndjson_batch, row_err, row_string, row_strings};
 
@@ -485,17 +485,7 @@ fn patch_spec(store: &mut Store, id: u32, line: usize, spec: &SpecPatch) -> Resu
     let position = store.specs.iter().position(|entry| entry.r#ref == r#ref);
     let before = match position {
         Some(position) => store.specs[position].clone(),
-        None => TaskSpec {
-            r#ref,
-            outcome: String::new(),
-            constraints: Vec::new(),
-            accept: Vec::new(),
-            premises: Vec::new(),
-            means: Vec::new(),
-            design: Vec::new(),
-            precedent: Vec::new(),
-            executor: String::new(),
-        },
+        None => empty_spec(r#ref),
     };
     let mut after = before.clone();
     spec.clone().apply_to(&mut after);
@@ -512,6 +502,20 @@ fn patch_spec(store: &mut Store, id: u32, line: usize, spec: &SpecPatch) -> Resu
         }
     }
     Ok(moves)
+}
+
+fn empty_spec(r#ref: String) -> TaskSpec {
+    TaskSpec {
+        r#ref,
+        outcome: String::new(),
+        constraints: Vec::new(),
+        accept: Vec::new(),
+        premises: Vec::new(),
+        means: Vec::new(),
+        design: Vec::new(),
+        precedent: Vec::new(),
+        executor: String::new(),
+    }
 }
 
 /// A supplied `accept` entry cannot carry a probe, so one matching a stored
@@ -1237,6 +1241,362 @@ fn replace_str(slot: &mut String, value: &str) -> bool {
     true
 }
 
+/// Row fields a review edit reaches. `title` is absent: a retitle moving the
+/// derived ref would strand every other finding keyed on the old one.
+const REVIEW_ROW_FIELDS: [&str; 9] = [
+    "acceptance",
+    "action",
+    "checkpoint",
+    "coupling",
+    "deps_note",
+    "detail",
+    "effort",
+    "files",
+    "needs",
+];
+
+const REVIEW_SPEC_FIELDS: [&str; 8] = [
+    "accept",
+    "constraints",
+    "design",
+    "executor",
+    "means",
+    "outcome",
+    "precedent",
+    "premises",
+];
+
+const REVIEW_SPEC_LISTS: [&str; 6] = [
+    "accept",
+    "constraints",
+    "design",
+    "means",
+    "precedent",
+    "premises",
+];
+
+/// One compare-and-set edit to a task row field or a `spec.<field>`.
+///
+/// With neither `index` nor `append` the edit replaces the whole value and
+/// needs `expect`. Otherwise it edits one list entry, matched by value: `new`
+/// null removes the entry equal to `expect`, and `append` takes `new` alone.
+pub(crate) struct ReviewEdit<'a> {
+    pub(crate) task_ref: &'a str,
+    pub(crate) field: &'a str,
+    /// Where the finding saw the entry. Matching ignores it; a stale report
+    /// shows the entry now at this position.
+    pub(crate) index: Option<usize>,
+    pub(crate) append: bool,
+    pub(crate) expect: Option<&'a JsonValue>,
+    pub(crate) new: &'a JsonValue,
+    pub(crate) actor: &'a str,
+    pub(crate) reason: &'a str,
+}
+
+/// `Stale` carries what the store holds where `expect` was looked for.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum ReviewEditOutcome {
+    Applied,
+    Already,
+    Stale { found: JsonValue },
+}
+
+/// Carries an outcome that writes nothing out of `store::mutate`, which
+/// persists whatever an `Ok` closure leaves, `last_updated` restamped.
+#[derive(Debug)]
+struct Unwritten(ReviewEditOutcome);
+
+impl std::fmt::Display for Unwritten {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "review edit not written: {:?}", self.0)
+    }
+}
+
+impl std::error::Error for Unwritten {}
+
+/// Applies `edit` to the flow's task store, re-reading the value and checking
+/// `expect` inside the store's lock. The change runs through the `--ndjson`
+/// patch path, so validation, probe keeping and the audit trail all apply.
+/// Only `Applied` writes the store; a refusal is an error and writes nothing.
+pub(crate) fn apply_review_edit(
+    slug: &str,
+    integrity: &WriteIntegrityArgs,
+    edit: &ReviewEdit<'_>,
+) -> Result<ReviewEditOutcome> {
+    let path = store::resolve_store_path(Some(slug), None)?;
+    let v2 = store::is_v2_flow(&path);
+    let integrity = WriteIntegrityArgs {
+        no_create: true,
+        ..integrity.clone()
+    };
+    let written = store::mutate(&path, &integrity, |store| {
+        match review_edit(store, edit, v2)? {
+            ReviewEditOutcome::Applied => Ok(()),
+            unwritten => Err(anyhow::Error::new(Unwritten(unwritten))),
+        }
+    });
+    match written {
+        Ok(()) => Ok(ReviewEditOutcome::Applied),
+        Err(err) => match err.downcast::<Unwritten>() {
+            Ok(Unwritten(outcome)) => Ok(outcome),
+            Err(err) => Err(err),
+        },
+    }
+}
+
+/// What `apply_review_edit` would return against the store as it stands,
+/// running the same patch on a copy and writing nothing.
+pub(crate) fn validate_review_edit(
+    slug: &str,
+    integrity: &WriteIntegrityArgs,
+    edit: &ReviewEdit<'_>,
+) -> Result<ReviewEditOutcome> {
+    let path = store::resolve_store_path(Some(slug), None)?;
+    let v2 = store::is_v2_flow(&path);
+    let mut store = store::load(
+        &path,
+        &ReadIntegrityArgs {
+            verify_integrity: integrity.verify_integrity,
+            strict_read: true,
+        },
+    )?;
+    review_edit(&mut store, edit, v2)
+}
+
+#[derive(Clone, Copy)]
+enum ReviewTarget {
+    Row(&'static str),
+    Spec(&'static str),
+}
+
+impl ReviewTarget {
+    fn parse(field: &str) -> Option<Self> {
+        let find =
+            |fields: &[&'static str], name: &str| fields.iter().copied().find(|f| *f == name);
+        match field.strip_prefix("spec.") {
+            Some(name) => find(&REVIEW_SPEC_FIELDS, name).map(Self::Spec),
+            None => find(&REVIEW_ROW_FIELDS, field).map(Self::Row),
+        }
+    }
+
+    fn is_list(self) -> bool {
+        match self {
+            Self::Row(field) => LISTS.contains(&field),
+            Self::Spec(field) => REVIEW_SPEC_LISTS.contains(&field),
+        }
+    }
+}
+
+fn review_edit(store: &mut Store, edit: &ReviewEdit<'_>, v2: bool) -> Result<ReviewEditOutcome> {
+    let refuse = |message: String| {
+        tagged_err(
+            ErrorKind::Validation,
+            None,
+            format!("task `{}` `{}`: {message}", edit.task_ref, edit.field),
+        )
+    };
+    let target = ReviewTarget::parse(edit.field).ok_or_else(|| {
+        refuse(format!(
+            "a review edit targets a row field ({}) or `spec.<field>` ({})",
+            REVIEW_ROW_FIELDS.join(", "),
+            REVIEW_SPEC_FIELDS.join(", ")
+        ))
+    })?;
+    let entry = edit.append || edit.index.is_some();
+    if entry && !target.is_list() {
+        return Err(refuse(
+            "the field is not a list, so it takes no entry index or append".to_string(),
+        ));
+    }
+    match (edit.append, edit.expect.is_some(), edit.new.is_null()) {
+        (true, true, _) => {
+            return Err(refuse(
+                "an append takes `new` alone, with no `expect`".to_string(),
+            ));
+        }
+        (true, false, true) => return Err(refuse("an append needs a `new` entry".to_string())),
+        (false, false, _) => return Err(refuse("the edit needs `expect`".to_string())),
+        (false, true, true) if !entry => {
+            return Err(refuse(
+                "a null `new` removes a list entry, so it needs an entry index".to_string(),
+            ));
+        }
+        _ => {}
+    }
+
+    let id = store
+        .items
+        .iter()
+        .find(|row| row.r#ref == edit.task_ref)
+        .map(|row| row.id)
+        .ok_or_else(|| refuse("no task holds this ref".to_string()))?;
+    let normalise = |value: &JsonValue| {
+        stored_form(target, entry, value)
+            .map_err(|err| err.context(format!("task `{}` `{}`", edit.task_ref, edit.field)))
+    };
+    let expect = edit.expect.map(normalise).transpose()?;
+    let new = match edit.new {
+        JsonValue::Null => None,
+        value => Some(normalise(value)?),
+    };
+    let current = review_value(store, id, target)?;
+
+    let whole = if entry {
+        match entry_edit(&current, expect, new, edit.index) {
+            Ok(list) => list,
+            Err(outcome) => return Ok(outcome),
+        }
+    } else {
+        let new = new.expect("a whole-value edit with a null `new` is refused above");
+        if current == new {
+            return Ok(ReviewEditOutcome::Already);
+        }
+        if expect.as_ref() != Some(&current) {
+            return Ok(ReviewEditOutcome::Stale { found: current });
+        }
+        new
+    };
+
+    let object = match target {
+        ReviewTarget::Row(field) => json!({ "id": id, "set": { field: whole } }),
+        ReviewTarget::Spec(field) => json!({ "id": id, "spec": { field: whole } }),
+    };
+    let JsonValue::Object(mut object) = object else {
+        unreachable!("json! of an object literal is an object");
+    };
+    object.insert("reason".to_string(), json!(edit.reason));
+    object.insert("actor".to_string(), json!(edit.actor));
+    let row = batch_row(1, &object, false, false)?;
+    let patch = Patch {
+        ids: &row.ids,
+        fields: &row.fields,
+        row: Some(&row.channel),
+    };
+    apply(store, &[patch], v2)?;
+    Ok(ReviewEditOutcome::Applied)
+}
+
+/// The list `current` becomes, or the outcome when nothing is to be written.
+/// An entry matches only by equality with `expect`, so a list holding two
+/// equal entries is stale rather than guessed at.
+fn entry_edit(
+    current: &JsonValue,
+    expect: Option<JsonValue>,
+    new: Option<JsonValue>,
+    hint: Option<usize>,
+) -> std::result::Result<JsonValue, ReviewEditOutcome> {
+    let mut entries = current.as_array().cloned().unwrap_or_default();
+    let stale = |entries: &[JsonValue]| ReviewEditOutcome::Stale {
+        found: hint
+            .and_then(|index| entries.get(index))
+            .cloned()
+            .unwrap_or_else(|| JsonValue::Array(entries.to_vec())),
+    };
+    let matches: Vec<usize> = match &expect {
+        Some(expect) => entries
+            .iter()
+            .enumerate()
+            .filter(|(_, entry)| *entry == expect)
+            .map(|(position, _)| position)
+            .collect(),
+        None => Vec::new(),
+    };
+    match (expect, new) {
+        (None, Some(new)) => {
+            if entries.contains(&new) {
+                return Err(ReviewEditOutcome::Already);
+            }
+            entries.push(new);
+        }
+        (Some(_), None) => match matches.as_slice() {
+            [] => return Err(ReviewEditOutcome::Already),
+            [position] => {
+                entries.remove(*position);
+            }
+            _ => return Err(stale(&entries)),
+        },
+        (Some(_), Some(new)) => match matches.as_slice() {
+            [position] => entries[*position] = new,
+            [] if entries.contains(&new) => return Err(ReviewEditOutcome::Already),
+            _ => return Err(stale(&entries)),
+        },
+        (None, None) => return Err(stale(&entries)),
+    }
+    Ok(JsonValue::Array(entries))
+}
+
+/// `value` as `review_value` would report it once stored, so a spec value
+/// leaving defaults unstated still compares equal. A spec value runs the
+/// `--ndjson` spec parser, refusing what it refuses, a supplied `probe` among
+/// them. `entry` reads `value` as one list entry rather than the whole list.
+fn stored_form(target: ReviewTarget, entry: bool, value: &JsonValue) -> Result<JsonValue> {
+    let ReviewTarget::Spec(field) = target else {
+        return Ok(value.clone());
+    };
+    let supplied = if entry { json!([value]) } else { value.clone() };
+    let mut spec = empty_spec(String::new());
+    SpecPatch::parse(1, &json!({ field: supplied }))?.apply_to(&mut spec);
+    let stored = spec_value(&spec, field);
+    Ok(match (entry, stored) {
+        (true, JsonValue::Array(mut entries)) if entries.len() == 1 => entries.remove(0),
+        (_, stored) => stored,
+    })
+}
+
+/// A field's whole value as JSON, with every `accept` entry's probe removed:
+/// a review edit never supplies one, and the patch path keeps a stored probe
+/// on an entry it leaves unchanged.
+fn review_value(store: &Store, id: u32, target: ReviewTarget) -> Result<JsonValue> {
+    let row = row_of(store, id)?;
+    Ok(match target {
+        ReviewTarget::Row(field) => match field {
+            "coupling" => json!(row.coupling),
+            "needs" => json!(row.needs),
+            "files" => json!(row.files),
+            "effort" => json!(row.effort.as_str()),
+            "acceptance" => json!(row.acceptance),
+            "action" => json!(row.action),
+            "checkpoint" => json!(row.checkpoint),
+            "deps_note" => json!(row.deps_note),
+            "detail" => json!(row.detail),
+            other => unreachable!("`{other}` is not a review row field"),
+        },
+        ReviewTarget::Spec(field) => {
+            let spec = store
+                .specs
+                .iter()
+                .find(|spec| spec.r#ref == row.r#ref)
+                .cloned()
+                .unwrap_or_else(|| empty_spec(row.r#ref.clone()));
+            spec_value(&spec, field)
+        }
+    })
+}
+
+fn spec_value(spec: &TaskSpec, field: &str) -> JsonValue {
+    match field {
+        "outcome" => json!(spec.outcome),
+        "executor" => json!(spec.executor),
+        "constraints" => json!(spec.constraints),
+        "design" => json!(spec.design),
+        "precedent" => json!(spec.precedent),
+        "premises" => premises_json(&spec.premises),
+        "means" => means_json(&spec.means),
+        "accept" => {
+            let unprobed: Vec<Accept> = spec
+                .accept
+                .iter()
+                .map(|entry| Accept {
+                    probe: None,
+                    ..entry.clone()
+                })
+                .collect();
+            accept_json(&unprobed)
+        }
+        other => unreachable!("`{other}` is not a review spec field"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1905,6 +2265,229 @@ mod tests {
                     .collect::<Vec<_>>(),
                 [("wire-the-renderer", vec!["B1".to_string()])]
             );
+        });
+    }
+
+    const SLUG: &str = "whimsical-hugging-puppy";
+
+    fn edit<'a>(
+        field: &'a str,
+        expect: Option<&'a JsonValue>,
+        new: &'a JsonValue,
+    ) -> ReviewEdit<'a> {
+        ReviewEdit {
+            task_ref: "seed-the-store",
+            field,
+            index: None,
+            append: false,
+            expect,
+            new,
+            actor: "review",
+            reason: "review r1 F3",
+        }
+    }
+
+    fn accept(check: &str) -> Accept {
+        Accept {
+            behaviour: format!("{check} holds"),
+            check: check.to_string(),
+            kind: "forward".to_string(),
+            positive: String::new(),
+            writes_build: true,
+            probe: None,
+        }
+    }
+
+    /// Seeds two accept entries, the first probed, on an audited store.
+    fn seeded_spec(root: &Path) -> PathBuf {
+        let path = seeded(root);
+        store::mutate(&path, &write_args(), |store| {
+            let mut spec = empty_spec("seed-the-store".to_string());
+            spec.accept = vec![
+                Accept {
+                    probe: Some(crate::tasks::schema::Probe {
+                        at: "2026-11-09".to_string(),
+                        neg_rc: Some(1),
+                        pos_rc: None,
+                        verdict: "healthy".to_string(),
+                    }),
+                    ..accept("grep -q a f")
+                },
+                accept("grep -q b f"),
+            ];
+            store.specs.push(spec);
+            store.audit = true;
+            Ok(())
+        })
+        .expect("the spec lands");
+        path
+    }
+
+    fn entry_json(check: &str) -> JsonValue {
+        accept_json(&[accept(check)])[0].clone()
+    }
+
+    #[test]
+    fn a_review_edit_compares_then_sets_and_reports_already_and_stale() {
+        with_root(|root| {
+            let path = seeded(root);
+            let empty = json!("");
+            let new = json!("Rewrite in place.");
+            let outcome =
+                apply_review_edit(SLUG, &write_args(), &edit("detail", Some(&empty), &new))
+                    .expect("the edit lands");
+            assert_eq!(outcome, ReviewEditOutcome::Applied);
+            assert_eq!(reload(&path).items[0].detail, "Rewrite in place.");
+
+            let outcome =
+                apply_review_edit(SLUG, &write_args(), &edit("detail", Some(&empty), &new))
+                    .expect("a repeat is not an error");
+            assert_eq!(outcome, ReviewEditOutcome::Already);
+
+            let other = json!("Something else.");
+            let outcome =
+                apply_review_edit(SLUG, &write_args(), &edit("detail", Some(&empty), &other))
+                    .expect("a mismatch is not an error");
+            assert_eq!(outcome, ReviewEditOutcome::Stale { found: new.clone() });
+            assert_eq!(reload(&path).items[0].detail, "Rewrite in place.");
+        });
+    }
+
+    #[test]
+    fn a_review_edit_refuses_title_and_a_missing_expect() {
+        with_root(|root| {
+            seeded(root);
+            let new = json!("Reseed the store");
+            let message = apply_review_edit(SLUG, &write_args(), &edit("title", None, &new))
+                .expect_err("title is not a review field")
+                .to_string();
+            assert!(message.contains("spec.<field>"), "{message}");
+            let message = apply_review_edit(SLUG, &write_args(), &edit("detail", None, &new))
+                .expect_err("a whole-value edit needs expect")
+                .to_string();
+            assert!(message.contains("expect"), "{message}");
+        });
+    }
+
+    /// The entry is matched by value with probes stripped, the untouched entry
+    /// keeps its probe, and the audited store records the move under the
+    /// edit's actor and reason.
+    #[test]
+    fn an_accept_entry_edit_matches_by_value_and_keeps_the_other_probe() {
+        with_root(|root| {
+            let path = seeded_spec(root);
+            let expect = entry_json("grep -q b f");
+            let new = entry_json("grep -q c f");
+            let outcome = apply_review_edit(
+                SLUG,
+                &write_args(),
+                &ReviewEdit {
+                    index: Some(0),
+                    ..edit("spec.accept", Some(&expect), &new)
+                },
+            )
+            .expect("the entry is replaced");
+            assert_eq!(outcome, ReviewEditOutcome::Applied);
+
+            let store = reload(&path);
+            let accept = &store.specs[0].accept;
+            assert_eq!(accept[1].check, "grep -q c f");
+            assert!(
+                accept[0].probe.is_some(),
+                "the untouched entry keeps its probe"
+            );
+            assert!(accept[1].probe.is_none());
+            let change = store.changes.last().expect("the audited store records it");
+            assert_eq!(change.field, "spec.accept");
+            assert_eq!(change.actor, "review");
+            assert_eq!(change.reason, "review r1 F3");
+        });
+    }
+
+    #[test]
+    fn an_expect_carrying_a_probe_is_refused() {
+        with_root(|root| {
+            seeded_spec(root);
+            let mut expect = entry_json("grep -q a f");
+            expect["probe"] = json!({"verdict": "healthy"});
+            let new = entry_json("grep -q c f");
+            let message = apply_review_edit(
+                SLUG,
+                &write_args(),
+                &ReviewEdit {
+                    index: Some(0),
+                    ..edit("spec.accept", Some(&expect), &new)
+                },
+            )
+            .expect_err("a probe is tool-written");
+            let message = format!("{message:#}");
+            assert!(message.contains("probe"), "{message}");
+        });
+    }
+
+    #[test]
+    fn appends_and_removals_are_already_when_the_list_holds_the_result() {
+        with_root(|root| {
+            let path = seeded_spec(root);
+            let present = entry_json("grep -q a f");
+            let append = ReviewEdit {
+                append: true,
+                ..edit("spec.accept", None, &present)
+            };
+            assert_eq!(
+                apply_review_edit(SLUG, &write_args(), &append).expect("append"),
+                ReviewEditOutcome::Already
+            );
+
+            let null = JsonValue::Null;
+            let absent = entry_json("grep -q z f");
+            let removal = ReviewEdit {
+                index: Some(4),
+                ..edit("spec.accept", Some(&absent), &null)
+            };
+            assert_eq!(
+                apply_review_edit(SLUG, &write_args(), &removal).expect("removal"),
+                ReviewEditOutcome::Already
+            );
+
+            let removal = ReviewEdit {
+                index: Some(1),
+                ..edit("spec.accept", Some(&present), &null)
+            };
+            assert_eq!(
+                apply_review_edit(SLUG, &write_args(), &removal).expect("removal"),
+                ReviewEditOutcome::Applied
+            );
+            let checks: Vec<String> = reload(&path).specs[0]
+                .accept
+                .iter()
+                .map(|entry| entry.check.clone())
+                .collect();
+            assert_eq!(checks, ["grep -q b f"]);
+        });
+    }
+
+    #[test]
+    fn validating_a_review_edit_writes_nothing() {
+        with_root(|root| {
+            let path = seeded(root);
+            let empty = json!("");
+            let new = json!("Rewrite in place.");
+            let outcome =
+                validate_review_edit(SLUG, &write_args(), &edit("detail", Some(&empty), &new))
+                    .expect("the edit validates");
+            assert_eq!(outcome, ReviewEditOutcome::Applied);
+            assert_eq!(reload(&path).items[0].detail, "");
+
+            let bad = json!("XL");
+            let message = validate_review_edit(
+                SLUG,
+                &write_args(),
+                &edit("effort", Some(&json!("S")), &bad),
+            )
+            .expect_err("XL is not an effort");
+            let message = format!("{message:#}");
+            assert!(message.contains("effort"), "{message}");
         });
     }
 

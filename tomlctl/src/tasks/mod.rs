@@ -62,6 +62,10 @@ pub(crate) use store::{
     is_v2_flow, load as load_store, mutate as mutate_store, resolve_store_path,
 };
 
+// `review apply` writes a finding's edit to a task row or spec through the
+// update verb's own patch path, with `expect` checked inside the store's lock.
+pub(crate) use update::{ReviewEdit, ReviewEditOutcome, apply_review_edit, validate_review_edit};
+
 /// The plan document `context.toml` binds `slug` to, through the plan-path
 /// seam's containment and `.md` validation — a recorded value is
 /// file-controlled input, and resolving one verbatim makes a reader of it an
