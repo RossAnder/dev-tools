@@ -27,7 +27,7 @@ const HANDOVER_REPLACE: &str = "plan handover add --command <same> --source-task
 const MILESTONE_UPDATE: &str = "plan milestone update --defer --reason <why>";
 const FIX_AND_REPROBE: &str = "tasks update --ndjson, then plan probes --emit";
 const PROBES_EMIT: &str = "plan probes --emit";
-const PLAN_REVIEW: &str = "plan run skip --step review --reason <why>";
+const PLAN_REVIEW: &str = "the /plan-v2 Review step, or plan run skip --step review --reason <why>";
 const AMEND_APPROVAL: &str = "plan approve --amend --review <outcome>";
 
 /// The order `prove` works through its blockers. Probes come last because any
@@ -51,7 +51,7 @@ pub(super) fn run(args: PlanStageArgs) -> Result<()> {
     let plan = store::load(&plan_path, &args.integrity)?;
     let tasks = load_store(&resolve_store_path(Some(slug), None)?, &args.integrity)?;
     let findings = check::findings(slug, &args.integrity)?;
-    let reviewed = review_settled(store::flow_dir(&plan_path), &plan)?;
+    let review_blockers = review_blockers(store::flow_dir(&plan_path), &plan, &tasks)?;
     let brief = relativise(
         &repo_or_cwd_root()?,
         &store::authored_dir(slug)?.join(store::BRIEF_FILE),
@@ -59,7 +59,7 @@ pub(super) fn run(args: PlanStageArgs) -> Result<()> {
 
     let open_runs = store::open_runs(&plan);
     let report = with_open_runs(
-        assess(&plan, &tasks, &findings, reviewed, &brief),
+        assess(&plan, &tasks, &findings, &review_blockers, &brief),
         &open_runs,
     );
     let open_steps: Vec<&str> = open_runs.iter().map(|run| run.step.as_str()).collect();
@@ -159,7 +159,7 @@ fn assess(
     plan: &PlanStore,
     tasks: &Store,
     findings: &[Finding],
-    reviewed: bool,
+    review_blockers: &[String],
     brief_rel: &str,
 ) -> Report {
     let of = |classes: &'static [&'static str]| move |f: &&Finding| classes.contains(&f.class);
@@ -237,12 +237,8 @@ fn assess(
         return report("prove", next, blockers);
     }
 
-    if !reviewed {
-        return report(
-            "review",
-            PLAN_REVIEW,
-            vec!["no finished plan review run and no recorded skip".to_string()],
-        );
+    if !review_blockers.is_empty() {
+        return report("review", PLAN_REVIEW, review_blockers.to_vec());
     }
 
     report("ready", "plan approve", Vec::new())
@@ -271,13 +267,32 @@ fn amend_report(
     report(stage, next, blockers)
 }
 
-/// A review is settled by a finished plan-family run or by a `[[run]]` for the
-/// review step carrying a skip reason.
-fn review_settled(flow_dir: &Path, plan: &PlanStore) -> Result<bool> {
+/// What keeps review unsettled, empty when it is settled. A `[[run]]` for the review
+/// step carrying a skip reason settles it; otherwise `plan approve --review ran`'s own
+/// rule decides, so the two cannot disagree.
+fn review_blockers(flow_dir: &Path, plan: &PlanStore, tasks: &Store) -> Result<Vec<String>> {
     if store::skipped_reviews(plan).next().is_some() {
-        return Ok(true);
+        return Ok(Vec::new());
     }
-    store::plan_review_finished(flow_dir)
+    let state = store::plan_review_state(flow_dir)?;
+    let Some(reason) = state.unsettled(tasks) else {
+        return Ok(Vec::new());
+    };
+    if state.finished_runs.is_empty() {
+        return Ok(vec![
+            "no finished plan review run and no recorded skip".to_string(),
+        ]);
+    }
+    let mut blockers: Vec<String> = reason
+        .split("; ")
+        .filter(|part| !part.starts_with("open user-tier findings"))
+        .map(str::to_string)
+        .collect();
+    let user = state.open_user_tier().count();
+    if user > 0 {
+        blockers.push(format!("{user} open user-tier findings to accept or veto"));
+    }
+    Ok(blockers)
 }
 
 #[cfg(test)]

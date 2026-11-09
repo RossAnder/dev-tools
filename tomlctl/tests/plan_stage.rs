@@ -11,7 +11,7 @@ use common::{git_available, git_bash, git_command, hex_digest, stage_tasks_flow}
 
 const SLUG: &str = "plan-stage";
 
-const REVIEW_NEXT: &str = "plan run skip --step review --reason <why>";
+const REVIEW_NEXT: &str = "the /plan-v2 Review step, or plan run skip --step review --reason <why>";
 const SPEC_NEXT: &str = "tasks update --ndjson";
 const PROBE_NEXT: &str = "plan probes --emit";
 const HANDOVER_NEXT: &str = "plan handover add --command <same> --source-task <live id>, then \
@@ -921,6 +921,25 @@ fn an_unfinished_or_non_plan_review_run_is_still_review() {
         "family = \"code\"",
     );
     assert_stage(&clean(&code), "review", REVIEW_NEXT);
+}
+
+#[test]
+fn an_open_user_tier_finding_keeps_the_stage_at_review() {
+    let store = format!(
+        "{REVIEW_STORE_FINISHED}\n[[findings]]\nid = \"F1\"\nfamily = \"plan\"\nrun = \"R1\"\n\
+         status = \"open\"\ntier = \"user\"\nkind = \"defect\"\nseverity = \"minor\"\n\
+         target = \"decision:D1.why\"\nsummary = \"s\"\n"
+    );
+    let report = assert_stage(&clean(&store), "review", REVIEW_NEXT);
+    assert!(
+        report["blockers"]
+            .to_string()
+            .contains("1 open user-tier findings"),
+        "{report}"
+    );
+
+    let settled = store.replace("status = \"open\"", "status = \"dismissed\"");
+    assert_stage(&clean(&settled), "ready", "plan approve");
 }
 
 #[test]
