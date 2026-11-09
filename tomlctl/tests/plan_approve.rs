@@ -576,6 +576,74 @@ fn review_ran_needs_a_finished_plan_family_run() {
     assert_eq!(plan["approval"][0]["review"].as_str(), Some("ran"));
 }
 
+const FINISHED_RUN: &str =
+    "[[runs]]\nid = \"U1\"\nfamily = \"plan\"\nfinished = \"2026-11-05T12:00:00Z\"\n";
+
+fn accept_edit_finding(check: &str) -> String {
+    format!(
+        "\n[[findings]]\nid = \"F1\"\nrun = \"U1\"\nfamily = \"plan\"\nkind = \"defect\"\n\
+         status = \"resolved\"\ntier = \"mechanical\"\ntarget = \"task:add-guard.spec.accept[0]\"\n\
+         summary = \"The check proves nothing.\"\n\
+         applied = {{ at = \"2026-11-05T12:05:00Z\", tier = \"mechanical\", \
+         target = \"task:add-guard.spec.accept[0]\", old = '{{\"check\":\"true\"}}', \
+         new = '{{\"behaviour\":\"a retry waits\",\"check\":\"{check}\"}}', by = \"tool\" }}\n"
+    )
+}
+
+#[test]
+fn review_ran_is_refused_for_an_open_user_tier_finding() {
+    let flow = Flow::clean();
+    let store = format!(
+        "{FINISHED_RUN}\n[[findings]]\nid = \"F9\"\nrun = \"U1\"\nfamily = \"plan\"\n\
+         kind = \"defect\"\nstatus = \"open\"\ntier = \"user\"\ntarget = \"decision:D1.why\"\n\
+         summary = \"Why is thin.\"\n"
+    );
+    flow.write("review-v2.toml", store.as_bytes());
+    let (message, kind) = flow.refused(&["--review", "ran"]);
+    assert_eq!(kind, "validation");
+    assert!(message.contains("F9"), "{message}");
+    assert!(message.contains("user-tier"), "{message}");
+
+    flow.write(
+        "review-v2.toml",
+        store
+            .replace("tier = \"user\"", "tier = \"cited\"")
+            .as_bytes(),
+    );
+    flow.approve(&["--review", "ran"]);
+}
+
+#[test]
+fn review_ran_is_refused_while_another_plan_run_is_unfinished() {
+    let flow = Flow::clean();
+    let store =
+        format!("{FINISHED_RUN}\n[[runs]]\nid = \"U2\"\nfamily = \"plan\"\nrechecks = \"U1\"\n");
+    flow.write("review-v2.toml", store.as_bytes());
+    let (message, kind) = flow.refused(&["--review", "ran"]);
+    assert_eq!(kind, "validation");
+    assert!(message.contains("U2"), "{message}");
+    assert!(message.contains("unfinished"), "{message}");
+}
+
+#[test]
+fn review_ran_is_refused_for_an_applied_accept_edit_left_unprobed() {
+    let flow = Flow::clean();
+    flow.write(
+        "review-v2.toml",
+        format!("{FINISHED_RUN}{}", accept_edit_finding("cargo test retry")).as_bytes(),
+    );
+    let (message, kind) = flow.refused(&["--review", "ran"]);
+    assert_eq!(kind, "validation");
+    assert!(message.contains("F1"), "{message}");
+    assert!(message.contains("unprobed"), "{message}");
+
+    flow.write(
+        "review-v2.toml",
+        format!("{FINISHED_RUN}{}", accept_edit_finding("cargo test other")).as_bytes(),
+    );
+    flow.approve(&["--review", "ran"]);
+}
+
 #[test]
 fn a_flow_past_in_progress_cannot_be_approved() {
     let flow = Flow::clean();
@@ -880,6 +948,120 @@ status = "pending"
 files = ["a"]
 "#;
 
+const GATE_REVIEW: &str = r#"
+[[runs]]
+id = "U1"
+family = "plan"
+finished = "2026-11-09T10:00:00Z"
+
+[[runs]]
+id = "U2"
+family = "plan"
+rechecks = "U1"
+finished = "2026-11-09T11:00:00Z"
+
+[[findings]]
+id = "F1"
+run = "U1"
+family = "plan"
+kind = "defect"
+status = "resolved"
+tier = "mechanical"
+target = "task:one.files"
+summary = "A path is missing."
+applied = { at = "2026-11-09T10:05:00Z", tier = "mechanical", target = "task:one.files", old = '["a"]', new = '["b"]', by = "tool" }
+
+[[findings]]
+id = "F2"
+run = "U1"
+family = "plan"
+kind = "defect"
+status = "resolved"
+tier = "user"
+target = "decision:D1.decision"
+summary = "The decision is vague."
+applied = { at = "2026-11-09T10:06:00Z", tier = "user", target = "decision:D1.decision", old = '"Narrow."', new = '"Narrow, stated."', by = "user" }
+
+[[findings]]
+id = "F3"
+run = "U1"
+family = "plan"
+kind = "cleanup"
+status = "resolved"
+tier = "cited"
+target = "task:two.spec.outcome"
+summary = "The outcome is loose."
+applied = { at = "2026-11-09T10:07:00Z", tier = "user", target = "task:two.spec.outcome", old = '"x"', new = '"y"', by = "user" }
+
+[[findings]]
+id = "F4"
+run = "U1"
+family = "plan"
+kind = "defect"
+severity = "critical"
+status = "open"
+tier = "advisory"
+target = "task:three.files"
+summary = "Four files is too many."
+
+[[findings]]
+id = "F5"
+run = "U1"
+family = "plan"
+kind = "defect"
+severity = "minor"
+status = "open"
+target = "task:one.files"
+summary = "A minor, not a gate risk."
+
+[[findings]]
+id = "F6"
+run = "U2"
+family = "plan"
+kind = "cleanup"
+status = "open"
+summary = "Raised by the re-check."
+
+[[findings]]
+id = "F7"
+run = "U1"
+family = "code"
+kind = "defect"
+severity = "critical"
+status = "open"
+summary = "Not a plan finding."
+"#;
+
+#[test]
+fn gate_lists_applied_edits_and_review_findings_as_risks() {
+    let flow = Flow::staged(GATE_PLAN, GATE_TASKS, BRIEF.as_bytes());
+    flow.write("review-v2.toml", GATE_REVIEW.as_bytes());
+
+    let report = flow.gate();
+
+    assert_eq!(
+        report["review_edits"],
+        serde_json::json!([
+            { "id": "F2", "target": "decision:D1.decision", "tier": "user", "by": "user",
+              "summary": "The decision is vague." },
+            { "id": "F3", "target": "task:two.spec.outcome", "tier": "user", "by": "user",
+              "summary": "The outcome is loose." },
+            { "id": "F1", "target": "task:one.files", "tier": "mechanical", "by": "tool",
+              "summary": "A path is missing." },
+        ])
+    );
+    assert_eq!(
+        report["risks"],
+        serde_json::json!([
+            { "kind": "skip-reason", "detail": "Low risk." },
+            { "kind": "review-finding", "id": "F4", "severity": "critical",
+              "target": "task:three.files", "summary": "Four files is too many." },
+            { "kind": "review-finding", "id": "F6", "severity": "", "target": "",
+              "summary": "Raised by the re-check." },
+        ])
+    );
+}
+
 #[test]
 fn gate_reports_each_item_in_the_screens_order() {
     let flow = Flow::staged(GATE_PLAN, GATE_TASKS, BRIEF.as_bytes());
@@ -905,7 +1087,6 @@ fn gate_reports_each_item_in_the_screens_order() {
             "review_edits",
             "deferred_milestones",
             "stops",
-            "review_note",
         ]
     );
 
@@ -935,12 +1116,6 @@ fn gate_reports_each_item_in_the_screens_order() {
         ])
     );
     assert_eq!(report["review_edits"], serde_json::json!([]));
-    assert!(
-        report["review_note"]
-            .as_str()
-            .is_some_and(|note| note.contains("review_edits")),
-        "{report}"
-    );
     assert_eq!(
         report["deferred_milestones"],
         serde_json::json!([{ "id": "B", "reason": "Depends on A." }])
