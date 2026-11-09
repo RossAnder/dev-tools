@@ -8,7 +8,7 @@ The goal is one v2 chain from planning through implementation, review and apply.
 ## Where things stand
 
 - Built and merged, never deployed or run: `/review-v2`, `/optimise-v2`, `/review-plan-v2`, the `tomlctl review` group, the lens catalogue and `claude/workflows/review-v2.js`.
-- Built, never run for real work: `/plan-v2` (v2 planning).
+- Run once for real work: `/plan-v2` (v2 planning), which planned and approved `human-only-handovers`, the proof recorded in `docs/ideas/plan-v2-probes.md`.
 - Not started: the execution engine, implement, apply.
 - v1 stays in use while v2 is built. `/tdd` runs inside v1 flows and dispatches v1 `/implement`, so it needs v1 until it is ported.
 

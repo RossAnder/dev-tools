@@ -6,11 +6,7 @@ Stage prose for a `--set-file` flag with the Write tool in the session's scratch
 
 ## Review
 
-Plan review is not built into `/plan-v2` yet, so there is no route to `plan approve --review ran`.
-
-**`--review`.** Refuse it when the arguments are read, before Open, so no work is spent on a plan that cannot be reviewed. Print that plan review is not built into `/plan-v2` yet, that the plan can be approved with the review skipped, and that `--review` should be dropped to do that. Stop.
-
-**Otherwise.** Record the skip, with one fixed reason chosen by the flag:
+Plan review is not built into `/plan-v2` yet, so there is no route to `plan approve --review ran`; `--review` was refused when the arguments were read. Record the skip, with one fixed reason chosen by the flag:
 
 | Flag | Reason |
 |---|---|
@@ -61,19 +57,29 @@ Show one screen, the arrays in the object's key order, because that order puts t
 
 Then the secret-scan hits, each as `file:line` with the matched text, or `secret scan: clean`. Totals come last: the counts of tasks, milestones, assumptions and one-way doors. An empty array is shown as `none` under its heading, not dropped, so the user can tell an empty section from a missing one.
 
+After the totals, show what approving does to the v1 carriers. Print this block verbatim as a quoted block, with only `<slug>` filled in, never paraphrased or shortened:
+
+> Bare v1 carriers will now pick this flow, `/review` and `/optimise` included, and none can run it: `tasks import-plan --slug` refuses it, `/implement` has no named halt for that, and `/review-plan` falls back to plan mode and can overwrite `brief.md`. No engine can run it yet. Pass `--flow` to v1 carriers, or clear it with `tomlctl flow active remove --slug <slug>`.
+
 Ask with `AskUserQuestion`: approve, or say what to change. Only "approve" goes on. Any other answer, a secret-scan hit to remove included, routes back into the plan: the step that owns the change (Surface, Design, Write or Prove) makes it, Prove re-runs as far as the change unprobes, and this step starts again from step 1.
 
 ### 4. Commit the plan
 
 `plan approve` refuses while `git status` reports anything for `tasks.toml`, `plan.toml`, `brief.md` or `design/`, because the stamp names `HEAD` and that commit must hold the plan. Commit first.
 
-Before staging, check the files the second commit will carry:
+Before staging, check the shared files the second commit will carry. `.claude/active-flow.toml` is always one. `.claude/backlog.toml` is one only when some task has `closes`; this prints nothing when none does:
 
 ```bash
-git status --short -- .claude/active-flow.toml .claude/backlog.toml
+tomlctl tasks list --slug <slug> --where-has closes --select id --lines
 ```
 
-Either one already modified means the second commit would sweep in edits this plan did not make. Name them to the user and ask whether to go on before committing anything.
+Then check each file that applies:
+
+```bash
+git status --short -- .claude/active-flow.toml [.claude/backlog.toml]
+```
+
+A checked file already modified holds edits this plan did not make, and the second commit would sweep them in. Name them to the user and offer two options before committing anything: the user commits or stashes those edits themselves and this step runs again, or stop. Never stage edits this engine did not make into either commit, and never offer to include them.
 
 List what the first commit holds:
 
@@ -134,14 +140,10 @@ The stamp's writes land after the commit it names, so they need a second commit:
 
 - every path `git status --porcelain --untracked-files=all -- .claude/flows/<slug>/` lists;
 - `.claude/active-flow.toml` and `.claude/active-flow.toml.sha256`;
-- `.claude/backlog.toml` and `.claude/backlog.toml.sha256`, when any task row had `closes`.
+- `.claude/backlog.toml` and `.claude/backlog.toml.sha256`, when step 4 found a task with `closes`.
 
 Invoke the `commit-conventions` skill for the message and commit.
 
 ### 8. Warn
 
-Print this, with the slug filled in:
-
-> Bare v1 carriers will now pick this flow, `/review` and `/optimise` included, and none can run it: `tasks import-plan --slug` refuses it, `/implement` has no named halt for that, and `/review-plan` falls back to plan mode and can overwrite `brief.md`. No engine can run it yet. Pass `--flow` to v1 carriers, or clear it with `tomlctl flow active remove --slug <slug>`.
-
-Then end with the approved commit, the second commit, the stage `plan stage` now reports, and any `promoted` or `skipped_stale` backlog ids.
+Print the v1-carrier warning from step 3 again, verbatim as a quoted block with the slug filled in, never paraphrased or shortened. Then end with the approved commit, the second commit, the stage `plan stage` now reports, and any `promoted` or `skipped_stale` backlog ids.

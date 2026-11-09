@@ -27,7 +27,7 @@ const HANDOVER_REPLACE: &str = "plan handover add --command <same> --source-task
 const MILESTONE_UPDATE: &str = "plan milestone update --defer --reason <why>";
 const FIX_AND_REPROBE: &str = "tasks update --ndjson, then plan probes --emit";
 const PROBES_EMIT: &str = "plan probes --emit";
-const PLAN_REVIEW: &str = "/review-plan-v2 or plan run skip --step review --reason <why>";
+const PLAN_REVIEW: &str = "plan run skip --step review --reason <why>";
 const AMEND_APPROVAL: &str = "plan approve --amend --review <outcome>";
 
 /// The order `prove` works through its blockers. Probes come last because any

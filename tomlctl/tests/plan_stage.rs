@@ -11,7 +11,7 @@ use common::{git_available, git_bash, git_command, hex_digest, stage_tasks_flow}
 
 const SLUG: &str = "plan-stage";
 
-const REVIEW_NEXT: &str = "/review-plan-v2 or plan run skip --step review --reason <why>";
+const REVIEW_NEXT: &str = "plan run skip --step review --reason <why>";
 const SPEC_NEXT: &str = "tasks update --ndjson";
 const PROBE_NEXT: &str = "plan probes --emit";
 const HANDOVER_NEXT: &str = "plan handover add --command <same> --source-task <live id>, then \

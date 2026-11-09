@@ -76,7 +76,7 @@ tomlctl tasks list --slug <slug> --select id --lines
 
 An empty result means the batch's rows are numbered 1, 2, 3 in file order, so `needs`, `coupling` and a premise's `after:<id>` can name a row later in the same file. When rows already exist, this is a revision, not a first Write: change existing rows with `tasks update --ndjson`, add new ones with `needs` only on ids that already exist, and add edges between new rows afterwards with a `set.needs` update naming the `rows[].id` the add printed. An id once issued is never reused, even after its row is removed, so never predict one on a store that has had rows.
 
-**A row** carries the v1 fields a worker and the scheduler read (`title`, `effort`, `files`, `needs`, `checkpoint`, `action`, `detail`) and the `spec` that `plan view --for worker` inlines. `file_notes` annotates a path as `(new)` or `(delete)`, and `closes` and `refs` link backlog ids. The spec's keys and their accepted values are in the `tomlctl` skill's `references/tasks-write.md`, under `tasks add-many`.
+**A row** carries the v1 fields a worker and the scheduler read (`title`, `effort`, `files`, `needs`, `checkpoint`, `action`, `detail`) and the `spec` that `plan view --for worker` inlines. `file_notes` annotates a path as `(new)` or `(delete)`, and `closes` and `refs` link backlog ids. The spec's keys and their accepted values are in the `tomlctl` skill's `references/tasks-write.md`, under `tasks add-many`; an `accept` entry's `positive`, `writes_build` and `probe` keys are in its `references/tasks-store.md`.
 
 ```toml
 [[record]]
@@ -171,7 +171,19 @@ It exits 1 on any error-class finding. `plan stage` names the verb that clears e
 
 ### 4b. Premises
 
-Run every `base` premise's `check` yourself, in one Bash call, and read each exit status. One that exits non-zero is a false premise. A false premise goes to replanning, never to a stronger executor: rewrite the task, and any task built on it, against what the code holds. When the outcome itself rested on it, that touches intent and goes to the user. `after:<id>` premises cannot hold yet and are not run.
+Emit a script that runs every `base` premise's `check` of each pending task:
+
+```bash
+tomlctl plan probes --slug <slug> --emit --premises > <scratch>/premises.sh
+```
+
+Read the script before running it, for the reason 4d gives: each `p` line runs a stored command, and `bash <file>` puts none of them in front of a permission prompt, so this read is the review. Then run it under a timeout:
+
+```bash
+timeout 540 bash <scratch>/premises.sh > <scratch>/premises.out
+```
+
+Each row of the capture reads `<task>:<premise index>`, `premise`, `sha256=<digest>`, `rc=<code>`, stdout and stderr, tab-separated. There is no `--record` for premises; read each row's `rc` yourself. `rc=0` means the premise holds, and any other code is a false premise. A false premise goes to replanning, never to a stronger executor: rewrite the task, and any task built on it, against what the code holds. When the outcome itself rested on it, that touches intent and goes to the user. `after:<id>` premises cannot hold yet and are not run.
 
 ### 4c. Cold read
 
@@ -192,7 +204,7 @@ tomlctl tasks list --slug <slug> --where checkpoint=<milestone> --where status=p
 
 A deferred milestone is read when it is elaborated, not now. A milestone with no pending task is left out.
 
-**Launch.** Delete `docs/flows/<slug>/notes/cold-read-<milestone>.md` for each milestone passed, because a cold reader writes nothing over an existing file and must not read its predecessor. Write the args object to `<scratch>/prove-args.json`; a relaunch needs those exact args, and the hash recorded below is how it knows they are unchanged. Take the fan-out snapshot from `open-and-challenge.md`, section 3, since cold readers hold Write for their note as investigators do, excluding only the `cold-read-<milestone>.md` paths this launch asks for. Then call:
+**Launch.** Delete `docs/flows/<slug>/notes/cold-read-<milestone>.md` for each milestone passed, because a cold reader writes nothing over an existing file and must not read its predecessor. Write the args object to `<scratch>/prove-args.json`; a relaunch needs those exact args, and the hash recorded below is how it knows they are unchanged. Take a fresh fan-out snapshot, as [open-and-challenge.md, section 3](open-and-challenge.md#3-the-fan-out-check) describes, since cold readers hold Write for their note as investigators do: `fanout-check.sh snapshot <scratch>/fanout-cold-read <slug>` with the `docs/flows/<slug>/notes/cold-read-<milestone>.md` path of each milestone this launch asks for, never a snapshot from an earlier launch. Then call:
 
 ```
 Workflow({name: "plan-v2-prove", args: {slug: "<slug>", milestones: [{id: "A", tasks: [1, 2]}, {id: "B", tasks: [3]}]}})
@@ -219,7 +231,7 @@ tomlctl plan run finish --slug <slug> --step cold-read --outcome <outcome>
 
 **An index showing no agent launched**, `reads` empty and `errors` ending `no agent launched`, is the Workflow refusing its args. It is a completed run, not a launch `error`: close it as `errors`, stop, report `errors`, and never relaunch the same args.
 
-Otherwise run the fan-out check. The result is an index, `{slug, reads: [{id, status, unactionable, false_premises, note, error}], errors, script_version}`, and the notes are the answer. Read each entry by its `status`:
+Otherwise run the fan-out check, `fanout-check.sh check` with the snapshot's arguments. The result is an index, `{slug, reads: [{id, status, unactionable, false_premises, note, error}], errors, script_version}`, and the notes are the answer. Read each entry by its `status`:
 
 | `status` | Meaning | Do |
 |---|---|---|
@@ -281,6 +293,8 @@ writes_build = false
 tomlctl tasks update --slug <slug> --ndjson <scratch>/cold-read-fixes.toml
 ```
 
+A `files` or `needs` change on a v2 flow takes no `--unlock-import-fields`, since there is no import to override. Once the plan is approved the store is audited, and every row that moves a plan field then needs a non-blank `reason`, or the update is refused.
+
 Then re-run `plan check` as in 4a.
 
 **Rerun a milestone's cold read** only when one of its tasks changed after its note in a way the note did not ask for: a new or removed task, a changed `outcome`, `files` or premise. Fixing the points a note raised does not call for one, and neither does a check rewritten in 4d. Delete that milestone's note first, then launch afresh as above with only the milestones that need it.
@@ -289,7 +303,7 @@ Then re-run `plan check` as in 4a.
 
 - the open row's `session` is this session's `CLAUDE_CODE_SESSION_ID`, and the run is no longer live; a run still live is waited for, or stopped with `TaskStop` and the launch's `taskId`;
 - `<scratch>/prove-args.json` still exists and its hash, `sha256sum <scratch>/prove-args.json | cut -d' ' -f1`, equals the open row's `args_hash`, read from `tomlctl plan view --slug <slug> --for digest --select stage_inputs.runs`; a row with an empty `args_hash` is abandoned;
-- nothing a prompt points at has changed since launch: `git rev-parse HEAD` equals `<scratch>/head-before.txt`, the fan-out check against the launch's snapshot passes, and no `tasks` or `plan` write other than the run's own records has landed since.
+- nothing a prompt points at has changed since launch: `git rev-parse HEAD` equals `<scratch>/fanout-cold-read/head-before.txt`, `fanout-check.sh check` against that launch's snapshot, with its arguments, exits 0, and no `tasks` or `plan` write other than the run's own records has landed since.
 
 Otherwise abandon the run, keep every cold-read note that opens `Verdict:` and whose milestone has not changed since, delete the rest and launch afresh for those milestones:
 

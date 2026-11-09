@@ -768,3 +768,23 @@ rationale = "plan stage reads brief, milestones, tasks, specs and findings but n
 type = "deviation"
 task_ref = "write-the-engine-skill"
 date = 2026-11-09
+
+[[items]]
+id = "E66"
+agent = "plan-update"
+rationale = "research-read-only speaks in research-methods terms (graded findings, the Counter line, lenses, sibling lenses) that neither agent loads or holds Skill to load. Rewording the shared block would weaken it for the research agents, so the two plan agents got their own block in scripts/shared-blocks.toml."
+summary = "plan-challenger and plan-cold-reader now carry a new agent-neutral plan-read-only shared block instead of research-read-only (review-apply, uncommitted)."
+original_intent = "The plan's agent table gave plan-challenger and plan-cold-reader the research-read-only block, shared with research-deep, research-lite and plan-investigator."
+type = "deviation"
+task_ref = "add-the-cold-reader-agent"
+date = 2026-11-09
+
+[[items]]
+id = "E67"
+agent = "plan-update"
+rationale = "The first real /plan-v2 run rebuilt the block three times as one long Bash line and reused the investigate snapshot before the challenger. A script removes the retyping and drift; per-step directories keep a later launch from overwriting the head-before.txt an open run's relaunch compares against."
+summary = "The fan-out snapshot and check moved from a hand-copied shell block in open-and-challenge.md to claude/skills/plan-v2-engine/scripts/fanout-check.sh (snapshot|check modes, per-step snapshot dirs, config compared first); every launch takes a fresh snapshot (review-apply, uncommitted)."
+original_intent = "open-and-challenge.md section 3 carried the five git captures and the cmp sequence inline for the orchestrator to run around each launch."
+type = "deviation"
+task_ref = "write-the-open-and-challenge-reference"
+date = 2026-11-09

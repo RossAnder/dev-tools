@@ -2,6 +2,8 @@
 //! row's controls, and `--record` turns that script's captured stdout into each
 //! row's `probe`. Both cover only pending tasks, so re-probing later leaves the
 //! verdicts of work already started or finished as they were recorded.
+//! `--emit --premises` prints the same kind of script over each pending task's
+//! `base` premises instead; its rows are read by the caller, never recorded.
 //!
 //! tomlctl never runs a stored command: `Bash(tomlctl *)` is pre-approved, so a
 //! verb executing stored strings would widen that approval to arbitrary
@@ -23,8 +25,8 @@ use crate::errors::{ErrorKind, tagged_err};
 use crate::integrity::hex_lower;
 use crate::output::{print_json_compact, print_text};
 use crate::tasks::schema::{
-    Accept, KIND_FALSIFIER, KIND_FORWARD, KIND_GUARD, Probe, Status, Store, TaskRow,
-    VERDICT_HEALTHY, normal_path,
+    Accept, KIND_FALSIFIER, KIND_FORWARD, KIND_GUARD, Premise, Probe, Status, Store, TaskRow,
+    TaskSpec, VERDICT_HEALTHY, normal_path,
 };
 use crate::tasks::{load_store, mutate_store, resolve_store_path};
 
@@ -36,7 +38,11 @@ const VERDICT_GUARD_ALONE: &str = "guard-alone";
 
 const CONTROL_NEG: &str = "neg";
 const CONTROL_POS: &str = "pos";
+const CONTROL_PREMISE: &str = "premise";
 const DIGEST_PREFIX: &str = "sha256=";
+const PREMISE_AT_BASE: &str = "base";
+const ROW_ACCEPT: &str = "accept";
+const ROW_PREMISE: &str = "premises";
 
 /// The stderr markers of a control that never tested its behaviour, whatever it
 /// exited with. A syntax error exits non-zero, which would read as a healthy
@@ -78,7 +84,12 @@ pub(super) fn run(mut args: PlanProbesArgs) -> Result<()> {
                 strict_read: true,
             },
         )?;
-        return print_text(&script(&store, args.milestone.as_deref())?);
+        let lines = if args.premises {
+            premise_lines
+        } else {
+            accept_lines
+        };
+        return print_text(&script(&store, args.milestone.as_deref(), lines)?);
     };
     let capture = read_capture(&capture)?;
     // A capture can only describe rows of a store that already exists, so a
@@ -119,6 +130,18 @@ fn has_positive(accept: &Accept) -> bool {
     !accept.positive.trim().is_empty()
 }
 
+/// Why a premise gets no line. An `after:` premise holds only once its task
+/// lands, so it cannot be checked against the base.
+fn premise_skip_reason(premise: &Premise) -> Option<&'static str> {
+    if premise.check.trim().is_empty() {
+        Some("empty check")
+    } else if premise.at != PREMISE_AT_BASE {
+        Some("not a base premise")
+    } else {
+        None
+    }
+}
+
 /// Why a task's rows are out of this run. The reason reaches the script, so it
 /// holds no stored string.
 fn task_skip_reason(row: &TaskRow, milestone: Option<&str>) -> Option<&'static str> {
@@ -154,7 +177,11 @@ fn command_digest(command: &str) -> String {
 /// The script. The `cd` is what lets it run from anywhere, since stored commands
 /// are repo-root-relative. Nothing sets `errexit`, because a healthy negative
 /// control exits non-zero and every later row must still run.
-fn script(store: &Store, milestone: Option<&str>) -> Result<String> {
+fn script(
+    store: &Store,
+    milestone: Option<&str>,
+    lines: fn(&mut String, u32, &TaskSpec) -> Result<()>,
+) -> Result<String> {
     refuse_unknown_milestone(store, milestone)?;
     let mut out = String::from("#!/usr/bin/env bash\n");
     out.push_str("printf 'head\\t%s\\n' \"$(git rev-parse HEAD)\"\n");
@@ -169,38 +196,61 @@ fn script(store: &Store, milestone: Option<&str>) -> Result<String> {
             writeln!(out, "# skipped task {}: {reason}", row.id)?;
             continue;
         }
-        for (index, accept) in spec.accept.iter().enumerate() {
-            let key = format!("{}:{index}", row.id);
-            if let Some(reason) = skip_reason(accept) {
-                writeln!(out, "# skipped {key}: {reason}")?;
-                continue;
-            }
-            writeln!(
-                out,
-                "p {key} {CONTROL_NEG} {} {}",
-                command_digest(&accept.check),
-                quote(&key, &accept.check)?
-            )?;
-            if has_positive(accept) {
-                writeln!(
-                    out,
-                    "p {key} {CONTROL_POS} {} {}",
-                    command_digest(&accept.positive),
-                    quote(&key, &accept.positive)?
-                )?;
-            }
-        }
+        lines(&mut out, row.id, spec)?;
     }
     Ok(out)
+}
+
+fn accept_lines(out: &mut String, task: u32, spec: &TaskSpec) -> Result<()> {
+    for (index, accept) in spec.accept.iter().enumerate() {
+        let key = format!("{task}:{index}");
+        if let Some(reason) = skip_reason(accept) {
+            writeln!(out, "# skipped {key}: {reason}")?;
+            continue;
+        }
+        writeln!(
+            out,
+            "p {key} {CONTROL_NEG} {} {}",
+            command_digest(&accept.check),
+            quote(ROW_ACCEPT, &key, &accept.check)?
+        )?;
+        if has_positive(accept) {
+            writeln!(
+                out,
+                "p {key} {CONTROL_POS} {} {}",
+                command_digest(&accept.positive),
+                quote(ROW_ACCEPT, &key, &accept.positive)?
+            )?;
+        }
+    }
+    Ok(())
+}
+
+/// A premise's line exits 0 when its claim holds.
+fn premise_lines(out: &mut String, task: u32, spec: &TaskSpec) -> Result<()> {
+    for (index, premise) in spec.premises.iter().enumerate() {
+        let key = format!("{task}:{index}");
+        if let Some(reason) = premise_skip_reason(premise) {
+            writeln!(out, "# skipped {key}: {reason}")?;
+            continue;
+        }
+        writeln!(
+            out,
+            "p {key} {CONTROL_PREMISE} {} {}",
+            command_digest(&premise.check),
+            quote(ROW_PREMISE, &key, &premise.check)?
+        )?;
+    }
+    Ok(())
 }
 
 /// One single-quoted shell word holding exactly `command`. Bash drops a NUL from
 /// a script without failing, which would run a different command than the stored
 /// one, so a NUL is refused rather than emitted.
-fn quote(key: &str, command: &str) -> Result<String> {
+fn quote(row_kind: &str, key: &str, command: &str) -> Result<String> {
     if command.contains('\0') {
         return Err(refuse(format!(
-            "`accept` row {key} holds a NUL, which a Bash script cannot carry"
+            "`{row_kind}` row {key} holds a NUL, which a Bash script cannot carry"
         )));
     }
     Ok(format!("'{}'", command.replace('\'', r"'\''")))

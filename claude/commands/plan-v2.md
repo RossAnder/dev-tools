@@ -17,8 +17,8 @@ A v2 plan has no plan document: it lives in `docs/flows/<slug>/` and in `.claude
 |---|---|
 | `<slug>` | Resumes that plan; which plan to work on is the engine's Re-entry section |
 | `--from <id>[,<id>...]` | Backlog ids seeding a new plan's brief |
-| `--depth quick\|standard\|deep` | `standard` (default) skips each step by judgement, per the engine's step table; `quick` launches no Workflow and dispatches no structure challenger; `deep` runs every step, the structure challenge included, with investigators still capped at 6 lenses a launch |
-| `--no-review` | The user's reason for skipping plan review |
+| `--depth quick\|standard\|deep` | Default `standard`; what each value runs is the engine's Depth section |
+| `--no-review` | A bare flag recording the fixed review skip reason `the user passed --no-review`; text after it is part of the discussion, not a reason |
 | `--review` | Refused, as the engine's Arguments section says |
 | Anything else | The discussion being planned |
 
@@ -28,14 +28,14 @@ This carrier builds no flow envelope: a bare `flow resolve` returns no draft flo
 
 Run these in order, before anything else. Each failure stops the command with the message given.
 
-1. **The `plan` group.** Run `tomlctl capabilities --get subcommands`. When `plan` is not in the list, the installed binary predates the `plan` verbs: stop and name `cargo install --path tomlctl`.
-2. **`AskUserQuestion`.** When the tool is unavailable, stop: this command runs attended only, and every question to the user comes from this conversation.
-3. **`Workflow`.** When the tool is absent, stop: both fan-outs are saved Workflows and there is no Agent-tool fallback.
+1. **The `tomlctl` skill.** Invoke the `tomlctl` skill, before the first `tomlctl` call below.
+2. **The `plan` group.** Run `tomlctl capabilities --get subcommands`. When `plan` is not in the list, the installed binary predates the `plan` verbs: stop and name `cargo install --path tomlctl`.
+3. **`AskUserQuestion`.** When the tool is unavailable, stop: this command runs attended only, and every question to the user comes from this conversation.
+4. **`Workflow`.** When the tool is absent, stop: both fan-outs are saved Workflows and there is no Agent-tool fallback.
 
-Launch failures surface later, at the step that launches. A first launch that is refused, or whose result carries `error`, stops that step, as the engine's fan-out rule says. A refused relaunch of a run still live in this session means wait for its task notification, or stop it with `TaskStop` and the launch's `taskId`; never abandon it and relaunch, since no read-only probe can tell whether the runtime would accept another launch.
+Launch failures surface later, at the step that launches, and are handled by the engine's fan-out rule and its open-run rule.
 
 ## Run
 
-1. Invoke the `tomlctl` skill before the first `tomlctl` call.
-2. Invoke the `plan-v2-engine` skill and follow it from its Arguments section, with `$ARGUMENTS` and the bindings above. Its Re-entry section decides which plan to work on, `tomlctl flow doctor --slug <slug>` included.
-3. At the engine's Approve step, invoke the `commit-conventions` skill to draft both commits, staging each path by name.
+1. Invoke the `plan-v2-engine` skill and follow it from its Arguments section, with `$ARGUMENTS` and the bindings above. Its Re-entry section decides which plan to work on, `tomlctl flow doctor --slug <slug>` included.
+2. At the engine's Approve step, invoke the `commit-conventions` skill to draft both commits, staging each path by name.

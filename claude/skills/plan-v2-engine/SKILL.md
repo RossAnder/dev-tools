@@ -35,7 +35,7 @@ Read the arguments before anything else:
 - `<slug>`: a first word naming a flow that `tomlctl flow list` lists with a `plan_path` under `docs/flows/` resumes that plan (Re-entry, below).
 - `--from <id>[,<id>...]`: backlog ids seeding a new plan's brief; passed to `plan open`.
 - `--depth quick|standard|deep`: the depth below; default `standard`.
-- `--no-review`: the user's reason for skipping plan review.
+- `--no-review`: a bare flag that records the fixed review skip reason `the user passed --no-review`. Text after it is not a reason; it is part of the discussion.
 - `--review`: **refused here, before Open or re-entry**, so no work is spent on a plan that cannot be reviewed. Print that plan review is not built into `/plan-v2` yet, that the plan can be approved with the review skipped, and that `--review` should be dropped to do that. Stop.
 
 Anything else is the discussion being planned.
@@ -61,9 +61,9 @@ Every skip is recorded with `plan run skip` and a reason, so each step can be me
 
 The references hold the procedure:
 
-- [references/open-and-challenge.md](references/open-and-challenge.md): writing under `docs/flows/`, Open, Investigate, the fan-out check around every launch, the structure challenge, Surface, and open runs on re-entry.
+- [references/open-and-challenge.md](references/open-and-challenge.md): writing under `docs/flows/`, Open, Investigate, the fan-out check around every launch with its script `scripts/fanout-check.sh`, the structure challenge, Surface, and open runs on re-entry.
 - [references/write-and-prove.md](references/write-and-prove.md): Design, Surface again, Write, and Prove with its store check, premises, cold read, probes and the cold-read relaunch rule.
-- [references/approve.md](references/approve.md): the review skip, the gate, the two commits, the approval stamp, the status transition and the closing warning.
+- [references/approve.md](references/approve.md): the review skip, the gate, the two commits, the approval stamp, the status transition, and the v1-carrier warning shown at the gate and repeated at the close.
 
 ## Depth
 
@@ -97,7 +97,7 @@ Keep the rows whose `plan_path` is under `docs/flows/`, and offer them through `
 **The open-run rule.** `plan stage` lists each run still open in `open_runs`, and `next` reads `relaunch step <s> or plan run abandon --step <s> --reason <why>` until every one is closed. Settle each before anything else:
 
 - **A run still live in this session**, its notification not yet arrived, is not re-entry. Wait for the notification, or stop it with `TaskStop` and the launch's `taskId`. Never abandon and relaunch over a live run.
-- **Relaunch** an `investigate` or `cold-read` run with `Workflow({name, args, resumeFromRunId})` only when all three hold: the open row's `session` is this session's `CLAUDE_CODE_SESSION_ID`; the args file in `<scratch>` still hashes to the open row's `args_hash`, since the runtime does not hold the args and the store holds only that hash; and nothing a prompt points at has changed since launch, HEAD included, against the `head-before.txt` the fan-out snapshot wrote. A relaunch returns the cached result of every agent whose prompt is unchanged, even when a file that prompt points at has changed, and a changed prompt reruns that agent and every one after it, so an edited relaunch buys nothing over a fresh launch.
+- **Relaunch** an `investigate` or `cold-read` run with `Workflow({name, args, resumeFromRunId})` only when all three hold: the open row's `session` is this session's `CLAUDE_CODE_SESSION_ID`; the args file in `<scratch>` still hashes to the open row's `args_hash`, since the runtime does not hold the args and the store holds only that hash; and nothing a prompt points at has changed since launch, HEAD included, against the `head-before.txt` that launch's fan-out snapshot wrote and by a fan-out check against that snapshot. A relaunch returns the cached result of every agent whose prompt is unchanged, even when a file that prompt points at has changed, and a changed prompt reruns that agent and every one after it, so an edited relaunch buys nothing over a fresh launch.
 - **Otherwise abandon** with `tomlctl plan run abandon --slug <slug> --step <s> --reason '<why>'`, recompute what is pending from the brief's Unknowns and `notes/`, and launch afresh. A `challenge` run, and any run from another session, is always abandoned.
 
 The detail, and what "nothing changed" means for each step, is in [open-and-challenge.md](references/open-and-challenge.md), section "Open runs on re-entry", for `investigate` and `challenge`, and in [write-and-prove.md](references/write-and-prove.md), the cold-read "Relaunch" rule, for `cold-read`.

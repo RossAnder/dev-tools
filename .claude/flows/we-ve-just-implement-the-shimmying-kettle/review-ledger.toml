@@ -494,7 +494,7 @@ resolution = "uncommitted: js_agent_override_keys flags model/effort keys inside
 id = "R13"
 first_flagged = 2026-11-09
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "we-ve-just-implement-the-shimmying-kettle"
 file = "tomlctl/src/cli/dispatch/tests/lint.rs"
 line = 829
@@ -510,6 +510,8 @@ evidence = [
     "claude/agents/plan-investigator.md:2",
 ]
 dedup_id = "ff979bd65491aae0"
+resolved = 2026-11-09
+resolution = "Uncommitted (review-apply 2026-11-09): the Workflow agent-exists gate compares agentType against each agent file's frontmatter name, not its file stem; fixture adds a drifted stem/name pair."
 
 [[items]]
 id = "R14"
@@ -544,7 +546,7 @@ resolution = "uncommitted: both Workflows wrap each agent in a caught() helper; 
 id = "R15"
 first_flagged = 2026-11-09
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "we-ve-just-implement-the-shimmying-kettle"
 file = "claude/skills/plan-v2-engine/references/open-and-challenge.md"
 line = 45
@@ -573,12 +575,14 @@ sweep = [
 ]
 enumeration = "complete"
 dedup_id = "bd7877604c7e4946"
+resolved = 2026-11-09
+resolution = "Uncommitted (review-apply 2026-11-09): new lint gate md_workflow_launches_name_saved_scripts checks every literal Workflow({name: ...}) and bash --workflow name in the scanned markdown against the scripts' meta.name; placeholders skipped, fails if no launch is found."
 
 [[items]]
 id = "R16"
 first_flagged = 2026-11-09
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "we-ve-just-implement-the-shimmying-kettle"
 file = "tomlctl/src/cli/dispatch/tests/lint.rs"
 line = 754
@@ -590,12 +594,14 @@ summary = "An agent() call with no agentType passes the Workflow gate"
 description = "js_agent_names reads only agentType: keys, so a refactor that drops the key leaves the gate green and the call runs the runtime's default agent. Fix: check that every agent( call carries agentType. Medium confidence: whether the runtime rejects a missing agentType was not verifiable."
 evidence = ["tomlctl/src/cli/dispatch/tests/lint.rs:754"]
 dedup_id = "0af6920206cbd04a"
+resolved = 2026-11-09
+resolution = "Uncommitted (review-apply 2026-11-09): every agent( call must carry agentType in its own options object; the agent-call walk is shared with the model/effort override check."
 
 [[items]]
 id = "R17"
 first_flagged = 2026-11-09
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "we-ve-just-implement-the-shimmying-kettle"
 file = "claude/agents/plan-cold-reader.md"
 line = 43
@@ -625,6 +631,8 @@ sweep = [
 ]
 enumeration = "complete"
 dedup_id = "a700ea99f0519dbe"
+resolved = 2026-11-09
+resolution = "Uncommitted (review-apply 2026-11-09): plan-challenger and plan-cold-reader moved to a new agent-neutral plan-read-only shared block; research-read-only unchanged for the research agents."
 
 [[items]]
 id = "R18"
@@ -652,7 +660,7 @@ resolution = "uncommitted: Card fields list includes the approximate transitive 
 id = "R19"
 first_flagged = 2026-11-09
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "we-ve-just-implement-the-shimmying-kettle"
 file = "claude/skills/plan-v2-engine/references/open-and-challenge.md"
 line = 74
@@ -671,12 +679,14 @@ instances = [
     "claude/skills/plan-v2-engine/references/write-and-prove.md:195",
 ]
 dedup_id = "ca35cc67bf2cee51"
+resolved = 2026-11-09
+resolution = "Uncommitted (review-apply 2026-11-09): fan-out check intro names cold readers and every plan-v2 launch; write-and-prove links to the section."
 
 [[items]]
 id = "R20"
 first_flagged = 2026-11-09
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "we-ve-just-implement-the-shimmying-kettle"
 file = "claude/skills/plan-v2-engine/references/approve.md"
 line = 11
@@ -701,12 +711,14 @@ sweep = [
 ]
 enumeration = "complete"
 dedup_id = "c8a71d7462cab1d3"
+resolved = 2026-11-09
+resolution = "Uncommitted (review-apply 2026-11-09): removed the --review refusal copy from approve.md and the Surface again copy from open-and-challenge.md, each replaced by a pointer."
 
 [[items]]
 id = "R21"
 first_flagged = 2026-11-09
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "we-ve-just-implement-the-shimmying-kettle"
 file = "claude/commands/plan-v2.md"
 line = 35
@@ -729,12 +741,14 @@ instances = [
     "claude/commands/plan-v2.md:35",
 ]
 dedup_id = "d7f3d191c3a083db"
+resolved = 2026-11-09
+resolution = "Uncommitted (review-apply 2026-11-09): plan-v2.md cuts the launch-failure paragraph and --depth row to pointers, and invokes the tomlctl skill before the capabilities probe."
 
 [[items]]
 id = "R22"
 first_flagged = 2026-11-09
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "we-ve-just-implement-the-shimmying-kettle"
 file = "claude/commands/plan-v2.md"
 line = 21
@@ -757,6 +771,8 @@ instances = [
 sweep = ["--no-review"]
 enumeration = "complete"
 dedup_id = "e84eda5ff1be1c5b"
+resolved = 2026-11-09
+resolution = "Uncommitted (review-apply 2026-11-09): plan-v2.md and SKILL.md describe --no-review as a bare flag recording the fixed reason."
 
 [[items]]
 id = "R23"
@@ -787,7 +803,7 @@ resolution = "uncommitted: removed the stale .github mirror passage; hook path l
 id = "R24"
 first_flagged = 2026-11-09
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "we-ve-just-implement-the-shimmying-kettle"
 file = "docs/ideas/v2-pipeline.md"
 line = 11
@@ -803,12 +819,14 @@ evidence = [
     "docs/ideas/plan-v2-probes.md:479 (uncommitted)",
 ]
 dedup_id = "332e62dd0c5afe95"
+resolved = 2026-11-09
+resolution = "Uncommitted (review-apply 2026-11-09): v2-pipeline.md says /plan-v2 has run once for real work (the human-only-handovers proof)."
 
 [[items]]
 id = "R25"
 first_flagged = 2026-11-09
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "we-ve-just-implement-the-shimmying-kettle"
 file = "claude/skills/plan-v2-engine/references/write-and-prove.md"
 line = 79
@@ -823,3 +841,5 @@ evidence = [
     "claude/skills/tomlctl/references/tasks-store.md:87",
 ]
 dedup_id = "2dbc2d667932b4a3"
+resolved = 2026-11-09
+resolution = "Uncommitted (review-apply 2026-11-09): write-and-prove.md adds a pointer to tasks-store.md for positive, writes_build and probe."

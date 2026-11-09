@@ -11,7 +11,7 @@ The brief, `design/` and the notes are authored with Write and Edit, and attende
 Pick the slug from the goal: a few kebab-case words naming the outcome, matching `^[a-z0-9][a-z0-9-]{0,63}$`. Confirm nothing holds it; an empty result means the slug is free:
 
 ```bash
-tomlctl flow list --where slug=<slug> --select slug,status --lines
+tomlctl flow list --where slug=<slug> --get slug
 ```
 
 `plan open` is idempotent on its own flow, so a slug that already belongs to another draft would quietly reuse that draft. Choose another slug rather than share one.
@@ -41,7 +41,7 @@ tomlctl plan run skip --slug <slug> --step investigate --reason '<why>'
 
 **Pending lenses.** List `docs/flows/<slug>/notes/`. A lens is done when `<id>.md` exists there and its first line opens `Verdict:`. Pending is the planned lenses minus the done ones. Delete any lens note that exists and does not open that way, because an investigator writes nothing over an existing file. Pass only the pending lenses.
 
-**Launch.** Write the args object to `<scratch>/investigate-args.json` first; a relaunch needs those exact args, and the hash recorded below is how it knows they are unchanged (section 6). Take the fan-out snapshot (section 3). Then call:
+**Launch.** Write the args object to `<scratch>/investigate-args.json` first; a relaunch needs those exact args, and the hash recorded below is how it knows they are unchanged (section 6). Take a fresh fan-out snapshot, `fanout-check.sh snapshot <scratch>/fanout-investigate <slug>` with each pending lens's note path (section 3). Then call:
 
 ```
 Workflow({name: "plan-v2-investigate", args: {slug: "<slug>", lenses: [{id: "<id>", question: "<question>"}]}})
@@ -68,7 +68,7 @@ tomlctl plan run finish --slug <slug> --step investigate --outcome <outcome>
 
 **An index showing no agent launched**, `notes` empty and `errors` ending `no agent launched`, is the Workflow refusing its args. It is a completed run, not a launch `error`: close it as `errors`, stop, report `errors`, and never relaunch the same args.
 
-Otherwise run the fan-out check. The result is an index, `{slug, notes: [{id, status, verdict, note, error}], errors, script_version}`, and the notes are the answer. Read each entry by its `status`:
+Otherwise run the fan-out check, `fanout-check.sh check` with the snapshot's arguments (section 3). The result is an index, `{slug, notes: [{id, status, verdict, note, error}], errors, script_version}`, and the notes are the answer. Read each entry by its `status`:
 
 | `status` | Meaning | Do |
 |---|---|---|
@@ -86,37 +86,27 @@ Read each note's verdict. Before a decision rests on a fact a note reports, read
 
 ## 3. The fan-out check
 
-Investigators and the challenger hold Write for their one note, and nothing fences them: Bash can already write anywhere, and no hook limits a Write to the `note:` path. A prompt injection in fetched content could write elsewhere. This check is what compensates, and it runs around every launch in this reference.
+Every agent plan-v2 launches holds Write for its one note: investigators, the challenger and cold readers alike. Nothing fences them: Bash can already write anywhere, and no hook limits a Write to the `note:` path. A prompt injection in fetched content could write elsewhere. This check is what compensates, and it runs around every launch: each `plan-v2-investigate` launch, the challenger's dispatch, and each `plan-v2-prove` launch.
 
-Before the launch, with `<notes>` standing for one `':(exclude)docs/flows/<slug>/notes/<file>.md'` pathspec per note this launch asks for: `<id>.md` per lens, `cold-read-<milestone>.md` per milestone, `structure-challenge.md` for the challenger:
+**What it captures.** A snapshot before the launch and a check after it compare five captures of the repo. The config catches a planted `core.fsmonitor`, `core.hooksPath` or diff driver, and is compared first, because `git status` and `git diff` run whatever `core.fsmonitor` or diff driver the config names. HEAD catches a commit, which would hide its own edits from the diff. The status catches a new or deleted path, with `-uall`, because without it a new file inside an untracked directory shows only as that directory. The tracked diff catches an edit to a file already dirty before launch. The untracked digests catch an edit to an untracked file, which until approval includes `brief.md` and every note, so they catch a stray file or an overwritten sibling note under `notes/`.
 
-```bash
-git rev-parse HEAD > <scratch>/head-before.txt
-git config --list --show-origin --show-scope > <scratch>/config-before.txt
-git status --porcelain=v1 -uall -- . <notes> ':(exclude).claude/flows/<slug>' > <scratch>/status-before.txt
-git diff HEAD --binary -- . <notes> ':(exclude).claude/flows/<slug>' > <scratch>/diff-before.txt
-git ls-files -z --others --exclude-standard -- . <notes> ':(exclude).claude/flows/<slug>' | xargs -0 -r sha256sum > <scratch>/untracked-before.txt
-```
+**What it leaves out.** Only the note paths the launch asks for are excluded, because they are what the run writes; every other note stays in. `.claude/flows/<slug>/` is excluded because `plan run start` and `finish` write `plan.toml` inside the window, so a write there by an agent is a residual this check cannot see. Writes outside the repo, under ignored paths, and inside `.git/` beyond its config and HEAD, such as `.git/hooks/`, stay unchecked.
 
-After the run finishes, compare the config first, because `git status` and `git diff` run whatever `core.fsmonitor` or a diff driver the config names:
+**Running it.** `<skill-dir>` is this skill's base directory, the one the Skill tool reported when it loaded `plan-v2-engine`. `<dir>` is a directory in `<scratch>` for this step's launch: `<scratch>/fanout-investigate`, `<scratch>/fanout-challenge` or `<scratch>/fanout-cold-read`. The note paths are the ones this launch asks for, repo-relative: `docs/flows/<slug>/notes/<id>.md` per lens, `docs/flows/<slug>/notes/cold-read-<milestone>.md` per milestone, `docs/flows/<slug>/notes/structure-challenge.md` for the challenger. Take a fresh snapshot immediately before every launch, never reusing one from an earlier launch, even one moments before:
 
 ```bash
-git config --list --show-origin --show-scope > <scratch>/config-after.txt
-cmp <scratch>/config-before.txt <scratch>/config-after.txt
+bash <skill-dir>/scripts/fanout-check.sh snapshot <dir> <slug> <note-path>...
 ```
 
-When it differs, stop before running any other git command, and show the user the config diff. Otherwise write the other four as `head-after.txt`, `status-after.txt`, `diff-after.txt` and `untracked-after.txt`, then compare:
+After the run finishes, check against it with the same arguments:
 
 ```bash
-cmp <scratch>/head-before.txt <scratch>/head-after.txt
-cmp <scratch>/status-before.txt <scratch>/status-after.txt
-cmp <scratch>/diff-before.txt <scratch>/diff-after.txt
-cmp <scratch>/untracked-before.txt <scratch>/untracked-after.txt
+bash <skill-dir>/scripts/fanout-check.sh check <dir> <slug> <note-path>...
 ```
 
-Every pair must be identical. Only the note paths the launch asked for are left out, because they are what the run writes; every other note stays in, and notes are untracked until approval, so the untracked digests catch a stray file or an overwritten sibling note under `notes/`. `.claude/flows/<slug>/` is left out because `plan run start` and `finish` write `plan.toml` inside the window; a write there by an agent is a residual this check cannot see. The config catches a planted `core.fsmonitor`, `core.hooksPath` or diff driver; HEAD catches a commit, which would hide its own edits from the diff; the status catches a new or deleted path; the tracked diff catches an edit to a file already dirty before launch; the untracked digests catch an edit to an untracked file, which until approval includes `brief.md` and every note. Anything else stops the plan: show the user the changed paths and change nothing yourself. A file that a `mismatch` entry names is such a change too; once the user has seen it, the status table's delete-and-relaunch applies. `-uall` matters, because without it a new file inside an untracked directory shows only as that directory. Writes outside the repo, under ignored paths, and inside `.git/` beyond its config and HEAD, such as `.git/hooks/`, stay unchecked.
+Exit 0 means every capture is identical. Exit 2 means the config changed: the script prints the config diff and runs no other git command, and you run none either. Exit 1 names each capture that changed, printing the changed lines of the status and the untracked digests. Exit 3 is a usage error, such as a slug or a note path the script refuses. Exit 1 or 2 stops the plan: show the user the output and the changed paths, and change nothing yourself. A file that a `mismatch` entry names is such a change too; once the user has seen it, the status table's delete-and-relaunch applies.
 
-`head-before.txt` is also the launch's HEAD that a relaunch compares against (section 6).
+`<dir>/head-before.txt` is also the launch's HEAD that a relaunch compares against (section 6).
 
 ## 4. Structure challenge
 
@@ -128,7 +118,7 @@ One fresh agent drafts the structure this work would want, from the intent, the 
 tomlctl plan run skip --slug <slug> --step challenge --reason '<why>'
 ```
 
-**Dispatch.** Delete `docs/flows/<slug>/notes/structure-challenge.md` if it exists, since the challenger writes nothing over a file. Take the fan-out snapshot, record the start, then dispatch one-shot, with no `name:`:
+**Dispatch.** Delete `docs/flows/<slug>/notes/structure-challenge.md` if it exists, since the challenger writes nothing over a file. Take a fresh fan-out snapshot, `fanout-check.sh snapshot <scratch>/fanout-challenge <slug> docs/flows/<slug>/notes/structure-challenge.md` (section 3), never the one taken before Investigate, then record the start and dispatch one-shot, with no `name:`:
 
 ```bash
 git rev-parse --show-toplevel
@@ -141,7 +131,7 @@ Agent({subagent_type: "plan-challenger", description: "structure challenge", pro
 
 Distil `intent:` and `future state:` from the brief only. Nothing from the notes, your design or the discussion's proposed solution goes in, because the draft is worth having only if it was made without them. Computed signals, such as the most-changed files under the scope from `git log`, may follow as extra lines.
 
-On the return, close the run: `ok` when it returned `{verdict, note}` with the note on disk opening `Verdict:`, `errors` when it returned without one, `stopped` when the dispatch failed. Then run the fan-out check.
+On the return, close the run: `ok` when it returned `{verdict, note}` with the note on disk opening `Verdict:`, `errors` when it returned without one, `stopped` when the dispatch failed. Then run the fan-out check, `fanout-check.sh check` with the snapshot's arguments.
 
 ```bash
 tomlctl plan run finish --slug <slug> --step challenge --outcome <outcome>
@@ -215,7 +205,7 @@ tomlctl plan run start --slug <slug> --step surface --session "$CLAUDE_CODE_SESS
 tomlctl plan run finish --slug <slug> --step surface --outcome ok
 ```
 
-**Surface again.** After Design, run anything Design itself raised through the same three tests and the same item shape. It normally finds nothing.
+Surface again, after Design, is in [write-and-prove.md](write-and-prove.md#2-surface-again).
 
 ## 6. Open runs on re-entry
 
@@ -231,7 +221,7 @@ tomlctl plan view --slug <slug> --for digest --select stage_inputs.runs
 
 - the open row's `session` is this session's `CLAUDE_CODE_SESSION_ID`;
 - `<scratch>/investigate-args.json` still exists and its hash, `sha256sum <scratch>/investigate-args.json | cut -d' ' -f1`, equals the open row's `args_hash`; the runtime does not restore the args and the store holds only that hash, so a row with an empty `args_hash` is abandoned. A changed prompt reruns that agent and every one started after it, so trimming or editing the args buys nothing over a fresh launch;
-- nothing a prompt points at has changed since launch: `git rev-parse HEAD` equals `<scratch>/head-before.txt` and the fan-out check against the launch's snapshot passes. A relaunch returns the cached result of each unchanged prompt even when a file it pointed at has since changed.
+- nothing a prompt points at has changed since launch: `git rev-parse HEAD` equals `<scratch>/fanout-investigate/head-before.txt` and `fanout-check.sh check` against that launch's snapshot, with its arguments, exits 0. A relaunch returns the cached result of each unchanged prompt even when a file it pointed at has since changed.
 
 Record the relaunch on the open row when it notifies, with `plan run finish --slug <slug> --step investigate --run-id <new runId> --outcome <outcome>`, then recompute the pending lenses from `notes/` as in section 2. An agent the relaunch reran meets its own earlier note and returns `no-note`; its note on disk still counts as done when it opens `Verdict:`.
 
@@ -241,4 +231,4 @@ Record the relaunch on the open row when it notifies, with `plan run finish --sl
 tomlctl plan run abandon --slug <slug> --step <step> --reason '<why>'
 ```
 
-Then recompute what is pending as section 2 defines it, from the brief's Unknowns and `notes/`: a lens or challenge note that opens `Verdict:` stands and is not run again, and any other lens the Unknowns plan has its note, if any, deleted and is launched afresh, with the fan-out check around the launch.
+Then recompute what is pending as section 2 defines it, from the brief's Unknowns and `notes/`: a lens or challenge note that opens `Verdict:` stands and is not run again, and any other lens the Unknowns plan has its note, if any, deleted and is launched afresh, with a fresh fan-out snapshot before the launch and the check after it.

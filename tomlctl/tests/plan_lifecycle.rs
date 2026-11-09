@@ -501,10 +501,7 @@ fn a_plan_runs_from_open_to_drift() {
         array(&store, "specs")[0]["accept"][0]["probe"]["at"].as_str(),
         Some(base.as_str())
     );
-    let report = flow.assert_stage(
-        "review",
-        "/review-plan-v2 or plan run skip --step review --reason <why>",
-    );
+    let report = flow.assert_stage("review", "plan run skip --step review --reason <why>");
     assert!(blockers(&report).contains("plan review"), "{report}");
 
     flow.plan(&["run", "skip", "--step", "review", "--reason", "Low risk."]);

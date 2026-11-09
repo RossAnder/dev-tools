@@ -85,6 +85,12 @@ files = [
   "claude/agents/research-deep.md",
   "claude/agents/research-lite.md",
   "claude/agents/plan-investigator.md",
+]
+
+# The read-only contract for the v2 plan agents that load no research method.
+[[block]]
+name = "plan-read-only"
+files = [
   "claude/agents/plan-challenger.md",
   "claude/agents/plan-cold-reader.md",
 ]

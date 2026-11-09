@@ -826,19 +826,19 @@ fn js_agent_names(source: &str) -> (Vec<String>, Vec<String>) {
     (names, opaque)
 }
 
-/// `model` and `effort` keys set inside `agent(` calls. A flow agent's model and
-/// effort live in its frontmatter, so a call site must not override them. Strings
-/// and comments are skipped, except a quoted key.
-fn js_agent_override_keys(source: &str) -> Vec<&'static str> {
-    const KEYS: [&str; 2] = ["model", "effort"];
-    let mut found = Vec::new();
+/// The object keys written inside each `agent(` call, each with its bracket depth:
+/// 1 is the call's parentheses, so the options object's own keys sit at 2. Strings
+/// and comments are skipped, except a quoted key; a shorthand `{ key }` is a key.
+fn js_agent_calls(source: &str) -> Vec<Vec<(String, usize)>> {
+    let mut calls = Vec::new();
 
     for (at, _) in source.match_indices("agent(") {
         if source[..at].ends_with(|c| is_js_ident(c) || c == '.') {
             continue;
         }
+        let mut keys = Vec::new();
         let mut rest = &source[at + "agent(".len()..];
-        let mut depth = 1usize;
+        let mut open = vec!['('];
         let mut prev_ident = false;
         let mut prev_significant = '(';
         while let Some(c) = rest.chars().next() {
@@ -846,14 +846,13 @@ fn js_agent_override_keys(source: &str) -> Vec<&'static str> {
                 rest = past;
                 continue;
             }
+            let in_object = open.last() == Some(&'{') && matches!(prev_significant, '{' | ',');
             if matches!(c, '\'' | '"' | '`') {
                 let Some((body, past)) = js_string(rest) else {
                     break;
                 };
-                let is_key =
-                    past.trim_start().starts_with(':') && matches!(prev_significant, '{' | ',');
-                if is_key && let Some(key) = KEYS.iter().find(|k| **k == body) {
-                    found.push(*key);
+                if in_object && past.trim_start().starts_with(':') {
+                    keys.push((body.to_string(), open.len()));
                 }
                 rest = past;
                 prev_ident = false;
@@ -862,11 +861,9 @@ fn js_agent_override_keys(source: &str) -> Vec<&'static str> {
             }
             if is_js_ident(c) && !prev_ident {
                 let len = rest.find(|ch| !is_js_ident(ch)).unwrap_or(rest.len());
-                let word = &rest[..len];
-                let is_key = rest[len..].trim_start().starts_with(':')
-                    && matches!(prev_significant, '{' | ',');
-                if is_key && let Some(key) = KEYS.iter().find(|k| **k == word) {
-                    found.push(*key);
+                let next = rest[len..].trim_start().chars().next();
+                if in_object && matches!(next, Some(':' | ',' | '}')) {
+                    keys.push((rest[..len].to_string(), open.len()));
                 }
                 rest = &rest[len..];
                 prev_ident = false;
@@ -874,10 +871,10 @@ fn js_agent_override_keys(source: &str) -> Vec<&'static str> {
                 continue;
             }
             match c {
-                '{' | '[' | '(' => depth += 1,
+                '{' | '[' | '(' => open.push(c),
                 '}' | ']' | ')' => {
-                    depth -= 1;
-                    if depth == 0 {
+                    open.pop();
+                    if open.is_empty() {
                         break;
                     }
                 }
@@ -889,8 +886,58 @@ fn js_agent_override_keys(source: &str) -> Vec<&'static str> {
             prev_ident = is_js_ident(c);
             rest = &rest[c.len_utf8()..];
         }
+        calls.push(keys);
     }
-    found
+    calls
+}
+
+/// `model` and `effort` keys set inside `agent(` calls. A flow agent's model and
+/// effort live in its frontmatter, so a call site must not override them.
+fn js_agent_override_keys(source: &str) -> Vec<&'static str> {
+    const KEYS: [&str; 2] = ["model", "effort"];
+    js_agent_calls(source)
+        .into_iter()
+        .flatten()
+        .filter_map(|(key, _)| KEYS.into_iter().find(|k| *k == key))
+        .collect()
+}
+
+/// `agent(` calls whose options object carries no `agentType` key of its own; the
+/// runtime would spawn its default agent for them.
+fn js_agent_calls_without_type(source: &str) -> usize {
+    js_agent_calls(source)
+        .iter()
+        .filter(|keys| {
+            !keys
+                .iter()
+                .any(|(key, depth)| key == "agentType" && *depth == 2)
+        })
+        .count()
+}
+
+/// The frontmatter `name:` of a markdown file, read from its leading `---` block.
+fn frontmatter_name(text: &str) -> Option<String> {
+    let mut lines = text.lines();
+    if lines.next()?.trim_end() != "---" {
+        return None;
+    }
+    lines
+        .take_while(|line| line.trim_end() != "---")
+        .find_map(|line| line.strip_prefix("name:"))
+        .map(|value| value.trim().trim_matches(['"', '\'']).to_string())
+}
+
+/// The registry resolves an `agentType` by each agent file's frontmatter `name:`,
+/// not by its file stem.
+fn agent_frontmatter_names(dir: &Path) -> Vec<String> {
+    fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("md"))
+        .filter_map(|p| frontmatter_name(&fs::read_to_string(p).ok()?))
+        .collect()
 }
 
 fn md_stems(dir: &Path) -> Vec<String> {
@@ -933,12 +980,20 @@ fn workflow_script_problems(source: &str, claude_dir: &Path) -> Vec<String> {
         problems.push(format!("the script must open with `{JS_META_OPEN}`"));
     }
 
-    let agents = md_stems(&claude_dir.join("agents"));
+    let agents = agent_frontmatter_names(&claude_dir.join("agents"));
     let (names, opaque) = js_agent_names(source);
     for name in names {
         if !agents.contains(&name) {
-            problems.push(format!("agent `{name}` has no file under agents/"));
+            problems.push(format!(
+                "agent `{name}` is no agents/ file's frontmatter `name:`"
+            ));
         }
+    }
+    for _ in 0..js_agent_calls_without_type(source) {
+        problems.push(
+            "an agent() call has no `agentType` key in its options object, so it runs the default agent"
+                .to_string(),
+        );
     }
     for value in opaque {
         problems.push(format!(
@@ -982,8 +1037,17 @@ fn workflow_scripts_fixture_dir() -> tempfile::TempDir {
     fs::create_dir_all(&agents).unwrap();
     fs::create_dir_all(&commands).unwrap();
     for agent in ["real-agent", "other-agent", "table-agent"] {
-        fs::write(agents.join(format!("{agent}.md")), "x").unwrap();
+        fs::write(
+            agents.join(format!("{agent}.md")),
+            format!("---\nname: {agent}\n---\nx"),
+        )
+        .unwrap();
     }
+    fs::write(
+        agents.join("drifted-stem.md"),
+        "---\r\nname: \"drifted-name\"\r\n---\r\nx",
+    )
+    .unwrap();
     fs::write(commands.join("taken.md"), "x").unwrap();
     dir
 }
@@ -1005,6 +1069,9 @@ fn workflow_scripts_accept_every_real_shape() {
          await agent(p, { agentType:\"other-agent\" })\n\
          await agent(p, { agentType: cell.agentType, schema })\n\
          await agent(p, { agentType: cell?.agentType })\n\
+         await agent(p, { agentType: 'drifted-name' })\n\
+         await agent(p, { ...base, 'agentType': 'real-agent' })\n\
+         await agent(f({ label }), { schema: s(a, b), agentType: 'real-agent' })\n\
          const row = { id, agentType }\n\
          log(`agentType ${cell.agentType ? cell.agentType : '(none)'}`)\n\
          const t = c ? agentType : 'also-not-an-agent'\n\
@@ -1092,7 +1159,24 @@ fn workflow_scripts_reject_each_violation() {
             "neither",
         ),
         (
+            format!("{meta}agent(p, {{ agentType: 'drifted-stem' }})\n"),
+            "`drifted-stem`",
+        ),
+        (
+            format!("{meta}agent(p, {{ label: 'x' }})\n"),
+            "no `agentType` key",
+        ),
+        (format!("{meta}agent(p, opts)\n"), "no `agentType` key"),
+        (
+            format!("{meta}agent(p, {{ schema: {{ agentType: 'real-agent' }} }})\n"),
+            "no `agentType` key",
+        ),
+        (
             format!("{meta}agent(p, {{ agentType: 'real-agent', model: 'opus' }})\n"),
+            "sets `model`",
+        ),
+        (
+            format!("{meta}agent(p, {{ agentType: 'real-agent', model }})\n"),
             "sets `model`",
         ),
         (
@@ -1105,6 +1189,108 @@ fn workflow_scripts_reject_each_violation() {
         assert_eq!(problems.len(), 1, "{source}: {problems:#?}");
         assert!(problems[0].contains(needle), "{source}: {problems:#?}");
     }
+}
+
+/// The saved Workflow names a markdown file launches: each `Workflow({name: "<x>"`
+/// call, and each literal `--workflow <x>` in a ```bash fence. A shorthand
+/// `{name, …}` and a `<placeholder>` or `$var` value name nothing.
+fn md_workflow_names(text: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    for (at, _) in text.match_indices("Workflow({") {
+        let Some(value) = text[at + "Workflow({".len()..]
+            .trim_start()
+            .strip_prefix("name")
+            .and_then(|r| r.trim_start().strip_prefix(':'))
+            .map(str::trim_start)
+        else {
+            continue;
+        };
+        if value.starts_with(['"', '\''])
+            && let Some((name, _)) = js_string(value)
+        {
+            names.push(name.to_string());
+        }
+    }
+    for fence in bash_fences(text) {
+        for line in &fence.lines {
+            let mut tokens = line.text.split_whitespace();
+            while let Some(token) = tokens.next() {
+                if token != "--workflow" {
+                    continue;
+                }
+                if let Some(name) = tokens.next().filter(|n| {
+                    n.chars()
+                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
+                }) {
+                    names.push(name.to_string());
+                }
+            }
+        }
+    }
+    names
+}
+
+/// The `meta.name` of each saved Workflow script.
+fn workflow_meta_names(claude_dir: &Path) -> Vec<String> {
+    command_lint_workflow_scripts(claude_dir)
+        .iter()
+        .filter_map(|script| {
+            let source = fs::read_to_string(script).ok()?;
+            js_meta_scan(source.strip_prefix(JS_META_OPEN)?).name
+        })
+        .collect()
+}
+
+/// Every Workflow name the markdown launches is a saved script's `meta.name`: the
+/// runtime resolves a launch by that name, and `plan run start --workflow` takes
+/// any string, so a rename otherwise surfaces only as a launch error.
+#[test]
+fn md_workflow_launches_name_saved_scripts() {
+    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let repo_root = crate_dir.parent().expect("repo root");
+    let claude_dir = repo_root.join("claude");
+    if !claude_dir.exists() {
+        eprintln!("md_workflow_launches: claude/ dir not found, skipping");
+        return;
+    }
+    let saved = workflow_meta_names(&claude_dir);
+    assert!(!saved.is_empty(), "the walk must find the saved scripts");
+    let mut launched = 0usize;
+    let mut problems = Vec::new();
+    for file in command_lint_scan_set(&claude_dir) {
+        let Ok(text) = fs::read_to_string(&file) else {
+            continue;
+        };
+        for name in md_workflow_names(&text) {
+            launched += 1;
+            if !saved.contains(&name) {
+                problems.push(format!(
+                    "{}: Workflow `{name}` is no claude/workflows/*.js script's meta name",
+                    lint_rel_path(&file, repo_root)
+                ));
+            }
+        }
+    }
+    assert!(launched > 0, "the scan must find the Workflow launches");
+    assert!(problems.is_empty(), "{problems:#?}");
+}
+
+#[test]
+fn md_workflow_names_reads_only_literal_names() {
+    let text = "Workflow({name: \"quoted\", args})\n\
+         Workflow({\n  name: 'spread-over-lines',\n})\n\
+         Workflow({name, args, resumeFromRunId})\n\
+         Workflow({args, name: \"not-first\"})\n\
+         prose --workflow outside-a-fence\n\
+         ```bash\n\
+         tomlctl plan run start --workflow fenced --run-id <id>\n\
+         tomlctl plan run start --workflow <workflow>\n\
+         tomlctl plan run start --workflow \"$wf\"\n\
+         ```\n";
+    assert_eq!(
+        md_workflow_names(text),
+        ["quoted", "spread-over-lines", "fenced"]
+    );
 }
 
 /// Only a bare fence line closes a bash fence: a close carrying trailing

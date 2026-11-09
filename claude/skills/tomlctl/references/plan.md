@@ -42,7 +42,7 @@ one with `kind=not_found`, naming `tomlctl plan open --slug <slug>`, and write n
 directory. `--no-create` is accepted on them but has no effect.
 
 A refused call exits 1, except a clap usage error (a missing required flag such as `--slug`, or the
-`plan probes` `--emit`/`--record` rule), which exits 2 with usage prose outside the JSON envelope. The rules that span flags (`--defer` needs `--reason`, `--elaborated` needs
+`plan probes` `--emit`/`--record` rule, or `--premises` without `--emit`), which exits 2 with usage prose outside the JSON envelope. The rules that span flags (`--defer` needs `--reason`, `--elaborated` needs
 `--reason`, `--for worker` needs `--task`) and the `--for`, `--review` and `--outcome` vocabularies
 are `kind=validation` refusals through `--error-format json`, not clap usage errors. Every plan verb on a flow with no `plan.toml` is
 `kind=not_found`, with `file` set to the `plan.toml` path and a message naming the flow and
@@ -347,12 +347,14 @@ rows with status `pending`.
 ```bash
 tomlctl plan probes --slug <slug> --emit > <script>
 tomlctl plan probes --slug <slug> --record <capture>
+tomlctl plan probes --slug <slug> --emit --premises > <script>
 ```
 
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
 | `--emit` | — | Print the probe script. | — |
 | `--record` | path | Store the verdicts from the script's captured stdout. | — |
+| `--premises` | — | With `--emit`, print a script checking the `base` premises instead of the `accept` rows. Without `--emit`, or with `--record`, it is a clap usage error. | off |
 | `--milestone` | id | Restrict either mode to this checkpoint's pending rows. An id in neither `[[checkpoints]]` nor `[[milestones]]` is refused with `kind=validation`. | all |
 
 tomlctl never runs a stored command: `Bash(tomlctl *)` is pre-approved, so a verb executing stored
@@ -369,6 +371,14 @@ control, each as one single-quoted word. A NUL in either refuses the emit. The s
 prints one row of
 `<task>:<index><TAB>neg|pos<TAB>sha256=<hex><TAB>rc=<n><TAB><stdout><TAB><stderr>`, with every column
 folded onto one line and `<hex>` the SHA-256 of the stored command.
+
+`--emit --premises` prints the same preamble, then one line per spec `premises` entry whose `at` is
+`base`, on the same pending, in-milestone tasks, the `check` again one single-quoted word. An
+`after:<id>` premise gets `# skipped <task>:<index>: not a base premise` and an empty `check`
+`# skipped <task>:<index>: empty check`, neither reaching the script otherwise. Each premise prints
+`<task>:<index><TAB>premise<TAB>sha256=<hex><TAB>rc=<n><TAB><stdout><TAB><stderr>`, `<index>`
+counting the spec's `premises`, and `rc=0` means the premise holds. There is no `--record` for
+premises: the caller reads each row's `rc` itself.
 
 `--record` needs a capture covering exactly the probeable controls of the pending rows in scope
 (narrowed by `--milestone`), each carrying the digest of the command the store holds now. A truncated
@@ -415,7 +425,7 @@ to diagnose a DAG or policy error.
 | `design` | No milestones or no tasks | `plan milestone add` when no milestones, else `tasks add-many` |
 | `write` | `plan/task-no-spec` | `tasks update --ndjson` |
 | `prove` | Any error-class finding, `plan/probe-absent`, or a surfaced decision still `agent-assumed` | By class, below |
-| `review` | No finished plan-family run in `review-v2.toml` and no `[[run]]` for step `review` with a skip reason | `/review-plan-v2 or plan run skip --step review --reason <why>` |
+| `review` | No finished plan-family run in `review-v2.toml` and no `[[run]]` for step `review` with a skip reason | `plan run skip --step review --reason <why>`, since plan review is not built for v2 flows |
 | `ready` | Otherwise | `plan approve` |
 
 At `prove`, `next` is the first row below that has a blocker. Probes come last, because any spec edit

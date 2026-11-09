@@ -947,6 +947,105 @@ fn emit_refuses_a_command_a_script_cannot_carry() {
     assert_eq!(error["kind"], "validation", "{stderr}");
 }
 
+/// A pending task carrying a `base` premise and an `after:` one, beside a done
+/// task whose `base` premise must stay out of the script.
+fn premise_store() -> String {
+    let doc = json!({
+        "schema_version": 2,
+        "items": [
+            { "id": 1, "ref": "done-row", "title": "Done", "effort": "S", "status": "done" },
+            { "id": 2, "ref": "the-row", "title": "The row", "effort": "S", "files": [FILE] },
+        ],
+        "specs": [
+            {
+                "ref": "done-row",
+                "outcome": "it held",
+                "accept": [accept("forward", "c", "")],
+                "premises": [{ "claim": "old", "check": "echo finished", "at": "base" }],
+            },
+            {
+                "ref": "the-row",
+                "outcome": "it holds",
+                "accept": [accept("forward", "echo accept-check", "")],
+                "premises": [
+                    { "claim": "it's there", "check": "test -f 'a b'", "at": "base" },
+                    { "claim": "it lands", "check": "echo after-check", "at": "after:1" },
+                    { "claim": "blank", "check": "  ", "at": "base" },
+                ],
+            },
+        ],
+    });
+    toml::to_string(&doc).expect("the fixture serialises")
+}
+
+#[test]
+fn emit_premises_prints_a_line_per_base_premise_of_a_pending_task() {
+    let (_dir, root) = sandbox();
+    seed_tasks(&root, &premise_store());
+    let out = cli(&root)
+        .args(["plan", "probes", "--slug", TASKS_SLUG])
+        .args(["--emit", "--premises"])
+        .assert()
+        .success();
+    let script = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    assert!(script.starts_with("#!/usr/bin/env bash\n"), "{script}");
+    assert!(
+        script.contains("cd \"$(git rev-parse --show-toplevel)\""),
+        "{script}"
+    );
+    let check = "test -f 'a b'";
+    let line = format!(
+        "\np 2:0 premise {} 'test -f '\\''a b'\\'''\n",
+        digest(check)
+    );
+    assert!(script.contains(&line), "{script}");
+    assert!(
+        script.contains("\n# skipped 2:1: not a base premise\n"),
+        "{script}"
+    );
+    assert!(
+        script.contains("\n# skipped 2:2: empty check\n"),
+        "{script}"
+    );
+    assert!(
+        script.contains("\n# skipped task 1: status is not pending\n"),
+        "{script}"
+    );
+    for absent in ["after-check", "finished", "accept-check", " neg "] {
+        assert!(
+            !script.contains(absent),
+            "`{absent}` must not reach:\n{script}"
+        );
+    }
+}
+
+#[test]
+fn premises_is_refused_without_emit() {
+    let (_dir, root) = sandbox();
+    let path = seed_tasks(&root, &premise_store());
+    let before = fs::read_to_string(&path).unwrap();
+    let capture = root.join("capture.tsv");
+    fs::write(&capture, format!("head\t{SHA}\n")).unwrap();
+    let bare = cli(&root)
+        .args(["plan", "probes", "--slug", TASKS_SLUG, "--premises"])
+        .assert()
+        .code(2);
+    let recorded = cli(&root)
+        .args(["plan", "probes", "--slug", TASKS_SLUG])
+        .args(["--premises", "--record"])
+        .arg(&capture)
+        .assert()
+        .code(2);
+    for assert in [bare, recorded] {
+        assert!(
+            assert.get_output().stdout.is_empty(),
+            "{:?}",
+            assert.get_output()
+        );
+    }
+    assert_eq!(fs::read_to_string(&path).unwrap(), before);
+}
+
 #[test]
 fn emit_on_a_missing_store_is_not_found() {
     let (_dir, root) = sandbox();

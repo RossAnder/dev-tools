@@ -392,6 +392,13 @@ pub(crate) struct PlanProbesArgs {
     )]
     pub(crate) record: Option<PathBuf>,
     #[arg(
+        long = "premises",
+        requires = "emit",
+        conflicts_with = "record",
+        help = "With --emit, print a script checking each pending task's `base` premises instead"
+    )]
+    pub(crate) premises: bool,
+    #[arg(
         long = "milestone",
         value_name = "ID",
         help = "Cover only this checkpoint's pending rows, in either mode"
