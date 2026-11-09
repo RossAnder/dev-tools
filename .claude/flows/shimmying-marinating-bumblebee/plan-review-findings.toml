@@ -1,0 +1,480 @@
+schema_version = 1
+last_updated = 2026-11-09
+round = 1
+
+[[vet_events]]
+timestamp = "2026-11-09T10:42:28Z"
+command = "review-plan"
+lens = "feasibility"
+tier = "deep"
+agent_index = 1
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = 'Sampled F1 (README/capabilities version literal at tests/capabilities.rs:1841, README.md:324, plan_lifecycle.rs:504) and F2 (items.rs is_empty_json drops null/""/[]; convert.rs json_to_toml bails on null): both confirmed by grep at the cited lines. Every stale/API claim (FEATURES in cli/types/mod.rs:40, verdict.rs settle pure at 304 vs set_status at 249, retitle_err at update.rs:1005, Finding ids-only shape, PROSE gate, line ceiling 589/600) re-verified. No drops, no downgrades. Duplicates with Agents 2/3 merged at consolidation.'
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-09T10:42:28Z"
+command = "review-plan"
+lens = "completeness"
+tier = "deep"
+agent_index = 2
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled #1 (runs.rs:23 START_FIELDS lacks rechecks) and #6 (fields.rs:438 PLAN visibility N for orchestrator; digest.rs location/defect_entry called only from render via report at digest.rs:156/160): both confirmed. Stale-reference claims (plan_lifecycle.rs:504, METHOD_REFERENCES at query.rs:33, feasibility.md:48 anchor_old, plan.md:428 'not built') verified. No drops, no downgrades."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-09T10:42:28Z"
+command = "review-plan"
+lens = "executability"
+tier = "deep"
+agent_index = 3
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled #1 (output_options.rs:2045 every_leaf_command_has_a_case; FEATURES at cli/types/mod.rs:40; README tests at capabilities.rs:2537/2593) and #13 (store.rs:964 pub(crate) struct Target): both confirmed. API claims (add.rs:557 advisory Open mint, triage.rs:614-616 refusals, check.rs probe-absent warning) verified. No drops, no downgrades."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-09T10:42:28Z"
+command = "review-plan"
+lens = "risk"
+tier = "deep"
+agent_index = 4
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled #2 (approve.rs:285 refuse_check_errors filters severity == ERROR; check.rs:471 probe-absent is a warning) and #8 (plan-v2-probes.md:42 elevation note; whoami /priv lists no SeCreateSymbolicLinkPrivilege): both confirmed. API claims (io.rs:1681 guard_write_path, check.rs:120 design_path private, tasks/add.rs:555 probe cannot be supplied, query.rs parse_citation never opens the file) verified. #3 and #9 are design readings graded medium by the agent; kept at that grade. No drops, no downgrades."
+dedup_id = "45ca31c3315a5978"
+
+[[items]]
+id = "P1"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "executability"
+plan_section = "#### 12. Register review apply in capabilities [S]"
+summary = "Task 12 omits the files the capabilities tests force it to edit; no task owns the output_options leaf case, so checkpoint B fails"
+description = """Features live in `FEATURES` at `tomlctl/src/cli/types/mod.rs:40`, not `capabilities.rs`. `tests/capabilities.rs:2537` `readme_feature_transcriptions_match_capabilities_features` holds `tomlctl/README.md`'s sample block and "Feature meanings" table to that list. `tests/output_options.rs:2045` `every_leaf_command_has_a_case` fails once task 11 adds the `review apply` leaf, and no task lists `tomlctl/tests/output_options.rs`. Add `cli/types/mod.rs` and `README.md` to task 12 (making it [M], 4 inseparable files) and add a new task, depending on 5, 6 and 11, for the `output_options.rs` case and its targeted-finding fixture. Update the Risks claim "at most 3 files, except task 11". Raised by feasibility, completeness and executability."""
+anchor_old = "- **Files**: `tomlctl/src/capabilities.rs`, `tomlctl/tests/capabilities.rs`"
+anchor_new = '- **Files**: `tomlctl/src/capabilities.rs`, `tomlctl/src/cli/types/mod.rs` — `FEATURES`, `tomlctl/README.md` — sample `features` block and "Feature meanings" table, `tomlctl/tests/capabilities.rs`'
+dedup_id = "3ee50913b032868b"
+
+[[items]]
+id = "P2"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "feasibility"
+plan_section = "#### 19. Bump tomlctl to 0.19.0 [S]"
+summary = "The version bump leaves two test-enforced 0.18.0 copies and collides with task 12 on tests/capabilities.rs"
+description = """`tests/capabilities.rs:1841` hard-codes `"0.18.0"` in `capabilities_version_matches_cargo_toml`, and `readme_sample_version_matches_cargo_toml` (`:2593`) compares `tomlctl/README.md:324` with Cargo.toml. The previous bump `67be38e` touched all five files. Checkpoint C's nextest fails as written. With both files added, task 19 and task 12 both edit `tests/capabilities.rs` and `README.md` with no dependency path, so task 19 must depend on 11 and 12, and is no longer [S]."""
+anchor_old = "- **Files**: `tomlctl/Cargo.toml`, `tomlctl/Cargo.lock`, `glimpse/Cargo.lock`"
+anchor_new = "- **Files**: `tomlctl/Cargo.toml`, `tomlctl/Cargo.lock`, `glimpse/Cargo.lock`, `tomlctl/README.md` — sample `version`, `tomlctl/tests/capabilities.rs` — `capabilities_version_matches_cargo_toml` literal"
+dedup_id = "6b4b143404913d74"
+
+[[items]]
+id = "P3"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "completeness"
+plan_section = "#### 17. Route review in plan stage [S]"
+summary = "Rewording PLAN_REVIEW breaks tomlctl/tests/plan_lifecycle.rs:504, which task 17 does not list"
+description = '`tests/plan_lifecycle.rs:504` asserts `flow.assert_stage("review", "plan run skip --step review --reason <why>")` with exact equality, and `:505` asserts the blocker text. Task 17 rewrites `PLAN_REVIEW` (`stage.rs:30`) and the blockers but declares only `stage.rs` and `tests/plan_stage.rs`, so checkpoint C fails.'
+anchor_old = "- **Files**: `tomlctl/src/plan/stage.rs`, `tomlctl/tests/plan_stage.rs`"
+anchor_new = "- **Files**: `tomlctl/src/plan/stage.rs`, `tomlctl/tests/plan_stage.rs`, `tomlctl/tests/plan_lifecycle.rs`"
+dedup_id = "6a4d136a0621c837"
+
+[[items]]
+id = "P4"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "feasibility"
+plan_section = "#### 1. Add the plan-record finding fields [M]"
+summary = 'expect/new as Ty::Any cannot round-trip the TOML review store: null, "" and [] are dropped at mint and a nested null aborts the write'
+description = """`review add` mints through `items::add_value_to`, which skips any top-level value `is_empty_json` accepts (`items.rs:495`: null, `""`, `[]`); `convert.rs:638` `json_to_toml` bails on null at any depth. So the Approach's "`new` null removes it" stores a row with no `new` (tiered advisory), clearing `deps_note`/`files`/`needs` loses `new`, an `expect` of `""` is lost, and a probed accept entry copied from `tasks show` carrying `pos_rc: null` aborts the cell's batch. `applied.old`/`applied.new` (task 11) hit the same limit. Separately, "`[+]` with no `expect` appends" contradicts the rule that `new` requires `expect`, which task 5 enforces with no exception. Store `expect`, `new` and `applied.old`/`.new` as JSON text and decode on read; state the `[+]` exemption. Touches tasks 1, 5, 7, 11 and Approach "Record targets"."""
+anchor_old = "`Ty::Any` accepts any JSON value, including null."
+anchor_new = '`Ty::Any` accepts any JSON value. The store cannot hold null or an empty value as-is (`items::add_value_to` drops a top-level null, `""` or `[]`; `convert::json_to_toml` refuses a nested null), so `expect`, `new` and `applied.old`/`applied.new` are stored as JSON text and decoded on read; a removal is `new` = the text `null`, and `[+]` with a `new` and no `expect` is the one row where `new` stands without `expect`.'
+dedup_id = "9dc81a6d920350f3"
+
+[[items]]
+id = "P5"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "completeness"
+plan_section = "### Re-check"
+summary = "The re-check run cannot start: review run start refuses --set rechecks"
+description = '`tomlctl/src/review/runs.rs:23` `START_FIELDS = ["scope", "models", "substrate"]`; `flag_fields` refuses any other key, and `UPDATE_FIELDS` lacks it too. No task touches `runs.rs`, and no test starts a run with `rechecks` (task 15 hand-writes stores; tasks 8 and 14 start no re-check run), so User Decision 7 and `recheck_yield` ship broken unnoticed. Add `"rechecks"` to `START_FIELDS` in task 1 (adding `tomlctl/src/review/runs.rs` to its Files) and have task 14 start one run with `review run start --set rechecks=U1`.'
+dedup_id = "e7b1f100919e7fc1"
+
+[[items]]
+id = "P6"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "executability"
+plan_section = "#### 5. Validate plan-record rows at review add [M]"
+summary = "Task 5's guard is permanently green, its enforcement site is left open, triage --convert bypasses it, and relaxing line loosens the code/perf schema"
+description = """(1) Permanently green: the falsifier "dropping the markdown-mode `plan_section` requirement turns its missing-section refusal test red" names a test that does not exist; `tests/review_add.rs` mentions `plan_section` only as input (lines 577, 622) and no test anywhere asserts the refusal, so the guard and the Success Criteria guard pass whether or not markdown mode keeps the requirement. Add a missing-`plan_section` refusal case to `tests/review_add.rs`. (2) "enforcing it in `record_refusals` or `text_refusals`" is an executor-time choice. (3) `triage.rs:614-616` (`--convert`) mints rows through `field_refusals` and `text_refusals` but not `prepare`, so requiredness or target checks placed only in `record_refusals` are bypassed; calling `record_refusals` from inside `text_refusals` covers both callers, but `text_refusals`' signature has no store slug. (4) `schema_out.rs` `required()` (lines 60-70) builds each kind's required set from `Need::RequiredFor`, so making `line` optional drops it from the code and perf defect/cleanup schema `review schema` emits and Workflow cells validate against, contradicting "markdown mode unchanged"; and the note at `schema_out.rs:124` disappears for `plan_section`. Decide the site, the convert path and the schema behaviour, and put `triage.rs`, `schema_out.rs` and `tests/review_add.rs` on a Files line (likely splitting the task). Raised by the orchestrator's Step 2.6 check and by all three code lenses."""
+dedup_id = "c8612db6517716cd"
+
+[[items]]
+id = "P7"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "#### 6. Stamp the tier when a plan-record finding is verified [M]"
+summary = "Tier stamp sites are wrong (settle is pure) and incomplete (advisory mint, triage --reopen), and stamp's signature fits no caller"
+description = "`verdict.rs:304` `settle` is a pure function shared with `stats.rs` and `resolve.rs`; the real transition is `finding.set_status(decided, &[])` at `verdict.rs:249`. `add.rs:557` mints advisory rows directly `open`, so a flow-mode advisory targeting `decision:*` never gets the user tier (Tiers rule 1) and never blocks `plan approve`, and `--plan-outcomes` sees no tier on advisory rows. `triage --reopen` (`triage.rs:70`) can open a `refuted` row that was never stamped. Task 4's `stamp(row: &mut Map<…>, flow: &Path, …)` does not fit the call sites, which hold a typed `store::Finding` (extra fields in a TOML `rest` table) and a slug, not a flow path. Task 11 needs a rule for an untiered row. Choose: stamp at the `set_status` site, the advisory mint (`add.rs`, needing an edge to task 5) and `--reopen`, or read a missing tier as advisory in tasks 11 and 13; and fix the signature to `&mut store::Finding` plus a slug."
+dedup_id = "2d428309fabd141b"
+
+[[items]]
+id = "P8"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "#### 7. Show targets and tiers in the digest [S]"
+summary = "location and defect_entry render review report, not the digest, and cleanup rows are not covered"
+description = """`digest.rs` `location` and `defect_entry` are called only from `render` (`digest.rs:381`), which `report` (`:156`) calls; `review digest` builds JSON projected for `Role::Orchestrator` and never calls them. `cleanup_entry` is untouched, so cleanup rows show no target. Task 8's "digest's target line" can be tested only through `review report`. Either retitle the task to the report and add `cleanup_entry`, or add the target/tier keys to the digest's JSON lists (which also needs the visibility fix on task 1)."""
+dedup_id = "28764e503d9ebfd8"
+
+[[items]]
+id = "P9"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "#### 1. Add the plan-record finding fields [M]"
+summary = "Copying plan_section's visibility hides target, tier and applied from the orchestrator and the digest"
+description = "`fields.rs:438` `const PLAN: [Vis; 8] = [N, R, N, R, N, R, N, R]`, columns finder, verifier, checker, implementer, orchestrator, audit, backlog, report (`fields.rs:427`): orchestrator and finder are `N`. `review list` defaults to the orchestrator role and `review digest` projects `Role::Orchestrator`, so tier-sorted triage, the lead's `settle` and finders' PRIOR would not see the new fields, defeating the Detail's own aim. State each new field's 8-column vector and `MATRIX` row: `target` readable by finder, verifier, implementer, orchestrator, audit, report; `tier`/`applied` by implementer, orchestrator, audit, report; `expect`/`new`/`proof` as `PLAN`; `rechecks` as `RECORD_STATE`."
+dedup_id = "5971c144b953e986"
+
+[[items]]
+id = "P10"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "#### 14. Test review apply [M]"
+summary = "Task 14 needs tier stamping (task 6) but does not depend on it, and defines its fixture by reference to task 8"
+description = """Task 14's closure is {1,2,3,4,5,9,10,11}; without task 6 no row has a tier, `review apply` refuses everything as advisory, and the mechanical and cited cases cannot pass. "built as task 8 builds its fixture" points a worker at another task's Detail it never receives; restate it (`plan open`, `plan decide`, `plan milestone add`, `tasks add-many` with a `spec`, in a temp repo on the `tomlctl/tests/plan_lifecycle.rs` pattern)."""
+anchor_old = "- **Depends on**: 5, 11"
+anchor_new = "- **Depends on**: 5, 6, 11"
+dedup_id = "c66f76ee1db700b5"
+
+[[items]]
+id = "P11"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "#### 33. Add and run the v2 review link script, and install tomlctl [S]"
+summary = "Task 33 can cargo-install before tasks 7 and 12 land, and is not lite work"
+description = """Task 33's dependency closure excludes 7 (`digest.rs`) and 12 (`capabilities.rs`); nothing depends on 12 and only 8 depends on 7. A frontier scheduler can run `cargo install --path tomlctl` while either is mid-edit, building a half-edited tree or a binary without them, contradicting Approach "Sequence" ("once the tomlctl work is in"). It also runs a release build and writes outside the repo, so it is [M], not [S]."""
+anchor_old = "- **Depends on**: 17, 18, 19, 20, 28, 29"
+anchor_new = "- **Depends on**: 7, 12, 17, 18, 19, 20, 28, 29"
+dedup_id = "246b67446eb958db"
+
+[[items]]
+id = "P12"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "#### 10. Expose plan record writes for review apply [M]"
+summary = "Task 10 must return task 9's outcome type without depending on 9, and two same-named re-exports collide"
+description = '"the same three outcomes as task 9" names no type, and task 10 depends only on 2, so a parallel run invents a second enum. Re-exporting `records::apply_review_edit` and `milestone::apply_review_edit` from `plan/mod.rs` is E0252. `milestone.rs::change` hard-codes `DEFAULT_ACTOR` and the update logic is inline in `update()`, so there is no reusable "path `plan milestone update` uses" without extracting it.'
+anchor_old = "Both return the same three outcomes as task 9."
+anchor_new = "Both return task 9's `crate::tasks::ReviewEditOutcome` (`Applied`, `Already`, `Stale { found }`), so task 10 depends on 9. Re-export them from `tomlctl/src/plan/mod.rs` as `apply_record_edit` and `apply_milestone_edit`; extract `milestone.rs` `update`'s body into the shared path and give `change` an `actor` parameter."
+dedup_id = "0989f21c29f8aa20"
+
+[[items]]
+id = "P13"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "#### 20. Document the review store additions [M]"
+summary = "references/review.md growth is not bounded by the 600-line ceiling gate"
+description = "`skill_references_under_line_ceiling` (`tomlctl/src/cli/dispatch/tests/skills.rs:902`, `CEILING = 600`) covers every skill reference; `claude/skills/tomlctl/references/review.md` is 504 lines today and task 20 adds a grammar, tier rules, proof kinds, a flag table and output, two stats flags and `rechecks`. Task 29 states its caps; this task does not."
+anchor_old = "every fenced example must use real flags (`command_lint`)."
+anchor_new = "every fenced example must use real flags (`command_lint`). Keep the file at or under 600 lines (`skill_references_under_line_ceiling`; `wc -l claude/skills/tomlctl/references/review.md` is 504 today), or move the new material to a new reference and add it and `claude/skills/tomlctl/SKILL.md` to Files."
+dedup_id = "e39393d5e6b55a61"
+
+[[items]]
+id = "P14"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "#### 21. Document the gate's review keys [S]"
+summary = "references/plan.md has 11 lines of headroom under the 600-line gate, and its 'not built' line survives the task"
+description = """`claude/skills/tomlctl/references/plan.md` is 589 lines; `skill_references_under_line_ceiling` fails at 601. Task 21 documents `review_edits`, `review-finding` risks, two `--review ran` refusals and a blocker across three sections. `plan.md:428` also says "since plan review is not built for v2 flows" in the stage table, which task 21's Detail and acceptance do not target."""
+anchor_old = '- **Detail**: Remove the "always empty" and `review_note` wording.'
+anchor_new = """- **Detail**: Remove the "always empty" and `review_note` wording, and the stage table's "since plan review is not built for v2 flows". The file is at 589 of the 600 lines `skill_references_under_line_ceiling` allows (`wc -l claude/skills/tomlctl/references/plan.md`): keep net growth under 11 lines, or move the gate section to a new reference and add it and `claude/skills/tomlctl/SKILL.md` to Files."""
+dedup_id = "ccc14a0010807694"
+
+[[items]]
+id = "P15"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "## Success Criteria"
+summary = "Success Criteria mostly check that tasks ran; two Context goals have no behavioural criterion, and keys and bullets do not line up"
+description = 'Criteria 1-5 are presence greps or `test -f` (criterion 4 is satisfied by a rename). "Review bound to a flow directory" (flow-mode scope = brief plus design, no import) has no criterion short of the attended After-Merge run. "Plan-review outcome logging" is checked only by a doc string; `cargo test --manifest-path tomlctl/Cargo.toml --test review_stats` (task 15) is the natural criterion. The wrapper gets file-exists only; `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` proves it lint-valid. `success: cargo clippy --manifest-path glimpse/Cargo.toml --locked` has no criterion bullet.'
+dedup_id = "3c945bae59dd646b"
+
+[[items]]
+id = "P16"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "#### 24. Bind the surveyor checks to a v2 flow [M]"
+summary = "Naming plan check classes in store-check.md fails the PROSE class gate, which knows only src/tasks classes"
+description = "`finding_classes.rs` `PROSE` lists `checks/store-check.md` and `commands/review-plan-v2.md`; `prose_class_names_exist_in_the_source` resolves backticked `group/name` tokens against `tasks_dir()` classes only. A v2 branch naming `plan/probe-unhealthy` or `plan/brief-changed` in backticks fails the pre-commit `cli::dispatch::tests` subset. Task 31 has the same trap."
+anchor_old = "and maps their error classes into the `STORE CHECK` fence."
+anchor_new = "and maps their error classes into the `STORE CHECK` fence, naming `plan check`'s classes without backticks: this file and task 31's `claude/commands/review-plan-v2.md` are in `finding_classes.rs` `PROSE`, whose gate accepts only `src/tasks` classes."
+dedup_id = "999f1fa11ba79d31"
+
+[[items]]
+id = "P17"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "#### 22. Write the plan-records reference [M]"
+summary = "Preloaded agents cannot locate plan-records.md, and nothing tells a finder it is in flow mode"
+description = '`review-v2-method/SKILL.md:22` tells preloaded agents to read references from the absolute paths their `review show` projection carries; those come from `METHOD_REFERENCES` (`tomlctl/src/review/query.rs:33`), which lists only `finding-kinds` and `verifying`. No task adds `plan-records`, updates `references/review.md` or the `tests/review_query.rs` assertion. The cell assignment carries only `plan_documents`, and only the surveyor prompt gains a `flow:` line (task 26), so finders, executors and sweepers have no flow-mode signal. Add `("plan-records", …)` and a `flow` key to the assignment in a tomlctl task.'
+dedup_id = "d4ee1761ebfea2ca"
+
+[[items]]
+id = "P18"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### Reviewers on a v2 flow"
+summary = "Unedited lenses instruct plan_section/anchor_old, which flow-mode review add refuses; feasibility.md is missing from the inventory"
+description = '`lenses/plan-structure.md:58`, `plan-executor.md:57`, `plan-grounding.md:57`, `plan-dependencies.md:49`, `plan-premortem.md:46`, `plan-risk.md:54`, `ripple.md:67`, `test-gaps.md:61`, `feasibility.md:48` and `methods/dry-run.md:20` tell finders to supply `plan_section`, `anchor_old`, `anchor_new`, which task 5 refuses in flow mode. The mapping table maps concepts, not edit fields, so a finder holding such a lens emits refused rows. `feasibility.md` (`families = ["plan"]`) is absent from the Exploration Notes inventory.'
+anchor_old = "Lenses are not edited. Only checks whose procedure is markdown-specific gain a v2 branch:"
+anchor_new = "Lenses are not edited; `plan-records.md` states that on a v2 flow any lens or method instruction to supply `plan_section`, `anchor_old` or `anchor_new` (the plan lenses, `feasibility`, `ripple`, `test-gaps`, `methods/dry-run.md` step 5) is read as `target`, `expect` and `new`. Only checks whose procedure is markdown-specific gain a v2 branch:"
+dedup_id = "41275afb7037ae34"
+
+[[items]]
+id = "P19"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "#### 25. Bind the plan-checks to records [M]"
+summary = "probe-absent entries have no stored verdict, so sending them as probe proof is either silently mechanical or always refused"
+description = '`plan/check.rs:471` raises `plan/probe-absent` as a warning when `accept.probe` is `None`. Approach "Tiers" defines `probe` proof as a stored verdict that is not `healthy`; whether a missing verdict qualifies is left to task 4. If it does, any `new` on an unprobed entry applies silently; if not, every such row task 25 writes is refused.'
+anchor_old = 'It raises each as a defect targeting the `spec.accept` entry with `proof {kind:"probe"}`'
+anchor_new = """It raises `plan/probe-unhealthy` as a defect targeting the `spec.accept` entry with `proof {kind:"probe"}`, and `plan/probe-absent` (no stored verdict) with no `proof`; task 4's `verify_proof` treats a missing verdict as no proof"""
+dedup_id = "e36b112b57030960"
+
+[[items]]
+id = "P20"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### Tiers"
+summary = "A mechanical proof licenses any replacement value, so silently applied edits can disable a failing check"
+description = """Each proof kind validates the defect, not `new`. A `probe` fix may set `writes_build = true`, making the entry unprobeable (`plan/probes.rs:122`) and raising no `probe-absent`; a `check-class` finding carries only task ids (`tasks/finding.rs`), so it proves an edit to any field of the task; `path-missing` lets `new` rewrite the whole `files` list; a cited citation is any in-repo `path:line`, and `query.rs` `parse_citation` never opens the file, so "resolves inside the file" must be implemented in `tier.rs`. `expect`/`new` have no cap where v1's anchors were capped at 400/800. Risks says only tool-verified proof applies silently; as designed that does not hold."""
+anchor_old = "`review add` refuses a `proof` that does not hold."
+anchor_new = "`review add` refuses a `proof` that does not hold, and a mechanical `new` that changes more than its proof covers: a `probe` fix may change only the entry's `check` and `positive`; a `path-missing` fix may only replace or drop the missing path; a `check-class` proof binds only the fields a class-to-field table names. A citation must name the target's own file or a path the target names, and `tier.rs` checks its line range against the file. `expect` and `new` are capped at 800 serialised characters; anything outside these shapes caps at cited."
+dedup_id = "d4f0764a17cfec0b"
+
+[[items]]
+id = "P21"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### Tiers"
+summary = "'Re-probed before approval' is not enforced: plan approve ignores the probe-absent warning"
+description = '`plan/approve.rs:285` `refuse_check_errors` filters `severity == ERROR`; `plan/probe-absent` is a warning (`check.rs:471`), and only `plan stage` treats it as a blocker. Approach "/plan-v2 and /review-plan-v2" runs apply, re-check and finish, then the gate, with no probe step, so `plan approve --review ran` succeeds with an edited, unprobed accept entry. Add a probe step to `plan-flow.md` (task 29) and an approve refusal for an applied-but-unprobed entry (task 16).'
+dedup_id = "55ad3a10def8f1dd"
+
+[[items]]
+id = "P22"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### review apply"
+summary = "review apply is not crash-safe across its two stores, and re-runs of appends, removals and lost stamps go wrong"
+description = "The target is written under its own lock, then the finding is stamped under the review lock. Before approval `audit` is false, so a failure between the two leaves an edit with no record anywhere; a re-run lists it under `already` without `applied`, so it reaches neither `review_edits` nor `--plan-outcomes`. A re-run `[+]` append appends twice; a re-run removal reports a false `skipped_stale`. `review add` validates `expect` but not `new`, so a `new` the target rejects (a `needs` cycle, a bad `effort`) fails mid-batch after earlier writes. State: stamp each finding right after its own target write; `already` still records `applied` (`old` from `expect`); append/removal idempotence rules; validate every `new` in the refusal pass."
+dedup_id = "f43c9e5e9163daaa"
+
+[[items]]
+id = "P23"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### review apply"
+summary = "The approved-flow 'every edit is asked' rule lives only in carrier prose; review apply itself does not enforce it"
+description = """Approach "/review-plan-v2" says every edit on an approved flow is asked, but task 11's refusals do not check `[[approval]]`. A direct CLI call or a resumed `/plan-v2` applies mechanical and cited rows unasked, and a brief edit then raises `plan/brief-changed` (`check.rs:254`) against the approval. Add the refusal to the list (and a task 14 case)."""
+dedup_id = "9f7bc3c15172ca9a"
+
+[[items]]
+id = "P24"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "### Record targets"
+summary = "Whole-entry expect on spec.accept cannot match a probed entry, and the reviewer views omit the stored fields"
+description = 'Stored accept entries carry a tool-written `probe {at, neg_rc, pos_rc, verdict}` (`tasks/schema.rs`); `tasks show` emits it, a `new` carrying it is refused (`tasks/add.rs:555`), and `plan view` (the reviewer input the plan prescribes) omits `writes_build` and the probe fields. So an `expect` copied from either view fails "equals the current value", and the `already` test never matches while a probe is stored, on exactly the entries the flagship `probe` proof targets. `resolve`, `match_entry` and the `already` test should compare with `probe` removed, as `tasks/update.rs` `keep_probes` does, and `plan-records.md` should name `tasks show <id> --with spec` as the source of `expect`.'
+dedup_id = "68790a13aac5c5dc"
+
+[[items]]
+id = "P25"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "### Record targets"
+summary = "task:<ref>.title edits are refused by the task update path's retitle check"
+description = "`tasks/update.rs:1005` returns `retitle_err` when a title change alters the derived ref and no new `ref` is passed. Task 9's `apply_review_edit` passes no ref, so most title fixes fail at apply; passing one re-keys the row and invalidates every other finding's `task:<ref>` target and every `[[changes]]` join. Drop `title` from the applicable fields, or tier title edits advisory."
+anchor_old = "field one of `title`, `action`, `detail`, `acceptance`,"
+anchor_new = "field one of `action`, `detail`, `acceptance`,"
+dedup_id = "7d4f40e9cd52455c"
+
+[[items]]
+id = "P26"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "#### 11. Implement review apply [L]"
+summary = "Brief and design edits have no write path: mutate_doc refuses docs/, design_path is private, and the read path is lossy"
+description = "`io.rs:1681` `guard_write_path` refuses writes outside `.claude/`, so `mutate_doc` cannot write `docs/flows/<slug>/`. Task 2 exposes `design_section`, which returns normalised text, not a location; the containment-checking `design_path` (`plan/check.rs:120`) stays private, inviting a hand re-join that loses its `..`/symlink guard. `add.rs` `read_normalised` uses `from_utf8_lossy`, so writing it back corrupts non-UTF-8 bytes."
+anchor_old = "or by exactly-once replacement for brief and design."
+anchor_new = "or by exactly-once replacement for brief and design: under `crate::io::with_exclusive_lock` on the prose file, resolve a design path through `plan/check.rs` `design_path` (made `pub(crate)` in task 2), refuse a file that is not UTF-8, keep its line endings, and persist with `crate::io::atomic_write`; `mutate_doc` cannot be used, since `guard_write_path` refuses paths outside `.claude/`."
+dedup_id = "6483979fc75a56b9"
+
+[[items]]
+id = "P27"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "#### 4. Compute a finding's tier [M]"
+summary = "A check-class proof cannot identify a contract, decision or milestone subject: plan check findings carry only task ids"
+description = '`tasks::finding::Finding` is `{class, severity, ids: Vec<u32>, detail}`; `plan/check.rs` contract and milestone findings put member task ids in `ids` and the `C<n>`/milestone id only in `detail` prose. "filters by class and subject" is unanswerable for `contract:*`, `decision:*` and `milestone:*` targets without parsing prose, and task targets need `<ref>` mapped to the numeric id.'
+anchor_old = "`check-class` filters `crate::plan::check::findings` by class and subject;"
+anchor_new = "`check-class` filters `crate::plan::check::findings` by class and by the target task's numeric id (its `<ref>` mapped through the task store); `plan check` findings carry only task ids, so `review add` refuses a `check-class` proof on a `contract:*`, `decision:*` or `milestone:*` target;"
+dedup_id = "fcca63ae879e0919"
+
+[[items]]
+id = "P28"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "#### 16. Read the review into the plan gate and approve [M]"
+summary = "Task 16 leaves keep-vs-replace open, and replacing the callers edits stage.rs, which it does not list"
+description = "`plan_review_finished` is called at `approve.rs:187` and `stage.rs:280`. Removing it breaks `stage.rs` until task 17 lands and edits a file outside task 16's declared set."
+anchor_old = "Keep `plan_review_finished` as a thin wrapper over it, or replace its callers."
+anchor_new = "Keep `plan_review_finished` as a thin wrapper over it, so `stage.rs` stays untouched here; `approve.rs` calls `plan_review_state` directly, and task 17 moves `review_settled` onto it."
+dedup_id = "5775b9f5d7c29b92"
+
+[[items]]
+id = "P29"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### Deploy"
+summary = "File symlinks need elevation on this machine, so task 33's run step and its test -L acceptance fail unattended"
+description = "`docs/ideas/plan-v2-probes.md:42` records that `New-Item -ItemType SymbolicLink` refuses without elevation because Developer Mode is off; `whoami /priv` lists no `SeCreateSymbolicLinkPrivilege`. An unelevated run creates the three skill junctions but none of the file symlinks, failing task 33's `test -L` acceptance and the Success Criterion. The run step also changes `~/.claude` and the installed binary before checkpoint D, visible to every session, and `cargo install` can hit `os error 5` while another session runs `tomlctl.exe`. User Decision 8 keeps deploy in the run, so the mitigation is detect-and-report plus an elevated After Merge step."
+anchor_old = "An entry that already links to its target is skipped."
+anchor_new = "An entry that already links to its target is skipped. File symbolic links need an elevated shell while Developer Mode is off (`docs/ideas/plan-v2-probes.md`), so the script checks first and, unelevated, creates the junctions and lists each file link it could not make; After Merge carries the elevated run, and task 33's `test -L` acceptance is **predicted, unverified** until then."
+dedup_id = "624fc05615837c16"
+
+[[items]]
+id = "P30"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### 3. Parse and resolve record targets [M]"
+summary = "The new Target type clashes with review::store::Target, and its variants are unspecified"
+description = "`store.rs:964` `pub(crate) struct Target` is already imported in `add.rs`, `verdict.rs`, `resolve.rs`, `digest.rs`, `query.rs` and `dispatch.rs`; tasks 4, 5, 6, 7 and 11 would need both. Tasks 4 and 11 branch on target kinds, so the variant shape is an implicit contract across five tasks."
+anchor_old = "`pub(super) fn parse(&str) -> Result<Target>`;"
+anchor_new = "`pub(super) fn parse(&str) -> Result<RecordTarget>`, an enum with one variant per row of the Approach table (`TaskField`, `SpecField`, `SpecEntry { list, index: Option<usize>, append: bool }`, `Decision`, `Contract`, `Milestone`, `Handover`, `Brief`, `Design`); not `Target`, which `review::store::Target` already names;"
+dedup_id = "a86ff8a8b7efcd3b"
+
+[[items]]
+id = "P31"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "### Sequence"
+summary = "Sequence step 1 is already satisfied: the Slice 2 edits are committed"
+description = '`git log -S` finds the `PLAN_REVIEW` hint in `7429069` and `long = "premises"` in `091d23f` (HEAD); `git status` shows no `tomlctl/` changes. The Exploration Notes base line ("`0c99589` plus the uncommitted …") is stale for the same reason.'
+anchor_old = "This plan's tasks assume them, notably the `PLAN_REVIEW` hint in `tomlctl/src/plan/stage.rs` and the `--premises` probe flag."
+anchor_new = "This plan's tasks assume them, notably the `PLAN_REVIEW` hint in `tomlctl/src/plan/stage.rs` and the `--premises` probe flag; both are committed (`7429069`, `091d23f`), so this step is already satisfied."
+dedup_id = "ec8c89de25beac71"
+
+[[items]]
+id = "P32"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "#### 34. Bring CLAUDE.md and the idea doc into line [S]"
+summary = "CLAUDE.md's Review v2 agents and deploy bullets will not name plan-review-lead or plan-v2-review"
+description = 'The CLAUDE.md "Review v2" Agents bullet lists the review agents by model and the Deploy bullet names only `claude/workflows/review-v2.js`; task 34 adds flow mode, `review apply` and the link script but neither new artefact.'
+anchor_old = 'have "Review v2" name flow mode, `review apply` and `scripts/link-v2-review.ps1` as the deploy route'
+anchor_new = 'have "Review v2" name flow mode, `review apply`, the `plan-review-lead` agent (Opus, one-shot, no `name:`), the `plan-v2-review` Workflow and `scripts/link-v2-review.ps1` as the deploy route'
+dedup_id = "62f04105700f8fa4"
+
+[[items]]
+id = "P33"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "### The wrapper and the lead"
+summary = "Fallback restarts at stage 2 even when the run already holds a wave, and misses the 'no result' case"
+description = """A wrapper that composed and ran a wave and then ended with no result triggers a fallback that re-runs survey and compose over a store already holding cells and findings; the engine's own fallback also fires on "no result" (`review-v2-engine/SKILL.md:151`), which the plan's trigger list omits."""
+anchor_old = "A launch that is refused or errors, or whose index shows no compose, falls back to the engine's own stages 2 to 6."
+anchor_new = "A launch that is refused, errors, or ends with no result falls back to the engine at the first stage the store shows incomplete (no surveyor digest: stage 2; no cells: stage 3; cells without findings: stage 4), never re-composing a run that already holds a wave."
+dedup_id = "726c1994ca27f6ea"
+
+[[items]]
+id = "P34"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "#### 32. Build review into /plan-v2 [M]"
+summary = "No pre-flight catches a binary older than 0.19.0 before the wrapper's agents run"
+description = "`claude/commands/plan-v2.md:32` already checks `tomlctl capabilities` for the `plan` group; task 12 adds the `review_apply` feature but no carrier reads it, so a stale binary runs every agent and then fails at `review apply` as an unknown subcommand. Extend the check to `review_apply` in tasks 31 and 32, naming `cargo install --path tomlctl`."
+dedup_id = "ca7b798e08cf21d6"
+
+[[items]]
+id = "P35"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "## Tasks"
+summary = "Several 'test X passes' acceptances carry no falsifier"
+description = 'The format requires a "test X passes" criterion to name the perturbation that turns it red. Tasks 12 (`--test capabilities`), 15 (`--test review_stats`), 17 (`--test plan_stage`) and 18 (`--test plan_approve`) state none; their forward greps discriminate presence only.'
+dedup_id = "39bff6858cf778ae"

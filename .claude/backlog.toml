@@ -6130,7 +6130,7 @@ tags = [
     "review-v2",
     "measurement",
 ]
-status = "open"
+status = "promoted"
 created = 2026-10-13
 last_seen = 2026-10-13
 seen_count = 1
@@ -6139,6 +6139,8 @@ origin = "implement"
 flow = "review-system-v2"
 context = "The thresholds name a per-agent-model overturn rate that review stats does not compute, so the trial review cannot check it. Add the breakdown to review stats --calibration or drop the threshold."
 base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+promoted = 2026-11-09
+promoted_to = "shimmying-marinating-bumblebee"
 
 [[backlog]]
 id = "B-f278c33f"

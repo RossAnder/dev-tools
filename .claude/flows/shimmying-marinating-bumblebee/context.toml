@@ -1,0 +1,44 @@
+slug = "shimmying-marinating-bumblebee"
+plan_path = "docs/plans/shimmying-marinating-bumblebee.md"
+status = "draft"
+created = 2026-11-09
+updated = 2026-11-09
+branch = "main"
+scope = [
+    "tomlctl/src/review/**",
+    "tomlctl/src/plan/**",
+    "tomlctl/src/tasks/mod.rs",
+    "tomlctl/src/tasks/update.rs",
+    "tomlctl/src/cli/types/review.rs",
+    "tomlctl/src/cli/mod.rs",
+    "tomlctl/src/capabilities.rs",
+    "tomlctl/tests/**",
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "glimpse/Cargo.lock",
+    "claude/skills/review-v2-method/**",
+    "claude/skills/review-v2-lenses/checks/**",
+    "claude/skills/review-v2-engine/**",
+    "claude/skills/plan-v2-engine/**",
+    "claude/skills/tomlctl/references/**",
+    "claude/agents/**",
+    "claude/workflows/**",
+    "claude/commands/review-plan-v2.md",
+    "claude/commands/plan-v2.md",
+    "scripts/shared-blocks.toml",
+    "scripts/link-v2-review.ps1",
+    "CLAUDE.md",
+    "docs/ideas/v2-pipeline.md",
+]
+
+[tasks]
+total = 0
+completed = 0
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/shimmying-marinating-bumblebee/review-ledger.toml"
+optimise_findings = ".claude/flows/shimmying-marinating-bumblebee/optimise-findings.toml"
+execution_record = ".claude/flows/shimmying-marinating-bumblebee/execution-record.toml"
+plan_review_findings = ".claude/flows/shimmying-marinating-bumblebee/plan-review-findings.toml"
+tasks = ".claude/flows/shimmying-marinating-bumblebee/tasks.toml"
