@@ -149,6 +149,7 @@ fn write_subcommands_expose_all_integrity_flags_in_help() {
         &["review", "resolve", "--help"],
         &["review", "triage", "--help"],
         &["review", "export-v1", "--help"],
+        &["review", "apply", "--help"],
         &["plan", "open", "--help"],
         &["plan", "decide", "--help"],
         &["plan", "contract", "--help"],
@@ -1783,6 +1784,9 @@ fn capabilities_features_contains_every_plan_feature() {
         "review_export_v1",
         "review_catalogue",
         "review_schema",
+        "review_apply",
+        "review_targets",
+        "review_plan_outcomes",
         // Agent ergonomics: prose payloads, batch writes, consistent reads.
         "regex_unicode",
         "template_escapes",
@@ -1838,8 +1842,8 @@ fn capabilities_version_matches_cargo_toml() {
         .and_then(|s| s.as_str())
         .expect("`version` must be a string");
     assert_eq!(
-        version, "0.18.0",
-        "expected version `0.18.0` (the minor bump for the `plan` verb group and the task-store `specs`/`milestones`/`changes` tables); got `{version}`"
+        version, "0.19.0",
+        "expected version `0.19.0` (the minor bump for the `review apply` verb and record-targeted plan findings); got `{version}`"
     );
 }
 

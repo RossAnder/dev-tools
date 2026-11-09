@@ -148,6 +148,9 @@ pub(crate) const FEATURES: &[&str] = &[
     "review_export_v1",
     "review_catalogue",
     "review_schema",
+    "review_apply",
+    "review_targets",
+    "review_plan_outcomes",
     // Agent ergonomics: prose payloads, batch writes, consistent reads.
     "regex_unicode",
     "template_escapes",
