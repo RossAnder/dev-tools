@@ -277,6 +277,15 @@ pub(crate) struct Premise {
     pub(crate) check: String,
     /// `base` or `after:<id>`.
     pub(crate) at: String,
+    /// `neg_rc` holds the check's exit code; `pos_rc` is always `None`.
+    pub(crate) probe: Option<Probe>,
+}
+
+/// The id in a canonical `after:<id>`. `after:+3` and `after:007` read as
+/// nothing: a reader joining on the stored string would miss the row.
+pub(crate) fn premise_target(at: &str) -> Option<u32> {
+    let id = at.strip_prefix("after:")?;
+    id.parse::<u32>().ok().filter(|n| n.to_string() == id)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -347,6 +356,7 @@ pub(crate) enum Status {
     Done,
     Failed,
     Deferred,
+    Parked,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -479,8 +489,14 @@ impl Store {
 }
 
 impl Status {
-    pub(crate) const VOCABULARY: &'static [&'static str] =
-        &["pending", "in-progress", "done", "failed", "deferred"];
+    pub(crate) const VOCABULARY: &'static [&'static str] = &[
+        "pending",
+        "in-progress",
+        "done",
+        "failed",
+        "deferred",
+        "parked",
+    ];
 
     pub(crate) fn as_str(self) -> &'static str {
         match self {
@@ -489,6 +505,7 @@ impl Status {
             Self::Done => "done",
             Self::Failed => "failed",
             Self::Deferred => "deferred",
+            Self::Parked => "parked",
         }
     }
 
@@ -500,6 +517,7 @@ impl Status {
             "done" => Some(Self::Done),
             "failed" => Some(Self::Failed),
             "deferred" => Some(Self::Deferred),
+            "parked" => Some(Self::Parked),
             _ => None,
         }
     }
@@ -987,8 +1005,8 @@ fn spec_from_toml(value: &TomlValue, index: usize) -> Result<TaskSpec> {
             .collect::<Result<Vec<_>>>()?,
         premises: sub_tables(table, "premises", &context)?
             .into_iter()
-            .map(premise_from_toml)
-            .collect(),
+            .map(|entry| premise_from_toml(entry, &context))
+            .collect::<Result<Vec<_>>>()?,
         means: sub_tables(table, "means", &context)?
             .into_iter()
             .map(means_from_toml)
@@ -1105,20 +1123,35 @@ fn probe_to_toml(entry: &Probe) -> TomlValue {
     TomlValue::Table(table)
 }
 
-fn premise_from_toml(table: &Table) -> Premise {
-    Premise {
+fn premise_from_toml(table: &Table, context: &str) -> Result<Premise> {
+    let probe = match table.get("probe") {
+        Some(raw) => Some(probe_from_toml(raw.as_table().ok_or_else(|| {
+            anyhow!("{context}: a `premises` entry's `probe` is not a table")
+        })?)),
+        None => None,
+    };
+    Ok(Premise {
         claim: lf(&str_or(table, "claim", "")),
         check: lf(&str_or(table, "check", "")),
         at: str_or(table, "at", ""),
-    }
+        probe,
+    })
 }
 
 fn premise_to_toml(entry: &Premise) -> TomlValue {
-    let Premise { claim, check, at } = entry;
+    let Premise {
+        claim,
+        check,
+        at,
+        probe,
+    } = entry;
     let mut table = Table::new();
     table.insert("claim".to_string(), TomlValue::String(lf(claim)));
     table.insert("check".to_string(), TomlValue::String(lf(check)));
     table.insert("at".to_string(), TomlValue::String(at.clone()));
+    if let Some(probe) = probe {
+        table.insert("probe".to_string(), probe_to_toml(probe));
+    }
     TomlValue::Table(table)
 }
 
@@ -1845,6 +1878,12 @@ mod tests {
                     claim: "fn parse exists in src/a.rs".to_string(),
                     check: "grep -q 'fn parse' src/a.rs".to_string(),
                     at: "after:1".to_string(),
+                    probe: Some(Probe {
+                        at: "0d1bf49".to_string(),
+                        neg_rc: Some(0),
+                        pos_rc: None,
+                        verdict: "holds".to_string(),
+                    }),
                 }],
                 means: vec![Means {
                     text: "use the backoff helper".to_string(),
@@ -2101,6 +2140,8 @@ commit = ""
         assert!(message.contains("means[0]"), "{message}");
         let message = refused("[[specs]]\nref = \"r\"\n[[specs.accept]]\nprobe = \"nope\"\n");
         assert!(message.contains("probe"), "{message}");
+        let message = refused("[[specs]]\nref = \"r\"\n[[specs.premises]]\nprobe = \"nope\"\n");
+        assert!(message.contains("`premises` entry's `probe`"), "{message}");
     }
 
     /// Absent reads as off, but a value that is not a boolean must not: that

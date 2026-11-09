@@ -400,9 +400,12 @@ fn classify(claim: &Claim, stores: &BTreeMap<String, Store>) -> Entry {
         .filter(|(_, task_status)| *task_status != Status::Done)
         .map(|(name, task_status)| format!("{name} ({task_status})"))
         .collect();
-    let stopped = closes
-        .iter()
-        .any(|name| matches!(status_of(name), Status::Deferred | Status::Failed));
+    let stopped = closes.iter().any(|name| {
+        matches!(
+            status_of(name),
+            Status::Deferred | Status::Failed | Status::Parked
+        )
+    });
     let progress = match closes.is_empty() {
         true => "no task closes this item".to_string(),
         false => format!("closing tasks not done: {}", not_done.join(", ")),
@@ -763,7 +766,7 @@ mod tests {
     }
 
     #[test]
-    fn a_deferred_or_failed_closing_task_is_stalled() {
+    fn a_deferred_failed_or_parked_closing_task_is_stalled() {
         let report = with_root(|root| {
             seed_flow(root, "alpha", "in-progress");
             seed_tasks(
@@ -773,19 +776,28 @@ mod tests {
                     task("one", "deferred"),
                     task("two", "pending"),
                     task("three", "failed"),
+                    task("four", "parked"),
                 ],
                 &[
                     ("one", &["B-aaaa0001"], &[]),
                     ("two", &["B-aaaa0001"], &[]),
                     ("three", &["B-aaaa0002"], &[]),
+                    ("four", &["B-aaaa0003"], &[]),
                 ],
             );
-            seed_backlog(root, &[("B-aaaa0001", "alpha"), ("B-aaaa0002", "alpha")]);
+            seed_backlog(
+                root,
+                &[
+                    ("B-aaaa0001", "alpha"),
+                    ("B-aaaa0002", "alpha"),
+                    ("B-aaaa0003", "alpha"),
+                ],
+            );
             run(None, false, false)
         });
         assert_eq!(
             bucket_ids(&report, "stalled"),
-            ["B-aaaa0001", "B-aaaa0002"],
+            ["B-aaaa0001", "B-aaaa0002", "B-aaaa0003"],
             "{report}"
         );
     }

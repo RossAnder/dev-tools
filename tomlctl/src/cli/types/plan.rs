@@ -393,9 +393,9 @@ pub(crate) struct PlanProbesArgs {
     pub(crate) record: Option<PathBuf>,
     #[arg(
         long = "premises",
-        requires = "emit",
-        conflicts_with = "record",
-        help = "With --emit, print a script checking each pending task's `base` premises instead"
+        help = "Work on each pending task's premises instead of its accept rows: `base` ones, \
+                and `after:<id>` ones once task <id> is done. With --record, store each \
+                premise's verdict: holds, fails or broken"
     )]
     pub(crate) premises: bool,
     #[arg(
@@ -404,6 +404,13 @@ pub(crate) struct PlanProbesArgs {
         help = "Cover only this checkpoint's pending rows, in either mode"
     )]
     pub(crate) milestone: Option<String>,
+    #[arg(
+        long = "task",
+        value_name = "N1,N2",
+        value_delimiter = ',',
+        help = "Cover only these tasks' pending rows, in either mode"
+    )]
+    pub(crate) task: Vec<u32>,
     #[command(flatten)]
     pub(crate) integrity: WriteIntegrityArgs,
 }
@@ -453,6 +460,11 @@ pub(crate) struct PlanApproveArgs {
 pub(crate) struct PlanDriftArgs {
     #[command(flatten)]
     pub(crate) target: PlanTarget,
+    #[arg(
+        long = "uncommitted",
+        help = "Also report the working tree's modified and untracked paths"
+    )]
+    pub(crate) uncommitted: bool,
     #[command(flatten)]
     pub(crate) integrity: ReadIntegrityArgs,
 }

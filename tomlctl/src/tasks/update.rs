@@ -32,7 +32,7 @@ use super::add::{
 use super::graph::{Node, Tense, build_or_refuse, nodes_of};
 use super::schema::{
     Accept, BacklogLink, Change, DEFAULT_ACTOR, Effort, FileNote, ImportOverride,
-    MILESTONE_REF_PREFIX, Status, Store, TaskRow, TaskSpec,
+    MILESTONE_REF_PREFIX, Premise, Status, Store, TaskRow, TaskSpec,
 };
 use super::show::{accept_json, means_json, premises_json};
 use super::{slug, store};
@@ -490,6 +490,7 @@ fn patch_spec(store: &mut Store, id: u32, line: usize, spec: &SpecPatch) -> Resu
     let mut after = before.clone();
     spec.clone().apply_to(&mut after);
     keep_probes(&before.accept, &mut after.accept);
+    keep_premise_probes(&before.premises, &mut after.premises);
     if after.premises != before.premises {
         let known: BTreeSet<u32> = store.items.iter().map(|row| row.id).collect();
         reject_unknown_premise_targets(line, &after.premises, &known)?;
@@ -528,6 +529,24 @@ fn keep_probes(before: &[Accept], after: &mut [Accept]) {
             .iter()
             .find(|stored| {
                 let unprobed = Accept {
+                    probe: None,
+                    ..(*stored).clone()
+                };
+                unprobed == *entry
+            })
+            .and_then(|stored| stored.probe.clone());
+        entry.probe = probe;
+    }
+}
+
+/// `keep_probes` for premises: a re-issued premise matching a stored one in
+/// every other field keeps its recorded verdict.
+fn keep_premise_probes(before: &[Premise], after: &mut [Premise]) {
+    for entry in after.iter_mut().filter(|entry| entry.probe.is_none()) {
+        let probe = before
+            .iter()
+            .find(|stored| {
+                let unprobed = Premise {
                     probe: None,
                     ..(*stored).clone()
                 };

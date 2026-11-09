@@ -24,7 +24,7 @@ use serde_json::{Map as JsonMap, Value as JsonValue};
 use super::graph::{Node, Tense, build_or_refuse};
 use super::schema::{
     ACCEPT_KINDS, Accept, BacklogLink, Change, DEFAULT_ACTOR, DEFAULT_HEADING_DEPTH, Effort,
-    FileNote, MEANS_BINDINGS, Means, Premise, Status, Store, TaskRow, TaskSpec,
+    FileNote, MEANS_BINDINGS, Means, Premise, Status, Store, TaskRow, TaskSpec, premise_target,
 };
 use super::{slug, store};
 use crate::cli::WriteIntegrityArgs;
@@ -341,13 +341,6 @@ pub(super) fn reject_unknown_premise_targets(
     Ok(())
 }
 
-/// The id in a canonical `after:<id>`. `after:+3` and `after:007` read as
-/// nothing: a reader joining on the stored string would miss the row.
-fn premise_target(at: &str) -> Option<u32> {
-    let id = at.strip_prefix("after:")?;
-    id.parse::<u32>().ok().filter(|n| n.to_string() == id)
-}
-
 impl RowExtras {
     /// Runs after `drop_ref_entries`, which would otherwise take these with
     /// the leftovers under the same `ref`.
@@ -598,6 +591,12 @@ fn accept_entry(entry: &SpecObject<'_>) -> Result<Accept> {
 }
 
 fn premise_entry(entry: &SpecObject<'_>) -> Result<Premise> {
+    if entry.map.contains_key("probe") {
+        return Err(entry.refuse(format!(
+            "`{}` cannot be supplied — only `plan probes --record --premises` writes it",
+            entry.path("probe")
+        )));
+    }
     entry.refuse_unknown(&PREMISE_FIELDS)?;
     let at = entry.text("at")?.unwrap_or_default();
     if at != "base" && premise_target(&at).is_none() {
@@ -610,6 +609,7 @@ fn premise_entry(entry: &SpecObject<'_>) -> Result<Premise> {
         claim: entry.text("claim")?.unwrap_or_default(),
         check: entry.text("check")?.unwrap_or_default(),
         at,
+        probe: None,
     })
 }
 

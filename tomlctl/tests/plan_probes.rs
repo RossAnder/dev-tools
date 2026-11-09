@@ -481,7 +481,10 @@ fn a_bad_capture_line_shows_the_expected_shape_and_a_cut_copy_of_the_line() {
         message.contains("capture line 2 is not a probe row"),
         "{message}"
     );
-    assert!(message.contains("<task>:<accept><TAB>neg|pos"), "{message}");
+    assert!(
+        message.contains("<task>:<index><TAB>neg|pos|premise"),
+        "{message}"
+    );
     assert!(message.contains("1:0\\tmid\\t"), "{message}");
     assert!(message.ends_with("..."), "{message}");
     assert!(!message.contains(&"x".repeat(100)), "{message}");
@@ -947,14 +950,32 @@ fn emit_refuses_a_command_a_script_cannot_carry() {
     assert_eq!(error["kind"], "validation", "{stderr}");
 }
 
-/// A pending task carrying a `base` premise and an `after:` one, beside a done
-/// task whose `base` premise must stay out of the script.
-fn premise_store() -> String {
+/// A pending task carrying a `base` premise and an `after:` one, beside a task
+/// of `first_status` whose `base` premise must stay out of the script.
+fn premise_store_after(first_status: &str) -> String {
     let doc = json!({
         "schema_version": 2,
+        "checkpoints": [
+            { "id": "A", "rationale": "first" },
+            { "id": "B", "rationale": "second" },
+        ],
         "items": [
-            { "id": 1, "ref": "done-row", "title": "Done", "effort": "S", "status": "done" },
-            { "id": 2, "ref": "the-row", "title": "The row", "effort": "S", "files": [FILE] },
+            {
+                "id": 1,
+                "ref": "done-row",
+                "title": "Done",
+                "effort": "S",
+                "status": first_status,
+                "checkpoint": "A",
+            },
+            {
+                "id": 2,
+                "ref": "the-row",
+                "title": "The row",
+                "effort": "S",
+                "checkpoint": "B",
+                "files": [FILE],
+            },
         ],
         "specs": [
             {
@@ -978,16 +999,25 @@ fn premise_store() -> String {
     toml::to_string(&doc).expect("the fixture serialises")
 }
 
-#[test]
-fn emit_premises_prints_a_line_per_base_premise_of_a_pending_task() {
-    let (_dir, root) = sandbox();
-    seed_tasks(&root, &premise_store());
-    let out = cli(&root)
+fn premise_store() -> String {
+    premise_store_after("done")
+}
+
+fn emit_premises(root: &Path, flags: &[&str]) -> String {
+    let out = cli(root)
         .args(["plan", "probes", "--slug", TASKS_SLUG])
         .args(["--emit", "--premises"])
+        .args(flags)
         .assert()
         .success();
-    let script = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    String::from_utf8_lossy(&out.get_output().stdout).to_string()
+}
+
+#[test]
+fn emit_premises_prints_a_line_per_checkable_premise_of_a_pending_task() {
+    let (_dir, root) = sandbox();
+    seed_tasks(&root, &premise_store());
+    let script = emit_premises(&root, &[]);
     assert!(script.starts_with("#!/usr/bin/env bash\n"), "{script}");
     assert!(
         script.contains("cd \"$(git rev-parse --show-toplevel)\""),
@@ -999,10 +1029,11 @@ fn emit_premises_prints_a_line_per_base_premise_of_a_pending_task() {
         digest(check)
     );
     assert!(script.contains(&line), "{script}");
-    assert!(
-        script.contains("\n# skipped 2:1: not a base premise\n"),
-        "{script}"
+    let after = format!(
+        "\np 2:1 premise {} 'echo after-check'\n",
+        digest("echo after-check")
     );
+    assert!(script.contains(&after), "{script}");
     assert!(
         script.contains("\n# skipped 2:2: empty check\n"),
         "{script}"
@@ -1011,7 +1042,7 @@ fn emit_premises_prints_a_line_per_base_premise_of_a_pending_task() {
         script.contains("\n# skipped task 1: status is not pending\n"),
         "{script}"
     );
-    for absent in ["after-check", "finished", "accept-check", " neg "] {
+    for absent in ["finished", "accept-check", " neg "] {
         assert!(
             !script.contains(absent),
             "`{absent}` must not reach:\n{script}"
@@ -1020,30 +1051,344 @@ fn emit_premises_prints_a_line_per_base_premise_of_a_pending_task() {
 }
 
 #[test]
-fn premises_is_refused_without_emit() {
+fn an_after_premise_waits_for_its_task_to_be_done() {
+    for status in ["pending", "in-progress", "failed"] {
+        let (_dir, root) = sandbox();
+        seed_tasks(&root, &premise_store_after(status));
+        let script = emit_premises(&root, &[]);
+        assert!(
+            script.contains("\n# skipped 2:1: task 1 is not done\n"),
+            "{status}: {script}"
+        );
+        assert!(!script.contains("after-check"), "{status}: {script}");
+        assert!(script.contains("\np 2:0 premise "), "{status}: {script}");
+    }
+}
+
+#[test]
+fn an_at_that_is_neither_base_nor_after_a_number_is_skipped_without_its_text() {
+    let (_dir, root) = sandbox();
+    let fixture = premise_store().replace("after:1", "after:+1-secret");
+    assert!(fixture.contains("after:+1-secret"));
+    seed_tasks(&root, &fixture);
+    let script = emit_premises(&root, &[]);
+    assert!(
+        script.contains("\n# skipped 2:1: `at` is neither `base` nor `after:<number>`\n"),
+        "{script}"
+    );
+    for absent in ["after-check", "secret"] {
+        assert!(
+            !script.contains(absent),
+            "`{absent}` must not reach:\n{script}"
+        );
+    }
+}
+
+#[test]
+fn a_task_list_restricts_both_modes_to_its_rows() {
+    let (_dir, root) = sandbox();
+    let path = seed_tasks(&root, &two_tasks("pending"));
+
+    let out = cli(&root)
+        .args(["plan", "probes", "--slug", TASKS_SLUG, "--emit"])
+        .args(["--task", "2"])
+        .assert()
+        .success();
+    let script = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    assert!(script.contains("\np 2:0 neg "), "{script}");
+    assert!(
+        script.contains("\n# skipped task 1: not a requested task\n"),
+        "{script}"
+    );
+    assert!(!script.contains("already-true"), "{script}");
+
+    let both = emit_premises(&root, &["--task", "1,2"]);
+    assert!(!both.contains("not a requested task"), "{both}");
+
+    let second = format!("head\t{SHA}\n{}", row("2:0", "neg", 1, ""));
+    record_with(&root, &second, &["--task", "2"]).success();
+    assert_eq!(verdict(&second_probe(&path)), "healthy");
+
+    let first = format!(
+        "head\t{SHA}\n1:0\tneg\tsha256={}\trc=0\t\t\n",
+        digest("already-true")
+    );
+    record_with(&root, &first, &["--task", "2"]).failure();
+}
+
+#[test]
+fn an_unknown_task_is_refused_in_both_modes() {
+    let (_dir, root) = sandbox();
+    let path = seed_tasks(&root, &two_tasks("pending"));
+    let before = fs::read_to_string(&path).unwrap();
+
+    let emit = cli(&root)
+        .args(["--error-format", "json"])
+        .args(["plan", "probes", "--slug", TASKS_SLUG, "--emit"])
+        .args(["--task", "2,9"])
+        .assert()
+        .failure();
+    let record = record_with(&root, &format!("head\t{SHA}\n"), &["--task", "9"]).failure();
+    for assert in [emit, record] {
+        let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+        let error = parse_json_error_envelope(&stderr);
+        assert_eq!(error["kind"], "validation", "{stderr}");
+        assert!(
+            error["message"].as_str().unwrap().contains("--task 9"),
+            "{stderr}"
+        );
+    }
+    assert_eq!(fs::read_to_string(&path).unwrap(), before);
+}
+
+#[test]
+fn premises_is_refused_with_neither_emit_nor_record() {
     let (_dir, root) = sandbox();
     let path = seed_tasks(&root, &premise_store());
     let before = fs::read_to_string(&path).unwrap();
-    let capture = root.join("capture.tsv");
-    fs::write(&capture, format!("head\t{SHA}\n")).unwrap();
     let bare = cli(&root)
         .args(["plan", "probes", "--slug", TASKS_SLUG, "--premises"])
         .assert()
         .code(2);
-    let recorded = cli(&root)
-        .args(["plan", "probes", "--slug", TASKS_SLUG])
-        .args(["--premises", "--record"])
-        .arg(&capture)
-        .assert()
-        .code(2);
-    for assert in [bare, recorded] {
-        assert!(
-            assert.get_output().stdout.is_empty(),
-            "{:?}",
-            assert.get_output()
-        );
-    }
+    assert!(
+        bare.get_output().stdout.is_empty(),
+        "{:?}",
+        bare.get_output()
+    );
     assert_eq!(fs::read_to_string(&path).unwrap(), before);
+}
+
+const BASE_CHECK: &str = "test -f 'a b'";
+const AFTER_CHECK: &str = "echo after-check";
+
+/// A capture row for a premise, carrying the digest of `check`.
+fn premise_row(key: &str, check: &str, rc: i64, stderr: &str) -> String {
+    format!(
+        "{key}\tpremise\tsha256={}\trc={rc}\t\t{stderr}\n",
+        digest(check)
+    )
+}
+
+/// The capture `premise_store`'s script yields, with the `base` premise's
+/// result given and the `after:` one holding.
+fn premise_capture(rc: i64, stderr: &str) -> String {
+    format!(
+        "head\t{SHA}\n{}{}",
+        premise_row("2:0", BASE_CHECK, rc, stderr),
+        premise_row("2:1", AFTER_CHECK, 0, "")
+    )
+}
+
+fn record_premises(root: &Path, capture: &str, flags: &[&str]) -> assert_cmd::assert::Assert {
+    let mut all = vec!["--premises"];
+    all.extend_from_slice(flags);
+    record_with(root, capture, &all)
+}
+
+fn premise_probes(store_path: &Path) -> Vec<Option<toml::Value>> {
+    let doc: toml::Value = toml::from_str(&fs::read_to_string(store_path).unwrap()).unwrap();
+    doc["specs"][1]["premises"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|premise| premise.get("probe").cloned())
+        .collect()
+}
+
+#[track_caller]
+fn assert_premises_refused(root: &Path, store_path: &Path, capture: &str, expected: &str) {
+    let before = fs::read_to_string(store_path).unwrap();
+    let assert = record_premises(root, capture, &[]).failure();
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    let error = parse_json_error_envelope(&stderr);
+    assert_eq!(error["kind"], "validation", "{stderr}");
+    assert!(
+        error["message"].as_str().unwrap().contains(expected),
+        "{stderr}"
+    );
+    assert_eq!(
+        fs::read_to_string(store_path).unwrap(),
+        before,
+        "a refused capture must write nothing"
+    );
+}
+
+#[test]
+fn recording_premises_stores_holds_fails_or_broken_from_the_capture() {
+    let cases = [
+        (0, "", "holds"),
+        (1, "", "fails"),
+        (2, "grep: missing.rs: No such file or directory", "fails"),
+        (0, "bash: nope: command not found", "broken"),
+        (1, "fatal: not a git repository", "broken"),
+    ];
+    for (rc, stderr, expected) in cases {
+        let (_dir, root) = sandbox();
+        let path = seed_tasks(&root, &premise_store());
+        let out = record_premises(&root, &premise_capture(rc, stderr), &[]).success();
+        let report: Value = serde_json::from_slice(&out.get_output().stdout).unwrap();
+        assert_eq!(
+            report,
+            json!({
+                "ok": true,
+                "recorded": [
+                    { "task": 2, "premise": 0, "verdict": expected },
+                    { "task": 2, "premise": 1, "verdict": "holds" },
+                ],
+            }),
+            "rc {rc}, stderr {stderr}"
+        );
+        let probes = premise_probes(&path);
+        let first = probes[0].as_ref().expect("a recorded premise probe");
+        assert_eq!(first["verdict"].as_str(), Some(expected));
+        assert_eq!(first["at"].as_str(), Some(SHA));
+        assert_eq!(first["neg_rc"].as_integer(), Some(rc));
+        assert!(first.get("pos_rc").is_none(), "{first}");
+        assert_eq!(verdict(&probes[1]), "holds");
+        assert_eq!(probes[2], None, "an unchecked premise gets no probe");
+    }
+}
+
+#[test]
+fn a_premise_capture_taken_before_its_check_was_edited_is_refused() {
+    let (_dir, root) = sandbox();
+    let path = seed_tasks(&root, &premise_store());
+    let capture = format!(
+        "head\t{SHA}\n{}{}",
+        premise_row("2:0", "test -f 'old'", 0, ""),
+        premise_row("2:1", AFTER_CHECK, 0, "")
+    );
+    assert_premises_refused(&root, &path, &capture, "`premises[0]`");
+    assert_premises_refused(&root, &path, &capture, "different command");
+}
+
+#[test]
+fn an_accept_capture_passed_with_premises_is_refused() {
+    let (_dir, root) = sandbox();
+    let path = seed_tasks(&root, &premise_store());
+    let capture = format!(
+        "head\t{SHA}\n2:0\tneg\tsha256={}\trc=1\t\t\n",
+        digest("echo accept-check")
+    );
+    assert_premises_refused(&root, &path, &capture, "is an `accept` row");
+}
+
+#[test]
+fn a_premise_capture_passed_without_premises_is_refused() {
+    let (_dir, root) = sandbox();
+    let path = seed_tasks(&root, &premise_store());
+    assert_refused(&root, &path, &premise_capture(0, ""), "is a premise row");
+}
+
+#[test]
+fn a_short_or_overlong_premise_capture_is_refused_whole() {
+    let (_dir, root) = sandbox();
+    let path = seed_tasks(&root, &premise_store());
+    let head = format!("head\t{SHA}\n");
+    let base = premise_row("2:0", BASE_CHECK, 0, "");
+    let after = premise_row("2:1", AFTER_CHECK, 0, "");
+    assert_premises_refused(&root, &path, &format!("{head}{base}"), "1 of the 2");
+    assert_premises_refused(
+        &root,
+        &path,
+        &format!("{head}{base}{after}{}", premise_row("2:2", "  ", 0, "")),
+        "2:2",
+    );
+    assert_premises_refused(
+        &root,
+        &path,
+        &format!("{head}{base}{after}{base}"),
+        "repeats",
+    );
+}
+
+#[test]
+fn recording_premises_honours_the_milestone_and_task_scope() {
+    let (_dir, root) = sandbox();
+    let path = seed_tasks(&root, &premise_store());
+    let capture = premise_capture(0, "");
+    for flags in [["--milestone", "A"], ["--task", "1"]] {
+        let before = fs::read_to_string(&path).unwrap();
+        record_premises(&root, &capture, &flags).failure();
+        assert_eq!(fs::read_to_string(&path).unwrap(), before, "{flags:?}");
+    }
+    record_premises(&root, &capture, &["--milestone", "B"]).success();
+    record_premises(&root, &premise_capture(1, ""), &["--task", "2"]).success();
+    assert_eq!(verdict(&premise_probes(&path)[0]), "fails");
+}
+
+#[test]
+fn a_re_issued_premise_keeps_its_verdict_and_an_edited_one_drops_it() {
+    let (_dir, root) = sandbox();
+    let path = seed_tasks(&root, &premise_store());
+    record_premises(&root, &premise_capture(0, ""), &[]).success();
+    let update = |premises: Value| {
+        let row = json!({ "id": 2, "spec": { "premises": premises } });
+        cli(&root)
+            .args(["tasks", "update", "--slug", TASKS_SLUG, "--ndjson", "-"])
+            .write_stdin(format!("{row}\n"))
+            .assert()
+            .success();
+    };
+    let base = json!({ "claim": "it's there", "check": BASE_CHECK, "at": "base" });
+    let after = json!({ "claim": "it lands", "check": AFTER_CHECK, "at": "after:1" });
+    let blank = json!({ "claim": "blank", "check": "  ", "at": "base" });
+
+    let added = json!({
+        "title": "Third",
+        "effort": "S",
+        "spec": {
+            "outcome": "it holds",
+            "premises": [{ "claim": "c", "check": "true", "at": "after:2" }],
+        },
+    });
+    cli(&root)
+        .args(["tasks", "add-many", "--slug", TASKS_SLUG, "--ndjson", "-"])
+        .write_stdin(format!("{added}\n"))
+        .assert()
+        .success();
+    assert_eq!(verdict(&premise_probes(&path)[0]), "holds");
+
+    update(json!([base, after, blank]));
+    let probes = premise_probes(&path);
+    assert_eq!(verdict(&probes[0]), "holds");
+    assert_eq!(verdict(&probes[1]), "holds");
+
+    let edited = json!({ "claim": "it lands later", "check": AFTER_CHECK, "at": "after:1" });
+    update(json!([base, edited, blank]));
+    let probes = premise_probes(&path);
+    assert_eq!(verdict(&probes[0]), "holds");
+    assert_eq!(probes[1], None, "an edited premise keeps no verdict");
+}
+
+#[test]
+fn a_supplied_premise_probe_is_refused() {
+    let (_dir, root) = sandbox();
+    seed_tasks(&root, &premise_store());
+    let row = json!({
+        "id": 2,
+        "spec": { "premises": [{
+            "claim": "c",
+            "check": "true",
+            "at": "base",
+            "probe": { "at": SHA, "neg_rc": 0, "verdict": "holds" },
+        }] },
+    });
+    let assert = cli(&root)
+        .args(["--error-format", "json"])
+        .args(["tasks", "update", "--slug", TASKS_SLUG, "--ndjson", "-"])
+        .write_stdin(format!("{row}\n"))
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    let error = parse_json_error_envelope(&stderr);
+    assert!(
+        error["message"]
+            .as_str()
+            .unwrap()
+            .contains("only `plan probes --record --premises` writes it"),
+        "{stderr}"
+    );
 }
 
 #[test]

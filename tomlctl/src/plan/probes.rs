@@ -2,8 +2,10 @@
 //! row's controls, and `--record` turns that script's captured stdout into each
 //! row's `probe`. Both cover only pending tasks, so re-probing later leaves the
 //! verdicts of work already started or finished as they were recorded.
-//! `--emit --premises` prints the same kind of script over each pending task's
-//! `base` premises instead; its rows are read by the caller, never recorded.
+//! `--premises` works on each pending task's premises instead: `base` ones, and
+//! `after:<id>` ones once task `<id>` is done. Recording one stores `holds`,
+//! `fails` or `broken` as the premise's `probe`. `--milestone` and `--task`
+//! narrow either mode to the rows they name.
 //!
 //! tomlctl never runs a stored command: `Bash(tomlctl *)` is pre-approved, so a
 //! verb executing stored strings would widen that approval to arbitrary
@@ -26,7 +28,7 @@ use crate::integrity::hex_lower;
 use crate::output::{print_json_compact, print_text};
 use crate::tasks::schema::{
     Accept, KIND_FALSIFIER, KIND_FORWARD, KIND_GUARD, Premise, Probe, Status, Store, TaskRow,
-    TaskSpec, VERDICT_HEALTHY, normal_path,
+    TaskSpec, VERDICT_HEALTHY, normal_path, premise_target,
 };
 use crate::tasks::{load_store, mutate_store, resolve_store_path};
 
@@ -35,6 +37,8 @@ const VERDICT_UNSATISFIABLE: &str = "unsatisfiable";
 const VERDICT_PERMANENTLY_GREEN: &str = "permanently-green";
 const VERDICT_BROKEN: &str = "broken";
 const VERDICT_GUARD_ALONE: &str = "guard-alone";
+const VERDICT_HOLDS: &str = "holds";
+const VERDICT_FAILS: &str = "fails";
 
 const CONTROL_NEG: &str = "neg";
 const CONTROL_POS: &str = "pos";
@@ -56,7 +60,7 @@ const BROKEN_MARKERS: [&str; 4] = [
 const MISSING_PATH_MARKER: &str = "No such file";
 
 /// What a capture row holds, for the refusal of one that holds anything else.
-const ROW_SHAPE: &str = "<task>:<accept><TAB>neg|pos<TAB>sha256=<digest><TAB>rc=<code>\
+const ROW_SHAPE: &str = "<task>:<index><TAB>neg|pos|premise<TAB>sha256=<digest><TAB>rc=<code>\
                          <TAB><stdout><TAB><stderr>";
 const QUOTED_CHARS: usize = 80;
 
@@ -67,6 +71,14 @@ const HELPER: &str = r#"p(){ e=$(mktemp); o=$(eval "$4" 2>"$e" </dev/null); r=$?
 
 fn refuse(message: String) -> anyhow::Error {
     tagged_err(ErrorKind::Validation, None, message)
+}
+
+/// The rows a run covers: those of one checkpoint, of the listed tasks, or both.
+/// An empty `tasks` lists none, so it narrows nothing.
+#[derive(Clone, Copy)]
+struct Scope<'a> {
+    milestone: Option<&'a str>,
+    tasks: &'a [u32],
 }
 
 pub(super) fn run(mut args: PlanProbesArgs) -> Result<()> {
@@ -89,15 +101,35 @@ pub(super) fn run(mut args: PlanProbesArgs) -> Result<()> {
         } else {
             accept_lines
         };
-        return print_text(&script(&store, args.milestone.as_deref(), lines)?);
+        let scope = Scope {
+            milestone: args.milestone.as_deref(),
+            tasks: &args.task,
+        };
+        return print_text(&script(&store, scope, lines)?);
     };
     let capture = read_capture(&capture)?;
     // A capture can only describe rows of a store that already exists, so a
     // mistyped slug must not leave an empty one behind.
     args.integrity.no_create = true;
-    let milestone = args.milestone.as_deref();
+    let scope = Scope {
+        milestone: args.milestone.as_deref(),
+        tasks: &args.task,
+    };
+    if args.premises {
+        let mut recorded = mutate_store(&path, &args.integrity, |store| {
+            record_premises(store, capture, scope)
+        })?;
+        recorded.sort_unstable_by_key(|(task, premise, _)| (*task, *premise));
+        let recorded: Vec<_> = recorded
+            .into_iter()
+            .map(|(task, premise, verdict)| {
+                json!({ "task": task, "premise": premise, "verdict": verdict })
+            })
+            .collect();
+        return print_json_compact(&json!({ "ok": true, "recorded": recorded }));
+    }
     let mut recorded = mutate_store(&path, &args.integrity, |store| {
-        record(store, capture, milestone)
+        record(store, capture, scope)
     })?;
     recorded.sort_unstable_by_key(|(task, accept, _)| (*task, *accept));
     let recorded: Vec<_> = recorded
@@ -131,41 +163,57 @@ fn has_positive(accept: &Accept) -> bool {
 }
 
 /// Why a premise gets no line. An `after:` premise holds only once its task
-/// lands, so it cannot be checked against the base.
-fn premise_skip_reason(premise: &Premise) -> Option<&'static str> {
+/// lands, so it is checked only when that task is done. The reason reaches the
+/// script, so it holds no stored string.
+fn premise_skip_reason(store: &Store, premise: &Premise) -> Option<String> {
     if premise.check.trim().is_empty() {
-        Some("empty check")
-    } else if premise.at != PREMISE_AT_BASE {
-        Some("not a base premise")
-    } else {
-        None
+        return Some("empty check".to_string());
+    }
+    if premise.at == PREMISE_AT_BASE {
+        return None;
+    }
+    let Some(id) = premise_target(&premise.at) else {
+        return Some("`at` is neither `base` nor `after:<number>`".to_string());
+    };
+    match store.items.iter().find(|row| row.id == id) {
+        Some(row) if row.status == Status::Done => None,
+        Some(_) => Some(format!("task {id} is not done")),
+        None => Some(format!("no task {id} in the store")),
     }
 }
 
 /// Why a task's rows are out of this run. The reason reaches the script, so it
 /// holds no stored string.
-fn task_skip_reason(row: &TaskRow, milestone: Option<&str>) -> Option<&'static str> {
+fn task_skip_reason(row: &TaskRow, scope: Scope) -> Option<&'static str> {
     if row.status != Status::Pending {
         Some("status is not pending")
-    } else if milestone.is_some_and(|id| row.checkpoint != id) {
+    } else if scope.milestone.is_some_and(|id| row.checkpoint != id) {
         Some("not in the requested milestone")
+    } else if !scope.tasks.is_empty() && !scope.tasks.contains(&row.id) {
+        Some("not a requested task")
     } else {
         None
     }
 }
 
-fn refuse_unknown_milestone(store: &Store, milestone: Option<&str>) -> Result<()> {
-    let Some(id) = milestone else {
-        return Ok(());
-    };
-    let declared =
-        store.checkpoints.iter().any(|c| c.id == id) || store.milestones.iter().any(|m| m.id == id);
-    if declared {
-        return Ok(());
+fn refuse_out_of_store(store: &Store, scope: Scope) -> Result<()> {
+    if let Some(id) = scope.milestone {
+        let declared = store.checkpoints.iter().any(|c| c.id == id)
+            || store.milestones.iter().any(|m| m.id == id);
+        if !declared {
+            return Err(refuse(format!(
+                "`--milestone {id}` names no checkpoint or milestone in the store"
+            )));
+        }
     }
-    Err(refuse(format!(
-        "`--milestone {id}` names no checkpoint or milestone in the store"
-    )))
+    if let Some(id) = scope
+        .tasks
+        .iter()
+        .find(|id| !store.items.iter().any(|row| row.id == **id))
+    {
+        return Err(refuse(format!("`--task {id}` names no task in the store")));
+    }
+    Ok(())
 }
 
 /// Binds a recorded verdict to the command that produced it. It catches a stale
@@ -179,10 +227,10 @@ fn command_digest(command: &str) -> String {
 /// control exits non-zero and every later row must still run.
 fn script(
     store: &Store,
-    milestone: Option<&str>,
-    lines: fn(&mut String, u32, &TaskSpec) -> Result<()>,
+    scope: Scope,
+    lines: fn(&mut String, &Store, u32, &TaskSpec) -> Result<()>,
 ) -> Result<String> {
-    refuse_unknown_milestone(store, milestone)?;
+    refuse_out_of_store(store, scope)?;
     let mut out = String::from("#!/usr/bin/env bash\n");
     out.push_str("printf 'head\\t%s\\n' \"$(git rev-parse HEAD)\"\n");
     out.push_str("cd \"$(git rev-parse --show-toplevel)\" || exit 1\n");
@@ -192,16 +240,16 @@ fn script(
         let Some(spec) = store.specs.iter().find(|spec| spec.r#ref == row.r#ref) else {
             continue;
         };
-        if let Some(reason) = task_skip_reason(row, milestone) {
+        if let Some(reason) = task_skip_reason(row, scope) {
             writeln!(out, "# skipped task {}: {reason}", row.id)?;
             continue;
         }
-        lines(&mut out, row.id, spec)?;
+        lines(&mut out, store, row.id, spec)?;
     }
     Ok(out)
 }
 
-fn accept_lines(out: &mut String, task: u32, spec: &TaskSpec) -> Result<()> {
+fn accept_lines(out: &mut String, _store: &Store, task: u32, spec: &TaskSpec) -> Result<()> {
     for (index, accept) in spec.accept.iter().enumerate() {
         let key = format!("{task}:{index}");
         if let Some(reason) = skip_reason(accept) {
@@ -227,10 +275,10 @@ fn accept_lines(out: &mut String, task: u32, spec: &TaskSpec) -> Result<()> {
 }
 
 /// A premise's line exits 0 when its claim holds.
-fn premise_lines(out: &mut String, task: u32, spec: &TaskSpec) -> Result<()> {
+fn premise_lines(out: &mut String, store: &Store, task: u32, spec: &TaskSpec) -> Result<()> {
     for (index, premise) in spec.premises.iter().enumerate() {
         let key = format!("{task}:{index}");
-        if let Some(reason) = premise_skip_reason(premise) {
+        if let Some(reason) = premise_skip_reason(store, premise) {
             writeln!(out, "# skipped {key}: {reason}")?;
             continue;
         }
@@ -262,10 +310,20 @@ struct Control {
     stderr: String,
 }
 
+/// The controls a capture holds under one `<task>:<index>` key. An `accept`
+/// row's are `neg` and `pos`; a premise's is `premise`, its index counting
+/// premises rather than `accept` rows.
 #[derive(Default)]
 struct Controls {
     neg: Option<Control>,
     pos: Option<Control>,
+    premise: Option<Control>,
+}
+
+impl Controls {
+    fn has_accept(&self) -> bool {
+        self.neg.is_some() || self.pos.is_some()
+    }
 }
 
 struct Capture {
@@ -361,6 +419,7 @@ fn parse_capture(text: &str) -> Result<Capture> {
         let slot = match control {
             CONTROL_NEG => &mut entry.neg,
             CONTROL_POS => &mut entry.pos,
+            CONTROL_PREMISE => &mut entry.premise,
             _ => return Err(malformed()),
         };
         if slot.replace(parsed).is_some() {
@@ -400,9 +459,20 @@ impl Verdict {
 fn record(
     store: &mut Store,
     mut capture: Capture,
-    milestone: Option<&str>,
+    scope: Scope,
 ) -> Result<Vec<(u32, usize, Verdict)>> {
-    refuse_unknown_milestone(store, milestone)?;
+    refuse_out_of_store(store, scope)?;
+    if let Some((task, index)) = capture
+        .controls
+        .iter()
+        .find(|(_, controls)| controls.premise.is_some())
+        .map(|(key, _)| *key)
+    {
+        return Err(refuse(format!(
+            "the capture's {task}:{index} is a premise row: record a premise capture with \
+             `plan probes --record <capture> --premises`"
+        )));
+    }
     let declared: Vec<String> = store
         .items
         .iter()
@@ -411,7 +481,7 @@ fn record(
     let expected: usize = store
         .items
         .iter()
-        .filter(|row| task_skip_reason(row, milestone).is_none())
+        .filter(|row| task_skip_reason(row, scope).is_none())
         .filter_map(|row| store.specs.iter().find(|spec| spec.r#ref == row.r#ref))
         .map(|spec| {
             spec.accept
@@ -430,7 +500,7 @@ fn record(
     }
     let mut recorded = Vec::new();
     for row in &store.items {
-        if task_skip_reason(row, milestone).is_some() {
+        if task_skip_reason(row, scope).is_some() {
             continue;
         }
         let Some(spec) = store.specs.iter_mut().find(|spec| spec.r#ref == row.r#ref) else {
@@ -481,6 +551,105 @@ fn record(
         )));
     }
     Ok(recorded)
+}
+
+/// Stores each in-scope premise's verdict, returning `(task, premise, verdict)`
+/// for each. As with `record`, the capture must cover exactly the premises the
+/// emitted script checks, each with the digest of the stored check, or nothing
+/// is written.
+fn record_premises(
+    store: &mut Store,
+    mut capture: Capture,
+    scope: Scope,
+) -> Result<Vec<(u32, usize, &'static str)>> {
+    refuse_out_of_store(store, scope)?;
+    if let Some((task, index)) = capture
+        .controls
+        .iter()
+        .find(|(_, controls)| controls.has_accept())
+        .map(|(key, _)| *key)
+    {
+        return Err(refuse(format!(
+            "the capture's {task}:{index} is an `accept` row, not a premise: record an accept \
+             capture without `--premises`"
+        )));
+    }
+    let checked: Vec<(u32, String, usize)> = store
+        .items
+        .iter()
+        .filter(|row| task_skip_reason(row, scope).is_none())
+        .filter_map(|row| {
+            let spec = store.specs.iter().find(|spec| spec.r#ref == row.r#ref)?;
+            Some((row, spec))
+        })
+        .flat_map(|(row, spec)| {
+            spec.premises
+                .iter()
+                .enumerate()
+                .filter(|(_, premise)| premise_skip_reason(store, premise).is_none())
+                .map(|(index, _)| (row.id, row.r#ref.clone(), index))
+        })
+        .collect();
+    if capture.controls.len() < checked.len() {
+        return Err(refuse(format!(
+            "the capture covers {} of the {} checkable premises in scope, as a script cut short \
+             by a timeout leaves it: re-run the emitted script under a longer limit, or `plan \
+             probes --emit --premises` again if the store has changed",
+            capture.controls.len(),
+            checked.len()
+        )));
+    }
+    let mut recorded = Vec::new();
+    for (task, r#ref, index) in checked {
+        let key = format!("{task}:{index}");
+        let control = capture
+            .controls
+            .remove(&(task, index))
+            .and_then(|controls| controls.premise)
+            .ok_or_else(|| stale(&key, CONTROL_PREMISE))?;
+        let premise = store
+            .specs
+            .iter_mut()
+            .find(|spec| spec.r#ref == r#ref)
+            .and_then(|spec| spec.premises.get_mut(index))
+            .expect("a premise collected from this store");
+        if control.digest != command_digest(&premise.check) {
+            return Err(refuse(format!(
+                "the capture's premise control for task {task}'s `premises[{index}]` ran a \
+                 different command than the store holds: re-run `plan probes --emit --premises`"
+            )));
+        }
+        let verdict = premise_verdict(&control);
+        premise.probe = Some(Probe {
+            at: capture.head.clone(),
+            neg_rc: Some(control.rc),
+            pos_rc: None,
+            verdict: verdict.to_string(),
+        });
+        recorded.push((task, index, verdict));
+    }
+    if let Some((task, index)) = capture.controls.keys().next() {
+        return Err(refuse(format!(
+            "the capture names {task}:{index}, which is not a checkable premise: re-run `plan \
+             probes --emit --premises`"
+        )));
+    }
+    Ok(recorded)
+}
+
+/// A premise's check exits 0 when its claim holds. A breakage marker means the
+/// check never tested the claim, whatever it exited with.
+fn premise_verdict(control: &Control) -> &'static str {
+    if BROKEN_MARKERS
+        .iter()
+        .any(|marker| control.stderr.contains(marker))
+    {
+        VERDICT_BROKEN
+    } else if control.rc == 0 {
+        VERDICT_HOLDS
+    } else {
+        VERDICT_FAILS
+    }
 }
 
 fn stale(key: &str, control: &str) -> anyhow::Error {

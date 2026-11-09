@@ -66,7 +66,9 @@ impl Standing {
         match status {
             Status::Pending => Self::Pending,
             Status::Done => Self::Done,
-            Status::InProgress | Status::Failed | Status::Deferred => Self::Stalled,
+            Status::InProgress | Status::Failed | Status::Deferred | Status::Parked => {
+                Self::Stalled
+            }
         }
     }
 }
@@ -816,6 +818,25 @@ mod tests {
         assert_eq!(
             frontier.blocked.iter().map(|b| b.id).collect::<Vec<_>>(),
             vec![4]
+        );
+    }
+
+    #[test]
+    fn a_pending_row_behind_a_parked_row_is_blocked_on_it() {
+        let mut nodes = vec![node(1, &[], &[], ""), node(2, &[1], &[], "")];
+        find(&mut nodes, 1).status = Status::Parked;
+        let graph = Graph::build(&nodes).expect("acyclic");
+
+        let frontier = graph.frontier(&[]).unwrap();
+        assert_eq!(frontier.ready, Vec::<u32>::new());
+        assert_eq!(frontier.next, Vec::<u32>::new());
+        assert_eq!(
+            frontier.blocked,
+            vec![Blocked {
+                id: 2,
+                blocker: 1,
+                blocker_status: Status::Parked,
+            }]
         );
     }
 

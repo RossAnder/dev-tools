@@ -154,8 +154,12 @@ impl Flow {
     }
 
     fn drift(&self) -> Value {
+        self.drift_with(&[])
+    }
+
+    fn drift_with(&self, extra: &[&str]) -> Value {
         let assert = self
-            .tomlctl(&["plan", "drift", "--slug", SLUG])
+            .tomlctl(&[&["plan", "drift", "--slug", SLUG], extra].concat())
             .assert()
             .success();
         let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
@@ -434,6 +438,64 @@ fn an_approved_commit_that_no_longer_resolves_is_refused_until_amended() {
     let report = flow.drift();
     assert_eq!(report["approved_commit"], head.as_str());
     assert_eq!(affected_ids(&report), Vec::<u64>::new());
+}
+
+/// A flow approved at HEAD, so only the working tree can drift.
+fn approved_flow(tasks: &str) -> Flow {
+    let flow = Flow::new();
+    flow.write_flow("tasks.toml", tasks);
+    let approved = flow.commit("approved");
+    flow.approve_at(&approved);
+    flow.commit("stamp");
+    flow
+}
+
+#[test]
+fn an_uncommitted_edit_to_a_pending_rows_file_is_reported() {
+    let flow = approved_flow(TASKS);
+    flow.write_src("a", "fn parse() { /* uncommitted */ }\n");
+    let notes = flow.root.join("docs/flows").join(SLUG).join("notes/run");
+    fs::create_dir_all(&notes).expect("notes dir");
+    fs::write(notes.join("1.md"), "note\n").expect("writable");
+    flow.write_flow("tasks.toml", &format!("{TASKS}\n"));
+
+    let report = flow.drift_with(&["--uncommitted"]);
+    assert_eq!(report["uncommitted_files"], json!(["src/a.rs"]), "{report}");
+    assert_eq!(report["changed_files"], json!([]), "{report}");
+    assert_eq!(affected_ids(&report), [1], "{report}");
+    assert_eq!(report["affected"][0]["files"], json!(["src/a.rs"]));
+    assert_eq!(report["affected"][0]["uncommitted"], json!(["src/a.rs"]));
+}
+
+#[test]
+fn an_uncommitted_edit_a_done_row_without_a_commit_names_is_the_runs_own_work() {
+    let flow = approved_flow(&TASKS.replace(
+        "files = [\"src/b.rs\"]",
+        "files = [\"src/b.rs\", \"src/a.rs\"]",
+    ));
+    flow.write_src("a", "fn parse() { /* the run's own work */ }\n");
+
+    let report = flow.drift_with(&["--uncommitted"]);
+    assert_eq!(report["uncommitted_files"], json!(["src/a.rs"]), "{report}");
+    assert_eq!(affected_ids(&report), Vec::<u64>::new(), "{report}");
+
+    flow.record_commit(2, "abc123");
+    let report = flow.drift_with(&["--uncommitted"]);
+    assert_eq!(
+        affected_ids(&report),
+        [1],
+        "a committed row's files are not the run's open work: {report}"
+    );
+}
+
+#[test]
+fn the_default_report_never_reads_the_working_tree() {
+    let flow = approved_flow(TASKS);
+    flow.write_src("a", "fn parse() { /* uncommitted */ }\n");
+
+    let report = flow.drift();
+    assert!(report.get("uncommitted_files").is_none(), "{report}");
+    assert_eq!(affected_ids(&report), Vec::<u64>::new(), "{report}");
 }
 
 #[test]

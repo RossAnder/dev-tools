@@ -1,6 +1,6 @@
 //! `plan drift`: files changed since the last approval by commits the plan
-//! does not own, reported against the tasks still to run. It warns and never
-//! fails on drift.
+//! does not own, and with `--uncommitted` the working tree's edits, reported
+//! against the tasks still to run. It warns and never fails on drift.
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -36,14 +36,23 @@ pub(super) fn run(args: PlanDriftArgs) -> Result<()> {
     refuse_unresolved(&root, &approval.commit)?;
     let owned = recorded_commits(&tasks);
     let changed = changed_files(&root, &approval.commit, &owned, slug)?;
-    let affected = affected_tasks(&tasks, &changed);
+    let uncommitted = if args.uncommitted {
+        Some(uncommitted_files(&root, slug)?)
+    } else {
+        None
+    };
+    let affected = affected_tasks(&tasks, &changed, uncommitted.as_ref());
 
-    print_json_line(&json!({
+    let mut report = json!({
         "ok": true,
         "approved_commit": approval.commit,
         "changed_files": changed,
         "affected": affected,
-    }))
+    });
+    if let Some(uncommitted) = uncommitted {
+        report["uncommitted_files"] = json!(uncommitted);
+    }
+    print_json_line(&report)
 }
 
 /// A rebase, a gc or a shallow clone can take the approved commit away, and
@@ -159,22 +168,106 @@ fn parse_log(log: &str, owned: &[String], flow_dir: &str) -> BTreeSet<String> {
     files
 }
 
-fn affected_tasks(tasks: &Store, changed: &BTreeSet<String>) -> Vec<JsonValue> {
+/// `-z` hands over every path verbatim, and `--no-renames` reports a rename as
+/// its deleted source and its new path. Paths under either of the flow's
+/// directories are its stores and its run notes, which are never drift.
+fn uncommitted_files(root: &Path, slug: &str) -> Result<BTreeSet<String>> {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args([
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--no-renames",
+            "--untracked-files=all",
+        ])
+        .output()
+        .map_err(|e| tagged_err(ErrorKind::Other, None, format!("git status: {e}")))?;
+    if !out.status.success() {
+        return Err(tagged_err(
+            ErrorKind::Other,
+            None,
+            format!(
+                "git status failed: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            ),
+        ));
+    }
+    let skip = [
+        format!(".claude/flows/{slug}/"),
+        format!("docs/flows/{slug}/"),
+    ];
+    Ok(parse_status(&String::from_utf8_lossy(&out.stdout), &skip))
+}
+
+/// Each NUL-terminated entry is two status bytes, a space, then the path.
+fn parse_status(status: &str, skip: &[String]) -> BTreeSet<String> {
+    status
+        .split('\0')
+        .filter_map(|entry| entry.get(3..))
+        .filter(|path| !path.is_empty() && !skip.iter().any(|dir| path.starts_with(dir.as_str())))
+        .map(str::to_string)
+        .collect()
+}
+
+/// Files of rows the run has worked but not yet committed: an uncommitted edit
+/// to one of them is the run's own work, not drift.
+fn own_work(tasks: &Store) -> BTreeSet<String> {
     tasks
         .items
         .iter()
-        .filter(|row| matches!(row.status, Status::Pending | Status::InProgress))
+        .filter(|row| {
+            matches!(
+                row.status,
+                Status::Done | Status::InProgress | Status::Failed | Status::Parked
+            ) && row.commit.trim().is_empty()
+        })
+        .flat_map(|row| row.files.iter().map(|file| normal_path(file)))
+        .collect()
+}
+
+fn names(paths: &BTreeSet<String>, file: &str) -> bool {
+    paths.contains(file) || paths.contains(&normal_path(file))
+}
+
+/// Committed changes affect pending and in-progress rows; uncommitted paths
+/// affect only pending rows, and are listed again under `uncommitted`.
+fn affected_tasks(
+    tasks: &Store,
+    changed: &BTreeSet<String>,
+    uncommitted: Option<&BTreeSet<String>>,
+) -> Vec<JsonValue> {
+    let own = uncommitted.map(|_| own_work(tasks)).unwrap_or_default();
+    tasks
+        .items
+        .iter()
         .filter_map(|row| {
+            let committed: Vec<&String> =
+                if matches!(row.status, Status::Pending | Status::InProgress) {
+                    row.files
+                        .iter()
+                        .filter(|file| names(changed, file))
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+            let open: Vec<&String> = match uncommitted {
+                Some(paths) if matches!(row.status, Status::Pending) => row
+                    .files
+                    .iter()
+                    .filter(|file| names(paths, file) && !names(&own, file))
+                    .collect(),
+                _ => Vec::new(),
+            };
+            if committed.is_empty() && open.is_empty() {
+                return None;
+            }
             let hit: Vec<&String> = row
                 .files
                 .iter()
-                .filter(|file| {
-                    changed.contains(file.as_str()) || changed.contains(&normal_path(file))
-                })
+                .filter(|file| committed.contains(file) || open.contains(file))
                 .collect();
-            if hit.is_empty() {
-                return None;
-            }
             let premises: Vec<JsonValue> = tasks
                 .specs
                 .iter()
@@ -182,12 +275,16 @@ fn affected_tasks(tasks: &Store, changed: &BTreeSet<String>) -> Vec<JsonValue> {
                 .flat_map(|spec| spec.premises.iter())
                 .map(|p| json!({ "claim": p.claim, "check": p.check, "at": p.at }))
                 .collect();
-            Some(json!({
+            let mut entry = json!({
                 "id": row.id,
                 "ref": row.r#ref,
                 "files": hit,
                 "premises": premises,
-            }))
+            });
+            if !open.is_empty() {
+                entry["uncommitted"] = json!(open);
+            }
+            Some(entry)
         })
         .collect()
 }
@@ -229,6 +326,18 @@ mod tests {
         assert_eq!(
             files.into_iter().collect::<Vec<_>>(),
             ["\u{1}odd name", "\nlead.rs", " edge ", "nl\nname"]
+        );
+    }
+
+    #[test]
+    fn status_entries_drop_their_codes_and_the_flow_directories() {
+        let status = " M src/a.rs\0?? docs/flows/s/notes/run/1.md\0 D .claude/flows/s/tasks.toml\0\
+                      ?? docs/flows/s2/x.md\0A  sp ace.rs\0";
+        let skip = [FLOW_DIR.to_string(), "docs/flows/s/".to_string()];
+        let files = parse_status(status, &skip);
+        assert_eq!(
+            files.into_iter().collect::<Vec<_>>(),
+            ["docs/flows/s2/x.md", "sp ace.rs", "src/a.rs"]
         );
     }
 }
