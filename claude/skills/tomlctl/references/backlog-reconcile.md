@@ -36,7 +36,7 @@ whose target is a flow lands in the first of the other five buckets that fits, i
 | `ready` | At least one task closes the row and every one is `done`. Tested first, so a ready row in a closed flow is `ready`, not `orphaned`. |
 | `orphaned` | The flow is at `review` or `complete`. |
 | `unlinked` | No task closes the row — including a flow with no `tasks.toml`, and a row only `refs` links name. |
-| `stalled` | A closing task is `deferred` or `failed`. |
+| `stalled` | A closing task is `deferred`, `failed` or `parked`. |
 | `in-progress` | A closing task is still `pending` or `in-progress`. |
 | `dangling` | `promoted_to` resolves to no flow: an unknown value, or a plan no flow binds. |
 | `external` | `promoted_to` is an `external:` reference. |

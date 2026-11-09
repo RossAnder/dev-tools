@@ -175,7 +175,7 @@ tomlctl backlog reconcile --apply
 
 `--apply` resolves every ready row the run covers, recording its flow, tasks and commits; add `--flow <slug>` to resolve a single flow's. Report `applied`, and `skipped` with each reason.
 
-**`orphaned`, `stalled`, `dangling` — reopen or re-promote.** An `orphaned` claim sits on a flow that closed without delivering it, a `stalled` one on a closing task that is `deferred` or `failed`, and a `dangling` one on a target that resolves to no flow. Offer, per row or per group sharing a target: reopen, re-promote, or keep. A reopen needs a rationale naming the flow, because it clears the claim — the user's wording, or a factual line such as ``flow `<slug>` closed without it``:
+**`orphaned`, `stalled`, `dangling` — reopen or re-promote.** An `orphaned` claim sits on a flow that closed without delivering it, a `stalled` one on a closing task that is `deferred`, `failed` or `parked`, and a `dangling` one on a target that resolves to no flow. Offer, per row or per group sharing a target: reopen, re-promote, or keep. A reopen needs a rationale naming the flow, because it clears the claim — the user's wording, or a factual line such as ``flow `<slug>` closed without it``:
 
 ```bash
 tomlctl backlog triage <ids> --reopen --rationale-file <rationale-file> --expect-status promoted
