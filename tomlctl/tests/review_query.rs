@@ -405,6 +405,13 @@ fn show_cell_carries_bound_catalogue_paths() {
             slash(&repo.claude_dir)
         )
     );
+    assert_eq!(
+        out["references"]["plan-records"],
+        format!(
+            "{}/skills/review-v2-method/references/plan-records.md",
+            slash(&repo.claude_dir)
+        )
+    );
 
     let refused = repo.review(&["show", "C1", "--for", "verifier"]).failure();
     let err = parse_json_error_envelope(&String::from_utf8_lossy(&refused.get_output().stderr));
@@ -433,6 +440,41 @@ fn show_cell_names_the_reviewed_documents_on_a_plan_run_only() {
         serde_json::json!(["docs/other/outline.md", "docs/other/detail.md"]),
         "{cell}"
     );
+}
+
+#[test]
+fn show_cell_names_the_flow_only_in_flow_mode() {
+    let repo = Repo::new();
+    let scope_store = repo.root.join(".claude/review-v2/t.toml");
+    let text = fs::read_to_string(&scope_store).expect("store");
+    let plan_run = text.replacen("family = \"code\"\ndepth", "family = \"plan\"\ndepth", 1);
+    assert_ne!(plan_run, text, "the fixture's run row moved");
+
+    let flow = repo.root.join(".claude/flows/demo");
+    fs::create_dir_all(&flow).unwrap();
+    fs::write(flow.join("review-v2.toml"), &plan_run).unwrap();
+    let show = |repo: &Repo| -> JsonValue {
+        let out = cli(&repo.root)
+            .current_dir(&repo.root)
+            .env("CLAUDE_CONFIG_DIR", &repo.claude_dir)
+            .args(["--error-format", "json", "review", "show", "C1"])
+            .args(["--for", "finder", "--slug", "demo"])
+            .assert()
+            .success();
+        serde_json::from_slice(&out.get_output().stdout).expect("review prints JSON")
+    };
+
+    let cell = show(&repo);
+    assert!(cell["items"][0].get("flow").is_none(), "{cell}");
+
+    fs::write(flow.join("plan.toml"), "").unwrap();
+    let cell = show(&repo);
+    assert_eq!(cell["items"][0]["flow"], "demo", "{cell}");
+
+    // A flow-less scope store never carries the key.
+    fs::write(&scope_store, plan_run).unwrap();
+    let cell = repo.json(&["show", "C1", "--for", "finder"]);
+    assert!(cell["items"][0].get("flow").is_none(), "{cell}");
 }
 
 #[test]

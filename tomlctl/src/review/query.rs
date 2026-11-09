@@ -39,6 +39,10 @@ const METHOD_REFERENCES: &[(&str, &str)] = &[
         "verifying",
         "skills/review-v2-method/references/verifying.md",
     ),
+    (
+        "plan-records",
+        "skills/review-v2-method/references/plan-records.md",
+    ),
 ];
 
 pub(crate) fn list(target: &Target, args: ReviewListArgs) -> Result<()> {
@@ -280,6 +284,17 @@ fn assignment(
     // A plan-family agent reviews these documents, which need not be the flow's plan.
     if run.family == Family::Plan {
         row.insert("plan_documents".into(), json!(run.scope));
+        // Present only in flow mode, so an agent can tell a v2 flow from a markdown plan.
+        if let Some(slug) = super::add::store_slug(target)
+            && root
+                .join(".claude")
+                .join("flows")
+                .join(&slug)
+                .join("plan.toml")
+                .is_file()
+        {
+            row.insert("flow".into(), json!(slug));
+        }
     }
     let baselines = run
         .rest

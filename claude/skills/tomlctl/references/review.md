@@ -112,7 +112,7 @@ A cell row takes `slice`, `concerns` (1–3), `agent` and `reason`, plus `questi
 
 | Role | Sees |
 |---|---|
-| `finder` | The identity fields and status, for a slice's `PRIOR`. A cell carries its assignment: slice, concerns with bound paths, facet and method paths, `pack`, `baselines`. A `review-finder-cf` cell carries no `pack`; it carries the run's `base` instead, to read the slice as `git diff <base>`. A plan-family cell adds `plan_documents`, the run's scope, with the plan first. |
+| `finder` | The identity fields and status, for a slice's `PRIOR`. A cell carries its assignment: slice, concerns with bound paths, facet and method paths, `pack`, `baselines`. A `review-finder-cf` cell carries no `pack`; it carries the run's `base` instead, to read the slice as `git diff <base>`. A plan-family cell adds `plan_documents`, the run's scope, with the plan first, and in flow mode `flow`, the slug. |
 | `verifier` | The claim to refute (`failure_scenario`, `counter`, `evidence`) and the `same_as` target; never `grade` or `fix`; the edit fields only when routed to it. |
 | `checker` | The cleanup edit fields and the `same_as` target. |
 | `implementer` | The fix, what done means, and the latest citation. |
@@ -123,7 +123,7 @@ A cell row takes `slice`, `concerns` (1–3), `agent` and `reason`, plus `questi
 
 A flow-mode finding's `target` shows in every role but `checker` and `backlog`; `expect`, `new` and `proof` in `verifier`, `implementer`, `audit` and `report`; `tier` and `applied` in `implementer`, `orchestrator`, `audit` and `report`.
 
-`finder`, `verifier` and `checker` reports also carry `references`, the absolute paths of the `review-v2-method` worked examples. A cell takes `finder`, `orchestrator` or `report` only.
+`finder`, `verifier` and `checker` reports also carry `references`, the absolute paths of the `review-v2-method` worked examples (`finding-kinds`, `verifying`, `plan-records`). A cell takes `finder`, `orchestrator` or `report` only.
 
 ## Routing
 
