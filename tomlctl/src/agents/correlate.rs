@@ -194,6 +194,11 @@ fn dispatch_in(text: &str, prompt_of: fn(&str) -> Option<String>) -> Option<Disp
         Regex::new(r"tasks show ([0-9]+(?:,[0-9]+)*) --slug ([a-z0-9][a-z0-9-]{0,63})")
             .expect("dispatch pattern compiles")
     });
+    static PLAN_VIEW: OnceLock<Regex> = OnceLock::new();
+    let plan_view = PLAN_VIEW.get_or_init(|| {
+        Regex::new(r"plan view --slug ([a-z0-9][a-z0-9-]{0,63}) --for worker --task ([0-9]+)")
+            .expect("plan view dispatch pattern compiles")
+    });
     static LEDGER: OnceLock<Regex> = OnceLock::new();
     // Multi-line: the line sits below a prompt's `DISPATCH:` header.
     let ledger = LEDGER.get_or_init(|| {
@@ -206,7 +211,10 @@ fn dispatch_in(text: &str, prompt_of: fn(&str) -> Option<String>) -> Option<Disp
     for line in text.lines().rev() {
         // A cheap rejection before a JSON parse: a line that cannot match is
         // skipped whatever its shape.
-        if !line.contains("tasks show") && !line.contains("ledger: .claude/flows/") {
+        if !line.contains("tasks show")
+            && !line.contains("plan view")
+            && !line.contains("ledger: .claude/flows/")
+        {
             continue;
         }
         let Some(prompt) = prompt_of(line) else {
@@ -222,6 +230,15 @@ fn dispatch_in(text: &str, prompt_of: fn(&str) -> Option<String>) -> Option<Disp
                 return None;
             }
             task_ids.extend(id.as_str().split(',').filter_map(|n| n.parse::<u32>().ok()));
+        }
+        for caps in plan_view.captures_iter(&prompt) {
+            let (Some(s), Some(id)) = (caps.get(1), caps.get(2)) else {
+                continue;
+            };
+            if !same_slug(&mut slug, s.as_str()) {
+                return None;
+            }
+            task_ids.extend(id.as_str().parse::<u32>().ok());
         }
         let mut item_ids: Vec<String> = Vec::new();
         for caps in ledger.captures_iter(&prompt) {
@@ -884,6 +901,44 @@ mod tests {
             latest_dispatch(&agent).map(|d| d.slug),
             Some("old-flow".to_string())
         );
+    }
+
+    #[test]
+    fn a_plan_view_worker_line_links_one_task() {
+        let text = user_line("run `tomlctl plan view --slug my-flow --for worker --task 6`");
+        assert_eq!(
+            dispatch_in(&text, user_text),
+            Some(Dispatch {
+                slug: "my-flow".into(),
+                task_ids: vec![6],
+                item_ids: Vec::new(),
+            })
+        );
+    }
+
+    #[test]
+    fn both_dispatch_forms_for_one_task_link_it_once() {
+        let text = user_line(
+            "tomlctl plan view --slug my-flow --for worker --task 6\n\
+             tomlctl tasks show 6 --slug my-flow",
+        );
+        assert_eq!(
+            dispatch_in(&text, user_text),
+            Some(Dispatch {
+                slug: "my-flow".into(),
+                task_ids: vec![6],
+                item_ids: Vec::new(),
+            })
+        );
+    }
+
+    #[test]
+    fn a_plan_view_line_naming_another_flow_gives_none() {
+        let text = user_line(
+            "tomlctl plan view --slug my-flow --for worker --task 6\n\
+             tomlctl tasks show 6 --slug other-flow",
+        );
+        assert_eq!(dispatch_in(&text, user_text), None);
     }
 
     #[test]
