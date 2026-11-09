@@ -1,0 +1,18 @@
+slug = "human-only-handovers"
+plan_path = "docs/flows/human-only-handovers/brief.md"
+status = "draft"
+created = 2026-11-09
+updated = 2026-11-09
+scope = []
+
+[tasks]
+total = 0
+completed = 0
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/human-only-handovers/review-ledger.toml"
+optimise_findings = ".claude/flows/human-only-handovers/optimise-findings.toml"
+execution_record = ".claude/flows/human-only-handovers/execution-record.toml"
+plan_review_findings = ".claude/flows/human-only-handovers/plan-review-findings.toml"
+tasks = ".claude/flows/human-only-handovers/tasks.toml"

@@ -1,0 +1,321 @@
+schema_version = 1
+last_updated = 2026-11-09
+
+[binding]
+branch = "main"
+scope = []
+
+[id_high_water]
+C = 4
+D = 10
+
+[[decision]]
+id = "D1"
+decision = "Apply the human-only rule to v1 as well: rewrite the After Merge template and Format rules in flow-contract-plan-output-format, and the restatements in /plan-new Phase 5 and /implement Phase 4, enforced by the format contract and the plan-review lenses rather than by a tomlctl parser."
+why = "/plan-new is still how plans are written until the v2 pipeline is complete, so leaving v1 alone leaves every upcoming plan with the noisy list; a parser would be Rust spent on a format that is being retired."
+provenance = "user-confirmed"
+door = "two-way"
+binds = [
+    "claude/skills/flow-contract-plan-output-format/SKILL.md",
+    "claude/commands/plan-new.md",
+    "claude/commands/implement.md",
+    "8",
+    "9",
+]
+rejected = []
+evidence = "notes/after-merge-corpus.md: 35 of 55 v1 bullets were agent work, seeded by the template examples at SKILL.md:206-211 and repeated at plan-new.md:108 and implement.md:330; no tomlctl code reads After Merge (structure-challenge note)."
+if_false = "v2 only: the v1 template, /plan-new and /implement stay as they are, and only the review lenses change (they review v1 plans too); or v1 also gets a tasks import-plan check for After Merge bullets, adding Rust tasks."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D2"
+decision = "Keep the present structure: extend the `[[handover]]` record in tomlctl/src/plan for v2, and put the v1 rule in flow-contract-plan-output-format; add no new contract skill."
+why = "Each half already has one owner: plan check feeds plan approve for v2, and the plan-review fence reads only the format contract for v1."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/plan/schema.rs",
+    "claude/skills/flow-contract-plan-output-format/SKILL.md",
+    "1",
+    "8",
+]
+evidence = "notes/structure-challenge.md (verdict: no restructure); read approve.rs refuse_check_errors, check.rs handover_finding, format-contract.md read line"
+if_false = "a shared handover skill is written and both the v1 format contract and the v2 engine point at it"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "A new flow-contract-handover skill"
+because = "no fence or carrier points at it, so review cells would never read it (format-contract.md reads only the format contract)"
+
+[[decision.rejected]]
+option = "Human steps as task rows with a human executor"
+because = "rows feed tasks ready and dispatch, so a human row would block the frontier"
+
+[[decision]]
+id = "D3"
+decision = "Reshape `[[handover]]` to `id`, `reason`, `action`, `when`, `done_when`, `source_task`, `done`, dropping `command`. `reason` takes one of restart, permissions, attended, observe, credentials, external; an unknown value is refused on read and write, and an absent or empty text field reads as empty so plan check reports it."
+why = "A runnable command is the kind of step an agent should perform; what reaches a person needs what to do, when, how to tell it is done, and why only a person can do it."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/plan/schema.rs",
+    "1",
+    "7",
+    "11",
+    "12",
+]
+evidence = "notes/after-merge-corpus.md: the human residue was session restarts, permissions or elevation, attended interactive checks and judgement over time; credentials and external systems are kept for repos outside this corpus"
+if_false = "the record keeps `command` and the extra facts live in prose the check cannot read"
+revisit_if = "a real human-only step fits none of the six reasons"
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Keep `command` and add fields beside it"
+because = "the name invites a shell command, which is the agent-performable step the intent removes"
+
+[[decision.rejected]]
+option = "Free-text reason"
+because = "a closed list is what makes the author justify the step; the corpus fits six reasons with none left over"
+
+[[decision]]
+id = "D4"
+decision = "Raise the plan store's SCHEMA_VERSION to 2 and stamp the current version on every write."
+why = "The store drops unknown keys on write, so an older tomlctl rewriting a plan.toml with the new handover keys would lose them silently; a newer version makes it refuse instead."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/plan/schema.rs",
+    "1",
+]
+rejected = []
+evidence = "read schema.rs: to_toml rebuilds from the struct and writes the schema_version read from disk; the guard refuses only a newer version. No plan.toml in the repo holds a handover."
+if_false = "the version stays 1 and an old binary can drop handover fields without error"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D5"
+decision = "Replace `plan handover add` with `plan handover set --ndjson <src>`, an add-or-update keyed on `id` in the shape `plan contract` takes; keep `plan handover done <id>`, and refuse `done` as a key in a set row."
+why = "Without an update path the only repair for a bad handover is add-new then mark-old done, which records a step the user never performed."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/plan/records.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "1",
+    "4",
+]
+evidence = "read records.rs handover_add/handover_done and upsert_contract; stage.rs HANDOVER_REPLACE"
+if_false = "flags are added to `add` and a separate `update` verb is written"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Keep `add` with more flags"
+because = "it still has no update, and stage.rs's add-then-done remedy would mark fixes as performed"
+
+[[decision]]
+id = "D6"
+decision = "Add one error class, `plan/handover-incomplete`, raised for an undone handover with an empty reason, action, when or done_when and naming the empty keys; skip done handovers as today. Route it and `plan/handover-task-unknown` in plan stage to `plan handover set` with the handover's id."
+why = "plan approve already refuses on any error-severity finding, so one class blocks approval with no change to approve.rs; done handovers stay skipped so `plan approve --amend` is not blocked by history."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/src/plan/stage.rs",
+    "2",
+    "5",
+]
+evidence = "read approve.rs refuse_check_errors (filters by severity), check.rs contract_findings (the Vec shape)"
+if_false = "an incomplete handover reaches the approval screen unflagged"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "One class per missing field"
+because = "four classes to document and route for one fix"
+
+[[decision]]
+id = "D7"
+decision = "Show undone handovers on the approval screen as their own `handovers` array carrying every field, leaving `stops` to milestone gates; carry every field in the digest's `open_items.undone_handovers` and the markdown view's handover line."
+why = "A human step after landing is not something that stops the run, and the screen must show its reason, when and done-when."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/plan/approve.rs",
+    "tomlctl/src/plan/view.rs",
+    "claude/skills/plan-v2-engine/references/approve.md",
+    "3",
+    "6",
+    "11",
+]
+rejected = []
+evidence = "read approve.rs gate_report (gates chained with handovers into stops), view.rs records_block and open_items"
+if_false = "handovers stay under stops showing only an action"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D8"
+decision = "Give each agent-performable kind of post-landing work a home in the run, and say so in both plan contracts: an in-repo edit, deletion or housekeeping step is a task; an install, deploy or link into the Claude config dir is an `install:` key under v1 Verification Commands, or a gate on the last v2 milestone, run by the verification agent after the suite; a predicted criterion is a check run at the final pass; a memory note the work makes stale is updated by the orchestrator at its report step; follow-on work, trials and next plans are backlog captures, never post-landing steps."
+why = "These are 35 of 55 past After Merge bullets; each kind already has an agent who can do it, and builds stay with the orchestrator's verification agent per the build-discipline rule."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "claude/skills/flow-contract-plan-output-format/SKILL.md",
+    "claude/commands/implement.md",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md",
+    "8",
+    "9",
+    "11",
+    "12",
+]
+evidence = "notes/after-merge-corpus.md class counts; CLAUDE.md Build discipline; implement.md Phase 3 runs the verification agent over an ordered command list and Phase 4 already harvests backlog"
+if_false = "agent work keeps landing in After Merge"
+revisit_if = "an install fails at the gate because a running glimpse holds its exe; then the residue is a restart handover"
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Installs as ordinary tasks"
+because = "a sub-agent running cargo install is a full build, which CLAUDE.md's build discipline reserves for the orchestrator"
+
+[[decision]]
+id = "D9"
+decision = "In v1, write each After Merge bullet as `- **<reason>**: <one action>. **When:** <trigger>. **Done when:** <observable result>.` with the same six reasons, `_None._` the expected case, and the rule stated in the Format rules block so the review fence reads it."
+why = "One shape for v1 and v2 lets a person act on a bullet without reading the plan; the fence reads only Format rules."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "claude/skills/flow-contract-plan-output-format/SKILL.md",
+    "claude/skills/review-v2-lenses/checks/format-contract.md",
+    "8",
+]
+rejected = []
+evidence = "format-contract.md read line covers the Format rules block to end of file; notes/after-merge-corpus.md lists 12 bundled bullets and 14 with no trigger or done condition"
+if_false = "v1 keeps free-form bullets"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D10"
+decision = "Invert the plan-review lenses: plan-risk and plan-structure flag a post-landing step an agent could perform, a bundled step, or one without a trigger or done condition, and no longer ask for After Merge lines or count After Merge as verifying a goal."
+why = "Six sites in the two lenses ask plans to add more After Merge steps, the opposite of the intent."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "claude/skills/review-v2-lenses/lenses/plan-risk.md",
+    "claude/skills/review-v2-lenses/lenses/plan-structure.md",
+    "10",
+]
+rejected = []
+evidence = "read plan-risk.md:36,57,72 and plan-structure.md:34,65,70"
+if_false = "review keeps pushing steps into After Merge"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[contract]]
+id = "C1"
+kind = "interface"
+claim = "The class plan/handover-incomplete that check.rs raises is documented in the plan reference's finding-class table."
+check = """grep -q '"plan/handover-incomplete"' tomlctl/src/plan/check.rs && grep -q 'plan/handover-incomplete' claude/skills/tomlctl/references/plan.md"""
+tasks = [
+    2,
+    7,
+]
+provides = "plan/handover-incomplete"
+consumes = "plan.md finding-class table"
+
+[[contract]]
+id = "C2"
+kind = "interface"
+claim = "plan handover set --ndjson exists in the CLI and is the verb the reference and the engine name."
+check = "grep -q 'PlanHandoverSetArgs' tomlctl/src/cli/types/plan.rs && grep -q 'plan handover set' claude/skills/tomlctl/references/plan.md && grep -q 'plan handover set' claude/skills/plan-v2-engine/references/write-and-prove.md"
+tasks = [
+    1,
+    7,
+    11,
+]
+provides = "plan handover set"
+consumes = "plan.md, write-and-prove.md"
+
+[[contract]]
+id = "C3"
+kind = "interface"
+claim = "plan gate emits a handovers array separate from stops, which approve.md presents."
+check = """grep -q '"handovers"' tomlctl/src/plan/approve.rs && grep -q 'handovers' claude/skills/plan-v2-engine/references/approve.md"""
+tasks = [
+    3,
+    11,
+]
+provides = "plan gate handovers"
+consumes = "approve.md section 3"
+
+[[contract]]
+id = "C4"
+kind = "interface"
+claim = "The install: key the format contract defines is the key /implement Phase 3 runs."
+check = "grep -q '`install: <command>`' claude/skills/flow-contract-plan-output-format/SKILL.md && grep -q 'install:' claude/commands/implement.md"
+tasks = [
+    8,
+    9,
+]
+provides = "install: key"
+consumes = "/implement Phase 3"
+
+[[run]]
+step = "investigate"
+workflow = "plan-v2-investigate"
+run_id = "wf_7f16d53d-cbe"
+session = "644152d8-257a-46d5-950c-c3a34c009174"
+started = 2026-11-09T07:40:14Z
+finished = 2026-11-09T07:42:17Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "challenge"
+run_id = ""
+session = "644152d8-257a-46d5-950c-c3a34c009174"
+started = 2026-11-09T07:42:40Z
+finished = 2026-11-09T07:46:41Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "cold-read"
+workflow = "plan-v2-prove"
+run_id = "wf_b65a0b30-aa4"
+session = "644152d8-257a-46d5-950c-c3a34c009174"
+started = 2026-11-09T07:54:41Z
+finished = 2026-11-09T07:57:22Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "review"
+run_id = ""
+started = 2026-11-09T07:59:03Z
+finished = ""
+skip_reason = "plan review is not built yet"

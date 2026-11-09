@@ -1,0 +1,923 @@
+schema_version = 2
+last_updated = 2026-11-09
+plan_path = ""
+last_import_refs = []
+
+[policy]
+checkpoints = "milestones"
+max_parallel = 6
+commit_granularity = "per-task"
+origin = "plan"
+note = ""
+
+[[checkpoints]]
+id = "A"
+rationale = "The v2 handover record holds only a human-only step, says what, when and done-when, blocks approval when incomplete, and shows on its own list at approval."
+
+[[checkpoints]]
+id = "B"
+rationale = "Every plan contract, carrier and review lens sends agent-performable post-landing work into the run and keeps only human-only steps for the user, and the new binaries are installed."
+
+[[specs]]
+ref = "reshape-the-handover-record-and-its-write-verb"
+outcome = "A v2 handover records why only a person can do it, what to do, when, and how to tell it is done, and can be corrected in place."
+constraints = [
+    "Do not change what approve.rs and view.rs emit beyond the field rename; task 3 owns that.",
+    "Leave the integration tests under tomlctl/tests/ to tasks 4-6; they will fail until then.",
+    "Touch no file outside this task's files.",
+]
+means = []
+design = []
+precedent = [
+    "tomlctl/src/plan/records.rs",
+    "tomlctl/src/plan/schema.rs",
+]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the plan store schema version is 2"
+check = "grep -q 'SCHEMA_VERSION: i64 = 2' tomlctl/src/plan/schema.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "f391ce5321f3e4f6d1a96b32f0c29ab658c2f0e8"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the handover record carries done_when and no command"
+check = "grep -q 'done_when' tomlctl/src/plan/schema.rs && ! grep -q 'pub(crate) command: String' tomlctl/src/plan/schema.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "f391ce5321f3e4f6d1a96b32f0c29ab658c2f0e8"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the handover write verb is set, taking ndjson"
+check = "grep -q 'PlanHandoverSetArgs' tomlctl/src/cli/types/plan.rs && ! grep -q 'PlanHandoverAddArgs' tomlctl/src/cli/types/plan.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "f391ce5321f3e4f6d1a96b32f0c29ab658c2f0e8"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the schema unit tests pass on the new shape"
+check = "cargo test --manifest-path tomlctl/Cargo.toml --lib plan::schema"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.premises]]
+claim = "the handover struct holds a command field"
+check = "grep -q 'pub(crate) command: String' tomlctl/src/plan/schema.rs"
+at = "base"
+
+[[specs.premises]]
+claim = "plan contract has the ndjson upsert this verb mirrors"
+check = "grep -q 'fn upsert_contract' tomlctl/src/plan/records.rs"
+at = "base"
+
+[[specs]]
+ref = "check-incomplete-handovers-and-route-their-repair"
+outcome = "A plan cannot be approved while an undone handover lacks a reason, action, trigger or done condition, and plan stage names the verb that fixes it."
+constraints = [
+    "Touch no file outside this task's files.",
+    "The class name is documented by task 7; the finding-class gate fails until both land, which the milestone gate checks.",
+]
+means = []
+design = []
+precedent = ["tomlctl/src/plan/check.rs"]
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "check.rs raises plan/handover-incomplete"
+check = """grep -q '"plan/handover-incomplete"' tomlctl/src/plan/check.rs"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "f391ce5321f3e4f6d1a96b32f0c29ab658c2f0e8"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "plan stage no longer tells the user to add a new handover and mark the old one done"
+check = "! grep -q 'plan handover add' tomlctl/src/plan/stage.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "f391ce5321f3e4f6d1a96b32f0c29ab658c2f0e8"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the stage unit tests pass with the new class routed"
+check = "cargo test --manifest-path tomlctl/Cargo.toml --lib plan::stage"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.premises]]
+claim = "stage.rs routes the handover class through HANDOVER_REPLACE"
+check = "grep -q 'HANDOVER_REPLACE' tomlctl/src/plan/stage.rs"
+at = "base"
+
+[[specs]]
+ref = "list-handovers-on-their-own-at-approval-and-in-the-views"
+outcome = "The approval screen shows each human step with its reason, trigger and done condition, apart from the gates that stop the run."
+constraints = ["Touch no file outside this task's files."]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the gate report has its own handovers key"
+check = """grep -q '"handovers"' tomlctl/src/plan/approve.rs"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "f391ce5321f3e4f6d1a96b32f0c29ab658c2f0e8"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "handovers are no longer chained into stops"
+check = """! grep -q '"kind": "handover"' tomlctl/src/plan/approve.rs"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "f391ce5321f3e4f6d1a96b32f0c29ab658c2f0e8"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the views carry done_when"
+check = "grep -q 'done_when' tomlctl/src/plan/view.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "f391ce5321f3e4f6d1a96b32f0c29ab658c2f0e8"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "gate_report chains handovers into stops with kind handover"
+check = """grep -q '"kind": "handover"' tomlctl/src/plan/approve.rs"""
+at = "base"
+
+[[specs]]
+ref = "update-the-records-capabilities-and-output-option-tests"
+outcome = "The integration tests exercise the new handover verb and shape."
+constraints = ["Touch no file outside this task's files."]
+premises = []
+means = []
+design = []
+precedent = ["tomlctl/tests/plan_records.rs"]
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "no test calls the removed --command flag"
+check = """! grep -q '"--command"' tomlctl/tests/plan_records.rs"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "f391ce5321f3e4f6d1a96b32f0c29ab658c2f0e8"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the three test binaries pass"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(plan_records) | binary(capabilities) | binary(output_options)'"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs]]
+ref = "update-the-check-and-stage-tests"
+outcome = "The new check class and its repair path are pinned by integration tests."
+constraints = ["Touch no file outside this task's files."]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the check tests name the new class"
+check = "grep -q 'plan/handover-incomplete' tomlctl/tests/plan_check.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "f391ce5321f3e4f6d1a96b32f0c29ab658c2f0e8"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the check and stage test binaries pass"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(plan_check) | binary(plan_stage)'"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs]]
+ref = "update-the-approve-view-and-lifecycle-tests"
+outcome = "The approval screen and views are pinned to the new handover list."
+constraints = ["Touch no file outside this task's files."]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the approve tests expect done_when on the gate"
+check = "grep -q 'done_when' tomlctl/tests/plan_approve.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "f391ce5321f3e4f6d1a96b32f0c29ab658c2f0e8"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the three test binaries pass"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(plan_approve) | binary(plan_view) | binary(plan_lifecycle)'"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs]]
+ref = "document-the-handover-verbs-record-and-check-class"
+outcome = "The tomlctl reference matches the new handover CLI, store and check class, so the command and finding-class gates pass."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Every backticked `tomlctl` command must match the CLI, since `command_lint` checks it.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "plan.md documents set and the new class and no longer documents add"
+check = "grep -q 'plan handover set' claude/skills/tomlctl/references/plan.md && grep -q 'plan/handover-incomplete' claude/skills/tomlctl/references/plan.md && ! grep -q 'plan handover add' claude/skills/tomlctl/references/plan.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "f391ce5321f3e4f6d1a96b32f0c29ab658c2f0e8"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "plan-store.md no longer claims source_task is unchecked"
+check = "! grep -q 'Not checked against the rows' claude/skills/tomlctl/references/plan-store.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "f391ce5321f3e4f6d1a96b32f0c29ab658c2f0e8"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the quick reference names handover set"
+check = '''grep -qF 'handover {set\|done}' claude/skills/tomlctl/SKILL.md'''
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "f391ce5321f3e4f6d1a96b32f0c29ab658c2f0e8"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "flow.md no longer names the removed verb"
+check = "! grep -q 'plan handover add' claude/skills/tomlctl/references/flow.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "f391ce5321f3e4f6d1a96b32f0c29ab658c2f0e8"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs]]
+ref = "rewrite-the-v1-after-merge-contract"
+outcome = "A v1 plan written from the contract lists only human-only post-landing steps, each actionable on its own, and sends agent work into the run."
+constraints = [
+    "Keep every heading and the section-order bullet unchanged.",
+    "Keep the file under 500 lines and the description unchanged.",
+    "Touch no file outside this task's files.",
+]
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the template no longer offers agent-performable examples"
+check = "! grep -q 'update a memory note' claude/skills/flow-contract-plan-output-format/SKILL.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "f391ce5321f3e4f6d1a96b32f0c29ab658c2f0e8"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "Verification Commands has an install key"
+check = "grep -q '^- `install: <command>`' claude/skills/flow-contract-plan-output-format/SKILL.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "f391ce5321f3e4f6d1a96b32f0c29ab658c2f0e8"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the Format rules block carries the After Merge shape"
+check = '''awk '/^\*\*Format rules:\*\*/{f=1} f' claude/skills/flow-contract-plan-output-format/SKILL.md | grep -q 'Done when''''
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "f391ce5321f3e4f6d1a96b32f0c29ab658c2f0e8"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the template lists a memory-note update as an After Merge step"
+check = "grep -q 'update a memory note' claude/skills/flow-contract-plan-output-format/SKILL.md"
+at = "base"
+
+[[specs]]
+ref = "point-plan-new-and-implement-at-the-human-only-rule"
+outcome = "/plan-new no longer seeds agent work into After Merge, and /implement performs the agent-performable landing work itself."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Keep every heading in both files.",
+    "Every backticked `tomlctl` command must match the CLI.",
+]
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "plan-new no longer lists install and resync as After Merge examples"
+check = "! grep -q 'install a binary, resync a cache' claude/commands/plan-new.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "f391ce5321f3e4f6d1a96b32f0c29ab658c2f0e8"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "implement runs install keys"
+check = "grep -q 'install:' claude/commands/implement.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "f391ce5321f3e4f6d1a96b32f0c29ab658c2f0e8"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "implement no longer calls After Merge steps the user must take by hand"
+check = "! grep -q 'steps the user must take by hand' claude/commands/implement.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "f391ce5321f3e4f6d1a96b32f0c29ab658c2f0e8"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "implement describes After Merge as steps the user must take by hand"
+check = "grep -q 'steps the user must take by hand' claude/commands/implement.md"
+at = "base"
+
+[[specs]]
+ref = "invert-the-plan-review-lenses-on-post-landing-steps"
+outcome = "Plan review pushes post-landing work into the run and flags any handover a person should not be doing."
+constraints = [
+    "Keep every heading and the frontmatter in both files; the catalogue validator reads them.",
+    "Touch no file outside this task's files.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "plan-risk no longer offers an After Merge line as an add edit"
+check = "! grep -q 'an After Merge or Risks line' claude/skills/review-v2-lenses/lenses/plan-risk.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "f391ce5321f3e4f6d1a96b32f0c29ab658c2f0e8"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "plan-structure no longer accepts a criterion scheduled by hand in After Merge"
+check = "! grep -q 'schedules to be run by hand' claude/skills/review-v2-lenses/lenses/plan-structure.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "f391ce5321f3e4f6d1a96b32f0c29ab658c2f0e8"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the catalogue still validates"
+check = "tomlctl review catalogue --builtin claude/skills/review-v2-lenses --check"
+kind = "guard"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "f391ce5321f3e4f6d1a96b32f0c29ab658c2f0e8"
+neg_rc = 0
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "plan-risk offers an After Merge line as an add edit"
+check = "grep -q 'an After Merge or Risks line' claude/skills/review-v2-lenses/lenses/plan-risk.md"
+at = "base"
+
+[[specs]]
+ref = "teach-the-v2-engine-when-a-step-becomes-a-handover"
+outcome = "The v2 planner records a handover only for a human-only step, and the user sees each one in full at approval."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Every backticked `tomlctl` command must match the CLI.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the engine names the handover write verb"
+check = "grep -q 'plan handover set' claude/skills/plan-v2-engine/references/write-and-prove.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "f391ce5321f3e4f6d1a96b32f0c29ab658c2f0e8"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "approval no longer files handovers under stops"
+check = "! grep -q 'gate command and undone handover' claude/skills/plan-v2-engine/references/approve.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "f391ce5321f3e4f6d1a96b32f0c29ab658c2f0e8"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "approve.md lists undone handovers under stops"
+check = "grep -q 'gate command and undone handover' claude/skills/plan-v2-engine/references/approve.md"
+at = "base"
+
+[[specs]]
+ref = "set-the-handover-contract-for-the-v2-execution-engine"
+outcome = "The v2 execution engine's design starts from the human-only handover rule."
+constraints = ["Touch no file outside this task's files."]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the idea doc no longer says an agent runs what is left in the handover store"
+check = "! grep -q 'an agent can be told to run' docs/ideas/v2-pipeline.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "f391ce5321f3e4f6d1a96b32f0c29ab658c2f0e8"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the idea doc says an agent can be told to run the handovers"
+check = "grep -q 'an agent can be told to run' docs/ideas/v2-pipeline.md"
+at = "base"
+
+[[milestones]]
+id = "A"
+gates = [
+    "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast",
+    "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check",
+    "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets -- -D warnings",
+    "cargo clippy --manifest-path glimpse/Cargo.toml --locked",
+]
+elaboration = "upfront"
+defer_reason = ""
+
+[[milestones]]
+id = "B"
+gates = [
+    "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests",
+    "cargo install --path tomlctl",
+    "cargo install --path glimpse",
+]
+elaboration = "upfront"
+defer_reason = ""
+
+[[items]]
+id = 1
+ref = "reshape-the-handover-record-and-its-write-verb"
+title = "Reshape the handover record and its write verb"
+effort = "L"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/plan/records.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/src/cli/mod.rs",
+    "tomlctl/src/plan/dispatch.rs",
+    "tomlctl/src/plan/approve.rs",
+    "tomlctl/src/plan/view.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Replace the handover's `command` with `reason`, `action`, `when` and `done_when`, raise the plan store's schema version to 2, and replace `plan handover add` with `plan handover set --ndjson`."
+detail = """
+The record shape, the six reasons and their meanings are design/handover.md#reasons and design/handover.md#shape (docs/flows/human-only-handovers/design/handover.md).
+
+schema.rs: add a `HandoverReason` vocabulary (restart, permissions, attended, observe, credentials, external) with the `vocabulary!` macro the other enums use. `Handover` becomes `id`, `reason: Option<HandoverReason>`, `action`, `when`, `done_when`, `source_task`, `done`. On read, an absent or empty text key is an empty string and an absent `reason` is None, so `plan check` (task 2) reports it rather than the read refusing; an unknown `reason` value is refused, as for the other vocabularies. Write keys in the order id, reason, action, when, done_when, source_task, done, omitting an empty text key and an absent reason. Set `SCHEMA_VERSION` to 2 and make `to_toml` write `SCHEMA_VERSION`, not the version read from disk, so every write upgrades the store. Update the fixture and unit tests in this file (the required-key and quoted-flag cases, and the `Handover` literal in the id-reuse test) to the new shape, and add a test that a store read at version 1 is written back at 2.
+
+records.rs, cli/types/plan.rs and cli/mod.rs: replace `PlanHandoverOp::Add` and `PlanHandoverAddArgs` with `Set` and `PlanHandoverSetArgs`, which take `--ndjson` exactly as `PlanContractArgs` does, and change the name in cli/mod.rs's `pub(crate) use types::{...}` re-export list. `handover_set` mirrors `contract`/`upsert_contract`: a row without `id` mints `H<n>` and needs a non-empty `action` and a `source_task`; a row with `id` updates only the keys it carries, refuses an empty `action` as `upsert_contract` refuses an empty `claim`, and is refused when no handover has that id. Accepted keys: id, reason, action, when, done_when, source_task. A `done` key is refused with a message naming `plan handover done`. Prints `{"ok":true,"ids":[...]}`. `handover_done` is unchanged. dispatch.rs routes `Set`.
+
+approve.rs and view.rs: change each read of `h.command` / `handover.command` to `action` so the crate compiles; task 3 reshapes their output."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 2
+ref = "check-incomplete-handovers-and-route-their-repair"
+title = "Check incomplete handovers and route their repair"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/src/plan/stage.rs",
+]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "Raise `plan/handover-incomplete` for an undone handover missing a field, and point both handover classes at `plan handover set`."
+detail = """
+check.rs: `handover_finding` becomes `handover_findings(&Handover, &Store) -> Vec<Finding>`, in the shape of `contract_findings`, called with `flat_map`. A done handover returns no findings, as today. An undone one yields `plan/handover-incomplete` (error severity) when `reason` is None or any of `action`, `when`, `done_when` is blank after trimming; the detail names the handover and the empty keys, e.g. `handover H2 has no when, done_when`. `plan/handover-task-unknown` is kept unchanged.
+
+stage.rs: replace the `HANDOVER_REPLACE` constant with one naming the repair in place, `plan handover set --ndjson <rows with the handover id and the missing or corrected keys>`, everywhere it appears: its definition, the `PROVE_ORDER` list, and the match in `fn remedy`, where both `plan/handover-task-unknown` and `plan/handover-incomplete` route to it. Update the exhaustive class-to-remedy test in this file's `mod tests` (the one using the `next_for` helper) to list the new class."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 3
+ref = "list-handovers-on-their-own-at-approval-and-in-the-views"
+title = "List handovers on their own at approval and in the views"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/approve.rs",
+    "tomlctl/src/plan/view.rs",
+]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "Give `plan gate` a `handovers` array beside `stops`, and carry every handover field in the digest and markdown views."
+detail = """
+approve.rs `gate_report`: `stops` holds milestone gate commands only. Add a `handovers` key, placed directly after `stops`, listing each undone handover as `{id, reason, action, when, done_when, source_task}`, with `reason` as its string or null.
+
+view.rs: `open_items.undone_handovers` carries the same six fields. The markdown `## Handovers` line becomes `- [ ] H1 (restart): <action> When: <when>. Done when: <done_when>. (after task <n>)`, with `x` for done, and an absent reason shown as `(no reason)`."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 4
+ref = "update-the-records-capabilities-and-output-option-tests"
+title = "Update the records, capabilities and output-option tests"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/tests/plan_records.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/tests/output_options.rs",
+]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "Move the handover integration tests to `plan handover set` and the new record shape."
+detail = """
+plan_records.rs: every `handover add --command ... --source-task ...` call becomes `handover set --ndjson` with a staged row carrying reason, action, when, done_when and source_task. Keep the minting, done and never-reuse tests. Add: a row with `id` updates only the keys it carries; a row naming an unknown id is refused; a row carrying `done` is refused; an unknown `reason` is refused.
+
+capabilities.rs: the help path `plan handover add` becomes `plan handover set`.
+
+output_options.rs: the `[[handover]]` fixture uses the new keys in place of `command`."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 5
+ref = "update-the-check-and-stage-tests"
+title = "Update the check and stage tests"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/tests/plan_check.rs",
+    "tomlctl/tests/plan_stage.rs",
+]
+needs = [
+    1,
+    2,
+]
+coupling = []
+deps_note = ""
+action = "Cover `plan/handover-incomplete` and the in-place repair in the check and stage integration tests."
+detail = """
+plan_check.rs: the handover fixtures use the new keys. Add: an undone handover missing `when` reports `plan/handover-incomplete` naming `when`; one missing every field names all four; a done handover missing fields reports nothing.
+
+plan_stage.rs: `HANDOVER_NEXT` matches task 2's remedy. The absent-task test repairs the handover with `plan handover set --ndjson` naming `H1` and a live `source_task`, then asserts the class is gone without calling `plan handover done`."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 6
+ref = "update-the-approve-view-and-lifecycle-tests"
+title = "Update the approve, view and lifecycle tests"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/tests/plan_approve.rs",
+    "tomlctl/tests/plan_view.rs",
+    "tomlctl/tests/plan_lifecycle.rs",
+]
+needs = [
+    1,
+    3,
+]
+coupling = []
+deps_note = ""
+action = "Move the gate, view and lifecycle tests to the separate `handovers` list and the new record shape."
+detail = "plan_approve.rs: the gate fixtures use the new keys; the expected gate JSON has no `kind = handover` entry in `stops` and a `handovers` array with all six fields. plan_view.rs: fixtures use the new keys and the markdown assertion matches task 3's line. plan_lifecycle.rs: the handover step uses `plan handover set --ndjson` with a complete row, and the gate assertion reads `handovers`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 7
+ref = "document-the-handover-verbs-record-and-check-class"
+title = "Document the handover verbs, record and check class"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/tomlctl/references/plan.md",
+    "claude/skills/tomlctl/references/plan-store.md",
+    "claude/skills/tomlctl/references/flow.md",
+    "claude/skills/tomlctl/SKILL.md",
+]
+needs = [
+    1,
+    2,
+    3,
+]
+coupling = []
+deps_note = ""
+action = "Document `plan handover set`, the reshaped `[[handover]]`, `plan/handover-incomplete` and the gate's `handovers` key."
+detail = '''
+plan.md: replace the `plan handover add` section and its contents-list link with `plan handover set` (flag table, accepted keys, add-or-update rule, refused `done`, output). Add `plan/handover-incomplete` to the finding-class table and the stage remedy table, and update `plan/handover-task-unknown`'s remedy to task 2's text. In the `plan gate` output table, `stops` is milestone gates only and a new `handovers` row lists the six fields; update the digest's `undone_handovers`. State the rule in one sentence where the handover verbs are introduced: a handover is a step only a person can perform, per the `reason` list, and agent work never becomes one. The reason list is design/handover.md#reasons; copy the six values and one-line meanings.
+
+plan-store.md: the sample `[[handover]]` and its key table use the new keys, `schema_version` is 2, and `source_task`'s row says `plan check` reports an unknown id (it says "Not checked against the rows" today, which is wrong).
+
+flow.md: the `--verify-integrity` support-matrix row for `tomlctl plan handover add` names `tomlctl plan handover set`.
+
+SKILL.md: the quick-reference row reads `handover {set\|done}`, keeping the escaped pipe the table cell needs.'''
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 8
+ref = "rewrite-the-v1-after-merge-contract"
+title = "Rewrite the v1 After Merge contract"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/flow-contract-plan-output-format/SKILL.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Make `## After Merge` a human-only list in the handover shape, add the `install:` key, and state the rule in the Format rules block."
+detail = """
+Read design/handover.md in full; this task carries it into the v1 contract.
+
+The `## After Merge` template text: only steps no agent can perform, one step per bullet, in the line shape of design/handover.md#shape, each `reason` from design/handover.md#reasons; `_None._` is the expected case. Drop the agent-performable examples it lists today (install, resync a plugin cache, update a memory note, run a predicted criterion by hand).
+
+`## Verification Commands` optional keys: add `install: <command>`, repeatable, for installing a binary, deploying, or linking an entry into the Claude config dir; `/implement` Phase 3 runs it last, after lint and audit, through the verification agent, and only when every earlier command passed.
+
+`**Format rules:**` block: add one bullet carrying the After Merge rule, the six reasons by name, the one-step shape, and where each agent-performable kind goes instead (design/handover.md#where-agent-performable-steps-go-instead), in at most six lines. This block is what plan review reads, so the rule must be here, not only in the template."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 9
+ref = "point-plan-new-and-implement-at-the-human-only-rule"
+title = "Point /plan-new and /implement at the human-only rule"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/commands/plan-new.md",
+    "claude/commands/implement.md",
+]
+needs = [8]
+coupling = []
+deps_note = ""
+action = "Drop the restated agent-performable examples from /plan-new, and make /implement run `install:` keys, update stale memory and report only human-only steps."
+detail = """
+plan-new.md, `## Phase 6: Design`, step 5 "Set the execution policy": replace the parenthetical list of After Merge examples with a pointer to the plan-output-format skill's After Merge rule: only steps no agent can perform, `_None._` otherwise. Name, in one clause, that installs go under an `install:` key and follow-ons into the backlog.
+
+implement.md:
+- Phase 1 extraction: also extract the `install:` keys.
+- Phase 3: append the plan's `install:` commands to the end of the verification agent's ordered `commands:` list, after lint and audit, so they run only when everything before passed; a failed install is a `fail` block like any other.
+- Phase 4, after the backlog harvest: update any auto-memory note this run made stale, and capture as backlog items any follow-on work the plan's After Merge or Risks names, through the same gate.
+- The report's `### After Merge` keeps the plan's bullets verbatim, and the paragraph after it says they are steps only the user can take, per the plan-output-format rule. Replace "steps the user must take by hand" accordingly."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 10
+ref = "invert-the-plan-review-lenses-on-post-landing-steps"
+title = "Invert the plan-review lenses on post-landing steps"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/review-v2-lenses/lenses/plan-risk.md",
+    "claude/skills/review-v2-lenses/lenses/plan-structure.md",
+]
+needs = [8]
+coupling = []
+deps_note = ""
+action = "Make plan review flag agent-performable, bundled or untriggered After Merge steps and handovers, and stop it asking for more."
+detail = """
+plan-risk.md: the back-compat bullet asks that a break name its migration as a task, or as an After Merge step only when it is human-only. The `add` edit for "an After Merge or Risks line" becomes a Risks line or a task. Add a check: each After Merge bullet or `[[handover]]` row an agent could perform, that bundles several steps, or that lacks a reason from the format contract, a trigger or a done condition, is a finding whose fix moves the work to its home (design/handover.md#where-agent-performable-steps-go-instead). Calibrate it `minor`, and `major` when the plan's goal is verified only by such a step. Drop "a missing After Merge note for a step the user would find" from `minor`.
+
+plan-structure.md: a predicted criterion is a goal left unproven unless a `success:` key or accept check runs it; a human-only `attended` or `observe` handover counts only when it names the criterion. Remove After Merge from the places `critical` and the `risk` advisory count as verifying a goal."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 11
+ref = "teach-the-v2-engine-when-a-step-becomes-a-handover"
+title = "Teach the v2 engine when a step becomes a handover"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/plan-v2-engine/references/write-and-prove.md",
+    "claude/skills/plan-v2-engine/references/approve.md",
+]
+needs = [
+    1,
+    3,
+]
+coupling = []
+deps_note = ""
+action = "Add a Handovers paragraph to Design and show the gate's `handovers` list at approval."
+detail = """
+write-and-prove.md, section 1 Design, after Milestones: a **Handovers** paragraph. A handover is recorded only for a step no agent can perform (the six reasons of design/handover.md#reasons), one step per row, with `reason`, `action`, `when`, `done_when` and `source_task`, through `tomlctl plan handover set --slug <slug> --ndjson <scratch>/handover.toml` after Write, since `source_task` names a row; show one record. Agent-performable landing work goes to its home (design/handover.md#where-agent-performable-steps-go-instead): an install or link is a gate on the last milestone. No handover is the expected case.
+
+approve.md, section 3: item 7 `stops` becomes milestone gate commands only, and a new item after it shows `handovers`, each with reason, action, when and done-when. Renumber as needed and keep the rule that an empty array shows as `none`."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 12
+ref = "set-the-handover-contract-for-the-v2-execution-engine"
+title = "Set the handover contract for the v2 execution engine"
+effort = "S"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["docs/ideas/v2-pipeline.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Rewrite the After Merge bullet of Smaller fixes as the contract the v2 execution engine must honour."
+detail = """The bullet says the handover store is one "an agent can be told to run". Replace it: `[[handover]]` holds only human-only steps (design/handover.md#reasons), each one step with reason, action, when and done-when; the execution engine runs every agent-performable landing step itself (gates on the last milestone, memory, backlog captures) and, at the end, reports each undone handover in that shape and nothing else. Keep the bullet's label and its place in the list; one to three sentences."""
+acceptance = ""
+agent = ""
+commit = ""
