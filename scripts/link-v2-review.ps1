@@ -1,5 +1,5 @@
-# Links the review-v2 commands, agents, skills and Workflows into the Claude config dir
-# ($env:CLAUDE_CONFIG_DIR, else ~/.claude). Idempotent: an entry already linked to its
+# Links every v2 command, agent, skill and Workflow (review, plan and implement) into the
+# Claude config dir ($env:CLAUDE_CONFIG_DIR, else ~/.claude). Idempotent: an entry already linked to its
 # source is skipped. Nothing under the config dir is ever deleted or overwritten: a real
 # file or directory, or a link pointing elsewhere, in an entry's place is reported and
 # left alone. Skills are junctions; every other entry is a file symbolic link, which
@@ -17,6 +17,8 @@ $entries = @(
     @{ Kind = 'commands'; Name = 'review-v2.md' }
     @{ Kind = 'commands'; Name = 'optimise-v2.md' }
     @{ Kind = 'commands'; Name = 'review-plan-v2.md' }
+    @{ Kind = 'commands'; Name = 'plan-v2.md' }
+    @{ Kind = 'commands'; Name = 'implement-v2.md' }
     @{ Kind = 'agents'; Name = 'review-surveyor.md' }
     @{ Kind = 'agents'; Name = 'review-sweeper.md' }
     @{ Kind = 'agents'; Name = 'review-checker.md' }
@@ -25,11 +27,21 @@ $entries = @(
     @{ Kind = 'agents'; Name = 'review-verifier.md' }
     @{ Kind = 'agents'; Name = 'plan-executor.md' }
     @{ Kind = 'agents'; Name = 'plan-review-lead.md' }
+    @{ Kind = 'agents'; Name = 'plan-investigator.md' }
+    @{ Kind = 'agents'; Name = 'plan-challenger.md' }
+    @{ Kind = 'agents'; Name = 'plan-cold-reader.md' }
+    @{ Kind = 'agents'; Name = 'plan-worker-lite.md' }
+    @{ Kind = 'agents'; Name = 'plan-worker-deep.md' }
     @{ Kind = 'skills'; Name = 'review-v2-engine' }
     @{ Kind = 'skills'; Name = 'review-v2-method' }
     @{ Kind = 'skills'; Name = 'review-v2-lenses' }
+    @{ Kind = 'skills'; Name = 'plan-v2-engine' }
+    @{ Kind = 'skills'; Name = 'implement-v2-engine' }
     @{ Kind = 'workflows'; Name = 'review-v2.js' }
     @{ Kind = 'workflows'; Name = 'plan-v2-review.js' }
+    @{ Kind = 'workflows'; Name = 'plan-v2-investigate.js' }
+    @{ Kind = 'workflows'; Name = 'plan-v2-prove.js' }
+    @{ Kind = 'workflows'; Name = 'implement-v2-milestone.js' }
 )
 
 function Get-FullPath([string]$path) {

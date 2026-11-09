@@ -1,6 +1,6 @@
 #!/bin/sh
-# Links the review-v2 commands, agents, skills and Workflows into the Claude config dir
-# ($CLAUDE_CONFIG_DIR, else ~/.claude) with symbolic links; the POSIX sibling of
+# Links every v2 command, agent, skill and Workflow (review, plan and implement) into the
+# Claude config dir ($CLAUDE_CONFIG_DIR, else ~/.claude) with symbolic links; the POSIX sibling of
 # link-v2-review.ps1, linking the same entries. Idempotent: an entry already linked to its
 # source is skipped. Nothing under the config dir is ever deleted or overwritten: a real
 # file or directory, or a link pointing elsewhere, in an entry's place is reported and
@@ -24,6 +24,8 @@ entries='
 commands/review-v2.md
 commands/optimise-v2.md
 commands/review-plan-v2.md
+commands/plan-v2.md
+commands/implement-v2.md
 agents/review-surveyor.md
 agents/review-sweeper.md
 agents/review-checker.md
@@ -32,11 +34,21 @@ agents/review-finder-cf.md
 agents/review-verifier.md
 agents/plan-executor.md
 agents/plan-review-lead.md
+agents/plan-investigator.md
+agents/plan-challenger.md
+agents/plan-cold-reader.md
+agents/plan-worker-lite.md
+agents/plan-worker-deep.md
 skills/review-v2-engine
 skills/review-v2-method
 skills/review-v2-lenses
+skills/plan-v2-engine
+skills/implement-v2-engine
 workflows/review-v2.js
 workflows/plan-v2-review.js
+workflows/plan-v2-investigate.js
+workflows/plan-v2-prove.js
+workflows/implement-v2-milestone.js
 '
 
 # The physical path a path names, its directory components resolved; a directory is
