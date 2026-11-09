@@ -131,7 +131,8 @@ A flow-mode finding's `target` shows in every role but `checker` and `backlog`; 
 
 - `advisory` → `none`.
 - `defect` → `verifier`, or `panel` for a `critical` defect in a `deep` run.
-- `cleanup` → `verifier` when any edited path (`target_file` or `file`, and every `instances` path) matches the vocabulary's `[routing].executable` globs, or matches its `[routing].tests` globs with `direction = remove`; otherwise `checker`.
+- `cleanup` on a `plan`-family run → `verifier`, always: the checker's projection hides a flow-mode row's `target` and edit.
+- any other `cleanup` → `verifier` when any edited path (`target_file` or `file`, and every `instances` path) matches the vocabulary's `[routing].executable` globs, or matches its `[routing].tests` globs with `direction = remove`; otherwise `checker`.
 - A checker's `unsettled` verdict re-routes the finding to `verifier`.
 
 ## Run lifecycle
@@ -337,30 +338,30 @@ A plan-family run is in **flow mode** when its store is a flow's (`--slug`) and 
 
 **Tiers.** `tier` is computed when a flow-mode finding first opens — by `verdict`, `resolve`, a `triage --reopen`, or `add` for an advisory — and frozen after. The first that holds wins:
 
-1. `user`: the target is any `decision:*`, any `task:*.spec.outcome`, or `brief#Intent`, `brief#Non-goals`, `brief#Scope budget` or `brief#Success criteria`.
+1. `question` or `user`: the target is any `decision:*`, any `task:*.spec.outcome`, or `brief#Intent`, `brief#Non-goals`, `brief#Scope budget` or `brief#Success criteria`. Kind `advisory` or no `new` is `question`, which `apply` and `triage --park` refuse and the user closes with `triage --resolve`; a defect or cleanup with `new` is `user`.
 2. `advisory`: kind `advisory`, a `handover:*` target, or no `new`.
 3. `mechanical`: a `proof` that tomlctl verifies from the store and the tree.
-4. `cited`: the latest deciding `verifier`, `panel` or `checker` verdict is `confirmed` or `plausible`, and its citation is a `path:line` in the target's own file, or in a path the target's value names, with the line inside that file.
+4. `cited`: the latest deciding `verifier` or `panel` verdict is `confirmed` or `plausible`, and its citation is a `path:line` in the target's own file, or in a path the target's value names, with the line inside that file. A `checker` verdict never cites a row into `cited`.
 
-Anything else is `advisory`. Agreement alone never lifts a row past `advisory`.
+Anything else is `advisory`. Agreement alone never lifts a row past `advisory`. A frozen tier is never migrated: a row stamped `user` before `question` existed stays `user`.
 
 **Proofs.** `proof` is `{kind, …}`, and `add` refuses one that does not hold or a `new` that changes more than it covers. `expect` and `new` are capped at 800 serialised characters each on a proven row.
 
 | `kind` | Holds when | `new` may |
 |---|---|---|
 | `probe` | the target is a `spec.accept` entry whose recorded probe verdict is not healthy; no verdict proves nothing | change only the entry's `check` and `positive` |
-| `check-class` (`class`) | `plan check` reports that class at error severity on the target's task; `task:*` targets only | change only the field the class binds (`plan-records.md` lists them) |
+| `check-class` (`class`) | `plan check` reports that class at error severity on the target's task; `task:*` targets only | change only the field the class binds (`plan-records.md` lists them). On a list it may only append entries or fill an existing entry's empty `check`; changing or dropping a stored entry is refused |
 | `path-missing` (`path`) | the target is `task:<ref>.files`, the path is absent from the tree and not a `(new)` file note | drop the path or replace it with one other |
 | `ref-unknown` (`ref`) | the target is `needs` or `contract:*.tasks` and the value names no task | drop the id or replace it with one other |
 
 ### `tomlctl review apply`
 
-Writes the record edits of open flow-mode defect and cleanup findings. Before any write it refuses, as one `kind=validation` error listing each refused id with its reasons: a finding of another family, kind or status than an open plan defect or cleanup; no `tier`, or `advisory`; `user` tier without `--user-accepted`; any finding without `--user-accepted` once `plan.toml` holds an `[[approval]]`; no `target` or no `new`; a `handover:*` target; a `new` the target store's validator rejects; and a mechanical proof that no longer holds. `--scope`, and a flow without `plan.toml`, are refused outright.
+Writes the record edits of open flow-mode defect and cleanup findings. Before any write it refuses, as one `kind=validation` error listing each refused id with its reasons: a finding of another family, kind or status than an open plan defect or cleanup; no `tier`, or `advisory`; `question` tier, naming `triage --resolve` as its exit; `user` tier without `--user-accepted`; any finding without `--user-accepted` once `plan.toml` holds an `[[approval]]`; no `target` or no `new`; a `handover:*` target; a `new` the target store's validator rejects; and a mechanical proof that no longer holds. `--scope`, and a flow without `plan.toml`, are refused outright.
 
 - **Writes.** Each target is written through its own store's path with `expect` re-checked inside that store's lock: task rows and specs through the task update path (actor `review`, reason `review <run> <id>`; a `[[changes]]` row only when the store's `audit` is on), decisions and contracts through the plan records path, milestones through the milestone path. A brief or design edit replaces `expect`'s one occurrence in the section, under an exclusive lock and an atomic write, keeping the file's line endings; a non-UTF-8 file is refused.
-- **Order.** Each finding is stamped straight after its own write, so a failure leaves at most one edit unstamped, and the error names the ids stamped before it.
+- **Order.** Each finding is stamped straight after its own write, so a failure leaves at most one edit unstamped. The error reads "applying <id> failed; stamped before it: [ids]. <id>'s edit may or may not have landed: re-run `review apply` with only the ids not listed as stamped, and an edit that landed reads as already applied".
 - **Already made.** A value already equal to `new` — for `[+]`, an equal entry exists; for a removal, no entry equals `expect` — is reported under `already`, written nothing, and stamped with `recovered = true`. This is decided before a mechanical proof is re-checked, since a made fix no longer satisfies its proof.
-- **Stale.** Any other mismatch lands under `skipped_stale` as `{id, target, expected, found}`, and the rest proceed.
+- **Stale.** Any other mismatch lands under `skipped_stale` as `{id, target, expected, found}`, and the rest proceed. Under `--dry-run`, a finding whose record an earlier finding in the same call already edits (same file, symbol and field; for list entries and prose, also the same `expect`; appends never collide) lands there too, as `{id, target, expected, found: null, edited_by: <earlier id>}` instead of `applied`. Real runs are unchanged.
 - **Stamp.** Status `resolved`, `resolution = "applied to <target>"`, and `applied = {at, tier, target, old, new, by, recovered}`, where `old` and `new` are JSON text and `by` is `tool`, or `user` under `--user-accepted`. Before approval no `[[changes]]` row exists, so `applied` is the edit's record.
 
 Prints `{ok, applied: [{id, target, tier}], already: [ids], skipped_stale}`; `--dry-run` adds `dry_run: true` and writes nothing.
@@ -447,7 +448,7 @@ Rates per lens, probe, run or model over one store or all of them. Writes nothin
 
 - **Rows** (`--by`, or no section flag): `key`, `families`, `runs`, `cells`, `findings` by kind, `yield_per_cell`, `verified`, `refuted`, `refute_rate`, `audited`, `overturned`, `audit_overturn_rate`, `dismissed`, `dismissal_rate`, `thin`, `uncovered`, `uncovered_rate`; per lens also `hashes`, `waived` and `waiver_rate`, per probe tag `probes`. A rate over zero is `null`. A probe groups under the tag its `reason` opens with (`nearest <tag>:`), else `untagged`.
 - **`--by model`** rows are keyed by the model of the verifying role that decided each finding — `models.verifier` for `verifier` and `panel`, `models.checker` for `checker`, read from the run that verdict names — and carry `roles`, `runs`, `verified`, `refuted`, `refute_rate`, `audited`, `overturned` and `audit_overturn_rate`. A run without `models`, or without the role, keys as `unknown`.
-- **`plan_outcomes`** (`--plan-outcomes`; `--slug` or `--all`, flow stores only, plan family only): per run and in `total`, `tiers` (tier → disposition → count; dispositions `applied`, `applied-disclosed` for cited, `user-accepted`, `user-vetoed`, else the status), `veto_rate` (vetoed over accepted plus vetoed), `growth` (`edits`, net `chars_added`, `entries_added`, `entries_removed`), `recheck_yield` (findings minted by a run with `rechecks`), and `cost` (`agents`, `minutes`); each run also names `rechecks`. A rate or yield with nothing to count is `null`.
+- **`plan_outcomes`** (`--plan-outcomes`; `--slug` or `--all`, flow stores only, plan family only): per run and in `total`, `tiers` (tier → disposition → count; dispositions `applied`, `applied-disclosed` for cited, `user-accepted`, `user-vetoed` for a dismissed `user` row or a dismissed non-advisory tiered row of a run started at or after the plan's first `[[approval]]`, `user-answered` for a `question` row resolved without an edit, else the status), `veto_rate` (vetoed over accepted plus vetoed; `user-answered` counts on neither side), `growth` (`edits`, net `chars_added`, `entries_added`, `entries_removed`), `recheck_yield` (findings minted by a run with `rechecks`), and `cost` (`agents`, `minutes`); each run also names `rechecks`. A rate or yield with nothing to count is `null`.
 - **`outcomes`**: per lens and kind, `exported`, `linked`, the v1 statuses, the mapped v2 statuses and `wontfix_reasons`, through `v2_ref` with `sync-v1`'s mapping; a retired link is not counted.
 - **`escapes`**: `count`, `by_concern` and `findings` minted in a file and concern an earlier run's cell had sealed `covered`.
 - **`calibration`**: per area, the top exemplar sentences with `count` and `sources`, drawn only from user dismissals, v1 wontfix reasons and audit overturns.
@@ -489,7 +490,7 @@ tomlctl review triage F8 --slug <slug> --convert cleanup --ndjson <run-dir>/payl
 | `--defer` / `--defer-file` | text \| path | Status → `deferred`, recording `defer_reason`; needs a trigger. | one disposition required |
 | `--trigger` / `--trigger-file` | text \| path | What reopens a deferred finding; with `--defer` only. | none |
 | `--reopen` / `--reopen-file` | text \| path | Status → `open` from `dismissed`, `deferred`, `parked`, `backlogged`, `refuted` or `resolved`. | one disposition required |
-| `--park` / `--park-file` | text \| path | Status → `parked`; advisory only. | one disposition required |
+| `--park` / `--park-file` | text \| path | Status → `parked`; advisory only, and never a `user` or `question` tier row. | one disposition required |
 | `--resolve` / `--resolve-file` | text \| path | Status → `resolved`, recording `resolution` and today's `resolved`. | one disposition required |
 | `--backlog-ref` | `B-<hex>` | Status → `backlogged`, recording the backlog item id. | one disposition required |
 | `--convert` | `cleanup` \| `defect` | Mint the advisory's replacement from `--ndjson`; status → `converted`. Exactly one advisory id. | one disposition required |

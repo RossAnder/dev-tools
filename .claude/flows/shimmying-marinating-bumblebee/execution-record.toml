@@ -1287,3 +1287,43 @@ to_status = "review"
 summary = "all 37 tasks done and verified; status in-progress -> review"
 type = "status-transition"
 date = 2026-11-09
+
+[[items]]
+id = "E99"
+agent = "plan-update"
+type = "deviation"
+summary = "Added Tier::Question in tomlctl/src/review/tier.rs: a user-owned target whose row review apply cannot write (advisory, or no new) is question, not user. apply refuses it naming triage --resolve; triage --park refuses user and question rows; plan approve and plan stage gate on open user or question rows (open_user_owned)."
+original_intent = "compute returned user for every user-owned target, ahead of the advisory and missing-new checks."
+rationale = "Review finding R3: user-tier rows that apply cannot write left Accept failing the batch and Veto as the only exit, which inflated the veto rate, and close-time parking could clear the approval gate unanswered. User chose a distinct tier over a docs-only exit."
+task_ref = "compute-a-findings-tier"
+date = 2026-11-09
+
+[[items]]
+id = "E100"
+agent = "plan-update"
+type = "deviation"
+summary = "tier.rs VERIFYING renamed CITING and reduced to verifier and panel, so a checker verdict can no longer lift a row to cited; fields::route takes the family and sends plan-family cleanups to the verifier. review-verifier.md gains a flow-mode clause."
+original_intent = "A confirmed verdict from any verifying role, checker included, could carry a citation into the cited tier, and plan cleanups routed to the checker like code cleanups."
+rationale = "Review finding R8: the Haiku checker cannot see target, expect or new, yet its confirmation could auto-apply a new value it never saw."
+task_ref = "stamp-the-tier-when-a-plan-record-finding-is-verified"
+date = 2026-11-09
+
+[[items]]
+id = "E101"
+agent = "plan-update"
+type = "deviation"
+summary = "stats::disposition counts a dismissed row as user-vetoed only on user tier, or on a tiered row from a run started at or after the plan's first approval; a resolved question row is the new user-answered disposition, outside veto_rate."
+original_intent = "Every dismissed non-advisory tiered row counted as user-vetoed."
+rationale = "Review finding R18: refused-then-dismissed mechanical and cited rows on a draft inflated the veto rate measurement.md compares with its one-third threshold."
+task_ref = "report-plan-review-outcomes-and-per-model-overturns"
+date = 2026-11-09
+
+[[items]]
+id = "E102"
+agent = "plan-update"
+type = "deviation"
+summary = "RecordTarget, its parser, Display, field_name and the current-value dispatcher moved to tomlctl/src/plan/target.rs; each store owns its review field list and reader; review/target.rs keeps only review-specific prose and file logic; review add judges a record expect through apply's Validate pass. Supersedes the review/target.rs locations named in E10, E11 and E12."
+original_intent = "RecordTarget and copies of the stores' field lists and value readers lived in tomlctl/src/review/target.rs."
+rationale = "Review finding R23: the second model let review add and review apply disagree on the same expect (one live case, R33). User chose the full store-owned-reader scope."
+task_ref = "parse-and-resolve-record-targets"
+date = 2026-11-09

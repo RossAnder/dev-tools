@@ -10,6 +10,7 @@ mod open;
 mod probes;
 mod records;
 mod stage;
+pub(crate) mod target;
 mod view;
 
 pub(crate) mod dispatch;

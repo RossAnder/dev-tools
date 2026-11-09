@@ -766,9 +766,33 @@ fn advisory_rows_are_stamped_at_mint() {
 
     let mut about_a_decision = advisory(PLAN_FILE, "D1");
     about_a_decision["target"] = json!("decision:D1.why");
-    let user = flow.minted(about_a_decision);
-    assert_eq!(flow.status(&user), "open");
-    assert_eq!(flow.tier(&user).as_deref(), Some("user"));
+    let question = flow.minted(about_a_decision);
+    assert_eq!(flow.status(&question), "open");
+    assert_eq!(flow.tier(&question).as_deref(), Some("question"));
+
+    let err = flow.refused(&[
+        "review", "triage", &question, "--slug", SLUG, "--park", "later",
+    ]);
+    assert!(err.contains("question tier"), "{err}");
+    let err = flow.refused(&[
+        "review",
+        "apply",
+        &question,
+        "--slug",
+        SLUG,
+        "--user-accepted",
+    ]);
+    assert!(err.contains("review triage --resolve"), "{err}");
+    flow.ok(&[
+        "review",
+        "triage",
+        &question,
+        "--slug",
+        SLUG,
+        "--resolve",
+        "kept by user",
+    ]);
+    assert_eq!(flow.status(&question), "resolved");
 }
 
 #[test]

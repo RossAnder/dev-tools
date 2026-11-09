@@ -12,6 +12,7 @@ use anyhow::Result;
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use serde_json::{Map, Value as JsonValue};
 
+use super::tier::Tier;
 use crate::errors::{ErrorKind, tagged_err};
 
 macro_rules! str_enum {
@@ -632,7 +633,7 @@ pub(crate) const FIELDS: &[FieldSpec] = &[
         .plan_only()
         .kinds(DEFECT_OR_CLEANUP),
     field(Finding, "tier", Ty::Str, TIER)
-        .values(&["mechanical", "cited", "advisory", "user"])
+        .values(Tier::VALUES)
         .computed(),
     field(Finding, "applied", Ty::Table, TIER).computed(),
     // findings: identity links and dispositions
@@ -1106,12 +1107,15 @@ pub(super) fn edited_paths<'a>(
 }
 
 /// Who verifies a finding. A critical defect at `deep` goes to a panel and
-/// any other defect to the verifier. Cleanup goes to the verifier when it
-/// edits executable non-test code or removes a test, at its edit target
-/// (`target_file`, else `file`) or any of its `instances`, and to the
-/// checker otherwise. A test path is never treated as executable.
+/// any other defect to the verifier. A plan cleanup goes to the verifier,
+/// since the checker's projection hides the record edit it carries. Any
+/// other cleanup goes to the verifier when it edits executable non-test code
+/// or removes a test, at its edit target (`target_file`, else `file`) or any
+/// of its `instances`, and to the checker otherwise. A test path is never
+/// treated as executable.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn route(
+    family: Family,
     kind: Kind,
     direction: Option<Direction>,
     severity: Option<Severity>,
@@ -1127,6 +1131,7 @@ pub(crate) fn route(
             Route::Panel
         }
         Kind::Defect => Route::Verifier,
+        Kind::Cleanup if family == Family::Plan => Route::Verifier,
         Kind::Cleanup => {
             let Some(direction) = direction else {
                 return Route::Verifier;
@@ -1535,6 +1540,7 @@ mod tests {
     ) -> Route {
         let instances: Vec<String> = instances.iter().map(|s| s.to_string()).collect();
         route(
+            Family::Code,
             Kind::Cleanup,
             Some(direction),
             None,
@@ -1577,6 +1583,7 @@ mod tests {
             Route::Checker
         );
         let advisory = route(
+            Family::Code,
             Kind::Advisory,
             None,
             None,
@@ -1590,9 +1597,28 @@ mod tests {
     }
 
     #[test]
+    fn route_sends_every_plan_cleanup_to_verifier() {
+        for direction in [Direction::Add, Direction::Change, Direction::Remove] {
+            let plan = route(
+                Family::Plan,
+                Kind::Cleanup,
+                Some(direction),
+                None,
+                Depth::Standard,
+                "docs/plans/a.md",
+                Some(".claude/flows/s/tasks.toml"),
+                &[],
+                &globs(),
+            );
+            assert_eq!(plan, Route::Verifier, "{direction:?}");
+        }
+    }
+
+    #[test]
     fn route_sends_critical_at_deep_to_panel() {
         let defect = |severity, depth| {
             route(
+                Family::Code,
                 Kind::Defect,
                 None,
                 Some(severity),

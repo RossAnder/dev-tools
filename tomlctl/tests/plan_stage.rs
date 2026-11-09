@@ -931,11 +931,9 @@ fn an_open_user_tier_finding_keeps_the_stage_at_review() {
          target = \"decision:D1.why\"\nsummary = \"s\"\n"
     );
     let report = assert_stage(&clean(&store), "review", REVIEW_NEXT);
-    assert!(
-        report["blockers"]
-            .to_string()
-            .contains("1 open user-tier findings"),
-        "{report}"
+    assert_eq!(
+        report["blockers"],
+        json!(["1 open user-tier or question-tier findings to accept, veto or answer"])
     );
 
     let settled = store.replace("status = \"open\"", "status = \"dismissed\"");
@@ -943,10 +941,47 @@ fn an_open_user_tier_finding_keeps_the_stage_at_review() {
 }
 
 #[test]
+fn an_open_question_tier_finding_keeps_the_stage_at_review() {
+    let store = format!(
+        "{REVIEW_STORE_FINISHED}\n[[findings]]\nid = \"F1\"\nfamily = \"plan\"\nrun = \"R1\"\n\
+         status = \"open\"\ntier = \"question\"\nkind = \"advisory\"\nseverity = \"minor\"\n\
+         target = \"decision:D1.why\"\nsummary = \"s\"\n"
+    );
+    let report = assert_stage(&clean(&store), "review", REVIEW_NEXT);
+    assert_eq!(
+        report["blockers"],
+        json!(["1 open user-tier or question-tier findings to accept, veto or answer"])
+    );
+
+    let answered = store.replace("status = \"open\"", "status = \"resolved\"");
+    assert_stage(&clean(&answered), "ready", "plan approve");
+}
+
+#[test]
 fn a_recorded_review_skip_is_ready() {
     let plan = format!("{PLAN}{SKIPPED_REVIEW}");
     let flow = Flow::seeded(TASKS, &plan, Some(BRIEF), None);
     assert_stage(&flow, "ready", "plan approve");
+}
+
+#[test]
+fn a_finished_review_after_a_skip_is_held_to_its_own_findings() {
+    let plan = format!("{PLAN}{SKIPPED_REVIEW}");
+    let store = format!(
+        "{REVIEW_STORE_FINISHED}\n[[runs]]\nid = \"R2\"\nfamily = \"plan\"\nrechecks = \"R1\"\n\
+         \n[[findings]]\nid = \"F1\"\nfamily = \"plan\"\nrun = \"R1\"\n\
+         status = \"open\"\ntier = \"user\"\nkind = \"defect\"\nseverity = \"minor\"\n\
+         target = \"decision:D1.why\"\nsummary = \"s\"\n"
+    );
+    let flow = Flow::seeded(TASKS, &plan, Some(BRIEF), Some(&store));
+    let report = assert_stage(&flow, "review", REVIEW_NEXT);
+    assert_eq!(
+        report["blockers"],
+        json!([
+            "unfinished plan-family runs: R2",
+            "1 open user-tier or question-tier findings to accept, veto or answer",
+        ])
+    );
 }
 
 #[test]

@@ -1,0 +1,990 @@
+schema_version = 1
+last_updated = 2026-11-09
+
+[[vet_events]]
+timestamp = "2026-11-09T17:56:59Z"
+command = "review"
+lens = "completeness"
+tier = "lite"
+agent_index = 4
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = """All 5 findings sampled and confirmed against the tree: F1 apply.rs judge refuses non-open ids and execute refuses the whole call, contradicting plan-flow.md "re-run the same call"; F2 plan/store.rs plan_review_state reads finding severity, not review::Store::severity's verdict-reassessed value; F3 stage.rs review_blockers short-circuits on any skip row while approve.md says the skip row stays after "review now"; F4 stats.rs disposition counts every non-advisory tiered dismissal as user-vetoed versus plan-flow.md "user-tier"; F5 is_gate_risk limits gate rows to critical/major defects and rechecks, against plan-flow.md "the gate shows it"."""
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-09T17:57:35Z"
+command = "review"
+lens = "testability"
+tier = "lite"
+agent_index = 5
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled F1, F2, F5, F6, F7; all confirmed. F1 apply.rs place searches the whole normalised file for the section body (hits(&normal, section)) and errors on more than one hit, while the body comes from section_bodies without an offset; recategorised quality as it is a placement defect. F2 judge's mechanical proof re-verify branch (apply.rs) confirmed present; no test string match per agent grep. F5 interrupted message at execute confirmed. F6 dry-run reports row.judged computed per row against the unmodified store, confirmed. F7 entry_edit stale closure returns entries[hint] in the duplicate case, confirmed. F8 re-anchored to plan/store.rs PlanReviewState::unsettled to keep it distinct from the completeness finding on stage.rs review_blockers."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-09T17:58:49Z"
+command = "review"
+lens = "package-quality"
+tier = "lite"
+agent_index = 6
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled 1, 2, 3, 4, 6b; all confirmed. 1: review-surveyor.md allowlist line omits tomlctl plan view used by step 11. 2: fields.rs route sends a cleanup to Checker unless an edited path matches executable globs (no .md/.toml), the checker projection column is '-' for target/expect/new, and tier.rs VERIFYING includes checker; re-anchored from review-checker.md (outside the change) to tomlctl/src/review/fields.rs route, category quality, needs-plan kept. 3: engine rule 1 names only orchestrator/audit projections while plan-flow.md section 7 reads --for implementer. 4: plan-flow.md run start lines hardcode substrate=workflow against engine Substrate rule. 6b: plan-v2-engine rule 2 says launch args go to scratch; plan-flow section 4 writes them under the run dir. 6 split into two findings (6a, 6b)."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-09T17:59:01Z"
+command = "review"
+lens = "security"
+tier = "deep"
+agent_index = 2
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "Both findings sampled and confirmed. F1: tier.rs CLASS_FIELDS binds plan/probe-unhealthy (and plan/accept-no-check, plan/spec-no-accept, plan/premise-task-unknown) to whole list fields, and Stores::check_class checks only class membership, the bound field name, and that plan check raises the class on the task; it never inspects new or expect, so a check-class proof lifts an arbitrary accept/premise rewrite to mechanical. F2: apply.rs prose_path and target.rs brief_value anchor containment on authored.canonicalize(), while plan/store.rs authored_anchor (used by read_brief and design_path) anchors on root.canonicalize().join(relative) precisely so a symlink below the root cannot move the anchor."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-09T18:01:11Z"
+command = "review"
+lens = "quality"
+tier = "deep"
+agent_index = 1
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled F1, F2, F3, F7, F9; all confirmed. F1 tier.rs compute returns USER before the advisory and missing-new checks, and review_plan_records.rs asserts an advisory on decision:D1.why tiers user, while apply judge refuses advisory and new-less rows. F2 merged with the security lens's prose_path finding (same file and symbol). F3 apply.rs execute re-runs Pass::Write only for Applied rows; Already rows are stamped from the unlocked validate judgement. F7 struct Unwritten defined in both plan/records.rs and tasks/update.rs. F9 target.rs Display has a (false, None) SpecEntry arm printing the SpecField form. F4 merged with the testability lens's unsettled-prose finding into one item on plan/store.rs PlanReviewState::unsettled. Note on the security lens's check-class finding: this lens ruled it out as matching the plan's text (check-class binds fields only); the plan text at line 87 does say that, but it does not reconcile it with the narrower probe rule for the same entries, so the security finding stands."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-09T18:02:01Z"
+command = "review"
+lens = "architecture"
+tier = "deep"
+agent_index = 3
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 1
+rationale = "Sampled 1, 2, 6, 7, 8. 1 merged with the security lens's prose_path finding (confirmed there). 6 merged with the quality and testability unsettled-prose findings. 7 confirmed: tomlctl sweep finds the flow-mode predicate computed at review/add.rs flow_slug, query.rs, tier.rs compute and apply.rs execute while tasks/store.rs is_v2_flow exists. 8 confirmed: plan-review-lead.md Follow-up rule both requires the quick escalation probe cell and forbids any follow-up in recheck, and plan-v2-review.js sets maxWaves 1 and refuses a next wave in recheck. 2 downgraded warning to suggestion: accept_target_ref parses the stable RecordTarget Display form and nothing is broken today; the fail-open risk is drift plus the missing review-apply-then-plan-approve test, so it is a hazard, not a defect."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-09T19:08:43Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "All three one-line doc edits read in the diff: R11 allowlist gains tomlctl plan view, R28 rule 1 carries the plan-family --for implementer exception, R32 rule 2 names the run-dir payloads exception; outside SHARED-BLOCK regions."
+agent_index = 4
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-09T19:12:27Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "R1 cross-cut follow-up: review.md check-class row gains the append/fill-only rule; measurement.md dead design anchor seed now expects cited. Both read in the diff."
+agent_index = 7
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-09T19:16:46Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "review.md apply section: Order bullet quotes the reworded mid-batch error (matches the format! string in review/apply.rs execute); Stale bullet adds the dry-run edited_by row. Both read in the diff."
+agent_index = 8
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[items]]
+id = "R1"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "shimmying-marinating-bumblebee"
+file = "tomlctl/src/review/tier.rs"
+line = 55
+symbol = "Stores::check_class"
+severity = "warning"
+effort = "small"
+category = "security"
+summary = "A check-class proof lifts an arbitrary accept or premise rewrite to mechanical tier, bypassing the narrow probe proof"
+description = "CLASS_FIELDS binds plan/probe-unhealthy (and plan/accept-no-check, plan/spec-no-accept, plan/premise-task-unknown) to whole list fields, and check_class checks only that the class is raised on the task and the target field is bound; it never inspects new or expect. A finder can send the same accept edit a probe proof would cap (PROBE_FIX_KEYS = check, positive) with proof {kind: check-class, class: plan/probe-unhealthy} and get mechanical tier, which review apply writes without asking: flipping writes_build (which also hides the entry from plan approve's unprobed-accept gate via skip_reason), changing behaviour or kind, adding check commands, or dropping healthy entries. Fix: drop the plan/probe-unhealthy row (the probe kind proves that case narrowly); in check_class refuse a list new that changes or drops an existing entry (append, or fill an empty check, only); update the class table in plan-records.md; add a tier test sending the writes_build flip through check-class and expecting cited."
+evidence = [
+    "tomlctl/src/review/tier.rs:49-58 CLASS_FIELDS",
+    "tomlctl/src/review/tier.rs:279-327 check_class never reads new/expect",
+    "tomlctl/src/review/tier.rs:46 PROBE_FIX_KEYS",
+    "tomlctl/src/plan/check.rs:462-469 probe-unhealthy raised at error",
+    "tomlctl/src/plan/store.rs:153-154 skip_reason filter",
+    "docs/plans/shimmying-marinating-bumblebee.md:87 tier contract",
+]
+instances = [
+    "tomlctl/src/review/tier.rs:CLASS_FIELDS",
+    "tomlctl/src/review/tier.rs:Stores::check_class",
+    "claude/skills/review-v2-method/references/plan-records.md:85",
+]
+sweep = ['\("(dag|plan)/[a-z-]+", &\[']
+enumeration = "complete"
+dedup_id = "389fabbc16624a33"
+resolved = 2026-11-09
+resolution = "Uncommitted: plan/probe-unhealthy dropped from CLASS_FIELDS; check_class lets a list new only append entries or fill an existing entry's empty check; plan-records.md, tomlctl review.md and measurement.md (dead design anchor seed now cited) updated; test a_check_class_fix_may_only_append_or_fill_a_check; deviated: ref_unknown_and_check_class_prove_a_dangling_need renamed and now asserts a check-class replacement is refused"
+
+[[items]]
+id = "R2"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "shimmying-marinating-bumblebee"
+file = "tomlctl/src/review/apply.rs"
+line = 452
+symbol = "prose_path"
+severity = "warning"
+effort = "small"
+category = "security"
+summary = "Brief containment anchors on authored.canonicalize(), so a symlinked docs/flows/<slug> lets review apply rewrite a brief.md outside the repo"
+description = "prose_path (brief branch) and target::brief_value check the resolved brief against authored.canonicalize(), which follows a symlink at docs, docs/flows or docs/flows/<slug>, so containment passes for a brief.md anywhere on the machine; prose() then atomic_writes it, and target::resolve inlines its section body into review output. plan/store.rs authored_anchor (root real path joined with the authored spelling) exists to prevent exactly this and is used by read_brief and check::design_path. Fix: expose one pub(crate) brief resolver in plan/store.rs built on authored_anchor (read_brief already embodies it), call it from prose_path and brief_value, and drop the duplicate BRIEF_FILE constants in apply.rs and target.rs. Reported independently by the security, quality and architecture lenses."
+evidence = [
+    "tomlctl/src/review/apply.rs:452-458",
+    "tomlctl/src/review/target.rs:469-474",
+    "tomlctl/src/plan/store.rs:56-88 authored_anchor/read_brief",
+    "tomlctl/src/plan/check.rs:133 design_path",
+    "git log -S'authored_anchor' -> 7429069",
+]
+instances = [
+    "tomlctl/src/review/apply.rs:prose_path",
+    "tomlctl/src/review/target.rs:brief_value",
+    "tomlctl/src/plan/store.rs:authored_anchor",
+]
+sweep = [
+    'authored\s*\.canonicalize',
+    '\.join\(BRIEF_FILE\)',
+    "const BRIEF_FILE",
+]
+enumeration = "complete"
+dedup_id = "9c8517c173e05a9f"
+resolved = 2026-11-09
+resolution = "Uncommitted: plan/store.rs locate_brief (anchored on authored_anchor) now backs read_brief, apply::prose_path and target::brief_value; duplicate BRIEF_FILE consts removed; unix test a_brief_behind_a_symlinked_flow_directory_is_not_written. Resolve-then-write symlink race remains (backlog)"
+
+[[items]]
+id = "R3"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "shimmying-marinating-bumblebee"
+file = "tomlctl/src/review/tier.rs"
+line = 77
+symbol = "tier::compute"
+severity = "warning"
+effort = "medium"
+category = "quality"
+summary = "User tier is stamped on advisory and new-less rows that review apply can never write, so the only exit is a veto"
+description = 'needs-plan. compute returns USER for any user-owned target (decision:*, spec.outcome, brief intent sections) before the advisory and missing-new checks, and review_plan_records.rs asserts an advisory on decision:D1.why is user tier. review apply refuses both shapes (kind not defect/cleanup; no new), and one refusal refuses the whole call, so plan-flow.md "Accept -> review apply <ids> --user-accepted" fails for the batch, while PlanReviewState::unsettled blocks plan approve --review ran and plan stage until each row is closed. The only exit offered is Veto, which stats::disposition counts as user-vetoed, inflating the veto rate measurement.md compares against its one-third threshold. Decide between: user tier only for applicable rows (defect/cleanup with new, reversing the asserted test), or a "user-owned question" disposition in plan-flow and stats that is neither apply nor veto.'
+evidence = [
+    "tomlctl/src/review/tier.rs:77-86",
+    "tomlctl/src/review/apply.rs:212-217,271-274",
+    "tomlctl/tests/review_plan_records.rs:767-771",
+    "tomlctl/src/plan/store.rs:134-136,179-185",
+    "claude/skills/review-v2-engine/references/plan-flow.md:198,205",
+]
+dedup_id = "3e51affa84d0c5f3"
+resolved = 2026-11-09
+resolution = "Uncommitted (review-apply 2026-11-09): new Tier::Question for user-owned rows apply cannot write (advisory or no new); apply refuses it naming triage --resolve; triage --park refuses user/question rows; plan approve/stage gate on open user or question rows (open_user_owned); plan-flow.md Question exit (Revise/Keep) and §9 park excludes them. User chose the distinct-tier option."
+
+[[items]]
+id = "R4"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "shimmying-marinating-bumblebee"
+file = "tomlctl/src/review/apply.rs"
+line = 174
+symbol = "execute::already_stamp"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "review apply stamps a row judged Already from the unlocked validate pass, so an earlier row in the same call can leave it resolved with a value the store no longer holds"
+description = """execute re-runs edit(.., Pass::Write) only for rows judged Applied; Already and Stale reuse the unlocked validate judgement, breaking the module's "expect re-checked inside that store's lock" contract. If finding A (expect = X) is applied before finding B (judged Already because current == X), B is stamped resolved with applied.new = X although A changed it; plan gate review_edits and --plan-outcomes read that record. The store helpers already return Already/Stale without writing, so run Pass::Write for every row and take its outcome."""
+evidence = [
+    "tomlctl/src/review/apply.rs:1-3 module contract",
+    "tomlctl/src/review/apply.rs:174-187",
+    "tomlctl/src/tasks/update.rs:1332-1344",
+    "tomlctl/src/plan/records.rs:353-369",
+]
+dedup_id = "b761cb9cf3d8ec6b"
+resolved = 2026-11-09
+resolution = "Uncommitted: execute runs the Pass::Write edit for every row and takes its outcome; deviated: also re-validates a mechanical row not judged Applied and checks its proof before it may write, so the change opens no proof bypass"
+
+[[items]]
+id = "R5"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "shimmying-marinating-bumblebee"
+file = "tomlctl/src/review/apply.rs"
+line = 515
+symbol = "place"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "Prose placement locates the section by searching the whole file for its body, so a body repeated elsewhere (None., TBD.) refuses an unambiguous target"
+description = """place searches the LF-normalised file for the section text with hits(&normal, section) and errors "the section's text occurs N times in the file" on more than one hit. The section text is the heading-bounded body from section_bodies / design_section with no offset kept, so two brief sections with the same short body make brief#<section> unplaceable though it resolved to exactly one section. Fix: have target::resolve (or prose) return the section's byte offset and drop the substring search; add a test where two sections share a body."""
+evidence = [
+    "tomlctl/src/review/apply.rs:515-523",
+    "tomlctl/src/review/add.rs:650-680 section_bodies",
+]
+related = ["B-037256f6"]
+dedup_id = "09964b2e6f6429ad"
+resolved = 2026-11-09
+resolution = "Uncommitted: add.rs section_spans and plan/check.rs design_section_in return section byte offsets; prose places brief and design edits at the offset; place takes base: usize and the whole-file search branch is gone; tests for repeated brief bodies and repeated design sections"
+
+[[items]]
+id = "R6"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "shimmying-marinating-bumblebee"
+file = "tomlctl/src/plan/store.rs"
+line = 307
+symbol = "plan_review_state"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "plan gate and plan stage judge critical/major risks from the finding's own severity, ignoring a verifier's reassessed severity"
+description = 'review verdict --severity stores the new severity only on the verdict row; review::Store::severity reads the latest verdict severity and export-v1 and the digest use it. plan_review_state reads the TOML directly and takes text(finding, "severity"), so a defect a verifier raised to critical never shows under risks and one lowered to minor still does. plan.md and approve.md both promise "open critical or major defect". Fix: take the latest non-empty verdict severity for the finding id from verdicts.'
+evidence = [
+    "tomlctl/src/plan/store.rs:245-248,307",
+    "tomlctl/src/review/store.rs:229-246 Store::severity",
+    "tomlctl/src/review/verdict.rs:93",
+]
+dedup_id = "6a85edbc0a2843bb"
+resolved = 2026-11-09
+resolution = "Uncommitted: plan_review_state takes the latest non-empty verdict severity per finding (Store::severity ordering), falling back to the finding's own; test gate_risks_take_the_latest_severity_a_verdict_reassessed"
+
+[[items]]
+id = "R7"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "shimmying-marinating-bumblebee"
+file = "tomlctl/src/plan/stage.rs"
+line = 274
+symbol = "review_blockers"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "plan stage reports review settled on any recorded skip, even after a later review run leaves user-tier findings open that plan approve --review ran refuses"
+description = """review_blockers returns no blockers as soon as skipped_reviews(plan) yields a row, though its doc says it defers to approve's rule "so the two cannot disagree". approve.md's "Review now" path runs a review after a skip and approves with --review ran, and states the skip row stays in plan.toml. If that review leaves user-tier findings unanswered, stage says ready with next = plan approve while approve refuses on unsettled. Fix: let a finished plan-family run supersede the skip in review_blockers, or check unsettled whenever such a run exists."""
+evidence = [
+    "tomlctl/src/plan/stage.rs:270-276",
+    "tomlctl/src/plan/approve.rs:221-224",
+    "claude/skills/plan-v2-engine/references/approve.md:82",
+]
+dedup_id = "637b84af93896afe"
+resolved = 2026-11-09
+resolution = "Uncommitted: review_blockers always reads review state; a skip settles review only with no finished plan-family run, else stage applies approve's rule; test a_finished_review_after_a_skip_is_held_to_its_own_findings. A flow with a skip now reads review-v2.toml, so an unreadable store errors there"
+
+[[items]]
+id = "R8"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "shimmying-marinating-bumblebee"
+file = "tomlctl/src/review/fields.rs"
+line = 1130
+symbol = "route"
+severity = "warning"
+effort = "medium"
+category = "architecture"
+summary = "Flow-mode cleanups route to the Haiku checker, which cannot see target/expect/new, yet its confirmed verdict can make the edit cited and auto-applied"
+description = "needs-plan. fields::route sends a cleanup to the checker unless an edited path matches the executable globs, which include no .md or .toml, so every flow-mode cleanup goes to review-checker. The checker projection column is '-' for target, expect and new, and its predicates require an old field flow rows never carry (review-checker.md is unchanged). tier.rs VERIFYING includes checker, so a checker confirmed citing a line in the target's file tiers the row cited, which plan-flow.md section 7 applies without asking. Either every flow cleanup bounces to a verifier, wasting a checker batch, or a Haiku confirmation applies a new value it never saw. Choose: route flow-mode cleanups to the verifier, or give the checker flow predicates and projection columns."
+evidence = [
+    "tomlctl/src/review/fields.rs:1130-1145 route",
+    "tomlctl/src/review/fields.rs:1351-1353 projection",
+    "claude/skills/review-v2-lenses/vocabulary.toml:645-649",
+    "tomlctl/src/review/tier.rs:41 VERIFYING",
+    "claude/agents/review-checker.md:29",
+]
+instances = [
+    "tomlctl/src/review/fields.rs:route",
+    "tomlctl/src/review/tier.rs:VERIFYING",
+    "claude/agents/review-checker.md:29",
+]
+related = ["B-10cbeccd"]
+dedup_id = "3684a3861c9a57a0"
+resolved = 2026-11-09
+resolution = "Uncommitted (review-apply 2026-11-09): fields::route takes the family and sends plan-family cleanups to the verifier; tier.rs VERIFYING renamed CITING without checker, so a checker confirmed cannot reach cited; review-verifier.md flow clause, review-checker.md, lenses SKILL.md and vocabulary.toml updated."
+
+[[items]]
+id = "R9"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "shimmying-marinating-bumblebee"
+file = "claude/workflows/plan-v2-review.js"
+line = 315
+symbol = "recheck follow-up guard"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "A re-check runs at quick depth but forbids the one escalation probe wave quick requires, so sweeper escalations after automated edits are never judged"
+description = """compose.md section 7 says at quick every escalated sweeper candidate goes into one review-finder probe cell written as the next wave; plan-review-lead.md's Follow-up rule repeats that and in the same paragraph says "In recheck mode there is never a follow-up"; plan-v2-review.js sets maxWaves 1 in recheck and refuses any next wave; plan-flow.md section 10 says the re-check has no follow-up. ripple is a floor plan-family lens, so a re-check normally has a sweeper cell, and escalations are not findings (review-v2-pipeline only counts them), so the stale-reference candidates a re-check exists to catch are dropped. Pick one owner: allow the single quick escalation probe in recheck, or have settle return escalations for plan-flow section 10 to mop up. Assumes the recheck compose keeps the floor ripple cell."""
+evidence = [
+    "claude/skills/review-v2-engine/references/compose.md:152",
+    "claude/agents/plan-review-lead.md:92",
+    "claude/workflows/plan-v2-review.js:268,315-317",
+    "claude/skills/review-v2-engine/references/plan-flow.md:311",
+    "claude/workflows/review-v2.js:155-156,180",
+]
+instances = [
+    "claude/workflows/plan-v2-review.js:268",
+    "claude/agents/plan-review-lead.md:92",
+    "claude/skills/review-v2-engine/references/plan-flow.md:311",
+]
+dedup_id = "f9491b5985070814"
+resolved = 2026-11-09
+resolution = "Uncommitted: recheck mode allows exactly one follow-up, the single review-finder quick escalation probe cell: plan-v2-review.js (maxWaves by depth, escalationProbe guard), plan-review-lead.md Follow-up rule and plan-flow.md section 10 agree"
+
+[[items]]
+id = "R10"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "shimmying-marinating-bumblebee"
+file = "claude/skills/review-v2-engine/references/plan-flow.md"
+line = 182
+symbol = "section 7 Mid-batch failure"
+severity = "warning"
+effort = "trivial"
+category = "completeness"
+summary = "plan-flow.md says re-run the same review apply call after a mid-batch failure, but that call is refused whole because the stamped ids are no longer open"
+description = 'judge refuses any finding that is not open and execute refuses the whole call when any id is refused, so re-running the same id list after "applying <id> failed; stamped before it: [...]" writes nothing. Tell the orchestrator to re-run with only the ids not listed as stamped (the unstamped edit then reads as already).'
+evidence = [
+    "tomlctl/src/review/apply.rs:138-146,219-223",
+    "tomlctl/tests/review_apply.rs:592-593",
+]
+dedup_id = "79f731a31112d8b3"
+resolved = 2026-11-09
+resolution = "Uncommitted: plan-flow.md section 7 Mid-batch failure says re-run with only the ids not listed as stamped"
+
+[[items]]
+id = "R11"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "shimmying-marinating-bumblebee"
+file = "claude/agents/review-surveyor.md"
+line = 19
+symbol = "read-verb allowlist"
+severity = "warning"
+effort = "trivial"
+category = "package-quality"
+summary = "The surveyor's read-only verb allowlist omits tomlctl plan view, which its own step 11 requires in flow mode"
+description = "Line 19 lists the only verbs the surveyor may run; step 11 tells it to read decisions and contracts with tomlctl plan view --slug <slug> --for human. A strict Haiku surveyor either breaks the allowlist or leaves decisions and contracts out of profile.md, which the plan-review-lead compose phase reads. Add tomlctl plan view to the list."
+evidence = [
+    "claude/agents/review-surveyor.md:19",
+    "claude/agents/review-surveyor.md:34",
+]
+dedup_id = "65da52faec8b5887"
+resolved = 2026-11-09
+resolution = "Uncommitted: review-surveyor.md read-verb allowlist gains tomlctl plan view"
+
+[[items]]
+id = "R12"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "shimmying-marinating-bumblebee"
+file = "tomlctl/src/review/apply.rs"
+line = 291
+symbol = "judge"
+severity = "warning"
+effort = "trivial"
+category = "testability"
+summary = "No test covers the apply-time re-check of a mechanical proof, the only guard on edits written without the user"
+description = 'judge re-runs tier::verify_proof for a mechanical row judged Applied; neither the "proof no longer holds" branch nor the "mechanical tier but carries no proof" branch is reached by any test (add-time refusal is tested, apply time is not). Add to tests/review_apply.rs: mint a path-missing finding, create the file, apply, assert refusal and an unchanged task store.'
+evidence = [
+    "tomlctl/src/review/apply.rs:291-300",
+    "tomlctl/tests/review_plan_records.rs:606 add-time only",
+]
+dedup_id = "26e51e2f54f5a2e5"
+resolved = 2026-11-09
+resolution = "Uncommitted: integration test a_mechanical_proof_that_stopped_holding_refuses_the_call; the no-proof mechanical branch has no CLI route and is covered by unit test a_mechanical_row_without_a_proof_is_refused"
+
+[[items]]
+id = "R13"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "shimmying-marinating-bumblebee"
+file = "tomlctl/src/review/tier.rs"
+line = 39
+symbol = "USER_SECTIONS"
+severity = "warning"
+effort = "trivial"
+category = "testability"
+summary = "No test asserts that brief#Intent, Non-goals, Scope budget or Success criteria targets tier user"
+description = "Tests assert user tier only for decision: and spec.outcome. If USER_SECTIONS drifts from target.rs BRIEF_SECTIONS (a rename), an intent edit backed by a citation tiers cited and is applied without the user. Add one case per section to the_user_table_beats_a_valid_proof."
+evidence = [
+    "tomlctl/src/review/tier.rs:39",
+    "tomlctl/src/review/tier.rs:668",
+    "tomlctl/tests/review_plan_records.rs:680-700",
+]
+dedup_id = "c36bb974cd0832d9"
+resolved = 2026-11-09
+resolution = "Uncommitted: the_user_table_beats_a_valid_proof asserts user tier for brief Intent, Non-goals, Scope budget and Success criteria, names written out"
+
+[[items]]
+id = "R14"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "shimmying-marinating-bumblebee"
+file = "tomlctl/src/review/tier.rs"
+line = 491
+symbol = "citation_holds"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "The cited-tier gate's line-range check and its named-path branch are untested"
+description = "A confirmed verdict citing past the end of the target file (tasks.toml:9999) must stay advisory; no test does that, so a regression in the line-count comparison or parse_citation would lift fabricated citations to cited, which is auto-applied. The positive named_paths case (a files target citing src/a.rs:1) is also never asserted. Add both to the tier.rs tests."
+evidence = [
+    "tomlctl/src/review/tier.rs:491",
+    "tomlctl/src/review/tier.rs:756-761",
+]
+dedup_id = "634c427cd8944f07"
+resolved = 2026-11-09
+resolution = "Uncommitted: tier tests assert a citation past end of file stays advisory and a_citation_of_a_path_the_value_names_holds computes cited"
+
+[[items]]
+id = "R15"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "shimmying-marinating-bumblebee"
+file = "tomlctl/src/review/apply.rs"
+line = 169
+symbol = "execute::interrupted"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "The mid-batch failure path is untested and its message does not say whether the failing edit landed or how to resume"
+description = """Reachable deterministically: two findings on one brief section where the first edit's new repeats the second's expect pass validation, then the second errors during the write after the first is stamped. "applying X failed; stamped before it: [...]" does not say whether X's edit landed or that re-running the remaining ids records a landed edit as recovered. Test that the stamped prefix matches the reported list, and reword the message to name the resume call."""
+evidence = [
+    "tomlctl/src/review/apply.rs:160-172",
+    "tomlctl/src/review/apply.rs:419-425",
+]
+dedup_id = "c3e4386a6a00d199"
+resolved = 2026-11-09
+resolution = "Uncommitted: mid-batch error says the failing edit may or may not have landed and to re-run with only unstamped ids; test a_failure_mid_batch_names_the_ids_stamped_before_it; tomlctl review.md Order bullet quotes it"
+
+[[items]]
+id = "R16"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "shimmying-marinating-bumblebee"
+file = "tomlctl/src/review/apply.rs"
+line = 151
+symbol = "execute::dry_run"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "Dry-run judges every row against the unmodified store, so same-target findings show applied in a dry run but stale or error for real"
+description = "Each row's judged outcome comes from the validate pass against the untouched store. F_a (X -> Y) and F_b (X -> Z) on one field both report applied under --dry-run; the real run stales F_b. Refuse a batch with duplicate targets or flag them in dry-run output, and add a test."
+evidence = [
+    "tomlctl/src/review/apply.rs:149-153",
+    "tomlctl/src/tasks/update.rs:1454",
+]
+dedup_id = "b9018f4d407a87d4"
+resolved = 2026-11-09
+resolution = "Uncommitted: dry-run reports a later row editing the same record as skipped_stale with edited_by; real runs unchanged; test a_dry_run_reports_a_later_edit_to_the_same_record_as_stale; tomlctl review.md Stale bullet updated"
+
+[[items]]
+id = "R17"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "shimmying-marinating-bumblebee"
+file = "tomlctl/src/plan/store.rs"
+line = 166
+symbol = "PlanReviewState::unsettled"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "unsettled returns one joined string that plan stage splits on '; ' and filters by message prefix, so a rewording duplicates the user-tier blocker unnoticed"
+description = """unsettled builds typed reasons, joins them for approve's message, and stage.rs review_blockers splits the string on "; " and drops parts starting "open user-tier findings", re-deriving the finished_runs branch itself. tests/plan_stage.rs only asserts contains, which still passes with both lines present. Return a Vec of a small reason enum (no finished run, unfinished runs, open user-tier ids, unprobed ids); approve formats and joins it, stage maps it, and assert the exact blockers array. Reported by the quality, architecture and testability lenses."""
+evidence = [
+    "tomlctl/src/plan/store.rs:166-194",
+    "tomlctl/src/plan/stage.rs:273-296",
+    "tomlctl/src/plan/approve.rs:222",
+    "tomlctl/tests/plan_stage.rs:934-938",
+]
+dedup_id = "289b3e5da50425f3"
+resolved = 2026-11-09
+resolution = "Uncommitted: unsettled returns Vec<Unsettled> (NoFinishedRun, UnfinishedRuns, OpenUserTier, UnprobedAcceptEdits); approve joins Display text byte-identically, stage matches variants; tests assert exact vec and blockers array"
+
+[[items]]
+id = "R18"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "shimmying-marinating-bumblebee"
+file = "tomlctl/src/review/stats.rs"
+line = 815
+symbol = "disposition"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "--plan-outcomes counts any dismissed mechanical or cited finding as user-vetoed, though the docs define a veto as a dismissed user-tier row"
+description = "disposition maps every dismissed non-advisory tiered row to user-vetoed; plan-flow.md says only a dismissed user-tier row is a veto. Before approval, mechanical/cited rows are dismissed only when apply refused them and the user discarded them, which inflates veto_rate (measurement.md's one-third threshold). On an approved flow every tier is put to the user, so the wider rule may be intended there: narrow the code to user tier plus approved flows, or correct plan-flow.md and measurement.md."
+evidence = [
+    "tomlctl/src/review/stats.rs:798-819",
+    "claude/skills/review-v2-engine/references/plan-flow.md:205",
+    "claude/skills/review-v2-engine/references/measurement.md:128",
+]
+dedup_id = "8f6d04eeb8c00dcb"
+resolved = 2026-11-09
+resolution = "Uncommitted (review-apply 2026-11-09): stats::disposition counts a dismissal as user-vetoed only on a user-tier row or a tiered row from a run started at/after the plan's first approval (first_approval reads plan.toml); resolved question rows are user-answered, outside veto_rate; plan-flow.md and measurement.md updated."
+
+[[items]]
+id = "R19"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "shimmying-marinating-bumblebee"
+file = "claude/skills/review-v2-engine/references/plan-flow.md"
+line = 179
+symbol = "section 7 Refusal"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "plan-flow.md says a refused id stays open and the gate shows it, but the gate shows only critical/major defects and re-check findings"
+description = """is_gate_risk admits only critical or major defects and anything a re-check raised, so a refused cleanup or minor defect stays open and appears nowhere at approval. Word it as the section's own advisory bullet does ("shows at the gate under risks when it is critical or major")."""
+evidence = [
+    "tomlctl/src/plan/store.rs:245-248",
+    "claude/skills/review-v2-engine/references/plan-flow.md:179",
+]
+dedup_id = "23939a4a4483bdf6"
+resolved = 2026-11-09
+resolution = "Uncommitted: plan-flow.md section 7 Refusal says a refused id shows at the gate only as a critical or major defect; deviated: names the defect kind too, since is_gate_risk counts only defects"
+
+[[items]]
+id = "R20"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "shimmying-marinating-bumblebee"
+file = "tomlctl/src/review/tier.rs"
+line = 32
+symbol = "MECHANICAL/CITED/ADVISORY/USER"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "Tier is a stringly-typed closed set spelled across six files; the review store's str_enum! idiom fits it"
+description = """Every other closed review vocabulary uses str_enum! with parse/as_str/VALUES; tier is four &str constants, a literal list in fields.rs, an Option<&'static str> from compute, an "unknown tier" branch in apply.rs judge that exists only because it is a string, literals in stats.rs and approve.rs, and its own TIER_USER in plan/store.rs. Add str_enum!(Tier { Mechanical, Cited, Advisory, User }) and re-export it pub(crate) for the plan-side readers."""
+evidence = [
+    "tomlctl/src/review/tier.rs:32-35",
+    "tomlctl/src/review/fields.rs:17-130,635",
+    "tomlctl/src/review/apply.rs:225-243",
+]
+instances = [
+    "tomlctl/src/review/tier.rs:compute",
+    "tomlctl/src/review/apply.rs:judge",
+    "tomlctl/src/review/fields.rs:635",
+    "tomlctl/src/review/stats.rs:disposition",
+    "tomlctl/src/plan/store.rs:TIER_USER",
+    "tomlctl/src/plan/approve.rs:review_edits",
+]
+sweep = [
+    '"(mechanical|cited)"',
+    '(?-u:\b)(TIER_USER|MECHANICAL|CITED|USER|ADVISORY)(?-u:\b)',
+]
+enumeration = "complete"
+dedup_id = "4a5adecf305787c9"
+resolved = 2026-11-09
+resolution = "Uncommitted: str_enum Tier in review/tier.rs, compute returns Option<Tier>, fields.rs vocabulary from Tier::VALUES, judge/stats/approve parse via Tier, TIER_USER removed; stored strings and output unchanged; deviated: one-line pub(crate) re-export in review/mod.rs since tier is a private module"
+
+[[items]]
+id = "R21"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "shimmying-marinating-bumblebee"
+file = "tomlctl/src/review/apply.rs"
+line = 310
+symbol = "decoded"
+severity = "suggestion"
+effort = "small"
+category = "db"
+summary = "The JSON-text storage rule for expect/new/applied.old/applied.new has four decoders that disagree on edge cases"
+description = 'apply::decoded, tier::stored, stats::applied_value and plan::store::json_text each decode the same JSON-text fields: a non-string TOML value is converted in two, cloned in one and read as Null in plan/store.rs; a missing value is "null" text in stats and Null in plan. Put one codec (decoder plus encoder) in crate::convert, which review and plan both import, and route the four readers plus add::encode_values and apply::stamp through it.'
+evidence = [
+    "tomlctl/src/review/apply.rs:310-316",
+    "tomlctl/src/review/tier.rs:162-167",
+    "tomlctl/src/review/stats.rs:824-829",
+    "tomlctl/src/plan/store.rs:324-330",
+    "tomlctl/src/review/add.rs:558 encode_values",
+]
+instances = [
+    "tomlctl/src/review/apply.rs:decoded",
+    "tomlctl/src/review/tier.rs:stored",
+    "tomlctl/src/review/stats.rs:applied_value",
+    "tomlctl/src/plan/store.rs:json_text",
+    "tomlctl/src/review/add.rs:encode_values",
+    "tomlctl/src/review/apply.rs:stamp",
+]
+sweep = [
+    'serde_json::from_str\(raw\)',
+    "fn encode_values",
+]
+enumeration = "complete"
+dedup_id = "736b9987c7e95943"
+resolved = 2026-11-09
+resolution = "Uncommitted: convert.rs decode_json_text / json_from_text / encode_json_text used by apply decoded and stamp, add encode_values, stats and plan store (applied_value and json_text removed); tier stored uses json_from_text; deviated: a non-string stored applied value now converts via toml_to_json instead of reading as Null (stamp only writes strings)"
+
+[[items]]
+id = "R22"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "shimmying-marinating-bumblebee"
+file = "tomlctl/src/tasks/update.rs"
+line = 1307
+symbol = "Unwritten"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "The Unwritten outcome-carrier error type is defined twice; tasks/update.rs inlines what plan/records.rs factored"
+description = "tasks/update.rs and plan/records.rs each define struct Unwritten(ReviewEditOutcome) with Display/Error impls and a downcast; records.rs factors it into written_only and unwritten_outcome (reused by milestone.rs), update.rs keeps an inline copy. Move ReviewEditOutcome, Unwritten, written_only and unwritten_outcome into one module both plan and tasks reach (plan already depends on tasks) and use it from apply_review_edit."
+evidence = [
+    "tomlctl/src/tasks/update.rs:1304-1344",
+    "tomlctl/src/plan/records.rs:339-369",
+]
+instances = [
+    "tomlctl/src/tasks/update.rs:Unwritten",
+    "tomlctl/src/tasks/update.rs:apply_review_edit",
+    "tomlctl/src/plan/records.rs:Unwritten",
+    "tomlctl/src/plan/records.rs:written_only",
+    "tomlctl/src/plan/records.rs:unwritten_outcome",
+]
+sweep = [
+    "struct Unwritten",
+    "downcast::<Unwritten>",
+]
+enumeration = "complete"
+dedup_id = "1a4fc8dc0f77dc45"
+resolved = 2026-11-09
+resolution = "Uncommitted (review-apply 2026-11-09): Unwritten, written_only and unwritten_outcome live once in tasks/update.rs, re-exported from tasks; plan/records.rs and milestone.rs import them; the round-trip test moved with them."
+
+[[items]]
+id = "R23"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "shimmying-marinating-bumblebee"
+file = "tomlctl/src/review/target.rs"
+line = 26
+symbol = "TASK_FIELDS/SPEC_FIELDS/SPEC_LISTS/MILESTONE_FIELDS"
+severity = "suggestion"
+effort = "medium"
+category = "architecture"
+summary = "target.rs keeps a second model of the records it targets: field lists and value readers that review add checks against, separate from the stores review apply writes through"
+description = "needs-plan. TASK_FIELDS, SPEC_FIELDS, SPEC_LISTS repeat tasks/update.rs REVIEW_ROW_FIELDS, REVIEW_SPEC_FIELDS, REVIEW_SPEC_LISTS; MILESTONE_FIELDS repeats milestone.rs REVIEW_FIELDS; BRIEF_SECTIONS repeats the plan/open.rs template; tier.rs USER_SECTIONS repeats check.rs REQUIRED_SECTIONS. target::resolve reads current values with task_value/plan_value while apply compares through each store's private reader (review_value + stored_form, record_value). They agree today, but add is stricter: an accept expect without the default writes_build key is refused by add's exact comparison yet normalised by apply's stored_form. If a list grows on one side, add accepts a target apply refuses or the reverse. Direction: each store exposes its field list and current-value reader pub(crate) and target::resolve calls them; consider moving RecordTarget into plan, which also serves the plan-side target parsing. Extends B-f007171d, which covers only DECISION_KEYS/CONTRACT_KEYS."
+evidence = [
+    "tomlctl/src/review/target.rs:26-82,391-455",
+    "tomlctl/src/tasks/update.rs:1246-1277,1532-1590",
+    "tomlctl/src/plan/milestone.rs:250",
+    "tomlctl/src/plan/records.rs:404-490",
+    "tomlctl/src/review/add.rs:512 expect_holds",
+]
+instances = [
+    "tomlctl/src/review/target.rs:TASK_FIELDS",
+    "tomlctl/src/review/target.rs:SPEC_FIELDS",
+    "tomlctl/src/review/target.rs:SPEC_LISTS",
+    "tomlctl/src/review/target.rs:MILESTONE_FIELDS",
+    "tomlctl/src/review/target.rs:BRIEF_SECTIONS",
+    "tomlctl/src/review/target.rs:task_value",
+    "tomlctl/src/review/target.rs:plan_value",
+    "tomlctl/src/review/tier.rs:USER_SECTIONS",
+]
+sweep = ["const (TASK_FIELDS|SPEC_FIELDS|SPEC_LISTS|MILESTONE_FIELDS|BRIEF_SECTIONS|USER_SECTIONS|REVIEW_FIELDS|REVIEW_ROW_FIELDS|REVIEW_SPEC_FIELDS|REVIEW_SPEC_LISTS|REQUIRED_SECTIONS)"]
+enumeration = "complete"
+related = ["B-f007171d"]
+dedup_id = "abf558c2aac67d03"
+resolved = 2026-11-09
+resolution = "Uncommitted (review-apply 2026-11-09): each store owns its review field lists and current-value reader; RecordTarget, its parser and current() moved to plan/target.rs; review/target.rs keeps only review-specific prose/file logic; review add judges record expect through apply's Validate pass; tier.rs uses check.rs REQUIRED_SECTIONS; open.rs BRIEF_SECTIONS const; record_refusals drops its unused root. Also closes backlog B-f007171d."
+
+[[items]]
+id = "R24"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "shimmying-marinating-bumblebee"
+file = "tomlctl/src/review/target.rs"
+line = 99
+symbol = "RecordTarget::SpecEntry"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "SpecEntry { index: Option<usize>, append: bool } represents meaningless states, and Display prints one as a different variant"
+description = "parse builds only (Some(n), false) or (None, true), but Display handles (false, None) by printing task:<ref>.spec.<list>, which re-parses as SpecField, breaking the round-trip of the string applied.target stores. ReviewEdit repeats the pair, with three states spread across entry = append || index.is_some(). Replace with enum Slot { At(usize), Append }: SpecEntry { slot } and ReviewEdit { entry: Option<Slot> }."
+evidence = [
+    "tomlctl/src/review/target.rs:99,340-350",
+    "tomlctl/src/tasks/update.rs:1288-1289,1405",
+]
+instances = [
+    "tomlctl/src/review/target.rs:RecordTarget::SpecEntry",
+    "tomlctl/src/review/apply.rs:edit",
+    "tomlctl/src/review/add.rs:expect_holds",
+    "tomlctl/src/review/tier.rs:probe",
+    "tomlctl/src/tasks/update.rs:ReviewEdit",
+]
+sweep = [
+    "append:",
+    "index:",
+]
+enumeration = "incomplete"
+dedup_id = "63e6791145f46fdb"
+resolved = 2026-11-09
+resolution = "Uncommitted (review-apply 2026-11-09): tasks::Slot { At(usize), Append } replaces index/append on RecordTarget::SpecEntry and ReviewEdit; Display has no unreachable arm."
+
+[[items]]
+id = "R25"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "shimmying-marinating-bumblebee"
+file = "tomlctl/src/plan/store.rs"
+line = 199
+symbol = "accept_target_ref"
+severity = "suggestion"
+effort = "small"
+category = "db"
+summary = "plan approve's unprobed-accept gate hand-parses targets and applied records review apply writes, with no test running one into the other; drift fails open"
+description = 'review apply stamp writes applied = {at, tier, target, old, new, by, recovered} with target from RecordTarget Display; plan/store.rs reads it as a plain document and re-implements the grammar (accept_target_ref, approve.rs starts_with("decision:"), re-declared tier/kind/status words). Every plan-side test hand-writes the applied table and no review test runs plan approve/gate/stage after a real review apply. If the grammar or applied keys change, accept_target_ref returns None, unprobed_accept_edits names nothing and --review ran passes without the required re-probe. Keep the plan-to-review layering, but add an integration test applying a spec.accept fix then asserting plan approve --review ran refuses, and share the target grammar once it lives below review.'
+evidence = [
+    "tomlctl/src/plan/store.rs:141-161,199-204",
+    "tomlctl/src/review/apply.rs:557-596 stamp",
+    "tomlctl/src/plan/approve.rs:130",
+    "tomlctl/tests/plan_approve.rs:582-590 hand-written applied",
+]
+instances = [
+    "tomlctl/src/plan/store.rs:accept_target_ref",
+    "tomlctl/src/plan/store.rs:plan_review_state",
+    "tomlctl/src/plan/approve.rs:review_edits",
+]
+sweep = [
+    'strip_prefix\("task:"\)',
+    'starts_with\("decision:"\)',
+    'split_once\("\.spec\.accept"\)',
+]
+enumeration = "complete"
+dedup_id = "926948094d509c63"
+resolved = 2026-11-09
+resolution = "Uncommitted: integration test review_ran_is_refused_after_review_apply_rewrites_an_accept_entry runs real review add, verdict and apply into plan approve --review ran; grammar not moved; deviated: the test stamps the run finished by hand, since review run finish needs unrelated coverage setup"
+
+[[items]]
+id = "R26"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "shimmying-marinating-bumblebee"
+file = "tomlctl/src/review/add.rs"
+line = 378
+symbol = "flow_slug"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "Whether a review store is in flow mode is computed four separate ways inside review, though tasks::is_v2_flow exists"
+description = "add.rs flow_slug and query.rs join root/.claude/flows/<slug>/plan.toml by hand; tier.rs compute and apply.rs execute go through plan::store::resolve (which validates the slug). One review-side helper built on store_slug and plan::store::resolve (or tasks::is_v2_flow) keeps the one fact CLAUDE.md defines in one place."
+evidence = [
+    '''tomlctl sweep -e 'join\("plan\.toml"\)' -e 'plan::store::resolve\(slug\)\?\.is_file\(\)' -e 'plan_path\.is_file\(\)' -> review/add.rs:384, review/query.rs:293, review/tier.rs:70, review/apply.rs:116''',
+    "tomlctl/src/tasks/store.rs:52-56 is_v2_flow",
+]
+instances = [
+    "tomlctl/src/review/add.rs:flow_slug",
+    "tomlctl/src/review/query.rs:293",
+    "tomlctl/src/review/tier.rs:compute",
+    "tomlctl/src/review/apply.rs:execute",
+]
+sweep = [
+    'join\("plan\.toml"\)',
+    'plan::store::resolve\(slug\)\?\.is_file\(\)',
+    'plan_path\.is_file\(\)',
+]
+enumeration = "complete"
+dedup_id = "a000f09aadfe0b7a"
+resolved = 2026-11-09
+resolution = "Uncommitted (review-apply 2026-11-09): review::add::v2_plan(slug) resolves through plan::store::resolve; add, query, tier and apply all use it."
+
+[[items]]
+id = "R27"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "shimmying-marinating-bumblebee"
+file = "tomlctl/src/tasks/update.rs"
+line = 1516
+symbol = "entry_edit"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "A list holding two entries equal to expect reports stale as 'expected X, found X', giving the agent nothing to act on"
+description = "In the duplicate case entry_edit's stale closure returns entries[hint], which equals expect. review add's match_entry and prose place both report the same case clearly as ambiguous. Report the whole list or an ambiguity reason instead, and add a duplicate-entry test (tasks update can create duplicates)."
+evidence = [
+    "tomlctl/src/tasks/update.rs:1480-1520",
+    "tomlctl/src/tasks/update.rs:2376-2468 tests",
+]
+dedup_id = "7741889cea903f32"
+resolved = 2026-11-09
+resolution = "Uncommitted (review-apply 2026-11-09): entry_edit reports the whole list as found when several entries equal expect; test two_entries_equal_to_expect_report_the_whole_list."
+
+[[items]]
+id = "R28"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "shimmying-marinating-bumblebee"
+file = "claude/skills/review-v2-engine/SKILL.md"
+line = 20
+symbol = "rule 1"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "Engine rule 1 limits the orchestrator to orchestrator/audit projections, but plan-flow.md section 7 triage reads --for implementer"
+description = "plan-flow.md says the engine's role rules hold throughout, then reads findings with --for implementer in section 7 because the orchestrator projection lacks expect and new. Markdown mode does the same (review-plan-v2.md:136). Amend rule 1 with a plan-family triage exception."
+evidence = [
+    "claude/skills/review-v2-engine/SKILL.md:20",
+    "claude/skills/review-v2-engine/references/plan-flow.md:12,165,193",
+    "tomlctl/src/review/fields.rs:1352-1353",
+]
+dedup_id = "c62e208ec6479797"
+resolved = 2026-11-09
+resolution = "Uncommitted: review-v2-engine SKILL.md rule 1 allows plan-family triage to read --for implementer"
+
+[[items]]
+id = "R29"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "shimmying-marinating-bumblebee"
+file = "claude/skills/review-v2-engine/references/plan-flow.md"
+line = 54
+symbol = "section 2 Run start"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "Flow-mode run start hardcodes --set substrate=workflow though the engine records agent-waves when the Workflow tool is unavailable"
+description = "The run-start and re-check run-start commands pass substrate=workflow unconditionally; engine SKILL.md says substrate is workflow only when the Workflow tool is available. The /review-plan-v2 flow-mode pre-flight never checks, so a session without the tool records the wrong substrate before falling back. Substitute the substrate the engine rule selects."
+evidence = [
+    "claude/skills/review-v2-engine/references/plan-flow.md:54,276",
+    "claude/skills/review-v2-engine/SKILL.md:95",
+]
+instances = [
+    "claude/skills/review-v2-engine/references/plan-flow.md:54",
+    "claude/skills/review-v2-engine/references/plan-flow.md:276",
+]
+dedup_id = "ff54fbb583d7a692"
+resolved = 2026-11-09
+resolution = "Uncommitted: plan-flow.md run start and re-check run start pass substrate=<workflow|agent-waves> with the engine's selection rule"
+
+[[items]]
+id = "R30"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "shimmying-marinating-bumblebee"
+file = "claude/workflows/plan-v2-review.js"
+line = 4
+symbol = "meta.whenToUse"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "whenToUse says the Workflow is launched only by the plan-v2-engine review procedure, but /review-plan-v2 flow mode launches it too"
+description = "plan-flow.md section 4 and review-plan-v2.md:78 launch plan-v2-review from /review-plan-v2's flow mode. Name both launchers."
+evidence = [
+    "claude/workflows/plan-v2-review.js:4",
+    "claude/commands/review-plan-v2.md:78",
+]
+dedup_id = "a920b6ed4f5ab89b"
+resolved = 2026-11-09
+resolution = "Uncommitted: plan-v2-review.js whenToUse names both launchers"
+
+[[items]]
+id = "R31"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "shimmying-marinating-bumblebee"
+file = "claude/workflows/plan-v2-review.js"
+line = 255
+symbol = "baselines none"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "The Workflow passes a bare 'none' under baselines:, which the lead's grammar does not define"
+description = 'plan-review-lead.md defines only "<key>: <path>" and "<key>: none — <reason>" baseline lines; when the surveyor returns no verification lines the Workflow emits a bare none, which the lead may read as a key. Emit a line in the defined form or define the bare form.'
+evidence = [
+    "claude/workflows/plan-v2-review.js:255",
+    "claude/agents/plan-review-lead.md:39",
+]
+dedup_id = "c54af3da3b2b2bd9"
+resolved = 2026-11-09
+resolution = "Uncommitted: plan-review-lead.md baselines grammar defines a lone none line"
+
+[[items]]
+id = "R32"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "shimmying-marinating-bumblebee"
+file = "claude/skills/plan-v2-engine/SKILL.md"
+line = 25
+symbol = "rule 2"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "plan-v2-engine rule 2 says launch args go to <scratch>, but plan-flow.md section 4 writes wrapper-args.json under <run-dir>/payloads/"
+description = "The two rules disagree about where the Workflow's launch args are staged. Reconcile them: either name the run-directory exception in rule 2 or stage wrapper-args.json in scratch."
+evidence = [
+    "claude/skills/plan-v2-engine/SKILL.md:25",
+    "claude/skills/review-v2-engine/references/plan-flow.md:78",
+]
+dedup_id = "3391a8ce3329bad6"
+resolved = 2026-11-09
+resolution = "Uncommitted: plan-v2-engine SKILL.md rule 2 names the review run directory payloads exception"
+
+[[items]]
+id = "R33"
+file = "tomlctl/src/tasks/update.rs"
+line = 1453
+symbol = "review_edit"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = 'review add accepts an accept-entry expect with kind "" copied from tasks show, which review apply then refuses in stored_form'
+description = """A check-less accept entry is stored with kind = "" (tasks/add.rs accept_entry), and tasks show prints it so. review add's exact expect comparison accepts a verbatim copy, and tier.rs treats the plan/accept-no-check fix as mechanical, but tasks/update.rs review_edit runs stored_form on expect with .transpose()?, and the accept parser refuses kind "" ("expected one of forward, falsifier, guard"). plan/records.rs already falls back with stored_form(...).unwrap_or_else(|_| expect.clone()); the task-store path has none. Found by the R23 research pass; fix with R23."""
+evidence = [
+    "tomlctl/src/tasks/update.rs review_edit stored_form(..).transpose()?",
+    "tomlctl/src/tasks/add.rs accept_entry kind default",
+    "tomlctl/src/plan/records.rs stored_form fallback",
+    'scratch run: tasks update --ndjson with kind "" -> `spec.accept[0].kind` expected one of forward, falsifier, guard, rc=1',
+]
+related = ["R23"]
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "shimmying-marinating-bumblebee"
+dedup_id = "2fd05864c3b954d5"
+resolved = 2026-11-09
+resolution = 'Uncommitted (review-apply 2026-11-09): review_edit compares a probe-less expect verbatim when stored_form refuses it; accept_entry reads kind "" with an empty check as absent, so a list holding a check-less entry round-trips through the patch path; test a_check_less_accept_entry_matches_its_verbatim_copy.'

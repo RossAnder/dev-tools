@@ -101,6 +101,7 @@ Triage is `plan-flow.md` section 7, by tier; there is no merge offer, and the gr
 
 - **Mechanical and cited.** Applied without asking through `review apply`, previewed with `--dry-run` first. List them as applied, with the refused, stale and `already` ids the verb reported; cited edits are disclosed rather than asked.
 - **User tier.** Asked in `AskUserQuestion` batches, applied with `--user-accepted` on Accept and dismissed on Veto. A headless session leaves them `open` and says `user tier pending`.
+- **Question tier.** Asked in the same batches with Revise and Keep: the user revises the record through the `plan` verbs or keeps it, and the row is resolved with `review triage --resolve`, never applied, parked or dismissed.
 - **Advisory and leftovers.** The engine's stage 7 presentation, over the advisory rows, the defect and cleanup rows whose tier is `advisory`, and the refused ids.
 
 On an approved flow, `plan-flow.md` section 12 replaces the first two groups: every edit is asked whatever its tier, the question naming the tier, because `review apply` refuses any call without `--user-accepted` once `plan.toml` holds an `[[approval]]`.

@@ -9037,7 +9037,7 @@ kind = "debt"
 summary = "review target.rs keeps its own copies of the plan decision and contract key lists"
 area = "tomlctl/src/review"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-09T13:45:26Z
 last_seen = 2026-11-09T13:45:26Z
 seen_count = 1
@@ -9048,6 +9048,8 @@ context = "DECISION_KEYS and CONTRACT_KEYS in tomlctl/src/plan/records.rs are pr
 base_sha = "6205e298590c4d917c4ebcbcab601185f4626788"
 evidence = ["tomlctl/src/review/target.rs:1"]
 related = ["B-efda464f"]
+resolved = 2026-11-09
+resolution = "Uncommitted review-apply 2026-11-09 (R23): plan/records.rs review_keys exports the decision/contract key lists; review/target.rs copies deleted, RecordTarget moved to plan/target.rs."
 
 [[backlog]]
 id = "B-36f791e4"
@@ -9073,7 +9075,7 @@ kind = "debt"
 summary = "review tier.rs copies the verifying-role list from stats.rs VERIFYING"
 area = "tomlctl/src/review"
 tags = []
-status = "open"
+status = "dismissed"
 created = 2026-11-09T13:45:26Z
 last_seen = 2026-11-09T13:45:26Z
 seen_count = 1
@@ -9083,6 +9085,8 @@ flow = "shimmying-marinating-bumblebee"
 context = "tier.rs needs the verifier/panel/checker role set to decide the citation tier and keeps its own copy because stats.rs VERIFYING is private. Two lists can drift. Make one pub(super) const in stats.rs or fields.rs."
 base_sha = "6205e298590c4d917c4ebcbcab601185f4626788"
 related = ["B-90c6b8fe"]
+dismissed = 2026-11-09
+dismiss_reason = "R8 (review-apply 2026-11-09) split the two lists on purpose: tier.rs CITING (verifier, panel) is a call that can carry a fix and must exclude the checker; stats.rs VERIFYING is a call an audit can overturn and properly includes it. Unifying them would reintroduce R8."
 
 [[backlog]]
 id = "B-50b2b7a2"
@@ -9202,3 +9206,113 @@ flow = "shimmying-marinating-bumblebee"
 context = "approve.md still warns that no engine can run the plan and that /review-plan can overwrite brief.md; now that /review-plan-v2 has a flow mode, the warning should point at it. Arrived cheap-in-file; deferred so the verified run was not re-opened."
 base_sha = "6205e298590c4d917c4ebcbcab601185f4626788"
 related = ["B-70b64580"]
+
+[[backlog]]
+id = "B-6a0b8f4f"
+kind = "annoyance"
+summary = "tasks show --with short help omits spec, which it accepts and lists under possible values"
+area = "tomlctl/src/cli"
+tags = ["help-text"]
+status = "open"
+created = 2026-11-09T18:04:10Z
+last_seen = 2026-11-09T18:04:10Z
+seen_count = 1
+dedup_id = "6a0b8f4fc17e82e7"
+origin = "review"
+flow = "shimmying-marinating-bumblebee"
+context = "The short help reads 'Sections to include (summary,body,files,deps,dependents,absent)'; spec is accepted and appears only under possible values. plan-records.md and three review-v2 check files tell agents to use --with spec, so an agent reading only the short help misses it. Add spec to the doc string."
+base_sha = "d0ab8fef3ebdf74048d3ece131e90d4f3e3bbd31"
+
+[[backlog]]
+id = "B-f0558729"
+kind = "question"
+summary = "scripts/link-v2-review.ps1 is Windows-only, so a Linux host has no scripted deploy for the review-v2 artefacts"
+area = "scripts"
+tags = [
+    "deploy",
+    "review-v2",
+]
+status = "open"
+created = 2026-11-09T18:04:10Z
+last_seen = 2026-11-09T18:04:10Z
+seen_count = 1
+dedup_id = "f0558729cb6a0ed7"
+origin = "review"
+flow = "shimmying-marinating-bumblebee"
+context = "The script uses WindowsIdentity, HKLM registry reads and Junction items, so under pwsh on Linux it most likely aborts before linking anything (not run). CLAUDE.md Review v2 Deploy names it as the link mechanism. On Linux, link the entries by hand with ln -s into the Claude config dir, or decide whether the script should grow a POSIX branch or a sibling shell script."
+base_sha = "d0ab8fef3ebdf74048d3ece131e90d4f3e3bbd31"
+evidence = ["scripts/link-v2-review.ps1:1"]
+
+[[backlog]]
+id = "B-466a423b"
+kind = "debt"
+summary = "review apply resolves a prose target path, then locks and atomic-writes it, so a symlink swapped in between is not re-checked under the lock"
+area = "tomlctl/src/review"
+tags = [
+    "review-v2",
+    "security",
+]
+status = "open"
+created = 2026-11-09T19:26:33Z
+last_seen = 2026-11-09T19:26:33Z
+seen_count = 1
+dedup_id = "466a423bed8456a0"
+origin = "review-apply"
+flow = "shimmying-marinating-bumblebee"
+context = "The brief and design containment check (plan/store.rs locate_brief, anchored on authored_anchor) now refuses a symlinked docs/flows/<slug> at resolve time, but prose() resolves the path, then takes the lock and writes, so a symlink created between the two steps is not seen. Needs an attacker with write access to the repo's docs tree mid-call; low exposure. A fix would re-resolve (or open with O_NOFOLLOW on the parent chain) inside the lock before the atomic write."
+base_sha = "d0ab8fef3ebdf74048d3ece131e90d4f3e3bbd31"
+evidence = ["tomlctl/src/review/apply.rs:498"]
+
+[[backlog]]
+id = "B-806c4f55"
+kind = "question"
+summary = "review stats first_approval reads plan.toml from the real repo root, so its in-crate unit test depends on whether a demo flow exists"
+area = "tomlctl/src/review"
+tags = []
+status = "open"
+created = 2026-11-09T19:59:13Z
+last_seen = 2026-11-09T19:59:13Z
+seen_count = 1
+dedup_id = "806c4f55be6320d1"
+origin = "review-apply"
+flow = "shimmying-marinating-bumblebee"
+context = "stats.rs first_approval (added for R18) resolves plan.toml through repo_or_cwd_root, so the unit test plan_outcomes_derive_dispositions_growth_and_cost (slug demo) reads .claude/flows/demo/plan.toml in the real checkout. If a demo flow with an approval ever exists, that test's veto counts change. Arrived cheap-in-file from the implementer and was deferred: thread the root or the approval time into the stats function, or use a slug no real flow can hold."
+base_sha = "d0ab8fef3ebdf74048d3ece131e90d4f3e3bbd31"
+evidence = ["tomlctl/src/review/stats.rs:1015"]
+related = ["B-66abc1d9"]
+
+[[backlog]]
+id = "B-dc8f8cdb"
+kind = "debt"
+summary = "review triage --convert accepts a question-tier advisory and mints a defect or cleanup that is stamped user tier, undocumented"
+area = "tomlctl/src/review"
+tags = []
+status = "open"
+created = 2026-11-09T19:59:13Z
+last_seen = 2026-11-09T19:59:13Z
+seen_count = 1
+dedup_id = "dc8f8cdbd5f4a065"
+origin = "review-apply"
+flow = "shimmying-marinating-bumblebee"
+context = "After R3 added the question tier, --park refuses question rows but --convert does not. Converting one turns a question into a proposed edit, which then tiers user and can be accepted. That may be the intended path from question to edit, but neither plan-flow.md section 7 nor review.md says so. Decide, then document it or refuse it."
+base_sha = "d0ab8fef3ebdf74048d3ece131e90d4f3e3bbd31"
+evidence = ["tomlctl/src/review/triage.rs:643"]
+related = ["B-50b2b7a2"]
+
+[[backlog]]
+id = "B-e803af5c"
+kind = "question"
+summary = "review tier.rs probe and check-class proofs match expect with exact match_entry, not the normalising form review add and apply use"
+area = "tomlctl/src/review"
+tags = []
+status = "open"
+created = 2026-11-09T19:59:13Z
+last_seen = 2026-11-09T19:59:13Z
+seen_count = 1
+dedup_id = "e803af5cc9be338d"
+origin = "review-apply"
+flow = "shimmying-marinating-bumblebee"
+context = "R23 made review add judge a record expect through apply's Validate pass (stored_form normalisation), but tier.rs's probe and check-class proofs still compare expect against the reader's list with exact match_entry (probe stripped). A short-form accept expect that add accepts cannot then be proved mechanical, which is a third comparison rule over the same records. Arrived cheap-in-file and was deferred: route the proof match through the store's normalising comparison."
+base_sha = "d0ab8fef3ebdf74048d3ece131e90d4f3e3bbd31"
+evidence = ["tomlctl/src/review/tier.rs:1"]
+related = ["B-466a423b"]

@@ -640,6 +640,7 @@ families = ["perf"]
 # ---------------------------------------------------------------- routing
 # `review add` routes cleanup to the Opus verifier when it edits an
 # `executable` path, or removes a test; `tests` wins over `executable`.
+# A plan-family cleanup goes to the verifier whatever its paths.
 
 [routing]
 executable = [

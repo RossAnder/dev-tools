@@ -17,7 +17,7 @@ Work goes to the cheapest executor that can do it reliably: deterministic `tomlc
 
 Four rules keep your context for those decisions:
 
-1. **Read digests and projections, never rows.** Your reads are `review plan --propose` output, `review digest`, the `--for orchestrator` and `--for audit` projections, the surveyor's digest and `profile.md`. Never open the store file, never read lens, facet or method bodies, and never read `pack.md`.
+1. **Read digests and projections, never rows.** Your reads are `review plan --propose` output, `review digest`, the `--for orchestrator` and `--for audit` projections, the surveyor's digest and `profile.md`. Plan-family triage may read findings with `--for implementer`, since the orchestrator projection omits the proposed edit's `expect` and `new`. Never open the store file, never read lens, facet or method bodies, and never read `pack.md`.
 2. **Never re-type a finding.** Agents write the store themselves. Refer to findings by id.
 3. **Never paste constraints, rows or catalogue text into a prompt.** A prompt is the assignment template in `references/agent-waves.md`; agents fetch the rest from the store and the pack.
 4. **Never load the `review-v2-lenses` skill.** `tomlctl` resolves the catalogue path, binds each concern's content into the cell, and hands agents the absolute paths. Load the `backlog-capture` skill only at stage 8, and only when the user picked an item for the backlog.

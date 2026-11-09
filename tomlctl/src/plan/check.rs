@@ -30,7 +30,7 @@ use crate::tasks::slug::{dedupe_refs, derive_ref};
 use crate::tasks::{load_store, resolve_store_path};
 
 const DESIGN_DIR: &str = "design";
-pub(super) const REQUIRED_SECTIONS: [&str; 4] =
+pub(crate) const REQUIRED_SECTIONS: [&str; 4] =
     ["Intent", "Non-goals", "Scope budget", "Success criteria"];
 
 /// An approved brief differs from its stamp exactly when `--amend` is needed.
@@ -106,13 +106,27 @@ pub(crate) fn design_section(root: &Path, citation: &str) -> Option<String> {
     }
     let path = design_path(root, relative)?;
     let source = fs::read_to_string(path).ok()?;
-    let outline = Outline::of(&source);
-    let section = outline.section(anchor)?;
+    design_section_in(&source, anchor).map(|(_, body)| body)
+}
+
+/// The section `anchor` names in `source`, as `design_section` reads it, with
+/// the byte offset of its heading line. The offset is meaningful only when
+/// `source` has LF line endings.
+pub(crate) fn design_section_in(source: &str, anchor: &str) -> Option<(usize, String)> {
+    if anchor.is_empty() {
+        return None;
+    }
+    let outline = Outline::of(source);
+    let (first, section) = outline.section(anchor)?;
     let end = section
         .iter()
         .rposition(|line| !line.trim().is_empty())
         .map_or(0, |last| last + 1);
-    Some(section[..end].join("\n"))
+    let offset = outline.lines[..first]
+        .iter()
+        .map(|line| line.len() + 1)
+        .sum();
+    Some((offset, section[..end].join("\n")))
 }
 
 /// Containment is checked after resolving symlinks, because a link at or inside
@@ -171,14 +185,15 @@ impl<'a> Outline<'a> {
         Self { lines, headings }
     }
 
-    fn section(&self, slug: &str) -> Option<&[&'a str]> {
+    /// The section's lines with the index of its heading line.
+    fn section(&self, slug: &str) -> Option<(usize, &[&'a str])> {
         let at = self.headings.iter().position(|h| h.slug == slug)?;
         let heading = &self.headings[at];
         let end = self.headings[at + 1..]
             .iter()
             .find(|next| next.depth <= heading.depth)
             .map_or(self.lines.len(), |next| next.line);
-        Some(&self.lines[heading.line..end])
+        Some((heading.line, &self.lines[heading.line..end]))
     }
 }
 
@@ -199,7 +214,7 @@ pub(super) fn atx_heading(line: &str) -> Option<(usize, &str)> {
 
 /// The heading level is not part of the contract, only the title.
 fn section_has_content(outline: &Outline<'_>, title: &str) -> bool {
-    let Some(section) = outline.section(&derive_ref(title)) else {
+    let Some((_, section)) = outline.section(&derive_ref(title)) else {
         return false;
     };
     body_is_filled(&section[1..].join("\n"))

@@ -514,6 +514,27 @@ pub(crate) fn toml_to_json(v: &TomlValue) -> JsonValue {
     }
 }
 
+/// Decodes a value stored as JSON text, as the review store keeps record values
+/// since TOML holds no null. An absent value is null, and a non-string legacy
+/// value converts through [`toml_to_json`].
+pub(crate) fn decode_json_text(value: Option<&TomlValue>) -> JsonValue {
+    match value {
+        Some(TomlValue::String(raw)) => json_from_text(raw),
+        Some(other) => toml_to_json(other),
+        None => JsonValue::Null,
+    }
+}
+
+/// `raw` parsed as JSON, or `raw` itself as a string when it is not JSON.
+pub(crate) fn json_from_text(raw: &str) -> JsonValue {
+    serde_json::from_str(raw).unwrap_or_else(|_| JsonValue::String(raw.to_string()))
+}
+
+/// The JSON text [`decode_json_text`] reads back as `value`.
+pub(crate) fn encode_json_text(value: &JsonValue) -> String {
+    value.to_string()
+}
+
 /// Borrowed-lifetime sibling of `toml_to_json`. Walks the
 /// `toml::de::DeTable<'a>` produced by `io::read_doc_borrowed` and emits an
 /// owned `serde_json::Value`. The key win over `toml_to_json` is that
@@ -952,6 +973,28 @@ pub(crate) fn compare_typed(field: &TomlValue, rhs_raw: &str) -> Result<std::cmp
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn json_text_round_trips_and_reads_its_edge_cases() {
+        for value in [
+            JsonValue::Null,
+            serde_json::json!("x"),
+            serde_json::json!(["a", 1]),
+        ] {
+            let stored = TomlValue::String(encode_json_text(&value));
+            assert_eq!(decode_json_text(Some(&stored)), value);
+        }
+        let not_json = TomlValue::String("plain text".into());
+        assert_eq!(
+            decode_json_text(Some(&not_json)),
+            JsonValue::from("plain text")
+        );
+        assert_eq!(
+            decode_json_text(Some(&TomlValue::Integer(3))),
+            JsonValue::from(3)
+        );
+        assert_eq!(decode_json_text(None), JsonValue::Null);
+    }
 
     #[test]
     fn navigate_json_walks_objects_and_arrays() {

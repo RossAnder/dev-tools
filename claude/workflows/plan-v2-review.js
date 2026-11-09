@@ -1,7 +1,7 @@
 export const meta = {
   name: 'plan-v2-review',
   description: 'Review a v2 plan over its flow directory: survey and baselines, a lead-composed coverage map, review-v2-pipeline waves the lead settles, then the lead audit',
-  whenToUse: 'Launched by the plan-v2-engine skill review procedure, full or recheck, with the slug, the started run and the run directory as args; not for direct use',
+  whenToUse: 'Launched by the plan-v2-engine skill review procedure and by /review-plan-v2 in flow mode, full or recheck, with the slug, the started run and the run directory as args; not for direct use',
   phases: [
     { title: 'Survey', detail: 'full mode: one review-surveyor, then one verification agent per resolved baseline, in sequence' },
     { title: 'Compose', detail: 'plan-review-lead writes the coverage map, its cells and waivers' },
@@ -265,7 +265,9 @@ if (!validWave(composed)) {
   return index()
 }
 
-const maxWaves = recheck ? 1 : MAX_WAVES[a.depth]
+const maxWaves = MAX_WAVES[a.depth]
+// A recheck runs at quick, so its only follow-up is the one escalation probe cell.
+const escalationProbe = (w) => Array.isArray(w.cells) && w.cells.length === 1 && w.cells[0].agentType === 'review-finder'
 let current = { wave: composed.wave, cells: composed.cells }
 let halted = false
 
@@ -312,8 +314,8 @@ while (current) {
 
   const next = settled.next
   if (!next) { current = null; continue }
-  if (recheck) {
-    fail(`lead settle wave ${current.wave} wrote follow-up wave ${next.wave} in recheck mode; not launched`)
+  if (recheck && !escalationProbe(next)) {
+    fail(`lead settle wave ${current.wave} wrote follow-up wave ${next.wave} in recheck mode, which allows only one review-finder escalation probe cell; not launched`)
     current = null
   } else if (!validWave(next) || next.wave <= current.wave) {
     fail(`lead settle wave ${current.wave} returned an unusable follow-up ${JSON.stringify(next)}; not launched`)

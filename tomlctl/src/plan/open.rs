@@ -217,6 +217,16 @@ fn fold_whitespace(raw: &str) -> String {
     raw.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// The brief's sections, in the order the skeleton writes them.
+pub(super) const BRIEF_SECTIONS: [&str; 6] = [
+    "Intent",
+    "Non-goals",
+    "Scope budget",
+    "Success criteria",
+    "Background",
+    "Unknowns",
+];
+
 /// Sections stay empty unless a row fills them, because `plan check` reads an
 /// empty one as unfinished.
 fn brief_skeleton(slug: &str, rows: &[BacklogRow]) -> String {
@@ -233,12 +243,14 @@ fn brief_skeleton(slug: &str, rows: &[BacklogRow]) -> String {
         }
     };
     let mut brief = format!("# {slug}\n\n");
-    brief.push_str(&section("Intent", &intent.concat()));
-    brief.push_str(&section("Non-goals", ""));
-    brief.push_str(&section("Scope budget", ""));
-    brief.push_str(&section("Success criteria", ""));
-    brief.push_str(&section("Background", &background.join("\n")));
-    brief.push_str(&section("Unknowns", ""));
+    for heading in BRIEF_SECTIONS {
+        let body = match heading {
+            "Intent" => intent.concat(),
+            "Background" => background.join("\n"),
+            _ => String::new(),
+        };
+        brief.push_str(&section(heading, &body));
+    }
     brief.truncate(brief.trim_end().len());
     brief.push('\n');
     brief

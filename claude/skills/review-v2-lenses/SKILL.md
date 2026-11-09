@@ -171,7 +171,7 @@ When `files`, `manifest` and `contains` are all present, a file must pass each o
 
 ### Routing
 
-`[routing]` holds `executable` globs (source whose edits change behaviour) and `tests` globs. `review add` routes a cleanup row to the Opus verifier when its edit target, or any of its `instances`, is a test path and the direction is `remove`, or is a non-test executable path. Every other cleanup goes to the Haiku checker. A test path is never treated as executable. A project `[routing]` appends to both lists.
+`[routing]` holds `executable` globs (source whose edits change behaviour) and `tests` globs. `review add` routes every plan-family cleanup row to the Opus verifier, whatever its paths, since the checker's projection hides a flow-mode row's record edit. Otherwise it routes a cleanup row to the verifier when its edit target, or any of its `instances`, is a test path and the direction is `remove`, or is a non-test executable path. Every other cleanup goes to the Haiku checker. A test path is never treated as executable. A project `[routing]` appends to both lists.
 
 ## Project layer
 

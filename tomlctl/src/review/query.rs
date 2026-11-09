@@ -286,12 +286,7 @@ fn assignment(
         row.insert("plan_documents".into(), json!(run.scope));
         // Present only in flow mode, so an agent can tell a v2 flow from a markdown plan.
         if let Some(slug) = super::add::store_slug(target)
-            && root
-                .join(".claude")
-                .join("flows")
-                .join(&slug)
-                .join("plan.toml")
-                .is_file()
+            && matches!(super::add::v2_plan(&slug), Ok(Some(_)))
         {
             row.insert("flow".into(), json!(slug));
         }

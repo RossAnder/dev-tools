@@ -75,14 +75,14 @@ A fix tomlctl can check from the store and the tree is applied without asking an
 | `proof` | Holds when | `new` may |
 |---|---|---|
 | `{"kind": "probe"}` | the target is an accept entry, `task:<ref>.spec.accept[<n>]`, whose recorded probe verdict is not healthy. An entry with no verdict proves nothing | change only the entry's `check` and `positive` |
-| `{"kind": "check-class", "class": "<class>"}` | `plan check` reports that class at error severity on the target's task. Only `task:` targets | change only the field the class binds (below) |
+| `{"kind": "check-class", "class": "<class>"}` | `plan check` reports that class at error severity on the target's task. Only `task:` targets | change only the field the class binds (below). On a list it may only append entries or fill an existing entry's empty `check`; changing or dropping any stored entry is refused |
 | `{"kind": "path-missing", "path": "<path>"}` | the target is `task:<ref>.files`, the task claims the path, the tree lacks it, and it is not a `(new)` file | drop that path, or replace it with one other path |
 | `{"kind": "ref-unknown", "ref": <id>}` | the target is `task:<ref>.needs` or `contract:C<n>.tasks`, its value names task `<id>`, and no task has that id | drop that id, or replace it with one other id |
 
 | `class` | Binds |
 |---|---|
 | `dag/dangling-ref` | `needs`, `coupling` |
-| `plan/accept-no-check`, `plan/probe-unhealthy`, `plan/spec-no-accept` | `spec.accept` |
+| `plan/accept-no-check`, `plan/spec-no-accept` | `spec.accept` |
 | `plan/design-anchor-dead` | `spec.design` |
 | `plan/means-required-no-reason` | `spec.means` |
 | `plan/premise-task-unknown` | `spec.premises` |
@@ -94,10 +94,13 @@ A `path-missing` or `ref-unknown` row's `expect` and `new` are the whole list. A
 
 tomlctl computes each finding's `tier` when it opens; never supply `tier` or `applied`.
 
-- **user** — the target is a decision, a `spec.outcome`, or the brief's Intent, Non-goals, Scope budget or Success criteria. The user is asked, whatever the evidence.
+- **user** — a defect or cleanup with a `new` whose target is a decision, a `spec.outcome`, or the brief's Intent, Non-goals, Scope budget or Success criteria. The user is asked, whatever the evidence, and an accepted edit is applied.
+- **question** — an advisory, or a row without `new`, on one of those user-owned targets. The user answers it by revising the record or keeping it; it is never applied, parked or vetoed.
 - **mechanical** — a `proof` that holds. Applied without asking.
-- **cited** — the verifier's confirmed or plausible verdict cites a `path:line` in the target's own file, or in a path the target's value names. Applied and listed at the approval gate.
-- **advisory** — everything else, including any row without `new`. Shown, never applied.
+- **cited** — the verifier's or panel's confirmed or plausible verdict cites a `path:line` in the target's own file, or in a path the target's value names. A checker call never cites a row into this tier, and a plan cleanup routes to the verifier, never the checker. Applied and listed at the approval gate.
+- **advisory** — everything else, including any other row without `new`. Shown, never applied.
+
+A tier is frozen once stamped, so a row stamped `user` before `question` existed stays `user`.
 
 A verifier who means its verdict to carry a fix cites a `path:line` range that exists in such a file.
 

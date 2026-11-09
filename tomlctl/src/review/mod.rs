@@ -25,6 +25,8 @@ mod tier;
 mod triage;
 mod verdict;
 
+pub(crate) use tier::Tier;
+
 /// A `validation`-kind error, for input a review verb refuses.
 pub(super) fn invalid(msg: impl Into<String>) -> anyhow::Error {
     crate::errors::tagged_err(crate::errors::ErrorKind::Validation, None, msg)

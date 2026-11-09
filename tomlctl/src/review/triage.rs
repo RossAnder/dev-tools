@@ -24,6 +24,7 @@ use super::fields::{self, FindingStatus, Kind, Route};
 use super::invalid;
 use super::matching::{self, Site};
 use super::store::{self, Finding, Minted, Run, Store, Target, Verdict};
+use super::tier::Tier;
 use crate::cli::{ReadIntegrityArgs, ReviewTriageArgs};
 use crate::io::{read_ndjson_source, read_prose, repo_or_cwd_root};
 use crate::output::print_json_compact;
@@ -287,6 +288,19 @@ fn judge(store: &Store, id: &str, mode: &Mode, expect: Option<&str>) -> Step {
             "--{} applies to advisory findings; {id} is {}",
             mode.name(),
             finding.kind.as_str()
+        ));
+    }
+    let users = finding
+        .rest
+        .get("tier")
+        .and_then(TomlValue::as_str)
+        .and_then(Tier::parse)
+        .filter(|tier| tier.is_users());
+    if let (Mode::Park(_), Some(tier)) = (mode, users) {
+        reasons.push(format!(
+            "{id} is {} tier, which the user answers; close it with --resolve, or --dismiss \
+             on a veto, rather than parking it",
+            tier.as_str()
         ));
     }
     if matches!(mode, Mode::Reopen(_)) && !current.is_settled() && !current.is_reopenable() {
@@ -626,13 +640,7 @@ fn replacement_row(
     let cell = store.cells.iter().find(|c| c.id == advisory.cell);
     reasons.extend(add::field_refusals(root, &row, advisory.family, cell));
     if reasons.is_empty() {
-        reasons.extend(add::record_refusals(
-            root,
-            slug,
-            &row,
-            kind,
-            advisory.family,
-        ));
+        reasons.extend(add::record_refusals(slug, &row, kind, advisory.family));
     }
     if reasons.is_empty() {
         reasons.extend(add::text_refusals(root, &row, kind, advisory.family));

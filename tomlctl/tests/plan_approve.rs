@@ -607,6 +607,17 @@ fn review_ran_is_refused_for_an_open_user_tier_finding() {
     flow.write(
         "review-v2.toml",
         store
+            .replace("tier = \"user\"", "tier = \"question\"")
+            .replace("kind = \"defect\"", "kind = \"advisory\"")
+            .as_bytes(),
+    );
+    let (message, _) = flow.refused(&["--review", "ran"]);
+    assert!(message.contains("F9"), "{message}");
+    assert!(message.contains("question-tier"), "{message}");
+
+    flow.write(
+        "review-v2.toml",
+        store
             .replace("tier = \"user\"", "tier = \"cited\"")
             .as_bytes(),
     );
@@ -642,6 +653,121 @@ fn review_ran_is_refused_for_an_applied_accept_edit_left_unprobed() {
         format!("{FINISHED_RUN}{}", accept_edit_finding("cargo test other")).as_bytes(),
     );
     flow.approve(&["--review", "ran"]);
+}
+
+/// Runs `tomlctl` and returns its stdout as JSON, failing on a non-zero exit.
+fn ran(flow: &Flow, args: &[&str]) -> Value {
+    let assert = flow.tomlctl(args).assert().success();
+    stdout_json(&assert)
+}
+
+#[test]
+fn review_ran_is_refused_after_review_apply_rewrites_an_accept_entry() {
+    let flow = Flow::clean();
+    let catalogue = tempfile::tempdir().expect("tempdir");
+    let lenses = catalogue.path().join("review-v2-lenses");
+    fs::create_dir_all(&lenses).expect("lens dir");
+    fs::write(
+        lenses.join("vocabulary.toml"),
+        "[routing]\nexecutable = [\"**/*.rs\"]\n",
+    )
+    .expect("vocabulary");
+    let builtin = lenses.to_string_lossy().replace('\\', "/");
+    let started = "started = \"2026-11-05T12:00:00Z\"\n";
+    flow.write(
+        "review-v2.toml",
+        format!(
+            "schema_version = 1\n\n[[runs]]\nid = \"U1\"\ncommand = \"review-plan-v2\"\n\
+             family = \"plan\"\ndepth = \"standard\"\n{started}\
+             catalogue = {{ builtin = \"{builtin}\" }}\n\n\
+             [[cells]]\nid = \"C1\"\nrun = \"U1\"\nwave = 1\nslice = [\"src/**\"]\n\
+             concerns = [\"plan-structure\"]\nagent = \"review-finder\"\n\
+             reason = \"proposed\"\nstatus = \"assigned\"\n"
+        )
+        .as_bytes(),
+    );
+
+    let tasks_file = format!(".claude/flows/{SLUG}/tasks.toml");
+    let entry = serde_json::json!({
+        "behaviour": "a retry waits", "check": "cargo test retry", "kind": "forward",
+        "positive": "", "writes_build": false,
+    });
+    let mut fixed = entry.clone();
+    fixed["check"] = serde_json::json!("cargo test retry_waits");
+    let row = serde_json::json!({
+        "kind": "defect", "lens": "plan-structure", "summary": "the check is too broad",
+        "severity": "major", "failure_scenario": "an unrelated test passes it",
+        "fix": "name the test", "fix_shape": "edits", "effort": "trivial",
+        "counter": "nobody reads it", "grade": "high", "evidence": ["the record shows it"],
+        "target": "task:add-guard.spec.accept[0]", "file": tasks_file, "symbol": "add-guard",
+        "expect": entry, "new": fixed,
+    });
+    let payload = flow._dir.path().join("rows.ndjson");
+    fs::write(&payload, format!("{row}\n")).expect("payload");
+    let added = ran(
+        &flow,
+        &[
+            "review",
+            "add",
+            "--slug",
+            SLUG,
+            "--run",
+            "U1",
+            "--cell",
+            "C1",
+            "--ndjson",
+            payload.to_str().expect("a UTF-8 path"),
+        ],
+    );
+    let id = added["findings"][0]["id"]
+        .as_str()
+        .unwrap_or_else(|| panic!("no finding minted: {added}"))
+        .to_string();
+    ran(
+        &flow,
+        &[
+            "review",
+            "verdict",
+            &id,
+            "--slug",
+            SLUG,
+            "--verdict",
+            "confirmed",
+            "--by",
+            "verifier",
+            "--citation",
+            &format!("{tasks_file}:1"),
+            "--rationale",
+            "checked against the record",
+        ],
+    );
+    let applied = ran(&flow, &["review", "apply", &id, "--slug", SLUG]);
+    assert_eq!(
+        applied["applied"][0]["target"], "task:add-guard.spec.accept[0]",
+        "{applied}"
+    );
+
+    let store = fs::read_to_string(flow.path("review-v2.toml")).expect("the review store");
+    assert!(store.contains(started), "{store}");
+    flow.write(
+        "review-v2.toml",
+        store
+            .replacen(
+                started,
+                &format!("{started}finished = \"2026-11-05T12:30:00Z\"\n"),
+                1,
+            )
+            .as_bytes(),
+    );
+    let (message, kind) = flow.refused(&["--review", "ran"]);
+    assert_eq!(kind, "validation");
+    assert_eq!(
+        message,
+        format!(
+            "`--review ran` refused: applied findings left a `spec.accept` entry unprobed, \
+             so run `plan probes`: {id}"
+        )
+    );
 }
 
 #[test]
@@ -1078,6 +1204,58 @@ fn gate_lists_applied_edits_and_review_findings_as_risks() {
             { "kind": "review-finding", "id": "F6", "severity": "", "target": "",
               "summary": "Raised by the re-check." },
         ])
+    );
+}
+
+const GATE_VERDICTS: &str = r#"
+[[verdicts]]
+finding = "F4"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+severity = "minor"
+
+[[verdicts]]
+finding = "F5"
+run = "U1"
+by = "panel"
+verdict = "confirmed"
+severity = "minor"
+
+[[verdicts]]
+finding = "F5"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+severity = "critical"
+
+[[verdicts]]
+finding = "F5"
+run = "U1"
+by = "audit"
+verdict = "confirmed"
+"#;
+
+#[test]
+fn gate_risks_take_the_latest_severity_a_verdict_reassessed() {
+    let flow = Flow::staged(GATE_PLAN, GATE_TASKS, BRIEF.as_bytes());
+    flow.write(
+        "review-v2.toml",
+        format!("{GATE_REVIEW}{GATE_VERDICTS}").as_bytes(),
+    );
+
+    let report = flow.gate();
+
+    assert_eq!(
+        report["risks"],
+        serde_json::json!([
+            { "kind": "skip-reason", "detail": "Low risk." },
+            { "kind": "review-finding", "id": "F5", "severity": "critical",
+              "target": "task:one.files", "summary": "A minor, not a gate risk." },
+            { "kind": "review-finding", "id": "F6", "severity": "", "target": "",
+              "summary": "Raised by the re-check." },
+        ]),
+        "a lowered critical drops out and a raised minor joins"
     );
 }
 

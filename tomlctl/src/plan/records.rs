@@ -20,7 +20,7 @@ use crate::cli::{
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::read_ndjson_source;
 use crate::items::{parse_ndjson_batch, row_err, row_ids, row_string, row_strings};
-use crate::tasks::ReviewEditOutcome;
+use crate::tasks::{ReviewEditOutcome, unwritten_outcome, written_only};
 
 type Row = Map<String, JsonValue>;
 
@@ -43,6 +43,17 @@ const DECISION_KEYS: &[&str] = &[
 const CONTRACT_KEYS: &[&str] = &[
     "id", "kind", "claim", "check", "tasks", "provides", "consumes",
 ];
+
+const HANDOVER_KEYS: &[&str] = &["command", "source_task", "done"];
+
+/// The keys of a `kind` record a review finding may target: every key but `id`.
+pub(super) fn review_keys(kind: RecordKind) -> &'static [&'static str] {
+    match kind {
+        RecordKind::Decision => &DECISION_KEYS[1..],
+        RecordKind::Contract => &CONTRACT_KEYS[1..],
+        RecordKind::Handover => HANDOVER_KEYS,
+    }
+}
 
 fn refusal(message: impl Into<String>) -> anyhow::Error {
     tagged_err(ErrorKind::Validation, None, message)
@@ -336,38 +347,6 @@ pub(crate) struct RecordEdit<'a> {
     pub(crate) new: &'a JsonValue,
 }
 
-/// Carries an outcome that writes nothing out of a store's `mutate`, which
-/// persists whatever an `Ok` closure leaves, `last_updated` restamped.
-#[derive(Debug)]
-struct Unwritten(ReviewEditOutcome);
-
-impl std::fmt::Display for Unwritten {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "review edit not written: {:?}", self.0)
-    }
-}
-
-impl std::error::Error for Unwritten {}
-
-/// `Ok` for `Applied` alone, so the enclosing `mutate` persists only a write.
-pub(super) fn written_only(outcome: ReviewEditOutcome) -> Result<()> {
-    match outcome {
-        ReviewEditOutcome::Applied => Ok(()),
-        unwritten => Err(anyhow::Error::new(Unwritten(unwritten))),
-    }
-}
-
-/// The outcome a `mutate` over [`written_only`] ended with.
-pub(super) fn unwritten_outcome(result: Result<()>) -> Result<ReviewEditOutcome> {
-    match result {
-        Ok(()) => Ok(ReviewEditOutcome::Applied),
-        Err(err) => match err.downcast::<Unwritten>() {
-            Ok(Unwritten(outcome)) => Ok(outcome),
-            Err(err) => Err(err),
-        },
-    }
-}
-
 /// Applies `edit` to the flow's `plan.toml`, re-reading the key and checking
 /// `expect` inside the store lock. The value is written through the row path
 /// `plan decide` and `plan contract` use, so their validation applies. Only
@@ -420,7 +399,8 @@ fn record_edit(plan: &mut PlanStore, edit: &RecordEdit<'_>) -> Result<ReviewEdit
     if edit.new.is_null() {
         return Err(refuse("a record key takes a value, not null"));
     }
-    let current = record_value(plan, edit).ok_or_else(|| refuse("no such record"))?;
+    let current =
+        record_value(plan, edit.kind, edit.id, edit.key).ok_or_else(|| refuse("no such record"))?;
     let new = stored_form(plan, edit, edit.new)?;
     if current == new {
         return Ok(ReviewEditOutcome::Already);
@@ -454,14 +434,21 @@ fn stored_form(plan: &PlanStore, edit: &RecordEdit<'_>, value: &JsonValue) -> Re
     let mut scratch = plan.clone();
     write_key(&mut scratch, edit, value)?;
     let scratch = schema::from_toml(&schema::to_toml(&scratch))?;
-    Ok(record_value(&scratch, edit).expect("the record was just written"))
+    Ok(record_value(&scratch, edit.kind, edit.id, edit.key).expect("the record was just written"))
 }
 
-fn record_value(plan: &PlanStore, edit: &RecordEdit<'_>) -> Option<JsonValue> {
-    match edit.kind {
+/// The current value of `key` on record `id`, as a review edit compares it.
+/// `None` when the record or the key does not exist.
+pub(super) fn record_value(
+    plan: &PlanStore,
+    kind: RecordKind,
+    id: &str,
+    key: &str,
+) -> Option<JsonValue> {
+    match kind {
         RecordKind::Decision => {
-            let d = plan.decisions.iter().find(|d| d.id == edit.id)?;
-            Some(match edit.key {
+            let d = plan.decisions.iter().find(|d| d.id == id)?;
+            Some(match key {
                 "decision" => json!(d.decision),
                 "why" => json!(d.why),
                 "provenance" => json!(d.provenance.as_str()),
@@ -483,8 +470,8 @@ fn record_value(plan: &PlanStore, edit: &RecordEdit<'_>) -> Option<JsonValue> {
             })
         }
         RecordKind::Contract => {
-            let c = plan.contracts.iter().find(|c| c.id == edit.id)?;
-            Some(match edit.key {
+            let c = plan.contracts.iter().find(|c| c.id == id)?;
+            Some(match key {
                 "kind" => json!(c.kind.as_str()),
                 "claim" => json!(c.claim),
                 "check" => json!(c.check),
@@ -494,7 +481,15 @@ fn record_value(plan: &PlanStore, edit: &RecordEdit<'_>) -> Option<JsonValue> {
                 _ => return None,
             })
         }
-        RecordKind::Handover => None,
+        RecordKind::Handover => {
+            let h = plan.handovers.iter().find(|h| h.id == id)?;
+            Some(match key {
+                "command" => json!(h.command),
+                "source_task" => json!(h.source_task),
+                "done" => json!(h.done),
+                _ => return None,
+            })
+        }
     }
 }
 
@@ -758,19 +753,5 @@ mod tests {
             assert!(refused.is_err(), "{id} {key} {new} should be refused");
         }
         assert_eq!(plan, seeded());
-    }
-
-    #[test]
-    fn only_an_applied_outcome_leaves_mutate_as_a_write() {
-        assert!(written_only(ReviewEditOutcome::Applied).is_ok());
-        for outcome in [
-            ReviewEditOutcome::Already,
-            ReviewEditOutcome::Stale { found: json!(1) },
-        ] {
-            let carried = written_only(outcome.clone());
-            assert!(carried.is_err());
-            assert_eq!(unwritten_outcome(carried).expect("carried"), outcome);
-        }
-        assert!(unwritten_outcome(Err(refusal("refused"))).is_err());
     }
 }

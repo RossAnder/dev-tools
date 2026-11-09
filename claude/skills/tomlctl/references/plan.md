@@ -425,7 +425,7 @@ to diagnose a DAG or policy error.
 | `design` | No milestones or no tasks | `plan milestone add` when no milestones, else `tasks add-many` |
 | `write` | `plan/task-no-spec` | `tasks update --ndjson` |
 | `prove` | Any error-class finding, `plan/probe-absent`, or a surfaced decision still `agent-assumed` | By class, below |
-| `review` | Review is unsettled: no `[[run]]` for step `review` with a skip reason, and none of the `plan approve --review ran` conditions below holds. The blockers include `N open user-tier findings to accept or veto` | the `/plan-v2` Review step, or `plan run skip --step review --reason <why>` |
+| `review` | Review is unsettled: no `[[run]]` for step `review` with a skip reason, and none of the `plan approve --review ran` conditions below holds. The blockers include `N open user-tier or question-tier findings to accept, veto or answer` | the `/plan-v2` Review step, or `plan run skip --step review --reason <why>` |
 | `ready` | Otherwise | `plan approve` |
 
 At `prove`, `next` is the first row below that has a blocker. Probes come last, because any spec edit
@@ -511,7 +511,7 @@ Each precondition is a `kind=validation` refusal, and nothing is written until a
 - `plan check` reports no error. Under `--amend`, `plan/brief-changed` does not count.
 - `--review ran` needs a `[[runs]]` row in `review-v2.toml` with `family = "plan"` and a non-empty
   `finished`. The refusal reads `` `--review ran` refused: <reasons joined by "; "> `` and names ids for:
-  no finished plan-family run, an unfinished plan-family run, an open user-tier finding, or an applied
+  no finished plan-family run, an unfinished plan-family run, an open user-tier or question-tier finding, or an applied
   `spec.accept` edit whose entry has no probe.
 - Without `--amend`, the flow's `status` is `draft` or `in-progress`.
 - `git status` reports nothing for `.claude/flows/<slug>/tasks.toml` and `plan.toml`, for

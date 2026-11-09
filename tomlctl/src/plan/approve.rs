@@ -15,7 +15,7 @@ use toml::Value as TomlValue;
 
 use super::check::{self, CLASS_BRIEF_CHANGED};
 use super::schema::{Approval, Decision, Door, PlanStore, Provenance, ReviewOutcome};
-use super::store::{self, AppliedEdit, BRIEF_FILE, PlanReviewState, TIER_USER, brief_digest};
+use super::store::{self, AppliedEdit, BRIEF_FILE, PlanReviewState, brief_digest};
 use crate::backlog::schema::STATUS_OPEN;
 use crate::backlog::triage::{Transition, triage_value};
 use crate::cli::{
@@ -25,6 +25,7 @@ use crate::errors::{ErrorKind, tagged_err};
 use crate::flow::active::{build_entry, upsert_entry};
 use crate::io::{OnMissing, mutate_doc, read_toml, relativise, repo_or_cwd_root};
 use crate::output::{print_json_compact, print_json_line};
+use crate::review::Tier;
 use crate::tasks::finding::ERROR;
 use crate::tasks::schema::Store;
 use crate::tasks::{load_store, mutate_store, resolve_store_path};
@@ -126,11 +127,11 @@ fn gate_report(plan: &PlanStore, tasks: &Store, review: &PlanReviewState) -> Jso
 /// Every applied plan finding, decisions first, then by how much the user had a say:
 /// user, cited, mechanical. The sort is stable, so store order holds within a rank.
 fn review_edits(review: &PlanReviewState) -> Vec<JsonValue> {
-    let rank = |f: &AppliedEdit| match f.tier.as_str() {
+    let rank = |f: &AppliedEdit| match Tier::parse(&f.tier) {
         _ if f.target.starts_with("decision:") => 0,
-        TIER_USER => 1,
-        "cited" => 2,
-        "mechanical" => 3,
+        Some(Tier::User | Tier::Question) => 1,
+        Some(Tier::Cited) => 2,
+        Some(Tier::Mechanical) => 3,
         _ => 4,
     };
     let mut applied: Vec<&AppliedEdit> = review.applied.iter().collect();
@@ -218,10 +219,16 @@ pub(super) fn approve(args: PlanApproveArgs) -> Result<()> {
         return Err(refuse(unanswered));
     }
     refuse_check_errors(&slug, &read_integrity, amend)?;
-    if review == ReviewOutcome::Ran
-        && let Some(why) = store::plan_review_state(flow_dir)?.unsettled(&tasks)
-    {
-        return Err(refuse(format!("`--review ran` refused: {why}")));
+    if review == ReviewOutcome::Ran {
+        let state = store::plan_review_state(flow_dir)?;
+        let reasons = state.unsettled(&tasks);
+        if !reasons.is_empty() {
+            let why: Vec<String> = reasons.iter().map(ToString::to_string).collect();
+            return Err(refuse(format!(
+                "`--review ran` refused: {}",
+                why.join("; ")
+            )));
+        }
     }
     let from = context_status(&context_path)?;
     if !amend && from != STATUS_DRAFT && from != STATUS_IN_PROGRESS {

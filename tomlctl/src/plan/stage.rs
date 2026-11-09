@@ -8,7 +8,7 @@ use serde_json::json;
 
 use super::check::{self, CLASS_BRIEF_CHANGED};
 use super::schema::{PlanStore, Run};
-use super::store;
+use super::store::{self, Unsettled};
 use crate::cli::PlanStageArgs;
 use crate::io::{relativise, repo_or_cwd_root};
 use crate::output::print_json_line;
@@ -267,30 +267,32 @@ fn amend_report(
     report(stage, next, blockers)
 }
 
-/// What keeps review unsettled, empty when it is settled. A `[[run]]` for the review
-/// step carrying a skip reason settles it; otherwise `plan approve --review ran`'s own
-/// rule decides, so the two cannot disagree.
+/// What keeps review unsettled, empty when it is settled. `plan approve --review ran`'s
+/// own rule decides, so the two cannot disagree; only with no finished plan-family run
+/// does a `[[run]]` for the review step carrying a skip reason settle it, since a review
+/// run after the skip is the one approval reports.
 fn review_blockers(flow_dir: &Path, plan: &PlanStore, tasks: &Store) -> Result<Vec<String>> {
-    if store::skipped_reviews(plan).next().is_some() {
-        return Ok(Vec::new());
-    }
     let state = store::plan_review_state(flow_dir)?;
-    let Some(reason) = state.unsettled(tasks) else {
-        return Ok(Vec::new());
-    };
-    if state.finished_runs.is_empty() {
-        return Ok(vec![
-            "no finished plan review run and no recorded skip".to_string(),
-        ]);
+    let mut blockers = Vec::new();
+    let mut user = 0;
+    for reason in state.unsettled(tasks) {
+        match reason {
+            Unsettled::NoFinishedRun if store::skipped_reviews(plan).next().is_some() => {
+                return Ok(Vec::new());
+            }
+            Unsettled::NoFinishedRun => {
+                return Ok(vec![
+                    "no finished plan review run and no recorded skip".to_string(),
+                ]);
+            }
+            Unsettled::OpenUserOwned(ids) => user = ids.len(),
+            other => blockers.push(other.to_string()),
+        }
     }
-    let mut blockers: Vec<String> = reason
-        .split("; ")
-        .filter(|part| !part.starts_with("open user-tier findings"))
-        .map(str::to_string)
-        .collect();
-    let user = state.open_user_tier().count();
     if user > 0 {
-        blockers.push(format!("{user} open user-tier findings to accept or veto"));
+        blockers.push(format!(
+            "{user} open user-tier or question-tier findings to accept, veto or answer"
+        ));
     }
     Ok(blockers)
 }

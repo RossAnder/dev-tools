@@ -22,29 +22,72 @@ use super::fields::{Family, FindingStatus, Kind};
 use super::invalid;
 use super::store::{self, Finding, Store, Target};
 use super::target::{self, RecordTarget};
-use super::tier::{self, ADVISORY, CITED, MECHANICAL, USER};
+use super::tier::{self, Tier};
 use crate::cli::{ReadIntegrityArgs, ReviewApplyArgs, WriteIntegrityArgs};
-use crate::convert::toml_to_json;
+use crate::convert::{decode_json_text, encode_json_text, toml_to_json};
 use crate::output::print_json_compact;
 use crate::plan::schema::RecordKind;
 use crate::plan::{MilestoneEdit, RecordEdit};
-use crate::tasks::{ReviewEdit, ReviewEditOutcome};
+use crate::tasks::{ReviewEdit, ReviewEditOutcome, Slot};
 
 const VERB: &str = "review apply";
 /// The actor the task and milestone audit rows name.
 const ACTOR: &str = "review";
-const BRIEF_FILE: &str = "brief.md";
 
 /// One finding judged applicable, with its stored values decoded.
 struct Planned {
     id: String,
     run: String,
-    tier: &'static str,
+    tier: Tier,
     target: RecordTarget,
     expect: Option<JsonValue>,
     new: JsonValue,
+    proof: Option<serde_json::Map<String, JsonValue>>,
     /// What the target store answered before any write.
     judged: ReviewEditOutcome,
+}
+
+impl Planned {
+    /// A mechanical row's proof re-checked against the stores as they stand;
+    /// any other tier needs none.
+    fn proven(&self, slug: &str) -> std::result::Result<(), String> {
+        if self.tier != Tier::Mechanical {
+            return Ok(());
+        }
+        let Some(proof) = self.proof.as_ref() else {
+            return Err(format!(
+                "{} is mechanical tier but carries no `proof`",
+                self.id
+            ));
+        };
+        tier::verify_proof(proof, &self.target, self.expect.as_ref(), &self.new, slug)
+            .map_err(|why| format!("{}'s proof no longer holds: {why}", self.id))
+    }
+
+    /// The record the edit changes, narrowed for a list entry or prose to the
+    /// `expect` it replaces, since an edit elsewhere in the same list or
+    /// section does not move it. `None` for an append.
+    fn record(&self, slug: &str) -> Option<String> {
+        let target = &self.target;
+        let record = format!(
+            "{} {} {}",
+            target.file(slug),
+            target.symbol(),
+            target.field_name()
+        );
+        match target {
+            RecordTarget::SpecEntry {
+                slot: Slot::Append, ..
+            } => None,
+            RecordTarget::SpecEntry { .. }
+            | RecordTarget::Brief { .. }
+            | RecordTarget::Design { .. } => Some(format!(
+                "{record} {}",
+                self.expect.as_ref().unwrap_or(&JsonValue::Null)
+            )),
+            _ => Some(record),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -73,7 +116,7 @@ impl Report {
             ReviewEditOutcome::Applied => self.applied.push(json!({
                 "id": planned.id,
                 "target": planned.target.to_string(),
-                "tier": planned.tier,
+                "tier": planned.tier.as_str(),
             })),
             ReviewEditOutcome::Already => self.already.push(planned.id.clone()),
             ReviewEditOutcome::Stale { found } => self.stale.push(json!({
@@ -112,12 +155,11 @@ fn execute(target: &Target, args: &ReviewApplyArgs) -> Result<JsonValue> {
     if ids.is_empty() {
         return Err(invalid(format!("{VERB}: no finding ids given")));
     }
-    let plan_path = crate::plan::store::resolve(slug)?;
-    if !plan_path.is_file() {
+    let Some(plan_path) = super::add::v2_plan(slug)? else {
         return Err(invalid(format!(
             "{VERB}: flow `{slug}` has no plan.toml, so its findings carry no record edits"
         )));
-    }
+    };
     let read = ReadIntegrityArgs {
         verify_integrity: args.integrity.verify_integrity,
         strict_read: true,
@@ -147,8 +189,33 @@ fn execute(target: &Target, args: &ReviewApplyArgs) -> Result<JsonValue> {
 
     let mut report = Report::default();
     if args.dry_run {
+        // Every row was judged against the untouched stores, so a row whose
+        // record an earlier applied row edits is reported stale, as the real
+        // run would find it, rather than applied.
+        let mut edited: Vec<(String, &str)> = Vec::new();
         for row in &planned {
-            report.take(row, row.judged.clone());
+            let record = row.record(slug);
+            let earlier = record
+                .as_ref()
+                .and_then(|record| edited.iter().find(|(seen, _)| seen == record))
+                .map(|(_, id)| *id);
+            match (earlier, &row.judged) {
+                (Some(by), ReviewEditOutcome::Applied | ReviewEditOutcome::Already) => {
+                    report.stale.push(json!({
+                        "id": row.id,
+                        "target": row.target.to_string(),
+                        "expected": row.expect.clone().unwrap_or(JsonValue::Null),
+                        "found": JsonValue::Null,
+                        "edited_by": by,
+                    }));
+                }
+                (_, judged) => {
+                    if let (ReviewEditOutcome::Applied, Some(record)) = (judged, record) {
+                        edited.push((record, &row.id));
+                    }
+                    report.take(row, judged.clone());
+                }
+            }
         }
         return Ok(report.to_json(true));
     }
@@ -166,19 +233,28 @@ fn execute(target: &Target, args: &ReviewApplyArgs) -> Result<JsonValue> {
                 .chain(report.already.iter().map(String::as_str))
                 .collect();
             format!(
-                "{VERB}: applying {} failed; stamped before it: [{}]",
-                row.id,
-                done.join(", ")
+                "{VERB}: applying {id} failed; stamped before it: [{}]. {id}'s edit may or \
+                 may not have landed: re-run `{VERB}` with only the ids not listed as \
+                 stamped, and an edit that landed reads as already applied",
+                done.join(", "),
+                id = row.id,
             )
         };
-        let outcome = match &row.judged {
-            ReviewEditOutcome::Applied => {
-                let reason = format!("review {} {}", row.run, row.id);
-                edit(slug, &args.integrity, row, &reason, Pass::Write)
-                    .with_context(|| interrupted(&report))?
+        let reason = format!("review {} {}", row.run, row.id);
+        // An earlier row can have moved this one's value, so its outcome is
+        // the write pass's, and a mechanical row the judge did not prove gets
+        // its proof checked before that pass can write.
+        if row.judged != ReviewEditOutcome::Applied && row.tier == Tier::Mechanical {
+            let now = edit(slug, &args.integrity, row, &reason, Pass::Validate)
+                .with_context(|| interrupted(&report))?;
+            if now == ReviewEditOutcome::Applied {
+                row.proven(slug)
+                    .map_err(invalid)
+                    .with_context(|| interrupted(&report))?;
             }
-            judged => judged.clone(),
-        };
+        }
+        let outcome = edit(slug, &args.integrity, row, &reason, Pass::Write)
+            .with_context(|| interrupted(&report))?;
         match outcome {
             ReviewEditOutcome::Applied => stamp(target, &review_integrity, row, by, false),
             ReviewEditOutcome::Already => stamp(target, &review_integrity, row, by, true),
@@ -229,19 +305,27 @@ fn judge(
             ));
             None
         }
-        Some(ADVISORY) => {
-            reasons.push(format!("{id} is advisory tier, which is never applied"));
-            None
-        }
-        Some(MECHANICAL) => Some(MECHANICAL),
-        Some(CITED) => Some(CITED),
-        Some(USER) => Some(USER),
-        Some(other) => {
-            reasons.push(format!("{id} carries an unknown tier `{other}`"));
-            None
-        }
+        Some(raw) => match Tier::parse(raw) {
+            Some(Tier::Advisory) => {
+                reasons.push(format!("{id} is advisory tier, which is never applied"));
+                None
+            }
+            Some(Tier::Question) => {
+                reasons.push(format!(
+                    "{id} is question tier, which carries no edit to apply; the user answers \
+                     it: revise the record through `plan` verbs, then close it with \
+                     `review triage --resolve {id}`, or keep the record and resolve it the same way"
+                ));
+                None
+            }
+            Some(tier) => Some(tier),
+            None => {
+                reasons.push(format!("{id} carries an unknown tier `{raw}`"));
+                None
+            }
+        },
     };
-    if tier == Some(USER) && !args.user_accepted {
+    if tier == Some(Tier::User) && !args.user_accepted {
         reasons.push(format!(
             "{id} is user tier; apply it with --user-accepted once the user accepts it"
         ));
@@ -283,20 +367,20 @@ fn judge(
         target,
         expect: decoded(finding, "expect"),
         new,
+        proof: finding
+            .rest
+            .get("proof")
+            .and_then(|proof| match toml_to_json(proof) {
+                JsonValue::Object(map) => Some(map),
+                _ => None,
+            }),
         judged: ReviewEditOutcome::Applied,
     };
     let reason = format!("review {} {}", row.run, row.id);
     row.judged = edit(slug, &args.integrity, &row, &reason, Pass::Validate)
         .map_err(|err| vec![format!("{id}: {err:#}")])?;
-    if row.judged == ReviewEditOutcome::Applied && row.tier == MECHANICAL {
-        let proof = finding.rest.get("proof").map(toml_to_json);
-        let Some(proof) = proof.as_ref().and_then(JsonValue::as_object) else {
-            return Err(vec![format!(
-                "{id} is mechanical tier but carries no `proof`"
-            )]);
-        };
-        tier::verify_proof(proof, &row.target, row.expect.as_ref(), &row.new, slug)
-            .map_err(|why| vec![format!("{id}'s proof no longer holds: {why}")])?;
+    if row.judged == ReviewEditOutcome::Applied {
+        row.proven(slug).map_err(|why| vec![why])?;
     }
     Ok(row)
 }
@@ -305,15 +389,12 @@ fn text<'f>(finding: &'f Finding, key: &str) -> Option<&'f str> {
     finding.rest.get(key).and_then(TomlValue::as_str)
 }
 
-/// `expect` and `new` are stored as JSON text; text that is not JSON reads as
-/// itself.
+/// The stored `expect` or `new` decoded, `None` when the finding carries none.
 fn decoded(finding: &Finding, key: &str) -> Option<JsonValue> {
-    match finding.rest.get(key)? {
-        TomlValue::String(raw) => {
-            Some(serde_json::from_str(raw).unwrap_or_else(|_| JsonValue::String(raw.clone())))
-        }
-        other => Some(toml_to_json(other)),
-    }
+    finding
+        .rest
+        .get(key)
+        .map(|value| decode_json_text(Some(value)))
 }
 
 /// Runs `row`'s edit through its target store: judged only under
@@ -326,23 +407,58 @@ fn edit(
     reason: &str,
     pass: Pass,
 ) -> Result<ReviewEditOutcome> {
+    target_edit(
+        slug,
+        integrity,
+        &row.target,
+        row.expect.as_ref(),
+        &row.new,
+        reason,
+        pass,
+    )
+}
+
+/// What `review apply` would judge an edit of `target` from `expect` to
+/// `new` against the stores as they stand, writing nothing.
+pub(super) fn validate_target_edit(
+    slug: &str,
+    target: &RecordTarget,
+    expect: Option<&JsonValue>,
+    new: &JsonValue,
+) -> Result<ReviewEditOutcome> {
+    let integrity = WriteIntegrityArgs {
+        allow_outside: false,
+        no_write_integrity: false,
+        verify_integrity: false,
+        strict_integrity: false,
+        no_create: true,
+    };
+    target_edit(slug, &integrity, target, expect, new, "", Pass::Validate)
+}
+
+fn target_edit(
+    slug: &str,
+    integrity: &WriteIntegrityArgs,
+    target: &RecordTarget,
+    expect: Option<&JsonValue>,
+    new: &JsonValue,
+    reason: &str,
+    pass: Pass,
+) -> Result<ReviewEditOutcome> {
     let write = pass == Pass::Write;
-    let expect = row.expect.as_ref();
-    let new = &row.new;
-    match &row.target {
+    match target {
         RecordTarget::TaskField { r#ref, .. }
         | RecordTarget::SpecField { r#ref, .. }
         | RecordTarget::SpecEntry { r#ref, .. } => {
-            let (index, append) = match &row.target {
-                RecordTarget::SpecEntry { index, append, .. } => (*index, *append),
-                _ => (None, false),
+            let entry = match target {
+                RecordTarget::SpecEntry { slot, .. } => Some(*slot),
+                _ => None,
             };
-            let field = row.target.field_name();
+            let field = target.field_name();
             let edit = ReviewEdit {
                 task_ref: r#ref,
                 field: &field,
-                index,
-                append,
+                entry,
                 expect,
                 new,
                 actor: ACTOR,
@@ -355,7 +471,7 @@ fn edit(
             }
         }
         RecordTarget::Decision { id, key } | RecordTarget::Contract { id, key } => {
-            let kind = match &row.target {
+            let kind = match target {
                 RecordTarget::Decision { .. } => RecordKind::Decision,
                 _ => RecordKind::Contract,
             };
@@ -388,11 +504,10 @@ fn edit(
             }
         }
         RecordTarget::Brief { .. } | RecordTarget::Design { .. } => {
-            prose(slug, &row.target, expect, new, write)
+            prose(slug, target, expect, new, write)
         }
         RecordTarget::Handover { .. } => Err(invalid(format!(
-            "target `{}`: no verb writes a handover yet",
-            row.target
+            "target `{target}`: no verb writes a handover yet"
         ))),
     }
 }
@@ -420,9 +535,21 @@ fn prose(
         let bytes = std::fs::read(&path).with_context(|| format!("reading {}", path.display()))?;
         let original = String::from_utf8(bytes)
             .map_err(|_| refuse("the file is not UTF-8, so it is not rewritten"))?;
-        let section = target::resolve(slug, target)?;
-        let section = section.as_str().unwrap_or_default();
-        match place(&original, section, expect, new).map_err(|why| refuse(&why))? {
+        let (base, section) = match target {
+            RecordTarget::Brief { section } => {
+                let (at, body) = target::brief_section(&original.replace("\r\n", "\n"), section)?;
+                (at, body)
+            }
+            RecordTarget::Design { anchor, .. } => {
+                let (at, body) =
+                    crate::plan::check::design_section_in(&original.replace("\r\n", "\n"), anchor)
+                        .ok_or_else(|| refuse("names no design section"))?;
+                (at, body)
+            }
+            _ => unreachable!("prose is called only for a brief or design target"),
+        };
+        let section = section.as_str();
+        match place(&original, section, base, expect, new).map_err(|why| refuse(&why))? {
             Placed::Edited(text) => {
                 if write {
                     crate::io::atomic_write(&path, text.as_bytes())?;
@@ -448,20 +575,7 @@ fn prose_path(slug: &str, target: &RecordTarget) -> Result<PathBuf> {
     let authored = crate::plan::store::authored_dir(slug)?;
     let refuse = |why: &str| invalid(format!("target `{target}`: {why}"));
     match target {
-        RecordTarget::Brief { .. } => {
-            let resolved = authored
-                .join(BRIEF_FILE)
-                .canonicalize()
-                .map_err(|_| refuse("the flow has no brief.md"))?;
-            let contained = authored
-                .canonicalize()
-                .is_ok_and(|anchor| resolved.starts_with(anchor));
-            if contained {
-                Ok(resolved)
-            } else {
-                Err(refuse("brief.md resolves outside the flow's directory"))
-            }
-        }
+        RecordTarget::Brief { section } => target::brief_path(&authored, section),
         RecordTarget::Design { file, .. } => crate::plan::check::design_path(&authored, file)
             .ok_or_else(|| refuse("names no design file inside the flow's design/ directory")),
         _ => unreachable!("prose_path is called only for a brief or design target"),
@@ -477,11 +591,17 @@ enum Placed {
 }
 
 /// Places the replacement of `expect` by `new` inside `section`, which is the
-/// LF form of a span of `original`. `new` occurring once with every `expect`
-/// inside it reads as already made; an empty `new` with no `expect` left
-/// likewise. Otherwise `expect` must occur once: none is stale, several is an
-/// error.
-fn place(original: &str, section: &str, expect: &str, new: &str) -> Result<Placed, String> {
+/// LF form of a span of `original` starting at byte `base` of that LF form.
+/// `new` occurring once with every `expect` inside it reads as already made;
+/// an empty `new` with no `expect` left likewise. Otherwise `expect` must
+/// occur once: none is stale, several is an error.
+fn place(
+    original: &str,
+    section: &str,
+    base: usize,
+    expect: &str,
+    new: &str,
+) -> Result<Placed, String> {
     let expect = expect.replace("\r\n", "\n");
     let new = new.replace("\r\n", "\n");
     let hits = |hay: &str, needle: &str| -> Vec<usize> {
@@ -512,16 +632,12 @@ fn place(original: &str, section: &str, expect: &str, new: &str) -> Result<Place
         }
     };
     let normal = original.replace("\r\n", "\n");
-    let base = match hits(&normal, section).as_slice() {
-        [base] => *base,
-        [] => return Err("the section is not in the file as read".to_string()),
-        many => {
-            return Err(format!(
-                "the section's text occurs {} times in the file, so the edit cannot be placed",
-                many.len()
-            ));
-        }
-    };
+    if !normal
+        .get(base..)
+        .is_some_and(|rest| rest.starts_with(section))
+    {
+        return Err("the section is not in the file as read".to_string());
+    }
     let start = original_offset(original, base + at);
     let end = original_offset(original, base + at + expect.len());
     let ending = if original.contains("\r\n") {
@@ -568,10 +684,10 @@ fn stamp(
         applied.insert(key.to_string(), value);
     };
     put("at", TomlValue::String(crate::time::now_rfc3339()));
-    put("tier", TomlValue::String(row.tier.to_string()));
+    put("tier", TomlValue::String(row.tier.as_str().to_string()));
     put("target", TomlValue::String(row.target.to_string()));
-    put("old", TomlValue::String(old.to_string()));
-    put("new", TomlValue::String(row.new.to_string()));
+    put("old", TomlValue::String(encode_json_text(&old)));
+    put("new", TomlValue::String(encode_json_text(&row.new)));
     put("by", TomlValue::String(by.to_string()));
     put("recovered", TomlValue::Boolean(recovered));
     let resolution = format!("applied to {}", row.target);
@@ -599,6 +715,7 @@ fn stamp(
 mod tests {
     use super::*;
     use crate::cli::ReviewStore;
+    use crate::plan::store::BRIEF_FILE;
     use crate::test_support::with_root;
     use std::path::Path;
 
@@ -855,19 +972,70 @@ new = '"parse and tokenise"'
     fn placement_keeps_line_endings_and_reads_repeats() {
         let original = "## A\r\n\r\nold line\r\nnext\r\n";
         let section = "\nold line\nnext\n";
+        let base = "## A\n".len();
         assert_eq!(
-            place(original, section, "old line\nnext", "new\nlines").unwrap(),
+            place(original, section, base, "old line\nnext", "new\nlines").unwrap(),
             Placed::Edited("## A\r\n\r\nnew\r\nlines\r\n".to_string())
         );
         assert_eq!(
-            place(original, section, "old", "old line").unwrap(),
+            place(original, section, base, "old", "old line").unwrap(),
             Placed::Already
         );
         assert_eq!(
-            place(original, section, "gone", "fresh").unwrap(),
+            place(original, section, base, "gone", "fresh").unwrap(),
             Placed::Stale
         );
-        let err = place("a a", "a a", "a", "b").unwrap_err();
+        let err = place(original, section, 0, "old line", "new").unwrap_err();
+        assert!(err.contains("not in the file as read"), "{err}");
+        let err = place("a a", "a a", 0, "a", "b").unwrap_err();
         assert!(err.contains("2 times"), "{err}");
+    }
+
+    #[test]
+    fn a_section_whose_body_repeats_elsewhere_is_placed_at_its_offset() {
+        with_root(|root| {
+            seed(root);
+            let brief = "# Brief\r\n\r\n## Intent\r\n\r\nNone.\r\n\r\n## Unknowns\r\n\r\nNone.\r\n";
+            let path = root.join("docs/flows").join(SLUG).join(BRIEF_FILE);
+            std::fs::write(&path, brief).unwrap();
+            let target = store::resolve(Some(SLUG), None).unwrap();
+            let review = REVIEW
+                .replace("brief#Background", "brief#Unknowns")
+                .replace(r#"'"The old parser\nis slow."'"#, r#"'"None."'"#)
+                .replace(
+                    r#"'"The old parser\nis slow on large plans."'"#,
+                    r#"'"Whether the cache holds."'"#,
+                );
+            std::fs::write(&target.path, review).unwrap();
+            let out = apply(&["F3"], false, false).unwrap();
+            assert_eq!(out["applied"][0]["id"], "F3", "{out}");
+            assert_eq!(
+                std::fs::read_to_string(&path).unwrap(),
+                brief.replace(
+                    "## Unknowns\r\n\r\nNone.",
+                    "## Unknowns\r\n\r\nWhether the cache holds."
+                )
+            );
+        });
+    }
+
+    #[test]
+    fn a_mechanical_row_without_a_proof_is_refused() {
+        with_root(|root| {
+            seed(root);
+            let target = store::resolve(Some(SLUG), None).unwrap();
+            let review = REVIEW.replace(
+                "proof = { kind = \"path-missing\", path = \"src/gone.rs\" }\n",
+                "",
+            );
+            std::fs::write(&target.path, review).unwrap();
+            let before = task_files(root);
+            let err = format!("{:#}", apply(&["F1"], false, false).unwrap_err());
+            assert!(
+                err.contains("F1 is mechanical tier but carries no `proof`"),
+                "{err}"
+            );
+            assert_eq!(task_files(root), before);
+        });
     }
 }

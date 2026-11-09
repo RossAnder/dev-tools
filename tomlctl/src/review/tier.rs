@@ -1,8 +1,10 @@
 //! The evidence tier of a plan finding on a v2 flow, which decides what
 //! `review apply` may write without asking. Tiers are tried in order:
 //!
-//! 1. `user`: the target is a decision, a spec `outcome`, or one of the four
-//!    brief sections that state intent, whatever the evidence.
+//! 1. `question` or `user`: the target is a decision, a spec `outcome`, or one
+//!    of the four brief sections that state intent, whatever the evidence. An
+//!    advisory row or one with no `new` is a `question`, which only the user
+//!    answers and `review apply` never writes; one with an edit is `user`.
 //! 2. `advisory`: an advisory row, a `handover:*` target, or no `new`.
 //! 3. `mechanical`: a `proof` this module verifies from the stores and the
 //!    tree, without running a command, over a `new` no wider than the proof.
@@ -17,42 +19,52 @@ use anyhow::Result;
 use serde_json::Value as JsonValue;
 use toml::Value as TomlValue;
 
-use super::fields::{Family, Kind, Route};
+use super::fields::{Family, Kind, Route, str_enum};
 use super::query::parse_citation;
 use super::store::{Finding, Row, Verdict};
 use super::target::{self, RecordTarget};
 use super::verdict::settle;
 use crate::cli::ReadIntegrityArgs;
-use crate::convert::toml_to_json;
+use crate::convert::{json_from_text, toml_to_json};
 use crate::io::repo_or_cwd_root;
+use crate::plan::check::REQUIRED_SECTIONS;
 use crate::tasks::finding::ERROR;
 use crate::tasks::schema::{FileKind, VERDICT_HEALTHY, normal_path};
-use crate::tasks::{Store as TaskStore, load_store, resolve_store_path};
+use crate::tasks::{Slot, Store as TaskStore, load_store, resolve_store_path};
 
-pub(super) const MECHANICAL: &str = "mechanical";
-pub(super) const CITED: &str = "cited";
-pub(super) const ADVISORY: &str = "advisory";
-pub(super) const USER: &str = "user";
+str_enum!(Tier {
+    Mechanical => "mechanical",
+    Cited => "cited",
+    Advisory => "advisory",
+    User => "user",
+    Question => "question",
+});
+
+impl Tier {
+    /// Tiers whose open rows are the user's to settle before a plan approves.
+    pub(crate) fn is_users(self) -> bool {
+        matches!(self, Self::User | Self::Question)
+    }
+}
 
 const TIER_KEY: &str = "tier";
-/// The brief sections that state intent, which only the user may change.
-const USER_SECTIONS: &[&str] = &["Intent", "Non-goals", "Scope budget", "Success criteria"];
-/// Verdict authors whose settled call a citation can stand on.
-const VERIFYING: &[&str] = &["verifier", "panel", "checker"];
+/// Verdict authors whose settled call a citation can stand on. The checker is
+/// not one: its projection hides the target and the edit it would vouch for.
+const CITING: &[&str] = &["verifier", "panel"];
 const STANDING: &[&str] = &["confirmed", "plausible"];
 /// Serialised characters each of `expect` and `new` may hold on a mechanical row.
 const MAX_VALUE_CHARS: usize = 800;
 /// The accept-entry keys a `probe` fix may change.
 const PROBE_FIX_KEYS: &[&str] = &["check", "positive"];
 /// The target fields a `check-class` proof may change, per `plan check` class.
-/// A class absent here proves nothing, since its fix is a judgement.
+/// A class absent here proves nothing, since its fix is a judgement; an
+/// unhealthy probe is proved by the narrower `probe` kind instead.
 const CLASS_FIELDS: &[(&str, &[&str])] = &[
     ("dag/dangling-ref", &["needs", "coupling"]),
     ("plan/accept-no-check", &["spec.accept"]),
     ("plan/design-anchor-dead", &["spec.design"]),
     ("plan/means-required-no-reason", &["spec.means"]),
     ("plan/premise-task-unknown", &["spec.premises"]),
-    ("plan/probe-unhealthy", &["spec.accept"]),
     ("plan/spec-no-accept", &["spec.accept"]),
     ("plan/spec-no-outcome", &["spec.outcome"]),
 ];
@@ -61,28 +73,28 @@ const CLASS_FIELDS: &[(&str, &[&str])] = &[
 /// as stored, or `None` for a row outside flow mode: not plan-family, or on a
 /// flow with no `plan.toml`. Errs on a `target` that does not parse and on a
 /// task or plan store that cannot be read.
-pub(super) fn compute(
-    row: &Row,
-    slug: &str,
-    verdicts: &[&Verdict],
-) -> Result<Option<&'static str>> {
+pub(super) fn compute(row: &Row, slug: &str, verdicts: &[&Verdict]) -> Result<Option<Tier>> {
     let family = text(row, "family").and_then(Family::parse);
-    if family != Some(Family::Plan) || !crate::plan::store::resolve(slug)?.is_file() {
+    if family != Some(Family::Plan) || super::add::v2_plan(slug)?.is_none() {
         return Ok(None);
     }
     let target = match text(row, "target").filter(|raw| !raw.is_empty()) {
         Some(raw) => Some(target::parse(raw)?),
         None => None,
     };
-    if target.as_ref().is_some_and(is_user) {
-        return Ok(Some(USER));
-    }
     let advisory = text(row, "kind").and_then(Kind::parse) == Some(Kind::Advisory);
+    if target.as_ref().is_some_and(is_user) {
+        return Ok(Some(if advisory || stored(row, "new").is_none() {
+            Tier::Question
+        } else {
+            Tier::User
+        }));
+    }
     let (Some(target), Some(new)) = (target, stored(row, "new")) else {
-        return Ok(Some(ADVISORY));
+        return Ok(Some(Tier::Advisory));
     };
     if advisory || matches!(target, RecordTarget::Handover { .. }) {
-        return Ok(Some(ADVISORY));
+        return Ok(Some(Tier::Advisory));
     }
     let stores = Stores::load(slug)?;
     let expect = stored(row, "expect");
@@ -95,12 +107,12 @@ pub(super) fn compute(
                 .is_ok()
         });
     if proven {
-        return Ok(Some(MECHANICAL));
+        return Ok(Some(Tier::Mechanical));
     }
     if cited(row, &target, slug, verdicts) {
-        return Ok(Some(CITED));
+        return Ok(Some(Tier::Cited));
     }
-    Ok(Some(ADVISORY))
+    Ok(Some(Tier::Advisory))
 }
 
 /// Sets `tier` on `finding` when it carries none, so a tier once stamped is
@@ -123,9 +135,10 @@ pub(super) fn stamp(finding: &mut Finding, slug: &str, verdicts: &[&Verdict]) ->
         target::parse(raw)?;
     }
     if let Ok(Some(tier)) = compute(&row, slug, verdicts) {
-        finding
-            .rest
-            .insert(TIER_KEY.to_string(), TomlValue::String(tier.to_string()));
+        finding.rest.insert(
+            TIER_KEY.to_string(),
+            TomlValue::String(tier.as_str().to_string()),
+        );
     }
     Ok(())
 }
@@ -148,7 +161,8 @@ fn is_user(target: &RecordTarget) -> bool {
     match target {
         RecordTarget::Decision { .. } => true,
         RecordTarget::SpecField { field, .. } => *field == "outcome",
-        RecordTarget::Brief { section } => USER_SECTIONS.contains(section),
+        // The sections `plan check` requires state intent, which only the user may change.
+        RecordTarget::Brief { section } => REQUIRED_SECTIONS.contains(section),
         _ => false,
     }
 }
@@ -157,13 +171,11 @@ fn text<'r>(row: &'r Row, key: &str) -> Option<&'r str> {
     row.get(key).and_then(JsonValue::as_str)
 }
 
-/// `expect` and `new` are stored as JSON text; a value that is not JSON text
-/// reads as itself.
+/// The stored `expect` or `new` decoded, `None` when the row carries none. The
+/// row is already JSON, so a non-string value is taken as converted.
 fn stored(row: &Row, key: &str) -> Option<JsonValue> {
     match row.get(key)? {
-        JsonValue::String(raw) => {
-            Some(serde_json::from_str(raw).unwrap_or_else(|_| JsonValue::String(raw.clone())))
-        }
+        JsonValue::String(raw) => Some(json_from_text(raw)),
         other => Some(other.clone()),
     }
 }
@@ -210,7 +222,7 @@ impl Stores {
             .ok_or("a proof names its `kind`")?;
         match kind {
             "probe" => self.probe(target, expect, new, slug),
-            "check-class" => self.check_class(proof, target, slug),
+            "check-class" => self.check_class(proof, target, expect, new, slug),
             "path-missing" => self.path_missing(proof, target, expect, new),
             "ref-unknown" => self.ref_unknown(proof, target, expect, new, slug),
             other => Err(format!(
@@ -231,7 +243,7 @@ impl Stores {
         let RecordTarget::SpecEntry {
             r#ref,
             list: "accept",
-            append: false,
+            slot: Slot::At(_),
             ..
         } = target
         else {
@@ -275,11 +287,14 @@ impl Stores {
 
     /// `plan check` raises the error class on the target's task, and the class
     /// binds the target's field. Its findings name tasks only, so the target is
-    /// a task's.
+    /// a task's. The class names the field but not the fix, so on a list `new`
+    /// may only append entries or fill an entry's empty `check`.
     fn check_class(
         &self,
         proof: &serde_json::Map<String, JsonValue>,
         target: &RecordTarget,
+        expect: Option<&JsonValue>,
+        new: &JsonValue,
         slug: &str,
     ) -> Result<(), String> {
         let class = proof
@@ -306,6 +321,32 @@ impl Stores {
         let field = target.field_name();
         if !bound.contains(&field.as_str()) {
             return Err(format!("`{class}` does not bind `{field}`"));
+        }
+        let current = match target::resolve(slug, target).map_err(|err| format!("{err:#}"))? {
+            JsonValue::Null => Some(Vec::new()),
+            JsonValue::Array(list) => Some(list),
+            _ => None,
+        };
+        if let Some(list) = current {
+            let keeps = match target {
+                RecordTarget::SpecEntry {
+                    slot: Slot::Append, ..
+                } => true,
+                RecordTarget::SpecEntry { .. } => {
+                    let expect = expect.ok_or("a `check-class` fix to one entry needs `expect`")?;
+                    let at =
+                        target::match_entry(&list, expect).map_err(|err| format!("{err:#}"))?;
+                    entry_kept(&list[at], new)
+                }
+                _ => new.as_array().is_some_and(|fixed| list_kept(&list, fixed)),
+            };
+            if !keeps {
+                return Err(
+                    "a `check-class` fix to a list may only append entries or fill an empty \
+                     `check`"
+                        .into(),
+                );
+            }
         }
         let id = self
             .tasks
@@ -451,6 +492,39 @@ fn one_entry_fix(
     }
 }
 
+/// `fixed` holds every entry of `stored` in place, each kept by [`entry_kept`],
+/// and may append more after them.
+fn list_kept(stored: &[JsonValue], fixed: &[JsonValue]) -> bool {
+    fixed.len() >= stored.len()
+        && stored
+            .iter()
+            .zip(fixed)
+            .all(|(old, new)| entry_kept(old, new))
+}
+
+/// `new` equals `old`, or `old` is an object with an empty or absent `check`
+/// and `new` is the same object with a non-empty `check`.
+fn entry_kept(old: &JsonValue, new: &JsonValue) -> bool {
+    fn check(entry: &serde_json::Map<String, JsonValue>) -> Option<&str> {
+        entry
+            .get("check")
+            .map_or(Some(""), JsonValue::as_str)
+            .map(str::trim)
+    }
+    if old == new {
+        return true;
+    }
+    let (Some(old), Some(new)) = (old.as_object(), new.as_object()) else {
+        return false;
+    };
+    check(old) == Some("")
+        && check(new).is_some_and(|filled| !filled.is_empty())
+        && old
+            .keys()
+            .chain(new.keys())
+            .all(|key| key == "check" || old.get(key) == new.get(key))
+}
+
 fn same_type(a: &JsonValue, b: &JsonValue) -> bool {
     std::mem::discriminant(a) == std::mem::discriminant(b)
 }
@@ -459,7 +533,7 @@ fn same_type(a: &JsonValue, b: &JsonValue) -> bool {
 /// verdict holds for the target.
 fn cited(row: &Row, target: &RecordTarget, slug: &str, verdicts: &[&Verdict]) -> bool {
     let route = text(row, "route").and_then(Route::parse);
-    let Some(settled) = settle(route, verdicts, |v| VERIFYING.contains(&v.by.as_str())) else {
+    let Some(settled) = settle(route, verdicts, |v| CITING.contains(&v.by.as_str())) else {
         return false;
     };
     if !STANDING.contains(&settled.verdict) {
@@ -647,7 +721,7 @@ done = false
         }
     }
 
-    fn tier(row: &Row, verdicts: &[&Verdict]) -> Option<&'static str> {
+    fn tier(row: &Row, verdicts: &[&Verdict]) -> Option<Tier> {
         compute(row, SLUG, verdicts).expect("the tier computes")
     }
 
@@ -683,14 +757,62 @@ done = false
                 SLUG,
             )
             .expect("the proof holds");
-            assert_eq!(tier(&row, &[]), Some(USER));
+            assert_eq!(tier(&row, &[]), Some(Tier::User));
             let decision = self::row(
                 "decision:D1.why",
                 Some(json!("fewer moving parts")),
                 json!("x"),
                 JsonValue::Null,
             );
-            assert_eq!(tier(&decision, &[]), Some(USER));
+            assert_eq!(tier(&decision, &[]), Some(Tier::User));
+            for section in ["Intent", "Non-goals", "Scope budget", "Success criteria"] {
+                let brief = self::row(
+                    &format!("brief#{section}"),
+                    Some(json!("old")),
+                    json!("new"),
+                    JsonValue::Null,
+                );
+                assert_eq!(tier(&brief, &[]), Some(Tier::User), "brief#{section}");
+            }
+        });
+    }
+
+    #[test]
+    fn a_user_owned_row_apply_cannot_write_is_a_question() {
+        with_root(|root| {
+            seed(root);
+            let edit = row(
+                "decision:D1.why",
+                Some(json!("fewer moving parts")),
+                json!("x"),
+                JsonValue::Null,
+            );
+            assert_eq!(tier(&edit, &[]), Some(Tier::User));
+            let mut bare = edit.clone();
+            bare.remove("new");
+            assert_eq!(tier(&bare, &[]), Some(Tier::Question));
+            let mut advisory = edit;
+            advisory["kind"] = "advisory".into();
+            assert_eq!(tier(&advisory, &[]), Some(Tier::Question));
+            let mut outcome = row("task:bare.spec.outcome", None, json!("x"), JsonValue::Null);
+            outcome.remove("new");
+            assert_eq!(tier(&outcome, &[]), Some(Tier::Question));
+        });
+    }
+
+    #[test]
+    fn a_checker_call_cannot_cite_a_row_into_cited() {
+        with_root(|root| {
+            seed(root);
+            let row = row(
+                "task:parse-it.files",
+                Some(json!(["src/a.rs", "src/gone.rs"])),
+                json!(["src/a.rs"]),
+                JsonValue::Null,
+            );
+            let mut checked = verdict("confirmed", ".claude/flows/tiers/tasks.toml:2-4");
+            checked.by = "checker".into();
+            assert_eq!(tier(&row, &[&checked]), Some(Tier::Advisory));
         });
     }
 
@@ -705,7 +827,7 @@ done = false
                 JsonValue::Null,
             );
             let standing = verdict("confirmed", ".claude/flows/tiers/plan.toml:1");
-            assert_eq!(tier(&row, &[&standing]), Some(ADVISORY));
+            assert_eq!(tier(&row, &[&standing]), Some(Tier::Advisory));
         });
     }
 
@@ -720,7 +842,7 @@ done = false
                 json!({"kind": "path-missing", "path": "src/a.rs"}),
             );
             assert!(proof_err(&row).contains("exists"));
-            assert_eq!(tier(&row, &[]), Some(ADVISORY));
+            assert_eq!(tier(&row, &[]), Some(Tier::Advisory));
 
             let held = self::row(
                 "task:parse-it.files",
@@ -728,7 +850,7 @@ done = false
                 json!(["src/a.rs"]),
                 json!({"kind": "path-missing", "path": "src/gone.rs"}),
             );
-            assert_eq!(tier(&held, &[]), Some(MECHANICAL));
+            assert_eq!(tier(&held, &[]), Some(Tier::Mechanical));
         });
     }
 
@@ -744,7 +866,7 @@ done = false
                 entry("cargo test parse --lib", false),
                 proof.clone(),
             );
-            assert_eq!(tier(&fixed, &[]), Some(MECHANICAL));
+            assert_eq!(tier(&fixed, &[]), Some(Tier::Mechanical));
 
             let flipped = row(
                 target,
@@ -754,11 +876,72 @@ done = false
             );
             assert!(proof_err(&flipped).contains("`writes_build`"));
             let standing = verdict("confirmed", ".claude/flows/tiers/tasks.toml:2-4");
-            assert_eq!(tier(&flipped, &[&standing]), Some(CITED));
+            assert_eq!(tier(&flipped, &[&standing]), Some(Tier::Cited));
             let refuted = verdict("refuted", ".claude/flows/tiers/tasks.toml:2-4");
-            assert_eq!(tier(&flipped, &[&refuted]), Some(ADVISORY));
+            assert_eq!(tier(&flipped, &[&refuted]), Some(Tier::Advisory));
             let elsewhere = verdict("confirmed", "src/a.rs:1");
-            assert_eq!(tier(&flipped, &[&elsewhere]), Some(ADVISORY));
+            assert_eq!(tier(&flipped, &[&elsewhere]), Some(Tier::Advisory));
+            let past_end = verdict("confirmed", ".claude/flows/tiers/tasks.toml:9999");
+            assert_eq!(tier(&flipped, &[&past_end]), Some(Tier::Advisory));
+        });
+    }
+
+    #[test]
+    fn a_citation_of_a_path_the_value_names_holds() {
+        with_root(|root| {
+            seed(root);
+            let row = row(
+                "task:parse-it.files",
+                Some(json!(["src/a.rs", "src/gone.rs"])),
+                json!(["src/a.rs"]),
+                JsonValue::Null,
+            );
+            let named = verdict("confirmed", "src/a.rs:1");
+            assert_eq!(tier(&row, &[&named]), Some(Tier::Cited));
+        });
+    }
+
+    #[test]
+    fn a_check_class_fix_may_only_append_or_fill_a_check() {
+        with_root(|root| {
+            seed(root);
+            std::fs::write(
+                root.join(".claude/flows/tiers/tasks.toml"),
+                TASKS.replace("check = \"cargo test render\"", "check = \"\""),
+            )
+            .unwrap();
+            let proof = json!({"kind": "check-class", "class": "plan/accept-no-check"});
+            let target = "task:parse-it.spec.accept[1]";
+            let mut expect = entry("", false);
+            expect["behaviour"] = "renders".into();
+            let mut filled = expect.clone();
+            filled["check"] = "cargo test render".into();
+            let fill = row(target, Some(expect.clone()), filled.clone(), proof.clone());
+            assert_eq!(tier(&fill, &[]), Some(Tier::Mechanical));
+
+            let mut flipped = filled.clone();
+            flipped["writes_build"] = true.into();
+            let flip = row(target, Some(expect.clone()), flipped, proof.clone());
+            assert!(proof_err(&flip).contains("only append entries or fill an empty `check`"));
+            assert_eq!(tier(&flip, &[]), Some(Tier::Advisory));
+            let standing = verdict("confirmed", ".claude/flows/tiers/tasks.toml:2-4");
+            assert_eq!(tier(&flip, &[&standing]), Some(Tier::Cited));
+
+            let dropped = row(
+                "task:parse-it.spec.accept",
+                Some(json!([entry("cargo test parse", false), expect])),
+                json!([filled]),
+                proof,
+            );
+            assert!(proof_err(&dropped).contains("only append entries"));
+
+            let unhealthy = row(
+                "task:parse-it.spec.accept[0]",
+                Some(entry("cargo test parse", false)),
+                entry("cargo test parse --lib", false),
+                json!({"kind": "check-class", "class": "plan/probe-unhealthy"}),
+            );
+            assert!(proof_err(&unhealthy).contains("binds no field"));
         });
     }
 
@@ -777,12 +960,12 @@ done = false
                 json!({"kind": "probe"}),
             );
             assert!(proof_err(&row).contains("no probe verdict"));
-            assert_eq!(tier(&row, &[]), Some(ADVISORY));
+            assert_eq!(tier(&row, &[]), Some(Tier::Advisory));
         });
     }
 
     #[test]
-    fn ref_unknown_and_check_class_prove_a_dangling_need() {
+    fn ref_unknown_proves_a_dangling_need_and_check_class_does_not() {
         with_root(|root| {
             seed(root);
             let unknown = row(
@@ -791,14 +974,15 @@ done = false
                 json!([]),
                 json!({"kind": "ref-unknown", "ref": 7}),
             );
-            assert_eq!(tier(&unknown, &[]), Some(MECHANICAL));
+            assert_eq!(tier(&unknown, &[]), Some(Tier::Mechanical));
             let class = row(
                 "task:parse-it.needs",
                 Some(json!([7])),
                 json!([2]),
                 json!({"kind": "check-class", "class": "dag/dangling-ref"}),
             );
-            assert_eq!(tier(&class, &[]), Some(MECHANICAL));
+            assert!(proof_err(&class).contains("only append entries"));
+            assert_eq!(tier(&class, &[]), Some(Tier::Advisory));
             let unbound = row(
                 "task:parse-it.files",
                 Some(json!(["src/a.rs", "src/gone.rs"])),
@@ -839,17 +1023,17 @@ done = false
             stamp(&mut finding, SLUG, &[]).unwrap();
             assert_eq!(
                 finding.rest.get(TIER_KEY).and_then(TomlValue::as_str),
-                Some(USER)
+                Some("user")
             );
 
             let mut frozen = fresh.clone();
             frozen
                 .rest
-                .insert(TIER_KEY.into(), TomlValue::String(CITED.into()));
+                .insert(TIER_KEY.into(), TomlValue::String("cited".into()));
             stamp(&mut frozen, SLUG, &[]).unwrap();
             assert_eq!(
                 frozen.rest.get(TIER_KEY).and_then(TomlValue::as_str),
-                Some(CITED)
+                Some("cited")
             );
 
             std::fs::write(root.join(".claude/flows/tiers/tasks.toml"), "items = 3").unwrap();

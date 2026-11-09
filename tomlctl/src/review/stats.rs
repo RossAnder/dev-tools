@@ -22,8 +22,10 @@ use super::fields::{Family, FindingStatus, Kind, Route};
 use super::invalid;
 use super::store::{self, Cell, Finding, Store, Verdict};
 use super::sync::{SYNC_REASON_PREFIX, V1Outcome, ledger_paths, linked_rows};
+use super::tier::Tier;
 use super::verdict::settle;
 use crate::cli::ReviewStatsArgs;
+use crate::convert::decode_json_text;
 use crate::io::{relativise_under, repo_or_cwd_root};
 
 const PROBE_PREFIX: &str = "probe:";
@@ -793,9 +795,11 @@ fn escapes(view: &View) -> JsonValue {
 }
 
 /// A plan finding's disposition, from its frozen `tier`, its status and who
-/// applied it. A non-advisory finding dismissed without an edit was put to
-/// the user and refused; any other row reads as its status.
-fn disposition(tier: &str, finding: &Finding) -> &'static str {
+/// applied it. A dismissed `user` row, or a dismissed tiered non-advisory row
+/// of a run started once the plan was approved, was put to the user and
+/// refused; on a draft the author dismisses those freely, so they read as
+/// `dismissed`. A `question` row resolved without an edit was answered.
+fn disposition(tier: &str, finding: &Finding, after_approval: bool) -> &'static str {
     let status = finding.status();
     let applied_by = finding
         .rest
@@ -806,27 +810,25 @@ fn disposition(tier: &str, finding: &Finding) -> &'static str {
                 .and_then(toml::Value::as_str)
                 .unwrap_or_default()
         });
+    let parsed = Tier::parse(tier);
     match applied_by {
-        Some(by) if status == FindingStatus::Resolved => match (by, tier) {
+        Some(by) if status == FindingStatus::Resolved => match (by, parsed) {
             ("user", _) => "user-accepted",
-            (_, "cited") => "applied-disclosed",
+            (_, Some(Tier::Cited)) => "applied-disclosed",
             _ => "applied",
         },
-        _ if status == FindingStatus::Dismissed && !matches!(tier, "advisory" | UNTIERED) => {
+        _ if status == FindingStatus::Dismissed
+            && tier != UNTIERED
+            && parsed != Some(Tier::Advisory)
+            && (parsed == Some(Tier::User) || after_approval) =>
+        {
             "user-vetoed"
+        }
+        None if status == FindingStatus::Resolved && parsed == Some(Tier::Question) => {
+            "user-answered"
         }
         _ => status.as_str(),
     }
-}
-
-/// An `applied.old` or `applied.new`, which hold JSON text; text that does
-/// not decode is taken as the string itself.
-fn applied_value(applied: &toml::Table, key: &str) -> JsonValue {
-    let raw = applied
-        .get(key)
-        .and_then(toml::Value::as_str)
-        .unwrap_or("null");
-    serde_json::from_str(raw).unwrap_or_else(|_| JsonValue::String(raw.to_string()))
 }
 
 /// Characters of text a value holds: string lengths and scalar renderings,
@@ -859,14 +861,14 @@ struct PlanTally {
 }
 
 impl PlanTally {
-    fn add_finding(&mut self, finding: &Finding) {
+    fn add_finding(&mut self, finding: &Finding, after_approval: bool) {
         let tier = finding
             .rest
             .get("tier")
             .and_then(toml::Value::as_str)
             .filter(|t| !t.is_empty())
             .unwrap_or(UNTIERED);
-        let disposition = disposition(tier, finding);
+        let disposition = disposition(tier, finding, after_approval);
         *self
             .tiers
             .entry(tier.to_string())
@@ -887,7 +889,10 @@ impl PlanTally {
         let Some(applied) = finding.rest.get("applied").and_then(toml::Value::as_table) else {
             return;
         };
-        let (old, new) = (applied_value(applied, "old"), applied_value(applied, "new"));
+        let (old, new) = (
+            decode_json_text(applied.get("old")),
+            decode_json_text(applied.get("new")),
+        );
         self.edits += 1;
         self.chars_added += text_size(&new) - text_size(&old);
         match (&old, &new) {
@@ -978,12 +983,21 @@ fn run_minutes(run: &store::Run) -> Option<f64> {
 fn plan_outcomes(view: &View) -> JsonValue {
     let mut runs = Vec::new();
     let mut total = PlanTally::default();
-    for sv in view.stores.iter().filter(|sv| sv.loaded.slug.is_some()) {
+    for sv in view.stores.iter() {
+        let Some(slug) = sv.loaded.slug.as_deref() else {
+            continue;
+        };
+        let approved = first_approval(slug);
         for run in &sv.runs {
             let mut tally = PlanTally::default();
+            let after_approval = approved.is_some_and(|at| {
+                run.started
+                    .parse::<jiff::Timestamp>()
+                    .is_ok_and(|started| started >= at)
+            });
             let minted: Vec<&&Finding> = sv.findings.iter().filter(|f| f.run == run.id).collect();
             for finding in &minted {
-                tally.add_finding(finding);
+                tally.add_finding(finding, after_approval);
             }
             tally.add_run(run, minted.len());
             let mut row = tally.to_json();
@@ -997,6 +1011,26 @@ fn plan_outcomes(view: &View) -> JsonValue {
     let mut total_json = total.to_json();
     total_json["runs"] = json!(runs.len());
     json!({"runs": runs, "total": total_json})
+}
+
+/// The earliest `[[approval]].at` in flow `slug`'s `plan.toml`; `None` when
+/// the flow has no plan, no approval, or a plan that does not read, since a
+/// stats pass never fails on a store it only consults.
+fn first_approval(slug: &str) -> Option<jiff::Timestamp> {
+    let path = crate::plan::store::resolve(slug).ok()?;
+    if !path.is_file() {
+        return None;
+    }
+    let integrity = crate::cli::ReadIntegrityArgs {
+        verify_integrity: false,
+        strict_read: false,
+    };
+    crate::plan::store::load(&path, &integrity)
+        .ok()?
+        .approvals
+        .iter()
+        .filter_map(|a| a.at.to_string().parse::<jiff::Timestamp>().ok())
+        .min()
 }
 
 /// The text up to and including the first `.`, `!` or `?` that ends a

@@ -558,7 +558,14 @@ fn accept_entry(entry: &SpecObject<'_>) -> Result<Accept> {
     }
     entry.refuse_unknown(&ACCEPT_FIELDS)?;
     let check = entry.text("check")?.unwrap_or_default();
-    let kind = match entry.one_of("kind", &ACCEPT_KINDS)? {
+    // A check-less entry is stored, and shown, as `kind = ""`; that form reads
+    // back as an absent kind so a stored list round-trips through the parser.
+    let unlabelled = check.trim().is_empty() && entry.text("kind")?.as_deref() == Some("");
+    let kind = match (!unlabelled)
+        .then(|| entry.one_of("kind", &ACCEPT_KINDS))
+        .transpose()?
+        .flatten()
+    {
         Some(kind) => kind,
         None if check.trim().is_empty() => String::new(),
         None => {

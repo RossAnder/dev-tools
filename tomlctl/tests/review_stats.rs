@@ -856,6 +856,56 @@ fn plan_outcomes_count_tiers_and_dispositions() {
 }
 
 #[test]
+fn a_dismissal_is_a_veto_only_on_a_user_row_or_after_approval() {
+    let repo = Repo::new();
+    let dismissed_mechanical = |id: &str, run: &str| {
+        format!(
+            "\n[[findings]]\nid = \"{id}\"\nrun = \"{run}\"\nfamily = \"plan\"\nkind = \"defect\"\n\
+             lens = \"feasibility\"\nroute = \"verifier\"\ntier = \"mechanical\"\n\
+             status = \"dismissed\"\ndismiss_reason = \"no\"\n"
+        )
+    };
+    let store = format!(
+        "{PLAN_STORE}{}{}\n[[findings]]\nid = \"F9\"\nrun = \"U1\"\nfamily = \"plan\"\n\
+         kind = \"advisory\"\nlens = \"intent\"\nroute = \"none\"\ntier = \"question\"\n\
+         status = \"resolved\"\nresolution = \"kept by user\"\n",
+        dismissed_mechanical("F7", "U1"),
+        dismissed_mechanical("F8", "U2"),
+    );
+    repo.write(FLOW_STORE_PATH, &store);
+    repo.write(
+        ".claude/flows/f1/plan.toml",
+        "schema_version = 1\n\n[[approval]]\ncommit = \"abc1234\"\n\
+         at = 2026-11-09T10:45:00Z\nreview = \"ran\"\n",
+    );
+    let out = repo.stats(&["--slug", "f1", "--plan-outcomes"]);
+    let runs = &out["plan_outcomes"]["runs"];
+    let first = &runs[0];
+    assert_eq!(first["tiers"]["mechanical"]["dismissed"], 1, "{first}");
+    assert_eq!(first["tiers"]["mechanical"]["user-vetoed"], JsonValue::Null);
+    assert_eq!(
+        first["tiers"]["question"],
+        json!({"user-answered": 1}),
+        "{first}"
+    );
+    assert_eq!(first["veto_rate"], 0.5, "{first}");
+    let second = &runs[1];
+    assert_eq!(
+        second["tiers"]["mechanical"],
+        json!({"user-vetoed": 1}),
+        "{second}"
+    );
+
+    repo.write(".claude/flows/f1/plan.toml", "schema_version = 1\n");
+    let draft = repo.stats(&["--slug", "f1", "--plan-outcomes"]);
+    assert_eq!(
+        draft["plan_outcomes"]["runs"][1]["tiers"]["mechanical"],
+        json!({"dismissed": 1}),
+        "{draft}"
+    );
+}
+
+#[test]
 fn overturns_group_by_model() {
     let repo = Repo::new();
     repo.write(FLOW_STORE_PATH, PLAN_STORE);

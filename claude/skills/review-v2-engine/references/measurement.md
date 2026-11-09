@@ -15,7 +15,7 @@ No lens, facet or activation tier is retuned on fewer than **five runs** of evid
 | Dismissals | `review stats --by lens` | Share of a lens's rows the user dismissed at triage, with reasons |
 | Coverage | `review stats --by run` | Uncovered and thin cells, waiver rates, per run |
 | Probe recurrence | `review stats --by probe` | Probes recurring under one concern tag across runs — a promotion candidate at three or more |
-| Plan outcomes | `review stats --plan-outcomes` | Per plan-family run of a v2 flow and in total: tier by disposition (applied, applied-disclosed, user-accepted, user-vetoed; advisory open, dismissed, parked or converted), the user-veto rate, growth from applied edits, re-check yield and cost |
+| Plan outcomes | `review stats --plan-outcomes` | Per plan-family run of a v2 flow and in total: tier by disposition (applied, applied-disclosed, user-accepted, user-vetoed, user-answered; advisory open, dismissed, parked or converted), the user-veto rate, growth from applied edits, re-check yield and cost |
 | Calibration | `review stats --calibration` | Exemplars drawn only from user dismissals, v1 wontfix reasons and audit overturns |
 | Cost | the run record (`agents`, `waves`) and the context measurement below | Agents and waves per run; orchestrator context per run |
 
@@ -125,7 +125,7 @@ Thresholds with no v1 counterpart, because v1 never measured them:
 - **Audit overturn on checked cleanup**: above 15% means the checker's predicates or the routing globs let behaviour-changing edits reach Haiku.
 - **Escapes**: a concern with escapes in two or more of its last five runs is under-sliced or under-bundled; look at how compose slices it before touching the lens.
 - **Audit overturn per agent model** (`review stats --by model`): the same 10% and 20% bands, read per model. A model above them while another model in the same role sits inside them points at the model assignment in the agent's frontmatter before the verifier's procedure.
-- **Plan family**: v1 merged 98% of its plan findings and discarded none, so the merge measured nothing. A v2 plan lens is worse when its audit overturn on CONFIRMED defects exceeds 20%, or when its user-veto rate in `review stats --plan-outcomes` (user-vetoed over user-accepted plus user-vetoed) exceeds a third. Plan seeded recall (below) holds the plan family to the same bands as code seeded recall.
+- **Plan family**: v1 merged 98% of its plan findings and discarded none, so the merge measured nothing. A v2 plan lens is worse when its audit overturn on CONFIRMED defects exceeds 20%, or when its user-veto rate in `review stats --plan-outcomes` (user-vetoed over user-accepted plus user-vetoed; a `user-answered` question row counts on neither side, and a draft-time dismissal of a mechanical or cited row is `dismissed`, not a veto) exceeds a third. Plan seeded recall (below) holds the plan family to the same bands as code seeded recall.
 - **Cost**: a run whose `agents` exceeds the proposal's estimate by more than half, or exceeds 25 without the composed map stating why, is a composition finding for compose, not a lens finding.
 
 A **better** result on a measure is evidence to keep a lens's current text and activation; a **worse** one names the lens, facet or activation to rework, which ships as a new `experimental` id opted into beside the old one rather than as an edit in place.
@@ -163,10 +163,10 @@ No v2 plan has run under an execution engine yet, so no deviation, revert or pos
 | Seed | Target | Expected tier | Why |
 |---|---|---|---|
 | A vacuous `accept` entry: a check that passes whatever the task does | `task:<ref>.spec.accept[<n>]` | mechanical | its recorded probe verdict is not `healthy` (`proof {kind:"probe"}`) |
-| A dead `design` anchor | `task:<ref>.spec.design` | mechanical | `plan check` reports `plan/design-anchor-dead` on the task (`proof {kind:"check-class"}`) |
+| A dead `design` anchor | `task:<ref>.spec.design` | cited | `check-class` may only append to `spec.design`, so replacing the dead anchor needs a verifier's confirmed citation to reach cited |
 | A wrong `files` path, not a `(new)` file | `task:<ref>.files` | mechanical | the path is absent from the tree (`proof {kind:"path-missing"}`) |
-| An overstated `outcome`, claiming more than the task's `accept` entries bind | `task:<ref>.spec.outcome` | user | every `spec.outcome` target is user tier |
-| A decision whose evidence the repo contradicts | `decision:D<n>.<key>` | user | every `decision:*` target is user tier |
+| An overstated `outcome`, claiming more than the task's `accept` entries bind | `task:<ref>.spec.outcome` | user | every `spec.outcome` target with a `new` edit is user tier; one without is question |
+| A decision whose evidence the repo contradicts | `decision:D<n>.<key>` | user | every `decision:*` target with a `new` edit is user tier; one without is question |
 
 The bands are the code check's: 4 or 5 hits passes, 3 is inconclusive (repeat with five more seeds on another flow), 2 or fewer fails. A miss on a mechanical seed points at the check or lens that should have raised it; a hit at the wrong tier points at `tier.rs`.
 

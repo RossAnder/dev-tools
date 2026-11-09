@@ -8,7 +8,6 @@
 use anyhow::Result;
 use serde_json::{Value as JsonValue, json};
 
-use super::records::{unwritten_outcome, written_only};
 use super::store;
 use crate::cli::{
     PlanMilestoneAddArgs, PlanMilestoneUpdateArgs, ReadIntegrityArgs, WriteIntegrityArgs,
@@ -19,7 +18,10 @@ use crate::tasks::schema::{
     Change, Checkpoint, DEFAULT_ACTOR, ELABORATION_DEFERRED, ELABORATION_ELABORATED,
     ELABORATION_UPFRONT, MILESTONE_REF_PREFIX, MilestoneSpec, Store,
 };
-use crate::tasks::{ReviewEditOutcome, load_store, mutate_store, resolve_store_path};
+use crate::tasks::{
+    ReviewEditOutcome, load_store, mutate_store, resolve_store_path, unwritten_outcome,
+    written_only,
+};
 
 fn refuse(message: String) -> anyhow::Error {
     tagged_err(ErrorKind::Validation, None, message)
@@ -247,7 +249,9 @@ const ELABORATIONS: [&str; 3] = [
     ELABORATION_ELABORATED,
 ];
 
-const REVIEW_FIELDS: [&str; 4] = ["goal", "gates", "elaboration", "defer_reason"];
+/// `goal` is the milestone's `[[checkpoints]]` rationale; the rest live on its
+/// `[[milestones]]` row.
+pub(super) const REVIEW_FIELDS: [&str; 4] = ["goal", "gates", "elaboration", "defer_reason"];
 
 /// One compare-and-set edit to a milestone field. `expect` is required and
 /// `new` is the field's whole value: a string, or an array of strings for
@@ -359,7 +363,7 @@ fn milestone_edit(store: &mut Store, edit: &MilestoneEdit<'_>) -> Result<ReviewE
 
 /// The field as a review edit sees it; a milestone with no `[[milestones]]`
 /// row reads as the row `patch_milestone` would add.
-fn milestone_value(store: &Store, id: &str, field: &str) -> Option<JsonValue> {
+pub(super) fn milestone_value(store: &Store, id: &str, field: &str) -> Option<JsonValue> {
     let checkpoint = store.checkpoints.iter().find(|entry| entry.id == id)?;
     let spec = store.milestones.iter().find(|entry| entry.id == id);
     Some(match field {

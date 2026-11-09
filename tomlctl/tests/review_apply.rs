@@ -849,6 +849,165 @@ fn a_brief_edit_replaces_text_once_and_an_ambiguous_one_is_refused() {
 }
 
 #[test]
+fn a_design_edit_lands_in_the_cited_section_when_its_text_repeats() {
+    let flow = Flow::new();
+    let design_file = "docs/flows/applying/design/notes.md";
+    let design = "# Notes\n\n## Retry\n\nWait one second.\n\n## Retry\n\nWait one second.\n";
+    write(&flow.root, design_file, design);
+    let id = flow.opened(
+        edit(
+            "design/notes.md#retry-2",
+            design_file,
+            "retry-2",
+            Some(json!("one second")),
+            json!("two seconds"),
+        ),
+        &format!("{design_file}:1"),
+    );
+
+    let out = flow.apply(&[&id], &[]);
+    assert_eq!(out["applied"][0]["id"], json!(id), "{out}");
+    assert_eq!(
+        fs::read_to_string(flow.root.join(design_file)).unwrap(),
+        "# Notes\n\n## Retry\n\nWait one second.\n\n## Retry\n\nWait two seconds.\n"
+    );
+}
+
+#[test]
+fn a_mechanical_proof_that_stopped_holding_refuses_the_call() {
+    let flow = Flow::new();
+    let mut row = task_edit(
+        "add-the-guard",
+        "files",
+        Some(json!(["src/guard.rs", "src/a.rs", "src/gone.rs"])),
+        json!(["src/guard.rs", "src/a.rs"]),
+    );
+    row["proof"] = json!({"kind": "path-missing", "path": "src/gone.rs"});
+    let id = flow.opened(row, &cite_tasks());
+    assert_eq!(flow.tier(&id), "mechanical");
+
+    write(&flow.root, "src/gone.rs", "fn back() {}\n");
+    let message = flow.apply_refused(&[&id], &[]);
+    assert!(message.contains("proof no longer holds"), "{message}");
+    assert!(message.contains("`src/gone.rs` exists"), "{message}");
+    assert_eq!(flow.status(&id), "open");
+    assert_eq!(
+        flow.row("add-the-guard")["files"],
+        json!(["src/guard.rs", "src/a.rs", "src/gone.rs"])
+    );
+}
+
+#[test]
+fn a_failure_mid_batch_names_the_ids_stamped_before_it() {
+    let flow = Flow::new();
+    let brief_cite = format!("{BRIEF_FILE}:1");
+    let row = |expect: &str, new: &str| {
+        edit(
+            "brief#Background",
+            BRIEF_FILE,
+            "Background",
+            Some(json!(expect)),
+            json!(new),
+        )
+    };
+    // The first edit adds a second occurrence of the second's `expect`, which
+    // the second meets only when it writes.
+    let first = flow.opened(row("storm", "storm in one week"), &brief_cite);
+    let second = flow.opened(row("in one week", "within a week"), &brief_cite);
+
+    let out = flow
+        .tomlctl(&["review", "apply", &first, &second, "--slug", SLUG])
+        .output()
+        .expect("the binary runs");
+    assert!(!out.status.success(), "the second edit cannot be placed");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains(&format!(
+            "applying {second} failed; stamped before it: [{first}]"
+        )),
+        "{stderr}"
+    );
+    assert!(stderr.contains("may or may not have landed"), "{stderr}");
+    assert!(stderr.contains("occurs 2 times"), "{stderr}");
+    assert_eq!(flow.status(&first), "resolved");
+    assert_eq!(flow.status(&second), "open");
+    assert_eq!(
+        fs::read_to_string(flow.root.join(BRIEF_FILE)).unwrap(),
+        BRIEF.replace("storm hit", "storm in one week hit")
+    );
+}
+
+#[test]
+fn a_dry_run_reports_a_later_edit_to_the_same_record_as_stale() {
+    let flow = Flow::new();
+    let first = flow.opened(
+        task_edit(
+            "wire-the-guard",
+            "action",
+            Some(json!("Wire-action.")),
+            json!("Wire-action-revised."),
+        ),
+        &cite_tasks(),
+    );
+    let second = flow.opened(
+        task_edit(
+            "wire-the-guard",
+            "action",
+            Some(json!("Wire-action.")),
+            json!("Wire-action-other."),
+        ),
+        &cite_tasks(),
+    );
+
+    let preview = flow.apply(&[&first, &second], &["--dry-run"]);
+    assert_eq!(
+        preview["applied"],
+        json!([{"id": first, "target": "task:wire-the-guard.action", "tier": "cited"}]),
+        "{preview}"
+    );
+    assert_eq!(
+        preview["skipped_stale"][0]["id"],
+        second.as_str(),
+        "{preview}"
+    );
+    assert_eq!(
+        preview["skipped_stale"][0]["edited_by"],
+        first.as_str(),
+        "{preview}"
+    );
+
+    let out = flow.apply(&[&first, &second], &[]);
+    assert_eq!(out["applied"], preview["applied"], "{out}");
+    assert_eq!(out["skipped_stale"][0]["id"], second.as_str(), "{out}");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_brief_behind_a_symlinked_flow_directory_is_not_written() {
+    let flow = Flow::new();
+    let id = flow.opened(
+        edit(
+            "brief#Background",
+            BRIEF_FILE,
+            "Background",
+            Some(json!("hit twice")),
+            json!("hit three times"),
+        ),
+        &format!("{BRIEF_FILE}:1"),
+    );
+    let outside = tempfile::tempdir().unwrap();
+    let authored = flow.root.join("docs/flows").join(SLUG);
+    let moved = outside.path().join(SLUG);
+    fs::rename(&authored, &moved).unwrap();
+    std::os::unix::fs::symlink(&moved, &authored).unwrap();
+
+    let message = flow.apply_refused(&[&id], &[]);
+    assert!(message.contains("resolves outside"), "{message}");
+    assert_eq!(fs::read_to_string(moved.join("brief.md")).unwrap(), BRIEF);
+    assert_eq!(flow.status(&id), "open");
+}
+
+#[test]
 fn a_dry_run_writes_nothing() {
     let flow = Flow::new();
     let id = flow.opened(

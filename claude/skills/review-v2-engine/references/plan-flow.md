@@ -51,10 +51,10 @@ The engine's role rules hold throughout: read digests and projections, never row
 Read the `model:` line of each of the eight agents with Grep, under `<claude dir>/agents/`: the engine's seven (`review-surveyor`, `review-sweeper`, `review-checker`, `review-finder`, `review-finder-cf`, `review-verifier`, `plan-executor`) and `plan-review-lead`. Record the lead's model under `lead`. Stage the table as JSON with the Write tool, since the run directory does not exist yet: use the session scratchpad, then pass it by `@` path.
 
 ```bash
-tomlctl review run start --slug <slug> --command review-plan-v2 --family plan --depth <depth> --base HEAD --set-json 'scope=["docs/flows/<slug>/brief.md","docs/flows/<slug>/design/*.md"]' --set-json models=@<scratch>/review-models.json --set substrate=workflow
+tomlctl review run start --slug <slug> --command review-plan-v2 --family plan --depth <depth> --base HEAD --set-json 'scope=["docs/flows/<slug>/brief.md","docs/flows/<slug>/design/*.md"]' --set-json models=@<scratch>/review-models.json --set substrate=<workflow|agent-waves>
 ```
 
-`--command` is `review-plan-v2` from either carrier. `<depth>` is the carrier's `--depth`, default `standard`. Bind `<run>` and `<run-dir>` from what it prints. A catalogue validation error halts the review, as the engine's stage 1 says; so does a refusal over `.claude/review-lenses`, which takes `--project` only on the user's say-so.
+`substrate` follows the engine's rule: `workflow` when the Workflow tool is available in this session, otherwise `agent-waves`. `--command` is `review-plan-v2` from either carrier. `<depth>` is the carrier's `--depth`, default `standard`. Bind `<run>` and `<run-dir>` from what it prints. A catalogue validation error halts the review, as the engine's stage 1 says; so does a refusal over `.claude/review-lenses`, which takes `--project` only on the user's say-so.
 
 ## 3. Survey signals and schemas
 
@@ -176,10 +176,10 @@ tomlctl review apply <ids> --slug <slug> --dry-run
 tomlctl review apply <ids> --slug <slug>
 ```
 
-- **Refusal.** The verb refuses the whole call, writing nothing, and lists each refused id with its reasons. Drop the refused ids, report each with its reason, and apply the rest. A refused id stays `open`, and the gate shows it.
+- **Refusal.** The verb refuses the whole call, writing nothing, and lists each refused id with its reasons. Drop the refused ids, report each with its reason, and apply the rest. A refused id stays `open`, and shows at the gate under `risks` when it is a critical or major defect.
 - **Stale.** `skipped_stale` rows lost a race with an earlier edit to the same record. Report them under `changed during the review` and never retry them; the next review reads them through `PRIOR`.
 - **Already.** `already` ids were made before, by a session that died before stamping them; the verb stamps them now.
-- **Mid-batch failure.** `applying <id> failed; stamped before it: […]` leaves at most that one edit unstamped. Re-run the same call: the stamped ids are no longer `open`, and the unstamped edit is recognised as `already`.
+- **Mid-batch failure.** `applying <id> failed; stamped before it: […]` leaves at most that one edit unstamped. Re-run the call with only the ids not listed as stamped: the stamped ids are no longer `open`, so the verb would refuse a call naming them, and the unstamped edit that did land is recognised as `already`.
 
 Keep the `target` of every `applied` and `already` row. Section 8 re-probes from them, and section 10 re-checks them.
 
@@ -187,7 +187,7 @@ Cited edits are applied without asking but are disclosed: the approval gate list
 
 ### User tier
 
-A user-tier row targets a decision, a `spec.outcome`, or the brief's Intent, Non-goals, Scope budget or Success criteria. It is asked whatever its evidence. Read the batch through the implementer projection, which carries the fix and the edit:
+A user-owned target is a decision, a `spec.outcome`, or the brief's Intent, Non-goals, Scope budget or Success criteria. A row on one is asked whatever its evidence. It is user tier when it is a defect or cleanup with a `new`, an edit `review apply` can write; any other row on such a target is question tier, below. Read the batch through the implementer projection, which carries the fix and the edit:
 
 ```bash
 tomlctl review show <ids> --slug <slug> --for implementer
@@ -208,7 +208,22 @@ Ask in `AskUserQuestion` batches of up to four, one question per finding. Each q
   tomlctl review triage <ids> --slug <slug> --dismiss-file <run-dir>/payloads/veto.md --expect-status open
   ```
 
-- **No answer.** A headless session leaves the rows `open`. `plan approve --review ran` refuses while any user-tier finding is open, and `plan stage` counts them as a blocker. Say `user tier pending` in the close summary.
+- **No answer.** A headless session leaves the rows `open`. `plan approve --review ran` refuses while any user-tier or question-tier finding is open, and `plan stage` counts them as a blocker. Say `user tier pending` in the close summary.
+
+### Question tier
+
+A question-tier row is an advisory, or a defect or cleanup with no `new`, on a user-owned target. It carries no edit, so `review apply` refuses it, and `review triage --park` refuses it too: only the user answers it. Ask it in the same `AskUserQuestion` batches, naming the target, its current value and the finding's summary, and offer **Revise** and **Keep**, never Accept or Veto.
+
+- **Revise.** The user's revision goes through the `plan` verbs that own the record, as an attended edit. Then resolve the row with `revised by user` staged:
+
+  ```bash
+  tomlctl review triage <ids> --slug <slug> --resolve-file <run-dir>/payloads/revised.md --expect-status open
+  ```
+
+- **Keep.** Resolve the row the same way with `kept by user` staged. `review stats --plan-outcomes` counts a resolved question row as `user-answered`, outside the veto rate.
+- **No answer.** As for the user tier: the row stays `open` and blocks `plan approve --review ran` and `plan stage`.
+
+A row stamped `user` before the question tier existed keeps `user`: tiers are frozen. One that carries no `new` is refused by `review apply`; close it as a question.
 
 ### Advisory, and what the tiers leave
 
@@ -244,7 +259,7 @@ tomlctl plan probes --slug <slug> --record <run-dir>/payloads/probes.out
 
 In this order:
 
-1. **Park.** Park every advisory the digest still lists as untriaged, with one staged reason, `untriaged at the close of <run>`:
+1. **Park.** Park every advisory the digest still lists as untriaged, except user-tier and question-tier rows, with one staged reason, `untriaged at the close of <run>`. Those stay `open` for the user, and `review triage --park` refuses them:
 
    ```bash
    tomlctl review triage <ids> --slug <slug> --park-file <run-dir>/payloads/park-untriaged.md --expect-status open
@@ -273,8 +288,10 @@ Run a re-check when section 7 recorded at least one `applied` or `already` row. 
 **Run start.** A fresh run at `quick`, recording the run it re-checks; `--propose` scales to the run's recorded depth:
 
 ```bash
-tomlctl review run start --slug <slug> --command review-plan-v2 --family plan --depth quick --base HEAD --set-json 'scope=["docs/flows/<slug>/brief.md","docs/flows/<slug>/design/*.md"]' --set rechecks=<run> --set-json models=@<scratch>/review-models.json --set substrate=workflow
+tomlctl review run start --slug <slug> --command review-plan-v2 --family plan --depth quick --base HEAD --set-json 'scope=["docs/flows/<slug>/brief.md","docs/flows/<slug>/design/*.md"]' --set rechecks=<run> --set-json models=@<scratch>/review-models.json --set substrate=<workflow|agent-waves>
 ```
+
+`substrate` follows the engine's rule, as at section 2.
 
 Bind its `<recheck-run>` and `<recheck-dir>`.
 
@@ -308,11 +325,11 @@ Workflow({
 
 `targets` lists each distinct `target` of section 7's `applied` and `already` rows, one per entry, as stored. A recheck takes depth `quick` and a non-empty `targets`; the wrapper refuses anything else and launches nothing. `/plan-v2`'s step row stays the one section 4 opened.
 
-**On the return.** Read it by section 5, with the same fallback table, then mop up by section 6 against `<recheck-run>`. The re-check has no follow-up wave.
+**On the return.** Read it by section 5, with the same fallback table, then mop up by section 6 against `<recheck-run>`. The re-check runs no follow-up wave except the one `review-finder` probe cell that collects its sweepers' escalations, as `compose.md` allows at `quick`.
 
 **Its findings are never applied automatically**, whatever their tier:
 
-- a user-tier finding is asked before approval, as in section 7, and an accepted one applied with `--user-accepted`. Re-probe by section 8 when it edits a `spec.accept` entry;
+- a user-tier finding is asked before approval, as in section 7, and an accepted one applied with `--user-accepted`. Re-probe by section 8 when it edits a `spec.accept` entry. A question-tier finding is asked and resolved as in section 7;
 - every other open finding is left `open`. The gate lists each open re-check finding under `risks`, as a leftover the user approves past or acts on.
 
 Then close `<recheck-run>` by section 9.
@@ -331,12 +348,12 @@ tomlctl plan run finish --slug <slug> --step review --outcome <outcome>
 | A fallback fired, or a run finished `--incomplete` | `errors` |
 | The user stopped the review | `stopped` |
 
-Then `/plan-v2` goes on to its gate, which shows `review_edits` and `risks`, and approves with `--review ran`. `plan approve` refuses while a plan-family run is unfinished, a user-tier finding is open, or an edited `spec.accept` entry has no probe; `plan stage` applies the same rule, so `next` names what is left.
+Then `/plan-v2` goes on to its gate, which shows `review_edits` and `risks`, and approves with `--review ran`. `plan approve` refuses while a plan-family run is unfinished, a user-tier or question-tier finding is open, or an edited `spec.accept` entry has no probe; `plan stage` applies the same rule, so `next` names what is left.
 
 **Close summary.** Print:
 
 - each run id with its report path and counts line;
-- the edits by tier: mechanical and cited applied, user accepted and vetoed;
+- the edits by tier: mechanical and cited applied, user accepted and vetoed, questions revised and kept;
 - the refused, stale and unprobed ids;
 - `user tier pending` when questions went unanswered;
 - the re-check's yield, its open findings and any user-tier findings it asked;
@@ -350,7 +367,7 @@ Name the outcome read for this plan: `tomlctl review stats --slug <slug> --plan-
 
 When `plan.toml` holds an `[[approval]]` (stage `approved`, `running` or `done`), intent is frozen. Every edit is the user's, whatever its tier, and `review apply` refuses any call without `--user-accepted`.
 
-- Section 7's mechanical and cited rows are asked like user-tier rows, in the same `AskUserQuestion` batches. The question names the tier, so the user sees which edits the tool would have made alone. Accepted ids are applied with `--user-accepted`; vetoed ones are dismissed.
+- Section 7's mechanical and cited rows are asked like user-tier rows, in the same `AskUserQuestion` batches. The question names the tier, so the user sees which edits the tool would have made alone. Accepted ids are applied with `--user-accepted`; vetoed ones are dismissed. `review stats --plan-outcomes` counts every dismissed tiered row other than `advisory` as a veto once its run started after the first approval; before it, only a dismissed user-tier row is one.
 - Task rows, specs and milestones are written through the audited path on an approved plan, so each edit also leaves a `[[changes]]` row.
 - An applied edit to `brief.md` changes the brief the approval recorded. `plan stage` then reports `plan/brief-changed`, and its `next` names `plan approve --amend --review ran`. Tell the user the amend is theirs to run.
 - An edit to a `spec.accept` entry is re-probed by section 8 as before.

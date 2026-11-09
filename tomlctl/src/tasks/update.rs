@@ -1243,7 +1243,7 @@ fn replace_str(slot: &mut String, value: &str) -> bool {
 
 /// Row fields a review edit reaches. `title` is absent: a retitle moving the
 /// derived ref would strand every other finding keyed on the old one.
-const REVIEW_ROW_FIELDS: [&str; 9] = [
+pub(crate) const REVIEW_ROW_FIELDS: [&str; 9] = [
     "acceptance",
     "action",
     "checkpoint",
@@ -1255,7 +1255,7 @@ const REVIEW_ROW_FIELDS: [&str; 9] = [
     "needs",
 ];
 
-const REVIEW_SPEC_FIELDS: [&str; 8] = [
+pub(crate) const REVIEW_SPEC_FIELDS: [&str; 8] = [
     "accept",
     "constraints",
     "design",
@@ -1266,7 +1266,8 @@ const REVIEW_SPEC_FIELDS: [&str; 8] = [
     "premises",
 ];
 
-const REVIEW_SPEC_LISTS: [&str; 6] = [
+/// The `REVIEW_SPEC_FIELDS` that hold lists, and so take an entry edit.
+pub(crate) const REVIEW_SPEC_LISTS: [&str; 6] = [
     "accept",
     "constraints",
     "design",
@@ -1277,20 +1278,26 @@ const REVIEW_SPEC_LISTS: [&str; 6] = [
 
 /// One compare-and-set edit to a task row field or a `spec.<field>`.
 ///
-/// With neither `index` nor `append` the edit replaces the whole value and
-/// needs `expect`. Otherwise it edits one list entry, matched by value: `new`
-/// null removes the entry equal to `expect`, and `append` takes `new` alone.
+/// With no `entry` the edit replaces the whole value and needs `expect`.
+/// Otherwise it edits one list entry, matched by value: `new` null removes the
+/// entry equal to `expect`, and an append takes `new` alone.
 pub(crate) struct ReviewEdit<'a> {
     pub(crate) task_ref: &'a str,
     pub(crate) field: &'a str,
-    /// Where the finding saw the entry. Matching ignores it; a stale report
-    /// shows the entry now at this position.
-    pub(crate) index: Option<usize>,
-    pub(crate) append: bool,
+    pub(crate) entry: Option<Slot>,
     pub(crate) expect: Option<&'a JsonValue>,
     pub(crate) new: &'a JsonValue,
     pub(crate) actor: &'a str,
     pub(crate) reason: &'a str,
+}
+
+/// The list entry a review edit addresses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Slot {
+    /// Where the finding saw the entry. Matching ignores it and goes by
+    /// equality with `expect`; a stale report shows the entry now here.
+    At(usize),
+    Append,
 }
 
 /// `Stale` carries what the store holds where `expect` was looked for.
@@ -1301,7 +1308,7 @@ pub(crate) enum ReviewEditOutcome {
     Stale { found: JsonValue },
 }
 
-/// Carries an outcome that writes nothing out of `store::mutate`, which
+/// Carries an outcome that writes nothing out of a store's `mutate`, which
 /// persists whatever an `Ok` closure leaves, `last_updated` restamped.
 #[derive(Debug)]
 struct Unwritten(ReviewEditOutcome);
@@ -1313,6 +1320,25 @@ impl std::fmt::Display for Unwritten {
 }
 
 impl std::error::Error for Unwritten {}
+
+/// `Ok` for `Applied` alone, so the enclosing `mutate` persists only a write.
+pub(crate) fn written_only(outcome: ReviewEditOutcome) -> Result<()> {
+    match outcome {
+        ReviewEditOutcome::Applied => Ok(()),
+        unwritten => Err(anyhow::Error::new(Unwritten(unwritten))),
+    }
+}
+
+/// The outcome a `mutate` over [`written_only`] ended with.
+pub(crate) fn unwritten_outcome(result: Result<()>) -> Result<ReviewEditOutcome> {
+    match result {
+        Ok(()) => Ok(ReviewEditOutcome::Applied),
+        Err(err) => match err.downcast::<Unwritten>() {
+            Ok(Unwritten(outcome)) => Ok(outcome),
+            Err(err) => Err(err),
+        },
+    }
+}
 
 /// Applies `edit` to the flow's task store, re-reading the value and checking
 /// `expect` inside the store's lock. The change runs through the `--ndjson`
@@ -1329,19 +1355,9 @@ pub(crate) fn apply_review_edit(
         no_create: true,
         ..integrity.clone()
     };
-    let written = store::mutate(&path, &integrity, |store| {
-        match review_edit(store, edit, v2)? {
-            ReviewEditOutcome::Applied => Ok(()),
-            unwritten => Err(anyhow::Error::new(Unwritten(unwritten))),
-        }
-    });
-    match written {
-        Ok(()) => Ok(ReviewEditOutcome::Applied),
-        Err(err) => match err.downcast::<Unwritten>() {
-            Ok(Unwritten(outcome)) => Ok(outcome),
-            Err(err) => Err(err),
-        },
-    }
+    unwritten_outcome(store::mutate(&path, &integrity, |store| {
+        written_only(review_edit(store, edit, v2)?)
+    }))
 }
 
 /// What `apply_review_edit` would return against the store as it stands,
@@ -1402,13 +1418,14 @@ fn review_edit(store: &mut Store, edit: &ReviewEdit<'_>, v2: bool) -> Result<Rev
             REVIEW_SPEC_FIELDS.join(", ")
         ))
     })?;
-    let entry = edit.append || edit.index.is_some();
+    let entry = edit.entry.is_some();
     if entry && !target.is_list() {
         return Err(refuse(
             "the field is not a list, so it takes no entry index or append".to_string(),
         ));
     }
-    match (edit.append, edit.expect.is_some(), edit.new.is_null()) {
+    let append = matches!(edit.entry, Some(Slot::Append));
+    match (append, edit.expect.is_some(), edit.new.is_null()) {
         (true, true, _) => {
             return Err(refuse(
                 "an append takes `new` alone, with no `expect`".to_string(),
@@ -1434,7 +1451,15 @@ fn review_edit(store: &mut Store, edit: &ReviewEdit<'_>, v2: bool) -> Result<Rev
         stored_form(target, entry, value)
             .map_err(|err| err.context(format!("task `{}` `{}`", edit.task_ref, edit.field)))
     };
-    let expect = edit.expect.map(normalise).transpose()?;
+    // An `expect` the spec parser refuses, such as a check-less accept entry's
+    // stored `kind = ""`, is compared as written; a supplied probe stays refused.
+    let expect = edit
+        .expect
+        .map(|value| match normalise(value) {
+            Err(_) if !carries_probe(entry, value) => Ok(value.clone()),
+            normalised => normalised,
+        })
+        .transpose()?;
     let new = match edit.new {
         JsonValue::Null => None,
         value => Some(normalise(value)?),
@@ -1442,7 +1467,11 @@ fn review_edit(store: &mut Store, edit: &ReviewEdit<'_>, v2: bool) -> Result<Rev
     let current = review_value(store, id, target)?;
 
     let whole = if entry {
-        match entry_edit(&current, expect, new, edit.index) {
+        let hint = match edit.entry {
+            Some(Slot::At(index)) => Some(index),
+            _ => None,
+        };
+        match entry_edit(&current, expect, new, hint) {
             Ok(list) => list,
             Err(outcome) => return Ok(outcome),
         }
@@ -1478,7 +1507,8 @@ fn review_edit(store: &mut Store, edit: &ReviewEdit<'_>, v2: bool) -> Result<Rev
 
 /// The list `current` becomes, or the outcome when nothing is to be written.
 /// An entry matches only by equality with `expect`, so a list holding two
-/// equal entries is stale rather than guessed at.
+/// equal entries is stale rather than guessed at, reporting the whole list;
+/// a list with no match reports the entry at `hint`.
 fn entry_edit(
     current: &JsonValue,
     expect: Option<JsonValue>,
@@ -1491,6 +1521,9 @@ fn entry_edit(
             .and_then(|index| entries.get(index))
             .cloned()
             .unwrap_or_else(|| JsonValue::Array(entries.to_vec())),
+    };
+    let ambiguous = |entries: &[JsonValue]| ReviewEditOutcome::Stale {
+        found: JsonValue::Array(entries.to_vec()),
     };
     let matches: Vec<usize> = match &expect {
         Some(expect) => entries
@@ -1513,12 +1546,13 @@ fn entry_edit(
             [position] => {
                 entries.remove(*position);
             }
-            _ => return Err(stale(&entries)),
+            _ => return Err(ambiguous(&entries)),
         },
         (Some(_), Some(new)) => match matches.as_slice() {
             [position] => entries[*position] = new,
             [] if entries.contains(&new) => return Err(ReviewEditOutcome::Already),
-            _ => return Err(stale(&entries)),
+            [] => return Err(stale(&entries)),
+            _ => return Err(ambiguous(&entries)),
         },
         (None, None) => return Err(stale(&entries)),
     }
@@ -1541,6 +1575,34 @@ fn stored_form(target: ReviewTarget, entry: bool, value: &JsonValue) -> Result<J
         (true, JsonValue::Array(mut entries)) if entries.len() == 1 => entries.remove(0),
         (_, stored) => stored,
     })
+}
+
+/// The current value of `field` (a row field or `spec.<field>`) on the row
+/// holding `task_ref`, as a review edit compares it.
+pub(crate) fn review_current(store: &Store, task_ref: &str, field: &str) -> Result<JsonValue> {
+    let target = ReviewTarget::parse(field).ok_or_else(|| {
+        tagged_err(
+            ErrorKind::Validation,
+            None,
+            format!("`{field}` is not a review field"),
+        )
+    })?;
+    let id = store.find_ref(task_ref).map(|row| row.id).ok_or_else(|| {
+        tagged_err(
+            ErrorKind::Validation,
+            None,
+            format!("no task with ref `{task_ref}`"),
+        )
+    })?;
+    review_value(store, id, target)
+}
+
+fn carries_probe(entry: bool, value: &JsonValue) -> bool {
+    let probed = |entry: &JsonValue| entry.get("probe").is_some();
+    match value {
+        JsonValue::Array(entries) if !entry => entries.iter().any(probed),
+        one => probed(one),
+    }
 }
 
 /// A field's whole value as JSON, with every `accept` entry's probe removed:
@@ -2278,8 +2340,7 @@ mod tests {
         ReviewEdit {
             task_ref: "seed-the-store",
             field,
-            index: None,
-            append: false,
+            entry: None,
             expect,
             new,
             actor: "review",
@@ -2382,7 +2443,7 @@ mod tests {
                 SLUG,
                 &write_args(),
                 &ReviewEdit {
-                    index: Some(0),
+                    entry: Some(Slot::At(0)),
                     ..edit("spec.accept", Some(&expect), &new)
                 },
             )
@@ -2415,7 +2476,7 @@ mod tests {
                 SLUG,
                 &write_args(),
                 &ReviewEdit {
-                    index: Some(0),
+                    entry: Some(Slot::At(0)),
                     ..edit("spec.accept", Some(&expect), &new)
                 },
             )
@@ -2425,13 +2486,78 @@ mod tests {
         });
     }
 
+    /// A check-less entry is stored and shown with `kind = ""`; a verbatim copy
+    /// of it matches as `expect`, and the rest of the list, another check-less
+    /// entry among it, is written back unrefused.
+    #[test]
+    fn a_check_less_accept_entry_matches_its_verbatim_copy() {
+        with_root(|root| {
+            let path = seeded(root);
+            let checkless = Accept {
+                check: String::new(),
+                kind: String::new(),
+                ..accept("")
+            };
+            store::mutate(&path, &write_args(), |store| {
+                let mut spec = empty_spec("seed-the-store".to_string());
+                spec.accept = vec![
+                    checkless.clone(),
+                    Accept {
+                        behaviour: "later".to_string(),
+                        ..checkless.clone()
+                    },
+                ];
+                store.specs.push(spec);
+                Ok(())
+            })
+            .expect("the spec lands");
+            let expect = json!({
+                "behaviour": " holds",
+                "check": "",
+                "kind": "",
+                "positive": "",
+                "writes_build": true,
+            });
+            let new = entry_json("grep -q a f");
+            let outcome = apply_review_edit(
+                SLUG,
+                &write_args(),
+                &ReviewEdit {
+                    entry: Some(Slot::At(0)),
+                    ..edit("spec.accept", Some(&expect), &new)
+                },
+            )
+            .expect("the verbatim expect matches");
+            assert_eq!(outcome, ReviewEditOutcome::Applied);
+            let accept = &reload(&path).specs[0].accept;
+            assert_eq!(accept[0].check, "grep -q a f");
+            assert_eq!(accept[0].kind, "forward");
+            assert_eq!(
+                accept[1].kind, "",
+                "the other check-less entry keeps its form"
+            );
+
+            let bad = json!({"behaviour": "x", "check": "grep -q z f", "kind": ""});
+            let message = apply_review_edit(
+                SLUG,
+                &write_args(),
+                &ReviewEdit {
+                    entry: Some(Slot::At(0)),
+                    ..edit("spec.accept", Some(&new), &bad)
+                },
+            )
+            .expect_err("`new` is still parsed");
+            assert!(format!("{message:#}").contains("kind"), "{message:#}");
+        });
+    }
+
     #[test]
     fn appends_and_removals_are_already_when_the_list_holds_the_result() {
         with_root(|root| {
             let path = seeded_spec(root);
             let present = entry_json("grep -q a f");
             let append = ReviewEdit {
-                append: true,
+                entry: Some(Slot::Append),
                 ..edit("spec.accept", None, &present)
             };
             assert_eq!(
@@ -2442,7 +2568,7 @@ mod tests {
             let null = JsonValue::Null;
             let absent = entry_json("grep -q z f");
             let removal = ReviewEdit {
-                index: Some(4),
+                entry: Some(Slot::At(4)),
                 ..edit("spec.accept", Some(&absent), &null)
             };
             assert_eq!(
@@ -2451,7 +2577,7 @@ mod tests {
             );
 
             let removal = ReviewEdit {
-                index: Some(1),
+                entry: Some(Slot::At(1)),
                 ..edit("spec.accept", Some(&present), &null)
             };
             assert_eq!(
@@ -2465,6 +2591,33 @@ mod tests {
                 .collect();
             assert_eq!(checks, ["grep -q b f"]);
         });
+    }
+
+    #[test]
+    fn two_entries_equal_to_expect_report_the_whole_list() {
+        let twice = json!("a");
+        let list = json!(["a", "b", "a"]);
+        let whole = ReviewEditOutcome::Stale {
+            found: list.clone(),
+        };
+        let removal = entry_edit(&list, Some(twice.clone()), None, Some(0));
+        assert_eq!(removal, Err(whole.clone()));
+        let replace = entry_edit(&list, Some(twice), Some(json!("c")), Some(0));
+        assert_eq!(replace, Err(whole));
+    }
+
+    #[test]
+    fn only_an_applied_outcome_leaves_mutate_as_a_write() {
+        assert!(written_only(ReviewEditOutcome::Applied).is_ok());
+        for outcome in [
+            ReviewEditOutcome::Already,
+            ReviewEditOutcome::Stale { found: json!(1) },
+        ] {
+            let carried = written_only(outcome.clone());
+            assert!(carried.is_err());
+            assert_eq!(unwritten_outcome(carried).expect("carried"), outcome);
+        }
+        assert!(unwritten_outcome(Err(anyhow::anyhow!("refused"))).is_err());
     }
 
     #[test]
