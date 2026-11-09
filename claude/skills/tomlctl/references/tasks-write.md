@@ -181,7 +181,7 @@ printf '%s\n' '{"ids":[8,9],"status":"done","commit":"<sha>"}' '{"id":14,"status
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
 | *(positional)* | ids, comma- or space-separated | Tasks to patch. At least one; a repeated id is patched once. | — |
-| `--status` | text | `pending`, `in-progress`, `done`, `failed`, `deferred`. Case-sensitive; validated after parsing. | — |
+| `--status` | text | `pending`, `in-progress`, `done`, `failed`, `deferred`, `parked`. Case-sensitive; validated after parsing. | — |
 | `--agent` | text | Agent the row was dispatched to. | — |
 | `--commit` | SHA | Commit the row landed in. | — |
 | `--checkpoint` | group id | Checkpoint group; pass an empty value to clear it. An undeclared group id is refused, through this flag and through `--set checkpoint=` alike. | — |

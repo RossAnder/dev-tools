@@ -160,6 +160,7 @@ tomlctl tasks ready --slug <slug> --in-flight 3,4
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
 | `--in-flight` | comma-separated ids | Tasks currently dispatched. A ready row sharing a file with one of them is reported as held, and a row waiting on one stays in `next` rather than `blocked`. | empty |
+| `--checkpoint` | checkpoint id | Keeps in `ready`, `held`, `next` and `blocked` only the rows whose `checkpoint` is the id; dependencies outside it still gate. An empty id, or one that neither a `[[checkpoints]]` entry nor any row's `checkpoint` carries, is refused (`kind=validation`). | all rows |
 
 An `--in-flight` id no row carries is refused, as is a cyclic store: Kahn strands a cycle's
 members and a stranded task reads in a frontier exactly like one that is merely waiting.
@@ -175,7 +176,7 @@ members and a stranded task reads in a frontier exactly like one that is merely 
 | `blocked[]` | objects, ascending by `id` | `pending` rows no later wave can reach. |
 | `blocked[].id` | id | The stranded row. |
 | `blocked[].blocker` | id | The nearest **ancestor** stranding it: one that is neither `done`, nor `pending`, nor named in `--in-flight`. The walk climbs through intervening `pending` rows, so this is the stall itself rather than a pending row between it and the blocked row. |
-| `blocked[].blocker_status` | status | The blocker's `status` — `in-progress`, `failed` or `deferred`. |
+| `blocked[].blocker_status` | status | The blocker's `status` — `in-progress`, `failed`, `deferred` or `parked`. |
 
 ## `tasks batches`
 
@@ -397,7 +398,7 @@ it.
 | `dag/duplicate-number` | error | `check` — `ids` carries the number alone, so the `detail` names the `ref` of every row on it, and rows sharing the `ref` too by 0-based `[[items]]` position and title (hand-edit one row's `id`); `import-plan` splits those refs into the ones the plan produced and the ones the store still holds |
 | `dag/unbuildable` | error | `check` — the graph engine refuses the store for a reason no row scan named; past the [node cap](tasks-store.md#the-512-node-cap) is the live case |
 | `dag/unreachable-claim` | warning | `check` — shared file, no directed path either way |
-| `dag/stalled-dependency` | warning | `check` — an `in-progress`, `failed` or `deferred` row with pending rows behind it; one finding per blocker, `ids` naming the blocker and `detail` its dependents. A blocker named in `--in-flight` raises nothing; never changes the exit code |
+| `dag/stalled-dependency` | warning | `check` — an `in-progress`, `failed`, `deferred` or `parked` row with pending rows behind it; one finding per blocker, `ids` naming the blocker and `detail` its dependents. A blocker named in `--in-flight` raises nothing; never changes the exit code |
 | `dag/symbol-without-edge` | warning | `check` — a symbol one row's `Action` introduces (`Add`/`Create`/`export` within three words of a backticked identifier) that another row's body names, with no directed path either way; one finding per pair, `ids` naming both. The edge `coupling` exists for and nothing populates. A markdown-only row introduces nothing, and a name two rows introduce raises nothing against a row already reaching one of them |
 | `checkpoint/orphan-task` | warning | `check` — `checkpoint = ""`, or a group id no `[[checkpoints]]` entry declares; one finding per case. The import no longer produces the second case: a retained row is blanked when the plan stops declaring its group |
 | `checkpoint/invalid-cut` | error | `check` — prefix union not downward-closed; `ids` are the dependencies that must move earlier |

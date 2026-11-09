@@ -85,7 +85,10 @@ empty on the same terms as `[[import_overrides]]`.
 `[[specs]]`: one entry per v2 row, keyed on `ref` — `outcome`, `constraints`, `accept`, `premises`,
 `means`, `design`, `precedent` and `executor`. `accept` entries carry `behaviour`, `check`, `kind`,
 `positive`, `writes_build` (absent reads `true`) and a `probe` only `plan probes --record` writes;
-`kind` is absent while `check` is empty. An entry with no `ref` is dropped on read and on write.
+`kind` is absent while `check` is empty. A `premises` entry carries `claim`, `check`, `at` and the same
+optional `probe`, written only by `plan probes --record --premises`; a supplied `probe` is refused,
+and a re-issued premise matching in its other fields keeps its stored probe. A row's `status` is
+`pending`, `in-progress`, `done`, `failed`, `deferred` or `parked`. An entry with no `ref` is dropped on read and on write.
 `tasks remove` drops the spec keyed on the row, and `tasks add` and `tasks update --ref` drop any
 already keyed on the `ref` they claim, which is never a `ref` holding a `[[changes]]` trail.
 
