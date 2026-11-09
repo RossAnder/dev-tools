@@ -33,6 +33,8 @@ name = "file-edits"
 files = [
   "claude/agents/implement-deep.md",
   "claude/agents/implement-lite.md",
+  "claude/agents/plan-worker-deep.md",
+  "claude/agents/plan-worker-lite.md",
 ]
 
 [[block]]
@@ -66,6 +68,26 @@ files = [
   "claude/agents/research-deep.md",
   "claude/agents/research-lite.md",
   "claude/agents/plan-investigator.md",
+  "claude/agents/plan-worker-deep.md",
+  "claude/agents/plan-worker-lite.md",
+]
+
+# The v2 worker pair's procedure, return object and limits. They carry these
+# in place of the implementers' working-tree, verification, report-line and
+# backlog blocks, whose wording sends check and TANGENTIAL lines to a return
+# payload; a v2 worker writes those into its run note instead.
+[[block]]
+name = "plan-worker-procedure"
+files = [
+  "claude/agents/plan-worker-deep.md",
+  "claude/agents/plan-worker-lite.md",
+]
+
+[[block]]
+name = "plan-worker-forbidden-ops"
+files = [
+  "claude/agents/plan-worker-deep.md",
+  "claude/agents/plan-worker-lite.md",
 ]
 
 # Method-load, read-only contract, finding record and delivery. The research
