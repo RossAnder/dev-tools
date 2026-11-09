@@ -173,6 +173,12 @@ pub(crate) const FEATURES: &[&str] = &[
     "owned_store_guard",
     // The v2 plan store: the `plan` subcommand cluster.
     "plan_store",
+    // The v2 execution engine's task and plan surface.
+    "task_status_parked",
+    "tasks_ready_checkpoint",
+    "premise_probes_scoped",
+    "premise_probe_record",
+    "plan_drift_uncommitted",
 ];
 
 /// User-facing top-level subcommand names, as they appear in

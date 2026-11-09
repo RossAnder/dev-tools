@@ -1814,6 +1814,12 @@ fn capabilities_features_contains_every_plan_feature() {
         "owned_store_guard",
         // The v2 plan store: the `plan` subcommand cluster.
         "plan_store",
+        // The v2 execution engine's task and plan surface.
+        "task_status_parked",
+        "tasks_ready_checkpoint",
+        "premise_probes_scoped",
+        "premise_probe_record",
+        "plan_drift_uncommitted",
     ];
     for name in expected {
         assert!(
@@ -1848,8 +1854,8 @@ fn capabilities_version_matches_cargo_toml() {
         .and_then(|s| s.as_str())
         .expect("`version` must be a string");
     assert_eq!(
-        version, "0.20.0",
-        "expected version `0.20.0` (the minor bump for the `review run list` verb and the `applying` mark); got `{version}`"
+        version, "0.21.0",
+        "expected version `0.21.0` (the minor bump for the `parked` status, `tasks ready --checkpoint`, scoped and recorded premise probes and `plan drift --uncommitted`); got `{version}`"
     );
 }
 

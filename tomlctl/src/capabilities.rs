@@ -100,7 +100,14 @@ const SCOPED_ENUM_VALUES: &[(&str, &str, &[&str])] = &[
     (
         "tasks update",
         "status",
-        &["pending", "in-progress", "done", "failed", "deferred"],
+        &[
+            "pending",
+            "in-progress",
+            "done",
+            "failed",
+            "deferred",
+            "parked",
+        ],
     ),
     ("tasks add", "effort", &["S", "M", "L"]),
     ("plan view", "for_role", crate::plan::VIEW_ROLES),
@@ -581,7 +588,14 @@ mod tests {
         };
         assert_eq!(
             values("tasks", "update"),
-            ["pending", "in-progress", "done", "failed", "deferred"]
+            [
+                "pending",
+                "in-progress",
+                "done",
+                "failed",
+                "deferred",
+                "parked"
+            ]
         );
         assert_eq!(
             values("backlog", "list"),

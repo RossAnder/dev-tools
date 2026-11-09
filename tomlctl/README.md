@@ -323,7 +323,7 @@ downstream flow-command templates can feature-gate at boot without parsing
 
 ```json
 {
-  "version": "0.20.0",
+  "version": "0.21.0",
   "features": ["count_distinct", "raw", "lines", "infer_prefix",
                "dedupe_by", "dedup_id_auto", "find_duplicates_across",
                "fingerprint", "capabilities", "error_format_json",
@@ -366,7 +366,9 @@ downstream flow-command templates can feature-gate at boot without parsing
                "flow_record_row_task", "backlog_get", "backlog_edit",
                "backlog_next", "backlog_focus", "backlog_tier",
                "backlog_datetime_stamps", "owned_store_guard",
-               "plan_store"],
+               "plan_store", "task_status_parked",
+               "tasks_ready_checkpoint", "premise_probes_scoped",
+               "premise_probe_record", "plan_drift_uncommitted"],
   "subcommands": ["parse", "get", "set", "set-json", "validate",
                   "items", "blocks", "array-append", "capabilities",
                   "integrity", "flow", "json", "backlog", "tasks",
@@ -544,3 +546,8 @@ Feature meanings:
 | `review_plan_outcomes` | `review stats --plan-outcomes` with `--slug` or `--all` — per plan-family run and in total, tier by disposition, user-veto rate, growth from applied edits, re-check yield and cost; `review stats --by model` groups audit overturns by the verifying role's model; writes nothing |
 | `review_run_list` | `review run list --slug <SLUG>\|--scope <SCOPE> [--open\|--finished]` — the store's runs ordered by id, as `{ok, runs}` rows the output options act on; writes nothing |
 | `plan_store` | the `plan` group over a v2 flow's `.claude/flows/<SLUG>/plan.toml`, `docs/flows/<SLUG>/brief.md` and task store, each verb taking `--slug`: `open`, `decide`, `contract`, `handover`, `run`, `milestone`, `check`, `view`, `probes`, `stage`, `gate`, `approve` and `drift` |
+| `task_status_parked` | `parked` in the task status vocabulary, for a row only a human can unblock; like `failed` and `deferred` it blocks its dependents in `tasks ready` |
+| `tasks_ready_checkpoint` | `tasks ready --checkpoint <ID>` — every list keeps only that checkpoint group's rows, while dependencies in other groups still gate; an id the store does not carry is refused |
+| `premise_probes_scoped` | `plan probes --task <N1,N2>` covers only those tasks' pending rows, and `--premises` emits an `after:<ID>` premise once task `<ID>` is `done` |
+| `premise_probe_record` | `plan probes --record <CAPTURE> --premises` stores each premise's verdict on its `probe`: `holds` (exit 0), `fails` (non-zero) or `broken` (a breakage marker on stderr) |
+| `plan_drift_uncommitted` | `plan drift --uncommitted` adds the working tree's modified and untracked paths as `uncommitted_files`, and each affected pending row lists its own under `uncommitted`; a path that a `done`, `in-progress`, `failed` or `parked` row with an empty `commit` also names affects no row, and paths under the flow's own directories are never listed |
