@@ -19,7 +19,7 @@ A v2 plan has no plan document: it lives in `docs/flows/<slug>/` and in `.claude
 | `--from <id>[,<id>...]` | Backlog ids seeding a new plan's brief |
 | `--depth quick\|standard\|deep` | Default `standard`; what each value runs is the engine's Depth section |
 | `--no-review` | A bare flag recording the fixed review skip reason `the user passed --no-review`; text after it is part of the discussion, not a reason |
-| `--review` | Refused, as the engine's Arguments section says |
+| `--review` | A bare flag forcing the Review step to run, overriding a low-risk judgement, as the engine's Arguments section says |
 | Anything else | The discussion being planned |
 
 This carrier builds no flow envelope: a bare `flow resolve` returns no draft flow, so the envelope would name an unrelated flow, and `tomlctl plan stage` with `tomlctl flow doctor --slug <slug>` answer everything the engine needs.
@@ -29,9 +29,9 @@ This carrier builds no flow envelope: a bare `flow resolve` returns no draft flo
 Run these in order, before anything else. Each failure stops the command with the message given.
 
 1. **The `tomlctl` skill.** Invoke the `tomlctl` skill, before the first `tomlctl` call below.
-2. **The `plan` group.** Run `tomlctl capabilities --get subcommands`. When `plan` is not in the list, the installed binary predates the `plan` verbs: stop and name `cargo install --path tomlctl`.
+2. **The `plan` group and `review apply`.** Run `tomlctl capabilities --get subcommands`, then `tomlctl capabilities --get features`. When `plan` is not in the first list, or `review_apply` is not in the second, the installed binary predates the verbs the plan and its Review step run: stop and name `cargo install --path tomlctl`, so no Workflow launches against a binary that cannot apply its findings.
 3. **`AskUserQuestion`.** When the tool is unavailable, stop: this command runs attended only, and every question to the user comes from this conversation.
-4. **`Workflow`.** When the tool is absent, stop: both fan-outs are saved Workflows and there is no Agent-tool fallback.
+4. **`Workflow`.** When the tool is absent, stop: Investigate and the cold read are saved Workflows with no Agent-tool fallback.
 
 Launch failures surface later, at the step that launches, and are handled by the engine's fan-out rule and its open-run rule.
 
