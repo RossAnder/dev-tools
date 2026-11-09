@@ -38,6 +38,7 @@ last_import_refs = [
     "add-and-run-the-v2-review-link-script-and-install-tomlctl",
     "bring-claudemd-and-the-idea-doc-into-line",
     "point-agents-at-plan-recordsmd-and-mark-flow-mode-cells",
+    "exempt-unprobeable-accept-entries-from-the-approve-review-gate",
 ]
 
 [policy]
@@ -148,7 +149,7 @@ id = 1
 ref = "add-the-plan-record-finding-fields"
 title = "Add the plan-record finding fields"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = "Milestone A: the review store learns plan records"
 phase_depth = 3
@@ -178,15 +179,15 @@ acceptance = '''
 - forward: `grep -cE 'field\((Finding|Run), "(target|expect|new|proof|tier|applied|rechecks)"' tomlctl/src/review/fields.rs` prints `7` (today: `0`).
 - forward: `grep -c 'Ty::Any' tomlctl/src/review/schema_out.rs` prints at least `1` (today: `0`).
 - forward: `cargo test --manifest-path tomlctl/Cargo.toml --lib review::fields` passes **predicted, unverified**. Falsifier: dropping `target` from the visibility table leaves the extended visibility test red.'''
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "6f98984"
 
 [[items]]
 id = 2
 ref = "expose-plan-check-reads-to-the-review-module"
 title = "Expose plan check reads to the review module"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = "Milestone A: the review store learns plan records"
 phase_depth = 3
@@ -203,15 +204,15 @@ detail = "Change `findings` and `design_section` from `pub(super)`, and the priv
 acceptance = '''
 - forward: `grep -cE 'pub\(crate\) fn (findings|design_section|design_path)' tomlctl/src/plan/check.rs` prints `3` (today: `0`).
 - forward: `grep -c 'pub(crate) mod check;' tomlctl/src/plan/mod.rs` prints `1` (today: `0`).'''
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "428b909"
 
 [[items]]
 id = 3
 ref = "parse-and-resolve-record-targets"
 title = "Parse and resolve record targets"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = "Milestone A: the review store learns plan records"
 phase_depth = 3
@@ -240,15 +241,15 @@ detail = """
 acceptance = """
 - forward: `test -f tomlctl/src/review/target.rs && grep -c '^mod target;' tomlctl/src/review/mod.rs` prints `1` (today: exits 1, no output).
 - forward: `cargo test --manifest-path tomlctl/Cargo.toml --lib review::target` passes **predicted, unverified**. Falsifier: accepting an empty ref after `task:` turns the empty-ref test red."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "6f98984"
 
 [[items]]
 id = 4
 ref = "compute-a-findings-tier"
 title = "Compute a finding's tier"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = "Milestone A: the review store learns plan records"
 phase_depth = 3
@@ -281,15 +282,15 @@ detail = """
 acceptance = """
 - forward: `test -f tomlctl/src/review/tier.rs && grep -c '^mod tier;' tomlctl/src/review/mod.rs` prints `1` (today: exits 1, no output).
 - forward: `cargo test --manifest-path tomlctl/Cargo.toml --lib review::tier` passes **predicted, unverified**. Falsifier: checking proof before the user table turns the user-override test red."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "6f98984"
 
 [[items]]
 id = 5
 ref = "validate-plan-record-rows-at-review-add"
 title = "Validate plan-record rows at review add"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = "Milestone A: the review store learns plan records"
 phase_depth = 3
@@ -322,15 +323,15 @@ acceptance = """
 - forward: `grep -c 'fn record_refusals' tomlctl/src/review/add.rs` prints `1` (today: `0`).
 - forward: `grep -c 'record_refusals' tomlctl/src/review/triage.rs` prints at least `1` (today: `0`).
 - guard: `cargo test --manifest-path tomlctl/Cargo.toml --test review_add` passes **predicted, unverified**. Its missing-requirement coverage is task 8's markdown-mode cases, since no existing test asserts a missing `plan_section` refusal."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "6f98984"
 
 [[items]]
 id = 6
 ref = "stamp-the-tier-when-a-plan-record-finding-is-verified"
 title = "Stamp the tier when a plan-record finding is verified"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = "Milestone A: the review store learns plan records"
 phase_depth = 3
@@ -353,15 +354,15 @@ detail = """
 - **Slug.** `stamp` takes a slug: thread the review store `Target`'s slug into `apply_one` and `resolve`. A scope-targeted store is never in flow mode.
 - **Freeze.** Stamp only when `tier` is absent, so the value stays frozen. Code and perf rows, and markdown-mode plan rows, get no `tier`."""
 acceptance = "- forward: `cat tomlctl/src/review/verdict.rs tomlctl/src/review/resolve.rs tomlctl/src/review/triage.rs | grep -c 'tier::stamp('` prints at least `3` (today: `0`)."
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "6f98984"
 
 [[items]]
 id = 7
 ref = "show-targets-and-tiers-in-the-digest"
 title = "Show targets and tiers in the digest"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = "Milestone A: the review store learns plan records"
 phase_depth = 3
@@ -373,15 +374,15 @@ deps_note = ""
 action = "Make `digest.rs` `location` render `target` when present, before the `§ plan_section` form, and add `Target`, `Expect`, `New` and `Tier` lines to `defect_entry` and `cleanup_entry` for rows that carry them."
 detail = "`location`, `defect_entry` and `cleanup_entry` render the markdown of `review report` (`render`, called from `report`), not `review digest`; the digest's JSON lists carry `target`, `tier` and `applied` through task 1's orchestrator visibility, with no change here. Leave the markdown-mode rendering unchanged."
 acceptance = """- forward: `grep -c '"tier"' tomlctl/src/review/digest.rs` prints at least `1` (today: `0`). (`"target"` already occurs at `digest.rs:112`, so it cannot discriminate.)"""
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "e756d65"
 
 [[items]]
 id = 8
 ref = "test-plan-record-findings"
 title = "Test plan-record findings"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = "Milestone A: the review store learns plan records"
 phase_depth = 3
@@ -402,15 +403,15 @@ detail = """
 acceptance = """
 - forward: `test -f tomlctl/tests/review_plan_records.rs` exits 0 (today: exits 1).
 - forward: `cargo test --manifest-path tomlctl/Cargo.toml --test review_plan_records` passes **predicted, unverified**. Falsifier: removing the stale-`expect` refusal turns its case red, and dropping the markdown-mode `plan_section` requirement turns the missing-section case red."""
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "25c5f0c"
 
 [[items]]
 id = 9
 ref = "expose-task-row-writes-for-review-apply"
 title = "Expose task-row writes for review apply"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = "Milestone B: apply, stats and the CLI"
 phase_depth = 3
@@ -427,15 +428,15 @@ detail = "It takes the slug, a ref, a field name (a row field other than `title`
 acceptance = """
 - forward: `grep -c 'pub(crate) fn apply_review_edit' tomlctl/src/tasks/update.rs` prints `1` (today: `0`).
 - guard: `cargo test --manifest-path tomlctl/Cargo.toml --test tasks_write` passes **predicted, unverified**."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "95db3af"
 
 [[items]]
 id = 10
 ref = "expose-plan-record-writes-for-review-apply"
 title = "Expose plan record writes for review apply"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = "Milestone B: apply, stats and the CLI"
 phase_depth = 3
@@ -456,15 +457,15 @@ detail = """Each function re-checks `expect` inside `crate::plan::store::mutate`
 acceptance = """
 - forward: `cat tomlctl/src/plan/records.rs tomlctl/src/plan/milestone.rs | grep -c 'pub(crate) fn apply_review_edit'` prints `2` (today: `0`).
 - guard: `cargo test --manifest-path tomlctl/Cargo.toml --test plan_records --test plan_milestone` passes **predicted, unverified**."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "428b909"
 
 [[items]]
 id = 11
 ref = "implement-review-apply"
 title = "Implement review apply"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = "Milestone B: apply, stats and the CLI"
 phase_depth = 3
@@ -495,15 +496,15 @@ detail = """
 acceptance = """
 - forward: `grep -c 'Apply(ReviewApplyArgs)' tomlctl/src/cli/types/review.rs` prints `1` (today: `0`).
 - forward: `test -f tomlctl/src/review/apply.rs` exits 0 (today: exits 1)."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "6f98984"
 
 [[items]]
 id = 12
 ref = "register-review-apply-in-capabilities"
 title = "Register review apply in capabilities"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = "Milestone B: apply, stats and the CLI"
 phase_depth = 3
@@ -523,15 +524,15 @@ acceptance = """
 - forward: `grep -c '"review apply"' tomlctl/src/capabilities.rs` prints `1` (today: `0`).
 - forward: `grep -c '"review_apply"' tomlctl/src/cli/types/mod.rs` prints `1` (today: `0`).
 - forward: `cargo test --manifest-path tomlctl/Cargo.toml --test capabilities` passes **predicted, unverified**. Falsifier: leaving `review_apply` out of the README "Feature meanings" table turns `readme_feature_transcriptions_match_capabilities_features` red."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "6d2f531"
 
 [[items]]
 id = 13
 ref = "report-plan-review-outcomes-and-per-model-overturns"
 title = "Report plan-review outcomes and per-model overturns"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = "Milestone B: apply, stats and the CLI"
 phase_depth = 3
@@ -555,15 +556,15 @@ detail = """
 acceptance = """
 - forward: `grep -c 'plan_outcomes' tomlctl/src/review/stats.rs` prints at least `1` (today: `0`).
 - forward: `grep -c 'plan_outcomes' tomlctl/src/cli/types/review.rs` prints at least `1` (today: `0`)."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "6f98984"
 
 [[items]]
 id = 14
 ref = "test-review-apply"
 title = "Test review apply"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = "Milestone B: apply, stats and the CLI"
 phase_depth = 3
@@ -594,15 +595,15 @@ Build the flow with `plan open`, `plan decide`, `plan milestone add` and `tasks 
 acceptance = """
 - forward: `test -f tomlctl/tests/review_apply.rs` exits 0 (today: exits 1).
 - forward: `cargo test --manifest-path tomlctl/Cargo.toml --test review_apply` passes **predicted, unverified**. Falsifier: skipping the in-lock `expect` re-check turns the stale case red."""
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "de84832"
 
 [[items]]
 id = 15
 ref = "test-plan-outcomes-and-per-model-overturns"
 title = "Test plan outcomes and per-model overturns"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = "Milestone B: apply, stats and the CLI"
 phase_depth = 3
@@ -616,15 +617,15 @@ detail = ""
 acceptance = """
 - forward: `grep -cE 'fn (plan_outcomes_count_tiers_and_dispositions|overturns_group_by_model)' tomlctl/tests/review_stats.rs` prints `2` (today: `0`).
 - forward: `cargo test --manifest-path tomlctl/Cargo.toml --test review_stats` passes **predicted, unverified**. Falsifier: grouping overturns by the audit's own model instead of the verifying role's turns `overturns_group_by_model` red."""
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "d5dcecb"
 
 [[items]]
 id = 35
 ref = "give-review-apply-an-output-options-case"
 title = "Give review apply an output-options case"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = "Milestone B: apply, stats and the CLI"
 phase_depth = 3
@@ -641,15 +642,15 @@ detail = """`every_leaf_command_has_a_case` fails ("commands without a case") on
 acceptance = """
 - forward: `grep -c '"review", "apply"' tomlctl/tests/output_options.rs` prints at least `1` (today: `0`); cases are argument arrays such as `&["review", "triage", …]`.
 - forward: `cargo test --manifest-path tomlctl/Cargo.toml --test output_options` passes **predicted, unverified**. Falsifier: deleting the case turns `every_leaf_command_has_a_case` red once task 11 has landed."""
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "ba80d0d"
 
 [[items]]
 id = 16
 ref = "read-the-review-into-the-plan-gate-and-approve"
 title = "Read the review into the plan gate and approve"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = "Milestone C: the plan reads its review"
 phase_depth = 3
@@ -669,15 +670,15 @@ detail = """
 acceptance = """
 - forward: `grep -c 'REVIEW_NOTE' tomlctl/src/plan/approve.rs` prints `0` (today: at least `1`).
 - forward: `grep -c 'fn plan_review_state' tomlctl/src/plan/store.rs` prints `1` (today: `0`)."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "6b784cc"
 
 [[items]]
 id = 17
 ref = "route-review-in-plan-stage"
 title = "Route review in plan stage"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = "Milestone C: the plan reads its review"
 phase_depth = 3
@@ -695,15 +696,15 @@ detail = 'Set `PLAN_REVIEW` to name the `/plan-v2` Review step and `plan run ski
 acceptance = """
 - forward: `grep -c 'plan_review_state' tomlctl/src/plan/stage.rs` prints at least `1` (today: `0`).
 - forward: `cargo test --manifest-path tomlctl/Cargo.toml --test plan_stage --test plan_lifecycle` passes **predicted, unverified**. Falsifier: settling review while an open user-tier finding remains turns the new `plan_stage` fixture red."""
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "d85a7ff"
 
 [[items]]
 id = 18
 ref = "update-the-gate-and-approve-tests"
 title = "Update the gate and approve tests"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = "Milestone C: the plan reads its review"
 phase_depth = 3
@@ -717,15 +718,15 @@ detail = ""
 acceptance = """
 - forward: `grep -c 'review_note' tomlctl/tests/plan_approve.rs` prints `0` (today: at least `1`).
 - forward: `cargo test --manifest-path tomlctl/Cargo.toml --test plan_approve` passes **predicted, unverified**. Falsifier: approving with an open user-tier finding turns the refusal case red."""
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "f52cd49"
 
 [[items]]
 id = 19
 ref = "bump-tomlctl-to-0190"
 title = "Bump tomlctl to 0.19.0"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = "Milestone C: the plan reads its review"
 phase_depth = 3
@@ -748,15 +749,15 @@ detail = "The five edits are inseparable: `readme_sample_version_matches_cargo_t
 acceptance = """
 - forward: `grep -c '^version = "0.19.0"' tomlctl/Cargo.toml` prints `1` (today: `0`).
 - forward: `grep -c '0.18.0' tomlctl/README.md tomlctl/tests/capabilities.rs` prints `tomlctl/README.md:0` and `tomlctl/tests/capabilities.rs:0` (today: `1` and `2`; the test's literal and its failure message, whose stated reason for the bump is rewritten for this one)."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "6d2f531"
 
 [[items]]
 id = 20
 ref = "document-the-review-store-additions"
 title = "Document the review store additions"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = "Milestone C: the plan reads its review"
 phase_depth = 3
@@ -772,15 +773,15 @@ deps_note = ""
 action = "Document the following in `references/review.md`: the flow-mode plan fields and target grammar; the `tier` rules and `proof` kinds; a `review apply` section with a flag table and output; `review stats --plan-outcomes` and `--by model`; and the run's `rechecks`."
 detail = "Rewrite the plan-family lines that today say `plan_section` and `anchor_old` (around lines 96, 98 and 110) for the two modes, and the line saying `line` is required: `review add` now enforces it outside flow mode, and `review schema` no longer lists it. Every flag table row must name a real clap long (`flag_table_lint`), and every fenced example must use real flags (`command_lint`). Keep the file at or under 600 lines (`skill_references_under_line_ceiling`; `wc -l claude/skills/tomlctl/references/review.md` is 504 today), or move the new material to a new reference and add it and `claude/skills/tomlctl/SKILL.md` to Files."
 acceptance = "- forward: `grep -c 'review apply' claude/skills/tomlctl/references/review.md` prints at least `1` (today: `0`)."
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "763ec15"
 
 [[items]]
 id = 21
 ref = "document-the-gates-review-keys"
 title = "Document the gate's review keys"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = "Milestone C: the plan reads its review"
 phase_depth = 3
@@ -797,15 +798,15 @@ detail = """Remove the "always empty" and `review_note` wording, and the stage t
 acceptance = """
 - forward: `grep -c 'review_note' claude/skills/tomlctl/references/plan.md` prints `0` (today: at least `1`).
 - forward: `grep -c 'not built' claude/skills/tomlctl/references/plan.md` prints `0` (today: `1`)."""
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "af17d1a"
 
 [[items]]
 id = 22
 ref = "write-the-plan-records-reference"
 title = "Write the plan-records reference"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "D"
 phase = "Milestone D: reviewers, the lead, the wrapper and the carriers"
 phase_depth = 3
@@ -820,15 +821,15 @@ deps_note = ""
 action = """Write `plan-records.md` per Approach, "Reviewers on a v2 flow": inputs, the never-read-`notes/` rule, the mapping table, the precedence rule reading any lens or method instruction to supply `plan_section`, `anchor_old` or `anchor_new` as `target`, `expect` and `new`, the target grammar (no `title` target; `[+]` appends; a `new` of null removes), `file`/`symbol`, `expect`/`new` copied from `tomlctl tasks show <id> --slug <slug> --with spec` with the `probe` key left out, `proof` kinds with the `new`-shape limits from Approach, "Tiers", and PRIOR on task refs. Then split the method's §Plan family into markdown mode, which is today's text, and flow mode, which points at `references/plan-records.md`."""
 detail = ""
 acceptance = "- forward: `test -f claude/skills/review-v2-method/references/plan-records.md && grep -c 'plan-records.md' claude/skills/review-v2-method/SKILL.md` prints at least `1` (today: exits 1, no output)."
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "3738c18"
 
 [[items]]
 id = 23
 ref = "teach-finding-kinds-and-the-sweeper-the-record-targets"
 title = "Teach finding kinds and the sweeper the record targets"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "D"
 phase = "Milestone D: reviewers, the lead, the wrapper and the carriers"
 phase_depth = 3
@@ -845,15 +846,15 @@ detail = "Leave the shared `review-v2-store-writer` paragraph in `review-sweeper
 acceptance = """
 - forward: `cat claude/skills/review-v2-method/references/finding-kinds.md claude/agents/review-sweeper.md | grep -c 'plan-records.md'` prints at least `2` (today: `0`).
 - guard: `bash scripts/verify-shared-blocks.sh` exits 0 (today: exits 0)."""
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "3ccaa45"
 
 [[items]]
 id = 24
 ref = "bind-the-surveyor-checks-to-a-v2-flow"
 title = "Bind the surveyor checks to a v2 flow"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "D"
 phase = "Milestone D: reviewers, the lead, the wrapper and the carriers"
 phase_depth = 3
@@ -869,15 +870,15 @@ deps_note = ""
 action = """Add a "v2 flow" branch to each check. `store-check` runs `tomlctl plan check --slug <slug>` and `tomlctl tasks check --slug <slug>` in place of the import dry run, and maps their error classes into the `STORE CHECK` fence, naming `plan check`'s classes without backticks: this file and task 31's `claude/commands/review-plan-v2.md` are in `finding_classes.rs` `PROSE`, whose `prose_class_names_exist_in_the_source` gate accepts only `src/tasks` classes. `format-contract` reports `not run: v2 flow`. `break-set-baseline` resolves `none — v2 flow carries no predicted break sets`."""
 detail = ""
 acceptance = "- forward: `cat claude/skills/review-v2-lenses/checks/store-check.md claude/skills/review-v2-lenses/checks/format-contract.md claude/skills/review-v2-lenses/checks/break-set-baseline.md | grep -c 'v2 flow'` prints at least `3` (today: `0`)."
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "c32262c"
 
 [[items]]
 id = 25
 ref = "bind-the-plan-checks-to-records"
 title = "Bind the plan-checks to records"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "D"
 phase = "Milestone D: reviewers, the lead, the wrapper and the carriers"
 phase_depth = 3
@@ -897,15 +898,15 @@ Add a "v2 flow" branch to each check.
 - `acceptance-contradiction` reads specs and contracts across tasks."""
 detail = ""
 acceptance = "- forward: `cat claude/skills/review-v2-lenses/checks/two-control-probe.md claude/skills/review-v2-lenses/checks/falsifiability.md claude/skills/review-v2-lenses/checks/acceptance-contradiction.md | grep -c 'v2 flow'` prints at least `3` (today: `0`)."
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "a83b1d6"
 
 [[items]]
 id = 26
 ref = "bind-the-surveyor-and-the-executor-to-a-v2-flow"
 title = "Bind the surveyor and the executor to a v2 flow"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "D"
 phase = "Milestone D: reviewers, the lead, the wrapper and the carriers"
 phase_depth = 3
@@ -924,15 +925,15 @@ acceptance = """
 - forward: `grep -c 'flow: <slug>' claude/skills/review-v2-engine/references/agent-waves.md` prints at least `1` (today: `0`).
 - forward: `grep -c 'plan view' claude/agents/plan-executor.md` prints at least `1` (today: `0`).
 - guard: `bash scripts/verify-shared-blocks.sh` exits 0 (today: exits 0)."""
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "caa8cf8"
 
 [[items]]
 id = 27
 ref = "add-the-plan-review-lead-agent"
 title = "Add the plan-review-lead agent"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "D"
 phase = "Milestone D: reviewers, the lead, the wrapper and the carriers"
 phase_depth = 3
@@ -955,15 +956,15 @@ detail = """
 acceptance = """
 - forward: `test -f claude/agents/plan-review-lead.md && grep -c 'plan-review-lead.md' scripts/shared-blocks.toml` prints `1` (today: exits 1, no output).
 - guard: `bash scripts/verify-shared-blocks.sh` exits 0 (today: exits 0)."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "1c08ab1"
 
 [[items]]
 id = 28
 ref = "add-the-plan-v2-review-workflow"
 title = "Add the plan-v2-review Workflow"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "D"
 phase = "Milestone D: reviewers, the lead, the wrapper and the carriers"
 phase_depth = 3
@@ -981,15 +982,15 @@ detail = """
 acceptance = """
 - forward: `grep -c "name: 'plan-v2-review'" claude/workflows/plan-v2-review.js` prints `1` (today: exits 2, file absent).
 - forward: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes **predicted, unverified**. Falsifier: an `agentType: 'plan-review-leader'` typo turns `workflow_scripts_name_real_agents` red."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "cc343ce"
 
 [[items]]
 id = 29
 ref = "write-the-engines-plan-flow-reference"
 title = "Write the engine's plan-flow reference"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "D"
 phase = "Milestone D: reviewers, the lead, the wrapper and the carriers"
 phase_depth = 3
@@ -1009,15 +1010,15 @@ deps_note = ""
 action = 'Write `plan-flow.md`, the flow-mode procedure from Approach, "/plan-v2 and /review-plan-v2", "Re-check" and "The wrapper and the lead": run start with the scope, survey and schemas, the `Workflow({name:"plan-v2-review", args})` launch, fallback at the first stage the store shows incomplete, mop-up, triage by tier through `review apply`, user-tier batches, re-probing every `spec.accept` entry an applied finding changed, parking, the re-check, finish, and the approved-flow rule (which `review apply` also enforces).'
 detail = "In `SKILL.md`, stage 0 step 5 skips the import on a v2 flow, stage 1's plan-family scope names both modes, and the family deltas point flow mode at `references/plan-flow.md`. In `triage-and-close.md` step 3, flow mode replaces the merge offer with `plan-flow.md`'s tiered apply. Keep `SKILL.md` under 500 lines and the reference under 600."
 acceptance = "- forward: `test -f claude/skills/review-v2-engine/references/plan-flow.md && grep -c 'plan-flow.md' claude/skills/review-v2-engine/SKILL.md` prints at least `1` (today: exits 1, no output)."
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "a9b0a76"
 
 [[items]]
 id = 30
 ref = "rebind-measurement-and-survey-to-v2-flows"
 title = "Rebind measurement and survey to v2 flows"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "D"
 phase = "Milestone D: reviewers, the lead, the wrapper and the carriers"
 phase_depth = 3
@@ -1039,15 +1040,15 @@ detail = ""
 acceptance = """
 - forward: `grep -c 'review stats --by model' claude/skills/review-v2-engine/references/measurement.md` prints at least `1` (today: `0`).
 - forward: `grep -c 'at the merge offer' claude/skills/review-v2-engine/references/measurement.md` prints `0` (today: `1`)."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "866e5e2"
 
 [[items]]
 id = 31
 ref = "give-review-plan-v2-a-flow-mode"
 title = "Give /review-plan-v2 a flow mode"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "D"
 phase = "Milestone D: reviewers, the lead, the wrapper and the carriers"
 phase_depth = 3
@@ -1067,15 +1068,15 @@ Add flow mode to the carrier.
 - **Stage 8.** Use tiered apply in place of the merge offer."""
 detail = "Leave the markdown-mode text as it is. Keep every skill the `carrier_invokes_required_skills` row lists for `review-plan-v2.md` named in the file. This file is in `finding_classes.rs` `PROSE`, so name no `plan check` class in backticks."
 acceptance = "- forward: `grep -c 'plan-flow.md' claude/commands/review-plan-v2.md` prints at least `1` (today: `0`)."
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "5cdb812"
 
 [[items]]
 id = 32
 ref = "build-review-into-plan-v2"
 title = "Build review into /plan-v2"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "D"
 phase = "Milestone D: reviewers, the lead, the wrapper and the carriers"
 phase_depth = 3
@@ -1103,15 +1104,15 @@ detail = """
 acceptance = """
 - forward: `cat claude/skills/plan-v2-engine/SKILL.md claude/skills/plan-v2-engine/references/approve.md | grep -c 'not built'` prints `0` (today: at least `3`).
 - forward: `grep -c 'Refused' claude/commands/plan-v2.md` prints `0` (today: `1`)."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "247a0e2"
 
 [[items]]
 id = 33
 ref = "add-and-run-the-v2-review-link-script-and-install-tomlctl"
 title = "Add and run the v2 review link script, and install tomlctl"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "D"
 phase = "Milestone D: reviewers, the lead, the wrapper and the carriers"
 phase_depth = 3
@@ -1127,6 +1128,7 @@ needs = [
     28,
     29,
     36,
+    37,
 ]
 coupling = []
 deps_note = ""
@@ -1137,15 +1139,15 @@ acceptance = """
 - forward: `test -L "$HOME/.claude/skills/review-v2-engine"` exits 0 (today: exits 1), since junctions need no elevation **predicted, unverified**.
 - forward: `test -L "$HOME/.claude/workflows/plan-v2-review.js"` exits 0 (today: exits 1) **predicted, unverified** until the elevated run in After Merge.
 - forward: `tomlctl review apply --help` exits 0 (today: exits 2, unrecognised subcommand) **predicted, unverified** until the install."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "3636f80"
 
 [[items]]
 id = 34
 ref = "bring-claudemd-and-the-idea-doc-into-line"
 title = "Bring CLAUDE.md and the idea doc into line"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "D"
 phase = "Milestone D: reviewers, the lead, the wrapper and the carriers"
 phase_depth = 3
@@ -1166,15 +1168,15 @@ detail = 'In `docs/ideas/v2-pipeline.md` §Plan review, record the departures fr
 acceptance = """
 - forward: `grep -c 'link-v2-review.ps1' CLAUDE.md` prints at least `1` (today: `0`).
 - forward: `grep -c 'review apply' docs/ideas/v2-pipeline.md` prints at least `1` (today: `0`)."""
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "6205e29"
 
 [[items]]
 id = 36
 ref = "point-agents-at-plan-recordsmd-and-mark-flow-mode-cells"
 title = "Point agents at plan-records.md and mark flow-mode cells"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "D"
 phase = "Milestone D: reviewers, the lead, the wrapper and the carriers"
 phase_depth = 3
@@ -1196,5 +1198,31 @@ detail = "Preloaded agents read method references from the absolute paths their 
 acceptance = """
 - forward: `grep -c 'plan-records' tomlctl/src/review/query.rs` prints `1` (today: `0`).
 - forward: `cargo test --manifest-path tomlctl/Cargo.toml --test review_query` passes **predicted, unverified**. Falsifier: emitting `flow` on a markdown-mode store turns the new case red."""
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "d790137"
+
+[[items]]
+id = 37
+ref = "exempt-unprobeable-accept-entries-from-the-approve-review-gate"
+title = "Exempt unprobeable accept entries from the approve review gate"
+effort = "S"
+status = "done"
+checkpoint = "D"
+phase = "Milestone D: reviewers, the lead, the wrapper and the carriers"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/store.rs",
+    "tomlctl/src/plan/probes.rs",
+    "tomlctl/tests/plan_approve.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "`PlanReviewState::unprobed_accept_edits` in `tomlctl/src/plan/store.rs` flags an applied `spec.accept` edit whenever the matching stored entry has no `probe`. But `plan probes --emit` never probes an entry whose `check` is empty or whose `writes_build` is not explicitly `false` (`plan/probes.rs` `skip_reason`), so such an entry can never gain a probe and a review edit to it blocks `plan approve --review ran` and `plan stage` permanently. Make `skip_reason` `pub(super)` in `tomlctl/src/plan/probes.rs` and have `unprobed_accept_edits` count only stored entries for which `skip_reason` is `None`. Add a store.rs unit test (an applied edit whose matching entry has `writes_build = true` and no probe is not flagged), and a `tomlctl/tests/plan_approve.rs` case where such an edit does not block `--review ran`."
+detail = ""
+acceptance = """
+- forward: `grep -c 'pub(super) fn skip_reason' tomlctl/src/plan/probes.rs` prints `1` (today: `0`).
+- forward: `cargo test --manifest-path tomlctl/Cargo.toml --test plan_approve` passes. Falsifier: dropping the `skip_reason` filter turns the new writes_build case red."""
+agent = "implement-lite"
+commit = "4faaea3"

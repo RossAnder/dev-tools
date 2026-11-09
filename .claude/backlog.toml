@@ -6130,7 +6130,7 @@ tags = [
     "review-v2",
     "measurement",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-10-13
 last_seen = 2026-10-13
 seen_count = 1
@@ -6141,6 +6141,17 @@ context = "The thresholds name a per-agent-model overturn rate that review stats
 base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
 promoted = 2026-11-09
 promoted_to = "shimmying-marinating-bumblebee"
+resolved = 2026-11-09
+resolution = "resolved by flow `shimmying-marinating-bumblebee` (tasks report-plan-review-outcomes-and-per-model-overturns, rebind-measurement-and-survey-to-v2-flows)"
+resolved_flow = "shimmying-marinating-bumblebee"
+resolved_tasks = [
+    "report-plan-review-outcomes-and-per-model-overturns",
+    "rebind-measurement-and-survey-to-v2-flows",
+]
+resolved_commits = [
+    "6f98984",
+    "866e5e2",
+]
 
 [[backlog]]
 id = "B-f278c33f"
@@ -9019,3 +9030,175 @@ evidence = [
     ".claude/settings.local.json:15",
     ".claude/settings.local.json:17",
 ]
+
+[[backlog]]
+id = "B-f007171d"
+kind = "debt"
+summary = "review target.rs keeps its own copies of the plan decision and contract key lists"
+area = "tomlctl/src/review"
+tags = []
+status = "open"
+created = 2026-11-09T13:45:26Z
+last_seen = 2026-11-09T13:45:26Z
+seen_count = 1
+dedup_id = "f007171d7d4d9c00"
+origin = "implement"
+flow = "shimmying-marinating-bumblebee"
+context = "DECISION_KEYS and CONTRACT_KEYS in tomlctl/src/plan/records.rs are private, so review/target.rs repeats them minus id. Adding a key to one list and not the other makes review add refuse or fail to resolve a valid decision/contract target. Fix: export the lists pub(crate) from records.rs and use them in target.rs."
+base_sha = "6205e298590c4d917c4ebcbcab601185f4626788"
+evidence = ["tomlctl/src/review/target.rs:1"]
+related = ["B-efda464f"]
+
+[[backlog]]
+id = "B-36f791e4"
+kind = "bug"
+summary = "review add section_bodies splits on LF only, so a CRLF brief or plan section never matches its heading"
+area = "tomlctl/src/review"
+tags = []
+status = "open"
+created = 2026-11-09T13:45:26Z
+last_seen = 2026-11-09T13:45:26Z
+seen_count = 1
+dedup_id = "36f791e47e4fa81d"
+origin = "implement"
+flow = "shimmying-marinating-bumblebee"
+context = 'section_bodies in review/add.rs cuts on \n, leaving a trailing \r on heading lines, so a CRLF brief.md or plan reads as having no such section. Callers that pass read_normalised text are unaffected; any raw CRLF caller misses every section. Normalise line endings inside section_bodies.'
+base_sha = "6205e298590c4d917c4ebcbcab601185f4626788"
+evidence = ["tomlctl/src/review/add.rs:436"]
+related = ["B-57df0409"]
+
+[[backlog]]
+id = "B-10cbeccd"
+kind = "debt"
+summary = "review tier.rs copies the verifying-role list from stats.rs VERIFYING"
+area = "tomlctl/src/review"
+tags = []
+status = "open"
+created = 2026-11-09T13:45:26Z
+last_seen = 2026-11-09T13:45:26Z
+seen_count = 1
+dedup_id = "10cbeccd76005ea6"
+origin = "implement"
+flow = "shimmying-marinating-bumblebee"
+context = "tier.rs needs the verifier/panel/checker role set to decide the citation tier and keeps its own copy because stats.rs VERIFYING is private. Two lists can drift. Make one pub(super) const in stats.rs or fields.rs."
+base_sha = "6205e298590c4d917c4ebcbcab601185f4626788"
+related = ["B-90c6b8fe"]
+
+[[backlog]]
+id = "B-50b2b7a2"
+kind = "annoyance"
+summary = "review triage --convert does not default the replacement's target from a flow-mode advisory"
+area = "tomlctl/src/review"
+tags = []
+status = "open"
+created = 2026-11-09T13:45:26Z
+last_seen = 2026-11-09T13:45:26Z
+seen_count = 1
+dedup_id = "50b2b7a2144fa16e"
+origin = "implement"
+flow = "shimmying-marinating-bumblebee"
+context = "--convert defaults file, line, symbol and summary from the advisory but not target, so converting a flow-mode advisory that carries a target makes the caller repeat it. Arrived cheap-in-file; deferred so the verified run was not re-opened."
+base_sha = "6205e298590c4d917c4ebcbcab601185f4626788"
+related = ["B-4a72f1a6"]
+
+[[backlog]]
+id = "B-2d735ad5"
+kind = "bug"
+summary = "review verdict refuses a row on a tier stamp error after its verdict was already upserted"
+area = "tomlctl/src/review"
+tags = []
+status = "open"
+created = 2026-11-09T13:45:26Z
+last_seen = 2026-11-09T13:45:26Z
+seen_count = 1
+dedup_id = "2d735ad5e053e705"
+origin = "implement"
+flow = "shimmying-marinating-bumblebee"
+context = "verdict.rs apply_one stamps the tier after set_status(Open) and returns a stamp error as a refusal reason, but the verdict and status change are already in the store copy that mutate writes back. resolve.rs and triage.rs ignore stamp errors instead. Only reachable with an unparseable target, which review add refuses. Align verdict with the ignore-and-leave-tier-absent behaviour."
+base_sha = "6205e298590c4d917c4ebcbcab601185f4626788"
+related = ["B-e77ba495"]
+
+[[backlog]]
+id = "B-037256f6"
+kind = "bug"
+summary = "review apply can read a short brief or design new value as already applied by coincidence"
+area = "tomlctl/src/review"
+tags = []
+status = "open"
+created = 2026-11-09T13:45:26Z
+last_seen = 2026-11-09T13:45:26Z
+seen_count = 1
+dedup_id = "037256f6cc4285e5"
+origin = "implement"
+flow = "shimmying-marinating-bumblebee"
+context = "For prose edits, already-made means new occurs once in the section and every expect occurrence lies inside it; a very short new (the unit test hit new = x inside next) can match when the section has drifted, resolving the finding as applied with recovered = true though nothing landed. Consider a minimum new length or a position check."
+base_sha = "6205e298590c4d917c4ebcbcab601185f4626788"
+related = ["B-1da78375"]
+
+[[backlog]]
+id = "B-860bfbc1"
+kind = "bug"
+summary = "plan-v2-review recheck mode leaves the re-check run directory without pack.md"
+area = "claude/workflows"
+tags = []
+status = "open"
+created = 2026-11-09T13:45:26Z
+last_seen = 2026-11-09T13:45:26Z
+seen_count = 1
+dedup_id = "860bfbc113ca48cd"
+origin = "implement"
+flow = "shimmying-marinating-bumblebee"
+context = "Recheck mode runs no survey, so the re-check run directory has no pack.md, yet the waves pass pack_path <run_dir>/pack.md to finders. plan-flow.md section 10 works around it by copying the first run's pack.md and profile.md. Better: have the wrapper or review run start --set rechecks carry the pack over."
+base_sha = "6205e298590c4d917c4ebcbcab601185f4626788"
+related = ["B-be44a578"]
+
+[[backlog]]
+id = "B-62d3d197"
+kind = "debt"
+summary = "command_lint stops checking a line at a placeholder containing a space, so later flags go unlinted"
+area = "tomlctl/src/cli/dispatch"
+tags = []
+status = "open"
+created = 2026-11-09T13:45:26Z
+last_seen = 2026-11-09T13:45:26Z
+seen_count = 1
+dedup_id = "62d3d1977b6115b7"
+origin = "implement"
+flow = "shimmying-marinating-bumblebee"
+context = "Residual of the resolved placeholder fix: a placeholder holding a space (e.g. <ids, comma-separated>) still ends linting for the rest of the line; a --dry-runx after it passed. triage-and-close.md uses that form. plan-flow.md avoids it by writing <ids>."
+base_sha = "6205e298590c4d917c4ebcbcab601185f4626788"
+related = ["B-de0a0d87"]
+
+[[backlog]]
+id = "B-59118332"
+kind = "question"
+summary = "no review read verb lists a store's runs or their finished state"
+area = "tomlctl/src/review"
+tags = []
+status = "open"
+created = 2026-11-09T13:45:26Z
+last_seen = 2026-11-09T13:45:26Z
+seen_count = 1
+dedup_id = "59118332d0e66124"
+origin = "implement"
+flow = "shimmying-marinating-bumblebee"
+context = "plan-flow.md section 13 re-entry reads tomlctl items list --array runs on review-v2.toml directly because no review verb projects runs. A review run list would keep re-entry on a projection."
+base_sha = "6205e298590c4d917c4ebcbcab601185f4626788"
+related = ["B-1ec5ebb6"]
+
+[[backlog]]
+id = "B-651f0ed2"
+kind = "annoyance"
+summary = "plan-v2 approve gate's v1-carrier warning does not name /review-plan-v2 as the safe reviewer for a v2 flow"
+area = "claude/skills/plan-v2-engine"
+tags = []
+status = "open"
+created = 2026-11-09T13:45:26Z
+last_seen = 2026-11-09T13:45:26Z
+seen_count = 1
+dedup_id = "651f0ed287340fb2"
+origin = "implement"
+flow = "shimmying-marinating-bumblebee"
+context = "approve.md still warns that no engine can run the plan and that /review-plan can overwrite brief.md; now that /review-plan-v2 has a flow mode, the warning should point at it. Arrived cheap-in-file; deferred so the verified run was not re-opened."
+base_sha = "6205e298590c4d917c4ebcbcab601185f4626788"
+related = ["B-70b64580"]

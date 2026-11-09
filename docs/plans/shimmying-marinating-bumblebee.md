@@ -645,7 +645,7 @@ The 900-second budgets carry over from `v2-planning`, where the suite took 322 s
 
 #### 33. Add and run the v2 review link script, and install tomlctl [M]
 - **Files**: `scripts/link-v2-review.ps1` (new)
-- **Depends on**: 7, 12, 17, 18, 19, 20, 28, 29, 36
+- **Depends on**: 7, 12, 17, 18, 19, 20, 28, 29, 36, 37
 - **Action**: Write `scripts/link-v2-review.ps1` per Approach, "Deploy", and run it with `pwsh -NoProfile -File scripts/link-v2-review.ps1`. Then run `cargo install --path tomlctl`, retrying once on `os error 5`.
 - **Detail**: This task is the run's one exception to the no-full-build rule, because the install is the deliverable and its dependencies keep it off the shared target while the checkpoint gates run. Its dependencies cover every task that edits `tomlctl/src/`, so the install builds the finished tree. File symbolic links need elevation while Developer Mode is off (`docs/ideas/plan-v2-probes.md`); the script checks for it and, unelevated, creates the junctions and lists the file links it could not make, which After Merge completes. Report each link the script made, skipped or refused.
 - **Acceptance**:
@@ -672,6 +672,14 @@ The 900-second budgets carry over from `v2-planning`, where the suite took 322 s
   - forward: `grep -c 'plan-records' tomlctl/src/review/query.rs` prints `1` (today: `0`).
   - forward: `cargo test --manifest-path tomlctl/Cargo.toml --test review_query` passes **predicted, unverified**. Falsifier: emitting `flow` on a markdown-mode store turns the new case red.
 
+### 37. Exempt unprobeable accept entries from the approve review gate [S]
+- **Files**: `tomlctl/src/plan/store.rs`, `tomlctl/src/plan/probes.rs`, `tomlctl/tests/plan_approve.rs`
+- **Depends on**: —
+- **Action**: `PlanReviewState::unprobed_accept_edits` in `tomlctl/src/plan/store.rs` flags an applied `spec.accept` edit whenever the matching stored entry has no `probe`. But `plan probes --emit` never probes an entry whose `check` is empty or whose `writes_build` is not explicitly `false` (`plan/probes.rs` `skip_reason`), so such an entry can never gain a probe and a review edit to it blocks `plan approve --review ran` and `plan stage` permanently. Make `skip_reason` `pub(super)` in `tomlctl/src/plan/probes.rs` and have `unprobed_accept_edits` count only stored entries for which `skip_reason` is `None`. Add a store.rs unit test (an applied edit whose matching entry has `writes_build = true` and no probe is not flagged), and a `tomlctl/tests/plan_approve.rs` case where such an edit does not block `--review ran`.
+- **Acceptance**:
+  - forward: `grep -c 'pub(super) fn skip_reason' tomlctl/src/plan/probes.rs` prints `1` (today: `0`).
+  - forward: `cargo test --manifest-path tomlctl/Cargo.toml --test plan_approve` passes. Falsifier: dropping the `skip_reason` filter turns the new writes_build case red.
+
 ## Dependency Graph
 
 Per-task `Depends on` lines are authoritative; this section states only the checkpoint cuts.
@@ -682,7 +690,7 @@ Per-task `Depends on` lines are authoritative; this section states only the chec
 
 — CHECKPOINT C after tasks 18, 19, 20, 21 — dependency closure: 1, 2, 3, 4, 5, 6, 9, 10, 11, 12, 13, 16, 17, 18, 19, 20, 21. The gate, approve and stage reading the review, the version bump and the tomlctl references
 
-— CHECKPOINT D after tasks 23, 24, 25, 26, 30, 34 — dependency closure: 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 36. Reviewer bindings, method references, the lead, the wrapper, both carriers, deploy and docs
+— CHECKPOINT D after tasks 23, 24, 25, 26, 30, 34 — dependency closure: 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 36, 37. Reviewer bindings, method references, the lead, the wrapper, both carriers, deploy and docs
 
 ## Risks
 

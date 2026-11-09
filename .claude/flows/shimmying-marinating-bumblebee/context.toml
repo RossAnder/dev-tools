@@ -1,6 +1,6 @@
 slug = "shimmying-marinating-bumblebee"
 plan_path = "docs/plans/shimmying-marinating-bumblebee.md"
-status = "draft"
+status = "review"
 created = 2026-11-09
 updated = 2026-11-09
 branch = "main"
@@ -32,8 +32,8 @@ scope = [
 ]
 
 [tasks]
-total = 0
-completed = 0
+total = 37
+completed = 37
 in_progress = 0
 
 [artifacts]

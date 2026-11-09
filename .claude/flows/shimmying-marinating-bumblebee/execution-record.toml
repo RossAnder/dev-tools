@@ -1,2 +1,1289 @@
 schema_version = 1
 last_updated = 2026-11-09
+
+[[items]]
+id = "E1"
+agent = "implement"
+from_status = "draft"
+to_status = "in-progress"
+summary = "status draft -> in-progress"
+type = "status-transition"
+date = 2026-11-09
+
+[[items]]
+id = "E2"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+files = [
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/src/plan/mod.rs",
+]
+summary = "Widened plan::check findings, design_section and design_path to pub(crate), and mod check to pub(crate); no behaviour change."
+type = "task-completion"
+task_ref = "expose-plan-check-reads-to-the-review-module"
+date = 2026-11-09
+
+[[items]]
+id = "E3"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = [
+    "tomlctl/src/review/fields.rs",
+    "tomlctl/src/review/schema_out.rs",
+    "tomlctl/src/review/runs.rs",
+]
+summary = "Added Ty::Any and finding fields target, expect, new, proof, tier, applied plus run field rechecks (settable at review run start); schema_out renders Ty::Any as {}; MATRIX rows added. applied is scoped to all kinds."
+type = "task-completion"
+task_ref = "add-the-plan-record-finding-fields"
+date = 2026-11-09
+
+[[items]]
+id = "E4"
+agent = "implement"
+summary = "Visibility MATRIX rows for target/expect/new/proof/tier/applied/rechecks appended after anchor_new in tomlctl/src/review/fields.rs"
+original_intent = "Put the in-module visibility test rows for the new fields near the plan_section rows"
+rationale = "MATRIX is shared by finding and run entries, so the new finding rows sit after anchor_new and the Run rechecks row sits with them rather than splitting the table"
+type = "deviation"
+task_ref = "add-the-plan-record-finding-fields"
+date = 2026-11-09
+
+[[items]]
+id = "E5"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = ["tomlctl/src/review/digest.rs"]
+summary = "review report markdown: location renders target ahead of plan_section; defect and cleanup entries gain Target, Expect, New and Tier lines via record_details."
+type = "task-completion"
+task_ref = "show-targets-and-tiers-in-the-digest"
+date = 2026-11-09
+
+[[items]]
+id = "E6"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/tasks/update.rs",
+    "tomlctl/src/tasks/mod.rs",
+]
+summary = "Added ReviewEdit, ReviewEditOutcome, apply_review_edit and validate_review_edit to tasks/update.rs (re-exported from tasks/mod.rs), routed through the --ndjson patch path inside store::mutate so validation, keep_probes, the graph check and record_changes run; 6 new unit tests."
+type = "task-completion"
+task_ref = "expose-task-row-writes-for-review-apply"
+date = 2026-11-09
+
+[[items]]
+id = "E7"
+agent = "implement"
+summary = "apply_review_edit/validate_review_edit take (slug, &WriteIntegrityArgs, &ReviewEdit) in tomlctl/src/tasks/update.rs"
+original_intent = "apply_review_edit takes the slug, ref, field, index hint, append flag, expect, new, actor and reason as separate parameters"
+rationale = "store::mutate needs WriteIntegrityArgs (which has no Default), and a struct keeps the review apply call sites readable; Already/Stale leave mutate through a private Unwritten error so no-op outcomes do not restamp the store"
+type = "deviation"
+task_ref = "expose-task-row-writes-for-review-apply"
+date = 2026-11-09
+
+[[items]]
+id = "E8"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/plan/store.rs",
+    "tomlctl/src/plan/approve.rs",
+]
+summary = "Added plan_review_state (plan-family runs, applied edits with decoded old/new, open findings with tier and recheck flag) to plan/store.rs; gate_report fills review_edits and review-finding risks; approve --review ran refuses unfinished runs, open user-tier findings and unprobed applied accept edits; REVIEW_NOTE removed. plan_approve gate_reports_each_item_in_the_screens_order now fails on review_note (task 18 owns it)."
+type = "task-completion"
+task_ref = "read-the-review-into-the-plan-gate-and-approve"
+date = 2026-11-09
+
+[[items]]
+id = "E9"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/review/target.rs",
+    "tomlctl/src/review/mod.rs",
+    "tomlctl/src/review/add.rs",
+]
+summary = "Added review/target.rs: RecordTarget grammar parse, resolve against tasks.toml/plan.toml/brief/design, and match_entry by value with probe stripped; registered mod target (expect(dead_code) until a caller lands); section_bodies made pub(super); 10 unit tests."
+type = "task-completion"
+task_ref = "parse-and-resolve-record-targets"
+date = 2026-11-09
+
+[[items]]
+id = "E10"
+agent = "implement"
+summary = "RecordTarget::file(&self, slug) in tomlctl/src/review/target.rs"
+original_intent = "RecordTarget::file and RecordTarget::symbol per the Record targets table"
+rationale = "The table's paths contain the flow slug, which a parsed target does not hold, so file takes the slug"
+type = "deviation"
+task_ref = "parse-and-resolve-record-targets"
+date = 2026-11-09
+
+[[items]]
+id = "E11"
+agent = "implement"
+summary = "SpecEntry resolves to the whole list in tomlctl/src/review/target.rs"
+original_intent = "Spec left open what a SpecEntry target resolves to"
+rationale = "[n] is only a hint, so resolve returns the whole list (probes stripped) and match_entry picks the entry; a brief section resolves to its body without the heading, a design anchor to its section with the heading"
+type = "deviation"
+task_ref = "parse-and-resolve-record-targets"
+date = 2026-11-09
+
+[[items]]
+id = "E12"
+agent = "implement"
+summary = "field_name() returns the [[changes]].field spelling in tomlctl/src/review/target.rs"
+original_intent = "field_name() returns the part of the target before ["
+rationale = "It returns the [[changes]].field spelling instead: spec.accept for spec fields and entries, the bare field for task rows and milestones, the key for plan records, and text for brief and design prose"
+type = "deviation"
+task_ref = "parse-and-resolve-record-targets"
+date = 2026-11-09
+
+[[items]]
+id = "E13"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = [
+    "tomlctl/src/plan/stage.rs",
+    "tomlctl/tests/plan_stage.rs",
+    "tomlctl/tests/plan_lifecycle.rs",
+]
+summary = "plan stage review_settled replaced by review_blockers over plan_review_state/unsettled (skip still settles); PLAN_REVIEW names the /plan-v2 Review step; blocker counts open user-tier findings; plan_stage fixture an_open_user_tier_finding_keeps_the_stage_at_review; lifecycle hint updated."
+type = "task-completion"
+task_ref = "route-review-in-plan-stage"
+date = 2026-11-09
+
+[[items]]
+id = "E14"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = ["tomlctl/tests/plan_approve.rs"]
+summary = "plan_approve tests: review_note assertion dropped; gate fixture covers ordered review_edits and review-finding risks; three --review ran refusals (open user-tier, unfinished run, unprobed applied accept edit), each with an approving control."
+type = "task-completion"
+task_ref = "update-the-gate-and-approve-tests"
+date = 2026-11-09
+
+[[items]]
+id = "E15"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+files = ["claude/skills/tomlctl/references/plan.md"]
+summary = "references/plan.md: stage review row (settling rule, user-tier blocker, new hint), gate review_edits/review-finding risks, approve --review ran refusals; review_note removed."
+type = "task-completion"
+task_ref = "document-the-gates-review-keys"
+date = 2026-11-09
+
+[[items]]
+id = "E16"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/plan/mod.rs",
+    "tomlctl/src/plan/records.rs",
+    "tomlctl/src/plan/milestone.rs",
+]
+summary = "Added compare-and-set review edits for decisions/contracts (plan/records.rs) and milestones (plan/milestone.rs, via a shared patch_milestone; change takes an actor), re-exported as apply/validate_record_edit and apply/validate_milestone_edit; Already/Stale leave both stores unwritten; 5 unit tests."
+type = "task-completion"
+task_ref = "expose-plan-record-writes-for-review-apply"
+date = 2026-11-09
+
+[[items]]
+id = "E17"
+agent = "implement"
+summary = "Shared field-level patch_milestone in tomlctl/src/plan/milestone.rs"
+original_intent = "Extract milestone update()'s inline logic as it stands into a shared function"
+rationale = "--defer always writes the --reason text into defer_reason, and a review edit must set goal, gates, elaboration and defer_reason each on its own, so the shared patch_milestone is field-level; the CLI flag checks and audit-row order are unchanged"
+type = "deviation"
+task_ref = "expose-plan-record-writes-for-review-apply"
+date = 2026-11-09
+
+[[items]]
+id = "E18"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/review/tier.rs",
+    "tomlctl/src/review/mod.rs",
+    "tomlctl/src/review/query.rs",
+]
+summary = "Added review/tier.rs: compute (user, advisory, mechanical proof, citation), stamp (write-once), verify_proof for probe/check-class/path-missing/ref-unknown with new-shape limits and the 800-char cap; parse_citation made pub(super); mod tier registered; 8 unit tests."
+type = "task-completion"
+task_ref = "compute-a-findings-tier"
+date = 2026-11-09
+
+[[items]]
+id = "E19"
+agent = "implement"
+summary = "verify_proof(proof, target, expect, new, slug) in tomlctl/src/review/tier.rs"
+original_intent = "verify_proof(proof, target, slug)"
+rationale = "The limits on what new may change need both expect and new, and the probe kind needs expect to find the accept entry"
+type = "deviation"
+task_ref = "compute-a-findings-tier"
+date = 2026-11-09
+
+[[items]]
+id = "E20"
+agent = "implement"
+summary = "stamp distinguishes a bad target (Err) from an unreadable store (Ok, tier absent) in tomlctl/src/review/tier.rs"
+original_intent = "stamp returns Result and leaves tier absent when a store cannot be read"
+rationale = "An unparseable target returns Err, while an unreadable task or plan store returns Ok with tier left absent, so a settle or resolve write is not aborted because tasks.toml cannot be read"
+type = "deviation"
+task_ref = "compute-a-findings-tier"
+date = 2026-11-09
+
+[[items]]
+id = "E21"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/review/add.rs",
+    "tomlctl/src/review/fields.rs",
+    "tomlctl/src/review/triage.rs",
+]
+summary = "review add and triage --convert gain record_refusals (flow-mode target/expect/new/proof rules; line and plan_section requiredness moved from fields.rs); expect/new encoded as JSON text at mint; flow-mode advisory rows stamped with a tier; 3 unit tests. review_add integration test and falsifier checks not run (sibling compile break) — covered by the checkpoint gate."
+type = "task-completion"
+task_ref = "validate-plan-record-rows-at-review-add"
+date = 2026-11-09
+
+[[items]]
+id = "E22"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+files = [
+    "tomlctl/src/review/verdict.rs",
+    "tomlctl/src/review/resolve.rs",
+    "tomlctl/src/review/triage.rs",
+]
+summary = "tier::stamp wired at verdict apply_one (on Open), resolve Reopened/Regression via stamp_tier, and triage --reopen; slug threaded from the store Target via add::store_slug; scope stores skip stamping."
+type = "task-completion"
+task_ref = "stamp-the-tier-when-a-plan-record-finding-is-verified"
+date = 2026-11-09
+
+[[items]]
+id = "E23"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/review/apply.rs",
+    "tomlctl/src/review/dispatch.rs",
+    "tomlctl/src/review/mod.rs",
+    "tomlctl/src/cli/types/review.rs",
+    "tomlctl/src/cli/mod.rs",
+]
+summary = "Added tomlctl review apply <ids> --slug [--user-accepted] [--dry-run]: refuses every id before any write, re-validates through each target store's validate companion and re-verifies mechanical proofs (already decided first), writes tasks/plan records/milestones via their compare-and-set paths and brief/design by exactly-once replacement preserving line endings, and stamps each finding resolved with applied right after its write; dead-code expects on mod target/tier removed; 6 unit tests."
+type = "task-completion"
+task_ref = "implement-review-apply"
+date = 2026-11-09
+
+[[items]]
+id = "E24"
+agent = "implement"
+summary = "Brief/design expect with 0 matches is skipped_stale, 2+ refused, in tomlctl/src/review/apply.rs"
+original_intent = "A brief or design edit refuses an expect text that does not occur exactly once in its section"
+rationale = 'An edit made since review must stay recoverable as already, and drift belongs in skipped_stale per Approach "review apply": 0 matches (and not already made) goes to skipped_stale with the section as found; 2+ matches are refused as ambiguous'
+type = "deviation"
+task_ref = "implement-review-apply"
+date = 2026-11-09
+
+[[items]]
+id = "E25"
+agent = "implement"
+summary = "Stamp resolves regardless of status at stamp time in tomlctl/src/review/apply.rs"
+original_intent = "Stamp each finding resolved after its own target write"
+rationale = "The stamp resolves the finding whatever its status at stamp time, since the target write has already happened and leaving it unresolved would lose the edit record"
+type = "deviation"
+task_ref = "implement-review-apply"
+date = 2026-11-09
+
+[[items]]
+id = "E26"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/capabilities.rs",
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/README.md",
+    "tomlctl/tests/capabilities.rs",
+]
+summary = "Registered review apply in capabilities (REVIEW_STORE group), added features review_apply, review_targets, review_plan_outcomes to FEATURES, both README transcriptions and the capabilities test; review apply --help row in the write-integrity list; README command list updated. capabilities test not yet run (sibling compile break) — checkpoint gate covers it."
+type = "task-completion"
+task_ref = "register-review-apply-in-capabilities"
+date = 2026-11-09
+scope_warning = true
+
+[[items]]
+id = "E27"
+agent = "implement"
+summary = "review apply row placed in the write-integrity help list in tomlctl/tests/capabilities.rs"
+original_intent = "Add the review apply --help row the capabilities test enumerates for every review verb"
+rationale = "review apply writes and flattens WriteIntegrityArgs, so its row belongs in write_subcommands_expose_all_integrity_flags_in_help; the three feature names also had to join capabilities_features_contains_every_plan_feature, which checks the count exactly"
+type = "deviation"
+task_ref = "register-review-apply-in-capabilities"
+date = 2026-11-09
+
+[[items]]
+id = "E28"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "glimpse/Cargo.lock",
+    "tomlctl/README.md",
+    "tomlctl/tests/capabilities.rs",
+]
+summary = "Bumped tomlctl to 0.19.0: Cargo.toml, both lockfiles (version line only), README sample version, capabilities_version_matches_cargo_toml literal and message."
+type = "task-completion"
+task_ref = "bump-tomlctl-to-0190"
+date = 2026-11-09
+scope_warning = true
+
+[[items]]
+id = "E29"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+files = ["tomlctl/tests/review_plan_records.rs"]
+summary = "Added tests/review_plan_records.rs: 11 integration tests over a fixture v2 flow covering every target kind, JSON-text round trip, refusals leaving the store byte-identical, failing proofs, tiers at verdict/mint/reopen, frozen tier, convert refusal, report target lines, and unchanged markdown/code requiredness."
+type = "task-completion"
+task_ref = "test-plan-record-findings"
+date = 2026-11-09
+
+[[items]]
+id = "E30"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/skills/review-v2-method/references/plan-records.md",
+    "claude/skills/review-v2-method/SKILL.md",
+]
+summary = "Wrote review-v2-method references/plan-records.md (inputs, notes rule, precedence rule, mapping table, target grammar, expect/new/proof rules with class-to-field table, tiers, PRIOR, worked examples) and split SKILL.md §Plan family into markdown mode (unchanged text) and flow mode."
+type = "task-completion"
+task_ref = "write-the-plan-records-reference"
+date = 2026-11-09
+
+[[items]]
+id = "E31"
+agent = "implement"
+summary = "Renamed AppliedFinding/OpenFinding to AppliedEdit/OpenReviewRow in tomlctl/src/plan/store.rs and tomlctl/src/plan/approve.rs"
+original_intent = "plan_review_state returns its rows as AppliedFinding and OpenFinding structs"
+rationale = "The finding-class gate (cli::dispatch::tests finding_classes) reads every 'Finding {' literal under plan/ as a plan check Finding and failed on both struct literals, which would block every commit through the pre-commit hook; the orchestrator renamed them AppliedEdit and OpenReviewRow"
+type = "deviation"
+task_ref = "read-the-review-into-the-plan-gate-and-approve"
+date = 2026-11-09
+
+[[items]]
+id = "E32"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+files = ["tomlctl/tests/output_options.rs"]
+summary = "output_options: review apply F1 --dry-run write case over a new apply_flow v2 fixture (cited-tier defect on task:add-guard.effort) added to the review group."
+type = "task-completion"
+task_ref = "give-review-apply-an-output-options-case"
+date = 2026-11-09
+
+[[items]]
+id = "E33"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/review/stats.rs",
+    "tomlctl/src/cli/types/review.rs",
+]
+summary = "review stats --plan-outcomes (per-run and total tier x disposition, veto_rate, growth, recheck_yield, cost) and --by model (overturns grouped by the deciding verifying verdict run models, unknown when absent); 3 unit tests. Closes B-13ec633a with task 30."
+type = "task-completion"
+task_ref = "report-plan-review-outcomes-and-per-model-overturns"
+date = 2026-11-09
+
+[[items]]
+id = "E34"
+agent = "implement"
+summary = "store on each plan_outcomes run row and runs in total, in tomlctl/src/review/stats.rs"
+original_intent = "--plan-outcomes prints {runs:[{run, rechecks, tiers, veto_rate, growth, recheck_yield, cost}], total}"
+rationale = "Under --all a run id is only unique per store, so each run row also carries store and total carries runs; a non-advisory finding dismissed without an edit counts as user-vetoed, since on an approved flow every tier goes through the user"
+type = "deviation"
+task_ref = "report-plan-review-outcomes-and-per-model-overturns"
+date = 2026-11-09
+
+[[items]]
+id = "E35"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = ["tomlctl/tests/review_apply.rs"]
+summary = "Added tests/review_apply.rs: 10 integration tests (rechecks stored, mechanical/cited/append/removal edits, advisory and user-tier refusals, --user-accepted, stale, already/recovered, cycle refused before write, approved-flow refusal, brief edits, dry-run byte-identical, audited store change row). Surfaced the empty validate-pass reason bug in apply.rs, fixed by the orchestrator."
+type = "task-completion"
+task_ref = "test-review-apply"
+date = 2026-11-09
+
+[[items]]
+id = "E36"
+agent = "implement"
+summary = "Validate pass now carries the review <run> <id> reason in tomlctl/src/review/apply.rs judge"
+original_intent = "review apply validates each edit through the target store before any write"
+rationale = "The Validate pass passed an empty reason, so validate_review_edit refused every edit on an audited task store; the review_apply audited-store test caught it and the orchestrator passed the same review <run> <id> reason the Write pass uses"
+type = "deviation"
+task_ref = "implement-review-apply"
+date = 2026-11-09
+
+[[items]]
+id = "E37"
+agent = "implement"
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "fail"
+summary = "2807 run: 2806 passed, 1 failed (finding_classes documented_plan_classes_match_the_source)"
+duration_s = 477
+failed_ids = ["cli::dispatch::tests::finding_classes::documented_plan_classes_match_the_source"]
+type = "verification"
+task_ref = "test-plan-record-findings"
+date = 2026-11-09
+
+[[items]]
+id = "E38"
+agent = "implement"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+summary = "clean, 0 warnings"
+duration_s = 26
+type = "verification"
+task_ref = "test-plan-record-findings"
+date = 2026-11-09
+
+[[items]]
+id = "E39"
+agent = "implement"
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+summary = "2807 tests run: 2807 passed, 1 skipped"
+duration_s = 557
+supersedes_entry = "E37"
+type = "verification"
+task_ref = "test-plan-record-findings"
+date = 2026-11-09
+
+[[items]]
+id = "E40"
+agent = "implement"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+summary = "exit 0"
+duration_s = 25
+type = "verification"
+task_ref = "test-plan-record-findings"
+date = 2026-11-09
+
+[[items]]
+id = "E41"
+agent = "implement"
+command = "cargo clippy --manifest-path glimpse/Cargo.toml --locked"
+outcome = "pass"
+summary = "exit 0"
+duration_s = 26
+type = "verification"
+task_ref = "test-plan-record-findings"
+date = 2026-11-09
+
+[[items]]
+id = "E42"
+agent = "implement"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+summary = "exit 0"
+duration_s = 3
+type = "verification"
+task_ref = "test-plan-record-findings"
+date = 2026-11-09
+
+[[items]]
+id = "E43"
+agent = "implement"
+kind = "commit-train"
+summary = "checkpoint A train. 95db3af: expose-task-row-writes-for-review-apply; 428b909: expose-plan-check-reads-to-the-review-module, expose-plan-record-writes-for-review-apply; 6f98984: add-the-plan-record-finding-fields, parse-and-resolve-record-targets, compute-a-findings-tier, validate-plan-record-rows-at-review-add, stamp-the-tier-when-a-plan-record-finding-is-verified, implement-review-apply, report-plan-review-outcomes-and-per-model-overturns; e756d65: show-targets-and-tiers-in-the-digest; 6d2f531: register-review-apply-in-capabilities, bump-tomlctl-to-0190; de84832: test-review-apply; 6b784cc: read-the-review-into-the-plan-gate-and-approve; 3738c18: write-the-plan-records-reference; ba80d0d: give-review-apply-an-output-options-case; 25c5f0c: test-plan-record-findings; d85a7ff: route-review-in-plan-stage; f52cd49: update-the-gate-and-approve-tests; af17d1a: document-the-gates-review-keys"
+commits = [
+    "95db3af",
+    "428b909",
+    "6f98984",
+    "e756d65",
+    "6d2f531",
+    "de84832",
+    "6b784cc",
+    "3738c18",
+    "ba80d0d",
+    "25c5f0c",
+    "d85a7ff",
+    "f52cd49",
+    "af17d1a",
+]
+type = "checkpoint"
+task_ref = "test-plan-record-findings"
+date = 2026-11-09
+
+[[items]]
+id = "E44"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+files = ["tomlctl/tests/review_stats.rs"]
+summary = "review_stats tests plan_outcomes_count_tiers_and_dispositions and overturns_group_by_model over a PLAN_STORE fixture whose audit model differs from the deciding verifier model."
+type = "task-completion"
+task_ref = "test-plan-outcomes-and-per-model-overturns"
+date = 2026-11-09
+
+[[items]]
+id = "E45"
+agent = "implement"
+retries = 0
+status = "done"
+summary = "finding-kinds.md gains the flow-mode plan row shape with a worked defect row; review-sweeper step 8 describes flow-mode rows; both cite plan-records.md."
+files = [
+    "claude/skills/review-v2-method/references/finding-kinds.md",
+    "claude/agents/review-sweeper.md",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+type = "task-completion"
+task_ref = "teach-finding-kinds-and-the-sweeper-the-record-targets"
+date = 2026-11-09
+
+[[items]]
+id = "E46"
+agent = "implement"
+retries = 0
+status = "done"
+summary = "store-check, format-contract and break-set-baseline gain a v2 flow branch (plan check + tasks check; not run; none)."
+files = [
+    "claude/skills/review-v2-lenses/checks/store-check.md",
+    "claude/skills/review-v2-lenses/checks/format-contract.md",
+    "claude/skills/review-v2-lenses/checks/break-set-baseline.md",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+type = "task-completion"
+task_ref = "bind-the-surveyor-checks-to-a-v2-flow"
+date = 2026-11-09
+
+[[items]]
+id = "E47"
+agent = "implement"
+retries = 0
+status = "done"
+summary = "two-control-probe, falsifiability and acceptance-contradiction gain a v2 flow branch reading probe verdicts, spec.accept fields, and specs/contracts/needs."
+files = [
+    "claude/skills/review-v2-lenses/checks/two-control-probe.md",
+    "claude/skills/review-v2-lenses/checks/falsifiability.md",
+    "claude/skills/review-v2-lenses/checks/acceptance-contradiction.md",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+type = "task-completion"
+task_ref = "bind-the-plan-checks-to-records"
+date = 2026-11-09
+
+[[items]]
+id = "E48"
+agent = "implement"
+retries = 0
+status = "done"
+summary = "Surveyor prompt gains flow: <slug>; review-surveyor reads flow-mode inputs at steps 2, 6, 7, 11; plan-executor reads tasks through plan view --for worker and writes targets per plan-records.md."
+files = [
+    "claude/skills/review-v2-engine/references/agent-waves.md",
+    "claude/agents/review-surveyor.md",
+    "claude/agents/plan-executor.md",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+type = "task-completion"
+task_ref = "bind-the-surveyor-and-the-executor-to-a-v2-flow"
+date = 2026-11-09
+
+[[items]]
+id = "E49"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/skills/review-v2-engine/references/measurement.md",
+    "claude/skills/review-v2-engine/references/survey.md",
+]
+summary = "measurement.md names review stats --by model for per-model overturns (closes B-13ec633a with task 13), rebinds the plan threshold to the user-veto rate from --plan-outcomes, adds the plan seeded-recall procedure and the engine contract note; survey.md gains the flow-mode scope, flow: prompt line, task list and per-check flow-mode behaviour."
+type = "task-completion"
+task_ref = "rebind-measurement-and-survey-to-v2-flows"
+date = 2026-11-09
+
+[[items]]
+id = "E50"
+agent = "implement"
+summary = "Plan seeded-recall uses a scratch worktree at the pre-approval commit in claude/skills/review-v2-engine/references/measurement.md"
+original_intent = "Seed recall cases into a copied plan"
+rationale = "Copying a flow to a new slug or removing an [[approval]] table needs a hand edit of the TOML that no verb supports, so the procedure seeds into a scratch worktree at the commit just before approval"
+type = "deviation"
+task_ref = "rebind-measurement-and-survey-to-v2-flows"
+date = 2026-11-09
+
+[[items]]
+id = "E51"
+agent = "implement"
+summary = "Aligned the flow-mode baseline literal in claude/agents/review-surveyor.md"
+original_intent = "review-surveyor step 7 resolves break-set-baseline in flow mode"
+rationale = "The surveyor wrote none — flow mode while break-set-baseline.md says none — v2 flow carries no predicted break sets; the orchestrator aligned the surveyor to the check's literal so the recorded baseline does not depend on which file is followed"
+type = "deviation"
+task_ref = "bind-the-surveyor-and-the-executor-to-a-v2-flow"
+date = 2026-11-09
+
+[[items]]
+id = "E52"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = ["claude/skills/tomlctl/references/review.md"]
+summary = "references/review.md: two-mode field catalogue (line/plan_section enforced by review add outside flow mode), Plan records section (target grammar, expect/new, tiers, proof kinds), review apply section with flag table and output, review stats --plan-outcomes and --by model, run rechecks; 564 lines."
+type = "task-completion"
+task_ref = "document-the-review-store-additions"
+date = 2026-11-09
+
+[[items]]
+id = "E53"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/agents/plan-review-lead.md",
+    "scripts/shared-blocks.toml",
+]
+summary = "Added the plan-review-lead agent (Read, Grep, Glob, Bash, Write; opus/high) with compose, settle and audit phases, each returning exact JSON, writing only in the run directory and through tomlctl review; research-delivering block copied byte for byte and registered in scripts/shared-blocks.toml."
+type = "task-completion"
+task_ref = "add-the-plan-review-lead-agent"
+date = 2026-11-09
+
+[[items]]
+id = "E54"
+agent = "implement"
+summary = "steering: prompt block in place of signals in claude/agents/plan-review-lead.md"
+original_intent = "The wrapper passes a signals arg to the lead"
+rationale = "signals has no stated meaning in the plan; the engine gives judged signals to the compose step, so the lead takes the user's --lens/--probe flags as a steering: prompt block and judges survey candidates itself; the Workflow maps args.signals to steering:"
+type = "deviation"
+task_ref = "add-the-plan-review-lead-agent"
+date = 2026-11-09
+
+[[items]]
+id = "E55"
+agent = "implement"
+summary = "Lead records baselines at compose in claude/agents/plan-review-lead.md"
+original_intent = "Plan is silent on who records verification baselines in a wrapper run"
+rationale = "A Workflow script cannot call tomlctl and finders read baseline logs from the store, so the lead records them at compose from a baselines: block the wrapper passes"
+type = "deviation"
+task_ref = "add-the-plan-review-lead-agent"
+date = 2026-11-09
+
+[[items]]
+id = "E56"
+agent = "implement"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+summary = "clean, 0 warnings"
+duration_s = 17
+type = "verification"
+task_ref = "test-plan-outcomes-and-per-model-overturns"
+date = 2026-11-09
+
+[[items]]
+id = "E57"
+agent = "implement"
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+summary = "2809 tests run: 2809 passed, 1 skipped"
+duration_s = 481
+type = "verification"
+task_ref = "test-plan-outcomes-and-per-model-overturns"
+date = 2026-11-09
+
+[[items]]
+id = "E58"
+agent = "implement"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+summary = "exit 0"
+duration_s = 27
+type = "verification"
+task_ref = "test-plan-outcomes-and-per-model-overturns"
+date = 2026-11-09
+
+[[items]]
+id = "E59"
+agent = "implement"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "fail"
+summary = "diff in tests/review_stats.rs (line wrap only)"
+duration_s = 6
+type = "verification"
+task_ref = "test-plan-outcomes-and-per-model-overturns"
+date = 2026-11-09
+
+[[items]]
+id = "E60"
+agent = "implement"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+summary = "exit 0 after cargo fmt"
+duration_s = 3
+supersedes_entry = "E59"
+type = "verification"
+task_ref = "test-plan-outcomes-and-per-model-overturns"
+date = 2026-11-09
+
+[[items]]
+id = "E61"
+agent = "implement"
+kind = "commit-train"
+summary = "checkpoints B and C train. d5dcecb: test-plan-outcomes-and-per-model-overturns; 763ec15: document-the-review-store-additions; 3ccaa45: teach-finding-kinds-and-the-sweeper-the-record-targets; c32262c: bind-the-surveyor-checks-to-a-v2-flow; a83b1d6: bind-the-plan-checks-to-records; caa8cf8: bind-the-surveyor-and-the-executor-to-a-v2-flow; 1c08ab1: add-the-plan-review-lead-agent; 866e5e2: rebind-measurement-and-survey-to-v2-flows"
+commits = [
+    "d5dcecb",
+    "763ec15",
+    "3ccaa45",
+    "c32262c",
+    "a83b1d6",
+    "caa8cf8",
+    "1c08ab1",
+    "866e5e2",
+]
+type = "checkpoint"
+task_ref = "test-plan-outcomes-and-per-model-overturns"
+date = 2026-11-09
+
+[[items]]
+id = "E62"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = [
+    "tomlctl/src/review/query.rs",
+    "tomlctl/tests/review_query.rs",
+    "claude/skills/tomlctl/references/review.md",
+]
+summary = "plan-records added to METHOD_REFERENCES; a plan-family cell assignment carries flow when the store is a v2 flow (store_slug + plan.toml); review_query test show_cell_names_the_flow_only_in_flow_mode; review.md method-references and finder rows updated."
+type = "task-completion"
+task_ref = "point-agents-at-plan-recordsmd-and-mark-flow-mode-cells"
+date = 2026-11-09
+
+[[items]]
+id = "E63"
+agent = "implement"
+summary = "plan-records appears twice in tomlctl/src/review/query.rs (key and path lines)"
+original_intent = "grep -c plan-records tomlctl/src/review/query.rs prints 1"
+rationale = "rustfmt wraps the METHOD_REFERENCES tuple so the key and the path sit on separate lines, giving a count of 2; the entry is present as specified"
+type = "deviation"
+task_ref = "point-agents-at-plan-recordsmd-and-mark-flow-mode-cells"
+date = 2026-11-09
+
+[[items]]
+id = "E64"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = ["claude/workflows/plan-v2-review.js"]
+summary = "Added the plan-v2-review Workflow: validates args, runs the surveyor and sequential verification baselines (full mode), the lead's compose, review-v2-pipeline waves each followed by the lead's settle within per-depth wave caps, then the lead's audit; returns {slug, run, mode, waves, unverified, audit, errors, script_version}; no retries or model overrides; passes workflow_script_problems."
+type = "task-completion"
+task_ref = "add-the-plan-v2-review-workflow"
+date = 2026-11-09
+
+[[items]]
+id = "E65"
+agent = "implement"
+summary = "args.signals = {survey, steering} in claude/workflows/plan-v2-review.js"
+original_intent = "args.signals maps to the lead's steering: block"
+rationale = "The surveyor needs review survey's detector signals or it stops with missing: signals, so signals is an object {survey, steering}: survey feeds the surveyor, steering feeds the lead; the top-level arg list stays as the Approach gives it"
+type = "deviation"
+task_ref = "add-the-plan-v2-review-workflow"
+date = 2026-11-09
+
+[[items]]
+id = "E66"
+agent = "implement"
+summary = "Surveyor and verification calls carry return schemas in claude/workflows/plan-v2-review.js"
+original_intent = "Plan gives no return shape for the surveyor or the verification agent inside the wrapper"
+rationale = "A script cannot reliably parse a plain-text digest or verification blocks, so both calls carry schemas: {digest, verification:[{key, command}]} and {outcome, log}"
+type = "deviation"
+task_ref = "add-the-plan-v2-review-workflow"
+date = 2026-11-09
+
+[[items]]
+id = "E67"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/skills/review-v2-engine/references/plan-flow.md",
+    "claude/skills/review-v2-engine/SKILL.md",
+    "claude/skills/review-v2-engine/references/triage-and-close.md",
+]
+summary = "Wrote review-v2-engine references/plan-flow.md (13 sections: pre-flight, run start, survey signals, plan-v2-review launch, fallback, mop-up, triage by tier via review apply, re-probe, close, re-check, finish, approved flow, re-entry); SKILL.md stage 0/1 and family deltas point flow mode at it; triage-and-close step 3 hands the merge offer to tiered apply."
+type = "task-completion"
+task_ref = "write-the-engines-plan-flow-reference"
+date = 2026-11-09
+
+[[items]]
+id = "E68"
+agent = "implement"
+summary = "No-cells fallback restarts at stage 2 in claude/skills/review-v2-engine/references/plan-flow.md"
+original_intent = "A wrapper run that composed no cells falls back to engine stage 3"
+rationale = "The surveyor digest goes to the Workflow, not the orchestrator, so the orchestrator never sees the candidates or the verification keys stage 4 needs; the fallback restarts at stage 2's surveyor and baselines"
+type = "deviation"
+task_ref = "write-the-engines-plan-flow-reference"
+date = 2026-11-09
+
+[[items]]
+id = "E69"
+agent = "implement"
+summary = "First run finishes before the re-check in plan-flow.md"
+original_intent = "Approach orders the re-check before run finish"
+rationale = "The first run is finished before the re-check starts, so it is a fixed history for the re-check's reviewers and stays settled if the re-check cannot launch; then the re-check run finishes, then plan run finish"
+type = "deviation"
+task_ref = "write-the-engines-plan-flow-reference"
+date = 2026-11-09
+
+[[items]]
+id = "E70"
+agent = "implement"
+summary = "Launch first, then plan run start --run-id, in plan-flow.md"
+original_intent = "plan run start precedes the wrapper launch"
+rationale = "references/plan.md and plan-v2-engine rule 3 record plan run start --run-id after the Workflow launch, in the same turn, so the run id exists"
+type = "deviation"
+task_ref = "write-the-engines-plan-flow-reference"
+date = 2026-11-09
+
+[[items]]
+id = "E71"
+agent = "implement"
+summary = "Re-check copies pack.md and profile.md in plan-flow.md"
+original_intent = "The re-check run reuses the wrapper as is"
+rationale = "The wrapper's recheck mode runs no survey, so its run directory has no pack.md for the finders; plan-flow.md copies the first run's pack.md and profile.md into the re-check run directory"
+type = "deviation"
+task_ref = "write-the-engines-plan-flow-reference"
+date = 2026-11-09
+
+[[items]]
+id = "E72"
+agent = "implement"
+summary = "Minted task 37 and added it to task 33's needs"
+original_intent = "plan carries no task for exempting unprobeable accept entries from the approve review gate"
+rationale = "Task 29 found that unprobed_accept_edits flags any applied accept edit whose stored entry has no probe, but plan probes --emit never probes an entry with an empty check or writes_build not false, so such an edit would block plan approve --review ran and plan stage permanently. Cheap, inside store.rs/probes.rs/plan_approve.rs, and covered by the plan_approve suite; minted as task 37, and task 33 (which installs the finished tree) now waits on it."
+type = "deviation"
+task_ref = "exempt-unprobeable-accept-entries-from-the-approve-review-gate"
+date = 2026-11-09
+
+[[items]]
+id = "E73"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = ["claude/commands/review-plan-v2.md"]
+summary = "/review-plan-v2 gains flow mode: stage 0 binds <flow> when plan.toml exists and runs plan-flow.md section 1 (review_apply capability check; no sync-v1 or import), stages 1-6 run through sections 2-6 with no plan.toml run rows, stage 7 presents by tier, stage 8 uses tiered apply; markdown-mode text unchanged."
+type = "task-completion"
+task_ref = "give-review-plan-v2-a-flow-mode"
+date = 2026-11-09
+
+[[items]]
+id = "E74"
+agent = "implement"
+summary = "Carrier asks on a markdown path argument against a v2 flow in claude/commands/review-plan-v2.md"
+original_intent = "Bind <flow> when the resolved flow has plan.toml"
+rationale = "A path argument naming a markdown plan outside docs/flows/<flow>/ cannot be reviewed against this flow's store, which refuses markdown anchors in flow mode, so the carrier asks whether the user meant this flow or another given with --flow"
+type = "deviation"
+task_ref = "give-review-plan-v2-a-flow-mode"
+date = 2026-11-09
+
+[[items]]
+id = "E75"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = [
+    "tomlctl/src/plan/probes.rs",
+    "tomlctl/src/plan/store.rs",
+    "tomlctl/tests/plan_approve.rs",
+]
+summary = "unprobed_accept_edits ignores accept entries plan probes never runs (skip_reason, now pub(super)); unit test and plan_approve case for a writes_build entry; existing refusal fixtures set writes_build = false so they still exercise the refusal."
+type = "task-completion"
+task_ref = "exempt-unprobeable-accept-entries-from-the-approve-review-gate"
+date = 2026-11-09
+
+[[items]]
+id = "E76"
+agent = "implement"
+summary = "Existing accept fixtures set writes_build = false in tomlctl/src/plan/store.rs and tomlctl/tests/plan_approve.rs"
+original_intent = "Only add tests for the unprobeable-entry exemption"
+rationale = "An absent writes_build reads as true, so the existing refusal fixtures would become unprobeable and stop testing the refusal; the accept() helper and the plan_approve TASKS fixture now set writes_build = false"
+type = "deviation"
+task_ref = "exempt-unprobeable-accept-entries-from-the-approve-review-gate"
+date = 2026-11-09
+
+[[items]]
+id = "E77"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/commands/plan-v2.md",
+    "claude/skills/plan-v2-engine/SKILL.md",
+    "claude/skills/plan-v2-engine/references/approve.md",
+]
+summary = "/plan-v2 Review step runs: --review accepted and forces review, step-table row invokes review-v2-engine and follows plan-flow.md, approve.md gains the skip table (skipped-flag, skipped-low-risk), the Run section, the gate showing risks and review_edits with review-now when skipped, approval with --review ran and its refusals; open review runs resume via plan-flow.md section 13; pre-flight checks review_apply."
+type = "task-completion"
+task_ref = "build-review-into-plan-v2"
+date = 2026-11-09
+
+[[items]]
+id = "E78"
+agent = "implement"
+summary = "Depth section scoped to before Review in claude/skills/plan-v2-engine/SKILL.md"
+original_intent = "Edit only the --review, step-table and open-run lines of plan-v2-engine SKILL.md"
+rationale = "The Depth section said quick launches no Workflow and dispatches no agent, which a review at quick depth contradicts; it now scopes that to the steps before Review and passes depth through to the review run"
+type = "deviation"
+task_ref = "build-review-into-plan-v2"
+date = 2026-11-09
+
+[[items]]
+id = "E79"
+agent = "implement"
+summary = "Failed-launch fallback records a bare plan run start in claude/skills/plan-v2-engine/references/approve.md"
+original_intent = "Plan does not cover a review launch that never reaches async_launched"
+rationale = "plan-flow.md section 11 closes the review step with plan run finish, which refuses without a row, so a failed launch first records plan run start --step review with no --workflow or --run-id, then falls back to the engine"
+type = "deviation"
+task_ref = "build-review-into-plan-v2"
+date = 2026-11-09
+
+[[items]]
+id = "E80"
+agent = "implement"
+summary = "--review with --no-review is asked in claude/skills/plan-v2-engine/SKILL.md"
+original_intent = "Plan does not cover --review passed with --no-review"
+rationale = "The pair contradicts itself, so the engine asks through AskUserQuestion before Open"
+type = "deviation"
+task_ref = "build-review-into-plan-v2"
+date = 2026-11-09
+
+[[items]]
+id = "E81"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = ["scripts/link-v2-review.ps1"]
+summary = "Added scripts/link-v2-review.ps1 (idempotent, never overwrites; exit 0/2/1) and ran it unelevated: 3 skill junctions made, 13 file symlinks (3 commands, 8 agents, 2 Workflows) wait for the elevated After Merge run; cargo install --path tomlctl installed 0.19.0 and review apply --help exits 0."
+type = "task-completion"
+task_ref = "add-and-run-the-v2-review-link-script-and-install-tomlctl"
+date = 2026-11-09
+
+[[items]]
+id = "E82"
+agent = "implement"
+summary = "Commands and agents also wait for the elevated run of scripts/link-v2-review.ps1"
+original_intent = "Unelevated, the script lists only the Workflow file links it could not make"
+rationale = "Every existing agents/ and commands/ entry under the config dir is a file symbolic link too, so the 3 commands and 8 agents also need elevation; the elevated After Merge run makes all 13 file links"
+type = "deviation"
+task_ref = "add-and-run-the-v2-review-link-script-and-install-tomlctl"
+date = 2026-11-09
+
+[[items]]
+id = "E83"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = [
+    "CLAUDE.md",
+    "docs/ideas/v2-pipeline.md",
+]
+summary = "CLAUDE.md Review v2 gains Flow mode and Plan review lead bullets and the link-script deploy route; Planning v2 says plan review runs in /plan-v2; docs/ideas/v2-pipeline.md section Plan review lists what was built and the departures."
+type = "task-completion"
+task_ref = "bring-claudemd-and-the-idea-doc-into-line"
+date = 2026-11-09
+
+[[items]]
+id = "E84"
+agent = "implement"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+summary = "exit 0"
+duration_s = 10
+type = "verification"
+task_ref = "bring-claudemd-and-the-idea-doc-into-line"
+date = 2026-11-09
+
+[[items]]
+id = "E85"
+agent = "implement"
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+summary = "2812 tests run: 2812 passed, 1 skipped"
+duration_s = 451
+type = "verification"
+task_ref = "bring-claudemd-and-the-idea-doc-into-line"
+date = 2026-11-09
+
+[[items]]
+id = "E86"
+agent = "implement"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+summary = "exit 0"
+duration_s = 21
+type = "verification"
+task_ref = "bring-claudemd-and-the-idea-doc-into-line"
+date = 2026-11-09
+
+[[items]]
+id = "E87"
+agent = "implement"
+command = "grep -q 'Apply(ReviewApplyArgs)' tomlctl/src/cli/types/review.rs"
+outcome = "pass"
+summary = "success criterion, exit 0"
+duration_s = 0
+type = "verification"
+task_ref = "bring-claudemd-and-the-idea-doc-into-line"
+date = 2026-11-09
+
+[[items]]
+id = "E88"
+agent = "implement"
+command = "test -f claude/workflows/plan-v2-review.js && test -f claude/agents/plan-review-lead.md"
+outcome = "pass"
+summary = "success criterion, exit 0"
+duration_s = 0
+type = "verification"
+task_ref = "bring-claudemd-and-the-idea-doc-into-line"
+date = 2026-11-09
+
+[[items]]
+id = "E89"
+agent = "implement"
+command = "! grep -qs 'not built' claude/skills/plan-v2-engine/SKILL.md claude/skills/plan-v2-engine/references/approve.md"
+outcome = "pass"
+summary = "success criterion, exit 0"
+duration_s = 0
+type = "verification"
+task_ref = "bring-claudemd-and-the-idea-doc-into-line"
+date = 2026-11-09
+
+[[items]]
+id = "E90"
+agent = "implement"
+command = "! grep -q 'REVIEW_NOTE' tomlctl/src/plan/approve.rs"
+outcome = "pass"
+summary = "success criterion, exit 0"
+duration_s = 1
+type = "verification"
+task_ref = "bring-claudemd-and-the-idea-doc-into-line"
+date = 2026-11-09
+
+[[items]]
+id = "E91"
+agent = "implement"
+command = "grep -q 'review stats --by model' claude/skills/review-v2-engine/references/measurement.md"
+outcome = "pass"
+summary = "success criterion, exit 0"
+duration_s = 0
+type = "verification"
+task_ref = "bring-claudemd-and-the-idea-doc-into-line"
+date = 2026-11-09
+
+[[items]]
+id = "E92"
+agent = "implement"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --test review_stats --test review_plan_records --test review_apply --test review_add"
+outcome = "pass"
+summary = "46 passed, 0 failed"
+duration_s = 16
+type = "verification"
+task_ref = "bring-claudemd-and-the-idea-doc-into-line"
+date = 2026-11-09
+
+[[items]]
+id = "E93"
+agent = "implement"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+outcome = "pass"
+summary = "53 passed, 0 failed"
+duration_s = 25
+type = "verification"
+task_ref = "bring-claudemd-and-the-idea-doc-into-line"
+date = 2026-11-09
+
+[[items]]
+id = "E94"
+agent = "implement"
+command = "cargo clippy --manifest-path glimpse/Cargo.toml --locked"
+outcome = "pass"
+summary = "exit 0, 0 warnings"
+duration_s = 12
+type = "verification"
+task_ref = "bring-claudemd-and-the-idea-doc-into-line"
+date = 2026-11-09
+
+[[items]]
+id = "E95"
+agent = "implement"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+summary = "exit 0, 0 warnings"
+duration_s = 20
+type = "verification"
+task_ref = "bring-claudemd-and-the-idea-doc-into-line"
+date = 2026-11-09
+
+[[items]]
+id = "E96"
+agent = "implement"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+summary = "exit 0"
+duration_s = 3
+type = "verification"
+task_ref = "bring-claudemd-and-the-idea-doc-into-line"
+date = 2026-11-09
+
+[[items]]
+id = "E97"
+agent = "implement"
+kind = "commit-train"
+summary = "checkpoint D / final train. cc343ce: add-the-plan-v2-review-workflow; d790137: point-agents-at-plan-recordsmd-and-mark-flow-mode-cells; 4faaea3: exempt-unprobeable-accept-entries-from-the-approve-review-gate; a9b0a76: write-the-engines-plan-flow-reference; 5cdb812: give-review-plan-v2-a-flow-mode; 247a0e2: build-review-into-plan-v2; 3636f80: add-and-run-the-v2-review-link-script-and-install-tomlctl; 6205e29: bring-claudemd-and-the-idea-doc-into-line"
+commits = [
+    "cc343ce",
+    "d790137",
+    "4faaea3",
+    "a9b0a76",
+    "5cdb812",
+    "247a0e2",
+    "3636f80",
+    "6205e29",
+]
+type = "checkpoint"
+task_ref = "bring-claudemd-and-the-idea-doc-into-line"
+date = 2026-11-09
+
+[[items]]
+id = "E98"
+agent = "plan-update"
+from_status = "in-progress"
+to_status = "review"
+summary = "all 37 tasks done and verified; status in-progress -> review"
+type = "status-transition"
+date = 2026-11-09
