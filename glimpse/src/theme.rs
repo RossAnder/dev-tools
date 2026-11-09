@@ -425,7 +425,7 @@ impl Theme {
             "in-progress" => self.in_progress,
             "done" => self.done,
             "failed" => self.failed,
-            "deferred" => self.deferred,
+            "deferred" | "parked" => self.deferred,
             _ => self.pending,
         }
     }
@@ -437,7 +437,7 @@ impl Theme {
             TaskStatus::InProgress => 1,
             TaskStatus::Done => 2,
             TaskStatus::Failed => 3,
-            TaskStatus::Deferred => 4,
+            TaskStatus::Deferred | TaskStatus::Parked => 4,
             TaskStatus::Pending | TaskStatus::Unknown => 0,
         };
         self.flash[at]

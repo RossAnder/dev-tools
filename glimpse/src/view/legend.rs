@@ -134,6 +134,7 @@ fn lines(theme: &Theme) -> Vec<Line<'static>> {
         TaskStatus::Done,
         TaskStatus::Failed,
         TaskStatus::Deferred,
+        TaskStatus::Parked,
     ] {
         out.push(row(
             Span::styled(status.glyph(), theme.status(status.as_str())),
@@ -305,7 +306,14 @@ mod tests {
     fn the_legend_draws_every_status_in_its_colour() {
         let mut app = App::new(fixture(), &Config::default());
         let lines = lines(&app.theme);
-        for status in ["pending", "in-progress", "done", "failed", "deferred"] {
+        for status in [
+            "pending",
+            "in-progress",
+            "done",
+            "failed",
+            "deferred",
+            "parked",
+        ] {
             let line = lines
                 .iter()
                 .find(|l| l.spans.last().is_some_and(|s| s.content == status))

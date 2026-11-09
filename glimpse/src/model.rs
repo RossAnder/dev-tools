@@ -70,6 +70,7 @@ pub(crate) enum TaskStatus {
     Done,
     Failed,
     Deferred,
+    Parked,
     /// A status outside the vocabulary this build knows.
     #[serde(other)]
     Unknown,
@@ -83,6 +84,7 @@ impl TaskStatus {
             Self::Done => "done",
             Self::Failed => "failed",
             Self::Deferred => "deferred",
+            Self::Parked => "parked",
             Self::Unknown => "unknown",
         }
     }
@@ -95,6 +97,7 @@ impl TaskStatus {
             Self::Done => "✓",
             Self::Failed => "✗",
             Self::Deferred => "⏸",
+            Self::Parked => "⊘",
             Self::Unknown => "?",
         }
     }
@@ -599,6 +602,24 @@ mod tests {
         assert_eq!(snap.tasks.len(), 8);
         assert_eq!(snap.tasks[1].status, TaskStatus::Unknown);
         assert_eq!(snap.agents[0].kind, AgentKind::Unknown);
+    }
+
+    #[test]
+    fn parked_status_parses_and_draws_its_own_one_cell_glyph() {
+        let status: TaskStatus = serde_json::from_str(r#""parked""#).expect("parked parses");
+        assert_eq!(status, TaskStatus::Parked);
+        assert_eq!(status.as_str(), "parked");
+        assert_eq!(ratatui::text::Span::raw(status.glyph()).width(), 1);
+        for other in [
+            TaskStatus::Pending,
+            TaskStatus::InProgress,
+            TaskStatus::Done,
+            TaskStatus::Failed,
+            TaskStatus::Deferred,
+            TaskStatus::Unknown,
+        ] {
+            assert_ne!(status.glyph(), other.glyph(), "{other:?}");
+        }
     }
 
     #[test]
