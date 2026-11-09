@@ -95,6 +95,10 @@ Advisory is not verified true or false; the orchestrator and the user judge it. 
 
 ### Plan family
 
+A plan-family run is in flow mode when its flow has `.claude/flows/<slug>/plan.toml`, and your cell assignment then names the flow. It is in markdown mode otherwise.
+
+#### Markdown mode
+
 A plan-family row anchors to the plan: `file` is the plan path, `line` the heading line of `plan_section`, `symbol` the task ref (or the heading's slug outside `## Tasks`).
 
 | Field | Rule |
@@ -104,6 +108,10 @@ A plan-family row anchors to the plan: `file` is the plan path, `line` the headi
 | `anchor_new` | ≤800; the replacement text |
 
 These three fields exist only in the plan family; a code or perf row carrying one is refused.
+
+#### Flow mode
+
+A v2 plan lives in records, not one markdown file, so a row names its record in `target` and carries the fix as `expect` and `new`, with an optional `proof`. `plan_section`, `anchor_old` and `anchor_new` are refused, and `line` is optional. Before writing the first row, read `references/plan-records.md` from the absolute path your `review show` projection carries: what to read, where each markdown section lives, the target grammar, `expect`/`new`, `proof` and PRIOR. Where a lens or method asks for the markdown-mode fields, it means those.
 
 ## Identity: `same_as` and PRIOR
 
