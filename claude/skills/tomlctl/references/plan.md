@@ -425,7 +425,7 @@ to diagnose a DAG or policy error.
 | `design` | No milestones or no tasks | `plan milestone add` when no milestones, else `tasks add-many` |
 | `write` | `plan/task-no-spec` | `tasks update --ndjson` |
 | `prove` | Any error-class finding, `plan/probe-absent`, or a surfaced decision still `agent-assumed` | By class, below |
-| `review` | No finished plan-family run in `review-v2.toml` and no `[[run]]` for step `review` with a skip reason | `plan run skip --step review --reason <why>`, since plan review is not built for v2 flows |
+| `review` | Review is unsettled: no `[[run]]` for step `review` with a skip reason, and none of the `plan approve --review ran` conditions below holds. The blockers include `N open user-tier findings to accept or veto` | the `/plan-v2` Review step, or `plan run skip --step review --reason <why>` |
 | `ready` | Otherwise | `plan approve` |
 
 At `prove`, `next` is the first row below that has a blocker. Probes come last, because any spec edit
@@ -480,13 +480,13 @@ tomlctl plan gate --slug <slug>
 |---|---|---|
 | `assumptions` | `id`, `decision`, `why`, `binds`, `door`, `surfaced`, `evidence`, `if_false`, `revisit_if` | `agent-assumed` decisions, ranked by how many entries they bind. |
 | `one_way_doors` | `id`, `decision`, `provenance`, `revisit_if` | Every one-way decision, whatever its provenance. |
-| `risks` | `kind`, `detail` | `kind = "skip-reason"` for each `[[run]]` of step `review` with a skip reason. |
+| `risks` | `kind`, then `detail`, or `id`, `severity`, `target`, `summary` | `kind = "skip-reason"` for each `[[run]]` of step `review` with a skip reason, then `kind = "review-finding"` for each open critical or major defect and each open re-check finding. A missing `severity` or `target` reads `""`. |
 | `task_mix` | `files`, `executor`, `tasks` | Row counts by file-count bucket (`1`, `2-3`, `4+`) and spec `executor`. A row with no files counts as `1`, and one with no spec under an empty executor. |
-| `review_edits` | — | Always empty. |
+| `review_edits` | `id`, `target`, `tier`, `by`, `summary` | Each plan finding review applied: decisions first, then user, cited and mechanical. |
 | `deferred_milestones` | `id`, `reason` | Milestones with `elaboration = "deferred"`. |
 | `stops` | `kind`, then `milestone`, `command` or `id`, `command`, `source_task` | Each milestone gate (`kind = "gate"`) and undone handover (`kind = "handover"`). |
 
-`ok` is always `true`, and `review_note` says that review findings do not reach this screen yet.
+`ok` is always `true`.
 
 ## `plan approve`
 
@@ -510,7 +510,9 @@ Each precondition is a `kind=validation` refusal, and nothing is written until a
 - Every surfaced decision is answered, meaning no longer `agent-assumed`.
 - `plan check` reports no error. Under `--amend`, `plan/brief-changed` does not count.
 - `--review ran` needs a `[[runs]]` row in `review-v2.toml` with `family = "plan"` and a non-empty
-  `finished`.
+  `finished`. The refusal reads `` `--review ran` refused: <reasons joined by "; "> `` and names ids for:
+  no finished plan-family run, an unfinished plan-family run, an open user-tier finding, or an applied
+  `spec.accept` edit whose entry has no probe.
 - Without `--amend`, the flow's `status` is `draft` or `in-progress`.
 - `git status` reports nothing for `.claude/flows/<slug>/tasks.toml` and `plan.toml`, for
   `docs/flows/<slug>/brief.md`, and for everything under `docs/flows/<slug>/design/`, ignored and
