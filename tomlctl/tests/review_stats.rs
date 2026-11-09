@@ -694,6 +694,197 @@ fn stats_probe_groups_by_concern_tag() {
     assert_eq!(untagged["uncovered"], 1, "{untagged}");
 }
 
+const PLAN_STORE: &str = r#"schema_version = 1
+
+[[runs]]
+id = "U1"
+command = "review-plan-v2"
+family = "plan"
+depth = "standard"
+started = "2026-11-09T10:00:00Z"
+finished = "2026-11-09T10:30:00Z"
+models = { verifier = "opus", checker = "haiku" }
+agents = 10
+
+[[runs]]
+id = "U2"
+command = "review-plan-v2"
+family = "plan"
+depth = "quick"
+started = "2026-11-09T11:00:00Z"
+models = { verifier = "sonnet" }
+rechecks = "U1"
+
+[[findings]]
+id = "F1"
+run = "U1"
+family = "plan"
+kind = "defect"
+lens = "feasibility"
+route = "verifier"
+tier = "mechanical"
+status = "resolved"
+applied = { by = "tool", old = '["a.rs"]', new = '["b.rs", "c.rs"]' }
+
+[[findings]]
+id = "F2"
+run = "U1"
+family = "plan"
+kind = "cleanup"
+lens = "feasibility"
+route = "checker"
+tier = "cited"
+status = "resolved"
+applied = { by = "tool", old = '"ab"', new = '"abcd"' }
+
+[[findings]]
+id = "F3"
+run = "U1"
+family = "plan"
+kind = "defect"
+lens = "intent"
+route = "verifier"
+tier = "user"
+status = "resolved"
+applied = { by = "user", old = "null", new = '"x"' }
+
+[[findings]]
+id = "F4"
+run = "U1"
+family = "plan"
+kind = "defect"
+lens = "intent"
+route = "verifier"
+tier = "user"
+status = "dismissed"
+dismiss_reason = "keep it"
+
+[[findings]]
+id = "F5"
+run = "U1"
+family = "plan"
+kind = "advisory"
+lens = "intent"
+route = "none"
+tier = "advisory"
+status = "parked"
+park_reason = "later"
+
+[[findings]]
+id = "F6"
+run = "U2"
+family = "plan"
+kind = "defect"
+lens = "feasibility"
+route = "verifier"
+status = "open"
+
+[[verdicts]]
+finding = "F1"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+
+[[verdicts]]
+finding = "F1"
+run = "U2"
+by = "audit"
+verdict = "refuted"
+
+[[verdicts]]
+finding = "F2"
+run = "U1"
+by = "checker"
+verdict = "confirmed"
+
+[[verdicts]]
+finding = "F2"
+run = "U2"
+by = "audit"
+verdict = "confirmed"
+
+[[verdicts]]
+finding = "F6"
+run = "U2"
+by = "verifier"
+verdict = "refuted"
+"#;
+
+#[test]
+fn plan_outcomes_count_tiers_and_dispositions() {
+    let repo = Repo::new();
+    repo.write(FLOW_STORE_PATH, PLAN_STORE);
+    let out = repo.stats(&["--slug", "f1", "--plan-outcomes"]);
+    let runs = out["plan_outcomes"]["runs"]
+        .as_array()
+        .expect("runs is an array");
+    assert_eq!(runs.len(), 2, "{out}");
+
+    let first = &runs[0];
+    assert_eq!(first["run"], "U1", "{first}");
+    assert_eq!(
+        first["tiers"],
+        json!({
+            "advisory": {"parked": 1},
+            "cited": {"applied-disclosed": 1},
+            "mechanical": {"applied": 1},
+            "user": {"user-accepted": 1, "user-vetoed": 1},
+        }),
+        "{first}"
+    );
+    assert_eq!(first["veto_rate"], 0.5, "{first}");
+    assert_eq!(
+        first["growth"],
+        json!({"edits": 3, "chars_added": 7, "entries_added": 3, "entries_removed": 1}),
+        "{first}"
+    );
+    assert_eq!(first["recheck_yield"], JsonValue::Null, "{first}");
+    assert_eq!(
+        first["cost"],
+        json!({"agents": 10, "minutes": 30.0}),
+        "{first}"
+    );
+
+    let second = &runs[1];
+    assert_eq!(second["rechecks"], "U1", "{second}");
+    assert_eq!(second["recheck_yield"], 1, "{second}");
+    assert_eq!(second["tiers"], json!({"none": {"open": 1}}), "{second}");
+
+    let total = &out["plan_outcomes"]["total"];
+    assert_eq!(total["runs"], 2, "{total}");
+    assert_eq!(total["growth"]["edits"], 3, "{total}");
+}
+
+#[test]
+fn overturns_group_by_model() {
+    let repo = Repo::new();
+    repo.write(FLOW_STORE_PATH, PLAN_STORE);
+    let out = repo.stats(&["--slug", "f1", "--by", "model"]);
+    assert_eq!(out["by"], "model", "{out}");
+    let rows = &out["rows"];
+    let keys: Vec<&str> = rows
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["key"].as_str().unwrap())
+        .collect();
+    assert_eq!(keys, ["haiku", "opus", "sonnet"], "{rows}");
+
+    let opus = row(rows, "opus");
+    assert_eq!(opus["roles"], json!(["verifier"]), "{opus}");
+    assert_eq!(opus["audited"], 1, "{opus}");
+    assert_eq!(
+        opus["overturned"], 1,
+        "the audit ran under sonnet, yet the overturn lands on the verifying opus: {opus}"
+    );
+    let haiku = row(rows, "haiku");
+    assert_eq!(haiku["audited"], 1, "{haiku}");
+    assert_eq!(haiku["overturned"], 0, "{haiku}");
+    let sonnet = row(rows, "sonnet");
+    assert_eq!(sonnet["audited"], 0, "{sonnet}");
+    assert_eq!(sonnet["overturned"], 0, "{sonnet}");
+}
+
 #[test]
 fn stats_all_aggregates_across_stores() {
     let repo = Repo::new();
