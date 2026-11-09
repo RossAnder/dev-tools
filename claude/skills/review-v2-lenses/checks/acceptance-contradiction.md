@@ -30,6 +30,15 @@ Not a contradiction:
 
 Two tasks whose intents conflict, rather than their acceptances, are feasibility's coherence concern; a dependency edge missing for any reason other than an acceptance's presumed state is plan-dependencies'.
 
+## v2 flow
+
+When the assignment names a flow, run the same scan over records. Load `review-v2-method/references/plan-records.md` for the finding shape.
+
+- **Presumed state.** Read every task's `spec.accept` entries (`check` and `positive`) and `spec.constraints` with `tomlctl tasks show <id> --slug <slug> --with spec`, plus each contract's `claim` and `check` in `plan.toml` and `brief#Success criteria`.
+- **Removed or changed state.** Read each task's `files`, `action` and `spec.means`, and the contracts' `provides` and `consumes`.
+- **Graph.** The edges are each task's `needs`; read them with `tomlctl tasks edges --slug <slug>`. Contracts that list several `tasks` are the other source of a shared state.
+- **Findings.** Target the presuming entry, `task:<ref>.spec.accept[<n>]`, or `contract:C<n>.check`, with `file` the record's file and `symbol` the ref or record id. `expect` is the whole presuming entry and `new` the rewrite when one acceptance settles it; an edge fix targets `task:<ref>.needs` the same way. Never put a `proof` on a finding of this check.
+
 ## Fence or finding mapping
 
 This check writes findings, no fence. Every row has `lens = "check:acceptance-contradiction"`, `file` the plan path, `line` the heading line of the presuming task's section, `symbol` the presuming task's ref (`success-criteria` for a Success Criterion), and `anchor_old` quoting the presuming acceptance exactly once under its section. `failure_scenario` and `evidence` name both tasks, the presumed state and the line of the other task that removes it.

@@ -38,6 +38,18 @@ Pitfalls that change a verdict:
 
 Also check that each runnable Success Criterion is repeated as a `success:` key under `## Verification Commands`, and that each criterion that cannot be probed read-only is labelled **predicted, unverified**.
 
+## v2 flow
+
+When the assignment names a flow, the plan has no markdown acceptance to run and the probes were already recorded by `plan probes`. Do not write a batch or run the helper. Load `review-v2-method/references/plan-records.md` for the finding shape.
+
+1. **Read the verdicts.** Run `tomlctl plan check --slug <slug>` and take its `plan/probe-unhealthy` and `plan/probe-absent` findings. Read each entry's stored verdict and fields with `tomlctl tasks show <id> --slug <slug> --with spec`.
+2. **Probe-unhealthy.** Raise a `defect` targeting `task:<ref>.spec.accept[<n>]` with `proof {"kind": "probe"}`, `expect` the whole entry and `new` the corrected entry, both with `probe` left out. `new` may change only `check` and `positive`. The verdict names the severity as in the table above: unsatisfiable, permanently green, broken and vacuous are `critical`.
+3. **Probe-absent.** An entry with no stored verdict proves nothing, so raise the finding with no `proof`. It tiers cited when a verifier's citation qualifies and advisory otherwise.
+4. **Entries with `writes_build = true`.** They were never probed. Judge each by reading its `check` and `positive` under the polarity rules above, and raise findings with no `proof`.
+5. **Success criteria and gates.** `brief#Success criteria` and `milestone:<id>.gates` map as in `plan-records.md`; compare them with the recorded entries instead of probing them.
+
+Rows carry `target`, `expect` and `new` in place of `plan_section`, `anchor_old` and `anchor_new`; the severity mapping below applies unchanged. A healthy entry is a coverage-note line. The coverage note lists the entries read, those judged by reading and those with no verdict.
+
 ## Fence or finding mapping
 
 This check writes findings, no fence. Every row has `lens = "check:two-control-probe"`, `file` the plan path, `line` the heading line of `plan_section`, `symbol` the task ref (`success-criteria` or `verification-commands` outside `## Tasks`), and `anchor_old` quoting the criterion's text exactly once under its section. `evidence` carries the batch lines that decided the verdict, both controls where both ran. Severity follows `/review-plan`'s verdict mapping:

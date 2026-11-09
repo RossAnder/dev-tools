@@ -37,6 +37,15 @@ A break-set prediction passes when every precondition holds. **Never diff the ba
 
 Defer to `two-control-probe` where it ran: a read-only command whose controls it observed takes its verdict from that probe, and this check adds a row only for a shape the two controls cannot see, such as a wrong implementation that would also pass.
 
+## v2 flow
+
+When the assignment names a flow, read the acceptance from the specs, not from a plan document. Load `review-v2-method/references/plan-records.md` for the finding shape.
+
+- Read each task's `spec.accept` entries with `tomlctl tasks show <id> --slug <slug> --with spec`. For each entry, `kind` gives the polarity, `check` the command and `positive` the control input a correct implementation produces. Run steps 1 and 2 on them: name the failing input and the wrong implementation, and hunt the vacuous shapes in `check`.
+- An entry with `kind = "falsifier"` or `"guard"` is judged under that polarity. An empty `positive` on a forward entry means no correct input was named; say so.
+- Success criteria are `brief#Success criteria`; break-set predictions sit in `milestone:<id>.gates` and the entries' `check` text. Step 3 applies to them unchanged.
+- Findings use `target`, `expect` and `new` in place of `plan_section`, `anchor_old` and `anchor_new`, with `task:<ref>.spec.accept[<n>]` for an entry and `file` the task store. Never put a `proof` on a finding of this check; its fixes tier cited or advisory.
+
 ## Fence or finding mapping
 
 This check writes findings, no fence. Every row has `lens = "check:falsifiability"`, `file` the plan path, `line` the heading line of `plan_section`, `symbol` the task ref (`success-criteria` outside `## Tasks`), and `anchor_old` quoting the criterion or prediction exactly once under its section.
