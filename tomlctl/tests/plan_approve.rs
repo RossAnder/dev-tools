@@ -42,7 +42,7 @@ rationale = "the store"
 [[specs]]
 ref = "add-guard"
 outcome = "the guard holds"
-accept = [{ behaviour = "a retry waits", check = "cargo test retry", kind = "forward", positive = "" }]
+accept = [{ behaviour = "a retry waits", check = "cargo test retry", kind = "forward", positive = "", writes_build = false }]
 executor = "lite"
 
 [[milestones]]
@@ -640,6 +640,25 @@ fn review_ran_is_refused_for_an_applied_accept_edit_left_unprobed() {
     flow.write(
         "review-v2.toml",
         format!("{FINISHED_RUN}{}", accept_edit_finding("cargo test other")).as_bytes(),
+    );
+    flow.approve(&["--review", "ran"]);
+}
+
+#[test]
+fn review_ran_ignores_an_applied_accept_edit_to_an_entry_probes_never_runs() {
+    let flow = Flow::clean();
+    let tasks = fs::read_to_string(flow.path("tasks.toml")).expect("the task store");
+    assert!(tasks.contains("writes_build = false"), "{tasks}");
+    flow.write(
+        "tasks.toml",
+        tasks
+            .replace("writes_build = false", "writes_build = true")
+            .as_bytes(),
+    );
+    flow.commit();
+    flow.write(
+        "review-v2.toml",
+        format!("{FINISHED_RUN}{}", accept_edit_finding("cargo test retry")).as_bytes(),
     );
     flow.approve(&["--review", "ran"]);
 }

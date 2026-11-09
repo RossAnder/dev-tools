@@ -136,7 +136,8 @@ impl PlanReviewState {
     }
 
     /// Applied findings that wrote a `spec.accept` entry still stored without a
-    /// probe. An entry since changed again or removed is no longer theirs to name.
+    /// probe. An entry since changed again or removed is no longer theirs to name,
+    /// and one `plan probes` never runs can never gain a probe, so it is not named.
     pub(super) fn unprobed_accept_edits(&self, tasks: &Store) -> Vec<&str> {
         self.applied
             .iter()
@@ -148,9 +149,11 @@ impl PlanReviewState {
                     return false;
                 };
                 written_entries(&finding.new).any(|entry| {
-                    spec.accept
-                        .iter()
-                        .any(|stored| stored.probe.is_none() && entry_matches(entry, stored))
+                    spec.accept.iter().any(|stored| {
+                        stored.probe.is_none()
+                            && super::probes::skip_reason(stored).is_none()
+                            && entry_matches(entry, stored)
+                    })
                 })
             })
             .map(|finding| finding.id.as_str())
@@ -702,7 +705,7 @@ summary = "Not a plan finding."
             check: check.to_string(),
             kind: String::new(),
             positive: String::new(),
-            writes_build: true,
+            writes_build: false,
             probe: probed.then(schema_probe),
         }
     }
@@ -785,6 +788,19 @@ summary = "Not a plan finding."
                 .unprobed_accept_edits(&tasks_with_accept(accept("other", false)))
                 .is_empty(),
             "an entry changed since is no longer the finding's"
+        );
+    }
+
+    #[test]
+    fn an_applied_edit_to_an_entry_probes_never_runs_is_not_named() {
+        let state = review_state(REVIEW_STORE);
+        let mut build = accept("new", false);
+        build.writes_build = true;
+        assert!(
+            state
+                .unprobed_accept_edits(&tasks_with_accept(build))
+                .is_empty(),
+            "a writes_build entry can never gain a probe"
         );
     }
 

@@ -116,7 +116,7 @@ pub(super) fn run(mut args: PlanProbesArgs) -> Result<()> {
 
 /// Why a row gets no probe line. Only an explicit `writes_build = false` runs,
 /// so an unlabelled command, which reads as `true`, never does.
-fn skip_reason(accept: &Accept) -> Option<&'static str> {
+pub(super) fn skip_reason(accept: &Accept) -> Option<&'static str> {
     if accept.check.trim().is_empty() {
         Some("empty check")
     } else if accept.writes_build {
