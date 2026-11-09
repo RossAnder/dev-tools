@@ -386,6 +386,7 @@ fn counts(plan: &PlanStore, tasks: &Store) -> JsonValue {
             "done": count_tasks(Status::Done),
             "failed": count_tasks(Status::Failed),
             "deferred": count_tasks(Status::Deferred),
+            "parked": count_tasks(Status::Parked),
         },
         "specs": tasks.specs.len(),
         "milestones": {
@@ -437,6 +438,12 @@ fn open_items(plan: &PlanStore, tasks: &Store) -> JsonValue {
         .filter(|row| row.status == Status::Failed)
         .map(|row| row.id)
         .collect();
+    let parked: Vec<u32> = tasks
+        .items
+        .iter()
+        .filter(|row| row.status == Status::Parked)
+        .map(|row| row.id)
+        .collect();
     let deferred: Vec<JsonValue> = tasks
         .milestones
         .iter()
@@ -449,6 +456,7 @@ fn open_items(plan: &PlanStore, tasks: &Store) -> JsonValue {
         "undone_handovers": handovers,
         "tasks_without_spec": without_spec,
         "failed_tasks": failed,
+        "parked_tasks": parked,
         "deferred_milestones": deferred,
     })
 }
@@ -659,7 +667,13 @@ fn spec_block(out: &mut String, spec: &TaskSpec) {
     let premises: Vec<String> = spec
         .premises
         .iter()
-        .map(|p| format!("{} (at {}): {}", p.claim, p.at, code_or_none(&p.check)))
+        .map(|p| {
+            let mut line = format!("{} (at {}): {}", p.claim, p.at, code_or_none(&p.check));
+            if let Some(probe) = &p.probe {
+                line.push_str(&format!(" (Probe: {} at `{}`)", probe.verdict, probe.at));
+            }
+            line
+        })
         .collect();
     bullets(out, "Premises", &premises);
     let means: Vec<String> = spec

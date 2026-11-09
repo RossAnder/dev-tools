@@ -539,6 +539,7 @@ fn digest_counts_every_record() {
                 "done": 0,
                 "failed": 0,
                 "deferred": 0,
+                "parked": 0,
             },
             "specs": 1,
             "milestones": {"total": 2, "deferred": 1},
@@ -563,8 +564,36 @@ fn digest_lists_what_is_still_open() {
             ],
             "tasks_without_spec": [2],
             "failed_tasks": [],
+            "parked_tasks": [],
             "deferred_milestones": [{"id": "B", "reason": "Depends on the store."}],
         })
+    );
+}
+
+#[test]
+fn a_parked_task_is_counted_and_listed_as_open() {
+    let tasks = TASKS.replacen("status = \"in-progress\"", "status = \"parked\"", 1);
+    let digest = Flow::seeded(Some(&tasks), PLAN, Some(BRIEF.as_bytes())).digest();
+    assert_eq!(digest["counts"]["tasks"]["parked"], json!(1));
+    assert_eq!(digest["counts"]["tasks"]["in_progress"], json!(0));
+    assert_eq!(digest["open_items"]["parked_tasks"], json!([1]));
+    assert_eq!(digest["open_items"]["failed_tasks"], json!([]));
+}
+
+#[test]
+fn a_premise_shows_its_recorded_verdict_to_the_worker() {
+    let plain = Flow::standard().view(&["--for", "worker", "--task", "1"]);
+    assert!(!plain.contains("(Probe: "), "{plain}");
+
+    let tasks = TASKS.replace(
+        "at = \"base\" }]",
+        "at = \"base\", probe = { at = \"def5678\", neg_rc = 1, verdict = \"fails\" } }]",
+    );
+    let worker = Flow::seeded(Some(&tasks), PLAN, Some(BRIEF.as_bytes()))
+        .view(&["--for", "worker", "--task", "1"]);
+    assert!(
+        worker.contains("(Probe: fails at `def5678`)"),
+        "the premise must carry its verdict:\n{worker}"
     );
 }
 
