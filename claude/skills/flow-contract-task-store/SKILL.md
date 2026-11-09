@@ -144,7 +144,7 @@ reason = "..."
 
 - **`[[specs]]`** is one entry per row, keyed on `ref`, a side table rather than row fields. An entry with no `ref` is dropped on read and write. `tasks remove` and a `ref` another row claims drop the spec keyed on it; `tasks update --ref` re-keys it with the row.
 - **`accept`** entries take `behaviour`, `check`, `kind` (`forward` \| `falsifier` \| `guard`), `positive` and `writes_build`. `kind` may be absent only while `check` is empty, so a deferred milestone's row can state a behaviour before anything exists to label; a `check` without a `kind` is refused. `writes_build` absent reads as `true`; only an explicit `false` is probed. A supplied `probe` key is refused, because only `plan probes --record` writes it. A re-issued `accept` list keeps the stored `probe` of every entry that matches in all its other fields, so it moves nothing, and any difference leaves that entry unprobed.
-- **`premises`** entries take `claim`, `check` and `at`, where `at` is `base` or `after:<id>`. The id must be written canonically (`after:3`, not `after:03` or `after:+3`) and name a row in the store or the same batch.
+- **`premises`** entries take `claim`, `check` and `at`, where `at` is `base` or `after:<id>`. The id must be written canonically (`after:3`, not `after:03` or `after:+3`) and name a row in the store or the same batch. An entry may also carry a `probe` verdict, which only `plan probes --record --premises` writes; a supplied one is refused.
 - **`means`** entries take `text`, `binding` (`required` \| `suggested`, mandatory) and `detail`.
 - **`executor`** is `tool`, `clerk`, `lite` or `deep`.
 - **Unknown keys are refused** inside `spec`, `accept`, `premises` and `means`, each refusal naming the row's line and the accepted set. The store's own reader still drops unknown keys, as for every table.
@@ -165,7 +165,7 @@ Repeats are suffixed in document order: the first heading keeps the bare ref, th
 
 ### 3. Status vocabulary
 
-`pending` · `in-progress` · `done` · `failed` · `deferred`. Case-sensitive — `Done` is not `done`.
+`pending` · `in-progress` · `done` · `failed` · `deferred` · `parked`. Case-sensitive — `Done` is not `done`. `failed` means the task was tried and missed its accept checks; `parked` means only a human can unblock it. Either stalls its dependents.
 
 A new row arrives `pending`. `import-plan` preserves whatever an existing row already carries, and under `--reconcile-record` promotes a row to `done` when the flow's `execution-record.toml` holds a `type = "task-completion"` entry with `status = "done"` whose `task_ref` matches. A record entry that is `failed` or `skipped` is ignored — adopting one would mark an unfinished row done.
 
@@ -347,7 +347,7 @@ tomlctl flow ensure-artifact --slug <slug> --kind tasks
 | `dag/duplicate-number` | error | Two rows claim one task number. `ids` carries the number alone, so the `detail` names the `ref` of every row on it — the key each write verb takes, and the only part of the finding a reader can act on. Rows sharing the `ref` as well are named by their 0-based position in `[[items]]` and their title, since no verb argument separates them and the fix is a hand edit of one row's `id`. `import-plan` extends that detail further, splitting the refs into the ones the plan produced and the ones the store still holds. |
 | `dag/unbuildable` | error | The graph engine refuses the store for a reason the row scans did not name — past the 512-node cap is the live case. Suppressed when `dag/duplicate-number` or `dag/dangling-ref` already accounts for the refusal. |
 | `dag/unreachable-claim` | warning | Two rows claim a shared file with no directed path either way — a file-claim collision under parallel dispatch. |
-| `dag/stalled-dependency` | warning | A row that is `in-progress`, `failed` or `deferred` while pending rows still sit behind it — the frontier's `blocked` bucket. One finding per blocker, its `ids` naming the blocker and its `detail` the dependents. |
+| `dag/stalled-dependency` | warning | A row that is `in-progress`, `failed`, `deferred` or `parked` while pending rows still sit behind it — the frontier's `blocked` bucket. One finding per blocker, its `ids` naming the blocker and its `detail` the dependents. |
 | `dag/symbol-without-edge` | warning | A symbol one row's `Action` introduces — `Add`, `Create` or `export` within three words of a backticked identifier — that another row's body names, with no directed path either way. One finding per pair, its `ids` naming both. This is the edge `coupling` exists to carry and nothing populates. Two suppressions: a row whose `files` are all markdown introduces nothing (it is documenting the symbol), and a name more than one row introduces raises nothing against a row that already reaches one of them. |
 | `checkpoint/orphan-task` | warning | A row no checkpoint group holds: `checkpoint = ""`, or a group id no `[[checkpoints]]` entry declares. Each case is its own finding, and either way only the final commit train commits the task. |
 | `checkpoint/invalid-cut` | error | A group's prefix union is not downward-closed; the ids named are the dependencies that must move earlier. |
@@ -431,6 +431,8 @@ then re-import. The gate is specified as a `--dry-run` step precisely so the ren
 Only the orchestrating carrier writes to the store. `import-plan`, `add`, `add-many`, `update`, `remove` and `render` are orchestrator verbs; a sub-agent gets the read verbs — `show`, `list`, `edges`, `ready`, `batches`, `closure`, `train`, `check`, `snapshot` — and nothing else.
 
 An implementing agent reports its outcome in its return payload, exactly as it does today. The orchestrator moves the row (`--status in-progress` at dispatch, `--status done` or `--status failed` on return) and appends the execution-record entry. Two writers on one store means a row's status and the record's `task-completion` entries can disagree, and the store has no supersession mechanism to reconcile them.
+
+One exception: a v2 worker (`plan-worker-lite`, `plan-worker-deep`) dispatched by `/implement-v2` writes `status` and `agent` on its own row, through `update <n> --status <status> --agent <name>` and nothing else. Plan fields and `commit` stay the orchestrator's, which stamps `commit` after the milestone commit. Each row has one writer at a time — its worker during a run, the orchestrator between runs — and since nothing enforces that, the orchestrator compares the store with a pre-launch snapshot at the drain.
 
 `agents.toml`, beside the store in the flow directory, is not the task store and no carrier writes it. It is written by `glimpse hook`'s in-process `tomlctl::record_agent`, which the harness hooks run as agents start and stop; `tomlctl agents record` is the manual entry point to the same code; `tasks snapshot` reads it and nothing else in the task-store contract touches it.
 

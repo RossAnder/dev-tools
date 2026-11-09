@@ -9,7 +9,8 @@ The goal is one v2 chain from planning through implementation, review and apply.
 
 - Built and merged, never deployed or run: `/review-v2`, `/optimise-v2`, `/review-plan-v2`, the `tomlctl review` group, the lens catalogue and `claude/workflows/review-v2.js`.
 - Run once for real work: `/plan-v2` (v2 planning), which planned and approved `human-only-handovers`, the proof recorded in `docs/ideas/plan-v2-probes.md`.
-- Not started: the execution engine, implement, apply.
+- Planned: the execution engine's first slice, `/implement-v2`, in `docs/plans/jiggly-exploring-robin.md`.
+- Not started: apply.
 - v1 stays in use while v2 is built. `/tdd` runs inside v1 flows and dispatches v1 `/implement`, so it needs v1 until it is ported.
 
 ## Design topics
@@ -19,7 +20,7 @@ The goal is one v2 chain from planning through implementation, review and apply.
 | 1 | Plan format and lifecycle | Decided |
 | 2 | Planning flow | Decided by `docs/plans/v2-planning.md` (Approach) |
 | 3 | Plan review | Decided |
-| 4 | Execution engine | First slice decided; `tool`, `clerk` and vetting open |
+| 4 | Execution engine | First slice decided and planned (`docs/plans/jiggly-exploring-robin.md`); `tool`, `clerk` and vetting open |
 | 5 | Apply | Partly decided |
 | 6 | Flow state and glimpse | Open |
 | 7 | Re-audit of the built review stage | Open |
@@ -149,7 +150,7 @@ Fixes and dismissals run without asking, because fixes are revertible commits an
 Decided 2026-11-09. These add to the plan's Approach, "After approval", which still binds.
 
 - **Scope:** implement only, with the `lite` and `deep` executors, premise checks before dispatch, milestone gates, the drain replan and handovers. The `tool` and `clerk` executors, vetting, apply and harvest come in later slices, so the clerk's model is not chosen here. `human-only-handovers` is the first plan it runs.
-- **Status:** each worker writes its own `status`, `agent` and `commit` through `tomlctl`, since those fields are unaudited. A run that dies leaves its state in the store, and glimpse shows progress during the run.
+- **Status:** each worker writes only `status` and `agent` on its own row through `tomlctl`, since those fields are unaudited; the orchestrator stamps `commit` on the milestone's rows after the milestone commit, because workers never commit. A worker ends a task `done`, `failed` (tried and missed its accept checks) or `parked` (only a human can unblock it), with the reason in its note. A run that dies leaves its state in the store, and glimpse shows progress during the run.
 - **Commits:** the orchestrator commits once per milestone, after the gate passes. Workers share one tree and never commit, and this slice uses no worktrees.
 - **Order inside a milestone:** the Workflow script walks the milestone's task graph in waves from its `args`, one run per milestone, not one per layer.
 - **Partial attempts:** the worker procedure checks the diff of its own files before it starts, because the runtime can restart a stalled writer with its edits left in place. Task specs do not carry this.

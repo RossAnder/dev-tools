@@ -240,7 +240,7 @@ Check classes: `plan/brief-missing`, `plan/brief-section-empty` (Intent, Non-goa
 
 A check that already passes at base is vacuous or its premise is false, which is the power test the research supports. Agent test patches carry weak oracle signals 80.2% of the time, and a label records polarity, not power. Reverting hunks after completion to test power is a hypothesis for the engine's slice.
 
-**Cold readers.** One fresh agent per upfront milestone, writing only its one note, gets the worker projection and the code, and reports what it cannot act on, false premises and exact check commands. Unlike the challenger it keeps CLAUDE.md, because a worker loads those files too and a reader without them would report gaps no worker has. Leaving out the rest of the plan and `notes/` is prompt-only, the same limit the challenger has, since Read reaches them. The orchestrator applies results through verbs and resolves anything touching intent. This replaces the idea doc's per-milestone writers. Agents never write the task store, so task-store section 11's one-writer rule stands.
+**Cold readers.** One fresh agent per upfront milestone, writing only its one note, gets the worker projection and the code, and reports what it cannot act on, false premises and exact check commands. Unlike the challenger it keeps CLAUDE.md, because a worker loads those files too and a reader without them would report gaps no worker has. Leaving out the rest of the plan and `notes/` is prompt-only, the same limit the challenger has, since Read reaches them. The orchestrator applies results through verbs and resolves anything touching intent. This replaces the idea doc's per-milestone writers. Planning agents never write the task store, so task-store section 11's one-writer rule stands; its one exception is the execution engine's workers, which write `status` and `agent` on their own row.
 
 ### Approval
 
@@ -262,7 +262,7 @@ From then on `tasks add-many`, `update`, `remove` and `plan milestone update` ne
 
 Specified here for the engine's own plan to build; none of it is built in this plan.
 
-- **Deferred elaboration.** Upfront is the norm. The planner may defer a later milestone, with a stated reason, when its detail depends on what earlier milestones will produce; its high-level shape is reviewed upfront. Just before that milestone implements, the engine runs elaboration and review as two top-level Workflow runs with the orchestrator between them, because review reads the elaborated specs, agents never write the task store, the orchestrator cannot act during a run, and `workflow()` nests one level only. The Elaborate run writes its proposals to a file and returns a pointer; the orchestrator applies them with `tasks update --ndjson` and a reason, then starts the Review run. A resulting change to an outcome or success criterion goes to the user.
+- **Deferred elaboration.** Upfront is the norm. The planner may defer a later milestone, with a stated reason, when its detail depends on what earlier milestones will produce; its high-level shape is reviewed upfront. Just before that milestone implements, the engine runs elaboration and review as two top-level Workflow runs with the orchestrator between them, because review reads the elaborated specs, no agent writes a spec or any field beyond its own row's `status` and `agent`, the orchestrator cannot act during a run, and `workflow()` nests one level only. The Elaborate run writes its proposals to a file and returns a pointer; the orchestrator applies them with `tasks update --ndjson` and a reason, then starts the Review run. A resulting change to an outcome or success criterion goes to the user.
 - **Replan at each milestone drain.** The orchestrator owns it. Inputs are deviations, failed premises, worker handoffs and `plan drift`. Output is task changes through audited verbs. A digest at the end cannot help tasks that already ran on a falsified assumption.
 - **Tripwires.** Interrupt only for a one-way door no decision covers, a contradiction of a decision or outcome, a failed premise that replanning cannot settle, or a budget breach. Park that branch and continue disjoint work. A run cannot stop for the user, so Interrupt means the branch parked and `needs_human` reported at run end, never a mid-run stop. Everything else goes in the milestone digest.
 - **Task contract freezes at dispatch.** Mid-task change is where Devin reports weakness.
@@ -302,7 +302,7 @@ Each becomes its own `/plan-new` once the slice before it lands, because each on
 | 3 | `/review-plan-v2` bound to a flow directory, findings targeting records, tiered edit application, the review wrapper Workflow, plan-review outcome logging | ~15 | Slice 2 can open a real plan |
 | 4 | glimpse shows `brief.md`, decisions, stage and approval state | ~6 | Slice 3 merged |
 
-The execution engine remains topic 4 of the idea doc. It must honour After approval above and read specs through `plan view --for worker`.
+The execution engine remains topic 4 of the idea doc. It must honour After approval above and read specs through `plan view --for worker`. Its first slice, `/implement-v2` running one milestone at a time, is planned in `docs/plans/jiggly-exploring-robin.md`.
 
 ## Success Criteria
 
