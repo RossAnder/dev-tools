@@ -1,7 +1,8 @@
 # tomlctl — plan reference
 
 The `tomlctl plan` verbs over a v2 flow's `.claude/flows/<slug>/plan.toml`,
-`docs/flows/<slug>/brief.md` and task store: each verb's flags and output, the probe verdicts and the check classes. The shape of
+`docs/flows/<slug>/brief.md` and task store: each verb's flags and output, and the check classes.
+`plan probes`, with its scripts and verdicts, is [plan-probes.md](plan-probes.md). The shape of
 `plan.toml` and what its fields mean are [plan-store.md](plan-store.md). The side tables a plan adds to `tasks.toml` (`[[specs]]`,
 `[[milestones]]`, `[[changes]]`, `audit`) are [tasks-store.md](tasks-store.md), and the `spec`,
 `reason` and `file_notes` row keys that fill them are
@@ -42,7 +43,7 @@ one with `kind=not_found`, naming `tomlctl plan open --slug <slug>`, and write n
 directory. `--no-create` is accepted on them but has no effect.
 
 A refused call exits 1, except a clap usage error (a missing required flag such as `--slug`, or the
-`plan probes` `--emit`/`--record` rule, or `--premises` without `--emit`), which exits 2 with usage prose outside the JSON envelope. The rules that span flags (`--defer` needs `--reason`, `--elaborated` needs
+`plan probes` `--emit`/`--record` rule), which exits 2 with usage prose outside the JSON envelope. The rules that span flags (`--defer` needs `--reason`, `--elaborated` needs
 `--reason`, `--for worker` needs `--task`) and the `--for`, `--review` and `--outcome` vocabularies
 are `kind=validation` refusals through `--error-format json`, not clap usage errors. Every plan verb on a flow with no `plan.toml` is
 `kind=not_found`, with `file` set to the `plan.toml` path and a message naming the flow and
@@ -318,7 +319,7 @@ tomlctl plan view --slug <slug> --for worker --task <id>
   approvals and changes that has anything to show.
 - **`worker`**: markdown, what one task's executor needs: Intent and Non-goals from the brief, the
   decisions whose `binds` reach the task, the contracts whose `tasks` name it, the row and its spec,
-  and the sections its spec cites.
+  and the sections its spec cites. A premise with a recorded probe ends ``(Probe: <verdict> at `<sha>`)``.
 - **`digest`**: one JSON object for an orchestrator re-entering a plan. Works with no `tasks.toml`,
   which reads as empty.
 
@@ -332,76 +333,14 @@ tomlctl plan view --slug <slug> --for worker --task <id>
 | `stage_inputs.runs[]` | `step`, `state` (`open`, `finished`, `abandoned`, `skipped`), `workflow`, `args_hash` (`""` when unset), `run_id`, `session`, `skip_reason`, `outcome` (a string, or `null`), `reason`. |
 | `stage_inputs.check` | `errors`, `warnings` and `classes`, or `null` with no `tasks.toml`. |
 | `counts` | Totals for `decisions` (`surfaced`, `vetoed`, `agent_assumed`, `one_way`), `contracts`, `tasks` by status, `specs`, `milestones` (`deferred`), `runs`, `handovers` (`undone`), `approvals`, `changes`. |
-| `open_items` | `unanswered_decisions`, `open_runs`, `undone_handovers`, `tasks_without_spec`, `failed_tasks`, `deferred_milestones`. `open_runs` lists one step per row still open, so finished, abandoned and skipped rows are excluded. |
+| `open_items` | `unanswered_decisions`, `open_runs`, `undone_handovers`, `tasks_without_spec`, `failed_tasks`, `parked_tasks`, `deferred_milestones`. `open_runs` lists one step per row still open, so finished, abandoned and skipped rows are excluded. |
 
 The human view's run line shows `abandoned (<reason>)`, and `, outcome <value>` on a run finished with
 an outcome.
 
 ## `plan probes`
 
-`--emit` prints a Bash script that runs each probeable `accept` row's controls. `--record` turns that
-script's captured stdout into each row's `probe`. Exactly one of the two is required; neither or both
-is a clap usage error, exit `2` outside the `--error-format json` envelope. Both cover only
-rows with status `pending`.
-
-```bash
-tomlctl plan probes --slug <slug> --emit > <script>
-tomlctl plan probes --slug <slug> --record <capture>
-tomlctl plan probes --slug <slug> --emit --premises > <script>
-```
-
-| Flag | Value | Meaning | Default |
-|---|---|---|---|
-| `--emit` | — | Print the probe script. | — |
-| `--record` | path | Store the verdicts from the script's captured stdout. | — |
-| `--premises` | — | With `--emit`, print a script checking the `base` premises instead of the `accept` rows. Without `--emit`, or with `--record`, it is a clap usage error. | off |
-| `--milestone` | id | Restrict either mode to this checkpoint's pending rows. An id in neither `[[checkpoints]]` nor `[[milestones]]` is refused with `kind=validation`. | all |
-
-tomlctl never runs a stored command: `Bash(tomlctl *)` is pre-approved, so a verb executing stored
-strings would widen that approval to arbitrary commands. The caller runs the script, and the commands
-in it are repo code run with the caller's rights.
-
-Only a row explicitly marked `writes_build = false` with a non-empty `check` runs; any other row gets
-a `# skipped` comment and none of its strings reach the script. A row whose task is not pending, or is
-outside the requested milestone, gets `# skipped task <id>: status is not pending` or
-`# skipped task <id>: not in the requested milestone`, and none of its strings reach the script
-either. A row's `check` runs as the negative control and its `positive`, when set, as the positive
-control, each as one single-quoted word. A NUL in either refuses the emit. The script opens with
-`head<TAB><sha>` and changes to the repo root, so stored commands are repo-root-relative. Each control
-prints one row of
-`<task>:<index><TAB>neg|pos<TAB>sha256=<hex><TAB>rc=<n><TAB><stdout><TAB><stderr>`, with every column
-folded onto one line and `<hex>` the SHA-256 of the stored command.
-
-`--emit --premises` prints the same preamble, then one line per spec `premises` entry whose `at` is
-`base`, on the same pending, in-milestone tasks, the `check` again one single-quoted word. An
-`after:<id>` premise gets `# skipped <task>:<index>: not a base premise` and an empty `check`
-`# skipped <task>:<index>: empty check`, neither reaching the script otherwise. Each premise prints
-`<task>:<index><TAB>premise<TAB>sha256=<hex><TAB>rc=<n><TAB><stdout><TAB><stderr>`, `<index>`
-counting the spec's `premises`, and `rc=0` means the premise holds. There is no `--record` for
-premises: the caller reads each row's `rc` itself.
-
-`--record` needs a capture covering exactly the probeable controls of the pending rows in scope
-(narrowed by `--milestone`), each carrying the digest of the command the store holds now. A truncated
-run, an edited `check` or `positive`, a capture with no digest, or a capture naming a row outside that
-set is refused with `kind=validation` and writes nothing; re-run `plan probes --emit`. Other rows'
-stored probes stay as they were. The digest catches a stale capture, not a forged one. It writes each
-row's `probe` as `at` (the capture's `head`), `neg_rc`, `pos_rc` and `verdict`, and prints:
-
-```json
-{"ok":true,"recorded":[{"task":1,"accept":0,"verdict":"healthy","reason":""}]}
-```
-
-Each row's `reason` is `""` when healthy and otherwise names the control and the rule it hit. It is
-printed only and never stored.
-
-| Verdict | Read from |
-|---|---|
-| `healthy` | A forward whose `check` fails now and whose positive control, if any, passes. A falsifier whose `check` passes. A guard whose `check` passes beside a discriminating row. |
-| `vacuous` | A forward whose `check` already passes: it tests nothing, or its premise is false. |
-| `unsatisfiable` | A forward whose `check` fails and whose positive control fails too. |
-| `permanently-green` | A falsifier whose `check` fails. |
-| `guard-alone` | A guard that passes with no discriminating row beside it. A discriminating row is a forward or falsifier with a `check` that is unprobed or `healthy`. |
-| `broken` | Either control's stderr names `command not found`, `fatal`, `syntax error`, `unexpected EOF`, or `No such file` for a path no row declares. Also a guard that fails, or an unknown `kind`. |
+Emits and records the acceptance and premise probes; its flags, scripts and verdicts are [plan-probes.md](plan-probes.md).
 
 ## `plan stage`
 
@@ -549,12 +488,24 @@ resolves (rebase plus gc, shallow clone), is refused with `kind=validation`.
 in a shallow clone, deepening the history keeps the original baseline.
 
 ```bash
-tomlctl plan drift --slug <slug>
+tomlctl plan drift --slug <slug> [--uncommitted]
 ```
+
+| Flag | Value | Meaning | Default |
+|---|---|---|---|
+| `--uncommitted` | — | Also report the working tree's modified and untracked paths. | off |
 
 ```json
 {"ok":true,"approved_commit":"<sha>","changed_files":["src/a.rs"],"affected":[{"id":1,"ref":"<ref>","files":["src/a.rs"],"premises":[{"claim":"…","check":"…","at":"base"}]}]}
 ```
+
+With `--uncommitted` the object gains `uncommitted_files`, the modified, staged, deleted and untracked
+paths from `git status`, a rename read as its source and its new path. Paths under
+`.claude/flows/<slug>/` and `docs/flows/<slug>/` are never listed. An uncommitted path affects a
+`pending` row naming it, unless a `done`, `in-progress`, `failed` or `parked` row with an empty
+`commit` also names it, since that edit is the run's own work. Such an entry lists the path in `files`
+and again in its own `uncommitted` array, which is absent when no uncommitted path hits the row.
+Without the flag the output is unchanged.
 
 A commit is owned when a row's `commit` holds it, either side being allowed to be an abbreviation of
 the other. A commit that no row records counts as drift even when it only touched flow files.
