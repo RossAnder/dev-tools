@@ -1,0 +1,825 @@
+schema_version = 1
+last_updated = 2026-11-09
+
+[[vet_events]]
+timestamp = "2026-11-09T08:19:57Z"
+command = "review"
+lens = "quality"
+tier = "deep"
+agent_index = 1
+sampled_count = 5
+dropped_count = 1
+downgraded_count = 0
+rationale = "Sampled re-entry/stage.rs, LENS_ID, refusal index, launch HEAD, flow list empty-result: all anchors confirmed. Dropped the flow-list empty-result finding as a duplicate of open backlog row B-91565d35. Re-entry merged with Agent-3 F1, args-hash with F4, note-writer block with Agent-6 (canonical), dep id with Agent-4 #1."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-09T08:19:57Z"
+command = "review"
+lens = "security"
+tier = "deep"
+agent_index = 2
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 1
+rationale = "Both anchors confirmed (snapshot pathspecs exclude all of notes/; no .git/config capture). Downgraded the .git/config finding warning->suggestion: the agent already holds Bash, so the planted hook adds persistence rather than new capability, and the check never claims to be a sandbox."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-09T08:19:57Z"
+command = "review"
+lens = "architecture"
+tier = "deep"
+agent_index = 3
+sampled_count = 6
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled F1-F6: stage.rs design branch, scratch-only lens args, approve.rs risks from skipped_reviews only, carrier capabilities-before-skill, duplicated --review/Surface again rules: all confirmed. F7 merged into the Agent-6 note-writer finding; F5 absorbed the Agent-6 Surface-again duplicate."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-09T08:19:57Z"
+command = "review"
+lens = "completeness"
+tier = "lite"
+agent_index = 4
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "All five sampled and confirmed (.github empty at HEAD, v2-pipeline line 11, tasks-write lacks writes_build, approve.md hard-coded reason, LENS_ID). #1 merged into the Agent-1 dep-id finding, #5 into the Agent-6 approve.md finding."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-09T08:19:57Z"
+command = "review"
+lens = "testability"
+tier = "lite"
+agent_index = 5
+sampled_count = 3
+dropped_count = 1
+downgraded_count = 2
+rationale = "Sampled model/effort gate, md_stems, reserved lens ids. Dropped reserved-lens-id enforcement: B-83da6296 resolved that class by reserving the ids in prose. Downgraded the model/effort and frontmatter-name gate gaps warning->suggestion: preventive, no current violation."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-09T08:19:57Z"
+command = "review"
+lens = "package-quality"
+tier = "lite"
+agent_index = 6
+sampled_count = 5
+dropped_count = 1
+downgraded_count = 0
+rationale = "Sampled approve.md reason, note-writer block, card fields, Surface again, skills preload. Dropped the skills: preload double-load finding: the pattern matches review-finder/review-verifier and Agent-1 ruled it out as sibling-consistent; double-load unobserved. Surface again folded into Agent-3 F5."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-09T08:38:53Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "R9 diff read in full; matches the finding, style preserved"
+agent_index = 2
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-09T08:38:53Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "R10 diff read in full; matches the finding, style preserved"
+agent_index = 3
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-09T08:38:53Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "R12 diff read in full; matches the finding, style preserved"
+agent_index = 4
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-09T08:38:53Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "R18 diff read in full; matches the finding, style preserved"
+agent_index = 6
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-09T08:38:53Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "R23 diff read in full; matches the finding, style preserved"
+agent_index = 7
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[items]]
+id = "R1"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "we-ve-just-implement-the-shimmying-kettle"
+file = "claude/skills/plan-v2-engine/SKILL.md"
+line = 83
+symbol = "Re-entry"
+severity = "warning"
+effort = "small"
+category = "db"
+summary = "Re-entry follows plan stage's next, but stage never reads investigate/challenge/cold-read runs, so a resumed plan silently skips them"
+description = "plan stage (stage.rs:207-221, 240-248) goes open -> design -> write -> prove -> review on brief, milestones, tasks, specs and findings alone; it never reads [[run]] rows. A session that ends after Open (or after Investigate, before the challenge) resumes at Design without the lenses or challenge; one that ends after the probes but before the cold read resumes at review (write-and-prove.md:314 says so). Surface records no run step, so a finished Surface and an unreached one look the same on disk, and the --depth/--no-review bindings are session-only. Rule 5 (SKILL.md:28) and open-and-challenge.md:3 promise stage alone is enough to resume. Fix: after the open-run rule, read `plan view --slug <slug> --for digest --select stage_inputs.runs` and resume at the earliest step whose run step has neither a finished nor a skipped row (investigate and challenge before Design, cold-read before Review); give Surface a run step (`plan run skip --step surface` when nothing survives)."
+evidence = [
+    "tomlctl/src/plan/stage.rs:207-221",
+    "tomlctl/src/plan/stage.rs:240-248",
+    "claude/skills/plan-v2-engine/SKILL.md:28",
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md:3",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md:314",
+    "tomlctl plan view --slug human-only-handovers --for digest --select stage_inputs.runs -> rows for investigate, challenge, cold-read, review; none for surface",
+]
+instances = [
+    "claude/skills/plan-v2-engine/SKILL.md:83",
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md:3",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md:314",
+]
+dedup_id = "85962106ec96adb7"
+related = [
+    "R2",
+    "R7",
+]
+resolved = 2026-11-09
+resolution = "uncommitted: Re-entry reads stage_inputs.runs and resumes at the earliest step with no finished/skipped run before following next; Surface gained a run step (skip when nothing survives, start+finish when items survive); depth/--no-review stated as session-only"
+
+[[items]]
+id = "R2"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "we-ve-just-implement-the-shimmying-kettle"
+file = "claude/skills/plan-v2-engine/references/open-and-challenge.md"
+line = 32
+symbol = "2. Investigate"
+severity = "warning"
+effort = "small"
+category = "db"
+summary = "The lens list lives only in <scratch>/investigate-args.json, so a new session cannot recompute pending lenses from notes/"
+description = """Lens ids are minted at launch (:32) but never written back to the brief; the args file is "the only copy" (:42) and the store does not hold them (:195). Re-entry abandons another session's run and "recompute[s] what is pending from notes/" (:206, SKILL.md:95), but notes/ says which lenses are done, not which were planned; dep-<name> lenses (:135) appear nowhere in the brief. The human-only-handovers brief lists two Unknowns with no ids and one lens note, so disk cannot say whether the second was investigated, settled by reading, or pending. Fix: at launch, write each lens into the brief's Unknowns as `- <id>: <question>` (dependency lenses included) and mark ones settled by reading; pending = Unknown ids minus notes/<id>.md opening `Verdict:`."""
+evidence = [
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md:42",
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md:206",
+    "claude/skills/plan-v2-engine/SKILL.md:95",
+    "docs/flows/human-only-handovers/brief.md (Unknowns, no ids)",
+]
+instances = [
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md:28",
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md:32",
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md:135",
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md:206",
+    "claude/skills/plan-v2-engine/SKILL.md:95",
+]
+dedup_id = "0d9ec97b4a714b07"
+related = ["R1"]
+resolved = 2026-11-09
+resolution = "uncommitted: each lens is written into the brief's Unknowns as '- <id>: <question>', settled ones marked; pending recomputed from Unknown ids minus notes opening Verdict:"
+
+[[items]]
+id = "R3"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "we-ve-just-implement-the-shimmying-kettle"
+file = "claude/skills/plan-v2-engine/references/open-and-challenge.md"
+line = 79
+symbol = "3. The fan-out check"
+severity = "warning"
+effort = "small"
+category = "security"
+summary = "The fan-out check excludes all of notes/, so a stray file or an overwritten sibling note passes unseen and Approve commits it"
+description = 'All three snapshot commands exclude `docs/flows/<slug>/notes` wholesale (:79-81), justified at :92 as "what the run writes". But each agent is assigned exactly one path (investigate.js notePath, prove.js notePath). An injected investigator or cold reader can write any other file under notes/ or rewrite a note the planner already read; Approve step 4 stages every path under docs/flows/<slug>/ that git status lists, notes/ included (approve.md:90), screened only by a content regex. Fix: exclude only the note paths this launch asks for (one `:(exclude)docs/flows/<slug>/notes/<id>.md` per lens / milestone / challenger); the untracked digests then catch any other new or edited file under notes/ (notes stay untracked until Approve). Update the rationale at :92 and the snapshot mention at write-and-prove.md:195.'
+evidence = [
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md:79-81",
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md:92",
+    "claude/skills/plan-v2-engine/references/approve.md:90",
+    "claude/workflows/plan-v2-investigate.js:70",
+    "claude/workflows/plan-v2-prove.js:79",
+]
+instances = [
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md:79",
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md:92",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md:195",
+]
+dedup_id = "e60a6779bff542b0"
+related = [
+    "R4",
+    "R11",
+    "R19",
+]
+resolved = 2026-11-09
+resolution = "uncommitted: fan-out snapshot excludes only this launch's note paths via a <notes> pathspec set, so stray or overwritten notes fail the untracked digests; Prove's launch excludes only its cold-read paths"
+
+[[items]]
+id = "R4"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "we-ve-just-implement-the-shimmying-kettle"
+file = "claude/skills/plan-v2-engine/references/open-and-challenge.md"
+line = 68
+symbol = "On the notification"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "Investigate hands a mismatch to the fan-out check, which cannot see notes/; it lacks Prove's status table, so a misplaced note can mark another lens done"
+description = "A `mismatch` (investigate.js:93) is a note written at a path other than the one asked for. When that path is under notes/, the fan-out check excludes it, and a lens counts as done when its note exists and opens `Verdict:` (:40), so a misplaced note can mark another lens done with the wrong answer. Prove already handles this: its status table (write-and-prove.md:221-226) says delete the file when it is under notes/ and relaunch once, and handles no-note. Fix: add the same four-row status table to section 2, worded for lenses."
+evidence = [
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md:40",
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md:68",
+    "claude/workflows/plan-v2-investigate.js:93-96",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md:221-226",
+]
+dedup_id = "5f3023c3798d3e14"
+related = ["R3"]
+resolved = 2026-11-09
+resolution = "uncommitted: Investigate gained Prove's per-entry status table (ok/no-note/no-return/error/mismatch) with delete-under-notes and relaunch-once"
+
+[[items]]
+id = "R5"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "we-ve-just-implement-the-shimmying-kettle"
+file = "claude/skills/plan-v2-engine/references/open-and-challenge.md"
+line = 135
+symbol = "5. Surface"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "Dependency lens ids are dep-<name>, but LENS_ID rejects _ . @ / and capitals, refusing the whole launch for names like serde_json or @scope/pkg"
+description = """plan-v2-investigate.js:17 validates `^[a-z0-9][a-z0-9-]*$`, and one bad id makes argProblems refuse the entire launch ("no agent launched", :62-67), losing every other dependency lens in the batch. Crate names with `_`, npm scoped names and mixed-case PyPI names are normal; the dependency-card recipe itself notes crates.io's -/_ mismatch. Fix at :135: lowercase the name and replace every character outside [a-z0-9-] with `-` to form the id, keeping the real name in the question text."""
+evidence = [
+    "claude/workflows/plan-v2-investigate.js:17",
+    "claude/workflows/plan-v2-investigate.js:51",
+    "claude/workflows/plan-v2-investigate.js:62-67",
+    "claude/skills/research-methods/references/supply-chain-intel.md:42",
+]
+dedup_id = "7bde382a23e9801f"
+resolved = 2026-11-09
+resolution = "uncommitted: dependency lens id normalised (lowercase, non [a-z0-9-] to -, runs collapsed, trimmed); question keeps the real name"
+
+[[items]]
+id = "R6"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "we-ve-just-implement-the-shimmying-kettle"
+file = "claude/skills/plan-v2-engine/references/write-and-prove.md"
+line = 201
+symbol = "4c. Cold read"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "A Workflow argument refusal arrives as a completed index with empty reads/notes, not a launch error, and then satisfies 'every read no-return' vacuously"
+description = """Both scripts validate args and `return index([])` with errors ending 'no agent launched' (investigate.js:62-67, prove.js:68-73), after async launch, so the run completes rather than erroring. The engine treats a refusal as "a result carrying error" (:201), will already have recorded plan run start, closes the run as errors and relaunches the same bad args once (open-and-challenge.md:68). An empty reads/notes array also passes "Every read no-return means plan-cold-reader is not registered" (:228; open-and-challenge.md:66 for investigators), pointing at the wrong cause. review-v2-engine/SKILL.md:151 names "an index showing no cell launched" as its own case. Fix: add that case to both references (stop, report errors) and require at least one entry before the every-no-return rule applies."""
+evidence = [
+    "claude/workflows/plan-v2-investigate.js:62-67",
+    "claude/workflows/plan-v2-prove.js:68-73",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md:228",
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md:66",
+    "claude/skills/review-v2-engine/SKILL.md:151",
+]
+instances = [
+    "claude/skills/plan-v2-engine/references/write-and-prove.md:201",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md:228",
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md:66",
+]
+sweep = [
+    "no agent launched",
+    "carrying `error`",
+    "Every (lens|read) `no-return`",
+]
+enumeration = "complete"
+dedup_id = "c82eed8c214254e9"
+related = ["R14"]
+resolved = 2026-11-09
+resolution = "uncommitted: both references name the no-agent-launched index case (close as errors, stop, no same-args relaunch); the not-registered rule needs at least one entry"
+
+[[items]]
+id = "R7"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "we-ve-just-implement-the-shimmying-kettle"
+file = "claude/skills/plan-v2-engine/references/open-and-challenge.md"
+line = 196
+symbol = "6. Open runs on re-entry"
+severity = "warning"
+effort = "small"
+category = "db"
+summary = "The relaunch guard requires the launch's HEAD and unchanged args, but no step records HEAD and plan run start's --args-hash is never passed"
+description = 'The fan-out snapshot (:79-81) writes status, diff and untracked digests; none records the commit, and the [[run]] row has no HEAD field (schema.rs Run; view.rs:317-331 stage_inputs.runs). "Args unchanged" is checked only against a scratch file, though plan run start accepts --args-hash (types/plan.rs:207-212) and v2-planning.md:225,780 says to record {stage, workflow, args_hash, run_id} at launch; both launch sites omit it (open-and-challenge.md:51, write-and-prove.md:204) and the digest does not project args_hash, so the field has neither writer nor reader. f391ce5 does not record this as a departure. Fix: add `git rev-parse HEAD > <scratch>/head-before.txt` to the snapshot; pass --args-hash (sha256 of the args file) at start, project it in the digest, and make "the hash matches" the relaunch condition — or record dropping it as a departure in v2-planning.md. Same edit at write-and-prove.md:267-268.'
+evidence = [
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md:79-81",
+    "tomlctl/src/plan/schema.rs:236-255",
+    "tomlctl/src/plan/view.rs:317-331",
+    "tomlctl/src/cli/types/plan.rs:207-212",
+    "docs/plans/v2-planning.md:225",
+    "docs/plans/v2-planning.md:780",
+]
+instances = [
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md:51",
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md:196",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md:204",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md:268",
+]
+sweep = [
+    "launch's HEAD",
+    "args-hash|args_hash",
+]
+enumeration = "complete"
+dedup_id = "c09e8aa4afa4c7bd"
+resolved = 2026-11-09
+resolution = "uncommitted: snapshot records HEAD; both launches pass --args-hash (sha256 of the args file); digest runs projects args_hash (view.rs, plan_records test, plan.md); relaunch requires the hash to match the open row"
+
+[[items]]
+id = "R8"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "we-ve-just-implement-the-shimmying-kettle"
+file = "claude/skills/plan-v2-engine/references/write-and-prove.md"
+line = 228
+symbol = "4c. Cold read"
+severity = "warning"
+effort = "trivial"
+category = "db"
+summary = "A milestone that fails its relaunch goes to the gate 'named in the plan's risks', but plan gate builds risks only from review skips and no verb adds one"
+description = "approve.rs:79-81 builds `risks` from store::skipped_reviews alone, and approve.md:56 agrees. Nothing the orchestrator writes puts an unread milestone on the gate; it reaches the user only if the same session remembers it. The sibling rule for a lens that fails again (open-and-challenge.md:68) uses an agent-assumed decision, which plan gate shows under assumptions. Fix: record a plan decide row with provenance agent-assumed, binds = the milestone's task ids, and an if_false naming the unread milestone; reword :228 to match."
+evidence = [
+    "tomlctl/src/plan/approve.rs:79-81",
+    "claude/skills/plan-v2-engine/references/approve.md:56",
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md:68",
+]
+dedup_id = "7fbad72976a76c32"
+resolved = 2026-11-09
+resolution = "uncommitted: an unread milestone is recorded as an agent-assumed plan decide row binding its tasks, so plan gate shows it under assumptions"
+
+[[items]]
+id = "R9"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "we-ve-just-implement-the-shimmying-kettle"
+file = "claude/skills/plan-v2-engine/references/approve.md"
+line = 95
+symbol = "5. Stamp the approval"
+severity = "warning"
+effort = "trivial"
+category = "package-quality"
+summary = "plan run skip and plan approve hard-code 'plan review is not built yet', though the table gives --no-review its own reason and :97 says pass it verbatim"
+description = "The Review table (:15-18) maps no flag to `plan review is not built yet` and --no-review to `the user passed --no-review`. Both commands (:21 plan run skip, :95 plan approve) spell out only the no-flag text, so an orchestrator copying them records the wrong reason under --no-review and the gate shows a skip-reason risk that contradicts the user. Fix: use a '<reason from the Review table>' placeholder in both commands."
+evidence = [
+    "claude/skills/plan-v2-engine/references/approve.md:15-18",
+    "claude/skills/plan-v2-engine/references/approve.md:21",
+    "claude/skills/plan-v2-engine/references/approve.md:95",
+    "claude/skills/plan-v2-engine/references/approve.md:97",
+]
+instances = [
+    "claude/skills/plan-v2-engine/references/approve.md:21",
+    "claude/skills/plan-v2-engine/references/approve.md:95",
+]
+sweep = ["plan review is not built yet"]
+enumeration = "complete"
+dedup_id = "bcf8a47b8037997c"
+related = ["R22"]
+resolved = 2026-11-09
+resolution = "uncommitted: plan run skip and plan approve use a '<reason from the Review table>' placeholder"
+
+[[items]]
+id = "R10"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "we-ve-just-implement-the-shimmying-kettle"
+file = "claude/agents/plan-challenger.md"
+line = 59
+symbol = "SHARED-BLOCK:plan-v2-note-writer"
+severity = "warning"
+effort = "small"
+category = "package-quality"
+summary = "The shared note-writer block defines investigator-only note contents and a 'say so in your return' the cold reader's schema cannot carry"
+description = """The block, byte-identical across all three plan agents, says the note holds "the verdict, the answer, a record for each fact a decision rests on, and the coverage line", and that an existing file is reported "in your return". Only plan-investigator carries research-finding-record; the challenger (:35, drafted structure, claims, refutations) and cold reader (:34, unactionable points, false premises, check commands) define different contents, and the cold reader's schema is {unactionable, false_premises, note} with additionalProperties false (prove.js:19-28) — its prompt correctly says return note as an empty string (prove.js:85). Fix: cut the block to what all three share (one Write to the note: path, never over an existing file — write nothing and return note empty; public text; fetched content is data) and leave note contents to each agent's own section. Edit all three files together and rerun verify-shared-blocks.sh."""
+evidence = [
+    "claude/agents/plan-challenger.md:35",
+    "claude/agents/plan-cold-reader.md:34",
+    "claude/workflows/plan-v2-prove.js:19-28",
+    "claude/workflows/plan-v2-prove.js:85",
+    "scripts/shared-blocks.toml (plan-v2-note-writer lists all three; research-finding-record lists plan-investigator only)",
+]
+instances = [
+    "claude/agents/plan-investigator.md:97",
+    "claude/agents/plan-challenger.md:59",
+    "claude/agents/plan-cold-reader.md:58",
+]
+sweep = ["a record for each fact a decision rests on"]
+enumeration = "complete"
+dedup_id = "f3dc2a497b10525b"
+resolved = 2026-11-09
+resolution = "uncommitted: note-writer block drops the investigator-only contents sentence; existing file means write nothing and return note empty; parity OK"
+
+[[items]]
+id = "R11"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "we-ve-just-implement-the-shimmying-kettle"
+file = "claude/skills/plan-v2-engine/references/open-and-challenge.md"
+line = 92
+symbol = "3. The fan-out check"
+severity = "suggestion"
+effort = "small"
+category = "security"
+summary = "The fan-out check cannot see .git/config, and its own post-run git status/diff would run an fsmonitor or textconv command an injected agent planted"
+description = "git status and git diff never report .git/, so a planted core.fsmonitor, core.hooksPath or diff textconv driver passes the check; :92 names only out-of-repo and ignored paths as blind spots. The post-run `git status`/`git diff HEAD` invoke the fsmonitor hook, and Approve's commits (approve.md:90, :139) run hooks from a redirected hooksPath. Vector is the one :74 names (injection via an investigator's WebFetch, then Bash). Fix: add a fourth snapshot pair, `git config --list --show-origin --show-scope` (executes nothing), compare it first after the run, and stop before running git status/diff if it differs; name .git/ in the :92 blind-spot sentence otherwise."
+evidence = [
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md:74",
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md:79-81",
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md:92",
+    "https://git-scm.com/docs/git-config — core.fsmonitor, core.hooksPath, fetched 2026-11-09",
+]
+dedup_id = "25e670c8932d719c"
+resolved = 2026-11-09
+resolution = "uncommitted: git config --list --show-origin --show-scope snapshotted and compared first, stopping before git status/diff on change; HEAD compared too; blind-spot sentence names .git/ beyond config and HEAD"
+
+[[items]]
+id = "R12"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "we-ve-just-implement-the-shimmying-kettle"
+file = "tomlctl/src/cli/dispatch/tests/lint.rs"
+line = 844
+symbol = "workflow_script_problems"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "The Workflow gate does not reject a model: or effort: override in an agent() options literal"
+description = "CLAUDE.md puts model and effort only in agent frontmatter, and the Workflow agent() call accepts {agentType, schema, effort, model, isolation} (v2-planning.md:685). js_agent_names (:754) reads only agentType, so an override passes the gate. Neither script carries one today, so this is preventive. Fix: report a model:/effort: key inside an agent( options literal, plus a row in workflow_scripts_reject_each_violation."
+evidence = [
+    "tomlctl/src/cli/dispatch/tests/lint.rs:754",
+    "tomlctl/src/cli/dispatch/tests/lint.rs:844",
+    "docs/plans/v2-planning.md:685",
+]
+dedup_id = "cd017ea710cc23fb"
+related = [
+    "R16",
+    "R13",
+]
+resolved = 2026-11-09
+resolution = "uncommitted: js_agent_override_keys flags model/effort keys inside agent() calls; two fixture rows added to workflow_scripts_reject_each_violation"
+
+[[items]]
+id = "R13"
+first_flagged = 2026-11-09
+rounds = 1
+status = "open"
+flow = "we-ve-just-implement-the-shimmying-kettle"
+file = "tomlctl/src/cli/dispatch/tests/lint.rs"
+line = 829
+symbol = "md_stems"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "The agent-exists check compares Workflow agentType to agent file stems, not the frontmatter name: the registry resolves"
+description = "md_stems (:829, used at :869) lists file names. Today every claude/agents/*.md name matches its frontmatter name:, but a frontmatter rename — the drift the gate exists for — passes it, and no other test asserts name equals stem. Fix: read each agent's frontmatter name: (or assert it equals the stem) before comparing."
+evidence = [
+    "tomlctl/src/cli/dispatch/tests/lint.rs:829",
+    "tomlctl/src/cli/dispatch/tests/lint.rs:869",
+    "claude/agents/plan-investigator.md:2",
+]
+dedup_id = "ff979bd65491aae0"
+
+[[items]]
+id = "R14"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "we-ve-just-implement-the-shimmying-kettle"
+file = "claude/workflows/plan-v2-investigate.js"
+line = 102
+symbol = "parallel thunk / toEntry"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "A thrown agent error is discarded as null, so every failure reads as no-return and the engine attributes it to an unregistered agent"
+description = """A thrown agent error comes back as null (comment at :101) and toEntry (:86) reports only "agent returned nothing"; the engine reads every-no-return as "not registered" (open-and-challenge.md:66, write-and-prove.md:228), so a schema failure or runtime fault looks the same. Fix: wrap each thunk with `.catch(e => ({error: String(e)}))`, carry the error into the entry and errors, and soften the engine lines to "most often not registered; read the error". If the runtime's failures block already carries each error, only the engine wording needs changing."""
+evidence = [
+    "claude/workflows/plan-v2-investigate.js:86",
+    "claude/workflows/plan-v2-investigate.js:101-102",
+    "claude/workflows/plan-v2-prove.js:96",
+    "claude/workflows/plan-v2-prove.js:113",
+]
+instances = [
+    "claude/workflows/plan-v2-investigate.js:102",
+    "claude/workflows/plan-v2-prove.js:113",
+]
+dedup_id = "64157f0d5c07b10b"
+related = ["R6"]
+resolved = 2026-11-09
+resolution = "uncommitted: both Workflows wrap each agent in a caught() helper; a throw yields status error with the message in error and errors; every entry carries error; SCRIPT_VERSION 2; engine tables gained an error row"
+
+[[items]]
+id = "R15"
+first_flagged = 2026-11-09
+rounds = 1
+status = "open"
+flow = "we-ve-just-implement-the-shimmying-kettle"
+file = "claude/skills/plan-v2-engine/references/open-and-challenge.md"
+line = 45
+symbol = 'Workflow({name: "plan-v2-investigate"'
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "No gate checks that the Workflow names the engine prose launches match a script's meta.name"
+description = """--workflow is a free string (records.rs:371), so a renamed meta.name surfaces only as a launch error in an attended session. Fix: a lint.rs gate collecting `Workflow({name: "..."` names from claude/**/*.md and checking each against the scripts' meta.name, reusing js_meta_scan. Preventive; the drift has not happened."""
+evidence = [
+    "tomlctl/src/plan/records.rs:371",
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md:45",
+]
+instances = [
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md:45",
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md:51",
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md:192",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md:198",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md:204",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md:264",
+    "claude/skills/review-v2-engine/references/agent-waves.md:12",
+]
+sweep = [
+    'Workflow\(\{name',
+    "--workflow ",
+]
+enumeration = "complete"
+dedup_id = "bd7877604c7e4946"
+
+[[items]]
+id = "R16"
+first_flagged = 2026-11-09
+rounds = 1
+status = "open"
+flow = "we-ve-just-implement-the-shimmying-kettle"
+file = "tomlctl/src/cli/dispatch/tests/lint.rs"
+line = 754
+symbol = "js_agent_names"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "An agent() call with no agentType passes the Workflow gate"
+description = "js_agent_names reads only agentType: keys, so a refactor that drops the key leaves the gate green and the call runs the runtime's default agent. Fix: check that every agent( call carries agentType. Medium confidence: whether the runtime rejects a missing agentType was not verifiable."
+evidence = ["tomlctl/src/cli/dispatch/tests/lint.rs:754"]
+dedup_id = "0af6920206cbd04a"
+
+[[items]]
+id = "R17"
+first_flagged = 2026-11-09
+rounds = 1
+status = "open"
+flow = "we-ve-just-implement-the-shimmying-kettle"
+file = "claude/agents/plan-cold-reader.md"
+line = 43
+symbol = "SHARED-BLOCK:research-read-only"
+severity = "suggestion"
+effort = "small"
+category = "package-quality"
+summary = "The read-only block uses research-method terms (Counter line, lens, sibling lenses, graded) the challenger and cold reader never load"
+description = """The block assumes research-methods: findings graded, "the Counter line naming what would settle it", a scratch directory "named for your lens", "Sibling lenses run in parallel". The cold reader has a milestone, the challenger runs alone, and neither holds Skill to load the method. Fix: word the block in agent-neutral terms ("the observation that would settle it", "your assignment's id") — byte parity means research-deep.md and research-lite.md change too — or give the two plan agents a lighter read-only block."""
+evidence = [
+    "claude/agents/plan-cold-reader.md:41",
+    "claude/agents/plan-cold-reader.md:43",
+    "claude/agents/plan-challenger.md:42",
+    "claude/agents/plan-challenger.md:44",
+    "claude/agents/plan-challenger.md:4 (tools: no Skill)",
+]
+instances = [
+    "claude/agents/plan-challenger.md:42",
+    "claude/agents/plan-challenger.md:44",
+    "claude/agents/plan-cold-reader.md:41",
+    "claude/agents/plan-cold-reader.md:43",
+]
+sweep = [
+    "Counter line",
+    "named for your lens",
+    "Sibling lenses",
+]
+enumeration = "complete"
+dedup_id = "a700ea99f0519dbe"
+
+[[items]]
+id = "R18"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "we-ve-just-implement-the-shimmying-kettle"
+file = "claude/skills/research-methods/references/supply-chain-intel.md"
+line = 57
+symbol = "Card fields"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "The dependency card's field list omits the transitive cost the section computes just above it"
+description = 'Lines 47-55 compute an approximate transitive count, and open-and-challenge.md:135 says the card gives "existence, version, licence, advisories and transitive cost", but the Card fields list at :57 leaves it out, so an investigator writing from the list drops it. Fix: add "transitive dependency count (approximate)" to Card fields.'
+evidence = [
+    "claude/skills/research-methods/references/supply-chain-intel.md:47-57",
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md:135",
+]
+dedup_id = "2d5bb2202e3ac9cc"
+resolved = 2026-11-09
+resolution = "uncommitted: Card fields list includes the approximate transitive dependency count"
+
+[[items]]
+id = "R19"
+first_flagged = 2026-11-09
+rounds = 1
+status = "open"
+flow = "we-ve-just-implement-the-shimmying-kettle"
+file = "claude/skills/plan-v2-engine/references/open-and-challenge.md"
+line = 74
+symbol = "3. The fan-out check (intro)"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "The fan-out check's intro names only investigators and the challenger and 'this reference', while Prove borrows it by bare filename"
+description = 'Line 74 says "Investigators and the challenger hold Write" and that the check runs "around every launch in this reference"; write-and-prove.md:195 reuses it as "the fan-out snapshot from open-and-challenge.md" with no link or section. Fix: name cold readers and every plan-v2 launch at :74, and make :195 a link to "3. The fan-out check".'
+evidence = [
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md:74",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md:195",
+]
+instances = [
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md:74",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md:195",
+]
+dedup_id = "ca35cc67bf2cee51"
+
+[[items]]
+id = "R20"
+first_flagged = 2026-11-09
+rounds = 1
+status = "open"
+flow = "we-ve-just-implement-the-shimmying-kettle"
+file = "claude/skills/plan-v2-engine/references/approve.md"
+line = 11
+symbol = "Review / --review"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "Two rules are copied into references that load after the rule applies: the --review refusal in approve.md and Surface again in open-and-challenge.md"
+description = "SKILL.md:39 owns the --review refusal at argument time; approve.md:11 restates it, but approve.md loads only at Review, after the refusal has fired. The step table sends Surface again to write-and-prove.md §2 (SKILL.md:54), whose full rule is at :57-65; open-and-challenge.md:180 keeps a shorter copy. Neither copy can act where it sits, and each can drift. Fix: delete both, leaving a pointer if wanted. (The three Surface tests repeated in both references are justified: a session resumed at Design loads only write-and-prove.md.)"
+evidence = [
+    "claude/skills/plan-v2-engine/SKILL.md:39",
+    "claude/skills/plan-v2-engine/SKILL.md:54",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md:57-65",
+]
+instances = [
+    "claude/skills/plan-v2-engine/references/approve.md:11",
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md:180",
+]
+sweep = [
+    "--review",
+    "Surface again",
+]
+enumeration = "complete"
+dedup_id = "c8a71d7462cab1d3"
+
+[[items]]
+id = "R21"
+first_flagged = 2026-11-09
+rounds = 1
+status = "open"
+flow = "we-ve-just-implement-the-shimmying-kettle"
+file = "claude/commands/plan-v2.md"
+line = 35
+symbol = "Pre-flight"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "The thin carrier restates the engine's launch-failure, live-run and depth rules, and probes tomlctl before invoking the tomlctl skill"
+description = "plan-v2.md:35 duplicates the fan-out Rule 3 (SKILL.md:26) and the live-run wait-or-TaskStop rule, which already appears at SKILL.md:93, open-and-challenge.md:190 and write-and-prove.md:266 — a fourth copy. The --depth row (:20) restates the Depth table and the 6-lens cap (SKILL.md:72-79, open-and-challenge.md:32, MAX_LENSES). The /review-v2 carrier keeps only bindings and deltas. Pre-flight step 1 runs `tomlctl capabilities` (:31) before Run step 1 invokes the tomlctl skill (:39), contradicting SKILL.md:24. Fix: cut :35 to a pointer to the engine's fan-out rule, cut the --depth row to the flag values plus a pointer, and either exempt the capabilities probe explicitly or invoke the skill first."
+evidence = [
+    "claude/commands/plan-v2.md:20",
+    "claude/commands/plan-v2.md:31",
+    "claude/commands/plan-v2.md:39",
+    "claude/skills/plan-v2-engine/SKILL.md:24",
+    "claude/skills/plan-v2-engine/SKILL.md:26",
+    "claude/commands/review-v2.md:9",
+]
+instances = [
+    "claude/commands/plan-v2.md:20",
+    "claude/commands/plan-v2.md:35",
+]
+dedup_id = "d7f3d191c3a083db"
+
+[[items]]
+id = "R22"
+first_flagged = 2026-11-09
+rounds = 1
+status = "open"
+flow = "we-ve-just-implement-the-shimmying-kettle"
+file = "claude/commands/plan-v2.md"
+line = 21
+symbol = "Bindings / --no-review"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "--no-review is described as 'the user's reason for skipping plan review', implying a value, though approve.md treats it as a bare flag with a fixed reason"
+description = """argument-hint shows [--no-review] with no value and approve.md:15-18 maps it to a fixed string, but plan-v2.md:21 and SKILL.md:38 call it "the user's reason", so text after the flag is ambiguous (reason or the discussion being planned). Fix: say in both places that the flag records the fixed reason `the user passed --no-review`."""
+evidence = [
+    "claude/commands/plan-v2.md:3",
+    "claude/commands/plan-v2.md:21",
+    "claude/skills/plan-v2-engine/SKILL.md:38",
+    "claude/skills/plan-v2-engine/references/approve.md:15-18",
+]
+instances = [
+    "claude/commands/plan-v2.md:21",
+    "claude/skills/plan-v2-engine/SKILL.md:38",
+]
+sweep = ["--no-review"]
+enumeration = "complete"
+dedup_id = "e84eda5ff1be1c5b"
+
+[[items]]
+id = "R23"
+first_flagged = 2026-11-09
+rounds = 1
+status = "fixed"
+flow = "we-ve-just-implement-the-shimmying-kettle"
+file = "CLAUDE.md"
+line = 76
+symbol = "Build & test / cargo nextest bullet"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "The CLAUDE.md line task 14 edited still describes .github/ symlink mirrors deleted in 1048839, and lists fewer hook paths than the hook gates"
+description = "Line 76 says .github/ holds symlink mirrors of claude/ with per-skill links; commit 1048839 (2026-10-05) deleted them and `git ls-tree HEAD .github` prints nothing. The same line names claude/**/*.md, claude/workflows/**/*.js and tomlctl/src/** for the hook's test step, while line 13 and the hook also gate claude/**/*.toml and .claude/review-lenses/**; line 13's gate list omits the new Workflow script gate the hook comment names. Fix: drop the mirror passage and align the path and gate lists with .githooks/pre-commit."
+evidence = [
+    "CLAUDE.md:13",
+    "CLAUDE.md:76",
+    ".githooks/pre-commit:56-58",
+    "git ls-tree HEAD .github -> (empty)",
+    "git log --diff-filter=D -- '.github/*' -> 1048839 cleanup",
+]
+dedup_id = "94adf894b28acb6d"
+resolved = 2026-11-09
+resolution = "uncommitted: removed the stale .github mirror passage; hook path list adds claude/**/*.toml and .claude/review-lenses/**; line 13 gate list names the Workflow-script and review-lens catalogue gates"
+
+[[items]]
+id = "R24"
+first_flagged = 2026-11-09
+rounds = 1
+status = "open"
+flow = "we-ve-just-implement-the-shimmying-kettle"
+file = "docs/ideas/v2-pipeline.md"
+line = 11
+symbol = "Where things stand"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "v2-pipeline.md still says /plan-v2 was never run for real work, but it planned and approved human-only-handovers"
+description = """Line 11 reads "Built, never run for real work: /plan-v2 (v2 planning)". Commits 9890f47 and 92d4ff1 add and approve the human-only-handovers v2 plan, and the probe runbook's Proof line records it. Fix: say it has run once (the human-only-handovers proof)."""
+evidence = [
+    "docs/ideas/v2-pipeline.md:11",
+    "git log: 9890f47, 92d4ff1",
+    "docs/ideas/plan-v2-probes.md:479 (uncommitted)",
+]
+dedup_id = "332e62dd0c5afe95"
+
+[[items]]
+id = "R25"
+first_flagged = 2026-11-09
+rounds = 1
+status = "open"
+flow = "we-ve-just-implement-the-shimmying-kettle"
+file = "claude/skills/plan-v2-engine/references/write-and-prove.md"
+line = 79
+symbol = "3. Write / A row"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "The spec-keys pointer names tasks-write.md, which does not document the accept-entry keys positive and writes_build"
+description = "Line 79 sends the reader to tasks-write.md under tasks add-many for the spec's keys; that row lists kind/binding/at/executor but not writes_build or positive, which control probing and are documented only at tasks-store.md:87. Fix: add a second pointer to tasks-store.md."
+evidence = [
+    "claude/skills/tomlctl/references/tasks-write.md:153",
+    "claude/skills/tomlctl/references/tasks-store.md:87",
+]
+dedup_id = "2dbc2d667932b4a3"

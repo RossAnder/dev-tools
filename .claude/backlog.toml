@@ -8865,3 +8865,141 @@ context = "Seen while exercising the write-and-prove reference's probe cycle in 
 base_sha = "f391ce5321f3e4f6d1a96b32f0c29ab658c2f0e8"
 resolved = 2026-11-09
 resolution = "Uncommitted: plan probes --record counts the capture rows against the probeable rows in scope first and refuses a short capture as cut short, naming both counts; plan_probes covers it."
+
+[[backlog]]
+id = "B-07136a3d"
+kind = "bug"
+summary = "plan-v2 approve checks .claude/backlog.toml dirt unconditionally but stages it only when a task closes an item, so the approval commit sweeps unrelated edits"
+area = "claude/skills/plan-v2-engine/references/approve.md"
+tags = ["plan-v2"]
+status = "open"
+created = 2026-11-09T08:10:11Z
+last_seen = 2026-11-09T08:10:11Z
+seen_count = 1
+dedup_id = "07136a3d31538387"
+origin = "plan-v2"
+flow = "human-only-handovers"
+context = "Seen in the first real /plan-v2 run (commit 92d4ff1). Step 4's dirt check lists active-flow.toml and backlog.toml together, step 7 stages backlog.toml only when a task row had closes; the orchestrator merged the two, told the user both had to be staged, and offered only Include or Stop. The commit recorded five 'Uncommitted:' backlog resolutions whose fixes were not in history and another flow's registry entry. Fix: make step 4 follow step 7's condition, and offer staging only the stamp's own hunks."
+base_sha = "92d4ff18dcf02e42ab2b09a784488d9ceddc151f"
+evidence = [
+    "claude/skills/plan-v2-engine/references/approve.md:73",
+    "claude/skills/plan-v2-engine/references/approve.md:137",
+]
+
+[[backlog]]
+id = "B-70b64580"
+kind = "bug"
+summary = "plan-v2 warns that an approved flow hijacks bare v1 carriers only after approval, not at the gate"
+area = "claude/skills/plan-v2-engine/references/approve.md"
+tags = ["plan-v2"]
+status = "open"
+created = 2026-11-09T08:10:11Z
+last_seen = 2026-11-09T08:10:11Z
+seen_count = 1
+dedup_id = "70b645808e35294b"
+origin = "plan-v2"
+flow = "human-only-handovers"
+context = "Step 8's warning (/review and /optimise pick the flow, /implement has no halt, /review-plan can overwrite brief.md) runs after the stamp, so the user approved without it, and the orchestrator paraphrased it in the final message, dropping the brief.md hazard. The carrier says nothing either. Fix: put it in the gate, ideally as a risk plan gate emits, so it cannot be paraphrased away."
+base_sha = "92d4ff18dcf02e42ab2b09a784488d9ceddc151f"
+evidence = ["claude/skills/plan-v2-engine/references/approve.md:145"]
+
+[[backlog]]
+id = "B-1da78375"
+kind = "bug"
+summary = "plan stage review hint names /review-plan-v2, which cannot review a v2 flow and can overwrite brief.md"
+area = "tomlctl/src/plan/stage.rs"
+tags = ["plan-v2"]
+status = "open"
+created = 2026-11-09T08:10:11Z
+last_seen = 2026-11-09T08:10:11Z
+seen_count = 1
+dedup_id = "1da78375da7ff73c"
+origin = "plan-v2"
+flow = "human-only-handovers"
+context = "PLAN_REVIEW reads '/review-plan-v2 or plan run skip --step review --reason <why>'. approve.md says plan review is not built for /plan-v2, and /review-plan-v2 reviews through plan_path and can merge edits over brief.md. The first run ignored the hint correctly; a re-entering session following next would not. Point next at the skip until Slice 3 lands."
+base_sha = "92d4ff18dcf02e42ab2b09a784488d9ceddc151f"
+evidence = ["tomlctl/src/plan/stage.rs:30"]
+
+[[backlog]]
+id = "B-acba1411"
+kind = "debt"
+summary = "no plan verb emits the base premise checks, so the orchestrator retypes them into a hand-quoted loop"
+area = "claude/skills/plan-v2-engine/references/write-and-prove.md"
+tags = ["plan-v2"]
+status = "open"
+created = 2026-11-09T08:10:11Z
+last_seen = 2026-11-09T08:10:11Z
+seen_count = 1
+dedup_id = "acba1411b7443f0f"
+origin = "plan-v2"
+flow = "human-only-handovers"
+context = "write-and-prove section 4b says run every base premise's check yourself in one Bash call. The first run retyped nine stored checks into a nested-quoted for loop, untied to the store and unrecorded. plan probes --emit covers accept entries only; a premises emit would remove the retyping and drift."
+base_sha = "92d4ff18dcf02e42ab2b09a784488d9ceddc151f"
+
+[[backlog]]
+id = "B-91565d35"
+kind = "annoyance"
+summary = "open-and-challenge says an empty flow list result means the slug is free, but flow list --lines always prints an ok line"
+area = "claude/skills/plan-v2-engine/references/open-and-challenge.md"
+tags = ["plan-v2"]
+status = "open"
+created = 2026-11-09T08:10:11Z
+last_seen = 2026-11-09T08:10:11Z
+seen_count = 1
+dedup_id = "91565d35c067fc16"
+origin = "plan-v2"
+flow = "human-only-handovers"
+context = """Section 1 reads an empty flow list --where slug=<slug> --select slug,status --lines result as a free slug, but the command always prints {"ok":true,"skipped":[]} for a free and a taken slug alike (re-checked 2026-11-09). Reword to 'no line carrying slug', or suppress the envelope line under --lines."""
+base_sha = "92d4ff18dcf02e42ab2b09a784488d9ceddc151f"
+
+[[backlog]]
+id = "B-4e19bbd3"
+kind = "debt"
+summary = "plan-v2 fan-out snapshot and check is a hand-copied shell block rebuilt around every launch"
+area = "claude/skills/plan-v2-engine/references/open-and-challenge.md"
+tags = ["plan-v2"]
+status = "open"
+created = 2026-11-09T08:10:11Z
+last_seen = 2026-11-09T08:10:11Z
+seen_count = 1
+dedup_id = "4e19bbd331f57f46"
+origin = "plan-v2"
+flow = "human-only-handovers"
+context = "Each launch needs three git captures with pathspec excludes, one piped through xargs sha256sum, and three cmps; the first run rebuilt the block three times as one long Bash line and reused the investigate snapshot before the challenger instead of taking a fresh one as section 4 says. Candidate for a tomlctl plan fanout snapshot|check verb."
+base_sha = "92d4ff18dcf02e42ab2b09a784488d9ceddc151f"
+
+[[backlog]]
+id = "B-2170b989"
+kind = "annoyance"
+summary = "write-and-prove cold-read fix example does not say a files change needs no --unlock-import-fields on a v2 flow"
+area = "claude/skills/plan-v2-engine/references/write-and-prove.md"
+tags = ["plan-v2"]
+status = "open"
+created = 2026-11-09T08:10:11Z
+last_seen = 2026-11-09T08:10:11Z
+seen_count = 1
+dedup_id = "2170b989a8270105"
+origin = "plan-v2"
+flow = "human-only-handovers"
+context = "Applying cold-read fixes changed task 1's files; the orchestrator read tasks-write.md and passed --unlock-import-fields, a v1 import flag tasks-write.md says a v2 flow does not need. Related: one-row record files were written with printf > rather than the Write tool Rules 1 and 3 ask for, suggesting that rule is friction for tiny payloads."
+base_sha = "92d4ff18dcf02e42ab2b09a784488d9ceddc151f"
+
+[[backlog]]
+id = "B-73a7718c"
+kind = "question"
+summary = "tracked .claude/settings.local.json pre-approves Bash(git *) and Bash(python3 *), so a prompt injection in any agent with Bash runs unprompted"
+area = ".claude/settings.local.json"
+tags = ["security"]
+status = "open"
+created = 2026-11-09T08:20:25Z
+last_seen = 2026-11-09T08:20:25Z
+seen_count = 1
+dedup_id = "73a7718c6cdd9328"
+origin = "review"
+flow = "we-ve-just-implement-the-shimmying-kettle"
+context = "Raised by the /review security lens on the plan-v2 flow: the plan-v2 fan-out check is the only control behind investigators that hold WebFetch and Bash, and these allow rules mean a planted git config or python write never prompts. settings.local.json is normally untracked per-machine state; decide whether it should be tracked and whether the broad git/python allows should stay."
+base_sha = "92d4ff18dcf02e42ab2b09a784488d9ceddc151f"
+evidence = [
+    ".claude/settings.local.json:15",
+    ".claude/settings.local.json:17",
+]

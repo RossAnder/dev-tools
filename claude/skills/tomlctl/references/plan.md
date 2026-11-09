@@ -329,7 +329,7 @@ tomlctl plan view --slug <slug> --for worker --task <id>
 | `stage_inputs.tasks_store` / `review_store` | Whether `tasks.toml` and `review-v2.toml` exist. |
 | `stage_inputs.audit` | The task store's `audit`. |
 | `stage_inputs.approval` | The newest stamp's `commit`, `at` and `review`, or `null`. |
-| `stage_inputs.runs[]` | `step`, `state` (`open`, `finished`, `abandoned`, `skipped`), `workflow`, `run_id`, `session`, `skip_reason`, `outcome` (a string, or `null`), `reason`. |
+| `stage_inputs.runs[]` | `step`, `state` (`open`, `finished`, `abandoned`, `skipped`), `workflow`, `args_hash` (`""` when unset), `run_id`, `session`, `skip_reason`, `outcome` (a string, or `null`), `reason`. |
 | `stage_inputs.check` | `errors`, `warnings` and `classes`, or `null` with no `tasks.toml`. |
 | `counts` | Totals for `decisions` (`surfaced`, `vetoed`, `agent_assumed`, `one_way`), `contracts`, `tasks` by status, `specs`, `milestones` (`deferred`), `runs`, `handovers` (`undone`), `approvals`, `changes`. |
 | `open_items` | `unanswered_decisions`, `open_runs`, `undone_handovers`, `tasks_without_spec`, `failed_tasks`, `deferred_milestones`. `open_runs` lists one step per row still open, so finished, abandoned and skipped rows are excluded. |

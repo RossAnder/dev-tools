@@ -11,7 +11,9 @@ export const meta = {
 // prompt is built from `args` alone, so a same-args relaunch hits the journal up
 // to the first failed agent, then reruns it and every agent started after it. A
 // failed read is reported rather than retried; the engine decides what runs again.
-const SCRIPT_VERSION = '1'
+// Each entry carries `error`: the agent's thrown error, with status `error`,
+// and null otherwise.
+const SCRIPT_VERSION = '2'
 const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/
 const MILESTONE_ID = /^[A-Za-z0-9][A-Za-z0-9-]*$/
 
@@ -92,29 +94,42 @@ const namesNote = (returned, expected) => {
 
 const toEntry = (m, ret) => {
   const expected = notePath(m.id)
+  if (ret && ret.thrown !== undefined) {
+    fail(`milestone ${m.id}: agent failed: ${ret.thrown}; check notes/ for what it wrote`)
+    return { id: m.id, status: 'error', unactionable: null, false_premises: null, note: null, error: ret.thrown }
+  }
   if (!ret) {
     fail(`milestone ${m.id}: agent returned nothing; check notes/ for what it wrote`)
-    return { id: m.id, status: 'no-return', unactionable: null, false_premises: null, note: null }
+    return { id: m.id, status: 'no-return', unactionable: null, false_premises: null, note: null, error: null }
   }
   const counts = { unactionable: ret.unactionable, false_premises: ret.false_premises }
   if (!ret.note) {
     fail(`milestone ${m.id}: agent wrote no note`)
-    return { id: m.id, status: 'no-note', ...counts, note: null }
+    return { id: m.id, status: 'no-note', ...counts, note: null, error: null }
   }
   if (!namesNote(ret.note, expected)) {
     fail(`milestone ${m.id}: agent returned note ${ret.note}; expected ${expected}`)
-    return { id: m.id, status: 'mismatch', ...counts, note: ret.note }
+    return { id: m.id, status: 'mismatch', ...counts, note: ret.note, error: null }
   }
-  return { id: m.id, status: 'ok', ...counts, note: expected }
+  return { id: m.id, status: 'ok', ...counts, note: expected, error: null }
+}
+
+// The schema forbids extra keys, so a real return never carries `thrown`.
+const caught = async (run) => {
+  try {
+    return await run()
+  } catch (e) {
+    return { thrown: String((e && e.message) || e) }
+  }
 }
 
 phase('Cold read')
-// A throw inside a thunk resolves to null here, where a directly awaited one would fail the whole run.
-const returns = await parallel(a.milestones.map((m) => () => agent(milestonePrompt(m), {
+// Each thunk catches its own throw so the entry can name it; an uncaught one would resolve to null.
+const returns = await parallel(a.milestones.map((m) => () => caught(() => agent(milestonePrompt(m), {
   agentType: 'plan-cold-reader',
   schema: RETURN_SCHEMA,
   label: `milestone ${m.id}`,
   phase: 'Cold read',
-})))
+}))))
 
 return index(a.milestones.map((m, i) => toEntry(m, returns[i])))

@@ -434,7 +434,7 @@ fn a_capture_that_does_not_match_the_store_is_refused_whole() {
     assert_refused(&root, &path, &format!("head\t\n{neg0}{pos0}{neg1}"), "head");
     assert_refused(&root, &path, &format!("{head}{neg0}{neg1}"), "pos control");
     assert_refused(&root, &path, &format!("{head}{pos0}{neg1}"), "neg control");
-    assert_refused(&root, &path, &format!("{head}{neg0}{pos0}"), "neg control");
+    assert_refused(&root, &path, &format!("{head}{neg0}{pos0}"), "1 of the 2");
     assert_refused(
         &root,
         &path,

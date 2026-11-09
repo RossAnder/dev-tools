@@ -11,7 +11,9 @@ export const meta = {
 // built from `args` alone, so a same-args relaunch hits the journal up to the
 // first failed agent, then reruns it and every agent started after it. A failed
 // lens is reported rather than retried; the engine decides what runs again.
-const SCRIPT_VERSION = '1'
+// Each entry carries `error`: the agent's thrown error, with status `error`,
+// and null otherwise.
+const SCRIPT_VERSION = '2'
 const MAX_LENSES = 6
 const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/
 const LENS_ID = /^[a-z0-9][a-z0-9-]*$/
@@ -82,28 +84,41 @@ const namesNote = (returned, expected) => {
 
 const toEntry = (lens, ret) => {
   const expected = notePath(lens.id)
+  if (ret && ret.thrown !== undefined) {
+    fail(`lens ${lens.id}: agent failed: ${ret.thrown}; check notes/ for what it wrote`)
+    return { id: lens.id, status: 'error', verdict: null, note: null, error: ret.thrown }
+  }
   if (!ret) {
     fail(`lens ${lens.id}: agent returned nothing; check notes/ for what it wrote`)
-    return { id: lens.id, status: 'no-return', verdict: null, note: null }
+    return { id: lens.id, status: 'no-return', verdict: null, note: null, error: null }
   }
   if (!ret.note) {
     fail(`lens ${lens.id}: agent wrote no note: ${ret.verdict}`)
-    return { id: lens.id, status: 'no-note', verdict: ret.verdict, note: null }
+    return { id: lens.id, status: 'no-note', verdict: ret.verdict, note: null, error: null }
   }
   if (ret.id !== lens.id || !namesNote(ret.note, expected)) {
     fail(`lens ${lens.id}: agent returned id ${ret.id} and note ${ret.note}; expected ${expected}`)
-    return { id: lens.id, status: 'mismatch', verdict: ret.verdict, note: ret.note }
+    return { id: lens.id, status: 'mismatch', verdict: ret.verdict, note: ret.note, error: null }
   }
-  return { id: lens.id, status: 'ok', verdict: ret.verdict, note: expected }
+  return { id: lens.id, status: 'ok', verdict: ret.verdict, note: expected, error: null }
+}
+
+// The schema forbids extra keys, so a real return never carries `thrown`.
+const caught = async (run) => {
+  try {
+    return await run()
+  } catch (e) {
+    return { thrown: String((e && e.message) || e) }
+  }
 }
 
 phase('Investigate')
-// A throw inside a thunk resolves to null here, where a directly awaited one would fail the whole run.
-const returns = await parallel(a.lenses.map((lens) => () => agent(lensPrompt(lens), {
+// Each thunk catches its own throw so the entry can name it; an uncaught one would resolve to null.
+const returns = await parallel(a.lenses.map((lens) => () => caught(() => agent(lensPrompt(lens), {
   agentType: 'plan-investigator',
   schema: RETURN_SCHEMA,
   label: `lens ${lens.id}`,
   phase: 'Investigate',
-})))
+}))))
 
 return index(a.lenses.map((lens, i) => toEntry(lens, returns[i])))

@@ -476,6 +476,7 @@ Nested memory: four of six challengers loaded their base's own CLAUDE.md (2 to 3
 Auto-memory: the replay ran from a directory with none, and real runs keep theirs; transcripts not inspected for auto-memory beyond that
 Tally: 3 of 3 restructure goals, 3 of 3 control goals
 Applied: keep verdict (6 of 6); plan-challenger and its shared-block entries left in place
+Proof: passed 2026-11-09. `/plan-v2` on `human-only-handovers` reached `plan approve` (`9890f47`, `92d4ff1`) with investigate, challenge and cold-read `ok` and review skipped as unbuilt, but in the primary checkout on `main` rather than the proof worktree, so its registry entry is live there. No tool errors; seven friction items filed as backlog B-07136a3d, B-70b64580, B-1da78375, B-acba1411, B-91565d35, B-4e19bbd3, B-2170b989.
 
 | Sheet letter | Goal | Kind | Would it have changed what was asked for? |
 |---|---|---|---|

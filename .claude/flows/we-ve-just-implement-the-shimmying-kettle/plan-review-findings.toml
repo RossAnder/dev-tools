@@ -1,0 +1,701 @@
+schema_version = 1
+last_updated = 2026-11-06
+round = 1
+
+[[vet_events]]
+timestamp = "2026-11-06T15:12:26Z"
+command = "review-plan"
+lens = "feasibility"
+tier = "deep"
+agent_index = 1
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled F1 (Phase 3 red): implement.md:256 read, confirmed; success: key probed rc=1. Sampled F3 (missing edges): plan Depends-on lines and store batches confirm task 4 can run before task 1. No drops. F-F1 and executability's Phase-3 finding merged; the feasibility form (continue to lint and Phase 4) preferred because a bare stop's final train still commits task 8."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-06T15:12:26Z"
+command = "review-plan"
+lens = "completeness"
+tier = "deep"
+agent_index = 2
+sampled_count = 2
+dropped_count = 1
+downgraded_count = 0
+dropped_ids = ["completeness-F11"]
+rationale = 'Sampled F5 (hook prose): CLAUDE.md:13 and :68 confirmed by grep. Sampled F7 (Write refuses an unread file): binary string confirmed. Dropped F11 (citation anchor): it repeats "57% has no source", refuted by amplifying.ai/research/claude-code-picks-fable, which states the figure; its alphaXiv caveat folded into the risk citation finding.'
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-06T15:12:26Z"
+command = "review-plan"
+lens = "executability"
+tier = "deep"
+agent_index = 3
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 1
+rationale = "Sampled F2 (delete note): tasks show 6 prints deleted_files with plan-challenger, confirmed. Sampled F3 (regex): probed, keep 3 of 6 matches and the template does not; the pattern also admits keep 1 of 6 by reading. Downgraded F14 to suggestion: heavier greps overfit wording on prose deliverables."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-06T15:12:26Z"
+command = "review-plan"
+lens = "risk"
+tier = "deep"
+agent_index = 4
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = 'Sampled F1 (57% citation): page fetched, "Fable does it 57% of the time" for caching confirmed; the 16/28 denominator rests on the lens. Sampled F2 (sparse index): live, lo/g/log 404, 3/l/log 200, 2/cc 200, se/rd/serde 200. Also confirmed F3: cargo tree refuses a manifest with no target. No drops.'
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-06T15:12:26Z"
+command = "review-plan"
+lens = "workflow-guru"
+tier = "deep"
+agent_index = 5
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 2
+rationale = "Sampled F1 (relaunch args): binary recovery strings and tool wording confirmed. Sampled F3 (omitClaudeMd row): recount on this machine, instructions rows in research-deep 48/48, flow-bootstrap 30/30, Explore 0/26, confirmed. Downgraded F5: its citation named a verification transcript that is actually the flow-bootstrap run, not an omitClaudeMd agent, so git-status reaching a custom omitClaudeMd agent is inferred, medium. Downgraded F4 to suggestion: effect on a verdict unmeasured. Nothing ran in a Workflow; a subagent cannot launch one."
+dedup_id = "45ca31c3315a5978"
+
+[[items]]
+id = "P1"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "feasibility"
+plan_section = "Sequence"
+summary = "Every milestone A run ends in a red Phase 3 that tells the orchestrator to write milestone B"
+description = """implement.md:256 runs the plan's success: commands, stops at the first fail, and says "fix directly or via targeted agent". No text scopes Phase 3 to an item subset (only implement.md:10 and :58 mention it). At the stop, success: test -f claude/commands/plan-v2.md exits 1 (probed), and the bare-run path reaches the same pass. Raised independently by feasibility and executability."""
+anchor_old = "2. `/implement items 1,2,3,4,5 from docs/plans/we-ve-just-implement-the-shimmying-kettle.md`: milestone A."
+anchor_new = "2. `/implement items 1,2,3,4,5 from docs/plans/we-ve-just-implement-the-shimmying-kettle.md`: milestone A. This run's Phase 3 leaves out every `success:` key that names a milestone B file, spends no fix cycle on them, and continues to lint and Phase 4. The same holds for a run that stops at task 6. Step 4's final pass runs them all."
+dedup_id = "ae728e304e5e9e88"
+
+[[items]]
+id = "P2"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "feasibility"
+plan_section = "Engine steps"
+summary = "The relaunch form omits args, so it validates nothing, launches no agent and T2/T3 record a zero-agent run"
+description = """Plan: Workflow({scriptPath, resumeFromRunId}). Binary 2.1.319's recovery strings add args ("To resume after editing the script, call: Workflow({scriptPath: ...") and the docs say omitted args are undefined in the script; the plan's own Research Notes say "Args are not restored on relaunch". With the review-v2.js shape, undefined args take the fail path. The name form also is the only one a Workflow(<name>) allow rule matches. Raised by workflow-guru and executability; inherited by the Probes T2/T3 and task 9."""
+anchor_old = "relaunch a read-only fan-out with `Workflow({scriptPath, resumeFromRunId})` when `## Results` shows that sound"
+anchor_new = "relaunch a read-only fan-out with `Workflow({name, args, resumeFromRunId})`, passing the launch's exact `args`, which the runtime does not restore and the store does not hold (an orchestrator that no longer has them abandons instead), when `## Results` shows that sound"
+dedup_id = "d8ea9aff4a4005ae"
+
+[[items]]
+id = "P3"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "Sequence"
+summary = "`items` is prose only: no verb narrows the frontier, so the primary path can reach tasks 8 and 6"
+description = "tasks ready takes only --in-flight and returns [1,2,8] today. implement.md:101 says dispatch every ready id; implement.md:103 defines finished by empty keys. A literal run dispatches 8 and then 6, landing on the spec-stale fallback, which is sound (implement.md:244) but makes step 4 conditional on row state."
+anchor_old = "After the probes, `tomlctl tasks update 6 --slug <slug> --status pending` clears that."
+anchor_new = "After the probes, `tomlctl tasks update 6 --slug <slug> --status pending` clears that. This applies whenever step 2 left it `failed`, the `items` path included: `tasks ready` takes no subset and Phase 2 dispatches every id it returns, so an `items` run may reach 8 and 6 too. `tomlctl tasks list --slug <slug> --where status=failed --select id --lines` shows which applies."
+dedup_id = "ecfd321ff9bc2389"
+
+[[items]]
+id = "P4"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "Carrier"
+summary = "Re-entry has no still-running branch: a live run is refused and the carrier reads that as a stop"
+description = """Binary string: "is still running (task ...). Stop it first with ... before resuming" (verified). The plan's branches are relaunch or abandon-and-launch-afresh; the abandon branch closes the row while agents run, so a fresh launch puts two agents on one note: path. [[run]] stores no task id; TaskStop is deferred, so the engine needs ToolSearch first."""
+anchor_old = "A launch that is refused, or that returns `error`, also stops"
+anchor_new = "A first launch that is refused, or that returns `error`, also stops; a refused relaunch of a run still live in this session means wait for its notification or `TaskStop` it with the launch's `taskId`, never abandon-and-relaunch"
+dedup_id = "d743bbf9baa7abda"
+
+[[items]]
+id = "P5"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "Engine steps"
+summary = "The design's Surface again step has no engine row, task or departure"
+description = """docs/plans/v2-planning.md:63 has a Surface again row; the plan holds zero mentions and What departs from v2-planning does not list it. Task 10's Action should read "Design, Surface again, Write and Prove"."""
+anchor_old = "| Design | `plan decide`, `plan contract`, `plan milestone add`; `design/*.md` only where prose is needed | `write-and-prove.md` |"
+anchor_new = """
+| Design | `plan decide`, `plan contract`, `plan milestone add`; `design/*.md` only where prose is needed | `write-and-prove.md` |
+| Surface again | Anything Design raised, by the same three tests and item shape as Surface; normally nothing | same |"""
+dedup_id = "e8aea7970d7c831c"
+
+[[items]]
+id = "P6"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "Engine steps"
+summary = "The post-approve commit omits the registry sidecar and a promoted backlog"
+description = """references/plan.md:514-516: approve promotes closes links and rewrites the registry and its .sha256; all are tracked. The hook does not catch a store staged without its sidecar, so a stale digest commits cleanly. Task 11's "stage by name" inherits this."""
+anchor_old = "Commit the post-stamp writes and `.claude/active-flow.toml`."
+anchor_new = "Commit the post-stamp writes: everything `git status` shows under `.claude/flows/<slug>/`, `.claude/active-flow.toml` with its `.sha256`, and, when any row had `closes`, `.claude/backlog.toml` with its `.sha256`."
+dedup_id = "9462827ca8caa513"
+
+[[items]]
+id = "P7"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "Engine steps"
+summary = "The approval warning overstates refuse, omits carriers and gives no way out"
+description = "/review-plan is written to fall back to plan mode on this refusal (review-plan Step 0.6) and its merge can overwrite brief.md before the --slug refusal fires. /review and /optimise also pick the flow. /implement has no named halt for it. Task 11 copies this text verbatim and it is User Decision 5's only mitigation. Read from the carriers, not run against a real approved flow."
+anchor_old = "Warn: bare `/implement`, `/plan-update` and `/review-plan` will now pick this flow and refuse it, and no engine can run it yet"
+anchor_new = "Warn: bare v1 carriers will now pick this flow, `/review` and `/optimise` included, and none can run it: `tasks import-plan --slug` refuses it, `/implement` has no named halt for that, and `/review-plan` falls back to plan mode and can overwrite `brief.md`. No engine can run it yet. Pass `--flow` to v1 carriers, or clear it with `tomlctl flow active remove --slug <slug>`"
+dedup_id = "c99b68c4ce573693"
+
+[[items]]
+id = "P8"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "Engine steps"
+summary = "The Edit rule silently matches nothing in user settings and covers only one prompt"
+description = "Docs permissions, Where a pattern anchors: in ~/.claude/settings.json /path resolves to ~/.claude/path. /plan-v2 is a global carrier, so user settings is the natural home. Under default, investigator WebSearch, WebFetch, Context7 and non-tomlctl Bash also prompt; under dontAsk they are denied, degrading the lens without an error. bypassPermissions hides all of it."
+anchor_old = "`Edit(/docs/flows/**)` pre-approves it; a reference states this."
+anchor_new = "In project or local settings `Edit(/docs/flows/**)` pre-approves it, and in user settings `Edit(docs/flows/**)` does, because `/path` there anchors at `~/.claude/`. A reference states this, and that an investigator's web, MCP and other Bash calls need their own allow rules."
+dedup_id = "a71b30dea246130f"
+
+[[items]]
+id = "P9"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "Engine steps"
+summary = "The notification step maps only ok|errors, but a run can end failed or killed with no result"
+description = "Binary: <result> only when completed, capped at 8000 chars with the full copy in the output file; <failures> and <recovery> otherwise. A missing agent throws, which parallel/pipeline turn into null, so an unregistered agent reads as every lens no-return. Tasks 4 and 7 must fan out through parallel or pipeline."
+anchor_old = 'On the notification, `plan run finish --step investigate --outcome ok\|errors`.'
+anchor_new = 'On the notification, read `<result>` and `<failures>`, then `plan run finish --step investigate --outcome ok\|errors`, or `stopped` when its status is failed or killed; every lens null means an agent is unregistered, so stop and name the link.'
+dedup_id = "db06ceea0102018b"
+
+[[items]]
+id = "P10"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "Engine steps"
+summary = "A rerun cold read cannot overwrite its note without reading it, which breaks the cold read"
+description = """Binary string verified: "File has not been read yet. Read it first before writing to it." A rerun's Write would be refused unless the reader first reads its predecessor, the one thing it must not do."""
+anchor_old = "Rerun a milestone's cold read only when one of its tasks changed after its note"
+anchor_new = "Rerun a milestone's cold read only when one of its tasks changed after its note, deleting that note first, since Write refuses an unread file and a cold reader must not read its predecessor"
+dedup_id = "17e62199a470ef6b"
+
+[[items]]
+id = "P11"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "Engine steps"
+summary = "Tracked docs/flows pollutes every sweep, and the exclusion lives only in notes implementers never get"
+description = "tomlctl/src/sweep.rs:35 defaults exclude only .claude/** and docs/plans/**. Tracked notes, briefs and designs quote symbols, so the Surface sweep returns a flow's own text unless told otherwise. Changing the default is a binary change this plan rules out; a backlog candidate."
+anchor_old = "scope uses `tomlctl sweep`, checking `truncated` and `coverage_complete`"
+anchor_new = '''scope uses `tomlctl sweep -e '(?-u:\bNAME\b)' --exclude 'docs/flows/**' --lines`, checking `truncated` and `coverage_complete`'''
+dedup_id = "e455c8cb6ae6c689"
+
+[[items]]
+id = "P12"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "Agents"
+summary = "Reused research blocks contradict a note-writing agent"
+description = """claude/agents/research-lite.md:39 heads the block "## Read-only, always"; research-finding-record requires a report-ending coverage line while the Workflow schema returns {id, verdict, note}; research-methods' bar drops restatement, often what a lens question asks. Task 2 says copy byte-identical without saying which rule wins or how a note maps to finding records."""
+anchor_old = "`plan-v2-note-writer` is a new shared block: write only the `note:` path the assignment names, overwriting an older note;"
+anchor_new = "`plan-v2-note-writer` is a new shared block, and the one write the read-only rules allow; the note holds the verdict, the answer, records for facts a decision rests on, and the coverage line. Write only the `note:` path the assignment names, overwriting an older note;"
+dedup_id = "53cad3f69d45fd58"
+
+[[items]]
+id = "P13"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "Agents"
+summary = "Exact values tasks 2, 4, 9 and 10 need are shorthand or appendix-only"
+description = '"both Context7 pairs" names no ids and tools: is a silent whole grant. Also state: the flow init slug rule ^[a-z0-9][a-z0-9-]{0,63}$ in Approach "Workflows" and the Open row; in task 10, that the emitted probe script has no errexit and no timeout, so run it under a stated limit.'
+anchor_old = "plus both Context7 pairs"
+anchor_new = "plus `mcp__plugin_context7_context7__query-docs`, `mcp__plugin_context7_context7__resolve-library-id`, `mcp__claude_ai_Context7__query-docs`, `mcp__claude_ai_Context7__resolve-library-id`"
+dedup_id = "fe7dcc762f28c35f"
+
+[[items]]
+id = "P14"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "Agents"
+summary = "omitClaudeMd leaves subdirectory CLAUDE.md and path rules in, so a live challenger is not code-only"
+description = "Docs: subdirectory CLAUDE.md files and matching path-scoped rules still load. Verified on this machine: Explore has nested_memory rows in 24 of 26 transcripts. Replay is measured on a different context from production unless the runbook records nested_memory. Downgraded from warning: impact on a verdict is unmeasured."
+anchor_old = "Told not to read `notes/`, `plan.toml` or `tasks.toml`, a prompt-only limit"
+anchor_new = "Told not to read `notes/`, `plan.toml` or `tasks.toml`, a prompt-only limit; subdirectory CLAUDE.md files and path-scoped rules still load when it reads inside the working directory"
+dedup_id = "f83938c07ac3d6ff"
+
+[[items]]
+id = "P15"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "Probes"
+summary = "The omitClaudeMd grep can false-fail: a marker read through a tool looks like an injected one"
+description = "Measured on this machine: research-deep has an instructions attachment row in 48 of 48 transcripts, flow-bootstrap 30 of 30, Explore 0 of 26. So the row discriminates and the marker grep does not: an agent reading a base's CLAUDE.md trips it while omitClaudeMd held."
+anchor_old = "Grep each agent's transcript under `transcriptDir` for a marker from the user CLAUDE.md and one from the project's; absent means it held."
+anchor_new = """Count `"attachment":{"type":"instructions"` rows in each agent's transcript under `transcriptDir`; none means it held. A marker inside a tool result only means the agent read the file. Also record any `"type":"nested_memory"` rows."""
+dedup_id = "77b85157c60e9696"
+
+[[items]]
+id = "P16"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "Probes"
+summary = "The replay leaks later commits and works only under bypass"
+description = """A detached worktree exposes every later commit (git rev-list --count 5b58a7e..HEAD is 332) through git log --all; the agent's cwd, git status and auto-memory stay at HEAD (MEMORY.md carries "propose split-the-big-file foundational tasks"; inferred for a custom omitClaudeMd agent, not measured; the workflow lens's transcript citation was a flow-bootstrap transcript, not an omitClaudeMd one, so downgraded to medium). Sibling-directory reads and writes prompt or fail under default, acceptEdits, auto and dontAsk. Launching from outside the repo is itself predicted, unverified, and each base's own CLAUDE.md then loads as nested memory, which is at-base knowledge and is recorded."""
+anchor_old = "`git worktree add --detach` each base in a sibling directory of the repo, and outputs there too, so no ignore rule is needed."
+anchor_new = "Export each base with `git archive <base> | tar -x -C <dir>` into a fresh directory outside the repo, outputs beside them, and run the replay from a new session started in their parent, so the agents' working directory, git refs, `git status` and auto-memory hold no later commit and reads and writes stay inside the working directory in every permission mode. Real runs keep auto-memory; note that gap in `## Results`."
+dedup_id = "a5453b9646dc31e9"
+
+[[items]]
+id = "P17"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "Probes"
+summary = "The keep rule treats reaching 2 as positive evidence from one unblinded rater"
+description = 'Exact binomial for 2 of 6: 95% CI 4.3% to 77.7%; P(at least 2 of 6) is 34.5% at a true rate of 20%. The rater sees slugs and "worth seeing" has no written criterion. Restructure and control goals pool, so an always-restructure challenger reaches 2 on restructure goals alone. Threshold is User Decision 6 and stands; this changes the sheet and the wording only.'
+anchor_old = "The user rates each output. Keep at 2 of 6 or more. Later knowledge can leak through memory, so the count is an upper bound."
+anchor_new = "The user rates each output against one written question, whether it would have changed what was asked for, from a sheet with slugs removed and order shuffled, before opening the key. The sheet tallies restructure goals and control goals separately. Keep at 2 of 6 or more. Later knowledge can leak and the rater knows the goals, so the count is an upper bound: below 2 removes the step, and 2 or more keeps it provisionally because it is cheap, not because it is shown to work."
+dedup_id = "61b240af66ee0542"
+
+[[items]]
+id = "P18"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "Probes"
+summary = "T1 to T3 state no consequence, so tasks 7 and 9 make an architectural call at run time"
+description = """Approach "Probes" promises each outcome has a stated consequence, but Resume only says record. Task 7's "anything" should become: only T3 bears on this script; if a changed first prompt does not miss, escalate spec-stale. Task 9's clause becomes: apply the consequences in Approach, "Probes". Also: "kill a session" is ambiguous (Move to background keeps a resumable session); T3 can false-report by editing claude/workflows/*.js when the relaunch reads a session copy or cached list, so change the prompt through args."""
+anchor_old = "T1: kill a session mid-run on three lenses, start a new session, list `notes/`, pass only what is missing, and confirm from the transcripts that only those ran. T2: under `claude --resume`, relaunch with `resumeFromRunId` after editing a file a prompt only points at, and record whether the cached result is stale. T3: repeat with a changed first prompt, and record whether it misses from there on."
+anchor_new = """T1: end a session with "Exit and stop tasks" or a hard kill, never "Move to background", mid-run on three lenses, start a new session, list `notes/`, pass only what is missing, treating a note that does not open `Verdict:` as missing, and confirm from the transcripts that only those ran. T2: under `claude --resume`, relaunch with `Workflow({name, args, resumeFromRunId})` after editing a file a prompt only points at, and record whether the cached result is stale. T3: repeat with a changed first prompt, by changing a lens's `question` in `args`, and record whether it misses from there on. Consequences: `T1:` false stops for `/plan-update`, since re-entry rests on it. The open-run rule permits a relaunch only when `T3:` reads `miss` and, if `T2:` reads `stale`, only when nothing a prompt points at has changed since launch. Any other result makes the rule always `plan run abandon`."""
+dedup_id = "c5fb17e5c572ca46"
+
+[[items]]
+id = "P19"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "Probes"
+summary = "Nothing enumerates milestone A's links, so plan-cold-reader falls through"
+description = "No probe uses plan-cold-reader and After Merge lists only commands/plan-v2.md, skills/plan-v2-engine and workflows/plan-v2-prove.js. A runbook linking what its probes use leaves plan-v2-prove naming an unlinked agent until the proof. ~/.claude/workflows does not exist, so New-Item fails without its parent."
+anchor_old = "- **Links.** New entries in `~/.claude/{agents,workflows}`, per-entry links"
+anchor_new = "- **Links.** New entries in `~/.claude/{agents,workflows}`, namely `agents/plan-investigator.md`, `agents/plan-challenger.md`, `agents/plan-cold-reader.md` and `workflows/plan-v2-investigate.js`, creating `workflows/` first; per-entry links"
+dedup_id = "4b6a67d5e4e59cd8"
+
+[[items]]
+id = "P20"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "4. Add the investigate Workflow [M]"
+summary = "A same-args relaunch hits the journal only up to the first failed agent"
+description = 'Docs "Which agents run again": a failed agent reruns, and so does every agent the script starts after it, even completed ones. Up to five good opus lenses can rerun and overwrite their notes. Task 7 and task 9 inherit the claim.'
+anchor_old = "A lens agent's prompt is built from `args` alone, so a same-args relaunch hits the journal."
+anchor_new = "A lens agent's prompt is built from `args` alone, so a same-args relaunch hits the journal up to the first failed agent, then reruns it and every agent started after it."
+dedup_id = "bff2ce21405d3e4f"
+
+[[items]]
+id = "P21"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "4. Add the investigate Workflow [M]"
+summary = "Three missing edges: task 4 on 1, task 9 on 8, task 14 on 13"
+description = "tasks edges shows task 1's only outgoing edge is 1 to 6. Task 4's acceptance runs cargo test --lib workflow_scripts, written by task 1; a filter matching zero tests exits 0, so it passes vacuously when concurrent. Task 9 cites the Dependency card section task 8 writes, and the link gate drops fragments. Task 14 points CLAUDE.md at task 13's carrier. Task 1 and 8 stop being maximal, so markers become A after 3, 5 and B after 14, 15. Membership unchanged."
+anchor_old = "- **Depends on**: 2"
+anchor_new = "- **Depends on**: 1, 2"
+dedup_id = "5eeb62281bad10a6"
+
+[[items]]
+id = "P22"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "5. Write the probe runbook [M]"
+summary = "Intent distillation is one unchecked judgement, the keep rule rests on it, and two instructions disagree"
+description = "Approach says Context; task 5 says Context and Scope, and Scope names the solution (polymorphic-wondering-magpie's Scope lists a notify 8.2.0 watcher and a lib+bin split). The acceptance counts rows, so an empty or leaky cell passes. A leaked solution inflates the count. Add Intents: to the Results lines."
+anchor_old = "Distil each intent and future state by hand from that plan's Context and Scope under `docs/plans/`, stating the need and none of its solution."
+anchor_new = "Distil each intent and future state by hand from that plan's Context under `docs/plans/` only, stating the need and none of its solution: no technique, module, verb or crate named in that plan's Scope or Tasks. The runbook's first replay step has the user read the table, rewrite any cell that names a solution, and write `Intents: reviewed` under `## Results` before launching."
+dedup_id = "f422e3049d1c56b6"
+
+[[items]]
+id = "P23"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "5. Write the probe runbook [M]"
+summary = "The resume tests have no slug, no teardown and no parent directory"
+description = "T1 to T3 run the real Workflow in this tree, leaving docs/flows/<slug>/notes/ and T2's edited file; implement.md:197 halts the train on unexplained leftovers. A killed session leaves an open run row, and on remove the challenger link dangles. Raised by executability, feasibility and risk."
+anchor_old = "The inline Workflow script, the two `omitClaudeMd` markers, the three resume tests and the rating sheet stating the rule."
+anchor_new = "The inline Workflow script, the `omitClaudeMd` row count, the three resume tests on the throwaway slug `plan-v2-probe` with three named lenses, the rating sheet stating the rule, and a teardown the user runs after `## Results`: `plan run abandon` any open row, delete `docs/flows/plan-v2-probe/` and `.claude/flows/plan-v2-probe/`, restore the file T2 edited, remove each replay directory, confirm `git status --short` shows only the runbook, and on `Verdict: remove` delete the `plan-challenger.md` link under the Claude config dir. Create `~/.claude/workflows` before linking into it."
+dedup_id = "2ed60f3f5febc276"
+
+[[items]]
+id = "P24"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "6. Apply the probe results [S]"
+summary = "The (delete) note tells the implementer to remove the challenger on keep and on the stop"
+description = """tasks show 6 --with files prints deleted_files [claude/agents/plan-challenger.md] (verified). Both implementers are told a path in deleted_files is removed rather than read. A multi-word note reads as an edit per FileKind::of_note. Also replace the Detail sentence "The `(delete)` above takes effect only on `remove`." with "The note on that path is a conditional instruction, not a `(delete)` kind."; and add guard: grep -q '^Verdict: remove' docs/ideas/plan-v2-probes.md && test ! -f claude/agents/plan-challenger.md || test -f claude/agents/plan-challenger.md."""
+anchor_old = "`claude/agents/plan-challenger.md` (delete)"
+anchor_new = "`claude/agents/plan-challenger.md` (delete only on a remove verdict)"
+dedup_id = "1454b2ae29676cce"
+
+[[items]]
+id = "P25"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "6. Apply the probe results [S]"
+summary = "Task 6 gates on the verdict alone, so a half-filled record or failed omitClaudeMd passes"
+description = """Lookup:, omitClaudeMd: and Surprises: have no consumer. "A result that the tasks cannot absorb goes to /plan-update" has no owner, and task 9 reads T1-T3 unchecked. Task 6 becomes the triage point; spec-stale already routes to /plan-update at implement.md:244. Task 14's "need links" needs "or copies, when Lookup: says so". Depends on the regex finding."""
+anchor_old = "No line matching `^Verdict: (keep|remove) [0-9] of 6$`: edit nothing and return `escalate 6: spec-stale`, naming the runbook."
+anchor_new = "No line matching `^Verdict: (keep [2-6]|remove [01]) of 6$`, any of `Intents:`, `Lookup:`, `omitClaudeMd:`, `T1:`, `T2:`, `T3:` left empty, `omitClaudeMd:` not reading `held`, `T1:` false, or `Surprises:` other than `none`: edit nothing and return `escalate 6: spec-stale`, naming the runbook and the line."
+dedup_id = "695cb003d63ea973"
+
+[[items]]
+id = "P26"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "12. Write the engine skill [M]"
+summary = "A remove verdict does not reach tasks 12, 13 and 15 or the link, leaving a dispatch of a deleted agent"
+description = """Tasks 6, 9 and 14 branch on the verdict. Task 12's step table and task 13's quick "no challenger" clause do not, and task 1's lint reads only workflow scripts, so nothing catches Agent({subagent_type:"plan-challenger"}) until a real run. Add to task 13: on remove, drop the challenger clause from --depth. Add to task 15: on remove, mark v2-planning's Structure challenge and that Flow row as removed, citing the count (docs/plans/v2-planning.md:60,87,650)."""
+anchor_old = "The description is at most 1024 characters and says a carrier invokes it."
+anchor_new = "The description is at most 1024 characters and says a carrier invokes it. On `Verdict: remove` in `docs/ideas/plan-v2-probes.md`, the step table has no Structure challenge row and names no `plan-challenger`."
+dedup_id = "3eada7048e616348"
+
+[[items]]
+id = "P27"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "8. Add the dependency card recipe [S]"
+summary = "The sparse index path form reports log, syn, cc and url as nonexistent"
+description = "Verified live: lo/g/log 404, 3/l/log 200, 2/cc 200, se/rd/serde 200. Names of 1, 2 and 3 characters use 1/, 2/ and 3/<first>/, and filenames are lowercased. The risk lens also observed the index and API disagreeing on - versus _. Wrong on the one question the card exists to settle. Keep the form on one line for the grep -c acceptance."
+anchor_old = "crates.io sparse index `index.crates.io/<2>/<2>/<name>`;"
+anchor_new = "crates.io sparse index on the lowercased name: `index.crates.io/1/<name>`, `2/<name>`, `3/<first>/<name>`, else `<first 2>/<next 2>/<name>`; a 404 is checked against the API before it reads as missing, because the two disagree on `-` and `_`;"
+dedup_id = "804e64e281296b9c"
+
+[[items]]
+id = "P28"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "8. Add the dependency card recipe [S]"
+summary = "The scratch-manifest recipe fails as written and overstates cost"
+description = 'Verified: cargo tree on a manifest with no target exits with "no targets specified in the manifest". Risk lens measured on reqwest: --no-dedupe printed 5544 lines for 138 distinct, and --target all gave 138 against 99 for the host. It downloads the graph and builds nothing. Rust only, though the card names Node and Python; supply-chain-intel.md:28 holds deps.dev :dependencies.'
+anchor_old = "a scratch manifest holding only the candidate, `cargo tree --prefix none --no-dedupe -e normal,build --target all`, minus names in the project lockfile, labelled approximate."
+anchor_new = "a scratch manifest holding only the candidate beside an empty `src/lib.rs`, since cargo refuses a manifest with no target, then `cargo tree --prefix none --no-dedupe -e normal,build --target all`, de-duplicated with `sort -u` and the scratch package's own line dropped, minus names in the project lockfile, labelled approximate and high because `--target all` counts every platform. It downloads the graph and builds nothing. For npm and PyPI, use the deps.dev `:dependencies` call above."
+dedup_id = "fd5b3462f3469660"
+
+[[items]]
+id = "P29"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "8. Add the dependency card recipe [S]"
+summary = "npm and PyPI endpoints named cannot supply required card fields"
+description = "Live: npm /latest has no time or downloads; registry.npmjs.org/<pkg> has time.created; api.npmjs.org serves downloads. PyPI info.downloads is -1 for every window, which can be misread as a number; first publish comes only from releases[*][*].upload_time."
+anchor_old = "`registry.npmjs.org/<pkg>/latest`; `pypi.org/pypi/<pkg>/json`."
+anchor_new = "`registry.npmjs.org/<pkg>/latest` for existence and licence, `registry.npmjs.org/<pkg>` `time.created` for first publish, `api.npmjs.org/downloads/point/last-week/<pkg>` for downloads; `pypi.org/pypi/<pkg>/json` for existence and licence, the earliest `releases[*][*].upload_time` for first publish, and report PyPI downloads as unavailable, since `info.downloads` is always -1."
+dedup_id = "d5d61fd03545a6b1"
+
+[[items]]
+id = "P30"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "8. Add the dependency card recipe [S]"
+summary = "Identifying user-agent and generic client name contradict"
+description = "crates.io data-access asks for a user-agent identifying the application. A user-agent naming the tool and carrying no personal data satisfies both."
+anchor_old = "Send only public registry names, with a generic client name."
+anchor_new = "Send only public registry names, under a client name that identifies the tool and carries no user, host or path."
+dedup_id = "749ba8385e451f1f"
+
+[[items]]
+id = "P31"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "10. Write the write-and-prove reference [M]"
+summary = "Tasks 9 to 12 depend on each other's unwritten text, and re-entry has two authors"
+description = """Task 10 runs alongside task 9, which writes the Investigate sequence the Prove row points at ("recorded as for Investigate"). Approach puts re-entry in SKILL.md, yet task 9 says "plus re-entry" and task 12 says "re-entry". Task 12 says "after async_launched the turn ends" while a compile failure is also async_launched with error. Task 9 also needs a source for Open's --branch and --scope, since Approach "Carrier" gives no such flags. Edits beyond the anchor: task 9 "plus the open-run rule"; task 12 "after async_launched with no error"."""
+anchor_old = 'Write the Design, Write and Prove rows of Approach, "Engine steps" as procedure.'
+anchor_new = """Write the Design, Surface again, Write and Prove rows of Approach, "Engine steps" as procedure. State the cold read's launch sequence in full (`Workflow`, check `error`, `plan run start`, end the turn, `plan run finish`) rather than pointing at `open-and-challenge.md`, which task 9 writes concurrently."""
+dedup_id = "668fb052caaeeb1a"
+
+[[items]]
+id = "P32"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "11. Write the approve reference [M]"
+summary = "Five refusals is six, and counts-last contradicts the gate's key order"
+description = """references/plan.md:497-509 lists six preconditions; --review ran cannot fire in this slice, which may be how five arose, but the task does not say so. task_mix is key four of seven in plan gate, so "in its order with counts last" contradicts itself: say key order, the digest's counts last."""
+anchor_old = "Name the five refusals from `claude/skills/tomlctl/references/plan.md` and what clears each."
+anchor_new = "Name each refusal under `plan approve` in `claude/skills/tomlctl/references/plan.md` and what clears it, noting that `--review ran` does not apply in this slice."
+dedup_id = "53edb8ad19a77216"
+
+[[items]]
+id = "P33"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "11. Write the approve reference [M]"
+summary = "Raw notes reach a public repo with no scan, and the user sees file names not contents"
+description = 'gh repo view reports PUBLIC. No scanner in .githooks or scripts. v1 notes are orchestrator-written and vetted; v2 notes are raw agent output mixing fetched text with private context, and this slice has no vet pass. Tracking stands per User Decision 3. A public commit cannot be fully undone (d729ca3: "The old paths remain in git history").'
+anchor_old = "Stage by name, never `git add -A`, and include all of `docs/flows/<slug>/`, since notes are tracked."
+anchor_new = '''Stage by name, never `git add -A`, and include all of `docs/flows/<slug>/` except any path `git check-ignore` reports, since notes are tracked by default. First run `grep -rnE 'BEGIN [A-Z ]*PRIVATE KEY|ghp_[A-Za-z0-9]{20}|github_pat_|sk-ant-|AKIA[0-9A-Z]{16}|C:[\\/]Users[\\/]' docs/flows/<slug>/` and show every hit at the gate.'''
+dedup_id = "84fb1f9e3e243b5d"
+
+[[items]]
+id = "P34"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "Risks"
+summary = "The .gitignore opt-out breaks the approval commit"
+description = "Scratch repo: git add -n of an ignored path by name exits 1. plan approve does not read notes/ (references/plan.md:508), so only the carrier's staging rule breaks. Depends on the task 11 check-ignore clause."
+anchor_old = "Per-repo opt-out is available through `.gitignore`."
+anchor_new = "Per-repo opt-out through `.gitignore` relies on task 11 skipping paths `git check-ignore` reports, because `git add` of an ignored path by name exits 1."
+dedup_id = "37c7f5db6a7d63a0"
+
+[[items]]
+id = "P35"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "14. Point the project docs at the carrier [S]"
+summary = "Task 1 falsifies hook prose no task updates"
+description = 'CLAUDE.md:13 and :68 enumerate the gate paths; :68 is already narrower than :13. Also .githooks/pre-commit:56 and scripts/shared-blocks.toml:70 ("The research agents share...") go stale; .claude/rules/documentation.md requires a comment to change with its line, in tasks 1 and 2 within their declared files.'
+anchor_old = "Facts stay in the skill; this is a pointer, as `## Review v2` is."
+anchor_new = "Facts stay in the skill; this is a pointer, as `## Review v2` is. Also add `claude/workflows/*.js` to the gate paths named in Developer setup and in Build & test's `cargo nextest` line."
+dedup_id = "4fd1dbf4d65aa755"
+
+[[items]]
+id = "P36"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "15. Record the departures [S]"
+summary = "Task 15 deletes a true citation as sourceless"
+description = """Verified: amplifying.ai/research/claude-code-picks-fable says "Fable does it 57% of the time" for caching, the exact claim at docs/plans/v2-planning.md:797. The other two corrections held per the risk lens: 1.3% is 2512.11589 (345 of 26,760 PRs) and 22.23% is 2606.08444 section 4.2 (10,779 of 48,494), a count of extracted crate references. The plan's only source for them is typed-dazzling-goblet.md, which After Merge deletes, and that source flags an alphaXiv rendering. Completeness's anchor repeating "no source" was dropped at vet."""
+anchor_old = "and the `57%` has no source, so delete it."
+anchor_new = "and the `57%` is Fable 5's Custom/DIY share of caching picks (`16/28`), from [What Fable Actually Chooses](https://amplifying.ai/research/claude-code-picks-fable) (Amplifying, July 2026), so keep it and cite that. State that `22.23%` is per extracted crate reference."
+dedup_id = "b8c1f1c545e1b687"
+
+[[items]]
+id = "P37"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "15. Record the departures [S]"
+summary = "v2-planning statements stay false after task 15, whose only forbids fixing them"
+description = 'L111 says whether notes are tracked is open; L243 says "One fresh read-only agent" while the cold reader holds Write; L269 says run review-v2-pipeline once before committing further, while Scope excludes it. The departure row "Investigators hold Write" understates: all three agents hold it. Add a departures row for L269.'
+anchor_old = "only hand-authored sections: Later slices row 2, the unattended sentence and the `cargo tree` phrase in Surfacing."
+anchor_new = """only hand-authored sections: Later slices row 2, the unattended sentence and the `cargo tree` phrase in Surfacing, the `notes/*.md` tracking sentence in Flow directory, "read-only agent" under Cold readers (it writes one note), and After approval's `review-v2-pipeline` line (milestone A's run stands in; that run stays assigned to no slice)."""
+dedup_id = "e2ca29be8e706f14"
+
+[[items]]
+id = "P38"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "Success Criteria"
+summary = "The verdict regex accepts verdicts that break the keep rule"
+description = "Probed: it matches Verdict: keep 1 of 6, remove 5 of 6 and keep 9 of 6. User Decision 6 fixed the rule in advance so it could not be rationalised afterwards. Replace at all five sites: Success Criteria, the success: key, task 5 Detail, task 5 falsifier, task 6 Detail."
+anchor_old = "`grep -Eqs '^Verdict: (keep|remove) [0-9] of 6$' docs/ideas/plan-v2-probes.md`"
+anchor_new = "`grep -Eqs '^Verdict: (keep [2-6]|remove [01]) of 6$' docs/ideas/plan-v2-probes.md`"
+dedup_id = "34077d569e291ef1"
+
+[[items]]
+id = "P39"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "Success Criteria"
+summary = "Success Criteria mostly prove that the tasks ran"
+description = """Goals unchecked: the engine and agents exist; probes other than the verdict recorded; the verdict applied; a run reached approval. The only end-to-end bullet is predicted and After Merge records only backlog items. Add forward: test "$(grep -cE '^(Lookup|omitClaudeMd|T1|T2|T3): [^<[:space:]]' docs/ideas/plan-v2-probes.md)" = 5 exits 0 (today: exits 1), with its success: key; have the proof write a Proof: line."""
+anchor_old = "forward: `test -f claude/commands/plan-v2.md` exits 0 (today: exits 1)."
+anchor_new = "forward: `test -f claude/commands/plan-v2.md && test -f claude/skills/plan-v2-engine/SKILL.md && test -f claude/agents/plan-investigator.md && test -f claude/agents/plan-cold-reader.md` exits 0 (today: exits 1)."
+dedup_id = "051ccbb36349d76d"
+
+[[items]]
+id = "P40"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "Verification Commands"
+summary = "Two-control sweep: all probes healthy, except a wrong baseline and a guard with no success key"
+description = 'Sweep of all 15 tasks and 4 success: keys: every forward criterion fails today and positive controls hold; every success: key exits non-zero. Two defects: the Task 5 falsifier and Success Criteria say exits 1 today, but with the file absent grep -Eqs exits 2; correct to "exits non-zero". The Success Criteria guard bash scripts/verify-shared-blocks.sh has no success: key, and Phase 3 runs only success: keys, not checkpoint:. Baseline: verify-shared-blocks OK; verify-plan-story-blocks OK; cli::dispatch::tests 48 passed.'
+anchor_old = "success: ! grep -q 'taking the body on stdin' docs/plans/v2-planning.md"
+anchor_new = """
+success: ! grep -q 'taking the body on stdin' docs/plans/v2-planning.md
+success: bash scripts/verify-shared-blocks.sh"""
+dedup_id = "8bfce3678230d02e"
+
+[[items]]
+id = "P41"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "Risks"
+summary = "The investigators' Write risk cites a non-comparable precedent and a prose-only fence"
+description = "review-finder, review-finder-cf and review-verifier do hold Write plus web tools (verified for review-verifier), but write to the ignored .review-v2-runs/ and have never run. Notes reviewed at commit see only what is staged; an injected write to .githooks/pre-commit, which Sequence step 1 turns on, never appears. The only PreToolUse hook is block-empty-python-stdin.py. Add the check to task 9's reference. Write stays, per User Decision 2."
+anchor_old = "This is the review agents' existing exposure."
+anchor_new = "Nothing fences this: Bash can already write anywhere, `defaultMode` here is `bypassPermissions`, and no hook limits a Write to `note:`. `review-finder`, `review-finder-cf` and `review-verifier` hold the same grant, but they write to the ignored `.review-v2-runs/` and have never run, so they are no precedent. The compensating check is the carrier's: after each fan-out, `git status --porcelain` compared with before launch must show nothing new outside `docs/flows/<slug>/notes/`, else stop and show the user. Writes outside the repo stay unchecked; that residual is accepted."
+dedup_id = "40fd8784cbaa8661"
+
+[[items]]
+id = "P42"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "Risks"
+summary = "Total Workflow failure has no stated consequence, and milestone B stalls"
+description = "The replay uses Workflow({script}) only to double as the omitClaudeMd test; the real challenger is one-shot Agent. If Workflows do not run, no Verdict: line appears, task 6 returns spec-stale indefinitely, and the Carrier design allows no Agent fallback, so the whole milestone needs a user decision nothing tells the user about."
+anchor_old = "Mitigation: milestone A finds out before the engine is written, on the real investigate Workflow."
+anchor_new = "Mitigation: milestone A finds out before the engine is written, on the real investigate Workflow. If Workflows do not run here at all, the replay falls back to six one-shot `Agent` dispatches, as the real step uses, so the rating still yields a `Verdict:`. The `omitClaudeMd` and resume probes record `not run`, task 6 returns `spec-stale` naming them, and the plan goes to `/plan-update`, because `v2-planning` allows the engine no Agent fallback. Milestone A stays committed, since its agents and scripts do nothing unlinked, and removing the links under the Claude config dir is the rollback."
+dedup_id = "027d90b647842e5f"
+
+[[items]]
+id = "P43"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "After Merge"
+summary = "The proof's round trip can drop this flow's registry row from main and block the return switch"
+description = "git diff shows this flow's row uncommitted in .claude/active-flow.toml (27 lines). git switch -c carries it, the Approve row commits it, and git switch main takes it away. Scratch-repo simulation: a later registry write blocks the switch. Ignored agents.toml survives under .claude/flows/<slug>/ (.gitignore:8), which the cleanup does not name. Raised by feasibility and risk; the worktree form was not run on this repo."
+anchor_old = "Run the proof: `git switch -c plan-v2-proof`, then `/plan-v2` on a small real goal through `plan approve`, probes and gate included. Record anything it reveals as backlog items, then `git switch main` and delete the branch, so the flow and its registry entry go with it. Remove `docs/flows/<slug>` if untracked files remain."
+anchor_new = "Run the proof in its own linked worktree: `git worktree add ../plan-v2-proof -b plan-v2-proof`, start a session there, then `/plan-v2` on a small real goal through `plan approve`, probes and gate included. Back in the primary checkout, record anything it reveals as backlog items and the outcome as a `Proof:` line under `## Results` in `docs/ideas/plan-v2-probes.md`, then `git worktree remove --force ../plan-v2-proof` and `git branch -D plan-v2-proof`, so the flow, its ignored `agents.toml` and its registry entry go with it and the primary checkout's registry is never touched."
+dedup_id = "5107ff21a22a79f6"
+
+[[items]]
+id = "P44"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "Tasks"
+summary = "Reference and doc acceptances check one token of a multi-part deliverable"
+description = "Downgraded from warning: heavier greps overfit wording and the deliverables are prose. Candidates: task 3, test -f the agent and no omitClaudeMd; task 8 the observed recipe run; task 9 Edit(/docs/flows/**), plan run abandon, AskUserQuestion; task 10 --record, writes_build, tasks add-many; task 11 status-transition, will now pick this flow; task 12 all three reference links; task 13 AskUserQuestion, --depth; task 15 57%, 22.23%, posts a durable question. Each new command needs the two-control sweep."
+dedup_id = "9d7968f5aa58c855"
+
+[[items]]
+id = "P45"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "1. Gate Workflow scripts on their agents [M]"
+summary = "Task 1's extraction is sound for review-v2.js but false-passes other spellings"
+description = """The node --check claim is correct and the binary allows top-level return. agentType: "x", agentType:'x', agentType: SOME_CONST and a list not named *_AGENTS pass unchecked. An interpolated meta passes the opening check, yet the runtime skips the file with only a warning (binary string "has invalid meta" verified)."""
+anchor_old = "Agents are every `agentType: '<x>'` literal and every quoted entry of a `const <NAME>_AGENTS = [...]`"
+anchor_new = "A `${` or `...` inside the `meta` block fails, because the runtime skips such a file with a warning. Agents are every `agentType` string literal in either quote, with or without the space, and every quoted entry of a `const <NAME>_AGENTS = [...]`; any other `agentType` value not ending `.agentType` fails"
+dedup_id = "99d5b661669e50b6"
+
+[[items]]
+id = "P46"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "Engine steps"
+summary = "skipped-flag stamps a flag no one passed"
+description = "tomlctl/src/plan/approve.rs:187,249 needs only a non-blank reason and no precondition reads the run. The append-only [[approval]] then records a user choice that did not happen. Flows are throwaway, so low impact; the reason text carries the distinction."
+anchor_old = "`plan approve --review skipped-flag --reason <text>`."
+anchor_new = "`plan approve --review skipped-flag --reason <text>`, with the same text as the review skip, because until Slice 3 `skipped-flag` also covers a run with no flag."
+dedup_id = "a688f8b3a679bda8"
+
+[[items]]
+id = "P47"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "Sequence"
+summary = "Six human ratings sit uncommitted across milestone B"
+description = "Results is the one artefact nobody can regenerate; the next cut is checkpoint B, and a working-tree rollback could lose it. Placement, not cadence. Keep each goal's rating too, since replay outputs are discarded."
+anchor_old = "A live session follows `docs/ideas/plan-v2-probes.md`: make the links, restart, replay, rate, run the checks, write `## Results`."
+anchor_new = "A live session follows `docs/ideas/plan-v2-probes.md`: make the links, restart, replay, rate, run the checks, write `## Results` with each goal's rating, and commit that file before step 4."
+dedup_id = "51553298060c38f2"
+
+[[items]]
+id = "P48"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "Probes"
+summary = "The relaunch branch and T2/T3 may not earn their cost"
+description = "Advisory, needs a user decision: relaunch needs the same session, exact args, a stopped run and no earlier failure, and returns only {id, verdict, note}, while the note already opens Verdict:. A fresh launch over missing lenses loses nothing. T2 and T3 test what the sources already settle (cache key holds no file state; a changed prompt misses). docs/plans/v2-planning.md Risks L656 asks for the three tests, so dropping them needs a v2-planning edit."
+dedup_id = "2a8313310056d203"
+
+[[items]]
+id = "P49"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "Carrier and Workflow substrate"
+summary = "Notes name two omitClaudeMd agents; four set it"
+description = "grep ^omitClaudeMd: claude/agents shows review-checker, review-finder-cf, review-surveyor, review-sweeper (verified). The only drift the alignment sweep found; every count it re-derived otherwise matched, including 20 files, 91 CRLF files and 7, 3, 3 missing links."
+anchor_old = "Agents: `review-finder-cf` and `review-surveyor` set `omitClaudeMd: true`."
+anchor_new = "Agents: `review-checker`, `review-finder-cf`, `review-surveyor` and `review-sweeper` set `omitClaudeMd: true`."
+dedup_id = "cf37eeae67516e49"

@@ -826,6 +826,73 @@ fn js_agent_names(source: &str) -> (Vec<String>, Vec<String>) {
     (names, opaque)
 }
 
+/// `model` and `effort` keys set inside `agent(` calls. A flow agent's model and
+/// effort live in its frontmatter, so a call site must not override them. Strings
+/// and comments are skipped, except a quoted key.
+fn js_agent_override_keys(source: &str) -> Vec<&'static str> {
+    const KEYS: [&str; 2] = ["model", "effort"];
+    let mut found = Vec::new();
+
+    for (at, _) in source.match_indices("agent(") {
+        if source[..at].ends_with(|c| is_js_ident(c) || c == '.') {
+            continue;
+        }
+        let mut rest = &source[at + "agent(".len()..];
+        let mut depth = 1usize;
+        let mut prev_ident = false;
+        let mut prev_significant = '(';
+        while let Some(c) = rest.chars().next() {
+            if let Some(past) = js_skip_comment(rest) {
+                rest = past;
+                continue;
+            }
+            if matches!(c, '\'' | '"' | '`') {
+                let Some((body, past)) = js_string(rest) else {
+                    break;
+                };
+                let is_key =
+                    past.trim_start().starts_with(':') && matches!(prev_significant, '{' | ',');
+                if is_key && let Some(key) = KEYS.iter().find(|k| **k == body) {
+                    found.push(*key);
+                }
+                rest = past;
+                prev_ident = false;
+                prev_significant = c;
+                continue;
+            }
+            if is_js_ident(c) && !prev_ident {
+                let len = rest.find(|ch| !is_js_ident(ch)).unwrap_or(rest.len());
+                let word = &rest[..len];
+                let is_key = rest[len..].trim_start().starts_with(':')
+                    && matches!(prev_significant, '{' | ',');
+                if is_key && let Some(key) = KEYS.iter().find(|k| **k == word) {
+                    found.push(*key);
+                }
+                rest = &rest[len..];
+                prev_ident = false;
+                prev_significant = 'a';
+                continue;
+            }
+            match c {
+                '{' | '[' | '(' => depth += 1,
+                '}' | ']' | ')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                _ => {}
+            }
+            if !c.is_whitespace() {
+                prev_significant = c;
+            }
+            prev_ident = is_js_ident(c);
+            rest = &rest[c.len_utf8()..];
+        }
+    }
+    found
+}
+
 fn md_stems(dir: &Path) -> Vec<String> {
     fs::read_dir(dir)
         .into_iter()
@@ -876,6 +943,11 @@ fn workflow_script_problems(source: &str, claude_dir: &Path) -> Vec<String> {
     for value in opaque {
         problems.push(format!(
             "agentType value `{value}` is neither a string literal nor a path ending `.agentType`"
+        ));
+    }
+    for key in js_agent_override_keys(source) {
+        problems.push(format!(
+            "an agent() call sets `{key}`, which belongs in the agent's frontmatter"
         ));
     }
     problems
@@ -1018,6 +1090,14 @@ fn workflow_scripts_reject_each_violation() {
         (
             format!("{meta}agent(p, {{ agentType: 'real-agent' + s }})\n"),
             "neither",
+        ),
+        (
+            format!("{meta}agent(p, {{ agentType: 'real-agent', model: 'opus' }})\n"),
+            "sets `model`",
+        ),
+        (
+            format!("{meta}agent(p, {{ agentType: 'real-agent', 'effort': 'high' }})\n"),
+            "sets `effort`",
         ),
     ];
     for (source, needle) in &cases {

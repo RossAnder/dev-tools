@@ -614,4 +614,5 @@ fn a_run_row_written_before_outcome_existed_still_reads() {
     let run = stdout_json(&out)["stage_inputs"]["runs"][0].clone();
     assert_eq!(run["state"], "finished", "{run}");
     assert_eq!(run["outcome"], serde_json::Value::Null, "{run}");
+    assert_eq!(run["args_hash"], "h", "{run}");
 }

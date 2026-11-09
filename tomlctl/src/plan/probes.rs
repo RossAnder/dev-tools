@@ -358,6 +358,26 @@ fn record(
         .iter()
         .flat_map(|row| row.files.iter().cloned())
         .collect();
+    let expected: usize = store
+        .items
+        .iter()
+        .filter(|row| task_skip_reason(row, milestone).is_none())
+        .filter_map(|row| store.specs.iter().find(|spec| spec.r#ref == row.r#ref))
+        .map(|spec| {
+            spec.accept
+                .iter()
+                .filter(|a| skip_reason(a).is_none())
+                .count()
+        })
+        .sum();
+    if capture.controls.len() < expected {
+        return Err(refuse(format!(
+            "the capture covers {} of the {expected} probeable `accept` rows in scope, as a probe \
+             script cut short by a timeout leaves it: re-run the emitted script under a longer \
+             limit, or `plan probes --emit` again if the store has changed",
+            capture.controls.len()
+        )));
+    }
     let mut recorded = Vec::new();
     for row in &store.items {
         if task_skip_reason(row, milestone).is_some() {

@@ -1,0 +1,37 @@
+slug = "we-ve-just-implement-the-shimmying-kettle"
+plan_path = "docs/plans/we-ve-just-implement-the-shimmying-kettle.md"
+status = "review"
+created = 2026-11-06
+updated = 2026-11-09
+branch = "main"
+scope = [
+    "claude/commands/plan-v2.md",
+    "claude/skills/plan-v2-engine/SKILL.md",
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md",
+    "claude/skills/plan-v2-engine/references/approve.md",
+    "claude/agents/plan-investigator.md",
+    "claude/agents/plan-challenger.md",
+    "claude/agents/plan-cold-reader.md",
+    "claude/workflows/**",
+    "claude/skills/research-methods/references/supply-chain-intel.md",
+    "claude/skills/tomlctl/references/plan.md",
+    "scripts/shared-blocks.toml",
+    ".githooks/pre-commit",
+    "tomlctl/src/cli/dispatch/tests/**",
+    "docs/ideas/**",
+    "docs/plans/v2-planning.md",
+    "CLAUDE.md",
+]
+
+[tasks]
+total = 15
+completed = 15
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/we-ve-just-implement-the-shimmying-kettle/review-ledger.toml"
+optimise_findings = ".claude/flows/we-ve-just-implement-the-shimmying-kettle/optimise-findings.toml"
+execution_record = ".claude/flows/we-ve-just-implement-the-shimmying-kettle/execution-record.toml"
+plan_review_findings = ".claude/flows/we-ve-just-implement-the-shimmying-kettle/plan-review-findings.toml"
+tasks = ".claude/flows/we-ve-just-implement-the-shimmying-kettle/tasks.toml"

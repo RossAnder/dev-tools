@@ -1,0 +1,489 @@
+schema_version = 1
+last_updated = 2026-11-09
+plan_path = "docs/plans/we-ve-just-implement-the-shimmying-kettle.md"
+last_import_refs = [
+    "gate-workflow-scripts-on-their-agents",
+    "add-the-investigator-and-challenger-agents",
+    "add-the-cold-reader-agent",
+    "add-the-investigate-workflow",
+    "write-the-probe-runbook",
+    "apply-the-probe-results",
+    "add-the-prove-workflow",
+    "add-the-dependency-card-recipe",
+    "write-the-open-and-challenge-reference",
+    "write-the-write-and-prove-reference",
+    "write-the-approve-reference",
+    "write-the-engine-skill",
+    "add-the-carrier-and-its-gate-row",
+    "point-the-project-docs-at-the-carrier",
+    "record-the-departures",
+]
+
+[policy]
+checkpoints = "milestones"
+max_parallel = 6
+commit_granularity = "per-task"
+origin = "plan"
+note = ""
+
+[[checkpoints]]
+id = "A"
+rationale = "The probe kit, runnable in a live session"
+
+[[checkpoints]]
+id = "B"
+rationale = "The carrier, steered by recorded results"
+
+[[file_notes]]
+ref = "add-the-investigator-and-challenger-agents"
+file = "claude/agents/plan-investigator.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "add-the-investigator-and-challenger-agents"
+file = "claude/agents/plan-challenger.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "add-the-cold-reader-agent"
+file = "claude/agents/plan-cold-reader.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "add-the-investigate-workflow"
+file = "claude/workflows/plan-v2-investigate.js"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-probe-runbook"
+file = "docs/ideas/plan-v2-probes.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "apply-the-probe-results"
+file = "claude/agents/plan-challenger.md"
+note = "(delete only on a remove verdict)"
+
+[[file_notes]]
+ref = "add-the-prove-workflow"
+file = "claude/workflows/plan-v2-prove.js"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-open-and-challenge-reference"
+file = "claude/skills/plan-v2-engine/references/open-and-challenge.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-write-and-prove-reference"
+file = "claude/skills/plan-v2-engine/references/write-and-prove.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-approve-reference"
+file = "claude/skills/plan-v2-engine/references/approve.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-engine-skill"
+file = "claude/skills/plan-v2-engine/SKILL.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "add-the-carrier-and-its-gate-row"
+file = "claude/commands/plan-v2.md"
+note = "(new)"
+
+[[items]]
+id = 1
+ref = "gate-workflow-scripts-on-their-agents"
+title = "Gate Workflow scripts on their agents"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A: the probe kit"
+phase_depth = 3
+heading_depth = 4
+files = [
+    "tomlctl/src/cli/dispatch/tests/lint.rs",
+    ".githooks/pre-commit",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add a test that every `claude/workflows/*.js` opens with `export const meta = {`, names itself, does not share a command's name, and names only agents with a file; run the gate subset when a Workflow script is staged."
+detail = '''Reuse `command_lint_workflow_scripts`. A `meta` `name:` literal must not equal a stem under `claude/commands/`, because a saved Workflow becomes a command of that name. A `${` or a `...` spread inside the `meta` block fails, because the runtime skips such a file with a warning. Agents are every `agentType` string literal in either quote, with or without the space, and every quoted entry of a `const <NAME>_AGENTS = [...]`, as `claude/workflows/review-v2.js` writes `CELL_AGENTS`; each must have `claude/agents/<x>.md`. Any other `agentType` value not ending `.agentType` fails. Separate the check from the tree walk so fixture tests can drive it, on the fixture pattern `command_lint` tests use. It validates no JS syntax, because a script's top-level `return` fails `node --check`. In `.githooks/pre-commit`, add `claude/workflows/.*\.js` to the alternation that runs `cli::dispatch::tests`, and name Workflow scripts in the comment above it.'''
+acceptance = """
+- forward: `grep -c 'fn workflow_scripts_name_real_agents' tomlctl/src/cli/dispatch/tests/lint.rs` prints `1` (today: `0`).
+- forward: `grep -c 'claude/workflows' .githooks/pre-commit` prints `1` (today: `0`).
+- forward: `cargo test --manifest-path tomlctl/Cargo.toml --lib workflow_scripts` passes **predicted, unverified**; falsifier: dropping the agent-file check leaves the fixture naming `no-such-agent` accepted, turning it red."""
+agent = "implement-deep"
+commit = "03faed8"
+
+[[items]]
+id = 2
+ref = "add-the-investigator-and-challenger-agents"
+title = "Add the investigator and challenger agents"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A: the probe kit"
+phase_depth = 3
+heading_depth = 4
+files = [
+    "claude/agents/plan-investigator.md",
+    "claude/agents/plan-challenger.md",
+    "scripts/shared-blocks.toml",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = 'Write both agents per Approach, "Agents", and add the `plan-v2-note-writer` block.'
+detail = """Body shape follows `claude/agents/plan-executor.md`: role, what the prompt names, the work, then the shared blocks. Copy each existing block byte-identical and add both agents to its `files` list in `scripts/shared-blocks.toml`; the block table in Approach, "Agents" says which. The prompt names: `note:` for both; `lens:` and `question:` for the investigator; `intent:`, `future state:`, `code root:` and any computed signals for the challenger. A challenger reads code under `code root`, using absolute paths, since a replay's root is a worktree. A new block needs two carriers, which these are. Correct the comment above the research blocks in `scripts/shared-blocks.toml`, which says only research agents share them."""
+acceptance = """
+- forward: `test -f claude/agents/plan-challenger.md && grep -q 'omitClaudeMd: true' claude/agents/plan-challenger.md` exits 0 (today: exits 1).
+- forward: `test -f claude/agents/plan-investigator.md && grep -q 'research-methods' claude/agents/plan-investigator.md` exits 0 (today: exits 1).
+- forward: `grep -c 'name = "plan-v2-note-writer"' scripts/shared-blocks.toml` prints `1` (today: `0`).
+- guard: `bash scripts/verify-shared-blocks.sh` exits 0."""
+agent = "implement-deep"
+commit = "cfa6f39"
+
+[[items]]
+id = 3
+ref = "add-the-cold-reader-agent"
+title = "Add the cold reader agent"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A: the probe kit"
+phase_depth = 3
+heading_depth = 4
+files = [
+    "claude/agents/plan-cold-reader.md",
+    "scripts/shared-blocks.toml",
+]
+needs = [2]
+coupling = []
+deps_note = ""
+action = 'Write `plan-cold-reader` per Approach, "Agents", and add it to the blocks it carries.'
+detail = "It ships in milestone A so that `plan-v2-note-writer` has its third carrier before task 6 can delete `plan-challenger`. The prompt names `milestone:`, `note:` and the fetch commands. Unlike the challenger it sets no `omitClaudeMd`, because a worker loads those files too. Its return carries `unactionable` and `false_premises` counts and the note's path."
+acceptance = """
+- forward: `grep -c 'plan-cold-reader' scripts/shared-blocks.toml` prints at least `1` (today: `0`).
+- forward: `test -f claude/agents/plan-cold-reader.md && ! grep -q 'omitClaudeMd' claude/agents/plan-cold-reader.md` exits 0 (today: exits 1).
+- falsifier: `test ! -f claude/agents/plan-cold-reader.md` exits 0 today, so task 2 has not already created it.
+- guard: `bash scripts/verify-shared-blocks.sh` exits 0."""
+agent = "implement-lite"
+commit = "cfa6f39"
+
+[[items]]
+id = 4
+ref = "add-the-investigate-workflow"
+title = "Add the investigate Workflow"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A: the probe kit"
+phase_depth = 3
+heading_depth = 4
+files = ["claude/workflows/plan-v2-investigate.js"]
+needs = [
+    1,
+    2,
+]
+coupling = []
+deps_note = ""
+action = 'Write the Workflow per Approach, "Workflows".'
+detail = "Validate args first, using `fail` and `index` as `claude/workflows/review-v2.js` does. A lens agent's prompt is built from `args` alone, so a same-args relaunch hits the journal up to the first failed agent, then reruns it and every agent started after it. The return schema is `{id, verdict, note}`, `verdict` one line."
+acceptance = """
+- forward: `test -f claude/workflows/plan-v2-investigate.js && grep -q "agentType: 'plan-investigator'" claude/workflows/plan-v2-investigate.js` exits 0 (today: exits 1).
+- forward: `cargo test --manifest-path tomlctl/Cargo.toml --lib workflow_scripts` passes with this script present **predicted, unverified**; falsifier: renaming `plan-investigator.md` turns it red."""
+agent = "implement-deep"
+commit = "851daf5"
+
+[[items]]
+id = 5
+ref = "write-the-probe-runbook"
+title = "Write the probe runbook"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A: the probe kit"
+phase_depth = 3
+heading_depth = 4
+files = ["docs/ideas/plan-v2-probes.md"]
+needs = [
+    2,
+    4,
+]
+coupling = []
+deps_note = ""
+action = 'Write the runbook per Approach, "Probes", ending in an empty `## Results` template.'
+detail = """Exact commands for each step, PowerShell for the links. A goals table with one row per replay, `| <slug> | <base> | <intent> | <future state> |`. Distil each intent and future state by hand from that plan's Context under `docs/plans/` only, stating the need and none of its solution: no technique, module, verb or crate named in that plan's Scope or Tasks. The runbook's first replay step has the user read the table, rewrite any cell that names a solution, and write `Intents: reviewed` under `## Results` before launching. Bases: `5b58a7e`, `5dc5b8d`, `d7485a9`, `0d1bf49`, `6fb8659`, `411cde5`, in the order Approach, "Probes" lists the slugs. The inline Workflow script, the `omitClaudeMd` row count, the three resume tests on the throwaway slug `plan-v2-probe` with three named lenses, the rating sheet stating the rule, and a teardown the user runs after `## Results`: `plan run abandon` any open row, delete `docs/flows/plan-v2-probe/` and `.claude/flows/plan-v2-probe/`, restore the file T2 edited, remove each replay directory, confirm `git status --short` shows only the runbook, and on `Verdict: remove` delete the `plan-challenger.md` link under the Claude config dir. Create `~/.claude/workflows` before linking into it. `## Results` lines to fill: `Verdict: <keep|remove> <n> of 6`, `Intents:` (`reviewed`), `Lookup:` (`symlink` or `copy`), `omitClaudeMd:` (`held`, `leaked` or `inconclusive`), `T1:` (`true` or `false`), `T2:` (`stale` or `fresh`), `T3:` (`miss` or `hit`), and `Surprises:` (`none`, or the text), each also `not run` if it could not run. A results line is written as `Verdict: keep 3 of 6`; the template's angle brackets must not match `^Verdict: (keep [2-6]|remove [01]) of 6$`."""
+acceptance = '''
+- forward: `grep -cEs '^\| [a-z-]+ \| [0-9a-f]{7} \|' docs/ideas/plan-v2-probes.md` prints `6` (today: no output, file absent).
+- forward: `grep -cs '^## Results' docs/ideas/plan-v2-probes.md` prints `1` (today: no output, file absent).
+- falsifier: `grep -Eqs '^Verdict: (keep [2-6]|remove [01]) of 6$' docs/ideas/plan-v2-probes.md` exits 2 today with the file absent, and must exit 1 when this task lands, so the template trips no gate.'''
+agent = "implement-deep"
+commit = "b1984dc"
+
+[[items]]
+id = 6
+ref = "apply-the-probe-results"
+title = "Apply the probe results"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B: the carrier"
+phase_depth = 3
+heading_depth = 4
+files = [
+    "docs/ideas/plan-v2-probes.md",
+    "claude/agents/plan-challenger.md",
+    "scripts/shared-blocks.toml",
+]
+needs = [
+    1,
+    3,
+    5,
+]
+coupling = []
+deps_note = ""
+action = "Stop unless `## Results` records a verdict; on `remove`, delete the challenger."
+detail = """This is the stop in Approach, "Sequence". No line matching `^Verdict: (keep [2-6]|remove [01]) of 6$`, any of `Intents:`, `Lookup:`, `omitClaudeMd:`, `T1:`, `T2:`, `T3:` left empty, `omitClaudeMd:` not reading `held`, `T1:` false, or `Surprises:` other than `none`: edit nothing and return `escalate 6: spec-stale`, naming the runbook and the line. On `keep`: edit nothing but this task's note line, `Applied:` under `## Results`. On `remove`: delete `claude/agents/plan-challenger.md`, drop it from every block in `scripts/shared-blocks.toml`, and add the `Applied:` line. The note on `claude/agents/plan-challenger.md` is a conditional instruction, not a `(delete)` kind. Never rate or write a verdict yourself."""
+acceptance = """
+- forward: `grep -cs '^Applied:' docs/ideas/plan-v2-probes.md` prints `1` (today: no output, file absent).
+- forward: `if grep -q '^Verdict: remove' docs/ideas/plan-v2-probes.md; then test ! -f claude/agents/plan-challenger.md; else test -f claude/agents/plan-challenger.md; fi` exits 0 (today: exits 1).
+- guard: `bash scripts/verify-shared-blocks.sh` exits 0."""
+agent = "implement-lite"
+commit = "7ab0593"
+
+[[items]]
+id = 7
+ref = "add-the-prove-workflow"
+title = "Add the prove Workflow"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B: the carrier"
+phase_depth = 3
+heading_depth = 4
+files = ["claude/workflows/plan-v2-prove.js"]
+needs = [
+    3,
+    6,
+]
+coupling = []
+deps_note = ""
+action = 'Write the Workflow per Approach, "Workflows", on the shape task 4 settled.'
+detail = "Only `T3:` under `## Results` in `docs/ideas/plan-v2-probes.md` bears on this script: if a changed first prompt does not miss, return `escalate 7: spec-stale`, since prompts built from `args` alone no longer guard the journal. Ignore the other lines. Backticked `tomlctl` spans in a prompt are parsed by `command_lint`, so write them as real commands."
+acceptance = """
+- forward: `test -f claude/workflows/plan-v2-prove.js && grep -q "agentType: 'plan-cold-reader'" claude/workflows/plan-v2-prove.js` exits 0 (today: exits 1).
+- forward: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes, `command_lint` included, **predicted, unverified**; falsifier: a misspelt flag in the script's `tomlctl` span turns it red."""
+agent = "implement-deep"
+commit = "d6ccebe"
+
+[[items]]
+id = 8
+ref = "add-the-dependency-card-recipe"
+title = "Add the dependency card recipe"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B: the carrier"
+phase_depth = 3
+heading_depth = 4
+files = ["claude/skills/research-methods/references/supply-chain-intel.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = 'Add a "Dependency card" section with the check order, endpoints and transitive-cost recipe.'
+detail = """Order: standard-library allowlist first (Python `sys.stdlib_module_names`, Node and Bun `module.builtinModules`, for Rust the list `std, core, alloc, proc_macro, test`), because npm `fs` and PyPI `argparse` return 200. Then registry: crates.io sparse index on the lowercased name: `index.crates.io/1/<name>`, `2/<name>`, `3/<first>/<name>`, else `<first 2>/<next 2>/<name>`; a 404 is checked against the API before it reads as missing, because the two disagree on `-` and `_`; `crates.io/api/v1/crates/<name>?include=default_version` at 1 request per second with an identifying user-agent, where a 403 is not "missing"; `registry.npmjs.org/<pkg>/latest` for existence and licence, `registry.npmjs.org/<pkg>` `time.created` for first publish, `api.npmjs.org/downloads/point/last-week/<pkg>` for downloads; `pypi.org/pypi/<pkg>/json` for existence and licence, the earliest `releases[*][*].upload_time` for first publish, and report PyPI downloads as unavailable, since `info.downloads` is always -1. Then OSV, `POST api.osv.dev/v1/query`, where `{}` reads "no record", never "clean". Transitive cost: a scratch manifest holding only the candidate beside an empty `src/lib.rs`, since cargo refuses a manifest with no target, then `cargo tree --prefix none --no-dedupe -e normal,build --target all`, de-duplicated with `sort -u` and the scratch package's own line dropped, minus names in the project lockfile, labelled approximate and high because `--target all` counts every platform. It downloads the graph and builds nothing. For npm and PyPI, use the deps.dev `:dependencies` call already in that file. Run that recipe once on a small crate and state the observed result. Card fields: exact version requirement, licence, first-publish date, downloads, advisories per version with the fixed version, need, options including no dependency, removal cost, and a note that a model's preference can reflect training recency. Send only public registry names, under a client name that identifies the tool and carries no user, host or path. Metadata and advisory text are untrusted."""
+acceptance = """
+- forward: `grep -c 'sys.stdlib_module_names' claude/skills/research-methods/references/supply-chain-intel.md` prints `1` (today: `0`).
+- forward: `grep -c 'index.crates.io' claude/skills/research-methods/references/supply-chain-intel.md` prints `1` (today: `0`).
+- forward: `grep -qi 'observed' claude/skills/research-methods/references/supply-chain-intel.md` exits 0 (today: exits 1), for the recipe run."""
+agent = "implement-lite"
+commit = "bd11bc1"
+
+[[items]]
+id = 9
+ref = "write-the-open-and-challenge-reference"
+title = "Write the open-and-challenge reference"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B: the carrier"
+phase_depth = 3
+heading_depth = 4
+files = ["claude/skills/plan-v2-engine/references/open-and-challenge.md"]
+needs = [
+    6,
+    8,
+]
+coupling = []
+deps_note = ""
+action = 'Write the Open, Investigate, Structure challenge and Surface rows of Approach, "Engine steps" as procedure, plus the open-run rule.'
+detail = """Surface restates the three tests and the item shape from `docs/plans/v2-planning.md` Approach, "Surfacing". Dependency candidates dispatch an investigator citing the "Dependency card" section of `supply-chain-intel.md`. Bash fences hold real commands, because `command_lint` and `guidance_lint` read them. Follow `## Results` in `docs/ideas/plan-v2-probes.md`: on `Verdict: remove` omit the Structure challenge step and say why in one line; apply the open-run consequences in Approach, "Probes". State the Edit rule from Approach, "Engine steps". Open's `--branch` is the current branch and `--scope` the globs the goal names, omitted when it names none. State the fan-out check from `## Risks`, under "Investigators now hold Write"."""
+acceptance = """
+- forward: `test -f claude/skills/plan-v2-engine/references/open-and-challenge.md && grep -q 'plan open --slug' claude/skills/plan-v2-engine/references/open-and-challenge.md` exits 0 (today: exits 1).
+- forward: `test -f claude/skills/plan-v2-engine/references/open-and-challenge.md && grep -q 'plan run abandon' claude/skills/plan-v2-engine/references/open-and-challenge.md && grep -q 'AskUserQuestion' claude/skills/plan-v2-engine/references/open-and-challenge.md` exits 0 (today: exits 1).
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes **predicted, unverified**."""
+agent = "implement-deep"
+commit = "1dc2b9e"
+
+[[items]]
+id = 10
+ref = "write-the-write-and-prove-reference"
+title = "Write the write-and-prove reference"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B: the carrier"
+phase_depth = 3
+heading_depth = 4
+files = ["claude/skills/plan-v2-engine/references/write-and-prove.md"]
+needs = [
+    6,
+    7,
+]
+coupling = []
+deps_note = ""
+action = """Write the Design, Surface again, Write and Prove rows of Approach, "Engine steps" as procedure. State the cold read's launch sequence in full (`Workflow`, check `error`, `plan run start`, end the turn, `plan run finish`) rather than pointing at `open-and-challenge.md`, which task 9 writes concurrently."""
+detail = """Show one `.toml` record file with a row carrying `spec`, per `claude/skills/tomlctl/references/tasks-write.md`. State the spec rules from `docs/plans/v2-planning.md` Approach, "Task spec": `behaviour` belongs to the orchestrator; `check` exits non-zero when the behaviour fails; `writes_build = false` is what gets probed; `means` is empty by default and a `required` entry needs `detail`. Give the `plan probes` verdict actions. The emitted script has no errexit and no timeout, so run it under a stated limit. Applying a cold read: results go through `tasks update --ndjson`, anything touching intent is the orchestrator's, and agents never write the store."""
+acceptance = """
+- forward: `test -f claude/skills/plan-v2-engine/references/write-and-prove.md && grep -q 'plan probes --slug' claude/skills/plan-v2-engine/references/write-and-prove.md` exits 0 (today: exits 1).
+- forward: `test -f claude/skills/plan-v2-engine/references/write-and-prove.md && grep -q 'plan probes --record' claude/skills/plan-v2-engine/references/write-and-prove.md && grep -q 'writes_build' claude/skills/plan-v2-engine/references/write-and-prove.md` exits 0 (today: exits 1).
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes **predicted, unverified**."""
+agent = "implement-deep"
+commit = "179054e"
+
+[[items]]
+id = 11
+ref = "write-the-approve-reference"
+title = "Write the approve reference"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B: the carrier"
+phase_depth = 3
+heading_depth = 4
+files = ["claude/skills/plan-v2-engine/references/approve.md"]
+needs = [6]
+coupling = []
+deps_note = ""
+action = 'Write the Review and Approve rows of Approach, "Engine steps" as procedure.'
+detail = '''Present `plan gate` in key order, per `docs/plans/v2-planning.md` Approach, "Approval", with any totals after it. Any answer beyond "approve" routes back into the plan. Stage by name, never `git add -A`, and include all of `docs/flows/<slug>/` except any path `git check-ignore` reports, since notes are tracked by default. First run `grep -rnE 'BEGIN [A-Z ]*PRIVATE KEY|ghp_[A-Za-z0-9]{20}|github_pat_|sk-ant-|AKIA[0-9A-Z]{16}|C:[\\/]Users[\\/]' docs/flows/<slug>/` and show every hit at the gate. Name each refusal under `plan approve` in `claude/skills/tomlctl/references/plan.md` and what clears it, noting that `--review ran` does not apply in this slice. State that the stamp's writes land after its commit, hence the second commit, which stages what Approach, "Engine steps" lists for it. Include the warning text verbatim.'''
+acceptance = """
+- forward: `test -f claude/skills/plan-v2-engine/references/approve.md && grep -q 'plan approve --review' claude/skills/plan-v2-engine/references/approve.md` exits 0 (today: exits 1).
+- forward: `test -f claude/skills/plan-v2-engine/references/approve.md && grep -q 'status-transition' claude/skills/plan-v2-engine/references/approve.md && grep -q 'will now pick this flow' claude/skills/plan-v2-engine/references/approve.md` exits 0 (today: exits 1).
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes **predicted, unverified**."""
+agent = "implement-deep"
+commit = "0f638f3"
+
+[[items]]
+id = 12
+ref = "write-the-engine-skill"
+title = "Write the engine skill"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B: the carrier"
+phase_depth = 3
+heading_depth = 4
+files = ["claude/skills/plan-v2-engine/SKILL.md"]
+needs = [
+    9,
+    10,
+    11,
+]
+coupling = []
+deps_note = ""
+action = "Write the skill: role, rules, step table with skips, depth, re-entry, and links to the three references."
+detail = 'On the `claude/skills/review-v2-engine/SKILL.md` shape. Principles from `docs/plans/v2-planning.md` Approach, "Principles". The conversation owns dialogue and gates. Each fan-out is one saved Workflow, and after `async_launched` with no `error` the turn ends. The description is at most 1024 characters and says a carrier invokes it. On `Verdict: remove` in `docs/ideas/plan-v2-probes.md`, the step table has no Structure challenge row and names no `plan-challenger`. Links must resolve, which is why this task follows its references.'
+acceptance = """
+- forward: `test -f claude/skills/plan-v2-engine/SKILL.md && grep -q 'references/write-and-prove.md' claude/skills/plan-v2-engine/SKILL.md` exits 0 (today: exits 1).
+- forward: `test -f claude/skills/plan-v2-engine/SKILL.md && grep -q 'references/open-and-challenge.md' claude/skills/plan-v2-engine/SKILL.md && grep -q 'references/approve.md' claude/skills/plan-v2-engine/SKILL.md` exits 0 (today: exits 1).
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes **predicted, unverified**."""
+agent = "implement-deep"
+commit = "85a9e51"
+
+[[items]]
+id = 13
+ref = "add-the-carrier-and-its-gate-row"
+title = "Add the carrier and its gate row"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B: the carrier"
+phase_depth = 3
+heading_depth = 4
+files = [
+    "claude/commands/plan-v2.md",
+    "tomlctl/src/cli/dispatch/tests/skills.rs",
+]
+needs = [12]
+coupling = []
+deps_note = ""
+action = 'Write the carrier per Approach, "Carrier", and add its row to `carrier_invokes_required_skills`.'
+detail = 'Row: `("plan-v2.md", &["tomlctl", "plan-v2-engine", "commit-conventions"])`. The carrier must say "`x` skill" for each, with no negation in the clause. State in one line why it builds no flow envelope. No `flow-contract-flow-context`. On `Verdict: remove` in `docs/ideas/plan-v2-probes.md`, drop the challenger clause from `--depth`.'
+acceptance = """
+- forward: `grep -c '"plan-v2.md"' tomlctl/src/cli/dispatch/tests/skills.rs` prints `1` (today: `0`).
+- forward: `test -f claude/commands/plan-v2.md && grep -q -- '--depth' claude/commands/plan-v2.md` exits 0 (today: exits 1).
+- forward: `cargo test --manifest-path tomlctl/Cargo.toml --lib carrier_invokes_required_skills` passes **predicted, unverified**; falsifier: dropping "`plan-v2-engine` skill" from the carrier turns it red."""
+agent = "implement-deep"
+commit = "7904566"
+
+[[items]]
+id = 14
+ref = "point-the-project-docs-at-the-carrier"
+title = "Point the project docs at the carrier"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B: the carrier"
+phase_depth = 3
+heading_depth = 4
+files = [
+    "CLAUDE.md",
+    "claude/skills/tomlctl/references/plan.md",
+]
+needs = [
+    12,
+    13,
+]
+coupling = []
+deps_note = ""
+action = """Add a `## Planning v2` section to `CLAUDE.md` beside `## Review v2`, and change `references/plan.md`'s statement of who owns "which verb a carrier reaches for at which step of planning" to name the `plan-v2-engine` skill."""
+detail = "Section content: the carrier and skill, the three agents, the two Workflows, attended only, that an approved plan cannot run until the engine exists, and that new entries need links under the Claude config dir, or copies when `Lookup:` in `docs/ideas/plan-v2-probes.md` says so. Facts stay in the skill; this is a pointer, as `## Review v2` is. Also add `claude/workflows/*.js` to the gate paths named in Developer setup and in Build & test's `cargo nextest` line. Name the challenger only if `## Results` in `docs/ideas/plan-v2-probes.md` kept it."
+acceptance = """
+- forward: `grep -c '^## Planning v2' CLAUDE.md` prints `1` (today: `0`).
+- forward: `grep -c 'plan-v2-engine' claude/skills/tomlctl/references/plan.md` prints `1` (today: `0`)."""
+agent = "implement-lite"
+commit = "9b1fcbe"
+
+[[items]]
+id = 15
+ref = "record-the-departures"
+title = "Record the departures"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B: the carrier"
+phase_depth = 3
+heading_depth = 4
+files = [
+    "docs/ideas/v2-pipeline.md",
+    "docs/plans/v2-planning.md",
+]
+needs = [13]
+coupling = []
+deps_note = ""
+action = """Move v2 planning to built in the idea doc, and rewrite `v2-planning`'s Later slices row 2 and Surfacing to match Approach, "What departs from v2-planning"."""
+detail = """In `docs/ideas/v2-pipeline.md`, "Where things stand": `/plan-v2` built, never run for real work; "Not started" keeps the engine, implement and apply. In `docs/plans/v2-planning.md`, only hand-authored sections: Later slices row 2, the unattended sentence and the `cargo tree` phrase in Surfacing, the `notes/*.md` tracking sentence in Flow directory, "read-only agent" under Cold readers (it writes one note), and After approval's `review-v2-pipeline` line (milestone A's run stands in; that run stays assigned to no slice). Also correct the citation in its Directed research additions: `1.3%` is 2512.11589, Rust is `22.23%` in 2606.08444, and the `57%` is Fable 5's Custom/DIY share of caching picks (`16/28`), from [What Fable Actually Chooses](https://amplifying.ai/research/claude-code-picks-fable) (Amplifying, July 2026), so keep it and cite that. State that `22.23%` is per extracted crate reference. On `Verdict: remove` in `docs/ideas/plan-v2-probes.md`, also mark its Approach, "Structure challenge" and that step's Flow row as removed, citing the count. Its `## Tasks` is rendered from the store; do not touch it."""
+acceptance = """
+- forward: `grep -c 'taking the body on stdin' docs/plans/v2-planning.md` prints `0` (today: `1`).
+- forward: `grep -c 'Not started: v2 planning' docs/ideas/v2-pipeline.md` prints `0` (today: `1`).
+- forward: `grep -c '20.23%' docs/plans/v2-planning.md` prints `0` (today: `1`).
+- forward: `grep -c 'amplifying.ai' docs/plans/v2-planning.md` prints `1` (today: `0`)."""
+agent = "implement-lite"
+commit = "f391ce5"

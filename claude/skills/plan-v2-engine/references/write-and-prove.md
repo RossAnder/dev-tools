@@ -192,16 +192,17 @@ tomlctl tasks list --slug <slug> --where checkpoint=<milestone> --where status=p
 
 A deferred milestone is read when it is elaborated, not now. A milestone with no pending task is left out.
 
-**Launch.** Delete `docs/flows/<slug>/notes/cold-read-<milestone>.md` for each milestone passed, because a cold reader writes nothing over an existing file and must not read its predecessor. Write the args object to `<scratch>/prove-args.json`; it is the only copy of the exact args a relaunch needs. Take the fan-out snapshot from `open-and-challenge.md`, since cold readers hold Write for their note as investigators do. Then call:
+**Launch.** Delete `docs/flows/<slug>/notes/cold-read-<milestone>.md` for each milestone passed, because a cold reader writes nothing over an existing file and must not read its predecessor. Write the args object to `<scratch>/prove-args.json`; a relaunch needs those exact args, and the hash recorded below is how it knows they are unchanged. Take the fan-out snapshot from `open-and-challenge.md`, section 3, since cold readers hold Write for their note as investigators do, excluding only the `cold-read-<milestone>.md` paths this launch asks for. Then call:
 
 ```
 Workflow({name: "plan-v2-prove", args: {slug: "<slug>", milestones: [{id: "A", tasks: [1, 2]}, {id: "B", tasks: [3]}]}})
 ```
 
-A task id may sit in one milestone only, and the Workflow refuses the whole launch, starting no agent, when one repeats. A result carrying `error` stops the step: report it, and do not fall back to the Agent tool, which this step never uses. Otherwise, in the same turn, record the launch and end the turn:
+A task id may sit in one milestone only, and the Workflow refuses the whole launch, starting no agent, when one repeats. A result carrying `error` stops the step: report it, and do not fall back to the Agent tool, which this step never uses. Otherwise, in the same turn, record the launch with the args file's hash and end the turn:
 
 ```bash
-tomlctl plan run start --slug <slug> --step cold-read --workflow plan-v2-prove --run-id <runId> --session "$CLAUDE_CODE_SESSION_ID"
+hash=$(sha256sum <scratch>/prove-args.json | cut -d' ' -f1)
+tomlctl plan run start --slug <slug> --step cold-read --workflow plan-v2-prove --args-hash "$hash" --run-id <runId> --session "$CLAUDE_CODE_SESSION_ID"
 ```
 
 **On the notification**, read `<result>` and `<failures>`, then close the run by how it ended:
@@ -216,16 +217,39 @@ tomlctl plan run start --slug <slug> --step cold-read --workflow plan-v2-prove -
 tomlctl plan run finish --slug <slug> --step cold-read --outcome <outcome>
 ```
 
-Then run the fan-out check. The result is an index, `{slug, reads: [{id, status, unactionable, false_premises, note}], errors, script_version}`, and the notes are the answer. Read each entry by its `status`:
+**An index showing no agent launched**, `reads` empty and `errors` ending `no agent launched`, is the Workflow refusing its args. It is a completed run, not a launch `error`: close it as `errors`, stop, report `errors`, and never relaunch the same args.
+
+Otherwise run the fan-out check. The result is an index, `{slug, reads: [{id, status, unactionable, false_premises, note, error}], errors, script_version}`, and the notes are the answer. Read each entry by its `status`:
 
 | `status` | Meaning | Do |
 |---|---|---|
 | `ok` | The note is at the path asked for | Read it |
 | `no-note` | The agent wrote nothing, or found a file already at the path | Check the path. A file there that predates the launch was not deleted: delete it and relaunch that milestone. Nothing there: relaunch it once |
 | `no-return` | The agent returned nothing | Check the path for a note opening `Verdict:` and read it if present; otherwise relaunch it once |
+| `error` | The agent failed, and `error` says how | Read the error, then treat it as `no-return` |
 | `mismatch` | The agent named a note at another path | The milestone is unread. Delete that file when it is under `notes/`, and relaunch it once |
 
-Every read `no-return` means `plan-cold-reader` is not registered in this session. Stop and name the missing entry, `agents/plan-cold-reader.md` under the Claude config dir, linked from this repo's `claude/agents/`. A milestone that fails its one relaunch goes to the gate unread, named in the plan's risks.
+When the index holds at least one entry and every one is `no-return`, none carrying an `error`, `plan-cold-reader` is not registered in this session. Stop and name the missing entry, `agents/plan-cold-reader.md` under the Claude config dir, linked from this repo's `claude/agents/`. An entry with an `error` names its own cause; read that instead.
+
+A milestone that fails its one relaunch goes to the gate unread, as an assumption `plan gate` shows. Record it as a decision:
+
+```toml
+[[record]]
+decision = "Approve milestone <milestone> without a cold read"
+why = "<how its cold read failed twice>"
+provenance = "agent-assumed"
+door = "two-way"
+binds = ["<task id>", "<task id>"]
+evidence = "<the index entries of both launches>"
+if_false = "Milestone <milestone> is unread: a worker may meet an unactionable task or a false premise a cold read would have caught"
+surfaced = false
+```
+
+```bash
+tomlctl plan decide --slug <slug> --ndjson <scratch>/cold-read-unread.toml
+```
+
+`binds` names the milestone's pending task ids, as strings.
 
 **Apply the results.** The cold reader never writes the store; you do, through `tasks update --ndjson`. Read every point in every note against the code it cites before acting on it:
 
@@ -264,8 +288,8 @@ Then re-run `plan check` as in 4a.
 **Relaunch**, with `resumeFromRunId`, is for an open `cold-read` run on re-entry, and almost never applies. A relaunch returns the cached result of every agent whose prompt is unchanged, and a cold reader's prompt is built from the args alone, so a relaunch after any change to the store, the brief, a design file or a task's files returns notes about the plan as it was. Relaunch with `Workflow({name: "plan-v2-prove", args, resumeFromRunId: "<run_id>"})` only when all of these hold:
 
 - the open row's `session` is this session's `CLAUDE_CODE_SESSION_ID`, and the run is no longer live; a run still live is waited for, or stopped with `TaskStop` and the launch's `taskId`;
-- `<scratch>/prove-args.json` holds that launch's args, passed unchanged;
-- nothing a prompt points at has changed since launch: `git rev-parse HEAD` is the launch's HEAD, the fan-out check against the launch's snapshot passes, and no `tasks` or `plan` write other than the run's own records has landed since.
+- `<scratch>/prove-args.json` still exists and its hash, `sha256sum <scratch>/prove-args.json | cut -d' ' -f1`, equals the open row's `args_hash`, read from `tomlctl plan view --slug <slug> --for digest --select stage_inputs.runs`; a row with an empty `args_hash` is abandoned;
+- nothing a prompt points at has changed since launch: `git rev-parse HEAD` equals `<scratch>/head-before.txt`, the fan-out check against the launch's snapshot passes, and no `tasks` or `plan` write other than the run's own records has landed since.
 
 Otherwise abandon the run, keep every cold-read note that opens `Verdict:` and whose milestone has not changed since, delete the rest and launch afresh for those milestones:
 
@@ -311,4 +335,4 @@ Every fix is a `tasks update --ndjson` re-issuing the task's `accept` list, as i
 tomlctl plan stage --slug <slug>
 ```
 
-`stage` reads `review` once Prove is done; follow `next` for anything else. A spec edit after the probes, from any step, sends the plan back to 4d for the entries it changed.
+`stage` reads `review` once the probes are recorded, without checking the cold read, so confirm a `cold-read` row that is `finished` or `skipped` before moving on, as the engine's Re-entry section says; follow `next` for anything else. A spec edit after the probes, from any step, sends the plan back to 4d for the entries it changed.

@@ -1,0 +1,770 @@
+schema_version = 1
+last_updated = 2026-11-09
+
+[[items]]
+id = "E1"
+agent = "implement"
+from_status = "draft"
+to_status = "in-progress"
+summary = "status draft -> in-progress"
+type = "status-transition"
+date = 2026-11-06
+
+[[items]]
+id = "E2"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+files = ["claude/skills/research-methods/references/supply-chain-intel.md"]
+summary = "Added the Dependency card section to supply-chain-intel.md: check order, registry endpoints, OSV caveat, scratch-manifest transitive-cost recipe, card fields, data handling. Recipe run on tempfile 3: 13 distinct names."
+type = "task-completion"
+task_ref = "add-the-dependency-card-recipe"
+date = 2026-11-06
+
+[[items]]
+id = "E3"
+agent = "implement"
+summary = "No `git` command that changes anything, in claude/agents/plan-investigator.md and claude/agents/plan-challenger.md"
+original_intent = "plan-v2-note-writer says no `git`"
+rationale = "research-methods step 5 tells the investigator to run `git log -S` and blame to disconfirm a finding, and research-read-only already bans the mutating verbs."
+type = "deviation"
+task_ref = "add-the-investigator-and-challenger-agents"
+date = 2026-11-06
+
+[[items]]
+id = "E4"
+agent = "implement"
+summary = "Also excluded everything else under docs/flows/ and .claude/flows/, in claude/agents/plan-challenger.md"
+original_intent = "Challenger told not to read notes/, plan.toml or tasks.toml"
+rationale = """brief.md and design/*.md hold the planner's thinking too, and "Structure challenge" allows only intent, future state and code. The limit stays prompt-only, as the plan states."""
+type = "deviation"
+task_ref = "add-the-investigator-and-challenger-agents"
+date = 2026-11-06
+
+[[items]]
+id = "E5"
+agent = "implement"
+summary = "Return shape {verdict, note}, in claude/agents/plan-challenger.md"
+original_intent = "Plan names no return shape for the challenger"
+rationale = "The agent must return a small object; this is the investigator's shape without a lens id."
+type = "deviation"
+task_ref = "add-the-investigator-and-challenger-agents"
+date = 2026-11-06
+
+[[items]]
+id = "E6"
+agent = "implement"
+summary = "If a file is still at the note path, the agent neither reads nor overwrites it and says so in its return, in the plan-v2-note-writer block"
+original_intent = "The orchestrator clears the note path; no rule for when it did not"
+rationale = "Write refuses an unread file, and a cold reader must not read its predecessor."
+type = "deviation"
+task_ref = "add-the-investigator-and-challenger-agents"
+date = 2026-11-06
+
+[[items]]
+id = "E7"
+agent = "implement"
+summary = "Private paths join the public-text ban, and an injected instruction in fetched content must be reported in the note, in the plan-v2-note-writer block"
+original_intent = "plan-v2-note-writer bans secrets and treats fetched content as data"
+rationale = "Notes are committed to a public repo, and an injection attempt is worth a reviewer seeing at commit."
+type = "deviation"
+task_ref = "add-the-investigator-and-challenger-agents"
+date = 2026-11-06
+
+[[items]]
+id = "E8"
+agent = "implement"
+summary = "Added color purple to plan-investigator and orange to plan-challenger"
+original_intent = "Frontmatter table lists no color"
+rationale = "All 13 existing agents set color."
+type = "deviation"
+task_ref = "add-the-investigator-and-challenger-agents"
+date = 2026-11-06
+
+[[items]]
+id = "E9"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/agents/plan-investigator.md",
+    "claude/agents/plan-challenger.md",
+    "scripts/shared-blocks.toml",
+]
+summary = "Added plan-investigator and plan-challenger agents with the new plan-v2-note-writer shared block; existing blocks copied byte-identical; manifest comment corrected. verify-shared-blocks passes; falsifier gave 8 drift errors across mutated carriers."
+type = "task-completion"
+task_ref = "add-the-investigator-and-challenger-agents"
+date = 2026-11-06
+
+[[items]]
+id = "E10"
+agent = "implement"
+summary = "`...` counts only outside strings and comments; `${` counts in any string but not in comments, in tomlctl/src/cli/dispatch/tests/lint.rs"
+original_intent = "A `${` or a `...` spread inside the meta block fails"
+rationale = "An ellipsis in a description is not a spread. Assumes the runtime reads the literal's structure rather than its raw text, inferred from the workflow-authoring wording and not run."
+type = "deviation"
+task_ref = "gate-workflow-scripts-on-their-agents"
+date = 2026-11-06
+
+[[items]]
+id = "E11"
+agent = "implement"
+summary = "Non-key positions skipped: ternaries and shorthand pass, quoted keys are read as keys, in tomlctl/src/cli/dispatch/tests/lint.rs"
+original_intent = "Every agentType string literal counts as an agent"
+rationale = "review-v2.js's own `cell.agentType : '(none)'` would otherwise read as an agent, `r.agentType === 'x'` has no colon, and a shorthand `{ id, agentType }` has no value to read."
+type = "deviation"
+task_ref = "gate-workflow-scripts-on-their-agents"
+date = 2026-11-06
+
+[[items]]
+id = "E12"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/cli/dispatch/tests/lint.rs",
+    ".githooks/pre-commit",
+]
+summary = "Added workflow_scripts_name_real_agents, a live-tree gate on claude/workflows/*.js, with fixture tests over workflow_script_problems; the hook runs cli::dispatch::tests when a Workflow script is staged. Agent-file falsifier turned 5 of 19 reject cases red."
+type = "task-completion"
+task_ref = "gate-workflow-scripts-on-their-agents"
+date = 2026-11-06
+
+[[items]]
+id = "E13"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/agents/plan-cold-reader.md",
+    "scripts/shared-blocks.toml",
+]
+summary = "Added the plan-cold-reader agent, no omitClaudeMd, returning {unactionable, false_premises, note}; appended it to the research-read-only, research-delivering and plan-v2-note-writer carrier lists. verify-shared-blocks passes."
+type = "task-completion"
+task_ref = "add-the-cold-reader-agent"
+date = 2026-11-06
+
+[[items]]
+id = "E14"
+agent = "implement"
+summary = "Also rejects an empty lenses list, duplicate ids and a blank or multi-line question, in claude/workflows/plan-v2-investigate.js"
+original_intent = "Args are {slug, lenses:[{id, question}]} with slug and id regexes and at most 6 lenses"
+rationale = "Duplicate ids would share one note, an empty run would record as a clean ok, and a later line in a question could pose as a note: line."
+type = "deviation"
+task_ref = "add-the-investigate-workflow"
+date = 2026-11-06
+
+[[items]]
+id = "E15"
+agent = "implement"
+summary = "Suffix match after folding backslashes, returning the canonical relative path, in claude/workflows/plan-v2-investigate.js"
+original_intent = "The return carries note, the path the agent wrote"
+rationale = "An agent may report the absolute path it resolved, and an exact match would call that a mismatch."
+type = "deviation"
+task_ref = "add-the-investigate-workflow"
+date = 2026-11-06
+
+[[items]]
+id = "E16"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = ["claude/workflows/plan-v2-investigate.js"]
+summary = "Added the plan-v2-investigate Workflow: one plan-investigator per lens, bad args launch nothing, statuses ok, no-return, no-note and mismatch. workflow_scripts passes with the script present; tested against a stub harness only, since milestone A's probes are its first live run."
+type = "task-completion"
+task_ref = "add-the-investigate-workflow"
+date = 2026-11-06
+
+[[items]]
+id = "E17"
+agent = "implement"
+summary = "`git archive -o` to a file, then System32 tar.exe with --exclude=.github, in docs/ideas/plan-v2-probes.md"
+original_intent = "Export each base with `git archive <base> | tar -x -C <dir>`"
+rationale = "A PowerShell 5.1 pipe corrupts binary output, Git's tar would read C: as a host, and the 18 .github symlinks at 5b58a7e failed to extract when tried."
+type = "deviation"
+task_ref = "write-the-probe-runbook"
+date = 2026-11-06
+
+[[items]]
+id = "E18"
+agent = "implement"
+summary = "No restore step; the flow directory's deletion covers it, in docs/ideas/plan-v2-probes.md"
+original_intent = "Teardown restores the file T2 edited"
+rationale = "T2's target is docs/flows/plan-v2-probe/t2-target.md, created by the runbook, so deleting the flow directory restores the tree and no tracked file is at risk."
+type = "deviation"
+task_ref = "write-the-probe-runbook"
+date = 2026-11-06
+
+[[items]]
+id = "E19"
+agent = "implement"
+summary = "The links step runs in an elevated window, in docs/ideas/plan-v2-probes.md"
+original_intent = "Make the links with New-Item -ItemType SymbolicLink"
+rationale = 'Without elevation it fails here with "Administrator privilege required", as Developer Mode is off. The links step could not be run elevated, so it is untested; its target form matches the existing flow-bootstrap.md link.'
+type = "deviation"
+task_ref = "write-the-probe-runbook"
+date = 2026-11-06
+
+[[items]]
+id = "E20"
+agent = "implement"
+summary = "Added Nested memory:, Auto-memory:, Tally: and a ratings table, in docs/ideas/plan-v2-probes.md"
+original_intent = "Results template lists eight lines"
+rationale = "Surprises: other than none stops task 6, so expected facts need their own lines."
+type = "deviation"
+task_ref = "write-the-probe-runbook"
+date = 2026-11-06
+
+[[items]]
+id = "E21"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = ["docs/ideas/plan-v2-probes.md"]
+summary = "Wrote the probe runbook: six-row goals table, inline replay Workflow, omitClaudeMd count with positive control, T1/T2/T3 on plan-v2-probe, rating sheet, teardown and an empty Results template. Scripts checked by mock harness and PowerShell blocks run on scratch directories; the links step is untested."
+type = "task-completion"
+task_ref = "write-the-probe-runbook"
+date = 2026-11-06
+
+[[items]]
+id = "E22"
+agent = "implement"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+outcome = "pass"
+duration_s = 29
+summary = "51 passed; 0 failed"
+type = "verification"
+task_ref = "add-the-cold-reader-agent"
+date = 2026-11-06
+
+[[items]]
+id = "E23"
+agent = "implement"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+duration_s = 25
+summary = "shared-block parity OK, exit 0"
+type = "verification"
+task_ref = "add-the-cold-reader-agent"
+date = 2026-11-06
+
+[[items]]
+id = "E24"
+agent = "implement"
+kind = "commit-train"
+summary = "03faed8: gate-workflow-scripts-on-their-agents; cfa6f39: add-the-investigator-and-challenger-agents, add-the-cold-reader-agent; bd11bc1: add-the-dependency-card-recipe; 851daf5: add-the-investigate-workflow; b1984dc: write-the-probe-runbook"
+commits = [
+    "03faed8",
+    "cfa6f39",
+    "bd11bc1",
+    "851daf5",
+    "b1984dc",
+]
+type = "checkpoint"
+task_ref = "add-the-cold-reader-agent"
+date = 2026-11-06
+
+[[items]]
+id = "E25"
+agent = "implement"
+status = "skipped"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+summary = "Plan's stop reached: docs/ideas/plan-v2-probes.md ## Results is the unfilled template, first tripping at the Verdict: line. Nothing edited. The live probes must run and be committed, then tasks update 6 --status pending clears the row."
+type = "task-completion"
+task_ref = "apply-the-probe-results"
+date = 2026-11-06
+
+[[items]]
+id = "E26"
+agent = "implement"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+duration_s = 42
+summary = "build exit 0"
+type = "verification"
+task_ref = "write-the-probe-runbook"
+date = 2026-11-06
+
+[[items]]
+id = "E27"
+agent = "implement"
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "fail"
+duration_s = 508
+failed_ids = ["fix_rewrites_worktrees_under_the_root_and_leaves_foreign_ones"]
+summary = "2732 run: 2731 passed, 1 failed, 1 skipped; rerun also fails. Windows-only defect from before this run, outside its file set; captured as a backlog item"
+type = "verification"
+task_ref = "write-the-probe-runbook"
+date = 2026-11-06
+
+[[items]]
+id = "E28"
+agent = "implement"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+duration_s = 36
+summary = "shared-block parity OK, exit 0"
+type = "verification"
+task_ref = "write-the-probe-runbook"
+date = 2026-11-06
+
+[[items]]
+id = "E29"
+agent = "implement"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+duration_s = 44
+summary = "clippy exit 0"
+type = "verification"
+task_ref = "write-the-probe-runbook"
+date = 2026-11-06
+
+[[items]]
+id = "E30"
+agent = "implement"
+command = "cargo audit --file tomlctl/Cargo.lock"
+outcome = "pass"
+duration_s = 15
+summary = "audit exit 0"
+type = "verification"
+task_ref = "write-the-probe-runbook"
+date = 2026-11-06
+
+[[items]]
+id = "E31"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+supersedes_entry = "E25"
+files = ["docs/ideas/plan-v2-probes.md"]
+summary = "Results record Verdict: keep 6 of 6 with every stop condition clear; added the single Applied: line under ## Results. plan-challenger and shared-blocks untouched."
+type = "task-completion"
+task_ref = "apply-the-probe-results"
+date = 2026-11-09
+
+[[items]]
+id = "E32"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = ["claude/workflows/plan-v2-prove.js"]
+summary = "Added the plan-v2-prove Workflow on the plan-v2-investigate shape: one plan-cold-reader per milestone writing notes/cold-read-<id>.md, args validated (slug regex, milestone ids, case-collision, disjoint positive task ids) with bad args launching nothing, statuses ok/no-return/no-note/mismatch, returns {slug, reads, errors, script_version}. T3: miss, so no stop. cli::dispatch::tests 51 passed; falsifier failed 2 tests."
+type = "task-completion"
+task_ref = "add-the-prove-workflow"
+date = 2026-11-09
+
+[[items]]
+id = "E33"
+agent = "implement"
+summary = 'Skip reason reads "plan review is not built yet" in claude/skills/plan-v2-engine/references/approve.md'
+original_intent = "The review skip reason states that plan review lands in Slice 3"
+rationale = ".claude/rules/documentation.md bars plan phases from shipped skill prose"
+type = "deviation"
+task_ref = "write-the-approve-reference"
+date = 2026-11-09
+
+[[items]]
+id = "E34"
+agent = "implement"
+summary = "Added tomlctl flow render-progress-log after flow record in claude/skills/plan-v2-engine/references/approve.md"
+original_intent = "No progress-log step after the status-transition record"
+rationale = "flow-contract-reconciler rule 5 requires a PROGRESS-LOG.md re-render after every execution-record append; the rendered file lands under .claude/flows/<slug>/ so the second commit picks it up"
+type = "deviation"
+task_ref = "write-the-approve-reference"
+date = 2026-11-09
+
+[[items]]
+id = "E35"
+agent = "implement"
+summary = "Added a git status --short check of the shared stores before the first commit, asking the user before going on, in claude/skills/plan-v2-engine/references/approve.md"
+original_intent = "No pre-commit check of the shared stores"
+rationale = "The second commit stages .claude/active-flow.toml and .claude/backlog.toml whole, and unrelated edits in them would be swept in"
+type = "deviation"
+task_ref = "write-the-approve-reference"
+date = 2026-11-09
+
+[[items]]
+id = "E36"
+agent = "implement"
+summary = "Added a short Amend paragraph linked from the open-run refusal row in claude/skills/plan-v2-engine/references/approve.md"
+original_intent = "Only the plan approve refusals are listed"
+rationale = "plan stage gives a plan approve --amend hint that the procedure must explain"
+type = "deviation"
+task_ref = "write-the-approve-reference"
+date = 2026-11-09
+
+[[items]]
+id = "E37"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = ["claude/skills/plan-v2-engine/references/approve.md"]
+summary = "Wrote the Review and Approve engine reference: review skip recorded only while plan stage reads review, secret scan, gate screen with AskUserQuestion, first commit staged by name minus check-ignored paths, plan approve --review skipped-flag with each refusal and its clearance, conditional status-transition record, second commit for the stamp's writes, and the verbatim warning. cli::dispatch::tests 51 passed."
+type = "task-completion"
+task_ref = "write-the-approve-reference"
+date = 2026-11-09
+
+[[items]]
+id = "E38"
+agent = "implement"
+summary = "Launch args written to <scratch>/investigate-args.json before launch, in claude/skills/plan-v2-engine/references/open-and-challenge.md"
+original_intent = "A relaunch passes the launch's exact args, held in the conversation"
+rationale = "A scratch file lets the open-run rule check that it still holds the exact args rather than trusting memory after compaction"
+type = "deviation"
+task_ref = "write-the-open-and-challenge-reference"
+date = 2026-11-09
+
+[[items]]
+id = "E39"
+agent = "implement"
+summary = "Fan-out check uses status, a git diff HEAD --binary capture and sha256 digests of untracked files, excluding notes/ and .claude/flows/<slug>, in claude/skills/plan-v2-engine/references/open-and-challenge.md"
+original_intent = "The fan-out check compares git status --porcelain with before launch"
+rationale = "Status alone misses an edit to an already-dirty file or to an untracked file such as brief.md; the flow store directory is written by plan run start/finish during the run"
+type = "deviation"
+task_ref = "write-the-open-and-challenge-reference"
+date = 2026-11-09
+
+[[items]]
+id = "E40"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = ["claude/skills/plan-v2-engine/references/open-and-challenge.md"]
+summary = "Wrote the Open, Investigate, fan-out check, Structure challenge, Surface and open-run-rule engine reference. Challenge kept per keep 6 of 6; with T2 stale and T3 miss a relaunch needs same session, exact args on hand, unchanged HEAD and a passing fan-out check, else plan run abandon. cli::dispatch::tests 51 passed."
+type = "task-completion"
+task_ref = "write-the-open-and-challenge-reference"
+date = 2026-11-09
+
+[[items]]
+id = "E41"
+agent = "implement"
+summary = "Added step 4b running each base premise's check, in claude/skills/plan-v2-engine/references/write-and-prove.md"
+original_intent = "Prove is plan check, probes and the cold read"
+rationale = "plan probes covers only accept entries, so nothing would run a base premise's check before approval"
+type = "deviation"
+task_ref = "write-the-write-and-prove-reference"
+date = 2026-11-09
+
+[[items]]
+id = "E42"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = ["claude/skills/plan-v2-engine/references/write-and-prove.md"]
+summary = "Wrote the Design, Surface again, Write and Prove engine reference: worked plan decide/contract/milestone add examples, a .toml record file with spec rows and the spec rules, the cold-read launch sequence in full under run step cold-read with per-status handling and a bounded rerun rule, premise checks, and plan probes run under timeout 540 with per-verdict actions. Examples exercised against a throwaway repo; cli::dispatch::tests 51 passed."
+type = "task-completion"
+task_ref = "write-the-write-and-prove-reference"
+date = 2026-11-09
+
+[[items]]
+id = "E43"
+agent = "implement"
+summary = "A plan needing a dependency at --depth quick continues at standard and the user is told, in claude/skills/plan-v2-engine/SKILL.md"
+original_intent = "--depth quick runs no Workflow; the plan does not say what happens when Surface needs a dependency card at quick"
+rationale = "The dependency card can only be built by a plan-v2-investigate launch; continuing keeps dependency facts tool-settled as Surfacing requires"
+type = "deviation"
+task_ref = "write-the-engine-skill"
+date = 2026-11-09
+
+[[items]]
+id = "E44"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = ["claude/skills/plan-v2-engine/SKILL.md"]
+summary = "Wrote the plan-v2-engine skill on the review-v2-engine shape: role, rules, argument reading with --review refused before Open, step table with run steps investigate/challenge/cold-read/review and their skips, depth, re-entry with the open-run rule summary, <scratch> definition, links to the three references. Challenge row kept. cli::dispatch::tests 51 passed."
+type = "task-completion"
+task_ref = "write-the-engine-skill"
+date = 2026-11-09
+
+[[items]]
+id = "E45"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/commands/plan-v2.md",
+    "tomlctl/src/cli/dispatch/tests/skills.rs",
+]
+summary = "Wrote the /plan-v2 carrier on the review-v2 pattern (bindings table, no-envelope line, pre-flight: capabilities lists plan, AskUserQuestion and Workflow present, refused-launch handling; defers to the skill's Arguments and Re-entry sections) and added its carrier_invokes_required_skills row. cli::dispatch::tests 51 passed; falsifier failed the gate once."
+type = "task-completion"
+task_ref = "add-the-carrier-and-its-gate-row"
+date = 2026-11-09
+
+[[items]]
+id = "E46"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = [
+    "CLAUDE.md",
+    "claude/skills/tomlctl/references/plan.md",
+]
+summary = "Added a ## Planning v2 pointer section to CLAUDE.md after ## Review v2 (carrier, skill, three agents, two Workflows, attended only, approved plans not yet runnable, symlink deploy per Lookup: symlink), added claude/workflows/**/*.js to both hook gate-path mentions, and named the plan-v2-engine skill as owner in tomlctl references/plan.md."
+type = "task-completion"
+task_ref = "point-the-project-docs-at-the-carrier"
+date = 2026-11-09
+
+[[items]]
+id = "E47"
+agent = "implement"
+summary = "Rewrote the whole row-2 clause (agents hold Write, no plan note verb, carrier documents Edit(docs/flows/**), gate row instead of VALID_COMMANDS) in docs/plans/v2-planning.md"
+original_intent = "Later slices row 2: remove the plan note verb taking the body on stdin"
+rationale = "Leaving the old plan-investigator clause and the VALID_COMMANDS item would contradict the departures table"
+type = "deviation"
+task_ref = "record-the-departures"
+date = 2026-11-09
+
+[[items]]
+id = "E48"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = [
+    "docs/ideas/v2-pipeline.md",
+    "docs/plans/v2-planning.md",
+]
+summary = "Moved /plan-v2 to built in the idea doc; in v2-planning rewrote Later slices row 2, the Surfacing unattended sentence and cargo tree phrase, the notes tracking sentence, Cold readers, the After approval review-v2-pipeline line, and corrected the Directed research citation (22.23% per extracted crate reference in 2606.08444, 1.3% in 2512.11589, 57% Custom/DIY caching share from Amplifying). Keep verdict, so no remove edits. All four acceptance greps pass."
+type = "task-completion"
+task_ref = "record-the-departures"
+date = 2026-11-09
+
+[[items]]
+id = "E49"
+agent = "implement"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+outcome = "pass"
+summary = "51 passed; 0 failed"
+duration_s = 25
+type = "verification"
+task_ref = "point-the-project-docs-at-the-carrier"
+date = 2026-11-09
+
+[[items]]
+id = "E50"
+agent = "implement"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+summary = "shared-block parity OK, exit 0"
+duration_s = 23
+type = "verification"
+task_ref = "point-the-project-docs-at-the-carrier"
+date = 2026-11-09
+
+[[items]]
+id = "E51"
+agent = "implement"
+kind = "commit-train"
+summary = "7ab0593: apply-the-probe-results; d6ccebe: add-the-prove-workflow; 1dc2b9e: write-the-open-and-challenge-reference; 0f638f3: write-the-approve-reference; 179054e: write-the-write-and-prove-reference; 85a9e51: write-the-engine-skill; 7904566: add-the-carrier-and-its-gate-row; 9b1fcbe: point-the-project-docs-at-the-carrier; f391ce5: record-the-departures"
+commits = [
+    "7ab0593",
+    "d6ccebe",
+    "1dc2b9e",
+    "0f638f3",
+    "179054e",
+    "85a9e51",
+    "7904566",
+    "9b1fcbe",
+    "f391ce5",
+]
+type = "checkpoint"
+task_ref = "point-the-project-docs-at-the-carrier"
+date = 2026-11-09
+
+[[items]]
+id = "E52"
+agent = "implement"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+summary = "build exit 0"
+duration_s = 41
+type = "verification"
+task_ref = "record-the-departures"
+date = 2026-11-09
+
+[[items]]
+id = "E53"
+agent = "implement"
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "fail"
+summary = "2732 run: 2731 passed, 1 failed, 1 skipped; narrow rerun also fails. Pre-existing Windows-only defect B-233309f2, outside this run's file set"
+duration_s = 462
+failed_ids = ["fix_rewrites_worktrees_under_the_root_and_leaves_foreign_ones"]
+type = "verification"
+task_ref = "record-the-departures"
+date = 2026-11-09
+
+[[items]]
+id = "E54"
+agent = "implement"
+command = "test -f claude/commands/plan-v2.md && test -f claude/skills/plan-v2-engine/SKILL.md && test -f claude/agents/plan-investigator.md && test -f claude/agents/plan-cold-reader.md"
+outcome = "pass"
+summary = "exit 0"
+duration_s = 0
+type = "verification"
+task_ref = "record-the-departures"
+date = 2026-11-09
+
+[[items]]
+id = "E55"
+agent = "implement"
+command = "test -f claude/workflows/plan-v2-investigate.js && test -f claude/workflows/plan-v2-prove.js"
+outcome = "pass"
+summary = "exit 0"
+duration_s = 1
+type = "verification"
+task_ref = "record-the-departures"
+date = 2026-11-09
+
+[[items]]
+id = "E56"
+agent = "implement"
+command = "grep -Eqs '^Verdict: (keep [2-6]|remove [01]) of 6$' docs/ideas/plan-v2-probes.md"
+outcome = "pass"
+summary = "exit 0"
+duration_s = 0
+type = "verification"
+task_ref = "record-the-departures"
+date = 2026-11-09
+
+[[items]]
+id = "E57"
+agent = "implement"
+command = """test "$(grep -cE '^(Lookup|omitClaudeMd|T1|T2|T3): [^<[:space:]]' docs/ideas/plan-v2-probes.md)" = 5"""
+outcome = "pass"
+summary = "exit 0"
+duration_s = 0
+type = "verification"
+task_ref = "record-the-departures"
+date = 2026-11-09
+
+[[items]]
+id = "E58"
+agent = "implement"
+command = "! grep -q 'taking the body on stdin' docs/plans/v2-planning.md"
+outcome = "pass"
+summary = "exit 0"
+duration_s = 0
+type = "verification"
+task_ref = "record-the-departures"
+date = 2026-11-09
+
+[[items]]
+id = "E59"
+agent = "implement"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+summary = "shared-block parity OK, exit 0"
+duration_s = 22
+type = "verification"
+task_ref = "record-the-departures"
+date = 2026-11-09
+
+[[items]]
+id = "E60"
+agent = "implement"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+summary = "clippy exit 0"
+duration_s = 18
+type = "verification"
+task_ref = "record-the-departures"
+date = 2026-11-09
+
+[[items]]
+id = "E61"
+agent = "implement"
+command = "cargo audit --file tomlctl/Cargo.lock"
+outcome = "pass"
+summary = "audit exit 0"
+duration_s = 9
+type = "verification"
+task_ref = "record-the-departures"
+date = 2026-11-09
+
+[[items]]
+id = "E62"
+agent = "plan-update"
+from_status = "in-progress"
+to_status = "review"
+summary = "status in-progress -> review: all 15 tasks done"
+type = "status-transition"
+date = 2026-11-09
+
+[[items]]
+id = "E63"
+agent = "plan-update"
+summary = "Both plan-v2 Workflows wrap each agent call so a thrown error becomes an entry with status `error` and an `error` message (also listed in `errors`); every entry now carries `error`, null unless it failed. SCRIPT_VERSION is 2. Applies to plan-v2-investigate.js and plan-v2-prove.js (task 7). Uncommitted."
+original_intent = "Entries carried id/status/verdict/note (investigate) and milestone/status/unactionable/false_premises/note (prove); a thrown agent error resolved to null and was reported as no-return."
+rationale = "/review found every agent failure read as no-return, which the engine attributes to an unregistered agent, so a schema or runtime fault was misdiagnosed. The plan's description of the return shapes is now out of date."
+type = "deviation"
+task_ref = "add-the-investigate-workflow"
+date = 2026-11-09
+
+[[items]]
+id = "E64"
+agent = "plan-update"
+summary = "open-and-challenge.md: the fan-out check snapshots git config (compared first, before any git status/diff) and HEAD, and excludes only the note paths each launch asks for. plan run start passes --args-hash (sha256 of the args file); the digest's stage_inputs.runs now projects args_hash (tomlctl/src/plan/view.rs, plan_records test, tomlctl references/plan.md), and a relaunch requires the hash to match. Surface records a run step (skip when nothing survives, start+finish when items do). Each lens is written into the brief's Unknowns as `- <id>: <question>`; pending is recomputed from those ids minus finished notes. Investigate gained Prove's status table, dependency lens ids are normalised, and the no-agent-launched case is named. Uncommitted."
+original_intent = "Fan-out check excluded all of notes/ and took three snapshots (status, diff, untracked); args lived only in a scratch file; Surface left no run row; pending lenses were recomputed from notes/ alone."
+rationale = "/review found the check let stray or overwritten notes and planted git config through, and that a resumed session could not recover the lens list, the launch HEAD or the args. args_hash already existed on the [[run]] row (v2-planning.md asked for it at launch) but had no writer or reader; the user chose to wire it through rather than record it as dropped."
+type = "deviation"
+task_ref = "write-the-open-and-challenge-reference"
+date = 2026-11-09
+
+[[items]]
+id = "E65"
+agent = "plan-update"
+summary = "SKILL.md Re-entry reads stage_inputs.runs after the open-run rule and resumes at the earliest step whose run step (investigate, challenge, surface, cold-read) has neither a finished nor a skipped row, then follows plan stage's next. Rule 5 no longer says plan stage alone is enough; --depth and --no-review are stated as session-only bindings. Uncommitted."
+original_intent = "Re-entry followed plan stage's next, on the premise that stage alone says where a plan stands."
+rationale = "plan stage reads brief, milestones, tasks, specs and findings but no [[run]] rows, so a session that ended after Open or after the probes resumed past Investigate, the structure challenge or the cold read."
+type = "deviation"
+task_ref = "write-the-engine-skill"
+date = 2026-11-09

@@ -197,10 +197,11 @@ pub(crate) fn normalised_worktree(anchor: &Path, stored: &str) -> Option<String>
 }
 
 /// Whether a stored worktree names one machine's disk: absolute here, or a
-/// Windows spelling, which reads as relative on any other platform.
+/// rooted spelling from either platform, since Windows reads `/home/x` and
+/// POSIX reads `C:\x` as relative.
 pub(crate) fn is_machine_local_worktree(stored: &str) -> bool {
     Path::new(stored).is_absolute()
-        || stored.starts_with('\\')
+        || stored.starts_with(['/', '\\'])
         || stored.as_bytes().get(1) == Some(&b':')
 }
 

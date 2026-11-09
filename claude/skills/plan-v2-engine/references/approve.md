@@ -18,7 +18,7 @@ Plan review is not built into `/plan-v2` yet, so there is no route to `plan appr
 | `--no-review` | `the user passed --no-review` |
 
 ```bash
-tomlctl plan run skip --slug <slug> --step review --reason 'plan review is not built yet'
+tomlctl plan run skip --slug <slug> --step review --reason '<reason from the Review table>'
 ```
 
 Keep the reason: Approve passes the same text to `plan approve --reason`, and the gate shows it under `risks` as `kind = "skip-reason"`. Record it when `plan stage` reads `review`, the stage that applies exactly while review is unsettled. At `ready` the skip is already recorded, and a second one would show twice under `risks`.
@@ -92,7 +92,7 @@ Notes are tracked by default, so the commit holds every path under `docs/flows/<
 ### 5. Stamp the approval
 
 ```bash
-tomlctl plan approve --slug <slug> --review skipped-flag --reason 'plan review is not built yet'
+tomlctl plan approve --slug <slug> --review skipped-flag --reason '<reason from the Review table>'
 ```
 
 Pass the review skip's reason verbatim. `--review skipped-flag` covers both rows of the Review table: with no route to `ran`, a run with no flag is skipped as surely as one with `--no-review`. `skipped-low-risk` claims a judgement this engine does not make.

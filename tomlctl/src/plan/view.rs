@@ -322,6 +322,7 @@ fn stage_inputs(view: &Plan<'_>, integrity: &ReadIntegrityArgs) -> Result<JsonVa
                 "step": run.step,
                 "state": run.state().as_str(),
                 "workflow": run.workflow,
+                "args_hash": run.args_hash,
                 "run_id": run.run_id,
                 "session": run.session,
                 "skip_reason": run.skip_reason,

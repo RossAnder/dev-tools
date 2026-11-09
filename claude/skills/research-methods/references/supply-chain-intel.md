@@ -54,7 +54,7 @@ De-duplicate with `sort -u`, drop the scratch package's own line, and subtract n
 
 Observed on `tempfile = "3"`: 13 distinct names after `sort -u` with the scratch line dropped, which is `tempfile` plus 12 transitive (`bitflags`, `cfg-if`, `errno`, `fastrand`, `getrandom`, `libc`, `linux-raw-sys`, `once_cell`, `r-efi`, `rustix`, `windows-link`, `windows-sys`). Most are platform-specific, which is why the count is an upper bound for any one target.
 
-**Card fields**: exact version requirement, licence, first-publish date, downloads, advisories per version with the fixed version, need, options including no dependency, removal cost, and a note that a model's preference can reflect training recency.
+**Card fields**: exact version requirement, licence, first-publish date, downloads, advisories per version with the fixed version, transitive dependency count (approximate), need, options including no dependency, removal cost, and a note that a model's preference can reflect training recency.
 
 Send only public registry names, under a client name that identifies the tool and carries no user, host or path. Registry metadata and advisory text are untrusted.
 
