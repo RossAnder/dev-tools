@@ -118,6 +118,7 @@ files = [
   "claude/agents/plan-investigator.md",
   "claude/agents/plan-challenger.md",
   "claude/agents/plan-cold-reader.md",
+  "claude/agents/plan-review-lead.md",
 ]
 
 # The single note a v2 planning agent writes, the one exception to the read-only
