@@ -137,6 +137,13 @@ Fixes and dismissals run without asking, because fixes are revertible commits an
 - **Opt-out:** there is no opt-out question. Review runs unless the planner judges the plan low risk and discloses that at approval, with `--review` and `--no-review` flags (the plan's user decision 5). If skipped, the approval gate still offers "review now". `/review-plan-v2` stays runnable alone.
 - **Risk:** an agent composing and triaging reverses the engine's rule that the orchestrator does, and it has not been tried. If it works, the same lead could serve `/review-v2` (topic 7).
 
+**Built (Slice 3):** record-targeted findings, computed evidence tiers, `review apply`, the `plan-review-lead` agent, the `plan-v2-review` Workflow, the re-check run, review inside `/plan-v2`, and plan outcome stats. Departures from the above:
+
+- **Notes after findings and recorded verdict changes:** not built; blind finders stay prompt-only.
+- **Exceptional targeted deep re-review:** not built; the gate shows the open critical instead.
+- **Proposed edits in a file:** edits live on the findings (`target`, `expect`, `new`) and `review apply` reads them, giving one store, compare-and-set and an outcome record.
+- **"Applies" before approval:** leaves no `[[changes]]` row, since `audit` is false until approval; the finding's `applied` field is the record.
+
 ### Smaller fixes
 
 - **Deviations:** the orchestrator takes them as input to a replan at each milestone drain, changing tasks through audited verbs (the plan's Approach, "After approval").
