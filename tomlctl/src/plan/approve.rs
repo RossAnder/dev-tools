@@ -15,7 +15,7 @@ use toml::Value as TomlValue;
 
 use super::check::{self, CLASS_BRIEF_CHANGED};
 use super::schema::{Approval, Decision, Door, PlanStore, Provenance, ReviewOutcome};
-use super::store::{self, BRIEF_FILE, REVIEW_STORE_FILE, brief_digest};
+use super::store::{self, AppliedEdit, BRIEF_FILE, PlanReviewState, TIER_USER, brief_digest};
 use crate::backlog::schema::STATUS_OPEN;
 use crate::backlog::triage::{Transition, triage_value};
 use crate::cli::{
@@ -40,8 +40,6 @@ const STATUS_IN_PROGRESS: &str = "in-progress";
 const APPROVED_BY: &str = "user";
 
 const FILE_BUCKETS: [&str; 3] = ["1", "2-3", "4+"];
-const REVIEW_NOTE: &str = "review findings do not reach this screen yet: `risks` holds only \
-                           recorded skip reasons and `review_edits` stays empty";
 
 fn refuse(message: String) -> anyhow::Error {
     tagged_err(ErrorKind::Validation, None, message)
@@ -49,12 +47,14 @@ fn refuse(message: String) -> anyhow::Error {
 
 pub(super) fn gate(args: PlanGateArgs) -> Result<()> {
     let slug = &args.target.slug;
-    let plan = store::load(&store::resolve(slug)?, &args.integrity)?;
+    let plan_path = store::resolve(slug)?;
+    let plan = store::load(&plan_path, &args.integrity)?;
     let tasks = load_store(&resolve_store_path(Some(slug), None)?, &args.integrity)?;
-    print_json_line(&gate_report(&plan, &tasks))
+    let review = store::plan_review_state(store::flow_dir(&plan_path))?;
+    print_json_line(&gate_report(&plan, &tasks, &review))
 }
 
-fn gate_report(plan: &PlanStore, tasks: &Store) -> JsonValue {
+fn gate_report(plan: &PlanStore, tasks: &Store, review: &PlanReviewState) -> JsonValue {
     let mut assumed: Vec<&Decision> = plan
         .decisions
         .iter()
@@ -76,9 +76,18 @@ fn gate_report(plan: &PlanStore, tasks: &Store) -> JsonValue {
         })
         .collect();
 
-    let risks: Vec<JsonValue> = store::skipped_reviews(plan)
-        .map(|run| json!({ "kind": "skip-reason", "detail": run.skip_reason }))
-        .collect();
+    let skip_reasons = store::skipped_reviews(plan)
+        .map(|run| json!({ "kind": "skip-reason", "detail": run.skip_reason }));
+    let open_findings = review.open.iter().filter(|f| f.is_gate_risk()).map(|f| {
+        json!({
+            "kind": "review-finding",
+            "id": f.id,
+            "severity": f.severity,
+            "target": f.target,
+            "summary": f.summary,
+        })
+    });
+    let risks: Vec<JsonValue> = skip_reasons.chain(open_findings).collect();
 
     let deferred: Vec<JsonValue> = tasks
         .milestones
@@ -108,11 +117,36 @@ fn gate_report(plan: &PlanStore, tasks: &Store) -> JsonValue {
         "one_way_doors": one_way,
         "risks": risks,
         "task_mix": task_mix(tasks),
-        "review_edits": [],
+        "review_edits": review_edits(review),
         "deferred_milestones": deferred,
         "stops": stops,
-        "review_note": REVIEW_NOTE,
     })
+}
+
+/// Every applied plan finding, decisions first, then by how much the user had a say:
+/// user, cited, mechanical. The sort is stable, so store order holds within a rank.
+fn review_edits(review: &PlanReviewState) -> Vec<JsonValue> {
+    let rank = |f: &AppliedEdit| match f.tier.as_str() {
+        _ if f.target.starts_with("decision:") => 0,
+        TIER_USER => 1,
+        "cited" => 2,
+        "mechanical" => 3,
+        _ => 4,
+    };
+    let mut applied: Vec<&AppliedEdit> = review.applied.iter().collect();
+    applied.sort_by_key(|f| rank(f));
+    applied
+        .into_iter()
+        .map(|f| {
+            json!({
+                "id": f.id,
+                "target": f.target,
+                "tier": f.tier,
+                "by": f.by,
+                "summary": f.summary,
+            })
+        })
+        .collect()
 }
 
 fn assumption(decision: &Decision) -> JsonValue {
@@ -184,10 +218,10 @@ pub(super) fn approve(args: PlanApproveArgs) -> Result<()> {
         return Err(refuse(unanswered));
     }
     refuse_check_errors(&slug, &read_integrity, amend)?;
-    if review == ReviewOutcome::Ran && !store::plan_review_finished(flow_dir)? {
-        return Err(refuse(format!(
-            "`--review ran` needs a finished plan-family run in `{REVIEW_STORE_FILE}`"
-        )));
+    if review == ReviewOutcome::Ran
+        && let Some(why) = store::plan_review_state(flow_dir)?.unsettled(&tasks)
+    {
+        return Err(refuse(format!("`--review ran` refused: {why}")));
     }
     let from = context_status(&context_path)?;
     if !amend && from != STATUS_DRAFT && from != STATUS_IN_PROGRESS {
