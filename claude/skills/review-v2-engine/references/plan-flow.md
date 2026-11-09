@@ -1,0 +1,373 @@
+# Plan review on a v2 flow
+
+A plan-family run is in **flow mode** when its flow has `.claude/flows/<slug>/plan.toml`, and in markdown mode otherwise. This reference is the whole orchestrator procedure for flow mode. `/plan-v2` runs it as its Review step, and `/review-plan-v2` runs it when the resolved flow has `plan.toml`. Markdown mode is unchanged: the engine's stages and the carrier's merge offer, as written.
+
+Flow mode differs from the engine's stages in four ways:
+
+- **Scope.** The scope is `docs/flows/<slug>/brief.md` plus every `docs/flows/<slug>/design/*.md`. No task-store import runs: the store is already canonical, and `tasks import-plan` refuses a v2 flow.
+- **Findings.** Findings target records (`task:<ref>.spec.accept[1]`, `decision:D3.why`, `brief#Background`) with an `expect` and a `new`, and tomlctl computes each one's `tier`. The reviewer side is `review-v2-method`'s `references/plan-records.md`; the tool side is the `tomlctl` skill's `references/review.md`, section "Plan records".
+- **Coverage.** The saved Workflow `plan-v2-review` runs stages 2 to 6: the survey and baselines, a `plan-review-lead` composing the map, `review-v2-pipeline` waves the lead settles, and the lead's audit. The engine's own stages are the fallback.
+- **Close.** Tiered apply through `tomlctl review apply` replaces the merge offer, then a narrower re-check run reviews what the edits changed.
+
+The engine's role rules hold throughout: read digests and projections, never rows; refer to findings by id; stage payloads and user prose with the Write tool under `<run-dir>/payloads/`; never quote user text into a shell argument. `<ids>` in a command is finding ids, comma-separated. `<scratch>` is the session's scratchpad directory, where the models table is staged because no run directory exists before the first run starts.
+
+## Contents
+
+1. Pre-flight
+2. Run start
+3. Survey signals and schemas
+4. Launch
+5. Reading the return, and the fallback
+6. Mop-up
+7. Triage by tier
+8. Re-probe
+9. Close the first run
+10. Re-check
+11. Finish
+12. An approved flow
+13. Re-entry
+
+## 1. Pre-flight
+
+1. The installed binary must carry the apply verb:
+
+   ```bash
+   tomlctl capabilities --get features
+   ```
+
+   Stop when `review_apply` is absent, naming `cargo install --path tomlctl` in the dev-tools checkout and a restart.
+2. Bind `<slug>`. `/plan-v2` has it already. `/review-plan-v2` takes it from the envelope its engine stage 0 built.
+3. Skip the engine's stage 0 steps 4 and 5. `review sync-v1` reads v1 ledgers, and the plan family never exports to one. The import is refused on a v2 flow.
+4. Read where the plan stands:
+
+   ```bash
+   tomlctl plan stage --slug <slug>
+   ```
+
+   On `approved`, `running` or `done`, section 12 governs every edit. Settle any open review run by section 13 before anything else.
+
+## 2. Run start
+
+Read the `model:` line of each of the eight agents with Grep, under `<claude dir>/agents/`: the engine's seven (`review-surveyor`, `review-sweeper`, `review-checker`, `review-finder`, `review-finder-cf`, `review-verifier`, `plan-executor`) and `plan-review-lead`. Record the lead's model under `lead`. Stage the table as JSON with the Write tool, since the run directory does not exist yet: use the session scratchpad, then pass it by `@` path.
+
+```bash
+tomlctl review run start --slug <slug> --command review-plan-v2 --family plan --depth <depth> --base HEAD --set-json 'scope=["docs/flows/<slug>/brief.md","docs/flows/<slug>/design/*.md"]' --set-json models=@<scratch>/review-models.json --set substrate=workflow
+```
+
+`--command` is `review-plan-v2` from either carrier. `<depth>` is the carrier's `--depth`, default `standard`. Bind `<run>` and `<run-dir>` from what it prints. A catalogue validation error halts the review, as the engine's stage 1 says; so does a refusal over `.claude/review-lenses`, which takes `--project` only on the user's say-so.
+
+## 3. Survey signals and schemas
+
+The wrapper needs the deterministic signals, and no read verb returns them after this call prints them:
+
+```bash
+tomlctl review survey --run <run> --slug <slug>
+```
+
+Keep each printed signal's `name` and `roots` exactly as printed. For each `unknown` signal that would have activated a lens, add `--lens +<id>` to the steering, or leave it and name it in the close summary.
+
+Fetch the two return schemas the waves need:
+
+```bash
+tomlctl review schema cell-return
+tomlctl review schema verdict-return
+```
+
+## 4. Launch
+
+Write the args object with the Write tool to `<run-dir>/payloads/wrapper-args.json`, so a later session can see what was launched, then launch:
+
+```text
+Workflow({
+  name: "plan-v2-review",
+  args: {
+    slug: "<slug>",
+    run: "<run>",
+    mode: "full",
+    depth: "<depth>",
+    run_dir: "<run-dir>",
+    ledger_line: "ledger: .claude/flows/<slug>/review-v2.toml",
+    signals: {
+      survey: [ { name: "<signal>", roots: ["<root>"] } ],
+      steering: ["--lens +contrarian", "--probe \"<question>\""]
+    },
+    schemas: { cell_return: <cell-return schema>, verdict_return: <verdict-return schema> }
+  }
+})
+```
+
+- `signals.survey` is section 3's output as printed, `[]` when it printed none.
+- `signals.steering` holds one flag per entry: `/review-plan-v2`'s `--lens` and `--probe` flags, plus any `--lens +<id>` section 3 added. Omit it when there are none. `/plan-v2` has no steering flags.
+- `targets` is absent in `full` mode.
+
+`/plan-v2` records the step in the same turn, once the launch reports `async_launched`, with the run id the launch printed. `/review-plan-v2` writes no `plan.toml` run rows, because those record `/plan-v2`'s steps.
+
+```bash
+tomlctl plan run start --slug <slug> --step review --workflow plan-v2-review --run-id <runId> --session "$CLAUDE_CODE_SESSION_ID"
+```
+
+End the turn and resume on the task notification. The wrapper writes nothing back but its index; every agent it runs writes the store itself.
+
+## 5. Reading the return, and the fallback
+
+The return is `{slug, run, mode, waves: [{wave, cells, verified, settled}], unverified, audit, errors, script_version}`. With `errors` empty, every wave settled and `audit` set, go to section 6.
+
+Otherwise, fall back to the engine at the first stage the store shows incomplete, and stay on the engine for the rest of the run. Never relaunch the wrapper over a run that already holds a wave: its compose phase would mint a second wave over the first. Read the store state with the digest and the run directory:
+
+```bash
+tomlctl review digest --run <run> --slug <slug>
+```
+
+| What failed | `errors` reads | Resume at |
+|---|---|---|
+| The launch was refused, errored, the name was unknown, or the notification carried no result | — | the first row below the store matches |
+| The args were refused | ends `no agent launched` | fix the args from `errors` and launch once more; nothing ran |
+| The surveyor failed or stopped `missing:` | `surveyor …; no cell composed` | engine stage 2, in flow mode, per `survey.md` |
+| Compose failed or wrote nothing | ends `fall back to engine stage 3` | engine stage 2's surveyor and baselines once more, then stage 3 |
+| A wave threw, ran no cell, or its settle failed | ends `no audit ran` | engine stage 4 for the unsealed cells when the digest lists any, else stage 5 |
+| Only the audit failed | `lead audit …` | engine stage 6 |
+| A follow-up was not launched | names its cells | stage 5's follow-up decision: launch those cells as the next wave, within the envelope, or waive them |
+
+Two reasons the compose row restarts at stage 2. The surveyor's digest went to the Workflow, not to you, so you hold neither its candidates nor its `verification:` lines. And stage 4 waits on a recorded baseline for every one of those lines, which no read verb lists. A second surveyor on the same run rewrites `profile.md` and `pack.md` in place.
+
+A store with no `profile.md` in `<run-dir>` is at stage 2; one with no cells in the digest is at stage 3, handled as the compose row; one with unsealed cells is at stage 4. Engine stage 4 for unsealed cells launches `review-v2-pipeline` with only those cells, as `agent-waves.md` ("What recovering a Workflow run costs") describes, or runs them as Agent waves. A fallback at stage 3 or later composes, settles and audits as the engine's stages say, in flow mode: the surveyor prompt carries `flow: <slug>` in place of `plan:`, and each cell assignment names the flow.
+
+The wrapper records no `substrate` change. Name a fallback in the close summary as `substrate: plan-v2-review → engine at stage <n>`.
+
+## 6. Mop-up
+
+The wrapper cannot dispatch outside its script, so the `unverified` ids it returns, and any cell it left unsealed, are yours. Settle the store and read the whole run:
+
+```bash
+tomlctl review resolve --run <run> --slug <slug>
+tomlctl review digest --run <run> --slug <slug>
+```
+
+- Each unverified id gets a mop-up dispatch by its route, per `agent-waves.md`, section "Mop-up". Repeat until none is left or an id fails twice.
+- Each unsealed cell gets one re-dispatch with the identical cell prompt, per `agent-waves.md`, section "The wave barrier". Never re-compose it through `review plan`, which would mint a second cell beside it.
+- An id that two mop-ups failed to verify stays `unverified`, and section 9 finishes the run with `--incomplete-file` naming it.
+
+The audit sampled the digest before the mop-up, so findings verified here are not in its sample. Do not re-audit them.
+
+Record the run's agent total: the agents the Workflow's notification reports, plus every mop-up and fallback dispatch.
+
+```bash
+tomlctl review run update <run> --slug <slug> --set-json agents=<total>
+```
+
+At `deep`, the lead wrote the map without asking the user. Say in the close summary that the map was not confirmed.
+
+## 7. Triage by tier
+
+Read every open finding with its `tier`, `target`, `expect` and `new`:
+
+```bash
+tomlctl review list --slug <slug> --run <run> --status open --for implementer
+```
+
+Group the rows by `tier`. Tiers are computed when a finding opens and frozen after, so read them; never re-derive one. On an approved flow, section 12 replaces this section's first two steps.
+
+### Mechanical and cited
+
+Apply every open mechanical and cited defect or cleanup row without asking, in one call, previewed first:
+
+```bash
+tomlctl review apply <ids> --slug <slug> --dry-run
+tomlctl review apply <ids> --slug <slug>
+```
+
+- **Refusal.** The verb refuses the whole call, writing nothing, and lists each refused id with its reasons. Drop the refused ids, report each with its reason, and apply the rest. A refused id stays `open`, and the gate shows it.
+- **Stale.** `skipped_stale` rows lost a race with an earlier edit to the same record. Report them under `changed during the review` and never retry them; the next review reads them through `PRIOR`.
+- **Already.** `already` ids were made before, by a session that died before stamping them; the verb stamps them now.
+- **Mid-batch failure.** `applying <id> failed; stamped before it: […]` leaves at most that one edit unstamped. Re-run the same call: the stamped ids are no longer `open`, and the unstamped edit is recognised as `already`.
+
+Keep the `target` of every `applied` and `already` row. Section 8 re-probes from them, and section 10 re-checks them.
+
+Cited edits are applied without asking but are disclosed: the approval gate lists every applied edit under `review_edits`, decisions first, then user, cited and mechanical.
+
+### User tier
+
+A user-tier row targets a decision, a `spec.outcome`, or the brief's Intent, Non-goals, Scope budget or Success criteria. It is asked whatever its evidence. Read the batch through the implementer projection, which carries the fix and the edit:
+
+```bash
+tomlctl review show <ids> --slug <slug> --for implementer
+```
+
+Ask in `AskUserQuestion` batches of up to four, one question per finding. Each question names the target, the current value and the proposed value in one or two lines, with the finding's summary, and offers **Accept** and **Veto**.
+
+- **Accept.** Apply the accepted ids together:
+
+  ```bash
+  tomlctl review apply <ids> --slug <slug> --user-accepted
+  ```
+
+  The verb records `by = "user"`. Its refusals, stale rows and failures read as above.
+- **Veto.** Stage the user's reason with the Write tool, or `vetoed at the plan review` when they gave none, and dismiss. `review stats --plan-outcomes` counts a dismissed user-tier row as a veto.
+
+  ```bash
+  tomlctl review triage <ids> --slug <slug> --dismiss-file <run-dir>/payloads/veto.md --expect-status open
+  ```
+
+- **No answer.** A headless session leaves the rows `open`. `plan approve --review ran` refuses while any user-tier finding is open, and `plan stage` counts them as a blocker. Say `user tier pending` in the close summary.
+
+### Advisory, and what the tiers leave
+
+Present, in one message, with a recommendation and a one-line reason for each item as the engine's stage 7 says:
+
+- the advisory rows, recommending park, backlog, convert or dismiss;
+- defect and cleanup rows whose tier is `advisory`: no `new`, a proof that did not hold, or no citation in the target's file. They are never applied. The user may dismiss or defer them; one left `open` shows at the gate under `risks` when it is critical or major;
+- the ids the applies above refused.
+
+Dispositions are the user's, as at the engine's stage 7. The grammar is the engine's, without `export`, which the plan family never does. A `convert` in flow mode writes the replacement with `target`, `expect` and `new` per `plan-records.md`; it is minted `unverified` and verified in this run before section 9. Backlog picks go through the `backlog-capture` skill, as the engine's stage 8 says.
+
+## 8. Re-probe
+
+An applied edit to a `spec.accept` entry drops that entry's probe, so the plan's stage returns to `prove`. `plan approve --review ran` also refuses while an entry an applied finding changed has no probe. Re-probe whenever any `applied` or `already` target from section 7 is a `task:<ref>.spec.accept` target, with or without an index:
+
+```bash
+tomlctl plan probes --slug <slug> --emit > <run-dir>/payloads/probes.sh
+```
+
+Read the script before running it: each line runs a stored command with your rights, and running it through `bash` puts none of them in front of a permission prompt.
+
+```bash
+timeout 540 bash <run-dir>/payloads/probes.sh > <run-dir>/payloads/probes.out
+tomlctl plan probes --slug <slug> --record <run-dir>/payloads/probes.out
+```
+
+`--record` needs a capture covering every probeable control of the pending rows, so it re-probes the whole plan, not only the edited entries. On exit 124 record nothing, and narrow the run with `--milestone <id>` on both `--emit` and `--record`.
+
+- **Unhealthy.** A recorded verdict other than `healthy` is a `plan check` error that blocks approval. Fix it as the cited edit would have: a new finding for the next review, or, under `/plan-v2`, its Prove step's spec fix and probes again.
+- **No probe line.** The emit skips an entry whose `check` is empty or whose `writes_build` is not `false`, so the edit leaves that entry unprobed and approval refuses. Name such entries in the close summary as blockers for the user.
+
+## 9. Close the first run
+
+In this order:
+
+1. **Park.** Park every advisory the digest still lists as untriaged, with one staged reason, `untriaged at the close of <run>`:
+
+   ```bash
+   tomlctl review triage <ids> --slug <slug> --park-file <run-dir>/payloads/park-untriaged.md --expect-status open
+   ```
+
+2. **Report.**
+
+   ```bash
+   tomlctl review report --run <run> --slug <slug> --out <run-dir>/report.md
+   ```
+
+3. **Finish.**
+
+   ```bash
+   tomlctl review run finish <run> --slug <slug>
+   ```
+
+   It refuses while an id is `unverified`, a `same_as` is unresolved, an unselected concern or unsliced file lacks a waiver, or a cell is unsealed. Fix the cause and finish again. Finish with `--incomplete-file <path>` only for a gap this run cannot close, the staged reason naming each open id or gap.
+
+The first run finishes before the re-check starts. A finished run is a fixed `PRIOR` for the re-check's finders, and when the re-check cannot launch, the first run has already settled what it can.
+
+## 10. Re-check
+
+Run a re-check when section 7 recorded at least one `applied` or `already` row. With none, skip to section 11.
+
+**Run start.** A fresh run at `quick`, recording the run it re-checks; `--propose` scales to the run's recorded depth:
+
+```bash
+tomlctl review run start --slug <slug> --command review-plan-v2 --family plan --depth quick --base HEAD --set-json 'scope=["docs/flows/<slug>/brief.md","docs/flows/<slug>/design/*.md"]' --set rechecks=<run> --set-json models=@<scratch>/review-models.json --set substrate=workflow
+```
+
+Bind its `<recheck-run>` and `<recheck-dir>`.
+
+**The pack.** A re-check runs no survey, so its directory holds no `pack.md` for the finders. Copy the first run's, without reading it:
+
+```bash
+cp <run-dir>/pack.md <recheck-dir>/pack.md
+cp <run-dir>/profile.md <recheck-dir>/profile.md
+```
+
+Its fences describe the plan before the edits, which the re-check's finders read against the records as they now stand.
+
+**Launch.** Fresh, never a `resumeFromRunId` relaunch: the first launch's journal would replay agents over edited records.
+
+```text
+Workflow({
+  name: "plan-v2-review",
+  args: {
+    slug: "<slug>",
+    run: "<recheck-run>",
+    mode: "recheck",
+    depth: "quick",
+    run_dir: "<recheck-dir>",
+    ledger_line: "ledger: .claude/flows/<slug>/review-v2.toml",
+    signals: {},
+    targets: ["task:<ref>.spec.accept[1]", "brief#Background"],
+    schemas: { cell_return: <cell-return schema>, verdict_return: <verdict-return schema> }
+  }
+})
+```
+
+`targets` lists each distinct `target` of section 7's `applied` and `already` rows, one per entry, as stored. A recheck takes depth `quick` and a non-empty `targets`; the wrapper refuses anything else and launches nothing. `/plan-v2`'s step row stays the one section 4 opened.
+
+**On the return.** Read it by section 5, with the same fallback table, then mop up by section 6 against `<recheck-run>`. The re-check has no follow-up wave.
+
+**Its findings are never applied automatically**, whatever their tier:
+
+- a user-tier finding is asked before approval, as in section 7, and an accepted one applied with `--user-accepted`. Re-probe by section 8 when it edits a `spec.accept` entry;
+- every other open finding is left `open`. The gate lists each open re-check finding under `risks`, as a leftover the user approves past or acts on.
+
+Then close `<recheck-run>` by section 9.
+
+## 11. Finish
+
+`/plan-v2` closes its step row:
+
+```bash
+tomlctl plan run finish --slug <slug> --step review --outcome <outcome>
+```
+
+| The review | `--outcome` |
+|---|---|
+| Both runs finished clean, with no fallback | `ok` |
+| A fallback fired, or a run finished `--incomplete` | `errors` |
+| The user stopped the review | `stopped` |
+
+Then `/plan-v2` goes on to its gate, which shows `review_edits` and `risks`, and approves with `--review ran`. `plan approve` refuses while a plan-family run is unfinished, a user-tier finding is open, or an edited `spec.accept` entry has no probe; `plan stage` applies the same rule, so `next` names what is left.
+
+**Close summary.** Print:
+
+- each run id with its report path and counts line;
+- the edits by tier: mechanical and cited applied, user accepted and vetoed;
+- the refused, stale and unprobed ids;
+- `user tier pending` when questions went unanswered;
+- the re-check's yield, its open findings and any user-tier findings it asked;
+- the backlog ids;
+- a fallback, if one fired;
+- `map not confirmed` at `deep`.
+
+Name the outcome read for this plan: `tomlctl review stats --slug <slug> --plan-outcomes`.
+
+## 12. An approved flow
+
+When `plan.toml` holds an `[[approval]]` (stage `approved`, `running` or `done`), intent is frozen. Every edit is the user's, whatever its tier, and `review apply` refuses any call without `--user-accepted`.
+
+- Section 7's mechanical and cited rows are asked like user-tier rows, in the same `AskUserQuestion` batches. The question names the tier, so the user sees which edits the tool would have made alone. Accepted ids are applied with `--user-accepted`; vetoed ones are dismissed.
+- Task rows, specs and milestones are written through the audited path on an approved plan, so each edit also leaves a `[[changes]]` row.
+- An applied edit to `brief.md` changes the brief the approval recorded. `plan stage` then reports `plan/brief-changed`, and its `next` names `plan approve --amend --review ran`. Tell the user the amend is theirs to run.
+- An edit to a `spec.accept` entry is re-probed by section 8 as before.
+
+`/plan-v2` does not reach this section, since its Review step runs before approval. `/review-plan-v2` reaches it on any flow it reviews after approval.
+
+## 13. Re-entry
+
+A `review` row that `plan stage` lists under `open_runs` is settled by the store, not by relaunching the wrapper:
+
+- **Live in this session.** Its notification has not arrived. Wait for it.
+- **From a dead session.** Read the flow's plan-family review runs:
+
+  ```bash
+  tomlctl items list .claude/flows/<slug>/review-v2.toml --array runs --where family=plan --lines
+  ```
+
+  Take the newest run without `finished`, bind it as `<run>` and `.review-v2-runs/<slug>/<run>/` at the repo root as `<run-dir>`, and resume it at the first incomplete stage by section 5's table. A run already at triage resumes at section 7. Then continue, and close the step row by section 11.
+
+Abandon the row only when the user drops the review: `tomlctl plan run abandon --slug <slug> --step review --reason '<why>'`. An abandoned review run does not settle the review stage, so the plan then needs a fresh review or `plan run skip --step review` with a reason.

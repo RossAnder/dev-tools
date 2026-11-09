@@ -83,13 +83,13 @@ Anything else in the arguments is scope: paths, globs, or a feature name.
    tomlctl review sync-v1 --slug <slug>
    ```
 
-5. **Plan family only.** Invoke the `flow-contract-task-store` skill and run its auto-import at Step 0 with the ref-set diff gate (its sections 9 and 10), exactly as an orchestrator does there. The import is yours; agents only ever run `tasks import-plan --dry-run`.
+5. **Plan family only.** Invoke the `flow-contract-task-store` skill and run its auto-import at Step 0 with the ref-set diff gate (its sections 9 and 10), exactly as an orchestrator does there. The import is yours; agents only ever run `tasks import-plan --dry-run`. Skip it on a v2 flow, one with `.claude/flows/<slug>/plan.toml`: its store is already canonical and `tasks import-plan` refuses it. That run is in flow mode, and `references/plan-flow.md` takes over from here.
 
 ### Stage 1 — Run start
 
 Resolve the run's inputs:
 
-- **Scope** — repo-relative, `/`-separated paths or globs. Refuse `..`, absolute paths outside the worktree, and any glob matching more than 200 files. With no scope argument, the scope is the diff: the files changed against the merge-base with the default branch on a feature branch, or against `HEAD~1` on the default branch. Plan family: the plan path.
+- **Scope** — repo-relative, `/`-separated paths or globs. Refuse `..`, absolute paths outside the worktree, and any glob matching more than 200 files. With no scope argument, the scope is the diff: the files changed against the merge-base with the default branch on a feature branch, or against `HEAD~1` on the default branch. Plan family: the plan path in markdown mode; in flow mode, `docs/flows/<slug>/brief.md` plus `docs/flows/<slug>/design/*.md`.
 - **Base** — the commit that diff is taken from. For a path review of unchanged code, pass `HEAD`; `changed_lines` then falls back to the scope's tracked line count. Plan family: `HEAD`.
 - **Models** — read the `model:` line of each of the seven v2 agents (`review-surveyor`, `review-sweeper`, `review-checker`, `review-finder`, `review-finder-cf`, `review-verifier`, `plan-executor`) under `<claude dir>/agents/` with Grep. Never assume them.
 - **Substrate** — `workflow` when the Workflow tool is available in this session, otherwise `agent-waves`.
@@ -204,7 +204,7 @@ The carriers own these; the engine leaves room for them at the stage named.
 
 - `/review-v2` (code): the `LINT BASELINE`, the context-free correctness cell at stage 3, export to `review-ledger.toml` and the `/review-apply` hand-off.
 - `/optimise-v2` (perf): a Focal Points Brief only for what the bound facets do not carry, the `PROFILE BASELINE`, export to `optimise-findings.toml` and the `/optimise-apply` hand-off.
-- `/review-plan-v2` (plan): plan resolution, the stage 0 task-store import, `STORE CHECK`, `FORMAT CONTRACT` and the `BREAK-SET BASELINE`, the `plan-checks` cell and `plan-executor` cells, and the merge offer in place of export.
+- `/review-plan-v2` (plan): plan resolution, the stage 0 task-store import, `STORE CHECK`, `FORMAT CONTRACT` and the `BREAK-SET BASELINE`, the `plan-checks` cell and `plan-executor` cells, and the merge offer in place of export. That is markdown mode. On a v2 flow (flow mode), `/review-plan-v2` and `/plan-v2`'s Review step follow `references/plan-flow.md` instead: the `plan-v2-review` Workflow in place of stages 2 to 6, then tiered apply, re-probes and a re-check run in place of the merge offer.
 
 ## References
 
@@ -212,4 +212,5 @@ The carriers own these; the engine leaves room for them at the stage named.
 - `references/compose.md` — stage 3 and the stage 5 decisions: candidates, the proposal, re-slicing, bundling, probes, facet edits, steering flags, waivers, the deep confirm step, the agent-count statement, follow-up and mop-up criteria.
 - `references/agent-waves.md` — the stage 4 fallback, the surveyor prompt, every prompt template, routing, the wave index and the mop-up dispatch.
 - `references/triage-and-close.md` — stages 6 to 8.
+- `references/plan-flow.md` — the plan family on a v2 flow: run start, the `plan-v2-review` launch and its fallback, mop-up, triage by tier through `review apply`, re-probes, the re-check run, finish, the approved-flow rule and re-entry.
 - `references/measurement.md` — the outcome signals, the v1 baselines and the thresholds that govern retuning.
