@@ -53,7 +53,7 @@ pub(super) fn run(args: PlanCheckArgs) -> Result<()> {
 
 /// Everything `plan check` reports for `slug`, sorted by class and ids. A store
 /// that cannot be read is a refusal rather than a finding.
-pub(super) fn findings(slug: &str, integrity: &ReadIntegrityArgs) -> Result<Vec<Finding>> {
+pub(crate) fn findings(slug: &str, integrity: &ReadIntegrityArgs) -> Result<Vec<Finding>> {
     let plan_path = store::resolve(slug)?;
     let plan = store::load(&plan_path, integrity)?;
     let tasks = load_store(&resolve_store_path(Some(slug), None)?, integrity)?;
@@ -99,7 +99,7 @@ pub(super) fn findings(slug: &str, integrity: &ReadIntegrityArgs) -> Result<Vec<
 /// line, up to the next heading no deeper than its own. `root` is the flow's
 /// authored directory, `store::authored_dir`. A citation is file-controlled input,
 /// so one that leaves `design/` or names no anchor reads as absent.
-pub(super) fn design_section(root: &Path, citation: &str) -> Option<String> {
+pub(crate) fn design_section(root: &Path, citation: &str) -> Option<String> {
     let (relative, anchor) = citation.split_once('#')?;
     if anchor.is_empty() {
         return None;
@@ -117,7 +117,7 @@ pub(super) fn design_section(root: &Path, citation: &str) -> Option<String> {
 
 /// Containment is checked after resolving symlinks, because a link at or inside
 /// `design/` could otherwise inline any file on the machine into a worker prompt.
-fn design_path(root: &Path, relative: &str) -> Option<PathBuf> {
+pub(crate) fn design_path(root: &Path, relative: &str) -> Option<PathBuf> {
     let relative = Path::new(relative);
     let mut parts = relative.components();
     match parts.next()? {

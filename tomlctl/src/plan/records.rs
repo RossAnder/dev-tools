@@ -2,7 +2,8 @@
 //!
 //! The batch verbs validate every row inside the store lock, so a refused row
 //! persists nothing. A row carrying `id` updates that record, changing only the
-//! keys it names; a row without one mints the next id.
+//! keys it names; a row without one mints the next id. A review edit writes
+//! one key through that same update path, compare-and-set on its old value.
 
 use anyhow::Result;
 use serde_json::{Map, Value as JsonValue, json};
@@ -11,14 +12,15 @@ use super::schema::{
     Contract, ContractKind, Decision, Door, Handover, PlanStore, Provenance, RecordKind, Rejected,
     Run, RunOutcome, Vocabulary,
 };
-use super::store;
+use super::{schema, store};
 use crate::cli::{
     PlanContractArgs, PlanDecideArgs, PlanHandoverAddArgs, PlanHandoverDoneArgs, PlanRunFinishArgs,
-    PlanRunSkipArgs, PlanRunStartArgs, WriteIntegrityArgs,
+    PlanRunSkipArgs, PlanRunStartArgs, ReadIntegrityArgs, WriteIntegrityArgs,
 };
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::read_ndjson_source;
 use crate::items::{parse_ndjson_batch, row_err, row_ids, row_string, row_strings};
+use crate::tasks::ReviewEditOutcome;
 
 type Row = Map<String, JsonValue>;
 
@@ -323,6 +325,179 @@ fn upsert_contract(plan: &mut PlanStore, line: usize, row: &Row) -> Result<Strin
     }
 }
 
+/// One compare-and-set edit to a decision or contract key, `id` excluded.
+/// `expect` is required, and a null `new` is refused: no record key is a list
+/// entry a review edit could remove.
+pub(crate) struct RecordEdit<'a> {
+    pub(crate) kind: RecordKind,
+    pub(crate) id: &'a str,
+    pub(crate) key: &'a str,
+    pub(crate) expect: Option<&'a JsonValue>,
+    pub(crate) new: &'a JsonValue,
+}
+
+/// Carries an outcome that writes nothing out of a store's `mutate`, which
+/// persists whatever an `Ok` closure leaves, `last_updated` restamped.
+#[derive(Debug)]
+struct Unwritten(ReviewEditOutcome);
+
+impl std::fmt::Display for Unwritten {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "review edit not written: {:?}", self.0)
+    }
+}
+
+impl std::error::Error for Unwritten {}
+
+/// `Ok` for `Applied` alone, so the enclosing `mutate` persists only a write.
+pub(super) fn written_only(outcome: ReviewEditOutcome) -> Result<()> {
+    match outcome {
+        ReviewEditOutcome::Applied => Ok(()),
+        unwritten => Err(anyhow::Error::new(Unwritten(unwritten))),
+    }
+}
+
+/// The outcome a `mutate` over [`written_only`] ended with.
+pub(super) fn unwritten_outcome(result: Result<()>) -> Result<ReviewEditOutcome> {
+    match result {
+        Ok(()) => Ok(ReviewEditOutcome::Applied),
+        Err(err) => match err.downcast::<Unwritten>() {
+            Ok(Unwritten(outcome)) => Ok(outcome),
+            Err(err) => Err(err),
+        },
+    }
+}
+
+/// Applies `edit` to the flow's `plan.toml`, re-reading the key and checking
+/// `expect` inside the store lock. The value is written through the row path
+/// `plan decide` and `plan contract` use, so their validation applies. Only
+/// `Applied` writes; a refusal is an error and writes nothing.
+pub(crate) fn apply_review_edit(
+    slug: &str,
+    integrity: &WriteIntegrityArgs,
+    edit: &RecordEdit<'_>,
+) -> Result<ReviewEditOutcome> {
+    let path = store::resolve(slug)?;
+    unwritten_outcome(store::mutate(&path, integrity, |plan| {
+        written_only(record_edit(plan, edit)?)
+    }))
+}
+
+/// What `apply_review_edit` would return against the store as it stands,
+/// writing nothing.
+pub(crate) fn validate_review_edit(
+    slug: &str,
+    integrity: &WriteIntegrityArgs,
+    edit: &RecordEdit<'_>,
+) -> Result<ReviewEditOutcome> {
+    let path = store::resolve(slug)?;
+    let mut plan = store::load(
+        &path,
+        &ReadIntegrityArgs {
+            verify_integrity: integrity.verify_integrity,
+            strict_read: true,
+        },
+    )?;
+    record_edit(&mut plan, edit)
+}
+
+fn record_edit(plan: &mut PlanStore, edit: &RecordEdit<'_>) -> Result<ReviewEditOutcome> {
+    let refuse = |message: &str| refusal(format!("`{}` `{}`: {message}", edit.id, edit.key));
+    let keys = match edit.kind {
+        RecordKind::Decision => DECISION_KEYS,
+        RecordKind::Contract => CONTRACT_KEYS,
+        RecordKind::Handover => return Err(refuse("a handover has no review write path")),
+    };
+    if edit.key == "id" || !keys.contains(&edit.key) {
+        return Err(refuse(&format!(
+            "a review edit targets one of {}",
+            keys[1..].join(", ")
+        )));
+    }
+    let Some(expect) = edit.expect else {
+        return Err(refuse("the edit needs `expect`"));
+    };
+    if edit.new.is_null() {
+        return Err(refuse("a record key takes a value, not null"));
+    }
+    let current = record_value(plan, edit).ok_or_else(|| refuse("no such record"))?;
+    let new = stored_form(plan, edit, edit.new)?;
+    if current == new {
+        return Ok(ReviewEditOutcome::Already);
+    }
+    // An `expect` the row path refuses cannot equal what the store holds.
+    let expect = stored_form(plan, edit, expect).unwrap_or_else(|_| expect.clone());
+    if expect != current {
+        return Ok(ReviewEditOutcome::Stale { found: current });
+    }
+    write_key(plan, edit, edit.new)?;
+    Ok(ReviewEditOutcome::Applied)
+}
+
+fn write_key(plan: &mut PlanStore, edit: &RecordEdit<'_>, value: &JsonValue) -> Result<()> {
+    let mut row = Row::new();
+    row.insert("id".to_string(), json!(edit.id));
+    row.insert(edit.key.to_string(), value.clone());
+    let written = match edit.kind {
+        RecordKind::Decision => upsert_decision(plan, 1, &row),
+        RecordKind::Contract => upsert_contract(plan, 1, &row),
+        RecordKind::Handover => unreachable!("a handover edit is refused before any write"),
+    };
+    written
+        .map(drop)
+        .map_err(|err| err.context(format!("`{}` `{}`", edit.id, edit.key)))
+}
+
+/// `value` as the key reads once written and the store round-trips through
+/// TOML, so a value differing only in what the store normalises compares equal.
+fn stored_form(plan: &PlanStore, edit: &RecordEdit<'_>, value: &JsonValue) -> Result<JsonValue> {
+    let mut scratch = plan.clone();
+    write_key(&mut scratch, edit, value)?;
+    let scratch = schema::from_toml(&schema::to_toml(&scratch))?;
+    Ok(record_value(&scratch, edit).expect("the record was just written"))
+}
+
+fn record_value(plan: &PlanStore, edit: &RecordEdit<'_>) -> Option<JsonValue> {
+    match edit.kind {
+        RecordKind::Decision => {
+            let d = plan.decisions.iter().find(|d| d.id == edit.id)?;
+            Some(match edit.key {
+                "decision" => json!(d.decision),
+                "why" => json!(d.why),
+                "provenance" => json!(d.provenance.as_str()),
+                "door" => json!(d.door.as_str()),
+                "binds" => json!(d.binds),
+                "rejected" => JsonValue::Array(
+                    d.rejected
+                        .iter()
+                        .map(|r| json!({"option": r.option, "because": r.because}))
+                        .collect(),
+                ),
+                "evidence" => json!(d.evidence),
+                "if_false" => json!(d.if_false),
+                "revisit_if" => json!(d.revisit_if),
+                "check" => json!(d.check),
+                "surfaced" => json!(d.surfaced),
+                "vetoed" => json!(d.vetoed),
+                _ => return None,
+            })
+        }
+        RecordKind::Contract => {
+            let c = plan.contracts.iter().find(|c| c.id == edit.id)?;
+            Some(match edit.key {
+                "kind" => json!(c.kind.as_str()),
+                "claim" => json!(c.claim),
+                "check" => json!(c.check),
+                "tasks" => json!(c.tasks),
+                "provides" => json!(c.provides),
+                "consumes" => json!(c.consumes),
+                _ => return None,
+            })
+        }
+        RecordKind::Handover => None,
+    }
+}
+
 fn mutate_plan<T>(
     slug: &str,
     integrity: &WriteIntegrityArgs,
@@ -474,4 +649,128 @@ pub(super) fn run_skip(args: PlanRunSkipArgs) -> Result<()> {
     })?;
     print_ok(json!({"ok": true}))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn seeded() -> PlanStore {
+        let mut plan = PlanStore::default();
+        let row = json!({
+            "decision": "Ship it",
+            "why": "old why",
+            "provenance": "user-stated",
+            "door": "two-way",
+        });
+        upsert_decision(&mut plan, 1, row.as_object().expect("an object")).expect("seeds");
+        let row = json!({"kind": "invariant", "claim": "holds", "tasks": [1]});
+        upsert_contract(&mut plan, 1, row.as_object().expect("an object")).expect("seeds");
+        plan
+    }
+
+    fn edit<'a>(
+        kind: RecordKind,
+        id: &'a str,
+        key: &'a str,
+        expect: Option<&'a JsonValue>,
+        new: &'a JsonValue,
+    ) -> RecordEdit<'a> {
+        RecordEdit {
+            kind,
+            id,
+            key,
+            expect,
+            new,
+        }
+    }
+
+    #[test]
+    fn a_record_edit_sets_then_reports_already_and_stale() {
+        let mut plan = seeded();
+        let (old, new) = (json!("old why"), json!("new why"));
+        let decision = edit(RecordKind::Decision, "D1", "why", Some(&old), &new);
+        assert_eq!(
+            record_edit(&mut plan, &decision).expect("applies"),
+            ReviewEditOutcome::Applied
+        );
+        assert_eq!(plan.decisions[0].why, "new why");
+        assert_eq!(
+            record_edit(&mut plan, &decision).expect("a repeat is no error"),
+            ReviewEditOutcome::Already
+        );
+        let other = json!("other why");
+        let stale = edit(RecordKind::Decision, "D1", "why", Some(&old), &other);
+        assert_eq!(
+            record_edit(&mut plan, &stale).expect("a mismatch is no error"),
+            ReviewEditOutcome::Stale { found: new.clone() }
+        );
+        assert_eq!(plan.decisions[0].why, "new why");
+
+        let (old, new) = (json!([1]), json!([1, 2]));
+        let contract = edit(RecordKind::Contract, "C1", "tasks", Some(&old), &new);
+        assert_eq!(
+            record_edit(&mut plan, &contract).expect("applies"),
+            ReviewEditOutcome::Applied
+        );
+        assert_eq!(plan.contracts[0].tasks, vec![1, 2]);
+    }
+
+    #[test]
+    fn a_record_edit_refuses_what_the_row_path_refuses() {
+        let mut plan = seeded();
+        let old = json!("two-way");
+        let cases = [
+            (RecordKind::Decision, "D1", "door", None, json!("one-way")),
+            (
+                RecordKind::Decision,
+                "D1",
+                "door",
+                Some(&old),
+                json!("sideways"),
+            ),
+            (
+                RecordKind::Decision,
+                "D1",
+                "door",
+                Some(&old),
+                JsonValue::Null,
+            ),
+            (RecordKind::Decision, "D1", "id", Some(&old), json!("D9")),
+            (
+                RecordKind::Decision,
+                "D9",
+                "door",
+                Some(&old),
+                json!("one-way"),
+            ),
+            (RecordKind::Contract, "C1", "claim", Some(&old), json!("  ")),
+            (
+                RecordKind::Handover,
+                "H1",
+                "command",
+                Some(&old),
+                json!("x"),
+            ),
+        ];
+        for (kind, id, key, expect, new) in &cases {
+            let refused = record_edit(&mut plan, &edit(*kind, id, key, *expect, new));
+            assert!(refused.is_err(), "{id} {key} {new} should be refused");
+        }
+        assert_eq!(plan, seeded());
+    }
+
+    #[test]
+    fn only_an_applied_outcome_leaves_mutate_as_a_write() {
+        assert!(written_only(ReviewEditOutcome::Applied).is_ok());
+        for outcome in [
+            ReviewEditOutcome::Already,
+            ReviewEditOutcome::Stale { found: json!(1) },
+        ] {
+            let carried = written_only(outcome.clone());
+            assert!(carried.is_err());
+            assert_eq!(unwritten_outcome(carried).expect("carried"), outcome);
+        }
+        assert!(unwritten_outcome(Err(refusal("refused"))).is_err());
+    }
 }
