@@ -1,0 +1,682 @@
+schema_version = 1
+last_updated = 2026-11-09
+plan_path = "docs/plans/jiggly-exploring-robin.md"
+last_import_refs = [
+    "add-the-parked-task-status",
+    "show-the-parked-status-in-glimpse",
+    "scope-tasks-ready-to-a-checkpoint",
+    "scope-premise-scripts-by-task-and-cover-after-premises",
+    "record-premise-verdicts",
+    "show-parked-counts-and-premise-verdicts-in-plan-view",
+    "report-uncommitted-drift",
+    "correlate-a-worker-prompt-to-its-task",
+    "bump-tomlctl-to-0210-and-advertise-the-features",
+    "document-the-new-plan-verbs",
+    "document-the-parked-status-and-the-scoped-frontier",
+    "add-the-v2-worker-agents",
+    "add-the-milestone-workflow-script",
+    "write-the-engine-reference-for-running-a-milestone",
+    "write-the-engine-reference-for-drain-gate-and-commit",
+    "write-the-engine-skill",
+    "add-the-implement-v2-carrier",
+    "amend-the-status-write-contract",
+    "cover-every-v2-entry-in-the-link-scripts",
+    "describe-the-engine-in-claudemd",
+    "say-a-parked-closing-task-stalls-its-backlog-item",
+    "retire-the-no-engine-statements-in-the-plan-v2-engine-references",
+]
+
+[policy]
+checkpoints = "milestones"
+max_parallel = 6
+commit_granularity = "per-task"
+origin = "plan"
+note = ""
+
+[[checkpoints]]
+id = "A"
+rationale = "The tomlctl and glimpse surface, complete, documented and versioned (installable increment)"
+
+[[checkpoints]]
+id = "B"
+rationale = "The engine's agents, Workflow, skill and carrier, with the contracts and deploy scripts that make it usable"
+
+[[file_notes]]
+ref = "document-the-new-plan-verbs"
+file = "claude/skills/tomlctl/references/plan-probes.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "add-the-v2-worker-agents"
+file = "claude/agents/plan-worker-lite.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "add-the-v2-worker-agents"
+file = "claude/agents/plan-worker-deep.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "add-the-milestone-workflow-script"
+file = "claude/workflows/implement-v2-milestone.js"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-engine-reference-for-running-a-milestone"
+file = "claude/skills/implement-v2-engine/references/run-milestone.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-engine-reference-for-drain-gate-and-commit"
+file = "claude/skills/implement-v2-engine/references/drain.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-engine-skill"
+file = "claude/skills/implement-v2-engine/SKILL.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "add-the-implement-v2-carrier"
+file = "claude/commands/implement-v2.md"
+note = "(new)"
+
+[[backlog_links]]
+ref = "cover-every-v2-entry-in-the-link-scripts"
+closes = ["B-735ed4dd"]
+refs = []
+
+[[items]]
+id = 1
+ref = "add-the-parked-task-status"
+title = "Add the parked task status"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/tasks/graph.rs",
+    "tomlctl/src/backlog/reconcile.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add `Status::Parked`, spelled `parked`, and make the frontier and backlog reconcile treat it as stalled."
+detail = """In `tomlctl/src/tasks/schema.rs` add the variant to `enum Status`, its vocabulary array, `as_str` and `parse`. In `tomlctl/src/tasks/graph.rs` map it to `Standing::Stalled` in `Standing::of`. Add a unit test in `graph.rs` beside the existing `blocker_status` tests: a pending row behind a parked row is reported under `blocked` with `blocker_status: Status::Parked`; put `parked` in the test's name. In `tomlctl/src/backlog/reconcile.rs` add `Status::Parked` to the `stopped` test beside `Status::Deferred` and `Status::Failed`, so a backlog item whose closing task is parked is bucketed `stalled`, and extend the unit test there that covers a `deferred` closing task. No exhaustive `match` on `Status` exists outside `schema.rs` and `graph.rs`; report any the compiler names in another file instead of editing it. Relies on Approach, "Status and parking"."""
+acceptance = """
+- forward: `grep -q '"parked"' tomlctl/src/tasks/schema.rs && grep -q 'Status::Parked' tomlctl/src/backlog/reconcile.rs` (today: exit 1)
+- forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'kind(lib) & test(parked)'` passes with at least one test run (today: no lib test matches, so nextest exits non-zero; the bare `test(parked)` filter matches two unrelated integration tests). **predicted, unverified**. Falsifier: mapping `Parked` to `Standing::Pending` turns it red."""
+agent = ""
+commit = ""
+
+[[items]]
+id = 2
+ref = "show-the-parked-status-in-glimpse"
+title = "Show the parked status in glimpse"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "glimpse/src/model.rs",
+    "glimpse/src/theme.rs",
+    "glimpse/src/view/legend.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Teach glimpse's `TaskStatus` the `parked` value so it stops rendering as `Unknown`."
+detail = """In `glimpse/src/model.rs` add `TaskStatus::Parked` with `as_str` `parked` and a glyph no other status uses; the glyph must be one terminal cell wide, as `Zoom::label_width` in `glimpse/src/diagram/mod.rs` assumes. In `glimpse/src/theme.rs` map `"parked"` to `self.deferred` in `Theme::status` and `TaskStatus::Parked` to slot `4` (Deferred's) in `Theme::flash`, which is a `[Style; 5]` with no sixth slot. In `glimpse/src/view/legend.rs` add it to both status lists. Add or extend a unit test in `glimpse/src/model.rs`, with `parked` in its name, that deserialises `"parked"` to `TaskStatus::Parked`. Do not add a theme colour field, and leave `SAMPLE` in `glimpse/src/view/themes.rs` unchanged."""
+acceptance = """
+- forward: `grep -q 'Parked' glimpse/src/model.rs` (today: exit 1)
+- forward: `cargo nextest run --manifest-path glimpse/Cargo.toml -E 'test(parked)'` passes with at least one test run (today: no glimpse test name holds `parked`). **predicted, unverified**. Falsifier: removing the `"parked"` arm of the deserialiser turns it red.
+- guard: `cargo clippy --manifest-path glimpse/Cargo.toml` reports no error in the three files this task owns."""
+agent = ""
+commit = ""
+
+[[items]]
+id = 3
+ref = "scope-tasks-ready-to-a-checkpoint"
+title = "Scope tasks ready to a checkpoint"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/cli/types/tasks.rs",
+    "tomlctl/src/tasks/ready.rs",
+    "tomlctl/src/tasks/dispatch.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add `--checkpoint <ID>` to `tasks ready`."
+detail = 'Add the flag to `TasksOp::Ready` in `tomlctl/src/cli/types/tasks.rs`. In `tomlctl/src/tasks/ready.rs` add a scoped entry point that builds the frontier over the whole graph and then keeps, in `ready`, `held`, `next` and `blocked`, only rows whose `checkpoint` equals the id; leave `ready_with` unchanged, because `tomlctl/src/tasks/snapshot.rs` calls it. Refuse an id no `[[checkpoints]]` entry carries with a `kind=validation` error. Call it from the `TasksOp::Ready` arm in `tomlctl/src/tasks/dispatch.rs`. Add `parked` to the statuses the `tasks update --status` help text in `tomlctl/src/cli/types/tasks.rs` lists. Unit tests in `ready.rs`: two checkpoints, a row of B waiting on a pending row of A is in neither `ready` list scoped to B; an unknown id is refused. Relies on Approach, "Milestone frontier".'
+acceptance = """
+- forward: `grep -A16 '^    Ready {' tomlctl/src/cli/types/tasks.rs | grep -q 'long = "checkpoint"'` (today: exit 1; the same pipe matches `long = "in-flight"` today)
+- forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/ready/)'` passes. **predicted, unverified**. Falsifier: dropping the filter on `next` turns the two-checkpoint test red."""
+agent = ""
+commit = ""
+
+[[items]]
+id = 4
+ref = "scope-premise-scripts-by-task-and-cover-after-premises"
+title = "Scope premise scripts by task and cover after-premises"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/probes.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/tests/plan_probes.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add `--task <N1,N2>` to `plan probes` and emit `after:<id>` premises whose task is done."
+detail = 'In `PlanProbesArgs` add `--task` (comma-delimited ids, valid in either mode). In `tomlctl/src/plan/probes.rs` extend `task_skip_reason` with a not-requested reason and refuse an id no row carries. Change `premise_skip_reason` so an `after:<id>` premise is emitted when row `<id>` has `Status::Done`, skipped with `task <id> is not done` otherwise, and skipped with a distinct reason when `at` is neither `base` nor `after:<number>`; the reason text reaches the script, so it must hold no stored string. Add integration tests in `tomlctl/tests/plan_probes.rs` for the three `at` cases and for `--task`, and rewrite `emit_premises_prints_a_line_per_base_premise_of_a_pending_task`, which asserts that an `after:1` premise on a done task is skipped; update the `tomlctl/src/plan/probes.rs` module doc and the `--premises` help text in `tomlctl/src/cli/types/plan.rs`. Relies on Approach, "Premise checks".'
+acceptance = """
+- forward: `grep -A40 'struct PlanProbesArgs' tomlctl/src/cli/types/plan.rs | grep -q 'long = "task"'` (today: exit 1; the same pipe matches `long = "milestone"` today)
+- forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(plan_probes)'` passes. **predicted, unverified**. Falsifier: restoring the `not a base premise` skip turns the done-task case red."""
+agent = ""
+commit = ""
+
+[[items]]
+id = 5
+ref = "record-premise-verdicts"
+title = "Record premise verdicts"
+effort = "L"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/tasks/add.rs",
+    "tomlctl/src/tasks/update.rs",
+    "tomlctl/src/plan/probes.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/tests/plan_probes.rs",
+]
+needs = [
+    1,
+    4,
+]
+coupling = []
+deps_note = ""
+action = "Let `plan probes --record <capture> --premises` store a verdict on each premise."
+detail = 'The six files must land together: the field, its construction site, its carry-over, its serialisation, the writer and the flag relaxation. Give `Premise` an optional `probe`, reusing `Probe` with `neg_rc` holding the exit code and `pos_rc` absent, parsed and serialised exactly as `Accept.probe` is, and kept out of audited input the same way: `probe: None` in `premise_entry` in `tomlctl/src/tasks/add.rs`, whose struct literal a new field otherwise breaks, and in `tomlctl/src/tasks/update.rs` a premise twin of `keep_probes`, so a re-issued premise that matches in every other field keeps its recorded probe. Leave `premises_json` in `tomlctl/src/tasks/show.rs` probe-free: `spec_moves` and the review `spec_value` read it, and a verdict there would read as a content change. In `PlanProbesArgs` drop `requires = "emit"` and `conflicts_with = "record"` from `--premises`; the `probes_mode` group already refuses `--premises` with neither `--emit` nor `--record`. Rewrite `premises_is_refused_without_emit` in `tomlctl/tests/plan_probes.rs`, whose `--premises --record` case becomes legal. In `tomlctl/src/plan/probes.rs` accept `premise` control rows in the capture and write `holds` for exit 0, `fails` for non-zero, and `broken` when stderr carries one of `BROKEN_MARKERS`; refuse a row whose digest does not match the stored check, as the accept path does. The envelope lists `{task, premise, verdict}`. Honour `--milestone` and `--task`. Tests in `tomlctl/tests/plan_probes.rs`: each verdict, a stale digest, and that an accept capture passed with `--premises` is refused. Relies on Approach, "Premise checks".'
+acceptance = """
+- forward: `grep -q '"holds"' tomlctl/src/plan/probes.rs` (today: exit 1)
+- forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(plan_probes)'` passes. **predicted, unverified**. Falsifier: writing `holds` regardless of the exit code turns the `fails` case red."""
+agent = ""
+commit = ""
+
+[[items]]
+id = 6
+ref = "show-parked-counts-and-premise-verdicts-in-plan-view"
+title = "Show parked counts and premise verdicts in plan view"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/tests/plan_view.rs",
+]
+needs = [
+    1,
+    5,
+]
+coupling = []
+deps_note = ""
+action = "Add `parked` to the task counts and print each premise's recorded verdict in the worker view."
+detail = 'In `tomlctl/src/plan/view.rs` add `"parked": count_tasks(Status::Parked)` beside the `deferred` count, and in `worker()` append the verdict to a premise line the way an accept line shows `Probe: healthy at <sha>`. A premise with no probe prints as today. Add `parked_tasks` beside `failed_tasks` in `open_items`. Add one test for each in `tomlctl/tests/plan_view.rs`, and add `"parked": 0` to the exact `counts` object `digest_counts_every_record` asserts there.'
+acceptance = """
+- forward: `grep -q 'Status::Parked' tomlctl/src/plan/view.rs` (today: exit 1)
+- forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(plan_view)'` passes. **predicted, unverified**. Falsifier: removing the verdict from the premise line turns the new test red."""
+agent = ""
+commit = ""
+
+[[items]]
+id = 7
+ref = "report-uncommitted-drift"
+title = "Report uncommitted drift"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/drift.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/tests/plan_drift.rs",
+]
+needs = [5]
+coupling = []
+deps_note = ""
+action = "Add `--uncommitted` to `plan drift`."
+detail = """Add the flag to `PlanDriftArgs`. In `tomlctl/src/plan/drift.rs`, when set, read `git status --porcelain=v1 -z --no-renames --untracked-files=all` under the repo root, drop paths under `.claude/flows/<slug>/` and `docs/flows/<slug>/` (the run's notes land in the second), and report the rest as `uncommitted_files`. Add a pending row to `affected` for an uncommitted path it names unless a `done`, `in-progress`, `failed` or `parked` row with an empty `commit` also names that path; mark such entries with the paths under an `uncommitted` key. Without the flag the output is byte-identical to today. Tests in `tomlctl/tests/plan_drift.rs`: an edit to a pending row's file is reported; the same edit is not reported when a done, uncommitted row names the file; the default output has no `uncommitted_files` key. The dependency on task 5 is the shared `tomlctl/src/cli/types/plan.rs`. Relies on Approach, "Drift"."""
+acceptance = """
+- forward: `grep -q 'uncommitted' tomlctl/src/plan/drift.rs` (today: exit 1)
+- forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(plan_drift)'` passes. **predicted, unverified**. Falsifier: dropping the own-work exclusion turns the second case red."""
+agent = ""
+commit = ""
+
+[[items]]
+id = 8
+ref = "correlate-a-worker-prompt-to-its-task"
+title = "Correlate a worker prompt to its task"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/src/agents/correlate.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Make `dispatch_in` link a prompt that carries `plan view --slug <slug> --for worker --task <n>`."
+detail = "Add a second task regex for that literal form with the same slug pattern, and widen the line pre-filter to admit a line containing `plan view`. A prompt naming two different slugs still returns `None`. Add unit tests beside the existing `dispatch_in` tests: the plan-view form links one task; a prompt carrying both forms for the same task and slug links it once. The engine's own prompts carry both lines and already link through the existing pattern; this one covers a prompt that carries the `plan view` line alone."
+acceptance = """
+- forward: `grep -q 'for worker --task' tomlctl/src/agents/correlate.rs` (today: exit 1)
+- forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/correlate/)'` passes. **predicted, unverified**. Falsifier: leaving the pre-filter unchanged turns the plan-view test red."""
+agent = ""
+commit = ""
+
+[[items]]
+id = 9
+ref = "bump-tomlctl-to-0210-and-advertise-the-features"
+title = "Bump tomlctl to 0.21.0 and advertise the features"
+effort = "L"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "glimpse/Cargo.lock",
+    "tomlctl/README.md",
+    "tomlctl/src/capabilities.rs",
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/tests/capabilities.rs",
+]
+needs = [
+    1,
+    3,
+    5,
+    7,
+]
+coupling = []
+deps_note = ""
+action = "Set the version to 0.21.0 and add the capability features and vocabulary."
+detail = 'The seven files land together because the version and the feature list are asserted in `tomlctl/tests/capabilities.rs` and `glimpse/Cargo.lock` is checked with `--locked`. Bump `tomlctl/Cargo.toml`; refresh the locks with `cargo tree --manifest-path tomlctl/Cargo.toml` and `cargo tree --manifest-path glimpse/Cargo.toml`, discarding their output. In `tomlctl/src/capabilities.rs` add `parked` to both status vocabulary arrays; add the features `task_status_parked`, `tasks_ready_checkpoint`, `premise_probes_scoped`, `premise_probe_record` and `plan_drift_uncommitted` to `FEATURES` in `tomlctl/src/cli/types/mod.rs`, to the `expected` array of `capabilities_features_contains_every_plan_feature` in `tomlctl/tests/capabilities.rs`, and to both the sample block and the "Feature meanings" table in `tomlctl/README.md`; leave `MUTEX_GROUPS` unchanged, since the `emit`/`record` group stays, as `plan_probes_advertises_the_one_mutex_clap_enforces` asserts. Update the version assertion and its message in `tomlctl/tests/capabilities.rs`, and the version in the `tomlctl/README.md` sample.'
+acceptance = """
+- forward: `grep -q '^version = "0.21.0"' tomlctl/Cargo.toml && grep -q 'tasks_ready_checkpoint' tomlctl/src/cli/types/mod.rs` (today: exit 1)
+- forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(capabilities)'` passes. **predicted, unverified**. Falsifier: leaving the README sample or the asserted version at 0.20.0 turns it red where a test reads them."""
+agent = ""
+commit = ""
+
+[[items]]
+id = 10
+ref = "document-the-new-plan-verbs"
+title = "Document the new plan verbs"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/tomlctl/references/plan.md",
+    "claude/skills/tomlctl/references/plan-probes.md",
+    "claude/skills/tomlctl/SKILL.md",
+]
+needs = [
+    5,
+    7,
+]
+coupling = []
+deps_note = ""
+action = "Document `--task`, premise recording and `--uncommitted`, moving the probes section to its own reference."
+detail = """`claude/skills/tomlctl/references/plan.md` is 591 lines against a 600-line ceiling (`skill_references_under_line_ceiling`), so move its `plan probes` section, with the probe verdicts, into the new `claude/skills/tomlctl/references/plan-probes.md`, leave a one-line pointer, and add the new flags and the premise verdicts `holds`, `fails`, `broken` there. Add `--uncommitted` and the `uncommitted_files` and `uncommitted` output keys to the `plan drift` section. In the refusal paragraph near the top of `claude/skills/tomlctl/references/plan.md`, drop "`--premises` without `--emit`", and repoint the file's opening sentence and its `claude/skills/tomlctl/SKILL.md` entry, which both say it holds the probe verdicts. Add the new file to the References list in `claude/skills/tomlctl/SKILL.md` and fix any link that pointed at the moved section. `flag_table_lint` checks every flag table against the CLI."""
+acceptance = """
+- forward: `test -f claude/skills/tomlctl/references/plan-probes.md && grep -q 'uncommitted' claude/skills/tomlctl/references/plan.md` (today: exit 1)
+- guard: `test "$(wc -l < claude/skills/tomlctl/references/plan.md)" -le 600` (today: exit 0)
+- forward: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes. **predicted, unverified**. Falsifier: a flag table naming a flag the verb lacks turns `flag_table_lint` red."""
+agent = ""
+commit = ""
+
+[[items]]
+id = 11
+ref = "document-the-parked-status-and-the-scoped-frontier"
+title = "Document the parked status and the scoped frontier"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/tomlctl/references/tasks.md",
+    "claude/skills/tomlctl/references/tasks-write.md",
+    "claude/skills/tomlctl/references/tasks-store.md",
+]
+needs = [
+    1,
+    3,
+    5,
+]
+coupling = []
+deps_note = ""
+action = "Add `parked`, `tasks ready --checkpoint` and the premise `probe` key to the task references."
+detail = "In `claude/skills/tomlctl/references/tasks.md` add `--checkpoint` to the `tasks ready` flag table and `parked` to the `blocked[].blocker_status` and `dag/stalled-dependency` rows. In `claude/skills/tomlctl/references/tasks-write.md` add `parked` to the `--status` row. In `claude/skills/tomlctl/references/tasks-store.md` add `parked` to the status vocabulary and the optional `probe` key to the premise description under `[[specs]]`."
+acceptance = "forward: `grep -q 'parked' claude/skills/tomlctl/references/tasks.md && grep -q 'parked' claude/skills/tomlctl/references/tasks-write.md && grep -q 'parked' claude/skills/tomlctl/references/tasks-store.md` (today: exit 1)"
+agent = ""
+commit = ""
+
+[[items]]
+id = 12
+ref = "add-the-v2-worker-agents"
+title = "Add the v2 worker agents"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/agents/plan-worker-lite.md",
+    "claude/agents/plan-worker-deep.md",
+    "scripts/shared-blocks.toml",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Write the two worker agents and register their shared blocks."
+detail = """Follow Approach, "Worker contract" for the prompt keys, the ten-step procedure, the write rule and the return object, and Approach, "Status and parking" for `failed` against `parked`. Frontmatter as `claude/agents/implement-lite.md` and `claude/agents/implement-deep.md`: `name`, `description`, `tools`, `model`, `effort`, `color`, with the lite and deep buckets' current values copied from those two files. Carry the existing blocks `file-edits` and `tomlctl-for-agents` byte-identical, adding both files to each block's `files` list in `scripts/shared-blocks.toml`. Do not carry `forbidden-working-tree-ops`, `implementer-report-lines`, `backlog-candidates` or `implementer-verification`: their v1 wording sends `TANGENTIAL:` and check lines to a return payload the orchestrator never reads. State their v2 forms in `plan-worker-procedure` instead: the narrow-check rule over the task's `files` and its `writes_build = false` accept checks, and `TANGENTIAL:` lines written into the note, never the return object. Declare two new blocks carried by exactly these two files: `plan-worker-procedure` (the procedure and return object) and `plan-worker-forbidden-ops` (no commit, stage, stash, branch switch or worktree; no store write except `tomlctl tasks update <n> --slug <slug> --status <s> --agent <name>` on the worker's own row; no Write-tool write under `.claude/`). Include the teammate-delivery paragraph the implementers carry. The deep file adds the judgement section; the lite file adds when to return `failed` instead of improvising. Every `tomlctl` call in a bash fence must parse (`command_lint`)."""
+acceptance = """
+- forward: `test -f claude/agents/plan-worker-lite.md && test -f claude/agents/plan-worker-deep.md && grep -q 'plan-worker-procedure' scripts/shared-blocks.toml` (today: exit 1)
+- guard: `bash scripts/verify-shared-blocks.sh` exits 0 (today: exit 0). Falsifier: a one-byte difference between the two carriers of `plan-worker-procedure` turns it red."""
+agent = ""
+commit = ""
+
+[[items]]
+id = 13
+ref = "add-the-milestone-workflow-script"
+title = "Add the milestone Workflow script"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/workflows/implement-v2-milestone.js"]
+needs = [12]
+coupling = []
+deps_note = ""
+action = "Write the Workflow that runs one milestone's tasks in waves."
+detail = """Follow Approach, "Milestone Workflow". Model the file on `claude/workflows/plan-v2-prove.js`: `export const meta = {` with a literal `name: 'implement-v2-milestone'`, `SCRIPT_VERSION`, `argProblems()`, `fail('no agent launched')`, `caught()`, a `RETURN_SCHEMA` with `additionalProperties: false`. Refuse args where a `needs` id is outside `tasks`, an `executor` is neither `lite` nor `deep`, or the graph has a cycle. Map `executor` to `agentType` through `const WORKERS = { lite: { agentType: 'plan-worker-lite' }, deep: { agentType: 'plan-worker-deep' } }`, bind `const worker = WORKERS[t.executor]` and pass `agentType: worker.agentType`; `workflow_scripts_name_real_agents` accepts a literal or a path ending `.agentType` and refuses an indexed or conditional value in the `agent()` call; set no `model` or `effort`. Build each prompt from `args` only, including the line `tomlctl plan view --slug <slug> --for worker --task <n>`, the line `tomlctl tasks show <n> --slug <slug>`, the note path `docs/flows/<slug>/notes/run/task-<n>.md` and the sibling files of the same wave. Use no clock, randomness or filesystem. A header comment states that a relaunch is always a fresh run."""
+acceptance = """
+- forward: `grep -q "name: 'implement-v2-milestone'" claude/workflows/implement-v2-milestone.js` (today: exit 2, no file)
+- forward: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes. **predicted, unverified**. Falsifier: an `agentType` naming no agent turns `workflow_scripts_name_real_agents` red."""
+agent = ""
+commit = ""
+
+[[items]]
+id = 14
+ref = "write-the-engine-reference-for-running-a-milestone"
+title = "Write the engine reference for running a milestone"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/implement-v2-engine/references/run-milestone.md"]
+needs = [
+    3,
+    5,
+    7,
+    13,
+]
+coupling = []
+deps_note = ""
+action = "Write the procedure from pre-flight to launch."
+detail = 'Cover steps 1 to 4 of Approach, "Orchestrator loop" and all of Approach, "Premise checks", with the exact commands: `tomlctl plan stage`, `plan check`, `tasks check`, `tasks closure --slug <slug> --checkpoint <id>` (its `members` are the source of `args`), `tasks ready --slug <slug> --checkpoint <id>`, the pre-launch `tasks list --slug <slug>` snapshot, `plan probes --slug <slug> --emit --premises --milestone <id>`, `plan probes --slug <slug> --record <capture> --premises --milestone <id>`, the args file shape, the `Workflow({name: "implement-v2-milestone", args: …})` launch, reading `error` on the launch result, and `plan run start --slug <slug> --step implement:<id> --workflow implement-v2-milestone --args-hash <hash> --run-id <runId> --session "$CLAUDE_CODE_SESSION_ID"`. Model the launch section on `claude/skills/plan-v2-engine/references/write-and-prove.md`. State that scratch files live in the session scratchpad, never under `.claude/` or `docs/flows/`, and that the emitted premise script is read before it runs, since `bash <file>` puts none of its stored commands in front of a permission prompt, then run as `timeout 540 bash <file> > <capture>`, never piped; a capture cut short by the timeout (exit 124) records nothing, as `claude/skills/plan-v2-engine/references/write-and-prove.md` says for probes. Stay under 600 lines.'
+acceptance = """
+- forward: `grep -q 'implement-v2-milestone' claude/skills/implement-v2-engine/references/run-milestone.md` (today: exit 2, no file)
+- forward: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes. **predicted, unverified**. Falsifier: a fenced `tomlctl` call with a flag the CLI lacks turns `command_lint` red."""
+agent = ""
+commit = ""
+
+[[items]]
+id = 15
+ref = "write-the-engine-reference-for-drain-gate-and-commit"
+title = "Write the engine reference for drain, gate and commit"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/implement-v2-engine/references/drain.md"]
+needs = [
+    1,
+    7,
+    14,
+]
+coupling = []
+deps_note = ""
+action = "Write the procedure from the run notification to the milestone commit."
+detail = """Cover step 5 of Approach, "Orchestrator loop", and all of Approach, "Gate, commit and fix rounds" and "Handovers". Give the exact commands: `plan run finish --slug <slug> --step implement:<id> --outcome ok|errors|stopped`, `plan drift --slug <slug> --uncommitted`, the audited `tasks update --slug <slug> --ndjson <path>` and `tasks add-many` forms with a `reason` (show the fix-task row shape with its `spec`), the `tasks update <ids> --slug <slug> --status pending` reset of rows left `in-progress`, the `verification` agent input (`commands:` items with optional `timeout:` and `rerun:`, plus `transient:`, as `claude/agents/verification.md` defines) built from the milestone's `gates`, read with `tomlctl items list .claude/flows/<slug>/tasks.toml --array milestones --where id=<id> --select gates`, and `tasks update <ids> --slug <slug> --commit <sha>`. Name the handover write in prose only, pointing at the handover verb in `claude/skills/tomlctl/references/plan.md`, and put no handover command in a bash fence. State which notes the orchestrator reads, that a failed premise or a `failed` task is replanned and never moved up a tier, the two-round limit, that `flaky` is a pass, that commit messages go through the `commit-conventions` skill, and the shape of the closing `needs_human` report. `TANGENTIAL:` lines in notes go through `backlog check` before `backlog add`. Stay under 600 lines."""
+acceptance = """
+- forward: `grep -q 'uncommitted' claude/skills/implement-v2-engine/references/drain.md` (today: exit 2, no file)
+- forward: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes. **predicted, unverified**. Falsifier: a fenced `tomlctl … 2>/dev/null` turns `guidance_lint` red."""
+agent = ""
+commit = ""
+
+[[items]]
+id = 16
+ref = "write-the-engine-skill"
+title = "Write the engine skill"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/implement-v2-engine/SKILL.md"]
+needs = [
+    14,
+    15,
+]
+coupling = []
+deps_note = ""
+action = "Write the orchestrator contract that ties the two references together."
+detail = 'Shape it like `claude/skills/plan-v2-engine/SKILL.md`: frontmatter with a description under 1024 characters saying it is invoked by `/implement-v2`; role rules (the orchestrator never reads worker transcripts, never runs a build inline, asks every user question itself, and names the allow rule for worker notes under `docs/flows/**` as `claude/skills/plan-v2-engine/SKILL.md` rule 6 does, adding it to no settings file); `## Rules`; `## Arguments` (`<slug>`, `--milestone <id>`); a `## Steps` table with Step, Run step, Skipped when and Reference columns linking `references/run-milestone.md` and `references/drain.md`; `## Re-entry`, which resets stale `in-progress` rows, never abandons a run still live in this session (it waits for the notification or stops the run first), asks through `AskUserQuestion` before abandoning an open `implement:<id>` run recorded under another session, since its workers may still be editing, and otherwise closes the open run with `plan run abandon`; it never resumes a run. Re-entry also covers the parked re-ask of Approach, "Handovers" and the unstamped all-`done` milestone of Approach, "Gate, commit and fix rounds". State the out-of-scope stops from Scope. Under 500 lines; every markdown link must resolve.'
+acceptance = """
+- forward: `grep -q 'references/drain.md' claude/skills/implement-v2-engine/SKILL.md` (today: exit 2, no file)
+- forward: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes. **predicted, unverified**. Falsifier: a link to a missing reference turns `skill_markdown_links_resolve` red."""
+agent = ""
+commit = ""
+
+[[items]]
+id = 17
+ref = "add-the-implement-v2-carrier"
+title = "Add the implement-v2 carrier"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/commands/implement-v2.md",
+    "tomlctl/src/cli/dispatch/tests/skills.rs",
+]
+needs = [
+    9,
+    16,
+]
+coupling = []
+deps_note = ""
+action = "Write the carrier and register its required skills."
+detail = """Follow Approach, "Carrier and deploy" and the shape of `claude/commands/plan-v2.md`: `description` and single-quoted `argument-hint` frontmatter, the thin-carrier and effort notes, a `## Bindings` table, a numbered `## Pre-flight` (invoke the `tomlctl` skill; check `tomlctl capabilities --get subcommands` for `plan` and `--get features` for `task_status_parked`, `tasks_ready_checkpoint`, `premise_probes_scoped`, `premise_probe_record` and `plan_drift_uncommitted`, naming `cargo install --path tomlctl` on a miss; stop when `AskUserQuestion` or `Workflow` is unavailable), and a `## Run` that invokes the `implement-v2-engine` skill. It must also contain an invocation phrase for the `commit-conventions` skill and one for the `backlog-capture` skill, which the drain's `backlog add` requires. Add `("implement-v2.md", &["tomlctl", "implement-v2-engine", "commit-conventions", "backlog-capture"])` to the `expected` array of `carrier_invokes_required_skills` in `tomlctl/src/cli/dispatch/tests/skills.rs`."""
+acceptance = """
+- forward: `grep -q '"implement-v2.md"' tomlctl/src/cli/dispatch/tests/skills.rs && test -f claude/commands/implement-v2.md` (today: exit 1)
+- forward: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes. **predicted, unverified**. Falsifier: removing the `implement-v2-engine` invocation phrase turns `carrier_invokes_required_skills` red."""
+agent = ""
+commit = ""
+
+[[items]]
+id = 18
+ref = "amend-the-status-write-contract"
+title = "Amend the status-write contract"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/flow-contract-task-store/SKILL.md",
+    "docs/plans/v2-planning.md",
+    "docs/ideas/v2-pipeline.md",
+]
+needs = [
+    1,
+    5,
+]
+coupling = []
+deps_note = ""
+action = 'Bring the three contract documents into line with Approach, "Contract amendments".'
+detail = """In `claude/skills/flow-contract-task-store/SKILL.md` add `parked` to the status vocabulary line and the `dag/stalled-dependency` row, and amend section 11 with the single exception: a v2 worker dispatched by `/implement-v2` writes `status` and `agent` on its own row; plan fields and `commit` stay the orchestrator's. The file is 478 lines against a 500-line ceiling, so keep the net addition under 15 lines. In its section 1a, add the optional `probe` key to the sentence listing what `premises` entries take, saying only `plan probes --record` writes it. In `docs/plans/v2-planning.md` qualify the two sentences that say agents never write the task store (under "Cold readers" and "Deferred elaboration") and note under "Later slices" that the first engine slice is planned. In `docs/ideas/v2-pipeline.md`, "Execution engine, first slice", correct the Status bullet to `status` and `agent` only, say the orchestrator stamps `commit`, and name `parked`; in the same file's status list near the top, move the execution engine out of the "Not started" bullet and update the "Execution engine" row of the topics table to say the first slice is planned."""
+acceptance = """
+- forward: `grep -q 'parked' claude/skills/flow-contract-task-store/SKILL.md && grep -q 'orchestrator stamps' docs/ideas/v2-pipeline.md` (today: exit 1). The corrected Status bullet in `docs/ideas/v2-pipeline.md` must contain the words "orchestrator stamps".
+- guard: `test "$(wc -l < claude/skills/flow-contract-task-store/SKILL.md)" -le 500` (today: exit 0)"""
+agent = ""
+commit = ""
+
+[[items]]
+id = 19
+ref = "cover-every-v2-entry-in-the-link-scripts"
+title = "Cover every v2 entry in the link scripts"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "scripts/link-v2-review.sh",
+    "scripts/link-v2-review.ps1",
+]
+needs = [
+    12,
+    13,
+    16,
+    17,
+]
+coupling = []
+deps_note = ""
+action = "Add the plan-v2 and implement-v2 entries to both link scripts."
+detail = "Add to the `entries` list of `scripts/link-v2-review.sh` and the `$entries` table of `scripts/link-v2-review.ps1`: `commands/plan-v2.md`, `commands/implement-v2.md`, `agents/plan-investigator.md`, `agents/plan-challenger.md`, `agents/plan-cold-reader.md`, `agents/plan-worker-lite.md`, `agents/plan-worker-deep.md`, `skills/plan-v2-engine`, `skills/implement-v2-engine`, `workflows/plan-v2-investigate.js`, `workflows/plan-v2-prove.js` and `workflows/implement-v2-milestone.js`. In the `.ps1`, skills are junctions and the rest file links, as the existing rows are. Update each script's header comment to say it links every v2 entry. Change no linking logic. Test only with `CLAUDE_CONFIG_DIR` pointing at an empty scratch directory; never run either script against the real config dir."
+acceptance = """
+- forward: `grep -q 'commands/plan-v2.md' scripts/link-v2-review.sh && grep -q 'commands/implement-v2.md' scripts/link-v2-review.sh && grep -q 'implement-v2-milestone.js' scripts/link-v2-review.ps1` (today: exit 1)
+- guard: `CLAUDE_CONFIG_DIR="$(mktemp -d)" sh scripts/link-v2-review.sh --dry-run` exits 0 (today: exit 0; the script exits 1 when it refuses any entry). It turns red if an entry is listed whose source tasks 12 to 17 have not created."""
+agent = ""
+commit = ""
+
+[[items]]
+id = 20
+ref = "describe-the-engine-in-claudemd"
+title = "Describe the engine in CLAUDE.md"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["CLAUDE.md"]
+needs = [
+    17,
+    19,
+]
+coupling = []
+deps_note = ""
+action = 'Replace the "cannot be run yet" sentence and add an "Implement v2" section.'
+detail = 'In "Planning v2", replace the sentence saying an approved v2 plan cannot be run with a pointer to `/implement-v2`. Add a `## Implement v2` section after it, in the style of "Planning v2": the carrier and skill, the two worker agents and their write rule, the Workflow, one gate and one commit per milestone, and a Deploy bullet. Change the "Review v2" Deploy bullet to say the link scripts cover every v2 entry, and the "Planning v2" Deploy bullet to point at those scripts instead of asking for a symlink per entry. In "Flow agent tiers", name `plan-worker-lite` and `plan-worker-deep` as following the bucket rules. In "Build discipline in multi-agent flows", add `/implement-v2` to the flows and `plan-worker-*` to the sub-agents the rule binds. Leave "Task store" unchanged; it lists no statuses. Add no history and no task or finding ids.'
+acceptance = """
+- forward: `grep -q 'cannot be run yet' CLAUDE.md; test $? -eq 1` (today: exit 1)
+- forward: `grep -q '^## Implement v2' CLAUDE.md` (today: exit 1)"""
+agent = ""
+commit = ""
+
+[[items]]
+id = 21
+ref = "say-a-parked-closing-task-stalls-its-backlog-item"
+title = "Say a parked closing task stalls its backlog item"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/tomlctl/references/backlog-reconcile.md",
+    "claude/commands/backlog.md",
+]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "Add `parked` to the two statements of the `stalled` bucket rule."
+detail = "In `claude/skills/tomlctl/references/backlog-reconcile.md`, the `stalled` row of the bucket table says a closing task is `deferred` or `failed`; make it `deferred`, `failed` or `parked`. In `claude/commands/backlog.md`, the paragraph that opens with the `orphaned`, `stalled`, `dangling` buckets says the same of a `stalled` claim; make the same change. Change nothing else in either file."
+acceptance = "forward: `grep -q 'parked' claude/skills/tomlctl/references/backlog-reconcile.md && grep -q 'parked' claude/commands/backlog.md` (today: exit 1)"
+agent = ""
+commit = ""
+
+[[items]]
+id = 22
+ref = "retire-the-no-engine-statements-in-the-plan-v2-engine-references"
+title = "Retire the no-engine statements in the plan-v2 engine references"
+effort = "S"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/plan-v2-engine/references/approve.md",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md",
+]
+needs = [
+    5,
+    17,
+]
+coupling = []
+deps_note = ""
+action = "Replace the two sentences that say no engine exists and that premises cannot be recorded."
+detail = 'In `claude/skills/plan-v2-engine/references/approve.md`, the approval warning ends with the sentence "No engine can run it yet."; replace that sentence with one naming `/implement-v2` as the command that runs the flow, and keep the rest of the warning, since the v1 carriers still cannot run it. In `claude/skills/plan-v2-engine/references/write-and-prove.md`, replace the sentence saying there is no `--record` for premises with one saying `tomlctl plan probes --record <capture> --premises` stores a verdict per premise; write the command in a backtick span, not a bash fence. Change nothing else in either file.'
+acceptance = """
+- forward: `grep -q 'No engine can run it yet' claude/skills/plan-v2-engine/references/approve.md; test $? -eq 1` (today: exit 1, the sentence is present)
+- forward: `grep -q 'There is no .--record. for premises' claude/skills/plan-v2-engine/references/write-and-prove.md; test $? -eq 1` (today: exit 1, the sentence is present)"""
+agent = ""
+commit = ""

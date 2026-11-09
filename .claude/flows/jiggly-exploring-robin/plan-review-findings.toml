@@ -1,0 +1,527 @@
+schema_version = 1
+last_updated = 2026-11-09
+round = 1
+
+[[vet_events]]
+timestamp = "2026-11-09T00:00:00Z"
+command = "review-plan"
+lens = "feasibility"
+tier = "deep"
+agent_index = 1
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled F4 (frontier next is one wave deep: graph.rs frontier, tasks ready on human-only-handovers), F7 (plan/task-no-spec is error-class over every row) and F2 (premises_json, Premise literal in add.rs). All anchors held. Nothing dropped or downgraded."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-09T00:00:00Z"
+command = "review-plan"
+lens = "completeness"
+tier = "deep"
+agent_index = 2
+sampled_count = 7
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified every stale or behaviour claim before sampling: F2 (FEATURES is in cli/types/mod.rs; both gating tests exist), F1 (payload task 1 action and milestone A gates read from the store), F5 (both existing tests and the skip string), F4 (reconcile.rs matches!), F7 (approve.md and write-and-prove.md lines), F8 (backlog-capture tuples), F9 (plan-v2-engine rule 6). All held. Five sweep lines returned. Nothing dropped or downgraded."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-09T00:00:00Z"
+command = "review-plan"
+lens = "executability"
+tier = "deep"
+agent_index = 3
+sampled_count = 6
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled F1 (Premise literal, keep_probes, carries_probe), F3 (js_agent_names opaque arm), F5 (drift.rs flow_dir), F7 (flash is [Style; 5]), F14 (exact counts literal), F15 (43 unique Files paths). All held. F13 was corrected, not dropped: the orchestrator probe shows test(parked) already matches two existing tests, so the criterion is vacuous rather than at risk of matching nothing; merged into the critical finding on task 1."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-09T00:00:00Z"
+command = "review-plan"
+lens = "risk"
+tier = "deep"
+agent_index = 4
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled F2 (plan-v2-engine open-run rule), F5 (read-before-run and timeout 540 in write-and-prove.md) and F11 (SCHEMA_VERSION constants). All held. Searched line present. Nothing dropped or downgraded."
+dedup_id = "45ca31c3315a5978"
+
+[[items]]
+id = "P1"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "feasibility"
+plan_section = "### 15. Write the engine reference for drain, gate and commit [M]"
+summary = "The first payload removes `plan handover add`, which drain.md must give as an exact command, so milestone A's own gate fails"
+description = """Raised by the feasibility and completeness lenses. `human-only-handovers` task 1 (milestone A) replaces `plan handover add` with `plan handover set --ndjson` and reshapes the handover record. Task 15 puts `plan handover add` into `claude/skills/implement-v2-engine/references/drain.md` as an exact command; `command_lint` parses every fenced tomlctl call under `claude/skills/**`, and milestone A's gate is the full nextest run, so the run the Context names as the outcome goes red on the engine's own reference. No payload task claims the engine files. Payload task 12 also rewrites the handover contract in `docs/ideas/v2-pipeline.md` (handovers hold human-only steps only), which contradicts Approach, "Handovers" (worker-proposed handovers), and payload milestone B reinstalls tomlctl mid-run. Needs a decision: keep the handover verb out of bash fences and defer to the tomlctl plan reference, or add an After Merge step amending the payload's doc task to cover the engine files; and align the handover/needs_human contract with payload task 12."""
+dedup_id = "33cb430ee3c9ba45"
+
+[[items]]
+id = "P2"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "completeness"
+plan_section = "### 9. Bump tomlctl to 0.21.0 and advertise the features [L]"
+summary = "Task 9 adds the features to the wrong file; its acceptance grep is unsatisfiable by a correct implementation, and two gated lists are missed"
+description = """Raised by the feasibility and completeness lenses and confirmed by probe. `FEATURES` is `tomlctl/src/cli/types/mod.rs` (`pub(crate) const FEATURES`), not `tomlctl/src/capabilities.rs`, which holds only `MUTEX_GROUPS` and the vocabulary arrays. The acceptance `grep -q 'tasks_ready_checkpoint' tomlctl/src/capabilities.rs` therefore fails for a correct implementation (unsatisfiable). `capabilities_features_contains_every_plan_feature` in `tomlctl/tests/capabilities.rs` holds a hand-written exhaustive `expected` list, and `readme_feature_transcriptions_match_capabilities_features` requires each feature in both the README sample block and the "Feature meanings" table. Beyond the anchored Detail edit: add `tomlctl/src/cli/types/mod.rs` to Files (task 3 also edits under `tomlctl/src/cli/types/` but not this file; task 9 already depends on 3) and point the first acceptance grep at `tomlctl/src/cli/types/mod.rs`."""
+anchor_old = "In `tomlctl/src/capabilities.rs` add `parked` to both status vocabulary arrays and the features `task_status_parked`, `tasks_ready_checkpoint`, `premise_probes_scoped`, `premise_probe_record` and `plan_drift_uncommitted`;"
+anchor_new = 'In `tomlctl/src/capabilities.rs` add `parked` to both status vocabulary arrays; add the features `task_status_parked`, `tasks_ready_checkpoint`, `premise_probes_scoped`, `premise_probe_record` and `plan_drift_uncommitted` to `FEATURES` in `tomlctl/src/cli/types/mod.rs`, to the `expected` array of `capabilities_features_contains_every_plan_feature` in `tomlctl/tests/capabilities.rs`, and to both the sample block and the "Feature meanings" table in `tomlctl/README.md`;'
+dedup_id = "32957825a0f52667"
+
+[[items]]
+id = "P3"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "executability"
+plan_section = "### 5. Record premise verdicts [L]"
+summary = "Task 5's Files omit `tomlctl/src/tasks/add.rs` and `tomlctl/src/tasks/update.rs`, which it must edit to compile and to keep verdicts"
+description = """Raised by all four lenses. `premise_entry` in `tomlctl/src/tasks/add.rs` builds `Premise { claim, check, at }` as a struct literal, so a new field is a compile error outside the task's Files. "Kept out of audited input the same way" as `Accept.probe` is implemented by `keep_probes` and `carries_probe`/`spec_value` in `tomlctl/src/tasks/update.rs`; without premise twins, any re-issued spec silently drops recorded verdicts and logs false `spec.premises` changes. The Detail should name: `probe: None` in `premise_entry`, a premise twin of `keep_probes`, and the strip in `spec_value`. The lenses disagree on `premises_json` in `tomlctl/src/tasks/show.rs`: printing the verdict there makes it visible in `tasks show` but feeds `spec_moves` and review compare-and-set unless stripped; the conservative reading is to leave it probe-free (task 6 shows the verdict in the worker view). Decide and say so in the Detail. "refuse `--premises` with neither `--emit` nor `--record`" is already enforced by the `probes_mode` ArgGroup."""
+anchor_old = "- **Files**: `tomlctl/src/tasks/schema.rs`, `tomlctl/src/plan/probes.rs`, `tomlctl/src/cli/types/plan.rs`, `tomlctl/tests/plan_probes.rs`"
+anchor_new = "- **Files**: `tomlctl/src/tasks/schema.rs`, `tomlctl/src/tasks/add.rs`, `tomlctl/src/tasks/update.rs`, `tomlctl/src/plan/probes.rs`, `tomlctl/src/cli/types/plan.rs`, `tomlctl/tests/plan_probes.rs`"
+dedup_id = "e00f856049374889"
+
+[[items]]
+id = "P4"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "risk"
+plan_section = "### Orchestrator loop"
+summary = "The clean-tree pre-flight refuses to resume after every designed stop"
+description = """Raised by the risk and feasibility lenses. The gate and commit run only when every row of the milestone is `done`, so a parked row, two failed gate rounds or a session exit each leave worker edits uncommitted outside the flow directories; the drain's `backlog add` also dirties `.claude/backlog.toml`. Step 1 then refuses the next `/implement-v2`, so the park, unblock, re-run loop dead-ends. Approach, "Drift" already defines own work as paths named by rows with an empty `commit`; the pre-flight can use the same definition. Tasks 14, 15 and 16 must carry the exemption."""
+anchor_old = "the working tree is clean outside the flow's own directories. With no open run, any `in-progress` row is reset to `pending`."
+anchor_new = "the working tree is clean outside the flow's own directories, `.claude/backlog.toml` and its sidecar, and the files of the milestone's rows that are not `pending` and carry an empty `commit`, which hold the milestone's own unfinished work. With no open run, any `in-progress` row is reset to `pending`, its edits left in place for the next worker's own-diff step."
+dedup_id = "806640fae73aff35"
+
+[[items]]
+id = "P5"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "executability"
+plan_section = "### 1. Add the parked task status [M]"
+summary = "Task 1's `test(parked)` acceptance is vacuous: the filter already matches two unrelated tests and passes today"
+description = """Orchestrator probe, confirmed by `cargo nextest list -E 'test(parked)'`: it lists `review_resolve same_as_on_parked_is_suppressed` and `review_triage park_marks_advisory_parked`, both integration tests, so "passes with at least one test run" holds before the task lands and after a no-op. The executability lens adds that the Detail never fixes the new test's name, so the filter would not reach it unless it happens to contain `parked`. Restrict the filter to the lib binary and require the name."""
+anchor_old = "`cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(parked)'` passes with at least one test run."
+anchor_new = "`cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'kind(lib) & test(parked)'` passes with at least one test run; the new unit test carries `parked` in its name (today: no lib test matches, so nextest exits non-zero; the bare `test(parked)` filter matches two unrelated integration tests and passes)."
+dedup_id = "1d5dcdab99d89a35"
+
+[[items]]
+id = "P6"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "executability"
+plan_section = "### 19. Cover every v2 entry in the link scripts [M]"
+summary = "The dry-run criterion is labelled forward but already holds today, and its `refused` wording cannot be checked as written"
+description = 'Orchestrator probe: `CLAUDE_CONFIG_DIR="$(mktemp -d)" sh scripts/link-v2-review.sh --dry-run` exits 0 today ("would make 16, skipped 0, refused 0"), so as a forward criterion it is vacuous; it discriminates only as a guard against listing an entry whose source is missing. The script exits 1 on any refusal and its summary line always contains the word `refused`, so "no `refused` line" read as a grep never holds. Relabel as a guard on the exit status; the grep criterion beside it is the discriminating forward.'
+anchor_old = 'forward: `CLAUDE_CONFIG_DIR="$(mktemp -d)" sh scripts/link-v2-review.sh --dry-run` exits 0 with no `refused` line. **predicted, unverified**: it needs the files tasks 12 to 17 create.'
+anchor_new = 'guard: `CLAUDE_CONFIG_DIR="$(mktemp -d)" sh scripts/link-v2-review.sh --dry-run` exits 0 (today: exit 0; the script exits 1 when it refuses any entry). It turns red if an entry is listed whose source tasks 12 to 17 have not created.'
+dedup_id = "fa3b76e26bf5eba2"
+
+[[items]]
+id = "P7"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### 13. Add the milestone Workflow script [M]"
+summary = "The `agentType` lookup task 13 describes is a form `workflow_scripts_name_real_agents` rejects"
+description = "Raised by the executability and feasibility lenses. `js_agent_names` in `tomlctl/src/cli/dispatch/tests/lint.rs` accepts an `agentType:` value only as a lone string literal or a path ending `.agentType`; an indexed `WORKERS[t.executor]` or a conditional lands in `opaque` and fails the gate the task's own falsifier names. The accepted shapes are two literal call sites chosen by a branch, or an object whose entries carry `agentType: '<literal>'` with `agentType: worker.agentType` at the call (the `CELL_AGENTS` pattern in `claude/workflows/review-v2.js`)."
+anchor_old = "Map `executor` to `agentType` through an object whose values are the string literals `'plan-worker-lite'` and `'plan-worker-deep'`, in the form `workflow_scripts_name_real_agents` accepts;"
+anchor_new = "Map `executor` to `agentType` through `const WORKERS = { lite: { agentType: 'plan-worker-lite' }, deep: { agentType: 'plan-worker-deep' } }`, bind `const worker = WORKERS[t.executor]` and pass `agentType: worker.agentType`; `workflow_scripts_name_real_agents` accepts a literal or a path ending `.agentType` and refuses an indexed or conditional value in the `agent()` call;"
+dedup_id = "4dfc85c8781806ac"
+
+[[items]]
+id = "P8"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### 12. Add the v2 worker agents [M]"
+summary = "Two v1 blocks copied byte-identical send `TANGENTIAL:` and check lines to a return payload the orchestrator never reads"
+description = 'Raised by the executability, completeness and feasibility lenses. `backlog-candidates` tells the agent to report under `TANGENTIAL:` "at the end of your return payload" and speaks of clusters and `Action`; `implementer-verification` speaks of `Acceptance` and `files[]`. The v2 worker returns a fixed object validated with `additionalProperties: false`, the Workflow index keeps only `{id, status, note, error}`, and task 15 reads `TANGENTIAL:` lines from notes. Byte-identical copies cannot be edited to agree with the worker contract, so discoveries are lost.'
+anchor_old = "Carry the existing blocks `file-edits`, `backlog-candidates`, `implementer-verification` and `tomlctl-for-agents` byte-identical, adding both files to each block's `files` list in `scripts/shared-blocks.toml`. Do not carry `forbidden-working-tree-ops` or `implementer-report-lines`."
+anchor_new = "Carry the existing blocks `file-edits` and `tomlctl-for-agents` byte-identical, adding both files to each block's `files` list in `scripts/shared-blocks.toml`. Do not carry `forbidden-working-tree-ops`, `implementer-report-lines`, `backlog-candidates` or `implementer-verification`: their v1 wording sends `TANGENTIAL:` and check lines to a return payload the orchestrator never reads. State their v2 forms in `plan-worker-procedure` instead: the narrow-check rule over the task's `files` and its `writes_build = false` accept checks, and `TANGENTIAL:` lines written into the note, never the return object."
+dedup_id = "bb3237d44a9f7220"
+
+[[items]]
+id = "P9"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "### Orchestrator loop"
+summary = "Args built from `tasks ready --checkpoint` cover only two waves, and withheld tasks' dependents are unhandled"
+description = """Raised by the feasibility, executability and risk lenses. `Graph::frontier` puts a pending row in `next` only when every unfinished dependency is in the current wave; rows further out appear in no list. For the payload's milestone A (`ready [1]`, `next [2,3,4]`, tasks 5 to 7 beyond) one run cannot finish the milestone as the section's opening sentence says. Pruning `needs` to ids inside `tasks` also lets a withheld task's dependent run before it, or makes the script refuse the args. A spec `executor` of `tool`, `clerk` or empty makes the Workflow refuse the whole launch. The plan does not say whether a premise skipped as `task <id> is not done` withholds its task. Task 14's command list should name `tasks closure --checkpoint`; `tasks ready --checkpoint` remains the drain's "dispatchable rows remain" test."""
+anchor_old = "Build `args` from `tasks ready --checkpoint`, the rows' `needs` and `files`, and each spec's executor;"
+anchor_new = "Build `args` from the milestone's pending members (`tasks closure --checkpoint <id>`): drop each withheld task and every member that transitively needs one, drop any row whose spec `executor` is neither `lite` nor `deep` and list it in the `needs_human` report, keep in each row's `needs` only ids left in that set, and refuse a member with a not-`done` need outside it; a premise skipped because its `after:` task is not done withholds its task; take `files` from the rows and the executor from each spec;"
+dedup_id = "6688f54105874f86"
+
+[[items]]
+id = "P10"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 15. Write the engine reference for drain, gate and commit [M]"
+summary = "Task 15 lacks an edge to task 14, whose file and Workflow name its relaunch step must cite"
+description = 'Feasibility lens, medium evidence. drain.md must describe "relaunch a fresh run": a link to `references/run-milestone.md` is checked by `skill_markdown_links_resolve`, a `Workflow({name: "implement-v2-milestone"` launch by `md_workflow_launches_name_saved_scripts`, and a fenced `tasks ready --checkpoint` by `command_lint` (task 3). Task 15 depends only on 1 and 7 and can be dispatched before 14 or 13 exist, so its acceptance (`cli::dispatch::tests`) can go red on a correct file. An edge to 14 covers 3, 5, 7 and 13 transitively and leaves the checkpoint cuts unchanged.'
+anchor_old = "- **Depends on**: 1, 7"
+anchor_new = "- **Depends on**: 1, 7, 14"
+dedup_id = "cb9750188a3769e6"
+
+[[items]]
+id = "P11"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "### Gate, commit and fix rounds"
+summary = "Fix tasks minted without a spec are a `plan check` error and give the Workflow no executor"
+description = "Raised by the feasibility and risk lenses. `plan/task-no-spec` in `tomlctl/src/plan/check.rs` is error-class on every row, and `plan/spec-no-outcome`, `plan/spec-no-accept` and `plan/accept-no-check` follow. A fix row minted with only a `reason` fails the engine's own pre-flight (`plan check` clean), carries no `executor` for the args, and gives the worker no accept checks. `tasks add-many` accepts a `spec` table; task 15's Detail should show the row shape."
+anchor_old = "On a fail it mints fix tasks in the same milestone with `tasks add-many` and a `reason`, and relaunches."
+anchor_new = "On a fail it mints fix tasks in the same milestone with `tasks add-many` and a `reason`, each row carrying a `spec` with an `outcome`, an `accept` entry with a `check`, and an `executor` of `lite` or `deep` (a spec-less row is a `plan/task-no-spec` error and gives the Workflow no executor), and relaunches."
+dedup_id = "0bcb4ad0b5131623"
+
+[[items]]
+id = "P12"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "## Risks"
+summary = "Status sites that need `parked` are comparisons the compiler never names, and one has no owning task"
+description = "Raised by the completeness, feasibility and risk lenses. No exhaustive `match` on `Status` exists outside `tomlctl/src/tasks/schema.rs` and `tomlctl/src/tasks/graph.rs`, so the Risks mitigation never fires. Sites that need `parked` by hand: `stopped` in `tomlctl/src/backlog/reconcile.rs` (`matches!(…, Status::Deferred | Status::Failed)`; a backlog item closed by a parked task reads as in-progress instead of stalled, and task 19 links a backlog item, so the path is live), with the rule restated in `claude/skills/tomlctl/references/backlog-reconcile.md` and `claude/commands/backlog.md`; `open_items`/`failed_tasks` in `tomlctl/src/plan/view.rs` (task 6 owns the file but only adds a count); the `tasks update --status` help text in `tomlctl/src/cli/types/tasks.rs` (task 3 owns the file); `SAMPLE` in `glimpse/src/view/themes.rs` and the status loop in the `glimpse/src/diagram/mod.rs` test. `tomlctl/src/backlog/reconcile.rs` and the two backlog docs need an owner: add them to task 1's Files or mint a small task depending on 1."
+anchor_old = "- An exhaustive `match` on `Status` outside task 1's files — the compiler names it; the worker reports it, and the orchestrator assigns it before checkpoint A's gate."
+anchor_new = "- No exhaustive `match` on `Status` exists outside task 1's files, so the compiler names nothing there — two sites compare statuses and need `parked` by hand: `failed_tasks` in `tomlctl/src/plan/view.rs` (task 6 adds `parked_tasks` beside it) and the `stopped` test in `tomlctl/src/backlog/reconcile.rs`, which must read a parked closing task as stalled."
+dedup_id = "e784f98900610735"
+
+[[items]]
+id = "P13"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### 4. Scope premise scripts by task and cover after-premises [M]"
+summary = "Two existing tests assert the behaviour tasks 4 and 5 change, and neither task says to rewrite them"
+description = """Completeness lens, confirmed. `emit_premises_prints_a_line_per_base_premise_of_a_pending_task` in `tomlctl/tests/plan_probes.rs` asserts `# skipped 2:1: not a base premise` for an `after:1` premise on a done task, exactly what task 4 makes emit; `premises_is_refused_without_emit` asserts `--premises --record` exits 2, which task 5 makes legal. Both Details say only "add" tests, so `binary(plan_probes)` stays red. The module doc of `tomlctl/src/plan/probes.rs` and the `--premises` help in `tomlctl/src/cli/types/plan.rs` also become false. Task 5's Detail needs the matching sentence for `premises_is_refused_without_emit`."""
+anchor_old = "Add integration tests in `tomlctl/tests/plan_probes.rs` for the three `at` cases and for `--task`."
+anchor_new = "Add integration tests in `tomlctl/tests/plan_probes.rs` for the three `at` cases and for `--task`, and rewrite `emit_premises_prints_a_line_per_base_premise_of_a_pending_task`, which asserts that an `after:1` premise on a done task is skipped; update the `tomlctl/src/plan/probes.rs` module doc and the `--premises` help text in `tomlctl/src/cli/types/plan.rs`."
+dedup_id = "18e7a923ebc464db"
+
+[[items]]
+id = "P14"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### 7. Report uncommitted drift [M]"
+summary = '"The flow directory" is two directories; worker notes under `docs/flows/<slug>/` would show as uncommitted drift on every drain'
+description = """Raised by the executability and completeness lenses. `changed_files` in `tomlctl/src/plan/drift.rs` hardcodes `.claude/flows/{slug}/`; a v2 flow also owns `docs/flows/<slug>/`, where workers write their notes. Read literally, the task fills `uncommitted_files` with the run's own notes. Related gap: no commit is assigned the notes in Approach, "Gate, commit and fix rounds"."""
+anchor_old = "drop paths under the flow directory"
+anchor_new = "drop paths under `.claude/flows/<slug>/` and `docs/flows/<slug>/` (the run's notes land in the second)"
+dedup_id = "a92f5b073cd48b1e"
+
+[[items]]
+id = "P15"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### 17. Add the implement-v2 carrier [M]"
+summary = "Task 17 must check five feature names that appear only in task 9's Detail"
+description = "Executability lens. An implementer receives the preamble and its own task; the five names are in neither, and no lint checks a feature string, so a wrong name is a pre-flight that never fires or always fires."
+anchor_old = "`--get features` for the five features task 9 adds"
+anchor_new = "`--get features` for `task_status_parked`, `tasks_ready_checkpoint`, `premise_probes_scoped`, `premise_probe_record` and `plan_drift_uncommitted`"
+dedup_id = "cb67de08ceea3575"
+
+[[items]]
+id = "P16"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### 17. Add the implement-v2 carrier [M]"
+summary = "The `carrier_invokes_required_skills` tuple omits `backlog-capture` although the engine runs `backlog add`"
+description = "Completeness lens. Task 15 has the orchestrator run `backlog check` then `backlog add`; the `backlog-capture` skill is to be used before any `backlog add`, and every other carrier that adds to the backlog lists it in `expected` in `tomlctl/src/cli/dispatch/tests/skills.rs`. The carrier also needs an invocation phrase for it."
+anchor_old = '("implement-v2.md", &["tomlctl", "implement-v2-engine", "commit-conventions"])'
+anchor_new = '("implement-v2.md", &["tomlctl", "implement-v2-engine", "commit-conventions", "backlog-capture"])'
+dedup_id = "46de41f95f440741"
+
+[[items]]
+id = "P17"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### 2. Show the parked status in glimpse [M]"
+summary = '"Sort position after `Deferred`" does not exist in theme.rs, and the obvious reading panics'
+description = """Executability lens, confirmed. The only status position in `glimpse/src/theme.rs` is the index into `flash: [Style; 5]` in `Theme::flash`; index 5 panics the first time a task turns parked, and a sixth slot needs the colour field the Detail forbids. `Theme::status` needs an explicit `"parked"` arm or it falls through. "A glyph no other status uses" omits the one-cell width `Zoom::label_width` assumes. No acceptance runs the new glimpse unit test: `grep -q 'Parked'` passes on a bare variant."""
+anchor_old = "give it the `deferred` colour and the sort position after `Deferred`"
+anchor_new = """map `"parked"` to `self.deferred` in `Theme::status` and `TaskStatus::Parked` to slot `4` (Deferred's) in `Theme::flash`, which is a `[Style; 5]` with no sixth slot; the glyph must be one terminal cell wide, as `Zoom::label_width` in `glimpse/src/diagram/mod.rs` assumes"""
+dedup_id = "9878aec33c62bb57"
+
+[[items]]
+id = "P18"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "## Success Criteria"
+summary = "No criterion checks the transcript-free goal, and three check only that tasks wrote files"
+description = """Executability lens. The Context's goal is a milestone run "without the orchestrator reading any worker transcript"; the only bullet near it is predicted, and Scope excludes the run. Bullets 1, 3 and 4 pass as soon as the tasks write anything. The replacement adds the dispatch lint gates and an index-only/transcript proxy; the new runnable criterion also needs a `success:` key under `## Verification Commands`."""
+anchor_old = "- **predicted, unverified**: `/implement-v2 human-only-handovers` runs milestone A to a gate-verified commit."
+anchor_new = """
+- forward: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes with the new carrier, skill, agents and Workflow in the tree. **predicted, unverified**: needs a build.
+- forward: `grep -q 'additionalProperties: false' claude/workflows/implement-v2-milestone.js && grep -qi 'transcript' claude/skills/implement-v2-engine/SKILL.md` (today: exit 2, no files)
+- **predicted, unverified**: `/implement-v2 human-only-handovers` runs milestone A to a gate-verified commit."""
+dedup_id = "2b29643d68ebf357"
+
+[[items]]
+id = "P19"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### 18. Amend the status-write contract [M]"
+summary = "Statements outside the task-owned edits become false when the engine ships"
+description = 'Completeness lens, confirmed. `claude/skills/plan-v2-engine/references/approve.md` tells the user at every approval that no carrier can run the flow; `claude/skills/plan-v2-engine/references/write-and-prove.md` says there is no `--record` for premises; `docs/ideas/v2-pipeline.md` says "Not started: the execution engine" outside the section task 18 scopes; `claude/skills/flow-contract-task-store/SKILL.md` section 1a lists premise keys without `probe`; `CLAUDE.md` "Planning v2" Deploy bullet still asks for hand-made symlinks, and "Build discipline" and "Flow agent tiers" name only the v1 carriers and agents. The two `plan-v2-engine` references have no owning task; the rest fall to tasks 18 and 20, whose Details do not mention them.'
+dedup_id = "ea9256d65fe7d50c"
+
+[[items]]
+id = "P20"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### 16. Write the engine skill [M]"
+summary = "Re-entry abandons any open run and resets its rows even while that run's workers are still editing"
+description = 'Risk lens, confirmed against `claude/skills/plan-v2-engine/SKILL.md` (open-run rule: never abandon and relaunch over a live run). The launch ends the turn and the session stays usable, so re-typing `/implement-v2 <slug>` hits Re-entry, abandons the live run, resets its rows and launches a second set of workers on the same files. The Risks mitigation for the no-compare-and-set write ("only when no run is open") does not hold without this.'
+anchor_old = "handles an open `implement:<id>` run with `plan run abandon`, and never resumes a run."
+anchor_new = "never abandons a run still live in this session (it waits for the notification or stops the run first), asks through `AskUserQuestion` before abandoning an open `implement:<id>` run recorded under another session, since its workers may still be editing, and otherwise closes the open run with `plan run abandon`; it never resumes a run."
+dedup_id = "416ec1d93c9babdd"
+
+[[items]]
+id = "P21"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### 16. Write the engine skill [M]"
+summary = "Worker note writes under `docs/flows/**` can prompt or be denied, and the engine skill does not carry the allow-rule guidance"
+description = "Completeness lens, medium evidence. `claude/skills/plan-v2-engine/SKILL.md` rule 6 says writes under `docs/flows/**` prompt in default mode and are denied under `dontAsk`, and names the allow rule that pre-approves them. Every worker writes its note there. The plan's Permissions note records only that the path is not protected. A worker meeting a denial returns no note, which the drain reads as a failure. Whether Workflow agents prompt or are denied is not settled in-tree; the first run settles it."
+anchor_old = "role rules (the orchestrator never reads worker transcripts, never runs a build inline, asks every user question itself)"
+anchor_new = "role rules (the orchestrator never reads worker transcripts, never runs a build inline, asks every user question itself, and names the allow rule for worker notes under `docs/flows/**` as `claude/skills/plan-v2-engine/SKILL.md` rule 6 does, adding it to no settings file)"
+dedup_id = "07a68649ca50ca1f"
+
+[[items]]
+id = "P22"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### Orchestrator loop"
+summary = "The drain never resets a row a dead worker left `in-progress`, so it and its dependents never become dispatchable"
+description = "Risk lens. `Standing::of` in `tomlctl/src/tasks/graph.rs` reads `in-progress` as stalled. A worker that crashed, stalled out or was stopped between its two status writes leaves the row `in-progress`; only the pre-flight resets it, and step 5 relaunches from the drain. The reset must follow `plan drift --uncommitted`, which counts an `in-progress` row with an empty `commit` as own work."
+anchor_old = "Run `plan drift --uncommitted`. Replan through audited verbs with a `reason`."
+anchor_new = "Run `plan drift --uncommitted`, then reset to `pending` every row of the run still `in-progress`, which a worker whose `agent()` call returned nothing leaves behind, since `tasks ready` reads `in-progress` as stalled. Replan through audited verbs with a `reason`."
+dedup_id = "b63bad7a0e03b3f8"
+
+[[items]]
+id = "P23"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### 14. Write the engine reference for running a milestone [M]"
+summary = "Task 14 drops the read-before-run review and the `timeout 540` limit that guard the premise script"
+description = "Risk lens, confirmed against `claude/skills/plan-v2-engine/references/write-and-prove.md`. The emitted script `eval`s every stored premise `check`, and `bash <file>` puts none of them in front of a permission prompt; the existing reference makes reading the script the review, runs it under `timeout 540`, and records nothing from a capture cut short (exit 124). In the engine the script runs on every launch over a tree with uncommitted worker edits."
+anchor_old = "and that the emitted premise script is run with `bash <file>` and its stdout captured to a file with a redirect, never piped."
+anchor_new = "and that the emitted premise script is read before it runs, since `bash <file>` puts none of its stored commands in front of a permission prompt, then run as `timeout 540 bash <file> > <capture>`, never piped; a capture cut short by the timeout (exit 124) records nothing, as `claude/skills/plan-v2-engine/references/write-and-prove.md` says for probes."
+dedup_id = "4211328bd30a719d"
+
+[[items]]
+id = "P24"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### Worker contract"
+summary = '"Own row, `status` and `agent` only" is prose: the allow rule lets a worker run any tomlctl verb, and those writes are unaudited'
+description = "Risk lens. `Bash(tomlctl *)` is pre-approved for subagents, and `status`, `agent` and `commit` writes leave no `[[changes]]` row, so a confused worker can mark a sibling done, stamp a commit or remove a row with no trace. The one-writer-per-row invariant stands in for compare-and-set (User Decisions 7), and nothing enforces it. A before/after snapshot at the drain makes a violation visible. Tasks 14 and 15 carry it."
+anchor_old = "Each row therefore has one writer at a time: its worker during a run, the orchestrator between runs."
+anchor_new = "Each row therefore has one writer at a time: its worker during a run, the orchestrator between runs. Nothing enforces this, since `Bash(tomlctl *)` approves every verb, so the orchestrator snapshots `tomlctl tasks list --slug <slug>` to scratch before each launch and, at the drain, reports any change other than `status` and `agent` on a dispatched row."
+dedup_id = "f2604a387a3d54e9"
+
+[[items]]
+id = "P25"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "### 15. Write the engine reference for drain, gate and commit [M]"
+summary = "Task 15 does not say how to read a milestone's gates or what the verification agent takes"
+description = "Executability lens. Both facts live only in Exploration Notes, which implementers never receive. `tomlctl items list .claude/flows/<slug>/tasks.toml --array milestones --where id=<id> --select gates` returns the gate commands; the input shape is in `claude/agents/verification.md`."
+anchor_old = "the `verification` agent input built from the milestone's `gates`"
+anchor_new = "the `verification` agent input (`commands:` items with optional `timeout:` and `rerun:`, plus `transient:`, as `claude/agents/verification.md` defines) built from the milestone's `gates`, read with `tomlctl items list .claude/flows/<slug>/tasks.toml --array milestones --where id=<id> --select gates`"
+dedup_id = "6ff24d9b08be5570"
+
+[[items]]
+id = "P26"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "### 10. Document the new plan verbs [M]"
+summary = "After task 5, plan.md still lists `--premises` without `--emit` as a refusal, and two pointers still say it holds the probe verdicts"
+description = "Executability lens. The refusal paragraph near the top of `claude/skills/tomlctl/references/plan.md`, that file's opening sentence and its entry in `claude/skills/tomlctl/SKILL.md` sit outside the moved section, in files task 10 already owns."
+anchor_old = "Add `--uncommitted` and the `uncommitted_files` and `uncommitted` output keys to the `plan drift` section."
+anchor_new = """Add `--uncommitted` and the `uncommitted_files` and `uncommitted` output keys to the `plan drift` section. In the refusal paragraph near the top of `claude/skills/tomlctl/references/plan.md`, drop "`--premises` without `--emit`", and repoint the file's opening sentence and its `claude/skills/tomlctl/SKILL.md` entry, which both say it holds the probe verdicts."""
+dedup_id = "35fc15be152e1c2f"
+
+[[items]]
+id = "P27"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "### 9. Bump tomlctl to 0.21.0 and advertise the features [L]"
+summary = "The `MUTEX_GROUPS` conditional can be settled now"
+description = """Executability lens. `MUTEX_GROUPS` holds `("plan probes", &[&["emit", "record"]])` and `plan_probes_advertises_the_one_mutex_clap_enforces` asserts exactly that. Task 5 removes only the `--premises` `conflicts_with`, which no entry holds, and task 9's implementer never sees task 5's text."""
+anchor_old = "; update `MUTEX_GROUPS` if task 5 changed a `plan probes` mutex"
+anchor_new = "; leave `MUTEX_GROUPS` unchanged, since the `emit`/`record` group stays, as `plan_probes_advertises_the_one_mutex_clap_enforces` asserts"
+dedup_id = "cae0967a2f8a325e"
+
+[[items]]
+id = "P28"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "### 20. Describe the engine in CLAUDE.md [S]"
+summary = 'The "only if that section lists statuses" conditional resolves to no edit today'
+description = 'Executability lens. The "Task store" section of `CLAUDE.md` lists no task statuses; an S task is meant to be fully specified.'
+anchor_old = 'In "Task store", note the `parked` status only if that section lists statuses.'
+anchor_new = 'Leave "Task store" unchanged; it lists no statuses.'
+dedup_id = "3f4db3ae462e5e89"
+
+[[items]]
+id = "P29"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "### 6. Show parked counts and premise verdicts in plan view [S]"
+summary = "Task 6 does not mention the exact-match test its change breaks, nor the parked list beside `failed_tasks`"
+description = 'Executability lens, confirmed. `digest_counts_every_record` in `tomlctl/tests/plan_view.rs` compares the whole `counts` object, so adding `"parked"` turns it red until the literal gains `"parked": 0`. See also the Risks finding: `open_items` lists `failed_tasks` only.'
+anchor_old = "Add one test for each in `tomlctl/tests/plan_view.rs`."
+anchor_new = 'Add `parked_tasks` beside `failed_tasks` in `open_items`. Add one test for each in `tomlctl/tests/plan_view.rs`, and add `"parked": 0` to the exact `counts` object `digest_counts_every_record` asserts there.'
+dedup_id = "9fb55045828a457a"
+
+[[items]]
+id = "P30"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "## Summary"
+summary = "The file count is stale: the Files lines name 43 unique paths, not about 39"
+description = '''Raised by the executability and completeness lenses. `grep '^- \*\*Files\*\*' docs/plans/jiggly-exploring-robin.md | grep -o '`[^`]*`' | sort -u | wc -l` prints 43; User Decisions 5 says about 38 and the Exploration scope check about 20. The task 5 and task 9 findings add three more.'''
+anchor_old = "At about 39 files"
+anchor_new = "At 43 files"
+dedup_id = "fc05dfca153915a1"
+
+[[items]]
+id = "P31"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "### 7. Report uncommitted drift [M]"
+summary = "The own-work exclusion covers `done` and `in-progress` rows only, so a failed or parked worker's partial edits read as out-of-lane drift"
+description = 'Risk lens, medium evidence. A pending row sharing a file with a failed or parked row of the same run is flagged in `affected`, and a failed row replanned to `pending` is flagged for its own earlier attempt. Approach, "Drift" carries the same phrase and needs the same edit.'
+anchor_old = "unless a `done` or `in-progress` row with an empty `commit` also names that path"
+anchor_new = "unless a `done`, `in-progress`, `failed` or `parked` row with an empty `commit` also names that path"
+dedup_id = "a3d6ee457a7e691a"
+
+[[items]]
+id = "P32"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "### 5. Record premise verdicts [L]"
+summary = "The premise `probe` key is added without a schema stamp, so an older binary silently drops recorded verdicts on its next write"
+description = "Risk lens. `SCHEMA_VERSION` in `tomlctl/src/tasks/schema.rs` exists so an older binary refuses a store rather than dropping its keys; `Accept.probe` arrived with the v2 bump. Impact is limited because the engine re-runs premises at every launch; what is lost is the record and the worker view. `parked` itself is safe: an older binary hard-errors on it."
+anchor_old = "Give `Premise` an optional `probe`,"
+anchor_new = "Give `Premise` an optional `probe` and stamp a store holding one with a raised `SCHEMA_VERSION`, so an older binary refuses it rather than dropping the verdicts on its next write,"
+dedup_id = "c0e63567f838c65c"
+
+[[items]]
+id = "P33"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "### Handovers"
+summary = "Nothing moves a `parked` row back to `pending`, so a milestone holding one stays stuck on every invocation"
+description = "Risk lens, medium evidence. Step 2 keeps picking the first milestone with a non-`done` row and `tasks ready` keeps the parked row and its dependents blocked; the `needs_human` report gives the user's answer no route back into the store. Tasks 15 and 16 carry the change."
+anchor_old = "At the end of every invocation the engine lists open handovers and parked tasks with their note paths, as the `needs_human` report."
+anchor_new = "At the end of every invocation the engine lists open handovers and parked tasks with their note paths, as the `needs_human` report. At the next invocation it asks through `AskUserQuestion` how each parked row of the current milestone is unblocked, and replans it to `pending` through audited verbs with the answer as the `reason`, before the premise step."
+dedup_id = "ea5066c54c5080d3"
+
+[[items]]
+id = "P34"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "### Gate, commit and fix rounds"
+summary = "A stop between the milestone commit and the sha stamp leaves an all-done milestone whose commit drift counts as foreign"
+description = "Risk lens, medium evidence. `recorded_commits` in `tomlctl/src/plan/drift.rs` treats a commit as the plan's own only when a row's `commit` holds it. Re-entry skips the all-`done` milestone, `plan drift` flags later rows touching its files, and `tasks train` keeps offering the rows. Task 16's Re-entry does not cover the state."
+anchor_old = "stamps the sha on every row of the milestone, and commits the flow stores as a second small commit."
+anchor_new = "stamps the sha on every row of the milestone, and commits the flow stores as a second small commit. Re-entry stamps an all-`done` milestone whose rows carry an empty `commit` from HEAD's milestone commit when that commit holds their files, and runs the gate again otherwise."
+dedup_id = "fc86037da61be935"
+
+[[items]]
+id = "P35"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### Orchestrator loop"
+summary = "Nothing changes the flow's status when the last milestone finishes"
+description = "Completeness lens, medium evidence. The plan has no step moving `context.toml` `status` or appending a status-transition record when every milestone is done; v1 `/implement` hands that to `/plan-update status`. Scope excludes harvest, but no document assigns flow closure to a later slice."
+dedup_id = "387fbfd674663e0e"
+
+[[items]]
+id = "P36"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### 8. Correlate a worker prompt to its task [S]"
+summary = "Task 8 changes nothing in this slice: task 13's prompt already carries the `tasks show` line the existing regex links"
+description = 'Raised by the completeness and feasibility lenses. Research Notes, "glimpse correlation" offers either the `tasks show` prompt line or a `plan view` pattern; the plan does both, and the only prompt the engine builds carries both. User Decisions 3 chose the fuller surface, so this is for the user to confirm, not a defect.'
+dedup_id = "ea85e053057ab60a"
+
+[[items]]
+id = "P37"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "### 3. Scope tasks ready to a checkpoint [M]"
+summary = "The `-A12` acceptance window leaves little room, and the `--status` help text in the same file lists five statuses"
+description = """Orchestrator probe. The `Ready` variant in `tomlctl/src/cli/types/tasks.rs` closes 9 lines after its opening line, so `grep -A12 '^    Ready {'` reaches a new `long = "checkpoint"` attribute only when the flag's doc comment is at most five lines and the attribute stays on one line; healthy today (negative control exit 1, `in-flight` claim holds) but fragile. The `tasks update --status` help text in the same file enumerates the statuses and no task adds `parked` to it."""
+anchor_old = """grep -A12 '^    Ready {' tomlctl/src/cli/types/tasks.rs | grep -q 'long = "checkpoint"'"""
+anchor_new = """grep -A16 '^    Ready {' tomlctl/src/cli/types/tasks.rs | grep -q 'long = "checkpoint"'"""
+dedup_id = "857ab80c123088e2"

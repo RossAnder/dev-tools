@@ -947,3 +947,32 @@ scope = [
     "CLAUDE.md",
     "docs/ideas/v2-pipeline.md",
 ]
+
+[[active]]
+slug = "jiggly-exploring-robin"
+last_used = "2026-11-09T21:15:01.6805904Z"
+
+[active.binding]
+branch = "main"
+worktree = "."
+scope = [
+    "tomlctl/src/tasks/**",
+    "tomlctl/src/plan/**",
+    "tomlctl/src/agents/**",
+    "tomlctl/src/cli/**",
+    "tomlctl/src/capabilities.rs",
+    "tomlctl/tests/**",
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "tomlctl/README.md",
+    "glimpse/src/**",
+    "glimpse/Cargo.lock",
+    "claude/agents/**",
+    "claude/commands/**",
+    "claude/skills/**",
+    "claude/workflows/**",
+    "scripts/**",
+    "docs/ideas/**",
+    "docs/plans/v2-planning.md",
+    "CLAUDE.md",
+]

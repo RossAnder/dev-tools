@@ -1,0 +1,39 @@
+slug = "jiggly-exploring-robin"
+plan_path = "docs/plans/jiggly-exploring-robin.md"
+status = "draft"
+created = 2026-11-09
+updated = 2026-11-09
+branch = "main"
+scope = [
+    "tomlctl/src/tasks/**",
+    "tomlctl/src/plan/**",
+    "tomlctl/src/agents/**",
+    "tomlctl/src/cli/**",
+    "tomlctl/src/capabilities.rs",
+    "tomlctl/tests/**",
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "tomlctl/README.md",
+    "glimpse/src/**",
+    "glimpse/Cargo.lock",
+    "claude/agents/**",
+    "claude/commands/**",
+    "claude/skills/**",
+    "claude/workflows/**",
+    "scripts/**",
+    "docs/ideas/**",
+    "docs/plans/v2-planning.md",
+    "CLAUDE.md",
+]
+
+[tasks]
+total = 0
+completed = 0
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/jiggly-exploring-robin/review-ledger.toml"
+optimise_findings = ".claude/flows/jiggly-exploring-robin/optimise-findings.toml"
+execution_record = ".claude/flows/jiggly-exploring-robin/execution-record.toml"
+plan_review_findings = ".claude/flows/jiggly-exploring-robin/plan-review-findings.toml"
+tasks = ".claude/flows/jiggly-exploring-robin/tasks.toml"

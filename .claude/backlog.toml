@@ -9360,7 +9360,7 @@ tags = [
     "deploy",
     "plan-v2",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-09T20:48:25Z
 last_seen = 2026-11-09T20:48:25Z
 seen_count = 1
@@ -9369,6 +9369,8 @@ origin = "backlog"
 context = "scripts/link-v2-review.ps1 and link-v2-review.sh link the review-v2 entries plus plan-v2-review.js only. CLAUDE.md Planning v2 Deploy says the plan-v2 carrier, plan-v2-engine, plan-investigator, plan-challenger, plan-cold-reader, plan-v2-investigate.js and plan-v2-prove.js each need a symlink. Decide whether to extend the entry lists (and rename the scripts) or add a sibling pair; until then link those by hand with ln -s into the Claude config dir."
 base_sha = "5187e3831ccede695696ccde7c5665dbc32a7c30"
 related = ["B-f0558729"]
+promoted = 2026-11-09
+promoted_to = "jiggly-exploring-robin"
 
 [[backlog]]
 id = "B-55a13775"
