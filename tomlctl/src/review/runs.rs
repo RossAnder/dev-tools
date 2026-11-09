@@ -20,7 +20,7 @@ use crate::io::{read_prose, relativise, relativise_under, repo_or_cwd_root};
 use crate::output::print_json_compact;
 
 /// The run fields `run start` takes through `--set` / `--set-json`.
-const START_FIELDS: &[&str] = &["scope", "models", "substrate"];
+const START_FIELDS: &[&str] = &["scope", "models", "substrate", "rechecks"];
 /// The run fields `run update` patches.
 const UPDATE_FIELDS: &[&str] = &["signals", "waivers", "audit", "agents", "baselines"];
 

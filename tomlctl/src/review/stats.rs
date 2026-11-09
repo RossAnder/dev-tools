@@ -7,7 +7,9 @@
 //! field; its `reason` opens with `nearest <tag>:`, and a probe without one
 //! groups under `untagged`. Calibration exemplars come only from user
 //! dismissals, v1 wontfix reasons and audit overturns, so a verifier's own
-//! refutation never teaches a finder anything.
+//! refutation never teaches a finder anything. `--plan-outcomes` derives a
+//! plan finding's disposition from `tier`, status and `applied`, so it needs
+//! no status of its own.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -30,11 +32,17 @@ const DEFAULT_EXEMPLARS: usize = 5;
 /// Verdict authors whose call is the one an audit can overturn.
 const VERIFYING: &[&str] = &["verifier", "panel", "checker"];
 
+/// The model of a run whose `models` names none for the verifying role.
+const UNKNOWN_MODEL: &str = "unknown";
+/// The tier key of a plan finding that never settled open in flow mode.
+const UNTIERED: &str = "none";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Axis {
     Lens,
     Probe,
     Run,
+    Model,
 }
 
 impl Axis {
@@ -43,6 +51,7 @@ impl Axis {
             "lens" => Some(Self::Lens),
             "probe" => Some(Self::Probe),
             "run" => Some(Self::Run),
+            "model" => Some(Self::Model),
             _ => None,
         }
     }
@@ -52,6 +61,7 @@ impl Axis {
             Self::Lens => "lens",
             Self::Probe => "probe",
             Self::Run => "run",
+            Self::Model => "model",
         }
     }
 }
@@ -69,11 +79,17 @@ struct Loaded {
 pub(crate) fn run(args: ReviewStatsArgs) -> Result<()> {
     let axis = match args.by.as_deref() {
         None => None,
-        Some(raw) => Some(
-            Axis::parse(raw)
-                .ok_or_else(|| invalid(format!("--by {raw:?} is not one of lens, probe, run")))?,
-        ),
+        Some(raw) => Some(Axis::parse(raw).ok_or_else(|| {
+            invalid(format!(
+                "--by {raw:?} is not one of lens, probe, run, model"
+            ))
+        })?),
     };
+    if args.plan_outcomes && args.store.scope.is_some() {
+        return Err(invalid(
+            "review stats --plan-outcomes reads a flow's plan runs, so name the flow with --slug, or pass --all",
+        ));
+    }
     let family =
         match args.family.as_deref() {
             None => None,
@@ -89,7 +105,7 @@ pub(crate) fn run(args: ReviewStatsArgs) -> Result<()> {
         "ok": true,
         "stores": stores.iter().map(|s| s.label.clone()).collect::<Vec<_>>(),
     });
-    let sections = args.outcomes || args.escapes || args.calibration;
+    let sections = args.outcomes || args.escapes || args.calibration || args.plan_outcomes;
     if axis.is_some() || !sections {
         let axis = axis.unwrap_or(Axis::Lens);
         out["by"] = json!(axis.as_str());
@@ -108,6 +124,9 @@ pub(crate) fn run(args: ReviewStatsArgs) -> Result<()> {
     if args.calibration {
         let n = args.exemplars.unwrap_or(DEFAULT_EXEMPLARS);
         out["calibration"] = calibration(&view, linked.as_deref().unwrap_or_default(), n);
+    }
+    if args.plan_outcomes {
+        out["plan_outcomes"] = plan_outcomes(&View::new(&stores, Some(Family::Plan)));
     }
     crate::output::print_json_line(&out)
 }
@@ -251,8 +270,18 @@ impl StoreView<'_> {
 /// `review verdict` applies, counting only verifying authors, so the audit
 /// never judges its own call.
 fn verifier_call(route: Option<Route>, verdicts: &[&Verdict]) -> Option<bool> {
-    settle(route, verdicts, |v| VERIFYING.contains(&v.by.as_str()))
-        .map(|settled| settled.verdict == "refuted")
+    deciding_verifier(route, verdicts).map(|(refuted, _)| refuted)
+}
+
+/// [`verifier_call`] with the verdict that decided it, the latest deciding
+/// seat on a panel.
+fn deciding_verifier<'v>(
+    route: Option<Route>,
+    verdicts: &[&'v Verdict],
+) -> Option<(bool, &'v Verdict)> {
+    let settled = settle(route, verdicts, |v| VERIFYING.contains(&v.by.as_str()))?;
+    let &last = settled.deciding.last()?;
+    Some((settled.verdict == "refuted", verdicts[last]))
 }
 
 /// Whether the latest audit verdict judged a decided verifying call, and that
@@ -370,7 +399,7 @@ impl Tally {
                 row["waiver_rate"] = rate(self.waived_runs.len(), considered);
             }
             Axis::Probe => row["probes"] = json!(self.probes),
-            Axis::Run => {}
+            Axis::Run | Axis::Model => {}
         }
         row
     }
@@ -393,7 +422,90 @@ fn group(view: &View, axis: Axis) -> Vec<JsonValue> {
         Axis::Lens => by_lens(view),
         Axis::Probe => by_probe(view),
         Axis::Run => by_run(view),
+        Axis::Model => by_model(view),
     }
+}
+
+/// The `models` key naming the model a verifying author ran on; panel seats
+/// are verifiers.
+fn model_role(by: &str) -> &'static str {
+    if by == "checker" {
+        "checker"
+    } else {
+        "verifier"
+    }
+}
+
+/// The model `run`'s `models` records for `role`, else [`UNKNOWN_MODEL`].
+fn run_model(store: &Store, run: &str, role: &str) -> String {
+    store
+        .runs
+        .iter()
+        .find(|r| r.id == run)
+        .and_then(|r| r.rest.get("models"))
+        .and_then(toml::Value::as_table)
+        .and_then(|models| models.get(role))
+        .and_then(toml::Value::as_str)
+        .map(str::trim)
+        .filter(|m| !m.is_empty())
+        .unwrap_or(UNKNOWN_MODEL)
+        .to_string()
+}
+
+/// Verified findings and their audit overturns per model of the verifying
+/// call, read from the `models` of the run its deciding verdict was written
+/// in, so the audit's own model never decides the group.
+fn by_model(view: &View) -> Vec<JsonValue> {
+    #[derive(Default)]
+    struct ModelTally {
+        roles: BTreeSet<&'static str>,
+        runs: BTreeSet<String>,
+        verified: usize,
+        refuted: usize,
+        audited: usize,
+        overturned: usize,
+    }
+    let mut tallies: BTreeMap<String, ModelTally> = BTreeMap::new();
+    for sv in &view.stores {
+        for finding in &sv.findings {
+            let verdicts = sv.verdicts_of(&finding.id);
+            let Some((refuted, deciding)) = deciding_verifier(finding.route, verdicts) else {
+                continue;
+            };
+            let run = if deciding.run.is_empty() {
+                &finding.run
+            } else {
+                &deciding.run
+            };
+            let role = model_role(&deciding.by);
+            let tally = tallies
+                .entry(run_model(&sv.loaded.store, run, role))
+                .or_default();
+            tally.roles.insert(role);
+            tally.runs.insert(sv.run_key(run));
+            tally.verified += 1;
+            tally.refuted += usize::from(refuted);
+            let (audited, overturned) = overturn(finding.route, verdicts);
+            tally.audited += usize::from(audited);
+            tally.overturned += usize::from(overturned.is_some());
+        }
+    }
+    tallies
+        .iter()
+        .map(|(model, t)| {
+            json!({
+                "key": model,
+                "roles": t.roles,
+                "runs": t.runs.len(),
+                "verified": t.verified,
+                "refuted": t.refuted,
+                "refute_rate": rate(t.refuted, t.verified),
+                "audited": t.audited,
+                "overturned": t.overturned,
+                "audit_overturn_rate": rate(t.overturned, t.audited),
+            })
+        })
+        .collect()
 }
 
 fn by_lens(view: &View) -> Vec<JsonValue> {
@@ -680,6 +792,213 @@ fn escapes(view: &View) -> JsonValue {
     })
 }
 
+/// A plan finding's disposition, from its frozen `tier`, its status and who
+/// applied it. A non-advisory finding dismissed without an edit was put to
+/// the user and refused; any other row reads as its status.
+fn disposition(tier: &str, finding: &Finding) -> &'static str {
+    let status = finding.status();
+    let applied_by = finding
+        .rest
+        .get("applied")
+        .and_then(toml::Value::as_table)
+        .map(|a| {
+            a.get("by")
+                .and_then(toml::Value::as_str)
+                .unwrap_or_default()
+        });
+    match applied_by {
+        Some(by) if status == FindingStatus::Resolved => match (by, tier) {
+            ("user", _) => "user-accepted",
+            (_, "cited") => "applied-disclosed",
+            _ => "applied",
+        },
+        _ if status == FindingStatus::Dismissed && !matches!(tier, "advisory" | UNTIERED) => {
+            "user-vetoed"
+        }
+        _ => status.as_str(),
+    }
+}
+
+/// An `applied.old` or `applied.new`, which hold JSON text; text that does
+/// not decode is taken as the string itself.
+fn applied_value(applied: &toml::Table, key: &str) -> JsonValue {
+    let raw = applied
+        .get(key)
+        .and_then(toml::Value::as_str)
+        .unwrap_or("null");
+    serde_json::from_str(raw).unwrap_or_else(|_| JsonValue::String(raw.to_string()))
+}
+
+/// Characters of text a value holds: string lengths and scalar renderings,
+/// summed through lists and tables, keys excluded.
+fn text_size(value: &JsonValue) -> i64 {
+    let n = match value {
+        JsonValue::Null => 0,
+        JsonValue::String(s) => s.chars().count(),
+        JsonValue::Bool(_) | JsonValue::Number(_) => value.to_string().chars().count(),
+        JsonValue::Array(items) => return items.iter().map(text_size).sum(),
+        JsonValue::Object(map) => return map.values().map(text_size).sum(),
+    };
+    i64::try_from(n).unwrap_or(i64::MAX)
+}
+
+#[derive(Default)]
+struct PlanTally {
+    tiers: BTreeMap<String, BTreeMap<&'static str, usize>>,
+    accepted: usize,
+    vetoed: usize,
+    edits: usize,
+    /// Net: an edit that shortens a value subtracts.
+    chars_added: i64,
+    entries_added: usize,
+    entries_removed: usize,
+    /// `None` until a run with `rechecks` is counted.
+    recheck_yield: Option<usize>,
+    agents: Option<u64>,
+    minutes: Option<f64>,
+}
+
+impl PlanTally {
+    fn add_finding(&mut self, finding: &Finding) {
+        let tier = finding
+            .rest
+            .get("tier")
+            .and_then(toml::Value::as_str)
+            .filter(|t| !t.is_empty())
+            .unwrap_or(UNTIERED);
+        let disposition = disposition(tier, finding);
+        *self
+            .tiers
+            .entry(tier.to_string())
+            .or_default()
+            .entry(disposition)
+            .or_default() += 1;
+        match disposition {
+            "user-accepted" => self.accepted += 1,
+            "user-vetoed" => self.vetoed += 1,
+            _ => {}
+        }
+        if !matches!(
+            disposition,
+            "applied" | "applied-disclosed" | "user-accepted"
+        ) {
+            return;
+        }
+        let Some(applied) = finding.rest.get("applied").and_then(toml::Value::as_table) else {
+            return;
+        };
+        let (old, new) = (applied_value(applied, "old"), applied_value(applied, "new"));
+        self.edits += 1;
+        self.chars_added += text_size(&new) - text_size(&old);
+        match (&old, &new) {
+            (JsonValue::Array(before), JsonValue::Array(after)) => {
+                self.entries_added += after.iter().filter(|e| !before.contains(e)).count();
+                self.entries_removed += before.iter().filter(|e| !after.contains(e)).count();
+            }
+            (JsonValue::Null, after) if !after.is_null() => self.entries_added += 1,
+            (before, JsonValue::Null) if !before.is_null() => self.entries_removed += 1,
+            _ => {}
+        }
+    }
+
+    fn add_run(&mut self, run: &store::Run, minted: usize) {
+        if rechecked(run).is_some() {
+            *self.recheck_yield.get_or_insert(0) += minted;
+        }
+        if let Some(agents) = run.agents {
+            *self.agents.get_or_insert(0) += u64::from(agents);
+        }
+        if let Some(minutes) = run_minutes(run) {
+            *self.minutes.get_or_insert(0.0) += minutes;
+        }
+    }
+
+    fn merge(&mut self, other: &Self) {
+        for (tier, dispositions) in &other.tiers {
+            let into = self.tiers.entry(tier.clone()).or_default();
+            for (disposition, n) in dispositions {
+                *into.entry(disposition).or_default() += n;
+            }
+        }
+        self.accepted += other.accepted;
+        self.vetoed += other.vetoed;
+        self.edits += other.edits;
+        self.chars_added += other.chars_added;
+        self.entries_added += other.entries_added;
+        self.entries_removed += other.entries_removed;
+        if let Some(n) = other.recheck_yield {
+            *self.recheck_yield.get_or_insert(0) += n;
+        }
+        if let Some(n) = other.agents {
+            *self.agents.get_or_insert(0) += n;
+        }
+        if let Some(n) = other.minutes {
+            *self.minutes.get_or_insert(0.0) += n;
+        }
+    }
+
+    fn to_json(&self) -> JsonValue {
+        json!({
+            "tiers": self.tiers,
+            "veto_rate": rate(self.vetoed, self.accepted + self.vetoed),
+            "growth": {
+                "edits": self.edits,
+                "chars_added": self.chars_added,
+                "entries_added": self.entries_added,
+                "entries_removed": self.entries_removed,
+            },
+            "recheck_yield": self.recheck_yield,
+            "cost": {
+                "agents": self.agents,
+                "minutes": self.minutes.map(|m| (m * 10.0).round() / 10.0),
+            },
+        })
+    }
+}
+
+/// The run a re-check run re-checks.
+fn rechecked(run: &store::Run) -> Option<&str> {
+    run.rest
+        .get("rechecks")
+        .and_then(toml::Value::as_str)
+        .filter(|r| !r.is_empty())
+}
+
+/// Minutes from `started` to `finished`; `None` for an unfinished run or a
+/// stamp that does not parse.
+fn run_minutes(run: &store::Run) -> Option<f64> {
+    let started: jiff::Timestamp = run.started.parse().ok()?;
+    let finished: jiff::Timestamp = run.finished.parse().ok()?;
+    Some(finished.duration_since(started).as_secs_f64() / 60.0)
+}
+
+/// Per plan run of a flow store, then in total: tier by disposition, the
+/// user-veto rate, the growth applied edits caused, the findings a re-check
+/// run minted, and cost. A flow-less store holds no flow-mode run.
+fn plan_outcomes(view: &View) -> JsonValue {
+    let mut runs = Vec::new();
+    let mut total = PlanTally::default();
+    for sv in view.stores.iter().filter(|sv| sv.loaded.slug.is_some()) {
+        for run in &sv.runs {
+            let mut tally = PlanTally::default();
+            let minted: Vec<&&Finding> = sv.findings.iter().filter(|f| f.run == run.id).collect();
+            for finding in &minted {
+                tally.add_finding(finding);
+            }
+            tally.add_run(run, minted.len());
+            let mut row = tally.to_json();
+            row["store"] = json!(sv.loaded.label);
+            row["run"] = json!(run.id);
+            row["rechecks"] = json!(rechecked(run));
+            runs.push(row);
+            total.merge(&tally);
+        }
+    }
+    let mut total_json = total.to_json();
+    total_json["runs"] = json!(runs.len());
+    json!({"runs": runs, "total": total_json})
+}
+
 /// The text up to and including the first `.`, `!` or `?` that ends a
 /// sentence, trimmed; the whole text when there is none.
 fn first_sentence(text: &str) -> String {
@@ -797,6 +1116,201 @@ mod tests {
         );
         assert_eq!(first_sentence("see v1.2 notes! more"), "see v1.2 notes!");
         assert_eq!(first_sentence("no terminator"), "no terminator");
+    }
+
+    const PLAN_STORE: &str = r#"
+schema_version = 1
+
+[[runs]]
+id = "U1"
+command = "review-plan-v2"
+family = "plan"
+depth = "standard"
+started = "2026-11-09T10:00:00Z"
+finished = "2026-11-09T10:30:00Z"
+models = { verifier = "opus", checker = "haiku" }
+agents = 10
+
+[[runs]]
+id = "U2"
+command = "review-plan-v2"
+family = "plan"
+depth = "quick"
+started = "2026-11-09T11:00:00Z"
+models = { verifier = "sonnet" }
+rechecks = "U1"
+
+[[findings]]
+id = "F1"
+run = "U1"
+family = "plan"
+kind = "defect"
+lens = "feasibility"
+route = "verifier"
+tier = "mechanical"
+status = "resolved"
+applied = { by = "tool", old = '["a.rs"]', new = '["b.rs", "c.rs"]' }
+
+[[findings]]
+id = "F2"
+run = "U1"
+family = "plan"
+kind = "cleanup"
+lens = "feasibility"
+route = "checker"
+tier = "cited"
+status = "resolved"
+applied = { by = "tool", old = '"ab"', new = '"abcd"' }
+
+[[findings]]
+id = "F3"
+run = "U1"
+family = "plan"
+kind = "defect"
+lens = "intent"
+route = "verifier"
+tier = "user"
+status = "resolved"
+applied = { by = "user", old = "null", new = '"x"' }
+
+[[findings]]
+id = "F4"
+run = "U1"
+family = "plan"
+kind = "defect"
+lens = "intent"
+route = "verifier"
+tier = "user"
+status = "dismissed"
+dismiss_reason = "keep it"
+
+[[findings]]
+id = "F5"
+run = "U1"
+family = "plan"
+kind = "advisory"
+lens = "intent"
+route = "none"
+tier = "advisory"
+status = "parked"
+park_reason = "later"
+
+[[findings]]
+id = "F6"
+run = "U2"
+family = "plan"
+kind = "defect"
+lens = "feasibility"
+route = "verifier"
+status = "open"
+
+[[verdicts]]
+finding = "F1"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+
+[[verdicts]]
+finding = "F1"
+run = "U2"
+by = "audit"
+verdict = "refuted"
+
+[[verdicts]]
+finding = "F2"
+run = "U1"
+by = "checker"
+verdict = "confirmed"
+
+[[verdicts]]
+finding = "F2"
+run = "U2"
+by = "audit"
+verdict = "confirmed"
+
+[[verdicts]]
+finding = "F6"
+run = "U2"
+by = "verifier"
+verdict = "refuted"
+"#;
+
+    fn plan_loaded() -> Vec<Loaded> {
+        let doc: toml::Value = toml::from_str(PLAN_STORE).expect("fixture parses");
+        vec![Loaded {
+            label: ".claude/flows/demo/review-v2.toml".to_string(),
+            path: PathBuf::from("review-v2.toml"),
+            slug: Some("demo".to_string()),
+            scope: None,
+            store: store::from_toml(&doc).expect("fixture loads"),
+        }]
+    }
+
+    #[test]
+    fn plan_outcomes_derive_dispositions_growth_and_cost() {
+        let stores = plan_loaded();
+        let out = plan_outcomes(&View::new(&stores, Some(Family::Plan)));
+        let first = &out["runs"][0];
+        assert_eq!(
+            first["tiers"],
+            json!({
+                "advisory": {"parked": 1},
+                "cited": {"applied-disclosed": 1},
+                "mechanical": {"applied": 1},
+                "user": {"user-accepted": 1, "user-vetoed": 1},
+            })
+        );
+        assert_eq!(first["veto_rate"], json!(0.5));
+        assert_eq!(
+            first["growth"],
+            json!({"edits": 3, "chars_added": 7, "entries_added": 3, "entries_removed": 1})
+        );
+        assert_eq!(first["rechecks"], JsonValue::Null);
+        assert_eq!(first["recheck_yield"], JsonValue::Null);
+        assert_eq!(first["cost"], json!({"agents": 10, "minutes": 30.0}));
+        let second = &out["runs"][1];
+        assert_eq!(second["rechecks"], "U1");
+        assert_eq!(second["recheck_yield"], 1);
+        assert_eq!(second["tiers"], json!({"none": {"open": 1}}));
+        assert_eq!(second["cost"], json!({"agents": null, "minutes": null}));
+        assert_eq!(out["total"]["runs"], 2);
+        assert_eq!(out["total"]["recheck_yield"], 1);
+        assert_eq!(out["total"]["growth"]["edits"], 3);
+    }
+
+    #[test]
+    fn overturns_group_by_the_verifying_role_model() {
+        let stores = plan_loaded();
+        let rows = by_model(&View::new(&stores, None));
+        let keyed: BTreeMap<&str, &JsonValue> = rows
+            .iter()
+            .map(|r| (r["key"].as_str().unwrap(), r))
+            .collect();
+        assert_eq!(
+            keyed.keys().copied().collect::<Vec<_>>(),
+            ["haiku", "opus", "sonnet"]
+        );
+        assert_eq!(keyed["opus"]["audited"], 1);
+        assert_eq!(keyed["opus"]["overturned"], 1);
+        assert_eq!(keyed["opus"]["roles"], json!(["verifier"]));
+        assert_eq!(keyed["haiku"]["audited"], 1);
+        assert_eq!(keyed["haiku"]["overturned"], 0);
+        assert_eq!(keyed["haiku"]["roles"], json!(["checker"]));
+        assert_eq!(keyed["sonnet"]["verified"], 1);
+        assert_eq!(keyed["sonnet"]["refuted"], 1);
+        assert_eq!(keyed["sonnet"]["audited"], 0);
+    }
+
+    #[test]
+    fn a_run_without_models_groups_as_unknown() {
+        let mut stores = plan_loaded();
+        for run in &mut stores[0].store.runs {
+            run.rest.remove("models");
+        }
+        let rows = by_model(&View::new(&stores, None));
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["key"], UNKNOWN_MODEL);
+        assert_eq!(rows[0]["verified"], 3);
     }
 
     #[test]

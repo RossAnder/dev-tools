@@ -58,6 +58,10 @@ pub(crate) enum ReviewOp {
     /// Disposition findings, moving only those still at `--expect-status`.
     Triage(ReviewTriageArgs),
 
+    /// Write the record edits open plan findings on a v2 flow carry, by tier,
+    /// each compare-and-set against its `expect`.
+    Apply(ReviewApplyArgs),
+
     /// Yield, refute, audit and outcome rates per lens, probe or run. Writes nothing.
     Stats(ReviewStatsArgs),
 
@@ -550,6 +554,32 @@ pub(crate) struct ReviewTriageArgs {
     pub(crate) integrity: WriteIntegrityArgs,
 }
 
+#[derive(Args)]
+pub(crate) struct ReviewApplyArgs {
+    #[arg(
+        value_name = "ID,...",
+        required = true,
+        num_args = 1..,
+        value_delimiter = ',',
+        help = "Finding ids, comma- or space-separated"
+    )]
+    pub(crate) ids: Vec<String>,
+    #[command(flatten)]
+    pub(crate) store: ReviewStore,
+    #[arg(
+        long = "user-accepted",
+        help = "The user accepted these edits: admits user-tier rows and an approved plan, and records `by = user`"
+    )]
+    pub(crate) user_accepted: bool,
+    #[arg(
+        long = "dry-run",
+        help = "Preview the operation without writing. Emits the envelope with dry_run: true; no file or sidecar touch."
+    )]
+    pub(crate) dry_run: bool,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
 // A companion flag's `requires` on a member of the required mode group goes
 // unenforced, so each companion instead conflicts with every other mode.
 const NOT_DEFER: &[&str] = &[
@@ -655,8 +685,17 @@ pub(crate) struct ReviewStatsArgs {
     pub(crate) store: ReviewStatsStore,
     #[arg(long = "family", value_name = "FAMILY", help = "code|perf|plan")]
     pub(crate) family: Option<String>,
-    #[arg(long = "by", value_name = "AXIS", help = "lens|probe|run")]
+    #[arg(
+        long = "by",
+        value_name = "AXIS",
+        help = "lens|probe|run|model; `model` groups audit overturns by the verifying role's model in the run's `models`"
+    )]
     pub(crate) by: Option<String>,
+    #[arg(
+        long = "plan-outcomes",
+        help = "Per plan run of a flow: tier by disposition, user-veto rate, edit growth, re-check yield and cost"
+    )]
+    pub(crate) plan_outcomes: bool,
     #[arg(
         long = "outcomes",
         help = "Join exported findings to their v1 status through `v2_ref`"

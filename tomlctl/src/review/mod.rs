@@ -8,6 +8,7 @@ mod matching;
 mod store;
 
 mod add;
+mod apply;
 mod catalogue_cmd;
 mod cells;
 mod digest;
@@ -19,6 +20,8 @@ mod schema_out;
 mod stats;
 mod survey;
 mod sync;
+mod target;
+mod tier;
 mod triage;
 mod verdict;
 

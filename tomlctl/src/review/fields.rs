@@ -287,6 +287,8 @@ pub(crate) enum Ty {
     StrList,
     Table,
     TableList,
+    /// Any JSON value; the store keeps it as JSON text.
+    Any,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -447,6 +449,8 @@ const CITATION: [Vis; 8] = [N, N, N, R, R, R, N, R];
 const AUDIT_ONLY: [Vis; 8] = [N, N, N, N, N, R, N, N];
 const CELL_ASSIGNMENT: [Vis; 8] = [R, N, N, N, R, N, N, R];
 const RECORD_STATE: [Vis; 8] = [N, N, N, N, R, N, N, R];
+const TARGET: [Vis; 8] = [R, R, N, R, R, R, N, R];
+const TIER: [Vis; 8] = [N, N, N, R, R, R, N, R];
 
 use Record::{Cell, Finding, Run, Verdict};
 
@@ -479,6 +483,7 @@ pub(crate) const FIELDS: &[FieldSpec] = &[
     field(Run, "agents", Ty::Int, RECORD_STATE),
     field(Run, "counts", Ty::Table, RECORD_STATE).computed(),
     field(Run, "audit", Ty::Table, RECORD_STATE),
+    field(Run, "rechecks", Ty::Str, RECORD_STATE),
     field(Run, "incomplete", Ty::Str, RECORD_STATE).computed(),
     // cells
     field(Cell, "id", Ty::Str, CELL_ASSIGNMENT).computed(),
@@ -521,9 +526,9 @@ pub(crate) const FIELDS: &[FieldSpec] = &[
     field(Finding, "file", Ty::Str, IDENT)
         .path(PathForm::Path)
         .required(),
-    field(Finding, "line", Ty::Int, IDENT)
-        .range(1, i64::MAX)
-        .need(Need::RequiredFor(DEFECT_OR_CLEANUP)),
+    // `review add` requires `line` on a defect or cleanup outside a v2 flow,
+    // whose findings name a record in `target` instead.
+    field(Finding, "line", Ty::Int, IDENT).range(1, i64::MAX),
     field(Finding, "symbol", Ty::Str, IDENT),
     field(Finding, "summary", Ty::Str, IDENT)
         .cap(160)
@@ -601,10 +606,11 @@ pub(crate) const FIELDS: &[FieldSpec] = &[
         .kinds(KindSet::ADVISORY)
         .need(Need::WhenChallenge),
     // findings: plan family
+    // Required by `review add` on a markdown plan's defect or cleanup, and
+    // refused on a v2 flow.
     field(Finding, "plan_section", Ty::Str, PLAN)
         .plan_only()
-        .cap(200)
-        .need(Need::RequiredFor(DEFECT_OR_CLEANUP)),
+        .cap(200),
     field(Finding, "anchor_old", Ty::Str, PLAN)
         .plan_only()
         .kinds(DEFECT_OR_CLEANUP)
@@ -613,6 +619,22 @@ pub(crate) const FIELDS: &[FieldSpec] = &[
         .plan_only()
         .kinds(DEFECT_OR_CLEANUP)
         .cap(800),
+    field(Finding, "target", Ty::Str, TARGET)
+        .plan_only()
+        .cap(300),
+    field(Finding, "expect", Ty::Any, PLAN)
+        .plan_only()
+        .kinds(DEFECT_OR_CLEANUP),
+    field(Finding, "new", Ty::Any, PLAN)
+        .plan_only()
+        .kinds(DEFECT_OR_CLEANUP),
+    field(Finding, "proof", Ty::Table, PLAN)
+        .plan_only()
+        .kinds(DEFECT_OR_CLEANUP),
+    field(Finding, "tier", Ty::Str, TIER)
+        .values(&["mechanical", "cited", "advisory", "user"])
+        .computed(),
+    field(Finding, "applied", Ty::Table, TIER).computed(),
     // findings: identity links and dispositions
     field(Finding, "same_as", Ty::Str, SAME_AS),
     field(Finding, "depends_on", Ty::StrList, DEPENDS),
@@ -858,6 +880,7 @@ fn check_value(spec: &FieldSpec, value: &JsonValue) -> std::result::Result<(), S
                 _ => Ok(()),
             }
         }
+        Ty::Any => Ok(()),
         Ty::Bool => value
             .as_bool()
             .map(|_| ())
@@ -1325,6 +1348,13 @@ mod tests {
         (Finding, "plan_section", None, "- R - R - R - R"),
         (Finding, "anchor_old", None, "- R - R - R - R"),
         (Finding, "anchor_new", None, "- R - R - R - R"),
+        (Finding, "target", None, "R R - R R R - R"),
+        (Finding, "expect", None, "- R - R - R - R"),
+        (Finding, "new", None, "- R - R - R - R"),
+        (Finding, "proof", None, "- R - R - R - R"),
+        (Finding, "tier", None, "- - - R R R - R"),
+        (Finding, "applied", None, "- - - R R R - R"),
+        (Run, "rechecks", None, "- - - - R - - R"),
         (Finding, "edit", None, "- rt R R C R - R"),
         (Finding, "direction", None, "- rt R R C R - -"),
         (Finding, "old", None, "- rt R R C R - -"),

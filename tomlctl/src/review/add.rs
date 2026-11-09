@@ -8,6 +8,7 @@
 //! the lock; the seal, candidates, `same_as` and minting run under it.
 //! Per-cell count caps are the method's ceilings and are not enforced here.
 
+use std::ffi::OsStr;
 use std::fmt;
 use std::path::Path;
 
@@ -22,6 +23,8 @@ use super::fields::{
 use super::invalid;
 use super::matching::{self, Site};
 use super::store::{self, Cell, Finding, Minted, Run, Store, Target};
+use super::target::{self as records, RecordTarget};
+use super::tier;
 use crate::cli::{ReadIntegrityArgs, ReviewAddArgs};
 use crate::io::{read_ndjson_source, repo_or_cwd_root};
 use crate::output::print_json_compact;
@@ -29,6 +32,10 @@ use crate::output::print_json_compact;
 const VERB: &str = "review add";
 /// How far from `line` a cleanup's `old` text may start.
 const OLD_WINDOW: u32 = 20;
+/// The markdown-plan fields a v2 flow's findings replace with `target`.
+const MARKDOWN_PLAN_FIELDS: &[&str] = &["plan_section", "anchor_old", "anchor_new"];
+/// How much of a record's current value an `expect` refusal quotes.
+const QUOTED_CHARS: usize = 200;
 /// The in-lock discovery that `review cover` sealed the cell after the
 /// pre-lock check passed; the caller reloads the store to print its ids.
 #[derive(Debug)]
@@ -96,11 +103,13 @@ pub(crate) fn run(target: &Target, args: ReviewAddArgs) -> Result<()> {
         return refuse_sealed(&stored, cell);
     }
     let globs = run_catalogue(&root, run)?.routing().compile()?;
+    let slug = store_slug(target);
+    let flow = flow_slug(&root, slug.as_deref(), run.family);
 
     let mut ready = Vec::new();
     let mut refused = Vec::new();
     for (line, row) in rows {
-        match prepare(line, row, run, cell, &root, &globs) {
+        match prepare(line, row, run, cell, &root, slug.as_deref(), &globs) {
             Ok(prepared) => ready.push(prepared),
             Err(reasons) => refused.push(json!({"line": line, "reasons": reasons})),
         }
@@ -135,7 +144,7 @@ pub(crate) fn run(target: &Target, args: ReviewAddArgs) -> Result<()> {
                 .collect();
             let mut rows = Vec::new();
             for prepared in &ready {
-                match finish_row(prepared, family, &pool, &run_id, &cell_id, &today) {
+                match finish_row(prepared, family, flow, &pool, &run_id, &cell_id, &today) {
                     Ok(row) => rows.push(row),
                     Err(reasons) => {
                         refused.push(json!({"line": prepared.line, "reasons": reasons}));
@@ -257,14 +266,16 @@ pub(super) fn str_of<'a>(row: &'a Map<String, JsonValue>, key: &str) -> Option<&
         .filter(|s| !s.is_empty())
 }
 
-/// The checks that need no store: the field catalogue, the cell's concerns,
-/// `old` and `anchor_old` against the files, and the route.
+/// The checks that need no review store: the field catalogue, the cell's
+/// concerns, the record target, `old` and `anchor_old` against the files,
+/// and the route.
 fn prepare(
     line: usize,
     row: Map<String, JsonValue>,
     run: &Run,
     cell: &Cell,
     root: &Path,
+    slug: Option<&str>,
     globs: &RoutingGlobs,
 ) -> std::result::Result<Prepared, Vec<String>> {
     let reasons = field_refusals(root, &row, run.family, Some(cell));
@@ -274,6 +285,10 @@ fn prepare(
     let kind = str_of(&row, "kind")
         .and_then(Kind::parse)
         .expect("validate_row accepts only a known kind");
+    let reasons = record_refusals(root, slug, &row, kind, run.family);
+    if !reasons.is_empty() {
+        return Err(reasons);
+    }
     let reasons = text_refusals(root, &row, kind, run.family);
     if !reasons.is_empty() {
         return Err(reasons);
@@ -347,6 +362,205 @@ pub(super) fn text_refusals(
         }
     }
     reasons
+}
+
+/// The flow slug of a per-flow store, or `None` for a flow-less `--scope` one.
+pub(super) fn store_slug(target: &Target) -> Option<String> {
+    let flow = target.path.parent()?;
+    if flow.parent()?.file_name()? != OsStr::new("flows") {
+        return None;
+    }
+    flow.file_name()?.to_str().map(str::to_string)
+}
+
+/// `slug` when a `family` row on its store is in flow mode: a plan finding on
+/// a flow that holds a v2 `plan.toml`.
+fn flow_slug<'s>(root: &Path, slug: Option<&'s str>, family: Family) -> Option<&'s str> {
+    let slug = slug.filter(|_| family == Family::Plan)?;
+    let plan = root
+        .join(".claude")
+        .join("flows")
+        .join(slug)
+        .join("plan.toml");
+    plan.is_file().then_some(slug)
+}
+
+fn blank(row: &Map<String, JsonValue>, key: &str) -> bool {
+    match row.get(key) {
+        None | Some(JsonValue::Null) => true,
+        Some(JsonValue::String(s)) => s.trim().is_empty(),
+        Some(_) => false,
+    }
+}
+
+/// The record-target rules. On a v2 flow a defect or cleanup names its record
+/// in `target`, and any `target` must parse and resolve, match the row's
+/// `file` and `symbol`, carry an `expect` equal to the record's current value,
+/// and hold its `proof`. Elsewhere a defect or cleanup needs `line`, and a
+/// markdown plan's needs `plan_section`.
+pub(super) fn record_refusals(
+    root: &Path,
+    slug: Option<&str>,
+    row: &Map<String, JsonValue>,
+    kind: Kind,
+    family: Family,
+) -> Vec<String> {
+    let mut reasons = Vec::new();
+    let edits = kind != Kind::Advisory;
+    let Some(slug) = flow_slug(root, slug, family) else {
+        if edits && blank(row, "line") {
+            reasons.push("`line` is required".to_string());
+        }
+        if edits && family == Family::Plan && blank(row, "plan_section") {
+            reasons.push("`plan_section` is required".to_string());
+        }
+        return reasons;
+    };
+    for key in MARKDOWN_PLAN_FIELDS
+        .iter()
+        .filter(|k| row.contains_key(**k))
+    {
+        reasons.push(format!(
+            "`{key}` does not apply on a v2 flow; name the record in `target`"
+        ));
+    }
+    let Some(raw) = str_of(row, "target") else {
+        if edits {
+            reasons.push("`target` is required on a v2 flow".to_string());
+        }
+        return reasons;
+    };
+    let target = match records::parse(raw) {
+        Ok(target) => target,
+        Err(err) => {
+            reasons.push(format!("{err:#}"));
+            return reasons;
+        }
+    };
+    let file = target.file(slug);
+    let given = str_of(row, "file").unwrap_or_default();
+    if given != file {
+        reasons.push(format!(
+            "`file` is {given:?}; target `{target}` is in {file}"
+        ));
+    }
+    let symbol = target.symbol();
+    if let Some(given) = str_of(row, "symbol")
+        && given != symbol
+    {
+        reasons.push(format!(
+            "`symbol` is {given:?}; target `{target}` names {symbol:?}"
+        ));
+    }
+    let current = match records::resolve(slug, &target) {
+        Ok(current) => current,
+        Err(err) => {
+            reasons.push(format!("{err:#}"));
+            return reasons;
+        }
+    };
+    let expect = row.get("expect");
+    let new = row.get("new");
+    let append = matches!(target, RecordTarget::SpecEntry { append: true, .. });
+    if new.is_some() && expect.is_none() && !append {
+        reasons.push(
+            "`new` needs `expect`, the value it replaces, except on a `[+]` append".to_string(),
+        );
+    }
+    let accept = matches!(
+        target,
+        RecordTarget::SpecField {
+            field: "accept",
+            ..
+        } | RecordTarget::SpecEntry { list: "accept", .. }
+    );
+    if accept && [expect, new].into_iter().flatten().any(carries_probe) {
+        reasons.push(
+            "`probe` is tool-written, so neither `expect` nor `new` may carry it".to_string(),
+        );
+    }
+    if let Some(expect) = expect
+        && let Err(reason) = expect_holds(&target, &current, expect)
+    {
+        reasons.push(reason);
+    }
+    if let Some(proof) = row.get("proof").and_then(JsonValue::as_object) {
+        match new {
+            None => reasons.push("`proof` needs `new`, the fix it proves".to_string()),
+            Some(new) => {
+                if let Err(why) = tier::verify_proof(proof, &target, expect, new, slug) {
+                    reasons.push(format!("`proof` does not hold: {why}"));
+                }
+            }
+        }
+    }
+    reasons
+}
+
+/// An accept entry, or any entry of an accept list, holding a `probe` key.
+fn carries_probe(value: &JsonValue) -> bool {
+    let has = |entry: &JsonValue| entry.as_object().is_some_and(|e| e.contains_key("probe"));
+    match value {
+        JsonValue::Array(entries) => entries.iter().any(has),
+        other => has(other),
+    }
+}
+
+/// `expect` against the record's current value: one entry for a list-entry
+/// target, text occurring exactly once for prose, the whole value otherwise.
+/// An `[+]` append replaces nothing, so its `expect` is not compared.
+fn expect_holds(
+    target: &RecordTarget,
+    current: &JsonValue,
+    expect: &JsonValue,
+) -> std::result::Result<(), String> {
+    match target {
+        RecordTarget::SpecEntry { append: true, .. } => Ok(()),
+        RecordTarget::SpecEntry { .. } => {
+            let list = current.as_array().map(Vec::as_slice).unwrap_or_default();
+            records::match_entry(list, expect)
+                .map(|_| ())
+                .map_err(|err| format!("target `{target}`: {err:#}"))
+        }
+        RecordTarget::Brief { .. } | RecordTarget::Design { .. } => {
+            let Some(text) = expect.as_str().filter(|t| !t.is_empty()) else {
+                return Err(format!(
+                    "`expect` on `{target}` must be text that occurs once in it"
+                ));
+            };
+            let section = current.as_str().unwrap_or_default().replace("\r\n", "\n");
+            match occurrences(&section, &text.replace("\r\n", "\n")).len() {
+                1 => Ok(()),
+                0 => Err(format!("`expect` does not occur in `{target}`")),
+                n => Err(format!(
+                    "`expect` occurs {n} times in `{target}`; it must occur exactly once"
+                )),
+            }
+        }
+        _ if current == expect => Ok(()),
+        _ => {
+            let shown = current.to_string();
+            let quoted: String = shown.chars().take(QUOTED_CHARS).collect();
+            let cut = if quoted.len() < shown.len() {
+                "…"
+            } else {
+                ""
+            };
+            Err(format!(
+                "`expect` is not the current value of `{target}`, which is {quoted}{cut}"
+            ))
+        }
+    }
+}
+
+/// Stores `expect` and `new` as JSON text: the TOML store holds no null and
+/// drops an empty value at mint, and a removal's `new` is null.
+pub(super) fn encode_values(row: &mut Map<String, JsonValue>) {
+    for key in ["expect", "new"] {
+        if let Some(value) = row.get_mut(key) {
+            *value = JsonValue::String(value.to_string());
+        }
+    }
 }
 
 /// The row's route by its kind, direction, severity, the run's depth and
@@ -433,7 +647,7 @@ fn heading_level(line: &str) -> Option<usize> {
 /// The bodies of every section of `text` whose heading is `section`, given
 /// with or without its `#` marks. A body runs to the next heading of the
 /// same or a higher level; headings inside fenced code do not count.
-fn section_bodies(text: &str, section: &str) -> Vec<String> {
+pub(super) fn section_bodies(text: &str, section: &str) -> Vec<String> {
     let wanted = section.trim();
     let bare = wanted.trim_start_matches('#').trim();
     let mut bodies = Vec::new();
@@ -504,10 +718,13 @@ pub(super) fn check_anchor_old(
 }
 
 /// Completes a prepared row against the store under the lock: its anchor,
-/// candidates, `same_as`, status and the computed bookkeeping fields.
+/// candidates, `same_as`, status and the computed bookkeeping fields. An
+/// advisory minted `open` on a v2 flow (`flow`) passes no verdict, so its
+/// tier is stamped here.
 fn finish_row(
     prepared: &Prepared,
     family: Family,
+    flow: Option<&str>,
     pool: &[Finding],
     run: &str,
     cell: &str,
@@ -536,6 +753,7 @@ fn finish_row(
     };
 
     let mut row = prepared.row.clone();
+    encode_values(&mut row);
     row.insert("run".into(), json!(run));
     row.insert("cell".into(), json!(cell));
     row.insert("seen_in".into(), json!([run]));
@@ -559,6 +777,17 @@ fn finish_row(
     };
     row.insert("status".into(), json!(status.as_str()));
     row.insert("first_seen".into(), json!(today));
+    if status == FindingStatus::Open
+        && let Some(slug) = flow
+    {
+        match tier::compute(&row, slug, &[]) {
+            Ok(Some(tier)) => {
+                row.insert("tier".into(), json!(tier));
+            }
+            Ok(None) => {}
+            Err(err) => return Err(vec![format!("`tier` cannot be computed: {err:#}")]),
+        }
+    }
     Ok(JsonValue::Object(row))
 }
 
@@ -596,6 +825,122 @@ mod tests {
         let notes = section_bodies(PLAN, "#### Notes");
         assert_eq!(notes.len(), 1);
         assert!(!notes[0].contains("### 5."));
+    }
+
+    const SLUG: &str = "records";
+    const TASKS: &str = "schema_version = 1\n\n[[items]]\nid = 1\nref = \"parse-it\"\n\
+        title = \"Parse it\"\neffort = \"S\"\nstatus = \"pending\"\nfiles = [\"src/a.rs\"]\n\
+        action = \"parse\"\n";
+
+    fn seed(root: &Path, v2: bool) {
+        let flow = root.join(".claude").join("flows").join(SLUG);
+        std::fs::create_dir_all(&flow).unwrap();
+        std::fs::write(flow.join("tasks.toml"), TASKS).unwrap();
+        if v2 {
+            std::fs::write(flow.join("plan.toml"), "schema_version = 1\n").unwrap();
+        }
+    }
+
+    fn plan_row(extra: JsonValue) -> Map<String, JsonValue> {
+        let mut row = json!({
+            "kind": "defect",
+            "file": format!(".claude/flows/{SLUG}/tasks.toml"),
+            "symbol": "parse-it",
+        });
+        for (key, value) in extra.as_object().unwrap() {
+            row[key] = value.clone();
+        }
+        row.as_object().unwrap().clone()
+    }
+
+    fn refusals(row: &Map<String, JsonValue>, family: Family) -> Vec<String> {
+        let root = crate::io::repo_or_cwd_root().unwrap();
+        record_refusals(&root, Some(SLUG), row, Kind::Defect, family)
+    }
+
+    #[test]
+    fn markdown_and_code_rows_need_line_and_plan_section() {
+        crate::test_support::with_root(|root| {
+            seed(root, false);
+            let bare = plan_row(json!({}));
+            assert_eq!(
+                refusals(&bare, Family::Plan),
+                ["`line` is required", "`plan_section` is required"]
+            );
+            assert_eq!(refusals(&bare, Family::Code), ["`line` is required"]);
+            let placed = plan_row(json!({"line": 3, "plan_section": "## Tasks"}));
+            assert!(refusals(&placed, Family::Plan).is_empty());
+        });
+    }
+
+    #[test]
+    fn a_v2_flow_row_names_a_record_with_a_current_expect() {
+        crate::test_support::with_root(|root| {
+            seed(root, true);
+            let good = plan_row(json!({
+                "target": "task:parse-it.action",
+                "expect": "parse",
+                "new": "parse targets",
+            }));
+            assert!(refusals(&good, Family::Plan).is_empty());
+
+            let markdown = plan_row(json!({"plan_section": "## Tasks", "line": 3}));
+            let reasons = refusals(&markdown, Family::Plan);
+            assert!(
+                reasons[0].contains("`plan_section` does not apply"),
+                "{reasons:?}"
+            );
+            assert!(reasons[1].contains("`target` is required"), "{reasons:?}");
+
+            let stale = plan_row(json!({
+                "target": "task:parse-it.action",
+                "expect": "render",
+                "new": "parse targets",
+            }));
+            let reasons = refusals(&stale, Family::Plan);
+            assert_eq!(reasons.len(), 1, "{reasons:?}");
+            assert!(reasons[0].contains("not the current value"), "{reasons:?}");
+
+            let elsewhere = plan_row(json!({
+                "target": "task:parse-it.action",
+                "file": "src/a.rs",
+                "symbol": "other",
+                "new": "parse targets",
+            }));
+            let reasons = refusals(&elsewhere, Family::Plan);
+            assert!(
+                reasons[0].starts_with("`file` is \"src/a.rs\""),
+                "{reasons:?}"
+            );
+            assert!(
+                reasons[1].starts_with("`symbol` is \"other\""),
+                "{reasons:?}"
+            );
+            assert!(
+                reasons[2].starts_with("`new` needs `expect`"),
+                "{reasons:?}"
+            );
+
+            let unknown = plan_row(json!({"target": "task:gone.action", "symbol": "gone"}));
+            let reasons = refusals(&unknown, Family::Plan);
+            assert_eq!(reasons.len(), 1, "{reasons:?}");
+            assert!(
+                reasons[0].contains("no task with ref `gone`"),
+                "{reasons:?}"
+            );
+        });
+    }
+
+    #[test]
+    fn expect_and_new_are_stored_as_json_text() {
+        let mut row = json!({"expect": "a", "new": null, "file": "x"})
+            .as_object()
+            .unwrap()
+            .clone();
+        encode_values(&mut row);
+        assert_eq!(row["expect"], json!("\"a\""));
+        assert_eq!(row["new"], json!("null"));
+        assert_eq!(row["file"], json!("x"));
     }
 
     #[test]

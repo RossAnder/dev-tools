@@ -57,14 +57,15 @@ pub(crate) fn run(target: &Target, args: ReviewVerdictArgs) -> Result<()> {
     // and writes nothing.
     let current = store::load(&target.path, &read)?;
     let mut trial = current.clone();
-    let preview = apply(&mut trial, &inputs);
+    let slug = super::add::store_slug(target);
+    let preview = apply(&mut trial, &inputs, slug.as_deref());
     refuse_if_nothing_landed(&preview, batch)?;
     let unchanged = trial == current;
     let applied = if unchanged {
         preview
     } else {
         store::mutate(&target.path, &args.integrity, |store| {
-            let applied = apply(store, &inputs);
+            let applied = apply(store, &inputs, slug.as_deref());
             refuse_if_nothing_landed(&applied, batch)?;
             Ok(applied)
         })?
@@ -124,13 +125,13 @@ fn refuse_if_nothing_landed(applied: &Applied, batch: bool) -> Result<()> {
 
 /// Upserts each input in order, refusing those that fail a check, and
 /// returns the verdict-return object of each that landed.
-fn apply(store: &mut Store, inputs: &[Input]) -> Applied {
+fn apply(store: &mut Store, inputs: &[Input], slug: Option<&str>) -> Applied {
     let mut applied = Applied {
         returns: Vec::new(),
         refused: Vec::new(),
     };
     for input in inputs {
-        match apply_one(store, input) {
+        match apply_one(store, input, slug) {
             Ok(entry) => applied.returns.push(entry),
             Err(reasons) => {
                 let finding = input.row.get("finding").cloned().unwrap_or(JsonValue::Null);
@@ -145,7 +146,11 @@ fn apply(store: &mut Store, inputs: &[Input]) -> Applied {
     applied
 }
 
-fn apply_one(store: &mut Store, input: &Input) -> std::result::Result<JsonValue, Vec<String>> {
+fn apply_one(
+    store: &mut Store,
+    input: &Input,
+    slug: Option<&str>,
+) -> std::result::Result<JsonValue, Vec<String>> {
     let row = &input.row;
     let text = |key: &str| row.get(key).and_then(JsonValue::as_str).unwrap_or_default();
     let id = text("finding");
@@ -247,6 +252,13 @@ fn apply_one(store: &mut Store, input: &Input) -> std::result::Result<JsonValue,
     }
     if finding.same_as.is_empty() && finding.status().decided_by_verdict() {
         finding.set_status(decided, &[]);
+        if decided == FindingStatus::Open
+            && let Some(slug) = slug
+        {
+            let mine: Vec<&Verdict> = store.verdicts.iter().filter(|v| v.finding == id).collect();
+            super::tier::stamp(&mut store.findings[index], slug, &mine)
+                .map_err(|e| vec![e.to_string()])?;
+        }
     }
 
     let mut entry = json!({"finding": id, "verdict": verdict});

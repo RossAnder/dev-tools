@@ -344,7 +344,7 @@ fn excerpts(root: &Path, finding: &Finding, verdicts: &[Row]) -> JsonValue {
 
 /// A citation's repo-relative path and 1-based line range, or `None` when it
 /// is not a `path:line` / `path:a-b` citation inside the repository.
-fn parse_citation(cite: &str) -> Option<(&str, usize, usize)> {
+pub(super) fn parse_citation(cite: &str) -> Option<(&str, usize, usize)> {
     if cite.chars().any(char::is_whitespace) {
         return None;
     }

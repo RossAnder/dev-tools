@@ -107,6 +107,7 @@ fn property(spec: &FieldSpec) -> JsonValue {
             }
             int
         }
+        Ty::Any => Map::new(),
         Ty::Bool => typed("boolean"),
         Ty::Table => typed("object"),
         Ty::TableList => {

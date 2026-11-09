@@ -180,14 +180,15 @@ pub(crate) fn run(target: &Target, args: ReviewTriageArgs) -> Result<()> {
     // A replay of a call that landed finds its moves already made and writes
     // nothing. A failed write leaves the TOML as it was, since the sidecar
     // is committed before it.
+    let slug = add::store_slug(target);
     let mut trial = current.clone();
-    let preview = dispose_all(&mut trial, &ids, &mode, expect, today);
+    let preview = dispose_all(&mut trial, &ids, &mode, expect, today, slug.as_deref());
     refuse_if_nothing_landed(&preview)?;
     let outcome = if trial == current {
         preview
     } else {
         store::mutate(&target.path, &args.integrity, |store| {
-            let outcome = dispose_all(store, &ids, &mode, expect, today);
+            let outcome = dispose_all(store, &ids, &mode, expect, today, slug.as_deref());
             refuse_if_nothing_landed(&outcome)?;
             Ok(outcome)
         })?
@@ -326,6 +327,7 @@ fn dispose_all(
     mode: &Mode,
     expect: Option<&str>,
     today: Datetime,
+    slug: Option<&str>,
 ) -> Outcome {
     let mut outcome = Outcome::default();
     for id in ids {
@@ -336,6 +338,8 @@ fn dispose_all(
                     .iter_mut()
                     .find(|f| &f.id == id)
                     .expect("judge applies only to a stored finding");
+                let verdicts: Vec<&Verdict> =
+                    store.verdicts.iter().filter(|v| &v.finding == id).collect();
                 let from = finding.status().as_str();
                 let resolved = matches!(mode, Mode::Resolve(_)).then_some(today);
                 // A reopened finding no longer follows its v1 row: sync would
@@ -344,6 +348,12 @@ fn dispose_all(
                     finding.retire_link();
                 }
                 dispose(finding, mode.status(), &mode.companions(), resolved);
+                if matches!(mode, Mode::Reopen(_))
+                    && let Some(slug) = slug
+                {
+                    // An unreadable store leaves the tier absent; the reopen still lands.
+                    let _ = super::tier::stamp(finding, slug, &verdicts);
+                }
                 outcome
                     .applied
                     .push(json!({"id": id, "from": from, "status": mode.status().as_str()}));
@@ -401,7 +411,8 @@ fn convert(
     let named = args.run.as_deref();
     let run = target_run(current, advisory, named)?;
     let root = repo_or_cwd_root()?;
-    let row = replacement_row(&root, current, advisory, run, kind, src)?;
+    let slug = add::store_slug(target);
+    let row = replacement_row(&root, slug.as_deref(), current, advisory, run, kind, src)?;
     let run_id = run.id.clone();
     let today_iso = today.to_string();
 
@@ -563,9 +574,11 @@ fn target_run<'a>(store: &'a Store, advisory: &Finding, named: Option<&str>) -> 
 /// The replacement as given, defaulted from the advisory's lens, anchor and
 /// summary, validated through the field catalogue and routed by its edit
 /// target under `run`'s catalogue and depth. The fields that need the store
-/// under the lock come later.
+/// under the lock come later. `slug` is the store's flow, which decides
+/// whether the record-target rules apply.
 fn replacement_row(
     root: &Path,
+    slug: Option<&str>,
     store: &Store,
     advisory: &Finding,
     run: &Run,
@@ -613,6 +626,15 @@ fn replacement_row(
     let cell = store.cells.iter().find(|c| c.id == advisory.cell);
     reasons.extend(add::field_refusals(root, &row, advisory.family, cell));
     if reasons.is_empty() {
+        reasons.extend(add::record_refusals(
+            root,
+            slug,
+            &row,
+            kind,
+            advisory.family,
+        ));
+    }
+    if reasons.is_empty() {
         reasons.extend(add::text_refusals(root, &row, kind, advisory.family));
     }
     if !reasons.is_empty() {
@@ -626,6 +648,7 @@ fn replacement_row(
     let globs = run_catalogue(root, run)?.routing().compile()?;
     let route = add::route_of(&row, kind, run, &globs);
     row.insert("route".into(), json!(route.as_str()));
+    add::encode_values(&mut row);
     Ok(row)
 }
 

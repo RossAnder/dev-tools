@@ -8,8 +8,8 @@ use anyhow::Result;
 
 use super::store::{self, Target};
 use super::{
-    add, catalogue_cmd, cells, digest, export, query, resolve, runs, schema_out, stats, survey,
-    sync, triage, verdict,
+    add, apply, catalogue_cmd, cells, digest, export, query, resolve, runs, schema_out, stats,
+    survey, sync, triage, verdict,
 };
 use crate::cli::{ReviewOp, ReviewRunOp, ReviewStore};
 
@@ -32,6 +32,7 @@ pub(crate) fn dispatch(op: ReviewOp) -> Result<()> {
         ReviewOp::Digest(args) => digest::digest(&target(&args.store)?, args),
         ReviewOp::Report(args) => digest::report(&target(&args.store)?, args),
         ReviewOp::Triage(args) => triage::run(&target(&args.store)?, args),
+        ReviewOp::Apply(args) => apply::run(&target(&args.store)?, args),
         ReviewOp::Stats(args) => stats::run(args),
         ReviewOp::ExportV1(args) => export::run(&target(&args.store)?, args),
         ReviewOp::Catalogue(args) => catalogue_cmd::run(args),

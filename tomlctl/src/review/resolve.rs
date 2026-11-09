@@ -102,14 +102,15 @@ pub(crate) fn run(target: &Target, args: ReviewResolveArgs) -> Result<()> {
     let current = store::load(&target.path, &read)?;
     has_run(&current, &args.run)?;
     let mut trial = current.clone();
-    let preview = resolve(&mut trial, &args.run, args.wave);
+    let slug = super::add::store_slug(target);
+    let preview = resolve(&mut trial, &args.run, args.wave, slug.as_deref());
     let unchanged = trial == current;
     let report = if unchanged {
         preview
     } else {
         store::mutate(&target.path, &args.integrity, |store| {
             has_run(store, &args.run)?;
-            Ok(resolve(store, &args.run, args.wave))
+            Ok(resolve(store, &args.run, args.wave, slug.as_deref()))
         })?
     };
     print_json_compact(&json!({
@@ -128,7 +129,7 @@ fn has_run(store: &Store, run: &str) -> Result<()> {
     }
 }
 
-fn resolve(store: &mut Store, run: &str, wave: Option<u32>) -> Report {
+fn resolve(store: &mut Store, run: &str, wave: Option<u32>, slug: Option<&str>) -> Report {
     let in_wave = |f: &Finding| {
         wave.is_none_or(|n| {
             store
@@ -154,7 +155,7 @@ fn resolve(store: &mut Store, run: &str, wave: Option<u32>) -> Report {
     loop {
         let before = waiting.len();
         waiting.retain(|&i| match classify(store, i) {
-            Ok((target, decision)) => match apply(store, i, target, decision) {
+            Ok((target, decision)) => match apply(store, i, target, decision, slug) {
                 Some(entry) => {
                     resolved.push(entry);
                     false
@@ -256,7 +257,13 @@ fn settled_target(store: &Store, row: &Finding) -> std::result::Result<usize, St
 
 /// Applies the outcome to the row at `i` and its target at `t`, returning
 /// the report entry, or `None` when no outcome covers the target's status.
-fn apply(store: &mut Store, i: usize, t: usize, decision: Decision) -> Option<serde_json::Value> {
+fn apply(
+    store: &mut Store,
+    i: usize,
+    t: usize,
+    decision: Decision,
+    slug: Option<&str>,
+) -> Option<serde_json::Value> {
     let outcome = Outcome::for_target(store.findings[t].status(), decision.call)?;
     let target_id = store.findings[t].id.clone();
     let row = store.findings[i].clone();
@@ -282,6 +289,7 @@ fn apply(store: &mut Store, i: usize, t: usize, decision: Decision) -> Option<se
         Outcome::Reopened => {
             gain(store, &target_id, &decision.deciding);
             store.findings[t].set_status(FindingStatus::Open, &[]);
+            stamp_tier(store, t, slug);
         }
         Outcome::Regression | Outcome::Suppressed => {}
     }
@@ -290,6 +298,7 @@ fn apply(store: &mut Store, i: usize, t: usize, decision: Decision) -> Option<se
     if outcome == Outcome::Regression {
         resolved.set_status(FindingStatus::Open, &[]);
         resolved.related = vec![target_id.clone()];
+        stamp_tier(store, i, slug);
     } else {
         resolved.set_status(
             FindingStatus::Merged,
@@ -302,6 +311,16 @@ fn apply(store: &mut Store, i: usize, t: usize, decision: Decision) -> Option<se
         "target": target_id,
         "status": store.findings[i].status().as_str(),
     }))
+}
+
+/// Stamps the tier of the finding at `at` as it opens. A store outside flow
+/// mode, or a tier that cannot be computed, leaves the finding unstamped so
+/// the resolve still lands.
+fn stamp_tier(store: &mut Store, at: usize, slug: Option<&str>) {
+    let Some(slug) = slug else { return };
+    let id = store.findings[at].id.clone();
+    let mine: Vec<&Verdict> = store.verdicts.iter().filter(|v| v.finding == id).collect();
+    let _ = super::tier::stamp(&mut store.findings[at], slug, &mine);
 }
 
 /// Copies the row's deciding verdicts onto the target. They are appended
