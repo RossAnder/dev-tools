@@ -183,7 +183,7 @@ Read the script before running it, for the reason 4d gives: each `p` line runs a
 timeout 540 bash <scratch>/premises.sh > <scratch>/premises.out
 ```
 
-Each row of the capture reads `<task>:<premise index>`, `premise`, `sha256=<digest>`, `rc=<code>`, stdout and stderr, tab-separated. There is no `--record` for premises; read each row's `rc` yourself. `rc=0` means the premise holds, and any other code is a false premise. A false premise goes to replanning, never to a stronger executor: rewrite the task, and any task built on it, against what the code holds. When the outcome itself rested on it, that touches intent and goes to the user. `after:<id>` premises cannot hold yet and are not run.
+Each row of the capture reads `<task>:<premise index>`, `premise`, `sha256=<digest>`, `rc=<code>`, stdout and stderr, tab-separated. `tomlctl plan probes --record <capture> --premises` stores a verdict per premise; read each row's `rc` yourself as well. `rc=0` means the premise holds, and any other code is a false premise. A false premise goes to replanning, never to a stronger executor: rewrite the task, and any task built on it, against what the code holds. When the outcome itself rested on it, that touches intent and goes to the user. `after:<id>` premises cannot hold yet and are not run.
 
 ### 4c. Cold read
 
