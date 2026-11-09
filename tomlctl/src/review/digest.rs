@@ -533,7 +533,9 @@ fn location(row: &Row) -> String {
     }
     place.push('`');
     let mut parts = vec![place];
-    if let Some(section) = text(row, "plan_section") {
+    if let Some(target) = text(row, "target") {
+        parts.push(format!("`{}`", one_line(target)));
+    } else if let Some(section) = text(row, "plan_section") {
         parts.push(format!("§ {}", one_line(section)));
     }
     if let Some(symbol) = text(row, "symbol") {
@@ -578,6 +580,15 @@ fn detail(md: &mut String, label: &str, value: Option<&str>) {
     }
 }
 
+/// The record-edit lines of a flow-mode finding; `expect` and `new` are stored
+/// as JSON text and shown as stored.
+fn record_details(md: &mut String, row: &Row) {
+    detail(md, "Target", text(row, "target"));
+    detail(md, "Expect", text(row, "expect"));
+    detail(md, "New", text(row, "new"));
+    detail(md, "Tier", text(row, "tier"));
+}
+
 fn defect_entry(row: &Row, severity: &str) -> String {
     let mut md = format!(
         "- **{}** {} — {}\n  - {}",
@@ -597,6 +608,7 @@ fn defect_entry(row: &Row, severity: &str) -> String {
     detail(&mut md, "Fix", text(row, "fix"));
     detail(&mut md, "Anchor", text(row, "anchor_old"));
     detail(&mut md, "Replacement", text(row, "anchor_new"));
+    record_details(&mut md, row);
     if let Some(JsonValue::Array(deps)) = row.get("depends_on")
         && !deps.is_empty()
     {
@@ -619,6 +631,7 @@ fn cleanup_entry(row: &Row) -> String {
     }
     md.push('\n');
     detail(&mut md, "Edit", text(row, "edit"));
+    record_details(&mut md, row);
     md
 }
 
