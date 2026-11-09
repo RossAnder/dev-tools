@@ -475,6 +475,7 @@ Method: agents linked into the config dir reached an already-running session wit
 Nested memory: four of six challengers loaded their base's own CLAUDE.md (2 to 3 nested_memory rows each), two loaded none; investigators showed 1 row each
 Auto-memory: the replay ran from a directory with none, and real runs keep theirs; transcripts not inspected for auto-memory beyond that
 Tally: 3 of 3 restructure goals, 3 of 3 control goals
+Applied: keep verdict (6 of 6); plan-challenger and its shared-block entries left in place
 
 | Sheet letter | Goal | Kind | Would it have changed what was asked for? |
 |---|---|---|---|
