@@ -69,7 +69,7 @@ Common fields:
 **The Owns rule.** The validator splits the Owns section into paragraphs on blank lines and reads the **first backtick-quoted span of each paragraph** as an owned tag. The set it reads must equal the frontmatter `owns` exactly. So:
 
 - start each tag's paragraph with the tag in backticks, and give every tag its own paragraph, separated by a blank line;
-- never put a backtick span in any other paragraph of the section, and never put two tags in one paragraph or a bulleted list, because only the first span of a paragraph counts.
+- never put a backtick span in any other paragraph of the section, and never put two tags in one paragraph or a bulleted list, because only the first span of a paragraph counts. A vocabulary concern tag in a later span of a paragraph is refused, since it reads as a claim the validator ignores.
 
 ```markdown
 ## Owns

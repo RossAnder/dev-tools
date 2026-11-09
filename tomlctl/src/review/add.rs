@@ -674,9 +674,10 @@ fn heading_level(line: &str) -> Option<usize> {
 
 /// The bodies of every section of `text` whose heading is `section`, given
 /// with or without its `#` marks. A body runs to the next heading of the
-/// same or a higher level; headings inside fenced code do not count.
+/// same or a higher level; headings inside fenced code do not count. Bodies
+/// come back in `\n` form whatever line endings `text` uses.
 pub(super) fn section_bodies(text: &str, section: &str) -> Vec<String> {
-    section_spans(text, section)
+    section_spans(&text.replace("\r\n", "\n"), section)
         .into_iter()
         .map(|(_, body)| body)
         .collect()
@@ -864,6 +865,17 @@ mod tests {
         let notes = section_bodies(PLAN, "#### Notes");
         assert_eq!(notes.len(), 1);
         assert!(!notes[0].contains("### 5."));
+    }
+
+    #[test]
+    fn a_crlf_section_matches_its_heading() {
+        assert_eq!(
+            section_bodies(
+                &PLAN.replace('\n', "\r\n"),
+                "### 4. Add the export verb [M]"
+            ),
+            section_bodies(PLAN, "### 4. Add the export verb [M]")
+        );
     }
 
     const SLUG: &str = "records";

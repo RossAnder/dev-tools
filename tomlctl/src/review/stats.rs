@@ -128,7 +128,8 @@ pub(crate) fn run(args: ReviewStatsArgs) -> Result<()> {
         out["calibration"] = calibration(&view, linked.as_deref().unwrap_or_default(), n);
     }
     if args.plan_outcomes {
-        out["plan_outcomes"] = plan_outcomes(&View::new(&stores, Some(Family::Plan)));
+        out["plan_outcomes"] =
+            plan_outcomes(&View::new(&stores, Some(Family::Plan)), first_approval);
     }
     crate::output::print_json_line(&out)
 }
@@ -980,14 +981,15 @@ fn run_minutes(run: &store::Run) -> Option<f64> {
 /// Per plan run of a flow store, then in total: tier by disposition, the
 /// user-veto rate, the growth applied edits caused, the findings a re-check
 /// run minted, and cost. A flow-less store holds no flow-mode run.
-fn plan_outcomes(view: &View) -> JsonValue {
+/// `approval` gives a flow's first approval time, normally [`first_approval`].
+fn plan_outcomes(view: &View, approval: impl Fn(&str) -> Option<jiff::Timestamp>) -> JsonValue {
     let mut runs = Vec::new();
     let mut total = PlanTally::default();
     for sv in view.stores.iter() {
         let Some(slug) = sv.loaded.slug.as_deref() else {
             continue;
         };
-        let approved = first_approval(slug);
+        let approved = approval(slug);
         for run in &sv.runs {
             let mut tally = PlanTally::default();
             let after_approval = approved.is_some_and(|at| {
@@ -1283,7 +1285,7 @@ verdict = "refuted"
     #[test]
     fn plan_outcomes_derive_dispositions_growth_and_cost() {
         let stores = plan_loaded();
-        let out = plan_outcomes(&View::new(&stores, Some(Family::Plan)));
+        let out = plan_outcomes(&View::new(&stores, Some(Family::Plan)), |_| None);
         let first = &out["runs"][0];
         assert_eq!(
             first["tiers"],

@@ -585,8 +585,8 @@ fn target_run<'a>(store: &'a Store, advisory: &Finding, named: Option<&str>) -> 
     Ok(run)
 }
 
-/// The replacement as given, defaulted from the advisory's lens, anchor and
-/// summary, validated through the field catalogue and routed by its edit
+/// The replacement as given, defaulted from the advisory's lens, anchor,
+/// summary and edit target, validated through the field catalogue and routed by its edit
 /// target under `run`'s catalogue and depth. The fields that need the store
 /// under the lock come later. `slug` is the store's flow, which decides
 /// whether the record-target rules apply.
@@ -630,6 +630,14 @@ fn replacement_row(
         ("line", advisory.line.map_or(JsonValue::Null, |l| json!(l))),
         ("symbol", json!(advisory.symbol)),
         ("summary", json!(advisory.summary)),
+        (
+            "target",
+            advisory
+                .rest
+                .get("target")
+                .and_then(|t| t.as_str())
+                .map_or(JsonValue::Null, |t| json!(t)),
+        ),
     ];
     for (key, value) in defaults {
         let empty = value.is_null() || value.as_str().is_some_and(str::is_empty);

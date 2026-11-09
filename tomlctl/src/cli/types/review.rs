@@ -18,7 +18,7 @@ pub(crate) enum ReviewOp {
     #[command(name = "sync-v1")]
     SyncV1(ReviewSyncArgs),
 
-    /// Start, patch or finish a review run.
+    /// Start, patch, finish or list review runs.
     Run {
         #[command(subcommand)]
         op: ReviewRunOp,
@@ -85,6 +85,8 @@ pub(crate) enum ReviewRunOp {
     Update(ReviewRunUpdateArgs),
     /// Stamp `finished` and compute `counts`, refusing an incomplete run.
     Finish(ReviewRunFinishArgs),
+    /// List the store's runs, ordered by id. Writes nothing.
+    List(ReviewRunListArgs),
 }
 
 /// The store a verb reads or writes: `.claude/flows/<slug>/review-v2.toml`
@@ -200,6 +202,26 @@ pub(crate) struct ReviewRunFinishArgs {
     pub(crate) incomplete_file: Option<PathBuf>,
     #[command(flatten)]
     pub(crate) integrity: WriteIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct ReviewRunListArgs {
+    #[command(flatten)]
+    pub(crate) store: ReviewStore,
+    #[arg(
+        long = "open",
+        conflicts_with = "finished",
+        help = "Only runs without `finished`"
+    )]
+    pub(crate) open: bool,
+    #[arg(
+        long = "finished",
+        conflicts_with = "open",
+        help = "Only runs with `finished`"
+    )]
+    pub(crate) finished: bool,
+    #[command(flatten)]
+    pub(crate) integrity: ReadIntegrityArgs,
 }
 
 #[derive(Args)]
@@ -481,7 +503,8 @@ pub(crate) struct ReviewDigestArgs {
 }
 
 // The read bundle, like `tasks render`: the report is derived markdown with
-// no sidecar.
+// no sidecar. `--allow-outside` is the one write-side flag it takes, for
+// `--out`'s containment.
 #[derive(Args)]
 pub(crate) struct ReviewReportArgs {
     #[command(flatten)]
@@ -494,6 +517,11 @@ pub(crate) struct ReviewReportArgs {
         help = "Where the report is written"
     )]
     pub(crate) out: PathBuf,
+    #[arg(
+        long = "allow-outside",
+        help = "Write --out outside .claude/ and .review-v2-runs/"
+    )]
+    pub(crate) allow_outside: bool,
     #[command(flatten)]
     pub(crate) integrity: ReadIntegrityArgs,
 }

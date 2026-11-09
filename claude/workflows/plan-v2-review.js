@@ -273,6 +273,9 @@ let halted = false
 
 while (current) {
   phase('Waves')
+  // A recheck runs no survey, so the orchestrator copies the first run's pack.md and
+  // profile.md here before launching; the pipeline takes its run directory from this
+  // path's parent, so pointing it at the first run's pack would redirect every payload.
   const ran = await caught(() => workflow('review-v2-pipeline', {
     run: a.run,
     wave: current.wave,

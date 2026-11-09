@@ -9,7 +9,7 @@
 //! cell's concerns to the content each one binds and the facets it attaches.
 //!
 //! A lens's Owns section names each owned tag as the first inline-code span
-//! of its own paragraph.
+//! of its own paragraph; a concern tag in a later span of a paragraph is refused.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -198,6 +198,10 @@ pub(crate) enum CatalogueError {
         owns: Vec<String>,
         named: Vec<String>,
     },
+    OwnsLaterSpan {
+        path: PathBuf,
+        tag: String,
+    },
     MissingSection {
         path: PathBuf,
         section: String,
@@ -213,6 +217,10 @@ pub(crate) enum CatalogueError {
     UnknownAttachTarget {
         path: PathBuf,
         target: String,
+    },
+    UnattachedFacetSection {
+        path: PathBuf,
+        lens: String,
     },
     UnknownConfigId {
         path: PathBuf,
@@ -303,6 +311,11 @@ impl fmt::Display for CatalogueError {
                 named.join(", "),
                 owns.join(", ")
             ),
+            Self::OwnsLaterSpan { path, tag } => write!(
+                f,
+                "{}: an Owns paragraph names concern `{tag}` after its first inline-code span, where it claims nothing; give it its own paragraph or drop the backticks",
+                p(path)
+            ),
             Self::MissingSection { path, section } => {
                 write!(f, "{}: missing the `## {section}` section", p(path))
             }
@@ -321,6 +334,11 @@ impl fmt::Display for CatalogueError {
                     p(path)
                 )
             }
+            Self::UnattachedFacetSection { path, lens } => write!(
+                f,
+                "{}: has a `### For {lens}` section, but `attaches_to` does not name `{lens}`",
+                p(path)
+            ),
             Self::UnknownConfigId { path, key, id } => {
                 write!(
                     f,
@@ -631,6 +649,9 @@ impl Catalogue {
                 .get("id")
                 .and_then(TomlValue::as_str)
                 .map(str::to_string);
+            if raw.ty == EntryType::Facet {
+                check_facet_sections(&raw, &mut errors);
+            }
             if let Some(id) = &id {
                 apply_config(&mut raw, id, &config, &mut used, &mut errors);
             }
@@ -1157,6 +1178,11 @@ impl Catalogue {
                                 named: named.into_iter().collect(),
                             });
                         }
+                        for tag in later_spans(&section.body) {
+                            if self.concern(&tag).is_some() {
+                                errors.push(CatalogueError::OwnsLaterSpan { path: path(), tag });
+                            }
+                        }
                     }
                 }
                 for family in &entry.families {
@@ -1317,13 +1343,39 @@ fn within(path: &str, dir: &str) -> bool {
             .is_some_and(|rest| rest.starts_with('/'))
 }
 
+/// The closed single-backtick inline-code spans of each paragraph, in order.
+fn paragraph_spans(body: &str) -> impl Iterator<Item = Vec<&str>> {
+    body.split("\n\n").map(|para| {
+        let parts: Vec<&str> = para.split('`').collect();
+        let closed = parts.len().saturating_sub(1);
+        parts
+            .into_iter()
+            .enumerate()
+            .filter(|&(i, _)| i % 2 == 1 && i < closed)
+            .map(|(_, span)| span)
+            .collect()
+    })
+}
+
 /// The first inline-code span of each paragraph.
 fn owned_tags(body: &str) -> BTreeSet<String> {
-    body.split("\n\n")
-        .filter_map(|para| {
-            let start = para.find('`')? + 1;
-            let len = para[start..].find('`')?;
-            Some(para[start..start + len].to_string())
+    paragraph_spans(body)
+        .filter_map(|spans| spans.first().map(|s| s.to_string()))
+        .collect()
+}
+
+/// Spans after a paragraph's first that differ from it: a tag here reads as
+/// an ownership claim but [`owned_tags`] ignores it.
+fn later_spans(body: &str) -> Vec<String> {
+    paragraph_spans(body)
+        .flat_map(|spans| {
+            let first = spans.first().copied();
+            spans
+                .into_iter()
+                .skip(1)
+                .filter(move |s| Some(*s) != first)
+                .map(str::to_string)
+                .collect::<Vec<_>>()
         })
         .collect()
 }
@@ -1499,6 +1551,42 @@ fn read_entries(
             front,
             sections,
         });
+    }
+}
+
+/// Each `### For <lens>` heading of a facet, outside fenced blocks, must name
+/// a lens its own frontmatter `attaches_to` lists. Read before the project
+/// config applies, so an `attaches_to` override never faults a built-in file.
+fn check_facet_sections(raw: &RawEntry, errors: &mut Vec<CatalogueError>) {
+    let attaches: Vec<&str> = match raw.front.get("attaches_to") {
+        Some(TomlValue::Array(items)) => items.iter().filter_map(TomlValue::as_str).collect(),
+        _ => return,
+    };
+    if attaches.contains(&"*") {
+        return;
+    }
+    for section in &raw.sections {
+        let mut fence: Option<&str> = None;
+        for line in section.body.lines() {
+            let trimmed = line.trim_start();
+            match fence {
+                Some(marker) if trimmed.starts_with(marker) => fence = None,
+                Some(_) => {}
+                None if trimmed.starts_with("```") => fence = Some("```"),
+                None if trimmed.starts_with("~~~") => fence = Some("~~~"),
+                None => {
+                    let Some(lens) = line.strip_prefix("### For ").map(str::trim) else {
+                        continue;
+                    };
+                    if !attaches.contains(&lens) {
+                        errors.push(CatalogueError::UnattachedFacetSection {
+                            path: raw.path.clone(),
+                            lens: lens.to_string(),
+                        });
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -2609,6 +2697,46 @@ Each acceptance command against two controls.
             matches!(
                 errors.as_slice(),
                 [CatalogueError::MissingProbes { family, .. }] if family == "plan"
+            ),
+            "got {errors:?}"
+        );
+    }
+
+    #[test]
+    fn facet_section_for_an_unattached_lens_is_refused() {
+        let fx = Fixture::new();
+        fx.builtin_file(
+            "facets/react.md",
+            &format!(
+                "{REACT}\n## By lens\n\n### For correctness\n- stale closures\n\n\
+                 ```markdown\n### For anything\n```\n\n### For type-design\n- prop types\n"
+            ),
+        );
+        let errors = fx.load().validate();
+        assert!(
+            matches!(
+                errors.as_slice(),
+                [CatalogueError::UnattachedFacetSection { lens, .. }] if lens == "type-design"
+            ),
+            "got {errors:?}"
+        );
+    }
+
+    #[test]
+    fn concern_tag_in_a_later_owns_span_is_refused() {
+        let fx = Fixture::new();
+        fx.builtin_file(
+            "lenses/correctness.md",
+            &CORRECTNESS.replace(
+                "`logic` — wrong output.",
+                "`logic` — wrong output, unlike `logic` itself, `ad hoc` text or `types`.",
+            ),
+        );
+        let errors = fx.load().validate();
+        assert!(
+            matches!(
+                errors.as_slice(),
+                [CatalogueError::OwnsLaterSpan { tag, .. }] if tag == "types"
             ),
             "got {errors:?}"
         );

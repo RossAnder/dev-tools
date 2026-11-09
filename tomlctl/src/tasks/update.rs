@@ -1577,6 +1577,19 @@ fn stored_form(target: ReviewTarget, entry: bool, value: &JsonValue) -> Result<J
     })
 }
 
+/// [`stored_form`] for `field` named as a review edit names it, a row field or
+/// `spec.<field>`, so a proof matches `expect` the way `review_edit` does.
+pub(crate) fn review_stored_form(field: &str, entry: bool, value: &JsonValue) -> Result<JsonValue> {
+    let target = ReviewTarget::parse(field).ok_or_else(|| {
+        tagged_err(
+            ErrorKind::Validation,
+            None,
+            format!("`{field}` is not a review field"),
+        )
+    })?;
+    stored_form(target, entry, value)
+}
+
 /// The current value of `field` (a row field or `spec.<field>`) on the row
 /// holding `task_ref`, as a review edit compares it.
 pub(crate) fn review_current(store: &Store, task_ref: &str, field: &str) -> Result<JsonValue> {

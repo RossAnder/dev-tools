@@ -877,6 +877,7 @@ fn cases() -> Vec<Case> {
             "ok",
         ),
         read(&["review", "list", "--slug", S], Field("findings"), "id"),
+        read(&["review", "run", "list", "--slug", S], Field("runs"), "id"),
         read(
             &["review", "show", "F1,F2", "--slug", S, "--for", "orchestrator"],
             Field("items"),

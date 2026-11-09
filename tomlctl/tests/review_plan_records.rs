@@ -818,6 +818,43 @@ fn a_conversion_to_a_bad_target_is_refused() {
 }
 
 #[test]
+fn a_conversion_defaults_the_target_from_the_advisory() {
+    let flow = Flow::new();
+    let mut about_a_decision = advisory(PLAN_FILE, "D1");
+    about_a_decision["target"] = json!("decision:D1.why");
+    let id = flow.minted(about_a_decision);
+    let mut replacement = base("defect");
+    replacement["expect"] = json!("Guard-bound-why.");
+    replacement["new"] = json!("Guard-bound-why-revised.");
+    let payload = flow.payload("convert.ndjson", &format!("{replacement}\n"));
+    let out = flow.ok(&[
+        "review",
+        "triage",
+        &id,
+        "--slug",
+        SLUG,
+        "--convert",
+        "defect",
+        "--ndjson",
+        &payload,
+    ]);
+    let minted = out["minted"][0]["id"].as_str().expect("a minted id");
+    assert_eq!(
+        stored_text(&flow.finding(minted), "target").as_deref(),
+        Some("decision:D1.why")
+    );
+    assert_eq!(flow.status(&id), "converted");
+
+    // Converting a question-tier advisory leaves the user's authority intact:
+    // the replacement settles user tier and still needs `--user-accepted`.
+    flow.verdict(minted, "confirmed", "src/a.rs:1");
+    assert_eq!(flow.status(minted), "open");
+    assert_eq!(flow.tier(minted).as_deref(), Some("user"));
+    let err = flow.refused(&["review", "apply", minted, "--slug", SLUG]);
+    assert!(err.contains("--user-accepted"), "{err}");
+}
+
+#[test]
 fn the_report_shows_the_target_and_its_edit() {
     let flow = Flow::new();
     let id = flow.minted(task_edit(

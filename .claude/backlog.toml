@@ -6286,7 +6286,7 @@ seen_count = 1
 dedup_id = "e922f5cb567bf68b"
 origin = "implement"
 flow = "review-system-v2"
-context = "Also, owned_tags reads only the first backtick span of each Owns paragraph. A facet section for a lens it does not attach to passes catalogue_validates today."
+context = "Narrowed 2026-11-09. Landed: the validator refuses a facet '### For <lens>' section naming a lens outside the facet's own attaches_to, and refuses a vocabulary concern tag in a later backtick span of an Owns paragraph. Still open, both needing a decision first: (1) the reverse rule from the lenses SKILL.md, one section per attached lens, is unenforced and the REACT fixture in catalogue.rs breaks it, and it is unclear how a project attaches_to override should count; (2) the experimental-rework ownership rule has no defined target, since SKILL.md 'Reworking a stable lens' only says 'until the validator changes'. One proposal: let an experimental lens co-own a tag with exactly one stable owner when it declares the lens it replaces."
 base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
 
 [[backlog]]
@@ -9259,7 +9259,7 @@ seen_count = 1
 dedup_id = "466a423bed8456a0"
 origin = "review-apply"
 flow = "shimmying-marinating-bumblebee"
-context = "The brief and design containment check (plan/store.rs locate_brief, anchored on authored_anchor) now refuses a symlinked docs/flows/<slug> at resolve time, but prose() resolves the path, then takes the lock and writes, so a symlink created between the two steps is not seen. Needs an attacker with write access to the repo's docs tree mid-call; low exposure. A fix would re-resolve (or open with O_NOFOLLOW on the parent chain) inside the lock before the atomic write."
+context = "Narrowed 2026-11-09: prose() in review/apply.rs now re-resolves the target inside the lock, just before atomic_write, and refuses a path that changed or left the flow. What remains is the window between that re-resolve and the rename inside io.rs atomic_write, whose parent directories are not opened no-follow; the same window exists for any caller that resolves before writing. Closing it needs O_NOFOLLOW or openat handling of each parent in crate-wide io.rs. Needs an attacker with write access to the repo's docs tree mid-call; low exposure. No race test exists, since a deterministic swap cannot be injected without hooks."
 base_sha = "d0ab8fef3ebdf74048d3ece131e90d4f3e3bbd31"
 evidence = ["tomlctl/src/review/apply.rs:498"]
 
@@ -9316,3 +9316,60 @@ context = "R23 made review add judge a record expect through apply's Validate pa
 base_sha = "d0ab8fef3ebdf74048d3ece131e90d4f3e3bbd31"
 evidence = ["tomlctl/src/review/tier.rs:1"]
 related = ["B-466a423b"]
+
+[[backlog]]
+id = "B-735ed4dd"
+kind = "question"
+summary = "neither link-v2-review script covers the plan-v2 carrier, engine skill, agents and Workflows, so a plan-v2 deploy is still done by hand"
+area = "scripts"
+tags = [
+    "deploy",
+    "plan-v2",
+]
+status = "open"
+created = 2026-11-09T20:48:25Z
+last_seen = 2026-11-09T20:48:25Z
+seen_count = 1
+dedup_id = "735ed4dd0c45705f"
+origin = "backlog"
+context = "scripts/link-v2-review.ps1 and link-v2-review.sh link the review-v2 entries plus plan-v2-review.js only. CLAUDE.md Planning v2 Deploy says the plan-v2 carrier, plan-v2-engine, plan-investigator, plan-challenger, plan-cold-reader, plan-v2-investigate.js and plan-v2-prove.js each need a symlink. Decide whether to extend the entry lists (and rename the scripts) or add a sibling pair; until then link those by hand with ln -s into the Claude config dir."
+base_sha = "5187e3831ccede695696ccde7c5665dbc32a7c30"
+related = ["B-f0558729"]
+
+[[backlog]]
+id = "B-55a13775"
+kind = "question"
+summary = "prose finding guidance does not tell finders that a brief or design new containing its expect recovers without the applying mark while a near-miss does not"
+area = "claude/skills/review-v2-method"
+tags = [
+    "review-v2",
+    "plan-records",
+]
+status = "open"
+created = 2026-11-09T20:48:25Z
+last_seen = 2026-11-09T20:48:25Z
+seen_count = 1
+dedup_id = "55a13775a8c63b9c"
+origin = "backlog"
+context = "review apply counts an unmarked prose edit as already applied only when expect is part of new; an edit whose new drops even a full stop from expect reads stale if someone made it by hand first. references/plan-records.md could tell finders to prefer expect/new pairs where new contains expect. Decide whether that guidance is worth a line or would bias how findings are written."
+base_sha = "5187e3831ccede695696ccde7c5665dbc32a7c30"
+related = ["B-037256f6"]
+
+[[backlog]]
+id = "B-d1d11150"
+kind = "debt"
+summary = "review apply writes the applying mark on and off for an unmarked prose row its judge pass already found stale"
+area = "tomlctl/src/review"
+tags = [
+    "review-v2",
+    "apply",
+]
+status = "open"
+created = 2026-11-09T20:48:25Z
+last_seen = 2026-11-09T20:48:25Z
+seen_count = 1
+dedup_id = "d1d1115063f1f17e"
+origin = "backlog"
+context = "Two extra review-store writes per stale prose row in apply.rs execute. Arrived cheap-in-file and was deferred because it needs a decision: skipping the mark when the judge found the row stale would leave unmarked a row that becomes applicable under the lock, so a crash after that write would not recover."
+base_sha = "5187e3831ccede695696ccde7c5665dbc32a7c30"
+related = ["B-037256f6"]

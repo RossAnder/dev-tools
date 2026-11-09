@@ -223,6 +223,8 @@ A question-tier row is an advisory, or a defect or cleanup with no `new`, on a u
 - **Keep.** Resolve the row the same way with `kept by user` staged. `review stats --plan-outcomes` counts a resolved question row as `user-answered`, outside the veto rate.
 - **No answer.** As for the user tier: the row stays `open` and blocks `plan approve --review ran` and `plan stage`.
 
+A question-tier advisory can also become a proposed edit. When the user wants a change but leaves its wording to the review, or the review can propose one worth asking, convert the advisory with `review triage <id> --slug <slug> --convert defect|cleanup --ndjson <path>`, staging a replacement that carries the `new`. `--convert` accepts a question-tier row, unlike `--park`. The replacement keeps the user-owned target, so once verified it is tiered `user` and asked with **Accept** and **Veto** as above; a replacement without a `new` is a question again. It still applies only with `review apply --user-accepted`, so conversion does not let anyone but the user approve the edit.
+
 A row stamped `user` before the question tier existed keeps `user`: tiers are frozen. One that carries no `new` is refused by `review apply`; close it as a question.
 
 ### Advisory, and what the tiers leave
@@ -295,7 +297,7 @@ tomlctl review run start --slug <slug> --command review-plan-v2 --family plan --
 
 Bind its `<recheck-run>` and `<recheck-dir>`.
 
-**The pack.** A re-check runs no survey, so its directory holds no `pack.md` for the finders. Copy the first run's, without reading it:
+**The pack.** A re-check runs no survey, so its directory holds no `pack.md` for the finders, and the launch below requires both copies to be in place first. The wrapper cannot carry them over: it has no shell, and passing the first run's pack path would move the pipeline's run directory, which it takes from that path's parent, into the first run. Copy them without reading them:
 
 ```bash
 cp <run-dir>/pack.md <recheck-dir>/pack.md
@@ -382,9 +384,9 @@ A `review` row that `plan stage` lists under `open_runs` is settled by the store
 - **From a dead session.** Read the flow's plan-family review runs:
 
   ```bash
-  tomlctl items list .claude/flows/<slug>/review-v2.toml --array runs --where family=plan --lines
+  tomlctl review run list --slug <slug> --open --where family=plan --lines
   ```
 
-  Take the newest run without `finished`, bind it as `<run>` and `.review-v2-runs/<slug>/<run>/` at the repo root as `<run-dir>`, and resume it at the first incomplete stage by section 5's table. A run already at triage resumes at section 7. Then continue, and close the step row by section 11.
+  Take the newest run it lists, the last row, bind it as `<run>` and `.review-v2-runs/<slug>/<run>/` at the repo root as `<run-dir>`, and resume it at the first incomplete stage by section 5's table. A run already at triage resumes at section 7. Then continue, and close the step row by section 11.
 
 Abandon the row only when the user drops the review: `tomlctl plan run abandon --slug <slug> --step review --reason '<why>'`. An abandoned review run does not settle the review stage, so the plan then needs a fresh review or `plan run skip --step review` with a reason.

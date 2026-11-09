@@ -22,6 +22,7 @@ const MUTEX_GROUPS: &[(&str, &[&[&str]])] = &[
     ("review run start", REVIEW_STORE),
     ("review run update", REVIEW_STORE),
     ("review run finish", REVIEW_STORE),
+    ("review run list", REVIEW_STORE),
     ("review survey", REVIEW_STORE),
     ("review plan", REVIEW_STORE),
     ("review cover", REVIEW_STORE),

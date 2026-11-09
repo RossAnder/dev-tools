@@ -342,7 +342,7 @@ pub(crate) enum TasksOp {
             value_enum,
             value_delimiter = ',',
             value_name = "PART,...",
-            help = "Sections to include (summary,body,files,deps,dependents,absent)"
+            help = "Sections to include (summary,body,files,spec,deps,dependents,absent)"
         )]
         with: Vec<ShowPart>,
         #[command(flatten)]

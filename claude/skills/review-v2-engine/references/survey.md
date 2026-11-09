@@ -20,7 +20,7 @@ tomlctl review survey --run <run> --slug <slug>
 The verb evaluates every `stack`, `diff` and `health` signal in the merged vocabulary, built-in plus any project `project:` signals, with no agent involved:
 
 - **stack** signals over `git ls-files`: manifest and project-file globs, content regexes, manifest key paths (TOML and JSON only; MSBuild XML through globs plus regexes). Each records the directories it matched as `roots`, so a polyglot repo gets separate roots per stack and a facet attaches only where its stack lives.
-- **diff** signals over the run's `base..HEAD` diff inside the scope: renames and removals, public API, dependencies, schema, query layer, async, process-heavy code, frontend, docs and tests touched.
+- **diff** signals over the run's `base..HEAD` diff inside the scope: renames and removals, public API, dependencies, schema, query layer, async, process-heavy code, build scripts and hooks, package lifecycle scripts, frontend, docs and tests touched.
 - **health** signals over the tree and `git log` windows: test growth, test ratio, doc growth, churn hotspots, finding hotspots, backlog clusters.
 
 The detector semantics — glob and regex rules, `count` literals, windows, thresholds and how roots are derived — are defined in the `review-v2-lenses` skill's Detectors section. You do not load that skill during a run; it is for catalogue authors.

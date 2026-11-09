@@ -92,7 +92,7 @@ A `path-missing` or `ref-unknown` row's `expect` and `new` are the whole list. A
 
 ## How a fix is applied
 
-tomlctl computes each finding's `tier` when it opens; never supply `tier` or `applied`.
+tomlctl computes each finding's `tier` when it opens, and `review apply` writes `applied` and the write-ahead mark `applying`; never supply any of the three.
 
 - **user** — a defect or cleanup with a `new` whose target is a decision, a `spec.outcome`, or the brief's Intent, Non-goals, Scope budget or Success criteria. The user is asked, whatever the evidence, and an accepted edit is applied.
 - **question** — an advisory, or a row without `new`, on one of those user-owned targets. The user answers it by revising the record or keeping it; it is never applied, parked or vetoed.

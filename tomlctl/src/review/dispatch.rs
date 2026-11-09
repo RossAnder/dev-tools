@@ -20,6 +20,7 @@ pub(crate) fn dispatch(op: ReviewOp) -> Result<()> {
             ReviewRunOp::Start(args) => runs::start(&target(&args.store)?, args),
             ReviewRunOp::Update(args) => runs::update(&target(&args.store)?, args),
             ReviewRunOp::Finish(args) => runs::finish(&target(&args.store)?, args),
+            ReviewRunOp::List(args) => runs::list(&target(&args.store)?, args),
         },
         ReviewOp::Survey(args) => survey::run(&target(&args.store)?, args),
         ReviewOp::Plan(args) => cells::plan(&target(&args.store)?, args),

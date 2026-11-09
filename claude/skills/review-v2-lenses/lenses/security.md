@@ -4,9 +4,9 @@ status = "stable"
 families = ["code", "plan"]
 mode = "judgement"
 produces = ["defect", "cleanup", "advisory"]
-owns = ["input-validation", "injection", "access-control", "secrets-and-crypto"]
+owns = ["input-validation", "injection", "access-control", "secrets-and-crypto", "supply-chain-execution"]
 activation = "signal"
-apply_when = { signals = ["trust-boundary", "dependency-change"] }
+apply_when = { signals = ["trust-boundary", "dependency-change", "build-script-change", "package-lifecycle-change"] }
 slice = "per-subsystem"
 methods = ["trace"]
 v1_category = "security"
@@ -29,6 +29,8 @@ Where does data from outside the process's trust enter this scope, what does it 
 
 `secrets-and-crypto` — secrets stored, logged, committed or sent in the clear, and cryptography that is weak, home-made or misused: a fixed nonce, a non-constant-time comparison, a disabled certificate check, a predictable token.
 
+`supply-chain-execution` — code that runs unsandboxed at build, install or commit time on whoever builds or clones the tree: a Cargo build script, a package lifecycle script, a git or pre-commit hook, an MSBuild target. It flags such code that downloads or executes something not pinned by hash, writes outside the build's output directory, reads credentials or the environment beyond what the build needs, or widens the set of dependencies trusted to run their own install scripts.
+
 ## Probes — code
 
 Work from the boundary inward. For each entry point in the slice, name it, name what the data reaches, and read every function between the two before claiming a check is missing; a check one call further down is the Counter line of the finding.
@@ -41,6 +43,7 @@ Work from the boundary inward. For each entry point in the slice, name it, name 
 - Access: a new endpoint or command missing the check its siblings carry; an authorisation decision made from a client-supplied field; an identifier from the request trusted to select another principal's data.
 - Secrets: a token, key or password written to a log, an error message, a panic, a committed file or a URL; a credential compared with ordinary equality; a secret read into a type that prints itself.
 - A dependency the change adds or bumps: what untrusted data the code now hands it, and whether the call site configures it for that data — entity expansion on an XML parser, polymorphic type handling on a deserialiser, certificate verification on a client. Advisories against the dependency itself belong to `external-validity`.
+- Build-time execution: what a changed build script, hook, targets file or lifecycle script fetches, runs and writes, and whether a download is pinned by hash; a new entry in `trustedDependencies` and what that package's install script does.
 
 Name the weakness with its most specific CWE id in the finding's evidence.
 

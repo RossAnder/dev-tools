@@ -7,6 +7,7 @@ produces = ["defect", "cleanup", "advisory"]
 owns = ["hidden-dependencies", "hard-wired-concretes"]
 activation = "candidate"
 slice = "per-subsystem"
+apply_when = { signals = ["new-seam"] }
 v1_category = "testability"
 +++
 

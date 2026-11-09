@@ -623,6 +623,94 @@ fn run_update_merges_baselines_and_waivers() {
 }
 
 #[test]
+fn run_list_orders_by_id_and_filters_open_and_finished() {
+    let Some(repo) = repo() else { return };
+    for _ in 0..10 {
+        repo.start(&repo.first, &[]);
+    }
+    repo.update("U2", "agents=4").success();
+    repo.tomlctl()
+        .args([
+            "review",
+            "run",
+            "finish",
+            "U2",
+            "--scope",
+            SCOPE,
+            "--incomplete",
+            "fixture",
+        ])
+        .assert()
+        .success();
+    let list = |extra: &[&str]| -> JsonValue {
+        let out = repo
+            .tomlctl()
+            .args(["review", "run", "list", "--scope", SCOPE])
+            .args(extra)
+            .assert()
+            .success();
+        serde_json::from_slice(&out.get_output().stdout).expect("run list prints JSON")
+    };
+    let ids = |report: &JsonValue| -> Vec<String> {
+        report["runs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["id"].as_str().unwrap().to_string())
+            .collect()
+    };
+
+    let all = list(&[]);
+    assert_eq!(all["ok"], true);
+    let expected: Vec<String> = (1..=10).map(|n| format!("U{n}")).collect();
+    assert_eq!(ids(&all), expected, "ordered by id number, not as text");
+    let u2 = &all["runs"][1];
+    assert_eq!(u2["command"], "review-v2");
+    assert_eq!(u2["family"], "code");
+    assert_eq!(u2["depth"], "quick");
+    assert_eq!(u2["base"].as_str(), Some(repo.first.as_str()));
+    assert_eq!(u2["agents"], 4);
+    assert_eq!(u2["incomplete"], "fixture");
+    assert!(u2["finished"].is_string(), "{u2}");
+    assert!(
+        all["runs"][0]["finished"].is_null(),
+        "an open run reads null"
+    );
+
+    let finished = list(&["--finished"]);
+    assert_eq!(ids(&finished), ["U2"]);
+    let open = list(&["--open"]);
+    assert_eq!(ids(&open).len(), 9);
+    assert!(!ids(&open).contains(&"U2".to_string()));
+
+    repo.tomlctl()
+        .args([
+            "review",
+            "run",
+            "list",
+            "--scope",
+            SCOPE,
+            "--open",
+            "--finished",
+        ])
+        .assert()
+        .failure();
+}
+
+#[test]
+fn run_list_refuses_a_missing_store() {
+    let Some(repo) = repo() else { return };
+    let out = repo
+        .tomlctl()
+        .args(["--error-format", "json"])
+        .args(["review", "run", "list", "--scope", SCOPE])
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr);
+    assert!(stderr.contains("not_found"), "{stderr}");
+}
+
+#[test]
 fn schema_defect_requires_failure_scenario() {
     let (_dir, root) = sandbox();
     let schema = |extra: &[&str]| -> JsonValue {

@@ -102,11 +102,12 @@ tomlctl review resolve --slug <s> --run <U> [--wave <n>]   # identity outcomes f
 tomlctl review list --slug <s> [--kind <k>] [--in <glob>] [--for <role>]   # findings through a role projection (default orchestrator)
 tomlctl review show <ids> --slug <s> --for <role>      # findings or cells through a role projection
 tomlctl review digest --slug <s> --run <U> [--since-wave <n>]   # counts, coverage gaps, unverified ids, contested, audit sample
-tomlctl review report --slug <s> --run <U> --out <path>   # markdown report; prints {path, counts}
+tomlctl review report --slug <s> --run <U> --out <path> [--allow-outside]   # markdown report; prints {path, counts}
 tomlctl review triage <ids> --slug <s> --dismiss-file <path> [--expect-status open]   # or --defer/--reopen/--park/--resolve, --backlog-ref, --convert [--run <open U>]
 tomlctl review apply <ids> --slug <s> [--user-accepted] [--dry-run]   # write plan findings' record edits on a v2 flow, compare-and-set on expect
 tomlctl review export-v1 <ids> --slug <s> --to <v1-ledger> [--dry-run]   # or --all: every open defect and cleanup of the ledger's family
 tomlctl review run finish <U> --slug <s> [--incomplete-file <path>]   # stamp finished + counts; refuses open gaps without --incomplete
+tomlctl review run list --slug <s> [--open|--finished]   # the store's runs ordered by id; read-only
 tomlctl review stats --all [--by lens] [--outcomes] [--escapes] [--calibration]   # read-only rates per lens, probe, run or model; --plan-outcomes for plan-family runs
 tomlctl review catalogue [--check] [--vocabulary] [--owners]   # the merged lens catalogue's index, or its validation
 tomlctl review schema finding [--kind <k>]             # JSON Schema from the field catalogue; or cell-return, verdict-return
@@ -322,7 +323,7 @@ downstream flow-command templates can feature-gate at boot without parsing
 
 ```json
 {
-  "version": "0.19.0",
+  "version": "0.20.0",
   "features": ["count_distinct", "raw", "lines", "infer_prefix",
                "dedupe_by", "dedup_id_auto", "find_duplicates_across",
                "fingerprint", "capabilities", "error_format_json",
@@ -357,7 +358,8 @@ downstream flow-command templates can feature-gate at boot without parsing
                "review_digest", "review_triage", "review_stats",
                "review_sync_v1", "review_export_v1", "review_catalogue",
                "review_schema", "review_apply", "review_targets",
-               "review_plan_outcomes", "regex_unicode", "template_escapes",
+               "review_plan_outcomes", "review_run_list", "regex_unicode",
+               "template_escapes",
                "text_view", "relaxed_refusals", "items_get_multi",
                "list_grep", "reconcile_counts", "toml_records",
                "tasks_update_batch", "backlog_triage_batch",
@@ -540,4 +542,5 @@ Feature meanings:
 | `review_apply` | `review apply <ID>... --slug <SLUG> [--user-accepted] [--dry-run]` — write the edits of open plan defect and cleanup findings on a v2 flow through each target's own store, compare-and-set on `expect`; refuses advisory and untiered rows, and user-tier rows or an approved plan without `--user-accepted`; prints `{ok, applied, already, skipped_stale}` and stamps each applied finding `resolved` with an `applied` table |
 | `review_targets` | plan findings on a v2 flow name a record in `target` (`task:<ref>.<field>`, `task:<ref>.spec.<field>`, `decision:D<n>.<key>`, `contract:C<n>.<key>`, `milestone:<id>.<field>`, `handover:H<n>.<field>`, `brief#<Section>`, `design/<file>.md#<anchor>`) with JSON-text `expect` and `new` and an optional `proof`, in place of `plan_section` and the anchors; `review add` checks each against the current record, and a computed `tier` (`user`, `mechanical`, `cited` or `advisory`) is frozen when the finding settles open |
 | `review_plan_outcomes` | `review stats --plan-outcomes` with `--slug` or `--all` — per plan-family run and in total, tier by disposition, user-veto rate, growth from applied edits, re-check yield and cost; `review stats --by model` groups audit overturns by the verifying role's model; writes nothing |
+| `review_run_list` | `review run list --slug <SLUG>\|--scope <SCOPE> [--open\|--finished]` — the store's runs ordered by id, as `{ok, runs}` rows the output options act on; writes nothing |
 | `plan_store` | the `plan` group over a v2 flow's `.claude/flows/<SLUG>/plan.toml`, `docs/flows/<SLUG>/brief.md` and task store, each verb taking `--slug`: `open`, `decide`, `contract`, `handover`, `run`, `milestone`, `check`, `view`, `probes`, `stage`, `gate`, `approve` and `drift` |

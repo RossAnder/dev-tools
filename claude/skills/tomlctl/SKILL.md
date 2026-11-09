@@ -175,6 +175,7 @@ Under `--lines`, a report wrapped in an object emits its other fields as one hea
 | `blocks verify` | block | `ok` |
 | `review list` | finding, projected `--for` a role | `for`, `count`, `references` |
 | `review show` | finding or cell, projected `--for` a role | `for`, `references` |
+| `review run list` | run | `ok` |
 
 `items list`, `backlog list` and `tasks list` run on the query engine, whose `--lines` / `--ndjson` is documented under [output shapes](references/query.md#output-shapes---raw----lines----ndjson). `tomlctl capabilities` lists every output flag under its root `global_flags` key, and advertises them as features: `output_options` for the original six, then `path_wildcard`, `rows_header`, `global_where`, `array_predicates`, `max_chars`, `omit`, `template_width`, `list_limited`, `template_escapes`, `text_view` and `relaxed_refusals`.
 

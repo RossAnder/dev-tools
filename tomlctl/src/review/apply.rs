@@ -10,7 +10,10 @@
 //!
 //! Each finding is stamped `resolved` with its `applied` record right after its
 //! own target write, so a failure leaves at most one edit unrecorded, and a
-//! re-run finds that edit already made and records it `recovered`.
+//! re-run finds that edit already made and records it `recovered`. A prose
+//! edit is marked `applying` on its finding before its write, since a short
+//! `new` can occur in a drifted section by chance: without the mark, prose
+//! reads as already made only when `expect` is part of `new`.
 
 use std::path::PathBuf;
 
@@ -33,6 +36,8 @@ use crate::tasks::{ReviewEdit, ReviewEditOutcome, Slot};
 const VERB: &str = "review apply";
 /// The actor the task and milestone audit rows name.
 const ACTOR: &str = "review";
+/// The finding key a prose write pass sets before writing and the stamp drops.
+const MARK: &str = "applying";
 
 /// One finding judged applicable, with its stored values decoded.
 struct Planned {
@@ -43,6 +48,8 @@ struct Planned {
     expect: Option<JsonValue>,
     new: JsonValue,
     proof: Option<serde_json::Map<String, JsonValue>>,
+    /// The finding carried the write-ahead mark when loaded.
+    marked: bool,
     /// What the target store answered before any write.
     judged: ReviewEditOutcome,
 }
@@ -253,11 +260,19 @@ fn execute(target: &Target, args: &ReviewApplyArgs) -> Result<JsonValue> {
                     .with_context(|| interrupted(&report))?;
             }
         }
+        let prose = is_prose(&row.target);
+        if prose && !row.marked {
+            mark(target, &review_integrity, &row.id, true).with_context(|| interrupted(&report))?;
+        }
         let outcome = edit(slug, &args.integrity, row, &reason, Pass::Write)
             .with_context(|| interrupted(&report))?;
         match outcome {
             ReviewEditOutcome::Applied => stamp(target, &review_integrity, row, by, false),
             ReviewEditOutcome::Already => stamp(target, &review_integrity, row, by, true),
+            // Nothing landed, so the mark would vouch for a later coincidence.
+            ReviewEditOutcome::Stale { .. } if prose => {
+                mark(target, &review_integrity, &row.id, false)
+            }
             ReviewEditOutcome::Stale { .. } => Ok(()),
         }
         .with_context(|| interrupted(&report))?;
@@ -374,6 +389,7 @@ fn judge(
                 JsonValue::Object(map) => Some(map),
                 _ => None,
             }),
+        marked: finding.rest.get(MARK).and_then(TomlValue::as_bool) == Some(true),
         judged: ReviewEditOutcome::Applied,
     };
     let reason = format!("review {} {}", row.run, row.id);
@@ -413,13 +429,22 @@ fn edit(
         &row.target,
         row.expect.as_ref(),
         &row.new,
+        row.marked,
         reason,
         pass,
     )
 }
 
+fn is_prose(target: &RecordTarget) -> bool {
+    matches!(
+        target,
+        RecordTarget::Brief { .. } | RecordTarget::Design { .. }
+    )
+}
+
 /// What `review apply` would judge an edit of `target` from `expect` to
-/// `new` against the stores as they stand, writing nothing.
+/// `new` against the stores as they stand, writing nothing, for a finding
+/// carrying no write-ahead mark.
 pub(super) fn validate_target_edit(
     slug: &str,
     target: &RecordTarget,
@@ -433,15 +458,28 @@ pub(super) fn validate_target_edit(
         strict_integrity: false,
         no_create: true,
     };
-    target_edit(slug, &integrity, target, expect, new, "", Pass::Validate)
+    target_edit(
+        slug,
+        &integrity,
+        target,
+        expect,
+        new,
+        false,
+        "",
+        Pass::Validate,
+    )
 }
 
+/// `marked` is whether the finding carries the write-ahead mark; only a
+/// prose edit reads it.
+#[allow(clippy::too_many_arguments)]
 fn target_edit(
     slug: &str,
     integrity: &WriteIntegrityArgs,
     target: &RecordTarget,
     expect: Option<&JsonValue>,
     new: &JsonValue,
+    marked: bool,
     reason: &str,
     pass: Pass,
 ) -> Result<ReviewEditOutcome> {
@@ -504,7 +542,7 @@ fn target_edit(
             }
         }
         RecordTarget::Brief { .. } | RecordTarget::Design { .. } => {
-            prose(slug, target, expect, new, write)
+            prose(slug, target, expect, new, marked, write)
         }
         RecordTarget::Handover { .. } => Err(invalid(format!(
             "target `{target}`: no verb writes a handover yet"
@@ -520,6 +558,7 @@ fn prose(
     target: &RecordTarget,
     expect: Option<&JsonValue>,
     new: &JsonValue,
+    marked: bool,
     write: bool,
 ) -> Result<ReviewEditOutcome> {
     let refuse = |why: &str| invalid(format!("target `{target}`: {why}"));
@@ -549,9 +588,14 @@ fn prose(
             _ => unreachable!("prose is called only for a brief or design target"),
         };
         let section = section.as_str();
-        match place(&original, section, base, expect, new).map_err(|why| refuse(&why))? {
+        match place(&original, section, base, expect, new, marked).map_err(|why| refuse(&why))? {
             Placed::Edited(text) => {
                 if write {
+                    // Resolved again under the lock, so a symlink swapped in
+                    // while the lock was awaited is refused, not written through.
+                    if prose_path(slug, target)? != path {
+                        return Err(refuse("the file's resolved path changed during the edit"));
+                    }
                     crate::io::atomic_write(&path, text.as_bytes())?;
                 }
                 Ok(ReviewEditOutcome::Applied)
@@ -592,15 +636,18 @@ enum Placed {
 
 /// Places the replacement of `expect` by `new` inside `section`, which is the
 /// LF form of a span of `original` starting at byte `base` of that LF form.
-/// `new` occurring once with every `expect` inside it reads as already made;
-/// an empty `new` with no `expect` left likewise. Otherwise `expect` must
-/// occur once: none is stale, several is an error.
+/// `new` occurring once with every `expect` inside it reads as already made,
+/// and so, when `marked`, does an empty `new` with no `expect` left. Unless
+/// `marked` or `expect` is part of `new`, a `new` found with `expect` gone may
+/// be chance, so it is not read as made. Otherwise `expect` must occur once:
+/// none is stale, several is an error.
 fn place(
     original: &str,
     section: &str,
     base: usize,
     expect: &str,
     new: &str,
+    marked: bool,
 ) -> Result<Placed, String> {
     let expect = expect.replace("\r\n", "\n");
     let new = new.replace("\r\n", "\n");
@@ -608,7 +655,9 @@ fn place(
         hay.match_indices(needle).map(|(at, _)| at).collect()
     };
     let olds = hits(section, &expect);
-    let already = if new.is_empty() {
+    let already = if !marked && !new.contains(&expect) {
+        false
+    } else if new.is_empty() {
         olds.is_empty()
     } else {
         match hits(section, &new).as_slice() {
@@ -669,7 +718,8 @@ fn original_offset(original: &str, normal: usize) -> usize {
 }
 
 /// Resolves the finding with its `applied` record under the review store's
-/// lock. `old` is `expect`; `recovered` marks an edit found already made.
+/// lock, dropping the write-ahead mark. `old` is `expect`; `recovered` marks
+/// an edit found already made.
 fn stamp(
     target: &Target,
     integrity: &WriteIntegrityArgs,
@@ -707,6 +757,27 @@ fn stamp(
         finding
             .rest
             .insert("applied".to_string(), TomlValue::Table(applied));
+        finding.rest.remove(MARK);
+        Ok(())
+    })
+}
+
+/// Sets or drops the write-ahead mark on finding `id` under the review
+/// store's lock.
+fn mark(target: &Target, integrity: &WriteIntegrityArgs, id: &str, on: bool) -> Result<()> {
+    store::mutate(&target.path, integrity, |store| {
+        let finding = store
+            .findings
+            .iter_mut()
+            .find(|f| f.id == id)
+            .ok_or_else(|| invalid(format!("{VERB}: {id} left the store mid-call")))?;
+        if on {
+            finding
+                .rest
+                .insert(MARK.to_string(), TomlValue::Boolean(true));
+        } else {
+            finding.rest.remove(MARK);
+        }
         Ok(())
     })
 }
@@ -934,6 +1005,7 @@ new = '"parse and tokenise"'
             assert_eq!(out["skipped_stale"][0]["id"], "F4");
             assert_eq!(out["skipped_stale"][0]["found"], "parse");
             assert_eq!(out["applied"][0]["id"], "F3");
+            assert!(!finding("F3").rest.contains_key(MARK));
             assert_eq!(finding("F4").status(), FindingStatus::Open);
             let brief =
                 std::fs::read_to_string(root.join("docs/flows").join(SLUG).join(BRIEF_FILE))
@@ -974,21 +1046,132 @@ new = '"parse and tokenise"'
         let section = "\nold line\nnext\n";
         let base = "## A\n".len();
         assert_eq!(
-            place(original, section, base, "old line\nnext", "new\nlines").unwrap(),
+            place(
+                original,
+                section,
+                base,
+                "old line\nnext",
+                "new\nlines",
+                false
+            )
+            .unwrap(),
             Placed::Edited("## A\r\n\r\nnew\r\nlines\r\n".to_string())
         );
         assert_eq!(
-            place(original, section, base, "old", "old line").unwrap(),
+            place(original, section, base, "old", "old line", false).unwrap(),
             Placed::Already
         );
         assert_eq!(
-            place(original, section, base, "gone", "fresh").unwrap(),
+            place(original, section, base, "gone", "fresh", false).unwrap(),
             Placed::Stale
         );
-        let err = place(original, section, 0, "old line", "new").unwrap_err();
+        let err = place(original, section, 0, "old line", "new", false).unwrap_err();
         assert!(err.contains("not in the file as read"), "{err}");
-        let err = place("a a", "a a", 0, "a", "b").unwrap_err();
+        let err = place("a a", "a a", 0, "a", "b", false).unwrap_err();
         assert!(err.contains("2 times"), "{err}");
+    }
+
+    #[test]
+    fn a_new_found_by_chance_is_already_made_only_under_the_mark() {
+        let original = "## A\n\nold line\nnext\n";
+        let section = "\nold line\nnext\n";
+        let base = "## A\n".len();
+        // `x` occurs once, inside `next`, and `expect` is gone.
+        assert_eq!(
+            place(original, section, base, "gone", "x", false).unwrap(),
+            Placed::Stale
+        );
+        assert_eq!(
+            place(original, section, base, "gone", "x", true).unwrap(),
+            Placed::Already
+        );
+        assert_eq!(
+            place(original, section, base, "gone", "", false).unwrap(),
+            Placed::Stale
+        );
+        assert_eq!(
+            place(original, section, base, "gone", "", true).unwrap(),
+            Placed::Already
+        );
+    }
+
+    /// F3 rewritten so its `expect` is not part of its `new`, over a brief
+    /// whose section holds `new` by chance and `expect` no longer.
+    fn seed_coincidence(root: &Path, marked: bool) {
+        seed(root);
+        let path = root.join("docs/flows").join(SLUG).join(BRIEF_FILE);
+        std::fs::write(&path, BRIEF.replace("is slow.", "drags on.")).unwrap();
+        let mut review = REVIEW
+            .replace(r#"'"The old parser\nis slow."'"#, r#"'"is slow."'"#)
+            .replace(
+                r#"'"The old parser\nis slow on large plans."'"#,
+                r#"'"drags"'"#,
+            );
+        if marked {
+            review = review.replace(
+                "new = '\"drags\"'\n",
+                "new = '\"drags\"'\napplying = true\n",
+            );
+        }
+        let target = store::resolve(Some(SLUG), None).unwrap();
+        std::fs::write(&target.path, review).unwrap();
+    }
+
+    #[test]
+    fn a_prose_new_present_by_chance_without_the_mark_is_stale() {
+        with_root(|root| {
+            seed_coincidence(root, false);
+            let out = apply(&["F3"], false, false).unwrap();
+            assert_eq!(out["skipped_stale"][0]["id"], "F3", "{out}");
+            assert_eq!(out["already"], json!([]));
+            let f3 = finding("F3");
+            assert_eq!(f3.status(), FindingStatus::Open);
+            assert!(!f3.rest.contains_key(MARK), "a stale write drops its mark");
+            assert!(!f3.rest.contains_key("applied"));
+            let brief =
+                std::fs::read_to_string(root.join("docs/flows").join(SLUG).join(BRIEF_FILE))
+                    .unwrap();
+            assert_eq!(brief, BRIEF.replace("is slow.", "drags on."));
+        });
+    }
+
+    #[test]
+    fn a_marked_prose_edit_already_written_is_recovered() {
+        with_root(|root| {
+            seed_coincidence(root, true);
+            let out = apply(&["F3"], false, false).unwrap();
+            assert_eq!(out["already"], json!(["F3"]), "{out}");
+            let f3 = finding("F3");
+            assert_eq!(f3.status(), FindingStatus::Resolved);
+            assert_eq!(
+                f3.rest["applied"]["recovered"].as_bool(),
+                Some(true),
+                "{f3:?}"
+            );
+            assert!(!f3.rest.contains_key(MARK), "the stamp drops the mark");
+        });
+    }
+
+    #[test]
+    fn a_prose_edit_whose_new_holds_expect_is_recovered_without_the_mark() {
+        with_root(|root| {
+            seed(root);
+            let path = root.join("docs/flows").join(SLUG).join(BRIEF_FILE);
+            std::fs::write(&path, BRIEF.replace("is slow.", "is slow on large plans.")).unwrap();
+            let target = store::resolve(Some(SLUG), None).unwrap();
+            let review = REVIEW
+                .replace(r#"'"The old parser\nis slow."'"#, r#"'"is slow"'"#)
+                .replace(
+                    r#"'"The old parser\nis slow on large plans."'"#,
+                    r#"'"is slow on large plans"'"#,
+                );
+            std::fs::write(&target.path, review).unwrap();
+            let out = apply(&["F3"], false, false).unwrap();
+            assert_eq!(out["already"], json!(["F3"]), "{out}");
+            let f3 = finding("F3");
+            assert_eq!(f3.rest["applied"]["recovered"].as_bool(), Some(true));
+            assert!(!f3.rest.contains_key(MARK));
+        });
     }
 
     #[test]

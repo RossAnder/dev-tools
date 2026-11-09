@@ -1,4 +1,5 @@
-//! `review run start`, `run update` and `run finish` — a run's lifecycle.
+//! `review run start`, `run update` and `run finish` — a run's lifecycle —
+//! and `run list`, its read.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -13,11 +14,11 @@ use super::digest::Counts;
 use super::fields::{self, Family, FindingStatus, Origin, Record, RowContext};
 use super::invalid;
 use super::store::{self, Minted, Run, Signal, Store, Target, Waiver};
-use crate::cli::{ReviewRunFinishArgs, ReviewRunStartArgs, ReviewRunUpdateArgs};
+use crate::cli::{ReviewRunFinishArgs, ReviewRunListArgs, ReviewRunStartArgs, ReviewRunUpdateArgs};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::fields::FieldArgs;
 use crate::io::{read_prose, relativise, relativise_under, repo_or_cwd_root};
-use crate::output::print_json_compact;
+use crate::output::{Rows, print_json_compact, print_report};
 
 /// The run fields `run start` takes through `--set` / `--set-json`.
 const START_FIELDS: &[&str] = &["scope", "models", "substrate", "rechecks"];
@@ -662,6 +663,58 @@ pub(crate) fn finish(target: &Target, args: ReviewRunFinishArgs) -> Result<()> {
         out["gaps"] = gaps.to_json();
     }
     print_json_compact(&out)
+}
+
+/// Every row carries every key, `null` when unset, so `--where` and
+/// `--select` see one shape whether or not a run has finished.
+pub(crate) fn list(target: &Target, args: ReviewRunListArgs) -> Result<()> {
+    let stored = store::load(&target.path, &args.integrity)?;
+    let mut runs: Vec<&Run> = stored
+        .runs
+        .iter()
+        .filter(|r| {
+            let finished = !r.finished.is_empty();
+            !(args.open && finished || args.finished && !finished)
+        })
+        .collect();
+    runs.sort_by_key(|r| run_number(&r.id));
+    let text = |s: &str| (!s.is_empty()).then(|| s.to_string());
+    let rest_text = |r: &Run, key: &str| {
+        r.rest
+            .get(key)
+            .and_then(toml::Value::as_str)
+            .map(str::to_string)
+    };
+    let rows: Vec<JsonValue> = runs
+        .into_iter()
+        .map(|r| {
+            json!({
+                "id": r.id,
+                "command": r.command,
+                "family": r.family.as_str(),
+                "depth": r.depth.as_str(),
+                "started": text(&r.started),
+                "finished": text(&r.finished),
+                "base": text(&r.base),
+                "scope": r.scope,
+                "substrate": text(&r.substrate),
+                "rechecks": rest_text(r, "rechecks"),
+                "waves": r.waves,
+                "agents": r.agents,
+                "incomplete": rest_text(r, "incomplete"),
+            })
+        })
+        .collect();
+    print_report(json!({"ok": true, "runs": rows}), Rows::Field("runs"))
+}
+
+/// The numeric part of a `U<n>` id; an id of any other shape sorts last.
+fn run_number(id: &str) -> (u64, String) {
+    let n = id
+        .strip_prefix(Minted::Runs.prefix())
+        .and_then(|d| d.parse().ok())
+        .unwrap_or(u64::MAX);
+    (n, id.to_string())
 }
 
 /// What keeps a run from finishing cleanly.

@@ -445,21 +445,26 @@ fn report_writes_file_and_prints_counts() {
 }
 
 #[test]
-fn report_refuses_an_out_beside_the_runs_root() {
+fn report_refuses_an_out_beside_the_runs_root_unless_allowed_outside() {
     let Some(repo) = Repo::new(&["src/a.rs"]) else {
         return;
     };
     repo.seed(ALL_WAIVED, &report_rows());
-    let out = repo
-        .tomlctl()
-        .args(["review", "report", "--run", "U1", "--out", "docs/report.md"])
-        .args(STORE)
-        .assert()
-        .failure();
+    fs::create_dir_all(repo.root.join("docs")).unwrap();
+    let report = || {
+        let mut cmd = repo.tomlctl();
+        cmd.args(["review", "report", "--run", "U1", "--out", "docs/report.md"])
+            .args(STORE);
+        cmd
+    };
+    let out = report().assert().failure();
     let stderr = String::from_utf8_lossy(&out.get_output().stderr);
     assert!(stderr.contains(".review-v2-runs/"), "{stderr}");
-    assert!(!stderr.contains("--allow-outside"), "{stderr}");
+    assert!(stderr.contains("--allow-outside"), "{stderr}");
     assert!(!repo.root.join("docs/report.md").exists());
+
+    report().arg("--allow-outside").assert().success();
+    assert!(repo.root.join("docs/report.md").is_file());
 }
 
 #[cfg(unix)]

@@ -19,7 +19,7 @@ The goal is one v2 chain from planning through implementation, review and apply.
 | 1 | Plan format and lifecycle | Decided |
 | 2 | Planning flow | Decided by `docs/plans/v2-planning.md` (Approach) |
 | 3 | Plan review | Decided |
-| 4 | Execution engine | Partly decided |
+| 4 | Execution engine | First slice decided; `tool`, `clerk` and vetting open |
 | 5 | Apply | Partly decided |
 | 6 | Flow state and glimpse | Open |
 | 7 | Re-audit of the built review stage | Open |
@@ -143,6 +143,17 @@ Fixes and dismissals run without asking, because fixes are revertible commits an
 - **Exceptional targeted deep re-review:** not built; the gate shows the open critical instead.
 - **Proposed edits in a file:** edits live on the findings (`target`, `expect`, `new`) and `review apply` reads them, giving one store, compare-and-set and an outcome record.
 - **"Applies" before approval:** leaves no `[[changes]]` row, since `audit` is false until approval; the finding's `applied` field is the record.
+
+### Execution engine, first slice
+
+Decided 2026-11-09. These add to the plan's Approach, "After approval", which still binds.
+
+- **Scope:** implement only, with the `lite` and `deep` executors, premise checks before dispatch, milestone gates, the drain replan and handovers. The `tool` and `clerk` executors, vetting, apply and harvest come in later slices, so the clerk's model is not chosen here. `human-only-handovers` is the first plan it runs.
+- **Status:** each worker writes its own `status`, `agent` and `commit` through `tomlctl`, since those fields are unaudited. A run that dies leaves its state in the store, and glimpse shows progress during the run.
+- **Commits:** the orchestrator commits once per milestone, after the gate passes. Workers share one tree and never commit, and this slice uses no worktrees.
+- **Order inside a milestone:** the Workflow script walks the milestone's task graph in waves from its `args`, one run per milestone, not one per layer.
+- **Partial attempts:** the worker procedure checks the diff of its own files before it starts, because the runtime can restart a stalled writer with its edits left in place. Task specs do not carry this.
+- **Gate failure:** a failed milestone gate is a drain input. The orchestrator mints fix tasks through audited verbs and relaunches, for at most two rounds, then parks the milestone for the user.
 
 ### Smaller fixes
 

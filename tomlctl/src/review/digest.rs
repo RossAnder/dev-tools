@@ -158,18 +158,7 @@ pub(crate) fn report(target: &Target, args: ReviewReportArgs) -> Result<()> {
     let run = find_run(&stored, &args.run, target, "review report")?;
     let root = repo_or_cwd_root()?;
     let (markdown, counts) = render(&stored, run);
-    // `report` takes no `--allow-outside`, so the shared refusal's advice to pass it
-    // would name a flag this verb rejects.
-    store::guard_run_write(&args.out, false).map_err(|e| {
-        if format!("{e:#}").contains("--allow-outside") {
-            anyhow::anyhow!(
-                "review output {} must resolve under .claude/ or .review-v2-runs/",
-                args.out.display()
-            )
-        } else {
-            e
-        }
-    })?;
+    store::guard_run_write(&args.out, args.allow_outside)?;
     atomic_write(&args.out, markdown.as_bytes())?;
     // The markdown is a pure function of the store, so a retry after a
     // shaping failure rewrites the same bytes; a read verb's printer fits.

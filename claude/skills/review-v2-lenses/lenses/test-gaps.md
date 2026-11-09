@@ -7,6 +7,7 @@ produces = ["defect", "cleanup", "advisory"]
 owns = ["missing-tests", "weak-assertions"]
 activation = "candidate"
 slice = "per-subsystem"
+apply_when = { signals = ["finding-hotspot"] }
 v1_category = "testability"
 +++
 

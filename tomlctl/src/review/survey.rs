@@ -886,3 +886,30 @@ fn manifest_passes(path: &str, bytes: &[u8], keys: &[Vec<String>]) -> Result<boo
         Ok(false)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `run start` and the catalogue drift check keep an uncompilable pattern
+    /// out of new runs, so only a legacy store reaches this branch.
+    #[test]
+    fn uncompilable_contains_pattern_is_recorded_unknown_with_its_reason() {
+        let table: Table = toml::from_str(r#"contains = ["ok", "(unclosed"]"#).unwrap();
+        let reason = Detect::parse(&table).err().expect("parse must fail");
+        assert!(
+            reason.starts_with(r#"`contains` pattern "(unclosed" does not compile: "#),
+            "reason must name the pattern: {reason}"
+        );
+
+        let detected = Detected {
+            name: "legacy".to_string(),
+            kind: SignalKind::Stack,
+            outcome: Outcome::Unknown(reason.clone()),
+        };
+        let signal = detected.signal().expect("an unknown outcome is recorded");
+        assert_eq!(signal.source, UNKNOWN);
+        assert!(signal.roots.is_empty());
+        assert_eq!(signal.evidence, vec![reason]);
+    }
+}

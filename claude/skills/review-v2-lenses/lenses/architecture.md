@@ -7,6 +7,7 @@ produces = ["defect", "cleanup", "advisory"]
 owns = ["layering", "placement", "evolvability"]
 activation = "candidate"
 slice = "whole-scope"
+apply_when = { signals = ["new-seam"] }
 v1_category = "architecture"
 +++
 

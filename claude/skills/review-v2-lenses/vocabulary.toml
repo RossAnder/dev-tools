@@ -122,6 +122,19 @@ detect = { files = ["**/*.rs", "**/*.ts", "**/*.tsx", "**/*.js", "**/*.mjs", "**
   '^[-+].*(Command::new|std::process|tokio::process|child_process|execSync|execFile|spawnSync|Bun\.spawn|Bun\.\$|Process\.Start|ProcessStartInfo|WalkDir|walkdir|read_dir|readdir|Directory\.(Enumerate|Get)(Files|Directories)|globSync|git[ \t]+ls-files)',
 ] }
 
+[signals.build-script-change]
+kind = "diff"
+meaning = "The change touches a file that runs code at build, install or commit time on whoever builds the tree: a Cargo build script, an MSBuild targets file, setup.py, a git hook or a pre-commit config."
+detect = { files = ["**/build.rs", "**/*.targets", "**/setup.py", "**/.githooks/**", "**/.husky/**", "**/.pre-commit-config.yaml"] }
+
+[signals.package-lifecycle-change]
+kind = "diff"
+meaning = "The change edits a package.json lifecycle script that npm or Bun runs on install, pack or publish, or the list of dependencies trusted to run theirs."
+detect = { files = ["**/package.json"], contains = [
+  '^[-+][ \t]*"(pre|post)?(install|prepare|pack|publish|publishOnly)"[ \t]*:',
+  '^[-+][ \t]*"trustedDependencies"[ \t]*:',
+] }
+
 [signals.frontend]
 kind = "diff"
 meaning = "The change touches UI components, markup or styles."
@@ -335,6 +348,10 @@ families = ["code", "plan"]
 
 [concerns.secrets-and-crypto]
 meaning = "Secrets stored or logged in the clear; weak or misused cryptography."
+families = ["code", "plan"]
+
+[concerns.supply-chain-execution]
+meaning = "Code run unsandboxed at build, install or commit time — build scripts, install hooks, package lifecycle scripts — that fetches, executes or reaches past the tree."
 families = ["code", "plan"]
 
 # external-validity

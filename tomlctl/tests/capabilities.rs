@@ -66,8 +66,9 @@ fn read_only_subcommands_hide_write_integrity_flags_in_help() {
         &["review", "show", "--help"],
         &["review", "digest", "--help"],
         // `review report` writes derived markdown with no sidecar, like
-        // `tasks render`.
+        // `tasks render`; its `--out` takes `--allow-outside`, exempted below.
         &["review", "report", "--help"],
+        &["review", "run", "list", "--help"],
         &["review", "stats", "--help"],
         &["review", "catalogue", "--help"],
         &["review", "schema", "--help"],
@@ -98,6 +99,10 @@ fn read_only_subcommands_hide_write_integrity_flags_in_help() {
             "--no-write-integrity",
             "--strict-integrity",
         ] {
+            // `review report --out` shares `review plan --out`'s containment rule.
+            if *path == ["review", "report", "--help"] && banned == "--allow-outside" {
+                continue;
+            }
             assert!(
                 !stdout.contains(banned),
                 "read-only sub `{}` must NOT list `{}` in --help; got:\n{}",
@@ -1787,6 +1792,7 @@ fn capabilities_features_contains_every_plan_feature() {
         "review_apply",
         "review_targets",
         "review_plan_outcomes",
+        "review_run_list",
         // Agent ergonomics: prose payloads, batch writes, consistent reads.
         "regex_unicode",
         "template_escapes",
@@ -1842,8 +1848,8 @@ fn capabilities_version_matches_cargo_toml() {
         .and_then(|s| s.as_str())
         .expect("`version` must be a string");
     assert_eq!(
-        version, "0.19.0",
-        "expected version `0.19.0` (the minor bump for the `review apply` verb and record-targeted plan findings); got `{version}`"
+        version, "0.20.0",
+        "expected version `0.20.0` (the minor bump for the `review run list` verb and the `applying` mark); got `{version}`"
     );
 }
 

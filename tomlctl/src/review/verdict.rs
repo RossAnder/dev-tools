@@ -256,8 +256,8 @@ fn apply_one(
             && let Some(slug) = slug
         {
             let mine: Vec<&Verdict> = store.verdicts.iter().filter(|v| v.finding == id).collect();
-            super::tier::stamp(&mut store.findings[index], slug, &mine)
-                .map_err(|e| vec![e.to_string()])?;
+            // A target that does not parse leaves the tier absent; the verdict still lands.
+            let _ = super::tier::stamp(&mut store.findings[index], slug, &mine);
         }
     }
 

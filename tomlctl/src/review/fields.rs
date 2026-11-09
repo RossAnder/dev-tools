@@ -636,6 +636,8 @@ pub(crate) const FIELDS: &[FieldSpec] = &[
         .values(Tier::VALUES)
         .computed(),
     field(Finding, "applied", Ty::Table, TIER).computed(),
+    // Set by `review apply` before a prose write and dropped by its stamp.
+    field(Finding, "applying", Ty::Bool, TIER).computed(),
     // findings: identity links and dispositions
     field(Finding, "same_as", Ty::Str, SAME_AS),
     field(Finding, "depends_on", Ty::StrList, DEPENDS),
@@ -1359,6 +1361,7 @@ mod tests {
         (Finding, "proof", None, "- R - R - R - R"),
         (Finding, "tier", None, "- - - R R R - R"),
         (Finding, "applied", None, "- - - R R R - R"),
+        (Finding, "applying", None, "- - - R R R - R"),
         (Run, "rechecks", None, "- - - - R - - R"),
         (Finding, "edit", None, "- rt R R C R - R"),
         (Finding, "direction", None, "- rt R R C R - -"),

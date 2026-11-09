@@ -250,6 +250,8 @@ impl Stores {
             return Err("a `probe` proof needs a `task:<ref>.spec.accept[<n>]` target".into());
         };
         let expect = expect.ok_or("a `probe` proof needs `expect`, the entry it fixes")?;
+        let expect = &as_stored(target, true, expect);
+        let new = &as_stored(target, true, new);
         let current = target::resolve(slug, target).map_err(|err| format!("{err:#}"))?;
         let list = current.as_array().map(Vec::as_slice).unwrap_or_default();
         let at = target::match_entry(list, expect).map_err(|err| format!("{err:#}"))?;
@@ -334,11 +336,14 @@ impl Stores {
                 } => true,
                 RecordTarget::SpecEntry { .. } => {
                     let expect = expect.ok_or("a `check-class` fix to one entry needs `expect`")?;
+                    let expect = as_stored(target, true, expect);
                     let at =
-                        target::match_entry(&list, expect).map_err(|err| format!("{err:#}"))?;
-                    entry_kept(&list[at], new)
+                        target::match_entry(&list, &expect).map_err(|err| format!("{err:#}"))?;
+                    entry_kept(&list[at], &as_stored(target, true, new))
                 }
-                _ => new.as_array().is_some_and(|fixed| list_kept(&list, fixed)),
+                _ => as_stored(target, false, new)
+                    .as_array()
+                    .is_some_and(|fixed| list_kept(&list, fixed)),
             };
             if !keeps {
                 return Err(
@@ -523,6 +528,14 @@ fn entry_kept(old: &JsonValue, new: &JsonValue) -> bool {
             .keys()
             .chain(new.keys())
             .all(|key| key == "check" || old.get(key) == new.get(key))
+}
+
+/// `value` as the target's store would hold it, so an entry leaving defaults
+/// unstated matches as `review add` and `review apply` judge it. A value the
+/// spec parser refuses, a supplied `probe` among them, is kept as written.
+fn as_stored(target: &RecordTarget, entry: bool, value: &JsonValue) -> JsonValue {
+    crate::tasks::review_stored_form(&target.field_name(), entry, value)
+        .unwrap_or_else(|_| value.clone())
 }
 
 fn same_type(a: &JsonValue, b: &JsonValue) -> bool {
@@ -883,6 +896,40 @@ done = false
             assert_eq!(tier(&flipped, &[&elsewhere]), Some(Tier::Advisory));
             let past_end = verdict("confirmed", ".claude/flows/tiers/tasks.toml:9999");
             assert_eq!(tier(&flipped, &[&past_end]), Some(Tier::Advisory));
+        });
+    }
+
+    #[test]
+    fn a_short_form_accept_expect_add_accepts_is_proved_mechanical() {
+        with_root(|root| {
+            seed(root);
+            let target = "task:parse-it.spec.accept[0]";
+            let short = |check: &str| {
+                json!({
+                    "behaviour": "parses",
+                    "check": check,
+                    "kind": "forward",
+                    "writes_build": false,
+                })
+            };
+            let (expect, new) = (short("cargo test parse"), short("cargo test parse --lib"));
+            assert_eq!(
+                super::super::apply::validate_target_edit(
+                    SLUG,
+                    &target::parse(target).unwrap(),
+                    Some(&expect),
+                    &new
+                )
+                .unwrap(),
+                crate::tasks::ReviewEditOutcome::Applied
+            );
+            let proof = json!({"kind": "probe"});
+            let fixed = row(target, Some(expect.clone()), new, proof.clone());
+            assert_eq!(tier(&fixed, &[]), Some(Tier::Mechanical));
+
+            let defaulted = json!({"behaviour": "parses", "check": "x", "kind": "forward"});
+            let flipped = row(target, Some(expect), defaulted, proof);
+            assert!(proof_err(&flipped).contains("`writes_build`"));
         });
     }
 

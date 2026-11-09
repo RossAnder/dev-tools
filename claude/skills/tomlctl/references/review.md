@@ -9,7 +9,7 @@ The flag surface of the `tomlctl review` group and the shape of the v2 review st
 - [Field catalogue](#field-catalogue)
 - [Roles](#roles)
 - [Routing](#routing)
-- [Run lifecycle](#run-lifecycle) — `sync-v1`, `run start`, `run update`, `run finish`
+- [Run lifecycle](#run-lifecycle) — `sync-v1`, `run start`, `run update`, `run finish`, `run list`
 - [Coverage](#coverage) — `survey`, `plan`, `cover`
 - [Findings and verdicts](#findings-and-verdicts) — `add`, `verdict`, `resolve`
 - [Plan records](#plan-records) — flow mode, `target`, `tier`, `proof`, `apply`
@@ -20,9 +20,9 @@ The flag surface of the `tomlctl review` group and the shape of the v2 review st
 ## Shared behaviour
 
 - **Store target.** Every verb except `catalogue` and `schema` takes exactly one of `--slug` (the flow store) or `--scope` (the flow-less store); `stats` also accepts `--all`. Both names are validated like a flow slug. The store stamps its own `last_updated`, so no verb takes `--no-stamp`.
-- **Run directory.** `.review-v2-runs/<store-key>/U<n>/` at the repo root, where `<store-key>` is the slug or `scope-<scope>`. `run start` creates it with a `payloads/` subdirectory, where agents stage their NDJSON payloads, and writes a `.gitignore` holding `*` at `.review-v2-runs/` when none is there. It and every `--out` must resolve, symlinks followed, under `.review-v2-runs/` or `.claude/`; `run start` and `plan --propose` take `--allow-outside` to override that.
+- **Run directory.** `.review-v2-runs/<store-key>/U<n>/` at the repo root, where `<store-key>` is the slug or `scope-<scope>`. `run start` creates it with a `payloads/` subdirectory, where agents stage their NDJSON payloads, and writes a `.gitignore` holding `*` at `.review-v2-runs/` when none is there. It and every `--out` must resolve, symlinks followed, under `.review-v2-runs/` or `.claude/`; `run start`, `plan --propose` and `report` take `--allow-outside` to override that.
 - **Catalogue drift.** A verb that reads a run's catalogue — `survey`, `plan`, `add`, `run finish` and the others that bind or route against it — reloads it from the roots the run recorded and fails `kind=validation` naming `tree_sha` or `config_sha` when either no longer matches the value `run start` recorded; start a new run. A run recorded without `tree_sha` is not checked.
-- **Integrity flags.** The writing verbs (`sync-v1`, `run *`, `survey`, `plan`, `cover`, `add`, `verdict`, `resolve`, `apply`, `triage`, `export-v1`) carry the write bundle — `--allow-outside`, `--no-write-integrity`, `--verify-integrity`, `--strict-integrity`, `--no-create`. The reading verbs (`list`, `show`, `digest`, `report`, `stats`, `catalogue`, `schema`) carry `--verify-integrity` and `--strict-read`. The flag tables below leave both bundles out.
+- **Integrity flags.** The writing verbs (`sync-v1`, `run *`, `survey`, `plan`, `cover`, `add`, `verdict`, `resolve`, `apply`, `triage`, `export-v1`) carry the write bundle — `--allow-outside`, `--no-write-integrity`, `--verify-integrity`, `--strict-integrity`, `--no-create`. The reading verbs (`run list`, `list`, `show`, `digest`, `report`, `stats`, `catalogue`, `schema`) carry `--verify-integrity` and `--strict-read`; `report` also takes `--allow-outside`, for its `--out`. The flag tables below leave both bundles out.
 - **Missing store.** `sync-v1` and `stats` read an absent store as empty and create nothing; `run start` seeds one; every other verb fails `kind=not_found`.
 - **Payload sources.** Each `--ndjson` takes `-` for stdin, otherwise a file path; a leading `@` is accepted. Prose flags (`--note`, `--rationale`, `--incomplete`, the triage reasons, `--trigger`) read stdin when given `-`, and each has a `-file` twin that reads a file the Write tool staged. Text is read with `\r\n` as `\n` and trimmed; an empty value is refused.
 - **Replays are harmless.** `cover`, `verdict`, `resolve`, `sync-v1` and `triage` compute their result against the stored rows first and write nothing when it changes nothing, and `plan --ndjson` recognises the wave it already minted, so replaying a call that succeeded reports itself `unchanged` rather than writing a duplicate.
@@ -100,7 +100,7 @@ The finding fields an agent supplies, with their caps in characters. Every other
 | plan family, markdown mode | `plan_section` (≤200) on defect and cleanup | `anchor_old` (≤400), `anchor_new` (≤800) |
 | plan family, flow mode | `target` (≤300) on defect and cleanup | `expect`, `new`, `proof` on defect and cleanup; `target` on advisory; `line` |
 
-`review add`, not the catalogue, holds the `line` and `plan_section` requirements, since they depend on the mode, so `review schema` lists neither as required. In flow mode `plan_section`, `anchor_old` and `anchor_new` are refused; see [Plan records](#plan-records). `tier` and `applied` are computed.
+`review add`, not the catalogue, holds the `line` and `plan_section` requirements, since they depend on the mode, so `review schema` lists neither as required. In flow mode `plan_section`, `anchor_old` and `anchor_new` are refused; see [Plan records](#plan-records). `tier`, `applied` and `applying` are computed.
 
 `effort` is `trivial`, `small`, `medium` or `large`. Paths (`file`, `target_file`, `instances`) are repo-relative and `/`-separated, with no `..` and no absolute part.
 
@@ -121,7 +121,7 @@ A cell row takes `slice`, `concerns` (1–3), `agent` and `reason`, plus `questi
 | `backlog` | A `backlog add` object (`summary`, `kind`, `area`, `tags`, `evidence`, `context`, `origin`), carrying the finding id as `id`. |
 | `report` | What the markdown report renders. |
 
-A flow-mode finding's `target` shows in every role but `checker` and `backlog`; `expect`, `new` and `proof` in `verifier`, `implementer`, `audit` and `report`; `tier` and `applied` in `implementer`, `orchestrator`, `audit` and `report`.
+A flow-mode finding's `target` shows in every role but `checker` and `backlog`; `expect`, `new` and `proof` in `verifier`, `implementer`, `audit` and `report`; `tier`, `applied` and `applying` in `implementer`, `orchestrator`, `audit` and `report`.
 
 `finder`, `verifier` and `checker` reports also carry `references`, the absolute paths of the `review-v2-method` worked examples (`finding-kinds`, `verifying`, `plan-records`). A cell takes `finder`, `orchestrator` or `report` only.
 
@@ -205,6 +205,20 @@ tomlctl review run finish U1 --slug <slug> --incomplete-file <run-dir>/payloads/
 | *(positional)* | run id | The run finished. | required |
 | `--slug` / `--scope` | name | The store. | required, one of |
 | `--incomplete` / `--incomplete-file` | text \| path | Finish despite open gaps, recording why. | none |
+
+### `tomlctl review run list`
+
+Lists the store's runs ordered by id number. Writes nothing. Prints `{ok, runs: [{id, command, family, depth, started, finished, base, scope, substrate, rechecks, waves, agents, incomplete}]}`; every row carries every key, `null` when the run has none, so an open run reads `finished: null`. `runs` holds the rows the global output options act on.
+
+```bash
+tomlctl review run list --slug <slug> --open --where family=plan --lines
+```
+
+| Flag | Value | Meaning | Default |
+|---|---|---|---|
+| `--slug` / `--scope` | name | The store. | required, one of |
+| `--open` | bool | Only runs without `finished`; conflicts with `--finished`. | every run |
+| `--finished` | bool | Only runs with `finished`; conflicts with `--open`. | every run |
 
 ## Coverage
 
@@ -360,7 +374,8 @@ Writes the record edits of open flow-mode defect and cleanup findings. Before an
 
 - **Writes.** Each target is written through its own store's path with `expect` re-checked inside that store's lock: task rows and specs through the task update path (actor `review`, reason `review <run> <id>`; a `[[changes]]` row only when the store's `audit` is on), decisions and contracts through the plan records path, milestones through the milestone path. A brief or design edit replaces `expect`'s one occurrence in the section, under an exclusive lock and an atomic write, keeping the file's line endings; a non-UTF-8 file is refused.
 - **Order.** Each finding is stamped straight after its own write, so a failure leaves at most one edit unstamped. The error reads "applying <id> failed; stamped before it: [ids]. <id>'s edit may or may not have landed: re-run `review apply` with only the ids not listed as stamped, and an edit that landed reads as already applied".
-- **Already made.** A value already equal to `new` — for `[+]`, an equal entry exists; for a removal, no entry equals `expect` — is reported under `already`, written nothing, and stamped with `recovered = true`. This is decided before a mechanical proof is re-checked, since a made fix no longer satisfies its proof.
+- **Already made.** A value already equal to `new` — for `[+]`, an equal entry exists; for a removal, no entry equals `expect` — is reported under `already`, written nothing, and stamped with `recovered = true`. This is decided before a mechanical proof is re-checked, since a made fix no longer satisfies its proof. A brief or design edit reads as already made only when `new` occurs once in the section with every occurrence of `expect` inside it and either `expect` is part of `new` or the finding carries `applying = true`; a deletion (empty `new`) with `expect` gone needs the mark. Without either, a `new` found with `expect` gone may be chance, and the finding is stale.
+- **Write-ahead mark.** Before a brief or design write, the finding gets `applying = true` in the review store. The stamp drops it, and so does a write that finds the edit stale; it stays when the write fails or lands without its stamp, so a re-run recovers an edit that landed. The field is absent otherwise, and record targets never carry it: their compare-and-set judges the whole value or entry, which a chance match cannot satisfy.
 - **Stale.** Any other mismatch lands under `skipped_stale` as `{id, target, expected, found}`, and the rest proceed. Under `--dry-run`, a finding whose record an earlier finding in the same call already edits (same file, symbol and field; for list entries and prose, also the same `expect`; appends never collide) lands there too, as `{id, target, expected, found: null, edited_by: <earlier id>}` instead of `applied`. Real runs are unchanged.
 - **Stamp.** Status `resolved`, `resolution = "applied to <target>"`, and `applied = {at, tier, target, old, new, by, recovered}`, where `old` and `new` are JSON text and `by` is `tool`, or `user` under `--user-accepted`. Before approval no `[[changes]]` row exists, so `applied` is the edit's record.
 
@@ -440,7 +455,8 @@ tomlctl review report --slug <slug> --run U1 --out <run-dir>/report.md
 |---|---|---|---|
 | `--slug` / `--scope` | name | The store. | required, one of |
 | `--run` | run id | The run reported. | required |
-| `--out` | path | Where the report is written. | required |
+| `--out` | path | Where the report is written; under `.review-v2-runs/` or `.claude/`, like every `--out`. | required |
+| `--allow-outside` | bool | Write `--out` outside those roots. | off |
 
 ### `tomlctl review stats`
 
@@ -498,7 +514,9 @@ tomlctl review triage F8 --slug <slug> --convert cleanup --ndjson <run-dir>/payl
 | `--run` | run id | The open run the replacement is minted in when the advisory's run is finished; with `--convert` only. | the advisory's run |
 | `--expect-status` | status | Move only the ids still at this status. | no check |
 
-`--convert` defaults the replacement's lens, anchor and summary from the advisory, validates and routes it, records an `orchestrator` verdict on it and leaves it `unverified` for its route; `minted` reports `{id, kind, severity, route, status}`, and a replay reports the replacement already minted.
+`--convert` defaults the replacement's lens, anchor, summary and, in flow mode, `target` from the advisory, validates and routes it, records an `orchestrator` verdict on it and leaves it `unverified` for its route; `minted` reports `{id, kind, severity, route, status}`, and a replay reports the replacement already minted.
+
+`--convert` accepts a `question` tier advisory, though `--park` refuses one: it is how a question becomes a proposed edit. The replacement targets the same user-owned record, so once verified it is tiered `user` when it carries a `new`, and `question` again when it does not. A `user` tier replacement still applies only through `review apply --user-accepted`, so the conversion never makes the edit without the user's Accept.
 
 The replacement is minted in an open run, which cannot finish until it is verified. While the advisory's run is open it is that run, and a `--run` naming any other is refused. Once the advisory's run is finished, the call is refused unless `--run` names an open run of the advisory's family; an unknown, finished or other-family run is refused too. The replacement then takes the named run as `run` and `seen_in`, keeps the advisory's `cell` as provenance, is routed by the named run's catalogue and depth, and its `orchestrator` verdict is filed under that run.
 

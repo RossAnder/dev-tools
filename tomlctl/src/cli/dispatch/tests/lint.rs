@@ -108,6 +108,35 @@ fn classify_token(token: &str) -> TokenRole {
     }
 }
 
+/// A placeholder the shell split at a space (`<ids, comma-separated>`), read
+/// from its opening token: the count of further tokens it spans and its
+/// rendering with the stand-in substituted. `<file 2>err` and `<file >out`
+/// stay redirections, since their closing `>` opens a redirection of its own.
+fn spaced_placeholder(tokens: &[String]) -> Option<(usize, String)> {
+    let first = tokens.first()?;
+    let rest = first.strip_prefix('[').unwrap_or(first).strip_prefix('<')?;
+    if !rest.starts_with(|c: char| c.is_ascii_alphabetic()) || rest.contains(['<', '>']) {
+        return None;
+    }
+    for (n, token) in tokens[1..].iter().enumerate() {
+        let token = strip_synopsis_notation(token);
+        if token.contains('<') || token.starts_with('-') {
+            return None;
+        }
+        if let Some(close) = token.find('>') {
+            let head = &token[..close];
+            if head.is_empty() || head.bytes().all(|b| b.is_ascii_digit()) {
+                return None;
+            }
+            return Some((
+                n + 1,
+                format!("{PLACEHOLDER_STAND_IN}{}", &token[close + 1..]),
+            ));
+        }
+    }
+    None
+}
+
 /// Lint outcome over one file set.
 #[derive(Default)]
 struct CommandLintReport {
@@ -226,7 +255,15 @@ fn lint_logical(rel: &str, logical: &str, opaque: &[String], report: &mut Comman
     // `-` (the stdin sentinel for `--ndjson -` / `--ops -`) is a real argv
     // token and is preserved.
     let mut tokens: Vec<String> = Vec::new();
-    for raw in &raw_tokens {
+    let mut idx = 0;
+    while idx < raw_tokens.len() {
+        let raw = &raw_tokens[idx];
+        idx += 1;
+        if let Some((skip, stand_in)) = spaced_placeholder(&raw_tokens[idx - 1..]) {
+            idx += skip;
+            tokens.push(stand_in);
+            continue;
+        }
         let token = strip_synopsis_notation(raw);
         // A token that was pure notation (`...`) is not argv; an argument
         // written as an empty string is.
@@ -570,6 +607,48 @@ fn command_lint_checks_flags_written_after_a_placeholder() {
             .2
             .contains("unexpected argument '--bogus-flag' found"),
         "the failure must name the drifted flag, not just the rejection: {:?}",
+        report.failures[0]
+    );
+}
+
+/// A placeholder holding a space is one argv slot, so the flags after it are
+/// still parsed, while a redirection whose target is followed by `2>` or `>`
+/// still ends the argv.
+#[test]
+fn command_lint_checks_flags_written_after_a_spaced_placeholder() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let commands = root.join("claude").join("commands");
+    fs::create_dir_all(&commands).unwrap();
+
+    let drifted = commands.join("drifted.md");
+    fs::write(
+        &drifted,
+        "```bash\n\
+         tomlctl tasks show <ids, comma-separated> --slug <slug> --bogus-flag\n\
+         tomlctl tasks show [<ids, comma-separated>] --slug <slug> --with body\n\
+         tomlctl flow active <in 2>err --bogus-flag\n\
+         tomlctl flow active <in >out --bogus-flag\n\
+         ```\n",
+    )
+    .unwrap();
+    let report = command_lint_report(std::slice::from_ref(&drifted), root);
+    assert_eq!(
+        report.failures.len(),
+        1,
+        "only the bogus flag after the spaced placeholder must be reported: {:?}",
+        report.failures
+    );
+    assert!(
+        report.failures[0]
+            .2
+            .contains("unexpected argument '--bogus-flag' found"),
+        "the failure must name the drifted flag: {:?}",
+        report.failures[0]
+    );
+    assert!(
+        report.failures[0].1.starts_with("tomlctl tasks show <ids,"),
+        "the failure must come from the spaced-placeholder line: {:?}",
         report.failures[0]
     );
 }

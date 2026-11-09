@@ -66,7 +66,8 @@ pub(crate) use store::{
 // update verb's own patch path, with `expect` checked inside the store's lock.
 pub(crate) use update::{
     REVIEW_ROW_FIELDS, REVIEW_SPEC_FIELDS, REVIEW_SPEC_LISTS, ReviewEdit, ReviewEditOutcome, Slot,
-    apply_review_edit, review_current, unwritten_outcome, validate_review_edit, written_only,
+    apply_review_edit, review_current, review_stored_form, unwritten_outcome, validate_review_edit,
+    written_only,
 };
 
 /// The plan document `context.toml` binds `slug` to, through the plan-path
