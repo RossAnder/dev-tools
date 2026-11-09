@@ -284,6 +284,7 @@ rationale = "read it"
 const PLAN_SLUG: &str = "plan-fixture";
 const READY_SLUG: &str = "plan-ready";
 const APPROVED_SLUG: &str = "plan-approved";
+const APPLY_SLUG: &str = "apply-fixture";
 const PROBE_CAPTURE: &str = "probe-capture.tsv";
 const PLAN_FILE: &str = "src/plan.rs";
 
@@ -871,6 +872,10 @@ fn cases() -> Vec<Case> {
             ],
             "ledger",
         ),
+        write(
+            &["review", "apply", "F1", "--slug", APPLY_SLUG, "--dry-run"],
+            "ok",
+        ),
         read(&["review", "list", "--slug", S], Field("findings"), "id"),
         read(
             &["review", "show", "F1,F2", "--slug", S, "--for", "orchestrator"],
@@ -1184,6 +1189,72 @@ fn open_plan(root: &Path, slug: &str) {
         PLAN_BRIEF,
     )
     .unwrap();
+}
+
+/// A v2 flow whose review store holds `F1`: an open, cited-tier edit of task
+/// `add-guard`'s effort, which is what `review apply` has to write. The flow
+/// is added to the `review` group's fixture alone, as `plan_flows` does for
+/// `plan`.
+fn apply_flow(root: &Path) {
+    open_plan(root, APPLY_SLUG);
+    let builtin = root.join(BUILTIN).to_string_lossy().replace('\\', "/");
+    put(
+        root,
+        &format!(".claude/flows/{APPLY_SLUG}/review-v2.toml"),
+        &format!(
+            "schema_version = 1\n\n[[runs]]\nid = \"U1\"\ncommand = \"review-plan-v2\"\n\
+             family = \"plan\"\ndepth = \"standard\"\nstarted = \"2026-10-12T10:00:00Z\"\n\
+             catalogue = {{ builtin = \"{builtin}\" }}\n\n[[cells]]\nid = \"C1\"\nrun = \"U1\"\n\
+             wave = 1\nslice = [\"src/**\"]\nconcerns = [\"plan-structure\"]\n\
+             agent = \"review-finder\"\nreason = \"proposed\"\nstatus = \"assigned\"\n"
+        ),
+    );
+    let tasks = format!(".claude/flows/{APPLY_SLUG}/tasks.toml");
+    let row = serde_json::json!({
+        "kind": "defect",
+        "lens": "plan-structure",
+        "summary": "the guard is bigger than S",
+        "severity": "major",
+        "failure_scenario": "a worker budgets for a small task",
+        "fix": "raise the effort",
+        "fix_shape": "edits",
+        "effort": "trivial",
+        "counter": "nobody budgets by it",
+        "grade": "high",
+        "evidence": ["the task row"],
+        "target": "task:add-guard.effort",
+        "file": tasks,
+        "symbol": "add-guard",
+        "expect": "S",
+        "new": "M",
+    });
+    let added = setup(
+        root,
+        &[
+            "review", "add", "--slug", APPLY_SLUG, "--run", "U1", "--cell", "C1", "--ndjson", "-",
+        ],
+        &row.to_string(),
+    );
+    assert_eq!(added["findings"][0]["id"], "F1", "{added}");
+    setup(
+        root,
+        &[
+            "review",
+            "verdict",
+            "F1",
+            "--slug",
+            APPLY_SLUG,
+            "--verdict",
+            "confirmed",
+            "--by",
+            "verifier",
+            "--citation",
+            &format!("{tasks}:1"),
+            "--rationale",
+            "read it",
+        ],
+        "",
+    );
 }
 
 /// The `plan` group's flows, added to its fixture alone so that no other group
@@ -2116,6 +2187,9 @@ fn honours(name: &str) {
     let fx = fixture();
     if name == "plan" {
         plan_flows(&fx.root);
+    }
+    if name == "review" {
+        apply_flow(&fx.root);
     }
     let next = AtomicUsize::new(0);
     let fails = Mutex::new(Vec::new());
