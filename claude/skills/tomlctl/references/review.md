@@ -12,6 +12,7 @@ The flag surface of the `tomlctl review` group and the shape of the v2 review st
 - [Run lifecycle](#run-lifecycle) — `sync-v1`, `run start`, `run update`, `run finish`
 - [Coverage](#coverage) — `survey`, `plan`, `cover`
 - [Findings and verdicts](#findings-and-verdicts) — `add`, `verdict`, `resolve`
+- [Plan records](#plan-records) — flow mode, `target`, `tier`, `proof`, `apply`
 - [Reads](#reads) — `list`, `show`, `digest`, `report`, `stats`
 - [Dispositions and export](#dispositions-and-export) — `triage`, `export-v1`
 - [Catalogue and schema](#catalogue-and-schema) — `catalogue`, `schema`
@@ -21,7 +22,7 @@ The flag surface of the `tomlctl review` group and the shape of the v2 review st
 - **Store target.** Every verb except `catalogue` and `schema` takes exactly one of `--slug` (the flow store) or `--scope` (the flow-less store); `stats` also accepts `--all`. Both names are validated like a flow slug. The store stamps its own `last_updated`, so no verb takes `--no-stamp`.
 - **Run directory.** `.review-v2-runs/<store-key>/U<n>/` at the repo root, where `<store-key>` is the slug or `scope-<scope>`. `run start` creates it with a `payloads/` subdirectory, where agents stage their NDJSON payloads, and writes a `.gitignore` holding `*` at `.review-v2-runs/` when none is there. It and every `--out` must resolve, symlinks followed, under `.review-v2-runs/` or `.claude/`; `run start` and `plan --propose` take `--allow-outside` to override that.
 - **Catalogue drift.** A verb that reads a run's catalogue — `survey`, `plan`, `add`, `run finish` and the others that bind or route against it — reloads it from the roots the run recorded and fails `kind=validation` naming `tree_sha` or `config_sha` when either no longer matches the value `run start` recorded; start a new run. A run recorded without `tree_sha` is not checked.
-- **Integrity flags.** The writing verbs (`sync-v1`, `run *`, `survey`, `plan`, `cover`, `add`, `verdict`, `resolve`, `triage`, `export-v1`) carry the write bundle — `--allow-outside`, `--no-write-integrity`, `--verify-integrity`, `--strict-integrity`, `--no-create`. The reading verbs (`list`, `show`, `digest`, `report`, `stats`, `catalogue`, `schema`) carry `--verify-integrity` and `--strict-read`. The flag tables below leave both bundles out.
+- **Integrity flags.** The writing verbs (`sync-v1`, `run *`, `survey`, `plan`, `cover`, `add`, `verdict`, `resolve`, `apply`, `triage`, `export-v1`) carry the write bundle — `--allow-outside`, `--no-write-integrity`, `--verify-integrity`, `--strict-integrity`, `--no-create`. The reading verbs (`list`, `show`, `digest`, `report`, `stats`, `catalogue`, `schema`) carry `--verify-integrity` and `--strict-read`. The flag tables below leave both bundles out.
 - **Missing store.** `sync-v1` and `stats` read an absent store as empty and create nothing; `run start` seeds one; every other verb fails `kind=not_found`.
 - **Payload sources.** Each `--ndjson` takes `-` for stdin, otherwise a file path; a leading `@` is accepted. Prose flags (`--note`, `--rationale`, `--incomplete`, the triage reasons, `--trigger`) read stdin when given `-`, and each has a `-file` twin that reads a file the Write tool staged. Text is read with `\r\n` as `\n` and trimmed; an empty value is refused.
 - **Replays are harmless.** `cover`, `verdict`, `resolve`, `sync-v1` and `triage` compute their result against the stored rows first and write nothing when it changes nothing, and `plan --ndjson` recognises the wave it already minted, so replaying a call that succeeded reports itself `unchanged` rather than writing a duplicate.
@@ -48,6 +49,7 @@ changed_lines = 412
 catalogue = { project = ".claude/review-lenses", tree_sha = "…" }  # + builtin when --builtin was passed, project_layer_changed
 signals = [ { name = "lang:rust", source = "detector", roots = ["tomlctl"] } ]
 waivers = [ { concern = "security", reason = "no input handling in scope" } ]
+rechecks = "U0"                    # plan family: the run whose applied edits this run re-checks
 
 [[cells]]
 id = "C1"
@@ -92,10 +94,13 @@ The finding fields an agent supplies, with their caps in characters. Every other
 | Kind | Required | Optional |
 |---|---|---|
 | every kind | `kind`, `lens` (one of the cell's concerns), `file`, `summary` (≤160) | `symbol`, `same_as`, `depends_on` |
-| `defect` | `line`, `severity` (`critical` \| `major` \| `minor`), `failure_scenario` (≤600), `fix` (≤800), `fix_shape` (`edits` \| `needs-plan`), `effort`, `counter` (≤300), `grade` (`high` \| `medium` \| `low`), `evidence` (≤5 × 300) | — |
-| `cleanup` | `line`, `edit` (≤800), `direction` (`add` \| `remove` \| `change`), `effort`; `old` (≤400) for `change` and `remove`, and for `add` unless `target_file` names a new file; never required on a plan review, for any direction | `target_file`, `instances` (≤50 paths), `counter` |
+| `defect` | `line` (outside a v2 flow), `severity` (`critical` \| `major` \| `minor`), `failure_scenario` (≤600), `fix` (≤800), `fix_shape` (`edits` \| `needs-plan`), `effort`, `counter` (≤300), `grade` (`high` \| `medium` \| `low`), `evidence` (≤5 × 300) | — |
+| `cleanup` | `line` (outside a v2 flow), `edit` (≤800), `direction` (`add` \| `remove` \| `change`), `effort`; `old` (≤400) for `change` and `remove`, and for `add` unless `target_file` names a new file; never required on a plan review, for any direction | `target_file`, `instances` (≤50 paths), `counter` |
 | `advisory` | `angle` (`risk` \| `challenge` \| `probe` \| `alternative` \| `direction`), `rationale` (≤800), `adoption_cost`; `challenges` when `angle = challenge` | `alternative`, `line` |
-| plan family | `plan_section` (≤200) on defect and cleanup | `anchor_old` (≤400), `anchor_new` (≤800) |
+| plan family, markdown mode | `plan_section` (≤200) on defect and cleanup | `anchor_old` (≤400), `anchor_new` (≤800) |
+| plan family, flow mode | `target` (≤300) on defect and cleanup | `expect`, `new`, `proof` on defect and cleanup; `target` on advisory; `line` |
+
+`review add`, not the catalogue, holds the `line` and `plan_section` requirements, since they depend on the mode, so `review schema` lists neither as required. In flow mode `plan_section`, `anchor_old` and `anchor_new` are refused; see [Plan records](#plan-records). `tier` and `applied` are computed.
 
 `effort` is `trivial`, `small`, `medium` or `large`. Paths (`file`, `target_file`, `instances`) are repo-relative and `/`-separated, with no `..` and no absolute part.
 
@@ -115,6 +120,8 @@ A cell row takes `slice`, `concerns` (1–3), `agent` and `reason`, plus `questi
 | `audit` | The verifier view plus every verdict and `excerpts`: ±5 lines around the finding's `file:line` and each `path:line` citation. |
 | `backlog` | A `backlog add` object (`summary`, `kind`, `area`, `tags`, `evidence`, `context`, `origin`), carrying the finding id as `id`. |
 | `report` | What the markdown report renders. |
+
+A flow-mode finding's `target` shows in every role but `checker` and `backlog`; `expect`, `new` and `proof` in `verifier`, `implementer`, `audit` and `report`; `tier` and `applied` in `implementer`, `orchestrator`, `audit` and `report`.
 
 `finder`, `verifier` and `checker` reports also carry `references`, the absolute paths of the `review-v2-method` worked examples. A cell takes `finder`, `orchestrator` or `report` only.
 
@@ -162,7 +169,7 @@ tomlctl review run start --slug <slug> --command review-v2 --family code --depth
 | `--base` | rev | The commit the change is measured from; stored as its sha. | required |
 | `--builtin` | dir | The built-in catalogue root, recorded as an absolute path; the default is left unrecorded and resolved again by each later verb. | `<claude dir>/skills/review-v2-lenses` |
 | `--project` | dir | The project catalogue layer; a named directory must exist (`kind=not_found`). Passing it accepts a layer `base..HEAD` changed. | `.claude/review-lenses` when present |
-| `--set` / `--set-json` / `--set-file` | `KEY=…` | Only `scope` (repo-relative paths or globs), `models` (a table) and `substrate` (`workflow` \| `agent-waves`). `--set-json KEY=@<path>` reads the JSON value from a file the Write tool staged. A field tomlctl computes, such as `incomplete` or `counts`, is refused as set by tomlctl. | none |
+| `--set` / `--set-json` / `--set-file` | `KEY=…` | Only `scope` (repo-relative paths or globs), `models` (a table), `substrate` (`workflow` \| `agent-waves`) and `rechecks` (the run id a plan re-check run re-reads; `stats --plan-outcomes` counts its findings as re-check yield). `--set-json KEY=@<path>` reads the JSON value from a file the Write tool staged. A field tomlctl computes, such as `incomplete` or `counts`, is refused as set by tomlctl. | none |
 
 The claude dir is `CLAUDE_CONFIG_DIR`, else `USERPROFILE` or `HOME` joined with `.claude`.
 
@@ -257,7 +264,7 @@ tomlctl review cover C3 --slug <slug> --status thin --note-file <run-dir>/payloa
 
 ### `tomlctl review add`
 
-Writes one cell's full finding set. Each row is checked against the field catalogue, `lens` against the cell's concerns, `old` against its file (within 20 lines of `line`, `\r\n` read as `\n`; in `target_file` when given and existing), and a plan row's `anchor_old` against its `plan_section` (exactly once). `route`, `anchor` and the anchor candidates are computed; a `same_as` must name a candidate, and a row with candidates but no `same_as` gets them as `related`. The cell's earlier `unverified` rows become `superseded`. Defect and cleanup rows are minted `unverified`; an advisory row `open`, or `merged` with `outcome = "suppressed"` when its `same_as` names a dismissed, deferred, parked, backlogged or converted finding. Prints `{ok, run, cell, findings: [{id, kind, severity, route}], superseded, refused}`.
+Writes one cell's full finding set. Each row is checked against the field catalogue, `lens` against the cell's concerns, `old` against its file (within 20 lines of `line`, `\r\n` read as `\n`; in `target_file` when given and existing), a markdown-mode plan row's `anchor_old` against its `plan_section` (exactly once), and a flow-mode plan row's `target`, `expect` and `proof` against the flow's records ([Plan records](#plan-records)). Outside flow mode a defect or cleanup row without `line`, or a markdown plan row without `plan_section`, is refused. `route`, `anchor` and the anchor candidates are computed; a `same_as` must name a candidate, and a row with candidates but no `same_as` gets them as `related`. The cell's earlier `unverified` rows become `superseded`. Defect and cleanup rows are minted `unverified`; an advisory row `open`, with its `tier` in flow mode, or `merged` with `outcome = "suppressed"` when its `same_as` names a dismissed, deferred, parked, backlogged or converted finding. Prints `{ok, run, cell, findings: [{id, kind, severity, route}], superseded, refused}`.
 
 On a sealed cell `add` prints `{ok: false, sealed: true, cell, status, findings}` with the cell's standing findings and exits 1. A finished run is refused.
 
@@ -320,6 +327,55 @@ tomlctl review resolve --slug <slug> --run U1 --wave 2
 | `--slug` / `--scope` | name | The store. | required, one of |
 | `--run` | run id | The run resolved. | required |
 | `--wave` | N | Only findings from cells of this wave. | every wave |
+
+## Plan records
+
+A plan-family run is in **flow mode** when its store is a flow's (`--slug`) and that flow has `.claude/flows/<slug>/plan.toml`; otherwise it is in **markdown mode**, which behaves as the rest of this reference describes. The reviewer-side how-to — what to read, which record each markdown section maps to, worked payloads — is `review-v2-method`'s `references/plan-records.md`; this section is the tool's side.
+
+- **`target`** names one record: `task:<ref>.<field>`, `task:<ref>.spec.<field>`, `task:<ref>.spec.<list>[<n>]` or `[+]`, `decision:D<n>.<key>`, `contract:C<n>.<key>`, `milestone:<id>.<field>`, `handover:H<n>.<field>`, `brief#<Section>` or `design/<file>.md#<anchor>`. `file` and `symbol` must be the target's own, and `line` is optional.
+- **`expect` and `new`** are JSON values, stored as JSON text since TOML holds no null. `expect` must equal the record's current value — for a list entry, exactly one entry must equal it, with an accept entry's tool-written `probe` removed on both sides; for prose, it is text occurring exactly once in the section. `new` needs `expect`, except on a `[+]` append; a `new` of `null` removes a list entry. Neither may carry `probe`. An advisory row may carry `target` alone.
+
+**Tiers.** `tier` is computed when a flow-mode finding first opens — by `verdict`, `resolve`, a `triage --reopen`, or `add` for an advisory — and frozen after. The first that holds wins:
+
+1. `user`: the target is any `decision:*`, any `task:*.spec.outcome`, or `brief#Intent`, `brief#Non-goals`, `brief#Scope budget` or `brief#Success criteria`.
+2. `advisory`: kind `advisory`, a `handover:*` target, or no `new`.
+3. `mechanical`: a `proof` that tomlctl verifies from the store and the tree.
+4. `cited`: the latest deciding `verifier`, `panel` or `checker` verdict is `confirmed` or `plausible`, and its citation is a `path:line` in the target's own file, or in a path the target's value names, with the line inside that file.
+
+Anything else is `advisory`. Agreement alone never lifts a row past `advisory`.
+
+**Proofs.** `proof` is `{kind, …}`, and `add` refuses one that does not hold or a `new` that changes more than it covers. `expect` and `new` are capped at 800 serialised characters each on a proven row.
+
+| `kind` | Holds when | `new` may |
+|---|---|---|
+| `probe` | the target is a `spec.accept` entry whose recorded probe verdict is not healthy; no verdict proves nothing | change only the entry's `check` and `positive` |
+| `check-class` (`class`) | `plan check` reports that class at error severity on the target's task; `task:*` targets only | change only the field the class binds (`plan-records.md` lists them) |
+| `path-missing` (`path`) | the target is `task:<ref>.files`, the path is absent from the tree and not a `(new)` file note | drop the path or replace it with one other |
+| `ref-unknown` (`ref`) | the target is `needs` or `contract:*.tasks` and the value names no task | drop the id or replace it with one other |
+
+### `tomlctl review apply`
+
+Writes the record edits of open flow-mode defect and cleanup findings. Before any write it refuses, as one `kind=validation` error listing each refused id with its reasons: a finding of another family, kind or status than an open plan defect or cleanup; no `tier`, or `advisory`; `user` tier without `--user-accepted`; any finding without `--user-accepted` once `plan.toml` holds an `[[approval]]`; no `target` or no `new`; a `handover:*` target; a `new` the target store's validator rejects; and a mechanical proof that no longer holds. `--scope`, and a flow without `plan.toml`, are refused outright.
+
+- **Writes.** Each target is written through its own store's path with `expect` re-checked inside that store's lock: task rows and specs through the task update path (actor `review`, reason `review <run> <id>`; a `[[changes]]` row only when the store's `audit` is on), decisions and contracts through the plan records path, milestones through the milestone path. A brief or design edit replaces `expect`'s one occurrence in the section, under an exclusive lock and an atomic write, keeping the file's line endings; a non-UTF-8 file is refused.
+- **Order.** Each finding is stamped straight after its own write, so a failure leaves at most one edit unstamped, and the error names the ids stamped before it.
+- **Already made.** A value already equal to `new` — for `[+]`, an equal entry exists; for a removal, no entry equals `expect` — is reported under `already`, written nothing, and stamped with `recovered = true`. This is decided before a mechanical proof is re-checked, since a made fix no longer satisfies its proof.
+- **Stale.** Any other mismatch lands under `skipped_stale` as `{id, target, expected, found}`, and the rest proceed.
+- **Stamp.** Status `resolved`, `resolution = "applied to <target>"`, and `applied = {at, tier, target, old, new, by, recovered}`, where `old` and `new` are JSON text and `by` is `tool`, or `user` under `--user-accepted`. Before approval no `[[changes]]` row exists, so `applied` is the edit's record.
+
+Prints `{ok, applied: [{id, target, tier}], already: [ids], skipped_stale}`; `--dry-run` adds `dry_run: true` and writes nothing.
+
+```bash
+tomlctl review apply F3,F7 --slug <slug> --dry-run
+tomlctl review apply F9 --slug <slug> --user-accepted
+```
+
+| Flag | Value | Meaning | Default |
+|---|---|---|---|
+| *(positional)* | ids | Finding ids, comma- or space-separated. | required |
+| `--slug` / `--scope` | name | The flow store; `--scope` is refused. | required |
+| `--user-accepted` | bool | The user accepted these edits: admits `user` tier and an approved plan, and records `by = "user"`. | off |
+| `--dry-run` | bool | Report the outcome without writing. | off |
 
 ## Reads
 
@@ -387,9 +443,11 @@ tomlctl review report --slug <slug> --run U1 --out <run-dir>/report.md
 
 ### `tomlctl review stats`
 
-Rates per lens, probe or run over one store or all of them. Writes nothing. Prints `{ok, stores: [paths], by?, rows?, outcomes?, escapes?, calibration?}`.
+Rates per lens, probe, run or model over one store or all of them. Writes nothing. Prints `{ok, stores: [paths], by?, rows?, outcomes?, escapes?, calibration?, plan_outcomes?}`.
 
 - **Rows** (`--by`, or no section flag): `key`, `families`, `runs`, `cells`, `findings` by kind, `yield_per_cell`, `verified`, `refuted`, `refute_rate`, `audited`, `overturned`, `audit_overturn_rate`, `dismissed`, `dismissal_rate`, `thin`, `uncovered`, `uncovered_rate`; per lens also `hashes`, `waived` and `waiver_rate`, per probe tag `probes`. A rate over zero is `null`. A probe groups under the tag its `reason` opens with (`nearest <tag>:`), else `untagged`.
+- **`--by model`** rows are keyed by the model of the verifying role that decided each finding — `models.verifier` for `verifier` and `panel`, `models.checker` for `checker`, read from the run that verdict names — and carry `roles`, `runs`, `verified`, `refuted`, `refute_rate`, `audited`, `overturned` and `audit_overturn_rate`. A run without `models`, or without the role, keys as `unknown`.
+- **`plan_outcomes`** (`--plan-outcomes`; `--slug` or `--all`, flow stores only, plan family only): per run and in `total`, `tiers` (tier → disposition → count; dispositions `applied`, `applied-disclosed` for cited, `user-accepted`, `user-vetoed`, else the status), `veto_rate` (vetoed over accepted plus vetoed), `growth` (`edits`, net `chars_added`, `entries_added`, `entries_removed`), `recheck_yield` (findings minted by a run with `rechecks`), and `cost` (`agents`, `minutes`); each run also names `rechecks`. A rate or yield with nothing to count is `null`.
 - **`outcomes`**: per lens and kind, `exported`, `linked`, the v1 statuses, the mapped v2 statuses and `wontfix_reasons`, through `v2_ref` with `sync-v1`'s mapping; a retired link is not counted.
 - **`escapes`**: `count`, `by_concern` and `findings` minted in a file and concern an earlier run's cell had sealed `covered`.
 - **`calibration`**: per area, the top exemplar sentences with `count` and `sources`, drawn only from user dismissals, v1 wontfix reasons and audit overturns.
@@ -397,13 +455,15 @@ Rates per lens, probe or run over one store or all of them. Writes nothing. Prin
 ```bash
 tomlctl review stats --all --by lens
 tomlctl review stats --slug <slug> --outcomes --escapes --calibration --exemplars 3
+tomlctl review stats --all --plan-outcomes --by model
 ```
 
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
 | `--slug` / `--scope` / `--all` | name \| bool | One store, or every flow and flow-less store. | required, one of |
 | `--family` | `code` \| `perf` \| `plan` | Only this family. | every family |
-| `--by` | `lens` \| `probe` \| `run` | The grouping axis of `rows`. | `lens` |
+| `--by` | `lens` \| `probe` \| `run` \| `model` | The grouping axis of `rows`. | `lens` |
+| `--plan-outcomes` | bool | Add the plan-review outcomes; refused with `--scope`. | off |
 | `--outcomes` | bool | Add the v1 apply outcomes. | off |
 | `--escapes` | bool | Add the coverage escapes. | off |
 | `--calibration` | bool | Add the calibration exemplars. | off |
