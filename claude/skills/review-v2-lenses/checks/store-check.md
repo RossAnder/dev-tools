@@ -23,6 +23,19 @@ Rules for both commands:
 - Do not redirect or discard stderr. A line starting `tomlctl:` is the reason a command failed.
 - Judge each command by what it prints, never by its exit code. `tasks check` exits 1 whenever it prints an `error` line; that is a result, not a failure.
 
+## v2 flow
+
+A run is a v2 flow when your assignment says `flow: <slug>` and `.claude/flows/<slug>/plan.toml` exists. The store is already canonical and `tasks import-plan` refuses a v2 flow, so run neither import command. Run these two read-only commands instead, copying the template exactly:
+
+1. `tomlctl plan check --slug <slug> --template '{severity} {class} {ids}: {detail}'`
+2. `tomlctl tasks check --slug <slug> --template '{severity} {class} {ids}: {detail}'`
+
+The same rules apply: judge by what each prints, never by exit code, and do not discard stderr. `plan check` exits 1 on an error line, which is a result. Its output includes the `tasks check` classes, so the two commands can print the same finding; keep both copies, under their own command.
+
+`plan check` adds classes beyond those below, all named `plan/…`: a missing or empty brief section, a changed brief, a contract or premise or handover or decision binding that names no row, a task with no spec or a spec with no outcome or accept entry, an accept entry with no check, a dead design anchor, a deferred milestone with no reason, an unhealthy or absent probe, and a milestone with no gate. Cell agents read them as facts about the records. The `render/drift` and `plan/no-tasks` classes do not occur on a v2 flow.
+
+In the fence, use the headings `plan check:` and `tasks check:` in place of the two headings in the mapping below, with the same three bodies (output lines, `no findings`, or `not run — <the tomlctl: line>`). The `checks:` line is `ran` when either command ran. See `review-v2-method/references/plan-records.md` for how findings on a v2 flow target records.
+
 ## Interpreting the result
 
 Each output line is one finding, shaped `<severity> <class> [<task ids>]: <detail>`. `<severity>` is `error`, `warning` or `info`. No output at all means the command found nothing.

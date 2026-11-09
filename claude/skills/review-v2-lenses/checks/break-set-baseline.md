@@ -22,6 +22,10 @@ The surveyor reads the plan's task Acceptance lines and its Success Criteria, co
 
 The baseline observes the tree; it never creates the post-task one. A command that would write the working tree is not run: one carrying `--fix` or `--write`, a formatter without its check flag, a code generator, a migration, a `tasks import-plan` without `--dry-run`. Its line resolves to `none — <command> writes the working tree`, and the precondition judgement goes ahead without a baseline for it.
 
+## v2 flow
+
+When your assignment says `flow: <slug>`, the surveyor lists no predicted break sets: task rows carry no such prediction text. The `verification:` line resolves to `none — v2 flow carries no predicted break sets`, and the precondition judgement goes ahead statically.
+
 ## Interpreting the result
 
 Each log is one command's output against the tree as it stands before any task runs. Read two things from it:

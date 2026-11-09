@@ -19,6 +19,10 @@ Decides whether the plan under review is in the house format, and if it is, poin
 
 Never copy the contract's text into the pack, and never edit the plan or the skill.
 
+## v2 flow
+
+When your assignment says `flow: <slug>`, the plan is a record store, not a markdown file, and the house format does not bind it. Run nothing. Write the `FORMAT CONTRACT` fence as the single line `not run: v2 flow`, and report `checks:` for `format-contract` as `not run — v2 flow`.
+
 ## Interpreting the result
 
 - Both headings found and the contract confirmed: house-format, contract available.
