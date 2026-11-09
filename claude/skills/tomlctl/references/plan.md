@@ -6,7 +6,7 @@ The `tomlctl plan` verbs over a v2 flow's `.claude/flows/<slug>/plan.toml`,
 `[[milestones]]`, `[[changes]]`, `audit`) are [tasks-store.md](tasks-store.md), and the `spec`,
 `reason` and `file_notes` row keys that fill them are
 [`tasks add-many`](tasks-write.md#tasks-add-many). Which verb a carrier reaches for at which step
-of planning is owned by the [task-store contract](../../flow-contract-task-store/SKILL.md).
+of planning is owned by the [`plan-v2-engine` skill](../../plan-v2-engine/SKILL.md).
 
 ## Contents
 
