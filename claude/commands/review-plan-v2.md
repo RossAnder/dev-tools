@@ -1,5 +1,5 @@
 ---
-description: Review an implementation plan with composed, verified coverage — the v2 plan family, findings in the v2 store, and a merge offer into the plan
+description: Review an implementation plan with composed, verified coverage — the v2 plan family, findings in the v2 store, and a merge offer into the plan, or tiered edits to the records of a v2 flow
 argument-hint: '[plan path or directory] [--depth quick|standard|deep] [--flow <slug>] [--probe "<question>"]... [--lens +id|-id]...'
 ---
 
@@ -8,6 +8,8 @@ argument-hint: '[plan path or directory] [--depth quick|standard|deep] [--flow <
 Reviews an implementation plan against the codebase with coverage composed for this plan: floor plan lenses, a dry run per task, the whole-plan `plan-checks` cell, and whatever lenses and probes the plan's signals call for. Every defect and cleanup finding is verified before it is offered back; verified findings can then be merged into the plan.
 
 Invoke the `review-v2-engine` skill before anything else and run its stages in order. It owns the pipeline: pre-flight, run start, survey, compose, waves, resolve and digest, audit, triage and close, the steering flags and the depth envelopes. This file states only what the plan family adds at each stage; where it says nothing, the engine's text stands.
+
+The run has two modes, fixed at stage 0. **Flow mode** applies when the resolved flow has `.claude/flows/<slug>/plan.toml`: the plan is a v2 flow's records, the procedure is the engine's `references/plan-flow.md`, and this file adds only the stage 0 bind, the stage 7 presentation and the stage 8 close below. **Markdown mode** is every other run, and is the rest of this file as written.
 
 > **Effort**: Requires `xhigh` or `max` — composition, audit and triage are judgement steps.
 
@@ -19,12 +21,29 @@ Invoke the `review-v2-engine` skill before anything else and run its stages in o
 | `review run start --command` | `review-plan-v2` |
 | envelope `--command` | `review-plan` |
 | base | `HEAD` |
-| scope | the plan documents bound at stage 0, `<plan>` first |
+| scope | markdown mode: the plan documents bound at stage 0, `<plan>` first; flow mode: `docs/flows/<slug>/brief.md` plus every `docs/flows/<slug>/design/*.md` |
 | depth | `--depth`, default `standard` |
 
 ## Stage 0 — pre-flight
 
-Invoke the `tomlctl` skill and the `flow-contract-flow-context` skill as the engine's stage 0 directs, and build the envelope with `--command review-plan`. Then, in this order, after the envelope is gated: steps 1 and 2 below, the engine's `review sync-v1`, and step 3, which is the engine's plan-family import.
+Invoke the `tomlctl` skill and the `flow-contract-flow-context` skill as the engine's stage 0 directs, and build the envelope with `--command review-plan`. Once the envelope is gated, decide the mode.
+
+### Flow mode
+
+When `envelope.resolved.slug` is set and `.claude/flows/<slug>/plan.toml` exists, the run is in flow mode. Bind `<flow>` to that slug and run `plan-flow.md` section 1 in place of the steps below:
+
+- check the installed binary for the apply verb, `tomlctl capabilities --get features`, and stop when `review_apply` is absent, naming `cargo install --path tomlctl` in the dev-tools checkout and a restart;
+- skip the plans-directory prompt and plan resolution: the plan is the flow's records, and no `<plan>` path is bound;
+- skip both the engine's `review sync-v1` and step 3's import, since `tasks import-plan` refuses a v2 flow;
+- read `tomlctl plan stage --slug <flow>`. On `approved`, `running` or `done`, `plan-flow.md` section 12 governs every edit this run makes. Settle any unfinished plan-family review run by section 13 first.
+
+A path argument names no document in flow mode. When one names a markdown plan outside `docs/flows/<flow>/`, the user may have meant another flow: say the resolved flow is a v2 flow and ask whether to review it or re-run with `--flow` naming the plan's own flow. Its findings could not land in this flow's store, which refuses markdown anchors.
+
+Name the mode in the triage presentation as `mode: flow (<flow>)`, with the import skip it implies.
+
+### Markdown mode
+
+Every run not in flow mode. In this order, after the envelope is gated: steps 1 and 2 below, the engine's `review sync-v1`, and step 3, which is the engine's plan-family import.
 
 **1. Plans directory.** When `envelope.plans_directory` is null, invoke the `flow-contract-plansdirectory-prompt` skill and run its first-use prompt. Its in-memory bind is the plans directory for step 2.
 
@@ -50,7 +69,17 @@ Skip the import in three cases and name the case that fired in the triage presen
 
 An error-class finding is review material here, never a halt. When the real import refuses, on a `dag/cycle`, a `checkpoint/invalid-cut` or a `dag/duplicate-number`, leave the store as it stands and continue. The surveyor's dry run carries those findings into the `STORE CHECK` fence, and the cells judge them.
 
-## Stage 2 — survey
+## Stages 1 to 6 — flow mode
+
+Run `plan-flow.md` sections 2 to 6 in place of the engine's stages 1 to 6 and the markdown-mode additions below:
+
+- **Run start**, section 2, with `--command review-plan-v2` and `<depth>` from `--depth`, default `standard`.
+- **Survey signals and schemas**, section 3. Add a `--lens +<id>` for an `unknown` signal there, or name it at close.
+- **Launch**, section 4. `signals.steering` carries this command's `--lens` and `--probe` flags. Write no `plan.toml` run row: those record `/plan-v2`'s steps, and this command's run is tracked in the review store alone.
+- **The return and the fallback**, section 5. A fallback resumes the engine's own stages in flow mode, as that section says: the surveyor prompt carries `flow: <flow>` in place of stage 2's `plan:` line, and a fallback compose keeps stage 3's floor, `plan-checks` cell and `plan-executor` rules.
+- **Mop-up**, section 6.
+
+## Stage 2 — survey (markdown mode)
 
 - The surveyor prompt carries the `plan:` line, set to `<plan>`.
 - The plan family's surveyor checks are `store-check` (the `STORE CHECK` fence: `tasks import-plan --dry-run` and `tasks check --plan`) and `format-contract` (the `FORMAT CONTRACT` fence: house format or foreign). Read their `checks:` lines in the digest; a `not run` there goes into the triage presentation.
@@ -58,7 +87,7 @@ An error-class finding is review material here, never a halt. When the real impo
 - Pass the plan's own `transient:` keys from its `## Verification Commands` as the dispatches' `transient:` patterns.
 - Run no break-set command yourself. The baseline observes today's tree; judging each prediction's preconditions against it is the `plan-checks` cell's work.
 
-## Stage 3 — compose
+## Stage 3 — compose (markdown mode)
 
 - **The floor.** `plan-structure`, `plan-grounding`, `plan-dependencies`, `ripple` and `plan-executor` are proposed on every plan run. Keep them; a floor lens is never dropped or waived.
 - **The `plan-checks` cell.** The proposal emits one `review-finder` cell whose concerns are the three cell-run checks, `check:two-control-probe`, `check:falsifiability` and `check:acceptance-contradiction`. Write it to the cell file exactly as proposed: same concerns, slice, agent and reason. It takes the place of v1's orchestrator-only checks, so you run no acceptance probe, no falsifiability scan and no cross-task contradiction scan yourself, and its defects are verified like any other.
@@ -66,11 +95,36 @@ An error-class finding is review material here, never a halt. When the real impo
 
 ## Stage 7 — triage
 
+### Flow mode
+
+Triage is `plan-flow.md` section 7, by tier; there is no merge offer, and the grammar's `export` does not apply. Open with the flow, its `plan stage`, the mode line from stage 0 and an overall assessment (`Ready to execute`, `Needs revision` or `Major gaps`), then present in tier order:
+
+- **Mechanical and cited.** Applied without asking through `review apply`, previewed with `--dry-run` first. List them as applied, with the refused, stale and `already` ids the verb reported; cited edits are disclosed rather than asked.
+- **User tier.** Asked in `AskUserQuestion` batches, applied with `--user-accepted` on Accept and dismissed on Veto. A headless session leaves them `open` and says `user tier pending`.
+- **Advisory and leftovers.** The engine's stage 7 presentation, over the advisory rows, the defect and cleanup rows whose tier is `advisory`, and the refused ids.
+
+On an approved flow, `plan-flow.md` section 12 replaces the first two groups: every edit is asked whatever its tier, the question naming the tier, because `review apply` refuses any call without `--user-accepted` once `plan.toml` holds an `[[approval]]`.
+
+### Markdown mode
+
 Open the presentation with the plan, its age, and an overall assessment (`Ready to execute`, `Needs revision` or `Major gaps`), then the engine's items. Add a line for any skipped task store or surveyor check that did not run.
 
 The grammar's `export` does not apply to this family. Verified findings go back into the plan through the merge offer at stage 8, and the presentation says so.
 
 ## Stage 8 — close
+
+### Flow mode
+
+Tiered apply has already replaced the merge offer, so nothing is merged, no `.revised.md` or `.premerge.md` is written, and `brief.md` is never rewritten whole. Close by `plan-flow.md`:
+
+1. **Re-probe**, section 8, whenever an applied or `already` target is a `spec.accept` entry.
+2. **Close the first run**, section 9: park the untriaged advisory, write the report, finish. Backlog picks go through the `backlog-capture` skill, as the engine's close says.
+3. **Re-check**, section 10, when any edit was applied. Its findings are never applied automatically: a user-tier one is asked, and the rest stay `open` for the approval gate.
+4. **Close summary**, section 11. Skip its `plan run finish`, since this command opened no `plan.toml` step row.
+
+On an approved flow, an applied `brief.md` edit leaves `plan stage` asking for `plan approve --amend --review ran`. Tell the user that amend is theirs to run; this command never approves.
+
+### Markdown mode
 
 The engine's close runs with two changes: the merge offer below takes the place of export (step 3), and there is no apply hand-off (step 4). Parking the untriaged advisory and the backlog picks run first, as the engine says; when the user picked an item for the backlog, invoke the `backlog-capture` skill there. Advisory is never merged into the plan.
 
