@@ -26,6 +26,12 @@ The scenario names the workload, the input size and the cost with its magnitude.
 {"kind": "defect", "lens": "plan-executor", "file": "docs/plans/export.md", "line": 212, "symbol": "add-the-export-verb", "summary": "Task 4's acceptance runs a test binary no task creates", "severity": "major", "failure_scenario": "At acceptance the implementer runs `cargo test --test export_cli`; no task's Files line creates tests/export_cli.rs, so the command fails with `no test target named export_cli`.", "fix": "Add tests/export_cli.rs (new) to task 4's Files line, or point the acceptance at the existing tests/export.rs.", "fix_shape": "edits", "effort": "trivial", "counter": "A later task could create the file; the Files lines of tasks 5-9 do not name it.", "grade": "high", "evidence": ["docs/plans/export.md:219 acceptance names --test export_cli", "no Files line in the plan names tests/export_cli.rs"], "plan_section": "### 4. Add the export verb [M]", "anchor_old": "`cargo test --test export_cli`", "anchor_new": "`cargo test --test export`"}
 ```
 
+On a v2 flow (the flow has `plan.toml`) a defect or cleanup row swaps `plan_section`, `anchor_old` and `anchor_new` for `target`, `expect`, `new` and an optional `proof`, and `line` is optional. `file` is the target's record file and `symbol` its record id. The target grammar, the proof kinds and worked rows are in `references/plan-records.md`.
+
+```json
+{"kind": "defect", "lens": "plan-executor", "file": ".claude/flows/export/tasks.toml", "symbol": "add-the-export-verb", "summary": "Task 4's acceptance runs a test binary no task creates", "severity": "major", "failure_scenario": "At acceptance the implementer runs `cargo test --test export_cli`; no task creates tests/export_cli.rs, so the command fails with `no test target named export_cli`.", "fix": "Point the acceptance at the existing tests/export.rs.", "fix_shape": "edits", "effort": "trivial", "counter": "A later task could create the file; no task's files names it.", "grade": "high", "evidence": ["tasks show add-the-export-verb: accept entry 0 names --test export_cli"], "target": "task:add-the-export-verb.acceptance", "expect": "`cargo test --test export_cli`", "new": "`cargo test --test export`"}
+```
+
 ## cleanup — `change`
 
 `old` is copied byte for byte from the anchor line, after re-reading it.
