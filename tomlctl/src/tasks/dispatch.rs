@@ -251,11 +251,16 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
         TasksOp::Ready {
             target,
             in_flight,
+            checkpoint,
             integrity,
         } => {
             let path = store::resolve_store_path(target.slug.as_deref(), target.file.as_deref())?;
             let store = store::load(&path, &integrity)?;
-            print_json(&ready::ready(&store, &in_flight)?)
+            let frontier = match checkpoint {
+                Some(checkpoint) => ready::ready_in_checkpoint(&store, &in_flight, &checkpoint)?,
+                None => ready::ready(&store, &in_flight)?,
+            };
+            print_json(&frontier)
         }
 
         TasksOp::Batches { target, integrity } => {

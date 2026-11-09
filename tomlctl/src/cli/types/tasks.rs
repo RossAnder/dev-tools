@@ -261,8 +261,8 @@ pub(crate) enum TasksOp {
         ids: TaskIds,
         #[command(flatten)]
         target: TasksTarget,
-        /// Lifecycle status: `pending`, `in-progress`, `done`, `failed` or
-        /// `deferred`. Validated against the store schema after parsing.
+        /// Lifecycle status: `pending`, `in-progress`, `done`, `failed`,
+        /// `deferred` or `parked`. Validated against the store schema after parsing.
         #[arg(long, value_name = "STATUS")]
         status: Option<String>,
         /// Agent the row was dispatched to, recorded at dispatch time.
@@ -398,6 +398,11 @@ pub(crate) enum TasksOp {
         /// them is reported as held, naming the file and the holder.
         #[arg(long = "in-flight", value_delimiter = ',', value_name = "N1,N2,...")]
         in_flight: Vec<u32>,
+        /// Keep only this checkpoint group's rows in every list. Dependencies
+        /// in other groups still gate; an id the store does not carry is
+        /// refused.
+        #[arg(long = "checkpoint", value_name = "ID")]
+        checkpoint: Option<String>,
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },

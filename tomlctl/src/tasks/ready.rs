@@ -3,7 +3,7 @@
 //! A cycle is refused rather than answered: Kahn strands its members, and a
 //! stranded task reads in a frontier exactly like one that is merely waiting.
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use serde_json::{Value as JsonValue, json};
 
 use super::graph::{Graph, Tense, build_or_refuse, nodes_of, refuse};
@@ -18,6 +18,41 @@ pub(crate) fn ready(store: &Store, in_flight: &[u32]) -> Result<JsonValue> {
     let nodes = nodes_of(&store.items);
     let graph = build_or_refuse(&nodes, "the frontier", Tense::Stored)?;
     ready_with(&graph, in_flight)
+}
+
+/// `ready` with every list cut to the rows whose `checkpoint` is `checkpoint`.
+/// The frontier is built over the whole graph first, so a dependency in
+/// another checkpoint still gates. A checkpoint naming nothing in the store is
+/// refused rather than read as an empty frontier.
+pub(crate) fn ready_in_checkpoint(
+    store: &Store,
+    in_flight: &[u32],
+    checkpoint: &str,
+) -> Result<JsonValue> {
+    let declared = store.checkpoints.iter().any(|c| c.id == checkpoint);
+    let claimed = store.items.iter().any(|row| row.checkpoint == checkpoint);
+    if checkpoint.is_empty() || !(declared || claimed) {
+        return Err(refuse(anyhow!("no checkpoint `{checkpoint}` in the store")));
+    }
+
+    let mut frontier = ready(store, in_flight)?;
+    let in_scope = |id: &JsonValue| {
+        id.as_u64()
+            .and_then(|id| u32::try_from(id).ok())
+            .and_then(|id| store.find(id))
+            .is_some_and(|row| row.checkpoint == checkpoint)
+    };
+    for list in ["ready", "next"] {
+        if let Some(JsonValue::Array(ids)) = frontier.get_mut(list) {
+            ids.retain(&in_scope);
+        }
+    }
+    for list in ["held", "blocked"] {
+        if let Some(JsonValue::Array(entries)) = frontier.get_mut(list) {
+            entries.retain(|entry| in_scope(&entry["id"]));
+        }
+    }
+    Ok(frontier)
 }
 
 /// `ready` over a graph the caller already built and refused a cycle in.
@@ -163,6 +198,48 @@ mod tests {
             err.to_string().contains("cycle through tasks 1, 2, 3"),
             "{err}"
         );
+    }
+
+    /// 2 sits in B behind 1, a pending row of A; 4 sits in B behind 5, a
+    /// failed row of A.
+    fn two_checkpoints() -> Store {
+        let in_checkpoint = |row: TaskRow, checkpoint: &str| TaskRow {
+            checkpoint: checkpoint.to_string(),
+            ..row
+        };
+        store(vec![
+            in_checkpoint(row(1, &[], &["a.rs"], Status::Pending), "A"),
+            in_checkpoint(row(2, &[1], &["b.rs"], Status::Pending), "B"),
+            in_checkpoint(row(3, &[], &["c.rs"], Status::Pending), "B"),
+            in_checkpoint(row(4, &[5], &["d.rs"], Status::Pending), "B"),
+            in_checkpoint(row(5, &[], &["e.rs"], Status::Failed), "A"),
+        ])
+    }
+
+    #[test]
+    fn a_checkpoint_scope_keeps_only_its_rows_while_other_checkpoints_still_gate() {
+        let store = two_checkpoints();
+
+        assert_eq!(
+            ready_in_checkpoint(&store, &[], "B").expect("B is claimed"),
+            json!({
+                "ready": [3],
+                "held": [],
+                "next": [2],
+                "blocked": [{"id": 4, "blocker": 5, "blocker_status": "failed"}],
+            })
+        );
+        assert_eq!(
+            ready_in_checkpoint(&store, &[], "A").expect("A is claimed"),
+            json!({"ready": [1], "held": [], "next": [], "blocked": []})
+        );
+    }
+
+    #[test]
+    fn a_checkpoint_no_row_or_entry_carries_is_refused() {
+        let err =
+            ready_in_checkpoint(&two_checkpoints(), &[], "C").expect_err("C is not in the store");
+        assert!(err.to_string().contains("no checkpoint `C`"), "{err}");
     }
 
     #[test]
