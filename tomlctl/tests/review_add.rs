@@ -18,6 +18,12 @@ executable = ["**/*.rs"]
 tests = ["tests/**"]
 "#;
 
+/// The one lens the catalogue marks sweeper-executed.
+const RIPPLE_LENS: &str = "+++\nid = \"ripple\"\nstatus = \"stable\"\n\
+    families = [\"code\", \"plan\"]\nmode = \"mechanical\"\nproduces = [\"cleanup\"]\n\
+    owns = [\"stale-references\"]\nactivation = \"floor\"\nslice = \"whole-scope\"\n+++\n\n\
+    ## Question\n\nWhat still names what the diff removed?\n";
+
 /// 40 numbered lines; `const LIMIT` sits on line 30.
 fn lib_rs() -> String {
     let mut text = String::new();
@@ -51,6 +57,8 @@ impl Repo {
         let builtin = catalogue.path().join("review-v2-lenses");
         fs::create_dir_all(&builtin).unwrap();
         fs::write(builtin.join("vocabulary.toml"), VOCABULARY).unwrap();
+        fs::create_dir_all(builtin.join("lenses")).unwrap();
+        fs::write(builtin.join("lenses").join("ripple.md"), RIPPLE_LENS).unwrap();
         let builtin = builtin.to_string_lossy().replace('\\', "/");
 
         write(&root, "src/lib.rs", &lib_rs());
@@ -542,6 +550,93 @@ fn lens_outside_cell_concerns_is_refused() {
     );
     assert_eq!(ids(&mixed), ["F3"]);
     assert!(reasons(&mixed, 0).contains("lens"), "{mixed}");
+}
+
+fn ripple(file: &str, line: u32, old: &str) -> JsonValue {
+    let mut row = cleanup(file, line, "change", Some(old));
+    row["lens"] = json!("ripple");
+    row
+}
+
+#[test]
+fn add_accepts_mechanical_cleanup_outside_cell_lenses() {
+    let repo = Repo::new();
+    let out = repo.added(
+        "U1",
+        "C1",
+        &[
+            ripple("src/lib.rs", 30, "LIMIT: usize = 8"),
+            ripple("docs/guide.md", 3, "`--fast`"),
+        ],
+    );
+    assert_eq!(ids(&out), ["F3", "F4"], "{out}");
+    assert!(out["refused"].as_array().unwrap().is_empty(), "{out}");
+    let routes: Vec<&str> = out["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["route"].as_str().unwrap())
+        .collect();
+    assert_eq!(routes, ["verifier", "checker"], "cleanup routing is kept");
+    assert_eq!(repo.finding("F3")["lens"].as_str(), Some("ripple"));
+    assert_eq!(repo.finding("F3")["cell"].as_str(), Some("C1"));
+}
+
+#[test]
+fn add_refuses_defect_outside_cell_lenses() {
+    let repo = Repo::new();
+    let mut unswept = ripple("src/lib.rs", 30, "LIMIT: usize = 8");
+    unswept["lens"] = json!("security");
+    let out = repo.added(
+        "U1",
+        "C1",
+        &[
+            defect("ripple", "lib::limit", "major"),
+            unswept,
+            defect("correctness", "lib::limit", "major"),
+        ],
+    );
+    assert_eq!(ids(&out), ["F3"], "{out}");
+    let refused: Vec<i64> = out["refused"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["line"].as_i64().unwrap())
+        .collect();
+    assert_eq!(refused, [1, 2], "{out}");
+    assert!(
+        reasons(&out, 0).contains("`lens` is \\\"ripple\\\""),
+        "{out}"
+    );
+    assert!(
+        reasons(&out, 1).contains("`lens` is \\\"security\\\""),
+        "{out}"
+    );
+}
+
+#[test]
+fn add_accepts_ripple_finding_outside_run_scope() {
+    let repo = Repo::new();
+    let path = repo.root.join(".claude/review-v2/t.toml");
+    let mut doc = repo.store();
+    let mut run = doc["runs"][0].as_table().unwrap().clone();
+    run.insert("id".into(), "U4".into());
+    run.insert(
+        "scope".into(),
+        toml::Value::Array(vec!["src/lib.rs".into()]),
+    );
+    doc["runs"].as_array_mut().unwrap().push(run.into());
+    let mut cell = doc["cells"][0].as_table().unwrap().clone();
+    cell.insert("id".into(), "C10".into());
+    cell.insert("run".into(), "U4".into());
+    cell.insert("concerns".into(), toml::Value::Array(vec!["ripple".into()]));
+    doc["cells"].as_array_mut().unwrap().push(cell.into());
+    fs::write(&path, toml::to_string(&doc).unwrap()).unwrap();
+
+    let out = repo.added("U4", "C10", &[ripple("docs/guide.md", 3, "`--fast`")]);
+    assert_eq!(ids(&out), ["F3"], "{out}");
+    assert!(out["refused"].as_array().unwrap().is_empty(), "{out}");
+    assert_eq!(repo.finding("F3")["file"].as_str(), Some("docs/guide.md"));
 }
 
 #[test]

@@ -16,7 +16,7 @@ use anyhow::Result;
 use serde_json::{Map, Value as JsonValue, json};
 use toml::Value as TomlValue;
 
-use super::catalogue::run_catalogue;
+use super::catalogue::{Catalogue, EntryType, Mode, run_catalogue};
 use super::fields::{
     self, Direction, Family, FindingStatus, Kind, Record, Route, RoutingGlobs, RowContext, Severity,
 };
@@ -104,14 +104,22 @@ pub(crate) fn run(target: &Target, args: ReviewAddArgs) -> Result<()> {
     if cell.sealed {
         return refuse_sealed(&stored, cell);
     }
-    let globs = run_catalogue(&root, run)?.routing().compile()?;
+    let catalogue = run_catalogue(&root, run)?;
+    let globs = catalogue.routing().compile()?;
+    let swept = swept_lenses(&catalogue, run.family);
     let slug = store_slug(target);
     let flow = flow_slug(slug.as_deref(), run.family);
 
+    let checks = Checks {
+        root: &root,
+        slug: slug.as_deref(),
+        globs: &globs,
+        swept: &swept,
+    };
     let mut ready = Vec::new();
     let mut refused = Vec::new();
     for (line, row) in rows {
-        match prepare(line, row, run, cell, &root, slug.as_deref(), &globs) {
+        match prepare(line, row, run, cell, &checks) {
             Ok(prepared) => ready.push(prepared),
             Err(reasons) => refused.push(json!({"line": line, "reasons": reasons})),
         }
@@ -268,6 +276,30 @@ pub(super) fn str_of<'a>(row: &'a Map<String, JsonValue>, key: &str) -> Option<&
         .filter(|s| !s.is_empty())
 }
 
+/// What every row of one `review add` call is checked against.
+struct Checks<'a> {
+    root: &'a Path,
+    slug: Option<&'a str>,
+    globs: &'a RoutingGlobs,
+    swept: &'a [String],
+}
+
+/// The ids of the catalogue's sweeper-executed lenses for `family`: those
+/// whose mode is `mechanical`.
+fn swept_lenses(catalogue: &Catalogue, family: Family) -> Vec<String> {
+    catalogue
+        .entries()
+        .iter()
+        .filter(|e| {
+            e.ty == EntryType::Lens
+                && e.mode == Some(Mode::Mechanical)
+                && !e.disabled
+                && e.families.contains(&family)
+        })
+        .map(|e| e.id.clone())
+        .collect()
+}
+
 /// The checks that need no review store: the field catalogue, the cell's
 /// concerns, the record target, `old` and `anchor_old` against the files,
 /// and the route.
@@ -276,18 +308,17 @@ fn prepare(
     row: Map<String, JsonValue>,
     run: &Run,
     cell: &Cell,
-    root: &Path,
-    slug: Option<&str>,
-    globs: &RoutingGlobs,
+    checks: &Checks<'_>,
 ) -> std::result::Result<Prepared, Vec<String>> {
-    let reasons = field_refusals(root, &row, run.family, Some(cell));
+    let root = checks.root;
+    let reasons = field_refusals_with(root, &row, run.family, Some(cell), checks.swept);
     if !reasons.is_empty() {
         return Err(reasons);
     }
     let kind = str_of(&row, "kind")
         .and_then(Kind::parse)
         .expect("validate_row accepts only a known kind");
-    let reasons = record_refusals(slug, &row, kind, run.family);
+    let reasons = record_refusals(checks.slug, &row, kind, run.family);
     if !reasons.is_empty() {
         return Err(reasons);
     }
@@ -295,7 +326,7 @@ fn prepare(
     if !reasons.is_empty() {
         return Err(reasons);
     }
-    let route = route_of(&row, kind, run, globs);
+    let route = route_of(&row, kind, run, checks.globs);
     Ok(Prepared {
         line,
         row,
@@ -312,6 +343,18 @@ pub(super) fn field_refusals(
     family: Family,
     cell: Option<&Cell>,
 ) -> Vec<String> {
+    field_refusals_with(root, row, family, cell, &[])
+}
+
+/// [`field_refusals`], except that a `cleanup` carrying `old` may name one of
+/// the `swept` lenses whether or not `cell` covers it.
+fn field_refusals_with(
+    root: &Path,
+    row: &Map<String, JsonValue>,
+    family: Family,
+    cell: Option<&Cell>,
+    swept: &[String],
+) -> Vec<String> {
     let exists = |rel: &str| root.join(rel).is_file();
     let ctx = RowContext {
         family,
@@ -324,6 +367,9 @@ pub(super) fn field_refusals(
     if let Some(cell) = cell
         && let Some(lens) = str_of(row, "lens")
         && !cell.concerns.iter().any(|c| c == lens)
+        && !(str_of(row, "kind") == Some(Kind::Cleanup.as_str())
+            && str_of(row, "old").is_some()
+            && swept.iter().any(|s| s == lens))
     {
         reasons.push(format!(
             "`lens` is {lens:?}; cell {} covers {}",
