@@ -9,7 +9,7 @@ The flag surface of the `tomlctl review` group and the shape of the v2 review st
 - [Field catalogue](#field-catalogue)
 - [Roles](#roles)
 - [Routing](#routing)
-- [Run lifecycle](#run-lifecycle) — `sync-v1`, `run start`, `run update`, `run finish`, `run list`
+- [Run lifecycle](#run-lifecycle) — `sync-v1`; the `run` verbs (`start`, `update`, `finish`, `list`, `show`) are [review-runs.md](review-runs.md)
 - [Coverage](#coverage) — `survey`, `plan`, `cover`
 - [Findings and verdicts](#findings-and-verdicts) — `add`, `verdict`, `resolve`
 - [Plan records](#plan-records) — flow mode, `target`, `tier`, `proof`, `apply`
@@ -22,7 +22,7 @@ The flag surface of the `tomlctl review` group and the shape of the v2 review st
 - **Store target.** Every verb except `catalogue` and `schema` takes exactly one of `--slug` (the flow store) or `--scope` (the flow-less store); `stats` also accepts `--all`. Both names are validated like a flow slug. The store stamps its own `last_updated`, so no verb takes `--no-stamp`.
 - **Run directory.** `.review-v2-runs/<store-key>/U<n>/` at the repo root, where `<store-key>` is the slug or `scope-<scope>`. `run start` creates it with a `payloads/` subdirectory, where agents stage their NDJSON payloads, and writes a `.gitignore` holding `*` at `.review-v2-runs/` when none is there. It and every `--out` must resolve, symlinks followed, under `.review-v2-runs/` or `.claude/`; `run start`, `plan --propose` and `report` take `--allow-outside` to override that.
 - **Catalogue drift.** A verb that reads a run's catalogue — `survey`, `plan`, `add`, `run finish` and the others that bind or route against it — reloads it from the roots the run recorded and fails `kind=validation` naming `tree_sha` or `config_sha` when either no longer matches the value `run start` recorded; start a new run. A run recorded without `tree_sha` is not checked.
-- **Integrity flags.** The writing verbs (`sync-v1`, `run *`, `survey`, `plan`, `cover`, `add`, `verdict`, `resolve`, `apply`, `triage`, `export-v1`) carry the write bundle — `--allow-outside`, `--no-write-integrity`, `--verify-integrity`, `--strict-integrity`, `--no-create`. The reading verbs (`run list`, `list`, `show`, `digest`, `report`, `stats`, `catalogue`, `schema`) carry `--verify-integrity` and `--strict-read`; `report` also takes `--allow-outside`, for its `--out`. The flag tables below leave both bundles out.
+- **Integrity flags.** The writing verbs (`sync-v1`, `run *`, `survey`, `plan`, `cover`, `add`, `verdict`, `resolve`, `apply`, `triage`, `export-v1`) carry the write bundle — `--allow-outside`, `--no-write-integrity`, `--verify-integrity`, `--strict-integrity`, `--no-create`. The reading verbs (`run list`, `run show`, `list`, `show`, `digest`, `report`, `stats`, `catalogue`, `schema`) carry `--verify-integrity` and `--strict-read`; `report` also takes `--allow-outside`, for its `--out`. The flag tables below leave both bundles out.
 - **Missing store.** `sync-v1` and `stats` read an absent store as empty and create nothing; `run start` seeds one; every other verb fails `kind=not_found`.
 - **Payload sources.** Each `--ndjson` takes `-` for stdin, otherwise a file path; a leading `@` is accepted. Prose flags (`--note`, `--rationale`, `--incomplete`, the triage reasons, `--trigger`) read stdin when given `-`, and each has a `-file` twin that reads a file the Write tool staged. Text is read with `\r\n` as `\n` and trimmed; an empty value is refused.
 - **Replays are harmless.** `cover`, `verdict`, `resolve`, `sync-v1` and `triage` compute their result against the stored rows first and write nothing when it changes nothing, and `plan --ndjson` recognises the wave it already minted, so replaying a call that succeeded reports itself `unchanged` rather than writing a duplicate.
@@ -44,6 +44,7 @@ family = "code"                    # code | perf | plan
 depth = "standard"                 # quick | standard | deep
 started = "2026-10-12T10:00:00Z"
 base = "e23b918…"                  # --base resolved to a commit sha
+head = "4a7c01d…"                  # --head resolved to a commit sha; absent measures to HEAD
 scope = ["tomlctl/src/review/**"]
 changed_lines = 412
 catalogue = { project = ".claude/review-lenses", tree_sha = "…" }  # + builtin when --builtin was passed, project_layer_changed
@@ -62,6 +63,7 @@ reason = "proposed"
 bound = [ { concern = "correctness", hash = "9c1e…", path = "…", methods = ["trace"], v1_category = "quality" } ]
 status = "covered"                 # assigned | covered | thin | uncovered
 sealed = true
+ruled_out = [ { file = "tomlctl/src/review/add.rs", symbol = "prepare", reason = "the early return is deliberate" } ]  # set by cover --ruled-out
 
 [[findings]]
 id = "F1"
@@ -93,18 +95,18 @@ The finding fields an agent supplies, with their caps in characters. Every other
 
 | Kind | Required | Optional |
 |---|---|---|
-| every kind | `kind`, `lens` (one of the cell's concerns), `file`, `summary` (≤160) | `symbol`, `same_as`, `depends_on` |
-| `defect` | `line` (outside a v2 flow), `severity` (`critical` \| `major` \| `minor`), `failure_scenario` (≤600), `fix` (≤800), `fix_shape` (`edits` \| `needs-plan`), `effort`, `counter` (≤300), `grade` (`high` \| `medium` \| `low`), `evidence` (≤5 × 300) | — |
+| every kind | `kind`, `lens` (one of the cell's concerns; see the cleanup exception below), `file`, `summary` (≤160) | `symbol`, `same_as`, `depends_on` |
+| `defect` | `line` (outside a v2 flow), `severity` (`critical` \| `major` \| `minor`), `failure_scenario` (≤600; aim for 450), `fix` (≤800), `fix_shape` (`edits` \| `needs-plan`), `effort`, `counter` (≤300), `grade` (`high` \| `medium` \| `low`), `evidence` (≤5 × 300) | — |
 | `cleanup` | `line` (outside a v2 flow), `edit` (≤800), `direction` (`add` \| `remove` \| `change`), `effort`; `old` (≤400) for `change` and `remove`, and for `add` unless `target_file` names a new file; never required on a plan review, for any direction | `target_file`, `instances` (≤50 paths), `counter` |
 | `advisory` | `angle` (`risk` \| `challenge` \| `probe` \| `alternative` \| `direction`), `rationale` (≤800), `adoption_cost`; `challenges` when `angle = challenge` | `alternative`, `line` |
 | plan family, markdown mode | `plan_section` (≤200) on defect and cleanup | `anchor_old` (≤400), `anchor_new` (≤800) |
 | plan family, flow mode | `target` (≤300) on defect and cleanup | `expect`, `new`, `proof` on defect and cleanup; `target` on advisory; `line` |
 
-`review add`, not the catalogue, holds the `line` and `plan_section` requirements, since they depend on the mode, so `review schema` lists neither as required. In flow mode `plan_section`, `anchor_old` and `anchor_new` are refused; see [Plan records](#plan-records). `tier`, `applied` and `applying` are computed.
+`review add`, not the catalogue, holds the `line` and `plan_section` requirements, since they depend on the mode, so `review schema` lists neither as required. It also holds the **mechanical-cleanup exception**: a `cleanup` row carrying `old` may name any lens the run's catalogue marks `mode = "mechanical"` for the run's family, from any cell, whether or not the cell covers it; it is routed like any other cleanup. In flow mode `plan_section`, `anchor_old` and `anchor_new` are refused; see [Plan records](#plan-records). `tier`, `applied` and `applying` are computed.
 
 `effort` is `trivial`, `small`, `medium` or `large`. Paths (`file`, `target_file`, `instances`) are repo-relative and `/`-separated, with no `..` and no absolute part.
 
-A cell row takes `slice`, `concerns` (1–3), `agent` and `reason`, plus `question` for a `probe:` concern, `pass` (1 or 2) and `facets` edits (`+id` / `-id`). A verdict row takes `finding`, `by`, `verdict`, `citation` and `rationale` (≤600), plus `seat` (1–3, panel only) and `severity` (defects only); `unsettled` is the checker's alone. `tomlctl review schema` emits the same rules as JSON Schema.
+A cell row takes `slice`, `concerns` (1–3), `agent` and `reason`, plus `question` for a `probe:` concern, `pass` (1 or 2) and `facets` edits (`+id` / `-id`). A verdict row takes `finding`, `by`, `verdict`, `citation` and `rationale` (≤600; aim for 450), plus `seat` (1–3, panel only) and `severity` (defects only); `unsettled` is the checker's alone. `tomlctl review schema` emits the same rules as JSON Schema.
 
 ## Roles
 
@@ -112,7 +114,7 @@ A cell row takes `slice`, `concerns` (1–3), `agent` and `reason`, plus `questi
 
 | Role | Sees |
 |---|---|
-| `finder` | The identity fields and status, for a slice's `PRIOR`. A cell carries its assignment: slice, concerns with bound paths, facet and method paths, `pack`, `baselines`. A `review-finder-cf` cell carries no `pack`; it carries the run's `base` instead, to read the slice as `git diff <base>`. A plan-family cell adds `plan_documents`, the run's scope, with the plan first, and in flow mode `flow`, the slug. |
+| `finder` | The identity fields and status, for a slice's `PRIOR`. A cell carries its assignment: slice, concerns with bound paths, facet and method paths, `pack`, `baselines`. A `review-finder-cf` cell carries no `pack`; it carries the run's `base` instead, to read the slice as `git diff <base>`, and the run's `head` beside it when the run records one. No other cell carries `head`. A plan-family cell adds `plan_documents`, the run's scope, with the plan first, and in flow mode `flow`, the slug. |
 | `verifier` | The claim to refute (`failure_scenario`, `counter`, `evidence`) and the `same_as` target; never `grade` or `fix`; the edit fields only when routed to it. |
 | `checker` | The cleanup edit fields and the `same_as` target. |
 | `implementer` | The fix, what done means, and the latest citation. |
@@ -120,6 +122,8 @@ A cell row takes `slice`, `concerns` (1–3), `agent` and `reason`, plus `questi
 | `audit` | The verifier view plus every verdict and `excerpts`: ±5 lines around the finding's `file:line` and each `path:line` citation. |
 | `backlog` | A `backlog add` object (`summary`, `kind`, `area`, `tags`, `evidence`, `context`, `origin`), carrying the finding id as `id`. |
 | `report` | What the markdown report renders. |
+
+`verifier` and `audit` rows also carry `ruled_out`, `[{cell, reason}]`: each rule-out another cell of the finding's run recorded at the finding's place (matched as for the digest's `ruled_out_hits`), whatever its wave; the key is absent when there is none.
 
 A flow-mode finding's `target` shows in every role but `checker` and `backlog`; `expect`, `new` and `proof` in `verifier`, `implementer`, `audit` and `report`; `tier`, `applied` and `applying` in `implementer`, `orchestrator`, `audit` and `report`.
 
@@ -151,80 +155,15 @@ tomlctl review sync-v1 --slug <slug>
 |---|---|---|---|
 | `--slug` / `--scope` | name | The store. | required, one of |
 
-### `tomlctl review run start`
+### The `run` verbs
 
-Mints `U<n>`, stamps `started`, resolves `--base` to a commit sha, computes `changed_lines` (lines added plus removed over `scope` in `base..HEAD`, or the scope's tracked line count when that is 0; absent for the plan family), validates the merged catalogue — halting with every error — records the catalogue roots and shas, and creates the run directory. Prints `{ok, run, dir, base, changed_lines}`.
-
-Without `--project`, it refuses when `base..HEAD` adds, edits or deletes anything under `.claude/review-lenses`, listing those paths: the change under review would otherwise configure its own review. Passing `--project <dir>` accepts the layer, and the changed paths are recorded as `catalogue.project_layer_changed` for the orchestrator to show the user.
-
-```bash
-tomlctl review run start --slug <slug> --command review-v2 --family code --depth standard --base HEAD~3 --set-json 'scope=["tomlctl/src/**"]' --set substrate=workflow
-```
-
-| Flag | Value | Meaning | Default |
-|---|---|---|---|
-| `--slug` / `--scope` | name | The store. | required, one of |
-| `--command` | `review-v2` \| `optimise-v2` \| `review-plan-v2` | The carrier. | required |
-| `--family` | `code` \| `perf` \| `plan` | The finding family. | required |
-| `--depth` | `quick` \| `standard` \| `deep` | The depth envelope. | required |
-| `--base` | rev | The commit the change is measured from; stored as its sha. | required |
-| `--builtin` | dir | The built-in catalogue root, recorded as an absolute path; the default is left unrecorded and resolved again by each later verb. | `<claude dir>/skills/review-v2-lenses` |
-| `--project` | dir | The project catalogue layer; a named directory must exist (`kind=not_found`). Passing it accepts a layer `base..HEAD` changed. | `.claude/review-lenses` when present |
-| `--set` / `--set-json` / `--set-file` | `KEY=…` | Only `scope` (repo-relative paths or globs), `models` (a table), `substrate` (`workflow` \| `agent-waves`) and `rechecks` (the run id a plan re-check run re-reads; `stats --plan-outcomes` counts its findings as re-check yield). `--set-json KEY=@<path>` reads the JSON value from a file the Write tool staged. A field tomlctl computes, such as `incomplete` or `counts`, is refused as set by tomlctl. | none |
-
-The claude dir is `CLAUDE_CONFIG_DIR`, else `USERPROFILE` or `HOME` joined with `.claude`.
-
-### `tomlctl review run update`
-
-Patches one run. Prints `{ok, run, updated: [keys]}`.
-
-```bash
-tomlctl review run update U1 --slug <slug> --set-json 'waivers=[{"concern":"security","reason":"no input handling in scope"}]'
-```
-
-| Flag | Value | Meaning | Default |
-|---|---|---|---|
-| *(positional)* | run id | The run patched. | required |
-| `--slug` / `--scope` | name | The store. | required, one of |
-| `--set-json` / `--set` / `--set-file` | `KEY=…` | Only `signals`, `waivers`, `audit`, `agents` and `baselines`. `--set-json KEY=@<path>` reads the JSON value from a file. A computed field, such as `incomplete`, is refused as set by tomlctl. | at least one |
-
-- `signals` are upserted by `name`. They may only add `judged` entries (`source` absent or `judged`; keys `name`, `source`, `roots`, `accepted`, `evidence`) or set an existing judged entry's `accepted`; a detector entry is never changed here.
-- `waivers` name exactly one of `concern` and `file`, with a `reason`; a repeated key replaces its reason.
-- `agents` is a non-negative integer; `audit` and `baselines` are tables merged into the stored ones. Each `baselines` value is a log path or `none — <reason>`.
-
-### `tomlctl review run finish`
-
-Stamps `finished` and computes `counts` (`cells`, `uncovered`, `defect`, `cleanup`, `advisory`, `refuted`, `suppressed`). Refuses while a finding is `unverified`, a `same_as` awaits `resolve`, an unselected matched concern or unsliced scope file has no waiver, or a cell of the run is unsealed — unless `--incomplete` records why, in which case the reason and the `gaps` are printed and the reason is stored as the run's `incomplete` field, a catalogue field only `run finish` writes. A later clean finish clears an earlier `incomplete`. Prints `{ok, run, finished, counts}`.
-
-```bash
-tomlctl review run finish U1 --slug <slug> --incomplete-file <run-dir>/payloads/incomplete.txt
-```
-
-| Flag | Value | Meaning | Default |
-|---|---|---|---|
-| *(positional)* | run id | The run finished. | required |
-| `--slug` / `--scope` | name | The store. | required, one of |
-| `--incomplete` / `--incomplete-file` | text \| path | Finish despite open gaps, recording why. | none |
-
-### `tomlctl review run list`
-
-Lists the store's runs ordered by id number. Writes nothing. Prints `{ok, runs: [{id, command, family, depth, started, finished, base, scope, substrate, rechecks, waves, agents, incomplete}]}`; every row carries every key, `null` when the run has none, so an open run reads `finished: null`. `runs` holds the rows the global output options act on.
-
-```bash
-tomlctl review run list --slug <slug> --open --where family=plan --lines
-```
-
-| Flag | Value | Meaning | Default |
-|---|---|---|---|
-| `--slug` / `--scope` | name | The store. | required, one of |
-| `--open` | bool | Only runs without `finished`; conflicts with `--finished`. | every run |
-| `--finished` | bool | Only runs with `finished`; conflicts with `--open`. | every run |
+`run start` (with `--base` and the optional `--head` that bound a run), `run update`, `run finish`, `run list` and the read-back `run show` are documented in [review-runs.md](review-runs.md).
 
 ## Coverage
 
 ### `tomlctl review survey`
 
-Evaluates every `stack`, `diff` and `health` detector of the merged vocabulary — stack over `git ls-files`, diff over the run's `base..HEAD` patch inside its scope, health over HEAD or a `git log` window — and records each true signal with `source = "detector"` and its `roots`. A detector that cannot be evaluated is recorded with `source = "unknown"` and its reason. A health detector whose `window` exceeds 36,500 days is recorded under `unknown` with the reason "`window` must be at most 36500 days, got <n>"; a valid window is passed to git as an absolute `--max-age=<epoch secs>` cutoff, with no filter when the cutoff reaches the epoch. A rerun replaces both and keeps judged signals. Prints `{ok, run, signals: [{name, kind, roots, evidence?}], unknown: [{name, kind, reason}]}`.
+Evaluates every `stack`, `diff` and `health` detector of the merged vocabulary — stack over `git ls-files`, diff over the run's `base..head` patch inside its scope (`base..HEAD` when the run records no `head`; a changed file's bytes are read at `head` when it is set, else from the working tree), health over HEAD or a `git log` window — and records each true signal with `source = "detector"` and its `roots`. A detector that cannot be evaluated is recorded with `source = "unknown"` and its reason. A health detector whose `window` exceeds 36,500 days is recorded under `unknown` with the reason "`window` must be at most 36500 days, got <n>"; a valid window is passed to git as an absolute `--max-age=<epoch secs>` cutoff, with no filter when the cutoff reaches the epoch. A commits-per-file detector (`churn-hotspot`) keeps only scope files in its evidence, though it counts their commits repo-wide, so the proposal's `hotspots` never name a file outside the scope. A rerun replaces both and keeps judged signals. Prints `{ok, run, signals: [{name, kind, roots, evidence?}], unknown: [{name, kind, reason}]}`.
 
 ```bash
 tomlctl review survey --slug <slug> --run U1
@@ -239,7 +178,9 @@ tomlctl review survey --slug <slug> --run U1
 
 Two modes, exactly one per call.
 
-`--propose` prints the default coverage map as NDJSON and writes nothing to the store: one cell row per line (`slice`, `concerns`, `agent`, `reason = "proposed"`, `pass` on a repeat), then a last `{"proposal":{…}}` line with `run`, `family`, `depth`, `changed_lines`, `ceiling`, `cells`, `executor_cells`, `agents`, `hotspots`, `unselected` (`[{concern, reason}]`), `unsliced`, `disabled` and, when the task store is empty, `tasks`. With `--out` the NDJSON goes to that file and stdout carries `{ok, out}` merged with the summary.
+`--propose` prints the default coverage map as NDJSON and writes nothing to the store: one cell row per line (`slice`, `concerns`, `agent`, `reason = "proposed"`, `pass` on a repeat), then a last `{"proposal":{…}}` line with `run`, `family`, `depth`, `changed_lines`, `ceiling`, `cells`, `executor_cells`, `agents`, `hotspots`, `unselected` (`[{concern, reason}]`), `unsliced`, `over_cap`, `disabled` and, when the task store is empty, `tasks`. With `--out` the NDJSON goes to that file and stdout carries `{ok, out}` merged with the summary.
+
+The proposal never emits more cells than `ceiling` minus the run's non-executor cells already planned, check cells included. Floor-lens slices merge toward half that budget, counted after repeats, before any later tier is admitted, and a lens that joins an existing cell's bundle adds no cell and is never cut for `ceiling`; a sweeper slice is split at 40 files, each part a cell counted against the ceiling. When the budget still cannot hold the cells, slices keep merging past both targets, down to one whole-scope cell per lens, and each sweeper cell left over 40 files is listed under `over_cap` as `{concerns, slice, files}`. A check cut for the budget appears in `unselected` as `check:<id>` with reason `ceiling`, as a cut lens does under its id.
 
 `--ndjson` appends cells as the next wave, status `assigned`, binding each concern's content hash, path, methods and `v1_category` and attaching facets. It skips a `{"proposal":…}` line, so an edited proposal file is written back as is. When the run's newest wave is unsealed, its cells are all still `assigned`, and they are exactly the incoming rows — compared on `slice` in order, `concerns`, `pass`, `question` and `agent` — the call is a replay: it prints that wave's cells with `unchanged: true` and mints nothing. A partial overlap, or a wave with any cell sealed, mints a new wave. Prints `{ok, run, wave, cells: [{id, agent, concerns, pass, facets}], refused, accounting: {unselected, unsliced, disabled}, unchanged}`.
 
@@ -262,10 +203,13 @@ A cell row is refused when a `slice` entry is not repo-relative, its `concerns` 
 
 ### `tomlctl review cover`
 
-Records a cell's coverage status and note and seals the cell. A cell already sealed with the same status and note succeeds unchanged; a different one is refused. Prints `{ok, cell, status, sealed, unchanged}`.
+Records a cell's coverage status and note, and its rule-outs when `--ruled-out` is passed, and seals the cell. A cell already sealed with the same status and note succeeds unchanged, unless `--ruled-out` brings a different set, which replaces the stored `ruled_out`; a different status or note is refused, and so is any write to a finished run's cell. Without `--ruled-out` the stored rule-outs are kept. Prints `{ok, cell, status, sealed, unchanged}`, plus `ruled_out` (the entry count) only when the flag is passed.
+
+**Rule-outs.** Each `--ruled-out` entry is one site the cell judged deliberate: `file` (required, repo-relative), optional `symbol` and `line` (a positive integer), and `reason` (required, at most 200 characters); any other key is refused. One refused entry refuses the whole call, and nothing is sealed. An entry whose `file` lies outside the cell's slice is refused unless one of the cell's concerns is a mechanical lens, whose sweep reaches past the slice. An entry matches a finding by the digest's place rule, so an entry with neither `symbol` nor `line` matches nothing.
 
 ```bash
 tomlctl review cover C3 --slug <slug> --status thin --note-file <run-dir>/payloads/C3-note.txt
+tomlctl review cover C4 --slug <slug> --status covered --note-file <run-dir>/payloads/C4-note.txt --ruled-out <run-dir>/payloads/C4-ruled-out.ndjson
 ```
 
 | Flag | Value | Meaning | Default |
@@ -273,13 +217,14 @@ tomlctl review cover C3 --slug <slug> --status thin --note-file <run-dir>/payloa
 | *(positional)* | cell id | The cell sealed. | required |
 | `--slug` / `--scope` | name | The store. | required, one of |
 | `--status` | `covered` \| `thin` \| `uncovered` | The coverage reached. | required |
-| `--note` / `--note-file` | text \| path | The coverage line, at most 600 characters. | required, one of |
+| `--note` / `--note-file` | text \| path | The coverage line, at most 600 characters; aim for 450. | required, one of |
+| `--ruled-out` | `-` \| path | The cell's rule-outs, one JSON object per line, or a `.toml` record file; replaces the stored set. | none |
 
 ## Findings and verdicts
 
 ### `tomlctl review add`
 
-Writes one cell's full finding set. Each row is checked against the field catalogue, `lens` against the cell's concerns, `old` against its file (within 20 lines of `line`, `\r\n` read as `\n`; in `target_file` when given and existing), a markdown-mode plan row's `anchor_old` against its `plan_section` (exactly once), and a flow-mode plan row's `target`, `expect` and `proof` against the flow's records ([Plan records](#plan-records)). Outside flow mode a defect or cleanup row without `line`, or a markdown plan row without `plan_section`, is refused. `route`, `anchor` and the anchor candidates are computed; a `same_as` must name a candidate, and a row with candidates but no `same_as` gets them as `related`. The cell's earlier `unverified` rows become `superseded`. Defect and cleanup rows are minted `unverified`; an advisory row `open`, with its `tier` in flow mode, or `merged` with `outcome = "suppressed"` when its `same_as` names a dismissed, deferred, parked, backlogged or converted finding. Prints `{ok, run, cell, findings: [{id, kind, severity, route}], superseded, refused}`.
+Writes one cell's full finding set. Each row is checked against the field catalogue, `lens` against the cell's concerns (except a `cleanup` row with `old` on a mechanical lens, [Field catalogue](#field-catalogue)), `old` against its file (within 20 lines of `line`, `\r\n` read as `\n`; in `target_file` when given and existing), a markdown-mode plan row's `anchor_old` against its `plan_section` (exactly once), and a flow-mode plan row's `target`, `expect` and `proof` against the flow's records ([Plan records](#plan-records)). Outside flow mode a defect or cleanup row without `line`, or a markdown plan row without `plan_section`, is refused. `route`, `anchor` and the anchor candidates are computed; a `same_as` must name a candidate, and a row with candidates but no `same_as` gets them as `related`. The cell's earlier `unverified` rows become `superseded`. Defect and cleanup rows are minted `unverified`; an advisory row `open`, with its `tier` in flow mode, or `merged` with `outcome = "suppressed"` when its `same_as` names a dismissed, deferred, parked, backlogged or converted finding. Prints `{ok, run, cell, findings: [{id, kind, severity, route}], superseded, refused}`.
 
 On a sealed cell `add` prints `{ok: false, sealed: true, cell, status, findings}` with the cell's standing findings and exits 1. A finished run is refused.
 
@@ -314,11 +259,11 @@ tomlctl review verdict --slug <slug> --ndjson <run-dir>/payloads/checker-1.ndjso
 | `--seat` | 1–3 | The panel vote; required for `panel`, refused otherwise. | none |
 | `--severity` | `critical` \| `major` \| `minor` | A reassessed defect severity. | none |
 | `--citation` | text | `file:line` or command output backing the verdict. Optional to the parser; a verdict without one is refused `kind=validation`. | none |
-| `--rationale` / `--rationale-file` | text \| path | Why, at most 600 characters; refused when absent, as `--citation` is. | none |
+| `--rationale` / `--rationale-file` | text \| path | Why, at most 600 characters (aim for 450); refused when absent, as `--citation` is. | none |
 | `--strike-same-as` | bool | Clear the finding's `same_as`, so it resolves on its own verdict. | off |
 | `--ndjson` | `-` \| path | A batch of verdict rows, one per line. Excludes every single-verdict flag. | none |
 
-Refused: a verdict on an advisory or `superseded` finding; `severity` on a non-defect; a checker's `plausible`; a checker's `refuted` on a row from a cell that is not a `review-sweeper` cell; `unsettled` from anyone but the checker.
+Refused: a verdict on an advisory or `superseded` finding; `severity` on a non-defect; a checker's `plausible`; a checker's `refuted`, unless a `review-sweeper` cell wrote the row or it is a `cleanup` row whose lens the run's catalogue marks `mode = "mechanical"` (a catalogue that cannot be read refuses it, naming why); `unsettled` from anyone but the checker.
 
 ### `tomlctl review resolve`
 
@@ -331,17 +276,21 @@ Resolves every `unverified` finding of the run whose `same_as` has complete verd
 | `resolved` | regression | contested | repeat |
 | `dismissed`, `deferred`, `parked`, `backlogged` | suppressed | suppressed | suppressed |
 
-A repeat appends the run to the target's `seen_in` and refreshes its `line` and `evidence`; a contested or reopened target gains the deciding verdicts, and a reopened one returns to `open`. The row becomes `merged` with `merged_into`, except a regression, which stays `open` with `related = [target]`. Prints `{ok, resolved: [{finding, outcome, target, status}], pending: [{finding, same_as, reason}], unchanged}`.
+A repeat appends the run to the target's `seen_in` and refreshes its `line` and `evidence`; a contested or reopened target gains the deciding verdicts, and a reopened one returns to `open`. The row becomes `merged` with `merged_into`, except a regression, which stays `open` with `related = [target]`. Prints `{ok, linked: [{finding, same_as}], resolved: [{finding, outcome, target, status}], pending: [{finding, same_as, reason}], unchanged}`; `linked` is empty without `--same-as`.
+
+**Linking duplicates.** Each `--same-as <DUP>=<TARGET>` sets the duplicate's `same_as` before the pass, and the pair resolves by the same table whatever wave the duplicate came from, so a `duplicate_candidates` pair whose duplicate has its verdicts settles in one call; one still awaiting them is listed under `pending`. Every pair is checked before any is set, and one refused pair refuses the call with each reason and writes nothing: a finding linked to itself; one duplicate given two targets; an unknown id; either finding from another run, or `superseded`; a pair of different families; a duplicate already `merged` into another row; a duplicate already naming another target in `same_as` (strike it with `verdict --strike-same-as` first); a duplicate at any status but `unverified`, `open` or `refuted`; and a link that would close a cycle through `same_as`, `merged_into` or `converted_to`. A duplicate already merged into, or already naming, its target is accepted and changes nothing.
 
 ```bash
 tomlctl review resolve --slug <slug> --run U1 --wave 2
+tomlctl review resolve --slug <slug> --run U1 --same-as F12=F7 --same-as F15=F9
 ```
 
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
 | `--slug` / `--scope` | name | The store. | required, one of |
 | `--run` | run id | The run resolved. | required |
-| `--wave` | N | Only findings from cells of this wave. | every wave |
+| `--wave` | N | Only findings from cells of this wave; a `--same-as` duplicate resolves whatever its wave. | every wave |
+| `--same-as` | `DUP=TARGET` | Link the duplicate to the target and resolve the pair. Repeatable. | none |
 
 ## Plan records
 
@@ -412,6 +361,7 @@ tomlctl review list --slug <slug> --in tomlctl/src/review --for finder
 | `--cell` | cell id | Keep findings of this cell. | any |
 | `--status` | status | Keep this status; `superseded` rows appear only when asked for. | any but `superseded` |
 | `--route` | `verifier` \| `panel` \| `checker` \| `none` | Keep this route. | any |
+| `--fix-shape` | `edits` \| `needs-plan` | Keep this `fix_shape`; any other value fails `kind=validation`. | any |
 | `--in` | glob | Keep findings whose `file` matches, as a `:(glob)` pathspec (`*` within one segment); a plain path also matches everything under it. | any |
 | `--for` | role | The projection; see [Roles](#roles). | `orchestrator` |
 
@@ -431,7 +381,14 @@ tomlctl review show F3,F7 --slug <slug> --for audit
 
 ### `tomlctl review digest`
 
-The orchestrator's view of one run, as a single object: `run` (and `since_wave`); `counts` by `kind`, `lens` and `status`; `cells` (`status` counts, `unsealed` ids, the `notes` of `thin` and `uncovered` cells); `unverified` (`[{id, kind, route, cell}]`); the coverage accounting `unselected`, `unsliced` and `disabled`, the first two needing a waiver before `run finish`; `contested` rows with their `target`; `refuted_criticals`; `audit_sample` (`confirmed_defects`, `refuted_defects` and `checked_cleanup` ids, two each, the cleanup including a sweeper row when there is one); and the open `advisory` rows. Rows are projected `--for orchestrator`, so the digest never carries `evidence`.
+The orchestrator's view of one run, as a single object: `run` (and `since_wave`); `counts` by `kind`, `lens` and `status`; `cells` (`status` counts, `unsealed` ids, the `notes` of `thin` and `uncovered` cells); `unverified` (`[{id, kind, route, cell}]`); the coverage accounting `unselected`, `unsliced` and `disabled`, the first two needing a waiver before `run finish`; `contested` rows with their `target`; `refuted_criticals`; `duplicate_candidates`; `ruled_out_hits`; `audit_sample`; and the open `advisory` rows. Rows are projected `--for orchestrator`, so the digest never carries `evidence`.
+
+- **Place rule.** Two places match when they share a `file` and either both carry a `symbol` and the symbols are equal, or otherwise both carry a `line` within 10 lines of each other. `lens` and `kind` play no part.
+- **`duplicate_candidates`**, `[{a, b, file, symbol, cells}]`: pairs of the run's non-superseded findings from different cells whose places match, `a` the lower id, `symbol` the first non-empty of the two, `cells` the two cells in pair order. A pair is omitted when the `same_as` / `merged_into` chains of its members meet. A candidate is a question for `resolve --same-as`, never a fold.
+- **`ruled_out_hits`**, `[{finding, cell, ruled_out_by, reason}]`: each finding whose place matches a rule-out another cell of the run recorded with `cover --ruled-out`, once per matching entry. A cell's own rule-outs never count against its findings.
+- **`audit_sample`**: `confirmed_defects` (standing defects, whose latest non-audit verdict is `confirmed` or `plausible`), `refuted_defects` (refuted non-critical defects) and `checked_cleanup` (checker-decided cleanup, including a sweeper row when there is one), two each, picked by position in store order. Each `refuted_defects` slot left empty takes one more standing defect, so `confirmed_defects` holds up to four.
+
+Under `--since-wave`, a duplicate pair shows when either member is in the window, and rule-outs from every wave count against the windowed findings.
 
 ```bash
 tomlctl review digest --slug <slug> --run U1 --since-wave 2
@@ -463,6 +420,7 @@ tomlctl review report --slug <slug> --run U1 --out <run-dir>/report.md
 Rates per lens, probe, run or model over one store or all of them. Writes nothing. Prints `{ok, stores: [paths], by?, rows?, outcomes?, escapes?, calibration?, plan_outcomes?}`.
 
 - **Rows** (`--by`, or no section flag): `key`, `families`, `runs`, `cells`, `findings` by kind, `yield_per_cell`, `verified`, `refuted`, `refute_rate`, `audited`, `overturned`, `audit_overturn_rate`, `dismissed`, `dismissal_rate`, `thin`, `uncovered`, `uncovered_rate`; per lens also `hashes`, `waived` and `waiver_rate`, per probe tag `probes`. A rate over zero is `null`. A probe groups under the tag its `reason` opens with (`nearest <tag>:`), else `untagged`.
+- **`--by run`** rows also carry `store`, `command`, `depth`, `started`, `finished`, `waves` (derived from the run's cells, as `run list` does), `agents` and `waivers` (`concerns`, `files`).
 - **`--by model`** rows are keyed by the model of the verifying role that decided each finding — `models.verifier` for `verifier` and `panel`, `models.checker` for `checker`, read from the run that verdict names — and carry `roles`, `runs`, `verified`, `refuted`, `refute_rate`, `audited`, `overturned` and `audit_overturn_rate`. A run without `models`, or without the role, keys as `unknown`.
 - **`plan_outcomes`** (`--plan-outcomes`; `--slug` or `--all`, flow stores only, plan family only): per run and in `total`, `tiers` (tier → disposition → count; dispositions `applied`, `applied-disclosed` for cited, `user-accepted`, `user-vetoed` for a dismissed `user` row or a dismissed non-advisory tiered row of a run started at or after the plan's first `[[approval]]`, `user-answered` for a `question` row resolved without an edit, else the status), `veto_rate` (vetoed over accepted plus vetoed; `user-answered` counts on neither side), `growth` (`edits`, net `chars_added`, `entries_added`, `entries_removed`), `recheck_yield` (findings minted by a run with `rechecks`), and `cost` (`agents`, `minutes`); each run also names `rechecks`. A rate or yield with nothing to count is `null`.
 - **`outcomes`**: per lens and kind, `exported`, `linked`, the v1 statuses, the mapped v2 statuses and `wontfix_reasons`, through `v2_ref` with `sync-v1`'s mapping; a retired link is not counted.
@@ -527,7 +485,7 @@ Exports open defect and cleanup findings into a v1 ledger for `/review-apply` or
 - **Refused**, with a reason: the plan family, advisory, any status but `open`, another family than the ledger's, `fix_shape = needs-plan`, `effort = large`.
 - **`--all`** takes every open defect and cleanup finding of the ledger's family in this store — there is no run filter — and holds back, under `held`, test removals and cleanup whose latest verdict is `plausible`; those export only by explicit id.
 - **Rows.** A defect exports with its latest severity (`major` → `warning`, `minor` → `suggestion`), cleanup as `suggestion`; `category` is the bound lens's `v1_category`, or `quality` / `algorithm` for a probe or check cell; `description` is built from the implementer projection. The v1 row carries `v2_ref = "<store path>#F<n>"`.
-- **Matching.** A v1 row whose `v2_ref` names the finding — the string, or an entry of the array — is `linked`. Otherwise the v1 merge rule applies (same `file`, and the same `symbol` or exact `summary`): an open match is `reused` with its `rounds` bumped, a fixed or applied match gets a new id with `related` (`regression`), and a deferred, wontfix, wontapply or verified-clean match is skipped. Anything else is `minted`. A reused row whose `v2_ref` names another finding becomes an array naming both, rather than being overwritten.
+- **Matching.** A v1 row whose `v2_ref` names the finding — the string, or an entry of the array — is `linked`. Otherwise an open row is `reused`, its `rounds` bumped, only on the strict fold: its `v2_ref` names the finding this finding's `same_as` names, or its `file`, `symbol` and `summary` all equal the finding's and its `v2_ref` names a finding of this store with the same `lens`. A v1 row carries `category`, never `lens`, so a row without a resolvable `v2_ref` never meets the second clause, and that clause never matches a row this same call wrote. Failing that, the loose v1 merge rule (same `file`, and the same non-empty `symbol` or the exact `summary`) is read for settled rows only: a deferred, wontfix, wontapply or verified-clean match is skipped, and a fixed or applied match gets a new id with `related` (`regression`). Anything else — an open row that matches only loosely included — is `minted`. A reused row whose `v2_ref` names another finding becomes an array naming both, rather than being overwritten.
 - **Retired links.** A row the finding retired on reopen is never `linked` and never skipped as settled; it joins the merge rule as a candidate. Open again in v1, it is `reused` and the link is restored, its `retired_links` entry dropped; fixed, applied or settled, it yields a `regression` row with `related` naming it.
 - **Writes.** The v1 ledger is written and committed first; then each finding becomes `exported` with `exported_as` and `export_ledger`. A new ledger is seeded, and the ledger's `last_updated` becomes the later of its own and the newest run date among the findings.
 
@@ -550,7 +508,7 @@ tomlctl review export-v1 --all --slug <slug> --to .claude/flows/<slug>/review-le
 
 ### `tomlctl review catalogue`
 
-Merges the built-in and project layers and applies the project config. Takes no store. Prints `{tree_sha, config_sha, entries}`, one entry per lens, facet, method and check: `type`, `id`, `hash`, `status`, `families`, `mode`, `produces`, `activation`, `apply_when` (`signals`, `paths`, `min_depth`, `always_at`), `matched`, `attaches_to`, `path`, `layer`, `disabled`. Every mode but `--check` fails when a catalogue file could not be read or parsed, listing those errors; `--check` reports them with the rest.
+Merges the built-in and project layers and applies the project config. Takes no store. Prints `{tree_sha, config_sha, entries}`, one entry per lens, facet, method and check: `type`, `id`, `hash`, `status`, `families`, `mode`, `produces`, `activation`, `apply_when` (`signals`, `paths`, `min_depth`, `always_at`), `matched`, `attaches_to`, `executor`, `command`, `path`, `layer`, `disabled`. `executor` (`tomlctl`, `surveyor`, `verification`, `cell`) and `command` belong to checks, `null` on the other types; a project check from `.claude/review-lenses/config.toml` prints `executor = "verification"` and its configured `command`. Every mode but `--check` fails when a catalogue file could not be read or parsed, listing those errors; `--check` reports them with the rest.
 
 ```bash
 tomlctl review catalogue --check

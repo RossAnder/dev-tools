@@ -59,7 +59,7 @@ The highest-frequency patterns. Deeper treatment lives in the reference files li
 | Import a plan's tasks into the flow's task DAG | `tomlctl tasks import-plan --slug <s> [--plan <p>] [--reconcile-record] [--dry-run]` |
 | Query, mutate or gate that DAG (`.claude/flows/<slug>/tasks.toml`) | `tomlctl tasks add\|add-many\|update\|remove\|show\|list\|edges\|ready\|batches\|closure\|check\|render\|snapshot --slug <s>` |
 | Open, record, prove and approve a v2 plan over `.claude/flows/<slug>/` (`plan.toml`, `tasks.toml`) and `docs/flows/<slug>/brief.md` | `tomlctl plan open\|decide\|contract\|handover {set\|done}\|run {start\|finish\|skip}\|milestone {add\|update}\|check\|view\|probes\|stage\|gate\|approve\|drift --slug <s>` |
-| Run a v2 review over its store (`.claude/flows/<slug>/review-v2.toml`, or `.claude/review-v2/<scope>.toml` under `--scope`) | `tomlctl review sync-v1\|run {start\|update\|finish}\|survey\|plan\|cover\|add\|verdict\|resolve\|list\|show\|digest\|report\|triage\|stats\|export-v1 --slug <s>`; `tomlctl review catalogue\|schema` take no store |
+| Run a v2 review over its store (`.claude/flows/<slug>/review-v2.toml`, or `.claude/review-v2/<scope>.toml` under `--scope`) | `tomlctl review sync-v1\|run {start\|update\|finish\|list\|show}\|survey\|plan\|cover\|add\|verdict\|resolve\|list\|show\|digest\|report\|triage\|stats\|export-v1 --slug <s>`; `tomlctl review catalogue\|schema` take no store |
 | List a flow's agent records (`.claude/flows/<slug>/agents.toml`; written by `glimpse hook` in-process, never by a carrier; `agents record` is the manual form) | `tomlctl agents list --slug <s>` |
 | Refresh integrity sidecar | `tomlctl integrity refresh <file>` |
 
@@ -86,6 +86,7 @@ The per-verb flag tables, recipes, and contract prose live in the sibling files 
 - [references/agents.md](references/agents.md) — the `agents` group: `agents record` (the CLI entry point for what the harness hooks write in-process) and `agents list`, the gitignored `.claude/flows/<slug>/agents.toml` store shape, the start / stop / idle events, flow selection, and the `record` output and its not-recorded reasons.
 - [references/inputs.md](references/inputs.md) — the `inputs` group over the git-ignored user-input store `.claude/inputs.toml`: `list`, `add`, `ack`, `handle`, `withdraw`, `answer`, their flag tables and output shapes, and the store shape. What a record means, who may write it, and its trust boundary are the `flow-contract-user-inputs` skill's call, not this one's.
 - [references/review.md](references/review.md) — the `review` group over the v2 review store (`.claude/flows/<slug>/review-v2.toml` or `.claude/review-v2/<scope>.toml`): every verb's flag table and output, the store shape, the field catalogue summary, the role projections and the routing rules. How a run is composed and who calls which verb are the `review-v2-engine` and `review-v2-method` skills' call, not this one's.
+- [references/review-runs.md](references/review-runs.md) — the `review run` verbs: `run start` with its `--base` / `--head` bounds, `run update`, `run finish`, `run list` and the read-back `run show`.
 
 To find a section without reading a whole file:
 
@@ -177,6 +178,7 @@ Under `--lines`, a report wrapped in an object emits its other fields as one hea
 | `review list` | finding, projected `--for` a role | `for`, `count`, `references` |
 | `review show` | finding or cell, projected `--for` a role | `for`, `references` |
 | `review run list` | run | `ok` |
+| `review run show` | signal | every other run field |
 
 `items list`, `backlog list` and `tasks list` run on the query engine, whose `--lines` / `--ndjson` is documented under [output shapes](references/query.md#output-shapes---raw----lines----ndjson). `tomlctl capabilities` lists every output flag under its root `global_flags` key, and advertises them as features: `output_options` for the original six, then `path_wildcard`, `rows_header`, `global_where`, `array_predicates`, `max_chars`, `omit`, `template_width`, `list_limited`, `template_escapes`, `text_view` and `relaxed_refusals`.
 
