@@ -502,6 +502,37 @@ fn show_for_finder_cf_omits_the_pack() {
     assert_eq!(cell["method_paths"][0]["id"], "trace");
 }
 
+#[test]
+fn finder_assignment_carries_head_when_the_run_has_one() {
+    let repo = Repo::new();
+    let path = repo.root.join(".claude/review-v2/t.toml");
+    let text = fs::read_to_string(&path).unwrap();
+    let text = text
+        .replacen(
+            "agent = \"review-finder\"\n",
+            "agent = \"review-finder-cf\"\n",
+            1,
+        )
+        .replacen(
+            "depth = \"standard\"\n",
+            "depth = \"standard\"\nbase = \"e23b918\"\n",
+            1,
+        );
+    fs::write(&path, &text).unwrap();
+    let cell = &repo.show("C1", "finder")[0];
+    assert!(cell.get("head").is_none(), "no head on the run: {cell}");
+
+    let with_head = text.replacen(
+        "base = \"e23b918\"\n",
+        "base = \"e23b918\"\nhead = \"f00d123\"\n",
+        1,
+    );
+    fs::write(&path, with_head).unwrap();
+    let cell = &repo.show("C1", "finder")[0];
+    assert_eq!(cell["base"], "e23b918", "{cell}");
+    assert_eq!(cell["head"], "f00d123", "{cell}");
+}
+
 /// A code lens with the frontmatter `review plan` binds against.
 fn bindable_lens(id: &str) -> String {
     format!(

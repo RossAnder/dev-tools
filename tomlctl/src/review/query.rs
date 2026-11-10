@@ -277,6 +277,9 @@ fn assignment(
     // of the pack.
     if cell.agent == fields::FINDER_CF {
         row.insert("base".into(), json!(run.base));
+        if let Some(head) = &run.head {
+            row.insert("head".into(), json!(head));
+        }
     } else {
         let pack = target.run_dir(&run.id)?.join("pack.md");
         row.insert("pack".into(), json!(relativise(root, &pack)));
