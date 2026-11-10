@@ -275,6 +275,31 @@ fn list_in_glob_filters_prior() {
 }
 
 #[test]
+fn list_filters_by_fix_shape_across_runs() {
+    let repo = Repo::new();
+    let path = repo.root.join(".claude/review-v2/t.toml");
+    let mut store = fs::read_to_string(&path).unwrap();
+    store.push_str(
+        "\n[[findings]]\nid = \"F7\"\nrun = \"U2\"\ncell = \"C9\"\nfamily = \"code\"\nkind = \"defect\"\n\
+         lens = \"correctness\"\nroute = \"verifier\"\nfile = \"src/a.rs\"\nline = 1\n\
+         summary = \"needs a redesign\"\nseverity = \"major\"\nfix_shape = \"needs-plan\"\nstatus = \"open\"\n\
+         \n[[findings]]\nid = \"F8\"\nrun = \"U1\"\ncell = \"C1\"\nfamily = \"code\"\nkind = \"defect\"\n\
+         lens = \"correctness\"\nroute = \"verifier\"\nfile = \"src/b.rs\"\nline = 2\n\
+         summary = \"needs a plan too\"\nseverity = \"major\"\nfix_shape = \"needs-plan\"\nstatus = \"open\"\n",
+    );
+    fs::write(&path, store).unwrap();
+
+    let out = repo.json(&["list", "--fix-shape", "needs-plan"]);
+    assert_eq!(ids(&out["findings"]), ["F7", "F8"], "{out}");
+    let edits = repo.json(&["list", "--fix-shape", "edits"]);
+    assert_eq!(ids(&edits["findings"]), ["F1"], "{edits}");
+
+    let refused = repo.review(&["list", "--fix-shape", "plan"]).failure();
+    let err = parse_json_error_envelope(&String::from_utf8_lossy(&refused.get_output().stderr));
+    assert_eq!(err["kind"], "validation");
+}
+
+#[test]
 fn show_for_verifier_omits_grade_and_fix() {
     let repo = Repo::new();
     let out = repo.json(&["show", "F1", "--for", "verifier"]);
@@ -531,6 +556,62 @@ fn finder_assignment_carries_head_when_the_run_has_one() {
     let cell = &repo.show("C1", "finder")[0];
     assert_eq!(cell["base"], "e23b918", "{cell}");
     assert_eq!(cell["head"], "f00d123", "{cell}");
+}
+
+/// Seeds rule-outs: C2 rules out F1's symbol and an unrelated file, and C1
+/// rules out F3's line, which as its own finding it never counts against.
+fn seed_rule_outs(repo: &Repo) {
+    let path = repo.root.join(".claude/review-v2/t.toml");
+    let text = fs::read_to_string(&path).unwrap().replacen(
+        "facets = [\"rust\"]\nstatus = \"assigned\"\n",
+        "facets = [\"rust\"]\nstatus = \"assigned\"\n\
+         ruled_out = [{ file = \"src/other.rs\", line = 6, reason = \"C1 judged it fine\" }]\n",
+        1,
+    );
+    let second = "\n[[cells]]\nid = \"C2\"\nrun = \"U1\"\nwave = 1\nslice = [\"src/**\"]\n\
+         concerns = [\"correctness\"]\nquestion = \"q\"\nagent = \"review-finder\"\n\
+         reason = \"proposed\"\nstatus = \"assigned\"\n\
+         ruled_out = [\
+         { file = \"src/review/lib.rs\", symbol = \"lib::limit\", reason = \"the pad is deliberate\" }, \
+         { file = \"src/unrelated.rs\", line = 30, reason = \"elsewhere\" }]\n";
+    fs::write(&path, format!("{text}{second}")).unwrap();
+}
+
+#[test]
+fn verifier_projection_carries_matching_rule_outs() {
+    let repo = Repo::new();
+    seed_rule_outs(&repo);
+    let want = serde_json::json!([{"cell": "C2", "reason": "the pad is deliberate"}]);
+    for role in ["verifier", "audit"] {
+        let row = &repo.show("F1", role)[0];
+        assert_eq!(row["ruled_out"], want, "{role}: {row}");
+        let own = &repo.show("F3", role)[0];
+        assert!(
+            own.get("ruled_out").is_none(),
+            "{role}: a cell's own rule-out reached its finding: {own}"
+        );
+    }
+    let listed = repo.json(&["list", "--for", "verifier"]);
+    let rows = listed["findings"].as_array().unwrap();
+    let f1 = rows.iter().find(|r| r["id"] == "F1").unwrap();
+    assert_eq!(f1["ruled_out"], want, "{listed}");
+    let unmatched: Vec<&JsonValue> = rows
+        .iter()
+        .filter(|r| r["id"] != "F1" && r.get("ruled_out").is_some())
+        .collect();
+    assert!(unmatched.is_empty(), "{unmatched:?}");
+}
+
+#[test]
+fn finder_projection_never_carries_rule_outs() {
+    let repo = Repo::new();
+    seed_rule_outs(&repo);
+    let listed = repo.json(&["list", "--for", "finder"]);
+    for row in listed["findings"].as_array().unwrap() {
+        assert!(row.get("ruled_out").is_none(), "{row}");
+    }
+    let shown = &repo.show("F1", "finder")[0];
+    assert!(shown.get("ruled_out").is_none(), "{shown}");
 }
 
 /// A code lens with the frontmatter `review plan` binds against.
