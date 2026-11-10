@@ -292,7 +292,22 @@ The summary and context are an agent's words, so quote them into the command onl
 
 ## 9. Handovers
 
-A worker proposes a handover in its note and its index entry's `handover`: a step after landing that only a person can perform, with how to tell it is done. Only you write one. Read the proposal in the note, decide whether it is real, and write it with the handover verb the `plan` reference documents for adding one ([plan.md](../../tomlctl/references/plan.md), the handover section), giving the command and the proposing task as its source task. That verb is due to change, so this reference names no command for it; follow the reference as it stands.
+A worker proposes a handover in its note and its index entry's `handover`: a step after landing that only a person can perform, with how to tell it is done. Only you write one. Read the proposal in the note and decide whether it is real: a step an agent could perform is not a handover, so it becomes a fix task in this milestone (step 6) or, when it is follow-on work, a backlog candidate (step 8). Stage each real one in `<scratch>/implement-<id>-<round>-handover.toml`:
+
+```toml
+[[record]]
+reason = "restart"
+action = "Restart the Claude Code session."
+when = "After the milestone commit"
+done_when = "`tomlctl --version` in the new session prints the new version"
+source_task = 7
+```
+
+```bash
+tomlctl plan handover set --slug <slug> --ndjson <scratch>/implement-<id>-<round>-handover.toml
+```
+
+`reason` is one of `restart`, `permissions`, `attended`, `observe`, `credentials` and `external`, whose meanings are in [plan.md](../../tomlctl/references/plan.md), section "`plan handover set`"; a proposal none of them fits is not human-only. `action`, `when` and `done_when` must each stand without the plan beside them, and `source_task` is the proposing task. `plan check` reports an undone handover missing any of them as an error, which the next invocation's pre-flight stops on.
 
 A handover proposed in the note but empty in the index, or the other way round, is still a proposal: the note is the fuller account.
 
@@ -355,7 +370,7 @@ tomlctl tasks list --slug <slug> --where status=parked --select id,checkpoint,ti
 tomlctl tasks list --slug <slug> --where status=failed --select id,ref,checkpoint --lines
 ```
 
-`open_items.undone_handovers` lists each handover not yet done as `{id, command, source_task}`; `open_items.parked_tasks` lists the parked ids. Every `failed` row goes in the report, whichever path ended the invocation: the reason relaunching stopped is the stop rule of step 6 when that fired, and otherwise the reason the invocation ended. Report in this shape, each section omitted when it is empty:
+`open_items.undone_handovers` lists each handover not yet done as `{id, reason, action, when, done_when, source_task}`; `open_items.parked_tasks` lists the parked ids. Every `failed` row goes in the report, whichever path ended the invocation: the reason relaunching stopped is the stop rule of step 6 when that fired, and otherwise the reason the invocation ended. Report in this shape, each section omitted when it is empty:
 
 ```
 needs_human — <slug>, stopped at milestone <id>: <why the invocation ended>
@@ -365,7 +380,7 @@ parked:
 failed:
 - task <n> <ref> (<checkpoint>): <why relaunching stopped> — docs/flows/<slug>/notes/run/task-<n>.md
 handovers:
-- <handover id> from task <n>: <command>
+- <handover id> from task <n> (<reason>): <action> — when: <when>; done when: <done_when>
 no worker:
 - task <n>: executor <tool|clerk>
 withheld:
