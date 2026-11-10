@@ -1,0 +1,18 @@
+slug = "v2-apply"
+plan_path = "docs/flows/v2-apply/brief.md"
+status = "draft"
+created = 2026-11-10
+updated = 2026-11-10
+scope = []
+
+[tasks]
+total = 0
+completed = 0
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/v2-apply/review-ledger.toml"
+optimise_findings = ".claude/flows/v2-apply/optimise-findings.toml"
+execution_record = ".claude/flows/v2-apply/execution-record.toml"
+plan_review_findings = ".claude/flows/v2-apply/plan-review-findings.toml"
+tasks = ".claude/flows/v2-apply/tasks.toml"

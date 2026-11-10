@@ -1,0 +1,401 @@
+schema_version = 2
+last_updated = 2026-11-10
+
+[binding]
+branch = "main"
+scope = []
+
+[id_high_water]
+C = 3
+D = 14
+
+[[decision]]
+id = "D1"
+decision = "A review bound to a v2 flow appends its apply milestones to that flow's plan through the audited verbs. A flow-less review mints its own v2 flow at triage. A review bound to a v1 flow gets no apply treatment: the apply path refuses it and names the reason."
+why = "One path for flow-bound and flow-less reviews, and no new work under an approval that froze other intent."
+provenance = "user-stated"
+door = "one-way"
+binds = [
+    "claude/skills/implement-v2-engine/SKILL.md",
+    "tomlctl/src/plan/open.rs",
+    "11",
+]
+rejected = []
+evidence = "tomlctl/src/plan/open.rs refuse_foreign_plan (a v1 flow cannot take plan.toml); tomlctl/src/plan/milestone.rs add appends last and run-milestone.md picks the first unfinished checkpoint, so an appended milestone waits behind unrun ones; tomlctl/src/plan/stage.rs assess moves a done plan back to running; notes/task-home.md and notes/structure-challenge.md claim 1."
+if_false = "Flow-bound reviews on a v2 flow append an apply milestone to that plan, so the plan carries two task homes: append for v2 flows, a new flow for v1-bound and flow-less reviews."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = true
+
+[[decision]]
+id = "D2"
+decision = "A defect task's accept check is a tomlctl read of its recorded reproduce verdict; the orchestrator adds a runnable check of its own only when the finding's trigger is already a command."
+why = "A defect finding carries only prose, and a task with no accept check fails plan check."
+provenance = "user-confirmed"
+door = "two-way"
+binds = [
+    "tomlctl/src/review/fields.rs",
+    "tomlctl/src/tasks/add.rs",
+    "6",
+    "16",
+]
+rejected = []
+evidence = "tomlctl/src/review/fields.rs defect fields are prose or enums; plan/spec-no-accept and plan/accept-no-check are error classes (claude/skills/tomlctl/references/plan.md); notes/finding-to-task.md."
+if_false = "The orchestrator writes an accept check for every defect when it mints the task, attended, and the reproduce check stays a separate gate input; minting defects is then judgement work, not a verb."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D3"
+decision = "Keep `review sync-v1` at the review engine's stage 0 as a legacy read-back and keep both v1 verbs; only triage's export hand-off leaves the v2 path."
+why = "A live store holds exported findings that only sync-v1 can resolve, and the v1 commands stay."
+provenance = "user-confirmed"
+door = "two-way"
+binds = [
+    "claude/skills/review-v2-engine/SKILL.md",
+    "tomlctl/src/review/sync.rs",
+    "13",
+]
+rejected = []
+evidence = "`tomlctl review list --slug jiggly-exploring-robin --status exported` returns 30 rows; tomlctl/src/review/stats.rs imports sync; notes/export-v1-exit.md."
+if_false = "Stage 0 drops sync-v1 too, and the plan adds a one-time migration for stores holding exported findings."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D4"
+decision = "Keep the present structure: tasks live in a v2 flow's task store, linked both ways to findings, and the slug-bound engine runs them unchanged in shape."
+why = "Every piece of apply has an existing seam, and a scope-addressed engine would force edits on every slug-bound surface."
+provenance = "agent-assumed"
+door = "one-way"
+binds = [
+    "claude/skills/implement-v2-engine/SKILL.md",
+    "claude/workflows/implement-v2-milestone.js",
+]
+evidence = "notes/structure-challenge.md, verdict no restructure; read claude/skills/implement-v2-engine/SKILL.md and tomlctl/src/review/fields.rs"
+if_false = "The engine and both stores gain a scope-addressed mode before any apply work"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "A scope-addressed engine and task store"
+because = "plan and task store resolution, the Workflow's slug check and every engine command are addressed by flow slug"
+
+[[decision.rejected]]
+option = "Tasks stored inside review-v2.toml"
+because = "it would duplicate the task schema, milestones, premises and run records the engine reads from tasks.toml"
+
+[[decision.rejected]]
+option = "The challenger's own flow for every apply"
+because = "the user chose to append to an existing v2 flow (D1)"
+
+[[decision]]
+id = "D5"
+decision = "Build in the order apply core, reproduce check, blocked findings, with the reproduction record and its read verb in the first milestone."
+why = "A defect's accept check reads its reproduction verdict (D2), so defects cannot be applied until the reproduce check exists; blocked findings build on both."
+provenance = "agent-assumed"
+door = "two-way"
+binds = ["tomlctl/src/review/store.rs"]
+evidence = "notes/finding-to-task.md: a defect carries no field that can become an accept check"
+if_false = "Milestones B and C swap, and settle-minted defect tasks cannot be accepted until the last milestone"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Blocked findings second, as first discussed"
+because = "the settle-then-fix path mints defect fix tasks whose acceptance needs the reproduce check"
+
+[[decision]]
+id = "D6"
+decision = "Name the carrier /apply-v2, its skill apply-v2-engine, and the verbs review schedule, review reconcile, review anchor, review reproduce, review reproduce-status and review settle."
+why = "`review apply` already writes plan-record edits, and `rechecks` already names a plan re-check run in the review store."
+provenance = "user-confirmed"
+door = "two-way"
+binds = [
+    "tomlctl/src/review/apply.rs",
+    "tomlctl/src/review/mod.rs",
+    "11",
+]
+rejected = []
+evidence = "tomlctl review apply --help; the brief's Background"
+if_false = "The names change; nothing structural moves"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D7"
+decision = "A finding with a live task takes a new status, `scheduled`, with link fields naming the flow and task; it is not left `open` with a link."
+why = "Triage must not move a finding whose task is live, and a re-find must read as a repeat."
+provenance = "agent-assumed"
+door = "one-way"
+binds = [
+    "tomlctl/src/review/fields.rs",
+    "tomlctl/src/review/resolve.rs",
+    "2",
+    "7",
+]
+evidence = "read FindingStatus and its predicates in tomlctl/src/review/fields.rs; notes/export-v1-exit.md"
+if_false = "The finding stays open while its task runs."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Reuse `exported`"
+because = "sync-v1 and stats --outcomes treat exported rows as v1-owned"
+
+[[decision.rejected]]
+option = "Stay `open` with a task link"
+because = "every triage and selection reader would need a second test for the link"
+
+[[decision]]
+id = "D8"
+decision = "Record reproduce verdicts in their own `[[reproductions]]` array keyed by the apply flow, milestone and round, with store schema version 2 written only when a store holds one or a scheduled finding, and no review run or cell rows."
+why = "A reproduce verdict written as a verdict overwrites the original, carries the wrong run and flips a fixed finding to refuted."
+provenance = "agent-assumed"
+door = "one-way"
+binds = [
+    "tomlctl/src/review/store.rs",
+    "tomlctl/src/review/verdict.rs",
+    "2",
+    "5",
+    "14",
+]
+evidence = "notes/reproduce-check.md; read FindingStatus::decided_by_verdict and CELL_AGENTS in tomlctl/src/review/fields.rs and from_toml in tomlctl/src/review/store.rs"
+if_false = "Reproductions ride in `[[verdicts]]` and every verdict reader filters them out"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "A discriminator on `[[verdicts]]`"
+because = "about ten readers group verdicts by finding alone and each would need a filter"
+
+[[decision.rejected]]
+option = "A review run with one cell per task"
+because = "a cell's agent is bound through the catalogue to a finder, a run holds one family and the pipeline requires a pack"
+
+[[decision]]
+id = "D9"
+decision = "Pick a fix task's executor by rule: lite when it holds at most two files and every finding is a cleanup or a trivial or small defect, otherwise deep."
+why = "File count separated failures in past runs, and small edits on one or two files were the safest shape."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "docs/ideas/v2-pipeline.md",
+    "6",
+]
+rejected = []
+evidence = "docs/ideas/v2-pipeline.md, Evidence: lite trouble 14/106 at 3+ files against 10/356 below"
+if_false = "Every defect runs on deep"
+revisit_if = "review stats --apply shows lite apply rows failing more often than deep ones"
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D10"
+decision = "Hold the one user gate inside the settle milestone's drain: ask about every user-tier proposal together, schedule only accepted proposals into the fix milestone, and defer the rest onto their findings."
+why = "The engine has no pause between milestones, and a parked fix row would hold every sibling fix uncommitted."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "27",
+]
+evidence = "notes/engine-settle-fit.md; read drain.md steps 6, 7 and 10"
+if_false = "The engine gains a milestone-level hold"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Park a fix task per unanswered proposal"
+because = "a parked row stops its whole milestone from gating"
+
+[[decision.rejected]]
+option = "A pause field on milestones"
+because = "it adds a store field and an engine stop rule for what a drain step already does"
+
+[[decision]]
+id = "D11"
+decision = "On the first failure of a lite apply row, move it to deep with its spec unchanged; park it for the user on the second."
+why = "The user decided a fix worker's needs-a-decision return goes up a tier before it reaches them."
+provenance = "user-stated"
+door = "two-way"
+binds = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "claude/skills/implement-v2-engine/SKILL.md",
+    "27",
+]
+rejected = []
+evidence = "docs/ideas/v2-pipeline.md, Apply: No worker reclassification. The engine's Never up a tier rule stays for plan rows"
+if_false = "Apply rows follow the engine's replan rule and a failure is re-specified, never escalated"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D12"
+decision = "A deferred proposal is overdue after three later runs of its family, and an overdue proposal must be given a disposition before a run can close."
+why = "The user wants unanswered proposals forced to a disposition after a set number of runs."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "claude/skills/review-v2-engine/references/triage-and-close.md",
+    "20",
+    "26",
+]
+rejected = []
+evidence = "docs/ideas/v2-pipeline.md, Apply: Ageing, which names no number"
+if_false = "The number changes"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D13"
+decision = "Plan-family findings use `blocked_on` too, in place of `fix_shape = needs-plan`, and the nine plan catalogue entries are reworded."
+why = "`fix_shape` is one field with no family restriction, so it cannot be replaced for code and perf alone."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/review/fields.rs",
+    "claude/skills/review-v2-lenses",
+    "17",
+    "25",
+]
+rejected = []
+evidence = "notes/fix-shape-reach.md; FieldSpec carries one optional family"
+if_false = "`fix_shape` stays for the plan family and the catalogue carries two fields for one idea"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D14"
+decision = "Keep `export-v1` and `sync-v1` as verbs and add native apply outcomes beside `stats --outcomes`, not in place of it."
+why = "The v1 commands stay, and stats imports sync."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/review/export.rs",
+    "tomlctl/src/review/stats.rs",
+    "3",
+    "9",
+    "13",
+]
+rejected = []
+evidence = "notes/export-v1-exit.md; the brief's Non-goals"
+if_false = "Retiring the verbs becomes part of this plan, across types, dispatch, statuses, stats and four test files"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[contract]]
+id = "C1"
+kind = "interface"
+claim = "The task store's `[[finding_links]]` array, keyed by task ref with `store`, `fixes` and `settles`, is the one link from a task to its findings; review schedule writes it, and review reconcile and the worker view read it."
+check = "grep -q 'finding_links' tomlctl/src/review/schedule.rs && grep -q 'finding_links' tomlctl/src/review/reconcile.rs && grep -q 'finding_links' tomlctl/src/plan/view.rs"
+tasks = [
+    1,
+    6,
+    7,
+    8,
+]
+provides = "tasks::schema finding_links"
+consumes = "review schedule, review reconcile, plan view --for worker"
+
+[[contract]]
+id = "C2"
+kind = "interface"
+claim = "Every premise and accept command review schedule writes into a fix task's spec is an invocation review anchor or review reproduce-status accepts. A settle task's accept check is the one exception: a grep of its proposal note."
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(review_schedule) & test(emitted_checks_parse)'"
+tasks = [
+    4,
+    5,
+    6,
+]
+provides = "review anchor, review reproduce-status"
+consumes = "review schedule"
+
+[[contract]]
+id = "C3"
+kind = "interface"
+claim = "Whether a stored finding is blocked, and on what, is answered by one catalogue helper that reads a legacy `fix_shape = needs-plan` row as blocked on design; selection, list, digest and schedule all ask it."
+check = """! grep -q '"fix_shape") [!=]= "needs-plan"' tomlctl/src/review/select.rs tomlctl/src/review/export.rs tomlctl/src/review/digest.rs tomlctl/src/review/query.rs tomlctl/src/review/schedule.rs"""
+tasks = [
+    17,
+    18,
+    21,
+]
+provides = "review::fields blocked helper"
+consumes = "review select, list, digest, schedule"
+
+[[run]]
+step = "investigate"
+workflow = "plan-v2-investigate"
+args_hash = "775c572a4769c958470c5ff1c49ed15e32eb54b16a9834291f99ba1bc1461e43"
+run_id = "wf_4e7f630b-d4a"
+session = "8f23ea4c-28a0-4c93-9bd5-ad2de6c4576c"
+started = 2026-11-10T18:21:28Z
+finished = 2026-11-10T18:24:29Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "challenge"
+run_id = ""
+session = "8f23ea4c-28a0-4c93-9bd5-ad2de6c4576c"
+started = 2026-11-10T18:24:45Z
+finished = 2026-11-10T18:29:49Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "surface"
+run_id = ""
+session = "8f23ea4c-28a0-4c93-9bd5-ad2de6c4576c"
+started = 2026-11-10T18:36:55Z
+finished = 2026-11-10T18:36:55Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "cold-read"
+workflow = "plan-v2-prove"
+args_hash = "754eb95a618e40a7303ccd4d338f999b1ad624116e2a84487083d55926644b5a"
+run_id = "wf_95c7e2eb-654"
+session = "8f23ea4c-28a0-4c93-9bd5-ad2de6c4576c"
+started = 2026-11-10T18:46:55Z
+finished = 2026-11-10T18:52:33Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "review"
+workflow = "plan-v2-review"
+run_id = "wf_5ccfade6-4bd"
+session = "8f23ea4c-28a0-4c93-9bd5-ad2de6c4576c"
+started = 2026-11-10T18:55:28Z
+finished = 2026-11-10T19:51:07Z
+skip_reason = ""
+outcome = "ok"
