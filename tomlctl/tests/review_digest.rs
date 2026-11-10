@@ -456,6 +456,131 @@ fn digest_audit_sample_includes_plausible_defects() {
     assert_eq!(sample["refuted_defects"], json!(["F3", "F4"]), "{sample}");
 }
 
+fn symbol(name: &str) -> String {
+    format!("symbol = \"{name}\"\n")
+}
+
+#[test]
+fn digest_lists_duplicate_candidates_across_cells() {
+    let Some(repo) = Repo::new(&["src/a.rs"]) else {
+        return;
+    };
+    let rows = [
+        cell("C1", 1, "review-finder", "covered"),
+        cell("C2", 2, "review-finder", "covered"),
+        defect("F1", "C1", "open", &symbol("a::run")),
+        defect("F2", "C2", "open", &symbol("a::run")),
+        defect("F3", "C2", "open", &symbol("a::other")),
+        defect("F4", "C1", "superseded", &symbol("a::other")),
+        defect("F10", "C1", "open", &symbol("b::step")),
+        defect("F9", "C2", "open", &symbol("b::step")),
+    ]
+    .concat();
+    repo.seed(ALL_WAIVED, &rows);
+
+    let want = json!([
+        {"a": "F1", "b": "F2", "file": "src/a.rs", "symbol": "a::run", "cells": ["C1", "C2"]},
+        {"a": "F9", "b": "F10", "file": "src/a.rs", "symbol": "b::step", "cells": ["C2", "C1"]},
+    ]);
+    let digest = repo.digest(&[]);
+    assert_eq!(digest["duplicate_candidates"], want, "{digest}");
+
+    let since = repo.digest(&["--since-wave", "2"]);
+    assert_eq!(
+        since["duplicate_candidates"], want,
+        "a late cell restating an early one is still listed: {since}"
+    );
+    let past = repo.digest(&["--since-wave", "3"]);
+    assert_eq!(past["duplicate_candidates"], json!([]), "{past}");
+}
+
+#[test]
+fn digest_omits_linked_pairs_from_duplicate_candidates() {
+    let Some(repo) = Repo::new(&["src/a.rs"]) else {
+        return;
+    };
+    let merged_into_f1 = format!(
+        "{}same_as = \"F1\"\noutcome = \"repeat\"\nmerged_into = \"F1\"\n",
+        symbol("a::run")
+    );
+    let rows = [
+        cell("C1", 1, "review-finder", "covered"),
+        cell("C2", 1, "review-finder", "covered"),
+        cell("C3", 1, "review-finder", "covered"),
+        defect("F1", "C1", "open", &symbol("a::run")),
+        defect("F2", "C2", "merged", &merged_into_f1),
+        defect("F3", "C3", "merged", &merged_into_f1),
+    ]
+    .concat();
+    repo.seed(ALL_WAIVED, &rows);
+    let digest = repo.digest(&[]);
+    assert_eq!(
+        digest["duplicate_candidates"],
+        json!([]),
+        "pairs joined directly or through one target are settled: {digest}"
+    );
+}
+
+#[test]
+fn digest_lists_findings_that_hit_another_cells_rule_out() {
+    let Some(repo) = Repo::new(&["src/a.rs"]) else {
+        return;
+    };
+    let rows = [
+        cell("C1", 1, "review-finder", "covered"),
+        cell("C2", 2, "review-finder", "covered"),
+        defect("F1", "C1", "open", &symbol("a::run")),
+        defect("F2", "C2", "open", &symbol("a::run")),
+        defect("F3", "C2", "open", &symbol("a::other")),
+    ]
+    .concat();
+    repo.seed(ALL_WAIVED, &rows);
+    let source = repo.root.join(".claude/ruled-out.ndjson");
+    fs::write(
+        &source,
+        "{\"file\":\"src/a.rs\",\"symbol\":\"a::run\",\"reason\":\"the pad is deliberate\"}\n",
+    )
+    .unwrap();
+    repo.tomlctl()
+        .args(["review", "cover", "C1", "--status", "covered"])
+        .args(["--note", "note of C1", "--ruled-out"])
+        .arg(&source)
+        .args(STORE)
+        .assert()
+        .success();
+
+    let want = json!([
+        {"finding": "F2", "cell": "C2", "ruled_out_by": "C1", "reason": "the pad is deliberate"},
+    ]);
+    let digest = repo.digest(&[]);
+    assert_eq!(digest["ruled_out_hits"], want, "{digest}");
+    let since = repo.digest(&["--since-wave", "2"]);
+    assert_eq!(
+        since["ruled_out_hits"], want,
+        "an earlier wave's rule-out still applies: {since}"
+    );
+    let past = repo.digest(&["--since-wave", "3"]);
+    assert_eq!(past["ruled_out_hits"], json!([]), "{past}");
+}
+
+#[test]
+fn digest_run_line_reports_waves_from_cells() {
+    let Some(repo) = Repo::new(&["src/a.rs"]) else {
+        return;
+    };
+    let rows = [
+        "waves = 7\n\n".to_string(),
+        cell("C1", 1, "review-finder", "covered"),
+        cell("C2", 3, "review-finder", "covered"),
+    ]
+    .concat();
+    repo.seed(ALL_WAIVED, &rows);
+    repo.report();
+    let text = fs::read_to_string(repo.root.join(REPORT)).unwrap();
+    assert!(text.contains(" · waves 3"), "waves from the cells:\n{text}");
+    assert!(!text.contains("waves 7"), "not the stored count:\n{text}");
+}
+
 fn report_rows() -> String {
     [
         cell("C1", 1, "review-finder", "covered"),

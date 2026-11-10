@@ -14,6 +14,8 @@ use toml::Value as TomlValue;
 
 use super::cells::coverage_accounting;
 use super::fields::{FindingStatus, Kind, Role, Route, SWEEPER, Severity};
+use super::matching::{Place, same_place};
+use super::stats::run_waves;
 use super::store::{self, Cell, Finding, Row, Run, Store, Target, Verdict, View};
 use crate::cli::{ReviewDigestArgs, ReviewReportArgs};
 use crate::errors::{ErrorKind, tagged_err};
@@ -129,6 +131,11 @@ pub(crate) fn digest(target: &Target, args: ReviewDigestArgs) -> Result<()> {
         .map(|(i, _)| JsonValue::Object(rows.project(Role::Orchestrator, i, false)))
         .collect();
 
+    let run_cells: Vec<&Cell> = stored.cells.iter().filter(|c| c.run == run.id).collect();
+    let in_window = |f: &Finding| in_wave(cell_of(&stored, f).and_then(|c| c.wave));
+    let duplicates = duplicate_candidates(&stored, &run.id, in_window);
+    let hits = ruled_out_hits(&run_cells, each().map(|(_, f)| f));
+
     let mut out = Map::new();
     out.insert("run".into(), json!(run.id));
     if let Some(n) = since {
@@ -148,6 +155,8 @@ pub(crate) fn digest(target: &Target, args: ReviewDigestArgs) -> Result<()> {
     out.insert("disabled".into(), json!(accounting.disabled));
     out.insert("contested".into(), json!(contested));
     out.insert("refuted_criticals".into(), json!(refuted_criticals));
+    out.insert("duplicate_candidates".into(), json!(duplicates));
+    out.insert("ruled_out_hits".into(), json!(hits));
     out.insert("audit_sample".into(), audit_sample(&stored, &findings));
     out.insert("advisory".into(), json!(advisory));
     print_json_line(&JsonValue::Object(out))
@@ -188,6 +197,115 @@ fn rest_str<'f>(finding: &'f Finding, key: &str) -> &'f str {
         .get(key)
         .and_then(TomlValue::as_str)
         .unwrap_or_default()
+}
+
+/// The finding's id and every id its `same_as` / `merged_into` links reach,
+/// stopping at a dangling link or a cycle. Two findings whose chains meet are
+/// already joined, directly or through a shared target.
+fn link_chain<'s>(store: &'s Store, finding: &'s Finding) -> Vec<&'s str> {
+    let mut chain = vec![finding.id.as_str()];
+    let mut at = finding;
+    loop {
+        let link = |key: &str| match key {
+            "same_as" => at.same_as.as_str(),
+            _ => rest_str(at, key),
+        };
+        let next = store.findings.iter().find(|f| {
+            !chain.contains(&f.id.as_str())
+                && ["same_as", "merged_into"]
+                    .iter()
+                    .any(|key| !link(key).is_empty() && link(key) == f.id)
+        });
+        match next {
+            Some(f) => {
+                chain.push(&f.id);
+                at = f;
+            }
+            None => return chain,
+        }
+    }
+}
+
+fn joined(store: &Store, a: &Finding, b: &Finding) -> bool {
+    let theirs = link_chain(store, b);
+    link_chain(store, a).iter().any(|id| theirs.contains(id))
+}
+
+/// The numeric part of a minted id first, so `F9` sorts before `F10`.
+fn id_order(id: &str) -> (u64, &str) {
+    let digits = id.trim_start_matches(|c: char| !c.is_ascii_digit());
+    (digits.parse().unwrap_or(u64::MAX), id)
+}
+
+/// Pairs of the run's live findings from different cells whose places match
+/// and that no `same_as` or `merged_into` chain already joins. A pair is
+/// listed when either member is in the `--since-wave` window, so a late cell
+/// restating an early one still surfaces.
+fn duplicate_candidates(
+    store: &Store,
+    run: &str,
+    in_window: impl Fn(&Finding) -> bool,
+) -> Vec<JsonValue> {
+    let live: Vec<&Finding> = store
+        .findings
+        .iter()
+        .filter(|f| f.run == run && f.status() != FindingStatus::Superseded)
+        .collect();
+    let mut pairs = Vec::new();
+    for (i, first) in live.iter().enumerate() {
+        for second in &live[i + 1..] {
+            if first.cell == second.cell
+                || !(in_window(first) || in_window(second))
+                || !same_place(&Place::of(first), &Place::of(second))
+                || joined(store, first, second)
+            {
+                continue;
+            }
+            let (a, b) = if id_order(&second.id) < id_order(&first.id) {
+                (second, first)
+            } else {
+                (first, second)
+            };
+            let symbol = if a.symbol.is_empty() {
+                &b.symbol
+            } else {
+                &a.symbol
+            };
+            pairs.push(json!({
+                "a": a.id,
+                "b": b.id,
+                "file": a.file,
+                "symbol": symbol,
+                "cells": [a.cell, b.cell],
+            }));
+        }
+    }
+    pairs
+}
+
+/// Each finding whose place matches a rule-out recorded by another cell of
+/// the run, once per matching entry. Every cell's rule-outs count whatever
+/// its wave; only the findings are windowed.
+fn ruled_out_hits<'s>(
+    cells: &[&'s Cell],
+    findings: impl Iterator<Item = &'s Finding>,
+) -> Vec<JsonValue> {
+    let mut hits = Vec::new();
+    for finding in findings {
+        for cell in cells.iter().filter(|c| c.id != finding.cell) {
+            for entry in &cell.ruled_out {
+                if same_place(&Place::of(finding), &Place::ruled_out(entry)) {
+                    hits.push(json!({
+                        "finding": finding.id,
+                        "cell": finding.cell,
+                        "ruled_out_by": cell.id,
+                        "reason": entry.reason,
+                    }));
+                }
+            }
+        }
+    }
+    hits
 }
 
 /// The finding's latest verdict other than an audit's, so an audit overturn
@@ -397,7 +515,7 @@ fn render(store: &Store, run: &Run) -> (String, String) {
     let mut md = format!(
         "# Review report — {}\n\n{}\n\n{counts}\n",
         run.id,
-        run_line(run)
+        run_line(store, run)
     );
 
     md.push_str("\n## Defects\n");
@@ -481,7 +599,7 @@ fn render(store: &Store, run: &Run) -> (String, String) {
     (md, counts)
 }
 
-fn run_line(run: &Run) -> String {
+fn run_line(store: &Store, run: &Run) -> String {
     let mut parts = vec![
         format!("Run {}", run.id),
         run.command.clone(),
@@ -497,9 +615,13 @@ fn run_line(run: &Run) -> String {
     add("started", &run.started);
     add("finished", &run.finished);
     add("substrate", &run.substrate);
+    let waves = run_waves(&store.cells, &run.id);
     add(
         "waves",
-        &run.waves.map(|n| n.to_string()).unwrap_or_default(),
+        &Some(waves)
+            .filter(|&n| n > 0)
+            .map(|n| n.to_string())
+            .unwrap_or_default(),
     );
     add(
         "agents",

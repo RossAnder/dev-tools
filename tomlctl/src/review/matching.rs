@@ -5,7 +5,7 @@
 //! decides identity — only a `same_as` naming one does.
 
 use super::fields::{Family, FindingStatus};
-use super::store::Finding;
+use super::store::{Finding, RuledOut};
 
 /// How far apart two symbol-less rows' lines may be and still match.
 pub(crate) const LINE_WINDOW: u32 = 10;
@@ -45,6 +45,48 @@ pub(crate) fn candidates<'s>(findings: &'s [Finding], site: &Site<'_>) -> Vec<&'
         .filter(|f| f.family == site.family && f.file == site.file)
         .filter(|f| matches_at(f, site))
         .collect()
+}
+
+/// Where a finding or a rule-out sits within one run, for the run's joins.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Place<'a> {
+    pub(crate) file: &'a str,
+    pub(crate) symbol: &'a str,
+    pub(crate) line: Option<u32>,
+}
+
+impl<'a> Place<'a> {
+    pub(crate) fn of(finding: &'a Finding) -> Self {
+        Self {
+            file: &finding.file,
+            symbol: &finding.symbol,
+            line: finding.line,
+        }
+    }
+
+    pub(crate) fn ruled_out(entry: &'a RuledOut) -> Self {
+        Self {
+            file: &entry.file,
+            symbol: &entry.symbol,
+            line: entry.line,
+        }
+    }
+}
+
+/// Whether two places name the same site: the same file, and the same symbol
+/// when both carry one, or lines within [`LINE_WINDOW`] otherwise. Symmetric,
+/// unlike [`candidates`], which keys on whichever the new row carries.
+pub(crate) fn same_place(a: &Place<'_>, b: &Place<'_>) -> bool {
+    if a.file != b.file {
+        return false;
+    }
+    if !a.symbol.is_empty() && !b.symbol.is_empty() {
+        return a.symbol == b.symbol;
+    }
+    match (a.line, b.line) {
+        (Some(x), Some(y)) => x.abs_diff(y) <= LINE_WINDOW,
+        _ => false,
+    }
 }
 
 fn matches_at(finding: &Finding, site: &Site<'_>) -> bool {
@@ -133,6 +175,43 @@ mod tests {
 
         let line_less = site(Family::Code, "src/a.rs", "", None);
         assert_eq!(ids(candidates(&store, &line_less)), vec!["F6"]);
+    }
+
+    #[test]
+    fn same_place_prefers_symbols_and_is_symmetric() {
+        let place = |file, symbol, line| Place { file, symbol, line };
+        let cases = [
+            (
+                place("a.rs", "a::run", Some(1)),
+                place("a.rs", "a::run", Some(90)),
+                true,
+            ),
+            (
+                place("a.rs", "a::run", Some(1)),
+                place("a.rs", "a::other", Some(1)),
+                false,
+            ),
+            (
+                place("a.rs", "a::run", Some(40)),
+                place("a.rs", "", Some(50)),
+                true,
+            ),
+            (
+                place("a.rs", "", Some(40)),
+                place("a.rs", "", Some(51)),
+                false,
+            ),
+            (place("a.rs", "", None), place("a.rs", "", None), false),
+            (
+                place("a.rs", "a::run", None),
+                place("b.rs", "a::run", None),
+                false,
+            ),
+        ];
+        for (a, b, want) in cases {
+            assert_eq!(same_place(&a, &b), want, "{a:?} vs {b:?}");
+            assert_eq!(same_place(&b, &a), want, "{b:?} vs {a:?}");
+        }
     }
 
     #[test]
