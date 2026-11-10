@@ -16,7 +16,7 @@ tomlctl review digest --run <run> --slug <slug>
 
 - every REFUTED critical defect;
 - every contested finding;
-- the digest's audit sample, chosen by index: two CONFIRMED defects, two REFUTED non-critical defects, and two checked cleanup rows, at least one of them from a sweeper cell.
+- the digest's `audit_sample`, chosen by position in store order: two standing defects (latest non-audit verdict CONFIRMED or PLAUSIBLE), two REFUTED non-critical defects, and two checker-decided cleanup rows, one of them from a sweeper cell when there is one. Each REFUTED slot the run cannot fill takes one more standing defect by the same rule, so a run with no refutations still samples four standing defects.
 
 Take the indexed rows exactly as the digest lists them. Choosing your own replacements turns a sample into a selection.
 
@@ -35,13 +35,20 @@ The audit projection is the verifier projection plus every verdict on each row a
 - A checked cleanup row is overturned when its `old` text is not at the anchor, the edit leaves `file`, `target_file` and `instances`, or a symbol called dead is referenced.
 - A contested finding is settled for whichever verdict its citations support.
 
-**Recording.** Record each overturn as an audit verdict, with the rationale staged as a file:
+**Recording.** Every sampled row gets an audit verdict, upheld or overturned, so `review stats` can measure the verifiers against a denominator. The verdict is your call on the finding itself: `confirmed` when it stands, `refuted` when it does not. Upholding a CONFIRMED or PLAUSIBLE defect, or a checker's confirm, is `confirmed`; upholding a refutation is `refuted`; an overturn is the opposite call. Use `confirmed` or `refuted` only. An audit `plausible` reads as a confirm in the overturn count while saying the audit could not decide, so the count would be measured against a call nobody made; when the excerpt and the cited range leave a row undecided, it is upheld only if its recorded verdict follows from its citation, and overturned otherwise.
 
-```bash
-tomlctl review verdict <finding> --slug <slug> --verdict confirmed --by audit --citation <file:line> --rationale-file <run-dir>/payloads/audit-<finding>.md
+Write the whole sample as one NDJSON batch with the Write tool, one row per sampled id, each with its own citation and a one-line rationale:
+
+```json
+{"finding": "F7", "verdict": "confirmed", "by": "audit", "citation": "src/merge.rs:88", "rationale": "Upheld: merge.rs:88 truncates the batch at CHUNK, as the failure_scenario says."}
+{"finding": "F11", "verdict": "confirmed", "by": "audit", "citation": "src/render.rs:66", "rationale": "Overturned: the refutation cites render.rs:40, but the empty section is emitted at render.rs:66, which the trigger reaches."}
 ```
 
-A row you agree with gets no verdict; it counts as sampled. Then record the sample size and the overturns on the run:
+```bash
+tomlctl review verdict --slug <slug> --ndjson <run-dir>/payloads/audit.ndjson
+```
+
+Read the output's `refused` list and fix each refused row before going on. Then record the sample on the run: `sampled` is the batch's row count and `overturned` the rows whose call differs from the recorded one:
 
 ```bash
 tomlctl review run update <run> --slug <slug> --set-json 'audit={"sampled":<n>,"overturned":<m>}'
@@ -91,7 +98,7 @@ Each user instruction maps to `review triage` calls. `--expect-status` is the st
 | `park F7 — <reason>` | stage `<reason>`; `review triage F7 --park-file <path> --expect-status open` |
 | `backlog F7,F9` | stage 8's backlog hand-off, then one `review triage <id> --backlog-ref <B-id> --expect-status open` per id |
 | `convert F8` | write the replacement row (below); `review triage F8 --convert cleanup\|defect --ndjson <path> --expect-status open` |
-| `plan F5` | no store write; the close summary names `/plan-new` with `review show F5 --for implementer` as its input |
+| `plan F5` | stage 8's backlog hand-off mints a row for the needs-plan defect, its context naming `tomlctl review show F5 --for implementer` with the store flag as `/plan-new`'s input; then `review triage F5 --backlog-ref <B-id> --expect-status open` |
 | `export F1,F4` / `export all` | stage 8's `export-v1` |
 
 Every call takes the store flag. Several ids sharing one disposition and one reason go in one call (`review triage F3,F4 --dismiss-file …`); a `backlog-ref` is per id, because each pick gets its own backlog item.
@@ -116,7 +123,7 @@ In this order.
 tomlctl review triage <ids, comma-separated> --slug <slug> --park-file <run-dir>/payloads/park-untriaged.md --expect-status open
 ```
 
-**2. Backlog picks.** Only for ids the user named under `backlog`; the orchestrator never sends an item to the backlog on its own recommendation. Invoke the `backlog-capture` skill now — not earlier in the run — and follow it as the only writer. Read the rows it captures from:
+**2. Backlog and plan picks.** Only for ids the user named under `backlog` or `plan`; the orchestrator never sends an item to the backlog on its own recommendation. Invoke the `backlog-capture` skill now — not earlier in the run — and follow it as the only writer. A `plan` pick's backlog context names `tomlctl review show <id> --slug <slug> --for implementer` (or `--scope <scope>`) as the input `/plan-new` starts from, so the defect is planned from the store rather than from a copy. Read the rows it captures from:
 
 ```bash
 tomlctl review show <ids, comma-separated> --slug <slug> --for backlog
@@ -149,4 +156,6 @@ It stamps `finished` and computes `counts`. It refuses while any finding is `unv
 
 **6. Refresh the report.** Re-run `review report --out` to the same path so the file carries the dispositions, exports and counts.
 
-**7. Close summary.** Print the run id, the report path, the counts line, what was exported (v1 ids and ledger), the backlog ids, any `skipped_stale` rows, any `plan` picks with their `/plan-new` hand-off, a substrate fallback if one happened, and `triage pending` when the user's answer was empty.
+**7. Close summary.** Print the run id, the report path, the counts line, what was exported (v1 ids and ledger), the backlog ids, any `skipped_stale` rows, any `plan` picks with their backlog id and `/plan-new` hand-off, a substrate fallback if one happened, and `triage pending` when the user's answer was empty.
+
+Then list each unhandled escalation: every entry of a wave index's `escalations` that you did not turn into a follow-up cell — out of budget, or anchored outside the scope and not a `ripple` row — by cell and text, each offered as a backlog capture. Capture only the ones the user accepts, through `backlog-capture`'s check-then-add gate as in step 2; the rest are dropped with the run.
