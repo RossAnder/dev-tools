@@ -66,28 +66,29 @@ Fetch your assignment with `tomlctl review show <cell id> --for finder <store fl
 
 ### Verifier prompt
 
-One finding, or a minor batch from one cell, or a panel seat. The finding line and the instruction are the Workflow's; the `batch:` line is added for a batch, so the verifier can name its payload `payloads/<batch>.ndjson`.
+One finding, a minor or cleanup batch from one cell, or a panel seat. The finding line, the `batch:` line and the instruction are the Workflow's; the verifier names its payload `payloads/<batch>.ndjson`.
 
 ```text
 findings: <id>[, <id>…]
-batch: verify-<cell id>-minor
+batch: verify-<cell id>-<minor|cleanup>
 panel seat: <seat> of 3
 
 Fetch each finding with `tomlctl review show <ids, comma-separated> --for verifier <store flag>`, verify it refute-first, and record each verdict with `tomlctl review verdict` using `--by verifier`. Return the verdict-return object.
 ```
 
 - Single finding: omit `batch:` and `panel seat:`; the instruction ends `Return the verdict-return object.`
-- Minor batch: keep `batch:`, omit `panel seat:`; the instruction ends `Return one verdict-return object per finding under \`verdicts\`.`
+- Minor or cleanup batch: keep `batch:`, omit `panel seat:`; the instruction ends `Return one verdict-return object per finding under \`verdicts\`.`
 - Panel seat: omit `batch:`; keep `panel seat:` and replace `--by verifier` with `--by panel --seat <seat>`.
 
 ### Checker prompt
 
-A pooled batch of up to 20 cleanup rows. The checker's projection does not carry `cell` or `lens`, and the checker may return `refuted` only on a row a sweeper cell wrote, so the prompt names those rows. The `batch:` and `sweeper rows:` lines are additions to the Workflow's template; write `sweeper rows: none` when no row in the batch came from a `review-sweeper` cell.
+A pooled batch of up to 20 cleanup rows, the same template the Workflow builds. The checker may return `refuted` only on a row a sweeper cell wrote or on a `cleanup` row whose lens the catalogue marks `mode = "mechanical"`, and its projection carries neither the row's cell nor its lens's mode, so the prompt names both. Write `sweeper rows: none` when no row in the batch came from a `review-sweeper` cell. The `mechanical lenses:` line lists the `id` of every `lens` entry whose `mode` is `mechanical` in `tomlctl review catalogue --family <family>`, read once per run, or `none` when there are none.
 
 ```text
 findings: <id>, <id>, …
 batch: check-<wave>-<n>
 sweeper rows: <ids from review-sweeper cells, or none>
+mechanical lenses: <lens ids, comma-separated, or none>
 
 Fetch the rows with `tomlctl review show <ids, comma-separated> --for checker <store flag>`, check each by your predicates, and record each verdict with `tomlctl review verdict --by checker`. Return one verdict-return object per finding under `verdicts`.
 ```
@@ -96,21 +97,18 @@ The orchestrator knows which rows are sweeper rows from the cell-returns: each r
 
 ### Surveyor prompt
 
-Stage 2 dispatches one `review-surveyor` after `review survey` has run. `review survey` prints the signals it recorded, and no read-only verb returns a run's signals afterwards, so the prompt must carry them; without them the surveyor stops and returns `missing: signals`.
+Stage 2 dispatches one `review-surveyor` after `review survey` has run. The prompt carries no signals: the surveyor reads the ones `review survey` recorded from the store with `tomlctl review run show <run id> <store flag>`, so nothing is copied from the survey's output by hand.
 
 ```text
 family: <code|perf|plan>
 scope: <the run's scope globs, comma-separated>
 plan: <plan path — plan family on a markdown plan only>
 flow: <slug>
-signals:
-- <name> — roots: <root>, <root>
-- <name> — roots: <root>
 
 Run the survey for this run as your procedure says and return your digest.
 ```
 
-The `flow: <slug>` line is for the plan family on a v2 flow only; it replaces `plan:`, and the surveyor reads the flow's records instead of a plan file. It follows the preamble, so it also carries the run, the store flag and the run directory. Copy each signal's `name` and `roots` from `review survey`'s output as printed. The surveyor counts toward the 16 running agents.
+The `flow: <slug>` line is for the plan family on a v2 flow only; it replaces `plan:`, and the surveyor reads the flow's records instead of a plan file. It follows the preamble, so it also carries the run, the store flag and the run directory. The surveyor counts toward the 16 running agents.
 
 ## Routing
 
@@ -119,6 +117,7 @@ Route each cell-return's `findings` by its `route`, which `review add` computed;
 | `route` | Dispatch |
 |---|---|
 | `verifier`, a `defect` of severity `minor`, depth `quick` or `standard` | one `review-verifier` minor batch per cell, holding all of that cell's minor defects |
+| `verifier`, a `cleanup`, at every depth | one `review-verifier` cleanup batch per cell, holding all of that cell's verifier-routed cleanup rows; a cell with a single such row sends it to one single-finding verifier |
 | `verifier`, anything else | one `review-verifier` per finding |
 | `panel` | three `review-verifier` dispatches, seats 1, 2 and 3 (only computed at `deep`) |
 | `checker` | into the checker pool |
@@ -131,7 +130,7 @@ Route each cell-return's `findings` by its `route`, which `review add` computed;
 
 **Starting early.** Verification may start for a cell as soon as that cell returns, while other cells still run, provided the running count allows; that is what the Workflow's pipeline does. When the count is tight, finish dispatching the cell wave first.
 
-**Returns.** A cell agent returns the cell-return object: `{cell, findings: [{id, kind, severity, route}], status, escalate?}`. A verifier returns one verdict-return object `{finding, verdict, reroute?}` for a single finding, and a batch — a checker batch included — returns them under `verdicts`. Collect every `escalate` entry from the cell-returns for stage 5, which decides whether an escalated sweeper candidate gets a `review-finder` cell.
+**Returns.** A cell agent returns the cell-return object: `{cell, findings: [{id, kind, severity, route}], status, escalate?}`. A verifier returns one verdict-return object `{finding, verdict, reroute?}` for a single finding, and a batch — a checker batch included — returns them under `verdicts`. Collect every `escalate` entry from the cell-returns into the index's `escalations` for stage 5, which decides whether an escalated candidate gets a follow-up cell.
 
 ### The wave index
 
@@ -140,9 +139,15 @@ Keep the same index the Workflow returns, so stage 5 reads one shape whichever s
 - `run`, `wave`;
 - `cells`: one entry per dispatched cell, `{id, status, findings, escalated}`, where `status` is the sealed status from the return, or `skipped`, `no-return` or `error`, `findings` the count of returned ids and `escalated` the count of `escalate` entries;
 - `verified`: the number of distinct finding ids that received a verdict other than `unsettled` in this wave;
-- `errors`: one line per skipped cell, lost return, missing verdict or unknown route.
+- `agents`: the number of agents this wave dispatched — cells, verifiers, panel seats, checker batches and the verifiers unsettled checker rows were rerouted to;
+- `errors`: one line per skipped cell, lost return, missing verdict or unknown route;
+- `escalations`: last, one `{cell, text}` per `escalate` entry, `text` being the entry as returned (an object serialised to JSON) cut to 300 characters.
 
-After the wave's last notification, record the running agent total for the run (every dispatch so far, surveyor and `verification` agents included):
+The Workflow's index also carries `script_version`; a fallback wave has none to report.
+
+### The agent total
+
+The run's `agents` is counted once, after the run's last wave and mop-up and before `review run finish`: the sum of every wave index's `agents`, whichever substrate ran it, plus the orchestrator's own dispatches outside the waves — the surveyor, each `verification` agent and each mop-up dispatch. Never add a wave twice, and never count an agent a Workflow index already counts.
 
 ```bash
 tomlctl review run update <run> --slug <slug> --set-json agents=<total>
