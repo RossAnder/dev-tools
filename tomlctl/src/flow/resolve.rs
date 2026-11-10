@@ -23,11 +23,11 @@
 //!
 //! # Read integrity
 //!
-//! Honours `ReadIntegrityArgs` (`--verify-integrity`, `--strict-read`).
-//! `--verify-integrity` is applied to the active-flow registry on the
-//! step-3/4 paths and to the resolved `context.toml`. `--strict-read`
-//! escalates a missing resolved `context.toml` (under `--flow <slug>`) to
-//! a tagged `kind=not_found` rather than falling through to step 6.
+//! Honours `--verify-integrity`, applied to the active-flow registry on the
+//! step-3/4 paths and to the resolved `context.toml`. A `--flow <slug>`
+//! whose `context.toml` is missing is a tagged `kind=not_found` error
+//! whether or not `--strict-read` is set; it never falls through to a
+//! later step.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -111,7 +111,6 @@ pub(crate) fn dispatch(
         worktree.as_deref(),
         with_staleness,
         opts,
-        integrity.strict_read,
     )?;
     print_json_line(&envelope)
 }
@@ -123,7 +122,8 @@ pub(crate) fn dispatch(
 /// Top-level resolver. Returns the JSON envelope ready for stdout.
 ///
 /// Steps (per `docs/plans/flow-tracking-overhaul.md` Task 10):
-/// 1. `--flow <slug>`     → `source = "explicit-flag"` if `context.toml` exists.
+/// 1. `--flow <slug>`     → `source = "explicit-flag"` if `context.toml` exists,
+///    a `kind=not_found` error otherwise.
 /// 2. scope-glob match     → `source = "scope-glob"` on a unique hit.
 /// 3. active-binding match → `source = "active-binding"` on a unique hit.
 /// 4. active-latest        → `source = "active-latest"` (registry non-empty).
@@ -141,7 +141,6 @@ fn resolve(
     worktree: Option<&Path>,
     with_staleness: bool,
     opts: IntegrityOpts,
-    strict_read: bool,
 ) -> Result<JsonValue> {
     let mut warnings: Vec<String> = Vec::new();
 
@@ -160,18 +159,15 @@ fn resolve(
                 &mut warnings,
             );
         }
-        if strict_read {
-            return Err(tagged_err(
-                ErrorKind::NotFound,
-                Some(ctx.clone()),
-                format!(
-                    "explicit --flow {slug}: context.toml does not exist at {}",
-                    ctx.display()
-                ),
-            ));
-        }
-        warnings.push(format!(
-            "explicit --flow {slug} requested but context.toml not found; falling through"
+        // Never falls through: a later step would bind some other flow, and
+        // the caller would write that flow's stores believing they were its own.
+        return Err(tagged_err(
+            ErrorKind::NotFound,
+            Some(ctx.clone()),
+            format!(
+                "explicit --flow {slug}: context.toml does not exist at {}",
+                ctx.display()
+            ),
         ));
     }
 

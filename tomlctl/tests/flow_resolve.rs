@@ -199,28 +199,37 @@ fn explicit_flag_resolves_the_named_flow() {
     );
 }
 
-/// `--flow <missing>` falls through to step 6 (none) by default — emits a
-/// warning explaining the explicit flag was ignored. Pins the
-/// "fall-through, don't error" semantics of the non-strict path.
+/// `--flow <missing>` is a `kind=not_found` error without `--strict-read`,
+/// even when a `--branch` would let a later step bind another flow: the
+/// caller would otherwise write that flow's stores as its own.
 #[test]
-fn explicit_flag_missing_falls_through_to_none_by_default() {
+fn explicit_flag_missing_errors_with_not_found() {
     let (dir, _claude) = fresh_root();
-    // No flows on disk; --flow points at a non-existent slug.
-    let v = run_resolve(&dir, &["--flow", "ghost"]);
-    assert_eq!(v["resolved"], serde_json::json!(false));
-    assert_eq!(v["source"], serde_json::json!("none"));
-    let warnings = v["warnings"].as_array().unwrap();
-    assert!(
-        warnings.iter().any(|w| w
-            .as_str()
-            .map(|s| s.contains("explicit --flow ghost"))
-            .unwrap_or(false)),
-        "expected a fall-through warning, got: {warnings:?}"
+    seed_flow_context(
+        dir.path(),
+        "feature-x",
+        &make_context("feature-x", "in-progress", Some("feat/x"), &[]),
     );
+    seed_all_canonical_artifacts(dir.path(), "feature-x");
+
+    let mut cmd = Command::cargo_bin("tomlctl").unwrap();
+    cmd.env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .args(["--error-format", "json", "flow", "resolve"])
+        .args(["--flow", "ghost", "--branch", "feat/x"]);
+    let out = cmd.write_stdin("").assert().failure().code(1);
+    let output = out.get_output();
+    assert!(
+        output.stdout.is_empty(),
+        "a missing explicit flow must print no envelope, got: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let err = common::parse_json_error_envelope(&stderr);
+    assert_eq!(err["kind"], serde_json::json!("not_found"));
 }
 
-/// `--flow <missing> --strict-read` flips the fall-through into a tagged
-/// `kind=not_found` error.
+/// `--strict-read` keeps the same `kind=not_found` error.
 #[test]
 fn explicit_flag_missing_strict_read_errors_with_not_found() {
     let (dir, _claude) = fresh_root();
