@@ -35,7 +35,7 @@ The engine's role rules hold throughout: read digests and projections, never row
    tomlctl capabilities --get features
    ```
 
-   Stop when `review_apply` is absent, naming `cargo install --path tomlctl` in the dev-tools checkout and a restart.
+   Stop when `review_apply`, `review_run_head`, `review_run_show`, `review_ruled_out`, `review_same_as_link` or `review_list_fix_shape` is absent, naming `cargo install --path tomlctl` in the dev-tools checkout and a restart.
 2. Bind `<slug>`. `/plan-v2` has it already. `/review-plan-v2` takes it from the envelope its engine stage 0 built.
 3. Skip the engine's stage 0 steps 4 and 5. `review sync-v1` reads v1 ledgers, and the plan family never exports to one. The import is refused on a v2 flow.
 4. Read where the plan stands:
@@ -48,29 +48,30 @@ The engine's role rules hold throughout: read digests and projections, never row
 
 ## 2. Run start
 
-Read the `model:` line of each of the eight agents with Grep, under `<claude dir>/agents/`: the engine's seven (`review-surveyor`, `review-sweeper`, `review-checker`, `review-finder`, `review-finder-cf`, `review-verifier`, `plan-executor`) and `plan-review-lead`. Record the lead's model under `lead`. Stage the table as JSON with the Write tool, since the run directory does not exist yet: use the session scratchpad, then pass it by `@` path.
+Read the `model:` line of each of the eight agents with Grep, under `<claude dir>/agents/`: the engine's seven (`review-surveyor`, `review-sweeper`, `review-checker`, `review-finder`, `review-finder-cf`, `review-verifier`, `plan-executor`) and `plan-review-lead`. Record the lead's model under `lead`. Stage the table as JSON with the Write tool, since the run directory does not exist yet: use the session scratchpad, then pass it by `@` path. Stage the scope list there too, as `<scratch>/review-scope.json` holding `["docs/flows/<slug>/brief.md","docs/flows/<slug>/design/*.md"]`.
 
 ```bash
-tomlctl review run start --slug <slug> --command review-plan-v2 --family plan --depth <depth> --base HEAD --set-json 'scope=["docs/flows/<slug>/brief.md","docs/flows/<slug>/design/*.md"]' --set-json models=@<scratch>/review-models.json --set substrate=<workflow|agent-waves>
+tomlctl review run start --slug <slug> --command review-plan-v2 --family plan --depth <depth> --base HEAD --set-json 'scope=@<scratch>/review-scope.json' --set-json models=@<scratch>/review-models.json --set substrate=<workflow|agent-waves>
 ```
 
 `substrate` follows the engine's rule: `workflow` when the Workflow tool is available in this session, otherwise `agent-waves`. `--command` is `review-plan-v2` from either carrier. `<depth>` is the carrier's `--depth`, default `standard`. Bind `<run>` and `<run-dir>` from what it prints. A catalogue validation error halts the review, as the engine's stage 1 says; so does a refusal over `.claude/review-lenses`, which takes `--project` only on the user's say-so.
 
 ## 3. Survey signals and schemas
 
-The wrapper needs the deterministic signals, and no read verb returns them after this call prints them:
+The survey records the deterministic signals, and `tomlctl review run show <run> --slug <slug>` returns them whenever they are needed; the surveyor reads them that way, so the wrapper is passed none:
 
 ```bash
 tomlctl review survey --run <run> --slug <slug>
 ```
 
-Keep each printed signal's `name` and `roots` exactly as printed. For each `unknown` signal that would have activated a lens, add `--lens +<id>` to the steering, or leave it and name it in the close summary.
+For each `unknown` signal it prints that would have activated a lens, add `--lens +<id>` to the steering, or leave it and name it in the close summary.
 
-Fetch the two return schemas the waves need:
+Fetch the two return schemas the waves need, and the ids of the catalogue's mechanical lenses, which the wrapper passes to the pipeline as `mechanical_lenses`:
 
 ```bash
 tomlctl review schema cell-return
 tomlctl review schema verdict-return
+tomlctl review catalogue --family plan --rows entries --where type=lens --where mode=mechanical --select id --lines
 ```
 
 ## 4. Launch
@@ -88,15 +89,16 @@ Workflow({
     run_dir: "<run-dir>",
     ledger_line: "ledger: .claude/flows/<slug>/review-v2.toml",
     signals: {
-      survey: [ { name: "<signal>", roots: ["<root>"] } ],
       steering: ["--lens +contrarian", "--probe \"<question>\""]
     },
+    mechanical_lenses: ["<lens id>"],
     schemas: { cell_return: <cell-return schema>, verdict_return: <verdict-return schema> }
   }
 })
 ```
 
-- `signals.survey` is section 3's output as printed, `[]` when it printed none.
+- `signals.survey` is no longer read or checked: the surveyor reads its signals from the store.
+- `mechanical_lenses` is section 3's catalogue output, one id per entry; omit it when the query printed none.
 - `signals.steering` holds one flag per entry: `/review-plan-v2`'s `--lens` and `--probe` flags, plus any `--lens +<id>` section 3 added. Omit it when there are none. `/plan-v2` has no steering flags.
 - `targets` is absent in `full` mode.
 
@@ -110,7 +112,7 @@ End the turn and resume on the task notification. The wrapper writes nothing bac
 
 ## 5. Reading the return, and the fallback
 
-The return is `{slug, run, mode, waves: [{wave, cells, verified, settled}], unverified, audit, errors, script_version}`. With `errors` empty, every wave settled and `audit` set, go to section 6.
+The return is `{slug, run, mode, waves: [{wave, cells, verified, agents, settled}], unverified, audit, agents, errors, script_version}`. `agents` counts every dispatch the wrapper made, its own and each wave's. Each wave's pipeline index also carries a top-level `escalations` array of `{cell, text}`; the wrapper hands it to the lead's `settle` phase, whose return may carry `reverify`, ids of findings the wrapper re-verifies once. The index does not return the escalations: the lead writes each one that gets no follow-up cell to `<run-dir>/payloads/escalations-w<wave>.md`, which the close summary in `triage-and-close.md` reads. With `errors` empty, every wave settled and `audit` set, go to section 6.
 
 Otherwise, fall back to the engine at the first stage the store shows incomplete, and stay on the engine for the rest of the run. Never relaunch the wrapper over a run that already holds a wave: its compose phase would mint a second wave over the first. Read the store state with the digest and the run directory:
 
@@ -128,7 +130,7 @@ tomlctl review digest --run <run> --slug <slug>
 | Only the audit failed | `lead audit …` | engine stage 6 |
 | A follow-up was not launched | names its cells | stage 5's follow-up decision: launch those cells as the next wave, within the envelope, or waive them |
 
-Two reasons the compose row restarts at stage 2. The surveyor's digest went to the Workflow, not to you, so you hold neither its candidates nor its `verification:` lines. And stage 4 waits on a recorded baseline for every one of those lines, which no read verb lists. A second surveyor on the same run rewrites `profile.md` and `pack.md` in place.
+Two reasons the compose row restarts at stage 2. The surveyor's digest went to the Workflow, not to you, so you hold neither its candidates nor its `verification:` lines. And stage 4 waits on a recorded baseline for every one of those lines; the Workflow records them from one `verification` dispatch with `keep_going: true`, and `tomlctl review run show <run> --slug <slug>` lists the keys recorded. A second surveyor on the same run rewrites `profile.md` and `pack.md` in place.
 
 A store with no `profile.md` in `<run-dir>` is at stage 2; one with no cells in the digest is at stage 3, handled as the compose row; one with unsealed cells is at stage 4. Engine stage 4 for unsealed cells launches `review-v2-pipeline` with only those cells, as `agent-waves.md` ("What recovering a Workflow run costs") describes, or runs them as Agent waves. A fallback at stage 3 or later composes, settles and audits as the engine's stages say, in flow mode: the surveyor prompt carries `flow: <slug>` in place of `plan:`, and each cell assignment names the flow.
 
@@ -149,7 +151,7 @@ tomlctl review digest --run <run> --slug <slug>
 
 The audit sampled the digest before the mop-up, so findings verified here are not in its sample. Do not re-audit them.
 
-Record the run's agent total: the agents the Workflow's notification reports, plus every mop-up and fallback dispatch.
+Record the run's agent total: the `agents` the Workflow's index reports, plus every mop-up and fallback dispatch.
 
 ```bash
 tomlctl review run update <run> --slug <slug> --set-json agents=<total>
@@ -290,7 +292,7 @@ Run a re-check when section 7 recorded at least one `applied` or `already` row. 
 **Run start.** A fresh run at `quick`, recording the run it re-checks; `--propose` scales to the run's recorded depth:
 
 ```bash
-tomlctl review run start --slug <slug> --command review-plan-v2 --family plan --depth quick --base HEAD --set-json 'scope=["docs/flows/<slug>/brief.md","docs/flows/<slug>/design/*.md"]' --set rechecks=<run> --set-json models=@<scratch>/review-models.json --set substrate=<workflow|agent-waves>
+tomlctl review run start --slug <slug> --command review-plan-v2 --family plan --depth quick --base HEAD --set-json 'scope=@<scratch>/review-scope.json' --set rechecks=<run> --set-json models=@<scratch>/review-models.json --set substrate=<workflow|agent-waves>
 ```
 
 `substrate` follows the engine's rule, as at section 2.
