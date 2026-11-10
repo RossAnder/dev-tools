@@ -1,5 +1,5 @@
 schema_version = 2
-last_updated = 2026-11-09
+last_updated = 2026-11-10
 plan_path = ""
 last_import_refs = []
 audit = true
@@ -83,10 +83,20 @@ claim = "the handover struct holds a command field"
 check = "grep -q 'pub(crate) command: String' tomlctl/src/plan/schema.rs"
 at = "base"
 
+[specs.premises.probe]
+at = "0d341a95436cb32cbeed65371db21bf288e3e372"
+neg_rc = 0
+verdict = "holds"
+
 [[specs.premises]]
 claim = "plan contract has the ndjson upsert this verb mirrors"
 check = "grep -q 'fn upsert_contract' tomlctl/src/plan/records.rs"
 at = "base"
+
+[specs.premises.probe]
+at = "0d341a95436cb32cbeed65371db21bf288e3e372"
+neg_rc = 0
+verdict = "holds"
 
 [[specs]]
 ref = "check-incomplete-handovers-and-route-their-repair"
@@ -135,6 +145,11 @@ writes_build = true
 claim = "stage.rs routes the handover class through HANDOVER_REPLACE"
 check = "grep -q 'HANDOVER_REPLACE' tomlctl/src/plan/stage.rs"
 at = "base"
+
+[specs.premises.probe]
+at = "0d341a95436cb32cbeed65371db21bf288e3e372"
+neg_rc = 0
+verdict = "holds"
 
 [[specs]]
 ref = "list-handovers-on-their-own-at-approval-and-in-the-views"
@@ -185,6 +200,11 @@ verdict = "healthy"
 claim = "gate_report chains handovers into stops with kind handover"
 check = """grep -q '"kind": "handover"' tomlctl/src/plan/approve.rs"""
 at = "base"
+
+[specs.premises.probe]
+at = "0d341a95436cb32cbeed65371db21bf288e3e372"
+neg_rc = 0
+verdict = "holds"
 
 [[specs]]
 ref = "update-the-records-capabilities-and-output-option-tests"
@@ -562,6 +582,85 @@ claim = "the idea doc says an agent can be told to run the handovers"
 check = "grep -q 'an agent can be told to run' docs/ideas/v2-pipeline.md"
 at = "base"
 
+[[specs]]
+ref = "move-the-plan-target-test-to-the-reshaped-handover-keys"
+outcome = "The plan target unit tests address a handover by the keys the reshaped record carries, so the lib suite passes"
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change the test target handover:H1.command to handover:H1.action, and the PLAN fixture's handover row to the new keys (action in place of command).",
+    "Change non-test code in target.rs only if it still names the handover key command.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "no handover target names the removed command key"
+check = "! grep -q 'handover:H1.command' tomlctl/src/plan/target.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[[specs.accept]]
+behaviour = "the target unit tests pass"
+check = "cargo test --manifest-path tomlctl/Cargo.toml --lib plan::target"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs]]
+ref = "move-the-review-plan-records-fixture-to-plan-handover-set"
+outcome = "The review_plan_records fixture writes its handover through plan handover set with the reshaped record, and the binary's tests pass"
+constraints = [
+    "Touch no file outside this task's files.",
+    "Replace the fixture's `plan handover add --command ... --source-task 1` call with `plan handover set --ndjson <payload>`, staging the row through the fixture's own payload helper as the decision and contract rows are staged.",
+    "The row carries action, when, done_when, reason and source_task, with a reason from the vocabulary in tomlctl/src/plan/schema.rs, so the fixture's plan still passes plan check.",
+    "Keep the minted handover id H1, since later tests target handover:H1.done.",
+    "Change a test's expectation only where it reads the removed command key.",
+]
+premises = []
+means = []
+design = []
+precedent = ["tomlctl/tests/plan_records.rs"]
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the fixture no longer passes the removed --command flag"
+check = """! grep -q '"--command"' tomlctl/tests/review_plan_records.rs"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[[specs.accept]]
+behaviour = "the review_plan_records binary passes"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(review_plan_records)'"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs]]
+ref = "format-the-review-plan-records-fixture"
+outcome = "tomlctl/tests/review_plan_records.rs is formatted as rustfmt wants, with no change to what its tests do"
+constraints = [
+    "Touch no file outside this task's files.",
+    "Format the file with `rustfmt --edition 2024 tomlctl/tests/review_plan_records.rs`; the edition flag is mandatory, and the file is a leaf so no other file is rewritten.",
+    "Make no change beyond formatting. If a duplicated `plan handover set` call exists in the fixture, keep exactly one.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "rustfmt reports no diff in the file"
+check = "rustfmt --edition 2024 --check tomlctl/tests/review_plan_records.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
 [[milestones]]
 id = "A"
 gates = [
@@ -583,12 +682,39 @@ gates = [
 elaboration = "upfront"
 defer_reason = ""
 
+[[changes]]
+at = 2026-11-10T04:56:23Z
+ref = "move-the-plan-target-test-to-the-reshaped-handover-keys"
+field = "*"
+old = ""
+new = "Move the plan target test to the reshaped handover keys"
+actor = "orchestrator"
+reason = "task 1 renamed the handover key command to action; the target.rs unit test every_target_kind_parses_and_prints_back still parses handover:H1.command and no task held the file"
+
+[[changes]]
+at = 2026-11-10T04:58:03Z
+ref = "move-the-review-plan-records-fixture-to-plan-handover-set"
+field = "*"
+old = ""
+new = "Move the review plan-records fixture to plan handover set"
+actor = "orchestrator"
+reason = "gate A round 1: cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast fails 11 tests of the review_plan_records binary; its shared flow fixture still calls the removed plan handover add --command"
+
+[[changes]]
+at = 2026-11-10T04:59:29Z
+ref = "format-the-review-plan-records-fixture"
+field = "*"
+old = ""
+new = "Format the review plan-records fixture"
+actor = "orchestrator"
+reason = "gate A round 2: cargo fmt --manifest-path tomlctl/Cargo.toml -- --check reports two diffs in tomlctl/tests/review_plan_records.rs, the TASK_RECORDS const declaration and the plan handover set call"
+
 [[items]]
 id = 1
 ref = "reshape-the-handover-record-and-its-write-verb"
 title = "Reshape the handover record and its write verb"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -615,15 +741,15 @@ records.rs, cli/types/plan.rs and cli/mod.rs: replace `PlanHandoverOp::Add` and 
 
 approve.rs and view.rs: change each read of `h.command` / `handover.command` to `action` so the crate compiles; task 3 reshapes their output."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "0f385a846e66df3fab583805ba526591e70acc78"
 
 [[items]]
 id = 2
 ref = "check-incomplete-handovers-and-route-their-repair"
 title = "Check incomplete handovers and route their repair"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -641,15 +767,15 @@ check.rs: `handover_finding` becomes `handover_findings(&Handover, &Store) -> Ve
 
 stage.rs: replace the `HANDOVER_REPLACE` constant with one naming the repair in place, `plan handover set --ndjson <rows with the handover id and the missing or corrected keys>`, everywhere it appears: its definition, the `PROVE_ORDER` list, and the match in `fn remedy`, where both `plan/handover-task-unknown` and `plan/handover-incomplete` route to it. Update the exhaustive class-to-remedy test in this file's `mod tests` (the one using the `next_for` helper) to list the new class."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "0f385a846e66df3fab583805ba526591e70acc78"
 
 [[items]]
 id = 3
 ref = "list-handovers-on-their-own-at-approval-and-in-the-views"
 title = "List handovers on their own at approval and in the views"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -667,15 +793,15 @@ approve.rs `gate_report`: `stops` holds milestone gate commands only. Add a `han
 
 view.rs: `open_items.undone_handovers` carries the same six fields. The markdown `## Handovers` line becomes `- [ ] H1 (restart): <action> When: <when>. Done when: <done_when>. (after task <n>)`, with `x` for done, and an absent reason shown as `(no reason)`."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "0f385a846e66df3fab583805ba526591e70acc78"
 
 [[items]]
 id = 4
 ref = "update-the-records-capabilities-and-output-option-tests"
 title = "Update the records, capabilities and output-option tests"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -696,15 +822,15 @@ capabilities.rs: the help path `plan handover add` becomes `plan handover set`.
 
 output_options.rs: the `[[handover]]` fixture uses the new keys in place of `command`."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "0f385a846e66df3fab583805ba526591e70acc78"
 
 [[items]]
 id = 5
 ref = "update-the-check-and-stage-tests"
 title = "Update the check and stage tests"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -725,15 +851,15 @@ plan_check.rs: the handover fixtures use the new keys. Add: an undone handover m
 
 plan_stage.rs: `HANDOVER_NEXT` matches task 2's remedy. The absent-task test repairs the handover with `plan handover set --ndjson` naming `H1` and a live `source_task`, then asserts the class is gone without calling `plan handover done`."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "0f385a846e66df3fab583805ba526591e70acc78"
 
 [[items]]
 id = 6
 ref = "update-the-approve-view-and-lifecycle-tests"
 title = "Update the approve, view and lifecycle tests"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -752,15 +878,15 @@ deps_note = ""
 action = "Move the gate, view and lifecycle tests to the separate `handovers` list and the new record shape."
 detail = "plan_approve.rs: the gate fixtures use the new keys; the expected gate JSON has no `kind = handover` entry in `stops` and a `handovers` array with all six fields. plan_view.rs: fixtures use the new keys and the markdown assertion matches task 3's line. plan_lifecycle.rs: the handover step uses `plan handover set --ndjson` with a complete row, and the gate assertion reads `handovers`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "0f385a846e66df3fab583805ba526591e70acc78"
 
 [[items]]
 id = 7
 ref = "document-the-handover-verbs-record-and-check-class"
 title = "Document the handover verbs, record and check class"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -788,8 +914,8 @@ flow.md: the `--verify-integrity` support-matrix row for `tomlctl plan handover 
 
 SKILL.md: the quick-reference row reads `handover {set\|done}`, keeping the escaped pipe the table cell needs.'''
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "0f385a846e66df3fab583805ba526591e70acc78"
 
 [[items]]
 id = 8
@@ -922,3 +1048,63 @@ detail = """The bullet says the handover store is one "an agent can be told to r
 acceptance = ""
 agent = ""
 commit = ""
+
+[[items]]
+id = 13
+ref = "move-the-plan-target-test-to-the-reshaped-handover-keys"
+title = "Move the plan target test to the reshaped handover keys"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/src/plan/target.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "0f385a846e66df3fab583805ba526591e70acc78"
+
+[[items]]
+id = 14
+ref = "move-the-review-plan-records-fixture-to-plan-handover-set"
+title = "Move the review plan-records fixture to plan handover set"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/tests/review_plan_records.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "0f385a846e66df3fab583805ba526591e70acc78"
+
+[[items]]
+id = 15
+ref = "format-the-review-plan-records-fixture"
+title = "Format the review plan-records fixture"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/tests/review_plan_records.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "0f385a846e66df3fab583805ba526591e70acc78"
