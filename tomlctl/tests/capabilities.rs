@@ -69,6 +69,7 @@ fn read_only_subcommands_hide_write_integrity_flags_in_help() {
         // `tasks render`; its `--out` takes `--allow-outside`, exempted below.
         &["review", "report", "--help"],
         &["review", "run", "list", "--help"],
+        &["review", "run", "show", "--help"],
         &["review", "stats", "--help"],
         &["review", "catalogue", "--help"],
         &["review", "schema", "--help"],
@@ -1821,6 +1822,12 @@ fn capabilities_features_contains_every_plan_feature() {
         "premise_probe_record",
         "plan_drift_uncommitted",
         "plan_view_writes_build",
+        // Review v2 run bounds, run read-back, rule-outs and duplicate links.
+        "review_run_head",
+        "review_run_show",
+        "review_ruled_out",
+        "review_same_as_link",
+        "review_list_fix_shape",
     ];
     for name in expected {
         assert!(
@@ -1855,8 +1862,8 @@ fn capabilities_version_matches_cargo_toml() {
         .and_then(|s| s.as_str())
         .expect("`version` must be a string");
     assert_eq!(
-        version, "0.21.0",
-        "expected version `0.21.0` (the minor bump for the `parked` status, `tasks ready --checkpoint`, scoped and recorded premise probes and `plan drift --uncommitted`); got `{version}`"
+        version, "0.22.0",
+        "expected version `0.22.0` (the minor bump for `review run start --head`, `review run show`, `review cover --ruled-out`, `review resolve --same-as` and `review list --fix-shape`); got `{version}`"
     );
 }
 

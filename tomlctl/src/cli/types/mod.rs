@@ -180,6 +180,12 @@ pub(crate) const FEATURES: &[&str] = &[
     "premise_probe_record",
     "plan_drift_uncommitted",
     "plan_view_writes_build",
+    // Review v2 run bounds, run read-back, rule-outs and duplicate links.
+    "review_run_head",
+    "review_run_show",
+    "review_ruled_out",
+    "review_same_as_link",
+    "review_list_fix_shape",
 ];
 
 /// User-facing top-level subcommand names, as they appear in

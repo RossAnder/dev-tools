@@ -90,16 +90,16 @@ tomlctl inputs withdraw <id>...                        # withdraw new records, a
 tomlctl inputs answer <question-id> [--pick <option>]... [--text <text>]   # answer a new question and mark it handled
 tomlctl plan open|decide|contract|handover|run|milestone|check|view|probes|stage|gate|approve|drift --slug <s>   # a v2 flow's plan.toml, brief and task-store side tables; `plan open` creates the plan.toml that makes a flow v2
 tomlctl review sync-v1 --slug <s>                      # read v1 apply outcomes back onto the v2 store through v2_ref
-tomlctl review run start --slug <s> --command review-v2 --family code --depth standard --base <rev> [--set-json scope=<json>]   # mint U<n>, validate the lens catalogue, create the run directory
+tomlctl review run start --slug <s> --command review-v2 --family code --depth standard --base <rev> [--head <rev>] [--set-json scope=<json>]   # mint U<n>, validate the lens catalogue, create the run directory
 tomlctl review run update <U> --slug <s> --set-json waivers=<json>   # patch signals, waivers, audit, agents or baselines (--set / --set-file also)
 tomlctl review survey --slug <s> --run <U>             # record the vocabulary's detector signals with their roots
 tomlctl review plan --slug <s> --run <U> --propose [--accept-signals <a,b>] [--lens <+id>]... [--out <path>]   # default coverage map as NDJSON
 tomlctl review plan --slug <s> --run <U> --ndjson <path>   # append the edited map as the next wave of cells
 tomlctl review add --slug <s> --run <U> --cell <C> --ndjson <path>   # one cell's full finding set; supersedes its unverified rows
-tomlctl review cover <C> --slug <s> --status covered --note-file <path>   # seal a cell with its coverage line
+tomlctl review cover <C> --slug <s> --status covered --note-file <path> [--ruled-out <src>]   # seal a cell with its coverage line and the sites it judged deliberate
 tomlctl review verdict <F> --slug <s> --verdict confirmed --by verifier --citation <file:line> --rationale-file <path>   # upsert on (finding, by, seat); or --ndjson <path>
-tomlctl review resolve --slug <s> --run <U> [--wave <n>]   # identity outcomes for rows naming a same_as
-tomlctl review list --slug <s> [--kind <k>] [--in <glob>] [--for <role>]   # findings through a role projection (default orchestrator)
+tomlctl review resolve --slug <s> --run <U> [--wave <n>] [--same-as <dup>=<target>]...   # identity outcomes for rows naming a same_as; --same-as links a pair first
+tomlctl review list --slug <s> [--kind <k>] [--fix-shape <shape>] [--in <glob>] [--for <role>]   # findings through a role projection (default orchestrator)
 tomlctl review show <ids> --slug <s> --for <role>      # findings or cells through a role projection
 tomlctl review digest --slug <s> --run <U> [--since-wave <n>]   # counts, coverage gaps, unverified ids, contested, audit sample
 tomlctl review report --slug <s> --run <U> --out <path> [--allow-outside]   # markdown report; prints {path, counts}
@@ -108,6 +108,7 @@ tomlctl review apply <ids> --slug <s> [--user-accepted] [--dry-run]   # write pl
 tomlctl review export-v1 <ids> --slug <s> --to <v1-ledger> [--dry-run]   # or --all: every open defect and cleanup of the ledger's family
 tomlctl review run finish <U> --slug <s> [--incomplete-file <path>]   # stamp finished + counts; refuses open gaps without --incomplete
 tomlctl review run list --slug <s> [--open|--finished]   # the store's runs ordered by id; read-only
+tomlctl review run show <U> --slug <s>                 # one run's bounds, signals, baselines, waves, agents and audit; read-only
 tomlctl review stats --all [--by lens] [--outcomes] [--escapes] [--calibration]   # read-only rates per lens, probe, run or model; --plan-outcomes for plan-family runs
 tomlctl review catalogue [--check] [--vocabulary] [--owners]   # the merged lens catalogue's index, or its validation
 tomlctl review schema finding [--kind <k>]             # JSON Schema from the field catalogue; or cell-return, verdict-return
@@ -297,11 +298,12 @@ Every other read subcommand (`parse`, `get`, `validate`, `json get`,
 on every read subcommand so a caller can pass it uniformly without branching
 on subcommand name. The `tasks` read verbs (`show`, `list`, `edges`, `ready`,
 `batches`, `closure`, `check`, `render`, `snapshot`) belong to this group too;
-`snapshot`'s companion files stay optional under the flag. Four `flow` read verbs give
-the flag a meaning of their own: `flow stale` and an explicit
-`flow resolve --flow` error on a missing `context.toml`, `flow find-plans` on
-a missing configured plan directory, and `flow list` on an unreadable
-`context.toml` it would otherwise skip. Two exceptions: `items sweep` carries the write-side
+`snapshot`'s companion files stay optional under the flag. Three `flow` read verbs give
+the flag a meaning of their own: `flow stale` errors on a missing `context.toml`,
+`flow find-plans` on a missing configured plan directory, and `flow list` on an
+unreadable `context.toml` it would otherwise skip. `flow resolve --flow <slug>`
+errors with `kind=not_found` on a slug with no `context.toml` whether or not
+the flag is set, and never falls through to another flow. Two exceptions: `items sweep` carries the write-side
 integrity bundle (it can `--update` the ledger) and rejects `--strict-read`,
 and the standalone `sweep` reads no TOML and takes no integrity flag at all.
 
@@ -323,7 +325,7 @@ downstream flow-command templates can feature-gate at boot without parsing
 
 ```json
 {
-  "version": "0.21.0",
+  "version": "0.22.0",
   "features": ["count_distinct", "raw", "lines", "infer_prefix",
                "dedupe_by", "dedup_id_auto", "find_duplicates_across",
                "fingerprint", "capabilities", "error_format_json",
@@ -369,7 +371,9 @@ downstream flow-command templates can feature-gate at boot without parsing
                "plan_store", "task_status_parked",
                "tasks_ready_checkpoint", "premise_probes_scoped",
                "premise_probe_record", "plan_drift_uncommitted",
-               "plan_view_writes_build"],
+               "plan_view_writes_build", "review_run_head",
+               "review_run_show", "review_ruled_out",
+               "review_same_as_link", "review_list_fix_shape"],
   "subcommands": ["parse", "get", "set", "set-json", "validate",
                   "items", "blocks", "array-append", "capabilities",
                   "integrity", "flow", "json", "backlog", "tasks",
@@ -553,3 +557,8 @@ Feature meanings:
 | `premise_probe_record` | `plan probes --record <CAPTURE> --premises` stores each premise's verdict on its `probe`: `holds` (exit 0), `fails` (non-zero) or `broken` (a breakage marker on stderr) |
 | `plan_drift_uncommitted` | `plan drift --uncommitted` adds the working tree's modified and untracked paths as `uncommitted_files`, and each affected pending row lists its own under `uncommitted`; a path that a `done`, `in-progress`, `failed` or `parked` row with an empty `commit` also names affects no row, and paths under the flow's own directories are never listed |
 | `plan_view_writes_build` | `plan view --for worker` and the human view print a `Writes build: yes\|no` line under each accept check, so a worker reads from the view whether it may run that check |
+| `review_run_head` | `review run start --head <REV>` bounds a run at a descendant of `--base`, stored as its sha in the run's `head`; the survey's diff detectors and changed-line reads measure `base..head`, and `HEAD` when it is absent; `review run list` rows carry `head` and the `waves` derived from the run's cells |
+| `review_run_show` | `review run show <RUN> --slug <SLUG>\|--scope <SCOPE>` — one run's `base`, `head`, `scope`, `depth`, `baselines`, `waves`, `agents`, `audit` and `signals`, each signal's `roots` limited to roots under a scope entry with the rest counted in `roots_outside_scope`; an unknown run is `kind=not_found`; writes nothing |
+| `review_ruled_out` | `review cover --ruled-out <SRC>` stores the sites a cell judged deliberate on the cell as `ruled_out` (`file`, optional `symbol` or `line`, `reason`); `review digest` lists other cells' findings on a matching anchor under `ruled_out_hits`, and the verifier and audit projections carry the matching rule-outs on each finding |
+| `review_same_as_link` | `review resolve --run <RUN> --same-as <DUP>=<TARGET>` (repeatable) sets the duplicate's `same_as` and resolves the pair in the same call, refusing a self-link, a second target or a cycle; the envelope lists the pairs under `linked`, and `review digest` lists unlinked pairs from different cells on a matching anchor under `duplicate_candidates` |
+| `review_list_fix_shape` | `review list --fix-shape <SHAPE>` keeps only findings whose `fix_shape` is `SHAPE` (`edits` or `needs-plan`) |
