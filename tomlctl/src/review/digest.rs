@@ -209,10 +209,11 @@ fn spread(n: usize, k: usize) -> Vec<usize> {
     (0..k).map(|i| (2 * i + 1) * n / (2 * k)).collect()
 }
 
-/// Two CONFIRMED defects, two REFUTED non-critical defects and two
-/// checker-decided cleanup rows, picked by position in store order so the
-/// orchestrator samples rather than selects. One cleanup pick comes from a
-/// sweeper cell whenever any checked row does.
+/// Two standing (confirmed or plausible) defects, two REFUTED non-critical
+/// defects and two checker-decided cleanup rows, picked by position in store
+/// order so the orchestrator samples rather than selects. Each refuted slot
+/// left empty takes one more standing defect, so the sample size holds. One
+/// cleanup pick comes from a sweeper cell whenever any checked row does.
 fn audit_sample(store: &Store, indices: &[usize]) -> JsonValue {
     let settled: Vec<&Finding> = indices
         .iter()
@@ -232,10 +233,14 @@ fn audit_sample(store: &Store, indices: &[usize]) -> JsonValue {
             .collect()
     };
 
-    let confirmed: Vec<&Finding> = settled
+    let standing: Vec<&Finding> = settled
         .iter()
         .copied()
-        .filter(|f| f.kind == Kind::Defect && judged(f).is_some_and(|v| v.verdict == "confirmed"))
+        .filter(|f| {
+            f.kind == Kind::Defect
+                && judged(f)
+                    .is_some_and(|v| matches!(v.verdict.as_str(), "confirmed" | "plausible"))
+        })
         .collect();
     let refuted: Vec<&Finding> = settled
         .iter()
@@ -275,9 +280,25 @@ fn audit_sample(store: &Store, indices: &[usize]) -> JsonValue {
         ids.sort_by_key(order);
         ids
     };
+    let refuted_ids = pick(&refuted);
+    let mut standing_ids = pick(&standing);
+    let empty = SAMPLE_SIZE.saturating_sub(refuted_ids.len());
+    if empty > 0 {
+        let remainder: Vec<&Finding> = standing
+            .iter()
+            .copied()
+            .filter(|f| !standing_ids.contains(&f.id))
+            .collect();
+        standing_ids.extend(
+            spread(remainder.len(), empty)
+                .into_iter()
+                .map(|i| remainder[i].id.clone()),
+        );
+        standing_ids.sort_by_key(|id| standing.iter().position(|f| &f.id == id));
+    }
     json!({
-        "confirmed_defects": pick(&confirmed),
-        "refuted_defects": pick(&refuted),
+        "confirmed_defects": standing_ids,
+        "refuted_defects": refuted_ids,
         "checked_cleanup": cleanup,
     })
 }

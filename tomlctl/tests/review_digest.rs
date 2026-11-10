@@ -380,13 +380,15 @@ fn digest_audit_sample_is_chosen_by_index() {
     rows.push_str(&verdict("F9", "verifier", "refuted"));
     rows.push_str(&defect("F10", "C1", "refuted", "").replace("\"major\"", "\"critical\""));
     rows.push_str(&verdict("F10", "verifier", "refuted"));
+    rows.push_str(&defect("F11", "C1", "refuted", "").replace("\"major\"", "\"minor\""));
+    rows.push_str(&verdict("F11", "verifier", "refuted"));
     repo.seed(ALL_WAIVED, &rows);
 
     let sample = &repo.digest(&[])["audit_sample"];
     assert_eq!(sample["confirmed_defects"], json!(["F2", "F4"]), "{sample}");
     assert_eq!(
         sample["refuted_defects"],
-        json!(["F9"]),
+        json!(["F9", "F11"]),
         "a refuted critical is audited in full, not sampled: {sample}"
     );
     assert_eq!(
@@ -394,6 +396,64 @@ fn digest_audit_sample_is_chosen_by_index() {
         json!(["F6", "F8"]),
         "one pick comes from the sweeper cell: {sample}"
     );
+}
+
+#[test]
+fn digest_audit_sample_fills_empty_refuted_slots() {
+    let Some(repo) = Repo::new(&["src/a.rs"]) else {
+        return;
+    };
+    let mut rows = cell("C1", 1, "review-finder", "covered");
+    for id in ["F1", "F2", "F3", "F4"] {
+        rows.push_str(&defect(id, "C1", "open", ""));
+        rows.push_str(&verdict(id, "verifier", "confirmed"));
+    }
+    let confirmed_only = rows.clone();
+    rows.push_str(&defect("F5", "C1", "refuted", "").replace("\"major\"", "\"minor\""));
+    rows.push_str(&verdict("F5", "verifier", "refuted"));
+    repo.seed(ALL_WAIVED, &rows);
+
+    let sample = &repo.digest(&[])["audit_sample"];
+    assert_eq!(sample["refuted_defects"], json!(["F5"]), "{sample}");
+    assert_eq!(
+        sample["confirmed_defects"],
+        json!(["F2", "F3", "F4"]),
+        "one empty refuted slot takes one more standing defect: {sample}"
+    );
+
+    repo.seed(ALL_WAIVED, &confirmed_only);
+    let sample = &repo.digest(&[])["audit_sample"];
+    assert_eq!(sample["refuted_defects"], json!([]), "{sample}");
+    assert_eq!(
+        sample["confirmed_defects"],
+        json!(["F1", "F2", "F3", "F4"]),
+        "both empty refuted slots are filled: {sample}"
+    );
+}
+
+#[test]
+fn digest_audit_sample_includes_plausible_defects() {
+    let Some(repo) = Repo::new(&["src/a.rs"]) else {
+        return;
+    };
+    let mut rows = cell("C1", 1, "review-finder", "covered");
+    rows.push_str(&defect("F1", "C1", "open", ""));
+    rows.push_str(&verdict("F1", "verifier", "confirmed"));
+    rows.push_str(&defect("F2", "C1", "open", ""));
+    rows.push_str(&verdict("F2", "verifier", "plausible"));
+    for id in ["F3", "F4"] {
+        rows.push_str(&defect(id, "C1", "refuted", "").replace("\"major\"", "\"minor\""));
+        rows.push_str(&verdict(id, "verifier", "refuted"));
+    }
+    repo.seed(ALL_WAIVED, &rows);
+
+    let sample = &repo.digest(&[])["audit_sample"];
+    assert_eq!(
+        sample["confirmed_defects"],
+        json!(["F1", "F2"]),
+        "a plausible defect stands and is sampled: {sample}"
+    );
+    assert_eq!(sample["refuted_defects"], json!(["F3", "F4"]), "{sample}");
 }
 
 fn report_rows() -> String {
