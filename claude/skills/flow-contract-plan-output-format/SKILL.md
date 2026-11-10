@@ -111,6 +111,10 @@ lint: <command>
 - `coverage: <command>` — the coverage run `/tdd`'s REFACTOR gate reads.
 - `checkpoint: <command>` — repeatable, in order. The cheaper list `/implement` runs at each
   checkpoint in place of `build:` + `test:` — a `--profile quick` run, an `@smoke` e2e subset.
+- `install: <command>` — repeatable, in order. Installs a binary, deploys, or links an entry
+  into the Claude config dir. `/implement` Phase 3 runs it last, after `lint:` and the audit,
+  through the verification agent, and only when every earlier command passed; checkpoints and
+  the apply flows skip it.
 - `<key>.timeout: <seconds>` — that command's budget in the verification agent (default 540).
   Set it on any suite that can run longer; an overrun reports `timeout`, not `fail`.
 - `<key>.rerun: <template>` — a narrow rerun of that command's failed tests at low parallelism,
@@ -204,11 +208,13 @@ closure *is* the group, which is the same reason this section carries markers on
 - Risk description — mitigation approach]
 
 ## After Merge
-[The steps someone must take once the work lands, one bullet each: install or reinstall a
-binary, resync a plugin cache, restart open sessions, update a memory note, run a
-**predicted, unverified** success criterion by hand. `/implement` repeats this list verbatim in
-its final report. When nothing is needed, write the single line `_None._` rather than omitting
-the section.]
+[Only the steps no agent can perform once the work lands, one step per bullet, in the shape
+the **After Merge** format rule gives: restart a session the user is watching, grant a
+permission, an attended check at the terminal, a judgement that needs elapsed time, a
+credential only the user holds, a system outside the session's reach. Everything an agent
+could do has a home in the run instead. `/implement` repeats this list verbatim in its final
+report. `_None._` is the expected case: write that single line rather than omitting the
+section.]
 
 ## Exploration Notes
 [Codebase findings from Phase 2 (Exploration) — the code paths, patterns, measurements and
@@ -250,5 +256,7 @@ Omit this section only if both Phase 3 (initial research) and Phase 5 (directed 
 - **A registration seam needs a call site.** A task introducing a provider, plugin, registry, or hook seam MUST name the production entry point that invokes it on its own **Files** line, or hand it to a named successor task. A seam nothing calls is dead code that passes every test — the in-test premise holds while the running system never exercises the tier.
 - **Derive, don't transcribe.** Filenames, enumeration counts, and allowlist memberships that can change between planning and execution are recorded as *the command that derives them*, never as the transcribed value. Line numbers are the exception: pair them with the symbol name they anchor and transcribe them freely — drift there costs a re-locate, whereas a transcribed filename or a miscounted enumeration site fails silently.
 - **Never write literal control bytes (U+0000–U+001F) into a plan document** — write them as the escape sequence your language uses (a backslash-u form, spelled out), never as the byte itself. A plan containing a literal control byte is binary to `git`, `grep` and `diff`, so every downstream tool degrades silently: `grep` without `-a` reports "Binary file matches" and returns no lines, and a reviewer greps the plan and concludes the string is absent. Detect with `grep -qI . <file> || echo "BINARY — contains control bytes"`, which tests the property that actually matters (does the toolchain treat this as binary) across all 32 forbidden values — a NUL-only scan misses the other 31.
+- **After Merge** lists only steps no agent can perform, one action per bullet (a bullet needing "then" is two): `- **<reason>**: <one action>. **When:** <trigger>. **Done when:** <observable result>.` The reason is one of `restart`, `permissions`, `attended`, `observe`, `credentials`, `external`; a step fitting none is not After Merge. `_None._` is the expected case.
+  Agent-performable work goes elsewhere: a repo edit, deletion or tidy-up is a task; an install, deploy or config-dir link is an `install:` key; a success criterion, predicted ones included, is a `success:` key; a stale memory note is the orchestrator's at its report step; follow-on work, trials and next plans are backlog captures. A mixed step splits, and only the human residue stays.
 - Research notes include source links so they can be verified later
 - Group tasks into phases/waves if there are more than 8 (presentational — scheduling follows the DAG edges)

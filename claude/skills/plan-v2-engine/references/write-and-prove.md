@@ -54,6 +54,23 @@ Upfront elaboration is the norm. Defer a later milestone only when its detail de
 
 **Design files.** Write `docs/flows/<slug>/design/<name>.md` only where a task needs prose no record holds: a data shape, a lock order, a migration sequence. A task cites a section as `design/<name>.md#<anchor>`, the anchor being the heading slugged by the task store's ref rule, so `## Lock order` is `#lock-order`. `plan check` reports a citation that resolves to no section as `plan/design-anchor-dead`.
 
+**Handovers.** A handover is recorded only for a step no agent can perform, one of the six reasons of `design/handover.md#reasons`. Record one step per row, with `reason`, `action`, `when`, `done_when` and `source_task`. Stage the rows with Write once the tasks exist, since `source_task` names a row, then load them:
+
+```toml
+[[record]]
+reason = "restart"
+action = "Restart the glimpse pane so it loads the rebuilt binary."
+when = "After the milestone commit."
+done_when = "The pane shows the new version string."
+source_task = 3
+```
+
+```bash
+tomlctl plan handover set --slug <slug> --ndjson <scratch>/handover.toml
+```
+
+Landing work an agent can perform goes to its home (`design/handover.md#where-agent-performable-steps-go-instead`): an install or link is a gate on the last milestone. No handover is the expected case.
+
 ## 2. Surface again
 
 Design often decides things the first Surface never saw: a dependency it settled on, a scope it widened, a one-way door. Put each through the same three tests:

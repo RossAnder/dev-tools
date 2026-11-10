@@ -71,7 +71,8 @@ Show one screen, the arrays in the object's key order, because that order puts t
 4. `task_mix`: tasks by file-count bucket and `executor`.
 5. `review_edits`: each edit the review applied, as `id`, `target`, `tier`, `by` and `summary`, in the order given, which puts decisions first, then user, cited and mechanical.
 6. `deferred_milestones`: each with its `reason`.
-7. `stops`: each milestone gate command and undone handover.
+7. `stops`: each milestone gate command.
+8. `handovers`: each undone handover, with its `reason`, `action`, `when` and `done_when`.
 
 Then the secret-scan hits, each as `file:line` with the matched text, or `secret scan: clean`. Totals come last: the counts of tasks, milestones, assumptions and one-way doors. An empty array is shown as `none` under its heading, not dropped, so the user can tell an empty section from a missing one.
 

@@ -31,7 +31,7 @@ Read the whole plan first, then the fences: `FORMAT CONTRACT` is the only source
 
 - Goal coverage: list each goal `## Context` and `## Summary` state, one line each, and map every one to the Success Criteria that verify it. A goal with no criterion is a row naming the goal and the sentence that states it.
 - For each Success Criterion, ask what a pass would prove. A criterion satisfied by every task merely having run — "all tasks complete", "the new files exist", "the build passes" with no behaviour named — verifies execution, not the goal; name the goal it should have checked.
-- A criterion marked predicted or unverified that nothing in `## After Merge` schedules to be run by hand is a goal left unproven.
+- A criterion marked predicted or unverified is a goal left unproven unless a `success:` key or an accept check runs it; a human-only `attended` or `observe` handover counts only when it names the criterion.
 - Approver sections: in a house-format plan, confirm `## Summary` and `## Success Criteria` are present and non-empty. Read the header first: a `**Status**` line marks a plan that predates the format, which sets the severity below.
 - Format conformance: compare the section order, the header fields and each task's bullet shape with the fence. Report one row per kind of departure, listing every task it affects, never one row per task.
 - A plan that lays its work out as prose — phases or paragraphs with no numbered tasks, Files lines or acceptance — is a row suggesting restructuring, naming the sections an executor could not dispatch from.
@@ -62,11 +62,11 @@ Read the whole plan first, then the fences: `FORMAT CONTRACT` is the only source
 ## Advisory angles
 
 - `direction` — a foreign-format plan that would gain from conversion to the house format; name what the conversion would buy the executor.
-- `risk` — a goal that only an After Merge step can verify, or a policy setting the graph cannot fill, where the cost is lost bisectability or idle parallelism rather than a broken run.
+- `risk` — a policy setting the graph cannot fill, where the cost is lost bisectability or idle parallelism rather than a broken run.
 - `challenge` — a documented decision that departs from the format; name it in `challenges`.
 
 ## Severity calibration
 
-- `critical` — a stated goal of the plan that no criterion, task acceptance or After Merge step checks at all, so the plan can finish green with the goal unmet.
+- `critical` — a stated goal of the plan that no criterion or task acceptance checks at all, so the plan can finish green with the goal unmet.
 - `major` — an uncovered secondary goal, a criterion that checks only that tasks ran, a missing approver section in a plan with no `**Status**` header line, a format departure that silently changes how a flow reads the plan, such as a dropped `## Dependency Graph` heading that downgrades every later review to foreign-format, or an Execution Policy value outside its allowed set or range.
 - `minor` — a missing approver section in a plan whose header still carries a `**Status**` line, a format departure an executor reads past, or a policy field absent where the default matches the plan's intent.

@@ -33,7 +33,8 @@ Read the Execution Policy first and judge every risk against the cadence it decl
 - Find every migration, schema change, stored-format change and public-API or CLI-surface change. Check a checkpoint follows it directly, before unrelated tasks join the same commit. Under a `single` policy, any such task in the middle of the flow is a finding; under `milestones`, a risky task buried inside a large group is.
 - Walk each checkpoint group as the unit a rollback restores to. A group whose failure would be discovered only by a task in a later group means the restore point is already past the damage.
 - For each surface the plan changes — a file format, a command, a flag, a config key, an exported type, a wire shape, a stored record — find who reads or calls it today outside the plan's scope: other repositories, installed binaries, user configuration, data already on disk. A change with no compatibility task, alias, version gate or migration is a back-compat break.
-- Check that the After Merge and Risks sections name the steps an existing user must take; a break the plan accepts deliberately still needs its migration step written down.
+- Check that a break the plan accepts deliberately still has its migration written down: as a task, or as an After Merge step or `[[handover]]` row only when no agent could perform it.
+- Check each After Merge bullet or `[[handover]]` row. One an agent could perform, one that bundles several steps, and one that lacks a reason from the format contract, a trigger or a done condition is a finding; its fix moves the work to its home (design/handover.md#where-agent-performable-steps-go-instead).
 - Compare the Summary's and Success Criteria's promises with what the tasks build. A promised outcome no task produces, or a task list whose effort total is far below the work its Details describe, is a scope-realism finding; name the missing work.
 - Performance and security risks the plan introduces without any task addressing them belong here only as the risk to the rollout; the defect itself belongs to the security or perf lenses.
 
@@ -54,7 +55,7 @@ Read the Execution Policy first and judge every risk against the cadence it decl
 Edits are to the plan text, with `plan_section`, `anchor_old` (occurring exactly once under that section) and `anchor_new`.
 
 - `change` — add a checkpoint marker directly after a risky task in the Execution Policy's checkpoint list, when the cadence is `milestones` and the cut is a valid topological cut.
-- `add` — a migration, alias or compatibility step to the task that breaks a surface, or an After Merge or Risks line naming the step an existing user must take.
+- `add` — a migration, alias or compatibility step to the task that breaks a surface, or a Risks line or a task naming the step an existing user must take.
 - `add` — a rollback or forward-fix note to a task whose effects survive a revert.
 
 A missing compatibility layer or a scope gap that needs its own task is a defect with `fix_shape = needs-plan`.
@@ -69,4 +70,4 @@ A missing compatibility layer or a scope gap that needs its own task is a defect
 
 - `critical` — the plan, executed as written, loses or corrupts existing data, or leaves users with no path back: an irreversible migration with no checkpoint before it and no forward fix, or a stored format the new code cannot read with no migration.
 - `major` — a real break or an unrecoverable failure with a nameable trigger: a renamed public surface with external callers and no alias, a risky task sharing a commit with unrelated work, a promised outcome no task delivers.
-- `minor` — a narrow break or a recoverable rollback gap: an internal caller outside the scope, a missing After Merge note for a step the user would find, an effort total modestly short of the work.
+- `minor` — a narrow break or a recoverable rollback gap: an internal caller outside the scope, an effort total modestly short of the work, a post-landing step that an agent could perform, that bundles several steps, or that lacks a reason, a trigger or a done condition. Such a step is `major` when it is the only thing verifying the plan's goal.

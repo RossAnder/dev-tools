@@ -159,7 +159,7 @@ Decided 2026-11-09. These add to the plan's Approach, "After approval", which st
 ### Smaller fixes
 
 - **Deviations:** the orchestrator takes them as input to a replan at each milestone drain, changing tasks through audited verbs (the plan's Approach, "After approval").
-- **After Merge:** becomes a `[[handover]]` store with command, source task and done status. Any task can append to it. It shows in glimpse and one report, and an agent can be told to run what's left.
+- **After Merge:** becomes a `[[handover]]` store holding only human-only steps (design/handover.md#reasons), each one step with reason, action, when and done-when. The execution engine runs every agent-performable landing step itself (gates on the last milestone, memory, backlog captures) and, at the end, reports each undone handover in that shape and nothing else.
 - **Milestones:** the only checkpoint shape. Membership is a task field, and each milestone has a goal, gate commands and handover. Removing `single` and `per-batch` costs prose rather than Rust.
 - **Glimpse:** tracks apply activity the way it tracks implement.
 
