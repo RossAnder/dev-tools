@@ -2,7 +2,7 @@
 
 Illustrative verdicts, one per outcome plus a severity reassessment, a struck identity and the checker's rows. Paths are invented. In an NDJSON batch each verdict is one line of `payloads/<batch>.ndjson`; a single verdict takes the same values as flags, with the rationale staged as a file and passed with `--rationale-file`.
 
-Every verdict carries a `citation` — a `file:line`, or the command and its decisive output — and a `rationale` of at most 600 characters.
+Every verdict carries a `citation` — a `file:line`, or the command and its decisive output — and a `rationale` that aims for 450 characters and is refused over 600.
 
 ## confirmed — verifier, reproduced
 
@@ -35,6 +35,16 @@ Pass `--severity` (or `severity` in the batch row) only when it changes. Here th
 ```json
 {"finding": "F14", "verdict": "confirmed", "by": "verifier", "severity": "major", "citation": "src/config.rs:31", "rationale": "Reproduced. The finder graded the trigger narrow, but config.rs:31 makes retries = 0 the default, so every fresh install hits the unguarded division at retry.rs:52. Major: a real defect with a common trigger."}
 ```
+
+## refuted — weighing a `ruled_out` entry
+
+The projection shows the finding with `ruled_out: [{cell, reason}]`: another cell judged the site deliberate. The reason is a claim to check; the verdict rests on the verifier's own citation.
+
+```json
+{"finding": "F12", "verdict": "refuted", "by": "verifier", "citation": "src/store/io.rs:44", "rationale": "ruled_out says the 0 s lock poll is floored. Checked: io.rs:44 clamps the poll to 1 s before use, so the claimed busy loop cannot occur. The ruling cell's reason holds on my own read; refuted."}
+```
+
+Had io.rs:44 not clamped, the same entry would not have protected the finding: confirm it and say the reason did not survive the check.
 
 ## struck identity
 

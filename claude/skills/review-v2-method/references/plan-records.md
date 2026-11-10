@@ -46,7 +46,7 @@ A lens check on a section with no record — the Summary, the Status line, the D
 | `decision:D<n>.<key>` | one key of a decision | `.claude/flows/<slug>/plan.toml` | `D<n>` |
 | `contract:C<n>.<key>`, key one of `kind`, `claim`, `check`, `tasks`, `provides`, `consumes` | one key of a contract | same | `C<n>` |
 | `milestone:<id>.<field>`, field one of `goal`, `gates`, `elaboration`, `defer_reason` | the field's value | `.claude/flows/<slug>/tasks.toml` | `milestone:<id>` |
-| `handover:H<n>.<field>`, field one of `command`, `source_task`, `done` | nothing: checked, never applied | `.claude/flows/<slug>/plan.toml` | `H<n>` |
+| `handover:H<n>.<field>`, field one of `reason`, `action`, `when`, `done_when`, `source_task`, `done` | nothing: checked, never applied | `.claude/flows/<slug>/plan.toml` | `H<n>` |
 | `brief#<Section>`, one of `Intent`, `Non-goals`, `Scope budget`, `Success criteria`, `Background`, `Unknowns` | text inside the section | `docs/flows/<slug>/brief.md` | the section name |
 | `design/<file>.md#<anchor>` | text inside the section | `docs/flows/<slug>/design/<file>.md` | `<anchor>` |
 
