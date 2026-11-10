@@ -6,14 +6,17 @@
 //! one with `same_as` stays `unverified` for `review resolve`. A batch row
 //! that fails a check is refused with its reasons while the rest land.
 
+use std::collections::BTreeMap;
+
 use anyhow::Result;
 use serde_json::{Map, Value as JsonValue, json};
 
+use super::catalogue::{EntryType, Mode, run_catalogue};
 use super::fields::{self, FindingStatus, Kind, Record, Route, RowContext, SWEEPER};
 use super::invalid;
-use super::store::{self, Store, Target, Verdict};
+use super::store::{self, Finding, Store, Target, Verdict};
 use crate::cli::{ReadIntegrityArgs, ReviewVerdictArgs};
-use crate::io::{read_flag_file, read_ndjson_source, read_text_arg};
+use crate::io::{read_flag_file, read_ndjson_source, read_text_arg, repo_or_cwd_root};
 use crate::output::print_json_compact;
 
 const VERB: &str = "review verdict";
@@ -56,16 +59,17 @@ pub(crate) fn run(target: &Target, args: ReviewVerdictArgs) -> Result<()> {
     // A replay of a call that landed finds its own verdicts already in place
     // and writes nothing.
     let current = store::load(&target.path, &read)?;
+    let mechanical = mechanical_lenses(&current, &inputs)?;
     let mut trial = current.clone();
     let slug = super::add::store_slug(target);
-    let preview = apply(&mut trial, &inputs, slug.as_deref());
+    let preview = apply(&mut trial, &inputs, slug.as_deref(), &mechanical);
     refuse_if_nothing_landed(&preview, batch)?;
     let unchanged = trial == current;
     let applied = if unchanged {
         preview
     } else {
         store::mutate(&target.path, &args.integrity, |store| {
-            let applied = apply(store, &inputs, slug.as_deref());
+            let applied = apply(store, &inputs, slug.as_deref(), &mechanical);
             refuse_if_nothing_landed(&applied, batch)?;
             Ok(applied)
         })?
@@ -125,13 +129,18 @@ fn refuse_if_nothing_landed(applied: &Applied, batch: bool) -> Result<()> {
 
 /// Upserts each input in order, refusing those that fail a check, and
 /// returns the verdict-return object of each that landed.
-fn apply(store: &mut Store, inputs: &[Input], slug: Option<&str>) -> Applied {
+fn apply(
+    store: &mut Store,
+    inputs: &[Input],
+    slug: Option<&str>,
+    mechanical: &Mechanical,
+) -> Applied {
     let mut applied = Applied {
         returns: Vec::new(),
         refused: Vec::new(),
     };
     for input in inputs {
-        match apply_one(store, input, slug) {
+        match apply_one(store, input, slug, mechanical) {
             Ok(entry) => applied.returns.push(entry),
             Err(reasons) => {
                 let finding = input.row.get("finding").cloned().unwrap_or(JsonValue::Null);
@@ -150,6 +159,7 @@ fn apply_one(
     store: &mut Store,
     input: &Input,
     slug: Option<&str>,
+    mechanical: &Mechanical,
 ) -> std::result::Result<JsonValue, Vec<String>> {
     let row = &input.row;
     let text = |key: &str| row.get(key).and_then(JsonValue::as_str).unwrap_or_default();
@@ -217,10 +227,21 @@ fn apply_one(
             "plausible" => {
                 reasons.push("a checker returns confirmed, unsettled or refuted".to_string());
             }
-            "refuted" if !written_by_sweeper(store, &finding.cell) => reasons.push(format!(
-                "a checker may refute only a row a sweeper wrote; {id} is from cell {}, which is not a {SWEEPER} cell",
-                finding.cell
-            )),
+            "refuted" => {
+                let allowed = checker_may_refute(store, finding, mechanical);
+                if allowed != Ok(true) {
+                    reasons.push(format!(
+                        "a checker may refute only a row a sweeper wrote; {id} is from cell {}, which is not a {SWEEPER} cell",
+                        finding.cell
+                    ));
+                }
+                if let Err(err) = allowed {
+                    reasons.push(format!(
+                        "run {}'s catalogue, which says whether lens {:?} is mechanical, could not be read: {err}",
+                        finding.run, finding.lens
+                    ));
+                }
+            }
             _ => {}
         }
     }
@@ -273,6 +294,81 @@ fn written_by_sweeper(store: &Store, cell: &str) -> bool {
         .cells
         .iter()
         .any(|c| c.id == cell && c.agent == SWEEPER)
+}
+
+/// Per run id, the ids of its catalogue's mechanical lenses for the run's
+/// family, or why the catalogue could not be read.
+type Mechanical = BTreeMap<String, std::result::Result<Vec<String>, String>>;
+
+/// The mechanical lenses of each run that a checker's `refuted` on a cleanup
+/// row outside a sweeper cell needs; no other verdict reads a catalogue.
+fn mechanical_lenses(store: &Store, inputs: &[Input]) -> Result<Mechanical> {
+    let mut mechanical = Mechanical::new();
+    let mut root = None;
+    for input in inputs {
+        let text = |key: &str| input.row.get(key).and_then(JsonValue::as_str);
+        if text("by") != Some("checker") || text("verdict") != Some("refuted") {
+            continue;
+        }
+        let Some(finding) = store
+            .findings
+            .iter()
+            .find(|f| Some(f.id.as_str()) == text("finding"))
+        else {
+            continue;
+        };
+        if finding.kind != Kind::Cleanup
+            || written_by_sweeper(store, &finding.cell)
+            || mechanical.contains_key(&finding.run)
+        {
+            continue;
+        }
+        let Some(run) = store.runs.iter().find(|r| r.id == finding.run) else {
+            continue;
+        };
+        let root = match &root {
+            Some(root) => root,
+            None => root.insert(repo_or_cwd_root()?),
+        };
+        let lenses = run_catalogue(root, run)
+            .map(|catalogue| {
+                catalogue
+                    .entries()
+                    .iter()
+                    .filter(|e| {
+                        e.ty == EntryType::Lens
+                            && e.mode == Some(Mode::Mechanical)
+                            && !e.disabled
+                            && e.families.contains(&run.family)
+                    })
+                    .map(|e| e.id.clone())
+                    .collect()
+            })
+            .map_err(|err| format!("{err:#}"));
+        mechanical.insert(run.id.clone(), lenses);
+    }
+    Ok(mechanical)
+}
+
+/// Whether a checker may refute `finding`: a sweeper cell wrote it, or it is
+/// a cleanup under one of its run's mechanical lenses. `Err` carries the
+/// catalogue failure that left the second question unanswered.
+fn checker_may_refute(
+    store: &Store,
+    finding: &Finding,
+    mechanical: &Mechanical,
+) -> std::result::Result<bool, String> {
+    if written_by_sweeper(store, &finding.cell) {
+        return Ok(true);
+    }
+    if finding.kind != Kind::Cleanup {
+        return Ok(false);
+    }
+    match mechanical.get(&finding.run) {
+        Some(Ok(lenses)) => Ok(lenses.contains(&finding.lens)),
+        Some(Err(err)) => Err(err.clone()),
+        None => Ok(false),
+    }
 }
 
 /// The status the verdict just written gives its finding. An audit verdict

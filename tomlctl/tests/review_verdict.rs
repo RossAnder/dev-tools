@@ -115,20 +115,68 @@ summary = "the limit is off by one again"
 severity = "major"
 same_as = "F1"
 status = "unverified"
+
+[[findings]]
+id = "F6"
+run = "U1"
+cell = "C1"
+family = "code"
+kind = "cleanup"
+lens = "ripple"
+route = "checker"
+file = "docs/guide.md"
+line = 3
+summary = "the guide still names the removed flag"
+status = "unverified"
 "#;
+
+const VOCABULARY: &str = "[routing]\nexecutable = [\"**/*.rs\"]\n";
+
+/// The one lens the catalogue marks mechanical.
+const RIPPLE_LENS: &str = "+++\nid = \"ripple\"\nstatus = \"stable\"\n\
+    families = [\"code\", \"plan\"]\nmode = \"mechanical\"\nproduces = [\"cleanup\"]\n\
+    owns = [\"stale-references\"]\nactivation = \"floor\"\nslice = \"whole-scope\"\n+++\n\n\
+    ## Question\n\nWhat still names what the diff removed?\n";
 
 struct Repo {
     _dir: tempfile::TempDir,
+    _catalogue: Option<tempfile::TempDir>,
     root: PathBuf,
 }
 
 impl Repo {
     fn new() -> Self {
+        Self::seeded(STORE.to_string(), None)
+    }
+
+    /// The same store, its run recording a catalogue whose one lens,
+    /// `ripple`, is mechanical.
+    fn with_catalogue() -> Self {
+        let catalogue = tempfile::tempdir().unwrap();
+        let builtin = catalogue.path().join("review-v2-lenses");
+        fs::create_dir_all(builtin.join("lenses")).unwrap();
+        fs::write(builtin.join("vocabulary.toml"), VOCABULARY).unwrap();
+        fs::write(builtin.join("lenses").join("ripple.md"), RIPPLE_LENS).unwrap();
+        let builtin = builtin.to_string_lossy().replace('\\', "/");
+        let started = "started = \"2026-10-12T10:00:00Z\"\n";
+        let store = STORE.replacen(
+            started,
+            &format!("{started}catalogue = {{ builtin = \"{builtin}\" }}\n"),
+            1,
+        );
+        Self::seeded(store, Some(catalogue))
+    }
+
+    fn seeded(store_text: String, catalogue: Option<tempfile::TempDir>) -> Self {
         let (dir, root) = sandbox();
         let store = root.join(".claude/review-v2/t.toml");
         fs::create_dir_all(store.parent().unwrap()).unwrap();
-        fs::write(store, STORE).unwrap();
-        Self { _dir: dir, root }
+        fs::write(store, store_text).unwrap();
+        Self {
+            _dir: dir,
+            _catalogue: catalogue,
+            root,
+        }
     }
 
     fn verdict(&self, finding: &str, args: &[&str]) -> assert_cmd::assert::Assert {
@@ -349,6 +397,42 @@ fn checker_cannot_refute_a_finder_row() {
     assert_eq!(repo.status("F2"), "unverified");
     assert_eq!(repo.status("F3"), "refuted");
     assert_eq!(repo.verdicts().len(), 1);
+}
+
+#[test]
+fn checker_may_refute_a_mechanical_cleanup_from_a_finder_cell() {
+    let repo = Repo::with_catalogue();
+    let out = repo.batched(&[row("F6", "checker", "refuted")]);
+    assert_eq!(
+        out["verdicts"],
+        json!([{"finding": "F6", "verdict": "refuted"}]),
+        "{out}"
+    );
+    assert_eq!(out["refused"], json!([]), "{out}");
+    assert_eq!(repo.status("F6"), "refuted");
+}
+
+#[test]
+fn checker_refute_of_a_non_mechanical_finder_row_is_refused() {
+    let repo = Repo::with_catalogue();
+    let out = repo.batched(&[
+        row("F2", "checker", "refuted"),
+        row("F6", "checker", "refuted"),
+    ]);
+    assert_eq!(
+        out["verdicts"],
+        json!([{"finding": "F6", "verdict": "refuted"}]),
+        "{out}"
+    );
+    assert_eq!(out["refused"][0]["finding"], "F2", "{out}");
+    assert_eq!(
+        out["refused"][0]["reasons"],
+        json!([
+            "a checker may refute only a row a sweeper wrote; F2 is from cell C1, which is not a review-sweeper cell"
+        ]),
+        "{out}"
+    );
+    assert_eq!(repo.status("F2"), "unverified");
 }
 
 #[test]
