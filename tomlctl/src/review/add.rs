@@ -414,7 +414,7 @@ pub(super) fn v2_plan(slug: &str) -> Result<Option<PathBuf>> {
 
 /// `slug` when a `family` row on its store is in flow mode: a plan finding on
 /// a flow that holds a v2 `plan.toml`.
-fn flow_slug(slug: Option<&str>, family: Family) -> Option<&str> {
+pub(super) fn flow_slug(slug: Option<&str>, family: Family) -> Option<&str> {
     let slug = slug.filter(|_| family == Family::Plan)?;
     v2_plan(slug).ok().flatten().map(|_| slug)
 }

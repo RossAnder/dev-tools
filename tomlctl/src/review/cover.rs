@@ -4,6 +4,7 @@
 use anyhow::Result;
 use serde_json::{Value as JsonValue, json};
 
+use super::add::{flow_slug, store_slug};
 use super::catalogue::run_catalogue;
 use super::cells::{PathSet, find_run, read_args};
 use super::fields::{self, CellStatus, Record};
@@ -54,18 +55,34 @@ fn read_ruled_out(src: &str) -> Result<Vec<RuledOut>> {
 }
 
 /// Refuses a rule-out outside `cell`'s slice unless the cell binds a
-/// mechanical lens, whose sweep reaches past the slice.
-fn check_ruled_out_reach(store: &Store, cell: &store::Cell, entries: &[RuledOut]) -> Result<()> {
+/// mechanical lens, whose sweep reaches past the slice. In flow mode the
+/// flow's `tasks.toml` and `plan.toml` are in reach of every cell, since a
+/// slice of task refs or plan documents never names the files its findings
+/// anchor on.
+fn check_ruled_out_reach(
+    target: &Target,
+    store: &Store,
+    cell: &store::Cell,
+    entries: &[RuledOut],
+) -> Result<()> {
     let slice = PathSet::new(&cell.slice);
+    let run = find_run(store, &cell.run, VERB)?;
+    let slug = store_slug(target);
+    let records: Vec<String> = flow_slug(slug.as_deref(), run.family)
+        .map(|slug| {
+            ["tasks.toml", "plan.toml"]
+                .map(|name| format!(".claude/flows/{slug}/{name}"))
+                .to_vec()
+        })
+        .unwrap_or_default();
     let outside: Vec<&str> = entries
         .iter()
-        .filter(|e| !slice.matches(&e.file))
+        .filter(|e| !slice.matches(&e.file) && !records.contains(&e.file))
         .map(|e| e.file.as_str())
         .collect();
     if outside.is_empty() {
         return Ok(());
     }
-    let run = find_run(store, &cell.run, VERB)?;
     let catalogue = run_catalogue(&repo_or_cwd_root()?, run)?;
     let sweeps = catalogue
         .entries()
@@ -153,7 +170,7 @@ pub(crate) fn cover(target: &Target, args: ReviewCoverArgs) -> Result<()> {
     } else {
         finished(&current, &existing.run)?;
         if let Some(entries) = &ruled_out {
-            check_ruled_out_reach(&current, existing, entries)?;
+            check_ruled_out_reach(target, &current, existing, entries)?;
         }
         store::mutate(&target.path, &args.integrity, |store| {
             let run = store

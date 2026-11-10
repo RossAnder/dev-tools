@@ -245,3 +245,70 @@ fn cover_accepts_ruled_out_outside_a_mechanical_cells_slice() {
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0]["file"].as_str(), Some("src/b.rs"));
 }
+
+const SLUG: &str = "s";
+
+/// Seeds a plan-family run and cell C1, sliced by task ref, in flow `SLUG`'s
+/// store, and returns the store path.
+fn seed_flow(repo: &Repo, v2: bool) -> PathBuf {
+    let flow = repo.root.join(".claude/flows").join(SLUG);
+    fs::create_dir_all(&flow).unwrap();
+    if v2 {
+        fs::write(flow.join("plan.toml"), "schema_version = 1\n").unwrap();
+    }
+    let path = flow.join("review-v2.toml");
+    fs::write(
+        &path,
+        format!(
+            "schema_version = 1\n\n[[runs]]\nid = \"U1\"\ncommand = \"review-plan-v2\"\nfamily = \"plan\"\n\
+             depth = \"standard\"\nstarted = \"2026-10-12T10:00:00Z\"\nbase = \"abc\"\n\
+             scope = []\nsignals = []\ncatalogue = {{ builtin = \"{}\" }}\n\n\
+             [[cells]]\nid = \"C1\"\nrun = \"U1\"\nslice = [\"add-the-verb\"]\nconcerns = [\"correctness\"]\n\
+             agent = \"plan-executor\"\nreason = \"proposed\"\nstatus = \"assigned\"\n",
+            repo.builtin.to_string_lossy().replace('\\', "/"),
+        ),
+    )
+    .unwrap();
+    path
+}
+
+fn cover_flow(repo: &Repo, ruled_out: &Path) -> assert_cmd::assert::Assert {
+    let mut cmd = cli(&repo.root);
+    cmd.current_dir(&repo.root)
+        .args([
+            "review", "cover", "C1", "--slug", SLUG, "--status", "covered", "--note", "swept",
+        ])
+        .arg("--ruled-out")
+        .arg(ruled_out);
+    cmd.assert()
+}
+
+fn record_rule_outs(repo: &Repo) -> PathBuf {
+    repo.payload(&[
+        json!({"file": format!(".claude/flows/{SLUG}/tasks.toml"), "symbol": "add-the-verb", "reason": "decided"}),
+        json!({"file": format!(".claude/flows/{SLUG}/plan.toml"), "symbol": "D3", "reason": "decided"}),
+    ])
+}
+
+#[test]
+fn cover_accepts_ruled_out_on_a_v2_flows_record_files() {
+    let repo = Repo::new();
+    let store = seed_flow(&repo, true);
+    cover_flow(&repo, &record_rule_outs(&repo)).success();
+    let parsed: toml::Value = toml::from_str(&fs::read_to_string(store).unwrap()).unwrap();
+    assert_eq!(ruled_out(&parsed["cells"][0]).len(), 2);
+}
+
+#[test]
+fn cover_refuses_ruled_out_on_record_files_without_a_v2_plan() {
+    let repo = Repo::new();
+    let store = seed_flow(&repo, false);
+    let before = fs::read(&store).unwrap();
+    let out = cover_flow(&repo, &record_rule_outs(&repo)).failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr);
+    assert!(
+        stderr.contains("tasks.toml") && stderr.contains("slice"),
+        "the refusal names the record file: {stderr}"
+    );
+    assert_eq!(fs::read(&store).unwrap(), before);
+}
