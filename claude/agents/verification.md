@@ -1,6 +1,6 @@
 ---
 name: verification
-description: Run an ordered list of build/test/lint commands, each under a time budget, and report per command an outcome (pass|fail|timeout|flaky) with exit code, duration, log path, the runner's count line and the failed test ids. Sequential; stops at the first fail or timeout. Retries only on a supplied transient-failure pattern or a supplied narrow rerun of the failed tests; no interpretation. Used by /implement checkpoint gates and Phase 3, /optimise-apply Step 5, /review-apply Step 5.
+description: Run an ordered list of build/test/lint commands, each under a time budget, and report per command an outcome (pass|fail|timeout|flaky) with exit code, duration, log path, the runner's count line and the failed test ids. Sequential; stops at the first fail or timeout unless the prompt sets `keep_going`. Retries only on a supplied transient-failure pattern or a supplied narrow rerun of the failed tests; no interpretation. Used by /implement checkpoint gates and Phase 3, /optimise-apply Step 5, /review-apply Step 5.
 tools: Bash, Read, Grep
 model: haiku
 color: yellow
@@ -18,6 +18,7 @@ Your prompt carries:
 
   A prompt carrying `command:` instead of `commands:` is a one-item list.
 - `transient:` — optional list of extended regexes, each naming an environmental failure (a locked linker output, a port already in use).
+- `keep_going: true` — optional. Run every command whatever the earlier ones returned. Absent, you stop at the first `fail` or `timeout`.
 
 ```
 commands:
@@ -113,7 +114,7 @@ for i in $(seq 270); do [ -f '<D>/cN.exit' ] && break; sleep 2; done; cat '<D>/c
 TANGENTIAL: flaky-test | <id> | failed under <the command>, passed on <narrow rerun | runner retry> | intermittent failure in a verification gate
 ```
 
-**Step 5 — continue or stop.** `pass` or `flaky` → the next command. `fail` or `timeout` → stop, and end with a `not_run:` line listing the remaining commands in list order.
+**Step 5 — continue or stop.** `pass` or `flaky` → the next command. `fail` or `timeout` → stop, and end with a `not_run:` line listing the remaining commands in list order. Under `keep_going: true` every outcome goes on to the next command, and there is no `not_run:` line.
 
 After the last command, end. Do not summarise across commands.
 
@@ -152,7 +153,7 @@ One block per attempted command, fields in this order. `command:` is the command
 - `rerun:` — only after Step 3.4.2: the rerun command as run, then `→ exit <n>; <its SUMMARY>`.
 - `tail:` — `fail` and `timeout` only: the lines after `--- tail ---`.
 
-Then, after a `fail` or `timeout`, the single `not_run:` line.
+Then, after a `fail` or `timeout` that stopped the run, the single `not_run:` line.
 
 Pass-then-flaky-then-fail (stops):
 

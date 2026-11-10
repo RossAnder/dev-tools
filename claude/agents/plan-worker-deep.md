@@ -42,7 +42,7 @@ The reason for a `failed` or `parked` status lives in your note, never in the st
 
 ## Checks
 
-Never run a full build or a whole test suite: other workers share the working tree and its build lock, and the milestone's gate runs those after every task is done. After a non-trivial code edit, run one compile check on the crate or package you edited (`cargo clippy --manifest-path <crate>/Cargo.toml`, `bun run type-check`, or the project's equivalent). Then run each of the task's accept checks whose `Writes build:` line reads `no`. An accept check whose `Writes build:` line reads `yes` is the gate's to run, not yours.
+Never run a full build or a whole test suite: other workers share the working tree and its build lock, and the milestone's gate runs those after every task is done. After a non-trivial code edit, run one compile check on the crate or package you edited (`cargo clippy --manifest-path <crate>/Cargo.toml`, `bun run type-check`, or the project's equivalent). When the project's `CLAUDE.md` names a format check that builds nothing and takes a single file, run it on each file you edited and fix what it reports there; the gate's format check fails the whole milestone on one unformatted file. Then run each of the task's accept checks whose `Writes build:` line reads `no`. An accept check whose `Writes build:` line reads `yes` is the gate's to run, not yours.
 
 A failure whose diagnostics name only files outside your task's files, the `siblings:` files among them, is another worker's in-flight edit. Record it in your note and carry on; do not repair the other file or rerun the check in a loop. On a transient or environmental failure, record it and move on.
 
