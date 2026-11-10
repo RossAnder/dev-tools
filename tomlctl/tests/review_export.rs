@@ -459,7 +459,7 @@ status = "open"
 "#;
 
 #[test]
-fn export_refuses_advisory_and_needs_plan() {
+fn export_refuses_advisory_and_a_legacy_needs_plan_row_as_blocked() {
     let repo = Repo::new();
     let out = repo.exported(&["F2,F3,F6"]);
     let refused = findings_in(&out, "refused");
@@ -475,7 +475,7 @@ fn export_refuses_advisory_and_needs_plan() {
         out["refused"][1]["reason"]
             .as_str()
             .unwrap()
-            .contains("needs-plan"),
+            .starts_with("blocked on design"),
         "{out}"
     );
     assert_eq!(findings_in(&out, "exported"), ["F6"], "{out}");
@@ -491,6 +491,29 @@ fn export_refuses_advisory_and_needs_plan() {
         !fresh.root.join(LEDGER).exists(),
         "an export refusing every finding writes no ledger"
     );
+}
+
+#[test]
+fn export_refuses_a_blocked_finding_naming_its_block_and_all_passes_it_over() {
+    let blocked = io_lock_defect(
+        "F10",
+        "the lock may be shared across processes",
+        "blocked_on = \"evidence\"\nblocked_missing = \"whether two processes open one store\"\n",
+    );
+    let repo = Repo::with_findings(&blocked);
+    let out = repo.exported(&["F10,F7"]);
+    assert_eq!(findings_in(&out, "refused"), ["F10"], "{out}");
+    assert_eq!(out["refused"][0]["reason"], "blocked on evidence", "{out}");
+    assert_eq!(text(&repo.finding("F10"), "status"), "open");
+
+    let fresh = Repo::with_findings(&blocked);
+    let out = fresh.exported(&["--all"]);
+    let offered: Vec<String> = ["exported", "held", "refused"]
+        .iter()
+        .flat_map(|key| findings_in(&out, key))
+        .collect();
+    assert!(!offered.contains(&"F10".to_string()), "{out}");
+    assert!(!offered.contains(&"F3".to_string()), "{out}");
 }
 
 #[test]

@@ -2,7 +2,7 @@
 
 After the last wave has resolved and its digest shows no unverified id, the orchestrator audits a sample of verdicts, presents the run to the user, applies the user's dispositions, and closes the run. Pass `--scope <scope>` in place of `--slug <slug>` for a flow-less store in every command below.
 
-Stage the user's prose and your own rationales with the Write tool, in the run directory's `payloads/` subdirectory, and pass them through the `--<flag>-file` twins (`--dismiss-file`, `--defer-file`, `--trigger-file`, `--reopen-file`, `--park-file`, `--resolve-file`, `--rationale-file`, `--incomplete-file`). Never quote user text into a shell argument.
+Stage the user's prose and your own rationales with the Write tool, in the run directory's `payloads/` subdirectory, and pass them through the `--<flag>-file` twins (`--dismiss-file`, `--defer-file`, `--trigger-file`, `--reopen-file`, `--park-file`, `--resolve-file`, `--answer-file`, `--fix-file`, `--rationale-file`, `--incomplete-file`). Never quote user text into a shell argument.
 
 ## Stage 6 — Audit
 
@@ -69,11 +69,35 @@ It prints the path and a counts line. Do not read the report back; it is for the
 **What to present.** In one message, in this order:
 
 1. the counts line;
-2. the Needs-a-plan group — defects with `fix_shape = needs-plan`, by id and summary;
-3. contested findings, with your audit outcome for each;
-4. the advisory list from the digest, each item with your recommendation and a one-line reason;
-5. the report path;
-6. the disposition grammar below, and what happens to anything the user leaves untriaged.
+2. the blocked findings, grouped by `blocked_on` in the order of the handling below, each by id, summary and what it lacks (its `blocked_*` detail), with the handling its group gets;
+3. the deferred proposals, each with its age, the overdue ones marked as needing a disposition before the run can close;
+4. contested findings, with your audit outcome for each;
+5. the advisory list from the digest, each item with your recommendation and a one-line reason;
+6. the report path;
+7. the disposition grammar below, and what happens to anything the user leaves untriaged.
+
+Read the blocked findings from the store rather than the run, since a block an earlier run left open is still the user's to answer:
+
+```bash
+tomlctl review list --slug <slug> --status open --blocked-on any
+```
+
+Read the deferred proposals from the final digest's `proposals`: each row carries the `proposal` note's path, `proposal_at`, its `age` (runs of the family started since the deferral) and `overdue`, set at an age of 3.
+
+**Blocked findings.** A blocked finding cannot be fixed as written; what happens to it depends on what it lacks. Every route below is the user's to take: you never answer a decision, pick the `plan` route, park a blocked finding or send it to the backlog on your own recommendation.
+
+- **`decision`** — ask every decision finding together, in one `AskUserQuestion` round after the presentation: one question per finding, up to four questions per call, the calls back to back, each naming the finding's summary and what it lacks and offering its `blocked_options` as the choices (with more than four options, name them all in the question and take the answer as text). Stage each answer — the chosen option's text and anything the user added, at most 800 characters — in `<run-dir>/payloads/answer-<id>.md`, and record it:
+
+  ```bash
+  tomlctl review triage F2 --slug <slug> --answer-file <run-dir>/payloads/answer-F2.md --expect-status open
+  ```
+
+  The answer clears the block and leaves the finding `open` and fixable, with the answer bound to its fix task when it is scheduled, so it can be picked under `apply` in the same triage. A question the user leaves unanswered records nothing, and the finding stays blocked for the next run.
+- **`evidence`** — offer it for apply. `/apply-v2` schedules it as a settle task, whose worker investigates and returns a proposal or a refutation in a note; it is not fixed in that round. A finding that already carries a `proposal` has had its settle round and is listed with the deferred proposals instead.
+- **`measurement`** and **`alternatives`** — list them as waiting for trials. Nothing runs them yet, and `/apply-v2` refuses them; they stay `open` and blocked.
+- **`design`** — offer the `plan` route: it names `/plan-v2` with the finding as the work to plan, so the plan starts from the store's record of it rather than a copy. Only the user picks it.
+
+**Deferred proposals.** A proposal deferred at an earlier settle stays `open` and blocked while it ages. List each one with its age and the path of its note. An overdue one must be given a disposition before `review run finish`, which refuses while any is overdue, `--incomplete-file` included: `accept` or `refute` through `review settle`, or any `review triage` disposition that moves it off `open`. Recommend one, as for advisory; the user decides.
 
 **Advisory recommendations.** Each recommendation is advice; the user decides. Recommend one of:
 
@@ -84,11 +108,11 @@ It prints the path and a counts line. Do not read the report back; it is for the
 
 A `challenge` item names the decision it challenges; recommend parking it unless the rationale carries evidence the decision did not have.
 
-**The gate.** Dispositions are the user's. Present them and wait for the answer: an instruction to proceed autonomously, or not to ask questions, does not cover this step, because a disposition decides what is applied, sent to the backlog or dropped. Ask with `AskUserQuestion` or end the turn on the presentation. An empty answer (a headless session) takes no disposition: stage 8 parks the untriaged advisory, hands nothing to apply, and the close summary says triage is pending.
+**The gate.** Dispositions are the user's. Present them and wait for the answer: an instruction to proceed autonomously, or not to ask questions, does not cover this step, because a disposition decides what is applied, sent to the backlog or dropped. Ask with `AskUserQuestion` or end the turn on the presentation. An empty answer (a headless session) takes no disposition: stage 8 parks the untriaged advisory, records no decision answer, leaves every blocked finding as it is, hands nothing to apply, and the close summary says triage is pending. When a deferred proposal is overdue, the run cannot finish without a disposition: leave it open, skip stage 8's step 5, and name the overdue ids in the close summary as what the next session must answer.
 
 ### The grammar
 
-Each user instruction maps to `review triage` calls. `--expect-status` is the status the row had when you presented it (`open` for an untriaged row; the row's current status for a `reopen`); a row that moved in the meantime lands under `skipped_stale` and is reported back rather than forced.
+Each user instruction maps to `review triage` calls, or `review settle` for a deferred proposal. `--expect-status` is the status the row had when you presented it (`open` for an untriaged row; the row's current status for a `reopen`); a row that moved in the meantime lands under `skipped_stale` and is reported back rather than forced.
 
 | User says | Calls |
 |---|---|
@@ -98,7 +122,10 @@ Each user instruction maps to `review triage` calls. `--expect-status` is the st
 | `park F7 — <reason>` | stage `<reason>`; `review triage F7 --park-file <path> --expect-status open` |
 | `backlog F7,F9` | stage 8's backlog hand-off, then one `review triage <id> --backlog-ref <B-id> --expect-status open` per id |
 | `convert F8` | write the replacement row (below); `review triage F8 --convert cleanup\|defect --ndjson <path> --expect-status open` |
-| `plan F5` | stage 8's backlog hand-off mints a row for the needs-plan defect, its context naming `tomlctl review show F5 --for implementer` with the store flag as `/plan-new`'s input; then `review triage F5 --backlog-ref <B-id> --expect-status open` |
+| `answer F2 — <answer>` | stage `<answer>`; `review triage F2 --answer-file <path> --expect-status open`, for a finding blocked on `decision` |
+| `accept F6 — <fix>` | stage `<fix>`; `review settle F6 --accept --tier user --fix-file <path>`, for a deferred proposal |
+| `refute F6 — <citation>` | `review settle F6 --refute --citation '<file:line>'`, for a deferred proposal |
+| `plan F5` | stage 8's plan hand-off names `/plan-v2` for the finding blocked on `design`; no `review triage` call |
 | `apply F1,F4` / `apply all` | stage 8's apply hand-off; no `review triage` call |
 
 Every call takes the store flag. Several ids sharing one disposition and one reason go in one call (`review triage F3,F4 --dismiss-file …`); a `backlog-ref` is per id, because each pick gets its own backlog item.
@@ -109,7 +136,7 @@ For example, a dismissal whose reason you staged:
 tomlctl review triage F3 --slug <slug> --dismiss-file <run-dir>/payloads/dismiss-F3.md --expect-status open
 ```
 
-**Convert.** Write the replacement as one JSON object with the Write tool to `<run-dir>/payloads/convert-<id>.ndjson`: the concrete `edit` (with `direction`, `old`, `effort` and any `target_file`) for `cleanup`, or the `fix`, `failure_scenario`, `severity`, `fix_shape`, `effort`, `counter`, `grade` and `evidence` for `defect` (and `line` when the advisory has none), anchored at the advisory's `file`, `line` and `symbol`. The verb mints the new finding with an `orchestrator` verdict, routed by its edit target, and marks the advisory `converted`. Read what it prints: when the new finding is minted `unverified` with a `verifier` or `checker` route, verify it with a one-row dispatch per `agent-waves.md` before handing it to apply.
+**Convert.** Write the replacement as one JSON object with the Write tool to `<run-dir>/payloads/convert-<id>.ndjson`: the concrete `edit` (with `direction`, `old`, `effort` and any `target_file`) for `cleanup`, or the `fix`, `failure_scenario`, `severity`, `effort`, `counter`, `grade` and `evidence` for `defect` (and `line` when the advisory has none), anchored at the advisory's `file`, `line` and `symbol`. The verb mints the new finding with an `orchestrator` verdict, routed by its edit target, and marks the advisory `converted`. Read what it prints: when the new finding is minted `unverified` with a `verifier` or `checker` route, verify it with a one-row dispatch per `agent-waves.md` before handing it to apply.
 
 **Convert after the run finished.** An advisory parked in an earlier run and revisited later belongs to a finished run, which cannot verify a replacement, so a plain `--convert` on it is refused. Convert it into the run you have open: add `--run <open run>`, which must be of the advisory's family. The replacement is minted `unverified` in that run, routed by its catalogue, and that run cannot finish until the replacement is verified, so verify it in the same run's waves. With no open run, leave the advisory parked and convert it at the next run.
 
@@ -123,7 +150,11 @@ In this order.
 tomlctl review triage <ids, comma-separated> --slug <slug> --park-file <run-dir>/payloads/park-untriaged.md --expect-status open
 ```
 
-**2. Backlog and plan picks.** Only for ids the user named under `backlog` or `plan`; the orchestrator never sends an item to the backlog on its own recommendation. Invoke the `backlog-capture` skill now — not earlier in the run — and follow it as the only writer. A `plan` pick's backlog context names `tomlctl review show <id> --slug <slug> --for implementer` (or `--scope <scope>`) as the input `/plan-new` starts from, so the defect is planned from the store rather than from a copy. Read the rows it captures from:
+**2. Backlog and plan picks.** Only for ids the user named under `backlog` or `plan`; the orchestrator never sends an item to the backlog or to planning on its own recommendation.
+
+A `plan` pick writes nothing. Name `/plan-v2` with the finding as the work to plan: `/plan-v2 <finding summary> — planned from tomlctl review show <id> --slug <slug> --for implementer` (or `--scope <scope>`), so the plan's brief reads the finding and its `blocked_contract` from the store. Do not start it; the user runs it. The finding stays `open` and blocked on `design`, and shows in the next run's opening listing until the planned work resolves it.
+
+For `backlog` picks, invoke the `backlog-capture` skill now — not earlier in the run — and follow it as the only writer. Read the rows it captures from:
 
 ```bash
 tomlctl review show <ids, comma-separated> --slug <slug> --for backlog
@@ -131,7 +162,7 @@ tomlctl review show <ids, comma-separated> --slug <slug> --for backlog
 
 Run the skill's check-then-add gate per row. Record each minted or matched backlog id with `review triage <id> --backlog-ref <B-id> --expect-status open`. A row the gate reports as a duplicate of an existing item takes that item's id; a row the gate refuses to mint is reported back to the user and stays parked.
 
-**3. Apply picks.** Nothing is written at this step; `/apply-v2` reads the selection from the store when the user runs it. Keep the ids the user named under `apply`, exactly as named, for step 4. Before naming them, say which of them the schedule rule will refuse — advisory, `needs-plan`, `effort = "large"`, a status other than `open`, the plan family — so the user is not surprised at the preview; `/apply-v2` reports each refusal and hold-back with its reason itself. `apply all` takes every open code or perf defect and cleanup in the store, earlier runs' included, and holds back test removals and cleanup whose latest verdict is PLAUSIBLE, which apply only by explicit id; list the open defects and cleanup before naming it:
+**3. Apply picks.** Nothing is written at this step; `/apply-v2` reads the selection from the store when the user runs it. Keep the ids the user named under `apply`, exactly as named, for step 4. Before naming them, say which of them the schedule rule will refuse — advisory, a finding still blocked on `decision`, `design`, `measurement` or `alternatives`, an `evidence` block that already carries a `proposal`, `effort = "large"`, a status other than `open`, the plan family — and which `evidence` picks become settle tasks rather than fixes, so the user is not surprised at the preview; `/apply-v2` reports each refusal and hold-back with its reason itself. A decision answered at this triage is no longer blocked and schedules as a fix. `apply all` takes every open code or perf defect and cleanup in the store that is not blocked, earlier runs' included, schedules a settle task for each `evidence` block without a proposal, and holds back test removals and cleanup whose latest verdict is PLAUSIBLE, which apply only by explicit id; list the open defects and cleanup before naming it:
 
 ```bash
 tomlctl review list --slug <slug> --status open --kind defect
@@ -151,10 +182,10 @@ tomlctl review run update <run> --slug <slug> --set-json agents=<total>
 tomlctl review run finish <run> --slug <slug>
 ```
 
-It stamps `finished` and computes `counts`. It refuses while any finding is `unverified`, any `same_as` is unresolved, an unselected matched concern or unsliced scope file lacks a waiver, or any cell of the run is unsealed; the refusal names each. Fix the cause — a mop-up dispatch, `review resolve`, a waiver — and finish again. Finish with `--incomplete-file <path>` only when a gap cannot be closed in this run, with the staged reason naming each open id or gap and why.
+It stamps `finished` and computes `counts`. It refuses while any finding is `unverified`, any `same_as` is unresolved, an unselected matched concern or unsliced scope file lacks a waiver, or any cell of the run is unsealed, and while a deferred proposal of the run's family is overdue; the refusal names each. Fix the cause — a mop-up dispatch, `review resolve`, a waiver, the user's disposition of the overdue proposal — and finish again. Finish with `--incomplete-file <path>` only when a gap cannot be closed in this run, with the staged reason naming each open id or gap and why; it does not cover an overdue proposal.
 
 **6. Refresh the report.** Re-run `review report --out` to the same path so the file carries the dispositions and counts.
 
-**7. Close summary.** Print the run id, the report path, the counts line, what was handed to apply (the `/apply-v2` command named, with its ids or `--all`, and any pick you said the schedule rule will refuse), the backlog ids, any `skipped_stale` rows, any `plan` picks with their backlog id and `/plan-new` hand-off, a substrate fallback if one happened, and `triage pending` when the user's answer was empty.
+**7. Close summary.** Print the run id, the report path, the counts line, what was handed to apply (the `/apply-v2` command named, with its ids or `--all`, and any pick you said the schedule rule will refuse), the backlog ids, any `skipped_stale` rows, the decision answers recorded, any `plan` picks with the `/plan-v2` command named, the deferred proposals given a disposition and any still overdue, a substrate fallback if one happened, and `triage pending` when the user's answer was empty.
 
 Then list each unhandled escalation: every entry of a wave index's `escalations` that you did not turn into a follow-up cell — out of budget, or anchored outside the scope and not a `ripple` row — by cell and text, each offered as a backlog capture. Capture only the ones the user accepts, through `backlog-capture`'s check-then-add gate as in step 2; the rest are dropped with the run.

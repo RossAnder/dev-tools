@@ -174,7 +174,6 @@ fn defect(lens: &str, symbol: &str, severity: &str) -> JsonValue {
         "severity": severity,
         "failure_scenario": "a ninth row is dropped",
         "fix": "raise LIMIT to 9",
-        "fix_shape": "edits",
         "effort": "trivial",
         "counter": "callers never pass nine rows",
         "grade": "high",
@@ -247,6 +246,119 @@ fn defect_without_failure_scenario_is_refused_rest_lands() {
     assert_eq!(minted["cell"].as_str(), Some("C1"));
     assert_eq!(minted["seen_in"][0].as_str(), Some("U1"));
     assert!(minted["first_seen"].as_datetime().is_some(), "{minted:?}");
+}
+
+/// The detail fields each `blocked_on` value requires, filled in.
+fn block_detail(block: &str) -> Vec<(&'static str, JsonValue)> {
+    let missing = ("blocked_missing", json!("whether callers rely on eight"));
+    let options = (
+        "blocked_options",
+        json!([
+            "raise it to nine, and the export grows a row",
+            "keep eight, and the importer pads"
+        ]),
+    );
+    match block {
+        "decision" | "alternatives" => vec![missing, options],
+        "evidence" => vec![missing],
+        "measurement" => vec![
+            missing,
+            ("blocked_metric", json!("rows per second")),
+            ("blocked_command", json!("cargo bench --bench rows")),
+        ],
+        "design" => vec![
+            missing,
+            (
+                "blocked_contract",
+                json!("the row limit moves into the config"),
+            ),
+        ],
+        other => panic!("no such block {other}"),
+    }
+}
+
+const BLOCKS: [&str; 5] = [
+    "decision",
+    "evidence",
+    "measurement",
+    "alternatives",
+    "design",
+];
+
+#[test]
+fn a_blocked_finding_without_its_detail_is_refused() {
+    let repo = Repo::new();
+    let rows: Vec<JsonValue> = BLOCKS
+        .iter()
+        .map(|block| {
+            let mut row = defect("correctness", &format!("lib::{block}"), "major");
+            row["blocked_on"] = json!(block);
+            row
+        })
+        .collect();
+    let out = repo.add("U1", "C1", &rows).failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    for (block, field) in [
+        ("decision", "blocked_options"),
+        ("measurement", "blocked_metric"),
+        ("measurement", "blocked_command"),
+        ("alternatives", "blocked_options"),
+        ("design", "blocked_contract"),
+    ] {
+        assert!(
+            stderr.contains(&format!("`{field}` is required when blocked_on is {block}")),
+            "{block} {field}: {stderr}"
+        );
+    }
+    assert!(stderr.contains("`blocked_missing` is required when blocked_on is evidence"));
+    assert_eq!(repo.finding_count(), 2, "nothing lands");
+}
+
+#[test]
+fn a_blocked_finding_with_its_detail_lands() {
+    let repo = Repo::new();
+    let mut rows = Vec::new();
+    for block in BLOCKS {
+        let mut row = defect("correctness", &format!("lib::{block}"), "major");
+        row["blocked_on"] = json!(block);
+        for (field, value) in block_detail(block) {
+            row[field] = value;
+        }
+        rows.push(row);
+    }
+    let mut blocked_cleanup = cleanup("docs/guide.md", 3, "change", Some("`--fast`"));
+    blocked_cleanup["blocked_on"] = json!("evidence");
+    blocked_cleanup["blocked_missing"] = json!("whether `--fast` still parses");
+    rows.push(blocked_cleanup);
+    let out = repo.added("U1", "C1", &rows);
+    assert_eq!(out["refused"].as_array().map_or(0, Vec::len), 0, "{out}");
+    assert_eq!(ids(&out).len(), BLOCKS.len() + 1, "{out}");
+    let decision = repo.finding(&ids(&out)[0]);
+    assert_eq!(decision["blocked_on"].as_str(), Some("decision"));
+    assert_eq!(
+        decision["blocked_options"].as_array().map(Vec::len),
+        Some(2)
+    );
+}
+
+#[test]
+fn a_blocked_decision_with_one_option_or_a_fix_shape_is_refused() {
+    let repo = Repo::new();
+    let mut one_option = defect("correctness", "lib::one", "major");
+    one_option["blocked_on"] = json!("decision");
+    one_option["blocked_missing"] = json!("whether callers rely on eight");
+    one_option["blocked_options"] = json!(["raise it to nine, and the export grows a row"]);
+    let mut shaped = defect("correctness", "lib::shaped", "major");
+    shaped["fix_shape"] = json!("edits");
+    let out = repo.add("U1", "C1", &[one_option, shaped]).failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("`blocked_options` has 1 entries; at least 2 are required"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("`fix_shape` is retired"), "{stderr}");
+    assert!(stderr.contains("blocked_on"), "{stderr}");
+    assert_eq!(repo.finding_count(), 2, "nothing lands");
 }
 
 #[test]

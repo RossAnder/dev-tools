@@ -12,7 +12,7 @@ use anyhow::Result;
 use serde_json::{Map, Value as JsonValue, json};
 
 use super::fields::{
-    self, FIELDS, FieldSpec, Kind, Need, Origin, PathForm, Record, Route, Severity, Ty,
+    self, BlockedOn, FIELDS, FieldSpec, Kind, Need, Origin, PathForm, Record, Route, Severity, Ty,
 };
 use super::invalid;
 use crate::cli::ReviewSchemaArgs;
@@ -95,6 +95,9 @@ fn property(spec: &FieldSpec) -> JsonValue {
             if let Some(max) = spec.max_items {
                 list.insert("maxItems".into(), json!(max));
             }
+            if let Some(min) = spec.min_items {
+                list.insert("minItems".into(), json!(min));
+            }
             list
         }
         Ty::Int => {
@@ -133,6 +136,12 @@ fn property(spec: &FieldSpec) -> JsonValue {
                 .to_string(),
         );
     }
+    if let Need::WhenBlockedOn(blocks) = spec.need {
+        notes.push(format!(
+            "required when blocked_on is {}",
+            block_names(blocks).join(" or ")
+        ));
+    }
     if !notes.is_empty() {
         out.insert("description".into(), json!(notes.join("; ")));
     }
@@ -147,9 +156,20 @@ fn conditionals(kind: Kind) -> Vec<JsonValue> {
                 "if": {"properties": {"angle": {"const": "challenge"}}, "required": ["angle"]},
                 "then": {"required": [s.name]},
             })),
+            Need::WhenBlockedOn(blocks) => Some(json!({
+                "if": {
+                    "properties": {"blocked_on": {"enum": block_names(blocks)}},
+                    "required": ["blocked_on"],
+                },
+                "then": {"required": [s.name]},
+            })),
             _ => None,
         })
         .collect()
+}
+
+fn block_names(blocks: &[BlockedOn]) -> Vec<&'static str> {
+    blocks.iter().map(|b| b.as_str()).collect()
 }
 
 fn properties(kind: Option<Kind>) -> Map<String, JsonValue> {
@@ -272,7 +292,25 @@ fn sealed_statuses() -> Vec<&'static str> {
         .collect()
 }
 
+/// The verdict-return object; `unblocks` and `fix_sketch` carry the
+/// catalogue's verdict rule that each needs the other.
 fn verdict_return() -> JsonValue {
+    let verdict_field = |name: &str| {
+        let spec = fields::spec(Record::Verdict, name, None)
+            .unwrap_or_else(|| panic!("the catalogue lists a verdict's {name}"));
+        property(spec)
+    };
+    let unblocking = json!({"properties": {"unblocks": {"const": true}}, "required": ["unblocks"]});
+    let rules: Vec<JsonValue> = FIELDS
+        .iter()
+        .filter(|s| s.record == Record::Verdict && s.need == Need::WhenUnblocks)
+        .flat_map(|s| {
+            [
+                json!({"if": unblocking, "then": {"required": [s.name]}}),
+                json!({"if": {"required": [s.name]}, "then": unblocking}),
+            ]
+        })
+        .collect();
     json!({
         "title": "review verdict-return",
         "type": "object",
@@ -281,8 +319,11 @@ fn verdict_return() -> JsonValue {
             "finding": {"type": "string", "pattern": "^F[1-9][0-9]*$"},
             "verdict": {"type": "string", "enum": fields::VERDICTS},
             "reroute": {"type": "string", "enum": [Route::Verifier.as_str()]},
+            "unblocks": verdict_field("unblocks"),
+            "fix_sketch": verdict_field("fix_sketch"),
         },
         "required": ["finding", "verdict"],
+        "allOf": rules,
     })
 }
 
@@ -413,6 +454,40 @@ mod tests {
     }
 
     #[test]
+    fn schema_and_validator_agree_on_blocked_detail() {
+        for kind in [Kind::Defect, Kind::Cleanup] {
+            let k = kind.as_str();
+            let schema = finding(Some(kind));
+            let plain = validator_requires(json!({"kind": k}), Family::Code);
+            for &block in BlockedOn::ALL {
+                let b = block.as_str();
+                let demanded: BTreeSet<String> =
+                    validator_requires(json!({"kind": k, "blocked_on": b}), Family::Code)
+                        .difference(&plain)
+                        .cloned()
+                        .collect();
+                assert!(!demanded.is_empty(), "{k} {b}: a block demands detail");
+                assert_eq!(
+                    then_requires(&schema["allOf"], "blocked_on", b),
+                    demanded,
+                    "{k} {b}"
+                );
+            }
+            assert_eq!(
+                schema["properties"]["blocked_options"]["minItems"],
+                json!(2),
+                "{k}"
+            );
+            assert!(schema["properties"].get("fix_shape").is_none(), "{k}");
+        }
+        assert!(
+            validator_requires(json!({"kind": "advisory"}), Family::Code)
+                .iter()
+                .all(|f| !f.starts_with("blocked_"))
+        );
+    }
+
+    #[test]
     fn computed_fields_are_not_offered() {
         let schema = finding(None);
         let props = schema["properties"].as_object().unwrap();
@@ -430,6 +505,63 @@ mod tests {
         assert_eq!(
             names(&verdict_return()["required"]),
             BTreeSet::from(["finding", "verdict"].map(String::from))
+        );
+    }
+
+    #[test]
+    fn verdict_return_and_validator_agree_on_unblocking() {
+        let refused = |extra: JsonValue| -> BTreeSet<String> {
+            let mut row = json!({
+                "finding": "F1",
+                "by": "verifier",
+                "verdict": "confirmed",
+                "citation": "src/a.rs:1",
+                "rationale": "answered",
+            });
+            row.as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            let ctx = RowContext {
+                family: Family::Code,
+                target_exists: &|_| true,
+            };
+            validate_row(Record::Verdict, row.as_object().unwrap(), &ctx)
+                .err()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|r| r.field)
+                .collect()
+        };
+        let schema = verdict_return();
+        let rules = &schema["allOf"];
+        let unblocking = rules
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["if"]["properties"]["unblocks"]["const"] == json!(true))
+            .expect("a rule on unblocks");
+        assert_eq!(
+            names(&unblocking["then"]["required"]),
+            refused(json!({"unblocks": true})),
+            "unblocks needs what the validator demands"
+        );
+        let sketched = rules
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["if"]["required"] == json!(["fix_sketch"]))
+            .expect("a rule on fix_sketch");
+        assert_eq!(sketched["then"]["properties"]["unblocks"]["const"], true);
+        assert_eq!(
+            refused(json!({"fix_sketch": "s", "unblocks": false})),
+            BTreeSet::from(["fix_sketch".to_string()])
+        );
+        assert!(refused(json!({"fix_sketch": "s", "unblocks": true})).is_empty());
+        assert!(refused(json!({})).is_empty());
+        let sketch_cap = fields::cap(Record::Verdict, "fix_sketch");
+        assert_eq!(
+            schema["properties"]["fix_sketch"]["maxLength"],
+            json!(sketch_cap)
         );
     }
 }

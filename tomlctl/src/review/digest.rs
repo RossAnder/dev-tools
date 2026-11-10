@@ -13,8 +13,11 @@ use serde_json::{Map, Value as JsonValue, json};
 use toml::Value as TomlValue;
 
 use super::cells::coverage_accounting;
-use super::fields::{CellStatus, FindingStatus, Kind, Role, Route, SWEEPER, Severity};
+use super::fields::{
+    self, BlockedOn, CellStatus, FindingStatus, Kind, Role, Route, SWEEPER, Severity,
+};
 use super::matching::{Place, rule_outs_at, same_place};
+use super::settle;
 use super::store::{self, Cell, Finding, Row, Run, Store, Target, Verdict, View, run_waves};
 use crate::cli::{ReviewDigestArgs, ReviewReportArgs};
 use crate::errors::{ErrorKind, tagged_err};
@@ -157,7 +160,33 @@ pub(crate) fn digest(target: &Target, args: ReviewDigestArgs) -> Result<()> {
     out.insert("ruled_out_hits".into(), json!(hits));
     out.insert("audit_sample".into(), audit_sample(&stored, &findings));
     out.insert("advisory".into(), json!(advisory));
+    out.insert("proposals".into(), proposals(&stored, run));
     print_json_line(&JsonValue::Object(out))
+}
+
+/// Every deferred proposal of the run's family in the store, whichever run
+/// found it, with its age in runs and whether it is overdue.
+fn proposals(store: &Store, run: &Run) -> JsonValue {
+    let rows: Vec<JsonValue> = settle::deferred(store, run.family)
+        .iter()
+        .map(|d| {
+            let f = d.finding;
+            json!({
+                "id": f.id,
+                "kind": f.kind.as_str(),
+                "summary": f.summary,
+                "proposal": rest_str(f, "proposal"),
+                "proposal_at": match f.rest.get("proposal_at") {
+                    Some(TomlValue::Datetime(at)) => Some(at.to_string()),
+                    Some(TomlValue::String(at)) => Some(at.clone()),
+                    _ => None,
+                },
+                "age": d.age,
+                "overdue": d.overdue(),
+            })
+        })
+        .collect();
+    json!(rows)
 }
 
 pub(crate) fn report(target: &Target, args: ReviewReportArgs) -> Result<()> {
@@ -516,13 +545,13 @@ fn render(store: &Store, run: &Run) -> (String, String) {
         .copied()
         .filter(|(_, f)| f.kind == Kind::Defect && live(f))
         .collect();
-    let needs_plan = |f: &Finding| rest_str(f, "fix_shape") == "needs-plan";
+    let blocked = |f: &Finding| fields::blocked_on(f).is_some();
     let mut levels: Vec<&str> = Severity::VALUES.to_vec();
     levels.push("");
     for level in levels {
         let group: Vec<usize> = defects
             .iter()
-            .filter(|(_, f)| !needs_plan(f) && store.severity(f) == level)
+            .filter(|(_, f)| !blocked(f) && store.severity(f) == level)
             .map(|(i, _)| *i)
             .collect();
         if group.is_empty() {
@@ -537,30 +566,41 @@ fn render(store: &Store, run: &Run) -> (String, String) {
             ));
         }
     }
-    if defects.iter().all(|(_, f)| needs_plan(f)) {
+    if defects.iter().all(|(_, f)| blocked(f)) {
         md.push_str("\nNone.\n");
     }
 
-    md.push_str("\n## Needs a plan\n\n");
-    let planned: Vec<usize> = defects
-        .iter()
-        .filter(|(_, f)| needs_plan(f))
-        .map(|(i, _)| *i)
-        .collect();
-    if planned.is_empty() {
-        md.push_str("None.\n");
+    md.push_str("\n## Blocked\n");
+    let mut by_block: BTreeMap<BlockedOn, Vec<usize>> = BTreeMap::new();
+    for (i, f) in &found {
+        if matches!(f.kind, Kind::Defect | Kind::Cleanup)
+            && live(f)
+            && let Some(block) = fields::blocked_on(f)
+        {
+            by_block.entry(block).or_default().push(*i);
+        }
     }
-    for i in planned {
-        md.push_str(&defect_entry(
-            &projected(i),
-            store.severity(&store.findings[i]),
-        ));
+    if by_block.is_empty() {
+        md.push_str("\nNone.\n");
+    }
+    for (block, group) in by_block {
+        md.push_str(&format!("\n### On {}\n\n", block.as_str()));
+        for i in group {
+            let f = &store.findings[i];
+            let row = projected(i);
+            md.push_str(&if f.kind == Kind::Defect {
+                defect_entry(&row, store.severity(f))
+            } else {
+                cleanup_entry(&row)
+            });
+            blocked_details(&mut md, &row);
+        }
     }
 
     md.push_str("\n## Cleanup\n");
     let mut by_file: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
     for (i, f) in &found {
-        if f.kind == Kind::Cleanup && live(f) {
+        if f.kind == Kind::Cleanup && live(f) && !blocked(f) {
             by_file.entry(f.file.as_str()).or_default().push(*i);
         }
     }
@@ -711,6 +751,20 @@ fn record_details(md: &mut String, row: &Row) {
     detail(md, "Expect", text(row, "expect"));
     detail(md, "New", text(row, "new"));
     detail(md, "Tier", text(row, "tier"));
+}
+
+/// What a blocked finding lacks, and the options, metric, command or contract
+/// its block names.
+fn blocked_details(md: &mut String, row: &Row) {
+    detail(md, "Missing", text(row, "blocked_missing"));
+    if let Some(JsonValue::Array(options)) = row.get("blocked_options") {
+        for option in options.iter().filter_map(JsonValue::as_str) {
+            detail(md, "Option", Some(option));
+        }
+    }
+    detail(md, "Metric", text(row, "blocked_metric"));
+    detail(md, "Command", text(row, "blocked_command"));
+    detail(md, "Contract", text(row, "blocked_contract"));
 }
 
 fn defect_entry(row: &Row, severity: &str) -> String {

@@ -17,7 +17,7 @@ export const meta = {
 // same-args relaunch can miss the journal from the first reshuffled batch. Store
 // writes are idempotent either way. The review-v2-engine skill's
 // references/agent-waves.md states what recovery costs.
-const SCRIPT_VERSION = '3'
+const SCRIPT_VERSION = '4'
 const CELL_AGENTS = ['review-finder', 'review-finder-cf', 'review-sweeper', 'plan-executor']
 // The context-free correctness cell runs without the pack, so its prompt omits the `pack:` line.
 const CONTEXT_FREE_AGENT = 'review-finder-cf'
@@ -188,7 +188,7 @@ Fetch your assignment with \`tomlctl review show ${cell.id} --for finder ${store
 const verifierPrompt = (ids, seat, batch) => `${preamble}
 findings: ${ids.join(', ')}
 ${batch ? `batch: ${batch}\n` : ''}${seat ? `panel seat: ${seat} of ${PANEL_SEATS}\n` : ''}
-Fetch each finding with \`tomlctl review show ${ids.join(',')} --for verifier ${storeFlag}\`, verify it refute-first, and record each verdict with \`tomlctl review verdict\` using ${seat ? `\`--by panel --seat ${seat}\`` : '`--by verifier`'}. Return ${!batch ? 'the verdict-return object' : 'one verdict-return object per finding under `verdicts`'}.`
+Fetch each finding with \`tomlctl review show ${ids.join(',')} --for verifier ${storeFlag}\`, verify it refute-first, and record each verdict with \`tomlctl review verdict\` using ${seat ? `\`--by panel --seat ${seat}\`` : '`--by verifier`'}. A finding with \`blocked_on\` claims its fix cannot be written; refute that claim too by trying to write the fix. ${seat ? 'A panel seat cannot unblock: when you could write the fix, say so in the rationale.' : `When you can, record a confirmed or plausible verdict that unblocks it: \`--unblocks --fix-sketch-file ${runDir}/payloads/<finding>.sketch.md\` on a single verdict, or \`"unblocks": true\` with a \`"fix_sketch"\` on its batch line. Edit no code to do it.`} Return ${!batch ? 'the verdict-return object' : 'one verdict-return object per finding under `verdicts`'}.`
 
 // The checker may refute only a sweeper cell's row or a cleanup row in a mechanical
 // lens, and its projection carries neither the cell nor the lens's mode.

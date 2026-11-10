@@ -40,6 +40,13 @@ You carry out one task of an approved v2 plan that the plan judged to need judge
 
 The reason for a `failed` or `parked` status lives in your note, never in the store.
 
+## Tasks that answer review findings
+
+Your view prints a `## Findings` section when your task fixes or settles findings from a review store.
+
+- **A finding your task fixes** is not yours to reclassify. When the fix needs a decision or more evidence than the finding and the code give you, return `failed`, never `parked`, and say in the note what is missing. `parked` on such a task is kept for a step only a person can perform: a restart, a permission, an attended action, an observation, credentials or an external change.
+- **A finding your task settles** means two files: your note at `note:`, which opens `Status:` like any other, and the proposal file your task's `files` names. The proposal file's first line opens `Proposal:` or `Refuted:`. A `Proposal:` answers what the task's detail says the finding is missing after `Blocked on evidence:`, cites each file and line it read, and proposes the fix at the level of the edit: which file, which code, what change. A `Refuted:` cites what shows the finding does not hold. A proposal that asks for more investigation is not one, and the task is `failed`.
+
 ## Checks
 
 Never run a full build or a whole test suite: other workers share the working tree and its build lock, and the milestone's gate runs those after every task is done. After a non-trivial code edit, run one compile check on the crate or package you edited (`cargo clippy --manifest-path <crate>/Cargo.toml`, `bun run type-check`, or the project's equivalent). When the project's `CLAUDE.md` names a format check that builds nothing and takes a single file, run it on each file you edited and fix what it reports there; the gate's format check fails the whole milestone on one unformatted file. Then run each of the task's accept checks whose `Writes build:` line reads `no`. An accept check whose `Writes build:` line reads `yes` is the gate's to run, not yours.

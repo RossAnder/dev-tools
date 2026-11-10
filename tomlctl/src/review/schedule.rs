@@ -2,7 +2,9 @@
 //! v2 flow's `tasks.toml`, each finding then marked `scheduled` with its task.
 //!
 //! Selection is `export-v1`'s, over both the code and perf families. Findings
-//! whose edited paths overlap share one task. Rows are minted through
+//! whose edited paths overlap share one task. A finding blocked on evidence
+//! with no proposal yet gets a settle task instead, whose work is a proposal
+//! note; every other blocked finding is refused. Rows are minted through
 //! `tasks add-many`'s own parse and append, under the task store's lock, and
 //! linked back through `[[finding_links]]`. The task store is written before
 //! the review store, so a rerun after a crash between the two finds the
@@ -17,7 +19,7 @@ use serde_json::{Map, Value as JsonValue, json};
 use toml::Value as TomlValue;
 
 use super::export::description;
-use super::fields::{self, Family, FindingStatus, Kind};
+use super::fields::{self, BlockedOn, Family, FindingStatus, Kind};
 use super::invalid;
 use super::select::{self, Selection, text};
 use super::store::{self, Finding, Row, Store, Target};
@@ -33,6 +35,7 @@ pub(crate) struct Request<'a> {
     pub(crate) all: bool,
     pub(crate) flow: &'a str,
     pub(crate) checkpoint: &'a str,
+    pub(crate) settle_checkpoint: Option<&'a str>,
 }
 
 /// One task's worth of findings, as indexes into the review store's findings.
@@ -47,6 +50,7 @@ struct Placed {
     task: u32,
     r#ref: String,
     action: &'static str,
+    settle: bool,
 }
 
 #[derive(Default)]
@@ -83,13 +87,16 @@ pub(crate) fn run(
         (None, None) => return Err(invalid(format!("{VERB}: no review store named"))),
     };
 
-    let Selection {
-        chosen,
-        held,
-        refused,
-        projected,
-    } = selection(&stored, &root, &request)?;
-    if !request.all && chosen.is_empty() && !refused.is_empty() {
+    let (
+        Selection {
+            chosen,
+            held,
+            refused,
+            projected,
+        },
+        settle,
+    ) = selection(&stored, &root, &request)?;
+    if !request.all && chosen.is_empty() && settle.is_empty() && !refused.is_empty() {
         let lines: Vec<String> = refused.iter().map(JsonValue::to_string).collect();
         return Err(invalid(format!(
             "{VERB}: every finding was refused; nothing was written:\n{}",
@@ -102,22 +109,24 @@ pub(crate) fn run(
         projected: &projected,
         store_rel: &store_rel,
         store_flag: &store_flag,
+        flow: request.flow,
         checkpoint: request.checkpoint,
+        settle_checkpoint: request.settle_checkpoint.unwrap_or_default(),
     };
 
     let mut outcome = TaskOutcome::default();
-    if !groups.is_empty() {
+    if !groups.is_empty() || !settle.is_empty() {
         let tasks_read = ReadIntegrityArgs {
             verify_integrity: integrity.verify_integrity,
             strict_read: false,
         };
         let current = crate::tasks::load_store(&tasks_path, &tasks_read)?;
-        let (rows, linked) = compose.plan(&current, &groups);
+        let (rows, linked) = compose.plan(&current, &groups, &settle);
         outcome = if rows.is_empty() {
             linked
         } else {
             crate::tasks::mutate_store(&tasks_path, integrity, |tasks| {
-                let (rows, mut outcome) = compose.plan(tasks, &groups);
+                let (rows, mut outcome) = compose.plan(tasks, &groups, &settle);
                 if rows.is_empty() {
                     return Ok(outcome);
                 }
@@ -132,12 +141,13 @@ pub(crate) fn run(
                             first + at as u32
                         )));
                     }
-                    for finding in &row.fixes {
+                    for finding in &row.findings {
                         outcome.placed.push(Placed {
                             finding: finding.clone(),
                             task: added.id,
                             r#ref: added.r#ref.clone(),
                             action: "minted",
+                            settle: row.settle,
                         });
                     }
                 }
@@ -153,17 +163,20 @@ pub(crate) fn run(
         })?;
     }
 
-    let scheduled: Vec<JsonValue> = outcome
-        .placed
-        .iter()
-        .map(|p| json!({"finding": p.finding, "task": p.task, "ref": p.r#ref, "action": p.action}))
-        .collect();
+    let placed = |settle: bool| -> Vec<JsonValue> {
+        outcome
+            .placed
+            .iter()
+            .filter(|p| p.settle == settle)
+            .map(|p| json!({"finding": p.finding, "task": p.task, "ref": p.r#ref, "action": p.action}))
+            .collect()
+    };
     print_json_compact(&json!({
         "ok": true,
         "flow": request.flow,
         "review_store": store_rel,
-        "scheduled": scheduled,
-        "settle": [],
+        "scheduled": placed(false),
+        "settle": placed(true),
         "held": held,
         "refused": refused,
         "dropped_deps": outcome.dropped_deps,
@@ -172,9 +185,14 @@ pub(crate) fn run(
 }
 
 /// `export-v1`'s selection run once per family a fix task can take, merged
-/// in store order (`--all`) or the order the ids were given. Under `--all` a
-/// `needs-plan` finding, which selection passes over, is listed as refused.
-fn selection(stored: &Store, root: &Path, request: &Request<'_>) -> Result<Selection> {
+/// in store order (`--all`) or the order the ids were given, with the indexes
+/// of the findings that get a settle task. Every other blocked finding is
+/// refused, under `--all` too, where selection passes over it.
+fn selection(
+    stored: &Store,
+    root: &Path,
+    request: &Request<'_>,
+) -> Result<(Selection, Vec<usize>)> {
     let family_of = |id: &str| {
         stored
             .findings
@@ -201,24 +219,78 @@ fn selection(stored: &Store, root: &Path, request: &Request<'_>) -> Result<Selec
         chosen.sort_by_key(order);
     }
     let held = code.held.into_iter().chain(perf.held).collect();
-    let mut refused: Vec<JsonValue> = code.refused.into_iter().chain(perf.refused).collect();
+    let mut settle = Vec::new();
+    let mut refused = Vec::new();
+    let mut route = |index: usize, block: BlockedOn, refused: &mut Vec<JsonValue>| {
+        let f = &stored.findings[index];
+        match settle_refusal(f, block, request.settle_checkpoint.is_some()) {
+            None => settle.push(index),
+            Some(reason) => refused.push(json!({"finding": f.id, "reason": reason})),
+        }
+    };
+    for entry in code.refused.into_iter().chain(perf.refused) {
+        let block = entry["finding"].as_str().and_then(|id| {
+            let index = stored.findings.iter().position(|f| f.id == id)?;
+            Some((index, blocked(&stored.findings[index])?))
+        });
+        match block {
+            Some((index, block)) => route(index, block, &mut refused),
+            None => refused.push(entry),
+        }
+    }
     if request.all {
-        for f in &stored.findings {
-            let blocked = f.status() == FindingStatus::Open
-                && matches!(f.family, Family::Code | Family::Perf)
-                && matches!(f.kind, Kind::Defect | Kind::Cleanup)
-                && text(f, "fix_shape") == "needs-plan";
-            if blocked && let Some(reason) = select::refusal(f, f.family) {
-                refused.push(json!({"finding": f.id, "reason": reason}));
+        for (index, f) in stored.findings.iter().enumerate() {
+            if let Some(block) = blocked(f) {
+                route(index, block, &mut refused);
             }
         }
     }
-    Ok(Selection {
+    let selection = Selection {
         chosen,
         held,
         refused,
         projected: code.projected,
-    })
+    };
+    Ok((selection, settle))
+}
+
+/// What an open code or perf defect or cleanup is blocked on, if anything.
+fn blocked(f: &Finding) -> Option<BlockedOn> {
+    let candidate = f.status() == FindingStatus::Open
+        && matches!(f.family, Family::Code | Family::Perf)
+        && matches!(f.kind, Kind::Defect | Kind::Cleanup);
+    candidate.then(|| fields::blocked_on(f)).flatten()
+}
+
+/// Why a finding blocked on `block` gets no settle task, or `None` when it
+/// gets one: only an evidence block, once, and only into a settle checkpoint.
+fn settle_refusal(f: &Finding, block: BlockedOn, settle_checkpoint: bool) -> Option<String> {
+    match block {
+        BlockedOn::Evidence => {
+            let proposal = text(f, "proposal").trim();
+            if !proposal.is_empty() {
+                Some(format!(
+                    "blocked on evidence; its proposal {proposal} is already made, and a \
+                     finding has one settle round"
+                ))
+            } else if !settle_checkpoint {
+                Some(
+                    "blocked on evidence; pass --settle-checkpoint to schedule its settle task"
+                        .into(),
+                )
+            } else {
+                None
+            }
+        }
+        BlockedOn::Measurement | BlockedOn::Alternatives => Some(format!(
+            "blocked on {}; it waits for trials",
+            block.as_str()
+        )),
+        BlockedOn::Decision | BlockedOn::Design => Some(
+            select::refusal(f, f.family)
+                .unwrap_or_else(|| format!("blocked on {}", block.as_str())),
+        ),
+    }
 }
 
 /// The paths a finding's fix edits: its edit target and its `instances`.
@@ -290,20 +362,28 @@ struct Compose<'a> {
     projected: &'a [Row],
     store_rel: &'a str,
     store_flag: &'a str,
+    flow: &'a str,
     checkpoint: &'a str,
+    settle_checkpoint: &'a str,
 }
 
-/// A row to mint and the findings it fixes.
+/// A row to mint and the findings it fixes, or settles when `settle`.
 struct NewRow {
     row: JsonValue,
-    fixes: Vec<String>,
+    findings: Vec<String>,
+    settle: bool,
 }
 
 impl Compose<'_> {
-    /// The rows still to mint against `tasks`, and the findings already
-    /// linked to a live task there. Ids are predicted from `next_id`, which
-    /// is what `add-many` mints from.
-    fn plan(&self, tasks: &crate::tasks::Store, groups: &[Group]) -> (Vec<NewRow>, TaskOutcome) {
+    /// The rows still to mint against `tasks`, fix rows before settle rows,
+    /// and the findings already linked to a live task there. Ids are
+    /// predicted from `next_id`, which is what `add-many` mints from.
+    fn plan(
+        &self,
+        tasks: &crate::tasks::Store,
+        groups: &[Group],
+        settle: &[usize],
+    ) -> (Vec<NewRow>, TaskOutcome) {
         let mut outcome = TaskOutcome::default();
         let mut task_of: HashMap<String, u32> = HashMap::new();
         let mut pending: Vec<Vec<usize>> = Vec::new();
@@ -311,7 +391,7 @@ impl Compose<'_> {
             let mut unlinked = Vec::new();
             for &index in &group.findings {
                 let id = &self.stored.findings[index].id;
-                match live_task(tasks, self.store_rel, id) {
+                match live_task(tasks, self.store_rel, id, false) {
                     Some(row) => {
                         task_of.insert(id.clone(), row.id);
                         outcome.placed.push(Placed {
@@ -319,6 +399,7 @@ impl Compose<'_> {
                             task: row.id,
                             r#ref: row.r#ref.clone(),
                             action: "linked",
+                            settle: false,
                         });
                     }
                     None => unlinked.push(index),
@@ -334,7 +415,7 @@ impl Compose<'_> {
                 task_of.insert(self.stored.findings[index].id.clone(), first + at as u32);
             }
         }
-        let rows = pending
+        let mut rows = pending
             .iter()
             .enumerate()
             .map(|(at, findings)| {
@@ -346,7 +427,7 @@ impl Compose<'_> {
                         let task = task_of
                             .get(dep)
                             .copied()
-                            .or_else(|| live_task(tasks, self.store_rel, dep).map(|r| r.id));
+                            .or_else(|| live_task(tasks, self.store_rel, dep, false).map(|r| r.id));
                         match task {
                             Some(task) if task == own => {}
                             Some(task) => {
@@ -362,8 +443,89 @@ impl Compose<'_> {
                 }
                 self.row(findings, needs)
             })
-            .collect();
+            .collect::<Vec<NewRow>>();
+        for &index in settle {
+            let f = &self.stored.findings[index];
+            match live_task(tasks, self.store_rel, &f.id, true) {
+                Some(row) => outcome.placed.push(Placed {
+                    finding: f.id.clone(),
+                    task: row.id,
+                    r#ref: row.r#ref.clone(),
+                    action: "linked",
+                    settle: true,
+                }),
+                None => rows.push(self.settle_row(index)),
+            }
+        }
         (rows, outcome)
+    }
+
+    /// A settle task: one deep worker writes a note that proposes the
+    /// missing evidence or refutes the finding.
+    fn settle_row(&self, index: usize) -> NewRow {
+        let f = &self.stored.findings[index];
+        let note = format!("docs/flows/{}/notes/settle/{}.md", self.flow, f.id);
+        let missing = match text(f, "blocked_missing").trim() {
+            "" => f.summary.trim(),
+            missing => missing,
+        };
+        let description = description(&self.projected[index]);
+        let mut detail = format!("{}: {}\n", f.id, f.summary.trim());
+        if !description.is_empty() {
+            detail.push_str(&description);
+            detail.push('\n');
+        }
+        detail.push_str(&format!(
+            "Blocked on evidence: {missing}\n\nWrite {note}. Its first line opens `Proposal:` \
+             with the evidence and the fix it supports, or `Refuted:` with why the finding \
+             does not hold."
+        ));
+        let mut row = Map::new();
+        row.insert(
+            "title".into(),
+            json!(format!("Settle {}: {}", f.id, f.summary.trim())),
+        );
+        row.insert("effort".into(), json!("M"));
+        row.insert("files".into(), json!([note]));
+        row.insert("file_notes".into(), json!({ note.clone(): "(new)" }));
+        row.insert("needs".into(), json!([]));
+        row.insert("checkpoint".into(), json!(self.settle_checkpoint));
+        row.insert(
+            "action".into(),
+            json!(format!(
+                "{}: find the missing evidence and write a proposal note",
+                f.id
+            )),
+        );
+        row.insert("detail".into(), json!(detail));
+        row.insert(
+            "spec".into(),
+            json!({
+                "outcome": format!(
+                    "{note} opens `Proposal:` or `Refuted:` and answers what {} is missing: {missing}",
+                    f.id
+                ),
+                "constraints": ["Touch no file outside this task's files."],
+                "accept": [{
+                    "behaviour": format!("the settle note for {} opens with a proposal or a refutation", f.id),
+                    "check": format!("head -n 1 {note} | grep -Eq '^(Proposal|Refuted):'"),
+                    "kind": "forward",
+                    "writes_build": false,
+                }],
+                "executor": "deep",
+            }),
+        );
+        row.insert(
+            "reason".into(),
+            json!(format!("apply {}: {}", self.store_rel, f.id)),
+        );
+        row.insert("review_store".into(), json!(self.store_rel));
+        row.insert("settles".into(), json!([f.id]));
+        NewRow {
+            row: JsonValue::Object(row),
+            findings: vec![f.id.clone()],
+            settle: true,
+        }
     }
 
     fn row(&self, findings: &[usize], needs: Vec<u32>) -> NewRow {
@@ -394,9 +556,29 @@ impl Compose<'_> {
             .iter()
             .map(|&i| {
                 let f = &self.stored.findings[i];
-                format!("{}:\n{}", f.id, description(&self.projected[i]))
+                let mut block = format!("{}:\n{}", f.id, description(&self.projected[i]));
+                let sketch = text(f, "fix_sketch").trim();
+                if !sketch.is_empty() {
+                    block.push_str(&format!("\nFix sketch: {sketch}"));
+                }
+                block
             })
             .collect();
+        let mut constraints = vec![
+            "Touch no file outside this task's files.".to_string(),
+            "Change no behaviour the finding does not name.".to_string(),
+        ];
+        for f in &found {
+            let answer = text(f, "decision_answer").trim();
+            if answer.is_empty() {
+                continue;
+            }
+            constraints.push(if found.len() == 1 {
+                format!("Decision: {answer}")
+            } else {
+                format!("Decision on {}: {answer}", f.id)
+            });
+        }
         let outcome: Vec<String> = found.iter().map(|f| outcome(f)).collect();
         let premises: Vec<JsonValue> = found
             .iter()
@@ -425,10 +607,7 @@ impl Compose<'_> {
             "spec".into(),
             json!({
                 "outcome": outcome.join("\n"),
-                "constraints": [
-                    "Touch no file outside this task's files.",
-                    "Change no behaviour the finding does not name.",
-                ],
+                "constraints": constraints,
                 "premises": premises,
                 "accept": accept,
                 "executor": if lite { "lite" } else { "deep" },
@@ -442,7 +621,8 @@ impl Compose<'_> {
         row.insert("fixes".into(), json!(ids));
         NewRow {
             row: JsonValue::Object(row),
-            fixes: ids,
+            findings: ids,
+            settle: false,
         }
     }
 
@@ -488,18 +668,23 @@ fn outcome(f: &Finding) -> String {
     }
 }
 
-/// The task already fixing `finding` of `review_store` that has not yet
-/// landed: a live row with no `commit`, not deferred. A link to a committed
-/// row is an earlier fix of a finding since reopened, so it does not count.
+/// The task already fixing `finding` of `review_store`, or settling it when
+/// `settle`, that has not yet landed: a live row with no `commit`, not
+/// deferred. A link to a committed row is an earlier round for a finding
+/// since reopened, so it does not count.
 fn live_task<'t>(
     tasks: &'t crate::tasks::Store,
     review_store: &str,
     finding: &str,
+    settle: bool,
 ) -> Option<&'t TaskRow> {
     let refs: BTreeSet<&str> = tasks
         .finding_links
         .iter()
-        .filter(|l| l.store == review_store && l.fixes.iter().any(|id| id == finding))
+        .filter(|l| {
+            let ids = if settle { &l.settles } else { &l.fixes };
+            l.store == review_store && ids.iter().any(|id| id == finding)
+        })
         .map(|l| l.r#ref.as_str())
         .collect();
     tasks.items.iter().find(|row| {

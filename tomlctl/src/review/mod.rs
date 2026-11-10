@@ -24,6 +24,7 @@ mod runs;
 mod schedule;
 mod schema_out;
 mod select;
+mod settle;
 mod stats;
 mod survey;
 mod sync;
@@ -32,6 +33,7 @@ mod tier;
 mod triage;
 mod verdict;
 
+pub(crate) use fields::SETTLE_TIERS;
 pub(crate) use store::implementer_findings;
 pub(crate) use tier::Tier;
 

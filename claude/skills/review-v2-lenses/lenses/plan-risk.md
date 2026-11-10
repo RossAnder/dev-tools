@@ -58,7 +58,7 @@ Edits are to the plan text, with `plan_section`, `anchor_old` (occurring exactly
 - `add` — a migration, alias or compatibility step to the task that breaks a surface, or a Risks line or a task naming the step an existing user must take.
 - `add` — a rollback or forward-fix note to a task whose effects survive a revert.
 
-A missing compatibility layer or a scope gap that needs its own task is a defect with `fix_shape = needs-plan`.
+A missing compatibility layer or a scope gap that needs its own task is a defect with `blocked_on = "design"`, naming the gap in `blocked_missing` and the task the plan must gain in `blocked_contract`.
 
 ## Advisory angles
 

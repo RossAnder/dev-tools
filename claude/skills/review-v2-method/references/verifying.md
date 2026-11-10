@@ -46,6 +46,16 @@ The projection shows the finding with `ruled_out: [{cell, reason}]`: another cel
 
 Had io.rs:44 not clamped, the same entry would not have protected the finding: confirm it and say the reason did not survive the check.
 
+## confirmed and unblocked — a blocked claim answered
+
+The finding carries `blocked_on`, and the projection shows its `blocked_missing` and the detail its value requires. Refute-first covers the classification too: try to write the fix the block says cannot be written. When you can, record a `confirmed` or `plausible` verdict with `unblocks` and a `fix_sketch` (≤800) saying how to fix it; tomlctl clears the block, keeps the sketch for the implementer and sets `unblocked_by = "verifier"`. You still edit no file. When you cannot, leave the block standing and say in the rationale what you tried.
+
+```json
+{"finding": "F18", "verdict": "confirmed", "by": "verifier", "citation": "src/cli/args.rs:40", "rationale": "Blocked on a decision between renaming --out and adding --to as an alias. The rename alone breaks the two scripts that pass --out (scripts/export.sh:12, scripts/nightly.sh:30); the alias keeps them and gives the new name. One option is dominated, so this is not a decision.", "unblocks": true, "fix_sketch": "Add `--to` to ExportArgs with `alias = \"out\"` on the same field, and update the help text to name --to."}
+```
+
+As a single verdict, stage the sketch with the Write tool and add `--unblocks --fix-sketch-file <run-dir>/payloads/<finding>.sketch.md`. A refuted finding has no block left to answer, and only `by = "verifier"` may unblock: a panel seat or a checker that thinks the block is answerable says so in its rationale.
+
 ## struck identity
 
 The finding's `same_as` names a prior row describing a different fault. Striking is a single-verdict flag, not a batch field:

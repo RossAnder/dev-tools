@@ -82,7 +82,8 @@ struct Defect<'a> {
     file: &'a str,
     symbol: &'a str,
     effort: &'a str,
-    fix_shape: &'a str,
+    /// TOML lines naming what blocks the fix; empty for a fixable defect.
+    blocked: &'a str,
     depends_on: &'a [&'a str],
 }
 
@@ -106,8 +107,7 @@ summary = "{symbol} is off by one"
 severity = "major"
 failure_scenario = "a two-row input returns one row"
 fix = "count from zero"
-fix_shape = "{fix_shape}"
-effort = "{effort}"
+{blocked}effort = "{effort}"
 depends_on = [{deps}]
 status = "open"
 "#,
@@ -115,7 +115,7 @@ status = "open"
         file = d.file,
         symbol = d.symbol,
         effort = d.effort,
-        fix_shape = d.fix_shape,
+        blocked = d.blocked,
         deps = deps.join(", "),
     )
 }
@@ -126,7 +126,7 @@ fn bug(id: &str, file: &str, symbol: &str) -> String {
         file,
         symbol,
         effort: "small",
-        fix_shape: "edits",
+        blocked: "",
         depends_on: &[],
     })
 }
@@ -433,7 +433,7 @@ fn a_medium_defect_or_a_third_file_runs_deep() {
         file: "src/a.rs",
         symbol: "alpha",
         effort: "medium",
-        fix_shape: "edits",
+        blocked: "",
         depends_on: &[],
     })]);
     let out = repo.schedule(&["F1"]);
@@ -450,7 +450,7 @@ fn what_selection_refuses_is_refused_and_nothing_is_written() {
         file: "src/b.rs",
         symbol: "beta",
         effort: "large",
-        fix_shape: "edits",
+        blocked: "",
         depends_on: &[],
     });
     let blocked = defect(Defect {
@@ -458,7 +458,7 @@ fn what_selection_refuses_is_refused_and_nothing_is_written() {
         file: "src/c.rs",
         symbol: "gamma",
         effort: "small",
-        fix_shape: "needs-plan",
+        blocked: "fix_shape = \"needs-plan\"\n",
         depends_on: &[],
     });
     let repo = Repo::new(&[ADVISORY.to_string(), large, blocked]);
@@ -574,7 +574,7 @@ fn depends_on_becomes_needs() {
             file: "src/b.rs",
             symbol: "beta",
             effort: "small",
-            fix_shape: "edits",
+            blocked: "",
             depends_on: &["F1"],
         }),
     ]);
@@ -601,6 +601,166 @@ fn a_rerun_after_the_task_landed_marks_without_minting() {
     let f = finding(&repo.review_doc(), "F1").clone();
     assert_eq!(f["status"].as_str(), Some("scheduled"));
     assert_eq!(f["apply_task"].as_str(), Some(r#ref.as_str()));
+}
+
+const EVIDENCE: &str =
+    "blocked_on = \"evidence\"\nblocked_missing = \"whether any caller passes two rows\"\n";
+
+fn evidence_bug(id: &str, blocked: &str) -> String {
+    defect(Defect {
+        id,
+        file: "src/a.rs",
+        symbol: "alpha",
+        effort: "small",
+        blocked,
+        depends_on: &[],
+    })
+}
+
+fn settle_ref(out: &JsonValue, id: &str) -> String {
+    out["settle"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["finding"] == id)
+        .unwrap_or_else(|| panic!("{id} not settled: {out}"))["ref"]
+        .as_str()
+        .unwrap()
+        .to_string()
+}
+
+fn settle_note(id: &str) -> String {
+    format!("docs/flows/{TASKS_SLUG}/notes/settle/{id}.md")
+}
+
+#[test]
+fn an_evidence_blocked_finding_becomes_one_settle_task() {
+    let repo = Repo::new(&[evidence_bug("F1", EVIDENCE), bug("F2", "src/b.rs", "beta")]);
+    let out = repo.schedule(&["F1,F2", "--settle-checkpoint", "A"]);
+    let r#ref = settle_ref(&out, "F1");
+    assert_eq!(out["settle"].as_array().unwrap().len(), 1, "{out}");
+    assert_eq!(out["scheduled"].as_array().unwrap().len(), 1, "{out}");
+    assert_ne!(scheduled_ref(&out, "F2"), r#ref);
+
+    let doc = repo.tasks_doc();
+    assert_eq!(items(&doc).len(), 3);
+    let note = settle_note("F1");
+    let r = row(&doc, &r#ref);
+    assert_eq!(strings(&r["files"]), [note.as_str()]);
+    assert_eq!(r["checkpoint"].as_str(), Some("A"));
+    let file_note = doc["file_notes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|n| n["ref"].as_str() == Some(r#ref.as_str()))
+        .unwrap_or_else(|| panic!("no file note for {ref}"));
+    assert_eq!(file_note["file"].as_str(), Some(note.as_str()));
+    assert_eq!(file_note["note"].as_str(), Some("(new)"));
+
+    let s = spec(&doc, &r#ref);
+    assert_eq!(s["executor"].as_str(), Some("deep"));
+    let outcome = s["outcome"].as_str().unwrap();
+    assert!(outcome.contains("Proposal:"), "{outcome}");
+    assert!(outcome.contains("Refuted:"), "{outcome}");
+    assert!(
+        outcome.contains("whether any caller passes two rows"),
+        "{outcome}"
+    );
+    assert_eq!(
+        s["accept"][0]["check"].as_str(),
+        Some(format!("head -n 1 {note} | grep -Eq '^(Proposal|Refuted):'").as_str())
+    );
+    assert_eq!(s["accept"][0]["kind"].as_str(), Some("forward"));
+    assert_eq!(s["accept"][0]["writes_build"].as_bool(), Some(false));
+
+    let l = link(&doc, &r#ref);
+    assert_eq!(l["store"].as_str(), Some(REVIEW_STORE));
+    assert_eq!(strings(&l["settles"]), ["F1"]);
+
+    let f = finding(&repo.review_doc(), "F1").clone();
+    assert_eq!(f["status"].as_str(), Some("scheduled"));
+    assert_eq!(f["apply_task"].as_str(), Some(r#ref.as_str()));
+}
+
+#[test]
+fn an_evidence_blocked_finding_is_refused_without_a_settle_checkpoint() {
+    let repo = Repo::new(&[evidence_bug("F1", EVIDENCE)]);
+    let tasks_before = fs::read(&repo.tasks).unwrap();
+    let out = repo.command(&["F1"]).failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(stderr.contains("--settle-checkpoint"), "{stderr}");
+    assert_eq!(fs::read(&repo.tasks).unwrap(), tasks_before);
+
+    let out = repo.schedule(&["--all"]);
+    assert_eq!(out["settle"].as_array().unwrap().len(), 0, "{out}");
+    assert_eq!(out["refused"][0]["finding"], "F1", "{out}");
+    assert_eq!(items(&repo.tasks_doc()).len(), 1);
+}
+
+#[test]
+fn a_finding_with_a_proposal_gets_no_second_settle_task() {
+    let blocked = format!(
+        "{EVIDENCE}proposal = \"docs/flows/{TASKS_SLUG}/notes/settle/F1.md\"\n\
+         proposal_at = 2026-10-02T10:00:00Z\n"
+    );
+    let repo = Repo::new(&[evidence_bug("F1", &blocked)]);
+    let tasks_before = fs::read(&repo.tasks).unwrap();
+    let out = repo.command(&["F1", "--settle-checkpoint", "A"]).failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(stderr.contains("one settle round"), "{stderr}");
+    assert_eq!(fs::read(&repo.tasks).unwrap(), tasks_before);
+}
+
+#[test]
+fn a_settle_rerun_links_the_live_settle_task() {
+    let repo = Repo::new(&[evidence_bug("F1", EVIDENCE)]);
+    let first = repo.schedule(&["F1", "--settle-checkpoint", "A"]);
+    let r#ref = settle_ref(&first, "F1");
+    repo.reopen("F1");
+
+    let again = repo.schedule(&["--all", "--settle-checkpoint", "A"]);
+    assert_eq!(settle_ref(&again, "F1"), r#ref);
+    assert_eq!(again["settle"][0]["action"], "linked");
+    assert_eq!(items(&repo.tasks_doc()).len(), 2);
+    assert_eq!(
+        finding(&repo.review_doc(), "F1")["status"].as_str(),
+        Some("scheduled")
+    );
+}
+
+#[test]
+fn a_settle_flag_leaves_a_measurement_block_waiting_for_trials() {
+    let blocked = "blocked_on = \"measurement\"\nblocked_missing = \"the hot path's cost\"\n\
+                   blocked_metric = \"ns per row\"\nblocked_command = \"cargo bench\"\n";
+    let repo = Repo::new(&[evidence_bug("F1", blocked)]);
+    let out = repo.command(&["F1", "--settle-checkpoint", "A"]).failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(stderr.contains("waits for trials"), "{stderr}");
+    assert_eq!(items(&repo.tasks_doc()).len(), 1);
+}
+
+#[test]
+fn a_settled_decision_answer_binds_the_fix_task() {
+    let answered = "decision_answer = \"keep the cache per process\"\n\
+                    fix_sketch = \"key the cache by pid\"\n";
+    let repo = Repo::new(&[evidence_bug("F1", answered)]);
+    let out = repo.schedule(&["F1"]);
+    let r#ref = scheduled_ref(&out, "F1");
+    let doc = repo.tasks_doc();
+    let constraints = strings(&spec(&doc, &r#ref)["constraints"])
+        .into_iter()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    assert!(
+        constraints.contains(&"Decision: keep the cache per process".to_string()),
+        "{constraints:?}"
+    );
+    assert!(
+        row(&doc, &r#ref)["detail"]
+            .as_str()
+            .unwrap()
+            .contains("Fix sketch: key the cache by pid")
+    );
 }
 
 #[test]

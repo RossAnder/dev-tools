@@ -79,6 +79,26 @@ pub(crate) struct ReviewVerdictArgs {
     )]
     pub(crate) strike_same_as: bool,
     #[arg(
+        long = "unblocks",
+        conflicts_with = "ndjson",
+        help = "A verifier's answer to a blocked finding: clear its block and give it the fix sketch"
+    )]
+    pub(crate) unblocks: bool,
+    #[arg(
+        long = "fix-sketch",
+        value_name = "TEXT",
+        conflicts_with_all = ["fix_sketch_file", "ndjson"],
+        help = "How to fix the unblocked finding; `-` reads stdin"
+    )]
+    pub(crate) fix_sketch: Option<String>,
+    #[arg(
+        long = "fix-sketch-file",
+        value_name = "PATH",
+        conflicts_with_all = ["fix_sketch", "ndjson"],
+        help = "Read the fix sketch from a file"
+    )]
+    pub(crate) fix_sketch_file: Option<PathBuf>,
+    #[arg(
         long = "ndjson",
         value_name = "SRC",
         help = "A batch of verdicts, one JSON object per line: `-` for stdin, otherwise a file path (a leading `@` is accepted; a `.toml` path is a record file)"

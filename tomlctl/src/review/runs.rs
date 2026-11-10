@@ -15,6 +15,7 @@ use super::digest::Counts;
 use super::fields::{self, Family, FindingStatus, Origin, Record, RowContext};
 use super::invalid;
 use super::resolve;
+use super::settle;
 use super::store::{self, Minted, Run, Signal, Store, Target, Waiver};
 use super::survey::{run_range, scope_pathspecs};
 use crate::cli::{ReviewRunFinishArgs, ReviewRunListArgs, ReviewRunStartArgs, ReviewRunUpdateArgs};
@@ -661,8 +662,22 @@ pub(crate) fn finish(target: &Target, args: ReviewRunFinishArgs) -> Result<()> {
     let root = repo_or_cwd_root()?;
     let run_id = args.run.clone();
     let (finished, counts, gaps) = store::mutate(&target.path, &args.integrity, |store| {
-        if !store.runs.iter().any(|r| r.id == run_id) {
+        let Some(family) = store.runs.iter().find(|r| r.id == run_id).map(|r| r.family) else {
             return Err(invalid(format!("{verb}: no run {run_id} in this store")));
+        };
+        // Not waived by --incomplete: an overdue proposal is a disposition
+        // owed, not coverage a run fell short of.
+        let overdue: Vec<String> = settle::deferred(store, family)
+            .iter()
+            .filter(|d| d.overdue())
+            .map(|d| format!("{} (age {})", d.finding.id, d.age))
+            .collect();
+        if !overdue.is_empty() {
+            return Err(invalid(format!(
+                "{verb}: {run_id} cannot finish while a deferred proposal of its family is overdue — {}; \
+                 record a disposition with `review settle --accept` or `--refute`, or move the finding off open with `review triage`",
+                overdue.join(", ")
+            )));
         }
         // Read under the write lock, so no finding lands between the gate and the stamp.
         let accounting = cells::coverage_accounting(&root, store, &run_id)?;

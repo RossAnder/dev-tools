@@ -1052,6 +1052,217 @@ fn stats_apply_counts_outcomes_and_reproductions_from_the_store() {
     );
 }
 
+const BLOCKED_STORE_PATH: &str = ".claude/review-v2/blocked.toml";
+
+const BLOCKED_STORE: &str = r#"schema_version = 2
+
+[[runs]]
+id = "U1"
+command = "review-v2"
+family = "code"
+depth = "standard"
+started = "2026-11-01T10:00:00Z"
+
+[[cells]]
+id = "C1"
+run = "U1"
+slice = ["src/lib.rs"]
+concerns = ["correctness"]
+agent = "review-finder"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = "covered"
+
+[[cells]]
+id = "C2"
+run = "U1"
+slice = ["src"]
+concerns = ["hygiene"]
+agent = "review-sweeper"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = "covered"
+
+[[findings]]
+id = "F1"
+run = "U1"
+cell = "C1"
+family = "code"
+kind = "defect"
+lens = "correctness"
+file = "src/lib.rs"
+line = 10
+summary = "which owner frees the buffer"
+status = "open"
+blocked_on = "decision"
+blocked_missing = "who owns the buffer"
+blocked_options = ["the reader", "the pool"]
+
+[[findings]]
+id = "F2"
+run = "U1"
+cell = "C1"
+family = "code"
+kind = "defect"
+lens = "correctness"
+file = "src/lib.rs"
+line = 20
+summary = "the retry may never stop"
+status = "open"
+fix_sketch = "cap the retries at three"
+unblocked_by = "verifier"
+
+[[findings]]
+id = "F3"
+run = "U1"
+cell = "C1"
+family = "code"
+kind = "defect"
+lens = "correctness"
+file = "src/lib.rs"
+line = 30
+summary = "the cache may be stale"
+status = "open"
+fix_sketch = "invalidate on write"
+unblocked_by = "settle"
+settle_tier = "mechanical"
+
+[[findings]]
+id = "F4"
+run = "U1"
+cell = "C1"
+family = "code"
+kind = "defect"
+lens = "correctness"
+file = "src/lib.rs"
+line = 40
+summary = "the lock may be held across await"
+status = "refuted"
+blocked_on = "evidence"
+blocked_missing = "whether the guard outlives the await"
+
+[[findings]]
+id = "F5"
+run = "U1"
+cell = "C2"
+family = "code"
+kind = "cleanup"
+lens = "hygiene"
+file = "src/io.rs"
+line = 5
+summary = "the helper may be dead"
+status = "open"
+blocked_on = "evidence"
+blocked_missing = "whether any caller remains"
+proposal = "docs/flows/f/notes/proposal-f5.md"
+proposal_at = 2026-11-02T10:00:00Z
+
+[[findings]]
+id = "F6"
+run = "U1"
+cell = "C2"
+family = "code"
+kind = "cleanup"
+lens = "hygiene"
+file = "src/io.rs"
+line = 9
+summary = "stale comment"
+status = "open"
+
+[[findings]]
+id = "F7"
+run = "U1"
+cell = "C2"
+family = "code"
+kind = "cleanup"
+lens = "hygiene"
+file = "src/io.rs"
+line = 12
+summary = "which name the flag takes"
+status = "open"
+decision_answer = "the short one"
+blocked_options = ["the short one", "the long one"]
+unblocked_by = "user"
+
+[[verdicts]]
+finding = "F4"
+run = "U1"
+by = "orchestrator"
+verdict = "refuted"
+citation = "src/lib.rs:41"
+rationale = "its settle proposal refuted the finding"
+"#;
+
+#[test]
+fn stats_apply_reports_blocked_rates_and_settle_outcomes() {
+    let repo = Repo::new();
+    repo.write(BLOCKED_STORE_PATH, BLOCKED_STORE);
+    let out = repo.stats(&["--scope", "blocked", "--apply"]);
+    let apply = &out["apply"];
+    let blocked_on = |decision: usize, evidence: usize, unrecorded: usize| {
+        json!({
+            "decision": decision,
+            "evidence": evidence,
+            "measurement": 0,
+            "alternatives": 0,
+            "design": 0,
+            "unrecorded": unrecorded,
+        })
+    };
+    let settle = |mechanical: usize, refuted: usize, deferred: usize| {
+        json!({
+            "mechanical": mechanical,
+            "cited": 0,
+            "user": 0,
+            "refuted": refuted,
+            "deferred": deferred,
+        })
+    };
+
+    let correctness = row(&apply["blocked"]["lens"], "correctness");
+    assert_eq!(correctness["findings"], 4, "{correctness}");
+    assert_eq!(
+        correctness["blocked"], 4,
+        "an answered block still counts as blocked: {correctness}"
+    );
+    assert_eq!(
+        correctness["blocked_on"],
+        blocked_on(1, 2, 1),
+        "a settled block reads as evidence, a verifier-cleared one as unrecorded: {correctness}"
+    );
+    assert_eq!(correctness["verifier_unblocked"], 1, "{correctness}");
+    assert_eq!(correctness["verifier_unblock_rate"], 0.25, "{correctness}");
+    assert_eq!(correctness["settle"], settle(1, 1, 0), "{correctness}");
+
+    let hygiene = row(&apply["blocked"]["lens"], "hygiene");
+    assert_eq!(hygiene["findings"], 3, "{hygiene}");
+    assert_eq!(hygiene["blocked"], 2, "{hygiene}");
+    assert_eq!(
+        hygiene["blocked_on"],
+        blocked_on(1, 1, 0),
+        "a user answer reads as a decision block: {hygiene}"
+    );
+    assert_eq!(hygiene["blocked_rate"], 0.667, "{hygiene}");
+    assert_eq!(hygiene["verifier_unblock_rate"], 0.0, "{hygiene}");
+    assert_eq!(hygiene["settle"], settle(0, 0, 1), "{hygiene}");
+
+    let finder = row(&apply["blocked"]["agent"], "review-finder");
+    assert_eq!(finder["blocked"], correctness["blocked"], "{finder}");
+    assert_eq!(finder["verifier_unblocked"], 1, "{finder}");
+    let sweeper = row(&apply["blocked"]["agent"], "review-sweeper");
+    assert_eq!(sweeper["blocked_on"], hygiene["blocked_on"], "{sweeper}");
+
+    assert_eq!(apply["settle"], settle(1, 1, 1), "{apply}");
+    assert_eq!(apply["outcomes"], json!([]), "{apply}");
+    assert_eq!(
+        repo.read(BLOCKED_STORE_PATH),
+        BLOCKED_STORE,
+        "the store is only read"
+    );
+}
+
 #[test]
 fn stats_apply_reads_no_v1_ledger_and_leaves_outcomes_alone() {
     let repo = Repo::new();

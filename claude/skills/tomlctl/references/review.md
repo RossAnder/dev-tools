@@ -15,7 +15,7 @@ The flag surface of the `tomlctl review` group and the shape of the v2 review st
 - [Plan records](#plan-records) — flow mode, `target`, `tier`, `proof`, `apply`
 - [Reads](#reads) — `list`, `show`, `digest`, `report`, `stats`
 - [Dispositions and export](#dispositions-and-export) — `triage`, `export-v1`
-- [Apply through a v2 flow](#apply-through-a-v2-flow) — `schedule`, `reconcile`, `anchor`, `reproduce`, `reproduce-status` are [review-apply.md](review-apply.md)
+- [Apply through a v2 flow](#apply-through-a-v2-flow) — `schedule`, `settle`, `reconcile`, `anchor`, `reproduce`, `reproduce-status` are [review-apply.md](review-apply.md)
 - [Catalogue and schema](#catalogue-and-schema) — `catalogue`, `schema`
 
 ## Shared behaviour
@@ -23,10 +23,10 @@ The flag surface of the `tomlctl review` group and the shape of the v2 review st
 - **Store target.** Every verb except `catalogue` and `schema` takes exactly one of `--slug` (the flow store) or `--scope` (the flow-less store); `stats` also accepts `--all`. Both names are validated like a flow slug. The store stamps its own `last_updated`, so no verb takes `--no-stamp`.
 - **Run directory.** `.review-v2-runs/<store-key>/U<n>/` at the repo root, where `<store-key>` is the slug or `scope-<scope>`. `run start` creates it with a `payloads/` subdirectory, where agents stage their NDJSON payloads, and writes a `.gitignore` holding `*` at `.review-v2-runs/` when none is there. It and every `--out` must resolve, symlinks followed, under `.review-v2-runs/` or `.claude/`; `run start`, `plan --propose` and `report` take `--allow-outside` to override that.
 - **Catalogue drift.** A verb that reads a run's catalogue — `survey`, `plan`, `add`, `run finish` and the others that bind or route against it — reloads it from the roots the run recorded and fails `kind=validation` naming `tree_sha` or `config_sha` when either no longer matches the value `run start` recorded; start a new run. A run recorded without `tree_sha` is not checked.
-- **Integrity flags.** The writing verbs (`sync-v1`, `run *`, `survey`, `plan`, `cover`, `add`, `verdict`, `resolve`, `reproduce`, `apply`, `triage`, `export-v1`, `schedule`, `reconcile`) carry the write bundle — `--allow-outside`, `--no-write-integrity`, `--verify-integrity`, `--strict-integrity`, `--no-create`. The reading verbs (`run list`, `run show`, `list`, `show`, `anchor`, `reproduce-status`, `digest`, `report`, `stats`, `catalogue`, `schema`) carry `--verify-integrity` and `--strict-read`; `report` also takes `--allow-outside`, for its `--out`. The flag tables below leave both bundles out.
+- **Integrity flags.** The writing verbs (`sync-v1`, `run *`, `survey`, `plan`, `cover`, `add`, `verdict`, `resolve`, `reproduce`, `apply`, `triage`, `settle`, `export-v1`, `schedule`, `reconcile`) carry the write bundle — `--allow-outside`, `--no-write-integrity`, `--verify-integrity`, `--strict-integrity`, `--no-create`. The reading verbs (`run list`, `run show`, `list`, `show`, `anchor`, `reproduce-status`, `digest`, `report`, `stats`, `catalogue`, `schema`) carry `--verify-integrity` and `--strict-read`; `report` also takes `--allow-outside`, for its `--out`. The flag tables below leave both bundles out.
 - **Missing store.** `sync-v1`, `stats` and `reconcile` read an absent store as empty and create nothing; `run start` seeds one; every other verb fails `kind=not_found`.
 - **Payload sources.** Each `--ndjson` takes `-` for stdin, otherwise a file path; a leading `@` is accepted. Prose flags (`--note`, `--rationale`, `--incomplete`, the triage reasons, `--trigger`) read stdin when given `-`, and each has a `-file` twin that reads a file the Write tool staged. Text is read with `\r\n` as `\n` and trimmed; an empty value is refused.
-- **Replays are harmless.** `cover`, `verdict`, `resolve`, `reproduce`, `sync-v1`, `triage` and `reconcile` compute their result against the stored rows first and write nothing when it changes nothing, and `plan --ndjson` recognises the wave it already minted, so replaying a call that succeeded reports itself `unchanged` rather than writing a duplicate.
+- **Replays are harmless.** `cover`, `verdict`, `resolve`, `reproduce`, `sync-v1`, `triage`, `settle` and `reconcile` compute their result against the stored rows first and write nothing when it changes nothing, and `plan --ndjson` recognises the wave it already minted, so replaying a call that succeeded reports itself `unchanged` rather than writing a duplicate.
 - **Partial batches.** `add`, `plan --ndjson`, `verdict --ndjson`, `reproduce`, `triage`, `export-v1` and `schedule` refuse a failing row or id with its reasons, under `refused`, while the rest land. A call whose every row is refused fails `kind=validation` and writes nothing, as does a refused single `verdict`; `export-v1 --all` and `schedule --all` report their refusals and exit 0.
 - **Output.** Writes print a compact `{"ok":true,…}` envelope. `list` and `show` are row reports ([Rows and header](../SKILL.md#rows-and-header-per-command)); `plan --propose` without `--out` prints NDJSON text. Errors are `kind=validation` unless named otherwise.
 
@@ -105,6 +105,10 @@ Ids are minted inside the write lock with the prefixes `U` (runs), `C` (cells) a
 
 **Apply link.** `apply_flow` and `apply_task` name the v2 flow and the task `ref` a `scheduled` finding is held by; `schedule` sets them and they are computed, never supplied. They are not companions either: `reconcile`'s move to `resolved` keeps them, and its move back to `open` clears them. `scheduled` owns no companion and, like `superseded`, `merged`, `converted` and `exported`, is never moved by `triage`; only `reconcile` moves it. As a `resolve` target it reads as `open` does.
 
+**Blocked findings.** A defect or cleanup that cannot be fixed as written names what it lacks in `blocked_on` — `decision`, `evidence`, `measurement`, `alternatives` or `design` — with its detail fields ([Field catalogue](#field-catalogue)); one without `blocked_on` is fixable. A legacy row stored with the retired `needs-plan` shape and no `blocked_on` reads as blocked on `design`. A block is answered three ways, each clearing `blocked_on`, its detail fields and any legacy `needs-plan` shape and recording `unblocked_by`: a verifier `verdict --unblocks` (`verifier`, with `fix_sketch`), `triage --answer-file` on a decision block (`user`, with `decision_answer`; `blocked_options` is kept), and `settle --accept` on an evidence block (`settle`, with `fix_sketch` and `settle_tier`). These fields are computed and survive every later status. `schedule`, `export-v1` and `--all` selections refuse a finding that is still blocked.
+
+**Deferred proposals.** `settle --defer` records `proposal` (the note's repo-relative path) and `proposal_at` (UTC datetime) on an open evidence-blocked finding and leaves it blocked. Its age is the number of runs of its family started after `proposal_at` (every run of the family when `proposal_at` is missing or unreadable); at age 3 it is overdue. `digest` lists each deferred proposal of the run's family under `proposals`, and `run finish` refuses, even with `--incomplete`, while one is overdue, until `settle --accept` or `--refute` disposes of it or `triage` moves the finding off `open`.
+
 ## Field catalogue
 
 The finding fields an agent supplies, with their caps in characters. Every other field is set by tomlctl, and a row supplying one is refused.
@@ -112,17 +116,18 @@ The finding fields an agent supplies, with their caps in characters. Every other
 | Kind | Required | Optional |
 |---|---|---|
 | every kind | `kind`, `lens` (one of the cell's concerns; see the cleanup exception below), `file`, `summary` (≤160) | `symbol`, `same_as`, `depends_on` |
-| `defect` | `line` (outside a v2 flow), `severity` (`critical` \| `major` \| `minor`), `failure_scenario` (≤600; aim for 450), `fix` (≤800), `fix_shape` (`edits` \| `needs-plan`), `effort`, `counter` (≤300), `grade` (`high` \| `medium` \| `low`), `evidence` (≤5 × 300) | — |
+| `defect` | `line` (outside a v2 flow), `severity` (`critical` \| `major` \| `minor`), `failure_scenario` (≤600; aim for 450), `fix` (≤800), `effort`, `counter` (≤300), `grade` (`high` \| `medium` \| `low`), `evidence` (≤5 × 300) | — |
 | `cleanup` | `line` (outside a v2 flow), `edit` (≤800), `direction` (`add` \| `remove` \| `change`), `effort`; `old` (≤400) for `change` and `remove`, and for `add` unless `target_file` names a new file; never required on a plan review, for any direction | `target_file`, `instances` (≤50 paths), `counter` |
+| `defect` or `cleanup`, blocked | `blocked_missing` (≤400) with any block; `blocked_options` (2–6 × 300, each option naming its consequence) for `decision` and `alternatives`; `blocked_metric` (≤200) and `blocked_command` (≤300) for `measurement`; `blocked_contract` (≤600) for `design` | `blocked_on` |
 | `advisory` | `angle` (`risk` \| `challenge` \| `probe` \| `alternative` \| `direction`), `rationale` (≤800), `adoption_cost`; `challenges` when `angle = challenge` | `alternative`, `line` |
 | plan family, markdown mode | `plan_section` (≤200) on defect and cleanup | `anchor_old` (≤400), `anchor_new` (≤800) |
 | plan family, flow mode | `target` (≤300) on defect and cleanup | `expect`, `new`, `proof` on defect and cleanup; `target` on advisory; `line` |
 
 `review add`, not the catalogue, holds the `line` and `plan_section` requirements, since they depend on the mode, so `review schema` lists neither as required. It also holds the **mechanical-cleanup exception**: a `cleanup` row carrying `old` may name any lens the run's catalogue marks `mode = "mechanical"` for the run's family, from any cell, whether or not the cell covers it; it is routed like any other cleanup. In flow mode `plan_section`, `anchor_old` and `anchor_new` are refused; see [Plan records](#plan-records). `tier`, `applied` and `applying` are computed.
 
-`effort` is `trivial`, `small`, `medium` or `large`. Paths (`file`, `target_file`, `instances`) are repo-relative and `/`-separated, with no `..` and no absolute part.
+`effort` is `trivial`, `small`, `medium` or `large`. A row still supplying the retired shape field (`edits` or `needs-plan`) is refused, naming `blocked_on` as its replacement. Paths (`file`, `target_file`, `instances`) are repo-relative and `/`-separated, with no `..` and no absolute part.
 
-A cell row takes `slice`, `concerns` (1–3), `agent` and `reason`, plus `question` for a `probe:` concern, `pass` (1 or 2) and `facets` edits (`+id` / `-id`). A verdict row takes `finding`, `by`, `verdict`, `citation` and `rationale` (≤600; aim for 450), plus `seat` (1–3, panel only) and `severity` (defects only); `unsettled` is the checker's alone. `tomlctl review schema` emits the same rules as JSON Schema.
+A cell row takes `slice`, `concerns` (1–3), `agent` and `reason`, plus `question` for a `probe:` concern, `pass` (1 or 2) and `facets` edits (`+id` / `-id`). A verdict row takes `finding`, `by`, `verdict`, `citation` and `rationale` (≤600; aim for 450), plus `seat` (1–3, panel only), `severity` (defects only) and `unblocks` (bool) with `fix_sketch` (≤800), each refused without the other; `unsettled` is the checker's alone. `tomlctl review schema` emits the same rules as JSON Schema.
 
 ## Roles
 
@@ -134,7 +139,7 @@ A cell row takes `slice`, `concerns` (1–3), `agent` and `reason`, plus `questi
 | `verifier` | The claim to refute (`failure_scenario`, `counter`, `evidence`) and the `same_as` target; never `grade` or `fix`; the edit fields only when routed to it. |
 | `checker` | The cleanup edit fields, the `lens` and the `same_as` target. |
 | `implementer` | The fix, what done means, and the latest citation. |
-| `orchestrator` | Status, `fix_shape`, the latest verdict, and the advisory fields until triaged; `failure_scenario` only when contested; never `evidence`. |
+| `orchestrator` | Status, `blocked_on` with its detail, the latest verdict, and the advisory fields until triaged; `failure_scenario` only when contested; never `evidence`. |
 | `audit` | The verifier view plus every verdict and `excerpts`: ±5 lines around the finding's `file:line` and each `path:line` citation. |
 | `backlog` | A `backlog add` object (`summary`, `kind`, `area`, `tags`, `evidence`, `context`, `origin`), carrying the finding id as `id`. |
 | `report` | What the markdown report renders. |
@@ -142,6 +147,8 @@ A cell row takes `slice`, `concerns` (1–3), `agent` and `reason`, plus `questi
 `verifier` and `audit` rows also carry `ruled_out`, `[{cell, reason}]`: each rule-out another cell of the finding's run recorded at the finding's place (matched as for the digest's `ruled_out_hits`), whatever its wave; the key is absent when there is none.
 
 A flow-mode finding's `target` shows in every role but `checker` and `backlog`; `expect`, `new` and `proof` in `verifier`, `implementer`, `audit` and `report`; `tier`, `applied` and `applying` in `implementer`, `orchestrator`, `audit` and `report`.
+
+`blocked_on`, its detail fields and `decision_answer` show in `verifier`, `implementer`, `orchestrator`, `audit` and `report`; `fix_sketch` in `implementer` and `report`; `settle_tier` in `implementer`, `orchestrator`, `audit` and `report`; `unblocked_by` in `finder`, `orchestrator` and `report`; `proposal` and `proposal_at` in `orchestrator` and `report`.
 
 `finder`, `verifier` and `checker` reports also carry `references`, the absolute paths of the `review-v2-method` worked examples (`finding-kinds`, `verifying`, `plan-records`). A cell takes `finder`, `orchestrator` or `report` only.
 
@@ -259,7 +266,7 @@ tomlctl review add --slug <slug> --run U1 --cell C3 --ndjson <run-dir>/payloads/
 
 ### `tomlctl review verdict`
 
-Upserts a verdict on (finding, `by`, `seat`): an identical replay writes nothing and a changed one moves to the end, where readers take the latest from. A finding with no `same_as` takes its status at once — `confirmed` or `plausible` → `open`, `refuted` → `refuted`, `unsettled` → `unverified`, re-routed to `verifier`; a panel decides once two seats agree (two non-refuted → `open`, two refuted → `refuted`). A finding with a `same_as` stays `unverified` for `resolve`. Only `unverified`, `open` and `refuted` findings take a status from a verdict. Prints `{ok, verdicts: [{finding, verdict, reroute?}], refused, unchanged}`.
+Upserts a verdict on (finding, `by`, `seat`): an identical replay writes nothing and a changed one moves to the end, where readers take the latest from. A finding with no `same_as` takes its status at once — `confirmed` or `plausible` → `open`, `refuted` → `refuted`, `unsettled` → `unverified`, re-routed to `verifier`; a panel decides once two seats agree (two non-refuted → `open`, two refuted → `refuted`). A finding with a `same_as` stays `unverified` for `resolve`. Only `unverified`, `open` and `refuted` findings take a status from a verdict. A verdict with `unblocks` answers a blocked finding: it clears the block and copies its `fix_sketch` onto the finding with `unblocked_by = "verifier"` ([Blocked findings](#store-shape)). Prints `{ok, verdicts: [{finding, verdict, reroute?, unblocks?, fix_sketch?}], refused, unchanged}`.
 
 ```bash
 tomlctl review verdict F3 --slug <slug> --verdict confirmed --by verifier --citation tomlctl/src/io.rs:88 --rationale-file <run-dir>/payloads/F3.txt
@@ -277,9 +284,11 @@ tomlctl review verdict --slug <slug> --ndjson <run-dir>/payloads/checker-1.ndjso
 | `--citation` | text | `file:line` or command output backing the verdict. Optional to the parser; a verdict without one is refused `kind=validation`. | none |
 | `--rationale` / `--rationale-file` | text \| path | Why, at most 600 characters (aim for 450); refused when absent, as `--citation` is. | none |
 | `--strike-same-as` | bool | Clear the finding's `same_as`, so it resolves on its own verdict. | off |
-| `--ndjson` | `-` \| path | A batch of verdict rows, one per line. Excludes every single-verdict flag. | none |
+| `--unblocks` | bool | The verifier's answer to a blocked finding; needs a fix sketch. | off |
+| `--fix-sketch` / `--fix-sketch-file` | text \| path | How to fix the unblocked finding, at most 800 characters; `-` reads stdin. Only with `--unblocks`. | none |
+| `--ndjson` | `-` \| path | A batch of verdict rows, one per line; a row may carry `unblocks` and `fix_sketch`. Excludes every single-verdict flag. | none |
 
-Refused: a verdict on an advisory or `superseded` finding; `severity` on a non-defect; a checker's `plausible`; a checker's `refuted`, unless a `review-sweeper` cell wrote the row or it is a `cleanup` row whose lens the run's catalogue marks `mode = "mechanical"` (a catalogue that cannot be read refuses it, naming why); `unsettled` from anyone but the checker.
+Refused: `unblocks` from anyone but the verifier, on a `refuted` verdict, or on a finding with no block (a replay excepted); a verdict on an advisory or `superseded` finding; `severity` on a non-defect; a checker's `plausible`; a checker's `refuted`, unless a `review-sweeper` cell wrote the row or it is a `cleanup` row whose lens the run's catalogue marks `mode = "mechanical"` (a catalogue that cannot be read refuses it, naming why); `unsettled` from anyone but the checker.
 
 ### `tomlctl review resolve`
 
@@ -377,7 +386,7 @@ tomlctl review list --slug <slug> --in tomlctl/src/review --for finder
 | `--cell` | cell id | Keep findings of this cell. | any |
 | `--status` | status | Keep this status; `superseded` rows appear only when asked for. | any but `superseded` |
 | `--route` | `verifier` \| `panel` \| `checker` \| `none` | Keep this route. | any |
-| `--fix-shape` | `edits` \| `needs-plan` | Keep this `fix_shape`; any other value fails `kind=validation`. | any |
+| `--blocked-on` | `decision` \| `evidence` \| `measurement` \| `alternatives` \| `design` \| `any` \| `none` | Keep findings blocked on this; `any` keeps every blocked finding, `none` fixable and advisory ones. A legacy `needs-plan` row counts as `design`; any other value fails `kind=validation`. | any |
 | `--in` | glob | Keep findings whose `file` matches, as a `:(glob)` pathspec (`*` within one segment); a plain path also matches everything under it. | any |
 | `--for` | role | The projection; see [Roles](#roles). | `orchestrator` |
 
@@ -397,7 +406,7 @@ tomlctl review show F3,F7 --slug <slug> --for audit
 
 ### `tomlctl review digest`
 
-The orchestrator's view of one run, as a single object: `run` (and `since_wave`); `counts` by `kind`, `lens` and `status`; `cells` (`status` counts, `unsealed` ids, the `notes` of `thin` and `uncovered` cells); `unverified` (`[{id, kind, route, cell}]`); the coverage accounting `unselected`, `unsliced` and `disabled`, the first two needing a waiver before `run finish`; `contested` rows with their `target`; `refuted_criticals`; `duplicate_candidates`; `ruled_out_hits`; `audit_sample`; and the open `advisory` rows. Rows are projected `--for orchestrator`, so the digest never carries `evidence`.
+The orchestrator's view of one run, as a single object: `run` (and `since_wave`); `counts` by `kind`, `lens` and `status`; `cells` (`status` counts, `unsealed` ids, the `notes` of `thin` and `uncovered` cells); `unverified` (`[{id, kind, route, cell}]`); the coverage accounting `unselected`, `unsliced` and `disabled`, the first two needing a waiver before `run finish`; `contested` rows with their `target`; `refuted_criticals`; `duplicate_candidates`; `ruled_out_hits`; `audit_sample`; the open `advisory` rows; and `proposals`, `[{id, kind, summary, proposal, proposal_at, age, overdue}]`, every deferred proposal of the run's family in the store, whichever run found it ([Deferred proposals](#store-shape)). Rows are projected `--for orchestrator`, so the digest never carries `evidence`.
 
 - **Place rule.** Two places match when they share a `file` and either both carry a `symbol` and the symbols are equal, or otherwise both carry a `line` within 10 lines of each other. `lens` and `kind` play no part.
 - **`duplicate_candidates`**, `[{a, b, file, symbol, cells}]`: pairs of the run's non-superseded findings from different cells whose places match, `a` the lower id, `symbol` the first non-empty of the two, `cells` the two cells in pair order. A pair is omitted when the `same_as` / `merged_into` chains of its members meet. A candidate is a question for `resolve --same-as`, never a fold.
@@ -418,7 +427,7 @@ tomlctl review digest --slug <slug> --run U1 --since-wave 2
 
 ### `tomlctl review report`
 
-Writes the run's markdown report — defects by severity, the Needs-a-plan group, cleanup by file, advisory with dispositions, the coverage map — from the store alone, so one store always writes the same bytes. The report is derived and has no sidecar. Prints `{path, counts}`, where `counts` is the report's counts line (`defect n · cleanup n · advisory n · refuted n · suppressed n · unverified n · cells n · uncovered n`).
+Writes the run's markdown report — unblocked defects by severity, a Blocked group with one subsection per `blocked_on` value holding its defects and cleanup with what each lacks (missing, options, metric, command, contract), unblocked cleanup by file, advisory with dispositions, the coverage map — from the store alone, so one store always writes the same bytes. The report is derived and has no sidecar. Prints `{path, counts}`, where `counts` is the report's counts line (`defect n · cleanup n · advisory n · refuted n · suppressed n · unverified n · cells n · uncovered n`).
 
 ```bash
 tomlctl review report --slug <slug> --run U1 --out <run-dir>/report.md
@@ -440,7 +449,7 @@ Rates per lens, probe, run or model over one store or all of them. Writes nothin
 - **`--by model`** rows are keyed by the model of the verifying role that decided each finding — `models.verifier` for `verifier` and `panel`, `models.checker` for `checker`, read from the run that verdict names — and carry `roles`, `runs`, `verified`, `refuted`, `refute_rate`, `audited`, `overturned` and `audit_overturn_rate`. A run without `models`, or without the role, keys as `unknown`.
 - **`plan_outcomes`** (`--plan-outcomes`; `--slug` or `--all`, flow stores only, plan family only): per run and in `total`, `tiers` (tier → disposition → count; dispositions `applied`, `applied-disclosed` for cited, `user-accepted`, `user-vetoed` for a dismissed `user` row or a dismissed non-advisory tiered row of a run started at or after the plan's first `[[approval]]`, `user-answered` for a `question` row resolved without an edit, else the status), `veto_rate` (vetoed over accepted plus vetoed; `user-answered` counts on neither side), `growth` (`edits`, net `chars_added`, `entries_added`, `entries_removed`), `recheck_yield` (findings minted by a run with `rechecks`), and `cost` (`agents`, `minutes`); each run also names `rechecks`. A rate or yield with nothing to count is `null`.
 - **`outcomes`**: per lens and kind, `exported`, `linked`, the v1 statuses, the mapped v2 statuses and `wontfix_reasons`, through `v2_ref` with `sync-v1`'s mapping; a retired link is not counted.
-- **`apply`** (`--apply`): the native counterpart of `outcomes`, read from the store alone with no v1 ledger opened. `outcomes` holds one row per lens and kind with any natively applied finding — `{lens, kind, scheduled, resolved, reopened, reproductions}` — where `scheduled` counts findings at that status, `resolved` resolved findings that keep an `apply_flow`, `reopened` open findings whose `reopen_reason` starts `apply: `, and `reproductions` maps each verdict (`gone`, `reproduces`, `unsettled`) to the findings whose current reproduction has it. `reproductions` is `{rows, findings}`, each a verdict → count map: `rows` over every reproduction row, `findings` over each finding's current one. A reproduction of a finding `--family` drops is not counted.
+- **`apply`** (`--apply`): the native counterpart of `outcomes`, read from the store alone with no v1 ledger opened. `outcomes` holds one row per lens and kind with any natively applied finding — `{lens, kind, scheduled, resolved, reopened, reproductions}` — where `scheduled` counts findings at that status, `resolved` resolved findings that keep an `apply_flow`, `reopened` open findings whose `reopen_reason` starts `apply: `, and `reproductions` maps each verdict (`gone`, `reproduces`, `unsettled`) to the findings whose current reproduction has it. `reproductions` is `{rows, findings}`, each a verdict → count map: `rows` over every reproduction row, `findings` over each finding's current one. A reproduction of a finding `--family` drops is not counted. `blocked` is `{lens, agent}`, one row per lens and per agent of the finding's cell (`unknown` when the cell names none): `key`, `findings` (every kind), `blocked`, `blocked_rate`, `blocked_on` (each block, plus `unrecorded` for a verifier unblock, which keeps no record of the block it cleared; an answered block is read from `unblocked_by`), `verifier_unblocked`, `verifier_unblock_rate` and the row's `settle` counts. `settle` counts settle outcomes over the view: `mechanical`, `cited` and `user` accepts by tier, `refuted` and `deferred`. A high `mechanical` count or `verifier_unblock_rate` reads as findings blocked that could have been fixed as written.
 - **`escapes`**: `count`, `by_concern` and `findings` minted in a file and concern an earlier run's cell had sealed `covered`.
 - **`calibration`**: per area, the top exemplar sentences with `count` and `sources`, drawn only from user dismissals, v1 wontfix reasons and audit overturns.
 
@@ -458,7 +467,7 @@ tomlctl review stats --all --plan-outcomes --by model
 | `--by` | `lens` \| `probe` \| `run` \| `model` | The grouping axis of `rows`. | `lens` |
 | `--plan-outcomes` | bool | Add the plan-review outcomes; refused with `--scope`. | off |
 | `--outcomes` | bool | Add the v1 apply outcomes. | off |
-| `--apply` | bool | Add the native apply outcomes and reproductions. | off |
+| `--apply` | bool | Add the native apply outcomes, reproductions, blocked rates and settle outcomes. | off |
 | `--escapes` | bool | Add the coverage escapes. | off |
 | `--calibration` | bool | Add the calibration exemplars. | off |
 | `--exemplars` | N | Exemplars per area; needs `--calibration`. | 5 |
@@ -487,6 +496,7 @@ tomlctl review triage F8 --slug <slug> --convert cleanup --ndjson <run-dir>/payl
 | `--resolve` / `--resolve-file` | text \| path | Status → `resolved`, recording `resolution` and today's `resolved`. | one disposition required |
 | `--backlog-ref` | `B-<hex>` | Status → `backlogged`, recording the backlog item id. | one disposition required |
 | `--convert` | `cleanup` \| `defect` | Mint the advisory's replacement from `--ndjson`; status → `converted`. Exactly one advisory id. | one disposition required |
+| `--answer-file` | path | The user's answer to an open finding blocked on `decision`, at most 800 characters; the status stays `open`. | one disposition required |
 | `--ndjson` | `-` \| path | The replacement as one JSON object; with `--convert` only. | none |
 | `--run` | run id | The open run the replacement is minted in when the advisory's run is finished; with `--convert` only. | the advisory's run |
 | `--expect-status` | status | Move only the ids still at this status. | no check |
@@ -497,11 +507,13 @@ tomlctl review triage F8 --slug <slug> --convert cleanup --ndjson <run-dir>/payl
 
 The replacement is minted in an open run, which cannot finish until it is verified. While the advisory's run is open it is that run, and a `--run` naming any other is refused. Once the advisory's run is finished, the call is refused unless `--run` names an open run of the advisory's family; an unknown, finished or other-family run is refused too. The replacement then takes the named run as `run` and `seen_in`, keeps the advisory's `cell` as provenance, is routed by the named run's catalogue and depth, and its `orchestrator` verdict is filed under that run.
 
+`--answer-file` (mode `answer`) records the file's text as `decision_answer` with `unblocked_by = "user"` and clears the block, keeping `blocked_options` as what the answer chose among; `schedule` binds the answer to the finding's fix task as a constraint. A finding not `open`, or blocked on anything but `decision`, is refused, and a replay of the same answer is `unchanged`.
+
 ### `tomlctl review export-v1`
 
 Exports open defect and cleanup findings into a v1 ledger for `/review-apply` or `/optimise-apply`. The ledger's family comes from `--to`: `review-ledger.toml` or a path under `.claude/reviews/` takes `code` findings with `R` ids; `optimise-findings.toml` or a path under `.claude/optimise-findings/` takes `perf` findings with `O` ids.
 
-- **Refused**, with a reason: the plan family, advisory, any status but `open`, another family than the ledger's, `fix_shape = needs-plan`, `effort = large`.
+- **Refused**, with a reason: the plan family, advisory, any status but `open`, another family than the ledger's, a blocked finding ([Blocked findings](#store-shape)), `effort = large`.
 - **`--all`** takes every open defect and cleanup finding of the ledger's family in this store — there is no run filter — and holds back, under `held`, test removals and cleanup whose latest verdict is `plausible`; those export only by explicit id.
 - **Rows.** A defect exports with its latest severity (`major` → `warning`, `minor` → `suggestion`), cleanup as `suggestion`; `category` is the bound lens's `v1_category`, or `quality` / `algorithm` for a probe or check cell; `description` is built from the implementer projection. The v1 row carries `v2_ref = "<store path>#F<n>"`.
 - **Matching.** A v1 row whose `v2_ref` names the finding — the string, or an entry of the array — is `linked`. Otherwise an open row is `reused`, its `rounds` bumped, only on the strict fold: its `v2_ref` names the finding this finding's `same_as` names, or its `file`, `symbol` and `summary` all equal the finding's and its `v2_ref` names a finding of this store with the same `lens`. A v1 row carries `category`, never `lens`, so a row without a resolvable `v2_ref` never meets the second clause, and that clause never matches a row this same call wrote. Failing that, the loose v1 merge rule (same `file`, and the same non-empty `symbol` or the exact `summary`) is read for settled rows only: a deferred, wontfix, wontapply or verified-clean match is skipped, and a fixed or applied match gets a new id with `related` (`regression`). Anything else — an open row that matches only loosely included — is `minted`. A reused row whose `v2_ref` names another finding becomes an array naming both, rather than being overwritten.
@@ -525,7 +537,7 @@ tomlctl review export-v1 --all --slug <slug> --to .claude/flows/<slug>/review-le
 
 ## Apply through a v2 flow
 
-`schedule`, `reconcile`, `anchor`, `reproduce` and `reproduce-status` — fixing code and perf findings through a v2 flow's task store, and the build-free checks a fix task asks — are documented in [review-apply.md](review-apply.md).
+`schedule`, `settle`, `reconcile`, `anchor`, `reproduce` and `reproduce-status` — fixing code and perf findings through a v2 flow's task store, settling evidence-blocked findings, and the build-free checks a fix task asks — are documented in [review-apply.md](review-apply.md).
 
 ## Catalogue and schema
 
@@ -552,7 +564,7 @@ tomlctl review catalogue --family code --signals lang:rust,public-api-change
 
 ### `tomlctl review schema`
 
-Prints a JSON Schema (draft 2020-12) built from the field catalogue. `finding` is the row `review add` accepts — closed, with each kind's required set; `cell-return` is what a cell agent returns, `{cell, findings: [{id, kind, severity, route}], status, escalate?}` — `add`'s cell and findings with the status `cover` sealed; `verdict-return` is `{finding, verdict, reroute?}`.
+Prints a JSON Schema (draft 2020-12) built from the field catalogue. `finding` is the row `review add` accepts — closed, with each kind's required set; `cell-return` is what a cell agent returns, `{cell, findings: [{id, kind, severity, route}], status, escalate?}` — `add`'s cell and findings with the status `cover` sealed; `verdict-return` is `{finding, verdict, reroute?, unblocks?, fix_sketch?}`, each of the last two requiring the other.
 
 ```bash
 tomlctl review schema finding --kind cleanup

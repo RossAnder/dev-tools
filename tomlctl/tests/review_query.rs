@@ -274,9 +274,9 @@ fn list_in_glob_filters_prior() {
     assert_eq!(err["kind"], "validation");
 }
 
-#[test]
-fn list_filters_by_fix_shape_across_runs() {
-    let repo = Repo::new();
+/// Three blocked defects beside the fixture: F7 a legacy `needs-plan` row in
+/// another run, F8 blocked on evidence, F9 blocked on design.
+fn with_blocked_rows(repo: &Repo) {
     let path = repo.root.join(".claude/review-v2/t.toml");
     let mut store = fs::read_to_string(&path).unwrap();
     store.push_str(
@@ -285,18 +285,46 @@ fn list_filters_by_fix_shape_across_runs() {
          summary = \"needs a redesign\"\nseverity = \"major\"\nfix_shape = \"needs-plan\"\nstatus = \"open\"\n\
          \n[[findings]]\nid = \"F8\"\nrun = \"U1\"\ncell = \"C1\"\nfamily = \"code\"\nkind = \"defect\"\n\
          lens = \"correctness\"\nroute = \"verifier\"\nfile = \"src/b.rs\"\nline = 2\n\
-         summary = \"needs a plan too\"\nseverity = \"major\"\nfix_shape = \"needs-plan\"\nstatus = \"open\"\n",
+         summary = \"which caller pads is unknown\"\nseverity = \"major\"\nblocked_on = \"evidence\"\n\
+         blocked_missing = \"whether any caller pads the input\"\nstatus = \"open\"\n\
+         \n[[findings]]\nid = \"F9\"\nrun = \"U1\"\ncell = \"C1\"\nfamily = \"code\"\nkind = \"defect\"\n\
+         lens = \"correctness\"\nroute = \"verifier\"\nfile = \"src/c.rs\"\nline = 3\n\
+         summary = \"the limit belongs to the parser\"\nseverity = \"major\"\nblocked_on = \"design\"\n\
+         blocked_missing = \"an owner for the limit\"\nblocked_contract = \"the parser exports the limit\"\n\
+         status = \"open\"\n",
     );
     fs::write(&path, store).unwrap();
+}
 
-    let out = repo.json(&["list", "--fix-shape", "needs-plan"]);
-    assert_eq!(ids(&out["findings"]), ["F7", "F8"], "{out}");
-    let edits = repo.json(&["list", "--fix-shape", "edits"]);
-    assert_eq!(ids(&edits["findings"]), ["F1"], "{edits}");
+#[test]
+fn list_filters_by_blocked_on_with_any_and_none() {
+    let repo = Repo::new();
+    with_blocked_rows(&repo);
 
-    let refused = repo.review(&["list", "--fix-shape", "plan"]).failure();
+    let evidence = repo.json(&["list", "--blocked-on", "evidence"]);
+    assert_eq!(ids(&evidence["findings"]), ["F8"], "{evidence}");
+    let any = repo.json(&["list", "--blocked-on", "any"]);
+    assert_eq!(ids(&any["findings"]), ["F7", "F8", "F9"], "{any}");
+    let none = repo.json(&["list", "--blocked-on", "none"]);
+    let fixable = ids(&none["findings"]);
+    assert!(fixable.contains(&"F1".to_string()), "{none}");
+    for blocked in ["F7", "F8", "F9"] {
+        assert!(!fixable.contains(&blocked.to_string()), "{none}");
+    }
+
+    let refused = repo.review(&["list", "--blocked-on", "plan"]).failure();
     let err = parse_json_error_envelope(&String::from_utf8_lossy(&refused.get_output().stderr));
     assert_eq!(err["kind"], "validation");
+    repo.review(&["list", "--fix-shape", "needs-plan"])
+        .failure();
+}
+
+#[test]
+fn list_reads_a_legacy_needs_plan_row_as_blocked_on_design() {
+    let repo = Repo::new();
+    with_blocked_rows(&repo);
+    let design = repo.json(&["list", "--blocked-on", "design"]);
+    assert_eq!(ids(&design["findings"]), ["F7", "F9"], "{design}");
 }
 
 #[test]

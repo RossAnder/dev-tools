@@ -280,7 +280,60 @@ pub(super) const FINDER_CF: &str = "review-finder-cf";
 pub(super) const SWEEPER: &str = "review-sweeper";
 pub(super) const EXECUTOR: &str = "plan-executor";
 pub(crate) const CELL_AGENTS: &[&str] = &[FINDER, FINDER_CF, SWEEPER, EXECUTOR];
-pub(crate) const FIX_SHAPES: &[&str] = &["edits", "needs-plan"];
+
+str_enum!(
+    /// What a defect or cleanup cannot be fixed without. A finding with none
+    /// is fixable as written.
+    BlockedOn {
+        Decision => "decision",
+        Evidence => "evidence",
+        Measurement => "measurement",
+        Alternatives => "alternatives",
+        Design => "design",
+    }
+);
+
+/// What `finding` is blocked on, or `None` when it is fixable. A stored row
+/// with `fix_shape = "needs-plan"` and no `blocked_on` is blocked on design.
+pub(crate) fn blocked_on(finding: &super::store::Finding) -> Option<BlockedOn> {
+    let text = |key: &str| finding.rest.get(key).and_then(toml::Value::as_str);
+    match text("blocked_on").map(str::trim) {
+        Some(value) if !value.is_empty() => BlockedOn::parse(value),
+        _ if text("fix_shape") == Some("needs-plan") => Some(BlockedOn::Design),
+        _ => None,
+    }
+}
+
+/// Who answered a blocked finding, recorded as its `unblocked_by`.
+pub(crate) const UNBLOCKED_BY: &[&str] = &["verifier", "user", "settle"];
+
+/// The tiers `review settle --accept` records as a finding's `settle_tier`.
+pub(crate) const SETTLE_TIERS: &[&str] = &["mechanical", "cited", "user"];
+
+/// Drops `finding`'s block: `blocked_on`, each `blocked_*` detail not in
+/// `keep`, and a legacy `fix_shape = "needs-plan"`, which [`blocked_on`]
+/// would still read as a design block.
+pub(crate) fn clear_block(finding: &mut super::store::Finding, keep: &[&str]) {
+    let detail = FIELDS
+        .iter()
+        .filter(|s| s.record == Record::Finding && matches!(s.need, Need::WhenBlockedOn(_)))
+        .map(|s| s.name);
+    for key in std::iter::once("blocked_on").chain(detail) {
+        if !keep.contains(&key) {
+            finding.rest.remove(key);
+        }
+    }
+    if finding.rest.get("fix_shape").and_then(toml::Value::as_str) == Some("needs-plan") {
+        finding.rest.remove("fix_shape");
+    }
+}
+
+/// A field a row may no longer supply, with what replaced it.
+const RETIRED: &[(&str, &str)] = &[(
+    "fix_shape",
+    "is retired; a fixable finding omits `blocked_on`, and one that cannot be fixed as written names what it lacks in `blocked_on`",
+)];
+
 const EFFORTS: &[&str] = &["trivial", "small", "medium", "large"];
 const GRADES: &[&str] = &["high", "medium", "low"];
 const ANGLES: &[&str] = &["risk", "challenge", "probe", "alternative", "direction"];
@@ -330,6 +383,10 @@ pub(crate) enum Need {
     OldText,
     /// Advisory `challenges`: required when `angle = challenge`.
     WhenChallenge,
+    /// A `blocked_*` detail field: required when `blocked_on` is one of these.
+    WhenBlockedOn(&'static [BlockedOn]),
+    /// Verdict `fix_sketch`: required when `unblocks = true`.
+    WhenUnblocks,
     /// Cell `question`: required when the cell's concern is a `probe:`.
     WhenProbe,
 }
@@ -381,6 +438,7 @@ pub(crate) struct FieldSpec {
     /// In characters, per string or per list element.
     pub(crate) cap: Option<usize>,
     pub(crate) max_items: Option<usize>,
+    pub(crate) min_items: Option<usize>,
     pub(crate) range: Option<(i64, i64)>,
     pub(crate) path: PathForm,
     pub(crate) origin: Origin,
@@ -398,6 +456,7 @@ const fn field(record: Record, name: &'static str, ty: Ty, vis: [Vis; 8]) -> Fie
         values: &[],
         cap: None,
         max_items: None,
+        min_items: None,
         range: None,
         path: PathForm::No,
         origin: Origin::Input,
@@ -427,6 +486,10 @@ impl FieldSpec {
     }
     const fn items(mut self, max: usize) -> Self {
         self.max_items = Some(max);
+        self
+    }
+    const fn min_items(mut self, min: usize) -> Self {
+        self.min_items = Some(min);
         self
     }
     const fn range(mut self, lo: i64, hi: i64) -> Self {
@@ -466,7 +529,7 @@ const COUNTER: [Vis; 8] = [N, R, N, N, N, R, N, N];
 const EVIDENCE: [Vis; 8] = [N, R, N, N, N, R, Vis::First(2), N];
 const GRADE: [Vis; 8] = [N, N, N, N, R, N, N, N];
 const FIX: [Vis; 8] = [N, N, N, R, N, N, N, R];
-const FIX_SHAPE: [Vis; 8] = [N, N, N, R, R, N, N, R];
+const BLOCKED: [Vis; 8] = [N, R, N, R, R, R, N, R];
 const PLAN: [Vis; 8] = [N, R, N, R, N, R, N, R];
 const EDIT: [Vis; 8] = [N, ROUTED, R, R, COUNT, R, N, R];
 const EDIT_DETAIL: [Vis; 8] = [N, ROUTED, R, R, COUNT, R, N, N];
@@ -578,10 +641,6 @@ pub(crate) const FIELDS: &[FieldSpec] = &[
         .kinds(KindSet::DEFECT)
         .cap(800)
         .required(),
-    field(Finding, "fix_shape", Ty::Str, FIX_SHAPE)
-        .kinds(KindSet::DEFECT)
-        .values(FIX_SHAPES)
-        .required(),
     field(Finding, "effort", Ty::Str, FIX)
         .kinds(KindSet::DEFECT)
         .values(EFFORTS)
@@ -621,6 +680,62 @@ pub(crate) const FIELDS: &[FieldSpec] = &[
         .kinds(KindSet::CLEANUP)
         .items(50)
         .path(PathForm::Path),
+    // findings: blocked defect or cleanup
+    field(Finding, "blocked_on", Ty::Str, BLOCKED)
+        .kinds(DEFECT_OR_CLEANUP)
+        .values(BlockedOn::VALUES),
+    field(Finding, "blocked_missing", Ty::Str, BLOCKED)
+        .kinds(DEFECT_OR_CLEANUP)
+        .cap(400)
+        .need(Need::WhenBlockedOn(BlockedOn::ALL)),
+    // A decision option names its consequence in the same string.
+    field(Finding, "blocked_options", Ty::StrList, BLOCKED)
+        .kinds(DEFECT_OR_CLEANUP)
+        .min_items(2)
+        .items(6)
+        .cap(300)
+        .need(Need::WhenBlockedOn(&[
+            BlockedOn::Decision,
+            BlockedOn::Alternatives,
+        ])),
+    field(Finding, "blocked_metric", Ty::Str, BLOCKED)
+        .kinds(DEFECT_OR_CLEANUP)
+        .cap(200)
+        .need(Need::WhenBlockedOn(&[BlockedOn::Measurement])),
+    field(Finding, "blocked_command", Ty::Str, BLOCKED)
+        .kinds(DEFECT_OR_CLEANUP)
+        .cap(300)
+        .need(Need::WhenBlockedOn(&[BlockedOn::Measurement])),
+    field(Finding, "blocked_contract", Ty::Str, BLOCKED)
+        .kinds(DEFECT_OR_CLEANUP)
+        .cap(600)
+        .need(Need::WhenBlockedOn(&[BlockedOn::Design])),
+    // Set when a block is answered, and kept through every later status.
+    field(Finding, "fix_sketch", Ty::Str, FIX)
+        .kinds(DEFECT_OR_CLEANUP)
+        .cap(800)
+        .computed(),
+    field(Finding, "unblocked_by", Ty::Str, STATUS)
+        .kinds(DEFECT_OR_CLEANUP)
+        .values(UNBLOCKED_BY)
+        .computed(),
+    field(Finding, "decision_answer", Ty::Str, BLOCKED)
+        .kinds(DEFECT_OR_CLEANUP)
+        .cap(800)
+        .computed(),
+    field(Finding, "settle_tier", Ty::Str, TIER)
+        .kinds(DEFECT_OR_CLEANUP)
+        .values(SETTLE_TIERS)
+        .computed(),
+    // A deferred settle proposal: its note's path, and when it was deferred.
+    // `proposal_at` is a UTC datetime; `Date` is the catalogue's TOML
+    // datetime type, which reads a full offset datetime back as one.
+    field(Finding, "proposal", Ty::Str, INTERNAL)
+        .kinds(DEFECT_OR_CLEANUP)
+        .computed(),
+    field(Finding, "proposal_at", Ty::Date, INTERNAL)
+        .kinds(DEFECT_OR_CLEANUP)
+        .computed(),
     // findings: advisory
     field(Finding, "angle", Ty::Str, ADVISORY)
         .kinds(KindSet::ADVISORY)
@@ -715,6 +830,12 @@ pub(crate) const FIELDS: &[FieldSpec] = &[
     field(Verdict, "rationale", Ty::Str, VERDICT_LATEST)
         .cap(600)
         .required(),
+    // A verifier's answer to a blocked finding; `review verdict` clears the
+    // block and copies the sketch onto the finding.
+    field(Verdict, "unblocks", Ty::Bool, VERDICT_LATEST),
+    field(Verdict, "fix_sketch", Ty::Str, VERDICT_LATEST)
+        .cap(800)
+        .need(Need::WhenUnblocks),
 ];
 
 /// The catalogue entry for `name` on `record`; for a finding, the entry that
@@ -797,8 +918,12 @@ pub(crate) fn validate_row(
 
     for (key, value) in row {
         let Some(spec) = spec(record, key, kind) else {
-            let reason = match kind {
-                Some(kind) if spec(record, key, None).is_some() => {
+            let retired = RETIRED
+                .iter()
+                .find(|(name, _)| record == Record::Finding && name == key);
+            let reason = match (kind, retired) {
+                (_, Some((_, why))) => why.to_string(),
+                (Some(kind), None) if spec(record, key, None).is_some() => {
                     format!("does not apply to a {} finding", kind.as_str())
                 }
                 _ => format!("is not a field of a {}", record.as_str()),
@@ -824,6 +949,10 @@ pub(crate) fn validate_row(
         }
     }
 
+    let blocked_on = str_field(row, "blocked_on").and_then(BlockedOn::parse);
+    let blocked_when = blocked_on
+        .map(|b| format!(" when blocked_on is {}", b.as_str()))
+        .unwrap_or_default();
     for spec in FIELDS.iter().filter(|s| {
         s.record == record
             && s.origin == Origin::Input
@@ -842,6 +971,11 @@ pub(crate) fn validate_row(
                 str_field(row, "angle") == Some("challenge"),
                 " when angle is challenge",
             ),
+            Need::WhenBlockedOn(blocks) => (
+                blocked_on.is_some_and(|b| blocks.contains(&b)),
+                blocked_when.as_str(),
+            ),
+            Need::WhenUnblocks => (unblocks(row), " when unblocks is true"),
             Need::WhenProbe => (
                 row.get("concerns")
                     .and_then(JsonValue::as_array)
@@ -866,6 +1000,12 @@ pub(crate) fn validate_row(
             "may be unsettled only from the checker".to_string(),
         );
     }
+    if record == Record::Verdict && !is_absent(row.get("fix_sketch")) && !unblocks(row) {
+        refuse(
+            "fix_sketch",
+            "is given only with unblocks = true".to_string(),
+        );
+    }
 
     if refusals.is_empty() {
         Ok(())
@@ -886,6 +1026,11 @@ fn old_required(row: &Map<String, JsonValue>, ctx: &RowContext<'_>) -> bool {
         },
         None => false,
     }
+}
+
+/// Whether a verdict row answers its finding's block.
+pub(crate) fn unblocks(row: &Map<String, JsonValue>) -> bool {
+    row.get("unblocks").and_then(JsonValue::as_bool) == Some(true)
 }
 
 fn str_field<'a>(row: &'a Map<String, JsonValue>, name: &str) -> Option<&'a str> {
@@ -937,6 +1082,14 @@ fn check_value(spec: &FieldSpec, value: &JsonValue) -> std::result::Result<(), S
                 && list.len() > max
             {
                 return Err(format!("has {} entries; the cap is {max}", list.len()));
+            }
+            if let Some(min) = spec.min_items
+                && list.len() < min
+            {
+                return Err(format!(
+                    "has {} entries; at least {min} are required",
+                    list.len()
+                ));
             }
             for (i, element) in list.iter().enumerate() {
                 let text = element.as_str().ok_or("must be an array of strings")?;
@@ -1279,7 +1432,6 @@ mod tests {
             "severity": "major",
             "failure_scenario": "a two-row input returns one row",
             "fix": "iterate to len, not len - 1",
-            "fix_shape": "edits",
             "effort": "small",
             "counter": "a caller that pads the input",
             "grade": "high",
@@ -1310,16 +1462,98 @@ mod tests {
     }
 
     #[test]
-    fn defect_requires_failure_scenario_and_fix_shape() {
+    fn defect_requires_failure_scenario() {
         assert_eq!(
             validate_row(Record::Finding, &defect(), &ctx(Family::Code)),
             Ok(())
         );
         let mut bare = defect();
         bare.remove("failure_scenario");
-        bare.remove("fix_shape");
         let refused = refused_fields(validate_row(Record::Finding, &bare, &ctx(Family::Code)));
-        assert_eq!(refused, ["failure_scenario", "fix_shape"]);
+        assert_eq!(refused, ["failure_scenario"]);
+    }
+
+    #[test]
+    fn each_block_requires_its_detail() {
+        let cases: [(&str, &[&str]); 5] = [
+            ("decision", &["blocked_missing", "blocked_options"]),
+            ("evidence", &["blocked_missing"]),
+            (
+                "measurement",
+                &["blocked_missing", "blocked_metric", "blocked_command"],
+            ),
+            ("alternatives", &["blocked_missing", "blocked_options"]),
+            ("design", &["blocked_missing", "blocked_contract"]),
+        ];
+        for (block, needs) in cases {
+            for (base, family) in [(defect(), Family::Code), (cleanup("remove"), Family::Plan)] {
+                let mut blocked = base;
+                blocked.insert("blocked_on".into(), json!(block));
+                let refused = refused_fields(validate_row(Record::Finding, &blocked, &ctx(family)));
+                assert_eq!(refused, needs, "{block}");
+                for need in needs {
+                    let value = if *need == "blocked_options" {
+                        json!([
+                            "keep it, and callers stay as they are",
+                            "drop it, and two callers change"
+                        ])
+                    } else {
+                        json!("stated")
+                    };
+                    blocked.insert((*need).into(), value);
+                }
+                assert_eq!(
+                    validate_row(Record::Finding, &blocked, &ctx(family)),
+                    Ok(()),
+                    "{block}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_single_option_and_a_fix_shape_are_refused() {
+        let mut decision = defect();
+        decision.insert("blocked_on".into(), json!("decision"));
+        decision.insert("blocked_missing".into(), json!("which owner"));
+        decision.insert("blocked_options".into(), json!(["the parser owns it"]));
+        let refusals = validate_row(Record::Finding, &decision, &ctx(Family::Code)).unwrap_err();
+        assert_eq!(
+            refusals.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            ["`blocked_options` has 1 entries; at least 2 are required"]
+        );
+
+        let mut shaped = defect();
+        shaped.insert("fix_shape".into(), json!("edits"));
+        let refusals = validate_row(Record::Finding, &shaped, &ctx(Family::Code)).unwrap_err();
+        assert_eq!(refusals.len(), 1, "{refusals:?}");
+        assert_eq!(refusals[0].field, "fix_shape");
+        assert!(refusals[0].reason.contains("blocked_on"), "{refusals:?}");
+    }
+
+    #[test]
+    fn a_legacy_needs_plan_row_reads_as_blocked_on_design() {
+        use super::super::store::from_toml;
+        let store = |extra: &str| {
+            let text = format!(
+                "schema_version = 1\n\n[[findings]]\nid = \"F1\"\nrun = \"U1\"\ncell = \"C1\"\nfamily = \"code\"\nkind = \"defect\"\nlens = \"correctness\"\nfile = \"src/a.rs\"\nsummary = \"s\"\nstatus = \"open\"\n{extra}"
+            );
+            let doc: toml::Value = toml::from_str(&text).expect("the fixture parses");
+            from_toml(&doc).expect("the fixture reads")
+        };
+        for (extra, expected) in [
+            ("", None),
+            ("fix_shape = \"edits\"\n", None),
+            ("fix_shape = \"needs-plan\"\n", Some(BlockedOn::Design)),
+            ("blocked_on = \"evidence\"\n", Some(BlockedOn::Evidence)),
+            (
+                "fix_shape = \"needs-plan\"\nblocked_on = \"decision\"\n",
+                Some(BlockedOn::Decision),
+            ),
+        ] {
+            let store = store(extra);
+            assert_eq!(blocked_on(&store.findings[0]), expected, "{extra:?}");
+        }
     }
 
     #[test]
@@ -1405,10 +1639,23 @@ mod tests {
         let finding = defect();
         let none = ProjectCtx::default();
         let verifier = project(Role::Verifier, Record::Finding, &finding, &none);
-        for withheld in ["grade", "fix", "fix_shape", "effort"] {
+        for withheld in ["grade", "fix", "effort"] {
             assert!(!verifier.contains_key(withheld), "verifier sees {withheld}");
         }
-        for shown in ["failure_scenario", "counter", "evidence", "severity"] {
+        let mut finding = finding;
+        finding.insert("blocked_on".into(), json!("design"));
+        finding.insert("blocked_missing".into(), json!("who owns the cache"));
+        finding.insert("blocked_contract".into(), json!("the cache API"));
+        let verifier = project(Role::Verifier, Record::Finding, &finding, &none);
+        for shown in [
+            "failure_scenario",
+            "counter",
+            "evidence",
+            "severity",
+            "blocked_on",
+            "blocked_missing",
+            "blocked_contract",
+        ] {
             assert!(verifier.contains_key(shown), "verifier misses {shown}");
         }
         let implementer = project(Role::Implementer, Record::Finding, &finding, &none);
@@ -1451,7 +1698,18 @@ mod tests {
         (Finding, "evidence", None, "- R - - - R E2 -"),
         (Finding, "grade", None, "- - - - R - - -"),
         (Finding, "fix", None, "- - - R - - - R"),
-        (Finding, "fix_shape", None, "- - - R R - - R"),
+        (Finding, "blocked_on", None, "- R - R R R - R"),
+        (Finding, "blocked_missing", None, "- R - R R R - R"),
+        (Finding, "blocked_options", None, "- R - R R R - R"),
+        (Finding, "blocked_metric", None, "- R - R R R - R"),
+        (Finding, "blocked_contract", None, "- R - R R R - R"),
+        (Finding, "blocked_command", None, "- R - R R R - R"),
+        (Finding, "fix_sketch", None, "- - - R - - - R"),
+        (Finding, "unblocked_by", None, "R - - - R - - R"),
+        (Finding, "decision_answer", None, "- R - R R R - R"),
+        (Finding, "settle_tier", None, "- - - R R R - R"),
+        (Finding, "proposal", None, "- - - - R - - R"),
+        (Finding, "proposal_at", None, "- - - - R - - R"),
         (Finding, "effort", Some(Kind::Defect), "- - - R - - - R"),
         (Finding, "plan_section", None, "- R - R - R - R"),
         (Finding, "anchor_old", None, "- R - R - R - R"),
@@ -1492,6 +1750,8 @@ mod tests {
         (Verdict, "severity", None, "- - - - R R - R"),
         (Verdict, "rationale", None, "- - - - R R - R"),
         (Verdict, "citation", None, "- - - R R R - R"),
+        (Verdict, "unblocks", None, "- - - - R R - R"),
+        (Verdict, "fix_sketch", None, "- - - - R R - R"),
     ];
 
     fn parse_vis(token: &str) -> Vis {

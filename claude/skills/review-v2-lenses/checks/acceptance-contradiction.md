@@ -46,4 +46,4 @@ This check writes findings, no fence. Every row has `lens = "check:acceptance-co
 - **No order satisfies both** — `critical` defect, as `/review-plan` assigns: it is unresolvable at runtime and costs a repair task. `fix` rewrites the presuming acceptance to assert state that survives, or the remover to preserve it.
 - **Unordered pair** — `major` defect: one scheduling order fails. `fix` adds the edge that puts the presumer first, or rewrites the acceptance so neither order fails.
 
-Defects are `fix_shape = "edits"` when one acceptance or edge rewrite settles it, `needs-plan` when both tasks genuinely need the contested state. The coverage note lists the pairs examined and why each non-contradiction cleared.
+A defect that one acceptance or edge rewrite settles carries no `blocked_on`; one where both tasks genuinely need the contested state carries `blocked_on = "design"`, naming what is missing in `blocked_missing` and the change to the two tasks' contract in `blocked_contract`. The coverage note lists the pairs examined and why each non-contradiction cleared.

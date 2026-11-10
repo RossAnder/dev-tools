@@ -10,8 +10,8 @@
 //! refutation never teaches a finder anything. `--plan-outcomes` derives a
 //! plan finding's disposition from `tier`, status and `applied`, so it needs
 //! no status of its own. `--apply` is the native counterpart of `--outcomes`:
-//! it reads a finding's apply link, its `reopen_reason` and the store's
-//! reproductions, and opens no v1 ledger.
+//! it reads a finding's apply link, its `reopen_reason`, its block and settle
+//! fields and the store's reproductions, and opens no v1 ledger.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -20,7 +20,9 @@ use anyhow::Result;
 use serde_json::{Value as JsonValue, json};
 
 use super::cells::PathSet;
-use super::fields::{CellStatus, Family, FindingStatus, Kind, ReproduceVerdict, Route};
+use super::fields::{
+    self, BlockedOn, CellStatus, Family, FindingStatus, Kind, ReproduceVerdict, Route,
+};
 use super::invalid;
 use super::store::{self, Cell, Finding, Store, Verdict};
 use super::sync::{SYNC_REASON_PREFIX, V1Outcome, ledger_paths, linked_rows};
@@ -834,10 +836,176 @@ fn apply_outcomes(view: &View) -> JsonValue {
             })
         })
         .collect();
+    let (blocked, settle) = blocked_rates(view);
     json!({
         "outcomes": outcomes,
         "reproductions": {"rows": rows, "findings": current},
+        "blocked": blocked,
+        "settle": settle,
     })
+}
+
+/// The `blocked_on` key of a finding whose block a verifier cleared: the
+/// verdict keeps no copy of the block it answered.
+const UNRECORDED_BLOCK: &str = "unrecorded";
+/// The agent key of a finding whose cell names none.
+const UNKNOWN_AGENT: &str = "unknown";
+
+/// What `finding` is or was blocked on. An answered block is gone from the
+/// row, so it is read from who answered it: the user answers only decision
+/// blocks and settle only evidence blocks.
+fn block_of(finding: &Finding) -> Option<&'static str> {
+    if let Some(block) = fields::blocked_on(finding) {
+        return Some(block.as_str());
+    }
+    match finding
+        .rest
+        .get("unblocked_by")
+        .and_then(toml::Value::as_str)
+    {
+        Some("user") => Some(BlockedOn::Decision.as_str()),
+        Some("settle") => Some(BlockedOn::Evidence.as_str()),
+        Some("verifier") => Some(UNRECORDED_BLOCK),
+        _ => None,
+    }
+}
+
+/// What a settle task made of `finding`: the tier it was accepted at,
+/// `refuted`, or `deferred`. A settle refute keeps the evidence block, so it
+/// is an evidence-blocked finding refuted by an `orchestrator` verdict.
+fn settle_outcome(sv: &StoreView, finding: &Finding) -> Option<&'static str> {
+    let text = |key: &str| {
+        finding
+            .rest
+            .get(key)
+            .and_then(toml::Value::as_str)
+            .map(str::trim)
+            .unwrap_or_default()
+    };
+    if text("unblocked_by") == "settle" {
+        return fields::SETTLE_TIERS
+            .iter()
+            .copied()
+            .find(|&t| t == text("settle_tier"));
+    }
+    match finding.status() {
+        FindingStatus::Refuted
+            if fields::blocked_on(finding) == Some(BlockedOn::Evidence)
+                && sv
+                    .verdicts_of(&finding.id)
+                    .iter()
+                    .any(|v| v.by == "orchestrator" && v.verdict == "refuted") =>
+        {
+            Some("refuted")
+        }
+        FindingStatus::Open if !text("proposal").is_empty() => Some("deferred"),
+        _ => None,
+    }
+}
+
+fn settle_counts() -> BTreeMap<&'static str, usize> {
+    fields::SETTLE_TIERS
+        .iter()
+        .chain(&["refuted", "deferred"])
+        .map(|&k| (k, 0))
+        .collect()
+}
+
+struct BlockTally {
+    findings: usize,
+    blocked: usize,
+    blocked_on: BTreeMap<&'static str, usize>,
+    verifier_unblocked: usize,
+    settle: BTreeMap<&'static str, usize>,
+}
+
+impl BlockTally {
+    fn new() -> Self {
+        Self {
+            findings: 0,
+            blocked: 0,
+            blocked_on: BlockedOn::VALUES
+                .iter()
+                .chain(&[UNRECORDED_BLOCK])
+                .map(|&k| (k, 0))
+                .collect(),
+            verifier_unblocked: 0,
+            settle: settle_counts(),
+        }
+    }
+
+    fn add(&mut self, finding: &Finding, settled: Option<&'static str>) {
+        self.findings += 1;
+        if let Some(block) = block_of(finding) {
+            self.blocked += 1;
+            *self.blocked_on.entry(block).or_default() += 1;
+        }
+        let unblocked_by = finding
+            .rest
+            .get("unblocked_by")
+            .and_then(toml::Value::as_str);
+        self.verifier_unblocked += usize::from(unblocked_by == Some("verifier"));
+        if let Some(outcome) = settled {
+            *self.settle.entry(outcome).or_default() += 1;
+        }
+    }
+
+    fn to_json(&self, key: &str) -> JsonValue {
+        json!({
+            "key": key,
+            "findings": self.findings,
+            "blocked": self.blocked,
+            "blocked_rate": rate(self.blocked, self.findings),
+            "blocked_on": self.blocked_on,
+            "verifier_unblocked": self.verifier_unblocked,
+            "verifier_unblock_rate": rate(self.verifier_unblocked, self.blocked),
+            "settle": self.settle,
+        })
+    }
+}
+
+/// Findings written, blocked by `blocked_on` and unblocked by a verifier, per
+/// lens and per the agent of the finding's cell; and settle outcomes across
+/// the view.
+fn blocked_rates(view: &View) -> (JsonValue, JsonValue) {
+    let mut lenses: BTreeMap<String, BlockTally> = BTreeMap::new();
+    let mut agents: BTreeMap<String, BlockTally> = BTreeMap::new();
+    let mut settle = settle_counts();
+    for sv in &view.stores {
+        let cell_agents: BTreeMap<&str, &str> = sv
+            .loaded
+            .store
+            .cells
+            .iter()
+            .map(|c| (c.id.as_str(), c.agent.trim()))
+            .collect();
+        for f in &sv.findings {
+            let settled = settle_outcome(sv, f);
+            if let Some(outcome) = settled {
+                *settle.entry(outcome).or_default() += 1;
+            }
+            lenses
+                .entry(f.lens.clone())
+                .or_insert_with(BlockTally::new)
+                .add(f, settled);
+            let agent = cell_agents
+                .get(f.cell.as_str())
+                .copied()
+                .filter(|a| !a.is_empty())
+                .unwrap_or(UNKNOWN_AGENT);
+            agents
+                .entry(agent.to_string())
+                .or_insert_with(BlockTally::new)
+                .add(f, settled);
+        }
+    }
+    let rows = |tallies: BTreeMap<String, BlockTally>| -> Vec<JsonValue> {
+        tallies.iter().map(|(k, t)| t.to_json(k)).collect()
+    };
+    (
+        json!({"lens": rows(lenses), "agent": rows(agents)}),
+        json!(settle),
+    )
 }
 
 /// Findings minted in a (file, concern) that an earlier run of the same store

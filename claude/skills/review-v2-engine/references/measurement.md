@@ -9,7 +9,7 @@ No lens, facet or activation tier is retuned on fewer than **five runs** of evid
 | Signal | Read with | What it measures |
 |---|---|---|
 | Apply outcomes | `review stats --outcomes` | Exported findings joined to their v1 status through `v2_ref` — fixed, wontfix with reasons, deferred, verified-clean — per lens and kind |
-| Native apply outcomes | `review stats --apply` | Findings applied through an apply flow, per lens and kind: `scheduled` (held by a live task), `resolved` (resolved with its apply link kept), `reopened` (`open` with a `reopen_reason` opening `apply: `); and reproductions by verdict (`gone`, `reproduces`, `unsettled`), every row and each finding's last row |
+| Native apply outcomes | `review stats --apply` | Findings applied through an apply flow, per lens and kind: `scheduled` (held by a live task), `resolved` (resolved with its apply link kept), `reopened` (`open` with a `reopen_reason` opening `apply: `); and reproductions by verdict (`gone`, `reproduces`, `unsettled`), every row and each finding's last row. Its `blocked` object gives, per lens and per agent of the finding's cell, the findings written, the blocked ones by `blocked_on`, and those a verifier unblocked; its `settle` object counts settle outcomes by tier (`mechanical`, `cited`, `user`), `refuted` and `deferred` |
 | Escapes | `review stats --escapes` | Findings minted in a file and concern that an earlier run's cell had sealed `covered`: the recall proxy for composed coverage |
 | Refute rate | `review stats --by lens` | Share of a lens's verified rows its verifiers refuted |
 | Audit overturns | `review stats --by lens`; `review stats --by model` | Overturn rate on CONFIRMED and REFUTED defects and on checked cleanup, per lens; and per agent model, grouped by the model the run's `models` records for the verifying role (`verifier` and `panel` read the verifier's model, `checker` the checker's), `unknown` when the run records none |
@@ -35,6 +35,10 @@ tomlctl review stats --all --apply
 ```
 
 `--apply` is the native counterpart of `--outcomes`: it reads the review store alone, so it needs no v1 ledger and counts no exported finding. `--outcomes` is unchanged and still reads only findings exported to a v1 ledger; a store whose findings went both ways needs both flags. A reproduction never moves a finding, so a group's `reproduces` count is read beside its `resolved` count, never subtracted from it.
+
+A blocked finding counts as blocked after its block is answered. An answered block is gone from the row, so `blocked_on` reads it from who answered: a user answer is a `decision` block, a settle outcome an `evidence` block, and a verifier's `unblocks` leaves no record of what it cleared, so it counts under `unrecorded`. A settle refute keeps the evidence block and is an `orchestrator` refutation of an evidence-blocked finding; a deferral is an open finding carrying a `proposal`.
+
+Two counts are the misclassification signals for the blocked routes. A settle outcome at the `mechanical` tier is a finding that was marked blocked though a command could prove its fix, and `verifier_unblocked` counts findings whose block a verifier answered from the code alone; both mean the finder marked blocked a finding it could have written as fixable. Read each per lens and per agent, as `verifier_unblock_rate` and the share of `blocked` settled `mechanical`: a lens or agent whose rates rise while the others' stay flat is using the blocked routes to leave work, and its text is what gets tuned.
 
 `--plan-outcomes` reads plan-family runs only and refuses `--scope`: name the flow with `--slug`, or pass `--all`, which skips flow-less stores.
 

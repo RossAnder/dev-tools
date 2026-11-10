@@ -35,9 +35,9 @@ The engine's role rules hold throughout: read digests and projections, never row
    tomlctl capabilities --get features
    ```
 
-   Stop when `review_apply`, `review_run_head`, `review_run_show`, `review_ruled_out`, `review_same_as_link` or `review_list_fix_shape` is absent, naming `cargo install --path tomlctl` in the dev-tools checkout and a restart.
+   Stop when `review_apply`, `review_run_head`, `review_run_show`, `review_ruled_out`, `review_same_as_link`, `review_blocked_on`, `review_settle` or `review_triage_answer` is absent, naming `cargo install --path tomlctl` in the dev-tools checkout and a restart.
 2. Bind `<slug>`. `/plan-v2` has it already. `/review-plan-v2` takes it from the envelope its engine stage 0 built.
-3. Skip the engine's stage 0 steps 4 and 6. Step 4's `review sync-v1` reads v1 ledgers, and the plan family never exports to one. Step 6's task import is refused on a v2 flow. Step 5's listing of parked advisory and open needs-plan findings still runs.
+3. Skip the engine's stage 0 steps 4 and 6. Step 4's `review sync-v1` reads v1 ledgers, and the plan family never exports to one. Step 6's task import is refused on a v2 flow. Step 5's listing of parked advisory and open blocked findings still runs.
 4. Read where the plan stands:
 
    ```bash

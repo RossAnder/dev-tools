@@ -157,6 +157,7 @@ fn write_subcommands_expose_all_integrity_flags_in_help() {
         &["review", "resolve", "--help"],
         &["review", "reproduce", "--help"],
         &["review", "triage", "--help"],
+        &["review", "settle", "--help"],
         &["review", "export-v1", "--help"],
         &["review", "schedule", "--help"],
         &["review", "reconcile", "--help"],
@@ -1832,7 +1833,6 @@ fn capabilities_features_contains_every_plan_feature() {
         "review_run_show",
         "review_ruled_out",
         "review_same_as_link",
-        "review_list_fix_shape",
         // Native apply of review findings through a v2 flow's task store.
         "tasks_finding_links",
         "review_schedule",
@@ -1840,6 +1840,10 @@ fn capabilities_features_contains_every_plan_feature() {
         "review_anchor",
         "review_reproduce",
         "review_stats_apply",
+        // Findings blocked on what they lack, and the verbs that answer a block.
+        "review_blocked_on",
+        "review_settle",
+        "review_triage_answer",
     ];
     for name in expected {
         assert!(
@@ -1874,8 +1878,8 @@ fn capabilities_version_matches_cargo_toml() {
         .and_then(|s| s.as_str())
         .expect("`version` must be a string");
     assert_eq!(
-        version, "0.23.0",
-        "expected version `0.23.0` (the minor bump for `[[finding_links]]`, `review schedule`, `review reconcile`, `review anchor`, `review reproduce` and `review stats --apply`); got `{version}`"
+        version, "0.24.0",
+        "expected version `0.24.0` (the minor bump for `blocked_on`, `review settle` and `review triage --answer-file`, retiring `fix_shape`); got `{version}`"
     );
 }
 

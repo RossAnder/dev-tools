@@ -342,7 +342,6 @@ fn base(kind: &str) -> JsonValue {
         "severity": "major",
         "failure_scenario": "a worker reads the stale value",
         "fix": "write the current value",
-        "fix_shape": "edits",
         "effort": "trivial",
         "counter": "nobody reads it",
         "grade": "high",

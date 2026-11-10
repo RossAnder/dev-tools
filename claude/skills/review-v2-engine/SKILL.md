@@ -75,7 +75,7 @@ Anything else in the arguments is scope: paths, globs, or a feature name.
    tomlctl capabilities
    ```
 
-   Halt unless `.features` lists `review_add`, `review_survey`, `review_catalogue`, `review_run_head`, `review_run_show`, `review_ruled_out`, `review_same_as_link`, `review_list_fix_shape`, `review_schedule`, `review_reconcile`, `review_anchor`, `review_reproduce` and `review_stats_apply`, telling the user to run `cargo install --path tomlctl` in the dev-tools checkout and restart.
+   Halt unless `.features` lists `review_add`, `review_survey`, `review_catalogue`, `review_run_head`, `review_run_show`, `review_ruled_out`, `review_same_as_link`, `review_blocked_on`, `review_settle`, `review_triage_answer`, `review_schedule`, `review_reconcile`, `review_anchor`, `review_reproduce` and `review_stats_apply`, telling the user to run `cargo install --path tomlctl` in the dev-tools checkout and restart.
 3. Invoke the `flow-contract-flow-context` skill and build the envelope as it says, with the **v1 command name**: `--command review` for `/review-v2`, `--command optimise` for `/optimise-v2`, `--command review-plan` for `/review-plan-v2`. The envelope builder knows only the v1 names. Gate on `envelope.ok`, emit the bootstrap-summary line, and bind the store flag from `envelope.resolved.slug`, or derive `<scope>` when no flow resolved. A v2 run skips the user-inputs sweep.
 4. Read back the v1 outcomes of findings an earlier run exported to a v1 ledger, for stores that still hold `exported` findings, so a re-found fixed issue resolves as a regression rather than a repeat. It is a legacy read-back for v1 rows whose `v2_ref` names this store, since triage hands findings to `/apply-v2` rather than to a v1 ledger:
 
@@ -83,11 +83,11 @@ Anything else in the arguments is scope: paths, globs, or a feature name.
    tomlctl review sync-v1 --slug <slug>
    ```
 
-5. List what earlier runs left without a landing place — parked advisory, and needs-plan defects still open — and report both in the run's opening lines, so the user sees them before new findings arrive:
+5. List what earlier runs left without a landing place — parked advisory, and open findings still blocked, grouped by what they are blocked on — and report both in the run's opening lines, so the user sees them before new findings arrive:
 
    ```bash
    tomlctl review list --slug <slug> --status parked
-   tomlctl review list --slug <slug> --status open --fix-shape needs-plan
+   tomlctl review list --slug <slug> --status open --blocked-on any
    ```
 
 6. **Plan family only.** Invoke the `flow-contract-task-store` skill and run its auto-import at Step 0 with the ref-set diff gate (its sections 9 and 10), exactly as an orchestrator does there. The import is yours; agents only ever run `tasks import-plan --dry-run`. Skip it on a v2 flow, one with `.claude/flows/<slug>/plan.toml`: its store is already canonical and `tasks import-plan` refuses it. That run is in flow mode, and `references/plan-flow.md` takes over from here.
@@ -196,7 +196,7 @@ Then decide, in this order:
 
 ### Stages 6 to 8 — Audit, triage, close
 
-Audit the digest's sample through the `audit` projection; write the report and present the counts, the Needs-a-plan group, contested items and the advisory list with a recommendation per item; take the user's dispositions; park untriaged advisory, hand user-picked items to the backlog through the `backlog-capture` skill, name `/apply-v2` with the store and the ids the user picked under `apply`, and finish the run. Follow `references/triage-and-close.md`. Triage is a user gate: an instruction to proceed autonomously does not cover it.
+Audit the digest's sample through the `audit` projection; write the report and present the counts, the blocked findings grouped by `blocked_on`, the deferred proposals with their age, contested items and the advisory list with a recommendation per item; ask every decision in one round and record each answer; take the user's dispositions, an overdue proposal's included; park untriaged advisory, hand user-picked items to the backlog through the `backlog-capture` skill, name `/apply-v2` with the store and the ids the user picked under `apply`, and finish the run. Follow `references/triage-and-close.md`. Triage is a user gate: an instruction to proceed autonomously does not cover it.
 
 Record the agent total, as stage 4 defines it, then finish:
 

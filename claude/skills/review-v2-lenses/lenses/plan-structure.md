@@ -57,7 +57,7 @@ Read the whole plan first, then the fences: `FORMAT CONTRACT` is the only source
 - `add` — a missing Success Criterion for an uncovered goal, a missing `## Summary` or `## Success Criteria` section, or a missing Execution Policy field. Anchor on the adjacent heading or bullet, and write the criterion as a check that fails today.
 - `change` — a criterion that checks only that tasks ran, rewritten to check the goal; a policy value outside its allowed set or range; a section heading out of the contract's order or spelling. `anchor_old` is the exact text under `plan_section`.
 - Never write an edit adding a `Checkpoint after` bullet: `tomlctl tasks render` derives it from the checkpoint markers.
-- A prose-format plan is never restructured by cleanup; the restructuring is a defect with `fix_shape = "needs-plan"` or an advisory, because it needs decisions about task boundaries.
+- A prose-format plan is never restructured by cleanup; the restructuring is a defect with `blocked_on = "decision"` or an advisory, because it needs decisions about task boundaries; the defect names the open boundary in `blocked_missing` and at least two candidate splits in `blocked_options`, each with its consequence.
 
 ## Advisory angles
 

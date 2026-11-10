@@ -31,7 +31,7 @@ Decide the kind before writing anything:
 2. Behaviour is right but the code, test or prose around it is not, and the fix is edits only — stale comment, dead code, naming drift, inconsistency with the converged pattern, a missing test, doc or help text, a small design fix such as extracting a duplicated helper, a low-value test or doc to remove → **`cleanup`**.
 3. Adopting it needs a decision — a theoretical risk, a challenge to a documented decision, a probe result, a counter-implementation (swap a dependency, re-architect, change direction) → **`advisory`**.
 
-A defect whose fix needs decisions stays a defect with `fix_shape = "needs-plan"`. A finding against a documented deliberate choice (an ADR, a comment at the site, a CLAUDE.md line, a test that pins it) is not dropped and is not a defect: it is `advisory` with `angle = "challenge"` and `challenges` naming the decision.
+A defect or cleanup that cannot be fixed as written stays that kind and carries `blocked_on` ([Blocked](#blocked)). A finding against a documented deliberate choice (an ADR, a comment at the site, a CLAUDE.md line, a test that pins it) is not dropped and is not a defect: it is `advisory` with `angle = "challenge"` and `challenges` naming the decision.
 
 ### Fields every finding carries
 
@@ -54,8 +54,7 @@ Never supply `id`, `status`, `route`, `anchor`, `related`, `outcome`, `cell`, `r
 |---|---|
 | `severity` | `critical` \| `major` \| `minor` (rubric below) |
 | `failure_scenario` | ≤600; the claim the verifier will try to refute (forms below) |
-| `fix` | ≤800; what to change |
-| `fix_shape` | `edits` \| `needs-plan` |
+| `fix` | ≤800; what to change, as far as it can be written when the row is blocked |
 | `effort` | `trivial` \| `small` \| `medium` \| `large` |
 | `counter` | ≤300; the `research-methods` Counter line — the one observation that would invalidate the finding |
 | `grade` | `high` \| `medium` \| `low`; the `research-methods` evidence grade |
@@ -80,6 +79,25 @@ Never supply `id`, `status`, `route`, `anchor`, `related`, `outcome`, `cell`, `r
 `review add` checks that `old` occurs within 20 lines of `line` — in `target_file` when given and existing, else in `file` — after normalising `\r\n` to `\n`. Re-read the anchor immediately before writing the row.
 
 One pattern across many sites is **one** row with `instances`, not a row per site.
+
+### Blocked
+
+A defect or cleanup is fixable by default. Blocked is a claim, made with `blocked_on`, that the fix cannot be written from what the review can see, and like every other claim it has to name its evidence: what exactly is missing, in the fields its value requires.
+
+| `blocked_on` | Use when | Required with it |
+|---|---|---|
+| `decision` | the fix turns on a choice the code cannot make | `blocked_missing`; `blocked_options`, 2–6 |
+| `evidence` | one fact outside the code would settle the fix | `blocked_missing`, the exact unknown |
+| `measurement` | the fix depends on a number not yet measured | `blocked_missing`; `blocked_metric`; `blocked_command` |
+| `alternatives` | two or more fixes must be compared before one is picked | `blocked_missing`; `blocked_options`, 2–6 |
+| `design` | the fix changes a contract across files or milestones | `blocked_missing`; `blocked_contract`, that change |
+
+- `blocked_missing` is ≤400 and names the missing thing, not the wish to look further. Each `blocked_options` entry is ≤300 and names its consequence in the same string.
+- A decision where one option is plainly dominated — it breaks a caller, contradicts a documented contract, or costs more for the same result — is not a decision. Write the dominant option as the fix and omit `blocked_on`.
+- What you could settle yourself within your slice is not missing: read the file, run the narrow command, and write the fix.
+- The row still carries its `fix` or `edit`, written as far as it goes. The verifier tries to finish it, and a block it can answer is sent back fixable.
+
+`review add` refuses a `blocked_on` without its required fields, and refuses the retired shape field, naming `blocked_on`. `tomlctl review schema finding --kind defect` prints the same conditions.
 
 #### Mechanical-cleanup exception
 
@@ -204,6 +222,7 @@ The orchestrator schedules follow-up work from `thin` and `uncovered`, so choose
 - `by` is your role: `verifier`, `panel` (with `seat` 1–3), or `checker`.
 - A verifier may reassess a defect's severity with `--severity`; pass it only when it changes.
 - A verifier who finds that `same_as` names a different fault passes `--strike-same-as`, and the finding resolves on its own verdict. Striking is available only on a single-verdict call, not in an NDJSON batch.
+- A blocked finding's classification is refuted like its claim. When the verifier can write the fix the block says is missing, it records a `confirmed` or `plausible` verdict with `unblocks` and a `fix_sketch` (≤800, how to fix it); tomlctl clears the block and keeps the sketch for the implementer. Only `by = "verifier"` may unblock, and it edits no file to do so.
 - A panel finding survives on at least two non-refuted votes of three.
 
 ## Store writes
@@ -234,7 +253,9 @@ Pass the note and the rule-outs by file, never on stdin; omit `--ruled-out` when
 tomlctl review verdict <finding> --verdict confirmed --by verifier --citation <path:line> --rationale-file <run-dir>/payloads/<finding>.rationale.md --slug <slug>
 ```
 
-A batch is one NDJSON file, one verdict per line (`finding`, `verdict`, `by`, `citation`, `rationale`, and optionally `seat` and `severity`):
+An unblocking verdict adds `--unblocks --fix-sketch-file <run-dir>/payloads/<finding>.sketch.md`, the sketch staged with the Write tool.
+
+A batch is one NDJSON file, one verdict per line (`finding`, `verdict`, `by`, `citation`, `rationale`, and optionally `seat`, `severity`, and `unblocks` with `fix_sketch`):
 
 ```bash
 tomlctl review verdict --ndjson <run-dir>/payloads/<batch>.ndjson --slug <slug>
@@ -253,7 +274,7 @@ Everything else belongs in the store. Return only:
   `escalate` is present only when something in the slice needs a different cell.
 - **Verifying agents** (`review-verifier`, `review-checker`) — one `verdict-return` object per finding:
   `{"finding": "F12", "verdict": "refuted", "reroute": "verifier"}`
-  `reroute` is present only when `review verdict` printed one.
+  `reroute` is present only when `review verdict` printed one; `unblocks` and `fix_sketch` only on a verdict that unblocked the finding, as `review verdict` printed them.
 - **`review-surveyor`** — the plain-text digest of at most 40 lines its body defines.
 
 `tomlctl review schema cell-return` and `tomlctl review schema verdict-return` print both shapes.

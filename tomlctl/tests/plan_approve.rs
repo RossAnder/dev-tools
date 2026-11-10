@@ -697,7 +697,7 @@ fn review_ran_is_refused_after_review_apply_rewrites_an_accept_entry() {
     let row = serde_json::json!({
         "kind": "defect", "lens": "plan-structure", "summary": "the check is too broad",
         "severity": "major", "failure_scenario": "an unrelated test passes it",
-        "fix": "name the test", "fix_shape": "edits", "effort": "trivial",
+        "fix": "name the test", "effort": "trivial",
         "counter": "nobody reads it", "grade": "high", "evidence": ["the record shows it"],
         "target": "task:add-guard.spec.accept[0]", "file": tasks_file, "symbol": "add-guard",
         "expect": entry, "new": fixed,

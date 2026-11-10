@@ -9,7 +9,7 @@ use anyhow::Result;
 use super::store::{self, Target};
 use super::{
     add, anchor, apply, catalogue_cmd, cells, cover, digest, export, query, reconcile, reproduce,
-    resolve, run_show, runs, schedule, schema_out, stats, survey, sync, triage, verdict,
+    resolve, run_show, runs, schedule, schema_out, settle, stats, survey, sync, triage, verdict,
 };
 use crate::cli::{ReviewOp, ReviewRunOp, ReviewStore};
 
@@ -46,6 +46,20 @@ pub(crate) fn dispatch(op: ReviewOp) -> Result<()> {
         ReviewOp::Digest(args) => digest::digest(&target(&args.store)?, args),
         ReviewOp::Report(args) => digest::report(&target(&args.store)?, args),
         ReviewOp::Triage(args) => triage::run(&target(&args.store)?, args),
+        ReviewOp::Settle(args) => settle::run(
+            &target(&args.store)?,
+            settle::Request {
+                id: &args.id,
+                accept: args.outcome.accept,
+                refute: args.outcome.refute,
+                defer: args.outcome.defer,
+                tier: args.tier.as_deref(),
+                fix_file: args.fix_file.as_deref(),
+                citation: args.citation.as_deref(),
+                proposal: args.proposal.as_deref(),
+            },
+            &args.integrity,
+        ),
         ReviewOp::Apply(args) => apply::run(&target(&args.store)?, args),
         ReviewOp::Stats(args) => stats::run(args),
         ReviewOp::ExportV1(args) => export::run(&target(&args.store)?, args),
@@ -57,6 +71,7 @@ pub(crate) fn dispatch(op: ReviewOp) -> Result<()> {
                 all: args.all,
                 flow: &args.flow,
                 checkpoint: &args.checkpoint,
+                settle_checkpoint: args.settle_checkpoint.as_deref(),
             },
             &args.integrity,
         ),

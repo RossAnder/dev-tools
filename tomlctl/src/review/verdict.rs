@@ -5,6 +5,8 @@
 //! A finding with no `same_as` takes its status from the verdict at once;
 //! one with `same_as` stays `unverified` for `review resolve`. A batch row
 //! that fails a check is refused with its reasons while the rest land.
+//! A verifier verdict with `unblocks` clears a blocked finding's block and
+//! leaves its `fix_sketch` on the finding.
 
 use std::collections::BTreeMap;
 
@@ -104,6 +106,16 @@ fn single(args: &ReviewVerdictArgs) -> Result<Input> {
     put(
         "rationale",
         rationale.map(|text| JsonValue::from(text.replace("\r\n", "\n").trim())),
+    );
+    put("unblocks", args.unblocks.then_some(JsonValue::Bool(true)));
+    let sketch = match (&args.fix_sketch, &args.fix_sketch_file) {
+        (Some(text), _) => Some(read_text_arg(text)?),
+        (None, Some(path)) => Some(read_flag_file(path, "fix-sketch-file")?),
+        (None, None) => None,
+    };
+    put(
+        "fix_sketch",
+        sketch.map(|text| JsonValue::from(text.replace("\r\n", "\n").trim())),
     );
     Ok(Input {
         line: 1,
@@ -243,10 +255,15 @@ fn apply_one(
             _ => {}
         }
     }
-    if !reasons.is_empty() {
-        return Err(reasons);
+    let unblocks = fields::unblocks(row);
+    let mut rest = toml::map::Map::new();
+    if unblocks {
+        rest.insert("unblocks".into(), toml::Value::Boolean(true));
+        rest.insert(
+            "fix_sketch".into(),
+            toml::Value::String(text("fix_sketch").to_string()),
+        );
     }
-
     let record = Verdict {
         finding: id.to_string(),
         run: finding.run.clone(),
@@ -256,8 +273,31 @@ fn apply_one(
         severity: text("severity").to_string(),
         citation: text("citation").to_string(),
         rationale: text("rationale").to_string(),
-        rest: toml::map::Map::new(),
+        rest,
     };
+    if unblocks {
+        if by != "verifier" {
+            reasons.push(format!(
+                "`unblocks` answers a blocked finding from the verifier, not {by:?}"
+            ));
+        }
+        if verdict == "refuted" {
+            reasons.push(
+                "a refuted finding has no block to answer; `unblocks` needs a standing verdict"
+                    .to_string(),
+            );
+        }
+        // A replay finds the block it cleared already gone.
+        if fields::blocked_on(finding).is_none() && !store.verdicts.contains(&record) {
+            reasons.push(format!(
+                "{id} is not blocked; `unblocks` answers a finding with `blocked_on`"
+            ));
+        }
+    }
+    if !reasons.is_empty() {
+        return Err(reasons);
+    }
+
     store.upsert_verdict(record);
 
     let reroute = verdict == "unsettled";
@@ -268,6 +308,15 @@ fn apply_one(
     }
     if reroute {
         finding.route = Some(Route::Verifier);
+    }
+    if unblocks {
+        fields::clear_block(finding, &[]);
+        let sketch = toml::Value::String(text("fix_sketch").to_string());
+        finding.rest.insert("fix_sketch".into(), sketch);
+        finding.rest.insert(
+            "unblocked_by".into(),
+            toml::Value::String("verifier".into()),
+        );
     }
     if finding.same_as.is_empty() && finding.status().decided_by_verdict() {
         finding.set_status(decided, &[]);
@@ -284,7 +333,36 @@ fn apply_one(
     if reroute {
         entry["reroute"] = json!(Route::Verifier.as_str());
     }
+    if unblocks {
+        entry["unblocks"] = json!(true);
+        entry["fix_sketch"] = json!(text("fix_sketch"));
+    }
     Ok(entry)
+}
+
+/// Records one `orchestrator` verdict on `finding` through the checks and
+/// status decision `review verdict` applies; `Err` carries the refusals.
+pub(super) fn orchestrator_verdict(
+    store: &mut Store,
+    finding: &str,
+    verdict: &str,
+    citation: &str,
+    rationale: &str,
+    slug: Option<&str>,
+) -> std::result::Result<JsonValue, Vec<String>> {
+    let row = Map::from_iter([
+        ("finding".to_string(), json!(finding)),
+        ("by".to_string(), json!("orchestrator")),
+        ("verdict".to_string(), json!(verdict)),
+        ("citation".to_string(), json!(citation)),
+        ("rationale".to_string(), json!(rationale)),
+    ]);
+    let input = Input {
+        line: 1,
+        row,
+        strike_same_as: false,
+    };
+    apply_one(store, &input, slug, &Mechanical::new())
 }
 
 fn written_by_sweeper(store: &Store, cell: &str) -> bool {

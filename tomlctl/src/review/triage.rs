@@ -10,6 +10,8 @@
 //! `converted` in one write; the replacement stays `unverified` for its route.
 //! An advisory whose run is finished converts only into the open run `--run`
 //! names, which then cannot finish until the replacement is verified.
+//! `--answer-file` records the user's answer on an open finding blocked on a
+//! decision and clears the block, leaving its status alone.
 
 use std::path::{Path, PathBuf};
 
@@ -20,7 +22,7 @@ use toml::value::Datetime;
 
 use super::add::{self, str_of};
 use super::catalogue::run_catalogue;
-use super::fields::{self, FindingStatus, Kind, Route};
+use super::fields::{self, BlockedOn, FindingStatus, Kind, Record, Route};
 use super::invalid;
 use super::matching::{self, Site};
 use super::store::{self, Finding, Minted, Run, Store, Target, Verdict};
@@ -43,12 +45,18 @@ const REOPENABLE_ORDER: &[FindingStatus] = &[
 
 enum Mode {
     Dismiss(String),
-    Defer { reason: String, trigger: String },
+    Defer {
+        reason: String,
+        trigger: String,
+    },
     Reopen(String),
     Park(String),
     Resolve(String),
     Backlog(String),
     Convert(Kind),
+    /// The user's answer to a finding blocked on a decision. The finding
+    /// stays `open`; the answer is not a status companion.
+    Answer(String),
 }
 
 impl Mode {
@@ -61,6 +69,7 @@ impl Mode {
             Self::Resolve(_) => "resolve",
             Self::Backlog(_) => "backlog-ref",
             Self::Convert(_) => "convert",
+            Self::Answer(_) => "answer",
         }
     }
 
@@ -68,7 +77,7 @@ impl Mode {
         match self {
             Self::Dismiss(_) => FindingStatus::Dismissed,
             Self::Defer { .. } => FindingStatus::Deferred,
-            Self::Reopen(_) => FindingStatus::Open,
+            Self::Reopen(_) | Self::Answer(_) => FindingStatus::Open,
             Self::Park(_) => FindingStatus::Parked,
             Self::Resolve(_) => FindingStatus::Resolved,
             Self::Backlog(_) => FindingStatus::Backlogged,
@@ -88,7 +97,23 @@ impl Mode {
             Self::Park(r) => vec![("park_reason", r)],
             Self::Resolve(r) => vec![("resolution", r)],
             Self::Backlog(id) => vec![("backlog_ref", id)],
-            Self::Convert(_) => Vec::new(),
+            Self::Convert(_) | Self::Answer(_) => Vec::new(),
+        }
+    }
+
+    /// Whether `finding` already carries what this mode records.
+    fn recorded(&self, finding: &Finding) -> bool {
+        let text = |key: &str| finding.rest.get(key).and_then(TomlValue::as_str);
+        match self {
+            Self::Answer(answer) => {
+                text("decision_answer") == Some(answer.as_str())
+                    && text("unblocked_by") == Some("user")
+                    && fields::blocked_on(finding).is_none()
+            }
+            _ => self
+                .companions()
+                .into_iter()
+                .all(|(key, value)| text(key) == Some(value)),
         }
     }
 
@@ -227,6 +252,18 @@ fn read_mode(args: &ReviewTriageArgs) -> Result<Mode> {
         }
         return Ok(Mode::Backlog(reference.to_string()));
     }
+    if let Some(answer) = read_prose(VERB, "answer", None, m.answer_file.as_deref())? {
+        let cap = fields::spec(Record::Finding, "decision_answer", None).and_then(|s| s.cap);
+        if let Some(cap) = cap
+            && answer.chars().count() > cap
+        {
+            return Err(invalid(format!(
+                "{VERB}: the --answer-file text is {} characters; the cap is {cap}",
+                answer.chars().count()
+            )));
+        }
+        return Ok(Mode::Answer(answer));
+    }
     if let Some(kind) = &m.convert {
         return match Kind::parse(kind) {
             Some(kind @ (Kind::Cleanup | Kind::Defect)) => Ok(Mode::Convert(kind)),
@@ -265,11 +302,7 @@ fn judge(store: &Store, id: &str, mode: &Mode, expect: Option<&str>) -> Step {
     };
     let current = finding.status();
     let status = current.as_str();
-    let recorded = mode
-        .companions()
-        .into_iter()
-        .all(|(key, value)| finding.rest.get(key).and_then(TomlValue::as_str) == Some(value));
-    if current == mode.status() && recorded {
+    if current == mode.status() && mode.recorded(finding) {
         return Step::Unchanged;
     }
     if let Some(expected) = expect
@@ -309,6 +342,23 @@ fn judge(store: &Store, id: &str, mode: &Mode, expect: Option<&str>) -> Step {
             "{id} is {status}; --reopen moves a finding that is {}",
             reopenable.join(", ")
         ));
+    }
+    if matches!(mode, Mode::Answer(_)) {
+        if !current.is_settled() && current != FindingStatus::Open {
+            reasons.push(format!(
+                "{id} is {status}; --answer-file answers an open finding"
+            ));
+        }
+        match fields::blocked_on(finding) {
+            Some(BlockedOn::Decision) => {}
+            Some(other) => reasons.push(format!(
+                "{id} is blocked on {}; --answer-file answers a finding blocked on decision",
+                other.as_str()
+            )),
+            None => reasons.push(format!(
+                "{id} is not blocked; --answer-file answers a finding blocked on decision"
+            )),
+        }
     }
     if reasons.is_empty() {
         Step::Apply
@@ -355,6 +405,13 @@ fn dispose_all(
                 let verdicts: Vec<&Verdict> =
                     store.verdicts.iter().filter(|v| &v.finding == id).collect();
                 let from = finding.status().as_str();
+                if let Mode::Answer(answer) = mode {
+                    answer_decision(finding, answer);
+                    outcome
+                        .applied
+                        .push(json!({"id": id, "from": from, "status": from}));
+                    continue;
+                }
                 let resolved = matches!(mode, Mode::Resolve(_)).then_some(today);
                 // A reopened finding no longer follows its v1 row: sync would
                 // undo the reopen, and a re-export mints a regression instead.
@@ -378,6 +435,19 @@ fn dispose_all(
         }
     }
     outcome
+}
+
+/// Clears a decision block, keeping `blocked_options` as what the answer
+/// chose among, and records the answer as the user's.
+fn answer_decision(finding: &mut Finding, answer: &str) {
+    fields::clear_block(finding, &["blocked_options"]);
+    finding.rest.insert(
+        "decision_answer".into(),
+        TomlValue::String(answer.to_string()),
+    );
+    finding
+        .rest
+        .insert("unblocked_by".into(), TomlValue::String("user".into()));
 }
 
 fn stale_entry(id: &str, expect: Option<&str>, found: &str) -> JsonValue {

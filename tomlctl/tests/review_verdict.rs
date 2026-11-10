@@ -677,3 +677,143 @@ fn same_as_finding_stays_unverified_until_struck() {
     assert_eq!(finding["status"].as_str(), Some("open"));
     assert_eq!(repo.verdicts().len(), 1);
 }
+
+/// Two blocked defects: one on evidence, one in the legacy needs-plan form.
+const BLOCKED: &str = r#"
+[[findings]]
+id = "F7"
+run = "U1"
+cell = "C1"
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "src/lib.rs"
+line = 40
+symbol = "lib::cache"
+summary = "the cache may serve stale rows"
+severity = "major"
+blocked_on = "evidence"
+blocked_missing = "whether any caller reads after a write"
+status = "unverified"
+
+[[findings]]
+id = "F8"
+run = "U1"
+cell = "C1"
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "src/lib.rs"
+line = 50
+symbol = "lib::flush"
+summary = "flush drops the tail"
+severity = "minor"
+fix_shape = "needs-plan"
+status = "unverified"
+"#;
+
+const SKETCH: &str = "invalidate the entry in lib::write before returning";
+
+fn blocked_repo() -> Repo {
+    Repo::seeded(format!("{STORE}{BLOCKED}"), None)
+}
+
+fn unblocking(finding: &str) -> JsonValue {
+    let mut row = row(finding, "verifier", "confirmed");
+    row["unblocks"] = json!(true);
+    row["fix_sketch"] = json!(SKETCH);
+    row
+}
+
+#[test]
+fn unblocking_verdict_clears_the_block_and_keeps_the_sketch() {
+    let repo = blocked_repo();
+    let mut args = CONFIRMED.to_vec();
+    args.extend(["--unblocks", "--fix-sketch", SKETCH]);
+    let out = repo.verdicted("F7", &args);
+    assert_eq!(
+        out["verdicts"],
+        json!([{"finding": "F7", "verdict": "confirmed", "unblocks": true, "fix_sketch": SKETCH}]),
+        "{out}"
+    );
+    let finding = repo.finding("F7");
+    assert!(finding.get("blocked_on").is_none(), "{finding:?}");
+    assert!(finding.get("blocked_missing").is_none(), "{finding:?}");
+    assert_eq!(finding["fix_sketch"].as_str(), Some(SKETCH));
+    assert_eq!(finding["unblocked_by"].as_str(), Some("verifier"));
+    assert_eq!(finding["status"].as_str(), Some("open"));
+    let verdicts = repo.verdicts();
+    assert_eq!(verdicts.len(), 1);
+    assert_eq!(verdicts[0]["unblocks"].as_bool(), Some(true));
+    assert_eq!(verdicts[0]["fix_sketch"].as_str(), Some(SKETCH));
+
+    let after = repo.raw();
+    let replay = repo.verdicted("F7", &args);
+    assert_eq!(replay["unchanged"], true, "{replay}");
+    assert_eq!(repo.raw(), after, "a replayed unblock writes nothing");
+}
+
+#[test]
+fn unblocking_clears_a_legacy_needs_plan_block() {
+    let repo = blocked_repo();
+    repo.batched(&[unblocking("F8")]);
+    let finding = repo.finding("F8");
+    assert!(finding.get("fix_shape").is_none(), "{finding:?}");
+    assert_eq!(finding["fix_sketch"].as_str(), Some(SKETCH));
+    assert_eq!(finding["unblocked_by"].as_str(), Some("verifier"));
+}
+
+#[test]
+fn unblock_without_fix_sketch_is_refused() {
+    let repo = blocked_repo();
+    let mut bare = unblocking("F7");
+    bare.as_object_mut().unwrap().remove("fix_sketch");
+    let refused = repo.batch(&[bare]).failure();
+    let stderr = String::from_utf8_lossy(&refused.get_output().stderr).to_string();
+    assert!(stderr.contains("fix_sketch"), "{stderr}");
+    assert_eq!(repo.finding("F7")["blocked_on"].as_str(), Some("evidence"));
+    assert!(repo.verdicts().is_empty());
+}
+
+#[test]
+fn unblock_of_a_finding_that_is_not_blocked_is_refused() {
+    let repo = blocked_repo();
+    let refused = repo.batch(&[unblocking("F1")]).failure();
+    let stderr = String::from_utf8_lossy(&refused.get_output().stderr).to_string();
+    assert!(stderr.contains("F1 is not blocked"), "{stderr}");
+    assert!(repo.finding("F1").get("fix_sketch").is_none());
+    assert!(repo.verdicts().is_empty());
+}
+
+#[test]
+fn unblock_from_a_refuting_or_non_verifier_verdict_is_refused() {
+    let repo = blocked_repo();
+    let mut refuting = unblocking("F7");
+    refuting["verdict"] = json!("refuted");
+    let mut audit = unblocking("F7");
+    audit["by"] = json!("audit");
+    for row in [refuting, audit] {
+        repo.batch(&[row]).failure();
+    }
+    assert_eq!(repo.finding("F7")["blocked_on"].as_str(), Some("evidence"));
+    assert!(repo.verdicts().is_empty());
+}
+
+#[test]
+fn verdict_without_unblocks_leaves_the_block() {
+    let repo = blocked_repo();
+    let mut sketch_only = row("F7", "verifier", "confirmed");
+    sketch_only["fix_sketch"] = json!(SKETCH);
+    let refused = repo.batch(&[sketch_only]).failure();
+    let stderr = String::from_utf8_lossy(&refused.get_output().stderr).to_string();
+    assert!(stderr.contains("only with unblocks"), "{stderr}");
+
+    repo.verdicted("F7", CONFIRMED);
+    let finding = repo.finding("F7");
+    assert_eq!(finding["blocked_on"].as_str(), Some("evidence"));
+    assert!(finding.get("fix_sketch").is_none(), "{finding:?}");
+    assert!(finding.get("unblocked_by").is_none(), "{finding:?}");
+    assert_eq!(finding["status"].as_str(), Some("open"));
+}

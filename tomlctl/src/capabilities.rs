@@ -95,6 +95,7 @@ const SCOPED_ENUM_VALUES: &[(&str, &str, &[&str])] = &[
         "review",
         crate::plan::schema::ReviewOutcome::VOCABULARY,
     ),
+    ("review settle", "tier", crate::review::SETTLE_TIERS),
 ];
 
 const BACKLOG_KINDS: &[&str] = &[
@@ -520,6 +521,7 @@ mod tests {
                 ("tasks add", "effort") => crate::tasks::Effort::VOCABULARY,
                 ("plan view", "for_role") => crate::plan::VIEW_ROLES,
                 ("plan approve", "review") => crate::plan::schema::ReviewOutcome::VOCABULARY,
+                ("review settle", "tier") => crate::review::SETTLE_TIERS,
                 other => panic!(
                     "SCOPED_ENUM_VALUES references `{other:?}` — add a branch naming its validator's vocabulary"
                 ),
@@ -586,6 +588,17 @@ mod tests {
                 .is_none(),
             "flow list --status has no vocabulary constant and must not borrow another subcommand's"
         );
+    }
+
+    #[test]
+    fn review_settle_tier_reports_the_settle_vocabulary_not_the_dup_tiers() {
+        let ctx = on_cli_stack(build_agent_context);
+        let flag = &ctx["review"]["subcommands"]["settle"]["flags"]["--tier"];
+        assert_eq!(
+            flag["values"],
+            serde_json::json!(["mechanical", "cited", "user"])
+        );
+        assert_eq!(flag["type"], "enum");
     }
 
     #[test]

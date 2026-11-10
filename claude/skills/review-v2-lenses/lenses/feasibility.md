@@ -46,7 +46,7 @@ Read the whole plan before the code, then test each load-bearing design move aga
 ## Edit forms
 
 - `change` — on the plan text, with `plan_section`, `anchor_old` and `anchor_new`: align a name, field, path or format to the spelling the rest of the plan and the code use, or bring a task's Detail into line with the Approach rule it implements, when the code or a User Decision settles which side is right.
-- A contradiction neither side of which is settled, and an infeasible design, need a decision: write them as defects with `fix_shape = needs-plan`, or as advisory when the plan still works either way.
+- A contradiction neither side of which is settled, and an infeasible design, need a decision: write them as defects with `blocked_on = "decision"`, naming the open choice in `blocked_missing` and at least two options in `blocked_options`, each with its consequence, or as advisory when the plan still works either way.
 
 ## Advisory angles
 

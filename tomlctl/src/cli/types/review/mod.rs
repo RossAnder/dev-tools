@@ -80,6 +80,10 @@ pub(crate) enum ReviewOp {
     /// Disposition findings, moving only those still at `--expect-status`.
     Triage(ReviewTriageArgs),
 
+    /// Record what became of a settle proposal for a finding blocked on
+    /// evidence: accepted with its tier and fix, refuted, or deferred.
+    Settle(ReviewSettleArgs),
+
     /// Write the record edits open plan findings on a v2 flow carry, by tier,
     /// each compare-and-set against its `expect`.
     Apply(ReviewApplyArgs),

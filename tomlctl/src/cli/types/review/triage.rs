@@ -1,4 +1,4 @@
-//! Arguments of `review triage` and `review apply`.
+//! Arguments of `review triage`, `review settle` and `review apply`.
 
 use std::path::PathBuf;
 
@@ -64,6 +64,70 @@ pub(crate) struct ReviewTriageArgs {
 }
 
 #[derive(Args)]
+pub(crate) struct ReviewSettleArgs {
+    #[arg(value_name = "ID", help = "The finding blocked on evidence")]
+    pub(crate) id: String,
+    #[command(flatten)]
+    pub(crate) store: ReviewStore,
+    #[command(flatten)]
+    pub(crate) outcome: ReviewSettleOutcome,
+    #[arg(
+        long = "tier",
+        value_name = "TIER",
+        conflicts_with_all = ["refute", "defer"],
+        help = "Companion to --accept: mechanical|cited|user"
+    )]
+    pub(crate) tier: Option<String>,
+    #[arg(
+        long = "fix-file",
+        value_name = "PATH",
+        conflicts_with_all = ["refute", "defer"],
+        help = "Companion to --accept: the fix the proposal settled on, recorded as `fix_sketch`"
+    )]
+    pub(crate) fix_file: Option<PathBuf>,
+    #[arg(
+        long = "citation",
+        value_name = "TEXT",
+        conflicts_with_all = ["accept", "defer"],
+        help = "Companion to --refute: what shows the finding false"
+    )]
+    pub(crate) citation: Option<String>,
+    #[arg(
+        long = "proposal",
+        value_name = "PATH",
+        conflicts_with_all = ["accept", "refute"],
+        help = "Companion to --defer: the proposal note, a file in the repository"
+    )]
+    pub(crate) proposal: Option<PathBuf>,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+/// The `review settle` outcomes, exactly one per call.
+#[derive(Args, Clone)]
+#[group(required = true, multiple = false)]
+pub(crate) struct ReviewSettleOutcome {
+    #[arg(
+        long = "accept",
+        requires_all = ["tier", "fix_file"],
+        help = "Unblock the finding with the proposal's fix; status → open"
+    )]
+    pub(crate) accept: bool,
+    #[arg(
+        long = "refute",
+        requires = "citation",
+        help = "Refute the finding through an orchestrator verdict; status → refuted"
+    )]
+    pub(crate) refute: bool,
+    #[arg(
+        long = "defer",
+        requires = "proposal",
+        help = "Record the proposal note and leave the finding blocked; status → open"
+    )]
+    pub(crate) defer: bool,
+}
+
+#[derive(Args)]
 pub(crate) struct ReviewApplyArgs {
     #[arg(
         value_name = "ID,...",
@@ -102,6 +166,7 @@ const NOT_DEFER: &[&str] = &[
     "resolve_file",
     "backlog_ref",
     "convert",
+    "answer_file",
 ];
 const NOT_CONVERT: &[&str] = &[
     "dismiss",
@@ -115,6 +180,7 @@ const NOT_CONVERT: &[&str] = &[
     "resolve",
     "resolve_file",
     "backlog_ref",
+    "answer_file",
 ];
 
 /// The `review triage` dispositions, exactly one per call. Each prose
@@ -186,4 +252,10 @@ pub(crate) struct ReviewTriageMode {
         help = "cleanup|defect: mint the advisory's replacement from --ndjson; status → converted"
     )]
     pub(crate) convert: Option<String>,
+    #[arg(
+        long = "answer-file",
+        value_name = "PATH",
+        help = "Answer an open finding blocked on a decision with the text of a file; clears the block, keeping its options"
+    )]
+    pub(crate) answer_file: Option<PathBuf>,
 }

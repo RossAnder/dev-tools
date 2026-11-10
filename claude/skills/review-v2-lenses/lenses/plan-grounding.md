@@ -55,7 +55,7 @@ Read the plan in full, then the tree. Each probe is an explicit procedure, not a
 ## Edit forms
 
 - `change` — on the task text, with `plan_section`, `anchor_old` and `anchor_new`: correct a stale path, symbol or line citation; replace a transcribed list or count with the re-derived one; rewrite a premise to what the code shows; add an unmentioned consumer to a task's Files line and Action.
-- `add` — a sentence or bullet in an existing task that schedules a missed configuration, migration or build step, or gives a new path the logging, error handling or invalidation its siblings carry, when the step is small and the task that needs it is clear. A missing piece of work large enough to need its own task is a defect with `fix_shape = needs-plan`.
+- `add` — a sentence or bullet in an existing task that schedules a missed configuration, migration or build step, or gives a new path the logging, error handling or invalidation its siblings carry, when the step is small and the task that needs it is clear. A missing piece of work large enough to need its own task is a defect with `blocked_on = "design"`, naming the missing work in `blocked_missing` and the task the plan must gain in `blocked_contract`.
 
 ## Advisory angles
 

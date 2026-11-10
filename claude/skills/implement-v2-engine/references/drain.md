@@ -120,7 +120,7 @@ The replan turns what the run found into task changes, through audited verbs, ea
 | A note reporting breakage the milestone's work caused in a file no row holds | Mint a fix task holding that file in this milestone (New tasks, below) before the gate, which would otherwise spend a fix round finding it |
 | A row with an empty `files` or no spec, dropped at launch | Give it its files or its spec. A row with no spec has no executor, so it cannot be dispatched |
 
-**Never up a tier.** A false premise or a `failed` task is replanned, never relaunched unchanged on a stronger executor: a task written against code that is not there, or a spec that left a choice open, stays wrong whoever runs it. The replan changes what the task says; when the re-spec leaves a choice the plan cannot settle in advance, the same row may also move `executor` from `lite` to `deep`, and its `reason` says what the re-spec changed and why the choice remains. An `executor` change with nothing else moved is the escalation this rule forbids.
+**Never up a tier.** A false premise or a `failed` task is replanned, never relaunched unchanged on a stronger executor: a task written against code that is not there, or a spec that left a choice open, stays wrong whoever runs it. The replan changes what the task says; when the re-spec leaves a choice the plan cannot settle in advance, the same row may also move `executor` from `lite` to `deep`, and its `reason` says what the re-spec changed and why the choice remains. An `executor` change with nothing else moved is the escalation this rule forbids. A `failed` or `parked` apply row follows [findings.md](findings.md), section "Failure on an apply row", instead.
 
 **Parking a row yourself.** When a replan input needs a person, set the row `parked` and write its note yourself, so every parked row has one:
 
@@ -211,7 +211,7 @@ After the replan, go back to run-milestone step 3 with `<round>` raised by one w
 
 Stop relaunching when a launch moved no row to `done` and the replan moved no field: the same args would run the same way. Go on from step 8 with what is left; the commit does not run, and each row still `failed` goes under the report's `failed:` section with that as the reason relaunching stopped.
 
-When every row of the milestone is `done`, go to step 7, by way of the reproduce check in [findings.md](findings.md), section "Reproduce check", when a row of the milestone fixes a finding; that check may mint fix tasks and come back here before the gate runs. When a row is `parked`, the milestone cannot gate: drain the rest of its disjoint work through relaunches, then go on from step 8 the same way.
+When every row of the milestone is `done`, go to step 7, by way of the reproduce check in [findings.md](findings.md), section "Reproduce check", when a row of the milestone fixes a finding; that check may mint fix tasks and come back here before the gate runs. When a row of the milestone settles a finding, go by way of [findings.md](findings.md), section "Settle drain", after that check and before the gate. When a row is `parked`, the milestone cannot gate: drain the rest of its disjoint work through relaunches, then go on from step 8 the same way.
 
 ## 7. Gate
 

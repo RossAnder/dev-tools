@@ -65,7 +65,7 @@ tomlctl review run update U1 --slug <slug> --set-json 'waivers=[{"concern":"secu
 
 ### `tomlctl review run finish`
 
-Stamps `finished` and computes `counts` (`cells`, `uncovered`, `defect`, `cleanup`, `advisory`, `refuted`, `suppressed`). Refuses while a finding is `unverified`, a `same_as` awaits `resolve`, an unselected matched concern or unsliced scope file has no waiver, or a cell of the run is unsealed — unless `--incomplete` records why, in which case the reason and the `gaps` are printed and the reason is stored as the run's `incomplete` field, a catalogue field only `run finish` writes. A later clean finish clears an earlier `incomplete`. Prints `{ok, run, finished, counts}`.
+Stamps `finished` and computes `counts` (`cells`, `uncovered`, `defect`, `cleanup`, `advisory`, `refuted`, `suppressed`). Refuses while a finding is `unverified`, a `same_as` awaits `resolve`, an unselected matched concern or unsliced scope file has no waiver, or a cell of the run is unsealed — unless `--incomplete` records why, in which case the reason and the `gaps` are printed and the reason is stored as the run's `incomplete` field, a catalogue field only `run finish` writes. A later clean finish clears an earlier `incomplete`. It also refuses while a deferred proposal of the run's family is overdue, and `--incomplete` / `--incomplete-file` does not waive that refusal; [Deferred proposals](review.md#store-shape) says how a proposal ages and is disposed of. Prints `{ok, run, finished, counts}`.
 
 ```bash
 tomlctl review run finish U1 --slug <slug> --incomplete-file <run-dir>/payloads/incomplete.txt
@@ -75,7 +75,7 @@ tomlctl review run finish U1 --slug <slug> --incomplete-file <run-dir>/payloads/
 |---|---|---|---|
 | *(positional)* | run id | The run finished. | required |
 | `--slug` / `--scope` | name | The store. | required, one of |
-| `--incomplete` / `--incomplete-file` | text \| path | Finish despite open gaps, recording why. | none |
+| `--incomplete` / `--incomplete-file` | text \| path | Finish despite open gaps, recording why; never waives an overdue deferred proposal. | none |
 
 ### `tomlctl review run list`
 

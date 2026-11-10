@@ -662,6 +662,83 @@ fn report_writes_file_and_prints_counts() {
 }
 
 #[test]
+fn report_groups_blocked_findings_by_blocked_on_outside_the_severity_groups() {
+    let Some(repo) = Repo::new(&["src/a.rs"]) else {
+        return;
+    };
+    let rows = [
+        cell("C1", 1, "review-finder", "covered"),
+        defect(
+            "F1",
+            "C1",
+            "open",
+            "blocked_on = \"evidence\"\nblocked_missing = \"whether x is ever empty\"\n",
+        ),
+        finding(
+            "F2",
+            "C1",
+            "defect",
+            "open",
+            "route = \"verifier\"\nseverity = \"major\"\nfailure_scenario = \"old stores fail\"\n\
+             fix_shape = \"needs-plan\"\neffort = \"medium\"\n",
+        ),
+        finding(
+            "F3",
+            "C1",
+            "cleanup",
+            "open",
+            "route = \"checker\"\nedit = \"merge the two parsers\"\ndirection = \"change\"\n\
+             effort = \"small\"\nblocked_on = \"decision\"\nblocked_missing = \"which parser stays\"\n\
+             blocked_options = [\"keep the fast one, losing spans\", \"keep the slow one, doubling load time\"]\n",
+        ),
+        verdict("F1", "verifier", "confirmed"),
+        verdict("F2", "verifier", "confirmed"),
+        verdict("F3", "checker", "confirmed"),
+    ]
+    .concat();
+    repo.seed(ALL_WAIVED, &rows);
+    repo.report();
+    let text = fs::read_to_string(repo.root.join(REPORT)).unwrap();
+
+    let section = |title: &str| {
+        let start = text
+            .find(title)
+            .unwrap_or_else(|| panic!("no {title:?}:\n{text}"));
+        let rest = &text[start + title.len()..];
+        rest[..rest.find("\n## ").unwrap_or(rest.len())].to_string()
+    };
+    let defects = section("## Defects\n");
+    assert!(!defects.contains("### Major"), "{defects}");
+    assert!(defects.contains("None."), "{defects}");
+    assert!(!section("## Cleanup\n").contains("**F3**"), "{text}");
+    assert!(!text.contains("Needs a plan"), "{text}");
+
+    let blocked = section("## Blocked\n");
+    let order: Vec<usize> = [
+        "### On decision",
+        "**F3**",
+        "### On evidence",
+        "**F1**",
+        "### On design",
+        "**F2**",
+    ]
+    .iter()
+    .map(|part| {
+        blocked
+            .find(part)
+            .unwrap_or_else(|| panic!("missing {part:?}:\n{blocked}"))
+    })
+    .collect();
+    assert!(order.windows(2).all(|w| w[0] < w[1]), "{blocked}");
+    for part in [
+        "Missing: whether x is ever empty",
+        "Option: keep the fast one, losing spans",
+    ] {
+        assert!(blocked.contains(part), "missing {part:?}:\n{blocked}");
+    }
+}
+
+#[test]
 fn report_refuses_an_out_beside_the_runs_root_unless_allowed_outside() {
     let Some(repo) = Repo::new(&["src/a.rs"]) else {
         return;

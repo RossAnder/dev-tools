@@ -10,7 +10,7 @@ The goal is one v2 chain from planning through implementation, review and apply.
 - Built and linked, with no run recorded in this repo: `/review-v2`, `/optimise-v2`, `/review-plan-v2`, the `tomlctl review` group, the lens catalogue and `claude/workflows/review-v2.js`. The Review step of `human-only-handovers` was skipped, because plan review was not built when that plan was authored.
 - Run once for real work: `/plan-v2` (v2 planning), which planned and approved `human-only-handovers`, the proof recorded in `docs/ideas/plan-v2-probes.md`.
 - Run once for real work: `/implement-v2`, the execution engine's first slice (`docs/plans/jiggly-exploring-robin.md`), which ran `human-only-handovers` end to end on 2026-11-10, both milestones gated and committed.
-- Not started: apply, and the `tool` and `clerk` executors and vetting of the execution engine.
+- Built: `/apply-v2`, native apply over the shared execution engine, with settle tasks for blocked findings and the reproduce check (see **Apply** below). Not started: trials, the `tool` and `clerk` executors, the rest of vetting, and harvest and clearance.
 - v1 stays in use while v2 is built. `/tdd` runs inside v1 flows and dispatches v1 `/implement`, so it needs v1 until it is ported.
 
 ## Design topics
@@ -21,7 +21,7 @@ The goal is one v2 chain from planning through implementation, review and apply.
 | 2 | Planning flow | Decided by `docs/plans/v2-planning.md` (Approach) |
 | 3 | Plan review | Decided |
 | 4 | Execution engine | First slice built and run (`docs/plans/jiggly-exploring-robin.md`); `tool`, `clerk` and vetting open |
-| 5 | Apply | Decided 2026-11-10 (see **Apply** below); trials and the `tool` executor are later slices |
+| 5 | Apply | Built (`/apply-v2`, see **Apply** below); trials and the `tool` executor are later slices |
 | 6 | Flow state and glimpse | Open |
 | 7 | Re-audit of the built review stage | Open |
 | 8 | Naming, coexistence, gates, carrier shape | Open |
@@ -200,6 +200,13 @@ These keep the blocked routes from becoming a dumping ground for cautious or wor
 **Reproduce-check vetting**
 
 Apply is vetting's first consumer: one cell per task at milestone drain, before the gate, checking that the finding no longer reproduces, with verdicts in the review store. The rest of the **Vetting** table waits for implement.
+
+**Built:** `/apply-v2`, `tomlctl review schedule`, `reconcile` and the reproduce check. Departures from the above:
+
+- **Milestone order:** the settle milestone is added before the fix milestone, and both are appended to the plan through the audited verbs.
+- **`scheduled` status:** a finding moves to `scheduled` with `apply_flow` and `apply_task` when its task is minted, and to `resolved` only when the task is committed.
+- **Reproductions:** verdicts are keyed by flow and milestone in `[[reproductions]]`, apart from `[[verdicts]]`.
+- **User gate:** the one gate sits inside the settle milestone's drain, between the settle and fix milestones.
 
 **Later slices**
 

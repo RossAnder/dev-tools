@@ -48,7 +48,7 @@ Edits are to the plan text, with `plan_section`, `anchor_old` (occurring exactly
 - `add` — a success criterion that would fail if the story came true, beside the criterion it slips past.
 - `add` — a Risks entry naming the failure story and its mitigation, when the plan has no line for it.
 
-A story whose prevention needs a new task, or a change to a task's design, is a defect with `fix_shape = needs-plan` when it is grounded end to end, and advisory otherwise.
+A story whose prevention needs a new task, or a change to a task's design, is a defect with `blocked_on = "design"`, naming the missing prevention in `blocked_missing` and the new task or design change in `blocked_contract`, when it is grounded end to end, and advisory otherwise.
 
 ## Advisory angles
 

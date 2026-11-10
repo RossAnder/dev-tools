@@ -7,7 +7,7 @@ Illustrative rows, one per kind, per cleanup direction and per family. Paths and
 A real failure with a nameable input. The `failure_scenario` is the claim the verifier will try to break; `counter` names the observation that would break it.
 
 ```json
-{"kind": "defect", "lens": "correctness", "file": "src/store/merge.rs", "line": 142, "symbol": "merge::apply_rows", "summary": "apply_rows drops the last row when the batch length is a multiple of the chunk size", "severity": "major", "failure_scenario": "A 64-row batch with CHUNK = 32: the loop bound `i + CHUNK < len` stops at i = 32, so rows 32..63 are never applied and the call still returns Ok.", "fix": "Loop while `i < len` and take `min(i + CHUNK, len)` as the chunk end.", "fix_shape": "edits", "effort": "small", "counter": "A caller that pads every batch to a non-multiple of CHUNK would never hit this; grep of the three callers found none that pads.", "grade": "high", "evidence": ["src/store/merge.rs:142 `while i + CHUNK < len`", "src/store/merge.rs:150 returns Ok(()) without a remainder pass"]}
+{"kind": "defect", "lens": "correctness", "file": "src/store/merge.rs", "line": 142, "symbol": "merge::apply_rows", "summary": "apply_rows drops the last row when the batch length is a multiple of the chunk size", "severity": "major", "failure_scenario": "A 64-row batch with CHUNK = 32: the loop bound `i + CHUNK < len` stops at i = 32, so rows 32..63 are never applied and the call still returns Ok.", "fix": "Loop while `i < len` and take `min(i + CHUNK, len)` as the chunk end.", "effort": "small", "counter": "A caller that pads every batch to a non-multiple of CHUNK would never hit this; grep of the three callers found none that pads.", "grade": "high", "evidence": ["src/store/merge.rs:142 `while i + CHUNK < len`", "src/store/merge.rs:150 returns Ok(()) without a remainder pass"]}
 ```
 
 ## defect — perf family
@@ -15,21 +15,39 @@ A real failure with a nameable input. The `failure_scenario` is the claim the ve
 The scenario names the workload, the input size and the cost with its magnitude.
 
 ```json
-{"kind": "defect", "lens": "algorithm", "file": "src/index/lookup.rs", "line": 58, "symbol": "lookup::find_all", "summary": "find_all rescans the whole id list per query, quadratic over a sweep", "severity": "major", "failure_scenario": "A sweep over 20k rows calls find_all once per row, and each call walks the 20k-entry Vec: about 4e8 comparisons, measured at 9.2 s against 0.04 s with a HashMap keyed by id.", "fix": "Build a HashMap<Id, usize> once in Index::new and look ids up through it.", "fix_shape": "edits", "effort": "medium", "counter": "If sweeps never exceed a few hundred rows the cost is negligible; the PROFILE BASELINE shows a 20k-row fixture in the bench set.", "grade": "high", "evidence": ["src/index/lookup.rs:58 linear `iter().position` per call", "bench sweep_20k: 9.2 s (see PROFILE BASELINE log)"]}
+{"kind": "defect", "lens": "algorithm", "file": "src/index/lookup.rs", "line": 58, "symbol": "lookup::find_all", "summary": "find_all rescans the whole id list per query, quadratic over a sweep", "severity": "major", "failure_scenario": "A sweep over 20k rows calls find_all once per row, and each call walks the 20k-entry Vec: about 4e8 comparisons, measured at 9.2 s against 0.04 s with a HashMap keyed by id.", "fix": "Build a HashMap<Id, usize> once in Index::new and look ids up through it.", "effort": "medium", "counter": "If sweeps never exceed a few hundred rows the cost is negligible; the PROFILE BASELINE shows a 20k-row fixture in the bench set.", "grade": "high", "evidence": ["src/index/lookup.rs:58 linear `iter().position` per call", "bench sweep_20k: 9.2 s (see PROFILE BASELINE log)"]}
 ```
+
+## defect — blocked
+
+A defect or cleanup is fixable unless it carries `blocked_on`, and every row above omits it. A blocked row still carries its `fix` or `edit`, written as far as it can go, and names what is missing in the fields its `blocked_on` requires (the table under Blocked in `SKILL.md`). The verifier will try to write the fix itself.
+
+Blocked on a decision: each option names its consequence in the same string, and neither is plainly dominated.
+
+```json
+{"kind": "defect", "lens": "correctness", "file": "src/sync/clock.rs", "line": 31, "symbol": "clock::merge_stamp", "summary": "Two replicas writing in the same millisecond keep whichever row syncs last", "severity": "major", "failure_scenario": "Replicas A and B both edit row 9 at t = 1000 ms; merge_stamp compares only the millisecond, so the later sync silently overwrites the earlier edit and neither replica reports a conflict.", "fix": "Break the tie in merge_stamp by the rule the decision picks, and add a test for two equal stamps.", "effort": "small", "counter": "If the stamp carried a sequence number the tie could not occur; clock.rs:12 shows the stamp is milliseconds only.", "grade": "high", "evidence": ["src/sync/clock.rs:31 `if a.ms >= b.ms { a } else { b }`", "src/sync/clock.rs:12 `struct Stamp { ms: u64 }`"], "blocked_on": "decision", "blocked_missing": "Which edit wins when two stamps are equal: the code cannot say whose write the user meant to keep.", "blocked_options": ["Lowest replica id wins: deterministic everywhere, but one replica always loses ties.", "Keep both and flag a conflict: no edit is lost, but the user resolves each tie by hand."]}
+```
+
+Blocked on evidence: `blocked_missing` names the exact unknown, not a wish to look further.
+
+```json
+{"kind": "cleanup", "lens": "hygiene", "file": "src/api/legacy.rs", "line": 1, "summary": "The v1 export endpoint has no caller in this repo", "edit": "Delete src/api/legacy.rs and its route in src/api/mod.rs.", "direction": "remove", "effort": "small", "old": "//! v1 export endpoint", "evidence": ["grep `legacy::` in src/ and tests/: only the route at src/api/mod.rs:40"], "blocked_on": "evidence", "blocked_missing": "Whether any deployed client still calls GET /v1/export; only the access log for the last 30 days shows it."}
+```
+
+Not blocked: "rename the flag or add an alias, a decision" is not a decision when the alias keeps every caller working and the rename alone breaks them. One option is plainly dominated, so the row omits `blocked_on` and its `fix` is the alias.
 
 ## defect — plan family
 
 `file` is the plan, `line` the heading line of `plan_section`, `symbol` the task ref. `anchor_old` occurs exactly once under that heading; `anchor_new` replaces it.
 
 ```json
-{"kind": "defect", "lens": "plan-executor", "file": "docs/plans/export.md", "line": 212, "symbol": "add-the-export-verb", "summary": "Task 4's acceptance runs a test binary no task creates", "severity": "major", "failure_scenario": "At acceptance the implementer runs `cargo test --test export_cli`; no task's Files line creates tests/export_cli.rs, so the command fails with `no test target named export_cli`.", "fix": "Add tests/export_cli.rs (new) to task 4's Files line, or point the acceptance at the existing tests/export.rs.", "fix_shape": "edits", "effort": "trivial", "counter": "A later task could create the file; the Files lines of tasks 5-9 do not name it.", "grade": "high", "evidence": ["docs/plans/export.md:219 acceptance names --test export_cli", "no Files line in the plan names tests/export_cli.rs"], "plan_section": "### 4. Add the export verb [M]", "anchor_old": "`cargo test --test export_cli`", "anchor_new": "`cargo test --test export`"}
+{"kind": "defect", "lens": "plan-executor", "file": "docs/plans/export.md", "line": 212, "symbol": "add-the-export-verb", "summary": "Task 4's acceptance runs a test binary no task creates", "severity": "major", "failure_scenario": "At acceptance the implementer runs `cargo test --test export_cli`; no task's Files line creates tests/export_cli.rs, so the command fails with `no test target named export_cli`.", "fix": "Add tests/export_cli.rs (new) to task 4's Files line, or point the acceptance at the existing tests/export.rs.", "effort": "trivial", "counter": "A later task could create the file; the Files lines of tasks 5-9 do not name it.", "grade": "high", "evidence": ["docs/plans/export.md:219 acceptance names --test export_cli", "no Files line in the plan names tests/export_cli.rs"], "plan_section": "### 4. Add the export verb [M]", "anchor_old": "`cargo test --test export_cli`", "anchor_new": "`cargo test --test export`"}
 ```
 
 On a v2 flow (the flow has `plan.toml`) a defect or cleanup row swaps `plan_section`, `anchor_old` and `anchor_new` for `target`, `expect`, `new` and an optional `proof`, and `line` is optional. `file` is the target's record file and `symbol` its record id. The target grammar, the proof kinds and worked rows are in `references/plan-records.md`.
 
 ```json
-{"kind": "defect", "lens": "plan-executor", "file": ".claude/flows/export/tasks.toml", "symbol": "add-the-export-verb", "summary": "Task 4's acceptance runs a test binary no task creates", "severity": "major", "failure_scenario": "At acceptance the implementer runs `cargo test --test export_cli`; no task creates tests/export_cli.rs, so the command fails with `no test target named export_cli`.", "fix": "Point the acceptance at the existing tests/export.rs.", "fix_shape": "edits", "effort": "trivial", "counter": "A later task could create the file; no task's files names it.", "grade": "high", "evidence": ["tasks show add-the-export-verb: accept entry 0 names --test export_cli"], "target": "task:add-the-export-verb.acceptance", "expect": "`cargo test --test export_cli`", "new": "`cargo test --test export`"}
+{"kind": "defect", "lens": "plan-executor", "file": ".claude/flows/export/tasks.toml", "symbol": "add-the-export-verb", "summary": "Task 4's acceptance runs a test binary no task creates", "severity": "major", "failure_scenario": "At acceptance the implementer runs `cargo test --test export_cli`; no task creates tests/export_cli.rs, so the command fails with `no test target named export_cli`.", "fix": "Point the acceptance at the existing tests/export.rs.", "effort": "trivial", "counter": "A later task could create the file; no task's files names it.", "grade": "high", "evidence": ["tasks show add-the-export-verb: accept entry 0 names --test export_cli"], "target": "task:add-the-export-verb.acceptance", "expect": "`cargo test --test export_cli`", "new": "`cargo test --test export`"}
 ```
 
 ## cleanup — `change`
@@ -77,7 +95,7 @@ A probe cell's answer that turns on a decision. `lens` is the cell's `probe:<slu
 `same_as` names a PRIOR row at the same file and symbol (or within 10 lines). The rest of the row is complete, because the verifier may strike the identity and the row then stands on its own.
 
 ```json
-{"kind": "defect", "lens": "correctness", "file": "src/store/merge.rs", "line": 144, "symbol": "merge::apply_rows", "summary": "apply_rows still drops the trailing chunk after the bound was changed", "severity": "major", "failure_scenario": "The bound is now `i + CHUNK <= len`, which still skips the remainder for a 70-row batch with CHUNK = 32: rows 64..69 are dropped.", "fix": "Process the remainder after the loop, or loop while `i < len`.", "fix_shape": "edits", "effort": "small", "counter": "If F7's fix already handles the remainder in a second pass, this is the same row; it does not, see line 150.", "grade": "high", "evidence": ["src/store/merge.rs:144 `while i + CHUNK <= len`"], "same_as": "F7"}
+{"kind": "defect", "lens": "correctness", "file": "src/store/merge.rs", "line": 144, "symbol": "merge::apply_rows", "summary": "apply_rows still drops the trailing chunk after the bound was changed", "severity": "major", "failure_scenario": "The bound is now `i + CHUNK <= len`, which still skips the remainder for a 70-row batch with CHUNK = 32: rows 64..69 are dropped.", "fix": "Process the remainder after the loop, or loop while `i < len`.", "effort": "small", "counter": "If F7's fix already handles the remainder in a second pass, this is the same row; it does not, see line 150.", "grade": "high", "evidence": ["src/store/merge.rs:144 `while i + CHUNK <= len`"], "same_as": "F7"}
 ```
 
 ## Coverage note

@@ -623,3 +623,90 @@ fn backlog_ref_marks_backlogged() {
     repo.triage("F4", &["--backlog-ref", "1a2b3c4d"]).failure();
     assert_eq!(repo.status("F4"), "open");
 }
+
+/// Blocks F3 on `block`, with the detail each block needs.
+fn block_f3(repo: &Repo, block: &str) {
+    repo.rewrite(|doc| {
+        let f3 = doc["findings"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|f| f["id"].as_str() == Some("F3"))
+            .unwrap()
+            .as_table_mut()
+            .unwrap();
+        f3.insert("blocked_on".into(), block.into());
+        f3.insert(
+            "blocked_missing".into(),
+            "which limit callers expect".into(),
+        );
+        if block == "decision" {
+            f3.insert(
+                "blocked_options".into(),
+                toml::Value::Array(vec![
+                    "inclusive — matches the docs".into(),
+                    "exclusive — matches the tests".into(),
+                ]),
+            );
+        }
+    });
+}
+
+#[test]
+fn answer_unblocks_a_decision_finding_keeping_its_options() {
+    let repo = Repo::new();
+    block_f3(&repo, "decision");
+    let answer = repo.staged("answer.md", "inclusive; the docs are the contract\r\n");
+    let out = repo.triaged("F3", &["--answer-file", &answer]);
+    assert_eq!(out["mode"], "answer", "{out}");
+    assert_eq!(out["applied"][0]["status"], "open", "{out}");
+
+    let f3 = repo.finding("F3");
+    assert_eq!(text(&f3, "status"), Some("open"));
+    assert_eq!(f3.get("blocked_on"), None);
+    assert_eq!(f3.get("blocked_missing"), None);
+    assert_eq!(
+        f3["blocked_options"].as_array().map(Vec::len),
+        Some(2),
+        "the options stay beside the answer"
+    );
+    assert_eq!(
+        text(&f3, "decision_answer"),
+        Some("inclusive; the docs are the contract")
+    );
+    assert_eq!(text(&f3, "unblocked_by"), Some("user"));
+
+    let before = fs::read_to_string(repo.root.join(".claude/review-v2/t.toml")).unwrap();
+    let replay = repo.triaged("F3", &["--answer-file", &answer]);
+    assert_eq!(replay["unchanged"], json!(["F3"]), "{replay}");
+    let after = fs::read_to_string(repo.root.join(".claude/review-v2/t.toml")).unwrap();
+    assert_eq!(before, after, "a replayed answer writes nothing");
+}
+
+#[test]
+fn answer_is_refused_on_a_finding_not_blocked_on_a_decision() {
+    let repo = Repo::new();
+    let answer = repo.staged("answer.md", "inclusive");
+    let before = fs::read_to_string(repo.root.join(".claude/review-v2/t.toml")).unwrap();
+
+    let refused = repo.triage("F3", &["--answer-file", &answer]).failure();
+    let err = String::from_utf8_lossy(&refused.get_output().stderr).to_string();
+    assert!(err.contains("F3 is not blocked"), "{err}");
+
+    block_f3(&repo, "evidence");
+    let blocked = fs::read_to_string(repo.root.join(".claude/review-v2/t.toml")).unwrap();
+    let refused = repo.triage("F3", &["--answer-file", &answer]).failure();
+    let err = String::from_utf8_lossy(&refused.get_output().stderr).to_string();
+    assert!(err.contains("blocked on evidence"), "{err}");
+    let after = fs::read_to_string(repo.root.join(".claude/review-v2/t.toml")).unwrap();
+    assert_eq!(blocked, after, "a refused answer writes nothing");
+    assert_ne!(before, blocked);
+
+    repo.triage(
+        "F3",
+        &["--answer-file", &answer, "--trigger", "next release"],
+    )
+    .failure();
+    let empty = repo.staged("empty.md", " \r\n");
+    repo.triage("F3", &["--answer-file", &empty]).failure();
+}

@@ -171,6 +171,82 @@ The highest `<n>` printed is the rounds spent. A check that still finds a findin
 
 A milestone cannot reach its commit with a finding outstanding: the gate runs only once this check leaves no finding `reproduces` or unsettled, and each fixing row's accept check, `review reproduce-status <F> --expect gone`, fails the gate if one is.
 
+## Settle drain
+
+Runs from [drain.md](drain.md), step 6, when every row of the milestone is `done` and at least one row's link carries `settles`, after the reproduce check and before the gate (step 7). A settle milestone, which `apply-v2-engine` adds before its fix milestone when a selected finding is blocked on evidence, has no gates, so its commit follows this step directly. This is the one point where the user is asked about the proposals, so every proposal of the milestone is judged before any is recorded.
+
+A settle row's `files` is one proposal file, `docs/flows/<slug>/notes/settle/<F>.md`, and its worker writes that file beside its run note. List the rows, their links and their findings:
+
+```bash
+tomlctl tasks list --slug <slug> --where checkpoint=<id> --select id,ref,files --lines
+tomlctl items list .claude/flows/<slug>/tasks.toml --array finding_links --where-in ref=<ref1,ref2> --select ref,store,settles --lines
+tomlctl review show <F1,F2> --slug <slug> --for orchestrator
+```
+
+A finding the last command shows no longer `scheduled` was recorded by an earlier pass of this step, since every `review settle` outcome takes it off `scheduled`: skip steps 1 to 4 for it, and take it to step 5 when it is `open` and no longer blocked.
+
+1. **Read** each proposal file with the Read tool, and the code it cites. A file whose first line opens neither `Proposal:` nor `Refuted:`, or that asks for more investigation instead of proposing a fix, or that does not answer what the finding's `blocked_missing` says is missing, fails its row: set it `failed` with `tomlctl tasks update <n> --slug <slug> --status failed` and handle it by **Failure on an apply row**, below. Record nothing for any finding of the milestone while a row is not `done`; relaunch through [run-milestone.md](run-milestone.md), step 3, and come back here when every row is `done` again.
+2. **Tier** each `Proposal:` by what shows its fix is right:
+
+   | Tier | When |
+   |---|---|
+   | `mechanical` | A read-only command the proposal names (a search, a `tomlctl` read, a `git show`) prints what the proposal says it prints when you run it. Never a build, a test or a gate |
+   | `cited` | Reading the lines the proposal cites shows what it says they show |
+   | `user` | Anything else |
+
+   A `Refuted:` whose citation, read, shows the finding does not hold is recorded with `--refute` at step 4. One whose citation does not show that is put to the user with the `user`-tier proposals.
+3. **Ask once.** Put every `user`-tier proposal and every unconfirmed refutation to the user through `AskUserQuestion`, one question per finding with the proposal's fix and its evidence, and options to accept it or defer it (and, for a refutation, to refute the finding). Four questions fit one call; send the calls one after another at this step, never spread across the milestone. A `mechanical` or `cited` proposal is accepted without asking.
+4. **Record** each finding with one `review settle` call, in its store:
+
+   ```bash
+   tomlctl review settle <F> --slug <slug> --accept --tier <mechanical|cited|user> --fix-file <scratch>/settle-<id>-<F>-fix.md
+   tomlctl review settle <F> --slug <slug> --refute --citation '<what shows the finding false>'
+   tomlctl review settle <F> --slug <slug> --defer --proposal docs/flows/<slug>/notes/settle/<F>.md
+   ```
+
+   `--accept` takes the fix the proposal settled on, staged with the Write tool from the proposal file's edit-level fix; the user tier is accepted only on the user's yes. A rejected or unanswered proposal is deferred: the finding keeps its proposal, gets no second settle round, since `review schedule` refuses an evidence block whose proposal is already made, and ages toward a forced disposition at its family's later review runs.
+5. **Schedule** the accepted findings into the fix milestone, one call per store. The fix milestone is the checkpoint that follows this one in store order, which `apply-v2-engine` adds right after it:
+
+   ```bash
+   tomlctl items list .claude/flows/<slug>/tasks.toml --array checkpoints --select id --lines
+   tomlctl review schedule <F1,F2> --slug <slug> --flow <slug> --checkpoint <fix id>
+   ```
+
+   The verb writes each minted row's `reason` itself. Report its `held` and `refused` rows in `needs_human`: such a finding stays `open` with its accepted fix, for a later `/apply-v2`. When no checkpoint follows this one, schedule nothing and report the accepted findings there the same way.
+
+The milestone commit then holds the proposal files, which are its rows' `files`; the review store, the task store with the minted fix rows, and the run notes go in the flow-store commit, as **Reconcile** stages them. Reconcile finds no settle finding still `scheduled` into this flow, since step 4 took each off; one it does find, because this step never recorded it, it reopens as committed with no recorded proposal.
+
+## Failure on an apply row
+
+These rules replace [drain.md](drain.md), step 6's for a `failed` or `parked` apply row only. Plan rows keep that step's rules, its **Never up a tier** among them.
+
+- **A fix worker cannot reclassify.** A return on an apply row that says the task needs a decision or more evidence is `failed`, whatever status the worker wrote: the review already judged the finding fixable, and a settle task is where evidence is found.
+- **A `parked` return on an apply row is read as `failed`** unless the note's reason is one a handover covers: `restart`, `permissions`, `attended`, `observe`, `credentials` or `external` ([drain.md](drain.md), step 9). Set such a row `failed` with `tomlctl tasks update <n> --slug <slug> --status failed` before the replan.
+- **Tier.** Count the row's earlier failures, from the replans that answered them:
+
+  ```bash
+  tomlctl items list .claude/flows/<slug>/tasks.toml --array changes --where ref=<ref> --where-prefix "reason=apply failure " --select field,reason --lines
+  ```
+
+  The highest `<n>` in a reason opening `apply failure <n>: ` is the failures already spent, or none.
+
+  | Row | First failure | Second failure |
+  |---|---|---|
+  | `executor = "lite"` | Move it to `deep` with its spec otherwise unchanged, through an audited update whose `reason` opens `apply failure 1: ` and says the row moved up a tier on the worker's return | Park it for the user |
+  | `executor = "deep"` | Replan it by [drain.md](drain.md), step 6's re-spec rule, with the `reason` opening `apply failure 1: ` | Park it for the user |
+
+  The `lite` move is the one place an `executor` moves with nothing else changed, and it applies to apply rows alone:
+
+  ```toml
+  [[record]]
+  id = 14
+  reason = "apply failure 1: the worker's note says the fix needs a decision on the error kind; moved up a tier with its spec unchanged"
+  [record.spec]
+  executor = "deep"
+  ```
+
+  A second failure parks the row with `tomlctl tasks update <n> --slug <slug> --status parked`, and you write its note by [drain.md](drain.md), step 6, "Parking a row yourself", carrying the worker's note forward as the evidence. A parked apply row is re-asked at the next invocation like any other.
+
 ## Reconcile
 
 Runs in [drain.md](drain.md), step 10, after the milestone commit is stamped on its rows and before the flow-store commit, when the milestone holds an apply row.

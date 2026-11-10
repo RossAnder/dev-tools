@@ -26,8 +26,8 @@ pub(super) struct Selection {
 }
 
 impl Selection {
-    /// With `all`, every open defect or cleanup of `family` not shaped
-    /// `needs-plan`; otherwise `ids` in order, blank and repeated ids skipped.
+    /// With `all`, every open defect or cleanup of `family` not blocked;
+    /// otherwise `ids` in order, blank and repeated ids skipped.
     pub(super) fn new(
         verb: &str,
         stored: &Store,
@@ -49,7 +49,7 @@ impl Selection {
                 let selectable = f.status() == FindingStatus::Open
                     && f.family == family
                     && matches!(f.kind, Kind::Defect | Kind::Cleanup)
-                    && text(f, "fix_shape") != "needs-plan";
+                    && fields::blocked_on(f).is_none();
                 if !selectable {
                     continue;
                 }
@@ -116,8 +116,13 @@ pub(super) fn refusal(f: &Finding, family: Family) -> Option<String> {
             family.as_str()
         ));
     }
-    if text(f, "fix_shape") == "needs-plan" {
-        return Some("fix_shape is needs-plan".into());
+    if let Some(blocked) = fields::blocked_on(f) {
+        let legacy = if text(f, "blocked_on").trim().is_empty() {
+            " (a stored fix_shape = needs-plan)"
+        } else {
+            ""
+        };
+        return Some(format!("blocked on {}{legacy}", blocked.as_str()));
     }
     if text(f, "effort") == "large" {
         return Some("effort is large".into());

@@ -60,7 +60,7 @@ All edits are to the plan text, with `plan_section` naming the task's heading, `
 - `change` — settle an executor decision when the plan's own preamble or the code already implies the answer: write the chosen name, signature or value into the Detail.
 - `add` — a falsifier or a discriminating `forward:` line beside a vacuous one, anchored on the adjacent acceptance text.
 
-A decision the plan has not made and that needs its author is a defect with `fix_shape = needs-plan`, or advisory when the task still executes either way.
+A decision the plan has not made and that needs its author is a defect with `blocked_on = "decision"`, naming the open choice in `blocked_missing` and at least two options in `blocked_options`, each with its consequence, or advisory when the task still executes either way.
 
 ## Advisory angles
 

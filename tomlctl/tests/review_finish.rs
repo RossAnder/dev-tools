@@ -376,3 +376,90 @@ fn finish_computes_counts() {
     assert_eq!(run["counts"]["defect"].as_integer(), Some(2), "{run}");
     assert_eq!(run["counts"]["suppressed"].as_integer(), Some(1), "{run}");
 }
+
+/// A code run `id` started at `started`, beside U1.
+fn later_run(id: &str, started: &str) -> String {
+    format!(
+        "[[runs]]\nid = \"{id}\"\ncommand = \"review-v2\"\nfamily = \"code\"\ndepth = \"quick\"\n\
+         started = \"{started}\"\n\n"
+    )
+}
+
+#[test]
+fn finish_refuses_while_a_proposal_is_overdue() {
+    let Some(repo) = Repo::new() else {
+        return;
+    };
+    let deferred = "route = \"verifier\"\nseverity = \"major\"\nblocked_on = \"evidence\"\n\
+                    blocked_missing = \"whether the cache is shared\"\n\
+                    proposal = \"docs/proposal.md\"\nproposal_at = 2026-10-01T09:00:00Z\n";
+    let rows = |later: &[(&str, &str)]| {
+        let mut rows = format!(
+            "{}{}",
+            full_cell(),
+            finding("F1", "U1", r#""U1""#, "defect", "open", deferred)
+        );
+        for (id, started) in later {
+            rows.push_str(&later_run(id, started));
+        }
+        rows
+    };
+
+    // Age 2, counting U1: not yet overdue.
+    repo.seed(&rows(&[
+        ("U0", "2026-09-30T10:00:00Z"),
+        ("U2", "2026-10-02T10:00:00Z"),
+    ]));
+    repo.finish(&[]).success();
+
+    repo.seed(&rows(&[
+        ("U2", "2026-10-02T10:00:00Z"),
+        ("U3", "2026-10-03T10:00:00Z"),
+    ]));
+    let refused = repo.finish(&[]).failure();
+    let err = stderr(&refused);
+    assert!(err.contains("overdue"), "{err}");
+    assert!(err.contains("F1 (age 3)"), "{err}");
+    assert_unfinished(&repo.path());
+    let refused = repo.finish(&["--incomplete", "budget spent"]).failure();
+    assert!(
+        stderr(&refused).contains("overdue"),
+        "--incomplete does not waive it"
+    );
+    assert_unfinished(&repo.path());
+
+    let fix = repo.root.join(".claude/fix.md");
+    fs::write(&fix, "take the lock").unwrap();
+    repo.tomlctl()
+        .args(["review", "settle", "F1", "--scope", SCOPE, "--accept"])
+        .args(["--tier", "cited", "--fix-file"])
+        .arg(&fix)
+        .assert()
+        .success();
+    repo.finish(&[]).success();
+    assert!(repo.run().get("finished").is_some());
+}
+
+#[test]
+fn finish_overdue_proposal_cleared_by_triage_moving_it_off_open() {
+    let Some(repo) = Repo::new() else {
+        return;
+    };
+    let deferred = "route = \"verifier\"\nseverity = \"major\"\nblocked_on = \"evidence\"\n\
+                    blocked_missing = \"whether the cache is shared\"\n\
+                    proposal = \"docs/proposal.md\"\nproposal_at = 2026-10-01T09:00:00Z\n";
+    repo.seed(&format!(
+        "{}{}{}{}",
+        full_cell(),
+        finding("F1", "U1", r#""U1""#, "defect", "open", deferred),
+        later_run("U2", "2026-10-02T10:00:00Z"),
+        later_run("U3", "2026-10-03T10:00:00Z"),
+    ));
+    repo.finish(&[]).failure();
+    repo.tomlctl()
+        .args(["review", "triage", "F1", "--scope", SCOPE])
+        .args(["--dismiss", "the cache is going away"])
+        .assert()
+        .success();
+    repo.finish(&[]).success();
+}

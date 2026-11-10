@@ -32,8 +32,12 @@ pub(crate) struct ReviewListArgs {
         help = "verifier|panel|checker|none"
     )]
     pub(crate) route: Option<String>,
-    #[arg(long = "fix-shape", value_name = "SHAPE", help = "edits|needs-plan")]
-    pub(crate) fix_shape: Option<String>,
+    #[arg(
+        long = "blocked-on",
+        value_name = "BLOCK",
+        help = "decision|evidence|measurement|alternatives|design, `any` for every blocked finding, `none` for fixable and advisory ones"
+    )]
+    pub(crate) blocked_on: Option<String>,
     #[arg(
         long = "in",
         value_name = "GLOB",

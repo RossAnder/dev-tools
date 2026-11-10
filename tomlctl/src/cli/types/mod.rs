@@ -185,7 +185,6 @@ pub(crate) const FEATURES: &[&str] = &[
     "review_run_show",
     "review_ruled_out",
     "review_same_as_link",
-    "review_list_fix_shape",
     // Native apply of review findings through a v2 flow's task store.
     "tasks_finding_links",
     "review_schedule",
@@ -193,6 +192,10 @@ pub(crate) const FEATURES: &[&str] = &[
     "review_anchor",
     "review_reproduce",
     "review_stats_apply",
+    // Findings blocked on what they lack, and the verbs that answer a block.
+    "review_blocked_on",
+    "review_settle",
+    "review_triage_answer",
 ];
 
 /// User-facing top-level subcommand names, as they appear in

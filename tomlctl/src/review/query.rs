@@ -16,7 +16,7 @@ use serde_json::{Map, Value as JsonValue, json};
 
 use super::catalogue::{self, Catalogue, EntryType, run_catalogue};
 use super::fields::{
-    self, FIELDS, Family, FindingStatus, Kind, ProjectCtx, Record, Role, Route, Vis,
+    self, BlockedOn, FIELDS, Family, FindingStatus, Kind, ProjectCtx, Record, Role, Route, Vis,
 };
 use super::invalid;
 use super::matching::rule_outs_at;
@@ -52,7 +52,12 @@ pub(crate) fn list(target: &Target, args: ReviewListArgs) -> Result<()> {
     check_value("--kind", args.kind.as_deref(), Kind::VALUES)?;
     check_value("--status", args.status.as_deref(), fields::FINDING_STATUSES)?;
     check_value("--route", args.route.as_deref(), Route::VALUES)?;
-    check_value("--fix-shape", args.fix_shape.as_deref(), fields::FIX_SHAPES)?;
+    let blocked_filter: Vec<&str> = BlockedOn::VALUES
+        .iter()
+        .copied()
+        .chain(["any", "none"])
+        .collect();
+    check_value("--blocked-on", args.blocked_on.as_deref(), &blocked_filter)?;
     let within = args.in_glob.as_deref().map(Within::new).transpose()?;
 
     let stored = store::load(&target.path, &args.integrity)?;
@@ -74,10 +79,14 @@ pub(crate) fn list(target: &Target, args: ReviewListArgs) -> Result<()> {
                 .route
                 .as_deref()
                 .is_none_or(|r| finding.route.unwrap_or(Route::Unrouted).as_str() == r)
-            && args
-                .fix_shape
-                .as_deref()
-                .is_none_or(|s| finding.rest.get("fix_shape").and_then(|v| v.as_str()) == Some(s))
+            && args.blocked_on.as_deref().is_none_or(|wanted| {
+                let blocked = fields::blocked_on(finding);
+                match wanted {
+                    "any" => blocked.is_some(),
+                    "none" => blocked.is_none(),
+                    value => blocked.is_some_and(|b| b.as_str() == value),
+                }
+            })
             && within.as_ref().is_none_or(|w| w.matches(&finding.file));
         if keep {
             rows.push(JsonValue::Object(finding_row(

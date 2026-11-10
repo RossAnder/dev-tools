@@ -31,7 +31,7 @@ pub(crate) struct ReviewExportArgs {
     pub(crate) store: ReviewStore,
     #[arg(
         long = "all",
-        help = "Every open defect and cleanup finding, less needs-plan, test removals and plausible cleanup"
+        help = "Every open defect and cleanup finding, less blocked findings, test removals and plausible cleanup"
     )]
     pub(crate) all: bool,
     #[arg(long = "to", value_name = "LEDGER", help = "The v1 ledger written")]
@@ -60,7 +60,7 @@ pub(crate) struct ReviewScheduleArgs {
     pub(crate) store: ReviewStore,
     #[arg(
         long = "all",
-        help = "Every open code or perf defect and cleanup, less needs-plan, test removals and plausible cleanup"
+        help = "Every open code or perf defect and cleanup, less blocked findings, test removals and plausible cleanup"
     )]
     pub(crate) all: bool,
     #[arg(
@@ -75,6 +75,12 @@ pub(crate) struct ReviewScheduleArgs {
         help = "The checkpoint group every minted task joins"
     )]
     pub(crate) checkpoint: String,
+    #[arg(
+        long = "settle-checkpoint",
+        value_name = "ID",
+        help = "The checkpoint group a settle task joins; without it an evidence-blocked finding is refused"
+    )]
+    pub(crate) settle_checkpoint: Option<String>,
     #[command(flatten)]
     pub(crate) integrity: WriteIntegrityArgs,
 }

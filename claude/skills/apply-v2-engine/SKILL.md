@@ -1,6 +1,6 @@
 ---
 name: apply-v2-engine
-description: "Orchestrator contract for applying the findings a v2 review's triage selected — the argument rules, resolving the flow the fixes go to and refusing a v1 flow, the preview, opening and approving a new flow for a flow-less review, the fix milestone and its gates, `review schedule`, the commits, the hand-over to `implement-v2-engine` and the close summary, with re-entry. Invoked by the /apply-v2 carrier after its pre-flight, before the first `tomlctl` call; not for direct use."
+description: "Orchestrator contract for applying the findings a v2 review's triage selected — the argument rules, resolving the flow the fixes go to and refusing a v1 flow, the preview, opening and approving a new flow for a flow-less review, the settle milestone, the fix milestone and its gates, `review schedule`, the commits, the hand-over to `implement-v2-engine` and the close summary, with re-entry. Invoked by the /apply-v2 carrier after its pre-flight, before the first `tomlctl` call; not for direct use."
 ---
 
 # Apply v2 engine
@@ -41,7 +41,7 @@ Anything else is not an argument: say so and stop, rather than guess what it was
 | 2. Preview | Never |
 | 3. Resolve the gates | Re-entry found the fix milestone already added |
 | 4. Open the new flow | The home is the reviewed flow, or re-entry found the new flow already opened |
-| 5. Add the fix milestone | Re-entry found it already added |
+| 5. Add the fix milestone, and the settle milestone before it | Re-entry found it already added |
 | 6. Schedule | Nothing selected is still `open` |
 | 7. Commit the new flow | The home is the reviewed flow, or the new flow is already approved |
 | 8. Approve the new flow | The home is the reviewed flow, or the new flow is already approved |
@@ -80,7 +80,9 @@ tomlctl review list --slug <slug> --status open --kind defect --for orchestrator
 tomlctl review list --slug <slug> --status open --kind cleanup --for orchestrator
 ```
 
-then `review show` the ids that remain after the rule below, `--for implementer`. Apply the schedule rule from the `tomlctl` skill's `references/review-apply.md`, section `tomlctl review schedule`: only `open` defects and cleanups of the `code` and `perf` families are taken; `fix_shape = needs-plan` and `effort = large` are refused; under `--all`, test removals and cleanups whose latest verdict is `plausible` are held. An explicit id that is unknown fails the read: stop and name it.
+then `review show` the ids that remain after the rule below, `--for implementer`. Apply the schedule rule from the `tomlctl` skill's `references/review-apply.md`, section `tomlctl review schedule`: only `open` defects and cleanups of the `code` and `perf` families are taken; a finding with a `blocked_on` is refused, except one blocked on `evidence` with no `proposal` yet, which gets a settle task in a settle milestone (step 5) instead of a fix task; `effort = large` is refused; under `--all`, test removals and cleanups whose latest verdict is `plausible` are held. An explicit id that is unknown fails the read: stop and name it.
+
+- **Blocked on evidence.** Note each passing finding whose `blocked_on` is `evidence`: those make step 5 add a settle milestone. Such a finding edits nothing yet, so it takes no part in the dirty-files check below or in step 3's gates.
 
 - **Already scheduled.** A selected finding that is `scheduled` with `apply_flow` naming a flow is past this skill: Re-entry, below, says what follows.
 - **Nothing to schedule.** When no selected finding passes the rule and none is already scheduled, report each one with the reason it is held or refused and stop. No flow is opened and no milestone added.
@@ -134,7 +136,7 @@ Leave Background and Unknowns empty, or put the store path and run ids under Bac
 
 ### 5. Add the fix milestone
 
-The milestone's id is `apply-<n>`, with the smallest `n` from 1 up that no checkpoint of the home carries:
+The milestone's id is `apply-<n>`, with the smallest `n` from 1 up for which no checkpoint of the home is `apply-<n>` or `settle-<n>`:
 
 ```bash
 tomlctl items list .claude/flows/<flow>/tasks.toml --array checkpoints --select id --lines
@@ -148,15 +150,30 @@ tomlctl plan milestone add --slug <flow> --id <id> --goal 'Fix <finding ids> fro
 
 On the reviewed flow, whose plan is approved, add `--reason 'apply <store>: <finding ids>'`.
 
+**The settle milestone.** When step 2 noted a finding blocked on evidence, add a settle milestone first, so it runs before the fix milestone and the fix milestone is the checkpoint right after it. Its id is `settle-<n>`, with the same `n` as the fix milestone's `apply-<n>`, and it has no `--gate`: its rows write proposal notes, which no build or test proves.
+
+```bash
+tomlctl plan milestone add --slug <flow> --id settle-<n> --goal 'Settle <finding ids> from <store>'
+tomlctl plan milestone add --slug <flow> --id apply-<n> --goal 'Fix <finding ids> from <store>' --gate '<command>'
+```
+
+The execution engine's settle drain judges each proposal when the settle milestone's rows are `done`, asks the user once about those only the user can accept, and schedules the accepted findings into `apply-<n>`, the checkpoint after `settle-<n>`. When every selected finding is blocked on evidence, `apply-<n>` starts with no rows and takes its tasks from that drain. Step 3 still resolves its gates, from the edited paths of the findings it fixes now, or when there are none, from the paths of the blocked findings' `file`, where their fixes are expected to land.
+
 ### 6. Schedule
 
 ```bash
 tomlctl review schedule <ids> --slug <slug> --flow <flow> --checkpoint <id>
 ```
 
-Pass `--all` in place of the ids when the arguments did. The verb mints the task rows with their specs and links under the task store's lock, then marks each finding `scheduled`. Report its `scheduled` rows as finding, task and `action` (`minted` or `linked`), and its `held`, `refused`, `dropped_deps` and `skipped_stale` rows each with its reason. When it fails, report its error and stop; a rerun resumes by Re-entry.
+With a settle milestone, add `--settle-checkpoint settle-<n>`; without it the verb refuses every finding blocked on evidence:
 
-When `scheduled` is empty, the milestone stays with no rows: report that, say a rerun with another selection reuses it, and stop. The execution engine passes over a milestone with no rows.
+```bash
+tomlctl review schedule <ids> --slug <slug> --flow <flow> --checkpoint apply-<n> --settle-checkpoint settle-<n>
+```
+
+Pass `--all` in place of the ids when the arguments did. The verb mints the task rows with their specs and links under the task store's lock, then marks each finding `scheduled`. Report its `scheduled` and `settle` rows as finding, task and `action` (`minted` or `linked`), and its `held`, `refused`, `dropped_deps` and `skipped_stale` rows each with its reason. When it fails, report its error and stop; a rerun resumes by Re-entry.
+
+When `scheduled` and `settle` are both empty, the milestones stay with no rows: report that, say a rerun with another selection reuses it, and stop. The execution engine passes over a milestone with no rows.
 
 ### 7. Commit the new flow
 
@@ -231,13 +248,13 @@ Every invocation reads where the apply stands from the stores, never from memory
 tomlctl tasks list --slug <flow> --where checkpoint=<id> --select id --lines
 ```
 
-  Reuse the last such checkpoint, skipping steps 3 and 5.
+  Reuse the last such checkpoint, skipping steps 3 and 5, unless a `settle-<n>` checkpoint of the same `n` holds a row: that `apply-<n>` is waiting for its settle drain, so it is not reused, and step 5 adds new milestones. A `settle-<n>` with no row beside an empty `apply-<n>` is reused with it, and passed to step 6 as `--settle-checkpoint` when a selected finding is blocked on evidence.
 - **Findings already scheduled.** A selected finding that is `scheduled` into the home is not scheduled again; `review schedule` itself links a finding whose live task already holds it rather than minting a second. When every selected finding is already scheduled into the home, go to step 7 on a new flow that is not yet approved, and to step 9 otherwise. A finding `scheduled` into a different flow is reported with that flow and left alone.
 - **An approval already stamped.** When the new flow's `plan stage` reads `approved`, `running` or `done`, steps 7 and 8 are done, unless `git status` still lists the approval's writes, which step 8's last commit then takes.
 
 ## Out of scope
 
-- **Settle milestones and blocked findings.** A finding the schedule rule refuses as `needs-plan` is reported, never scheduled; nothing here investigates or proposes.
+- **Judging proposals.** This skill adds the settle milestone and schedules its settle tasks; the execution engine's settle drain reads their proposals, asks the user and schedules the accepted findings. A finding still blocked on a decision, a design, a measurement or alternatives is refused by `review schedule` and reported, never scheduled; a decision triage answered is no longer a block, and its answer reaches the fix task as a constraint.
 - **Plan-family findings.** `tomlctl review apply` writes them to plan records; `review schedule` refuses them.
 - **A v1 flow, its ledgers and `export-v1`.** A review bound to a v1 flow is refused at step 1.
 - **Running, gating, committing and reconciling the fix milestone.** These are `implement-v2-engine`'s.

@@ -173,7 +173,8 @@ Does it compute the right thing?
 
 /// Run `U1`, carrying one undecided judged signal, with `C1` sealed over
 /// `src/a.rs` and `C2` still assigned over `src/b.rs`; `F1` is a confirmed open defect and `F2` an unverified
-/// cleanup. `F1` was reproduced `gone`, and `F3` is scheduled to an apply-flow task that no longer exists.
+/// cleanup. `F1` was reproduced `gone`, `F3` is scheduled to an apply-flow task that no longer exists,
+/// and `F4` is an open defect blocked on evidence.
 /// `{base}` and `{builtin}` are filled in by the fixture.
 const REVIEW_STORE: &str = r#"schema_version = 2
 last_updated = 2026-10-13
@@ -241,7 +242,6 @@ summary = "alpha is wrong"
 severity = "major"
 failure_scenario = "input x fails"
 fix = "guard x"
-fix_shape = "edits"
 effort = "small"
 counter = "none found"
 grade = "high"
@@ -285,7 +285,6 @@ summary = "alpha leaks"
 severity = "minor"
 failure_scenario = "input y leaks"
 fix = "close y"
-fix_shape = "edits"
 effort = "small"
 counter = "none found"
 grade = "high"
@@ -294,6 +293,25 @@ anchor = "code|src/a.rs|@1"
 status = "scheduled"
 apply_flow = "apply-fixture"
 apply_task = "retired-fix"
+first_seen = 2026-10-13
+
+[[findings]]
+id = "F4"
+run = "U1"
+cell = "C1"
+seen_in = ["U1"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "src/a.rs"
+line = 1
+summary = "alpha caches"
+severity = "minor"
+blocked_on = "evidence"
+blocked_missing = "whether the cache is shared"
+anchor = "code|src/a.rs|@1"
+status = "open"
 first_seen = 2026-10-13
 
 [[verdicts]]
@@ -944,6 +962,19 @@ fn cases() -> Vec<Case> {
             &["review", "reconcile", "--slug", S, "--flow", APPLY_SLUG],
             "flow",
         ),
+        write(
+            &[
+                "review",
+                "settle",
+                "F4",
+                "--slug",
+                S,
+                "--refute",
+                "--citation",
+                "src/a.rs:1",
+            ],
+            "ok",
+        ),
         read(&["review", "anchor", "F1", "--slug", S], One, "id"),
         read(
             &["review", "reproduce-status", "F1", "--slug", S, "--expect", "gone"],
@@ -1298,7 +1329,6 @@ fn apply_flow(root: &Path) {
         "severity": "major",
         "failure_scenario": "a worker budgets for a small task",
         "fix": "raise the effort",
-        "fix_shape": "edits",
         "effort": "trivial",
         "counter": "nobody budgets by it",
         "grade": "high",
