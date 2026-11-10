@@ -368,7 +368,8 @@ downstream flow-command templates can feature-gate at boot without parsing
                "backlog_datetime_stamps", "owned_store_guard",
                "plan_store", "task_status_parked",
                "tasks_ready_checkpoint", "premise_probes_scoped",
-               "premise_probe_record", "plan_drift_uncommitted"],
+               "premise_probe_record", "plan_drift_uncommitted",
+               "plan_view_writes_build"],
   "subcommands": ["parse", "get", "set", "set-json", "validate",
                   "items", "blocks", "array-append", "capabilities",
                   "integrity", "flow", "json", "backlog", "tasks",
@@ -551,3 +552,4 @@ Feature meanings:
 | `premise_probes_scoped` | `plan probes --task <N1,N2>` covers only those tasks' pending rows, and `--premises` emits an `after:<ID>` premise once task `<ID>` is `done` |
 | `premise_probe_record` | `plan probes --record <CAPTURE> --premises` stores each premise's verdict on its `probe`: `holds` (exit 0), `fails` (non-zero) or `broken` (a breakage marker on stderr) |
 | `plan_drift_uncommitted` | `plan drift --uncommitted` adds the working tree's modified and untracked paths as `uncommitted_files`, and each affected pending row lists its own under `uncommitted`; a path that a `done`, `in-progress`, `failed` or `parked` row with an empty `commit` also names affects no row, and paths under the flow's own directories are never listed |
+| `plan_view_writes_build` | `plan view --for worker` and the human view print a `Writes build: yes\|no` line under each accept check, so a worker reads from the view whether it may run that check |

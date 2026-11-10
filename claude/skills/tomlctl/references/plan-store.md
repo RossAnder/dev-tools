@@ -1,7 +1,8 @@
 # tomlctl — plan store reference
 
 The on-disk shape of `.claude/flows/<slug>/plan.toml` and what each record's keys mean. The verbs
-that write it, the probe verdicts and the check classes are [plan.md](plan.md).
+that write it and the check classes are [plan.md](plan.md); the probe verdicts are
+[plan-probes.md](plan-probes.md).
 
 ## Contents
 

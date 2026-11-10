@@ -91,7 +91,7 @@ id = 1
 ref = "add-the-parked-task-status"
 title = "Add the parked task status"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -109,15 +109,15 @@ detail = """In `tomlctl/src/tasks/schema.rs` add the variant to `enum Status`, i
 acceptance = """
 - forward: `grep -q '"parked"' tomlctl/src/tasks/schema.rs && grep -q 'Status::Parked' tomlctl/src/backlog/reconcile.rs` (today: exit 1)
 - forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'kind(lib) & test(parked)'` passes with at least one test run (today: no lib test matches, so nextest exits non-zero; the bare `test(parked)` filter matches two unrelated integration tests). **predicted, unverified**. Falsifier: mapping `Parked` to `Standing::Pending` turns it red."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "3c8f8d6"
 
 [[items]]
 id = 2
 ref = "show-the-parked-status-in-glimpse"
 title = "Show the parked status in glimpse"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -136,15 +136,15 @@ acceptance = """
 - forward: `grep -q 'Parked' glimpse/src/model.rs` (today: exit 1)
 - forward: `cargo nextest run --manifest-path glimpse/Cargo.toml -E 'test(parked)'` passes with at least one test run (today: no glimpse test name holds `parked`). **predicted, unverified**. Falsifier: removing the `"parked"` arm of the deserialiser turns it red.
 - guard: `cargo clippy --manifest-path glimpse/Cargo.toml` reports no error in the three files this task owns."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "2ca58e9"
 
 [[items]]
 id = 3
 ref = "scope-tasks-ready-to-a-checkpoint"
 title = "Scope tasks ready to a checkpoint"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -162,15 +162,15 @@ detail = 'Add the flag to `TasksOp::Ready` in `tomlctl/src/cli/types/tasks.rs`. 
 acceptance = """
 - forward: `grep -A16 '^    Ready {' tomlctl/src/cli/types/tasks.rs | grep -q 'long = "checkpoint"'` (today: exit 1; the same pipe matches `long = "in-flight"` today)
 - forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/ready/)'` passes. **predicted, unverified**. Falsifier: dropping the filter on `next` turns the two-checkpoint test red."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "a9b8832"
 
 [[items]]
 id = 4
 ref = "scope-premise-scripts-by-task-and-cover-after-premises"
 title = "Scope premise scripts by task and cover after-premises"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -188,15 +188,15 @@ detail = 'In `PlanProbesArgs` add `--task` (comma-delimited ids, valid in either
 acceptance = """
 - forward: `grep -A40 'struct PlanProbesArgs' tomlctl/src/cli/types/plan.rs | grep -q 'long = "task"'` (today: exit 1; the same pipe matches `long = "milestone"` today)
 - forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(plan_probes)'` passes. **predicted, unverified**. Falsifier: restoring the `not a base premise` skip turns the done-task case red."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "3c8f8d6"
 
 [[items]]
 id = 5
 ref = "record-premise-verdicts"
 title = "Record premise verdicts"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -220,15 +220,15 @@ detail = 'The six files must land together: the field, its construction site, it
 acceptance = """
 - forward: `grep -q '"holds"' tomlctl/src/plan/probes.rs` (today: exit 1)
 - forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(plan_probes)'` passes. **predicted, unverified**. Falsifier: writing `holds` regardless of the exit code turns the `fails` case red."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "3c8f8d6"
 
 [[items]]
 id = 6
 ref = "show-parked-counts-and-premise-verdicts-in-plan-view"
 title = "Show parked counts and premise verdicts in plan view"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -248,15 +248,15 @@ detail = 'In `tomlctl/src/plan/view.rs` add `"parked": count_tasks(Status::Parke
 acceptance = """
 - forward: `grep -q 'Status::Parked' tomlctl/src/plan/view.rs` (today: exit 1)
 - forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(plan_view)'` passes. **predicted, unverified**. Falsifier: removing the verdict from the premise line turns the new test red."""
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "8ba32c2"
 
 [[items]]
 id = 7
 ref = "report-uncommitted-drift"
 title = "Report uncommitted drift"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -274,15 +274,15 @@ detail = """Add the flag to `PlanDriftArgs`. In `tomlctl/src/plan/drift.rs`, whe
 acceptance = """
 - forward: `grep -q 'uncommitted' tomlctl/src/plan/drift.rs` (today: exit 1)
 - forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(plan_drift)'` passes. **predicted, unverified**. Falsifier: dropping the own-work exclusion turns the second case red."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "3c8f8d6"
 
 [[items]]
 id = 8
 ref = "correlate-a-worker-prompt-to-its-task"
 title = "Correlate a worker prompt to its task"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -296,15 +296,15 @@ detail = "Add a second task regex for that literal form with the same slug patte
 acceptance = """
 - forward: `grep -q 'for worker --task' tomlctl/src/agents/correlate.rs` (today: exit 1)
 - forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/correlate/)'` passes. **predicted, unverified**. Falsifier: leaving the pre-filter unchanged turns the plan-view test red."""
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "aa86c18"
 
 [[items]]
 id = 9
 ref = "bump-tomlctl-to-0210-and-advertise-the-features"
 title = "Bump tomlctl to 0.21.0 and advertise the features"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -331,15 +331,15 @@ detail = 'The seven files land together because the version and the feature list
 acceptance = """
 - forward: `grep -q '^version = "0.21.0"' tomlctl/Cargo.toml && grep -q 'tasks_ready_checkpoint' tomlctl/src/cli/types/mod.rs` (today: exit 1)
 - forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(capabilities)'` passes. **predicted, unverified**. Falsifier: leaving the README sample or the asserted version at 0.20.0 turns it red where a test reads them."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "6454bc7"
 
 [[items]]
 id = 10
 ref = "document-the-new-plan-verbs"
 title = "Document the new plan verbs"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -361,15 +361,15 @@ acceptance = """
 - forward: `test -f claude/skills/tomlctl/references/plan-probes.md && grep -q 'uncommitted' claude/skills/tomlctl/references/plan.md` (today: exit 1)
 - guard: `test "$(wc -l < claude/skills/tomlctl/references/plan.md)" -le 600` (today: exit 0)
 - forward: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes. **predicted, unverified**. Falsifier: a flag table naming a flag the verb lacks turns `flag_table_lint` red."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "5cc05c9"
 
 [[items]]
 id = 11
 ref = "document-the-parked-status-and-the-scoped-frontier"
 title = "Document the parked status and the scoped frontier"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -389,15 +389,15 @@ deps_note = ""
 action = "Add `parked`, `tasks ready --checkpoint` and the premise `probe` key to the task references."
 detail = "In `claude/skills/tomlctl/references/tasks.md` add `--checkpoint` to the `tasks ready` flag table and `parked` to the `blocked[].blocker_status` and `dag/stalled-dependency` rows. In `claude/skills/tomlctl/references/tasks-write.md` add `parked` to the `--status` row. In `claude/skills/tomlctl/references/tasks-store.md` add `parked` to the status vocabulary and the optional `probe` key to the premise description under `[[specs]]`."
 acceptance = "forward: `grep -q 'parked' claude/skills/tomlctl/references/tasks.md && grep -q 'parked' claude/skills/tomlctl/references/tasks-write.md && grep -q 'parked' claude/skills/tomlctl/references/tasks-store.md` (today: exit 1)"
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "c48fdf0"
 
 [[items]]
 id = 12
 ref = "add-the-v2-worker-agents"
 title = "Add the v2 worker agents"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -415,15 +415,15 @@ detail = """Follow Approach, "Worker contract" for the prompt keys, the ten-step
 acceptance = """
 - forward: `test -f claude/agents/plan-worker-lite.md && test -f claude/agents/plan-worker-deep.md && grep -q 'plan-worker-procedure' scripts/shared-blocks.toml` (today: exit 1)
 - guard: `bash scripts/verify-shared-blocks.sh` exits 0 (today: exit 0). Falsifier: a one-byte difference between the two carriers of `plan-worker-procedure` turns it red."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "d0f2d18"
 
 [[items]]
 id = 13
 ref = "add-the-milestone-workflow-script"
 title = "Add the milestone Workflow script"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -437,15 +437,15 @@ detail = """Follow Approach, "Milestone Workflow". Model the file on `claude/wor
 acceptance = """
 - forward: `grep -q "name: 'implement-v2-milestone'" claude/workflows/implement-v2-milestone.js` (today: exit 2, no file)
 - forward: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes. **predicted, unverified**. Falsifier: an `agentType` naming no agent turns `workflow_scripts_name_real_agents` red."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "2215881"
 
 [[items]]
 id = 14
 ref = "write-the-engine-reference-for-running-a-milestone"
 title = "Write the engine reference for running a milestone"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -464,15 +464,15 @@ detail = 'Cover steps 1 to 4 of Approach, "Orchestrator loop" and all of Approac
 acceptance = """
 - forward: `grep -q 'implement-v2-milestone' claude/skills/implement-v2-engine/references/run-milestone.md` (today: exit 2, no file)
 - forward: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes. **predicted, unverified**. Falsifier: a fenced `tomlctl` call with a flag the CLI lacks turns `command_lint` red."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "5a441e2"
 
 [[items]]
 id = 15
 ref = "write-the-engine-reference-for-drain-gate-and-commit"
 title = "Write the engine reference for drain, gate and commit"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -490,15 +490,15 @@ detail = """Cover step 5 of Approach, "Orchestrator loop", and all of Approach, 
 acceptance = """
 - forward: `grep -q 'uncommitted' claude/skills/implement-v2-engine/references/drain.md` (today: exit 2, no file)
 - forward: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes. **predicted, unverified**. Falsifier: a fenced `tomlctl … 2>/dev/null` turns `guidance_lint` red."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "abec638"
 
 [[items]]
 id = 16
 ref = "write-the-engine-skill"
 title = "Write the engine skill"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -515,15 +515,15 @@ detail = 'Shape it like `claude/skills/plan-v2-engine/SKILL.md`: frontmatter wit
 acceptance = """
 - forward: `grep -q 'references/drain.md' claude/skills/implement-v2-engine/SKILL.md` (today: exit 2, no file)
 - forward: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes. **predicted, unverified**. Falsifier: a link to a missing reference turns `skill_markdown_links_resolve` red."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "e2fa638"
 
 [[items]]
 id = 17
 ref = "add-the-implement-v2-carrier"
 title = "Add the implement-v2 carrier"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -543,15 +543,15 @@ detail = """Follow Approach, "Carrier and deploy" and the shape of `claude/comma
 acceptance = """
 - forward: `grep -q '"implement-v2.md"' tomlctl/src/cli/dispatch/tests/skills.rs && test -f claude/commands/implement-v2.md` (today: exit 1)
 - forward: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes. **predicted, unverified**. Falsifier: removing the `implement-v2-engine` invocation phrase turns `carrier_invokes_required_skills` red."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "899a8bb"
 
 [[items]]
 id = 18
 ref = "amend-the-status-write-contract"
 title = "Amend the status-write contract"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -572,15 +572,15 @@ detail = """In `claude/skills/flow-contract-task-store/SKILL.md` add `parked` to
 acceptance = """
 - forward: `grep -q 'parked' claude/skills/flow-contract-task-store/SKILL.md && grep -q 'orchestrator stamps' docs/ideas/v2-pipeline.md` (today: exit 1). The corrected Status bullet in `docs/ideas/v2-pipeline.md` must contain the words "orchestrator stamps".
 - guard: `test "$(wc -l < claude/skills/flow-contract-task-store/SKILL.md)" -le 500` (today: exit 0)"""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "85db099"
 
 [[items]]
 id = 19
 ref = "cover-every-v2-entry-in-the-link-scripts"
 title = "Cover every v2 entry in the link scripts"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -602,15 +602,15 @@ detail = "Add to the `entries` list of `scripts/link-v2-review.sh` and the `$ent
 acceptance = """
 - forward: `grep -q 'commands/plan-v2.md' scripts/link-v2-review.sh && grep -q 'commands/implement-v2.md' scripts/link-v2-review.sh && grep -q 'implement-v2-milestone.js' scripts/link-v2-review.ps1` (today: exit 1)
 - guard: `CLAUDE_CONFIG_DIR="$(mktemp -d)" sh scripts/link-v2-review.sh --dry-run` exits 0 (today: exit 0; the script exits 1 when it refuses any entry). It turns red if an entry is listed whose source tasks 12 to 17 have not created."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "ffefc81"
 
 [[items]]
 id = 20
 ref = "describe-the-engine-in-claudemd"
 title = "Describe the engine in CLAUDE.md"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -627,15 +627,15 @@ detail = 'In "Planning v2", replace the sentence saying an approved v2 plan cann
 acceptance = """
 - forward: `grep -q 'cannot be run yet' CLAUDE.md; test $? -eq 1` (today: exit 1)
 - forward: `grep -q '^## Implement v2' CLAUDE.md` (today: exit 1)"""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "d3ce04e"
 
 [[items]]
 id = 21
 ref = "say-a-parked-closing-task-stalls-its-backlog-item"
 title = "Say a parked closing task stalls its backlog item"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -650,15 +650,15 @@ deps_note = ""
 action = "Add `parked` to the two statements of the `stalled` bucket rule."
 detail = "In `claude/skills/tomlctl/references/backlog-reconcile.md`, the `stalled` row of the bucket table says a closing task is `deferred` or `failed`; make it `deferred`, `failed` or `parked`. In `claude/commands/backlog.md`, the paragraph that opens with the `orphaned`, `stalled`, `dangling` buckets says the same of a `stalled` claim; make the same change. Change nothing else in either file."
 acceptance = "forward: `grep -q 'parked' claude/skills/tomlctl/references/backlog-reconcile.md && grep -q 'parked' claude/commands/backlog.md` (today: exit 1)"
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "f921318"
 
 [[items]]
 id = 22
 ref = "retire-the-no-engine-statements-in-the-plan-v2-engine-references"
 title = "Retire the no-engine statements in the plan-v2 engine references"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -678,5 +678,5 @@ detail = 'In `claude/skills/plan-v2-engine/references/approve.md`, the approval 
 acceptance = """
 - forward: `grep -q 'No engine can run it yet' claude/skills/plan-v2-engine/references/approve.md; test $? -eq 1` (today: exit 1, the sentence is present)
 - forward: `grep -q 'There is no .--record. for premises' claude/skills/plan-v2-engine/references/write-and-prove.md; test $? -eq 1` (today: exit 1, the sentence is present)"""
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "265293f"

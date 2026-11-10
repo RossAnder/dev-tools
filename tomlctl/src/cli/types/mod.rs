@@ -179,6 +179,7 @@ pub(crate) const FEATURES: &[&str] = &[
     "premise_probes_scoped",
     "premise_probe_record",
     "plan_drift_uncommitted",
+    "plan_view_writes_build",
 ];
 
 /// User-facing top-level subcommand names, as they appear in

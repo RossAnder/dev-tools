@@ -651,6 +651,8 @@ fn spec_block(out: &mut String, spec: &TaskSpec) {
                 out.push_str("  - Check: none yet\n");
             } else {
                 out.push_str(&format!("  - Check: {}\n", code(&accept.check)));
+                let writes = if accept.writes_build { "yes" } else { "no" };
+                out.push_str(&format!("  - Writes build: {writes}\n"));
             }
             if !accept.positive.is_empty() {
                 out.push_str(&format!("  - Positive: {}\n", code(&accept.positive)));

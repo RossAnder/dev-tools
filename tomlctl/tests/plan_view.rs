@@ -598,6 +598,36 @@ fn a_premise_shows_its_recorded_verdict_to_the_worker() {
 }
 
 #[test]
+fn an_accept_check_shows_whether_it_writes_the_build() {
+    let worker = Flow::standard().view(&["--for", "worker", "--task", "1"]);
+    assert!(
+        worker.contains("  - Check: `cargo test retry`\n  - Writes build: no\n"),
+        "an explicit false must read as no:\n{worker}"
+    );
+
+    let tasks = TASKS.replace("writes_build = false, ", "");
+    let worker = Flow::seeded(Some(&tasks), PLAN, Some(BRIEF.as_bytes()))
+        .view(&["--for", "worker", "--task", "1"]);
+    assert!(
+        worker.contains("  - Check: `cargo test retry`\n  - Writes build: yes\n"),
+        "an absent writes_build must read as yes:\n{worker}"
+    );
+
+    let tasks = TASKS.replace("check = \"cargo test retry\"", "check = \"\"");
+    assert_ne!(tasks, TASKS);
+    let worker = Flow::seeded(Some(&tasks), PLAN, Some(BRIEF.as_bytes()))
+        .view(&["--for", "worker", "--task", "1"]);
+    assert!(
+        worker.contains("  - Check: none yet\n"),
+        "an empty check must read as none yet:\n{worker}"
+    );
+    assert!(
+        !worker.contains("Writes build"),
+        "an empty check must print no Writes build line:\n{worker}"
+    );
+}
+
+#[test]
 fn an_answered_surfaced_decision_is_not_open() {
     let plan = PLAN.replacen(
         "provenance = \"agent-assumed\"",

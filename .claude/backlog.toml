@@ -1,5 +1,5 @@
 schema_version = 1
-last_updated = 2026-11-09
+last_updated = 2026-11-10
 
 [[backlog]]
 id = "B-de0a0d87"
@@ -9360,7 +9360,7 @@ tags = [
     "deploy",
     "plan-v2",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-11-09T20:48:25Z
 last_seen = 2026-11-09T20:48:25Z
 seen_count = 1
@@ -9371,6 +9371,11 @@ base_sha = "5187e3831ccede695696ccde7c5665dbc32a7c30"
 related = ["B-f0558729"]
 promoted = 2026-11-09
 promoted_to = "jiggly-exploring-robin"
+resolved = 2026-11-09
+resolution = "resolved by flow `jiggly-exploring-robin` (tasks cover-every-v2-entry-in-the-link-scripts)"
+resolved_flow = "jiggly-exploring-robin"
+resolved_tasks = ["cover-every-v2-entry-in-the-link-scripts"]
+resolved_commits = ["ffefc81"]
 
 [[backlog]]
 id = "B-55a13775"
@@ -9409,3 +9414,287 @@ origin = "backlog"
 context = "Two extra review-store writes per stale prose row in apply.rs execute. Arrived cheap-in-file and was deferred because it needs a decision: skipping the mark when the judge found the row stale would leave unmarked a row that becomes applicable under the lock, so a crash after that write would not recover."
 base_sha = "5187e3831ccede695696ccde7c5665dbc32a7c30"
 related = ["B-037256f6"]
+
+[[backlog]]
+id = "B-9e645146"
+kind = "question"
+summary = "plan view --for worker does not print an accept check's writes_build, so a v2 worker needs a second tasks show --with spec call to know which checks it may run"
+area = "tomlctl/src/plan/view.rs"
+tags = [
+    "implement-v2",
+    "plan-view",
+]
+status = "resolved"
+created = 2026-11-09T22:22:34Z
+last_seen = 2026-11-09T22:22:34Z
+seen_count = 1
+dedup_id = "9e64514691e593c0"
+origin = "implement"
+flow = "jiggly-exploring-robin"
+context = "The plan-worker procedure tells the worker to add --with spec to tasks show when it needs a spec field. Printing writes_build in the worker view would make the view enough on its own."
+base_sha = "d3ce04e2998c9b9454dbd56d06d09ec641de7c4a"
+related = ["B-81b3ee0b"]
+resolved = 2026-11-10
+resolution = "Fixed in the working tree on 2026-11-10 (uncommitted at triage time); full tomlctl and glimpse suites, clippy and fmt pass."
+
+[[backlog]]
+id = "B-23893ca4"
+kind = "debt"
+summary = "the Zoom::Tight label-width test in glimpse lists every TaskStatus by hand and leaves out Parked"
+area = "glimpse/src/diagram/mod.rs"
+tags = [
+    "glimpse",
+    "parked",
+]
+status = "resolved"
+created = 2026-11-09T22:22:34Z
+last_seen = 2026-11-09T22:22:34Z
+seen_count = 1
+dedup_id = "23893ca41cd8c4de"
+origin = "implement"
+flow = "jiggly-exploring-robin"
+context = "The list is not a match, so the compiler names nothing. Adding TaskStatus::Parked to it is one line; the model test parked_status_parses_and_draws_its_own_one_cell_glyph covers the glyph width meanwhile."
+base_sha = "d3ce04e2998c9b9454dbd56d06d09ec641de7c4a"
+related = ["B-7ffd9652"]
+resolved = 2026-11-10
+resolution = "Fixed in the working tree on 2026-11-10 (uncommitted at triage time); full tomlctl and glimpse suites, clippy and fmt pass."
+
+[[backlog]]
+id = "B-80ac5e61"
+kind = "debt"
+summary = "the non-pending status loop in tests/plan_check.rs names statuses by hand and misses parked"
+area = "tomlctl/tests/plan_check.rs"
+tags = [
+    "parked",
+    "tests",
+]
+status = "resolved"
+created = 2026-11-09T22:22:34Z
+last_seen = 2026-11-09T22:22:34Z
+seen_count = 1
+dedup_id = "80ac5e6177986be5"
+origin = "implement"
+flow = "jiggly-exploring-robin"
+context = "The test still passes but no longer covers every status. Iterating Status::VOCABULARY minus pending would keep it complete."
+base_sha = "d3ce04e2998c9b9454dbd56d06d09ec641de7c4a"
+related = ["B-545a384c"]
+resolved = 2026-11-10
+resolution = "Fixed in the working tree on 2026-11-10 (uncommitted at triage time); full tomlctl and glimpse suites, clippy and fmt pass."
+
+[[backlog]]
+id = "B-e8de8ef6"
+kind = "debt"
+summary = "plan-store.md still says the probe verdicts are documented in plan.md; they moved to plan-probes.md"
+area = "claude/skills/tomlctl/references/plan-store.md"
+tags = [
+    "docs",
+    "plan-probes",
+]
+status = "resolved"
+created = 2026-11-09T22:22:34Z
+last_seen = 2026-11-09T22:22:34Z
+seen_count = 1
+dedup_id = "e8de8ef6a5d8f9dd"
+origin = "implement"
+flow = "jiggly-exploring-robin"
+context = "Stale prose near the top of the file, not a broken link. Repoint it at plan-probes.md."
+base_sha = "d3ce04e2998c9b9454dbd56d06d09ec641de7c4a"
+related = ["B-c2570c84"]
+resolved = 2026-11-10
+resolution = "Fixed in the working tree on 2026-11-10 (uncommitted at triage time); full tomlctl and glimpse suites, clippy and fmt pass."
+
+[[backlog]]
+id = "B-678773a3"
+kind = "question"
+summary = "the plan-worker agents say a replan may give a failed task to the other tier, while the engine plan says a failure is never moved up a tier; drain.md reconciles them by requiring a re-spec"
+area = "claude/agents/plan-worker-lite.md"
+tags = [
+    "implement-v2",
+    "workers",
+]
+status = "resolved"
+created = 2026-11-09T22:22:34Z
+last_seen = 2026-11-09T22:22:34Z
+seen_count = 1
+dedup_id = "678773a399f2bad6"
+origin = "implement"
+flow = "jiggly-exploring-robin"
+context = "drain.md's replan step forbids an executor change alone and never re-tiers a failed premise. Decide which reading is intended, then align the shared plan-worker-procedure block or drain.md."
+base_sha = "d3ce04e2998c9b9454dbd56d06d09ec641de7c4a"
+related = ["B-7c18f900"]
+resolved = 2026-11-10
+resolution = "Fixed in the working tree on 2026-11-10 (uncommitted at triage time); full tomlctl and glimpse suites, clippy and fmt pass."
+
+[[backlog]]
+id = "B-6d577c72"
+kind = "bug"
+summary = "implement-v2 pre-flight exempts only non-pending rows' files from the clean-tree check, so a pending row with partial edits in place blocks the next invocation"
+area = "claude/skills/implement-v2-engine/references/run-milestone.md"
+tags = [
+    "implement-v2",
+    "pre-flight",
+]
+status = "resolved"
+created = 2026-11-09T22:22:34Z
+last_seen = 2026-11-09T22:22:34Z
+seen_count = 1
+dedup_id = "6d577c72fad089a2"
+origin = "implement"
+flow = "jiggly-exploring-robin"
+context = "The engine skill's Re-entry section states this as a known gap: the engine names the row and its note and changes nothing. drain.md avoids creating the state by resetting in-progress rows only before a relaunch."
+base_sha = "d3ce04e2998c9b9454dbd56d06d09ec641de7c4a"
+related = ["B-07136a3d"]
+resolved = 2026-11-10
+resolution = "Fixed in the working tree on 2026-11-10 (uncommitted at triage time); full tomlctl and glimpse suites, clippy and fmt pass."
+
+[[backlog]]
+id = "B-85f895ef"
+kind = "debt"
+summary = "the implement-v2 pre-launch snapshot is a tasks list with no specs, so the drain cannot directly detect a worker that edited a spec"
+area = "claude/skills/implement-v2-engine/references/run-milestone.md"
+tags = [
+    "implement-v2",
+    "drain",
+]
+status = "resolved"
+created = 2026-11-09T22:22:34Z
+last_seen = 2026-11-09T22:22:34Z
+seen_count = 1
+dedup_id = "85f895ef7d68bb37"
+origin = "implement"
+flow = "jiggly-exploring-robin"
+context = "drain.md falls back on the [[changes]] audit trail and the run's start and finish times. A separate spec snapshot at launch would make the comparison direct."
+base_sha = "d3ce04e2998c9b9454dbd56d06d09ec641de7c4a"
+related = ["B-ddd7141e"]
+resolved = 2026-11-10
+resolution = "Fixed in the working tree on 2026-11-10 (uncommitted at triage time); full tomlctl and glimpse suites, clippy and fmt pass."
+
+[[backlog]]
+id = "B-72b3ad42"
+kind = "question"
+summary = "the needs_human report in drain.md has no section for failed rows left when relaunching stops, so they end an invocation unreported"
+area = "claude/skills/implement-v2-engine/references/drain.md"
+tags = [
+    "implement-v2",
+    "drain",
+]
+status = "resolved"
+created = 2026-11-09T22:22:34Z
+last_seen = 2026-11-09T22:22:34Z
+seen_count = 1
+dedup_id = "72b3ad424b327cd3"
+origin = "implement"
+flow = "jiggly-exploring-robin"
+context = "The engine skill's Re-entry replans such rows at the next invocation, but the closing report of the invocation that left them never names them."
+base_sha = "d3ce04e2998c9b9454dbd56d06d09ec641de7c4a"
+related = ["B-c6fcfb97"]
+resolved = 2026-11-10
+resolution = "Fixed in the working tree on 2026-11-10 (uncommitted at triage time); full tomlctl and glimpse suites, clippy and fmt pass."
+
+[[backlog]]
+id = "B-3b459196"
+kind = "debt"
+summary = "invokes_skill counts any non-negated quoted mention of a skill as an invocation, so a carrier that only describes a skill passes carrier_invokes_required_skills"
+area = "tomlctl/src/cli/dispatch/tests/skills.rs"
+tags = [
+    "lint",
+    "carriers",
+]
+status = "resolved"
+created = 2026-11-09T22:22:34Z
+last_seen = 2026-11-09T22:22:34Z
+seen_count = 1
+dedup_id = "3b45919641864ac0"
+origin = "implement"
+flow = "jiggly-exploring-robin"
+context = "Seen on implement-v2.md: removing the Run-section handoff left the test green because the intro line also mentions the skill; plan-v2.md has the same shape. The guard is weaker than its docstring says."
+base_sha = "d3ce04e2998c9b9454dbd56d06d09ec641de7c4a"
+related = ["B-0a34cd73"]
+resolved = 2026-11-10
+resolution = "Fixed in the working tree on 2026-11-10 (uncommitted at triage time); full tomlctl and glimpse suites, clippy and fmt pass."
+
+[[backlog]]
+id = "B-6a0aff17"
+kind = "debt"
+summary = "plan drift own_work() decides own work by row status, not by a set agent, so a started row reset to pending shows its own partial edits as uncommitted hits"
+area = "tomlctl/src/plan/drift.rs"
+tags = [
+    "implement-v2",
+    "drift",
+]
+status = "open"
+created = 2026-11-10T04:16:34Z
+last_seen = 2026-11-10T04:16:34Z
+seen_count = 1
+dedup_id = "6a0aff17b9f8ad81"
+origin = "implement"
+flow = "jiggly-exploring-robin"
+context = "drain.md step 3 explains the case in prose. Matching the pre-flight's started-row rule (no commit, agent set) in the tool would remove the special case."
+base_sha = "d3ce04e2998c9b9454dbd56d06d09ec641de7c4a"
+related = ["B-aca96d19"]
+
+[[backlog]]
+id = "B-eebed4e1"
+kind = "debt"
+summary = "glimpse theme-picker preview SAMPLE lists five task statuses and omits parked, so a theme's parked style is never previewed"
+area = "glimpse/src/view/themes.rs"
+tags = [
+    "glimpse",
+    "parked",
+]
+status = "open"
+created = 2026-11-10T04:30:21Z
+last_seen = 2026-11-10T04:30:21Z
+seen_count = 1
+dedup_id = "eebed4e1705a299f"
+origin = "review"
+flow = "jiggly-exploring-robin"
+context = 'SAMPLE at glimpse/src/view/themes.rs:15 is a fixed five-element array; the status legend already includes parked. Add "parked" and widen the array length.'
+base_sha = "d3ce04e2998c9b9454dbd56d06d09ec641de7c4a"
+evidence = ["glimpse/src/view/themes.rs:15"]
+related = ["B-23893ca4"]
+
+[[backlog]]
+id = "B-3d7b3a14"
+kind = "debt"
+summary = "parked means two things in glimpse: ledger StatusClass::Parked covers deferred or promoted items while TaskStatus::Parked is a v2 task blocked on a person"
+area = "glimpse/src"
+tags = [
+    "glimpse",
+    "parked",
+]
+status = "open"
+created = 2026-11-10T04:30:21Z
+last_seen = 2026-11-10T04:30:21Z
+seen_count = 1
+dedup_id = "3d7b3a14e6230e9d"
+origin = "review"
+flow = "jiggly-exploring-robin"
+context = "glimpse/src/ledger.rs:96 defines the ledger class and glimpse/src/theme.rs:415 and :428 map each to a different style. A rename of one (the ledger class is the older name) would separate the vocabularies; until then read which enum a parked style belongs to before changing it."
+base_sha = "d3ce04e2998c9b9454dbd56d06d09ec641de7c4a"
+evidence = [
+    "glimpse/src/ledger.rs:96",
+    "glimpse/src/theme.rs:415",
+]
+related = ["B-23893ca4"]
+
+[[backlog]]
+id = "B-ef8adde8"
+kind = "debt"
+summary = "implement-v2 drain step 10 and its Edits-follow-their-files paragraph compare default git status --porcelain output with rows' files, which C-quotes paths with spaces or non-ASCII characters"
+area = "claude/skills/implement-v2-engine"
+tags = [
+    "implement-v2",
+    "git-status",
+]
+status = "open"
+created = 2026-11-10T04:42:57Z
+last_seen = 2026-11-10T04:42:57Z
+seen_count = 1
+dedup_id = "ef8adde8080a6166"
+origin = "review-apply"
+flow = "jiggly-exploring-robin"
+context = "The pre-flight was moved to `tomlctl plan drift --uncommitted --get uncommitted_files`, which prints unquoted paths. The drain's `git status --porcelain -- <paths>` reads still quote such paths, so one would not match a row's `files` spelling or pass to `git add`. Arrived cheap-in-file from the review-apply run and was deferred: the replacement read for a pathspec-scoped status needs choosing, and no verification step exercises that prose."
+base_sha = "d3ce04e2998c9b9454dbd56d06d09ec641de7c4a"
+evidence = ["claude/skills/implement-v2-engine/references/drain.md:285"]
+related = ["B-6d577c72"]

@@ -1,2 +1,920 @@
 schema_version = 1
-last_updated = 2026-11-09
+last_updated = 2026-11-10
+
+[[items]]
+id = "E1"
+agent = "implement"
+from_status = "draft"
+to_status = "in-progress"
+summary = "status draft -> in-progress"
+type = "status-transition"
+date = 2026-11-09
+
+[[items]]
+id = "E2"
+agent = "implement"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = ["tomlctl/src/agents/correlate.rs"]
+summary = "dispatch_in links a prompt carrying the plan-view worker form via a second regex and a widened pre-filter; three unit tests added, pre-filter falsifier observed (1 failure of 27)."
+type = "task-completion"
+task_ref = "correlate-a-worker-prompt-to-its-task"
+date = 2026-11-09
+
+[[items]]
+id = "E3"
+agent = "implement"
+summary = "tasks ready --checkpoint refuses an id that neither a [[checkpoints]] entry nor any row's checkpoint field carries (and an empty id) in tomlctl/src/tasks/ready.rs"
+original_intent = "refuse a --checkpoint id that no [[checkpoints]] entry carries"
+rationale = "Matches the declared-or-claimed check train::check_window uses for tasks train --checkpoint, so both verbs refuse the same ids; a group rows claim without a declared entry stays queryable. Differs only on a store with undeclared checkpoint groups."
+type = "deviation"
+task_ref = "scope-tasks-ready-to-a-checkpoint"
+date = 2026-11-09
+
+[[items]]
+id = "E4"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/tasks/ready.rs",
+    "tomlctl/src/tasks/dispatch.rs",
+    "tomlctl/src/cli/types/tasks.rs",
+]
+summary = "Added tasks ready --checkpoint: ready_in_checkpoint filters all four frontier lists to one group while outside dependencies still gate; unknown id refused with kind=validation; parked added to --status help; two unit tests, each falsified (1 failure)."
+type = "task-completion"
+task_ref = "scope-tasks-ready-to-a-checkpoint"
+date = 2026-11-09
+
+[[items]]
+id = "E5"
+agent = "implement"
+summary = "Playwright tools left out of the tools list in claude/agents/plan-worker-lite.md and plan-worker-deep.md; name, model, effort and colour copied"
+original_intent = "frontmatter tools as in the implement-* files"
+rationale = "The v2 dispatch prompt has no DEV SERVER key and the workers have no browser section, so the Playwright tools would be unusable."
+type = "deviation"
+task_ref = "add-the-v2-worker-agents"
+date = 2026-11-09
+
+[[items]]
+id = "E6"
+agent = "implement"
+summary = "the shared procedure tells the worker to add --with spec when it needs a spec field, in claude/agents/plan-worker-lite.md and plan-worker-deep.md; the prompt's bare fetch command is unchanged"
+original_intent = "step 2 reads the row with tomlctl tasks show <n> --slug <slug>"
+rationale = "The default summary shape carries no spec and plan view --for worker does not print writes_build, which the check rule needs."
+type = "deviation"
+task_ref = "add-the-v2-worker-agents"
+date = 2026-11-09
+
+[[items]]
+id = "E7"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/agents/plan-worker-lite.md",
+    "claude/agents/plan-worker-deep.md",
+    "scripts/shared-blocks.toml",
+]
+summary = "Added plan-worker-lite and plan-worker-deep with shared plan-worker-procedure and plan-worker-forbidden-ops blocks, plus file-edits and tomlctl-for-agents, all registered in scripts/shared-blocks.toml; verify-shared-blocks exits 0 and a one-byte drift falsifier failed it (1 drift)."
+type = "task-completion"
+task_ref = "add-the-v2-worker-agents"
+date = 2026-11-09
+
+[[items]]
+id = "E8"
+agent = "implement"
+summary = "the test was also renamed from a_deferred_or_failed_closing_task_is_stalled to a_deferred_failed_or_parked_closing_task_is_stalled in tomlctl/src/backlog/reconcile.rs"
+original_intent = "extend the unit test that covers a deferred closing task"
+rationale = "Putting parked in the test name lets the acceptance filter test(parked) select it."
+type = "deviation"
+task_ref = "add-the-parked-task-status"
+date = 2026-11-09
+
+[[items]]
+id = "E9"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+summary = "Added Status::Parked to the enum, VOCABULARY, as_str and parse; Standing::of maps it to Stalled and backlog reconcile's stopped test counts it; one new graph test and an extended reconcile test, falsified (2 failures)."
+files = [
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/tasks/graph.rs",
+    "tomlctl/src/backlog/reconcile.rs",
+]
+type = "task-completion"
+task_ref = "add-the-parked-task-status"
+date = 2026-11-09
+scope_warning = true
+
+[[items]]
+id = "E10"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+summary = "glimpse reads and writes TaskStatus::Parked as parked with its own one-cell glyph, the deferred colour, a flash slot and a legend row; new model test and legend test entry, falsified (2 failures)."
+files = [
+    "glimpse/src/model.rs",
+    "glimpse/src/theme.rs",
+    "glimpse/src/view/legend.rs",
+]
+type = "task-completion"
+task_ref = "show-the-parked-status-in-glimpse"
+date = 2026-11-09
+
+[[items]]
+id = "E11"
+agent = "implement"
+summary = "an after:<id> premise whose row is missing is skipped as no task <id> in the store, in tomlctl/src/plan/probes.rs"
+original_intent = "an after:<id> premise has two outcomes: emitted when task <id> is done, skipped as task <id> is not done otherwise"
+rationale = "A missing row must not pass silently as not done; tasks add refuses such a target, so only a hand-edited store reaches it."
+type = "deviation"
+task_ref = "scope-premise-scripts-by-task-and-cover-after-premises"
+date = 2026-11-09
+
+[[items]]
+id = "E12"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/src/plan/probes.rs",
+    "tomlctl/tests/plan_probes.rs",
+]
+summary = "plan probes gains --task <N1,N2> for emit and record, refuses an id no row carries, and emits an after:<id> premise once task <id> is done; five tests added or rewritten in tests/plan_probes.rs, falsified (3 and 2 failures), binary 48/48."
+type = "task-completion"
+task_ref = "scope-premise-scripts-by-task-and-cover-after-premises"
+date = 2026-11-09
+
+[[items]]
+id = "E13"
+agent = "implement"
+status = "done"
+summary = "Added parked to the stalled bucket rule in backlog-reconcile.md and backlog.md"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+files = [
+    "claude/skills/tomlctl/references/backlog-reconcile.md",
+    "claude/commands/backlog.md",
+]
+type = "task-completion"
+task_ref = "say-a-parked-closing-task-stalls-its-backlog-item"
+date = 2026-11-09
+
+[[items]]
+id = "E14"
+agent = "implement"
+summary = "index entries are {id, status, note, error, deviations, handover} in claude/workflows/implement-v2-milestone.js; a worker that returned nothing gets [] and an empty string"
+original_intent = "index entries are {id, status, note, error}"
+rationale = "The drain reads the notes of tasks that report deviations or a handover and can only tell which from the index."
+type = "deviation"
+task_ref = "add-the-milestone-workflow-script"
+date = 2026-11-09
+
+[[items]]
+id = "E15"
+agent = "implement"
+summary = "the index also reports error, no-return and mismatch statuses in claude/workflows/implement-v2-milestone.js; a missing or misplaced note keeps the worker's status with the problem in error"
+original_intent = "only blocked is reported beyond the worker statuses"
+rationale = "A thrown call, a null return and a return naming another task each need a status distinct from the worker's own; all count as not done, block dependents and are listed in errors[]."
+type = "deviation"
+task_ref = "add-the-milestone-workflow-script"
+date = 2026-11-09
+
+[[items]]
+id = "E16"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = ["claude/workflows/implement-v2-milestone.js"]
+summary = "Added the implement-v2-milestone Workflow: argument refusal with no agent launched, plain-JS waves over needs and file overlap cut to max_parallel, blocked propagation, caught() worker calls with a literal agentType lookup, strict return schema. cli::dispatch::tests 54 passed; falsifier observed 2 failed tests."
+type = "task-completion"
+task_ref = "add-the-milestone-workflow-script"
+date = 2026-11-09
+
+[[items]]
+id = "E17"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/tasks/add.rs",
+    "tomlctl/src/tasks/update.rs",
+    "tomlctl/src/plan/probes.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/tests/plan_probes.rs",
+]
+summary = "plan probes --record --premises stores holds, fails or broken on each premise in scope as Premise.probe, honouring --milestone and --task and refusing stale, short, overlong, repeated or wrong-mode captures; add and update mirror Accept.probe handling; premise_target now has one definition in tasks/schema.rs. plan_probes 56/56; falsifiers observed 7 and 5 failures."
+type = "task-completion"
+task_ref = "record-premise-verdicts"
+date = 2026-11-09
+
+[[items]]
+id = "E18"
+agent = "implement"
+summary = "a one-sentence status list including parked was added inside the [[specs]] paragraph of claude/skills/tomlctl/references/tasks-store.md"
+original_intent = "add parked to the status vocabulary in tasks-store.md"
+rationale = "The file held no status vocabulary to extend."
+type = "deviation"
+task_ref = "document-the-parked-status-and-the-scoped-frontier"
+date = 2026-11-09
+
+[[items]]
+id = "E19"
+agent = "implement"
+status = "done"
+summary = "Documented parked, tasks ready --checkpoint and the premise probe key in the three task references; orchestrator vet named the premise fields claim, check, at"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = [
+    "claude/skills/tomlctl/references/tasks.md",
+    "claude/skills/tomlctl/references/tasks-write.md",
+    "claude/skills/tomlctl/references/tasks-store.md",
+]
+type = "task-completion"
+task_ref = "document-the-parked-status-and-the-scoped-frontier"
+date = 2026-11-09
+
+[[items]]
+id = "E20"
+agent = "implement"
+summary = '"parked_tasks": [] was also added to the exact open_items assertion in tomlctl/tests/plan_view.rs'
+original_intent = 'only "parked": 0 is added to the exact counts object in tests/plan_view.rs'
+rationale = "The new open_items key would otherwise fail the existing exact assertion in digest_lists_what_is_still_open."
+type = "deviation"
+task_ref = "show-parked-counts-and-premise-verdicts-in-plan-view"
+date = 2026-11-09
+
+[[items]]
+id = "E21"
+agent = "implement"
+summary = "implement was removed from Not started as well, which now lists apply only, in docs/ideas/v2-pipeline.md"
+original_intent = "move the execution engine out of the Not started bullet"
+rationale = "The planned first slice is the implement step, so leaving implement under Not started would contradict the new Planned bullet."
+type = "deviation"
+task_ref = "amend-the-status-write-contract"
+date = 2026-11-09
+
+[[items]]
+id = "E22"
+agent = "implement"
+summary = "the premise probe key is described in a following sentence in claude/skills/flow-contract-task-store/SKILL.md"
+original_intent = "add probe to the sentence listing what premise entries take"
+rationale = "Listing it inside the claim, check, at list would break the clause that defines at; the separate sentence also states that a supplied probe is refused, as add.rs does."
+type = "deviation"
+task_ref = "amend-the-status-write-contract"
+date = 2026-11-09
+
+[[items]]
+id = "E23"
+agent = "implement"
+status = "done"
+summary = "plan view counts parked tasks, lists parked_tasks under open_items and prints a premise's recorded verdict in the worker view; two tests added, falsified (2 failures), plan_view 35/35"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+files = [
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/tests/plan_view.rs",
+]
+type = "task-completion"
+task_ref = "show-parked-counts-and-premise-verdicts-in-plan-view"
+date = 2026-11-09
+
+[[items]]
+id = "E24"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/skills/flow-contract-task-store/SKILL.md",
+    "docs/plans/v2-planning.md",
+    "docs/ideas/v2-pipeline.md",
+]
+summary = "Task-store contract gains the parked status, the premise probe key and the section 11 exception letting a v2 worker write status and agent on its own row; v2-planning.md and v2-pipeline.md brought into line, including the orchestrator stamping commit. Skill at 480 lines, under its 500 ceiling."
+type = "task-completion"
+task_ref = "amend-the-status-write-contract"
+date = 2026-11-09
+
+[[items]]
+id = "E25"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/src/plan/drift.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/tests/plan_drift.rs",
+]
+summary = "Added plan drift --uncommitted: working-tree modified and untracked paths outside the flow's two directories are reported as uncommitted_files, and a pending row is affected unless a done, in-progress, failed or parked row with an empty commit names the path; default output unchanged. Four tests added, falsified (3 failures); 73 passed."
+type = "task-completion"
+task_ref = "report-uncommitted-drift"
+date = 2026-11-09
+
+[[items]]
+id = "E26"
+agent = "implement"
+summary = "the plan probes heading was kept above the one-line pointer in claude/skills/tomlctl/references/plan.md"
+original_intent = "leave a one-line pointer where the probes section was"
+rationale = "The Contents anchor #plan-probes must still resolve, and the pointer would otherwise read as part of the plan view section."
+type = "deviation"
+task_ref = "document-the-new-plan-verbs"
+date = 2026-11-09
+
+[[items]]
+id = "E27"
+agent = "implement"
+summary = "parked_tasks in the digest open_items row and the worker view premise probe suffix were also documented in claude/skills/tomlctl/references/plan.md"
+original_intent = "the task names plan probes and plan drift only, not plan view"
+rationale = "Both behaviours are already in tomlctl/src/plan/view.rs and no other task documents them in this file."
+type = "deviation"
+task_ref = "document-the-new-plan-verbs"
+date = 2026-11-09
+
+[[items]]
+id = "E28"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/skills/tomlctl/references/plan-probes.md",
+    "claude/skills/tomlctl/references/plan.md",
+    "claude/skills/tomlctl/SKILL.md",
+]
+summary = "Moved the plan probes section into the new plan-probes.md, which also documents --task, --record --premises, the after:<id> skips and the premise verdicts; plan.md keeps a pointer and documents plan drift --uncommitted; SKILL.md references the new file. plan.md is 542 lines. cli::dispatch::tests 54 passed; falsifier observed 1 failed test with 2 drifts."
+type = "task-completion"
+task_ref = "document-the-new-plan-verbs"
+date = 2026-11-09
+
+[[items]]
+id = "E29"
+agent = "implement"
+status = "done"
+summary = "tomlctl bumped to 0.21.0 with both lockfiles refreshed; parked added to both status vocabulary arrays; five features advertised in FEATURES, the capabilities test and the README; falsifier observed 4 failures, 83 passed after restore"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "glimpse/Cargo.lock",
+    "tomlctl/README.md",
+    "tomlctl/src/capabilities.rs",
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/tests/capabilities.rs",
+]
+type = "task-completion"
+task_ref = "bump-tomlctl-to-0210-and-advertise-the-features"
+date = 2026-11-09
+
+[[items]]
+id = "E30"
+agent = "implement"
+summary = "run-milestone.md also refuses --milestone <id> while an earlier checkpoint holds a row that is not done, in claude/skills/implement-v2-engine/references/run-milestone.md"
+original_intent = "the reference covers Orchestrator loop steps 1 to 4 only"
+rationale = "A dependent of an unfinished row in an earlier checkpoint would launch on unfinished work."
+type = "deviation"
+task_ref = "write-the-engine-reference-for-running-a-milestone"
+date = 2026-11-09
+
+[[items]]
+id = "E31"
+agent = "implement"
+summary = "both kinds of row are dropped before launch and sent to the drain replan or the needs_human report, in claude/skills/implement-v2-engine/references/run-milestone.md"
+original_intent = "the launch step does not mention rows with an empty files list or no spec"
+rationale = "The Workflow refuses the whole launch on an empty files entry, and a spec-less row has no executor."
+type = "deviation"
+task_ref = "write-the-engine-reference-for-running-a-milestone"
+date = 2026-11-09
+
+[[items]]
+id = "E32"
+agent = "implement"
+summary = "the refusal is applied per member: the row and its transitive dependents are dropped and reported, in claude/skills/implement-v2-engine/references/run-milestone.md"
+original_intent = "refuse a member with a not-done need outside the dispatch set"
+rationale = "Refusing the whole launch would let one failed row stall every unrelated task in the milestone."
+type = "deviation"
+task_ref = "write-the-engine-reference-for-running-a-milestone"
+date = 2026-11-09
+
+[[items]]
+id = "E33"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = ["claude/skills/implement-v2-engine/references/run-milestone.md"]
+summary = "Wrote the engine reference for running a milestone: pre-flight, milestone pick, premise emit, run and record, args build, snapshot, Workflow launch and run start, with max_parallel defaulting to 4. 216 lines; cli::dispatch::tests 54 passed; falsifier observed 1 failure."
+type = "task-completion"
+task_ref = "write-the-engine-reference-for-running-a-milestone"
+date = 2026-11-09
+
+[[items]]
+id = "E34"
+agent = "implement"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+summary = "build ok"
+duration_s = 14
+type = "verification"
+task_ref = "bump-tomlctl-to-0210-and-advertise-the-features"
+date = 2026-11-09
+
+[[items]]
+id = "E35"
+agent = "implement"
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+summary = "2889 tests run: 2889 passed, 1 skipped"
+duration_s = 10
+type = "verification"
+task_ref = "bump-tomlctl-to-0210-and-advertise-the-features"
+date = 2026-11-09
+
+[[items]]
+id = "E36"
+agent = "implement"
+command = "cargo nextest run --manifest-path glimpse/Cargo.toml --no-fail-fast"
+outcome = "pass"
+summary = "647 tests run: 647 passed, 0 skipped"
+duration_s = 38
+type = "verification"
+task_ref = "bump-tomlctl-to-0210-and-advertise-the-features"
+date = 2026-11-09
+
+[[items]]
+id = "E37"
+agent = "implement"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+summary = "no diff"
+duration_s = 2
+type = "verification"
+task_ref = "bump-tomlctl-to-0210-and-advertise-the-features"
+date = 2026-11-09
+
+[[items]]
+id = "E38"
+agent = "implement"
+command = "cargo fmt --manifest-path glimpse/Cargo.toml -- --check"
+outcome = "pass"
+summary = "no diff"
+duration_s = 0
+type = "verification"
+task_ref = "bump-tomlctl-to-0210-and-advertise-the-features"
+date = 2026-11-09
+
+[[items]]
+id = "E39"
+agent = "implement"
+command = "cargo clippy --manifest-path glimpse/Cargo.toml --locked"
+outcome = "pass"
+summary = "clean"
+duration_s = 7
+type = "verification"
+task_ref = "bump-tomlctl-to-0210-and-advertise-the-features"
+date = 2026-11-09
+
+[[items]]
+id = "E40"
+agent = "implement"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+summary = "exit 0"
+duration_s = 0
+type = "verification"
+task_ref = "bump-tomlctl-to-0210-and-advertise-the-features"
+date = 2026-11-09
+
+[[items]]
+id = "E41"
+agent = "implement"
+kind = "commit-train"
+summary = "3c8f8d6: add-the-parked-task-status, scope-premise-scripts-by-task-and-cover-after-premises, record-premise-verdicts, report-uncommitted-drift; 2ca58e9: show-the-parked-status-in-glimpse; a9b8832: scope-tasks-ready-to-a-checkpoint; aa86c18: correlate-a-worker-prompt-to-its-task; d0f2d18: add-the-v2-worker-agents; 8ba32c2: show-parked-counts-and-premise-verdicts-in-plan-view; 6454bc7: bump-tomlctl-to-0210-and-advertise-the-features; 5cc05c9: document-the-new-plan-verbs; c48fdf0: document-the-parked-status-and-the-scoped-frontier; 2215881: add-the-milestone-workflow-script; 85db099: amend-the-status-write-contract; f921318: say-a-parked-closing-task-stalls-its-backlog-item; 5a441e2: write-the-engine-reference-for-running-a-milestone"
+commits = [
+    "3c8f8d6",
+    "2ca58e9",
+    "a9b8832",
+    "aa86c18",
+    "d0f2d18",
+    "8ba32c2",
+    "6454bc7",
+    "5cc05c9",
+    "c48fdf0",
+    "2215881",
+    "85db099",
+    "f921318",
+    "5a441e2",
+]
+type = "checkpoint"
+task_ref = "bump-tomlctl-to-0210-and-advertise-the-features"
+date = 2026-11-09
+
+[[items]]
+id = "E42"
+agent = "implement"
+summary = "drain.md resets in-progress rows only before a relaunch and leaves them for the pre-flight when the drain stops, in claude/skills/implement-v2-engine/references/drain.md"
+original_intent = "at the drain, reset to pending every row of the run still in-progress"
+rationale = "run-milestone's pre-flight checks the tree is clean before it resets stale rows and exempts only the files of non-pending rows, so a row reset at a drain that then ends the invocation would make its own partial edits block the next pre-flight."
+type = "deviation"
+task_ref = "write-the-engine-reference-for-drain-gate-and-commit"
+date = 2026-11-09
+
+[[items]]
+id = "E43"
+agent = "implement"
+summary = "an executor change alone is forbidden, but a re-spec row may also move lite to deep when the re-spec leaves a choice open, in claude/skills/implement-v2-engine/references/drain.md"
+original_intent = "a failed task is never moved up a tier"
+rationale = "Both worker agents already tell the replan it may give a failed task to the other tier; requiring a re-spec alongside reconciles the two. A failed premise is never re-tiered."
+type = "deviation"
+task_ref = "write-the-engine-reference-for-drain-gate-and-commit"
+date = 2026-11-09
+
+[[items]]
+id = "E44"
+agent = "implement"
+summary = "drain.md adds backlog reconcile --apply at the commit, a durable fix-round count through a reason prefix, a no-cost gate timeout retry, a gateless commit for an empty gates list, and writes the user's answer for a parked row into spec.constraints, in claude/skills/implement-v2-engine/references/drain.md"
+original_intent = "the drain steps as Approach lists them"
+rationale = "Each closes a gap the steps leave: a resolved backlog item must land in the flow-store commit, fix rounds must survive a restart, a gate timeout says nothing about the code, and a parked row's return to pending is otherwise unaudited."
+type = "deviation"
+task_ref = "write-the-engine-reference-for-drain-gate-and-commit"
+date = 2026-11-09
+
+[[items]]
+id = "E45"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = ["claude/skills/implement-v2-engine/references/drain.md"]
+summary = "Wrote the engine reference for drain, gate and commit: run finish, index triage, uncommitted drift, snapshot comparison, audited replan and fix tasks, the gate with two fix rounds, backlog capture, handovers in prose, the milestone and flow-store commits with sha stamping, and the needs_human report. 390 lines; cli::dispatch::tests 54 passed; falsifier observed 2 failures. The nested spec record-file shape is unverified."
+type = "task-completion"
+task_ref = "write-the-engine-reference-for-drain-gate-and-commit"
+date = 2026-11-09
+
+[[items]]
+id = "E46"
+agent = "implement"
+summary = "Re-entry also replans a failed row left by an earlier invocation before the premises, and runs drift and the audit-trail read for an abandoned run, in claude/skills/implement-v2-engine/SKILL.md"
+original_intent = "Re-entry covers resetting stale rows, the open run, the parked re-ask and the unstamped milestone"
+rationale = "The dispatch set keeps only pending rows, so a failed row from an earlier invocation would never run again; and an abandoned run has no index, so its rows must stand in for one before the reset."
+type = "deviation"
+task_ref = "write-the-engine-skill"
+date = 2026-11-09
+
+[[items]]
+id = "E47"
+agent = "implement"
+summary = "Re-entry settles an unstamped all-done milestone before the milestone pick, in claude/skills/implement-v2-engine/SKILL.md"
+original_intent = "the unstamped-milestone handling sits inside Re-entry with no ordering"
+rationale = "The pick selects the first checkpoint with a row that is not done, so it would skip a milestone whose rows are all done but unstamped."
+type = "deviation"
+task_ref = "write-the-engine-skill"
+date = 2026-11-09
+
+[[items]]
+id = "E48"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = ["claude/skills/implement-v2-engine/SKILL.md"]
+summary = "Wrote the implement-v2-engine skill: role, eight rules, arguments including the --milestone refusals, a steps table over both references, out-of-scope stops and Re-entry (open run, stale rows, unstamped milestone, parked and failed rows, the pending-row gap). 110 lines; cli::dispatch::tests 54 passed; falsifier observed 1 failure."
+type = "task-completion"
+task_ref = "write-the-engine-skill"
+date = 2026-11-09
+
+[[items]]
+id = "E49"
+agent = "implement"
+summary = "the falsifier needed every quoted implement-v2-engine skill mention removed from claude/commands/implement-v2.md before the test failed"
+original_intent = "removing the implement-v2-engine invocation phrase turns carrier_invokes_required_skills red"
+rationale = "The invokes_skill predicate counts any non-negated quoted mention of the skill as an invocation, so the descriptive intro line also satisfies it."
+type = "deviation"
+task_ref = "add-the-implement-v2-carrier"
+date = 2026-11-09
+
+[[items]]
+id = "E50"
+agent = "implement"
+status = "done"
+summary = "Added the /implement-v2 carrier (bindings, capability and tool pre-flight, handoff to the engine skill) and registered its required skills in carrier_invokes_required_skills; cli::dispatch::tests 54 passed; falsifier observed 1 failure"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/commands/implement-v2.md",
+    "tomlctl/src/cli/dispatch/tests/skills.rs",
+]
+type = "task-completion"
+task_ref = "add-the-implement-v2-carrier"
+date = 2026-11-09
+
+[[items]]
+id = "E51"
+agent = "implement"
+status = "done"
+summary = "approve.md names /implement-v2 as the command that runs an approved plan; write-and-prove.md names plan probes --record --premises in place of the no-record statement"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/skills/plan-v2-engine/references/approve.md",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md",
+]
+type = "task-completion"
+task_ref = "retire-the-no-engine-statements-in-the-plan-v2-engine-references"
+date = 2026-11-09
+
+[[items]]
+id = "E52"
+agent = "implement"
+status = "done"
+summary = "Both link scripts now cover the 12 plan-v2 and implement-v2 entries; the sh dry run reports would make 28, refused 0; the ps1 edit is unexecuted on this host"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "scripts/link-v2-review.sh",
+    "scripts/link-v2-review.ps1",
+]
+type = "task-completion"
+task_ref = "cover-every-v2-entry-in-the-link-scripts"
+date = 2026-11-09
+
+[[items]]
+id = "E53"
+agent = "implement"
+status = "done"
+summary = "CLAUDE.md points approved v2 plans at /implement-v2, gains an Implement v2 section, and updates the Deploy bullets, Flow agent tiers and Build discipline for the engine and its workers"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = ["CLAUDE.md"]
+type = "task-completion"
+task_ref = "describe-the-engine-in-claudemd"
+date = 2026-11-09
+
+[[items]]
+id = "E54"
+agent = "implement"
+command = "CARGO_INCREMENTAL=0 cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+summary = "build ok (final pass)"
+duration_s = 12
+type = "verification"
+task_ref = "describe-the-engine-in-claudemd"
+date = 2026-11-09
+
+[[items]]
+id = "E55"
+agent = "implement"
+command = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+summary = "2889 tests run: 2889 passed, 1 skipped"
+duration_s = 32
+type = "verification"
+task_ref = "describe-the-engine-in-claudemd"
+date = 2026-11-09
+
+[[items]]
+id = "E56"
+agent = "implement"
+command = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path glimpse/Cargo.toml --no-fail-fast"
+outcome = "pass"
+summary = "647 tests run: 647 passed, 0 skipped"
+duration_s = 44
+type = "verification"
+task_ref = "describe-the-engine-in-claudemd"
+date = 2026-11-09
+
+[[items]]
+id = "E57"
+agent = "implement"
+command = "test -f claude/commands/implement-v2.md && test -f claude/skills/implement-v2-engine/SKILL.md && test -f claude/workflows/implement-v2-milestone.js"
+outcome = "pass"
+summary = "success criterion: exit 0"
+duration_s = 0
+type = "verification"
+task_ref = "describe-the-engine-in-claudemd"
+date = 2026-11-09
+
+[[items]]
+id = "E58"
+agent = "implement"
+command = "grep -q 'cannot be run yet' CLAUDE.md; test $? -eq 1"
+outcome = "pass"
+summary = "success criterion: exit 0"
+duration_s = 0
+type = "verification"
+task_ref = "describe-the-engine-in-claudemd"
+date = 2026-11-09
+
+[[items]]
+id = "E59"
+agent = "implement"
+command = "grep -q 'commands/plan-v2.md' scripts/link-v2-review.sh && grep -q 'commands/implement-v2.md' scripts/link-v2-review.sh"
+outcome = "pass"
+summary = "success criterion: exit 0"
+duration_s = 0
+type = "verification"
+task_ref = "describe-the-engine-in-claudemd"
+date = 2026-11-09
+
+[[items]]
+id = "E60"
+agent = "implement"
+command = """grep -q '"parked"' tomlctl/src/tasks/schema.rs && grep -q '^version = "0.21.0"' tomlctl/Cargo.toml"""
+outcome = "pass"
+summary = "success criterion: exit 0"
+duration_s = 0
+type = "verification"
+task_ref = "describe-the-engine-in-claudemd"
+date = 2026-11-09
+
+[[items]]
+id = "E61"
+agent = "implement"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+summary = "success criterion: exit 0 (final pass)"
+duration_s = 0
+type = "verification"
+task_ref = "describe-the-engine-in-claudemd"
+date = 2026-11-09
+
+[[items]]
+id = "E62"
+agent = "implement"
+command = "grep -q 'additionalProperties: false' claude/workflows/implement-v2-milestone.js && grep -qi 'transcript' claude/skills/implement-v2-engine/SKILL.md"
+outcome = "pass"
+summary = "success criterion: exit 0"
+duration_s = 0
+type = "verification"
+task_ref = "describe-the-engine-in-claudemd"
+date = 2026-11-09
+
+[[items]]
+id = "E63"
+agent = "implement"
+command = "CARGO_INCREMENTAL=0 cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets && CARGO_INCREMENTAL=0 cargo clippy --manifest-path glimpse/Cargo.toml --locked"
+outcome = "pass"
+summary = "clean"
+duration_s = 17
+type = "verification"
+task_ref = "describe-the-engine-in-claudemd"
+date = 2026-11-09
+
+[[items]]
+id = "E64"
+agent = "implement"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+summary = "no diff (final pass)"
+duration_s = 1
+supersedes_entry = "E37"
+type = "verification"
+task_ref = "describe-the-engine-in-claudemd"
+date = 2026-11-09
+
+[[items]]
+id = "E65"
+agent = "implement"
+command = "cargo fmt --manifest-path glimpse/Cargo.toml -- --check"
+outcome = "pass"
+summary = "no diff (final pass)"
+duration_s = 0
+supersedes_entry = "E38"
+type = "verification"
+task_ref = "describe-the-engine-in-claudemd"
+date = 2026-11-09
+
+[[items]]
+id = "E66"
+agent = "implement"
+command = "CARGO_INCREMENTAL=0 cargo doc --manifest-path tomlctl/Cargo.toml --lib --no-deps --document-private-items"
+outcome = "pass"
+summary = "exit 0"
+duration_s = 2
+type = "verification"
+task_ref = "describe-the-engine-in-claudemd"
+date = 2026-11-09
+
+[[items]]
+id = "E67"
+agent = "implement"
+command = "bash scripts/verify-plan-story-blocks.sh"
+outcome = "pass"
+summary = "exit 0"
+duration_s = 1
+type = "verification"
+task_ref = "describe-the-engine-in-claudemd"
+date = 2026-11-09
+
+[[items]]
+id = "E68"
+agent = "implement"
+command = "cargo audit --file tomlctl/Cargo.lock"
+outcome = "pass"
+summary = "exit 0"
+duration_s = 4
+type = "verification"
+task_ref = "describe-the-engine-in-claudemd"
+date = 2026-11-09
+
+[[items]]
+id = "E69"
+agent = "implement"
+kind = "commit-train"
+summary = "abec638: write-the-engine-reference-for-drain-gate-and-commit; e2fa638: write-the-engine-skill; 899a8bb: add-the-implement-v2-carrier; ffefc81: cover-every-v2-entry-in-the-link-scripts; 265293f: retire-the-no-engine-statements-in-the-plan-v2-engine-references; d3ce04e: describe-the-engine-in-claudemd"
+commits = [
+    "abec638",
+    "e2fa638",
+    "899a8bb",
+    "ffefc81",
+    "265293f",
+    "d3ce04e",
+]
+type = "checkpoint"
+task_ref = "describe-the-engine-in-claudemd"
+date = 2026-11-09
+
+[[items]]
+id = "E70"
+agent = "plan-update"
+from_status = "in-progress"
+to_status = "review"
+summary = "status in-progress -> review: all 22 tasks done"
+type = "status-transition"
+date = 2026-11-09
+
+[[items]]
+id = "E71"
+agent = "plan-update"
+summary = "Drain step 7 now also sends verification each done row's accept checks that do not set writes_build = false, after the milestone's gates and deduplicated against them; a failing one costs a fix round. Next continues only after a commit, a second gate timeout goes on from step 8, a third pre-launch snapshot covers [[milestones]], and a split keeps the original row and passes its agent to a row receiving a dirty path."
+original_intent = "The gate ran only the milestone's gates[], while four statements promised build-writing accept checks to the gate; the drain compared the store with a rows snapshot only."
+rationale = "Review found no step owned running build-writing accept checks, and the user chose to have the gate run them. The remaining changes close review findings: a no-commit stop path could continue to the next milestone, and a worker could clear its milestone's gates unseen."
+type = "deviation"
+task_ref = "write-the-engine-reference-for-drain-gate-and-commit"
+date = 2026-11-10
+
+[[items]]
+id = "E72"
+agent = "plan-update"
+summary = "The pre-flight reads dirty paths from tomlctl plan drift --uncommitted instead of git status, and a row counts as started only when its agent is plan-worker-lite or plan-worker-deep with an empty commit; a row with any other agent value is named, not exempted."
+original_intent = "The pre-flight matched git status --porcelain output against the files of non-pending rows with an empty commit."
+rationale = "Default porcelain collapses untracked directories and quotes unusual paths, so a started row's own new file read as a stranger's edit; and the exemption trusted an unaudited agent field of any value."
+type = "deviation"
+task_ref = "write-the-engine-reference-for-running-a-milestone"
+date = 2026-11-10

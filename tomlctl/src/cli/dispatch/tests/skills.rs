@@ -1314,12 +1314,16 @@ fn skill_markdown_links_flags_a_missing_target() {
     );
 }
 
-/// Whether `text` invokes `skill`, as opposed to merely naming it.
+/// Whether `text` invokes `skill`, as opposed to merely naming or describing it.
 ///
-/// An invocation is a backtick-quoted skill name followed by the word "skill"
-/// ("Invoke the `x` skill", "run the `x` skill's gate") whose clause carries no
-/// negation cue — so a cross-reference, a path, or a sentence warning against
-/// the skill does not qualify. One qualifying phrase in the file is enough.
+/// An invocation is a `Skill("x"…)`, `Skill(x…)` or `Skill({skill: "x"…})` call,
+/// or a backtick-quoted name followed by the noun "skill" and governed by an
+/// invoke/load/run/call verb — directly ("invoke the `x` skill"), through a
+/// coordinated mention ("invoke the `a` skill and the `x` skill"), or by a
+/// trailing "(invoke it" — whose clause carries no negation cue. "A thin carrier
+/// over the `x` skill" does not count. A mention inherits the verb only directly
+/// after "and [the]": a comma list, "and then", an inflected verb ("Invoking") or
+/// a prefixed one ("rerun") fails closed, so a carrier gives each skill its own verb.
 fn invokes_skill(text: &str, skill: &str) -> bool {
     const NEGATIONS: &[&str] = &[
         "do not",
@@ -1335,32 +1339,7 @@ fn invokes_skill(text: &str, skill: &str) -> bool {
     // How far back a negation cue may sit and still govern the phrase.
     const CLAUSE_WINDOW: usize = 160;
 
-    let quoted = format!("`{skill}`");
-    let mut cursor = 0usize;
-    while let Some(rel) = text[cursor..].find(&quoted) {
-        let start = cursor + rel;
-        let after_quote = start + quoted.len();
-        cursor = after_quote;
-
-        // Markdown emphasis and a wrapped line break can both sit between the
-        // closing backtick and the noun.
-        let tail = text[after_quote..]
-            .trim_start_matches(|c: char| c.is_whitespace() || c == '*' || c == '_');
-        let Some(head) = tail.get(..5) else {
-            continue;
-        };
-        if !head.eq_ignore_ascii_case("skill") {
-            continue;
-        }
-        // Accepts "skill", "skill's", "skill**"; rejects "skillset".
-        if tail[5..]
-            .chars()
-            .next()
-            .is_some_and(|c| c.is_ascii_alphanumeric())
-        {
-            continue;
-        }
-
+    let is_negated = |start: usize| {
         let window_start = text[..start]
             .char_indices()
             .rev()
@@ -1372,12 +1351,121 @@ fn invokes_skill(text: &str, skill: &str) -> bool {
             Some(i) => &preceding[i + 1..],
             None => &preceding[..],
         };
-        if NEGATIONS.iter().any(|n| clause.contains(n)) {
+        NEGATIONS.iter().any(|n| clause.contains(n))
+    };
+
+    for call in [
+        format!("Skill(\"{skill}\""),
+        format!("Skill({skill}"),
+        format!("Skill({{skill: \"{skill}\""),
+    ] {
+        let mut cursor = 0usize;
+        while let Some(rel) = text[cursor..].find(&call) {
+            let start = cursor + rel;
+            cursor = start + call.len();
+            if text[cursor..]
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_alphanumeric() || c == '-')
+            {
+                continue;
+            }
+            if !is_negated(start) {
+                return true;
+            }
+        }
+    }
+
+    let quoted = format!("`{skill}`");
+    let mut cursor = 0usize;
+    while let Some(rel) = text[cursor..].find(&quoted) {
+        let start = cursor + rel;
+        cursor = start + quoted.len();
+        let Some(after_noun) = skill_noun_end(text, cursor) else {
+            continue;
+        };
+        if !governed_by_invocation_verb(text, start) && !trailing_invoke_it(&text[after_noun..]) {
+            continue;
+        }
+        if is_negated(start) {
             continue;
         }
         return true;
     }
     false
+}
+
+/// The byte offset just past the noun "skill" when it follows the closing
+/// backtick at `after_quote`; markdown emphasis and a wrapped line break may
+/// sit between. Accepts "skill", "skill's", "skill**"; rejects "skillset".
+fn skill_noun_end(text: &str, after_quote: usize) -> Option<usize> {
+    let rest = &text[after_quote..];
+    let tail = rest.trim_start_matches(|c: char| c.is_whitespace() || c == '*' || c == '_');
+    let head = tail.get(..5)?;
+    if !head.eq_ignore_ascii_case("skill")
+        || tail[5..]
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphanumeric())
+    {
+        return None;
+    }
+    Some(after_quote + (rest.len() - tail.len()) + 5)
+}
+
+/// Whether the backtick quote opening at `quote_start` is the object of an
+/// invocation verb: "<verb> [the] `x`", or "… `y` skill[,] and [the] `x`"
+/// where the `y` mention is itself so governed.
+fn governed_by_invocation_verb(text: &str, quote_start: usize) -> bool {
+    const VERBS: &[&str] = &["invoke", "load", "run", "call"];
+    let trim = |s: &str| -> usize {
+        s.trim_end_matches(|c: char| c.is_whitespace() || c == '*' || c == '_')
+            .len()
+    };
+    let ends_with_word = |s: &str, word: &str| -> bool {
+        let lower = s.to_ascii_lowercase();
+        lower.ends_with(word)
+            && !lower[..lower.len() - word.len()]
+                .chars()
+                .next_back()
+                .is_some_and(|c| c.is_ascii_alphanumeric())
+    };
+
+    let mut end = trim(&text[..quote_start]);
+    if ends_with_word(&text[..end], "the") {
+        end = trim(&text[..end - 3]);
+    }
+    let before = &text[..end];
+    if VERBS.iter().any(|v| ends_with_word(before, v)) {
+        return true;
+    }
+    if !ends_with_word(before, "and") {
+        return false;
+    }
+    let before_and = text[..end - 3].trim_end_matches(|c: char| c.is_whitespace() || c == ',');
+    let before_noun = &before_and[..trim(before_and)];
+    if !ends_with_word(before_noun, "skill") {
+        return false;
+    }
+    let quoted_end = trim(&before_noun[..before_noun.len() - 5]);
+    if !before_noun[..quoted_end].ends_with('`') {
+        return false;
+    }
+    match before_noun[..quoted_end - 1].rfind('`') {
+        Some(open) => governed_by_invocation_verb(text, open),
+        None => false,
+    }
+}
+
+/// Whether the text after the noun opens a parenthetical "(invoke it".
+fn trailing_invoke_it(after_noun: &str) -> bool {
+    let rest = after_noun.trim_start();
+    rest.get(..10)
+        .is_some_and(|h| h.eq_ignore_ascii_case("(invoke it"))
+        && !rest[10..]
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphanumeric())
 }
 
 /// Progressive-disclosure invocation guard. A skeletonised carrier must
@@ -1628,7 +1716,11 @@ fn invokes_skill_requires_an_invocation_phrase() {
         "5. **Vet pass** — invoke the `flow-contract-vet-research` skill for the run.",
         "run the `backlog-capture` skill's check-then-add gate before minting",
         "honour the contract — **invoke the `flow-contract-plan-restructure` skill** to load it",
-        "see the\n`flow-contract-showcase-bundle` skill.",
+        "The pipeline belongs to the engine. **Invoke the `review-v2-engine` skill** and run it.",
+        "Invoke the\n`flow-contract-showcase-bundle` skill.",
+        "load the `research-methods` skill first",
+        "call the `plan-update` skill with literal arg `status`",
+        "run the candidate survey from the `flow-contract-showcase-bundle` skill (invoke it now)",
     ];
     for text in accepted {
         assert!(
@@ -1636,6 +1728,55 @@ fn invokes_skill_requires_an_invocation_phrase() {
             "should count as an invocation: {text}"
         );
     }
+
+    // The second of two coordinated objects inherits the verb.
+    for text in [
+        "Invoke the `tomlctl` skill and the `flow-contract-flow-context` skill as stage 0 says.",
+        "invoke the `tomlctl` skill, and the `flow-contract-flow-context` skill",
+    ] {
+        assert!(
+            invokes_skill(text, "flow-contract-flow-context"),
+            "a coordinated object should count: {text}"
+        );
+    }
+    assert!(
+        invokes_skill(
+            "invoke the `a-one` skill and the `b-two` skill and the `c-three` skill",
+            "c-three"
+        ),
+        "the verb should carry down a chain of coordinated objects"
+    );
+    assert!(invokes_skill(
+        "call `Skill(\"plan-update\", \"status\")` now",
+        "plan-update"
+    ));
+    assert!(invokes_skill("call Skill(plan-update) now", "plan-update"));
+    assert!(invokes_skill(
+        "First, `Skill({skill: \"research-methods\"})`.",
+        "research-methods"
+    ));
+    assert!(!invokes_skill(
+        "Never call `Skill(\"plan-update\")` here.",
+        "plan-update"
+    ));
+    assert!(
+        !invokes_skill("`Skill(\"plan-update-extra\")`", "plan-update"),
+        "a longer skill name must not satisfy the call form"
+    );
+
+    // Descriptive mentions only: the shape of a carrier whose Run-section
+    // handoff was deleted.
+    let descriptive_only = "\
+# /implement-v2 — run an approved v2 plan
+
+> Thin carrier. The `implement-v2-engine` skill owns every step from pre-flight.
+
+This command is a thin carrier over the `implement-v2-engine` skill.
+";
+    assert!(
+        !invokes_skill(descriptive_only, "implement-v2-engine"),
+        "a carrier that only describes the skill must fail the guard"
+    );
 
     // A carrier whose only mention is a warning against the skill.
     let negative_only = "\
@@ -1667,6 +1808,59 @@ single-step and dispatches no research agent.
             "the `flow-contract-flow-context` skillset overview",
             "flow-contract-flow-context",
         ),
+        // Quoted and followed by the noun, but no invocation verb governs it.
+        (
+            "see the\n`flow-contract-showcase-bundle` skill.",
+            "flow-contract-showcase-bundle",
+        ),
+        (
+            "emits the file per the `flow-contract-showcase-bundle` skill's Part 2",
+            "flow-contract-showcase-bundle",
+        ),
+        (
+            "The `tomlctl` skill loaded at Step 0 carries the idioms.",
+            "tomlctl",
+        ),
+        // A verb governs a different object; "and the" coordinates with a
+        // mention no verb governs.
+        (
+            "run the gate from the `a-skill` skill and the `backlog-capture` skill",
+            "backlog-capture",
+        ),
+        // "Invoke" earlier in the sentence, but not governing this mention.
+        (
+            "Invoke it once; the `backlog-capture` skill owns the gate.",
+            "backlog-capture",
+        ),
+        // The trailing form needs the word "it", not a prefix of a longer one.
+        (
+            "use the `backlog-capture` skill (invoke its gate)",
+            "backlog-capture",
+        ),
+        // The unquoted call form, suffixed or negated.
+        ("Skill(plan-update-extra)", "plan-update"),
+        ("Never call Skill(plan-update) here.", "plan-update"),
+        // Negation reaches a coordinated mention and the trailing form.
+        (
+            "Do not invoke the `tomlctl` skill and the `flow-contract-flow-context` skill",
+            "flow-contract-flow-context",
+        ),
+        (
+            "Never use the `backlog-capture` skill (invoke it later)",
+            "backlog-capture",
+        ),
+        // A mention inherits the verb only directly after "and [the]".
+        (
+            "invoke the `a-one` skill, the `b-two` skill and the `c-three` skill",
+            "b-two",
+        ),
+        (
+            "invoke the `a-one` skill and then the `b-two` skill",
+            "b-two",
+        ),
+        // Only the bare verb governs, not an inflected or prefixed form.
+        ("Invoking the `backlog-capture` skill", "backlog-capture"),
+        ("rerun the `backlog-capture` skill", "backlog-capture"),
     ];
     for (text, skill) in rejected {
         assert!(

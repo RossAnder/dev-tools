@@ -1248,6 +1248,7 @@ mod tests {
             TaskStatus::Done,
             TaskStatus::Failed,
             TaskStatus::Deferred,
+            TaskStatus::Parked,
             TaskStatus::Unknown,
         ] {
             let drawn = label_cells(&Zoom::Tight.label(12, "", status));

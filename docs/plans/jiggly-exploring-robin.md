@@ -354,7 +354,7 @@ Per-task `Depends on` lines are authoritative; this section states only the chec
 - The premise `probe` key might be rejected or audited by spec-input validation — task 5 mirrors `Accept.probe` in `add.rs` and `update.rs` as well as `schema.rs`, and its tests write a spec through `tasks add-many` after a record.
 - The premise `probe` key carries no schema stamp of its own, so an older binary drops recorded verdicts on its next write — the engine re-runs premises at every launch, so only the record and the worker view are lost, and After Merge reinstalls the binary.
 - `human-only-handovers` replaces `plan handover add` and rewrites the handover contract in `docs/ideas/v2-pipeline.md` — the engine references name the handover verb in prose only, and After Merge lists the amendment that payload needs before its first run.
-- A stop leaves a milestone's own edits uncommitted — the pre-flight exempts the files of non-`pending` rows with an empty `commit`, and re-entry never abandons a run that may still be live.
+- A stop leaves a milestone's own edits uncommitted — the pre-flight exempts the files of started rows, those with `agent` set and an empty `commit`, and re-entry never abandons a run that may still be live.
 - The engine prose cannot be exercised by any test — the lint gates check its commands and names, and the first real run on `human-only-handovers` is listed under After Merge as its proof.
 - The plan is over the 25-file line — two checkpoint groups keep each gate's footprint coherent, and group B has no Rust beyond one test tuple.
 

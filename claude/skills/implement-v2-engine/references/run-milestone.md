@@ -2,7 +2,7 @@
 
 The four steps from an invocation to a running milestone: pre-flight, picking the milestone, checking its premises, and launching its dispatchable tasks through the `implement-v2-milestone` Workflow. What happens when the run's notification arrives, from `plan run finish` to the milestone commit, is the engine's `references/drain.md`.
 
-`<slug>` is the flow, `<id>` the milestone being run and `<scratch>` the session scratchpad. Every scratch file below — the premise script and its capture, the pre-launch snapshot, the args file and any record file — goes in `<scratch>`, never under `.claude/`, where a Write is a protected-path write, and never under `docs/flows/<slug>/`, which is committed. Payloads for `tomlctl` are `.toml` record files staged there with the Write tool; no heredocs, no pipes out of `tomlctl`.
+`<slug>` is the flow, `<id>` the milestone being run and `<scratch>` the session scratchpad. Every scratch file below — the premise script and its capture, the pre-launch snapshots, the args file and any record file — goes in `<scratch>`, never under `.claude/`, where a Write is a protected-path write, and never under `docs/flows/<slug>/`, which is committed. Payloads for `tomlctl` are `.toml` record files staged there with the Write tool; no heredocs, no pipes out of `tomlctl`.
 
 ## 1. Pre-flight
 
@@ -28,17 +28,20 @@ Each exits 1 on an error-class finding. Report the findings and stop; the fix is
 **The working tree.**
 
 ```bash
-git status --porcelain
-tomlctl tasks list --slug <slug> --where-not status=pending --select id,status,checkpoint,commit,files --lines
+tomlctl plan drift --slug <slug> --uncommitted --get uncommitted_files
+tomlctl tasks list --slug <slug> --where-missing commit --select id,status,agent,checkpoint,files --lines
 ```
+
+The first prints every modified, deleted or untracked path one per line, spelled as rows' `files` spell them: each untracked file inside a new directory on its own line, and no path quoted. The stage check above has already confirmed the approval it measures from.
+
+The list prints every row not yet in a milestone commit. Of those, a row is **started** when its `agent` is `plan-worker-lite` or `plan-worker-deep`, whatever its `status`: a worker writes `agent` before its first edit and no status change clears it, so a row reset or replanned back to `pending` stays started. A started row's files hold the flow's own unfinished work. A row never started, `pending` or parked by the orchestrator before any worker ran it, has no edits of its own, so dirt in its files is someone else's. A row whose `agent` holds any other value is not started either: its files are not exempt, and a dirty path in them is named with that row and its `agent`.
 
 The tree must be clean except for:
 
-- anything under `.claude/flows/<slug>/` or `docs/flows/<slug>/`, the flow's own directories;
 - `.claude/backlog.toml` and `.claude/backlog.toml.sha256`;
-- the `files` of every row the list prints with an empty `commit`. Those rows are past `pending` and not yet in a milestone commit, so their edits are the milestone's own unfinished work.
+- the `files` of every started row.
 
-Any other modified or untracked path is someone else's edit, and a worker would build on it or a milestone commit would sweep it in. Stop and name each path; the user commits, moves or discards it, never the engine.
+Paths under `.claude/flows/<slug>/` and `docs/flows/<slug>/`, the flow's own directories, are never listed. Any other path is someone else's edit, and a worker would build on it or a milestone commit, which stages its rows' `files`, would sweep it in. Stop and name each path; the user commits, moves or discards it, never the engine.
 
 **Stale `in-progress` rows.** With no open run, a row still `in-progress` is left over from a run that ended without its worker's final status. Reset every one to `pending`, leaving its edits in place for the next worker's own-diff step:
 
@@ -155,13 +158,15 @@ It prints `{ready, held, next, blocked}`, each restricted to the milestone's row
 
 ### Write the args file
 
-Snapshot the store first. The drain compares the store with this snapshot and reports any change other than `status` and `agent` on a dispatched row, since a worker may write only those two fields on its own row and nothing enforces it:
+Snapshot the store first: its rows, their specs and the milestones with their gates. A worker may write only `status` and `agent` on its own row and nothing enforces it, so the drain compares the store with these snapshots by the rule in [drain.md](drain.md), step 5:
 
 ```bash
 tomlctl tasks list --slug <slug> > <scratch>/implement-<id>-<round>-snapshot.json
+tomlctl items list .claude/flows/<slug>/tasks.toml --array specs > <scratch>/implement-<id>-<round>-specs.json
+tomlctl items list .claude/flows/<slug>/tasks.toml --array milestones > <scratch>/implement-<id>-<round>-milestones.json
 ```
 
-`<round>` counts the launches of this milestone in the session, starting at 1, so a relaunch never overwrites the snapshot or args a drain still needs.
+`<round>` counts the launches of this milestone in the session, starting at 1, so a relaunch never overwrites the snapshots or args a drain still needs.
 
 Then write the args with the Write tool to `<scratch>/implement-<id>-<round>-args.json`:
 

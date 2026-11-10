@@ -320,6 +320,9 @@ tomlctl plan view --slug <slug> --for worker --task <id>
 - **`worker`**: markdown, what one task's executor needs: Intent and Non-goals from the brief, the
   decisions whose `binds` reach the task, the contracts whose `tasks` name it, the row and its spec,
   and the sections its spec cites. A premise with a recorded probe ends ``(Probe: <verdict> at `<sha>`)``.
+  An `accept` entry with a check follows its `Check:` line with `Writes build: yes` or
+  `Writes build: no`: `no` only when the entry sets `writes_build = false`, the one case a worker
+  may run the check itself. `human` prints the same accept lines.
 - **`digest`**: one JSON object for an orchestrator re-entering a plan. Works with no `tasks.toml`,
   which reads as empty.
 

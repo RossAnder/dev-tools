@@ -662,7 +662,7 @@ fn a_probe_is_absent_only_on_a_checked_row_marked_as_not_writing_the_build() {
 #[test]
 fn a_probe_is_absent_only_on_a_pending_row() {
     let unprobed = swap(TASKS, PROBE, "");
-    for status in ["in-progress", "done", "failed", "deferred"] {
+    for status in ["in-progress", "done", "failed", "deferred", "parked"] {
         let tasks = swap(
             &unprobed,
             "status = \"pending\"",

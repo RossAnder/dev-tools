@@ -1,6 +1,6 @@
 slug = "jiggly-exploring-robin"
 plan_path = "docs/plans/jiggly-exploring-robin.md"
-status = "draft"
+status = "review"
 created = 2026-11-09
 updated = 2026-11-09
 branch = "main"
@@ -27,8 +27,8 @@ scope = [
 ]
 
 [tasks]
-total = 0
-completed = 0
+total = 22
+completed = 22
 in_progress = 0
 
 [artifacts]

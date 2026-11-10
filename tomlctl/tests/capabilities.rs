@@ -1820,6 +1820,7 @@ fn capabilities_features_contains_every_plan_feature() {
         "premise_probes_scoped",
         "premise_probe_record",
         "plan_drift_uncommitted",
+        "plan_view_writes_build",
     ];
     for name in expected {
         assert!(

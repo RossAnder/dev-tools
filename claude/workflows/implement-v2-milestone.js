@@ -133,9 +133,9 @@ root: ${a.root}
 note: ${notePath(t.id)}
 siblings: ${siblings.length ? siblings.join(', ') : 'none'}
 
-Fetch your task with these commands, run as given:
+Fetch your task with the first command, run as given; run the second only when you need a field the view does not print:
 - \`tomlctl plan view --slug ${a.slug} --for worker --task ${t.id}\`
-- \`tomlctl tasks show ${t.id} --slug ${a.slug}\`
+- \`tomlctl tasks show ${t.id} --slug ${a.slug} --with spec\`
 
 Carry out this one task as your procedure says, write your note at that path, and return only \`{task, status, note, files_touched, deviations, handover}\`.`
 

@@ -1,0 +1,598 @@
+schema_version = 1
+last_updated = 2026-11-10
+
+[[vet_events]]
+timestamp = "2026-11-10T04:30:06Z"
+command = "review"
+lens = "quality"
+tier = "deep"
+agent_index = 1
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Every sampled finding's cited file:line was read and matched its description; pattern sweeps re-run with tomlctl sweep matched the declared instances. Nothing dropped or downgraded. Cross-lens duplicates were merged at consolidation."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-10T04:30:06Z"
+command = "review"
+lens = "security"
+tier = "deep"
+agent_index = 2
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "Every sampled finding's cited file:line was read and matched its description; pattern sweeps re-run with tomlctl sweep matched the declared instances. Nothing dropped or downgraded. Cross-lens duplicates were merged at consolidation."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-10T04:30:06Z"
+command = "review"
+lens = "architecture"
+tier = "deep"
+agent_index = 3
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "Every sampled finding's cited file:line was read and matched its description; pattern sweeps re-run with tomlctl sweep matched the declared instances. Nothing dropped or downgraded. Cross-lens duplicates were merged at consolidation."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-10T04:30:06Z"
+command = "review"
+lens = "completeness"
+tier = "lite"
+agent_index = 4
+sampled_count = 6
+dropped_count = 0
+downgraded_count = 0
+rationale = "Every sampled finding's cited file:line was read and matched its description; pattern sweeps re-run with tomlctl sweep matched the declared instances. Nothing dropped or downgraded. Cross-lens duplicates were merged at consolidation."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-10T04:30:06Z"
+command = "review"
+lens = "testability"
+tier = "lite"
+agent_index = 5
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Every sampled finding's cited file:line was read and matched its description; pattern sweeps re-run with tomlctl sweep matched the declared instances. Nothing dropped or downgraded. Cross-lens duplicates were merged at consolidation."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-10T04:30:06Z"
+command = "review"
+lens = "package-quality"
+tier = "lite"
+agent_index = 6
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "Every sampled finding's cited file:line was read and matched its description; pattern sweeps re-run with tomlctl sweep matched the declared instances. Nothing dropped or downgraded. Cross-lens duplicates were merged at consolidation."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-10T04:42:48Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "Every apply tag matched the working-tree diff at the cited lines."
+agent_index = 2
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-10T04:42:48Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "Every apply tag matched the working-tree diff at the cited lines."
+agent_index = 5
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-10T04:42:48Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "Every apply tag matched the working-tree diff at the cited lines."
+agent_index = 6
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[items]]
+id = "R1"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "jiggly-exploring-robin"
+file = "claude/skills/implement-v2-engine/references/drain.md"
+line = 328
+symbol = "### Next"
+severity = "warning"
+effort = "trivial"
+category = "package-quality"
+summary = "The no-commit stop paths now fall into step 10's Next, which continues to the next milestone without checking a commit ran"
+description = "drain.md:193, :195 and :257 now say 'go on from step 8' where the gate-round-2 path used to say 'stop'. Following the steps reaches the Next subsection, whose only condition is 'nothing parked in the flow'. After a gate failed twice every row is done with an empty commit, so the pick skips the milestone and the next one launches on uncommitted, gate-failed edits; with rows still failed the pick returns the same milestone with an empty dispatch set and no defined exit. SKILL.md:60 has the right conditions ('After a commit ... and --milestone was not given'). Fix: open Next with 'When this milestone committed, nothing in the flow is parked and --milestone was not given ...; otherwise end with the report'. Reported by the quality, completeness and package-quality lenses."
+evidence = [
+    "claude/skills/implement-v2-engine/references/drain.md:193",
+    "claude/skills/implement-v2-engine/references/drain.md:257",
+    "claude/skills/implement-v2-engine/references/drain.md:328",
+    "claude/skills/implement-v2-engine/SKILL.md:60",
+]
+dedup_id = "63f34f525f4d982b"
+resolved = 2026-11-10
+resolution = "Uncommitted. drain.md Next now continues only when the milestone committed, nothing is parked and --milestone was not given; otherwise ends with the report."
+
+[[items]]
+id = "R2"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "jiggly-exploring-robin"
+file = "claude/skills/tomlctl/references/plan-store.md"
+line = 4
+severity = "warning"
+effort = "trivial"
+category = "package-quality"
+summary = "Rewritten pointer sentence is ungrammatical and sends readers to plan-probes.md for the plan.toml write verbs, which live in plan.md"
+description = "The line reads 'The verbs that write it, the probe verdicts are [plan-probes.md]; the check classes are [plan.md]'. plan-probes.md documents only `plan probes` and itself says the other plan verbs are in plan.md. Fix: 'The verbs that write it and the check classes are [plan.md](plan.md); the probe verdicts are [plan-probes.md](plan-probes.md).' Reported by four lenses."
+evidence = [
+    "claude/skills/tomlctl/references/plan-store.md:4",
+    "claude/skills/tomlctl/references/plan-probes.md:3",
+]
+dedup_id = "7880e5f271f9c34d"
+resolved = 2026-11-10
+resolution = "Uncommitted. plan-store.md intro now points the write verbs and check classes at plan.md and the probe verdicts at plan-probes.md."
+
+[[items]]
+id = "R3"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "jiggly-exploring-robin"
+file = "claude/agents/plan-worker-lite.md"
+line = 85
+symbol = "When to return failed"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "Lite worker is told to note that every failure needs the deep tier, against the new rule that only an open choice re-tiers"
+description = "Line 85 applies 'write in the note ... that the task needs the deep tier ... and re-tier it with the re-spec' to every bullet below it, including a missing symbol or a file outside `files`, which are re-spec or widen cases. The shared failed bullet (line 38, both agents) and drain.md:120 allow the lite-to-deep move only when a re-spec leaves a choice open. Fix: limit the deep-tier clause to the open-choice case."
+evidence = [
+    "claude/agents/plan-worker-lite.md:85",
+    "claude/agents/plan-worker-lite.md:38",
+    "claude/skills/implement-v2-engine/references/drain.md:120",
+]
+dedup_id = "6dd57a95d0ebaec8"
+resolved = 2026-11-10
+resolution = "Uncommitted. plan-worker-lite 'When to return failed' now claims the deep tier only when the gap is an open choice."
+
+[[items]]
+id = "R4"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "jiggly-exploring-robin"
+file = "claude/agents/plan-worker-lite.md"
+line = 45
+symbol = "Checks"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "Checks rule still names the store field `writes_build` true/false while step 2 now points workers at the view's `Writes build: yes|no` line"
+description = "Step 2 says each accept check's `Writes build:` line is in the view; the rule that acts on it still says 'whose `writes_build` is `false`'. Reword to 'whose `Writes build:` line reads `no`' / 'reads `yes`'. The text sits in the shared block `plan-worker-procedure`, so both agents change byte-identically."
+evidence = [
+    "claude/agents/plan-worker-lite.md:25",
+    "claude/agents/plan-worker-lite.md:45",
+    "tomlctl/src/plan/view.rs:654",
+]
+instances = [
+    "claude/agents/plan-worker-lite.md:45",
+    "claude/agents/plan-worker-deep.md:45",
+]
+sweep = ["whose `writes_build` is"]
+enumeration = "complete"
+dedup_id = "6d5ca05473f2de53"
+resolved = 2026-11-10
+resolution = "Uncommitted. Checks rule in both worker agents now reads the view's `Writes build:` yes/no line; shared-block parity OK."
+
+[[items]]
+id = "R5"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "jiggly-exploring-robin"
+file = "claude/skills/implement-v2-engine/references/drain.md"
+line = 238
+symbol = "7. Gate"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "The gate's second-timeout stop was not rerouted to 'go on from step 8' like the other stop paths"
+description = "Lines 193, 195 and 257 now go on from step 8 so tangential discoveries and handovers are still processed; line 238's second `timeout` still only 'stops the milestone as a gate failure the user settles', skipping steps 8 and 9. Fix it with the Next condition."
+evidence = ["claude/skills/implement-v2-engine/references/drain.md:238"]
+dedup_id = "3455291638dc86db"
+resolved = 2026-11-10
+resolution = "Uncommitted. A second gate timeout now goes on from step 8 without the commit and is reported in needs_human; the report template gained a timed-out-twice line."
+
+[[items]]
+id = "R6"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "jiggly-exploring-robin"
+file = "claude/skills/implement-v2-engine/references/drain.md"
+line = 82
+symbol = "5. Store changes during the run"
+severity = "warning"
+effort = "small"
+category = "security"
+summary = "The rows and specs snapshots do not cover [[milestones]], so a worker clearing or weakening its milestone's gates goes unseen and the milestone commits ungated"
+description = "`plan milestone update --gate/--clear-gate` has only the `require_open` guard (plan.toml exists). `gates` live in tasks.toml [[milestones]], which neither pre-launch snapshot diffs; step 7 treats an empty gates list as nothing to run and step 10 commits. The abandoned-run fallback filters `changes` with `--where-in ref=<row refs>`, and milestone changes are keyed `milestone:<id>`, so it misses them too. Fix: add a third `--array milestones` snapshot and diff, or read every `changes` row in the run window with no ref filter. Whether `plan decide` / `plan contract` are equally uncovered was not confirmed."
+evidence = [
+    "tomlctl/src/plan/milestone.rs:136",
+    "claude/skills/implement-v2-engine/references/drain.md:85",
+    "claude/skills/implement-v2-engine/references/drain.md:96",
+    "claude/skills/implement-v2-engine/references/drain.md:205",
+]
+instances = [
+    "claude/skills/implement-v2-engine/references/drain.md:82",
+    "claude/skills/implement-v2-engine/references/drain.md:93",
+    "claude/skills/implement-v2-engine/references/run-milestone.md:160",
+]
+enumeration = "incomplete"
+dedup_id = "ff363f2303c92408"
+resolved = 2026-11-10
+resolution = "Uncommitted. run-milestone takes a third pre-launch snapshot of [[milestones]]; drain step 5 diffs it and the abandoned-run changes read includes milestone:<id>."
+
+[[items]]
+id = "R7"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "jiggly-exploring-robin"
+file = "claude/skills/implement-v2-engine/references/run-milestone.md"
+line = 35
+symbol = "started"
+severity = "suggestion"
+effort = "trivial"
+category = "security"
+summary = "The started-row exemption trusts an unaudited `agent` field across every milestone, and the abandoned-run check cannot see a worker setting it on a row it was not dispatched to"
+description = "`agent` produces no [[changes]] row (update.rs audited_value has no arm for it), so on re-entry after an abandoned run a stray `agent` write is invisible; that row's files are then exempt from the stranger-edit check at every later pre-flight and are staged by the milestone commit. The exemption also persists until commit, so a later user edit to a failed started row's files is no longer caught. Fix: limit the exemption to started rows of the milestone about to run and name an `agent` value other than plan-worker-lite / plan-worker-deep as a stranger."
+evidence = [
+    "claude/skills/implement-v2-engine/references/run-milestone.md:32",
+    "tomlctl/src/tasks/update.rs:784",
+    "claude/skills/implement-v2-engine/references/drain.md:93",
+]
+dedup_id = "5cde14a3165efd3a"
+resolved = 2026-11-10
+resolution = "Uncommitted. A row is started only when `agent` is plan-worker-lite or plan-worker-deep; any other value is not exempt and is named. The exemption was deliberately not narrowed to one milestone."
+
+[[items]]
+id = "R8"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "jiggly-exploring-robin"
+file = "claude/skills/implement-v2-engine/references/run-milestone.md"
+line = 31
+symbol = "The working tree."
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "Pre-flight matches default `git status --porcelain` output against rows' files by hand, so a started row's file in a new directory or with a quoted path reads as a stranger's edit"
+description = "Default porcelain collapses a wholly untracked directory to `?? dir/` and C-quotes paths with spaces or non-ASCII, so neither matches a `files` entry and the pre-flight stops on the flow's own work. `tomlctl plan drift --uncommitted` already computes the list correctly (`--porcelain=v1 -z --no-renames --untracked-files=all`) and skips both flow directories; the drain uses it. Fix: read `uncommitted_files` from `plan drift --uncommitted` in the pre-flight and state the exemption set once in run-milestone step 1, with drain step 3 pointing at it. Related: backlog B-6a0aff17."
+evidence = [
+    "claude/skills/implement-v2-engine/references/run-milestone.md:31",
+    "tomlctl/src/plan/drift.rs:178",
+    "scratch repo: `git status --porcelain` printed `?? src/` for src/newmod/a.rs; `status.showUntrackedFiles` is unset in this repo",
+]
+dedup_id = "9d3db203796231f5"
+resolved = 2026-11-10
+resolution = "Uncommitted. Pre-flight reads dirty paths from `tomlctl plan drift --uncommitted --get uncommitted_files` instead of default git status porcelain."
+
+[[items]]
+id = "R9"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "jiggly-exploring-robin"
+file = "claude/skills/implement-v2-engine/references/drain.md"
+line = 113
+symbol = "6. Replan"
+severity = "warning"
+effort = "small"
+category = "db"
+summary = "A split or files-narrowing replan moves partial edits to rows with an empty `agent`, so the next pre-flight reads the flow's own edits as a stranger's; the note covering this was deleted"
+description = """'Started' is recorded per row (`agent` set) but edits are owned per file. `tasks add-many` always mints `agent = ""`, so files a split hands to new rows are held by no started row; if the invocation ends before they run, the next pre-flight stops on them. The drain also never says what happens to the original failed row after a split. This diff removed SKILL.md's 'A pending row with partial edits' paragraph, the only guidance for the case. Fix: in step 6, when a split or narrowing moves a path holding uncommitted edits, set `agent` on the receiving row (or restore the gap note for the split case), and state the fate of the split row. Reported by the architecture and completeness lenses."""
+evidence = [
+    "tomlctl/src/tasks/add.rs:727",
+    "claude/skills/implement-v2-engine/references/run-milestone.md:35",
+    "claude/skills/implement-v2-engine/references/drain.md:113",
+]
+dedup_id = "a778e2a5d5eab176"
+resolved = 2026-11-10
+resolution = "Uncommitted. drain 'New tasks' gained 'Edits follow their files': a split keeps and re-specs the original row, and a row receiving a dirty path gets the original row's `agent`."
+
+[[items]]
+id = "R10"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "jiggly-exploring-robin"
+file = "claude/skills/flow-contract-task-store/SKILL.md"
+line = 435
+symbol = "One exception: a v2 worker"
+severity = "suggestion"
+effort = "trivial"
+category = "db"
+summary = "`agent` now carries an edit-ownership invariant on v2 flows that the task-store contract owning the field never states"
+description = "run-milestone.md:35 depends on 'no status change clears `agent`', but the contract still describes `agent` as a dispatch label and the field is unaudited and clearable (`--set agent=`). A future step that clears it would silently turn a started row's edits into a stranger's. Fix: one sentence in the section 11 exception: on a v2 flow a set `agent` marks a row a worker has begun, and no writer clears it while `commit` is empty."
+evidence = [
+    "claude/skills/flow-contract-task-store/SKILL.md:435",
+    "claude/skills/tomlctl/references/tasks-write.md:185",
+    "tomlctl/src/tasks/update.rs:1223",
+]
+dedup_id = "e25d5c75cbc4d9ba"
+resolved = 2026-11-10
+resolution = "Uncommitted. flow-contract-task-store section 11 exception now states that a set `agent` marks a begun row on a v2 flow and is not cleared while `commit` is empty."
+
+[[items]]
+id = "R11"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "jiggly-exploring-robin"
+file = "claude/skills/implement-v2-engine/references/drain.md"
+line = 185
+symbol = "7. Gate"
+severity = "warning"
+effort = "medium"
+category = "architecture"
+summary = "needs-plan: build-writing accept checks are promised to the gate, but the gate runs only the milestone's gates[], so no step owns running them"
+description = "needs-plan. write-and-prove.md:141, drain.md:185 and line 45 of both worker agents say an accept check without `writes_build = false` runs at the milestone's gate. Step 7 sends `verification` only `milestones[].gates`, and `plan check` only warns on a gateless milestone. The new `Writes build: yes` view line makes workers skip these checks reliably, so a task's stated acceptance is exercised only if a gate happens to cover it. Decision needed between: (a) the gate appends each done row's build-writing accept checks to the verification prompt; (b) `plan check` gains a class warning when such a check is covered by no gate; (c) the four statements are reworded to say the gates must cover them."
+evidence = [
+    "claude/skills/implement-v2-engine/references/drain.md:185",
+    "claude/skills/implement-v2-engine/references/drain.md:213",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md:141",
+    "tomlctl/src/plan/view.rs:654",
+]
+dedup_id = "56fe549a533a68fa"
+resolved = 2026-11-10
+resolution = "Uncommitted. User chose 'gate runs them': drain step 7 appends each done row's build-writing accept checks to the verification prompt after gates[], deduplicated; a failure costs a fix round. SKILL.md step-table skip cell updated to match."
+
+[[items]]
+id = "R12"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "jiggly-exploring-robin"
+file = "tomlctl/src/cli/types/mod.rs"
+line = 176
+symbol = "FEATURES"
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "No capability feature advertises the worker view's `Writes build:` line, so /implement-v2's pre-flight cannot refuse a stale binary the workers now depend on"
+description = "Both worker agents dropped the `tasks show --with spec` source for `writes_build` and rely on the view line; a binary installed before this change prints none and the worker has no stated source for whether it may run a check. Fix: add a feature (e.g. `plan_view_writes_build`) to FEATURES, tomlctl/tests/capabilities.rs, the README feature tables and the carrier's list at claude/commands/implement-v2.md:29, with a version bump. Severity lowered from the lens's warning at consolidation: the project already requires a reinstall after pulling, and the gate otherwise covers verbs rather than output lines."
+evidence = [
+    "tomlctl/src/cli/types/mod.rs:181",
+    "claude/commands/implement-v2.md:29",
+    "claude/agents/plan-worker-lite.md:25",
+]
+dedup_id = "dab5e41763ac5e85"
+resolved = 2026-11-10
+resolution = "Uncommitted. Added capability feature plan_view_writes_build to FEATURES, the capabilities test, README, the /implement-v2 pre-flight list and CLAUDE.md. No version bump."
+
+[[items]]
+id = "R13"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "jiggly-exploring-robin"
+file = "claude/skills/implement-v2-engine/references/run-milestone.md"
+line = 160
+symbol = "Write the args file"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "Two pre-launch snapshots now exist but three sites still describe one, and run-milestone:160 states the narrower pre-change rule"
+description = "run-milestone.md:160 says the drain 'reports any change other than `status` and `agent` on a dispatched row'; drain.md:91 now also reports every spec change and those two fields on undispatched rows. Fix: say 'these snapshots' and point at drain step 5 rather than restating the rule; pluralise the scratch-file lists. Optionally rename the rows file to `-rows.json`. flow-contract-task-store/SKILL.md:435 uses the singular generically and can stay."
+evidence = [
+    "claude/skills/implement-v2-engine/references/drain.md:91",
+    "claude/skills/implement-v2-engine/references/run-milestone.md:160",
+]
+instances = [
+    "claude/skills/implement-v2-engine/references/run-milestone.md:160",
+    "claude/skills/implement-v2-engine/references/run-milestone.md:5",
+    "claude/skills/implement-v2-engine/SKILL.md:25",
+]
+sweep = ["pre-launch snapshot|with this snapshot"]
+enumeration = "complete"
+dedup_id = "42085387893c8c30"
+resolved = 2026-11-10
+resolution = "Uncommitted. Scratch-file lists say 'snapshots' and run-milestone's snapshot paragraph points at drain step 5 instead of restating the narrower rule."
+
+[[items]]
+id = "R14"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "jiggly-exploring-robin"
+file = "docs/plans/jiggly-exploring-robin.md"
+line = 357
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "Plan risk text still states the old pre-flight rule (files of non-pending rows with an empty commit) instead of the started-row rule"
+description = "The only stale copy of a removed phrase outside the engine; it sits in a non-rendered prose section, so a hand edit survives the next render. Leave it if plan documents are treated as a record of what was approved."
+evidence = ["docs/plans/jiggly-exploring-robin.md:357"]
+dedup_id = "54414ecc0f09534e"
+resolved = 2026-11-10
+resolution = "Uncommitted. Plan risk bullet now states the started-row rule."
+
+[[items]]
+id = "R15"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "jiggly-exploring-robin"
+file = "claude/workflows/implement-v2-milestone.js"
+line = 136
+symbol = "workerPrompt"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "Workflow prompt and the agents' input list still say run a bare `tasks show` 'as given' while step 2 now says run it only when needed, with `--with spec`"
+description = "Three statements of how a worker fetches its task disagree. The bare command defaults to `--with summary`, which adds nothing beyond the worker view. Fix: pick one spelling: drop the second fetch command from the prompt and from line 20 of both agents, or make all say `--with spec` and 'when needed'. Line 20 is in the shared block, so both agents change together."
+evidence = [
+    "claude/workflows/implement-v2-milestone.js:136",
+    "claude/agents/plan-worker-lite.md:20",
+    "claude/agents/plan-worker-lite.md:25",
+]
+instances = [
+    "claude/workflows/implement-v2-milestone.js:136",
+    "claude/agents/plan-worker-lite.md:20",
+    "claude/agents/plan-worker-deep.md:20",
+]
+sweep = ["Run them as given|run as given"]
+enumeration = "complete"
+dedup_id = "81921a70e6cc876e"
+resolved = 2026-11-10
+resolution = "Uncommitted. Workflow prompt and both agents spell the second fetch command with --with spec and run it only when needed."
+
+[[items]]
+id = "R16"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "jiggly-exploring-robin"
+file = "claude/skills/tomlctl/references/plan.md"
+line = 323
+symbol = "plan view"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "plan.md reads as if the `Writes build:` line appears only for `writes_build = false`; the view prints it for every entry with a check"
+description = "The sentence 'follows its `Check:` line with `Writes build: no` only when the entry sets `writes_build = false` ... an absent `writes_build` prints `yes`' also omits an explicit `true`. Fix: 'follows its `Check:` line with `Writes build: yes|no`: `no` only when the entry sets `writes_build = false`, the one case a worker may run the check itself.'"
+evidence = [
+    "claude/skills/tomlctl/references/plan.md:323",
+    "tomlctl/src/plan/view.rs:653",
+]
+dedup_id = "b5c7a9e29dab9d97"
+resolved = 2026-11-10
+resolution = "Uncommitted. plan.md worker bullet now says the Check line is followed by Writes build yes or no, no only for writes_build = false."
+
+[[items]]
+id = "R17"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "jiggly-exploring-robin"
+file = "tomlctl/src/cli/dispatch/tests/skills.rs"
+line = 1703
+symbol = "invokes_skill_requires_an_invocation_phrase"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "New matcher branches are unpinned: the unquoted `Skill(x` form, a negated coordinated mention, a negated '(invoke it', and a three-way chain have no table rows"
+description = "Every Skill(...) case in the table is quoted, so the second call pattern and its suffix reject never run; the coordination branch is tested only in positive form; `trailing_invoke_it` has one accepted case and no negated one. A standalone harness of the matcher shows all behave correctly today, so this is unpinned behaviour in the guard that gates every carrier, not a live bug. Fix: add those rows to the accepted/rejected tables."
+evidence = [
+    "tomlctl/src/cli/dispatch/tests/skills.rs:1354",
+    "tomlctl/src/cli/dispatch/tests/skills.rs:1703",
+]
+dedup_id = "7ae1a67691c745c2"
+resolved = 2026-11-10
+resolution = "Uncommitted. Predicate test pins the unquoted call form and its suffix reject, negated call, negated coordinated mention, negated trailing form and a three-way chain."
+
+[[items]]
+id = "R18"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "jiggly-exploring-robin"
+file = "tomlctl/src/cli/dispatch/tests/skills.rs"
+line = 1354
+symbol = "invokes_skill"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = """The call-form branch rejects the repo's object form `Skill({skill: "x"})`"""
+description = """Only `Skill("x"` and `Skill(x` are recognised, while the agents under claude/agents/ use the object form. No carrier relies on it today and a miss fails the guard loudly with a misleading 'missing invocation'. Fix: add the object form to the call array with one accepted row."""
+evidence = [
+    "tomlctl/src/cli/dispatch/tests/skills.rs:1354",
+    "claude/agents/research-lite.md:15",
+]
+dedup_id = "0eec6eae126de49c"
+resolved = 2026-11-10
+resolution = "Uncommitted. invokes_skill accepts the object call form, with an accepted assertion and updated doc comment."
+
+[[items]]
+id = "R19"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "jiggly-exploring-robin"
+file = "tomlctl/src/cli/dispatch/tests/skills.rs"
+line = 1454
+symbol = "trailing_invoke_it"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "`trailing_invoke_it` has no word boundary, so '(invoke its gate)' and '(invoke itself' count as an invocation"
+description = "The 10-byte prefix compare lacks the alphanumeric-suffix check `skill_noun_end` uses. Harness: 'use the `c` skill (invoke its gate)' is accepted. Fix: require the next char not be ASCII alphanumeric and add a rejected row."
+evidence = ["tomlctl/src/cli/dispatch/tests/skills.rs:1454"]
+dedup_id = "cd70d17fa98f32ff"
+resolved = 2026-11-10
+resolution = "Uncommitted. trailing_invoke_it requires a non-alphanumeric char after '(invoke it'; rejected row added."
+
+[[items]]
+id = "R20"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "jiggly-exploring-robin"
+file = "tomlctl/src/cli/dispatch/tests/skills.rs"
+line = 1412
+symbol = "governed_by_invocation_verb"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "Comma lists, 'and then', 'Invoking' and 'rerun' are rejected, and the doc comment does not say which list shapes fail"
+description = "A mention inherits the verb only directly after 'and [the]', and the verb must be one of four exact words. Harness: 'invoke the `a` skill, the `b` skill and the `c` skill' fails for b and c. These fail closed and no carrier trips them today. Fix: either document the accepted grammar's rejected shapes in the doc comment, or accept a comma coordinator and 'invoking'; pin the choice with table rows."
+evidence = [
+    "tomlctl/src/cli/dispatch/tests/skills.rs:1412",
+    "tomlctl/src/cli/dispatch/tests/skills.rs:1317",
+]
+dedup_id = "d1672708ce6bcef4"
+resolved = 2026-11-10
+resolution = "Uncommitted. Grammar kept narrow; doc comment documents the rejected list shapes and four rejected rows pin them."
+
+[[items]]
+id = "R21"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "jiggly-exploring-robin"
+file = "tomlctl/tests/plan_view.rs"
+line = 601
+symbol = "an_accept_check_shows_whether_it_writes_the_build"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "The 'Check: none yet' branch (no Writes build line) is unpinned, and the human view's new line is never asserted"
+description = "view.rs emits the line only in the else arm, and no fixture has an empty check, so moving the push out of the else would pass every test. Fix: add a case blanking the check that asserts 'Check: none yet' is present and 'Writes build' absent. The human view shares `spec_block`, so that half is low risk."
+evidence = [
+    "tomlctl/tests/plan_view.rs:601",
+    "tomlctl/src/plan/view.rs:650",
+]
+dedup_id = "cfbc20bfffd06163"
+resolved = 2026-11-10
+resolution = "Uncommitted. plan_view test gained a case asserting an empty check prints 'Check: none yet' and no Writes build line."
