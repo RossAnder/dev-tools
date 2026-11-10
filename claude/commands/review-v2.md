@@ -25,7 +25,7 @@ Reviews code by composing coverage for the change at hand rather than broadcasti
 | v1 export target | `.claude/flows/<slug>/review-ledger.toml` with a flow bound; `.claude/reviews/<scope>.toml` without one |
 | Apply hand-off | `/review-apply <v1-ids>` |
 
-`$ARGUMENTS` carries the steering flags (`--depth`, `--flow`, `--probe`, `--lens`) and the scope, parsed as the engine's Steering flags section says.
+`$ARGUMENTS` carries the steering flags (`--depth`, `--flow`, `--probe`, `--lens`) and the scope, parsed as the engine's Steering flags section says. The scope may be a range, a commit list or paths; the engine's stage 1 owns how `--base`, `--head` (the run's upper bound) and the scope list are chosen, and scope lists are staged outside the repository.
 
 ## Run
 
@@ -37,7 +37,7 @@ Reviews code by composing coverage for the change at hand rather than broadcasti
 
 ### Stage 2 — `LINT BASELINE`
 
-The surveyor resolves `lint-baseline` through its discovery ladder, one command per stack root that meets the scope, keyed `lint-baseline`, `lint-baseline-2`, … in ladder order. Every project check whose `families` include `code` and whose `paths` meet the scope resolves too (in this repo, `harness-gates` for a scope under `claude/`). Dispatch one `verification` agent per resolved line and record each under its own key, as the engine's survey reference says. A red baseline is information for the finders, not a halt.
+The surveyor resolves `lint-baseline` through its discovery ladder, one command per stack root that meets the scope, keyed `lint-baseline`, `lint-baseline-2`, … in ladder order. Every project check whose `families` include `code` and whose `paths` meet the scope resolves too (in this repo, `harness-gates` for a scope under `claude/`). Dispatch the baselines as the engine's survey reference, section 6, says, and record each under its own key. A red baseline is information for the finders, not a halt.
 
 ### Stage 3 — the code floor
 
@@ -56,7 +56,7 @@ At `standard` and `deep`, add one cell that runs the `correctness` lens over the
 
 - **Ceiling**: it counts against the depth's cell ceiling like any cell, and outranks candidate-tier cells and repeat passes. When nothing but floor cells is left to cut, leave it out and say so in the close summary.
 - **Store record**: the cell's `agent` marks it as context-free; the `question` and `reason` above record why it exists. Its findings count under `correctness` in `review stats`, which does not separate them from the floor cell's.
-- **Dispatch**: it runs at stage 4 like any other cell, on either substrate. `review show --for finder` gives a `review-finder-cf` cell no pack and adds the run's `base`, and the cell prompt omits the `pack:` line for it, so the finder reads the slice as `git diff <base>` and skips the prior findings. Its findings route like any finder cell's.
+- **Dispatch**: it runs at stage 4 like any other cell, on either substrate. `review show --for finder` gives a `review-finder-cf` cell no pack and adds the run's `base`, and the cell prompt omits the `pack:` line for it, so the finder reads the slice as `git diff <base>` (`git diff <base> <head>` for a bounded run) and skips the prior findings. Its findings route like any finder cell's.
 
 ### Stage 8 — backlog, export and hand-off
 

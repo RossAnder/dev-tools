@@ -41,7 +41,7 @@ git merge-base <branch1> <branch2>
 git diff --name-only <branch1>...<branch2>
 ```
 
-Pass that merge-base as `--base`. `review run start` measures `changed_lines` over `base..HEAD`, and every agent reads the working tree, so the range is only coherent when `<branch2>` is the checked-out commit. Compare `git rev-parse <branch2>` with `git rev-parse HEAD`. When they differ, tell the user and ask with `AskUserQuestion` whether to review the current checkout against that merge-base or to stop so they can check out `<branch2>`. An empty answer stops the run before `review run start`.
+Pass that merge-base as `--base`, and `--head` when the run is bounded (the engine's stage 1 owns the rule; scope lists are staged outside the repository). `review run start` measures `changed_lines` over `base..head`, and every agent reads the working tree, so the range is only coherent when `<branch2>` is the checked-out commit. Compare `git rev-parse <branch2>` with `git rev-parse HEAD`. When they differ, tell the user and ask with `AskUserQuestion` whether to review the current checkout against that merge-base or to stop so they can check out `<branch2>`. An empty answer stops the run before `review run start`.
 
 Text after the range (`/optimise-v2 main..feature queries`) is a focus, not scope: it goes into the Focal Points Brief below.
 
@@ -49,7 +49,7 @@ Text after the range (`/optimise-v2 main..feature queries`) is a focus, not scop
 
 The surveyor resolves the `profile-baseline` check's discovery ladder without running it: the bound plan's `bench:` key, then a benchmark or profiling command the project's CLAUDE.md declares, then an existing bench harness per stack root that meets the scope, narrowed to the scope's subsystem. Its digest lists one `verification:` line per resolved command, keyed `profile-baseline`, then `profile-baseline-2` and onward, in ladder order, or a single `none — <reason>` line.
 
-Dispatch the `verification` agent once per line, one at a time, as the engine's survey reference describes, and record each returned log path under its own key:
+Dispatch every line in one `verification` dispatch with `keep_going`, as the engine's survey reference, section 6, describes, and record each returned log path under its own key:
 
 ```bash
 tomlctl review run update <run> --slug <slug> --set-json 'baselines={"profile-baseline-2":"<log-path>"}'

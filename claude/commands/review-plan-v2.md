@@ -20,7 +20,7 @@ The run has two modes, fixed at stage 0. **Flow mode** applies when the resolved
 | family | `plan` |
 | `review run start --command` | `review-plan-v2` |
 | envelope `--command` | `review-plan` |
-| base | `HEAD` |
+| base | `HEAD`; `--head` is the run's upper bound where the engine's stage 1 sets one |
 | scope | markdown mode: the plan documents bound at stage 0, `<plan>` first; flow mode: `docs/flows/<slug>/brief.md` plus every `docs/flows/<slug>/design/*.md` |
 | depth | `--depth`, default `standard` |
 
@@ -83,7 +83,7 @@ Run `plan-flow.md` sections 2 to 6 in place of the engine's stages 1 to 6 and th
 
 - The surveyor prompt carries the `plan:` line, set to `<plan>`.
 - The plan family's surveyor checks are `store-check` (the `STORE CHECK` fence: `tasks import-plan --dry-run` and `tasks check --plan`) and `format-contract` (the `FORMAT CONTRACT` fence: house format or foreign). Read their `checks:` lines in the digest; a `not run` there goes into the triage presentation.
-- `break-set-baseline` resolves one command per predicted break set in the plan. The digest lists them as `verification:` lines keyed `break-set-baseline`, `break-set-baseline-2` and so on, in plan order. Dispatch the `verification` agent once per line, one at a time, and record each under its own key, as the engine's survey reference says. Project checks whose `families` include `plan` follow them.
+- `break-set-baseline` resolves one command per predicted break set in the plan. The digest lists them as `verification:` lines keyed `break-set-baseline`, `break-set-baseline-2` and so on, in plan order. Dispatch them as the engine's survey reference, section 6, says, and record each under its own key. Project checks whose `families` include `plan` follow them.
 - Pass the plan's own `transient:` keys from its `## Verification Commands` as the dispatches' `transient:` patterns.
 - Run no break-set command yourself. The baseline observes today's tree; judging each prediction's preconditions against it is the `plan-checks` cell's work.
 
