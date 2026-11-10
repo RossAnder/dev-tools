@@ -592,6 +592,16 @@ fn by_probe(view: &View) -> Vec<JsonValue> {
         .collect()
 }
 
+/// The highest `wave` among `cells` that belong to `run`; `0` when none carries one.
+pub(crate) fn run_waves<'a>(cells: impl IntoIterator<Item = &'a Cell>, run: &str) -> u32 {
+    cells
+        .into_iter()
+        .filter(|c| c.run == run)
+        .filter_map(|c| c.wave)
+        .max()
+        .unwrap_or(0)
+}
+
 fn by_run(view: &View) -> Vec<JsonValue> {
     let mut rows = Vec::new();
     for sv in &view.stores {
@@ -612,7 +622,7 @@ fn by_run(view: &View) -> Vec<JsonValue> {
             row["depth"] = json!(run.depth.as_str());
             row["started"] = json!(run.started);
             row["finished"] = json!(run.finished);
-            row["waves"] = json!(run.waves);
+            row["waves"] = json!(run_waves(sv.cells.iter().copied(), &run.id));
             row["agents"] = json!(run.agents);
             row["waivers"] = json!({
                 "concerns": waived_concerns,

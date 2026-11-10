@@ -671,6 +671,27 @@ fn calibration_ignores_unaudited_refutations() {
 }
 
 #[test]
+fn stats_by_run_reports_waves_from_cells() {
+    let repo = Repo::new();
+    let text = STORE
+        .replacen(
+            "id = \"C1\"\nrun = \"U1\"\n",
+            "id = \"C1\"\nrun = \"U1\"\nwave = 1\n",
+            1,
+        )
+        .replacen(
+            "id = \"C2\"\nrun = \"U1\"\n",
+            "id = \"C2\"\nrun = \"U1\"\nwave = 2\n",
+            1,
+        );
+    assert_ne!(text, STORE, "the fixture moved");
+    repo.write(STORE_PATH, &text);
+    let out = repo.stats(&["--scope", "t", "--by", "run"]);
+    assert_eq!(row(&out["rows"], "U1")["waves"], 2, "{out}");
+    assert_eq!(row(&out["rows"], "U2")["waves"], 0, "{out}");
+}
+
+#[test]
 fn stats_probe_groups_by_concern_tag() {
     let repo = Repo::new();
     let out = repo.stats(&["--scope", "t", "--by", "probe"]);
