@@ -75,7 +75,7 @@ Anything else in the arguments is scope: paths, globs, or a feature name.
    tomlctl capabilities
    ```
 
-   Halt unless `.features` lists `review_add`, `review_survey` and `review_catalogue`, telling the user to run `cargo install --path tomlctl` in the dev-tools checkout and restart.
+   Halt unless `.features` lists `review_add`, `review_survey`, `review_catalogue`, `review_run_head`, `review_run_show`, `review_ruled_out`, `review_same_as_link` and `review_list_fix_shape`, telling the user to run `cargo install --path tomlctl` in the dev-tools checkout and restart.
 3. Invoke the `flow-contract-flow-context` skill and build the envelope as it says, with the **v1 command name**: `--command review` for `/review-v2`, `--command optimise` for `/optimise-v2`, `--command review-plan` for `/review-plan-v2`. The envelope builder knows only the v1 names. Gate on `envelope.ok`, emit the bootstrap-summary line, and bind the store flag from `envelope.resolved.slug`, or derive `<scope>` when no flow resolved. A v2 run skips the user-inputs sweep.
 4. Read v1 apply outcomes back into the store, so a re-found fixed issue resolves as a regression rather than a repeat:
 
@@ -83,26 +83,40 @@ Anything else in the arguments is scope: paths, globs, or a feature name.
    tomlctl review sync-v1 --slug <slug>
    ```
 
-5. **Plan family only.** Invoke the `flow-contract-task-store` skill and run its auto-import at Step 0 with the ref-set diff gate (its sections 9 and 10), exactly as an orchestrator does there. The import is yours; agents only ever run `tasks import-plan --dry-run`. Skip it on a v2 flow, one with `.claude/flows/<slug>/plan.toml`: its store is already canonical and `tasks import-plan` refuses it. That run is in flow mode, and `references/plan-flow.md` takes over from here.
+5. List what earlier runs left without a landing place — parked advisory, and needs-plan defects still open — and report both in the run's opening lines, so the user sees them before new findings arrive:
+
+   ```bash
+   tomlctl review list --slug <slug> --status parked
+   tomlctl review list --slug <slug> --status open --fix-shape needs-plan
+   ```
+
+6. **Plan family only.** Invoke the `flow-contract-task-store` skill and run its auto-import at Step 0 with the ref-set diff gate (its sections 9 and 10), exactly as an orchestrator does there. The import is yours; agents only ever run `tasks import-plan --dry-run`. Skip it on a v2 flow, one with `.claude/flows/<slug>/plan.toml`: its store is already canonical and `tasks import-plan` refuses it. That run is in flow mode, and `references/plan-flow.md` takes over from here.
 
 ### Stage 1 — Run start
 
 Resolve the run's inputs:
 
-- **Scope** — repo-relative, `/`-separated paths or globs. Refuse `..`, absolute paths outside the worktree, and any glob matching more than 200 files. With no scope argument, the scope is the diff: the files changed against the merge-base with the default branch on a feature branch, or against `HEAD~1` on the default branch. Plan family: the plan path in markdown mode; in flow mode, `docs/flows/<slug>/brief.md` plus `docs/flows/<slug>/design/*.md`.
-- **Base** — the commit that diff is taken from. For a path review of unchanged code, pass `HEAD`; `changed_lines` then falls back to the scope's tracked line count. Plan family: `HEAD`.
+- **Bounds and scope** — a run is measured from `base` to `head`, and its scope is a list of repo-relative, `/`-separated paths or globs. Refuse `..`, absolute paths outside the worktree, and any glob matching more than 200 files. Choose by the first case that holds:
+  - *A flow-bound run whose task rows carry `commit` stamps* (`tomlctl tasks list --slug <slug> --select id,commit --lines`): the commit list is the distinct stamps. `head` is the stamp that descends from every other; `base` is the first parent (`<stamp>^`) of the stamp every other descends from. Order them with `git merge-base --is-ancestor`, never by committer date, which ties on rebased work, and ask the user when the stamps are not on one ancestry line. The scope is the union of the files those commits touch (`git show --name-only --format= <stamp>` per stamp), not the files changed across `base..head`: an interleaved commit from another flow contributes no file.
+  - *A flow-less run, or a flow with no stamps*: choose `--base`, `--head` and the scope from the user's argument — a range, a commit list, paths — and state the choice in the run's opening line. With no argument on a feature branch, `base` is the merge-base with the default branch, `head` is omitted (the run measures to `HEAD`), and the scope is the files that diff changes; on the default branch with no argument, ask the user where the change starts.
+  - *A path review of unchanged code*: `base` is `HEAD` and `head` is omitted; `changed_lines` then falls back to the scope's tracked line count.
+  - *Plan family*: `base` is `HEAD`; the scope is the plan path in markdown mode and, in flow mode, `docs/flows/<slug>/brief.md` plus `docs/flows/<slug>/design/*.md`.
+
+  Write the scope list with the Write tool to a JSON file in a scratch directory outside the repository and pass it as `--set-json 'scope=@<path>'`. Agents read the working tree whatever the bounds are, so when `head` is behind `HEAD`, name in the run's opening line every scope file a later commit changed (`git diff --name-only <head> HEAD -- <scope entries>`).
+
+  **Ripple reaches past the scope.** The scope bounds what cells read as changed, not where a finding may be anchored: a `ripple` cell greps the whole tree for names the diff removed or renamed, and a stale reference in an untouched file is a finding on that file.
 - **Models** — read the `model:` line of each of the seven v2 agents (`review-surveyor`, `review-sweeper`, `review-checker`, `review-finder`, `review-finder-cf`, `review-verifier`, `plan-executor`) under `<claude dir>/agents/` with Grep. Never assume them.
 - **Substrate** — `workflow` when the Workflow tool is available in this session, otherwise `agent-waves`.
 
 ```bash
-tomlctl review run start --slug <slug> --command review-v2 --family code --depth standard --base <base-sha> --set-json 'scope=["tomlctl/src/review/**"]' --set-json 'models={"surveyor":"haiku","sweeper":"haiku","checker":"haiku","finder":"opus","finder-cf":"opus","verifier":"opus","executor":"opus"}' --set substrate=workflow
+tomlctl review run start --slug <slug> --command review-v2 --family code --depth standard --base <base-sha> --head <head-sha> --set-json 'scope=@<scratch>/scope.json' --set-json 'models={"surveyor":"haiku","sweeper":"haiku","checker":"haiku","finder":"opus","finder-cf":"opus","verifier":"opus","executor":"opus"}' --set substrate=workflow
 ```
 
-It mints the run (`U<n>`), resolves `--base` to a sha, computes `changed_lines`, records the catalogue roots and shas, and validates the merged catalogue. A validation error halts the run: report the offending file and stop, because a project-layer error is the project's to fix. It also refuses when `base..HEAD` changes anything under `.claude/review-lenses`, since the change under review would configure its own review: show the user the listed paths and pass `--project .claude/review-lenses` only on their say-so. A run started that way records the paths as `catalogue.project_layer_changed`; name them to the user in the close summary. It prints `{run, dir, base, changed_lines}`. Bind `<run>` and `<run-dir>` (the printed `dir`); `pack.md` and `profile.md` are written there, and every payload you stage goes in `<run-dir>/payloads/`.
+Omit `--head` when the run measures to `HEAD`. It mints the run (`U<n>`), resolves `--base` and `--head` to shas, computes `changed_lines` over `base..head`, records the catalogue roots and shas, and validates the merged catalogue. A validation error halts the run: report the offending file and stop, because a project-layer error is the project's to fix. It also refuses when `base..head` (`base..HEAD` for a run without a head) changes anything under `.claude/review-lenses`, since the change under review would configure its own review: show the user the listed paths and pass `--project .claude/review-lenses` only on their say-so. A run started that way records the paths as `catalogue.project_layer_changed`; name them to the user in the close summary. It prints `{run, dir, base, head, changed_lines}`, `head` being `null` without `--head`. Bind `<run>` and `<run-dir>` (the printed `dir`); `pack.md` and `profile.md` are written there, and every payload you stage goes in `<run-dir>/payloads/`.
 
 ### Stage 2 — Survey
 
-`review survey` records the deterministic signals; one review-surveyor proposes judged signals, runs the surveyor checks, resolves the baseline commands and writes `profile.md` and `pack.md`; then one `verification` dispatch per resolved baseline command runs in sequence. Follow `references/survey.md`. Stage 3 may start once the surveyor's digest is in; **stage 4 waits until every resolved baseline has a recorded entry**.
+`review survey` records the deterministic signals; one review-surveyor proposes judged signals, runs the surveyor checks, resolves the baseline commands and writes `profile.md` and `pack.md`; then one `verification` dispatch carries every resolved baseline command with `keep_going: true`, each with its own `timeout`, and every baseline key is recorded from that one return. Read the run's signals and recorded baseline keys back with `tomlctl review run show <run> --slug <slug>` rather than copying them into a prompt. Follow `references/survey.md`. Stage 3 may start once the surveyor's digest is in; **stage 4 waits until every resolved baseline has a recorded entry**.
 
 ### Stage 3 — Compose
 
@@ -136,6 +150,7 @@ Workflow({
     wave: <wave>,
     depth: "<depth>",
     pack_path: "<run-dir>/pack.md",
+    mechanical_lenses: ["hygiene", "ripple"],
     cells: [ { id: "C1", agentType: "review-finder" } ],
     schemas: { cell_return: <cell-return schema>, verdict_return: <verdict-return schema> }
   }
@@ -144,13 +159,14 @@ Workflow({
 
 - `store` is `{ scope: "<scope>" }` for a flow-less store, and `ledger_line` is then omitted.
 - `cells` lists this wave's cells only, each with the `agent` the composed map gave it.
+- `mechanical_lenses` is the ids of the catalogue's `mode = "mechanical"` lenses, read once per run with `tomlctl review catalogue --family <family> --rows entries --where type=lens --where mode=mechanical --select id --lines`; a checker may refute a cleanup row a sweeper did not write only when its lens is one of them.
 - After the launch reports `async_launched`, end your turn. Resume on the task notification.
 
-The Workflow runs one agent per cell, then routes each returned finding by the `route` `review add` computed: one `review-verifier` per finding (three seats for `panel`), one verifier batch per cell for minor defects at `quick` and `standard`, and pooled `review-checker` batches of up to 20 cleanup rows, with a checker's `unsettled` rows re-routed to a verifier. It returns only the index `{run, wave, cells: [{id, status, findings, escalated}], verified, errors, script_version}`; the findings are already in the store.
+The Workflow runs one agent per cell, then routes each returned finding by the `route` `review add` computed: one `review-verifier` per finding (three seats for `panel`); one verifier batch per cell for minor defects at `quick` and `standard`, and one per cell for verifier-routed cleanup rows at every depth; and pooled `review-checker` batches of up to 20 cleanup rows, with a checker's `unsettled` rows re-routed to a verifier. It returns only the index `{run, wave, cells: [{id, status, findings, escalated}], verified, agents, errors, script_version, escalations}`; the findings are already in the store. `agents` counts the Workflow's own agent launches; `escalations` is `[{cell, text}]`, each text cut to 300 characters, and sits last so a cut result loses escalation text before any cell's status. The conversation sees at most 8,000 characters of a Workflow result: when the result says it was truncated, read the notification's output file for the whole index.
 
 **Fallback.** Run the wave as Agent waves per `references/agent-waves.md` when the Workflow tool is disabled or absent, the name is unknown, the launch reports `error`, or the run ends with no result or with an index showing no cell launched. A Workflow that completed with some cells `no-return` or `error` is not a fallback case: go to stage 5 and let the mop-up cover them. Once the fallback fires, the rest of the run stays on it; `review run update` does not take `substrate`, so record the switch in the close summary as `agent-waves.md` describes.
 
-After each wave, record the running agent total:
+Keep the run's agent total as you go: each wave index's `agents`, plus every agent you dispatch yourself — `flow-bootstrap`, the surveyor, the baseline `verification` dispatch, and any Agent-wave or mop-up dispatch. Record it with one update once the last wave is resolved, before stage 6:
 
 ```bash
 tomlctl review run update <run> --slug <slug> --set-json agents=23
@@ -163,7 +179,18 @@ tomlctl review resolve --run <run> --slug <slug> --wave <wave>
 tomlctl review digest --run <run> --slug <slug> --since-wave <wave>
 ```
 
-`resolve` settles every finding whose `same_as` has complete verdicts (repeat, contested, reopened, regression, suppressed). The digest then gives counts by kind and lens, cells by status with notes for `thin` and `uncovered`, unverified ids with their routes, unselected concerns and unsliced files still needing a waiver, contested findings, refuted criticals, and the advisory list.
+`resolve` settles every finding whose `same_as` has complete verdicts (repeat, contested, reopened, regression, suppressed). The digest then gives counts by kind and lens, cells by status with notes for `thin` and `uncovered`, unverified ids with their routes, unselected concerns and unsliced files still needing a waiver, contested findings, refuted criticals, `duplicate_candidates`, `ruled_out_hits` and the advisory list.
+
+Read three more lists before deciding:
+
+- **`escalations`**, from the wave index: each is a follow-up cell candidate. One you do not turn into a cell — out of budget, or anchored outside the scope and not a ripple row — is named in the close summary and offered as a backlog capture.
+- **`duplicate_candidates`**, from the digest: a pair of places that match across cells is a question, never a fold. Link each pair you judge one defect, every pair in one call, and leave a pair you judge distinct alone:
+
+  ```bash
+  tomlctl review resolve --run <run> --slug <slug> --same-as F12=F7 --same-as F15=F9
+  ```
+
+- **`ruled_out_hits`**, from the digest: a finding at a place another cell ruled deliberate. Check that the verifier's rationale answers the rule-out, and re-dispatch one verifier where it does not, as `references/compose.md` sets out.
 
 Then decide, in this order:
 
@@ -191,7 +218,7 @@ tomlctl review run finish <run> --slug <slug>
 | concerns per cell | ≤3 | ≤3 | ≤2 |
 | follow-up waves | 0 | 1 | 2 |
 | defect verification | one verifier per critical or major defect; one batch verifier per cell for minor | as quick | one verifier per non-critical defect; a critical goes to a 3-vote panel instead, and survives on ≥2 non-refuted votes |
-| cleanup check | pooled Haiku checker batches; code-touching, test-removal and unsettled rows go to an Opus verifier | as quick | as quick |
+| cleanup check | pooled Haiku checker batches; code-touching and test-removal rows go to one Opus verifier batch per cell, unsettled checker rows to an Opus verifier each | as quick | as quick |
 | repeat passes | none | floor and hotspot cells once more, files in reverse order | every high-risk cell once more |
 | plan-executor cells | ≤4 tasks | ≤12 tasks, L and M first, checkpoint-marker tasks first | every task |
 | confirm the map before launch | no | no | yes |
