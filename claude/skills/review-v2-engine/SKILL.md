@@ -75,9 +75,9 @@ Anything else in the arguments is scope: paths, globs, or a feature name.
    tomlctl capabilities
    ```
 
-   Halt unless `.features` lists `review_add`, `review_survey`, `review_catalogue`, `review_run_head`, `review_run_show`, `review_ruled_out`, `review_same_as_link` and `review_list_fix_shape`, telling the user to run `cargo install --path tomlctl` in the dev-tools checkout and restart.
+   Halt unless `.features` lists `review_add`, `review_survey`, `review_catalogue`, `review_run_head`, `review_run_show`, `review_ruled_out`, `review_same_as_link`, `review_list_fix_shape`, `review_schedule`, `review_reconcile`, `review_anchor`, `review_reproduce` and `review_stats_apply`, telling the user to run `cargo install --path tomlctl` in the dev-tools checkout and restart.
 3. Invoke the `flow-contract-flow-context` skill and build the envelope as it says, with the **v1 command name**: `--command review` for `/review-v2`, `--command optimise` for `/optimise-v2`, `--command review-plan` for `/review-plan-v2`. The envelope builder knows only the v1 names. Gate on `envelope.ok`, emit the bootstrap-summary line, and bind the store flag from `envelope.resolved.slug`, or derive `<scope>` when no flow resolved. A v2 run skips the user-inputs sweep.
-4. Read v1 apply outcomes back into the store, so a re-found fixed issue resolves as a regression rather than a repeat:
+4. Read back the v1 outcomes of findings an earlier run exported to a v1 ledger, for stores that still hold `exported` findings, so a re-found fixed issue resolves as a regression rather than a repeat. It is a legacy read-back for v1 rows whose `v2_ref` names this store, since triage hands findings to `/apply-v2` rather than to a v1 ledger:
 
    ```bash
    tomlctl review sync-v1 --slug <slug>
@@ -196,7 +196,7 @@ Then decide, in this order:
 
 ### Stages 6 to 8 — Audit, triage, close
 
-Audit the digest's sample through the `audit` projection; write the report and present the counts, the Needs-a-plan group, contested items and the advisory list with a recommendation per item; take the user's dispositions; park untriaged advisory, hand user-picked items to the backlog through the `backlog-capture` skill, export with `review export-v1`, hand off to `/review-apply` or `/optimise-apply`, and finish the run. Follow `references/triage-and-close.md`. Triage is a user gate: an instruction to proceed autonomously does not cover it.
+Audit the digest's sample through the `audit` projection; write the report and present the counts, the Needs-a-plan group, contested items and the advisory list with a recommendation per item; take the user's dispositions; park untriaged advisory, hand user-picked items to the backlog through the `backlog-capture` skill, name `/apply-v2` with the store and the ids the user picked under `apply`, and finish the run. Follow `references/triage-and-close.md`. Triage is a user gate: an instruction to proceed autonomously does not cover it.
 
 Record the agent total, as stage 4 defines it, then finish:
 
@@ -228,9 +228,9 @@ The ceiling counts every wave's cells, repeat cells included; plan-executor cell
 
 The carriers own these; the engine leaves room for them at the stage named.
 
-- `/review-v2` (code): the `LINT BASELINE`, the context-free correctness cell at stage 3, export to `review-ledger.toml` and the `/review-apply` hand-off.
-- `/optimise-v2` (perf): a Focal Points Brief only for what the bound facets do not carry, the `PROFILE BASELINE`, export to `optimise-findings.toml` and the `/optimise-apply` hand-off.
-- `/review-plan-v2` (plan): plan resolution, the stage 0 task-store import, `STORE CHECK`, `FORMAT CONTRACT` and the `BREAK-SET BASELINE`, the `plan-checks` cell and `plan-executor` cells, and the merge offer in place of export. That is markdown mode. On a v2 flow (flow mode), `/review-plan-v2` and `/plan-v2`'s Review step follow `references/plan-flow.md` instead: the `plan-v2-review` Workflow in place of stages 2 to 6, then tiered apply, re-probes and a re-check run in place of the merge offer.
+- `/review-v2` (code): the `LINT BASELINE`, the context-free correctness cell at stage 3, and the `/apply-v2` hand-off.
+- `/optimise-v2` (perf): a Focal Points Brief only for what the bound facets do not carry, the `PROFILE BASELINE`, and the `/apply-v2` hand-off.
+- `/review-plan-v2` (plan): plan resolution, the stage 0 task-store import, `STORE CHECK`, `FORMAT CONTRACT` and the `BREAK-SET BASELINE`, the `plan-checks` cell and `plan-executor` cells, and the merge offer in place of the apply hand-off. That is markdown mode. On a v2 flow (flow mode), `/review-plan-v2` and `/plan-v2`'s Review step follow `references/plan-flow.md` instead: the `plan-v2-review` Workflow in place of stages 2 to 6, then tiered apply, re-probes and a re-check run in place of the merge offer.
 
 ## References
 

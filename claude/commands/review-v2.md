@@ -1,5 +1,5 @@
 ---
-description: Review code with composed coverage — a coverage map built per change from the shared lens catalogue, findings classified as defect, cleanup or advisory and verified refute-first, then exported to the v1 review ledger for /review-apply
+description: Review code with composed coverage — a coverage map built per change from the shared lens catalogue, findings classified as defect, cleanup or advisory and verified refute-first, then handed to /apply-v2 for the findings the user picks
 argument-hint: '[--depth quick|standard|deep] [--flow <slug>] [--probe "<question>"]... [--lens +id|-id]... [file paths, globs, feature name, or empty for recent changes]'
 ---
 
@@ -7,9 +7,9 @@ argument-hint: '[--depth quick|standard|deep] [--flow <slug>] [--probe "<questio
 
 > Thin carrier. The `review-v2-engine` skill owns the pipeline; this file binds the code family and states only its deltas.
 
-Reviews code by composing coverage for the change at hand rather than broadcasting a fixed lens set: `tomlctl` detects the stack, the diff's shape and the project's health, proposes a map of cells (a slice of the scope × up to three concerns), and the orchestrator edits that map, adds probes and waives what it leaves out. Agents write their own findings to the v2 store, each finding is verified by its route, and the user triages. Defects and cleanup reach `/review-apply` through `review export-v1`; advisory stays in the v2 store unless the user picks it for the backlog.
+Reviews code by composing coverage for the change at hand rather than broadcasting a fixed lens set: `tomlctl` detects the stack, the diff's shape and the project's health, proposes a map of cells (a slice of the scope × up to three concerns), and the orchestrator edits that map, adds probes and waives what it leaves out. Agents write their own findings to the v2 store, each finding is verified by its route, and the user triages. Defects and cleanup the user picks are handed to `/apply-v2`, which fixes them through a v2 flow; advisory stays in the v2 store unless the user picks it for the backlog.
 
-`/review` is unchanged and stays available beside this command. This carrier skips the user-inputs sweep and writes a v1 ledger only through `review export-v1`.
+`/review` is unchanged and stays available beside this command. This carrier skips the user-inputs sweep and writes no v1 ledger.
 
 > **Effort**: Requires `xhigh` or `max` — composition, audit and triage are judgement steps.
 
@@ -22,8 +22,7 @@ Reviews code by composing coverage for the change at hand rather than broadcasti
 | Envelope `--command` | `review` (the envelope builder knows only the v1 names) |
 | Baseline check | `lint-baseline` → `LINT BASELINE` |
 | Floor lenses | `correctness`, `ripple` |
-| v1 export target | `.claude/flows/<slug>/review-ledger.toml` with a flow bound; `.claude/reviews/<scope>.toml` without one |
-| Apply hand-off | `/review-apply <v1-ids>` |
+| Apply hand-off | `/apply-v2 <slug> <finding ids>` with a flow bound; `/apply-v2 --scope <scope> <finding ids>` without one |
 
 `$ARGUMENTS` carries the steering flags (`--depth`, `--flow`, `--probe`, `--lens`) and the scope, parsed as the engine's Steering flags section says. The scope may be a range, a commit list or paths; the engine's stage 1 owns how `--base`, `--head` (the run's upper bound) and the scope list are chosen, and scope lists are staged outside the repository.
 
@@ -58,8 +57,7 @@ At `standard` and `deep`, add one cell that runs the `correctness` lens over the
 - **Store record**: the cell's `agent` marks it as context-free; the `question` and `reason` above record why it exists. Its findings count under `correctness` in `review stats`, which does not separate them from the floor cell's.
 - **Dispatch**: it runs at stage 4 like any other cell, on either substrate. `review show --for finder` gives a `review-finder-cf` cell no pack and adds the run's `base`, and the cell prompt omits the `pack:` line for it, so the finder reads the slice as `git diff <base>` (`git diff <base> <head>` for a bounded run) and skips the prior findings. Its findings route like any finder cell's.
 
-### Stage 8 — backlog, export and hand-off
+### Stage 8 — backlog and hand-off
 
 - **Backlog**: at stage 8, and only for ids the user named under `backlog`, invoke the `backlog-capture` skill and run its check-then-add gate on the rows `review show --for backlog` emits, as the engine's triage-and-close reference says. It is loaded nowhere earlier in the run.
-- **Export**: export the user's chosen ids, or `export all`, with `review export-v1` to the v1 export target above, previewing with `--dry-run` first. Defects map to v1 severities by their latest verdict and cleanup exports as `suggestion`; advisory, `needs-plan` defects, `effort = "large"` rows and rows not `open` are refused, and each refusal is reported with its reason.
-- **Hand-off**: name `/review-apply <v1-ids>` with the ids `export-v1` printed, and let the user run it. The next `/review-v2` run's stage 0 `review sync-v1` reads each applied row's outcome back into the store.
+- **Hand-off**: name `/apply-v2` from the bindings above with the ids the user picked under `apply`, or `--all` for `apply all`, as the engine's triage-and-close reference says, and let the user run it. Advisory, `needs-plan` defects, `effort = "large"` rows and rows not `open` are refused by its schedule rule; say which picks those are when you name it.

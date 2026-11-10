@@ -5,7 +5,7 @@ argument-hint: '[paths | globs | feature | branch1..branch2 [focus]] [--depth qu
 
 # /optimise-v2 — composed performance review
 
-Researches code for performance and efficiency opportunities. Coverage is composed per run from the change's signals and the shared lens catalogue rather than from a fixed set of lenses, and every matched concern and scope file is either covered or waived. Agents write their own findings, of three kinds, to the v2 store, and each defect and routed cleanup row is verified before you see it. **Research-only**: this command changes no code. Findings you choose to apply are exported to the v1 optimise ledger and applied with `/optimise-apply`.
+Researches code for performance and efficiency opportunities. Coverage is composed per run from the change's signals and the shared lens catalogue rather than from a fixed set of lenses, and every matched concern and scope file is either covered or waived. Agents write their own findings, of three kinds, to the v2 store, and each defect and routed cleanup row is verified before you see it. **Research-only**: this command changes no code. Findings you choose to apply are handed to `/apply-v2`, which fixes them through a v2 flow.
 
 The pipeline belongs to the engine. **Invoke the `review-v2-engine` skill** and run its stages 0 to 8 in order, with the bindings and deltas below. Do not restate a stage here or in a prompt; where this file is silent, the engine governs.
 
@@ -19,8 +19,7 @@ The pipeline belongs to the engine. **Invoke the `review-v2-engine` skill** and 
 | envelope `--command` (stage 0) | `optimise` |
 | `review run start --command` (stage 1) | `optimise-v2` |
 | baseline check (stage 2) | `profile-baseline`, fence `PROFILE BASELINE`, plus every project check whose `families` include `perf` |
-| export target (stage 8) | `envelope.resolved.artifacts.optimise_findings` when a flow is bound, else `.claude/optimise-findings/<scope>.toml` |
-| apply hand-off (stage 8) | `/optimise-apply <O-ids>` |
+| apply hand-off (stage 8) | `/apply-v2 <slug> <finding ids>` when a flow is bound, else `/apply-v2 --scope <scope> <finding ids>` |
 
 At stage 0, invoke the `tomlctl` skill before the first `tomlctl` call, then invoke the `flow-contract-flow-context` skill and build the envelope with `--command optimise`, adding `--path-arg <p>` once per path token of the scope and `--flow-override <slug>` for `--flow`. Bind the store flag from the envelope, or derive `<scope>` by that skill's flow-less rule when no flow resolved.
 
@@ -92,17 +91,8 @@ Agents apply it through the `measure` method and the `profile-baseline` check; y
 
 At audit, a CONFIRMED perf defect whose citation shows no sourced input size is an overturn.
 
-## Stage 8 — export and hand-off
+## Stage 8 — hand-off
 
-Export to the optimise ledger from the bindings table; a perf finding exports with an `O` id:
-
-```bash
-tomlctl review export-v1 F2,F5 --scope <scope> --to .claude/optimise-findings/<scope>.toml --dry-run
-tomlctl review export-v1 --all --slug <slug> --to .claude/flows/<slug>/optimise-findings.toml --dry-run
-```
-
-`--all` takes every open perf finding in the store, earlier runs' included, so show the user the dry run's list before writing. Report every refusal and hold-back with its reason, then run the chosen command without `--dry-run`.
-
-Then name the apply command with the `O` ids the export printed, `/optimise-apply O3,O4`, and stop; the user runs it. A later `/optimise-v2` run's stage 0 `review sync-v1` reads each exported row's outcome back into the store.
+Name the apply hand-off from the bindings table with the finding ids the user picked under `apply`, `/apply-v2 --scope <scope> F2,F5`, or with `--all` for `apply all`, as the engine's triage-and-close reference says, and stop; the user runs it. `--all` takes every open perf defect and cleanup in the store, earlier runs' included, so show the user that list before naming it, and say which picks the schedule rule will refuse or hold back, with the reason.
 
 For each advisory item the user picks for the backlog at triage, invoke the `backlog-capture` skill at this stage, as the engine's close step describes, and run its check-then-add gate before any backlog write.

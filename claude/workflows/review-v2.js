@@ -1,10 +1,11 @@
 export const meta = {
   name: 'review-v2-pipeline',
   description: 'Run one review-v2 wave: one agent per cell, then route each finding to its verifier or pooled checker',
-  whenToUse: 'Launched by the review-v2-engine skill at stage 4 with the run, wave, cells and schemas as args; not for direct use',
+  whenToUse: 'Launched by the review-v2-engine skill at stage 4 with the run, wave, cells and schemas as args, or before the gate of an apply milestone with mode reproduce and the flow, milestone, round and units as args; not for direct use',
   phases: [
     { title: 'Cells', detail: 'one review-finder, review-finder-cf, review-sweeper or plan-executor per cell; each writes and seals its cell' },
     { title: 'Verify', detail: 'review-verifier per routed finding (panel: three seats), per-cell minor-defect and cleanup batches, pooled review-checker batches' },
+    { title: 'Reproduce', detail: 'reproduce mode only: one review-verifier per apply task, recording whether each finding it fixed still reproduces' },
   ],
 }
 
@@ -16,7 +17,7 @@ export const meta = {
 // same-args relaunch can miss the journal from the first reshuffled batch. Store
 // writes are idempotent either way. The review-v2-engine skill's
 // references/agent-waves.md states what recovery costs.
-const SCRIPT_VERSION = '2'
+const SCRIPT_VERSION = '3'
 const CELL_AGENTS = ['review-finder', 'review-finder-cf', 'review-sweeper', 'plan-executor']
 // The context-free correctness cell runs without the pack, so its prompt omits the `pack:` line.
 const CONTEXT_FREE_AGENT = 'review-finder-cf'
@@ -31,6 +32,118 @@ const escalations = []
 let agents = 0
 
 const a = args || {}
+
+// Reproduce mode runs no cells, takes no pack and no schemas, and returns its own
+// index; the store's reproductions, not this return, are what the engine acts on.
+if (a.mode === 'reproduce') {
+  const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/
+  const TASK_REF = /^[a-z0-9_-]+$/
+  const MILESTONE = /^[A-Za-z0-9][A-Za-z0-9_-]*$/
+  const FINDING = /^F[1-9][0-9]*$/
+  const REPRODUCE_VERDICTS = ['gone', 'reproduces', 'unsettled']
+  // RegExp.test coerces its argument, which would pass ['some-slug'] or 123.
+  const matches = (re, value) => typeof value === 'string' && re.test(value)
+  const oneLine = (value) => typeof value === 'string' && value.trim() !== '' && !/[\r\n]/.test(value)
+
+  const rStore = a.store || {}
+  const units = Array.isArray(a.units) ? a.units : []
+  const reproduceIndex = (unitRows) => ({ mode: 'reproduce', units: unitRows, errors, script_version: SCRIPT_VERSION })
+
+  const problems = []
+  if (!oneLine(a.run_dir)) problems.push('run_dir must be one non-empty line')
+  const hasSlug = rStore.slug !== undefined
+  const hasScope = rStore.scope !== undefined
+  if (hasSlug === hasScope) problems.push('store must hold exactly one of slug or scope')
+  else if (!matches(SLUG, hasSlug ? rStore.slug : rStore.scope)) problems.push(`store.${hasSlug ? 'slug' : 'scope'} does not match ${SLUG.source}`)
+  if (!matches(SLUG, a.flow)) problems.push(`flow ${JSON.stringify(a.flow)} does not match ${SLUG.source}`)
+  if (!matches(MILESTONE, a.milestone)) problems.push(`milestone ${JSON.stringify(a.milestone)} does not match ${MILESTONE.source}`)
+  if (!Number.isInteger(a.round) || a.round < 1) problems.push(`round ${JSON.stringify(a.round)} is not a positive integer`)
+  if (!Array.isArray(a.units) || !units.length) problems.push('units must be a non-empty array')
+  const seenTasks = new Set()
+  units.forEach((u, i) => {
+    if (!u || typeof u !== 'object') { problems.push(`units[${i}] is not an object`); return }
+    if (!matches(TASK_REF, u.task)) problems.push(`units[${i}].task ${JSON.stringify(u.task)} does not match ${TASK_REF.source}`)
+    else if (seenTasks.has(u.task)) problems.push(`units[${i}].task ${u.task} appears twice`)
+    else seenTasks.add(u.task)
+    if (!Array.isArray(u.files) || !u.files.every(oneLine)) problems.push(`units[${i}].files must be an array of one-line paths`)
+    if (!Array.isArray(u.findings) || !u.findings.length || !u.findings.every((f) => matches(FINDING, f))) {
+      problems.push(`units[${i}].findings must be a non-empty array of ids matching ${FINDING.source}`)
+    }
+  })
+  if (problems.length) {
+    problems.forEach(fail)
+    fail('no agent launched')
+    return reproduceIndex([])
+  }
+
+  const rStoreFlag = hasSlug ? `--slug ${rStore.slug}` : `--scope ${rStore.scope}`
+  const rRunDir = a.run_dir.replace(/[\\/]+$/, '')
+  const unitSchema = {
+    type: 'object',
+    properties: {
+      task: { type: 'string' },
+      reproductions: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { finding: { type: 'string' }, verdict: { type: 'string', enum: REPRODUCE_VERDICTS } },
+          required: ['finding', 'verdict'],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ['task', 'reproductions'],
+    additionalProperties: false,
+  }
+
+  // A flow-bound store carries the `ledger:` line, which agent correlation reads at column 0.
+  const reproducePrompt = (u) => {
+    const payload = `${rRunDir}/payloads/reproduce-${u.task}.ndjson`
+    return `${hasSlug ? `ledger: .claude/flows/${rStore.slug}/review-v2.toml\n` : ''}mode: reproduce
+store: ${rStoreFlag}
+flow: ${a.flow}
+milestone: ${a.milestone}
+round: ${a.round}
+task: ${u.task}
+files: ${u.files.length ? u.files.join(', ') : 'none'}
+findings: ${u.findings.join(', ')}
+run directory: ${rRunDir}
+
+The apply task \`${u.task}\` has landed a fix for each finding above. Read them with \`tomlctl review show ${u.findings.join(',')} ${rStoreFlag} --for implementer\`, then judge against the working tree, as it stands now, whether each still reproduces: \`gone\` when the cited failure or cleanup can no longer occur, \`reproduces\` when it still can, \`unsettled\` when the decisive check is out of reach. Write one JSON line per finding to \`${payload}\` with the keys finding, flow (\`${a.flow}\`), milestone (\`${a.milestone}\`), round (${a.round}), task (\`${u.task}\`), verdict, by (\`verifier\`) and citation (a file:line or a command and its decisive output), and record them with \`tomlctl review reproduce ${rStoreFlag} --ndjson ${payload}\`. Change no other file: no source edit, no other store write. Return \`{task, reproductions: [{finding, verdict}]}\` for this task.`
+  }
+
+  const runUnit = async (u) => {
+    let ret
+    try {
+      ret = await agent(reproducePrompt(u), { agentType: 'review-verifier', schema: unitSchema, label: `reproduce ${u.task}`, phase: 'Reproduce' })
+    } catch (e) {
+      const error = String((e && e.message) || e)
+      fail(`reproduce ${u.task}: ${error}`)
+      return { task: u.task, status: 'error', reproductions: [], error }
+    }
+    if (!ret) {
+      fail(`reproduce ${u.task}: agent returned nothing; ${u.findings.join(', ')} unchecked`)
+      return { task: u.task, status: 'no-return', reproductions: [], error: null }
+    }
+    const list = Array.isArray(ret.reproductions) ? ret.reproductions.filter((r) => r && u.findings.includes(r.finding)) : []
+    const lost = u.findings.filter((id) => !list.some((r) => r.finding === id))
+    const problemsOf = [
+      ret.task !== u.task ? `returned task ${JSON.stringify(ret.task)}` : null,
+      lost.length ? `no reproduction returned for ${lost.join(', ')}` : null,
+    ].filter(Boolean)
+    if (problemsOf.length) {
+      const error = problemsOf.join('; ')
+      fail(`reproduce ${u.task}: ${error}`)
+      return { task: u.task, status: 'error', reproductions: list, error }
+    }
+    return { task: u.task, status: 'ok', reproductions: list, error: null }
+  }
+
+  phase('Reproduce')
+  const rows = await parallel(units.map((u) => () => runUnit(u)))
+  return reproduceIndex(rows.map((r, i) => r || { task: units[i].task, status: 'error', reproductions: [], error: 'unit did not settle' }))
+}
+
 const index = (cells, verified) => ({ run: a.run || null, wave: a.wave ?? null, cells, verified, agents, errors, script_version: SCRIPT_VERSION, escalations })
 
 const store = a.store || {}

@@ -84,7 +84,7 @@ It prints the path and a counts line. Do not read the report back; it is for the
 
 A `challenge` item names the decision it challenges; recommend parking it unless the rationale carries evidence the decision did not have.
 
-**The gate.** Dispositions are the user's. Present them and wait for the answer: an instruction to proceed autonomously, or not to ask questions, does not cover this step, because a disposition decides what is exported, sent to the backlog or dropped. Ask with `AskUserQuestion` or end the turn on the presentation. An empty answer (a headless session) takes no disposition: stage 8 parks the untriaged advisory, exports nothing, and the close summary says triage is pending.
+**The gate.** Dispositions are the user's. Present them and wait for the answer: an instruction to proceed autonomously, or not to ask questions, does not cover this step, because a disposition decides what is applied, sent to the backlog or dropped. Ask with `AskUserQuestion` or end the turn on the presentation. An empty answer (a headless session) takes no disposition: stage 8 parks the untriaged advisory, hands nothing to apply, and the close summary says triage is pending.
 
 ### The grammar
 
@@ -99,7 +99,7 @@ Each user instruction maps to `review triage` calls. `--expect-status` is the st
 | `backlog F7,F9` | stage 8's backlog hand-off, then one `review triage <id> --backlog-ref <B-id> --expect-status open` per id |
 | `convert F8` | write the replacement row (below); `review triage F8 --convert cleanup\|defect --ndjson <path> --expect-status open` |
 | `plan F5` | stage 8's backlog hand-off mints a row for the needs-plan defect, its context naming `tomlctl review show F5 --for implementer` with the store flag as `/plan-new`'s input; then `review triage F5 --backlog-ref <B-id> --expect-status open` |
-| `export F1,F4` / `export all` | stage 8's `export-v1` |
+| `apply F1,F4` / `apply all` | stage 8's apply hand-off; no `review triage` call |
 
 Every call takes the store flag. Several ids sharing one disposition and one reason go in one call (`review triage F3,F4 --dismiss-file …`); a `backlog-ref` is per id, because each pick gets its own backlog item.
 
@@ -109,7 +109,7 @@ For example, a dismissal whose reason you staged:
 tomlctl review triage F3 --slug <slug> --dismiss-file <run-dir>/payloads/dismiss-F3.md --expect-status open
 ```
 
-**Convert.** Write the replacement as one JSON object with the Write tool to `<run-dir>/payloads/convert-<id>.ndjson`: the concrete `edit` (with `direction`, `old`, `effort` and any `target_file`) for `cleanup`, or the `fix`, `failure_scenario`, `severity`, `fix_shape`, `effort`, `counter`, `grade` and `evidence` for `defect` (and `line` when the advisory has none), anchored at the advisory's `file`, `line` and `symbol`. The verb mints the new finding with an `orchestrator` verdict, routed by its edit target, and marks the advisory `converted`. Read what it prints: when the new finding is minted `unverified` with a `verifier` or `checker` route, verify it with a one-row dispatch per `agent-waves.md` before exporting it.
+**Convert.** Write the replacement as one JSON object with the Write tool to `<run-dir>/payloads/convert-<id>.ndjson`: the concrete `edit` (with `direction`, `old`, `effort` and any `target_file`) for `cleanup`, or the `fix`, `failure_scenario`, `severity`, `fix_shape`, `effort`, `counter`, `grade` and `evidence` for `defect` (and `line` when the advisory has none), anchored at the advisory's `file`, `line` and `symbol`. The verb mints the new finding with an `orchestrator` verdict, routed by its edit target, and marks the advisory `converted`. Read what it prints: when the new finding is minted `unverified` with a `verifier` or `checker` route, verify it with a one-row dispatch per `agent-waves.md` before handing it to apply.
 
 **Convert after the run finished.** An advisory parked in an earlier run and revisited later belongs to a finished run, which cannot verify a replacement, so a plain `--convert` on it is refused. Convert it into the run you have open: add `--run <open run>`, which must be of the advisory's family. The replacement is minted `unverified` in that run, routed by its catalogue, and that run cannot finish until the replacement is verified, so verify it in the same run's waves. With no open run, leave the advisory parked and convert it at the next run.
 
@@ -131,20 +131,18 @@ tomlctl review show <ids, comma-separated> --slug <slug> --for backlog
 
 Run the skill's check-then-add gate per row. Record each minted or matched backlog id with `review triage <id> --backlog-ref <B-id> --expect-status open`. A row the gate reports as a duplicate of an existing item takes that item's id; a row the gate refuses to mint is reported back to the user and stays parked.
 
-**3. Export.** For `export F1,F4` or `export all`, export to the family's v1 ledger. The flow-bound targets are `.claude/flows/<slug>/review-ledger.toml` (code) and `.claude/flows/<slug>/optimise-findings.toml` (perf); the flow-less targets are `.claude/reviews/<scope>.toml` and `.claude/optimise-findings/<scope>.toml`. Preview first:
+**3. Apply picks.** Nothing is written at this step; `/apply-v2` reads the selection from the store when the user runs it. Keep the ids the user named under `apply`, exactly as named, for step 4. Before naming them, say which of them the schedule rule will refuse — advisory, `needs-plan`, `effort = "large"`, a status other than `open`, the plan family — so the user is not surprised at the preview; `/apply-v2` reports each refusal and hold-back with its reason itself. `apply all` takes every open code or perf defect and cleanup in the store, earlier runs' included, and holds back test removals and cleanup whose latest verdict is PLAUSIBLE, which apply only by explicit id; list the open defects and cleanup before naming it:
 
 ```bash
-tomlctl review export-v1 F1,F4 --slug <slug> --to .claude/flows/<slug>/review-ledger.toml --dry-run
-tomlctl review export-v1 --all --slug <slug> --to .claude/flows/<slug>/review-ledger.toml --dry-run
+tomlctl review list --slug <slug> --status open --kind defect
+tomlctl review list --slug <slug> --status open --kind cleanup
 ```
 
-Report every refusal with its reason (advisory, `needs-plan`, `effort = "large"`, a status other than `open`, the plan family), then run the same command without `--dry-run`. `--all` leaves out `needs-plan` defects, test removals and cleanup whose latest verdict is PLAUSIBLE; those export only by explicit id. Each exported row carries `v2_ref`, and the next run's `review sync-v1` reads its v1 outcome back.
+Glimpse does not read the v2 store. A picked finding shows there once `/apply-v2` has scheduled it, as its fix task in the flow's task graph; a finding left `open`, parked or deferred does not appear in glimpse at all, and `review list` and the report are where to see it.
 
-Export is also the only bridge to glimpse: glimpse reads v1 ledgers, not the v2 store, so a v2 finding shows there only once it is exported. A finding left `open`, parked or deferred in the store does not appear in glimpse at all; `review list` and the report are where to see it.
+The plan family never hands off to apply: its eligible findings go through the carrier's merge offer instead, which takes this step's place. In flow mode, on a v2 flow, `plan-flow.md`'s tiered apply through `review apply` takes it instead, with its re-probes and re-check run; `plan-flow.md` then owns the rest of the close. Every status write the merge makes — resolving the merged findings, dismissing the ones a Discard drops — lands before step 5. `review run finish` refuses while an id is unverified, so finish after those writes, never before.
 
-The plan family never exports: its eligible findings go through the carrier's merge offer instead, which takes this step's place. In flow mode, on a v2 flow, `plan-flow.md`'s tiered apply through `review apply` takes it instead, with its re-probes and re-check run; `plan-flow.md` then owns the rest of the close. Every status write the merge makes — resolving the merged findings, dismissing the ones a Discard drops — lands before step 5. `review run finish` refuses while an id is unverified, so finish after those writes, never before.
-
-**4. Apply hand-off.** Name the apply command and the v1 ids `export-v1` printed: `/review-apply <ids>` for code, `/optimise-apply <ids>` for perf. Do not start it; the user runs it.
+**4. Apply hand-off.** Name `/apply-v2` with the store and the user's picks: `/apply-v2 <slug> F1,F4` for a flow-bound store, `/apply-v2 --scope <scope> F1,F4` for a flow-less one, and `--all` in place of the ids for `apply all`. Name only ids the user picked, never ones you recommended. Do not start it; the user runs it. It schedules the picks as fix tasks in a v2 flow — the reviewed flow when its plan is approved, a new flow for a flow-less store — and a finding is `resolved` only once its fix task passes the milestone's gates and is committed. A store bound to a v1 flow has no path through `/apply-v2`, which refuses it at its first step and names the route that applies it; say so when the bound flow has no `.claude/flows/<slug>/plan.toml`.
 
 **5. Finish the run.** Record the run's agent total first, as the engine's stage 4 defines it, so it includes any verifier dispatched after a convert:
 
@@ -155,8 +153,8 @@ tomlctl review run finish <run> --slug <slug>
 
 It stamps `finished` and computes `counts`. It refuses while any finding is `unverified`, any `same_as` is unresolved, an unselected matched concern or unsliced scope file lacks a waiver, or any cell of the run is unsealed; the refusal names each. Fix the cause — a mop-up dispatch, `review resolve`, a waiver — and finish again. Finish with `--incomplete-file <path>` only when a gap cannot be closed in this run, with the staged reason naming each open id or gap and why.
 
-**6. Refresh the report.** Re-run `review report --out` to the same path so the file carries the dispositions, exports and counts.
+**6. Refresh the report.** Re-run `review report --out` to the same path so the file carries the dispositions and counts.
 
-**7. Close summary.** Print the run id, the report path, the counts line, what was exported (v1 ids and ledger), the backlog ids, any `skipped_stale` rows, any `plan` picks with their backlog id and `/plan-new` hand-off, a substrate fallback if one happened, and `triage pending` when the user's answer was empty.
+**7. Close summary.** Print the run id, the report path, the counts line, what was handed to apply (the `/apply-v2` command named, with its ids or `--all`, and any pick you said the schedule rule will refuse), the backlog ids, any `skipped_stale` rows, any `plan` picks with their backlog id and `/plan-new` hand-off, a substrate fallback if one happened, and `triage pending` when the user's answer was empty.
 
 Then list each unhandled escalation: every entry of a wave index's `escalations` that you did not turn into a follow-up cell — out of budget, or anchored outside the scope and not a `ripple` row — by cell and text, each offered as a backlog capture. Capture only the ones the user accepts, through `backlog-capture`'s check-then-add gate as in step 2; the rest are dropped with the run.

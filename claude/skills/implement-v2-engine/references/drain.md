@@ -211,7 +211,7 @@ After the replan, go back to run-milestone step 3 with `<round>` raised by one w
 
 Stop relaunching when a launch moved no row to `done` and the replan moved no field: the same args would run the same way. Go on from step 8 with what is left; the commit does not run, and each row still `failed` goes under the report's `failed:` section with that as the reason relaunching stopped.
 
-When every row of the milestone is `done`, go to step 7. When a row is `parked`, the milestone cannot gate: drain the rest of its disjoint work through relaunches, then go on from step 8 the same way.
+When every row of the milestone is `done`, go to step 7, by way of the reproduce check in [findings.md](findings.md), section "Reproduce check", when a row of the milestone fixes a finding; that check may mint fix tasks and come back here before the gate runs. When a row is `parked`, the milestone cannot gate: drain the rest of its disjoint work through relaunches, then go on from step 8 the same way.
 
 ## 7. Gate
 

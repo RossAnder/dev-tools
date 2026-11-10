@@ -72,6 +72,23 @@ For a cleanup row that removes a test, name the regression the test alone guards
 {"finding": "F20", "verdict": "confirmed", "by": "verifier", "citation": "tests/parse.rs:310", "rationale": "The test asserts the same CRLF case as parse_crlf_header at tests/parse.rs:310, through the same parse_header path. Removing it leaves that path guarded; no other behaviour is pinned only by it."}
 ```
 
+## reproduce check — verifier
+
+After an apply milestone's tasks finish, and before its gate, a verifier is asked whether each finding a task fixed still reproduces in the working tree as it stands, uncommitted edits included. The method differs from a refutation:
+
+- **Read** the findings with `tomlctl review show <ids> --for implementer`, the one cross-role read a verifier makes, so the applied `fix` is in view.
+- **Judge** each finding on its own against the current code: re-read the anchor and the task's files, trace the trigger through what changed, or run the narrowest command that exercises it. No whole-crate build or full suite.
+- **Decide** `gone` (cite why the failure no longer occurs), `reproduces` (cite where the trigger still reaches it) or `unsettled` (cite the last thing checked and what would decide it). No severity, no rationale, no `review verdict`, and no edit to any file outside the run directory.
+- **Record** the unit's rows in one `tomlctl review reproduce --ndjson <run-dir>/payloads/reproduce-<task>.ndjson --slug <slug>` call (or `--scope`). A row carries exactly `finding`, `flow`, `milestone`, `round`, `task`, `verdict`, `by` and `citation`; any other key refuses the row. It never changes the finding's status.
+
+```json
+{"finding": "F3", "flow": "auth-apply", "milestone": "B", "round": 1, "task": "fix-the-retry-bound", "verdict": "gone", "by": "verifier", "citation": "src/retry.rs:40"}
+{"finding": "F5", "flow": "auth-apply", "milestone": "B", "round": 1, "task": "fix-the-retry-bound", "verdict": "reproduces", "by": "verifier", "citation": "cargo test --test retry zero_retries: panicked at src/retry.rs:52, attempt to divide by zero"}
+{"finding": "F6", "flow": "auth-apply", "milestone": "B", "round": 1, "task": "fix-the-retry-bound", "verdict": "unsettled", "by": "verifier", "citation": "src/retry.rs:71: the backoff cap now reads config, but only the soak bench shows whether the stall is gone"}
+```
+
+The return is `{"task": "fix-the-retry-bound", "reproductions": [{"finding": "F3", "verdict": "gone"}, {"finding": "F5", "verdict": "reproduces"}, {"finding": "F6", "verdict": "unsettled"}]}`.
+
 ## checker — confirmed
 
 Every applicable predicate held, each with a citation from the checker's own Grep or Read. The rationale names the predicates and the search strings.

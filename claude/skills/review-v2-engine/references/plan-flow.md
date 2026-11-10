@@ -233,7 +233,7 @@ Present, in one message, with a recommendation and a one-line reason for each it
 - defect and cleanup rows whose tier is `advisory`: no `new`, a proof that did not hold, or no citation in the target's file. They are never applied. The user may dismiss or defer them; one left `open` shows at the gate under `risks` when it is critical or major;
 - the ids the applies above refused.
 
-Dispositions are the user's, as at the engine's stage 7. The grammar is the engine's, without `export`, which the plan family never does. A `convert` in flow mode writes the replacement with `target`, `expect` and `new` per `plan-records.md`; it is minted `unverified` and verified in this run before section 9. Backlog picks go through the `backlog-capture` skill, as the engine's stage 8 says.
+Dispositions are the user's, as at the engine's stage 7. The grammar is the engine's, without `apply`, which the plan family never does. A `convert` in flow mode writes the replacement with `target`, `expect` and `new` per `plan-records.md`; it is minted `unverified` and verified in this run before section 9. Backlog picks go through the `backlog-capture` skill, as the engine's stage 8 says.
 
 ## 8. Re-probe
 

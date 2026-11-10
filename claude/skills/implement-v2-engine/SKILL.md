@@ -23,7 +23,7 @@ The workers hold the edits, the store holds the progress, and you hold the plan'
 
 1. **Invoke the `tomlctl` skill before the first `tomlctl` call.** Its guidance canon holds throughout: payloads are `.toml` record files staged with the Write tool in `<scratch>`, never heredocs, never piped, and `tomlctl` output is never piped into a text tool or redirected with `2>/dev/null`.
 2. **`<scratch>` is the session's scratchpad directory**, or the system temp directory when the session has none. The premise script and its capture, the pre-launch snapshots, the args file and every record file go there; never under `.claude/`, where a Write is a protected-path write, and never under `docs/flows/<slug>/`, which is committed.
-3. **Workers run only through the saved `implement-v2-milestone` Workflow.** Write the args first, then launch. A launch result carrying `error` stops the engine: report it and never fall back to the Agent tool, which this engine never uses for workers. After a launch with no `error`, record `plan run start` in the same turn and end the turn; resume on the task notification. Never launch with `resumeFromRunId`: workers write their own status, so a replayed return would contradict the store.
+3. **Workers run only through the saved `implement-v2-milestone` Workflow.** Write the args first, then launch. A launch result carrying `error` stops the engine: report it and never fall back to the Agent tool, which this engine never uses for workers. After a launch with no `error`, record `plan run start` in the same turn and end the turn; resume on the task notification. Never launch with `resumeFromRunId`: workers write their own status, so a replayed return would contradict the store. The engine's second Workflow launch, the reproduce check's `review-v2-pipeline` run in `mode: "reproduce"`, recorded as `reproduce:<id>`, follows the same rules: args first, a launch `error` stops the engine with no fallback, `plan run start` in the same turn, and never a resume.
 4. **The `verification` agent is the one Agent dispatch**, one-shot: no `name:`, which would leave its return with no channel, and no `model:`, since model and effort live in the agent's frontmatter.
 5. **Every step writes to disk before the next starts**, so a new session needs no memory of this one. "Where am I" is `tomlctl plan stage --slug <slug>`, the open runs it names, and the task rows' `status` and `commit`, as Re-entry says.
 6. **Writes under `docs/flows/**` prompt in attended `default` mode and are denied under `dontAsk`.** Workers write their run notes there, and you write the note of a row you park. The allow rule that pre-approves them is in the `plan-v2-engine` skill's [open-and-challenge.md](../plan-v2-engine/references/open-and-challenge.md), section "Writing under `docs/flows/`". Name it when a prompt or a denial interrupts a run or a drain; add it to no settings file yourself.
@@ -52,6 +52,7 @@ Anything else is not an argument: say so and stop, rather than guess what it was
 | Premises | — | The dispatch set is empty | [run-milestone.md](references/run-milestone.md), section 3; an apply row's anchor premises by [findings.md](references/findings.md), section "Anchor premises on a started row" |
 | Launch | `implement:<id>` (start) | No member of the dispatch set is `ready` or `held` | [run-milestone.md](references/run-milestone.md), section 4 |
 | Drain and replan | `implement:<id>` (finish) | No launch this round | [drain.md](references/drain.md), steps 1 to 6 |
+| Reproduce check | `reproduce:<id>` (start and finish) | A row of the milestone is not `done`; no row of the milestone fixes a finding | [findings.md](references/findings.md), section "Reproduce check"; entered from [drain.md](references/drain.md), step 6 |
 | Gate | — | A row of the milestone is not `done`; an empty `gates` list with no accept check left to the gate runs nothing | [drain.md](references/drain.md), step 7 |
 | Tangential discoveries | — | No note or block carries one | [drain.md](references/drain.md), step 8 |
 | Handovers | — | No worker proposed one | [drain.md](references/drain.md), step 9 |
@@ -59,13 +60,13 @@ Anything else is not an argument: say so and stop, rather than guess what it was
 | Reconcile | — | The milestone holds no apply row | [findings.md](references/findings.md), section "Reconcile"; between the stamp and the flow-store commit |
 | `needs_human` report | — | Never | [drain.md](references/drain.md), step 11 |
 
-Between the drain and the gate the engine loops: a replan that leaves a dispatchable row goes back to the premises with the launch count raised by one, and the gate's fix rounds go back the same way. After a commit, the engine picks the next milestone while nothing in the flow is parked and `--milestone` was not given; otherwise it ends with the report.
+Between the drain and the gate the engine loops: a replan that leaves a dispatchable row goes back to the premises with the launch count raised by one, and the reproduce check's and the gate's fix rounds go back the same way. After a commit, the engine picks the next milestone while nothing in the flow is parked and `--milestone` was not given; otherwise it ends with the report.
 
 The references hold the procedure:
 
 - [references/run-milestone.md](references/run-milestone.md): the pre-flight with its clean-tree check and stale-row reset, picking the milestone, the premise script and its verdicts, building the dispatch set, the args file, the launch and what the index holds.
 - [references/drain.md](references/drain.md): closing the run, reading the index and the notes, drift, rows left in progress, store changes during the run, the replan with its fix tasks, the gate and its two fix rounds, tangential discoveries, handovers, the two commits, stamping, the `needs_human` report, and the parked re-ask.
-- [references/findings.md](references/findings.md): the rules for apply rows, the rows a `[[finding_links]]` entry names — what an apply row is, the findings its worker sees, anchor premises on a started row, the linked review stores exempt from the clean-tree and lane checks, and reconciling the findings after the milestone commit. A milestone with no apply row reads none of it.
+- [references/findings.md](references/findings.md): the rules for apply rows, the rows a `[[finding_links]]` entry names — what an apply row is, the findings its worker sees, anchor premises on a started row, the linked review stores exempt from the clean-tree and lane checks, the reproduce check before the gate with its two fix rounds, and reconciling the findings after the milestone commit. A milestone with no apply row reads none of it.
 
 ## Out of scope
 
@@ -73,7 +74,7 @@ This engine stops, and says so in the `needs_human` report, rather than reach fo
 
 - **A `tool` or `clerk` executor.** Such a row has no worker yet; the launch lists it under `no worker` with every member that needs it.
 - **A deferred milestone.** Its tasks carry no checks or premises; the engine stops and says it must be elaborated first.
-- **Vetting and harvest.** There is no vet pass over a worker's return; the drain's drift and store checks are the only cross-check. Apply rows are in scope, by [findings.md](references/findings.md).
+- **Vetting and harvest.** The reproduce check, which asks of each finding an apply row fixed whether it still reproduces, is the one vet pass over a worker's return; otherwise the drain's drift and store checks are the only cross-check. Apply rows are in scope, by [findings.md](references/findings.md).
 - **Worktree isolation.** Workers edit the main working tree, in disjoint `files` per wave.
 - **An Agent-tool fallback** when the Workflow is unavailable or refuses a launch.
 - **Closing the flow.** When every milestone is committed, the report says the flow's status is still to be moved; the engine does not move it.
@@ -84,7 +85,7 @@ It never touches `/implement`, the v1 implementer agents or a v1 plan.
 
 Every invocation is a re-entry: the engine reads where the flow stands from the store, never from memory. Settle what is below in this order, after the pre-flight's stage and store checks and before the premises run.
 
-**The open-run rule.** `plan stage` lists each run still open in `open_runs`; an `implement:<id>` entry is a launch whose drain never ran `plan run finish`. Read the open rows with their `session` and `run_id`:
+**The open-run rule.** `plan stage` lists each run still open in `open_runs`; an `implement:<id>` entry is a launch whose drain never ran `plan run finish`, and a `reproduce:<id>` entry is a reproduce check whose store was never read. Both are settled the same way. Read the open rows with their `session` and `run_id`:
 
 ```bash
 tomlctl plan view --slug <slug> --for digest --select stage_inputs.runs
@@ -100,7 +101,9 @@ Settle each before anything else, and never resume one:
 tomlctl plan run abandon --slug <slug> --step implement:<id> --reason '<why>'
 ```
 
-An abandoned run has no index, so its rows stand in for one. Its workers wrote `done`, `failed` or `parked` on their own rows, and a row still `in-progress` is a `no-return`. Run the drain's drift check and its audit-trail read of store changes from [drain.md](references/drain.md), steps 3 and 5, before the reset below; the pre-launch snapshots belonged to the other session's scratch, so their diffs are not available and the report says so.
+An open `reproduce:<id>` run closes the same way, with `--step reproduce:<id>`. Its verifiers changed no file and no task row, so there is no drift or audit read: relaunch its round, by [findings.md](references/findings.md), section "Reproduce check", once the milestone's rows are all `done` again. The round number is recomputed from the store, and the fix-round cap counts `reproduce <id> round ` reasons, so the relaunch spends no fix round.
+
+An abandoned `implement:<id>` run has no index, so its rows stand in for one. Its workers wrote `done`, `failed` or `parked` on their own rows, and a row still `in-progress` is a `no-return`. Run the drain's drift check and its audit-trail read of store changes from [drain.md](references/drain.md), steps 3 and 5, before the reset below; the pre-launch snapshots belonged to the other session's scratch, so their diffs are not available and the report says so.
 
 **Stale `in-progress` rows.** With every run settled, the pre-flight resets each row still `in-progress` to `pending`, its edits left in place for the next worker's own-diff step. With a run still open this reset waits, because a live run's workers own those rows.
 

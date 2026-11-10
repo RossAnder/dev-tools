@@ -147,9 +147,9 @@ The digest's `duplicate_candidates` are pairs from different cells whose places 
   ```
 
   Each `--same-as` sets the duplicate's `same_as` and resolves the pair in the same call by the target's status table, whatever wave the duplicate is in. A pair listed under `pending` is still awaiting the duplicate's verdicts; it resolves at the next `review resolve` once they land. One refused pair refuses the whole call and writes nothing: read the reasons, drop or fix that pair, and rerun.
-- **Distinct** — the same place, but a different failure or a different fix. Leave the pair alone; both rows export separately.
+- **Distinct** — the same place, but a different failure or a different fix. Leave the pair alone; both rows are applied separately.
 
-A linked pair leaves the digest once the two rows' `same_as` / `merged_into` chains meet. Settle duplicates before the export: `export-v1` folds two findings into one v1 row only when one is merged into the other, so an unlinked true duplicate exports twice.
+A linked pair leaves the digest once the two rows' `same_as` / `merged_into` chains meet. Settle duplicates before triage: a duplicate linked here becomes `merged` and leaves `open`, so `/apply-v2` schedules only its target, while an unlinked true duplicate is scheduled as a second fix of the same defect.
 
 ### Rule-out hits
 
