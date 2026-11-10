@@ -496,6 +496,56 @@ fn run_start_refuses_option_shaped_base() {
 }
 
 #[test]
+fn run_start_records_head_and_measures_to_it() {
+    let Some(repo) = repo() else { return };
+    let second = git(&repo.root, &["rev-parse", "HEAD"]);
+    fs::write(
+        repo.root.join("src/a.rs"),
+        "one\nTWO\nthree\nfour\nfive\nsix\n",
+    )
+    .unwrap();
+    git(&repo.root, &["add", "src/a.rs"]);
+    git(&repo.root, &["commit", "-q", "-m", "third"]);
+    let scope = ["--set-json", r#"scope=["src/**"]"#];
+
+    let bounded = repo.start(
+        &repo.first,
+        &[&scope[..], &["--head", "HEAD~1"][..]].concat(),
+    );
+    assert_eq!(bounded["head"], second.as_str(), "printed as the sha");
+    assert_eq!(
+        bounded["changed_lines"], 3,
+        "the commit after head is not measured"
+    );
+    assert_eq!(repo.run(0)["head"].as_str(), Some(second.as_str()));
+
+    let open = repo.start(&repo.first, &scope);
+    assert!(open["head"].is_null(), "no --head prints null: {open}");
+    assert_eq!(
+        open["changed_lines"], 5,
+        "without head the run measures to HEAD"
+    );
+    assert!(
+        repo.run(1).get("head").is_none(),
+        "no --head stores no head"
+    );
+}
+
+#[test]
+fn run_start_refuses_head_not_descended_from_base() {
+    let Some(repo) = repo() else { return };
+    let stderr = repo.start_fails("HEAD", &["--head", &repo.first]);
+    assert!(stderr.contains("does not descend"), "{stderr}");
+    assert!(!repo.store().exists(), "no run is minted");
+
+    let stderr = repo.start_fails(&repo.first, &["--head=--all"]);
+    assert!(
+        stderr.contains("--head") && stderr.contains("does not name a commit"),
+        "{stderr}"
+    );
+}
+
+#[test]
 fn run_ids_never_reuse_a_removed_id() {
     let Some(repo) = repo() else { return };
     repo.start(&repo.first, &[]);
@@ -695,6 +745,56 @@ fn run_list_orders_by_id_and_filters_open_and_finished() {
         ])
         .assert()
         .failure();
+}
+
+#[test]
+fn run_list_reports_waves_from_cells() {
+    let Some(repo) = repo() else { return };
+    repo.start(&repo.first, &[]);
+    repo.start(&repo.first, &[]);
+    let mut store = repo.read_store();
+    let cell = |id: &str, run: &str, wave: i64| -> toml::Value {
+        toml::from_str(&format!(
+            "id = \"{id}\"\nrun = \"{run}\"\nwave = {wave}\nslice = [\"src/a.rs\"]\nstatus = \"assigned\"\n"
+        ))
+        .unwrap()
+    };
+    let table = store.as_table_mut().unwrap();
+    table.insert(
+        "cells".into(),
+        toml::Value::Array(vec![
+            cell("C1", "U1", 1),
+            cell("C2", "U1", 3),
+            cell("C3", "U2", 2),
+        ]),
+    );
+    table["runs"][0]
+        .as_table_mut()
+        .unwrap()
+        .insert("waves".into(), toml::Value::Integer(9));
+    fs::write(repo.store(), toml::to_string(&store).unwrap()).unwrap();
+
+    let out = repo
+        .tomlctl()
+        .args(["review", "run", "list", "--scope", SCOPE])
+        .assert()
+        .success();
+    let report: JsonValue = serde_json::from_slice(&out.get_output().stdout).unwrap();
+    let waves: Vec<&JsonValue> = report["runs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| &r["waves"])
+        .collect();
+    assert_eq!(
+        waves,
+        [&json!(3), &json!(2)],
+        "the highest wave among each run's cells"
+    );
+    assert!(
+        report["runs"][0]["head"].is_null(),
+        "every row carries head"
+    );
 }
 
 #[test]

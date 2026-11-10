@@ -144,6 +144,17 @@ impl Repo {
         serde_json::from_slice(&out.get_output().stdout).expect("resolve prints JSON")
     }
 
+    fn resolve_refused(&self, extra: &[&str]) -> String {
+        let out = cli(&self.root)
+            .current_dir(&self.root)
+            .args(["--error-format", "json", "review", "resolve"])
+            .args(["--scope", SCOPE, "--run", "U2"])
+            .args(extra)
+            .assert()
+            .failure();
+        String::from_utf8_lossy(&out.get_output().stderr).into_owned()
+    }
+
     fn raw(&self) -> String {
         fs::read_to_string(self.root.join(".claude/review-v2/t.toml")).unwrap()
     }
@@ -482,6 +493,80 @@ fn wave_limits_resolution_to_its_cells() {
     repo.resolve(&["--wave", "2"]);
     assert_eq!(repo.field("F2", "status").as_deref(), Some("unverified"));
     repo.assert_merged("F3", "F1", "repeat");
+}
+
+/// Two current-run rows from different cells, each verified on its own, so
+/// neither is still `unverified` when the pair is linked.
+fn verified_pair(dup_verdict: &str) -> Repo {
+    let repo = Repo::new(&[
+        defect("F1", "U2", "C2", "unverified", "", ""),
+        defect("F2", "U2", "C3", "unverified", "", ""),
+    ]);
+    repo.verdict("F1", "confirmed");
+    repo.verdict("F2", dup_verdict);
+    repo
+}
+
+#[test]
+fn resolve_same_as_merges_a_verified_pair() {
+    let repo = verified_pair("confirmed");
+    assert_eq!(repo.field("F2", "status").as_deref(), Some("open"));
+
+    let out = repo.resolve(&["--same-as", "F2=F1"]);
+    assert_eq!(
+        out["linked"],
+        serde_json::json!([{"finding": "F2", "same_as": "F1"}]),
+        "{out}"
+    );
+    assert_eq!(out["resolved"][0]["outcome"], "repeat", "{out}");
+    repo.assert_merged("F2", "F1", "repeat");
+    assert_eq!(repo.field("F2", "same_as").as_deref(), Some("F1"));
+    assert_eq!(repo.field("F1", "status").as_deref(), Some("open"));
+    assert_eq!(repo.strings("F1", "seen_in"), s(&["U2"]));
+
+    let after = repo.raw();
+    let again = repo.resolve(&["--same-as", "F2=F1"]);
+    assert_eq!(again["unchanged"], true, "{again}");
+    assert_eq!(repo.raw(), after, "relinking a merged pair writes nothing");
+}
+
+#[test]
+fn resolve_same_as_marks_differing_verdicts_contested() {
+    let repo = verified_pair("refuted");
+    assert_eq!(repo.field("F2", "status").as_deref(), Some("refuted"));
+
+    let out = repo.resolve(&["--same-as", "F2=F1"]);
+    assert_eq!(out["resolved"][0]["outcome"], "contested", "{out}");
+    repo.assert_merged("F2", "F1", "contested");
+    assert_eq!(repo.field("F1", "status").as_deref(), Some("open"));
+    assert_eq!(
+        repo.verdicts_on("F1"),
+        vec![
+            ("verifier".to_string(), "confirmed".to_string()),
+            ("verifier".to_string(), "refuted".to_string()),
+        ],
+        "the target keeps its own verdict and gains the refuting one"
+    );
+}
+
+#[test]
+fn resolve_same_as_refuses_a_cycle() {
+    let repo = Repo::new(&[
+        defect("F1", "U2", "C2", "unverified", "F2", ""),
+        defect("F2", "U2", "C3", "unverified", "", ""),
+        defect("F3", "U2", "C3", "unverified", "", ""),
+    ]);
+    repo.verdict("F2", "confirmed");
+    repo.verdict("F3", "confirmed");
+    let before = repo.raw();
+
+    let stored = repo.resolve_refused(&["--same-as", "F2=F1"]);
+    assert!(stored.contains("cycle"), "{stored}");
+    let in_call = repo.resolve_refused(&["--same-as", "F3=F2", "--same-as", "F2=F3"]);
+    assert!(in_call.contains("cycle"), "{in_call}");
+    let itself = repo.resolve_refused(&["--same-as", "F3=F3"]);
+    assert!(itself.contains("itself"), "{itself}");
+    assert_eq!(repo.raw(), before, "a refused link writes nothing");
 }
 
 #[test]

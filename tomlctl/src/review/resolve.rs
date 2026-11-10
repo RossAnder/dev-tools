@@ -1,7 +1,7 @@
 //! `review resolve` — identity outcomes for findings that name a `same_as`.
 //!
 //! A row resolves once its own verdicts are complete and its target is
-//! settled. Passes repeat until none resolves, so a same-run target always
+//! settled and not itself awaiting a `same_as`. Passes repeat until none resolves, so a same-run target always
 //! resolves before the rows naming it, whatever order the verdicts arrived
 //! in. A `merged` target is followed through `merged_into` to the row it
 //! joined, and a `converted` advisory through `converted_to` to its
@@ -11,6 +11,8 @@
 //!   resolved:        confirmed → regression; plausible → contested; refuted → repeat
 //!   dismissed, deferred, parked, backlogged → suppressed
 //! A plausible verdict never overturns a settled target; it contests it.
+//! `--same-as` links two findings of the run first, verified or not, and the
+//! pair resolves by the same table.
 
 use anyhow::Result;
 use serde_json::json;
@@ -97,28 +99,211 @@ pub(crate) fn run(target: &Target, args: ReviewResolveArgs) -> Result<()> {
         strict_read: true,
     };
 
+    let links = parse_links(&args.same_as)?;
+
     // A rerun over an already-resolved store finds nothing waiting and
     // writes nothing, so `last_updated` is not restamped.
     let current = store::load(&target.path, &read)?;
     has_run(&current, &args.run)?;
     let mut trial = current.clone();
     let slug = super::add::store_slug(target);
-    let preview = resolve(&mut trial, &args.run, args.wave, slug.as_deref());
+    let linked = link(&mut trial, &args.run, &links)?;
+    let preview = resolve(&mut trial, &args.run, args.wave, slug.as_deref(), &linked);
     let unchanged = trial == current;
     let report = if unchanged {
         preview
     } else {
         store::mutate(&target.path, &args.integrity, |store| {
             has_run(store, &args.run)?;
-            Ok(resolve(store, &args.run, args.wave, slug.as_deref()))
+            let linked = link(store, &args.run, &links)?;
+            Ok(resolve(
+                store,
+                &args.run,
+                args.wave,
+                slug.as_deref(),
+                &linked,
+            ))
         })?
     };
+    let linked: Vec<serde_json::Value> = linked
+        .iter()
+        .map(|l| json!({"finding": l.dup, "same_as": l.target}))
+        .collect();
     print_json_compact(&json!({
         "ok": true,
+        "linked": linked,
         "resolved": report.resolved,
         "pending": report.pending,
         "unchanged": unchanged,
     }))
+}
+
+/// One `--same-as` pair: the duplicate and the finding it repeats.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Link {
+    dup: String,
+    target: String,
+}
+
+fn parse_links(raw: &[String]) -> Result<Vec<Link>> {
+    raw.iter()
+        .map(|pair| match pair.split_once('=') {
+            Some((dup, target)) if !dup.trim().is_empty() && !target.trim().is_empty() => {
+                Ok(Link {
+                    dup: dup.trim().to_string(),
+                    target: target.trim().to_string(),
+                })
+            }
+            _ => Err(invalid(format!(
+                "{VERB}: --same-as {pair:?} is not DUP=TARGET"
+            ))),
+        })
+        .collect()
+}
+
+/// Sets each duplicate's `same_as` to its target and returns the accepted
+/// pairs. Every pair is checked before any is set, so one refused pair
+/// leaves the store untouched.
+fn link(store: &mut Store, run: &str, links: &[Link]) -> Result<Vec<Link>> {
+    let mut accepted: Vec<Link> = Vec::new();
+    let mut reasons = Vec::new();
+    for l in links {
+        if accepted.contains(l) {
+            continue;
+        }
+        match check_link(store, run, l, &accepted) {
+            Ok(()) => accepted.push(l.clone()),
+            Err(reason) => reasons.push(reason),
+        }
+    }
+    if !reasons.is_empty() {
+        return Err(invalid(format!(
+            "{VERB}: --same-as refused: {}",
+            reasons.join("; ")
+        )));
+    }
+    for l in &accepted {
+        if let Some(dup) = store.findings.iter_mut().find(|f| f.id == l.dup)
+            && dup.status() != FindingStatus::Merged
+        {
+            dup.same_as.clone_from(&l.target);
+        }
+    }
+    Ok(accepted)
+}
+
+/// Why the pair cannot be linked, given the pairs already accepted in this
+/// call. A duplicate already merged into its target, or already naming it
+/// in `same_as`, is accepted and changes nothing.
+fn check_link(
+    store: &Store,
+    run: &str,
+    l: &Link,
+    accepted: &[Link],
+) -> std::result::Result<(), String> {
+    let (dup_id, target_id) = (l.dup.as_str(), l.target.as_str());
+    if dup_id == target_id {
+        return Err(format!("{dup_id} cannot be linked to itself"));
+    }
+    if let Some(other) = accepted.iter().find(|a| a.dup == dup_id) {
+        return Err(format!(
+            "{dup_id} is linked to both {} and {target_id}",
+            other.target
+        ));
+    }
+    let find = |id: &str| {
+        store
+            .findings
+            .iter()
+            .find(|f| f.id == id)
+            .ok_or_else(|| format!("no finding {id} in this store"))
+    };
+    let dup = find(dup_id)?;
+    let target = find(target_id)?;
+    for f in [dup, target] {
+        if f.run != run {
+            return Err(format!("{} is from run {}, not {run}", f.id, f.run));
+        }
+        if f.status() == FindingStatus::Superseded {
+            return Err(format!("{} is superseded", f.id));
+        }
+    }
+    if dup.family != target.family {
+        return Err(format!(
+            "{dup_id} is {} and {target_id} is {}; a pair shares its family",
+            dup.family.as_str(),
+            target.family.as_str()
+        ));
+    }
+    if dup.status() == FindingStatus::Merged {
+        let into = dup.rest.get("merged_into").and_then(TomlValue::as_str);
+        return if into == Some(target_id) {
+            Ok(())
+        } else {
+            Err(format!(
+                "{dup_id} is already merged into {}",
+                into.unwrap_or("an unnamed row")
+            ))
+        };
+    }
+    if !dup.same_as.is_empty() && dup.same_as != target_id {
+        return Err(format!(
+            "{dup_id} already names {} in `same_as`; strike it with `review verdict --strike-same-as` first",
+            dup.same_as
+        ));
+    }
+    if dup.same_as.is_empty() && !dup.status().decided_by_verdict() {
+        return Err(format!(
+            "{dup_id} is {}; only an unverified, open or refuted row can be linked",
+            dup.status().as_str()
+        ));
+    }
+    if leads_to(store, target_id, dup_id, accepted) {
+        return Err(format!(
+            "linking {dup_id} to {target_id} makes a cycle: {target_id} already leads to {dup_id}"
+        ));
+    }
+    Ok(())
+}
+
+/// Whether the identity chain from `from` reaches `to`, following the pairs
+/// accepted in this call before each row's stored `same_as`, `merged_into`
+/// or `converted_to`.
+fn leads_to(store: &Store, from: &str, to: &str, accepted: &[Link]) -> bool {
+    let mut visited: Vec<&str> = Vec::new();
+    let mut id = from;
+    loop {
+        if id == to {
+            return true;
+        }
+        if visited.contains(&id) {
+            return false;
+        }
+        visited.push(id);
+        let next = accepted
+            .iter()
+            .find(|a| a.dup == id)
+            .map(|a| a.target.as_str())
+            .or_else(|| {
+                let f = store.findings.iter().find(|f| f.id == id)?;
+                if !f.same_as.is_empty() {
+                    return Some(f.same_as.as_str());
+                }
+                ["merged_into", "converted_to"]
+                    .iter()
+                    .find_map(|k| f.rest.get(*k).and_then(TomlValue::as_str))
+            });
+        match next {
+            Some(n) => id = n,
+            None => return false,
+        }
+    }
+}
+
+/// A row whose `same_as` has not yet been resolved: its verdict decides its
+/// status and no outcome has been recorded.
+fn awaits_resolution(f: &Finding) -> bool {
+    !f.same_as.is_empty() && f.outcome.is_empty() && f.status().decided_by_verdict()
 }
 
 fn has_run(store: &Store, run: &str) -> Result<()> {
@@ -129,25 +314,29 @@ fn has_run(store: &Store, run: &str) -> Result<()> {
     }
 }
 
-fn resolve(store: &mut Store, run: &str, wave: Option<u32>, slug: Option<&str>) -> Report {
+/// Resolves the run's rows awaiting their `same_as`. A pair linked in this
+/// call is resolved whatever wave its duplicate came from.
+fn resolve(
+    store: &mut Store,
+    run: &str,
+    wave: Option<u32>,
+    slug: Option<&str>,
+    linked: &[Link],
+) -> Report {
     let in_wave = |f: &Finding| {
-        wave.is_none_or(|n| {
-            store
-                .cells
-                .iter()
-                .any(|c| c.id == f.cell && c.wave == Some(n))
-        })
+        linked.iter().any(|l| l.dup == f.id)
+            || wave.is_none_or(|n| {
+                store
+                    .cells
+                    .iter()
+                    .any(|c| c.id == f.cell && c.wave == Some(n))
+            })
     };
     let mut waiting: Vec<usize> = store
         .findings
         .iter()
         .enumerate()
-        .filter(|(_, f)| {
-            f.run == run
-                && f.status() == FindingStatus::Unverified
-                && !f.same_as.is_empty()
-                && in_wave(f)
-        })
+        .filter(|(_, f)| f.run == run && awaits_resolution(f) && in_wave(f))
         .map(|(i, _)| i)
         .collect();
 
@@ -245,6 +434,9 @@ fn settled_target(store: &Store, row: &Finding) -> std::result::Result<usize, St
         }
         match target.status() {
             FindingStatus::Unverified => return Err(format!("target {id} is unverified")),
+            _ if awaits_resolution(target) => {
+                return Err(format!("target {id} awaits its own `same_as`"));
+            }
             FindingStatus::Superseded => {
                 return Err(format!(
                     "target {id} is superseded; strike the identity with `review verdict --strike-same-as`"

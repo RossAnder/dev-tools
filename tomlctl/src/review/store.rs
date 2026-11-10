@@ -13,7 +13,7 @@
 //! the row rides in `rest`, so the kind-specific prose of a finding survives
 //! a write untouched. Rows are written in field-catalogue order with unknown
 //! keys last, and an empty string, list or absent number is omitted, as
-//! `items add` omits one. Nested tables (`signals`, `waivers`, `bound`) are
+//! `items add` omits one. Nested tables (`signals`, `waivers`, `bound`, `ruled_out`) are
 //! fully typed and drop keys they do not know.
 
 use std::collections::HashMap;
@@ -100,6 +100,8 @@ pub(crate) struct Run {
     pub(crate) started: String,
     pub(crate) finished: String,
     pub(crate) base: String,
+    /// The sha the run measures to; `None` measures to `HEAD`.
+    pub(crate) head: Option<String>,
     pub(crate) scope: Vec<String>,
     pub(crate) changed_lines: Option<i64>,
     pub(crate) substrate: String,
@@ -145,7 +147,18 @@ pub(crate) struct Cell {
     pub(crate) status: String,
     pub(crate) sealed: bool,
     pub(crate) note: String,
+    pub(crate) ruled_out: Vec<RuledOut>,
     pub(crate) rest: Table,
+}
+
+/// A site the cell judged deliberate, so another cell's finding on it is
+/// worth a second look. `file` and `reason` are always set.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RuledOut {
+    pub(crate) file: String,
+    pub(crate) symbol: String,
+    pub(crate) line: Option<u32>,
+    pub(crate) reason: String,
 }
 
 /// One concern's catalogue entry as bound when the cell was planned.
@@ -508,6 +521,7 @@ const RUN_CORE: &[&str] = &[
     "started",
     "finished",
     "base",
+    "head",
     "scope",
     "changed_lines",
     "substrate",
@@ -526,6 +540,7 @@ fn run_from_toml(t: &Table, at: &str) -> Result<Run> {
         started: text(t, "started"),
         finished: text(t, "finished"),
         base: text(t, "base"),
+        head: Some(text(t, "head")).filter(|head| !head.is_empty()),
         scope: texts(t, "scope"),
         changed_lines: t.get("changed_lines").and_then(TomlValue::as_integer),
         substrate: text(t, "substrate"),
@@ -546,6 +561,9 @@ fn run_to_toml(run: &Run) -> TomlValue {
     put_text(&mut t, "started", &run.started);
     put_text(&mut t, "finished", &run.finished);
     put_text(&mut t, "base", &run.base);
+    if let Some(head) = &run.head {
+        put_text(&mut t, "head", head);
+    }
     put_texts(&mut t, "scope", &run.scope);
     if let Some(n) = run.changed_lines {
         t.insert("changed_lines".to_string(), TomlValue::Integer(n));
@@ -597,8 +615,21 @@ fn waiver_to_toml(w: &Waiver) -> Table {
 }
 
 const CELL_CORE: &[&str] = &[
-    "id", "run", "wave", "pass", "slice", "concerns", "question", "agent", "reason", "bound",
-    "facets", "status", "sealed", "note",
+    "id",
+    "run",
+    "wave",
+    "pass",
+    "slice",
+    "concerns",
+    "question",
+    "agent",
+    "reason",
+    "bound",
+    "facets",
+    "status",
+    "sealed",
+    "note",
+    "ruled_out",
 ];
 
 fn cell_from_toml(t: &Table, at: &str) -> Result<Cell> {
@@ -620,6 +651,7 @@ fn cell_from_toml(t: &Table, at: &str) -> Result<Cell> {
             .and_then(TomlValue::as_bool)
             .unwrap_or(false),
         note: text(t, "note"),
+        ruled_out: nested(t, "ruled_out", at, ruled_out_from_toml)?,
         rest: rest(Record::Cell, t, CELL_CORE),
     })
 }
@@ -642,7 +674,30 @@ fn cell_to_toml(cell: &Cell) -> TomlValue {
         t.insert("sealed".to_string(), TomlValue::Boolean(true));
     }
     put_text(&mut t, "note", &cell.note);
+    put_tables(
+        &mut t,
+        "ruled_out",
+        cell.ruled_out.iter().map(ruled_out_to_toml),
+    );
     ordered(Record::Cell, t, &cell.rest)
+}
+
+fn ruled_out_from_toml(t: &Table, at: &str) -> Result<RuledOut> {
+    Ok(RuledOut {
+        file: text(t, "file"),
+        symbol: text(t, "symbol"),
+        line: count(t, "line", at)?,
+        reason: text(t, "reason"),
+    })
+}
+
+fn ruled_out_to_toml(r: &RuledOut) -> Table {
+    let mut t = Table::new();
+    put_text(&mut t, "file", &r.file);
+    put_text(&mut t, "symbol", &r.symbol);
+    put_count(&mut t, "line", r.line);
+    put_text(&mut t, "reason", &r.reason);
+    t
 }
 
 fn binding_from_toml(t: &Table, at: &str) -> Result<Binding> {

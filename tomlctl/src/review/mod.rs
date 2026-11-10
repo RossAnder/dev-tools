@@ -11,6 +11,7 @@ mod add;
 mod apply;
 mod catalogue_cmd;
 mod cells;
+mod cover;
 mod digest;
 mod export;
 mod query;

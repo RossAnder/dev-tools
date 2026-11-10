@@ -472,6 +472,7 @@ pub(crate) const FIELDS: &[FieldSpec] = &[
     field(Run, "started", Ty::Str, RECORD_STATE).computed(),
     field(Run, "finished", Ty::Str, RECORD_STATE).computed(),
     field(Run, "base", Ty::Str, RECORD_STATE),
+    field(Run, "head", Ty::Str, RECORD_STATE),
     field(Run, "scope", Ty::StrList, RECORD_STATE),
     field(Run, "changed_lines", Ty::Int, RECORD_STATE).computed(),
     field(Run, "substrate", Ty::Str, RECORD_STATE).values(SUBSTRATES),
@@ -509,6 +510,7 @@ pub(crate) const FIELDS: &[FieldSpec] = &[
     field(Cell, "note", Ty::Str, RECORD_STATE)
         .cap(600)
         .computed(),
+    field(Cell, "ruled_out", Ty::TableList, RECORD_STATE).computed(),
     // findings: identity and bookkeeping
     field(Finding, "id", Ty::Str, IDENT).computed(),
     field(Finding, "run", Ty::Str, INTERNAL).computed(),
@@ -963,6 +965,63 @@ pub(super) fn path_problem(path: &str, noun: &str) -> Option<String> {
     } else {
         None
     }
+}
+
+/// Keys a cell's `ruled_out` entry may carry.
+const RULED_OUT_KEYS: &[&str] = &["file", "symbol", "line", "reason"];
+/// The longest `reason` a `ruled_out` entry may carry, in characters.
+const RULED_OUT_REASON_CAP: usize = 200;
+
+/// Why `entry` cannot be stored as one of a cell's `ruled_out` sites; empty
+/// when it can. `Ty::TableList` admits any table, so the entry's shape is
+/// checked here.
+pub(crate) fn ruled_out_refusals(entry: &Map<String, JsonValue>) -> Vec<String> {
+    let mut reasons: Vec<String> = entry
+        .keys()
+        .filter(|key| !RULED_OUT_KEYS.contains(&key.as_str()))
+        .map(|key| {
+            format!(
+                "`{key}` is not a rule-out key; expected {}",
+                RULED_OUT_KEYS.join(", ")
+            )
+        })
+        .collect();
+    match entry.get("file") {
+        Some(JsonValue::String(file)) => {
+            if let Some(problem) = path_problem(file, "rule-out files") {
+                reasons.push(format!("`file` {file:?} {problem}"));
+            }
+        }
+        None | Some(JsonValue::Null) => reasons.push("`file` is required".to_string()),
+        Some(_) => reasons.push("`file` must be a string".to_string()),
+    }
+    match entry.get("symbol") {
+        None | Some(JsonValue::Null | JsonValue::String(_)) => {}
+        Some(_) => reasons.push("`symbol` must be a string".to_string()),
+    }
+    match entry.get("line") {
+        None | Some(JsonValue::Null) => {}
+        Some(value)
+            if value
+                .as_i64()
+                .is_some_and(|n| n >= 1 && n <= i64::from(u32::MAX)) => {}
+        Some(_) => reasons.push("`line` must be a positive integer".to_string()),
+    }
+    match entry.get("reason") {
+        Some(JsonValue::String(reason)) if !reason.trim().is_empty() => {
+            let len = reason.chars().count();
+            if len > RULED_OUT_REASON_CAP {
+                reasons.push(format!(
+                    "`reason` is {len} characters; the cap is {RULED_OUT_REASON_CAP}"
+                ));
+            }
+        }
+        Some(JsonValue::String(_)) | None | Some(JsonValue::Null) => {
+            reasons.push("`reason` is required".to_string());
+        }
+        Some(_) => reasons.push("`reason` must be a string".to_string()),
+    }
+    reasons
 }
 
 /// What [`project`] needs beyond the row: the finding's verdicts, oldest
@@ -1688,5 +1747,79 @@ mod tests {
             ));
             assert_eq!(refused, ["citation"], "{bad}");
         }
+    }
+
+    #[test]
+    fn run_head_round_trips() {
+        use super::super::store::{from_toml, to_toml};
+        let store_text = |head: &str, ruled_out: &str| {
+            format!(
+                "schema_version = 1\n\n[[runs]]\nid = \"U1\"\nfamily = \"code\"\ndepth = \"standard\"\nbase = \"e23b918\"\n{head}scope = [\"src/a.rs\"]\n\n[[cells]]\nid = \"C1\"\nrun = \"U1\"\nslice = [\"src/a.rs\"]\nstatus = \"covered\"\nnote = \"swept\"\n{ruled_out}"
+            )
+        };
+        let with_both = store_text(
+            "head = \"4f0c2aa\"\n",
+            "ruled_out = [{ file = \"src/a.rs\", symbol = \"a::run\", line = 12, reason = \"the pad is deliberate\" }]\n",
+        );
+        for (fixture, head) in [(with_both, Some("4f0c2aa")), (store_text("", ""), None)] {
+            let doc: toml::Value = toml::from_str(&fixture).expect("the fixture parses");
+            let store = from_toml(&doc).expect("the fixture reads");
+            assert_eq!(store.runs[0].head.as_deref(), Some(head).flatten());
+            assert!(
+                store.runs[0].rest.get("head").is_none(),
+                "`head` is typed, not carried in `rest`"
+            );
+            assert_eq!(store.cells[0].ruled_out.len(), usize::from(head.is_some()));
+            assert_eq!(to_toml(&store), doc, "the store writes back as read");
+            assert_eq!(
+                toml::to_string(&to_toml(&store)).expect("serialises"),
+                toml::to_string(&doc).expect("serialises"),
+                "the written text matches the read text"
+            );
+        }
+    }
+
+    #[test]
+    fn ruled_out_entry_refuses_unknown_key() {
+        let entry = |value: JsonValue| row(value);
+        assert_eq!(
+            ruled_out_refusals(&entry(json!({
+                "file": "src/a.rs",
+                "symbol": "a::run",
+                "line": 12,
+                "reason": "the pad is deliberate",
+            }))),
+            Vec::<String>::new()
+        );
+        let refused = ruled_out_refusals(&entry(json!({
+            "file": "src/a.rs",
+            "reason": "the pad is deliberate",
+            "lens": "correctness",
+        })));
+        assert_eq!(refused.len(), 1, "{refused:?}");
+        assert!(
+            refused[0].starts_with("`lens` is not a rule-out key"),
+            "{refused:?}"
+        );
+
+        let refused = ruled_out_refusals(&entry(json!({
+            "file": "C:\\src\\a.rs",
+            "line": 0,
+            "reason": "x".repeat(201),
+        })));
+        assert_eq!(refused.len(), 3, "{refused:?}");
+        assert!(
+            ruled_out_refusals(&entry(json!({"reason": "r"})))[0].contains("`file` is required")
+        );
+        assert!(
+            ruled_out_refusals(&entry(json!({"file": "src/a.rs"})))[0]
+                .contains("`reason` is required")
+        );
+        assert!(
+            ruled_out_refusals(&entry(
+                json!({"file": "src/a.rs", "reason": "x".repeat(200)})
+            ))
+            .is_empty()
+        );
     }
 }

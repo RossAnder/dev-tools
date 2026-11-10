@@ -62,11 +62,20 @@ pub(crate) fn start(target: &Target, args: ReviewRunStartArgs) -> Result<()> {
         }
     }
 
-    let base = resolve_base(&root, &args.base)?;
-    let catalogue_record = start_catalogue(&root, &base, args.builtin, args.project)?;
+    let base = resolve_rev(&root, "--base", &args.base)?;
+    let head = match &args.head {
+        Some(rev) => {
+            let sha = resolve_rev(&root, "--head", rev)?;
+            require_descendant(&root, &base, &sha, rev)?;
+            Some(sha)
+        }
+        None => None,
+    };
+    let range = format!("{base}..{}", head.as_deref().unwrap_or("HEAD"));
+    let catalogue_record = start_catalogue(&root, &range, args.builtin, args.project)?;
     let changed_lines = match family {
         Family::Plan => None,
-        Family::Code | Family::Perf => Some(changed_lines(&root, &base, &scope)?),
+        Family::Code | Family::Perf => Some(changed_lines(&root, &range, &scope)?),
     };
 
     row.insert(
@@ -78,6 +87,9 @@ pub(crate) fn start(target: &Target, args: ReviewRunStartArgs) -> Result<()> {
         ),
     );
     row.insert("base".into(), json!(base));
+    if let Some(sha) = &head {
+        row.insert("head".into(), json!(sha));
+    }
     if let Some(n) = changed_lines {
         row.insert("changed_lines".into(), json!(n));
     }
@@ -118,6 +130,7 @@ pub(crate) fn start(target: &Target, args: ReviewRunStartArgs) -> Result<()> {
         "run": id,
         "dir": relativise(&root, &dir),
         "base": base,
+        "head": head,
         "changed_lines": changed_lines,
     }))
 }
@@ -186,12 +199,12 @@ fn git_output(root: &Path, cmd: &mut Command, what: &str) -> Result<Vec<u8>> {
     Ok(out.stdout)
 }
 
-/// `--end-of-options` keeps a `base` starting with `-` from reaching git as
-/// an option; `^{commit}` refuses a tree or blob.
-fn resolve_base(root: &Path, base: &str) -> Result<String> {
+/// `--end-of-options` keeps a rev starting with `-` from reaching git as an
+/// option; `^{commit}` refuses a tree or blob.
+fn resolve_rev(root: &Path, flag: &str, rev: &str) -> Result<String> {
     let out = git(root)
         .args(["rev-parse", "--verify", "--quiet", "--end-of-options"])
-        .arg(format!("{base}^{{commit}}"))
+        .arg(format!("{rev}^{{commit}}"))
         .output()
         .map_err(|e| {
             tagged_err(
@@ -203,18 +216,47 @@ fn resolve_base(root: &Path, base: &str) -> Result<String> {
     let sha = String::from_utf8_lossy(&out.stdout).trim().to_string();
     if !out.status.success() || sha.is_empty() {
         return Err(invalid(format!(
-            "review run start: --base {base:?} does not name a commit"
+            "review run start: {flag} {rev:?} does not name a commit"
         )));
     }
     Ok(sha)
 }
 
+/// Refuses a `head` that `base` is not an ancestor of; equal shas pass.
+/// `merge-base --is-ancestor` exits 1 for "no" and higher for an error.
+fn require_descendant(root: &Path, base: &str, head: &str, given: &str) -> Result<()> {
+    let out = git(root)
+        .args(["merge-base", "--is-ancestor", base, head])
+        .output()
+        .map_err(|e| {
+            tagged_err(
+                ErrorKind::Other,
+                Some(root.to_path_buf()),
+                format!("git merge-base: {e}"),
+            )
+        })?;
+    match out.status.code() {
+        Some(0) => Ok(()),
+        Some(1) => Err(invalid(format!(
+            "review run start: --head {given:?} ({head}) does not descend from --base {base}"
+        ))),
+        _ => Err(tagged_err(
+            ErrorKind::Other,
+            Some(root.to_path_buf()),
+            format!(
+                "git merge-base --is-ancestor failed: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            ),
+        )),
+    }
+}
+
 /// Loads and validates the merged catalogue, returning the run's
 /// `catalogue` record. Any validation error halts the start, as does a
-/// default project layer the reviewed range `base..HEAD` itself changed.
+/// default project layer the reviewed `range` itself changed.
 fn start_catalogue(
     root: &Path,
-    base: &str,
+    range: &str,
     builtin: Option<PathBuf>,
     project: Option<PathBuf>,
 ) -> Result<JsonValue> {
@@ -229,10 +271,10 @@ fn start_catalogue(
     };
     let explicit_project = project.is_some();
     let project = catalogue::project_layer(root, project)?;
-    let layer_changed = project_layer_changes(root, base)?;
+    let layer_changed = project_layer_changes(root, range)?;
     if !explicit_project && !layer_changed.is_empty() {
         return Err(invalid(format!(
-            "review run start: the reviewed range {base}..HEAD changes the project lens layer, \
+            "review run start: the reviewed range {range} changes the project lens layer, \
              which would configure its own review:\n{}\n\
              pass --project <dir> explicitly to accept that layer",
             layer_changed
@@ -274,14 +316,14 @@ fn start_catalogue(
     Ok(JsonValue::Object(record))
 }
 
-/// Paths under `.claude/review-lenses` that `base..HEAD` adds, edits or
-/// deletes. Renames are split so a file moved out of the layer still counts.
-fn project_layer_changes(root: &Path, base: &str) -> Result<Vec<String>> {
+/// Paths under `.claude/review-lenses` that `range` adds, edits or deletes.
+/// Renames are split so a file moved out of the layer still counts.
+fn project_layer_changes(root: &Path, range: &str) -> Result<Vec<String>> {
     let listed = git_output(
         root,
         git(root)
             .args(["diff", "--name-only", "-z", "--no-ext-diff", "--no-renames"])
-            .arg(format!("{base}..HEAD"))
+            .arg(range)
             .args(["--", ".claude/review-lenses"]),
         "git diff --name-only",
     )?;
@@ -296,15 +338,15 @@ fn pathspecs(scope: &[String]) -> Vec<String> {
     scope.iter().map(|s| format!(":(glob){s}")).collect()
 }
 
-/// Lines added plus removed over `scope` in `base..HEAD`; when that is 0,
-/// the scope's tracked line count.
-fn changed_lines(root: &Path, base: &str, scope: &[String]) -> Result<i64> {
+/// Lines added plus removed over `scope` in `range`; when that is 0, the
+/// scope's tracked line count.
+fn changed_lines(root: &Path, range: &str, scope: &[String]) -> Result<i64> {
     let specs = pathspecs(scope);
     let numstat = git_output(
         root,
         git(root)
             .args(["diff", "--numstat", "--no-ext-diff", "--find-renames"])
-            .arg(format!("{base}..HEAD"))
+            .arg(range)
             .arg("--")
             .args(&specs),
         "git diff --numstat",
@@ -696,10 +738,11 @@ pub(crate) fn list(target: &Target, args: ReviewRunListArgs) -> Result<()> {
                 "started": text(&r.started),
                 "finished": text(&r.finished),
                 "base": text(&r.base),
+                "head": r.head,
                 "scope": r.scope,
                 "substrate": text(&r.substrate),
                 "rechecks": rest_text(r, "rechecks"),
-                "waves": r.waves,
+                "waves": super::stats::run_waves(&stored.cells, &r.id),
                 "agents": r.agents,
                 "incomplete": rest_text(r, "incomplete"),
             })

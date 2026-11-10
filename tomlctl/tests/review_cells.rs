@@ -853,6 +853,219 @@ fn plan_executor_cells_batch_tasks_outside_ceiling() {
     assert_eq!(checks["agent"], "review-finder");
 }
 
+fn ceiling_cells(rows: &[JsonValue]) -> usize {
+    rows.iter()
+        .filter(|r| r["agent"] != "plan-executor")
+        .count()
+}
+
+fn with_concern<'a>(rows: &'a [JsonValue], id: &str) -> Vec<&'a JsonValue> {
+    rows.iter()
+        .filter(|r| concerns(r).contains(&id.to_string()))
+        .collect()
+}
+
+fn ceiling_cut(summary: &JsonValue, concern: &str) -> bool {
+    summary["unselected"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|u| u["concern"] == concern && u["reason"] == "ceiling")
+}
+
+/// `count` files directly under `src/`, named in path order.
+fn flat_files(count: usize) -> Vec<String> {
+    (0..count).map(|i| format!("src/f{i:03}.rs")).collect()
+}
+
+#[test]
+fn propose_never_exceeds_ceiling() {
+    let mut files: Vec<String> = (0..24)
+        .flat_map(|d| (0..3).map(move |f| format!("d{d:02}/f{f}.rs")))
+        .collect();
+    files.extend(["d24/x.rs".to_string(), "d24/y.rs".to_string()]);
+    assert_eq!(files.len(), 74);
+    let refs: Vec<&str> = files.iter().map(String::as_str).collect();
+    let Some(repo) = Repo::new(&refs) else {
+        return;
+    };
+    let hot: Vec<String> = files.iter().take(30).map(|f| format!("{f:?}")).collect();
+    let signals = format!(
+        r#"[{{ name = "trust-boundary", source = "judged", accepted = true }}, {{ name = "churn-hotspot", source = "detector", roots = ["."], evidence = [{}] }}]"#,
+        hot.join(", ")
+    );
+    repo.seed(&[RunSpec {
+        id: "U1",
+        family: "code",
+        depth: "standard",
+        changed_lines: Some(2000),
+        scope: &["d*/**"],
+        signals: &signals,
+    }]);
+    let (rows, summary) = repo.propose(STORE, "U1", &[]);
+    assert_eq!(summary["ceiling"], 16, "{summary}");
+    assert!(
+        ceiling_cells(&rows) <= 16,
+        "{} cells over a ceiling of 16: {rows:?}",
+        ceiling_cells(&rows)
+    );
+    assert!(summary["cells"].as_u64().unwrap() <= 16, "{summary}");
+    for floor in ["correctness", "ripple"] {
+        assert!(
+            !with_concern(&rows, floor).is_empty(),
+            "{floor} keeps a cell: {rows:?}"
+        );
+    }
+    assert_eq!(
+        summary["unsliced"],
+        json!([]),
+        "merging keeps every file sliced"
+    );
+}
+
+#[test]
+fn propose_merges_small_floor_slices_before_cutting_signal_lenses() {
+    let files: Vec<String> = (0..12).map(|d| format!("d{d:02}/a.rs")).collect();
+    let refs: Vec<&str> = files.iter().map(String::as_str).collect();
+    let Some(repo) = Repo::new(&refs) else {
+        return;
+    };
+    repo.seed(&[RunSpec {
+        id: "U1",
+        family: "code",
+        depth: "standard",
+        changed_lines: Some(2000),
+        scope: &["d*/**"],
+        signals: r#"[{ name = "trust-boundary", source = "judged", accepted = true }]"#,
+    }]);
+    let (rows, summary) = repo.propose(STORE, "U1", &[]);
+    let firsts: Vec<JsonValue> = rows
+        .iter()
+        .filter(|r| r.get("pass").is_none())
+        .cloned()
+        .collect();
+    let correctness = with_concern(&firsts, "correctness");
+    assert!(
+        (1..12).contains(&correctness.len()),
+        "the twelve one-directory slices merge: {correctness:?}"
+    );
+    assert!(
+        (correctness.len() * 2) <= 8,
+        "the floor lens fits half the budget of 16 with its repeats: {correctness:?}"
+    );
+    assert!(
+        !with_concern(&rows, "security").is_empty(),
+        "the signal lens keeps a cell: {rows:?}"
+    );
+    assert!(!ceiling_cut(&summary, "security"), "{summary}");
+    assert!(ceiling_cells(&rows) <= 16, "{rows:?}");
+    assert_eq!(summary["unsliced"], json!([]), "{summary}");
+}
+
+#[test]
+fn propose_counts_check_cells_against_ceiling() {
+    let docs: Vec<String> = (1..=5).map(|i| format!("docs/p{i}.md")).collect();
+    let mut files: Vec<&str> = docs.iter().map(String::as_str).collect();
+    files.push("docs/plan.md");
+    let Some(repo) = Repo::new(&files) else {
+        return;
+    };
+    repo.seed(&[RunSpec {
+        id: "U1",
+        family: "plan",
+        depth: "quick",
+        changed_lines: None,
+        scope: &["docs/plan.md"],
+        signals: "[]",
+    }]);
+    let planned: Vec<JsonValue> = docs
+        .iter()
+        .map(|d| {
+            json!({"slice": [d], "concerns": ["plan-structure"], "agent": "review-finder", "reason": "proposed"})
+        })
+        .collect();
+    repo.plan("U1", &planned);
+
+    let (rows, summary) = repo.propose(STORE, "U1", &[]);
+    assert_eq!(summary["ceiling"], 6, "{summary}");
+    assert!(
+        ceiling_cells(&rows) <= 1,
+        "five cells planned leave room for one: {rows:?}"
+    );
+    assert!(summary["cells"].as_u64().unwrap() <= 1, "{summary}");
+    assert!(
+        ceiling_cut(&summary, "check:falsifiability"),
+        "a check cell past the ceiling is listed: {summary}"
+    );
+}
+
+#[test]
+fn propose_caps_sweeper_slice_by_file_count() {
+    let files = flat_files(90);
+    let refs: Vec<&str> = files.iter().map(String::as_str).collect();
+    let Some(repo) = Repo::new(&refs) else {
+        return;
+    };
+    repo.seed(&[RunSpec {
+        id: "U1",
+        family: "code",
+        depth: "quick",
+        changed_lines: Some(2000),
+        scope: &["src/**"],
+        signals: "[]",
+    }]);
+    let (rows, summary) = repo.propose(STORE, "U1", &[]);
+    let ripple = with_concern(&rows, "ripple");
+    assert_eq!(ripple.len(), 3, "90 files at 40 a cell: {ripple:?}");
+    let mut swept: Vec<String> = Vec::new();
+    for cell in &ripple {
+        assert_eq!(cell["agent"], "review-sweeper");
+        let slice = strings(&cell["slice"]);
+        assert!(
+            slice.len() <= 40,
+            "{} files in one sweeper cell",
+            slice.len()
+        );
+        swept.extend(slice);
+    }
+    swept.sort();
+    assert_eq!(swept, files, "the chunks cover the scope in path order");
+    assert!(ceiling_cells(&rows) <= 6, "{rows:?}");
+    assert_eq!(summary["over_cap"], json!([]), "{summary}");
+}
+
+#[test]
+fn propose_reports_over_cap_cells_at_a_small_ceiling() {
+    let files = flat_files(90);
+    let refs: Vec<&str> = files.iter().map(String::as_str).collect();
+    let Some(repo) = Repo::new(&refs) else {
+        return;
+    };
+    repo.seed(&[RunSpec {
+        id: "U1",
+        family: "code",
+        depth: "quick",
+        changed_lines: Some(100),
+        scope: &["src/**"],
+        signals: "[]",
+    }]);
+    let (rows, summary) = repo.propose(STORE, "U1", &[]);
+    assert_eq!(summary["ceiling"], 3, "{summary}");
+    assert!(ceiling_cells(&rows) <= 3, "{rows:?}");
+    let ripple = with_concern(&rows, "ripple");
+    assert!(
+        !ripple.is_empty() && ripple.len() < 3,
+        "the sweeper chunks merge past the cap to fit: {ripple:?}"
+    );
+    let over = summary["over_cap"].as_array().expect("over_cap is listed");
+    assert_eq!(over.len(), 1, "{summary}");
+    assert!(
+        concerns(&over[0]).contains(&"ripple".to_string()),
+        "{summary}"
+    );
+    assert!(over[0]["files"].as_u64().unwrap() > 40, "{summary}");
+}
+
 #[test]
 fn plan_binds_hashes_and_root_scoped_facets() {
     let Some(repo) = Repo::new(&["src/a.rs", "web/app.vue"]) else {
