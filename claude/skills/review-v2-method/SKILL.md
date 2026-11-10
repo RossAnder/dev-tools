@@ -38,7 +38,7 @@ A defect whose fix needs decisions stays a defect with `fix_shape = "needs-plan"
 | Field | Rule |
 |---|---|
 | `kind` | `defect` \| `cleanup` \| `advisory` |
-| `lens` | one of your cell's concerns, verbatim — a lens id, `probe:<slug>` or `check:<id>` |
+| `lens` | one of your cell's concerns, verbatim — a lens id, `probe:<slug>` or `check:<id>` — except under the mechanical-cleanup exception below |
 | `file` | repo-relative, `/`-separated, no `..`, not absolute |
 | `line` | ≥1; required for defect and cleanup |
 | `symbol` | optional; the function, type or task ref at the anchor. Set it whenever there is one — identity matching keys on it |
@@ -80,6 +80,10 @@ Never supply `id`, `status`, `route`, `anchor`, `related`, `outcome`, `cell`, `r
 `review add` checks that `old` occurs within 20 lines of `line` — in `target_file` when given and existing, else in `file` — after normalising `\r\n` to `\n`. Re-read the anchor immediately before writing the row.
 
 One pattern across many sites is **one** row with `instances`, not a row per site.
+
+#### Mechanical-cleanup exception
+
+A mechanical cleanup you see outside your cell's concerns — a stale reference, dead code, an unused setting — is written, not escalated. Its `lens` may be any lens the run's catalogue marks `mode = "mechanical"` (`tomlctl review catalogue --family <family> --rows entries --where type=lens --where mode=mechanical --select id --lines` lists them), from any cell, provided the row is a `cleanup` carrying exact `old`. It is routed like any other cleanup, and a checker may refute it as it refutes a sweeper's row. `review add` refuses every other lens outside the cell's concerns; escalate what this exception cannot carry.
 
 ### `advisory`
 
@@ -150,15 +154,38 @@ Every probe row's `lens` is the cell's `probe:<slug>`.
 
 ## Coverage note
 
-Every cell is sealed with a status and a note (≤600 characters):
+Every cell is sealed with a status and a note:
 
 - `covered` — you examined the whole slice for every concern.
 - `thin` — you examined part of it; say which part was skipped.
 - `uncovered` — you could not examine it; say why.
 
-`review cover` refuses a note over 600 characters, so keep it terse: counts of the files read in full and the checks, probes and searches run; one `file:symbol — reason` entry per candidate you ruled out; and, for `thin` or `uncovered`, what went unexamined and why. A clean check or probe is a count, never a line of its own.
+**Swept.** A sweeper has swept a slice when every name the slice's diff removed or renamed has been grepped tree-wide and every hit read at its line. A sweeper cell is `covered` only then, and `thin` when any such name went ungrepped; the note names those names.
+
+### Length
+
+Aim for 450 characters in a note and in a verdict `rationale`; 600 is the limit the tool enforces, and a note or rationale over it is refused after the work is done. Write to the target, not the limit.
+
+The note holds counts only: the files read in full and the checks, probes and searches run, and, for `thin` or `uncovered`, what went unexamined and why. A clean check or probe is a count, never a line of its own.
 
 **Precedence.** Where a bound lens, method or check asks for one note line per sweep, probe, task or pair, a count plus the failing items satisfies it. The 600-character cap wins over any per-item ask.
+
+### Rule-outs
+
+A candidate you examined and judged deliberate or harmless is a rule-out, and rule-outs go in a staged file passed as `--ruled-out`, never in the note. The store joins each one against other cells' findings at the same place, and a verifier sees it beside the finding.
+
+One JSON object per line, staged with the Write tool in the run directory's `payloads/`:
+
+```json
+{"file": "tomlctl/src/review/add.rs", "symbol": "prepare", "reason": "the early return is deliberate: the caller re-checks"}
+```
+
+- `file` is required and repo-relative, inside your slice unless one of your concerns is a mechanical lens.
+- Give `symbol` or `line` (a positive integer) on every entry: an entry with neither matches nothing.
+- `reason` is required, at most 200 characters.
+- No other key. One refused entry refuses the whole `review cover` call and seals nothing; fix it and seal again.
+
+The file replaces the cell's stored rule-outs, so pass the full set.
 
 The orchestrator schedules follow-up work from `thin` and `uncovered`, so choose them honestly.
 
@@ -168,11 +195,12 @@ The orchestrator schedules follow-up work from `thin` and `uncovered`, so choose
 |---|---|---|---|
 | `confirmed` | any verifier role | reproduced, or no reasonable doubt remains | `open` |
 | `plausible` | verifier, panel | holds as far as it could be taken; the decisive check was out of reach | `open` |
-| `refuted` | verifier, panel; checker only on a sweeper's row with a grep citation | wrong, and you can cite why | `refuted` |
+| `refuted` | verifier, panel; checker only with a grep citation, on a sweeper's row or a `cleanup` row on a mechanical lens | wrong, and you can cite why | `refuted` |
 | `unsettled` | checker only | grep cannot decide it; re-routes to the verifier | stays `unverified` |
 
 - Every verdict carries a `citation`: a `file:line`, a `path#id`, or the command and its decisive output. A verdict without one is refused. Never concede on an uncited assertion.
-- `rationale` is ≤600 characters.
+- `rationale` aims for 450 characters and is refused over 600 ([Length](#length)).
+- A finding in a `verifier` or `audit` projection may carry `ruled_out`, `[{cell, reason}]`: another cell judged that place deliberate. Weigh the reason as a claim to check, not a verdict; confirm or refute on your own citation either way.
 - `by` is your role: `verifier`, `panel` (with `seat` 1–3), or `checker`.
 - A verifier may reassess a defect's severity with `--severity`; pass it only when it changes.
 - A verifier who finds that `same_as` names a different fault passes `--strike-same-as`, and the finding resolves on its own verdict. Striking is available only on a single-verdict call, not in an NDJSON batch.
@@ -192,13 +220,13 @@ tomlctl review add --run <run> --cell <cell> --ndjson <run-dir>/payloads/<cell>.
 - A refused row is reported with its field and reason while the rest land. Fix it and resubmit the full set once; report anything still refused in your return.
 - `review add` prints each minted id with its `kind`, `severity` and `route`. Tomlctl computes the route; you never choose your own verifier.
 
-**Seal the cell** once its findings are in. Stage the note with the Write tool and pass it by file:
+**Seal the cell** once its findings are in. Stage the note, and the rule-outs when there are any ([Rule-outs](#rule-outs)), with the Write tool and pass them by file:
 
 ```bash
-tomlctl review cover <cell> --status covered --note-file <run-dir>/payloads/<cell>.note.md --slug <slug>
+tomlctl review cover <cell> --status covered --note-file <run-dir>/payloads/<cell>.note.md --ruled-out <run-dir>/payloads/<cell>.ruled-out.ndjson --slug <slug>
 ```
 
-Pass the note by file, never on stdin. After sealing, `review add` on that cell is refused and prints the cell's existing ids: return those. Sealing again with the same status and note is a no-op.
+Pass the note and the rule-outs by file, never on stdin; omit `--ruled-out` when you ruled nothing out. After sealing, `review add` on that cell is refused and prints the cell's existing ids: return those. Sealing again with the same status and note is a no-op.
 
 **Verdicts.** One finding, with the rationale staged as a file:
 
