@@ -9698,3 +9698,162 @@ context = "The pre-flight was moved to `tomlctl plan drift --uncommitted --get u
 base_sha = "d3ce04e2998c9b9454dbd56d06d09ec641de7c4a"
 evidence = ["claude/skills/implement-v2-engine/references/drain.md:285"]
 related = ["B-6d577c72"]
+
+[[backlog]]
+id = "B-ef0d9fd7"
+kind = "debt"
+summary = "a v2 plan that renames a field or removes a verb is not swept for the other files that use it, so the run finds them at the gate"
+area = "claude/skills/plan-v2-engine"
+tags = [
+    "plan-v2",
+    "implement-v2",
+]
+status = "open"
+created = 2026-11-10T05:14:21Z
+last_seen = 2026-11-10T05:14:21Z
+seen_count = 1
+dedup_id = "ef0d9fd76024613b"
+origin = "implement-v2"
+flow = "human-only-handovers"
+context = "Seen 2026-11-10 running human-only-handovers: the plan renamed the handover key command to action and removed plan handover add, but listed neither tomlctl/src/plan/target.rs nor tomlctl/tests/review_plan_records.rs, which both used the old shape. A worker note caught the first and the gate caught the second, costing three extra single-task rounds. Candidate fix: at Write or Prove, a task whose outcome renames or removes a symbol, key or verb carries a tomlctl sweep for its remaining uses, and every hit outside the plan's files fails the proof. The cold readers read one milestone as a worker would and did not look outside the listed files."
+base_sha = "70a012ac9741618025934b4208ae2a17355163b5"
+related = ["B-2170b989"]
+
+[[backlog]]
+id = "B-de3462fb"
+kind = "debt"
+summary = "plan workers do not format-check the Rust files they edit, so an unformatted file costs a gate fix round"
+area = "claude/agents/plan-worker"
+tags = [
+    "implement-v2",
+    "fmt",
+]
+status = "open"
+created = 2026-11-10T05:14:21Z
+last_seen = 2026-11-10T05:14:21Z
+seen_count = 1
+dedup_id = "de3462fb04798205"
+origin = "implement-v2"
+flow = "human-only-handovers"
+context = "Seen 2026-11-10: a lite worker edited tomlctl/tests/review_plan_records.rs and returned done; the milestone gate's cargo fmt --check then failed on that file and used the second and last fix round. rustfmt --edition 2024 --check <file> builds nothing and is file-scoped for a leaf file (CLAUDE.md, Build tuning), so the shared worker procedure can run it on each .rs file it edited before writing done. A non-leaf module recurses into its children, so limit it to leaf files or accept the wider report."
+base_sha = "70a012ac9741618025934b4208ae2a17355163b5"
+related = ["B-64a17353"]
+
+[[backlog]]
+id = "B-5680c91a"
+kind = "debt"
+summary = "the implement-v2 gate stops at its first failing command, so each fix round uncovers only one failure against a cap of two rounds"
+area = "claude/skills/implement-v2-engine"
+tags = [
+    "implement-v2",
+    "gate",
+]
+status = "open"
+created = 2026-11-10T05:14:21Z
+last_seen = 2026-11-10T05:14:21Z
+seen_count = 1
+dedup_id = "5680c91a31d914bf"
+origin = "implement-v2"
+flow = "human-only-handovers"
+context = "Seen 2026-11-10 on milestone A of human-only-handovers: gate run 1 failed at nextest and never ran fmt; run 2 failed at fmt; run 3 passed with both fix rounds spent. A third independent failure would have left the milestone uncommitted for the user. The verification agent is sequential and stops at the first fail by design. Options to weigh: let the gate dispatch ask for run-all so one round sees every failure; order cheap checks such as fmt before the suite; or count a round per distinct cause rather than per gate run. The round cap and the gate input are in references/drain.md step 7."
+base_sha = "70a012ac9741618025934b4208ae2a17355163b5"
+related = ["B-6d577c72"]
+
+[[backlog]]
+id = "B-c71f122d"
+kind = "debt"
+summary = "the implement-v2 drain has no rule for a worker reporting breakage in a file no task holds, short of waiting for the gate to fail"
+area = "claude/skills/implement-v2-engine"
+tags = [
+    "implement-v2",
+    "drain",
+]
+status = "open"
+created = 2026-11-10T05:14:21Z
+last_seen = 2026-11-10T05:14:21Z
+seen_count = 1
+dedup_id = "c71f122d6625b85b"
+origin = "implement-v2"
+flow = "human-only-handovers"
+context = "Seen 2026-11-10: task 1 returned done and its note named a unit test in tomlctl/src/plan/target.rs that its rename had broken, outside its files, repeated as a TANGENTIAL line. drain.md routes TANGENTIAL lines to the backlog (step 8) and has replan rows for failed tasks and out-of-lane edits, but none for known in-scope breakage in an unowned file. The orchestrator minted a fix task in the same milestone before the gate, which saved a gate round; the reference should say so, and say that such a line is not a backlog candidate."
+base_sha = "70a012ac9741618025934b4208ae2a17355163b5"
+related = ["B-85f895ef"]
+
+[[backlog]]
+id = "B-d5f07c82"
+kind = "debt"
+summary = "a gate fix task minted on a file a done task already holds gets no needs edge, so plan check warns dag/unreachable-claim"
+area = "claude/skills/implement-v2-engine"
+tags = [
+    "implement-v2",
+    "gate",
+]
+status = "open"
+created = 2026-11-10T05:14:21Z
+last_seen = 2026-11-10T05:14:21Z
+seen_count = 1
+dedup_id = "d5f07c82888c5067"
+origin = "implement-v2"
+flow = "human-only-handovers"
+context = "Seen 2026-11-10: fix tasks 14 and 15 of human-only-handovers both hold tomlctl/tests/review_plan_records.rs and were minted in successive gate rounds with needs = [], following the fix-task record shape in references/drain.md. plan check now reports dag/unreachable-claim for the pair, a warning that stays in the finished flow. The fix-task shape should set needs to the latest task holding each of its files."
+base_sha = "70a012ac9741618025934b4208ae2a17355163b5"
+related = ["B-2170b989"]
+
+[[backlog]]
+id = "B-56a8a9ff"
+kind = "annoyance"
+summary = "the implement-v2 gate reruns narrow accept checks that the milestone's full-suite gate already covered"
+area = "claude/skills/implement-v2-engine"
+tags = [
+    "implement-v2",
+    "gate",
+]
+status = "open"
+created = 2026-11-10T05:14:21Z
+last_seen = 2026-11-10T05:14:21Z
+seen_count = 1
+dedup_id = "56a8a9ff675760df"
+origin = "implement-v2"
+flow = "human-only-handovers"
+context = "Seen 2026-11-10: milestone A's gates open with the full nextest suite, and drain.md step 7 then appends every writes_build accept check, leaving out only byte-identical commands. Six narrow cargo test and nextest subsets ran after the suite that contains them. Cheap here at a few seconds, costly on a slow crate. A subset cannot be detected mechanically in general, so the likely fix is at plan time: mark an accept check as covered by a named gate, or let the milestone say its gates subsume the accept checks."
+base_sha = "70a012ac9741618025934b4208ae2a17355163b5"
+related = ["B-6d577c72"]
+
+[[backlog]]
+id = "B-3ae4a2be"
+kind = "debt"
+summary = "nothing in a v2 run syncs claude/ to a config dir that holds copies, so deployed skills lag the binary a gate just installed"
+area = "scripts/link-v2-review"
+tags = [
+    "deploy",
+    "implement-v2",
+]
+status = "open"
+created = 2026-11-10T05:14:21Z
+last_seen = 2026-11-10T05:14:21Z
+seen_count = 1
+dedup_id = "3ae4a2bed4c38889"
+origin = "implement-v2"
+flow = "human-only-handovers"
+context = "Seen 2026-11-10: the config dir held plain copies of claude/agents, commands, skills and workflows, not links. Milestone B's gate installed the new tomlctl, after which the deployed tomlctl skill still documented plan handover add, a verb the binary no longer had, until the directories were copied by hand. Under the human-only handover rule the sync is agent-performable, so a plan that edits claude/ and installs a binary should carry it as a gate or task. Check first why this machine has copies when scripts/link-v2-review.sh makes links; if copies are intended, the script needs a copy mode a gate can call."
+base_sha = "70a012ac9741618025934b4208ae2a17355163b5"
+
+[[backlog]]
+id = "B-43daf15c"
+kind = "debt"
+summary = "docs/ideas/v2-pipeline.md Where things stand still lists /implement-v2 as planned and the review commands as never run"
+area = "docs/ideas"
+tags = [
+    "docs",
+    "v2-pipeline",
+]
+status = "open"
+created = 2026-11-10T05:14:21Z
+last_seen = 2026-11-10T05:14:21Z
+seen_count = 1
+dedup_id = "43daf15cba5568e9"
+origin = "implement-v2"
+flow = "human-only-handovers"
+context = "As of 2026-11-10 /implement-v2 is built, deployed and has run human-only-handovers end to end, and the plan-family review has run in flow mode. The section and the topic 4 row of the design-topics table need bringing up to date; the open parts of topic 4 (tool, clerk, vetting) still stand."
+base_sha = "70a012ac9741618025934b4208ae2a17355163b5"
+related = ["B-a70a9da3"]
