@@ -930,7 +930,7 @@ check = "grep -q 'review export-v1' claude/skills/review-v2-engine/references/tr
 at = "base"
 
 [specs.premises.probe]
-at = "faf0252188ecb577d5433e787bff3e7fe58c5377"
+at = "61be69c9ac3a3352ee637c367354c0975cf83cac"
 neg_rc = 0
 verdict = "holds"
 
@@ -973,7 +973,7 @@ check = "grep -q 'SCRIPT_VERSION' claude/workflows/review-v2.js"
 at = "base"
 
 [specs.premises.probe]
-at = "faf0252188ecb577d5433e787bff3e7fe58c5377"
+at = "61be69c9ac3a3352ee637c367354c0975cf83cac"
 neg_rc = 0
 verdict = "holds"
 
@@ -1086,6 +1086,11 @@ verdict = "healthy"
 claim = "the findings reference exists"
 check = "test -f claude/skills/implement-v2-engine/references/findings.md"
 at = "after:12"
+
+[specs.premises.probe]
+at = "61be69c9ac3a3352ee637c367354c0975cf83cac"
+neg_rc = 0
+verdict = "holds"
 
 [[specs]]
 ref = "replace-fix_shape-with-blocked_on-in-the-finding-catalogue"
@@ -1950,6 +1955,62 @@ kind = "guard"
 positive = ""
 writes_build = true
 
+[[specs]]
+ref = "name-the-apply-grammar-row-in-the-plan-flow-reference"
+outcome = "claude/skills/review-v2-engine/references/plan-flow.md names the engine's triage grammar row the plan family leaves out as `apply`, matching the review-v2-engine skill's triage reference"
+constraints = [
+    "The sentence reads: The grammar is the engine's, without `export`, which the plan family never does. Replace `export` with `apply` there, after confirming in claude/skills/review-v2-engine/references/triage-and-close.md that the row is now named `apply`",
+    "Fix any other mention in plan-flow.md of the engine's `export` disposition the same way; leave every mention of `review export-v1` or `sync-v1` as a verb alone",
+    "Change nothing else in the file",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "The stale grammar wording is gone"
+check = "! grep -q 'without `export`' claude/skills/review-v2-engine/references/plan-flow.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[[specs.accept]]
+behaviour = "The harness gates still pass"
+check = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+kind = "guard"
+positive = ""
+writes_build = true
+
+[[specs]]
+ref = "make-the-findings-references-orchestrator-reproduce-command-parse"
+outcome = "Every `tomlctl` invocation inside a code fence of claude/skills/implement-v2-engine/references/findings.md parses under the real clap parser"
+constraints = [
+    "The lint reads fenced commands and substitutes each `<...>` placeholder; `<store flag>` holds a space and stands for a flag plus its value, so it becomes stray positionals. In every fenced `tomlctl` command of the file, spell the store as `--slug <slug>`, and say once in the prose beside the first such fence that a scope store takes `--scope <scope>` in its place",
+    "Inline prose mentions of `<store flag>` outside code fences may stay as they are; the paragraph defining `<store flag>` stays",
+    "Change no other wording in the file",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "No fenced command carries the two-word placeholder"
+check = "! grep -q -E '^tomlctl .*<store flag>' claude/skills/implement-v2-engine/references/findings.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[[specs.accept]]
+behaviour = "The command lint passes"
+check = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests::lint::command_lint"
+kind = "forward"
+positive = ""
+writes_build = true
+
 [[milestones]]
 id = "A"
 gates = [
@@ -2130,6 +2191,42 @@ old = "[11,16,21,30]"
 new = "[11,16,21,30,34]"
 actor = "orchestrator"
 reason = "task 34 now holds claude/skills/apply-v2-engine/SKILL.md before this row; the row follows it"
+
+[[changes]]
+at = 2026-11-10T21:19:49Z
+ref = "name-the-apply-grammar-row-in-the-plan-flow-reference"
+field = "*"
+old = ""
+new = "Name the apply grammar row in the plan-flow reference"
+actor = "orchestrator"
+reason = "milestone B's own work left this file stale: task 13 renamed the engine's triage grammar row from `export` to `apply`, and plan-flow.md still says the plan grammar is the engine's without `export`"
+
+[[changes]]
+at = 2026-11-10T21:20:00Z
+ref = "rewrite-review-triage-for-blocked-findings"
+field = "needs"
+old = "[13,23]"
+new = "[13,23,35]"
+actor = "orchestrator"
+reason = "task 35 now holds claude/skills/review-v2-engine/references/plan-flow.md before this row; the row follows it"
+
+[[changes]]
+at = 2026-11-10T21:21:12Z
+ref = "make-the-findings-references-orchestrator-reproduce-command-parse"
+field = "*"
+old = ""
+new = "Make the findings reference's orchestrator reproduce command parse"
+actor = "orchestrator"
+reason = "gate B round 1: cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests fails cli::dispatch::tests::lint::command_lint: claude/skills/implement-v2-engine/references/findings.md, `tomlctl review reproduce <store flag> --ndjson <scratch>/reproduce-<id>-<round>-orchestrator.ndjson` is rejected with unexpected argument '1'"
+
+[[changes]]
+at = 2026-11-10T21:21:12Z
+ref = "add-the-settle-drain-and-the-apply-row-failure-rules-to-the-engines"
+field = "needs"
+old = "[11,16,21,30,34]"
+new = "[11,16,21,30,34,36]"
+actor = "orchestrator"
+reason = "gate B round 1: fix task 36 now holds claude/skills/implement-v2-engine/references/findings.md before this row; the row follows it"
 
 [[items]]
 id = 1
@@ -2469,7 +2566,7 @@ id = 13
 ref = "hand-triage-off-to-apply-v2-in-the-review-engine"
 title = "Hand triage off to /apply-v2 in the review engine"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -2488,15 +2585,15 @@ deps_note = ""
 action = "Replace the `export-v1` step and the v1 apply hand-off in the review engine's triage and close with a hand-off to `/apply-v2`, and reword every site that describes the old path."
 detail = "The triage grammar's `export F1,F4` / `export all` row becomes `apply F1,F4` / `apply all`. The close summary reports what was handed to apply. Stage 0 keeps `review sync-v1`, reworded as a read-back for stores that still hold exported findings. Add `review_schedule`, `review_reconcile`, `review_anchor`, `review_reproduce` and `review_stats_apply` to the stage 0 capability check. In CLAUDE.md, rewrite the Review v2 Store bullet's last sentence and add `/apply-v2` where the v2 entries are listed. Leave the `plan F5` row and the needs-plan group as they are; a later task replaces them."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "a3df45235ade34080e512e540ff776b520eb785e"
 
 [[items]]
 id = 14
 ref = "add-a-reproduce-mode-to-the-review-v2-pipeline-workflow"
 title = "Add a reproduce mode to the review-v2 pipeline Workflow"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -2508,15 +2605,15 @@ deps_note = ""
 action = 'Give `claude/workflows/review-v2.js` a reproduce mode, selected by `mode: "reproduce"` in its args, that runs one `review-verifier` per unit and no finder cells.'
 detail = """The args and the return are fixed in the design section cited below: `mode`, `run_dir`, `store`, `flow`, `milestone`, `round` and `units` in; `{mode, units: [{task, status, reproductions, error}], errors, script_version}` out. The script holds the unit return schema itself, `{task, reproductions: [{finding, verdict}]}`, and takes no pack and no `schemas` in this mode. Each verifier's prompt names its unit, tells it to read the findings with `tomlctl review show <ids> <store flag> --for implementer`, to judge against the working tree whether each still reproduces, to write its rows with `tomlctl review reproduce --ndjson <path under run_dir>/payloads/`, and to change no other file. A unit whose agent returns nothing is `no-return`. The plan-review wrapper's `mode: "recheck"` launch is the precedent for a mode key with its own `run_dir`. Raise `SCRIPT_VERSION`. `node --check` cannot parse a Workflow script, whose body has a top-level `return`; the harness gate below is the syntax-independent check."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "a3df45235ade34080e512e540ff776b520eb785e"
 
 [[items]]
 id = 15
 ref = "teach-the-verifier-the-reproduce-check"
 title = "Teach the verifier the reproduce check"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -2537,15 +2634,15 @@ deps_note = ""
 action = "Add the reproduce check to the verifier: a section in `review-verifier.md` and its method in `verifying.md`, and admit the `reproduce` write in the store-writer contract the seven review agents share."
 detail = "The check asks one question per finding: does it still reproduce in the working tree as it stands, with the milestone's uncommitted edits in place. The answer is `gone`, `reproduces` or `unsettled`, each with a file:line or command-output citation, written with `tomlctl review reproduce --ndjson <path>`; read the verb's row shape from its `--help` in a debug build or from its clap type. It is not refute-first, it records no `review verdict`, and the verifier changes no file. Two contracts in the agent file change to admit it. The `review-v2-store-writer` shared block lists the verbs a review agent may write as `add`, `cover` and `verdict`: add `reproduce` there, with the same bytes in all seven carriers. The Fetch section says never to read another role's projection: the reproduce section states its one exception, that a reproduce check reads `--for implementer`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "a3df45235ade34080e512e540ff776b520eb785e"
 
 [[items]]
 id = 16
 ref = "add-the-reproduce-check-step-to-the-execution-engine"
 title = "Add the reproduce check step to the execution engine"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -2565,8 +2662,8 @@ deps_note = ""
 action = "Add the Reproduce check section to `references/findings.md`, its row to the step table between the drain and the gate, and a pointer from drain.md's step 6 to step 7 hand-over."
 detail = "Cover the round number, the reproduce-mode launch with its args file and `plan run start` under `reproduce:<id>`, relaunching a unit that did not return, reading the store with one `review reproduce-status` call per finding and verdict, closing the run with `plan run finish --step reproduce:<id>` once the store is read, what each verdict leads to, the fix task's reason prefix, the two-round cap, and which findings a later pass checks again. In SKILL.md four places change to admit the step: rule 3, which names `implement-v2-milestone` as the Workflow workers run through, gains the reproduce launch as the engine's second Workflow launch, under the same no-fallback and no-resume rules; the out-of-scope line saying there is no vet pass over a worker's return now names the reproduce check as the one such pass; the Re-entry open-run rule treats an open `reproduce:<id>` run as it treats `implement:<id>`, abandoning it with `plan run abandon --step reproduce:<id>` and relaunching its round; and the step table gains the row. Rule 4 and the out-of-scope line on an Agent-tool fallback stay as they are, since the reproduce check has no Agent fallback."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "a3df45235ade34080e512e540ff776b520eb785e"
 
 [[items]]
 id = 17
@@ -2871,6 +2968,7 @@ files = [
 needs = [
     13,
     23,
+    35,
 ]
 coupling = []
 deps_note = ""
@@ -2906,6 +3004,7 @@ needs = [
     21,
     30,
     34,
+    36,
 ]
 coupling = []
 deps_note = ""
@@ -3076,3 +3175,43 @@ detail = ""
 acceptance = ""
 agent = "plan-worker-lite"
 commit = "9257466010baf02cacbf3a60be9c869dcd116849"
+
+[[items]]
+id = 35
+ref = "name-the-apply-grammar-row-in-the-plan-flow-reference"
+title = "Name the apply grammar row in the plan-flow reference"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/review-v2-engine/references/plan-flow.md"]
+needs = [13]
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "a3df45235ade34080e512e540ff776b520eb785e"
+
+[[items]]
+id = 36
+ref = "make-the-findings-references-orchestrator-reproduce-command-parse"
+title = "Make the findings reference's orchestrator reproduce command parse"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/implement-v2-engine/references/findings.md"]
+needs = [16]
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "a3df45235ade34080e512e540ff776b520eb785e"

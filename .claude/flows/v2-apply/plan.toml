@@ -8,7 +8,7 @@ scope = []
 [id_high_water]
 C = 3
 D = 14
-H = 1
+H = 2
 
 [[decision]]
 id = "D1"
@@ -464,6 +464,39 @@ finished = 2026-11-10T21:05:42Z
 skip_reason = ""
 outcome = "ok"
 
+[[run]]
+step = "implement:B"
+workflow = "implement-v2-milestone"
+args_hash = "81999728d00fe35399f4adc93aaacbacfafd31bee14cc8cf486df3b4db9ca21c"
+run_id = "wf_dfb86fc5-514"
+session = "442794e1-30c8-4969-8675-5f5859824ecb"
+started = 2026-11-10T21:14:06Z
+finished = 2026-11-10T21:19:31Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "implement:B"
+workflow = "implement-v2-milestone"
+args_hash = "9d7ca6f26c00882b65a14fade43110dd517ec4cf9edfc10f6d84091de4c34a51"
+run_id = "wf_17ed62e6-e45"
+session = "442794e1-30c8-4969-8675-5f5859824ecb"
+started = 2026-11-10T21:20:04Z
+finished = 2026-11-10T21:20:25Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "implement:B"
+workflow = "implement-v2-milestone"
+args_hash = "f00b529ad1ff2cdee701d03605ccba929e934559fe63fe52bdbd160accbe8678"
+run_id = "wf_7d2712cc-ea3"
+session = "442794e1-30c8-4969-8675-5f5859824ecb"
+started = 2026-11-10T21:21:23Z
+finished = 2026-11-10T21:22:02Z
+skip_reason = ""
+outcome = "ok"
+
 [[handover]]
 id = "H1"
 reason = "external"
@@ -471,4 +504,13 @@ action = "Deploy the changed entries under claude/ to the Claude config dir (~/.
 when = "After the milestone A commit"
 done_when = "`cmp claude/commands/implement-v2.md ~/.claude-work/commands/implement-v2.md` exits 0 and `~/.claude-work/skills/tomlctl/references/review-apply.md` exists"
 source_task = 11
+done = false
+
+[[handover]]
+id = "H2"
+reason = "external"
+action = "Deploy milestone B's changed entries under claude/ to the Claude config dir (~/.claude-work), which holds real copies the link script refuses: commands/review-v2.md and commands/optimise-v2.md; workflows/review-v2.js; agents review-verifier, review-finder, review-finder-cf, plan-executor, review-surveyor, review-sweeper and review-checker; skills/review-v2-engine (SKILL.md, references/triage-and-close.md, references/compose.md, references/plan-flow.md); skills/review-v2-method/references/verifying.md; and skills/implement-v2-engine (SKILL.md, references/drain.md, references/findings.md)."
+when = "After the milestone B commit"
+done_when = "`cmp claude/workflows/review-v2.js ~/.claude-work/workflows/review-v2.js` and `cmp claude/agents/review-verifier.md ~/.claude-work/agents/review-verifier.md` both exit 0"
+source_task = 13
 done = false
