@@ -1,9 +1,10 @@
 slug = "v2-apply"
 plan_path = "docs/flows/v2-apply/brief.md"
-status = "draft"
+status = "in-progress"
 created = 2026-11-10
 updated = 2026-11-10
 scope = []
+branch = "main"
 
 [tasks]
 total = 0

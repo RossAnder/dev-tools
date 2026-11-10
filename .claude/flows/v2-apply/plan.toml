@@ -350,6 +350,14 @@ tasks = [
 provides = "review::fields blocked helper"
 consumes = "review select, list, digest, schedule"
 
+[[approval]]
+commit = "f94eae956dd71329a4ecb5ef8bd09cb9ddd9dfa4"
+at = 2026-11-10T19:52:41Z
+brief_sha256 = "27975462219615f46ef5b4848f1e702dc377b8b39f4d147e64665b806d8d99b5"
+by = "user"
+review = "ran"
+reason = ""
+
 [[run]]
 step = "investigate"
 workflow = "plan-v2-investigate"

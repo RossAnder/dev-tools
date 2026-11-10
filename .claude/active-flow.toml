@@ -1003,3 +1003,10 @@ scope = [
     "claude/skills/review-v2-lenses/**",
     "claude/skills/tomlctl/**",
 ]
+
+[[active]]
+slug = "v2-apply"
+last_used = "2026-11-10T19:52:41.156749977Z"
+
+[active.binding]
+branch = "main"
