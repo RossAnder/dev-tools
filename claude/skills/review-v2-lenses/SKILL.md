@@ -41,7 +41,7 @@ Common fields:
 | Field | Required | Value |
 |---|---|---|
 | `families` | yes | non-empty subset of `code`, `perf`, `plan` |
-| `mode` | yes | `judgement` (review-finder; the context-free correctness cell runs `review-finder-cf`, the same Opus agent without CLAUDE.md) \| `mechanical` (review-sweeper) \| `executor` (plan-executor) |
+| `mode` | yes | `judgement` (review-finder; the context-free correctness cell runs `review-finder-cf`, the same Opus agent without CLAUDE.md) \| `mechanical` (review-sweeper; a mechanical lens owns its rows but accepts a `cleanup` row with exact `old` text from any cell) \| `executor` (plan-executor) |
 | `produces` | yes | kinds from `defect`, `cleanup`, `advisory` |
 | `owns` | yes | non-empty list of concern tags from the vocabulary |
 | `activation` | yes | `floor` \| `signal` \| `candidate` \| `opt-in` |
@@ -149,7 +149,7 @@ When `files`, `manifest` and `contains` are all present, a file must pass each o
 
 **Stack** — evaluated over `git ls-files`. True when any file passes; the roots are the parent directories of the passing files. Anchor stacks on manifests or project files (`Cargo.toml`, `tsconfig.json`, `*.csproj`, `package.json`) rather than source extensions, so roots name projects rather than every source directory.
 
-**Diff** — evaluated over the changed files of `git diff -M <base>..HEAD` inside the run's scope. `files` filters the changed paths. `contains` is matched against each file's patch text: the header lines (`deleted file mode`, `rename from`, `new file mode`) and the hunk lines with their `+`, `-` or space prefix, so `^-` finds a removed line and `^[-+]` a changed one. The roots are the parent directories of the passing files.
+**Diff** — evaluated over the changed files of `git diff -M <base>..<head>` (`HEAD` when the run has no head) inside the run's scope. `files` filters the changed paths. `contains` is matched against each file's patch text: the header lines (`deleted file mode`, `rename from`, `new file mode`) and the hunk lines with their `+`, `-` or space prefix, so `^-` finds a removed line and `^[-+]` a changed one. The roots are the parent directories of the passing files.
 
 **Health** has three shapes:
 

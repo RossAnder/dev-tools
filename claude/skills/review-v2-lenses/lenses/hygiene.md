@@ -26,6 +26,8 @@ What in this slice can a reference search prove is no longer used, done or read,
 
 `unused-config` — configuration keys, feature flags, declared dependencies, build features and imports that nothing reads.
 
+Hygiene rows belong to this lens whichever cell writes them: a cell bound to another lens that meets a removable item writes it as a cleanup row on the hygiene lens, provided the old text is exact and a search proved the absence. A checker may refute such a row as it refutes a sweeper's.
+
 ## Probes — code
 
 Every row rests on a search. Run the sweep method for each candidate, search every spelling of the name across the whole tree, and record the search strings and the hit count in the row's evidence. A candidate whose verdict needs a judgement the search cannot settle — whether a public item has callers outside the repo, whether a framework finds it by convention, whether a TODO's intent is met — goes in your return under `escalate`, never into the store.
