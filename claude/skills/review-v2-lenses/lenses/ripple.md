@@ -29,7 +29,9 @@ What else in the tree names, depends on or repeats the thing this change renamed
 
 ## Probes — code
 
-Run each probe as the `sweep` method describes: a recorded search string, the whole tree as the search space, every hit read at its line. Report one line per probe in the coverage note even when it finds nothing.
+Run each probe as the `sweep` method describes: a recorded search string, the whole tree as the search space, every hit read at its line. Start from the names the diff removed or renamed, not from whole files, and count every probe in the coverage note even when it finds nothing.
+
+A hit in a file outside the scope is still a row: the scope bounds what the cell reads as changed, not where a stale reference may sit. Anchor the row on the file that holds the stale text.
 
 - For every symbol, file, flag, error message or config key the diff renames or removes, search the whole tree for the old spelling: source, comments and doc comments, `.md` and other prose, configuration, test fixtures and string literals. Search the bare name, not only a call-shaped `name(` spelling, and search the old file name without its extension.
 - A copied literal of a deleted or reworded message is a stale reference even when a test still passes on it; the test may only ever feed a mock.
@@ -40,7 +42,7 @@ Run each probe as the `sweep` method describes: a recorded search string, the wh
 
 ## Probes — plan
 
-Run the same `sweep` discipline against the tree the plan will change, reading the plan's tasks as the diff. Report one line per sweep in the coverage note even when it finds nothing.
+Run the same `sweep` discipline against the tree the plan will change, reading the plan's tasks as the diff. Count every sweep in the coverage note even when it finds nothing.
 
 - Sweep 1: for every symbol, file, flag or message a task renames or deletes, search the whole tree for the old name, comments, doc comments, prose and user-visible string literals included. Each hit in a file no task's Files line names is a row against the task that does the rename.
 - Sweep 2: for every registration seam a task introduces, find the task, or the existing code, that calls it from a production entry point. No such call site anywhere in the plan or the tree is a row.
@@ -57,7 +59,7 @@ Run the same `sweep` discipline against the tree the plan will change, reading t
 - Tests the change did not write; missing tests belong to test-gaps.
 - Files the change affects in a way grep cannot show — a behavioural dependency, a consumer of changed output shape — which need judgement; escalate them rather than writing a row.
 - In the plan family, files, components and consumers the change affects beyond what a sweep's search string finds; those are plan-grounding's unmentioned consumers.
-- Out-of-scope paths the run's scope excludes, and generated or vendored files.
+- Generated or vendored files. A path outside the scope is not excluded: a stale reference there is a row on that file.
 
 ## Edit forms
 
