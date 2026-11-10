@@ -41,8 +41,8 @@ pub(crate) use types::{
     QueryArgs, ReadIntegrityArgs, RelationKind, ReviewAddArgs, ReviewApplyArgs,
     ReviewCatalogueArgs, ReviewCoverArgs, ReviewDigestArgs, ReviewExportArgs, ReviewListArgs,
     ReviewOp, ReviewPlanArgs, ReviewReportArgs, ReviewResolveArgs, ReviewRunFinishArgs,
-    ReviewRunListArgs, ReviewRunOp, ReviewRunStartArgs, ReviewRunUpdateArgs, ReviewSchemaArgs,
-    ReviewShowArgs, ReviewStatsArgs, ReviewStore, ReviewSurveyArgs, ReviewSyncArgs,
-    ReviewTriageArgs, ReviewVerdictArgs, ShowPart, TasksOp, TasksTarget, TriageMode,
-    WriteIntegrityArgs,
+    ReviewRunListArgs, ReviewRunOp, ReviewRunShowArgs, ReviewRunStartArgs, ReviewRunUpdateArgs,
+    ReviewSchemaArgs, ReviewShowArgs, ReviewStatsArgs, ReviewStore, ReviewSurveyArgs,
+    ReviewSyncArgs, ReviewTriageArgs, ReviewVerdictArgs, ShowPart, TasksOp, TasksTarget,
+    TriageMode, WriteIntegrityArgs,
 };

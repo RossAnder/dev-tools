@@ -9,7 +9,7 @@ use std::path::Path;
 use anyhow::Result;
 use serde_json::{Value as JsonValue, json};
 
-use super::catalogue::{EntryType, Mode, run_catalogue};
+use super::catalogue::run_catalogue;
 use super::cells::{
     PathSet, ScopeView, Signals, disabled_lenses, find_run, list_tracked, pick_checks, pick_lenses,
     read_args,
@@ -155,9 +155,10 @@ fn check_ruled_out_reach(store: &Store, cell: &store::Cell, entries: &[RuledOut]
     }
     let run = find_run(store, &cell.run, VERB)?;
     let catalogue = run_catalogue(&repo_or_cwd_root()?, run)?;
-    let sweeps = catalogue.entries().iter().any(|e| {
-        e.ty == EntryType::Lens && e.mode == Some(Mode::Mechanical) && cell.concerns.contains(&e.id)
-    });
+    let sweeps = catalogue
+        .entries()
+        .iter()
+        .any(|e| e.is_mechanical_lens() && cell.concerns.contains(&e.id));
     if sweeps {
         return Ok(());
     }

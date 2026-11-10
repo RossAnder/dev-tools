@@ -16,6 +16,7 @@ mod digest;
 mod export;
 mod query;
 mod resolve;
+mod run_show;
 mod runs;
 mod schema_out;
 mod stats;

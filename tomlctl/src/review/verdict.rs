@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use anyhow::Result;
 use serde_json::{Map, Value as JsonValue, json};
 
-use super::catalogue::{EntryType, Mode, run_catalogue};
+use super::catalogue::run_catalogue;
 use super::fields::{self, FindingStatus, Kind, Record, Route, RowContext, SWEEPER};
 use super::invalid;
 use super::store::{self, Finding, Store, Target, Verdict};
@@ -59,7 +59,7 @@ pub(crate) fn run(target: &Target, args: ReviewVerdictArgs) -> Result<()> {
     // A replay of a call that landed finds its own verdicts already in place
     // and writes nothing.
     let current = store::load(&target.path, &read)?;
-    let mechanical = mechanical_lenses(&current, &inputs)?;
+    let mechanical = mechanical_by_run(&current, &inputs)?;
     let mut trial = current.clone();
     let slug = super::add::store_slug(target);
     let preview = apply(&mut trial, &inputs, slug.as_deref(), &mechanical);
@@ -302,7 +302,7 @@ type Mechanical = BTreeMap<String, std::result::Result<Vec<String>, String>>;
 
 /// The mechanical lenses of each run that a checker's `refuted` on a cleanup
 /// row outside a sweeper cell needs; no other verdict reads a catalogue.
-fn mechanical_lenses(store: &Store, inputs: &[Input]) -> Result<Mechanical> {
+fn mechanical_by_run(store: &Store, inputs: &[Input]) -> Result<Mechanical> {
     let mut mechanical = Mechanical::new();
     let mut root = None;
     for input in inputs {
@@ -331,19 +331,7 @@ fn mechanical_lenses(store: &Store, inputs: &[Input]) -> Result<Mechanical> {
             None => root.insert(repo_or_cwd_root()?),
         };
         let lenses = run_catalogue(root, run)
-            .map(|catalogue| {
-                catalogue
-                    .entries()
-                    .iter()
-                    .filter(|e| {
-                        e.ty == EntryType::Lens
-                            && e.mode == Some(Mode::Mechanical)
-                            && !e.disabled
-                            && e.families.contains(&run.family)
-                    })
-                    .map(|e| e.id.clone())
-                    .collect()
-            })
+            .map(|catalogue| catalogue.mechanical_lenses(run.family))
             .map_err(|err| format!("{err:#}"));
         mechanical.insert(run.id.clone(), lenses);
     }

@@ -89,6 +89,16 @@ pub(crate) struct ReviewRunFinishArgs {
 }
 
 #[derive(Args)]
+pub(crate) struct ReviewRunShowArgs {
+    #[arg(value_name = "RUN")]
+    pub(crate) run: String,
+    #[command(flatten)]
+    pub(crate) store: ReviewStore,
+    #[command(flatten)]
+    pub(crate) integrity: ReadIntegrityArgs,
+}
+
+#[derive(Args)]
 pub(crate) struct ReviewRunListArgs {
     #[command(flatten)]
     pub(crate) store: ReviewStore,

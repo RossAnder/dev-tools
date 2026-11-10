@@ -462,6 +462,12 @@ impl Entry {
         }
     }
 
+    /// A lens whose mode is `mechanical`, whatever its families or the
+    /// project config's `disable`.
+    pub(crate) fn is_mechanical_lens(&self) -> bool {
+        self.ty == EntryType::Lens && self.mode == Some(Mode::Mechanical)
+    }
+
     pub(crate) fn section(&self, key: &str) -> Option<&Section> {
         self.sections.iter().find(|s| s.key == key)
     }
@@ -719,6 +725,16 @@ impl Catalogue {
 
     pub(crate) fn signals(&self) -> &[Signal] {
         &self.signals
+    }
+
+    /// The ids of the sweeper-executed lenses `family` may bind: lenses whose
+    /// mode is `mechanical`, not disabled.
+    pub(crate) fn mechanical_lenses(&self, family: Family) -> Vec<String> {
+        self.entries
+            .iter()
+            .filter(|e| e.is_mechanical_lens() && !e.disabled && e.families.contains(&family))
+            .map(|e| e.id.clone())
+            .collect()
     }
 
     /// Sha256 over every vocabulary and entry file of both layers, with line
@@ -1325,7 +1341,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
 
 /// Whether a slice entry (a path or a glob) and a signal root share a
 /// subtree. A root of `` or `.` is the repository root.
-fn meets(slice_entry: &str, root: &str) -> bool {
+pub(super) fn meets(slice_entry: &str, root: &str) -> bool {
     let root = root.trim_start_matches("./").trim_end_matches('/');
     if root.is_empty() || root == "." {
         return true;
@@ -1338,7 +1354,7 @@ fn meets(slice_entry: &str, root: &str) -> bool {
     dir.is_empty() || within(dir, root) || within(root, dir)
 }
 
-fn within(path: &str, dir: &str) -> bool {
+pub(super) fn within(path: &str, dir: &str) -> bool {
     path == dir
         || path
             .strip_prefix(dir)

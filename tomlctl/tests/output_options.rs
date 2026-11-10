@@ -171,8 +171,8 @@ Does it compute the right thing?
 - confirmations
 "#;
 
-/// Run `U1` with `C1` sealed over `src/a.rs` and `C2` still assigned over
-/// `src/b.rs`; `F1` is a confirmed open defect and `F2` an unverified
+/// Run `U1`, carrying one undecided judged signal, with `C1` sealed over
+/// `src/a.rs` and `C2` still assigned over `src/b.rs`; `F1` is a confirmed open defect and `F2` an unverified
 /// cleanup. `{base}` and `{builtin}` are filled in by the fixture.
 const REVIEW_STORE: &str = r#"schema_version = 1
 last_updated = 2026-10-13
@@ -185,6 +185,7 @@ depth = "standard"
 started = "2026-10-13T04:32:04Z"
 base = "{base}"
 changed_lines = 2
+signals = [{ name = "trust-boundary", source = "judged", roots = ["src"], evidence = ["src/a.rs"] }]
 
 [runs.catalogue]
 builtin = "{builtin}"
@@ -881,6 +882,11 @@ fn cases() -> Vec<Case> {
         ),
         read(&["review", "list", "--slug", S], Field("findings"), "id"),
         read(&["review", "run", "list", "--slug", S], Field("runs"), "id"),
+        read(
+            &["review", "run", "show", "U1", "--slug", S],
+            Field("signals"),
+            "name",
+        ),
         read(
             &["review", "show", "F1,F2", "--slug", S, "--for", "orchestrator"],
             Field("items"),

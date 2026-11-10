@@ -16,7 +16,7 @@ use anyhow::Result;
 use serde_json::{Map, Value as JsonValue, json};
 use toml::Value as TomlValue;
 
-use super::catalogue::{Catalogue, EntryType, Mode, run_catalogue};
+use super::catalogue::run_catalogue;
 use super::fields::{
     self, Direction, Family, FindingStatus, Kind, Record, Route, RoutingGlobs, RowContext, Severity,
 };
@@ -106,7 +106,7 @@ pub(crate) fn run(target: &Target, args: ReviewAddArgs) -> Result<()> {
     }
     let catalogue = run_catalogue(&root, run)?;
     let globs = catalogue.routing().compile()?;
-    let swept = swept_lenses(&catalogue, run.family);
+    let swept = catalogue.mechanical_lenses(run.family);
     let slug = store_slug(target);
     let flow = flow_slug(slug.as_deref(), run.family);
 
@@ -282,22 +282,6 @@ struct Checks<'a> {
     slug: Option<&'a str>,
     globs: &'a RoutingGlobs,
     swept: &'a [String],
-}
-
-/// The ids of the catalogue's sweeper-executed lenses for `family`: those
-/// whose mode is `mechanical`.
-fn swept_lenses(catalogue: &Catalogue, family: Family) -> Vec<String> {
-    catalogue
-        .entries()
-        .iter()
-        .filter(|e| {
-            e.ty == EntryType::Lens
-                && e.mode == Some(Mode::Mechanical)
-                && !e.disabled
-                && e.families.contains(&family)
-        })
-        .map(|e| e.id.clone())
-        .collect()
 }
 
 /// The checks that need no review store: the field catalogue, the cell's

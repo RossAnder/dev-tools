@@ -27,7 +27,7 @@ pub(crate) enum ReviewOp {
     #[command(name = "sync-v1")]
     SyncV1(ReviewSyncArgs),
 
-    /// Start, patch, finish or list review runs.
+    /// Start, patch, finish, list or show review runs.
     Run {
         #[command(subcommand)]
         op: ReviewRunOp,
@@ -96,6 +96,9 @@ pub(crate) enum ReviewRunOp {
     Finish(ReviewRunFinishArgs),
     /// List the store's runs, ordered by id. Writes nothing.
     List(ReviewRunListArgs),
+    /// Print one run's bounds, signals (roots limited to its scope),
+    /// baselines, waves, agents and audit. Writes nothing.
+    Show(ReviewRunShowArgs),
 }
 
 /// The store a verb reads or writes: `.claude/flows/<slug>/review-v2.toml`
