@@ -8,7 +8,7 @@ scope = []
 [id_high_water]
 C = 3
 D = 14
-H = 2
+H = 3
 
 [[decision]]
 id = "D1"
@@ -497,6 +497,83 @@ finished = 2026-11-10T21:22:02Z
 skip_reason = ""
 outcome = "ok"
 
+[[run]]
+step = "implement:C"
+workflow = "implement-v2-milestone"
+args_hash = "e2e96e4e82362dbc8a186b1b46b1448e1a680d32851294354a92822af7c0a2ea"
+run_id = "wf_d248a53c-529"
+session = "442794e1-30c8-4969-8675-5f5859824ecb"
+started = 2026-11-10T21:23:22Z
+finished = 2026-11-10T21:29:19Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "implement:C"
+workflow = "implement-v2-milestone"
+args_hash = "8a3fdd598c768de05ae04ab533cb867242763b242903839302da917db4ae87df"
+run_id = "wf_e5f134a4-e61"
+session = "442794e1-30c8-4969-8675-5f5859824ecb"
+started = 2026-11-10T21:29:40Z
+finished = 2026-11-10T21:49:14Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "implement:C"
+workflow = "implement-v2-milestone"
+args_hash = "8426413729cb6748a3706eaec9e9a0139f96e92e357ebc3bbb5577a2b6689525"
+run_id = "wf_f1c731e8-be5"
+session = "442794e1-30c8-4969-8675-5f5859824ecb"
+started = 2026-11-10T21:49:51Z
+finished = 2026-11-10T21:53:15Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "implement:C"
+workflow = "implement-v2-milestone"
+args_hash = "f5b309b3e214b8638f6c340efede022b9c8b2f13256932f4b41bf5b6822c567c"
+run_id = "wf_47c4bbfb-b02"
+session = "442794e1-30c8-4969-8675-5f5859824ecb"
+started = 2026-11-10T21:53:44Z
+finished = 2026-11-10T22:06:00Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "implement:C"
+workflow = "implement-v2-milestone"
+args_hash = "27a2e26c2f891d52af52179e0f513ece42ccf5e24bd82681fb79e40aaeba67ba"
+run_id = "wf_71aacadc-74c"
+session = "442794e1-30c8-4969-8675-5f5859824ecb"
+started = 2026-11-10T22:06:26Z
+finished = 2026-11-10T22:06:55Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "implement:C"
+workflow = "implement-v2-milestone"
+args_hash = "70014097e2300e8cf944da3f3c7196a448573a6cc6f056f6d5c9e59976608598"
+run_id = "wf_d89e320c-00e"
+session = "442794e1-30c8-4969-8675-5f5859824ecb"
+started = 2026-11-10T22:13:47Z
+finished = 2026-11-10T22:15:57Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "implement:C"
+workflow = "implement-v2-milestone"
+args_hash = "addcbd516c68e6b1929ae2c01324b9d4bdcc6fb4320352486e7af6ad6f5c24ae"
+run_id = "wf_26757854-b93"
+session = "442794e1-30c8-4969-8675-5f5859824ecb"
+started = 2026-11-10T22:16:22Z
+finished = 2026-11-10T22:17:51Z
+skip_reason = ""
+outcome = "ok"
+
 [[handover]]
 id = "H1"
 reason = "external"
@@ -513,4 +590,13 @@ action = "Deploy milestone B's changed entries under claude/ to the Claude confi
 when = "After the milestone B commit"
 done_when = "`cmp claude/workflows/review-v2.js ~/.claude-work/workflows/review-v2.js` and `cmp claude/agents/review-verifier.md ~/.claude-work/agents/review-verifier.md` both exit 0"
 source_task = 13
+done = false
+
+[[handover]]
+id = "H3"
+reason = "external"
+action = "Deploy milestone C's changed entries under claude/ to the Claude config dir (~/.claude-work), which holds real copies the link script refuses: commands review-v2.md, implement-v2.md and apply-v2.md (already a link); agents review-verifier, plan-worker-lite and plan-worker-deep; workflows/review-v2.js; skills review-v2-method, review-v2-lenses (six lenses, three checks), review-v2-engine, implement-v2-engine, apply-v2-engine (already a link) and tomlctl (SKILL.md, references/review.md, review-apply.md, review-runs.md). The plan-worker agents and the implement-v2 engine are the ones /implement-v2 itself runs from."
+when = "After the milestone C commit"
+done_when = "`cmp claude/agents/plan-worker-deep.md ~/.claude-work/agents/plan-worker-deep.md` and `cmp claude/skills/review-v2-method/SKILL.md ~/.claude-work/skills/review-v2-method/SKILL.md` both exit 0"
+source_task = 27
 done = false

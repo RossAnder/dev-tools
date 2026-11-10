@@ -1139,7 +1139,7 @@ check = '''grep -q 'FIX_SHAPES: &\[&str\] = &\["edits", "needs-plan"\]' tomlctl/
 at = "base"
 
 [specs.premises.probe]
-at = "faf0252188ecb577d5433e787bff3e7fe58c5377"
+at = "634757327c47d3bbdffdecf6c1a53b8b312ef6f8"
 neg_rc = 0
 verdict = "holds"
 
@@ -1149,7 +1149,7 @@ check = "grep -q 'WhenChallenge' tomlctl/src/review/fields.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "faf0252188ecb577d5433e787bff3e7fe58c5377"
+at = "634757327c47d3bbdffdecf6c1a53b8b312ef6f8"
 neg_rc = 0
 verdict = "holds"
 
@@ -1231,6 +1231,11 @@ claim = "the blocked_on field exists"
 check = """grep -q '"blocked_on"' tomlctl/src/review/fields.rs"""
 at = "after:17"
 
+[specs.premises.probe]
+at = "634757327c47d3bbdffdecf6c1a53b8b312ef6f8"
+neg_rc = 0
+verdict = "holds"
+
 [[specs]]
 ref = "let-a-verifier-verdict-unblock-a-finding"
 outcome = "A verifier that can answer a blocked claim records that with a sketch of the fix, and the finding comes back as an ordinary fixable finding that carries the sketch for its implementer; the verifier writes only its verdict."
@@ -1268,6 +1273,11 @@ writes_build = true
 claim = "the blocked_on field exists"
 check = """grep -q '"blocked_on"' tomlctl/src/review/fields.rs"""
 at = "after:17"
+
+[specs.premises.probe]
+at = "634757327c47d3bbdffdecf6c1a53b8b312ef6f8"
+neg_rc = 0
+verdict = "holds"
 
 [[specs]]
 ref = "add-decision-answers-review-settle-and-proposal-ageing"
@@ -1336,6 +1346,11 @@ claim = "the blocked_on field exists"
 check = """grep -q '"blocked_on"' tomlctl/src/review/fields.rs"""
 at = "after:17"
 
+[specs.premises.probe]
+at = "634757327c47d3bbdffdecf6c1a53b8b312ef6f8"
+neg_rc = 0
+verdict = "holds"
+
 [[specs]]
 ref = "mint-settle-tasks-and-carry-decision-answers-in-review-schedule"
 outcome = "An evidence-blocked finding gets exactly one settle task whose work is a proposal note, every other blocked finding is refused with what it is blocked on, and an answered decision reaches the fix worker as a binding constraint."
@@ -1344,6 +1359,7 @@ constraints = [
     "A finding that already carries a proposal never gets a second settle task.",
     "Scheduling fixable findings behaves as it did before this task.",
     "A finding blocked on measurement or alternatives is refused with a reason saying it waits for trials.",
+    "In tomlctl/src/review/dispatch.rs change only the `ReviewOp::Schedule` arm: pass the new flag into `schedule::Request` as a `settle_checkpoint` field, the way the arm already passes `checkpoint`.",
 ]
 means = []
 design = [
@@ -1376,6 +1392,11 @@ writes_build = true
 claim = "review settle exists"
 check = "test -f tomlctl/src/review/settle.rs"
 at = "after:20"
+
+[specs.premises.probe]
+at = "634757327c47d3bbdffdecf6c1a53b8b312ef6f8"
+neg_rc = 0
+verdict = "holds"
 
 [[specs]]
 ref = "report-blocked-rates-and-settle-tiers-in-review-stats-apply"
@@ -1415,6 +1436,7 @@ outcome = "An installed tomlctl announces the blocked-finding verbs as features,
 constraints = [
     "Touch no file outside this task's files.",
     "Every flag a table names is one the verb accepts: read each verb's `--help` from a debug build or its clap type.",
+    "claude/skills/tomlctl/references/review.md is 564 lines against a 600-line ceiling that the `skill_references_under_line_ceiling` gate enforces on every references file. The apply verbs (`review schedule`, `review reconcile`, `review anchor`, `review reproduce`, `review reproduce-status`) are documented in claude/skills/tomlctl/references/review-apply.md: document `review settle`, and any change to `review schedule`, there, and keep both files under 600 lines.",
 ]
 means = []
 design = ["design/verbs.md#capabilities"]
@@ -1473,6 +1495,11 @@ verdict = "healthy"
 claim = "the version is 0.23.0"
 check = """grep -q '^version = "0.23.0"' tomlctl/Cargo.toml"""
 at = "after:10"
+
+[specs.premises.probe]
+at = "634757327c47d3bbdffdecf6c1a53b8b312ef6f8"
+neg_rc = 0
+verdict = "holds"
 
 [[specs]]
 ref = "rewrite-the-review-method-for-blocked-findings-and-the-verifiers-unblock"
@@ -1541,7 +1568,7 @@ check = "grep -q 'fix_shape' claude/skills/review-v2-method/SKILL.md"
 at = "base"
 
 [specs.premises.probe]
-at = "faf0252188ecb577d5433e787bff3e7fe58c5377"
+at = "634757327c47d3bbdffdecf6c1a53b8b312ef6f8"
 neg_rc = 0
 verdict = "holds"
 
@@ -1583,7 +1610,7 @@ check = """test "$(grep -rl 'needs-plan' claude/skills/review-v2-lenses | wc -l)
 at = "base"
 
 [specs.premises.probe]
-at = "faf0252188ecb577d5433e787bff3e7fe58c5377"
+at = "634757327c47d3bbdffdecf6c1a53b8b312ef6f8"
 neg_rc = 0
 verdict = "holds"
 
@@ -1634,7 +1661,7 @@ check = "grep -q 'review_list_fix_shape' claude/skills/review-v2-engine/SKILL.md
 at = "base"
 
 [specs.premises.probe]
-at = "faf0252188ecb577d5433e787bff3e7fe58c5377"
+at = "634757327c47d3bbdffdecf6c1a53b8b312ef6f8"
 neg_rc = 0
 verdict = "holds"
 
@@ -1711,7 +1738,7 @@ check = "grep -q 'SHARED-BLOCK:plan-worker-procedure END' claude/agents/plan-wor
 at = "base"
 
 [specs.premises.probe]
-at = "faf0252188ecb577d5433e787bff3e7fe58c5377"
+at = "634757327c47d3bbdffdecf6c1a53b8b312ef6f8"
 neg_rc = 0
 verdict = "holds"
 
@@ -1758,7 +1785,7 @@ check = "grep -q 'Not started: apply' docs/ideas/v2-pipeline.md"
 at = "base"
 
 [specs.premises.probe]
-at = "faf0252188ecb577d5433e787bff3e7fe58c5377"
+at = "634757327c47d3bbdffdecf6c1a53b8b312ef6f8"
 neg_rc = 0
 verdict = "holds"
 
@@ -2011,6 +2038,119 @@ kind = "forward"
 positive = ""
 writes_build = true
 
+[[specs]]
+ref = "state-the-overdue-proposal-refusal-in-the-run-verb-reference"
+outcome = "claude/skills/tomlctl/references/review-runs.md says, under `tomlctl review run finish`, that the verb also refuses while a deferred proposal of the run's family is overdue, and that `--incomplete` / `--incomplete-file` does not waive that refusal"
+constraints = [
+    "Take the rule and its wording from the `Deferred proposals` paragraph of claude/skills/tomlctl/references/review.md and from `tomlctl/src/review/runs.rs`; state it in one or two sentences and point at that paragraph rather than restating how a proposal ages",
+    "Edit only the `run finish` section: its refusal sentence and, where it needs it, the `--incomplete` flag row",
+    "The file stays under 600 lines, and every flag a table names is one the verb accepts",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "The run-verb reference names the overdue refusal"
+check = "grep -q -i 'overdue' claude/skills/tomlctl/references/review-runs.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[[specs.accept]]
+behaviour = "The harness gates still pass"
+check = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+kind = "guard"
+positive = ""
+writes_build = true
+
+[[specs]]
+ref = "make-the-findings-references-settle-and-show-commands-parse"
+outcome = "Every `tomlctl` invocation inside a code fence of claude/skills/implement-v2-engine/references/findings.md parses under the real clap parser"
+constraints = [
+    "The lint reads fenced commands and substitutes each `<...>` placeholder; `<store flag>` holds a space and stands for a flag plus its value, so it becomes stray positionals. In every fenced `tomlctl` command of the file that still carries `<store flag>` (the three `review settle` commands and the `review show <F1,F2> <store flag> --for orchestrator` line among them), spell the store as `--slug <slug>`, as the file's reproduce commands already do",
+    "The file already says once that a scope store takes `--scope <scope>` in place of `--slug <slug>`; add that note beside the first settle fence only if the existing note does not plainly cover it",
+    "Inline prose mentions of `<store flag>` outside code fences stay; change no other wording",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "No fenced command carries the two-word placeholder"
+check = "! grep -q -E '^tomlctl .*<store flag>' claude/skills/implement-v2-engine/references/findings.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[[specs.accept]]
+behaviour = "The command lint passes"
+check = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests::lint::command_lint"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs]]
+ref = "give-review-settle-its-output-options-case"
+outcome = "tomlctl/tests/output_options.rs carries a case for `review settle`, in the shape the neighbouring review write verbs' cases take, and `every_leaf_command_has_a_case` and the output-options suite pass"
+constraints = [
+    "`review settle` is a write verb: model its case on the existing `review reproduce`, `review schedule` and `review reconcile` cases, against the review fixture store the file already builds, extending the fixture with an evidence-blocked open finding if the verb needs one",
+    "The case exercises the real verb; it is not a stub that only names the command",
+    "Change no existing case",
+    "Edit tomlctl/src/review/settle.rs only when the case shows the verb prints its write envelope through the wrong emitter for a write (the write emitter is `print_json_compact`); otherwise leave it untouched and say so in the note",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "Every leaf command has a case"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(output_options) & test(every_leaf_command_has_a_case)'"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.accept]]
+behaviour = "The output-options suite and the settle tests pass"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(output_options) | binary(review_settle)'"
+kind = "guard"
+positive = ""
+writes_build = true
+
+[[specs]]
+ref = "advertise-review-settles-tier-vocabulary-in-capabilities"
+outcome = "`tomlctl capabilities` reports the values of `review settle --tier` as `mechanical`, `cited`, `user`, read from the same constant the verb validates against, and no other flag's reported values change"
+constraints = [
+    """The bare clap id `tier` falls back to the unscoped `ENUM_VALUES` entry (A, B, C). Add a `("review settle", "tier", ...)` entry to `SCOPED_ENUM_VALUES` in tomlctl/src/capabilities.rs, and a matching arm in the `scoped_enum_values_match_their_validators` test naming the validator's own vocabulary""",
+    "The vocabulary is `fields::SETTLE_TIERS` in the private `review::fields` module; re-export it from tomlctl/src/review/mod.rs as `pub(crate) use fields::SETTLE_TIERS;` beside the existing re-exports, and change nothing else in that file",
+    "Add or extend a unit test in capabilities.rs asserting the reported values for `review settle` `tier`; change no other entry of either table",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "The scoped table names the settle tier"
+check = """grep -q '"review settle"' tomlctl/src/capabilities.rs && grep -q 'SETTLE_TIERS' tomlctl/src/review/mod.rs"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[[specs.accept]]
+behaviour = "The capabilities unit tests and the capability integration tests pass"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(capabilities::) | binary(capabilities)'"
+kind = "forward"
+positive = ""
+writes_build = true
+
 [[milestones]]
 id = "A"
 gates = [
@@ -2043,7 +2183,6 @@ gates = [
     "bash scripts/verify-shared-blocks.sh",
     "cargo install --path tomlctl",
     "cargo install --path glimpse",
-    "bash scripts/link-v2-review.sh",
 ]
 elaboration = "upfront"
 defer_reason = ""
@@ -2227,6 +2366,87 @@ old = "[11,16,21,30,34]"
 new = "[11,16,21,30,34,36]"
 actor = "orchestrator"
 reason = "gate B round 1: fix task 36 now holds claude/skills/implement-v2-engine/references/findings.md before this row; the row follows it"
+
+[[changes]]
+at = 2026-11-10T21:29:19Z
+ref = "milestone:C"
+field = "gates"
+old = '["cargo fmt --manifest-path tomlctl/Cargo.toml -- --check","cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets -- -D warnings","cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast","cargo clippy --manifest-path glimpse/Cargo.toml --locked","bash scripts/verify-shared-blocks.sh","cargo install --path tomlctl","cargo install --path glimpse","bash scripts/link-v2-review.sh"]'
+new = '["cargo fmt --manifest-path tomlctl/Cargo.toml -- --check","cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets -- -D warnings","cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast","cargo clippy --manifest-path glimpse/Cargo.toml --locked","bash scripts/verify-shared-blocks.sh","cargo install --path tomlctl","cargo install --path glimpse"]'
+actor = "orchestrator"
+reason = "user: drop `bash scripts/link-v2-review.sh` from the gates, as for milestone A; this machine deploys the config dir by copy, so the script refuses the real files in place"
+
+[[changes]]
+at = 2026-11-10T21:49:39Z
+ref = "bump-tomlctl-to-0240-and-document-the-blocked-finding-surface"
+field = "files"
+old = '["tomlctl/Cargo.toml","tomlctl/Cargo.lock","glimpse/Cargo.lock","tomlctl/src/cli/types/mod.rs","tomlctl/src/capabilities.rs","tomlctl/tests/capabilities.rs","tomlctl/README.md","claude/skills/tomlctl/references/review.md","claude/skills/tomlctl/SKILL.md"]'
+new = '["tomlctl/Cargo.toml","tomlctl/Cargo.lock","glimpse/Cargo.lock","tomlctl/src/cli/types/mod.rs","tomlctl/src/capabilities.rs","tomlctl/tests/capabilities.rs","tomlctl/README.md","claude/skills/tomlctl/references/review.md","claude/skills/tomlctl/references/review-apply.md","claude/skills/tomlctl/SKILL.md"]'
+actor = "orchestrator"
+reason = "milestone A's fix task 32 moved the apply verbs out of review.md into references/review-apply.md to keep review.md under the 600-line reference ceiling; this row was written before the split, so it now also holds review-apply.md and is told where each verb's reference lives"
+
+[[changes]]
+at = 2026-11-10T21:49:39Z
+ref = "bump-tomlctl-to-0240-and-document-the-blocked-finding-surface"
+field = "spec.constraints"
+old = """["Touch no file outside this task's files.","Every flag a table names is one the verb accepts: read each verb's `--help` from a debug build or its clap type."]"""
+new = """["Touch no file outside this task's files.","Every flag a table names is one the verb accepts: read each verb's `--help` from a debug build or its clap type.","claude/skills/tomlctl/references/review.md is 564 lines against a 600-line ceiling that the `skill_references_under_line_ceiling` gate enforces on every references file. The apply verbs (`review schedule`, `review reconcile`, `review anchor`, `review reproduce`, `review reproduce-status`) are documented in claude/skills/tomlctl/references/review-apply.md: document `review settle`, and any change to `review schedule`, there, and keep both files under 600 lines."]"""
+actor = "orchestrator"
+reason = "milestone A's fix task 32 moved the apply verbs out of review.md into references/review-apply.md to keep review.md under the 600-line reference ceiling; this row was written before the split, so it now also holds review-apply.md and is told where each verb's reference lives"
+
+[[changes]]
+at = 2026-11-10T21:53:33Z
+ref = "mint-settle-tasks-and-carry-decision-answers-in-review-schedule"
+field = "files"
+old = '["tomlctl/src/review/schedule.rs","tomlctl/src/cli/types/review/export.rs","tomlctl/tests/review_schedule.rs"]'
+new = '["tomlctl/src/review/schedule.rs","tomlctl/src/cli/types/review/export.rs","tomlctl/src/review/dispatch.rs","tomlctl/tests/review_schedule.rs"]'
+actor = "orchestrator"
+reason = "task 21 failed: `--settle-checkpoint` has to reach `schedule::Request`, whose literal is built in the `ReviewOp::Schedule` arm of tomlctl/src/review/dispatch.rs, a file the task did not hold; the task now holds it"
+
+[[changes]]
+at = 2026-11-10T21:53:33Z
+ref = "mint-settle-tasks-and-carry-decision-answers-in-review-schedule"
+field = "spec.constraints"
+old = """["Touch no file outside this task's files.","A finding that already carries a proposal never gets a second settle task.","Scheduling fixable findings behaves as it did before this task.","A finding blocked on measurement or alternatives is refused with a reason saying it waits for trials."]"""
+new = """["Touch no file outside this task's files.","A finding that already carries a proposal never gets a second settle task.","Scheduling fixable findings behaves as it did before this task.","A finding blocked on measurement or alternatives is refused with a reason saying it waits for trials.","In tomlctl/src/review/dispatch.rs change only the `ReviewOp::Schedule` arm: pass the new flag into `schedule::Request` as a `settle_checkpoint` field, the way the arm already passes `checkpoint`."]"""
+actor = "orchestrator"
+reason = "task 21 failed: `--settle-checkpoint` has to reach `schedule::Request`, whose literal is built in the `ReviewOp::Schedule` arm of tomlctl/src/review/dispatch.rs, a file the task did not hold; the task now holds it"
+
+[[changes]]
+at = 2026-11-10T22:06:16Z
+ref = "state-the-overdue-proposal-refusal-in-the-run-verb-reference"
+field = "*"
+old = ""
+new = "State the overdue-proposal refusal in the run-verb reference"
+actor = "orchestrator"
+reason = "milestone C's own work left this file stale: task 20 made `review run finish` refuse while a deferred proposal of the run's family is overdue, with `--incomplete` not waiving it, and review-runs.md, which no row held, does not say so"
+
+[[changes]]
+at = 2026-11-10T22:13:37Z
+ref = "make-the-findings-references-settle-and-show-commands-parse"
+field = "*"
+old = ""
+new = "Make the findings reference's settle and show commands parse"
+actor = "orchestrator"
+reason = "gate C round 1: cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests fails cli::dispatch::tests::lint::command_lint: claude/skills/implement-v2-engine/references/findings.md, three fenced `tomlctl review settle <F> <store flag> ...` commands are rejected with unexpected argument '1'"
+
+[[changes]]
+at = 2026-11-10T22:13:37Z
+ref = "give-review-settle-its-output-options-case"
+field = "*"
+old = ""
+new = "Give review settle its output-options case"
+actor = "orchestrator"
+reason = "gate C round 1: cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast fails every_leaf_command_has_a_case (tests/output_options.rs): commands without a case: review settle"
+
+[[changes]]
+at = 2026-11-10T22:16:11Z
+ref = "advertise-review-settles-tier-vocabulary-in-capabilities"
+field = "*"
+old = ""
+new = "Advertise review settle's tier vocabulary in capabilities"
+actor = "orchestrator"
+reason = "milestone C's own work left capabilities wrong: `tomlctl capabilities --get 'commands.review.subcommands.settle.flags.--tier'` prints values A, B, C, where `review settle --tier` (task 20) accepts mechanical, cited, user; task 23 could not fix it without tomlctl/src/review/mod.rs"
 
 [[items]]
 id = 1
@@ -2670,7 +2890,7 @@ id = 17
 ref = "replace-fix_shape-with-blocked_on-in-the-finding-catalogue"
 title = "Replace fix_shape with blocked_on in the finding catalogue"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = ""
 phase_depth = 0
@@ -2702,15 +2922,15 @@ deps_note = ""
 action = "Remove `fix_shape` from the field catalogue and add `blocked_on` with its detail fields for defect and cleanup findings, with the conditional requirements enforced at write time and stated in the agent schema."
 detail = 'The existing conditional-requirement idiom (the variant that requires `challenges` when `angle = challenge`) is the pattern; a minimum item count is new. Add a helper other modules can call to ask whether a stored finding is blocked and on what, which answers `design` for a legacy row with `fix_shape = "needs-plan"` and no `blocked_on`. The listed test files write rows with `fix_shape`; move them to the new field. Leave the `FIX_SHAPES` constant in place: `review list --fix-shape` in query.rs still reads it, and the next task removes both together, so the crate keeps compiling.'
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "be21122c9cba89adabcce5737f815733ccd877d1"
 
 [[items]]
 id = 18
 ref = "move-every-fix_shape-reader-to-blocked_on"
 title = "Move every fix_shape reader to blocked_on"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = ""
 phase_depth = 0
@@ -2736,15 +2956,15 @@ deps_note = ""
 action = "Replace `review list --fix-shape` with `--blocked-on <value>|any|none`, group the report's blocked findings by `blocked_on` in place of the Needs-a-plan group, and make selection refuse a blocked finding with its `blocked_on` as the reason."
 detail = "Every reader asks whether a finding is blocked through the catalogue's helper, so a legacy needs-plan row lists, reports and is refused as blocked on design. With `--fix-shape` gone, delete the `FIX_SHAPES` constant from fields.rs; that is this task's only edit there. The help text of `review export-v1 --all` says it leaves out needs-plan findings: reword it to say it leaves out blocked ones."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "be21122c9cba89adabcce5737f815733ccd877d1"
 
 [[items]]
 id = 19
 ref = "let-a-verifier-verdict-unblock-a-finding"
 title = "Let a verifier verdict unblock a finding"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = ""
 phase_depth = 0
@@ -2762,15 +2982,15 @@ deps_note = ""
 action = "Add `unblocks` and `fix_sketch` to the verdict row and the verdict-return schema, and make `review verdict` clear a finding's block when a verifier's verdict carries them."
 detail = ""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "be21122c9cba89adabcce5737f815733ccd877d1"
 
 [[items]]
 id = 20
 ref = "add-decision-answers-review-settle-and-proposal-ageing"
 title = "Add decision answers, review settle and proposal ageing"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = ""
 phase_depth = 0
@@ -2799,15 +3019,15 @@ deps_note = ""
 action = "Add `review triage --answer-file` for decision-blocked findings and the `review settle` verb with its three outcomes, list deferred proposals with their age in the digest, and make `review run finish` refuse while a proposal of its family is overdue."
 detail = "`proposal_at` is a UTC datetime, not a date, so a run started later the same day counts toward the proposal's age: the age is the number of runs of the finding's family whose `started` is later than it."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "be21122c9cba89adabcce5737f815733ccd877d1"
 
 [[items]]
 id = 21
 ref = "mint-settle-tasks-and-carry-decision-answers-in-review-schedule"
 title = "Mint settle tasks and carry decision answers in review schedule"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = ""
 phase_depth = 0
@@ -2815,6 +3035,7 @@ heading_depth = 3
 files = [
     "tomlctl/src/review/schedule.rs",
     "tomlctl/src/cli/types/review/export.rs",
+    "tomlctl/src/review/dispatch.rs",
     "tomlctl/tests/review_schedule.rs",
 ]
 needs = [20]
@@ -2823,15 +3044,15 @@ deps_note = ""
 action = "Add `--settle-checkpoint` to `review schedule`: a finding blocked on evidence with no proposal becomes a settle task there; a finding with a `decision_answer` carries it as a constraint on its fix task; a finding with `fix_sketch` shows it in the task's detail."
 detail = ""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "be21122c9cba89adabcce5737f815733ccd877d1"
 
 [[items]]
 id = 22
 ref = "report-blocked-rates-and-settle-tiers-in-review-stats-apply"
 title = "Report blocked rates and settle tiers in review stats --apply"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = ""
 phase_depth = 0
@@ -2850,15 +3071,15 @@ deps_note = ""
 action = "Extend `review stats --apply` with, per lens and per agent, the findings written, the blocked ones by `blocked_on` and those a verifier unblocked, and with settle outcomes by tier, refuted and deferred."
 detail = "A settle outcome at the `mechanical` tier is a finding that was marked blocked though its fix was provable by a command; say in measurement.md that this count and the verifier-unblocked count are the misclassification signals."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "be21122c9cba89adabcce5737f815733ccd877d1"
 
 [[items]]
 id = 23
 ref = "bump-tomlctl-to-0240-and-document-the-blocked-finding-surface"
 title = "Bump tomlctl to 0.24.0 and document the blocked-finding surface"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = ""
 phase_depth = 0
@@ -2872,6 +3093,7 @@ files = [
     "tomlctl/tests/capabilities.rs",
     "tomlctl/README.md",
     "claude/skills/tomlctl/references/review.md",
+    "claude/skills/tomlctl/references/review-apply.md",
     "claude/skills/tomlctl/SKILL.md",
 ]
 needs = [
@@ -2885,15 +3107,15 @@ deps_note = ""
 action = "Set the version to 0.24.0, add the milestone C features and remove `review_list_fix_shape`, refresh both lock files, and bring the reference in line with the blocked-finding surface."
 detail = "In review.md replace every `fix_shape` and `--fix-shape` mention, document `blocked_on` with its detail fields and conditions, `unblocks` and `fix_sketch` on a verdict, `review triage --answer-file`, `review settle`, `review schedule --settle-checkpoint`, the proposal fields and ageing, and the extended `review stats --apply`. The `review report` section says the report writes a Needs-a-plan group: it now groups blocked findings by `blocked_on`. Do the same in README.md."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "be21122c9cba89adabcce5737f815733ccd877d1"
 
 [[items]]
 id = 24
 ref = "rewrite-the-review-method-for-blocked-findings-and-the-verifiers-unblock"
 title = "Rewrite the review method for blocked findings and the verifier's unblock"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = ""
 phase_depth = 0
@@ -2916,15 +3138,15 @@ deps_note = ""
 action = "Replace every `fix_shape` and `needs-plan` instruction in the review method with `blocked_on` and its burden of proof, and add the verifier's challenge of a blocked claim to its method, its agent file and its prompt in the pipeline script."
 detail = "State the rule as the method's own: a finding is fixable by default; blocked is a claim that must name what is missing, in the fields its kind requires; a decision where one option is plainly dominated is not a decision. For the verifier: refute-first extends to the classification, so it tries to write the fix, and when it can it returns `unblocks` with a `fix_sketch` and edits nothing. Update the finding examples in finding-kinds.md. Raise the script's `SCRIPT_VERSION`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "be21122c9cba89adabcce5737f815733ccd877d1"
 
 [[items]]
 id = 25
 ref = "reword-the-plan-family-catalogue-entries-from-needs-plan-to-blocked_on"
 title = "Reword the plan-family catalogue entries from needs-plan to blocked_on"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = ""
 phase_depth = 0
@@ -2946,15 +3168,15 @@ deps_note = ""
 action = 'In each of the nine entries, rewrite the sentence that tells a finder to set `fix_shape = "needs-plan"` so it tells the finder to set `blocked_on` to `decision` or `design` with the detail that value requires.'
 detail = """A plan finding whose fix turns on a choice is blocked on `decision` and names its options; one that needs the plan's structure reworked is blocked on `design` and names the contract change. Change only that sentence in each file. In the three `checks/` entries the same sentence also names `fix_shape = "edits"`: drop that too, since a fixable finding now carries no such field."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "be21122c9cba89adabcce5737f815733ccd877d1"
 
 [[items]]
 id = 26
 ref = "rewrite-review-triage-for-blocked-findings"
 title = "Rewrite review triage for blocked findings"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = ""
 phase_depth = 0
@@ -2975,15 +3197,15 @@ deps_note = ""
 action = "Replace the Needs-a-plan group and the `--fix-shape` listing in the review engine with blocked findings grouped by `blocked_on`, and write the triage handling for each kind."
 detail = "Decision findings are asked together and each answer recorded with `--answer-file`. Evidence findings are offered for apply. Measurement and alternatives are listed as waiting for trials. Design is offered the `plan` route, which names `/plan-v2` with the finding as intent and which only the user picks. Deferred proposals are listed with their age, and an overdue one must be given a disposition before `review run finish`. The convert payload loses `fix_shape`. Both capability checks (SKILL.md stage 0 and plan-flow.md section 1) swap `review_list_fix_shape` for `review_blocked_on`, `review_settle` and `review_triage_answer`. plan-flow.md also names needs-plan findings in its pre-flight listing step; reword that too. No `needs-plan` wording is left in any of the four files."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "be21122c9cba89adabcce5737f815733ccd877d1"
 
 [[items]]
 id = 27
 ref = "add-the-settle-drain-and-the-apply-row-failure-rules-to-the-engines"
 title = "Add the settle drain and the apply-row failure rules to the engines"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = ""
 phase_depth = 0
@@ -3011,15 +3233,15 @@ deps_note = ""
 action = "Add the Settle drain and Failure on an apply row sections to `references/findings.md` with their step-table row and drain.md pointers; add the settle note's form and the no-reclassification rule to the shared worker procedure in both worker files; add the settle milestone and its checkpoint flag to the apply skill; add the milestone C features to the capability checks of the apply skill and the `/implement-v2` carrier."
 detail = "The worker procedure is the `plan-worker-procedure` shared block: both files must carry the same bytes. A settle task writes two files: its run note, which opens `Status:` like any other, and the proposal file its `files` names. The proposal file opens `Proposal:` or `Refuted:`, answers the finding's `blocked_missing`, cites what it read, and proposes an edit-level fix; one that asks for more investigation is a failed task. drain.md's Never-up-a-tier rule stays for plan rows and gains one pointer to the apply-row rule. The apply skill adds a settle milestone before the fix milestone when a selected finding is blocked on evidence and passes `--settle-checkpoint`. Both carriers' pre-flights gain `review_blocked_on`, `review_settle` and `review_triage_answer`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "be21122c9cba89adabcce5737f815733ccd877d1"
 
 [[items]]
 id = 28
 ref = "record-apply-as-built-in-claudemd-and-the-pipeline-idea-doc"
 title = "Record apply as built in CLAUDE.md and the pipeline idea doc"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = ""
 phase_depth = 0
@@ -3038,8 +3260,8 @@ deps_note = ""
 action = "Add an Apply v2 section to CLAUDE.md after Implement v2, and update the status lines of `docs/ideas/v2-pipeline.md` to say apply is built."
 detail = "The CLAUDE.md section follows the shape of the Implement v2 section: one opening paragraph, then bullets for the verbs and stores, blocked findings, the reproduce check, and deploy (the link scripts and the `cargo install` rerun). In the idea doc change Where things stand and the topic table's Apply row; under the Apply decisions add a short Built list naming what departs from them: milestone order, the `scheduled` status, reproductions keyed by flow and milestone, the user gate inside the settle drain."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "be21122c9cba89adabcce5737f815733ccd877d1"
 
 [[items]]
 id = 29
@@ -3215,3 +3437,95 @@ detail = ""
 acceptance = ""
 agent = "plan-worker-lite"
 commit = "a3df45235ade34080e512e540ff776b520eb785e"
+
+[[items]]
+id = 37
+ref = "state-the-overdue-proposal-refusal-in-the-run-verb-reference"
+title = "State the overdue-proposal refusal in the run-verb reference"
+effort = "S"
+status = "done"
+checkpoint = "C"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/tomlctl/references/review-runs.md"]
+needs = [23]
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "be21122c9cba89adabcce5737f815733ccd877d1"
+
+[[items]]
+id = 38
+ref = "make-the-findings-references-settle-and-show-commands-parse"
+title = "Make the findings reference's settle and show commands parse"
+effort = "S"
+status = "done"
+checkpoint = "C"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/implement-v2-engine/references/findings.md"]
+needs = [27]
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "be21122c9cba89adabcce5737f815733ccd877d1"
+
+[[items]]
+id = 39
+ref = "give-review-settle-its-output-options-case"
+title = "Give review settle its output-options case"
+effort = "S"
+status = "done"
+checkpoint = "C"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/tests/output_options.rs",
+    "tomlctl/src/review/settle.rs",
+]
+needs = [
+    20,
+    17,
+]
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-deep"
+commit = "be21122c9cba89adabcce5737f815733ccd877d1"
+
+[[items]]
+id = 40
+ref = "advertise-review-settles-tier-vocabulary-in-capabilities"
+title = "Advertise review settle's tier vocabulary in capabilities"
+effort = "S"
+status = "done"
+checkpoint = "C"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/capabilities.rs",
+    "tomlctl/src/review/mod.rs",
+]
+needs = [
+    23,
+    20,
+]
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-deep"
+commit = "be21122c9cba89adabcce5737f815733ccd877d1"

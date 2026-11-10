@@ -11032,3 +11032,54 @@ flow = "v2-apply"
 context = "The skill hands over to implement-v2-engine with the flow slug, which picks the first milestone with a row not done, and --milestone is refused while an earlier one is unfinished. The skill only announces this, so /apply-v2 can run plan work the user did not ask for. Decide whether it should stop and ask instead."
 base_sha = "e42667b7f81f921261d8017ccbe4c95d800c18af"
 related = ["B-ce9ebb4d"]
+
+[[backlog]]
+id = "B-1745ce8c"
+kind = "debt"
+summary = "a verifier unblocks verdict clears blocked_on without keeping the block it answered, so stats count it as unrecorded"
+area = "tomlctl/src/review/verdict.rs"
+tags = []
+status = "open"
+created = 2026-11-10T22:24:21Z
+last_seen = 2026-11-10T22:24:21Z
+seen_count = 1
+dedup_id = "1745ce8cdba72bf5"
+origin = "implement-v2"
+flow = "v2-apply"
+context = "review stats --apply reads an answered block from unblocked_by: user means decision, settle means evidence, and a verifier unblock has nothing to read, so it lands under unrecorded and the per-block verifier-unblock rate cannot be computed. Keeping the cleared block on the verdict or on the finding would fix it."
+base_sha = "634757327c47d3bbdffdecf6c1a53b8b312ef6f8"
+related = ["B-fc4d7f8b"]
+
+[[backlog]]
+id = "B-517686fb"
+kind = "question"
+summary = "review settle --refute is refused on a panel-routed finding, so one blocked on evidence cannot be refuted at settle"
+area = "tomlctl/src/review/settle.rs"
+tags = []
+status = "open"
+created = 2026-11-10T22:24:21Z
+last_seen = 2026-11-10T22:24:21Z
+seen_count = 1
+dedup_id = "517686fb1c1c14a6"
+origin = "implement-v2"
+flow = "v2-apply"
+context = "settle --refute records an orchestrator refuted verdict, and review verdict takes only panel and audit verdicts on the panel route. A panel-routed finding blocked on evidence therefore has no refute path at settle; it needs an audit verdict or a rule for this case. Accept and defer still work."
+base_sha = "634757327c47d3bbdffdecf6c1a53b8b312ef6f8"
+related = ["B-b4451a42"]
+
+[[backlog]]
+id = "B-97172963"
+kind = "annoyance"
+summary = "review verdict --rationale - and --fix-sketch - both read stdin, so passing both leaves the second empty"
+area = "tomlctl/src/review/verdict.rs"
+tags = []
+status = "open"
+created = 2026-11-10T22:24:21Z
+last_seen = 2026-11-10T22:24:21Z
+seen_count = 1
+dedup_id = "9717296362fb3b6d"
+origin = "implement-v2"
+flow = "v2-apply"
+context = "Work around it by passing the sketch with --fix-sketch-file, or the rationale inline. A refusal naming the clash when both flags are given as - would make it plain."
+base_sha = "634757327c47d3bbdffdecf6c1a53b8b312ef6f8"
+related = ["B-00ae0571"]
