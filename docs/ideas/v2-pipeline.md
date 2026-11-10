@@ -7,10 +7,10 @@ The goal is one v2 chain from planning through implementation, review and apply.
 
 ## Where things stand
 
-- Built and merged, never deployed or run: `/review-v2`, `/optimise-v2`, `/review-plan-v2`, the `tomlctl review` group, the lens catalogue and `claude/workflows/review-v2.js`.
+- Built and linked, with no run recorded in this repo: `/review-v2`, `/optimise-v2`, `/review-plan-v2`, the `tomlctl review` group, the lens catalogue and `claude/workflows/review-v2.js`. The Review step of `human-only-handovers` was skipped, because plan review was not built when that plan was authored.
 - Run once for real work: `/plan-v2` (v2 planning), which planned and approved `human-only-handovers`, the proof recorded in `docs/ideas/plan-v2-probes.md`.
-- Planned: the execution engine's first slice, `/implement-v2`, in `docs/plans/jiggly-exploring-robin.md`.
-- Not started: apply.
+- Run once for real work: `/implement-v2`, the execution engine's first slice (`docs/plans/jiggly-exploring-robin.md`), which ran `human-only-handovers` end to end on 2026-11-10, both milestones gated and committed.
+- Not started: apply, and the `tool` and `clerk` executors and vetting of the execution engine.
 - v1 stays in use while v2 is built. `/tdd` runs inside v1 flows and dispatches v1 `/implement`, so it needs v1 until it is ported.
 
 ## Design topics
@@ -20,7 +20,7 @@ The goal is one v2 chain from planning through implementation, review and apply.
 | 1 | Plan format and lifecycle | Decided |
 | 2 | Planning flow | Decided by `docs/plans/v2-planning.md` (Approach) |
 | 3 | Plan review | Decided |
-| 4 | Execution engine | First slice decided and planned (`docs/plans/jiggly-exploring-robin.md`); `tool`, `clerk` and vetting open |
+| 4 | Execution engine | First slice built and run (`docs/plans/jiggly-exploring-robin.md`); `tool`, `clerk` and vetting open |
 | 5 | Apply | Partly decided |
 | 6 | Flow state and glimpse | Open |
 | 7 | Re-audit of the built review stage | Open |
