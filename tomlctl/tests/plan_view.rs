@@ -98,13 +98,19 @@ skip_reason = "Low risk."
 
 [[handover]]
 id = "H1"
-command = "cargo install --path tomlctl"
+reason = "restart"
+action = "Restart open sessions."
+when = "After the run."
+done_when = "The new command is listed."
 source_task = 1
 done = false
 
 [[handover]]
 id = "H2"
-command = "done-handover-command"
+reason = "attended"
+action = "done-handover-action"
+when = "Earlier."
+done_when = "Already true."
 source_task = 2
 done = true
 "#;
@@ -459,7 +465,8 @@ fn human_prints_the_whole_plan_as_markdown() {
         "Other-row-action.",
         "Outcome-marker.",
         "Locking-marker.",
-        "done-handover-command",
+        "- [x] H2 (attended): done-handover-action When: Earlier.. Done when: Already true.. (after task 2)",
+        "- [ ] H1 (restart): Restart open sessions. When: After the run.. Done when: The new command is listed.. (after task 1)",
         "`prove`: open",
         "Low risk.",
     ] {
@@ -560,7 +567,14 @@ fn digest_lists_what_is_still_open() {
             "unanswered_decisions": [{"id": "D1", "decision": "Use the helper."}],
             "open_runs": ["prove"],
             "undone_handovers": [
-                {"id": "H1", "command": "cargo install --path tomlctl", "source_task": 1}
+                {
+                    "id": "H1",
+                    "reason": "restart",
+                    "action": "Restart open sessions.",
+                    "when": "After the run.",
+                    "done_when": "The new command is listed.",
+                    "source_task": 1
+                }
             ],
             "tasks_without_spec": [2],
             "failed_tasks": [],

@@ -158,7 +158,7 @@ fn write_subcommands_expose_all_integrity_flags_in_help() {
         &["plan", "open", "--help"],
         &["plan", "decide", "--help"],
         &["plan", "contract", "--help"],
-        &["plan", "handover", "add", "--help"],
+        &["plan", "handover", "set", "--help"],
         &["plan", "handover", "done", "--help"],
         &["plan", "run", "start", "--help"],
         &["plan", "run", "finish", "--help"],

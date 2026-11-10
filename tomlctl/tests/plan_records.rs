@@ -80,6 +80,22 @@ fn stderr(assert: &assert_cmd::assert::Assert) -> String {
     String::from_utf8_lossy(&assert.get_output().stderr).to_string()
 }
 
+const HANDOVER: &str = r#"{"reason":"restart","action":"Restart the session.","when":"after merge","done_when":"the new tools are listed","source_task":1}"#;
+
+fn set_handover(root: &Path, rows: &str) -> assert_cmd::assert::Assert {
+    let file = root.join("handover-rows.ndjson");
+    fs::write(&file, format!("{rows}\n")).expect("rows file");
+    plan(
+        root,
+        &[
+            "handover",
+            "set",
+            "--ndjson",
+            file.to_str().expect("utf8 path"),
+        ],
+    )
+}
+
 const GOOD: &str = r#"{"decision":"Use the helper.","provenance":"agent-assumed","door":"two-way","rejected":[{"option":"new","because":"dup"}]}"#;
 
 /// `plan open` refuses a flow recording a foreign plan, so a record verb that
@@ -101,7 +117,7 @@ fn every_record_verb_refuses_a_flow_with_no_plan_toml() {
     let verbs: [&[&str]; 8] = [
         &["decide", "--ndjson", rows],
         &["contract", "--ndjson", rows],
-        &["handover", "add", "--command", "c", "--source-task", "1"],
+        &["handover", "set", "--ndjson", rows],
         &["handover", "done", "H1"],
         &[
             "run",
@@ -171,11 +187,7 @@ fn every_read_verb_on_an_unopened_flow_names_the_flow_and_plan_open() {
 #[test]
 fn a_mistyped_slug_creates_no_flow_directory() {
     let (_dir, root) = sandbox();
-    plan(
-        &root,
-        &["handover", "add", "--command", "c", "--source-task", "1"],
-    )
-    .failure();
+    set_handover(&root, HANDOVER).failure();
     assert!(!root.join(".claude").join("flows").join(SLUG).exists());
 }
 
@@ -318,32 +330,66 @@ fn contracts_mint_validate_and_update() {
 #[test]
 fn handovers_mint_and_complete() {
     let (_dir, root) = opened();
-    let out = plan(
-        &root,
-        &[
-            "handover",
-            "add",
-            "--command",
-            "cargo install",
-            "--source-task",
-            "3",
-        ],
-    )
-    .success();
-    assert_eq!(stdout_json(&out)["id"], "H1");
+    let out = set_handover(&root, HANDOVER).success();
+    assert_eq!(stdout_json(&out)["ids"], serde_json::json!(["H1"]));
     plan(&root, &["handover", "done", "H1"]).success();
     assert!(store_text(&root).contains("done = true"));
     plan(&root, &["handover", "done", "H7"]).failure();
 }
 
 #[test]
+fn a_handover_row_with_an_id_updates_only_the_keys_it_carries() {
+    let (_dir, root) = opened();
+    set_handover(&root, HANDOVER).success();
+    let out = set_handover(&root, r#"{"id":"H1","action":"Restart both sessions."}"#).success();
+    assert_eq!(stdout_json(&out)["ids"], serde_json::json!(["H1"]));
+    let text = store_text(&root);
+    assert!(text.contains("Restart both sessions."), "{text}");
+    assert!(!text.contains("Restart the session."), "{text}");
+    assert!(text.contains("reason = \"restart\""), "{text}");
+    assert!(text.contains("after merge"), "{text}");
+    assert!(text.contains("the new tools are listed"), "{text}");
+    assert!(text.contains("done = false"), "{text}");
+    assert_eq!(text.matches("[[handover]]").count(), 1, "{text}");
+}
+
+#[test]
+fn a_handover_row_naming_an_unknown_id_is_refused() {
+    let (_dir, root) = opened();
+    let before = store_text(&root);
+    let out = set_handover(&root, r#"{"id":"H9","action":"x"}"#).failure();
+    assert!(stderr(&out).contains("H9"), "{}", stderr(&out));
+    assert_eq!(store_text(&root), before);
+}
+
+#[test]
+fn a_handover_row_carrying_done_is_refused() {
+    let (_dir, root) = opened();
+    set_handover(&root, HANDOVER).success();
+    let before = store_text(&root);
+    let out = set_handover(&root, r#"{"id":"H1","done":true}"#).failure();
+    assert!(
+        stderr(&out).contains("plan handover done"),
+        "{}",
+        stderr(&out)
+    );
+    assert_eq!(store_text(&root), before);
+}
+
+#[test]
+fn a_handover_row_with_an_unknown_reason_is_refused() {
+    let (_dir, root) = opened();
+    let before = store_text(&root);
+    let bad = r#"{"reason":"whenever","action":"x","source_task":1}"#;
+    let out = set_handover(&root, bad).failure();
+    assert!(stderr(&out).contains("reason"), "{}", stderr(&out));
+    assert_eq!(store_text(&root), before);
+}
+
+#[test]
 fn a_removed_top_handover_id_is_not_reused() {
     let (_dir, root) = opened();
-    plan(
-        &root,
-        &["handover", "add", "--command", "a", "--source-task", "1"],
-    )
-    .success();
+    set_handover(&root, HANDOVER).success();
     let path = root
         .join(".claude")
         .join("flows")
@@ -352,12 +398,8 @@ fn a_removed_top_handover_id_is_not_reused() {
     let text = fs::read_to_string(&path).expect("store");
     let cut = text.find("[[handover]]").expect("a handover row");
     fs::write(&path, &text[..cut]).expect("rewrite without the row");
-    let out = plan(
-        &root,
-        &["handover", "add", "--command", "b", "--source-task", "1"],
-    )
-    .success();
-    assert_eq!(stdout_json(&out)["id"], "H2");
+    let out = set_handover(&root, HANDOVER).success();
+    assert_eq!(stdout_json(&out)["ids"], serde_json::json!(["H2"]));
 }
 
 #[test]
@@ -396,11 +438,7 @@ fn runs_start_finish_and_skip() {
     let text = store_text(&root);
     assert!(text.contains("skip_reason = \"low risk\""), "{text}");
     // The skipped row must still read back: a `[[run]]` needs `started`.
-    plan(
-        &root,
-        &["handover", "add", "--command", "c", "--source-task", "1"],
-    )
-    .success();
+    set_handover(&root, HANDOVER).success();
 }
 
 #[test]

@@ -1018,13 +1018,19 @@ skip_reason = "No unknowns."
 
 [[handover]]
 id = "H1"
-command = "cargo install --path tomlctl"
+reason = "restart"
+action = "Restart open sessions."
+when = "After the run."
+done_when = "The new command is listed."
 source_task = 1
 done = false
 
 [[handover]]
 id = "H2"
-command = "already run"
+reason = "attended"
+action = "already run"
+when = "Earlier."
+done_when = "Already true."
 source_task = 1
 done = true
 "#;
@@ -1284,6 +1290,7 @@ fn gate_reports_each_item_in_the_screens_order() {
             "review_edits",
             "deferred_milestones",
             "stops",
+            "handovers",
         ]
     );
 
@@ -1319,15 +1326,18 @@ fn gate_reports_each_item_in_the_screens_order() {
     );
     assert_eq!(
         report["stops"],
-        serde_json::json!([
-            { "kind": "gate", "milestone": "A", "command": "cargo test" },
-            {
-                "kind": "handover",
-                "id": "H1",
-                "command": "cargo install --path tomlctl",
-                "source_task": 1
-            },
-        ])
+        serde_json::json!([{ "kind": "gate", "milestone": "A", "command": "cargo test" }])
+    );
+    assert_eq!(
+        report["handovers"],
+        serde_json::json!([{
+            "id": "H1",
+            "reason": "restart",
+            "action": "Restart open sessions.",
+            "when": "After the run.",
+            "done_when": "The new command is listed.",
+            "source_task": 1
+        }])
     );
 }
 

@@ -70,7 +70,7 @@ pub(crate) fn findings(slug: &str, integrity: &ReadIntegrityArgs) -> Result<Vec<
     found.extend(
         plan.handovers
             .iter()
-            .filter_map(|h| handover_finding(h, &tasks)),
+            .flat_map(|h| handover_findings(h, &tasks)),
     );
     found.extend(tasks.specs.iter().flat_map(|spec| {
         spec.premises
@@ -312,18 +312,38 @@ fn contract_findings(contract: &Contract, tasks: &Store) -> Vec<Finding> {
 
 /// A done handover has nothing left to run, so the task it came from no longer
 /// matters and must not block `plan approve --amend`.
-fn handover_finding(handover: &Handover, tasks: &Store) -> Option<Finding> {
-    if handover.done || tasks.find(handover.source_task).is_some() {
-        return None;
+fn handover_findings(handover: &Handover, tasks: &Store) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    if handover.done {
+        return findings;
     }
-    Some(error(
-        "plan/handover-task-unknown",
-        vec![handover.source_task],
-        format!(
-            "handover {} names task {}, which no row carries",
-            handover.id, handover.source_task
-        ),
-    ))
+    let empty: Vec<&str> = [
+        ("reason", handover.reason.is_none()),
+        ("action", handover.action.trim().is_empty()),
+        ("when", handover.when.trim().is_empty()),
+        ("done_when", handover.done_when.trim().is_empty()),
+    ]
+    .into_iter()
+    .filter_map(|(key, missing)| missing.then_some(key))
+    .collect();
+    if !empty.is_empty() {
+        findings.push(error(
+            "plan/handover-incomplete",
+            vec![handover.source_task],
+            format!("handover {} has no {}", handover.id, empty.join(", ")),
+        ));
+    }
+    if tasks.find(handover.source_task).is_none() {
+        findings.push(error(
+            "plan/handover-task-unknown",
+            vec![handover.source_task],
+            format!(
+                "handover {} names task {}, which no row carries",
+                handover.id, handover.source_task
+            ),
+        ));
+    }
+    findings
 }
 
 /// A premise at `after:<id>` waits on that row, so one naming no row can never be

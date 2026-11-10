@@ -38,6 +38,8 @@ const DECISION: &str = r#"{"decision":"Guard-bound-decision.","why":"Guard-bound
 const CONTRACT: &str =
     r#"{"kind":"invariant","claim":"Both-agree-claim.","check":"test -f src/a.rs","tasks":[1,2]}"#;
 
+const HANDOVER: &str = r#"{"reason":"restart","action":"Restart the session.","when":"after merge","done_when":"the new tools are listed","source_task":1}"#;
+
 const TASK_RECORDS: &str = r#"[[record]]
 title = "Add the guard"
 effort = "S"
@@ -149,16 +151,9 @@ impl Flow {
         flow.ok(&["plan", "decide", "--slug", SLUG, "--ndjson", &decision]);
         let contract = flow.payload("contract.ndjson", &format!("{CONTRACT}\n"));
         flow.ok(&["plan", "contract", "--slug", SLUG, "--ndjson", &contract]);
+        let handover = flow.payload("handover.ndjson", &format!("{HANDOVER}\n"));
         flow.ok(&[
-            "plan",
-            "handover",
-            "add",
-            "--slug",
-            SLUG,
-            "--command",
-            "cargo install --path tomlctl",
-            "--source-task",
-            "1",
+            "plan", "handover", "set", "--slug", SLUG, "--ndjson", &handover,
         ]);
         flow.ok(&[
             "plan",

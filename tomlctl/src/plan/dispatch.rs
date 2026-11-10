@@ -13,7 +13,7 @@ pub(crate) fn dispatch(op: PlanOp) -> Result<()> {
         PlanOp::Decide(args) => records::decide(args),
         PlanOp::Contract(args) => records::contract(args),
         PlanOp::Handover { op } => match op {
-            PlanHandoverOp::Add(args) => records::handover_add(args),
+            PlanHandoverOp::Set(args) => records::handover_set(args),
             PlanHandoverOp::Done(args) => records::handover_done(args),
         },
         PlanOp::Run { op } => match op {

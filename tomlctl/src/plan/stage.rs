@@ -22,8 +22,8 @@ const TASKS_CHECK: &str = "tasks check";
 const PLAN_CHECK: &str = "plan check";
 const PLAN_CONTRACT: &str = "plan contract";
 const PLAN_DECIDE: &str = "plan decide";
-const HANDOVER_REPLACE: &str = "plan handover add --command <same> --source-task <live id>, then \
-                                plan handover done <old id>";
+const HANDOVER_SET: &str = "plan handover set --ndjson <rows with the handover id and the missing \
+                            or corrected keys>";
 const MILESTONE_UPDATE: &str = "plan milestone update --defer --reason <why>";
 const FIX_AND_REPROBE: &str = "tasks update --ndjson, then plan probes --emit";
 const PROBES_EMIT: &str = "plan probes --emit";
@@ -38,7 +38,7 @@ const PROVE_ORDER: [&str; 10] = [
     TASKS_UPDATE,
     PLAN_CONTRACT,
     PLAN_DECIDE,
-    HANDOVER_REPLACE,
+    HANDOVER_SET,
     MILESTONE_UPDATE,
     PLAN_CHECK,
     FIX_AND_REPROBE,
@@ -135,7 +135,7 @@ fn remedy(class: &str) -> &'static str {
         | "backlog/unknown-id" => TASKS_UPDATE,
         "plan/contract-no-check" | "plan/contract-task-unknown" => PLAN_CONTRACT,
         "plan/decision-bind-unknown" => PLAN_DECIDE,
-        "plan/handover-task-unknown" => HANDOVER_REPLACE,
+        "plan/handover-task-unknown" | "plan/handover-incomplete" => HANDOVER_SET,
         "plan/deferred-no-reason" => MILESTONE_UPDATE,
         "plan/probe-unhealthy" => FIX_AND_REPROBE,
         "plan/probe-absent" => PROBES_EMIT,
@@ -340,7 +340,8 @@ mod tests {
             ("plan/contract-no-check", PLAN_CONTRACT),
             ("plan/contract-task-unknown", PLAN_CONTRACT),
             ("plan/decision-bind-unknown", PLAN_DECIDE),
-            ("plan/handover-task-unknown", HANDOVER_REPLACE),
+            ("plan/handover-task-unknown", HANDOVER_SET),
+            ("plan/handover-incomplete", HANDOVER_SET),
             ("plan/deferred-no-reason", MILESTONE_UPDATE),
             ("plan/probe-unhealthy", FIX_AND_REPROBE),
             ("plan/probe-absent", PROBES_EMIT),

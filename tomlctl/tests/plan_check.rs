@@ -443,7 +443,8 @@ fn a_contract_naming_an_absent_task_is_an_error() {
 fn a_handover_naming_an_absent_task_is_an_error() {
     let handover = |task: u32| {
         format!(
-            "{PLAN}\n[[handover]]\nid = \"H1\"\ncommand = \"c\"\nsource_task = {task}\ndone = false\n"
+            "{PLAN}\n{}source_task = {task}\ndone = false\n",
+            HANDOVER_HEAD
         )
     };
     assert_clean(&Flow::with_plan(&handover(1)));
@@ -456,9 +457,52 @@ fn a_handover_naming_an_absent_task_is_an_error() {
 
 #[test]
 fn a_done_handover_may_name_an_absent_task() {
+    let plan = format!("{PLAN}\n{HANDOVER_HEAD}source_task = 7\ndone = true\n");
+    assert_clean(&Flow::with_plan(&plan));
+}
+
+const HANDOVER_HEAD: &str = "[[handover]]\nid = \"H1\"\nreason = \"restart\"\n\
+    action = \"Restart the session.\"\nwhen = \"after merge\"\n\
+    done_when = \"the new tools are listed\"\n";
+
+fn incomplete_detail(flow: &Flow) -> String {
+    let (_, report) = flow.run();
+    report["findings"][0]["detail"]
+        .as_str()
+        .expect("a detail")
+        .to_string()
+}
+
+#[test]
+fn an_undone_handover_missing_when_is_incomplete() {
     let plan = format!(
-        "{PLAN}\n[[handover]]\nid = \"H1\"\ncommand = \"c\"\nsource_task = 7\ndone = true\n"
+        "{PLAN}\n[[handover]]\nid = \"H1\"\nreason = \"restart\"\n\
+         action = \"Restart the session.\"\ndone_when = \"the new tools are listed\"\n\
+         source_task = 1\ndone = false\n"
     );
+    let flow = Flow::with_plan(&plan);
+    assert_reports_error(&flow, "plan/handover-incomplete");
+    let detail = incomplete_detail(&flow);
+    assert!(
+        detail.contains("when") && !detail.contains("action"),
+        "{detail}"
+    );
+}
+
+#[test]
+fn an_undone_handover_missing_every_field_names_all_four() {
+    let plan = format!("{PLAN}\n[[handover]]\nid = \"H1\"\nsource_task = 1\ndone = false\n");
+    let flow = Flow::with_plan(&plan);
+    assert_reports_error(&flow, "plan/handover-incomplete");
+    let detail = incomplete_detail(&flow);
+    for key in ["reason", "action", "when", "done_when"] {
+        assert!(detail.contains(key), "{detail}");
+    }
+}
+
+#[test]
+fn a_done_handover_missing_fields_reports_nothing() {
+    let plan = format!("{PLAN}\n[[handover]]\nid = \"H1\"\nsource_task = 1\ndone = true\n");
     assert_clean(&Flow::with_plan(&plan));
 }
 

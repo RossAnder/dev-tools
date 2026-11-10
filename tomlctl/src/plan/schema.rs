@@ -1,15 +1,15 @@
 //! Plan store records and their TOML conversions.
 //!
 //! ```toml
-//! schema_version = 1
+//! schema_version = 2
 //! last_updated = 2026-11-05
 //! [binding] / [id_high_water]
 //! [[decision]] / [[contract]] / [[approval]] / [[run]] / [[handover]]
 //! ```
 //!
 //! `to_toml` inserts keys in that order and `preserve_order` holds it, so a
-//! write is byte-stable with no sort step. Each root key but `schema_version`
-//! is omitted while empty. Free text is LF-normalised on both read and write,
+//! write is byte-stable with no sort step. Every write stamps the current
+//! `SCHEMA_VERSION`, and each root key but `schema_version` is omitted while empty. Free text is LF-normalised on both read and write,
 //! because a lone `\r` forces `toml`'s escaped string form. Unknown keys are
 //! dropped: the store is tool-owned and every write re-emits it from this shape.
 
@@ -24,7 +24,7 @@ use crate::tasks::schema::{
     as_date as as_datetime, id_array, lf, normal_path, str_arr_value, str_array,
 };
 
-pub(crate) const SCHEMA_VERSION: i64 = 1;
+pub(crate) const SCHEMA_VERSION: i64 = 2;
 
 type Table = Map<String, TomlValue>;
 
@@ -105,6 +105,18 @@ vocabulary!(
         Errors => "errors",
         Stopped => "stopped",
         Abandoned => "abandoned",
+    }
+);
+
+vocabulary!(
+    /// Why a handover needs a person rather than an agent.
+    HandoverReason {
+        Restart => "restart",
+        Permissions => "permissions",
+        Attended => "attended",
+        Observe => "observe",
+        Credentials => "credentials",
+        External => "external",
     }
 );
 
@@ -295,10 +307,15 @@ impl Run {
     }
 }
 
+/// A step after landing that only a person can perform. An absent `reason` and
+/// an empty text field read without refusal, so `plan check` can report them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Handover {
     pub(crate) id: String,
-    pub(crate) command: String,
+    pub(crate) reason: Option<HandoverReason>,
+    pub(crate) action: String,
+    pub(crate) when: String,
+    pub(crate) done_when: String,
     pub(crate) source_task: u32,
     pub(crate) done: bool,
 }
@@ -350,9 +367,8 @@ pub(crate) fn from_toml(doc: &TomlValue) -> Result<PlanStore> {
         .get("schema_version")
         .and_then(TomlValue::as_integer)
         .unwrap_or(SCHEMA_VERSION);
-    // A newer store holds keys this shape drops, and the next write would
-    // re-emit it still stamped with its own version, so the loss would be
-    // invisible to the binary that wrote it.
+    // A newer store holds keys this shape drops, so a write from this binary
+    // would lose them silently.
     if schema_version > SCHEMA_VERSION {
         return Err(anyhow!(
             "plan store schema_version {schema_version} is newer than the supported \
@@ -378,7 +394,7 @@ pub(crate) fn from_toml(doc: &TomlValue) -> Result<PlanStore> {
 
 pub(crate) fn to_toml(store: &PlanStore) -> TomlValue {
     let PlanStore {
-        schema_version,
+        schema_version: _,
         last_updated,
         binding,
         id_high_water,
@@ -392,7 +408,7 @@ pub(crate) fn to_toml(store: &PlanStore) -> TomlValue {
     let mut root = Table::new();
     root.insert(
         "schema_version".to_string(),
-        TomlValue::Integer(*schema_version),
+        TomlValue::Integer(SCHEMA_VERSION),
     );
     if let Some(date) = last_updated {
         root.insert("last_updated".to_string(), TomlValue::Datetime(*date));
@@ -752,7 +768,14 @@ fn handover_from_toml(table: &Table, context: &str) -> Result<Handover> {
         .and_then(|n| u32::try_from(n).ok())
         .ok_or_else(|| anyhow!("{context} has no non-negative integer `source_task`"))?;
     Ok(Handover {
-        command: str_or(table, "command"),
+        reason: match table.get("reason") {
+            None => None,
+            Some(TomlValue::String(raw)) if raw.is_empty() => None,
+            Some(_) => Some(vocab(table, "reason", &context)?),
+        },
+        action: lf(&str_or(table, "action")),
+        when: lf(&str_or(table, "when")),
+        done_when: lf(&str_or(table, "done_when")),
         source_task,
         done: bool_or_false(table, "done", &context)?,
         id,
@@ -762,13 +785,26 @@ fn handover_from_toml(table: &Table, context: &str) -> Result<Handover> {
 fn handover_to_toml(handover: &Handover) -> TomlValue {
     let Handover {
         id,
-        command,
+        reason,
+        action,
+        when,
+        done_when,
         source_task,
         done,
     } = handover;
     let mut table = Table::new();
     table.insert("id".to_string(), TomlValue::String(id.clone()));
-    table.insert("command".to_string(), TomlValue::String(command.clone()));
+    if let Some(reason) = reason {
+        table.insert(
+            "reason".to_string(),
+            TomlValue::String(reason.as_str().to_string()),
+        );
+    }
+    for (key, text) in [("action", action), ("when", when), ("done_when", done_when)] {
+        if !text.is_empty() {
+            table.insert(key.to_string(), TomlValue::String(lf(text)));
+        }
+    }
     table.insert(
         "source_task".to_string(),
         TomlValue::Integer(i64::from(*source_task)),
@@ -907,7 +943,10 @@ pub(crate) mod tests {
             ],
             handovers: vec![Handover {
                 id: "H1".to_string(),
-                command: "cargo install --path tomlctl".to_string(),
+                reason: Some(HandoverReason::Restart),
+                action: "Restart open Claude Code sessions.".to_string(),
+                when: "Once the run reports done.".to_string(),
+                done_when: "The new command appears in a fresh session.".to_string(),
                 source_task: 3,
                 done: true,
             }],
@@ -998,6 +1037,7 @@ pub(crate) mod tests {
             ("decision", "door", "revolving", "one-way"),
             ("contract", "kind", "promise", "invariant"),
             ("approval", "review", "waved", "skipped-flag"),
+            ("handover", "reason", "whim", "credentials"),
         ];
         for (array, key, bad, listed) in cases {
             let mut raw = to_toml(&fixture());
@@ -1033,6 +1073,75 @@ pub(crate) mod tests {
                 .to_string();
             assert!(message.contains(key), "{array}.{key}: {message}");
         }
+    }
+
+    #[test]
+    fn a_handover_without_reason_or_text_reads_empty_and_writes_without_them() {
+        let mut raw = to_toml(&fixture());
+        let row = record_mut(&mut raw, "handover");
+        for key in ["reason", "action", "when", "done_when"] {
+            row.remove(key);
+        }
+        let read = from_toml(&raw).expect("absent handover fields are not refused");
+        let handover = &read.handovers[0];
+        assert_eq!(handover.reason, None);
+        assert_eq!(
+            (
+                handover.action.as_str(),
+                handover.when.as_str(),
+                handover.done_when.as_str()
+            ),
+            ("", "", "")
+        );
+
+        let written = to_toml(&read);
+        let keys: Vec<&str> = written["handover"][0]
+            .as_table()
+            .expect("a row table")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(keys, ["id", "source_task", "done"]);
+
+        let mut raw = to_toml(&fixture());
+        record_mut(&mut raw, "handover")
+            .insert("reason".to_string(), TomlValue::String(String::new()));
+        assert_eq!(from_toml(&raw).expect("parses").handovers[0].reason, None);
+    }
+
+    #[test]
+    fn a_handover_writes_its_keys_in_record_order() {
+        let doc = to_toml(&fixture());
+        let keys: Vec<&str> = doc["handover"][0]
+            .as_table()
+            .expect("a row table")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            keys,
+            [
+                "id",
+                "reason",
+                "action",
+                "when",
+                "done_when",
+                "source_task",
+                "done"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_store_read_at_an_older_version_is_written_at_the_current_one() {
+        let mut raw = to_toml(&fixture());
+        raw.as_table_mut()
+            .expect("root table")
+            .insert("schema_version".to_string(), TomlValue::Integer(1));
+        let read = from_toml(&raw).expect("an older store parses");
+        assert_eq!(read.schema_version, 1);
+        let written = to_toml(&read);
+        assert_eq!(written["schema_version"].as_integer(), Some(SCHEMA_VERSION));
     }
 
     #[test]
@@ -1202,7 +1311,10 @@ pub(crate) mod tests {
         let first = store.mint_id(RecordKind::Handover);
         store.handovers.push(Handover {
             id: first,
-            command: String::new(),
+            reason: None,
+            action: String::new(),
+            when: String::new(),
+            done_when: String::new(),
             source_task: 1,
             done: false,
         });

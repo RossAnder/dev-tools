@@ -11,7 +11,7 @@ that write it and the check classes are [plan.md](plan.md); the probe verdicts a
 ## `plan.toml` store shape
 
 ```toml
-schema_version = 1
+schema_version = 2
 last_updated = 2026-11-05
 
 [binding]
@@ -68,7 +68,10 @@ skip_reason = ""
 
 [[handover]]
 id = "H1"
-command = "cargo install --path tomlctl"
+reason = "restart"
+action = "Restart open Claude Code sessions."
+when = "Once the run reports done."
+done_when = "The new command appears in a fresh session's command list."
 source_task = 3
 done = false
 ```
@@ -134,6 +137,9 @@ id is then never minted again.
 | `[[handover]]` key | Meaning |
 |---|---|
 | `id` | Minted under the lock. |
-| `command` | A command a person must run once the task lands. |
-| `source_task` | The task id that makes it necessary. Not checked against the rows. |
+| `reason` | Why only a person can do it: `restart`, `permissions`, `attended`, `observe`, `credentials` or `external`. An unknown value is refused; absent reads as unset and `plan check` reports it. |
+| `action` | The one thing to do, with the exact command or setting when there is one. |
+| `when` | The trigger for doing it. |
+| `done_when` | What the user can observe to know it is done. |
+| `source_task` | The task id that makes it necessary. `plan check` reports an id no row carries. |
 | `done` | Set by `plan handover done`. |

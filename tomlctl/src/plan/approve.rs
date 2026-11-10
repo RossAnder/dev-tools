@@ -102,15 +102,22 @@ fn gate_report(plan: &PlanStore, tasks: &Store, review: &PlanReviewState) -> Jso
             .iter()
             .map(|command| json!({ "kind": "gate", "milestone": m.id, "command": command }))
     });
-    let handovers = plan.handovers.iter().filter(|h| !h.done).map(|h| {
-        json!({
-            "kind": "handover",
-            "id": h.id,
-            "command": h.command,
-            "source_task": h.source_task,
+    let handovers: Vec<JsonValue> = plan
+        .handovers
+        .iter()
+        .filter(|h| !h.done)
+        .map(|h| {
+            json!({
+                "id": h.id,
+                "reason": h.reason.map(|r| r.as_str()),
+                "action": h.action,
+                "when": h.when,
+                "done_when": h.done_when,
+                "source_task": h.source_task,
+            })
         })
-    });
-    let stops: Vec<JsonValue> = gates.chain(handovers).collect();
+        .collect();
+    let stops: Vec<JsonValue> = gates.collect();
 
     json!({
         "ok": true,
@@ -121,6 +128,7 @@ fn gate_report(plan: &PlanStore, tasks: &Store, review: &PlanReviewState) -> Jso
         "review_edits": review_edits(review),
         "deferred_milestones": deferred,
         "stops": stops,
+        "handovers": handovers,
     })
 }
 

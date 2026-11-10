@@ -27,7 +27,7 @@ pub(crate) enum PlanOp {
     /// Add or update cross-task contracts, minting ids under the lock.
     Contract(PlanContractArgs),
 
-    /// Add a handover or mark one done.
+    /// Add or update handovers, or mark one done.
     Handover {
         #[command(subcommand)]
         op: PlanHandoverOp,
@@ -72,8 +72,9 @@ pub(crate) enum PlanOp {
 /// `plan handover` leaves.
 #[derive(Subcommand)]
 pub(crate) enum PlanHandoverOp {
-    /// Record a command a person must run once a task lands.
-    Add(PlanHandoverAddArgs),
+    /// Add or update steps only a person can perform once a task lands,
+    /// minting ids under the lock.
+    Set(PlanHandoverSetArgs),
     /// Mark a handover done.
     Done(PlanHandoverDoneArgs),
 }
@@ -163,17 +164,15 @@ pub(crate) struct PlanContractArgs {
 }
 
 #[derive(Args)]
-pub(crate) struct PlanHandoverAddArgs {
+pub(crate) struct PlanHandoverSetArgs {
     #[command(flatten)]
     pub(crate) target: PlanTarget,
-    #[arg(long = "command", value_name = "COMMAND", help = "The command to run")]
-    pub(crate) command: String,
     #[arg(
-        long = "source-task",
-        value_name = "N",
-        help = "Task id that makes the command necessary"
+        long = "ndjson",
+        value_name = "SRC",
+        help = "Handovers, one JSON object per line; a row with `id` updates: `-` for stdin, otherwise a file path (a leading `@` is accepted; a `.toml` path is a record file)"
     )]
-    pub(crate) source_task: u32,
+    pub(crate) ndjson: String,
     #[command(flatten)]
     pub(crate) integrity: WriteIntegrityArgs,
 }

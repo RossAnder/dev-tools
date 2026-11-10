@@ -15,7 +15,7 @@ of planning is owned by the [`plan-v2-engine` skill](../../plan-v2-engine/SKILL.
 - [`plan open`](#plan-open)
 - [`plan decide`](#plan-decide)
 - [`plan contract`](#plan-contract)
-- [`plan handover add`](#plan-handover-add)
+- [`plan handover set`](#plan-handover-set)
 - [`plan handover done`](#plan-handover-done)
 - [`plan run start`](#plan-run-start)
 - [`plan run finish`](#plan-run-finish)
@@ -38,7 +38,7 @@ rule so that it cannot reach outside `.claude/flows/` or `docs/flows/`. The writ
 `--verify-integrity`), and `plan check`, `view`, `stage`, `gate` and `drift` the read bundle
 (`--verify-integrity`, `--strict-read`). Neither is repeated in the tables below. Only `plan open`
 creates a `plan.toml`, because its presence is what makes a flow v2. `plan decide`, `contract`,
-`handover add|done`, `run start|finish|abandon|skip`, `milestone add|update` and `approve` refuse a flow without
+`handover set|done`, `run start|finish|abandon|skip`, `milestone add|update` and `approve` refuse a flow without
 one with `kind=not_found`, naming `tomlctl plan open --slug <slug>`, and write nothing, not even a
 directory. `--no-create` is accepted on them but has no effect.
 
@@ -145,18 +145,36 @@ tomlctl plan contract --slug <slug> --ndjson <path>
 
 Prints `{"ok":true,"ids":["C1"]}`.
 
-## `plan handover add`
+## `plan handover set`
+
+A handover is a step only a person can perform, and `reason` says why. Agent work never becomes a
+handover: it is a task, a gate or an accept check.
+
+| `reason` | Meaning |
+|---|---|
+| `restart` | A running process the user owns must be restarted to load the change, and an agent cannot restart the session or pane the user is watching. |
+| `permissions` | A permission or elevation the agent must not grant itself: an allow or ask rule, an elevated shell, Developer Mode. |
+| `attended` | A check that needs a person at the terminal: an interactive command, a gesture, an `AskUserQuestion` flow. |
+| `observe` | A judgement that needs elapsed time or several real sessions. |
+| `credentials` | A secret, login or token only the user holds. |
+| `external` | A system outside the session's reach: another machine, a web console, a person. |
+
+Adds or updates handovers on the same terms as `plan decide`. A row without `id` mints one and needs
+a non-empty `action` and a `source_task`; `reason`, `when` and `done_when` may follow, and
+`plan check` reports a handover still missing one. A row with `id` updates that record, changing only
+the keys it names. The accepted keys are `id`, `reason`, `action`, `when`, `done_when` and
+`source_task`. A `done` key, an unknown key, an unknown id, an unknown `reason` or a blank `action`
+refuses the batch, which persists nothing; mark a step performed with `plan handover done`.
 
 ```bash
-tomlctl plan handover add --slug <slug> --command '<command>' --source-task <id>
+tomlctl plan handover set --slug <slug> --ndjson <path>
 ```
 
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
-| `--command` | command | The command to run; blank is refused. | required |
-| `--source-task` | id | The task that makes it necessary. | required |
+| `--ndjson` | source | One JSON object per line: `-` for stdin, otherwise a file path. A leading `@` is accepted, and a `.toml` path is a [record file](write.md). | required |
 
-Prints `{"ok":true,"id":"H1"}`.
+Prints `{"ok":true,"ids":["H1"]}`, one id per row in order.
 
 ## `plan handover done`
 
@@ -336,7 +354,7 @@ tomlctl plan view --slug <slug> --for worker --task <id>
 | `stage_inputs.runs[]` | `step`, `state` (`open`, `finished`, `abandoned`, `skipped`), `workflow`, `args_hash` (`""` when unset), `run_id`, `session`, `skip_reason`, `outcome` (a string, or `null`), `reason`. |
 | `stage_inputs.check` | `errors`, `warnings` and `classes`, or `null` with no `tasks.toml`. |
 | `counts` | Totals for `decisions` (`surfaced`, `vetoed`, `agent_assumed`, `one_way`), `contracts`, `tasks` by status, `specs`, `milestones` (`deferred`), `runs`, `handovers` (`undone`), `approvals`, `changes`. |
-| `open_items` | `unanswered_decisions`, `open_runs`, `undone_handovers`, `tasks_without_spec`, `failed_tasks`, `parked_tasks`, `deferred_milestones`. `open_runs` lists one step per row still open, so finished, abandoned and skipped rows are excluded. |
+| `open_items` | `unanswered_decisions`, `open_runs`, `undone_handovers` (each with `id`, `reason`, `action`, `when`, `done_when`, `source_task`), `tasks_without_spec`, `failed_tasks`, `parked_tasks`, `deferred_milestones`. `open_runs` lists one step per row still open, so finished, abandoned and skipped rows are excluded. |
 
 The human view's run line shows `abandoned (<reason>)`, and `, outcome <value>` on a run finished with
 an outcome.
@@ -380,7 +398,7 @@ unprobes the entry it changes.
 | `plan/spec-no-outcome`, `plan/spec-no-accept`, `plan/accept-no-check`, `plan/means-required-no-reason`, `plan/design-anchor-dead`, `plan/premise-task-unknown`, `backlog/unknown-id` | `tasks update --ndjson` |
 | `plan/contract-no-check`, `plan/contract-task-unknown` | `plan contract` |
 | `plan/decision-bind-unknown`, or a surfaced decision still `agent-assumed`, which no class reports but `plan approve` refuses | `plan decide` |
-| `plan/handover-task-unknown` | `plan handover add --command <same> --source-task <live id>, then plan handover done <old id>` |
+| `plan/handover-task-unknown`, `plan/handover-incomplete` | `plan handover set --ndjson <rows with the handover id and the missing or corrected keys>` |
 | `plan/deferred-no-reason` | `plan milestone update --defer --reason <why>` |
 | Any other error class | `plan check` |
 | `plan/probe-unhealthy` | `tasks update --ndjson, then plan probes --emit` |
@@ -426,7 +444,8 @@ tomlctl plan gate --slug <slug>
 | `task_mix` | `files`, `executor`, `tasks` | Row counts by file-count bucket (`1`, `2-3`, `4+`) and spec `executor`. A row with no files counts as `1`, and one with no spec under an empty executor. |
 | `review_edits` | `id`, `target`, `tier`, `by`, `summary` | Each plan finding review applied: decisions first, then user, cited and mechanical. |
 | `deferred_milestones` | `id`, `reason` | Milestones with `elaboration = "deferred"`. |
-| `stops` | `kind`, then `milestone`, `command` or `id`, `command`, `source_task` | Each milestone gate (`kind = "gate"`) and undone handover (`kind = "handover"`). |
+| `stops` | `kind`, `milestone`, `command` | Each milestone gate (`kind = "gate"`). |
+| `handovers` | `id`, `reason`, `action`, `when`, `done_when`, `source_task` | Each undone handover. An unset `reason` reads `null`. |
 
 `ok` is always `true`.
 
@@ -531,6 +550,7 @@ reported as written.
 | `plan/contract-task-unknown` | error | A contract's `tasks` names an id no row carries. |
 | `plan/premise-task-unknown` | error | A premise's `at = after:<id>` names no row, including a non-canonical or non-numeric id. |
 | `plan/handover-task-unknown` | error | A handover's `source_task` names an id no row carries. A done handover is not checked. |
+| `plan/handover-incomplete` | error | An undone handover has no `reason`, `action`, `when` or `done_when`; one finding per handover naming the empty keys. |
 | `plan/decision-bind-unknown` | error | A `binds` entry is empty, a task id no row carries, or a path neither on a row's `files` nor under the repo root. |
 | `plan/task-no-spec` | error | A row has no `[[specs]]` entry. |
 | `plan/spec-orphan` | error | A spec is keyed on a `ref` no row carries. |

@@ -14,8 +14,8 @@ const SLUG: &str = "plan-stage";
 const REVIEW_NEXT: &str = "the /plan-v2 Review step, or plan run skip --step review --reason <why>";
 const SPEC_NEXT: &str = "tasks update --ndjson";
 const PROBE_NEXT: &str = "plan probes --emit";
-const HANDOVER_NEXT: &str = "plan handover add --command <same> --source-task <live id>, then \
-                             plan handover done <old id>";
+const HANDOVER_NEXT: &str = "plan handover set --ndjson <rows with the handover id and the missing \
+                             or corrected keys>";
 
 const SPEC_BLOCK: &str = "[[specs]]\nref = \"add-guard\"\noutcome = \"the guard holds\"\n\
     accept = [{ behaviour = \"a retry waits\", check = \"cargo test retry\", kind = \"forward\", \
@@ -696,9 +696,11 @@ fn a_premise_after_an_absent_task_names_tasks_update_which_clears_it() {
 }
 
 #[test]
-fn a_handover_naming_an_absent_task_is_replaced_and_retired_by_its_own_verbs() {
+fn a_handover_naming_an_absent_task_is_repaired_in_place_by_handover_set() {
     let plan = format!(
-        "{PLAN}\n[[handover]]\nid = \"H1\"\ncommand = \"c\"\nsource_task = 9\ndone = false\n"
+        "{PLAN}\n[[handover]]\nid = \"H1\"\nreason = \"restart\"\n\
+         action = \"Restart the session.\"\nwhen = \"after merge\"\n\
+         done_when = \"the new tools are listed\"\nsource_task = 9\ndone = false\n"
     );
     let flow = Flow::seeded(TASKS, &plan, Some(BRIEF), Some(REVIEW_STORE_FINISHED));
     let report = assert_stage(&flow, "prove", HANDOVER_NEXT);
@@ -709,18 +711,9 @@ fn a_handover_naming_an_absent_task_is_replaced_and_retired_by_its_own_verbs() {
         "{report}"
     );
     flow.verb(
-        &[
-            "plan",
-            "handover",
-            "add",
-            "--command",
-            "c",
-            "--source-task",
-            "1",
-        ],
-        "",
+        &["plan", "handover", "set", "--ndjson", "-"],
+        "{\"id\":\"H1\",\"source_task\":1}\n",
     );
-    flow.verb(&["plan", "handover", "done", "H1"], "");
     assert_stage(&flow, "ready", "plan approve");
 }
 

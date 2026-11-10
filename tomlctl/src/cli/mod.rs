@@ -34,8 +34,8 @@ pub(crate) use dispatch::{read_integrity_opts, run, write_integrity_opts};
 pub(crate) use types::{
     ActiveOp, ArtifactKind, BacklogOp, Cli, ClusterBy, EdgeKind, EnvelopeOp, ErrorFormat,
     EvidenceOp, FlowOp, JsonOp, LegacyShortcuts, OnDuplicate, PlanApproveArgs, PlanCheckArgs,
-    PlanContractArgs, PlanDecideArgs, PlanDriftArgs, PlanGateArgs, PlanHandoverAddArgs,
-    PlanHandoverDoneArgs, PlanHandoverOp, PlanMilestoneAddArgs, PlanMilestoneOp,
+    PlanContractArgs, PlanDecideArgs, PlanDriftArgs, PlanGateArgs, PlanHandoverDoneArgs,
+    PlanHandoverOp, PlanHandoverSetArgs, PlanMilestoneAddArgs, PlanMilestoneOp,
     PlanMilestoneUpdateArgs, PlanOp, PlanOpenArgs, PlanProbesArgs, PlanRunAbandonArgs,
     PlanRunFinishArgs, PlanRunOp, PlanRunSkipArgs, PlanRunStartArgs, PlanStageArgs, PlanViewArgs,
     QueryArgs, ReadIntegrityArgs, RelationKind, ReviewAddArgs, ReviewApplyArgs,

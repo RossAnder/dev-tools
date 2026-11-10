@@ -213,10 +213,13 @@ fn records_block(out: &mut String, plan: &PlanStore) {
         out.push_str("## Handovers\n\n");
         for handover in &plan.handovers {
             let mark = if handover.done { "x" } else { " " };
+            let reason = handover.reason.map_or("no reason", |r| r.as_str());
             out.push_str(&format!(
-                "- [{mark}] {}: {} (after task {})\n",
+                "- [{mark}] {} ({reason}): {} When: {}. Done when: {}. (after task {})\n",
                 handover.id,
-                code(&handover.command),
+                handover.action,
+                handover.when,
+                handover.done_when,
                 handover.source_task
             ));
         }
@@ -424,7 +427,16 @@ fn open_items(plan: &PlanStore, tasks: &Store) -> JsonValue {
         .handovers
         .iter()
         .filter(|h| !h.done)
-        .map(|h| json!({"id": h.id, "command": h.command, "source_task": h.source_task}))
+        .map(|h| {
+            json!({
+                "id": h.id,
+                "reason": h.reason.map(|r| r.as_str()),
+                "action": h.action,
+                "when": h.when,
+                "done_when": h.done_when,
+                "source_task": h.source_task,
+            })
+        })
         .collect();
     let without_spec: Vec<u32> = tasks
         .items

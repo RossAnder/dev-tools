@@ -9,12 +9,12 @@ use anyhow::Result;
 use serde_json::{Map, Value as JsonValue, json};
 
 use super::schema::{
-    Contract, ContractKind, Decision, Door, Handover, PlanStore, Provenance, RecordKind, Rejected,
-    Run, RunOutcome, Vocabulary,
+    Contract, ContractKind, Decision, Door, Handover, HandoverReason, PlanStore, Provenance,
+    RecordKind, Rejected, Run, RunOutcome, Vocabulary,
 };
 use super::{schema, store};
 use crate::cli::{
-    PlanContractArgs, PlanDecideArgs, PlanHandoverAddArgs, PlanHandoverDoneArgs, PlanRunFinishArgs,
+    PlanContractArgs, PlanDecideArgs, PlanHandoverDoneArgs, PlanHandoverSetArgs, PlanRunFinishArgs,
     PlanRunSkipArgs, PlanRunStartArgs, ReadIntegrityArgs, WriteIntegrityArgs,
 };
 use crate::errors::{ErrorKind, tagged_err};
@@ -44,14 +44,26 @@ const CONTRACT_KEYS: &[&str] = &[
     "id", "kind", "claim", "check", "tasks", "provides", "consumes",
 ];
 
-const HANDOVER_KEYS: &[&str] = &["command", "source_task", "done"];
+const HANDOVER_KEYS: &[&str] = &[
+    "id",
+    "reason",
+    "action",
+    "when",
+    "done_when",
+    "source_task",
+    "done",
+];
+
+/// The keys a `plan handover set` row may carry: `done` is written only by
+/// `plan handover done`, so a set row cannot record a step as performed.
+const HANDOVER_SET_KEYS: &[&str] = &["id", "reason", "action", "when", "done_when", "source_task"];
 
 /// The keys of a `kind` record a review finding may target: every key but `id`.
 pub(super) fn review_keys(kind: RecordKind) -> &'static [&'static str] {
     match kind {
         RecordKind::Decision => &DECISION_KEYS[1..],
         RecordKind::Contract => &CONTRACT_KEYS[1..],
-        RecordKind::Handover => HANDOVER_KEYS,
+        RecordKind::Handover => &HANDOVER_KEYS[1..],
     }
 }
 
@@ -484,7 +496,10 @@ pub(super) fn record_value(
         RecordKind::Handover => {
             let h = plan.handovers.iter().find(|h| h.id == id)?;
             Some(match key {
-                "command" => json!(h.command),
+                "reason" => json!(h.reason.map_or("", HandoverReason::as_str)),
+                "action" => json!(h.action),
+                "when" => json!(h.when),
+                "done_when" => json!(h.done_when),
                 "source_task" => json!(h.source_task),
                 "done" => json!(h.done),
                 _ => return None,
@@ -501,22 +516,89 @@ fn mutate_plan<T>(
     store::mutate(&store::resolve(slug)?, integrity, f)
 }
 
-pub(super) fn handover_add(args: PlanHandoverAddArgs) -> Result<()> {
-    if args.command.trim().is_empty() {
-        return Err(refusal("`--command` is empty"));
-    }
-    let id = mutate_plan(&args.target.slug, &args.integrity, |plan| {
-        let id = plan.mint_id(RecordKind::Handover);
-        plan.handovers.push(Handover {
-            id: id.clone(),
-            command: args.command.clone(),
-            source_task: args.source_task,
-            done: false,
-        });
-        Ok(id)
+pub(super) fn handover_set(args: PlanHandoverSetArgs) -> Result<()> {
+    let rows = load_rows(&args.ndjson)?;
+    let path = store::resolve(&args.target.slug)?;
+    let ids = store::mutate(&path, &args.integrity, |plan| {
+        let mut ids = Vec::with_capacity(rows.len());
+        for (line, row) in &rows {
+            ids.push(upsert_handover(plan, *line, row)?);
+        }
+        Ok(ids)
     })?;
-    print_ok(json!({"ok": true, "id": id}))?;
+    print_ok(json!({"ok": true, "ids": ids}))?;
     Ok(())
+}
+
+fn row_task(line: usize, key: &str, row: &Row) -> Result<Option<u32>> {
+    let Some(raw) = row.get(key) else {
+        return Ok(None);
+    };
+    raw.as_u64()
+        .and_then(|n| u32::try_from(n).ok())
+        .map(Some)
+        .ok_or_else(|| row_err(line, format!("`{key}` must be a task id, got `{raw}`")))
+}
+
+fn upsert_handover(plan: &mut PlanStore, line: usize, row: &Row) -> Result<String> {
+    if row.contains_key("done") {
+        return Err(row_err(
+            line,
+            "`done` is not set here — mark a performed step with `plan handover done <id>`",
+        ));
+    }
+    check_keys(line, row, HANDOVER_SET_KEYS)?;
+    let id = row_id(line, row)?;
+    let existing = match &id {
+        Some(id) => Some(
+            plan.handovers
+                .iter()
+                .position(|h| &h.id == id)
+                .ok_or_else(|| row_err(line, format!("no handover `{id}` to update")))?,
+        ),
+        None => None,
+    };
+
+    let text = |key: &str| row_string(line, key, row.get(key));
+    let reason = vocab_value::<HandoverReason>(line, "reason", row)?;
+    let source_task = row_task(line, "source_task", row)?;
+
+    match existing {
+        Some(index) => {
+            let h = &mut plan.handovers[index];
+            if let Some(v) = reason {
+                h.reason = Some(v);
+            }
+            if let Some(v) = text("action")? {
+                h.action = non_empty(line, "action", v)?;
+            }
+            if let Some(v) = text("when")? {
+                h.when = v;
+            }
+            if let Some(v) = text("done_when")? {
+                h.done_when = v;
+            }
+            if let Some(v) = source_task {
+                h.source_task = v;
+            }
+            Ok(h.id.clone())
+        }
+        None => {
+            let action = non_empty(line, "action", require(line, "action", text("action")?)?)?;
+            let source_task = require(line, "source_task", source_task)?;
+            let id = plan.mint_id(RecordKind::Handover);
+            plan.handovers.push(Handover {
+                id: id.clone(),
+                reason,
+                action,
+                when: text("when")?.unwrap_or_default(),
+                done_when: text("done_when")?.unwrap_or_default(),
+                source_task,
+                done: false,
+            });
+            Ok(id)
+        }
+    }
 }
 
 pub(super) fn handover_done(args: PlanHandoverDoneArgs) -> Result<()> {
@@ -740,18 +822,81 @@ mod tests {
                 json!("one-way"),
             ),
             (RecordKind::Contract, "C1", "claim", Some(&old), json!("  ")),
-            (
-                RecordKind::Handover,
-                "H1",
-                "command",
-                Some(&old),
-                json!("x"),
-            ),
+            (RecordKind::Handover, "H1", "action", Some(&old), json!("x")),
         ];
         for (kind, id, key, expect, new) in &cases {
             let refused = record_edit(&mut plan, &edit(*kind, id, key, *expect, new));
             assert!(refused.is_err(), "{id} {key} {new} should be refused");
         }
         assert_eq!(plan, seeded());
+    }
+
+    fn set(plan: &mut PlanStore, row: JsonValue) -> Result<String> {
+        upsert_handover(plan, 1, row.as_object().expect("an object"))
+    }
+
+    #[test]
+    fn a_handover_set_mints_then_updates_only_the_keys_it_carries() {
+        let mut plan = PlanStore::default();
+        let id = set(
+            &mut plan,
+            json!({
+                "reason": "restart",
+                "action": "Restart the session.",
+                "when": "Once the run reports done.",
+                "done_when": "The command lists.",
+                "source_task": 2,
+            }),
+        )
+        .expect("mints");
+        assert_eq!(id, "H1");
+
+        set(
+            &mut plan,
+            json!({"id": "H1", "reason": "attended", "when": "Now."}),
+        )
+        .expect("updates");
+        let h = &plan.handovers[0];
+        assert_eq!(h.reason, Some(HandoverReason::Attended));
+        assert_eq!(h.when, "Now.");
+        assert_eq!(h.action, "Restart the session.");
+        assert_eq!(h.done_when, "The command lists.");
+        assert_eq!(h.source_task, 2);
+        assert!(!h.done);
+    }
+
+    #[test]
+    fn a_handover_set_refuses_a_bad_row_and_writes_nothing() {
+        let mut plan = PlanStore::default();
+        set(&mut plan, json!({"action": "Restart.", "source_task": 1})).expect("mints");
+        let before = plan.clone();
+        let cases = [
+            (json!({"source_task": 1}), "action"),
+            (json!({"action": "  ", "source_task": 1}), "action"),
+            (json!({"action": "Restart."}), "source_task"),
+            (
+                json!({"action": "Restart.", "source_task": -1}),
+                "source_task",
+            ),
+            (
+                json!({"action": "Restart.", "source_task": 1, "reason": "whim"}),
+                "whim",
+            ),
+            (
+                json!({"action": "Restart.", "source_task": 1, "command": "x"}),
+                "command",
+            ),
+            (json!({"id": "H1", "action": ""}), "action"),
+            (json!({"id": "H9", "action": "Restart."}), "H9"),
+            (json!({"id": "H1", "done": true}), "plan handover done"),
+        ];
+        for (row, named) in cases {
+            let message = format!(
+                "{:#}",
+                set(&mut plan, row.clone()).expect_err(&row.to_string())
+            );
+            assert!(message.contains(named), "{row}: {message}");
+        }
+        assert_eq!(plan, before);
     }
 }

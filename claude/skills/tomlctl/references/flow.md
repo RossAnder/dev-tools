@@ -62,7 +62,7 @@ the Quick Reference table of [../SKILL.md](../SKILL.md).
 | `tomlctl plan open` | yes — checks an existing `plan.toml`, and `backlog.toml` under `--from` |
 | `tomlctl plan decide` | yes — checks `plan.toml` |
 | `tomlctl plan contract` | yes — checks `plan.toml` |
-| `tomlctl plan handover add` | yes — checks `plan.toml` |
+| `tomlctl plan handover set` | yes — checks `plan.toml` |
 | `tomlctl plan handover done` | yes — checks `plan.toml` |
 | `tomlctl plan run start` | yes — checks `plan.toml` |
 | `tomlctl plan run finish` | yes — checks `plan.toml` |

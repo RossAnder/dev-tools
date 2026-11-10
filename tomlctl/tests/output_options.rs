@@ -317,7 +317,10 @@ finished = ""
 
 [[handover]]
 id = "H1"
-command = "cargo install --path tomlctl"
+reason = "restart"
+action = "Run cargo install --path tomlctl, then restart the session."
+when = "after merge"
+done_when = "tomlctl --version prints the new version"
 source_task = 1
 done = false
 "#;
@@ -942,15 +945,16 @@ fn cases() -> Vec<Case> {
             &[
                 "plan",
                 "handover",
-                "add",
+                "set",
                 "--slug",
                 PLAN_SLUG,
-                "--command",
-                "cargo install --path tomlctl",
-                "--source-task",
-                "1",
+                "--ndjson",
+                "-",
             ],
-            "id",
+            "ids",
+        )
+        .stdin(
+            r#"{"reason":"restart","action":"Run cargo install --path tomlctl, then restart the session.","when":"after merge","done_when":"tomlctl --version prints the new version","source_task":1}"#,
         ),
         write(&["plan", "handover", "done", "H1", "--slug", PLAN_SLUG], "id"),
         write(

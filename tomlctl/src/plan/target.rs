@@ -306,7 +306,7 @@ mod tests {
             "decision:D1.why",
             "contract:C2.tasks",
             "milestone:A.gates",
-            "handover:H1.command",
+            "handover:H1.action",
             "brief#Scope budget",
             "design/flow/api.md#record-targets",
         ] {
@@ -431,7 +431,7 @@ tasks = [1]
 
 [[handover]]
 id = "H1"
-command = "cargo install --path tomlctl"
+action = "cargo install --path tomlctl"
 source_task = 1
 done = false
 "#;

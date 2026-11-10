@@ -387,15 +387,12 @@ fn a_plan_runs_from_open_to_drift() {
         flow.plan(&["contract", "--ndjson", &contract])["ids"],
         json!(["C1"])
     );
-    let handover = flow.plan(&[
-        "handover",
-        "add",
-        "--command",
-        "cargo install --path tomlctl",
-        "--source-task",
-        "1",
-    ]);
-    assert_eq!(handover["id"], "H1");
+    let handover_rows = flow.payload(
+        "handover.ndjson",
+        "{\"reason\":\"restart\",\"action\":\"Restart open sessions.\",\"when\":\"After the run.\",\"done_when\":\"The new command is listed.\",\"source_task\":1}\n",
+    );
+    let handover = flow.plan(&["handover", "set", "--ndjson", &handover_rows]);
+    assert_eq!(handover["ids"], json!(["H1"]));
     flow.plan(&[
         "run",
         "start",
@@ -525,7 +522,7 @@ fn a_plan_runs_from_open_to_drift() {
         "Guard-bound-decision.",
         "Both-agree-claim.",
         "Depends on A.",
-        "cargo install --path tomlctl",
+        "Restart open sessions.",
     ] {
         assert!(human.contains(needle), "{needle} missing:\n{human}");
     }
@@ -568,15 +565,18 @@ fn a_plan_runs_from_open_to_drift() {
     );
     assert_eq!(
         gate["stops"],
-        json!([
-            { "kind": "gate", "milestone": "A", "command": "cargo test" },
-            {
-                "kind": "handover",
-                "id": "H1",
-                "command": "cargo install --path tomlctl",
-                "source_task": 1,
-            },
-        ])
+        json!([{ "kind": "gate", "milestone": "A", "command": "cargo test" }])
+    );
+    assert_eq!(
+        gate["handovers"],
+        json!([{
+            "id": "H1",
+            "reason": "restart",
+            "action": "Restart open sessions.",
+            "when": "After the run.",
+            "done_when": "The new command is listed.",
+            "source_task": 1,
+        }])
     );
     assert_eq!(
         gate["task_mix"],
@@ -716,6 +716,7 @@ fn a_plan_runs_from_open_to_drift() {
         gate["stops"],
         json!([{ "kind": "gate", "milestone": "A", "command": "cargo test" }])
     );
+    assert_eq!(gate["handovers"], json!([]));
     for id in 1..=3 {
         flow.update(&json!({ "id": id, "status": "done" }));
     }
