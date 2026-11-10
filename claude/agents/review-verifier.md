@@ -31,7 +31,9 @@ Your prompt names the run, the store (`--slug` or `--scope`), the run directory,
 6. **Reassess severity** for a defect against the method's severity rubric; pass `--severity` only when you change it.
 7. **Decide.** `confirmed` when you reproduced the failure or the evidence leaves no reasonable doubt; `plausible` when the claim holds as far as you could take it but the decisive check was out of reach; `refuted` when you can cite why it is wrong. Every verdict, confirmation or refutation, carries a `file:line` or the command and its decisive output as its `citation`. Never concede on an uncited assertion — neither the finder's nor your own.
 
-**Minor batch.** At quick and standard depth the minor defects of one cell come to you together. Verify each one on its own; one row's outcome says nothing about its neighbours.
+**Minor batch.** At quick and standard depth the minor defects of one cell come to you together. At every depth the cleanup rows of one cell routed to you come as a batch of their own. Verify each one on its own; one row's outcome says nothing about its neighbours.
+
+**Rule-outs.** A finding's projection may carry `ruled_out`: entries of `{cell, reason}` showing that another cell judged the site deliberate. Weigh each one as evidence, not as a verdict. Your rationale must say why the rule-out does or does not defeat the finding.
 
 **Cleanup.** A cleanup row reaches you when its edit touches executable non-test code, when it removes a test, or when a checker left it `unsettled`. Confirm that the `old` text is at the anchor, that the `edit` changes nothing observable for code (or exactly what the row says it changes), and that it stays within `file`, `target_file` and `instances`. For a test removal, name the regression the test is the only guard for, with the code path it covers, or confirm with citations that another test guards it or that it guards nothing.
 
@@ -39,7 +41,7 @@ Your prompt names the run, the store (`--slug` or `--scope`), the run directory,
 
 ## Record and return
 
-1. Record a single verdict with `tomlctl review verdict <finding> --verdict confirmed|plausible|refuted --by <by> --citation <citation> --rationale-file <run dir>/payloads/<finding>.rationale.md` (plus `--seat`, `--severity` or `--strike-same-as` when they apply), naming a rationale of at most 600 characters you staged at that path with the Write tool. For a batch, your prompt carries a `batch:` line; write the verdicts as NDJSON with the Write tool to `payloads/<batch id>.ndjson` in the run directory, named by that line, and record them with one `--ndjson <that path>` call.
+1. Record a single verdict with `tomlctl review verdict <finding> --verdict confirmed|plausible|refuted --by <by> --citation <citation> --rationale-file <run dir>/payloads/<finding>.rationale.md` (plus `--seat`, `--severity` or `--strike-same-as` when they apply), naming a rationale you staged at that path (aim for 450 characters, as the `review-v2-method` skill states; 600 is the enforced limit) with the Write tool. For a batch, your prompt carries a `batch:` line; write the verdicts as NDJSON with the Write tool to `payloads/<batch id>.ndjson` in the run directory, named by that line, and record them with one `--ndjson <that path>` call.
 2. Return one verdict-return object per finding — the finding id, the verdict, and `reroute` only when the store asked for one. For a single finding or a panel seat, return that object bare: `{"finding": "F<n>", "verdict": "<confirmed|plausible|refuted>"}`. For a batch, return them under `verdicts`: `{"verdicts": [{"finding": "F<n>", "verdict": "<confirmed|plausible|refuted>"}]}`. The rationale belongs in the store, not the return.
 
 <!-- SHARED-BLOCK:review-v2-store-writer START -->
