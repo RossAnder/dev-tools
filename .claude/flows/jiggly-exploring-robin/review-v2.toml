@@ -1,0 +1,2634 @@
+schema_version = 1
+last_updated = 2026-11-10
+
+[[runs]]
+id = "U1"
+command = "review-v2"
+family = "code"
+depth = "standard"
+started = "2026-11-10T08:16:56Z"
+finished = "2026-11-10T08:35:42Z"
+base = "ccad91fa266ac17f1be43d5bf7692ae2bdb20932"
+scope = [
+    "CLAUDE.md",
+    "claude/agents/plan-worker-deep.md",
+    "claude/agents/plan-worker-lite.md",
+    "claude/agents/verification.md",
+    "claude/commands/backlog.md",
+    "claude/commands/implement-v2.md",
+    "claude/commands/implement.md",
+    "claude/commands/plan-new.md",
+    "claude/skills/flow-contract-plan-output-format/SKILL.md",
+    "claude/skills/flow-contract-task-store/SKILL.md",
+    "claude/skills/implement-v2-engine/SKILL.md",
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "claude/skills/implement-v2-engine/references/run-milestone.md",
+    "claude/skills/plan-v2-engine/references/approve.md",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md",
+    "claude/skills/review-v2-lenses/lenses/plan-risk.md",
+    "claude/skills/review-v2-lenses/lenses/plan-structure.md",
+    "claude/skills/tomlctl/SKILL.md",
+    "claude/skills/tomlctl/references/backlog-reconcile.md",
+    "claude/skills/tomlctl/references/flow.md",
+    "claude/skills/tomlctl/references/plan-probes.md",
+    "claude/skills/tomlctl/references/plan-store.md",
+    "claude/skills/tomlctl/references/plan.md",
+    "claude/skills/tomlctl/references/tasks-store.md",
+    "claude/skills/tomlctl/references/tasks-write.md",
+    "claude/skills/tomlctl/references/tasks.md",
+    "claude/workflows/implement-v2-milestone.js",
+    "docs/ideas/v2-pipeline.md",
+    "glimpse/Cargo.lock",
+    "glimpse/src/diagram/mod.rs",
+    "glimpse/src/model.rs",
+    "glimpse/src/theme.rs",
+    "glimpse/src/view/legend.rs",
+    "scripts/link-v2-review.ps1",
+    "scripts/link-v2-review.sh",
+    "scripts/shared-blocks.toml",
+    "tomlctl/Cargo.lock",
+    "tomlctl/Cargo.toml",
+    "tomlctl/README.md",
+    "tomlctl/src/agents/correlate.rs",
+    "tomlctl/src/backlog/reconcile.rs",
+    "tomlctl/src/capabilities.rs",
+    "tomlctl/src/cli/dispatch/tests/skills.rs",
+    "tomlctl/src/cli/mod.rs",
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/src/cli/types/tasks.rs",
+    "tomlctl/src/plan/approve.rs",
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/src/plan/dispatch.rs",
+    "tomlctl/src/plan/drift.rs",
+    "tomlctl/src/plan/probes.rs",
+    "tomlctl/src/plan/records.rs",
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/plan/stage.rs",
+    "tomlctl/src/plan/target.rs",
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/src/tasks/add.rs",
+    "tomlctl/src/tasks/dispatch.rs",
+    "tomlctl/src/tasks/graph.rs",
+    "tomlctl/src/tasks/ready.rs",
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/tasks/update.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/tests/output_options.rs",
+    "tomlctl/tests/plan_approve.rs",
+    "tomlctl/tests/plan_check.rs",
+    "tomlctl/tests/plan_drift.rs",
+    "tomlctl/tests/plan_lifecycle.rs",
+    "tomlctl/tests/plan_probes.rs",
+    "tomlctl/tests/plan_records.rs",
+    "tomlctl/tests/plan_stage.rs",
+    "tomlctl/tests/plan_view.rs",
+    "tomlctl/tests/review_plan_records.rs",
+]
+changed_lines = 4145
+substrate = "workflow"
+agents = 38
+
+[runs.models]
+surveyor = "haiku"
+sweeper = "haiku"
+checker = "haiku"
+finder = "opus"
+finder-cf = "opus"
+verifier = "opus"
+executor = "opus"
+
+[runs.catalogue]
+project = ".claude/review-lenses"
+tree_sha = "8fc8d0331337015bc6b767c197dca6f9530bd82cd2cfbcabfd4e95969559d489"
+config_sha = "43eed0e78dc0dd0c218061c5c3815a24759d33c893287e7aeb2feb5b593f9463"
+
+[[runs.signals]]
+name = "lang:rust"
+source = "detector"
+roots = [
+    "glimpse",
+    "lumina",
+    "lumina/companion",
+    "lumina/core",
+    "lumina/protocol",
+    "lumina/server",
+    "statusline",
+    "tomlctl",
+]
+
+[[runs.signals]]
+name = "lang:ts"
+source = "detector"
+roots = ["lumina/web"]
+
+[[runs.signals]]
+name = "framework:vue"
+source = "detector"
+roots = ["lumina/web"]
+
+[[runs.signals]]
+name = "runtime:tokio"
+source = "detector"
+roots = [
+    "lumina/companion",
+    "lumina/core",
+    "lumina/server",
+]
+
+[[runs.signals]]
+name = "db:sqlx"
+source = "detector"
+roots = [
+    "lumina",
+    "lumina/core",
+    "lumina/server",
+]
+
+[[runs.signals]]
+name = "harness:claude"
+source = "detector"
+roots = [
+    ".claude/skills/adopt-flow-registry",
+    ".claude/skills/testing-discipline",
+    "claude/agents",
+    "claude/commands",
+    "claude/plugins/lumina-story-blocks/skills/acceptance-criteria",
+    "claude/plugins/lumina-story-blocks/skills/alternatives",
+    "claude/plugins/lumina-story-blocks/skills/approach",
+    "claude/plugins/lumina-story-blocks/skills/closure-gate",
+    "claude/plugins/lumina-story-blocks/skills/compose-sprint",
+    "claude/plugins/lumina-story-blocks/skills/create-project",
+    "claude/plugins/lumina-story-blocks/skills/decompose-tasks",
+    "claude/plugins/lumina-story-blocks/skills/edge-cases",
+    "claude/plugins/lumina-story-blocks/skills/epic-close-criteria",
+    "claude/plugins/lumina-story-blocks/skills/epic-outcome",
+    "claude/plugins/lumina-story-blocks/skills/focus-framing",
+    "claude/plugins/lumina-story-blocks/skills/focus-shape",
+    "claude/plugins/lumina-story-blocks/skills/lifecycle",
+    "claude/plugins/lumina-story-blocks/skills/mcp",
+    "claude/plugins/lumina-story-blocks/skills/next-block",
+    "claude/plugins/lumina-story-blocks/skills/not-doing",
+    "claude/plugins/lumina-story-blocks/skills/plan-story",
+    "claude/plugins/lumina-story-blocks/skills/problem-statement",
+    "claude/plugins/lumina-story-blocks/skills/relevance",
+    "claude/plugins/lumina-story-blocks/skills/research-directed",
+    "claude/plugins/lumina-story-blocks/skills/research-explore",
+    "claude/plugins/lumina-story-blocks/skills/research-notes",
+    "claude/plugins/lumina-story-blocks/skills/risks",
+    "claude/plugins/lumina-story-blocks/skills/run-sprint",
+    "claude/plugins/lumina-story-blocks/skills/set-task-spec",
+    "claude/plugins/lumina-story-blocks/skills/story-review",
+    "claude/plugins/lumina-story-blocks/skills/user-interrogation",
+    "claude/plugins/lumina-story-blocks/skills/verification-commands",
+    "claude/plugins/lumina-story-blocks/skills/vet-research",
+    "claude/plugins/lumina-story-blocks/skills/wire-task-deps",
+    "claude/skills/backlog-capture",
+    "claude/skills/backlog-clear",
+    "claude/skills/commit-conventions",
+    "claude/skills/documentation-conventions",
+    "claude/skills/flow-contract-apply-constraints",
+    "claude/skills/flow-contract-apply-dependency-sort",
+    "claude/skills/flow-contract-apply-pipeline",
+    "claude/skills/flow-contract-apply-rollback-protocol",
+    "claude/skills/flow-contract-apply-vet-implement-lite",
+    "claude/skills/flow-contract-execution-record-schema",
+    "claude/skills/flow-contract-flow-context",
+    "claude/skills/flow-contract-ledger-disposition-sweep",
+    "claude/skills/flow-contract-ledger-schema",
+    "claude/skills/flow-contract-plan-output-format",
+    "claude/skills/flow-contract-plan-restructure",
+    "claude/skills/flow-contract-plansdirectory-prompt",
+    "claude/skills/flow-contract-reconciler",
+    "claude/skills/flow-contract-showcase-bundle",
+    "claude/skills/flow-contract-task-store",
+    "claude/skills/flow-contract-user-inputs",
+    "claude/skills/flow-contract-vet-research",
+    "claude/skills/implement-v2-engine",
+    "claude/skills/plan-v2-engine",
+    "claude/skills/research-methods",
+    "claude/skills/review-v2-engine",
+    "claude/skills/review-v2-lenses",
+    "claude/skills/review-v2-method",
+    "claude/skills/test-author",
+    "claude/skills/tomlctl",
+]
+
+[[runs.signals]]
+name = "rename-or-removal"
+source = "detector"
+roots = [
+    "tomlctl/src/backlog",
+    "tomlctl/src/cli/types",
+    "tomlctl/src/plan",
+    "tomlctl/src/tasks",
+    "tomlctl/tests",
+]
+
+[[runs.signals]]
+name = "public-api-change"
+source = "detector"
+roots = ["claude/workflows"]
+
+[[runs.signals]]
+name = "async-concurrency"
+source = "detector"
+roots = ["claude/workflows"]
+
+[[runs.signals]]
+name = "process-heavy"
+source = "detector"
+roots = ["tomlctl/src/plan"]
+
+[[runs.signals]]
+name = "docs-touched"
+source = "detector"
+roots = [
+    ".",
+    "claude/agents",
+    "claude/commands",
+    "claude/skills/flow-contract-plan-output-format",
+    "claude/skills/flow-contract-task-store",
+    "claude/skills/implement-v2-engine",
+    "claude/skills/implement-v2-engine/references",
+    "claude/skills/plan-v2-engine/references",
+    "claude/skills/review-v2-lenses/lenses",
+    "claude/skills/tomlctl",
+    "claude/skills/tomlctl/references",
+    "docs/ideas",
+    "tomlctl",
+]
+
+[[runs.signals]]
+name = "tests-touched"
+source = "detector"
+roots = [
+    "tomlctl/src/cli/dispatch/tests",
+    "tomlctl/tests",
+]
+
+[[runs.signals]]
+name = "doc-growth"
+source = "detector"
+roots = [
+    ".",
+    ".claude/flows/eventual-churning-sunrise",
+    ".claude/flows/federated-beaming-hollerith",
+    ".claude/flows/giggly-conjuring-brook",
+    ".claude/flows/glimpse-ux-backlog",
+    ".claude/flows/human-only-handovers",
+    ".claude/flows/jiggly-exploring-robin",
+    ".claude/flows/lively-twirling-babbage",
+    ".claude/flows/polymorphic-wondering-magpie",
+    ".claude/flows/proud-leaping-conway",
+    ".claude/flows/review-system-v2",
+    ".claude/flows/review-system-v2/archive",
+    ".claude/flows/shimmying-marinating-bumblebee",
+    ".claude/flows/temporal-snuggling-pnueli",
+    ".claude/flows/toasty-wobbling-stonebraker",
+    ".claude/flows/tomlctl-backlog-capture",
+    ".claude/flows/tomlctl-followups",
+    ".claude/flows/tomlctl-followups-round-2",
+    ".claude/flows/tomlctl-items-sweep-clusters",
+    ".claude/flows/twinkling-hopping-otter",
+    ".claude/flows/unified-singing-gem",
+    ".claude/flows/v2-planning",
+    ".claude/flows/we-ve-just-implement-the-shimmying-kettle",
+    ".claude/flows/whimsical-hugging-puppy",
+    ".claude/flows/woolly-greeting-rainbow",
+    ".claude/rules",
+    ".github/agents",
+    ".github/skills/backlog-capture",
+    ".github/skills/flow-contract-apply-constraints",
+    ".github/skills/flow-contract-apply-dependency-sort",
+    ".github/skills/flow-contract-apply-pipeline",
+    ".github/skills/flow-contract-apply-pipeline/references",
+    ".github/skills/flow-contract-apply-rollback-protocol",
+    ".github/skills/flow-contract-apply-vet-implement-lite",
+    ".github/skills/flow-contract-execution-record-schema",
+    ".github/skills/flow-contract-flow-context",
+    ".github/skills/flow-contract-ledger-disposition-sweep",
+    ".github/skills/flow-contract-ledger-schema",
+    ".github/skills/flow-contract-plan-output-format",
+    ".github/skills/flow-contract-plan-restructure",
+    ".github/skills/flow-contract-plansdirectory-prompt",
+    ".github/skills/flow-contract-reconciler",
+    ".github/skills/flow-contract-task-store",
+    ".github/skills/flow-contract-vet-research",
+    ".github/skills/tomlctl",
+    ".github/skills/tomlctl/references",
+    "claude/agents",
+    "claude/commands",
+    "claude/plugins/lumina-story-blocks/skills/mcp",
+    "claude/plugins/lumina-story-blocks/skills/plan-story",
+    "claude/plugins/lumina-story-blocks/skills/run-sprint",
+    "claude/skills/backlog-capture",
+    "claude/skills/backlog-clear",
+    "claude/skills/commit-conventions",
+    "claude/skills/documentation-conventions",
+    "claude/skills/documentation-conventions/references",
+    "claude/skills/flow-contract-apply-constraints",
+    "claude/skills/flow-contract-apply-dependency-sort",
+    "claude/skills/flow-contract-apply-pipeline",
+    "claude/skills/flow-contract-apply-pipeline/references",
+    "claude/skills/flow-contract-apply-rollback-protocol",
+    "claude/skills/flow-contract-apply-vet-implement-lite",
+    "claude/skills/flow-contract-execution-record-schema",
+    "claude/skills/flow-contract-flow-context",
+    "claude/skills/flow-contract-ledger-disposition-sweep",
+    "claude/skills/flow-contract-ledger-schema",
+    "claude/skills/flow-contract-plan-output-format",
+    "claude/skills/flow-contract-plan-output-format/references",
+    "claude/skills/flow-contract-plan-restructure",
+    "claude/skills/flow-contract-plansdirectory-prompt",
+    "claude/skills/flow-contract-reconciler",
+    "claude/skills/flow-contract-showcase-bundle",
+    "claude/skills/flow-contract-task-store",
+    "claude/skills/flow-contract-task-visibility",
+    "claude/skills/flow-contract-user-inputs",
+    "claude/skills/flow-contract-vet-research",
+    "claude/skills/implement-v2-engine",
+    "claude/skills/implement-v2-engine/references",
+    "claude/skills/plan-v2-engine",
+    "claude/skills/plan-v2-engine/references",
+    "claude/skills/research-methods",
+    "claude/skills/research-methods/references",
+    "claude/skills/review-v2-engine",
+    "claude/skills/review-v2-engine/references",
+    "claude/skills/review-v2-lenses",
+    "claude/skills/review-v2-lenses/checks",
+    "claude/skills/review-v2-lenses/facets",
+    "claude/skills/review-v2-lenses/lenses",
+    "claude/skills/review-v2-lenses/methods",
+    "claude/skills/review-v2-method",
+    "claude/skills/review-v2-method/references",
+    "claude/skills/test-author",
+    "claude/skills/tomlctl",
+    "claude/skills/tomlctl/references",
+    "config/nvim",
+    "docs/flows/human-only-handovers",
+    "docs/flows/human-only-handovers/design",
+    "docs/flows/human-only-handovers/notes",
+    "docs/flows/human-only-handovers/notes/run",
+    "docs/ideas",
+    "docs/plans",
+    "glimpse",
+    "lumina",
+    "lumina/docs/runbooks",
+    "scripts/templates",
+    "statusline",
+    "themes",
+    "themes/firefox",
+    "themes/nvim",
+    "tomlctl",
+    "tomlctl/tests/fixtures/tasks",
+]
+
+[[runs.signals]]
+name = "churn-hotspot"
+source = "detector"
+roots = [
+    "glimpse/src",
+    "glimpse/src/view",
+    "glimpse/tests",
+    "tomlctl/src",
+    "tomlctl/src/agents",
+    "tomlctl/src/backlog",
+    "tomlctl/src/cli",
+    "tomlctl/src/cli/dispatch/tests",
+    "tomlctl/src/cli/types",
+    "tomlctl/src/flow",
+    "tomlctl/src/plan",
+    "tomlctl/src/review",
+    "tomlctl/src/tasks",
+    "tomlctl/tests",
+    "tomlctl/tests/common",
+]
+evidence = [
+    "tomlctl/src/io.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/src/cli/dispatch/tests/skills.rs",
+    "tomlctl/src/items.rs",
+    "glimpse/src/app.rs",
+    "glimpse/src/runtime.rs",
+    "tomlctl/src/tasks/update.rs",
+    "tomlctl/src/backlog/dispatch.rs",
+    "tomlctl/src/query.rs",
+    "tomlctl/src/tasks/dispatch.rs",
+    "tomlctl/src/lib.rs",
+    "glimpse/src/view/mod.rs",
+    "tomlctl/src/capabilities.rs",
+    "tomlctl/src/tasks/mod.rs",
+    "tomlctl/src/backlog/add.rs",
+    "tomlctl/src/cli/mod.rs",
+    "tomlctl/src/tasks/parse_tasks.rs",
+    "glimpse/src/source.rs",
+    "tomlctl/src/backlog/check.rs",
+    "tomlctl/src/flow/doctor.rs",
+    "tomlctl/src/output.rs",
+    "tomlctl/src/tasks/import_plan.rs",
+    "tomlctl/tests/output_options.rs",
+    "glimpse/src/main.rs",
+    "tomlctl/src/backlog/triage.rs",
+    "tomlctl/src/cli/dispatch/tests/lint.rs",
+    "tomlctl/src/flow/init.rs",
+    "tomlctl/src/flow/resolve.rs",
+    "tomlctl/tests/backlog_write.rs",
+    "glimpse/src/cli.rs",
+    "tomlctl/src/backlog/query.rs",
+    "tomlctl/src/backlog/schema.rs",
+    "tomlctl/src/tasks/add.rs",
+    "tomlctl/src/tasks/show.rs",
+    "tomlctl/tests/common/mod.rs",
+    "glimpse/src/keys.rs",
+    "glimpse/src/view/items.rs",
+    "tomlctl/src/backlog/evidence_ops.rs",
+    "tomlctl/src/convert.rs",
+    "tomlctl/src/flow/active.rs",
+    "tomlctl/src/main.rs",
+    "tomlctl/src/tasks/render.rs",
+    "glimpse/src/actions.rs",
+    "glimpse/src/surface.rs",
+    "glimpse/src/theme.rs",
+    "glimpse/src/view/details.rs",
+    "glimpse/src/view/legend.rs",
+    "tomlctl/src/flow/list.rs",
+    "tomlctl/src/flow/mod.rs",
+    "tomlctl/src/plan/stage.rs",
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/tests/integration.rs",
+    "tomlctl/src/agents/correlate.rs",
+    "tomlctl/src/backlog/compact.rs",
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/tests/flow_doctor.rs",
+    "tomlctl/tests/tasks_write.rs",
+    "glimpse/src/config.rs",
+    "glimpse/src/hook.rs",
+    "glimpse/src/view/header.rs",
+    "glimpse/src/view/inbox.rs",
+    "tomlctl/src/flow/render_progress_log.rs",
+    "tomlctl/src/inputs.rs",
+    "tomlctl/src/plan/approve.rs",
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/src/review/digest.rs",
+    "tomlctl/src/review/query.rs",
+    "tomlctl/src/tasks/graph.rs",
+    "tomlctl/src/tasks/parse_policy.rs",
+    "tomlctl/tests/plan_stage.rs",
+    "glimpse/src/view/layers.rs",
+    "glimpse/tests/cli.rs",
+    "tomlctl/src/backlog/cluster.rs",
+    "tomlctl/src/backlog/relate.rs",
+    "tomlctl/src/cli/types/tasks.rs",
+    "tomlctl/src/flow/ensure_artifact.rs",
+    "tomlctl/src/json.rs",
+    "tomlctl/src/ledgers.rs",
+    "tomlctl/tests/backlog_read.rs",
+    "tomlctl/tests/flow_init.rs",
+    "tomlctl/tests/flow_resolve.rs",
+    "tomlctl/tests/plan_approve.rs",
+    "tomlctl/tests/tasks_corpus.rs",
+    "tomlctl/tests/tasks_import.rs",
+]
+
+[[runs.signals]]
+name = "finding-hotspot"
+source = "detector"
+roots = [
+    "glimpse/src",
+    "glimpse/src/view",
+    "lumina/core/src/repo",
+    "tomlctl/src",
+    "tomlctl/src/cli",
+    "tomlctl/src/cli/dispatch/tests",
+    "tomlctl/src/cli/types",
+    "tomlctl/src/flow",
+    "tomlctl/src/plan",
+    "tomlctl/src/review",
+    "tomlctl/src/tasks",
+    "tomlctl/tests",
+]
+evidence = [
+    "tomlctl/src/tasks/update.rs",
+    "tomlctl/src/io.rs",
+    "tomlctl/src/flow/init.rs",
+    "tomlctl/src/items.rs",
+    "tomlctl/src/tasks/add.rs",
+    "glimpse/src/app.rs",
+    "glimpse/src/runtime.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/src/convert.rs",
+    "tomlctl/src/flow/doctor.rs",
+    "tomlctl/src/plan/store.rs",
+    "tomlctl/src/tasks/render.rs",
+    "tomlctl/tests/plan_approve.rs",
+    "glimpse/src/main.rs",
+    "glimpse/src/source.rs",
+    "tomlctl/src/inputs.rs",
+    "tomlctl/src/output.rs",
+    "tomlctl/src/plan/approve.rs",
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/src/plan/milestone.rs",
+    "tomlctl/src/plan/open.rs",
+    "tomlctl/src/plan/records.rs",
+    "tomlctl/src/plan/stage.rs",
+    "tomlctl/src/review/digest.rs",
+    "tomlctl/src/review/fields.rs",
+    "tomlctl/src/tasks/mod.rs",
+    "tomlctl/src/tasks/parse_policy.rs",
+    "tomlctl/src/tasks/parse_tasks.rs",
+    "tomlctl/tests/flow_doctor.rs",
+    "tomlctl/tests/plan_stage.rs",
+    "glimpse/src/cli.rs",
+    "glimpse/src/surface.rs",
+    "glimpse/src/view/mod.rs",
+    "lumina/core/src/repo/runs_sprints.rs",
+    "tomlctl/src/cli/dispatch/tests/lint.rs",
+    "tomlctl/src/cli/dispatch/tests/skills.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/src/cli/types/shared.rs",
+    "tomlctl/src/flow/active.rs",
+    "tomlctl/src/flow/ensure_artifact.rs",
+    "tomlctl/src/flow/render_progress_log.rs",
+    "tomlctl/src/flow/resolve.rs",
+    "tomlctl/src/plan/probes.rs",
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/src/query.rs",
+    "tomlctl/src/review/add.rs",
+    "tomlctl/src/review/runs.rs",
+    "tomlctl/src/review/stats.rs",
+    "tomlctl/src/review/survey.rs",
+    "tomlctl/src/review/triage.rs",
+    "tomlctl/src/tasks/import_plan.rs",
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/tasks/store.rs",
+    "tomlctl/tests/backlog_write.rs",
+    "tomlctl/tests/flow_init.rs",
+    "tomlctl/tests/output_options.rs",
+    "tomlctl/tests/plan_lifecycle.rs",
+    "tomlctl/tests/plan_milestone.rs",
+    "tomlctl/tests/plan_records.rs",
+    "tomlctl/tests/review_digest.rs",
+    "tomlctl/tests/review_runs.rs",
+    "tomlctl/tests/tasks_import.rs",
+]
+
+[[runs.signals]]
+name = "backlog-cluster"
+source = "detector"
+roots = [".claude"]
+
+[[runs.signals]]
+name = "trust-boundary"
+source = "judged"
+accepted = true
+evidence = [
+    "tomlctl/src/payload.rs",
+    "tomlctl/src/plan/drift.rs",
+]
+
+[[runs.waivers]]
+concern = "contrarian"
+reason = "new-seam was not proposed: the diff adds no trait, interface or extension point; the engine's design was settled in the plan and its review"
+
+[[runs.waivers]]
+concern = "doc-consolidation"
+reason = "doc-growth matched mostly on flow records and unrelated skill directories outside the scope; doc-drift on C8 and C9 covers the in-scope prose"
+
+[runs.baselines]
+lint-baseline = "C:/Users/rossa/AppData/Local/Temp/tmp.gHzGhY78z2/c1.log"
+lint-baseline-2 = "C:/Users/rossa/AppData/Local/Temp/tmp.XX7B3aY2l2/c1.log"
+harness-gates = "C:/Users/rossa/AppData/Local/Temp/tmp.Xx7UVBFSON/c1.log"
+
+[runs.counts]
+cells = 16
+uncovered = 0
+defect = 18
+cleanup = 12
+advisory = 2
+refuted = 0
+suppressed = 0
+
+[runs.audit]
+sampled = 4
+overturned = 0
+
+[[cells]]
+id = "C1"
+run = "U1"
+wave = 1
+slice = [
+    "tomlctl/src/plan/probes.rs",
+    "tomlctl/src/plan/drift.rs",
+    "tomlctl/src/plan/dispatch.rs",
+    "tomlctl/src/plan/target.rs",
+]
+concerns = ["correctness"]
+agent = "review-finder"
+reason = "re-sliced by subsystem: premise probes and drift are the largest new plan code (process-heavy root), so correctness reads them alone"
+facets = ["rust"]
+status = "covered"
+sealed = true
+note = '4/4 slice files read in full; git -z log format, cat-file --end-of-options and a rebase scratch repro run. sweep (flows/{slug}/ skip sets in tomlctl/src): 2 drift sites, asymmetric -> F21. Ruled out: drift.rs:own_work - B-6a0aff17; probes.rs:record/record_premises - emit/record scope and counts agree, stale captures refused; probes.rs:parse_capture BOM/UTF-16 - refused, fail-safe; probes.rs:premise_verdict missing-path - design; target.rs:parse design/ paths - .. and \ refused; dispatch.rs - exhaustive match.'
+
+[[cells.bound]]
+concern = "correctness"
+hash = "7f806130477f6c8b53fee4d1d134425c86c8eb78d582c7ea1077a9e49aa836e5"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/correctness.md"
+methods = [
+    "trace",
+    "sweep",
+]
+v1_category = "quality"
+
+[[cells]]
+id = "C2"
+run = "U1"
+wave = 1
+slice = [
+    "tomlctl/src/plan/records.rs",
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/src/plan/approve.rs",
+    "tomlctl/src/plan/stage.rs",
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/src/cli/types/plan.rs",
+]
+concerns = [
+    "correctness",
+    "type-design",
+]
+agent = "review-finder"
+reason = "re-sliced by subsystem: plan records, schema and gates; type-design bundled because the diff adds record fields and verdict enums read the same way"
+facets = ["rust"]
+status = "covered"
+sealed = true
+note = "7/7 slice files read in full; diff 0f385a84 traced into target.rs, review/apply.rs, tier.rs. Sweeps: check error classes vs stage::remedy (all unmapped classes are WARNING/INFO, OK); PlanStore.schema_version readers (tests only). Ruled out: records.rs:upsert_handover empty when/done_when on update — check reports it, matches decide; approve.rs:approve partial writes — documented stamp-last; check.rs:design_section_in CRLF offset — documented LF-only; approve.rs/view.rs duplicated handover JSON — two sites only."
+
+[[cells.bound]]
+concern = "correctness"
+hash = "7f806130477f6c8b53fee4d1d134425c86c8eb78d582c7ea1077a9e49aa836e5"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/correctness.md"
+methods = [
+    "trace",
+    "sweep",
+]
+v1_category = "quality"
+
+[[cells.bound]]
+concern = "type-design"
+hash = "ff31272a4651f0c676995ee8acf7faf90d912d161296e779488d89c35e9ca183"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/type-design.md"
+methods = ["trace"]
+v1_category = "architecture"
+
+[[cells]]
+id = "C3"
+run = "U1"
+wave = 1
+slice = [
+    "tomlctl/src/tasks/add.rs",
+    "tomlctl/src/tasks/dispatch.rs",
+    "tomlctl/src/tasks/graph.rs",
+    "tomlctl/src/tasks/ready.rs",
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/tasks/update.rs",
+    "tomlctl/src/cli/types/tasks.rs",
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/src/cli/mod.rs",
+    "tomlctl/src/agents/correlate.rs",
+    "tomlctl/src/backlog/reconcile.rs",
+    "tomlctl/src/capabilities.rs",
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+]
+concerns = [
+    "correctness",
+    "type-design",
+]
+agent = "review-finder"
+reason = "re-sliced by subsystem: the parked status, the scoped frontier and agent correlation, with the hotspot tasks/update.rs; replaces the one-file update.rs cell and the 35-file catch-all"
+facets = ["rust"]
+status = "covered"
+sealed = true
+note = "14 slice files read via diff e296f01c..HEAD plus graph::frontier, update review_edit/keep_probes, show::premises_json. Baselines clean. Sweeps: Status::Parked matches (tomlctl+glimpse) all cover it, OK; after:-prefix parse, 1 copy (F25); feature ids vs implement-v2.md, all match. Ruled out: ready_in_checkpoint — held is only vs in_flight, so post-filter is sound; correlate plan-view regex — matches workflow prompt form; premises_json omits probe — keeps review CAS round-trip, plan view shows it; capabilities literal status list — drift-gated by test."
+
+[[cells.bound]]
+concern = "correctness"
+hash = "7f806130477f6c8b53fee4d1d134425c86c8eb78d582c7ea1077a9e49aa836e5"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/correctness.md"
+methods = [
+    "trace",
+    "sweep",
+]
+v1_category = "quality"
+
+[[cells.bound]]
+concern = "type-design"
+hash = "ff31272a4651f0c676995ee8acf7faf90d912d161296e779488d89c35e9ca183"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/type-design.md"
+methods = ["trace"]
+v1_category = "architecture"
+
+[[cells]]
+id = "C4"
+run = "U1"
+wave = 1
+slice = [
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/tests/output_options.rs",
+    "tomlctl/tests/plan_approve.rs",
+    "tomlctl/tests/plan_check.rs",
+    "tomlctl/tests/plan_drift.rs",
+    "tomlctl/tests/plan_lifecycle.rs",
+    "tomlctl/tests/plan_probes.rs",
+    "tomlctl/tests/plan_records.rs",
+    "tomlctl/tests/plan_stage.rs",
+    "tomlctl/tests/plan_view.rs",
+    "tomlctl/tests/review_plan_records.rs",
+    "tomlctl/src/cli/dispatch/tests/skills.rs",
+]
+concerns = [
+    "correctness",
+    "test-gaps",
+]
+agent = "review-finder"
+reason = "merged the two one-file test cells with the other touched tests; test-gaps bundled because tests-touched matched and the same reading serves both"
+facets = ["rust"]
+status = "covered"
+sealed = true
+note = "12 files read via their diffs vs base (946+/171-), with probes.rs, drift.rs, check.rs, view.rs and schema.rs handover code traced. Harness-gates baseline green. Ruled out: skills.rs invokes_skill byte slicing (all cuts after ASCII words, no panic); premise_target's canonical-id check; tasks add/update reject unknown after: targets; the old binary refuses schema 2 loudly. Sweep (scope-only .failure() assertions in plan_probes): 2 sites, complete, both in F17. Escalated: schema.rs drops a v1 handover's `command` on first write."
+
+[[cells.bound]]
+concern = "correctness"
+hash = "7f806130477f6c8b53fee4d1d134425c86c8eb78d582c7ea1077a9e49aa836e5"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/correctness.md"
+methods = [
+    "trace",
+    "sweep",
+]
+v1_category = "quality"
+
+[[cells.bound]]
+concern = "test-gaps"
+hash = "e50a44ddcbcf1985988dd67c56f0ceb0274e7835d2c6b992056bb56e64cb901b"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/test-gaps.md"
+v1_category = "testability"
+
+[[cells]]
+id = "C5"
+run = "U1"
+wave = 1
+slice = [
+    "glimpse/Cargo.lock",
+    "glimpse/src/diagram/mod.rs",
+    "glimpse/src/model.rs",
+    "glimpse/src/theme.rs",
+    "glimpse/src/view/legend.rs",
+]
+concerns = ["correctness"]
+agent = "review-finder"
+reason = "proposed"
+facets = ["rust"]
+status = "covered"
+sealed = true
+note = "5 slice files read (diffs 2ca58e93, 0d341a95, Cargo.lock tomlctl 0.21.0 bump; changed regions of model.rs, theme.rs, legend.rs, diagram/mod.rs). sweep (TaskStatus:: and status-string consumers in glimpse/src): ~60 sites, exhaustive matches or correct wildcard fallback for parked — OK. Ruled out: theme.rs:status/flash — parked maps to deferred by design; diagram/mod.rs:label_width — glyph width 1 pinned by test; view/mod.rs:notice — no parked notice is a design choice; tomlctl tasks/schema.rs vocabulary matches TaskStatus; view/themes.rs:SAMPLE omits parked, same colour."
+
+[[cells.bound]]
+concern = "correctness"
+hash = "7f806130477f6c8b53fee4d1d134425c86c8eb78d582c7ea1077a9e49aa836e5"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/correctness.md"
+methods = [
+    "trace",
+    "sweep",
+]
+v1_category = "quality"
+
+[[cells]]
+id = "C6"
+run = "U1"
+wave = 1
+slice = ["claude/workflows/implement-v2-milestone.js"]
+concerns = ["correctness"]
+agent = "review-finder"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = "1 file read in full (+ worker agents, run-milestone.md, drain.md, tasks graph/schema for contract). Traced args validation, cycle check, settleBlocked fixpoint, nextWave, toEntry, caught. Ruled out: nextWave empty-wave branch — unreachable given acyclic validation; cycleMembers self/duplicate needs — Set + self-edge caught; fileKey case-folding — conservative only; namesNote suffix match — benign. Sweep (file-claim compare without normal_path): 2 sites (js fileKey, graph.rs overlap_pairs), complete over tomlctl/src/tasks + claude/workflows."
+
+[[cells.bound]]
+concern = "correctness"
+hash = "7f806130477f6c8b53fee4d1d134425c86c8eb78d582c7ea1077a9e49aa836e5"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/correctness.md"
+methods = [
+    "trace",
+    "sweep",
+]
+v1_category = "quality"
+
+[[cells]]
+id = "C7"
+run = "U1"
+wave = 1
+slice = [
+    "claude/skills/implement-v2-engine/SKILL.md",
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "claude/skills/implement-v2-engine/references/run-milestone.md",
+    "claude/commands/implement-v2.md",
+    "claude/agents/plan-worker-deep.md",
+    "claude/agents/plan-worker-lite.md",
+]
+concerns = ["correctness"]
+agent = "review-finder"
+reason = "merged the engine, its carrier and the two workers: they state one procedure between them and contradictions only show when read together"
+status = "covered"
+sealed = true
+note = "6/6 slice files read in full. Checked about 20 tomlctl verb and flag uses against help and source (all present); git empty-pathspec probe run; stage.rs, records.rs run_finish, update.rs ndjson keys and query where-missing read. Ruled out: drain step 7 writes_build default (materialised by tasks show); drift skip dirs (drift.rs:198); commit spelling of untracked paths (backlog B-ef8adde8); drift own_work by status (B-6a0aff17). Sweep for the stage done exit: 3 sites (run-milestone:17, SKILL:37, implement-v2.md:18), all named in F10's fix, enumeration complete."
+
+[[cells.bound]]
+concern = "correctness"
+hash = "7f806130477f6c8b53fee4d1d134425c86c8eb78d582c7ea1077a9e49aa836e5"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/correctness.md"
+methods = [
+    "trace",
+    "sweep",
+]
+v1_category = "quality"
+
+[[cells]]
+id = "C8"
+run = "U1"
+wave = 1
+slice = [
+    "claude/skills/tomlctl/SKILL.md",
+    "claude/skills/tomlctl/references/backlog-reconcile.md",
+    "claude/skills/tomlctl/references/flow.md",
+    "claude/skills/tomlctl/references/plan-probes.md",
+    "claude/skills/tomlctl/references/plan-store.md",
+    "claude/skills/tomlctl/references/plan.md",
+    "claude/skills/tomlctl/references/tasks-store.md",
+    "claude/skills/tomlctl/references/tasks-write.md",
+    "claude/skills/tomlctl/references/tasks.md",
+    "tomlctl/README.md",
+]
+concerns = [
+    "correctness",
+    "doc-drift",
+]
+agent = "review-finder"
+reason = "the tomlctl reference docs with the README; doc-drift bundled because these files describe the CLI the same diff changed"
+facets = [
+    "claude-harness",
+    "rust",
+]
+status = "covered"
+sealed = true
+note = "Read in full: plan-probes.md, plan-store.md; every changed hunk of the other 8 slice files (diff ccad91fa..HEAD), checked against probes.rs, drift.rs, records.rs, approve.rs, view.rs, stage.rs, check.rs, ready.rs, reconcile.rs, update.rs, add.rs, cli/types/plan.rs. README feature list and table diffed against FEATURES: identical. Status-vocab sweep over the slice: all list parked. Ruled out: plan.md:55 stale `--command` (ripple owns, escalated); plan-store.md v1 `command` drop (schema.rs, escalated)."
+
+[[cells.bound]]
+concern = "correctness"
+hash = "7f806130477f6c8b53fee4d1d134425c86c8eb78d582c7ea1077a9e49aa836e5"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/correctness.md"
+methods = [
+    "trace",
+    "sweep",
+]
+v1_category = "quality"
+
+[[cells.bound]]
+concern = "doc-drift"
+hash = "a82f55abaaabf6458d1ccfa9648012857e7d6bff88d49e2345b2219794394bc9"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/doc-drift.md"
+v1_category = "quality"
+
+[[cells]]
+id = "C9"
+run = "U1"
+wave = 1
+slice = [
+    "CLAUDE.md",
+    "claude/agents/verification.md",
+    "claude/commands/backlog.md",
+    "claude/commands/implement.md",
+    "claude/commands/plan-new.md",
+    "claude/skills/flow-contract-plan-output-format/SKILL.md",
+    "claude/skills/flow-contract-task-store/SKILL.md",
+    "claude/skills/plan-v2-engine/references/approve.md",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md",
+    "claude/skills/review-v2-lenses/lenses/plan-risk.md",
+    "claude/skills/review-v2-lenses/lenses/plan-structure.md",
+    "docs/ideas/v2-pipeline.md",
+    "scripts/link-v2-review.ps1",
+    "scripts/link-v2-review.sh",
+    "scripts/shared-blocks.toml",
+]
+concerns = [
+    "correctness",
+    "doc-drift",
+]
+agent = "review-finder"
+reason = "merged seven small-diff prose and script cells into one; doc-drift bundled for the project docs and carriers that describe the new engine"
+facets = ["claude-harness"]
+status = "covered"
+sealed = true
+note = "15 slice files read in diff plus full where claims turned on them; base ccad91fa. Checks: verify-shared-blocks OK; 28/28 link entries exist; CLI help for plan handover set, plan probes --premises, tasks update --agent; sweeps: parked status lists (8 hits, all updated), After Merge (37, legacy ok), design/handover.md (4, complete). Ruled out: approve.md gate keys - match approve.rs; CLAUDE.md implement-v2 pre-flight/gate claims - match carrier and drain.md; backlog.md parked stalled - reconcile.rs:406; apply-pipeline install skip - Step 5a takes build/test only."
+
+[[cells.bound]]
+concern = "correctness"
+hash = "7f806130477f6c8b53fee4d1d134425c86c8eb78d582c7ea1077a9e49aa836e5"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/correctness.md"
+methods = [
+    "trace",
+    "sweep",
+]
+v1_category = "quality"
+
+[[cells.bound]]
+concern = "doc-drift"
+hash = "a82f55abaaabf6458d1ccfa9648012857e7d6bff88d49e2345b2219794394bc9"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/doc-drift.md"
+v1_category = "quality"
+
+[[cells]]
+id = "C10"
+run = "U1"
+wave = 1
+slice = [
+    "tomlctl/src/plan/probes.rs",
+    "tomlctl/src/plan/drift.rs",
+    "claude/workflows/implement-v2-milestone.js",
+    "scripts/link-v2-review.ps1",
+    "scripts/link-v2-review.sh",
+]
+concerns = ["security"]
+agent = "review-finder"
+reason = "trust-boundary accepted: probe scripts are emitted from stored plan text and drift spawns git with plan paths; sliced to the files that build commands or links"
+status = "covered"
+sealed = true
+note = "5/5 files read in full; security lens, trace to sinks. Ruled out: probes.rs:quote — single-quote escape is complete, NUL refused, skip reasons and keys carry no stored string (premise_target is u32); probes.rs:HELPER — mktemp temp, tabs/newlines folded so output cannot forge a row; drift.rs:refuse_unresolved/changed_files — stored commit and range follow --end-of-options, argv not shell; implement-v2-milestone.js:workerPrompt — slug/milestone regex-bound, root/files one-line, store-authored; link-v2-review.ps1/.sh — fixed entry list, no overwrite, user's own config dir."
+
+[[cells.bound]]
+concern = "security"
+hash = "f68292fa8f5d406e1445e1a49c52bbaabf71ecbd1d6f346ba3f25b67c48f29c0"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/security.md"
+methods = ["trace"]
+v1_category = "security"
+
+[[cells]]
+id = "C11"
+run = "U1"
+wave = 1
+slice = [
+    "CLAUDE.md",
+    "claude/agents/plan-worker-deep.md",
+    "claude/agents/plan-worker-lite.md",
+    "claude/agents/verification.md",
+    "claude/commands/backlog.md",
+    "claude/commands/implement-v2.md",
+    "claude/commands/implement.md",
+    "claude/commands/plan-new.md",
+    "claude/skills/flow-contract-plan-output-format/SKILL.md",
+    "claude/skills/flow-contract-task-store/SKILL.md",
+    "claude/skills/implement-v2-engine/SKILL.md",
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "claude/skills/implement-v2-engine/references/run-milestone.md",
+    "claude/skills/plan-v2-engine/references/approve.md",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md",
+    "claude/skills/review-v2-lenses/lenses/plan-risk.md",
+    "claude/skills/review-v2-lenses/lenses/plan-structure.md",
+    "claude/skills/tomlctl/SKILL.md",
+    "claude/skills/tomlctl/references/backlog-reconcile.md",
+    "claude/skills/tomlctl/references/flow.md",
+    "claude/skills/tomlctl/references/plan-probes.md",
+    "claude/skills/tomlctl/references/plan-store.md",
+    "claude/skills/tomlctl/references/plan.md",
+    "claude/skills/tomlctl/references/tasks-store.md",
+    "claude/skills/tomlctl/references/tasks-write.md",
+    "claude/skills/tomlctl/references/tasks.md",
+    "claude/workflows/implement-v2-milestone.js",
+    "docs/ideas/v2-pipeline.md",
+    "glimpse/Cargo.lock",
+    "glimpse/src/diagram/mod.rs",
+    "glimpse/src/model.rs",
+    "glimpse/src/theme.rs",
+    "glimpse/src/view/legend.rs",
+    "scripts/link-v2-review.ps1",
+    "scripts/link-v2-review.sh",
+    "scripts/shared-blocks.toml",
+    "tomlctl/Cargo.lock",
+    "tomlctl/Cargo.toml",
+    "tomlctl/README.md",
+    "tomlctl/src/agents/correlate.rs",
+    "tomlctl/src/backlog/reconcile.rs",
+    "tomlctl/src/capabilities.rs",
+    "tomlctl/src/cli/dispatch/tests/skills.rs",
+    "tomlctl/src/cli/mod.rs",
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/src/cli/types/tasks.rs",
+    "tomlctl/src/plan/approve.rs",
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/src/plan/dispatch.rs",
+    "tomlctl/src/plan/drift.rs",
+    "tomlctl/src/plan/probes.rs",
+    "tomlctl/src/plan/records.rs",
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/plan/stage.rs",
+    "tomlctl/src/plan/target.rs",
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/src/tasks/add.rs",
+    "tomlctl/src/tasks/dispatch.rs",
+    "tomlctl/src/tasks/graph.rs",
+    "tomlctl/src/tasks/ready.rs",
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/tasks/update.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/tests/output_options.rs",
+    "tomlctl/tests/plan_approve.rs",
+    "tomlctl/tests/plan_check.rs",
+    "tomlctl/tests/plan_drift.rs",
+    "tomlctl/tests/plan_lifecycle.rs",
+    "tomlctl/tests/plan_probes.rs",
+    "tomlctl/tests/plan_records.rs",
+    "tomlctl/tests/plan_stage.rs",
+    "tomlctl/tests/plan_view.rs",
+    "tomlctl/tests/review_plan_records.rs",
+]
+concerns = [
+    "ripple",
+    "hygiene",
+]
+agent = "review-sweeper"
+reason = "hygiene bundled with the proposed ripple sweep: same mechanical mode over the same slice, and it would otherwise be waived for the ceiling"
+facets = [
+    "claude-harness",
+    "rust",
+]
+status = "thin"
+sealed = true
+note = """
+C11 thin. Slice of about 100 files; read in full: 0. Targeted probes only.
+Probes (ripple, hygiene):
+- TODO/FIXME/XXX/HACK over slice: 0 in slice.
+- allow(dead_code) and cfg(test) in slice: 0 in slice.
+- B-id citations in slice source: none in source.
+- ripple, handover add/--command renamed to set: 0 stale hits outside .claude and docs.
+- ripple, After Merge heading: consistent with implement.md and plan-output-format.
+- ripple, stops and undone-handover wording: approve.md and tomlctl plan.md consistent.
+Candidates: 0 kept, 0 escalated. Unswept: the rest of the slice."""
+
+[[cells.bound]]
+concern = "ripple"
+hash = "012ddd396ee8a79db6f97da1315453c2e1e03975ce6b95b8373a06867e0ffb51"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/ripple.md"
+methods = ["sweep"]
+v1_category = "completeness"
+
+[[cells.bound]]
+concern = "hygiene"
+hash = "4e949cfe476e885ed918f630410e71771885029145fd9923482bf4691ec60bc8"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/hygiene.md"
+methods = [
+    "sweep",
+    "trace",
+]
+v1_category = "quality"
+
+[[cells]]
+id = "C12"
+run = "U1"
+wave = 1
+slice = [
+    "tomlctl/src/agents/correlate.rs",
+    "tomlctl/src/backlog/reconcile.rs",
+    "tomlctl/src/capabilities.rs",
+    "tomlctl/src/cli/mod.rs",
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/src/cli/types/tasks.rs",
+    "tomlctl/src/plan/approve.rs",
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/src/plan/dispatch.rs",
+    "tomlctl/src/plan/drift.rs",
+    "tomlctl/src/plan/probes.rs",
+    "tomlctl/src/plan/records.rs",
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/plan/stage.rs",
+    "tomlctl/src/plan/target.rs",
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/src/tasks/add.rs",
+    "tomlctl/src/tasks/dispatch.rs",
+    "tomlctl/src/tasks/graph.rs",
+    "tomlctl/src/tasks/ready.rs",
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/tasks/update.rs",
+    "glimpse/src/diagram/mod.rs",
+    "glimpse/src/model.rs",
+    "glimpse/src/theme.rs",
+    "glimpse/src/view/legend.rs",
+]
+concerns = ["correctness"]
+question = "context-free variant: diff only, no pack, no prior findings"
+agent = "review-finder-cf"
+reason = "context-free correctness pass over the diff, independent of the pack"
+facets = ["rust"]
+status = "covered"
+sealed = true
+note = 'Context-free: 27 slice diffs read; traced mutate_store rollback, Status::Parked sites, premise serialisers. Sweeps: Parked in matches!/==/"deferred" sites, all covered; premise serialisers 3, 1 gap (F9). Ruled out: plan/schema.rs handover_from_toml drops v1 `command` (decided in D3/D4, no store holds one); probes.rs record_premises partial mutation (mutate persists nothing on Err); drift.rs parse_status (porcelain -z root-relative, no renames); ready.rs ready_in_checkpoint held/blocked id keys OK; correlate.rs plan_view dedupe tested.'
+
+[[cells.bound]]
+concern = "correctness"
+hash = "7f806130477f6c8b53fee4d1d134425c86c8eb78d582c7ea1077a9e49aa836e5"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/correctness.md"
+methods = [
+    "trace",
+    "sweep",
+]
+v1_category = "quality"
+
+[[cells]]
+id = "C13"
+run = "U1"
+wave = 1
+slice = [
+    "claude/workflows/implement-v2-milestone.js",
+    "claude/skills/implement-v2-engine/SKILL.md",
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "claude/skills/implement-v2-engine/references/run-milestone.md",
+    "claude/commands/implement-v2.md",
+    "claude/agents/plan-worker-deep.md",
+    "claude/agents/plan-worker-lite.md",
+]
+concerns = ["correctness"]
+question = "context-free variant: diff only, no pack, no prior findings"
+agent = "review-finder-cf"
+reason = "context-free correctness pass over the diff, independent of the pack"
+status = "covered"
+sealed = true
+note = "Context-free: 7 new files read in full from diff vs ccad91fa; correctness lens, trace over index statuses script->run-milestone->drain. Ruled out: cycleMembers — self-loop and duplicate needs handled by Set; nextWave empty-wave branch — unreachable once cycles refused; namesNote — backslash and absolute paths normalised; fileKey case-fold — only over-serialises; argProblems — null task and bad ids short-circuit cycle check; settleBlocked fixpoint — correct. Sweep (index status values vs drain step 2 table): 7 statuses, all mapped except mismatch in step 6."
+
+[[cells.bound]]
+concern = "correctness"
+hash = "7f806130477f6c8b53fee4d1d134425c86c8eb78d582c7ea1077a9e49aa836e5"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/correctness.md"
+methods = [
+    "trace",
+    "sweep",
+]
+v1_category = "quality"
+
+[[cells]]
+id = "C14"
+run = "U1"
+wave = 2
+slice = [
+    "tomlctl/src/agents/correlate.rs",
+    "tomlctl/src/backlog/reconcile.rs",
+    "tomlctl/src/capabilities.rs",
+    "tomlctl/src/cli/mod.rs",
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/src/cli/types/tasks.rs",
+    "tomlctl/src/plan/approve.rs",
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/src/plan/dispatch.rs",
+    "tomlctl/src/plan/drift.rs",
+    "tomlctl/src/plan/probes.rs",
+    "tomlctl/src/plan/records.rs",
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/plan/stage.rs",
+    "tomlctl/src/plan/target.rs",
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/src/tasks/add.rs",
+    "tomlctl/src/tasks/dispatch.rs",
+    "tomlctl/src/tasks/graph.rs",
+    "tomlctl/src/tasks/ready.rs",
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/tasks/update.rs",
+    "glimpse/src/diagram/mod.rs",
+    "glimpse/src/model.rs",
+    "glimpse/src/theme.rs",
+    "glimpse/src/view/legend.rs",
+]
+concerns = [
+    "ripple",
+    "hygiene",
+]
+question = "C11 sealed thin: no file was read in full and only targeted greps ran. Sweep these Rust sources completely: every symbol, status value, flag and message the diff renamed or removed, checked for stale references."
+agent = "review-sweeper"
+reason = "follow-up for thin C11: the same concerns over the Rust sources only, a slice one sweeper can read"
+facets = ["rust"]
+status = "thin"
+sealed = true
+note = """
+C14 thin. Files read in full: 0 of 27 (about 39k lines). Diff basis: commits 0f385a84 and 3c8f8d6c.
+Probes (Grep, whole tree), all clean:
+1. Removed names (PlanHandoverAddArgs, HANDOVER_REPLACE, handover_finding, ROW_SHAPE, skip helpers): no stale use.
+2. Stale verb or flag (handover add, --command, source-task): none in tomlctl/src.
+3. Status vocabulary (in-progress, deferred) in plan/ and tasks/: no stale list.
+4. glimpse/src stale names: none.
+Escalated: plan-records.md:49 (outside slice).
+Prior rows F6-F9, F21-F26 unchanged."""
+
+[[cells.bound]]
+concern = "ripple"
+hash = "012ddd396ee8a79db6f97da1315453c2e1e03975ce6b95b8373a06867e0ffb51"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/ripple.md"
+methods = ["sweep"]
+v1_category = "completeness"
+
+[[cells.bound]]
+concern = "hygiene"
+hash = "4e949cfe476e885ed918f630410e71771885029145fd9923482bf4691ec60bc8"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/hygiene.md"
+methods = [
+    "sweep",
+    "trace",
+]
+v1_category = "quality"
+
+[[cells]]
+id = "C15"
+run = "U1"
+wave = 2
+slice = [
+    "CLAUDE.md",
+    "claude/agents/plan-worker-deep.md",
+    "claude/agents/plan-worker-lite.md",
+    "claude/agents/verification.md",
+    "claude/commands/backlog.md",
+    "claude/commands/implement-v2.md",
+    "claude/commands/implement.md",
+    "claude/commands/plan-new.md",
+    "claude/skills/flow-contract-plan-output-format/SKILL.md",
+    "claude/skills/flow-contract-task-store/SKILL.md",
+    "claude/skills/implement-v2-engine/SKILL.md",
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "claude/skills/implement-v2-engine/references/run-milestone.md",
+    "claude/skills/plan-v2-engine/references/approve.md",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md",
+    "claude/skills/review-v2-lenses/lenses/plan-risk.md",
+    "claude/skills/review-v2-lenses/lenses/plan-structure.md",
+    "claude/skills/tomlctl/SKILL.md",
+    "claude/skills/tomlctl/references/backlog-reconcile.md",
+    "claude/skills/tomlctl/references/flow.md",
+    "claude/skills/tomlctl/references/plan-probes.md",
+    "claude/skills/tomlctl/references/plan-store.md",
+    "claude/skills/tomlctl/references/plan.md",
+    "claude/skills/tomlctl/references/tasks-store.md",
+    "claude/skills/tomlctl/references/tasks-write.md",
+    "claude/skills/tomlctl/references/tasks.md",
+    "claude/workflows/implement-v2-milestone.js",
+    "docs/ideas/v2-pipeline.md",
+    "scripts/link-v2-review.ps1",
+    "scripts/link-v2-review.sh",
+    "scripts/shared-blocks.toml",
+    "tomlctl/README.md",
+]
+concerns = [
+    "ripple",
+    "hygiene",
+]
+question = "C11 sealed thin. Sweep the harness prose and scripts completely for references to verbs, flags and statuses the diff renamed or removed. One escalated candidate to settle: claude/skills/tomlctl/references/plan.md line 55 still describes quoting inside `--command` values, though `plan handover add --command` is gone."
+agent = "review-sweeper"
+reason = "follow-up for thin C11 over the prose and scripts, carrying the escalated plan.md --command candidate"
+facets = [
+    "claude-harness",
+    "rust",
+]
+status = "covered"
+sealed = true
+note = """
+C15 ripple+hygiene, 32 slice entries, PRIOR listed for all 32; no prior row at plan.md:55.
+Probes (grep, whole tree, hits read):
+- ripple: `handover add` over claude/, tomlctl/src, scripts/: 0 hits (hits only in .claude/ records, docs/).
+- ripple: `--command` in claude/skills/tomlctl/references/plan.md: 1 hit, line 55 -> F34.
+- ripple: `plan run` / `handover set|done` in claude/workflows/implement-v2-milestone.js: 0 hits.
+- hygiene: TODO/FIXME and link-v2-review over slice: no stale markers; ps1/sh pair both present.
+Escalated: none."""
+
+[[cells.bound]]
+concern = "ripple"
+hash = "012ddd396ee8a79db6f97da1315453c2e1e03975ce6b95b8373a06867e0ffb51"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/ripple.md"
+methods = ["sweep"]
+v1_category = "completeness"
+
+[[cells.bound]]
+concern = "hygiene"
+hash = "4e949cfe476e885ed918f630410e71771885029145fd9923482bf4691ec60bc8"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/hygiene.md"
+methods = [
+    "sweep",
+    "trace",
+]
+v1_category = "quality"
+
+[[cells]]
+id = "C16"
+run = "U1"
+wave = 2
+slice = [
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/tests/output_options.rs",
+    "tomlctl/tests/plan_approve.rs",
+    "tomlctl/tests/plan_check.rs",
+    "tomlctl/tests/plan_drift.rs",
+    "tomlctl/tests/plan_lifecycle.rs",
+    "tomlctl/tests/plan_probes.rs",
+    "tomlctl/tests/plan_records.rs",
+    "tomlctl/tests/plan_stage.rs",
+    "tomlctl/tests/plan_view.rs",
+    "tomlctl/tests/review_plan_records.rs",
+    "tomlctl/src/cli/dispatch/tests/skills.rs",
+]
+concerns = [
+    "ripple",
+    "hygiene",
+]
+question = "C11 sealed thin. Sweep the touched tests completely: fixtures and assertions that still name a renamed or removed verb, flag, field or status."
+agent = "review-sweeper"
+reason = "follow-up for thin C11 over the touched tests"
+facets = ["rust"]
+status = "covered"
+sealed = true
+note = """
+C16: 12 slice files swept by Grep.
+Probes:
+- handover verb/flag rename (add and --command removed): 0 stale hits. Clean.
+- handover command->action field rename: 0 stale hits. Clean.
+- whole-tree `handover add` search: hits only in .claude/flows and docs/flows (historical or excluded).
+- hygiene constants (HANDOVER, HANDOVER_HEAD, PLAN_STORE): used. 0 candidates.
+PRIOR F15, F16, F18 not re-raised.
+Escalated: claude/skills/tomlctl/references/plan.md:55 — `--command` prose may be stale after handover add removal — needs judgement."""
+
+[[cells.bound]]
+concern = "ripple"
+hash = "012ddd396ee8a79db6f97da1315453c2e1e03975ce6b95b8373a06867e0ffb51"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/ripple.md"
+methods = ["sweep"]
+v1_category = "completeness"
+
+[[cells.bound]]
+concern = "hygiene"
+hash = "4e949cfe476e885ed918f630410e71771885029145fd9923482bf4691ec60bc8"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/hygiene.md"
+methods = [
+    "sweep",
+    "trace",
+]
+v1_category = "quality"
+
+[[findings]]
+id = "F1"
+run = "U1"
+cell = "C6"
+seen_in = ["U1"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "claude/workflows/implement-v2-milestone.js"
+line = 166
+symbol = "toEntry"
+summary = "A worker's wrong-root `error` return reaches the index with `error: 'wrote no note'`, not the root mismatch the drain reads to stop the engine"
+severity = "minor"
+failure_scenario = "A worker finds `git rev-parse --show-toplevel` differs from `root:`, changes nothing and returns {status:'error', note:''}. RETURN_SCHEMA has no field for the two paths, so toEntry takes the `!ret.note` branch and emits {status:'error', error:'wrote no note'}. drain.md says `error` names the root mismatch and a wrong root stops the engine, otherwise treat as no-return; the engine sees no mismatch, relaunches every task, then parks each on the second error. A wrong-root return that does carry a note gets error null and no fail(), so the run closes `ok`."
+fix = "Add a `reason` string to RETURN_SCHEMA (required, '' unless status is error) and to the worker return contract in plan-worker-lite.md and plan-worker-deep.md (shared block, line 78). In toEntry, before the note check, map ret.status === 'error' to fail(`task N: worker returned error: ${ret.reason}`) and entry(t.id, 'error', {...fields, error: ret.reason || 'worker returned error with no reason'}). Update the prompt's return shape at workerPrompt and the index tables in run-milestone.md and drain.md if the field name changes."
+fix_shape = "edits"
+effort = "small"
+counter = "Refuted if the Workflow runtime surfaces free text outside the schema to the script, or if the engine is documented to treat `error` + 'wrote no note' as the wrong-root signal; neither appears in run-milestone.md or drain.md."
+grade = "high"
+evidence = [
+    "claude/agents/plan-worker-lite.md:24 — wrong root: change nothing and return `status: error` naming both paths; :78 return has only task/status/note/files_touched/deviations/handover",
+    "claude/workflows/implement-v2-milestone.js:30-42 RETURN_SCHEMA additionalProperties:false, no reason field",
+    "claude/workflows/implement-v2-milestone.js:166-169 empty note -> entry(ret.status, {error:'wrote no note'}); :176 error status with a note -> error null, no fail()",
+    "claude/skills/implement-v2-engine/references/drain.md:35-38 — wrong root stops the engine; `error` names the root mismatch; drain.md:118 error/no-return relaunch once then park",
+]
+anchor = "code|claude/workflows/implement-v2-milestone.js|toEntry"
+status = "exported"
+first_seen = 2026-11-10
+exported_as = "R22"
+export_ledger = ".claude/flows/jiggly-exploring-robin/review-ledger.toml"
+
+[[findings]]
+id = "F2"
+run = "U1"
+cell = "C6"
+seen_in = ["U1"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "claude/workflows/implement-v2-milestone.js"
+line = 128
+symbol = "fileKey"
+summary = "fileKey folds case and backslashes but not a leading `./`, so `./src/a.rs` and `src/a.rs` on two tasks land in one wave"
+severity = "minor"
+failure_scenario = """Two dispatched tasks with no needs path between them hold `files: ["./tomlctl/src/x.rs"]` and `["tomlctl/src/x.rs"]`. fileKey maps them to distinct keys, nextWave puts both in the same wave, and two workers edit one file concurrently, each seeing the other's half-written edit and one overwriting the other. tomlctl itself treats the two spellings as one file (tasks::schema::normal_path strips a leading `./`), and stored paths keep the spelling as written."""
+fix = '''Make fileKey match normal_path: `f.replace(/\\/g, '/').replace(/^(\.\/)+/, '').toLowerCase()`, and update the comment above it to name the `./` spelling. Same pattern outside the slice: tomlctl/src/tasks/graph.rs overlap_pairs and first_claim compare node.files raw, so tasks check's dag/unreachable-claim and tasks ready's held miss the same pair; normalising there through normal_path is a separate edit.'''
+fix_shape = "edits"
+effort = "trivial"
+counter = "Refuted if every writer of a row's `files` (tasks add/add-many/update, import-plan, plan verbs) canonicalises paths before storing; schema.rs:578-579 says stored paths stay as written, and no `./` refusal was found in tomlctl/src/tasks."
+grade = "medium"
+evidence = [
+    "claude/workflows/implement-v2-milestone.js:126-128 fileKey = replace backslash, toLowerCase only",
+    "tomlctl/src/tasks/schema.rs:578-582 normal_path: backslashes folded and leading `./` removed; stored paths stay as written",
+    """Grep of tomlctl/src/tasks for '"./"|starts_with("./")' finds only normal_path: no writer refuses or rewrites a `./` path""",
+    "tomlctl/src/tasks/graph.rs:340-355 overlap_pairs intersects raw node.files strings",
+]
+anchor = "code|claude/workflows/implement-v2-milestone.js|fileKey"
+status = "exported"
+first_seen = 2026-11-10
+exported_as = "R23"
+export_ledger = ".claude/flows/jiggly-exploring-robin/review-ledger.toml"
+
+[[findings]]
+id = "F3"
+run = "U1"
+cell = "C13"
+seen_in = ["U1"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "claude/workflows/implement-v2-milestone.js"
+line = 30
+symbol = "RETURN_SCHEMA"
+summary = "A wrong-root worker's reason never reaches the index `error`, so the drain cannot tell a wrong root from a crash and never stops the engine"
+severity = "minor"
+failure_scenario = "Worker finds git toplevel != root, changes nothing, returns {status:'error', note:''} (plan-worker procedure step 1; note is '' when none written). RETURN_SCHEMA has no reason field, so toEntry hits `!ret.note` and sets error='wrote no note'. drain.md step 2 says `error` names the root mismatch and a wrong root stops the engine; with no such text the drain treats it as no-return, relaunches into the same wrong root, then parks the task instead of stopping."
+fix = "Add a required string `reason` to RETURN_SCHEMA (empty unless status is error) and to the workers' Return section; in toEntry, when ret.status === 'error', set the entry's error to ret.reason (falling back to 'wrote no note' only for other statuses). Alternatively have the Workflow compare root itself before dispatch. Keep drain.md step 2's claim and run-milestone.md's index table in step with whichever field carries it."
+fix_shape = "edits"
+effort = "small"
+counter = "If the harness lets a schema-validated agent return carry a message outside the schema, or the drain reads some other channel for the root mismatch, the reason does reach it; neither appears in the slice."
+grade = "high"
+evidence = [
+    "claude/workflows/implement-v2-milestone.js:30-42 RETURN_SCHEMA: task,status,note,files_touched,deviations,handover only; additionalProperties false",
+    "claude/workflows/implement-v2-milestone.js:166-169 toEntry: empty note -> error 'wrote no note', status kept",
+    "claude/agents/plan-worker-lite.md:24 wrong root: change nothing, return status error naming both paths; :78 note is '' when none written",
+    "claude/skills/implement-v2-engine/references/drain.md:35-38 wrong root stops the engine; `error` carries the reason naming the root mismatch",
+]
+anchor = "code|claude/workflows/implement-v2-milestone.js|RETURN_SCHEMA"
+status = "exported"
+first_seen = 2026-11-10
+exported_as = "R24"
+export_ledger = ".claude/flows/jiggly-exploring-robin/review-ledger.toml"
+
+[[findings]]
+id = "F4"
+run = "U1"
+cell = "C13"
+seen_in = ["U1"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "claude/workflows/implement-v2-milestone.js"
+line = 169
+symbol = "toEntry"
+summary = "A done or failed return with no note or a wrong note path keeps its status with an `error` the drain never reads, so dependents run and the gap goes unreported"
+severity = "minor"
+failure_scenario = "Worker sets its row done but its note Write under docs/flows/ is denied (SKILL.md rule 6: denied under dontAsk) and it returns note ''. toEntry keeps status 'done' with error 'wrote no note'; settleBlocked treats it as done and dispatches dependents. drain.md step 2 maps done to 'Nothing, unless deviations or a handover' and has no case for a non-null `error`, so the missing note reaches no needs_human section; a failed return with no note leaves step 6's 'Read its note' nothing to read."
+fix = "In drain.md step 2, add a rule: any entry whose `error` is non-null alongside a worker status (done, failed, parked) is read and reported in needs_human (e.g. under `reconcile:` as 'task <n>: <error>'); for a missing note on failed or parked, read the row's status and treat it as no-return for relaunch. Optionally make the Workflow treat a note-less `done` as not done for settleBlocked so dependents are held."
+fix_shape = "edits"
+effort = "small"
+counter = "If the drain's Status-line grep (drain.md step 2) is meant to catch a missing note and report it under reconcile, the gap is covered; the text only covers a disagreeing line, not an absent file."
+grade = "medium"
+evidence = [
+    "claude/workflows/implement-v2-milestone.js:166-175 toEntry returns entry(t.id, ret.status, {error}) for missing or mismatched note",
+    "claude/workflows/implement-v2-milestone.js:198 settleBlocked blocks only on status !== 'done'",
+    "claude/skills/implement-v2-engine/references/drain.md:31 done -> Nothing, unless it reports deviations or a handover",
+    "claude/skills/implement-v2-engine/SKILL.md:29 writes under docs/flows/** prompt in default mode and are denied under dontAsk",
+]
+related = ["F1"]
+anchor = "code|claude/workflows/implement-v2-milestone.js|toEntry"
+status = "exported"
+first_seen = 2026-11-10
+exported_as = "R22"
+export_ledger = ".claude/flows/jiggly-exploring-robin/review-ledger.toml"
+
+[[findings]]
+id = "F5"
+run = "U1"
+cell = "C13"
+seen_in = ["U1"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "claude/skills/implement-v2-engine/references/drain.md"
+line = 212
+symbol = "Relaunch or stop"
+summary = "The stop rule forbids the one unchanged relaunch that error, no-return and mismatch are promised, and leaves those pending rows out of the report"
+severity = "minor"
+failure_scenario = "A launch whose only dispatched worker throws (or returns nothing, or another task id). Step 4 resets the row to pending; step 6 says relaunch unchanged once, so the replan moves no field. Step 6's stop rule then fires: the launch moved no row to done and the replan moved no field. The engine goes to step 8 without relaunching; the row is pending, not failed or parked, so no needs_human section lists it. mismatch is also absent from step 6's table though step 2 routes it there."
+fix = "Reword the stop rule to exclude the owed relaunch: 'Stop relaunching when a launch moved no row to done, the replan moved no field, and no row is owed its one unchanged relaunch for error, no-return or mismatch.' Add mismatch to step 6's 'error or no-return' row. Add a needs_human line for a row left pending when relaunching stopped."
+fix_shape = "edits"
+effort = "small"
+counter = "If 'the replan moved no field' is meant to count the step-4 status reset as a move, the stop rule would not fire; but drain.md:78 and :129 say status is not a plan field, so it is not counted as one."
+grade = "high"
+evidence = [
+    "claude/skills/implement-v2-engine/references/drain.md:36 no-return, mismatch -> Relaunch unchanged once; see step 6",
+    "claude/skills/implement-v2-engine/references/drain.md:118 only `error` or `no-return`: Relaunch unchanged once; second such return parks it",
+    "claude/skills/implement-v2-engine/references/drain.md:212 Stop relaunching when a launch moved no row to done and the replan moved no field",
+    "claude/skills/implement-v2-engine/references/drain.md:387-407 report sections: parked, failed, handovers, no worker, withheld, gate, out of lane, store changes, reconcile; none for a pending row",
+]
+anchor = "code|claude/skills/implement-v2-engine/references/drain.md|Relaunch or stop"
+status = "exported"
+first_seen = 2026-11-10
+exported_as = "R25"
+export_ledger = ".claude/flows/jiggly-exploring-robin/review-ledger.toml"
+
+[[findings]]
+id = "F6"
+run = "U1"
+cell = "C2"
+seen_in = ["U1"]
+family = "code"
+kind = "cleanup"
+lens = "correctness"
+route = "verifier"
+file = "tomlctl/src/plan/view.rs"
+line = 218
+symbol = "records_block"
+summary = "plan view --for human renders handover when/done_when with a doubled period and breaks the bullet on multi-line action text"
+effort = "trivial"
+counter = """If the documented convention were for when/done_when to be written without a trailing period the doubling would not arise, but plan-store.md's own example (when = "Once the run reports done.") ends in one, and the test pins "Earlier.."."""
+grade = "high"
+evidence = [
+    "tomlctl/src/plan/view.rs:218 format appends '.' after when and done_when",
+    'tomlctl/tests/plan_view.rs:468-469 pin "When: Earlier.. Done when: Already true.."',
+    "claude/skills/tomlctl/references/plan-store.md:73-74 example when/done_when both end in '.'",
+]
+edit = """In records_block, stop appending '.' after when and done_when (or trim one trailing '.' from each before formatting), and pass action, when and done_when through one_line() as decision_block does for its heading, so a stored newline cannot split the list item. Update the two pinned lines in tests/plan_view.rs ("When: Earlier.. Done when: Already true.." and "When: After the run.. Done when: The new command is listed..") to the corrected form."""
+direction = "change"
+old = '"- [{mark}] {} ({reason}): {} When: {}. Done when: {}. (after task {})\n",'
+instances = ["tomlctl/tests/plan_view.rs"]
+anchor = "code|tomlctl/src/plan/view.rs|records_block"
+status = "exported"
+first_seen = 2026-11-10
+exported_as = "R26"
+export_ledger = ".claude/flows/jiggly-exploring-robin/review-ledger.toml"
+
+[[findings]]
+id = "F7"
+run = "U1"
+cell = "C2"
+seen_in = ["U1"]
+family = "code"
+kind = "advisory"
+lens = "correctness"
+route = "none"
+file = "tomlctl/src/plan/schema.rs"
+line = 776
+symbol = "handover_from_toml"
+summary = "A schema_version 1 store's handover `command` text is dropped on read and lost on the next plan write, with no migration into `action`"
+grade = "high"
+evidence = [
+    "tomlctl/src/plan/schema.rs:776-778 read action/when/done_when only; module doc line 13-14: unknown keys are dropped",
+    "tomlctl/src/plan/schema.rs:369-377 only a newer schema_version is refused; v1 reads",
+    '''grep '\.schema_version' over *.rs: PlanStore.schema_version read only by tests (schema.rs:1000,1142)''',
+]
+angle = "challenge"
+rationale = """from_toml accepts schema_version 1 and the commit promises a v1 store 'still reads and is written back at 2', but handover_from_toml reads only action/when/done_when, and unknown keys are dropped. Any plan verb that writes (plan run start, plan decide, plan approve) on a v1 store holding an undone [[handover]] command = "..." rewrites it at v2 with the command text gone; plan check then reports 'handover H1 has no reason, action, when, done_when' with nothing left to recover the step from but git history. D4 weighed only this repo's stores, while tomlctl is installed globally and plan stores in other repos are not covered by that evidence. PlanStore.schema_version is read but consulted by no production code, so there is no migration hook today."""
+alternative = "Refuse to write a v1 store that holds a handover with `command` until it is re-entered with plan handover set."
+adoption_cost = "Small: in handover_from_toml, when action is absent and a string `command` is present (or when the store's schema_version < 2), read it into action; add one round-trip test with a v1 fixture. Alternatively record in plan-store.md that v1 handover commands are discarded."
+challenges = '.claude/flows/human-only-handovers/plan.toml decision D3 (id at line 61, drops `command`) and D4 (line 89, evidence: "No plan.toml in the repo holds a handover")'
+anchor = "code|tomlctl/src/plan/schema.rs|handover_from_toml"
+status = "converted"
+first_seen = 2026-11-10
+converted_to = "F35"
+
+[[findings]]
+id = "F8"
+run = "U1"
+cell = "C2"
+seen_in = ["U1"]
+family = "code"
+kind = "advisory"
+lens = "type-design"
+route = "none"
+file = "tomlctl/src/plan/records.rs"
+line = 400
+symbol = "record_edit"
+summary = "plan handover set now updates handovers in place, yet review still refuses every handover target as having no writer"
+grade = "high"
+evidence = [
+    "tomlctl/src/plan/records.rs:400 refuses handover edits; :436 unreachable! arm; :543 upsert_handover exists",
+    "tomlctl/src/review/apply.rs:360 and :548 'no verb writes a handover yet'",
+    "tomlctl/src/review/tier.rs:96 matches RecordTarget::Handover to Tier::Advisory",
+]
+angle = "direction"
+rationale = "The reshape added upsert_handover, the same id-keyed row path record_edit uses for decisions and contracts, but record_edit still refuses RecordKind::Handover ('a handover has no review write path'), write_key keeps an unreachable! arm, review/tier.rs:96 forces every handover target to Advisory, and review/apply.rs:360 and :548 still say 'no verb writes a handover yet', which is now false. A flow-mode plan review that finds a handover missing when or done_when (exactly what plan/handover-incomplete reports) cannot apply its fix; the user must hand-run plan handover set. Whether review should edit a human-facing step is a decision, so this is not a cleanup."
+adoption_cost = "Medium: route RecordKind::Handover through upsert_handover in record_edit/write_key (refusing `done` as the row path does), drop the Handover arm from tier.rs's forced-Advisory rule, and replace the apply.rs refusals; or, if handovers should stay review-read-only, change the two apply.rs messages to say so rather than 'yet'."
+anchor = "code|tomlctl/src/plan/records.rs|record_edit"
+status = "parked"
+first_seen = 2026-11-10
+park_reason = "Whether review may edit a human-facing handover step is a design decision; parked by the user at U1 triage."
+
+[[findings]]
+id = "F9"
+run = "U1"
+cell = "C12"
+seen_in = ["U1"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "tomlctl/src/tasks/schema.rs"
+line = 281
+symbol = "Premise::probe"
+summary = "Premise gained a recorded `probe` but `tasks show`'s premises_json never emits it, so a recorded premise verdict is invisible there while accept probes show"
+severity = "minor"
+failure_scenario = "Run `plan probes --record <capture> --premises --slug s` so task 4's premises[0] stores probe {verdict: fails}. `tasks show 4 --slug s` prints premises via show.rs premises_json, which maps only claim/check/at, so the verdict and its `at` commit are absent; the same command does print each accept row's probe via accept_json. A caller gating dispatch on `tasks show` sees no premise result."
+fix = "In tomlctl/src/tasks/show.rs premises_json, add a `probe` object (at, neg_rc, pos_rc, verdict) when `p.probe` is Some, mirroring accept_json. Then, as spec_value already does for `accept`, strip premise probes before premises_json in tasks/update.rs spec_value (the `premises` expect value) and spec_moves, so an `expect` a caller can supply still matches and a probe-only difference is not reported as a move."
+fix_shape = "edits"
+effort = "small"
+counter = "A design note or test stating `tasks show` deliberately hides premise verdicts (plan view --for worker prints them via view.rs spec_block) would make this a deliberate projection choice; I found none in show.rs or its tests."
+grade = "medium"
+evidence = [
+    "tomlctl/src/tasks/schema.rs:281 adds `probe: Option<Probe>` to Premise; premise_to_toml persists it",
+    "tomlctl/src/tasks/show.rs:170-175 premises_json emits only claim, check, at",
+    "tomlctl/src/tasks/show.rs:153-163 accept_json emits `probe` for accept rows",
+    "tomlctl/src/plan/probes.rs record_premises writes premise.probe = Some(Probe{..verdict})",
+    '''sweep grep '\.claim\b' over tomlctl/src: 3 premise serialisers (drift.rs:276, view.rs:685, show.rs:173); only view.rs renders probe — complete''',
+]
+anchor = "code|tomlctl/src/tasks/schema.rs|Premise::probe"
+status = "exported"
+first_seen = 2026-11-10
+exported_as = "R27"
+export_ledger = ".claude/flows/jiggly-exploring-robin/review-ledger.toml"
+
+[[findings]]
+id = "F10"
+run = "U1"
+cell = "C7"
+seen_in = ["U1"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "claude/skills/implement-v2-engine/references/run-milestone.md"
+line = 17
+symbol = "Pre-flight"
+summary = "Pre-flight stops on stage done, but stage is done whenever every row is done, so an uncommitted final milestone is never re-gated or stamped"
+severity = "major"
+failure_scenario = "The final milestone's gate fails after round 2 (drain step 7 leaves its fix rows done) or times out twice, or the session ends between gate pass and stamp. Every row is now done with an empty commit. The next /implement-v2 runs plan stage, which returns done (stage.rs: all rows Done, commit ignored); pre-flight reports 'nothing to run, status still to be moved' and stops before Re-entry's unstamped-milestone settling, so the milestone's work is never gated, committed or stamped."
+fix = "In run-milestone.md section 1, treat stage done as done only when `tasks list --where-missing commit` prints no row; otherwise continue to Re-entry's unstamped-milestone settling. Align SKILL.md Arguments (line 37, 'stage is not approved or running is refused') and commands/implement-v2.md Bindings (line 18) with the same exception. Alternatively make plan stage report running while any row lacks a commit."
+fix_shape = "edits"
+effort = "small"
+counter = "Refuted if plan stage reads a row's commit before returning done, or if pre-flight ran the unstamped-milestone listing before the stage gate; stage.rs:168-170 shows neither."
+grade = "high"
+evidence = [
+    """tomlctl/src/plan/stage.rs:168-170: stage is "done" when every task row's status is Done; commit is not consulted""",
+    "run-milestone.md:17: '`done` means every row is `done`: there is nothing to run, so report ... and stop'",
+    "drain.md:286: a gate failing after round 2 leaves 'Its fix rows stay `done`' and the milestone uncommitted",
+    "SKILL.md:104: unstamped milestones are settled in Re-entry, which runs after the pre-flight's stage check (SKILL.md:82)",
+]
+anchor = "code|claude/skills/implement-v2-engine/references/run-milestone.md|Pre-flight"
+status = "exported"
+first_seen = 2026-11-10
+exported_as = "R28"
+export_ledger = ".claude/flows/jiggly-exploring-robin/review-ledger.toml"
+
+[[findings]]
+id = "F11"
+run = "U1"
+cell = "C7"
+seen_in = ["U1"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "claude/skills/implement-v2-engine/SKILL.md"
+line = 53
+symbol = "Steps"
+summary = "A round with nothing to launch has no drain path: the step table skips drain and replan, and drain step 1's run finish is refused with no open run"
+severity = "major"
+failure_scenario = "A milestone whose only pending row has a base premise that fails (or every member is withheld, has empty files or no spec): the dispatch set is empty, so nothing launches. run-milestone.md:157 says go to the drain, but SKILL.md's table skips Drain and replan when there was no launch, so the withheld row is never re-specced; the gate is skipped (row not done) and every later invocation repeats the same empty round. Following run-milestone instead, drain step 1 runs plan run finish, which refuses: no unfinished run of step implement:<id>."
+fix = "Define the no-launch round: in SKILL.md's table make Drain and replan skip only steps 1 to 5 when no launch ran, and still run step 6 (the replan) for withheld rows and rows dropped at launch; in drain.md step 1 say it is skipped when this round launched nothing. run-milestone.md:147 and :157 then point at drain step 6."
+fix_shape = "edits"
+effort = "small"
+counter = "Refuted if some other step replans withheld rows when nothing launched (Re-entry's Failed rows covers only failed rows, not pending withheld ones), or if plan run finish accepts a step with no open run; records.rs:660-665 refuses it."
+grade = "high"
+evidence = [
+    "SKILL.md:53: 'Drain and replan | implement:<id> (finish) | No launch this round | drain.md steps 1 to 6'",
+    "run-milestone.md:157: 'If none does, nothing can start: launch nothing and go to the drain with the reasons collected above'",
+    "run-milestone.md:129 and :147: withheld rows and rows with empty files go to the drain replan",
+    "tomlctl/src/plan/records.rs:660-665: run_finish refuses with 'no unfinished run of step `<step>`'",
+]
+anchor = "code|claude/skills/implement-v2-engine/SKILL.md|Steps"
+status = "exported"
+first_seen = 2026-11-10
+exported_as = "R29"
+export_ledger = ".claude/flows/jiggly-exploring-robin/review-ledger.toml"
+
+[[findings]]
+id = "F12"
+run = "U1"
+cell = "C7"
+seen_in = ["U1"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "claude/skills/implement-v2-engine/references/drain.md"
+line = 212
+symbol = "Relaunch or stop"
+summary = "The stop rule fires before the 'relaunch unchanged once' rule for error and no-return, so a stopped run or a lone no-return task is never retried"
+severity = "minor"
+failure_scenario = "A run is stopped (drain step 1 drains it as every task no-return), or a one-task relaunch round's worker returns nothing. Step 4 resets the rows to pending; step 6 says relaunch unchanged once, so the replan moves no field, and no row moved to done. The stop rule (launch moved no row to done and the replan moved no field) then ends relaunching, so the retry never happens; the rows are pending, not failed, so the report's failed: section omits them and no section names them."
+fix = "Exempt the first unchanged relaunch of an error or no-return task from the stop rule: stop only when the launch moved no row to done, the replan moved no field, and no task is due its single unchanged relaunch. Add a report line for rows left pending after a second no-return (or park them, as step 6's table already says)."
+fix_shape = "edits"
+effort = "trivial"
+counter = "Refuted if the step 4 status reset counts as 'the replan moved a field'; the stop rule names the replan and step 4 is described separately as needing no reason, so the reading is ambiguous at best."
+grade = "medium"
+evidence = [
+    "drain.md:118: '`error` or `no-return` | Relaunch unchanged once. A second such return for the same task parks it'",
+    "drain.md:212: 'Stop relaunching when a launch moved no row to `done` and the replan moved no field'",
+    "drain.md:23: a stopped run is drained 'like an index in which every dispatched task is `no-return`'",
+]
+related = ["F5"]
+anchor = "code|claude/skills/implement-v2-engine/references/drain.md|Relaunch or stop"
+status = "exported"
+first_seen = 2026-11-10
+exported_as = "R25"
+export_ledger = ".claude/flows/jiggly-exploring-robin/review-ledger.toml"
+
+[[findings]]
+id = "F13"
+run = "U1"
+cell = "C7"
+seen_in = ["U1"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "claude/skills/implement-v2-engine/references/drain.md"
+line = 329
+symbol = "Commit"
+summary = "Commit step has no branch for an empty candidate set: git commit with no paths fails, the engine stops unstamped, and re-entry re-gates into the same failure"
+severity = "minor"
+failure_scenario = "An invocation ends after the milestone commit but before the stamp, and before re-entry the user commits an unrelated dirty file (as the pre-flight tells them to), so HEAD no longer lists the rows' files. Stamping on re-entry then runs the gate again; at step 10 git status prints none of the rows' files, so git add -- gets no paths and `git commit -m msg --` exits 1 'nothing to commit'. A failed commit stops the engine and stamps nothing, so every later invocation loops. The same applies to a milestone whose rows changed no file."
+fix = "In step 10, when git status prints none of the candidates, make no milestone commit and stamp the rows with `git log -1 --format=%H -- <paths>`. In 'Stamping on re-entry', find the milestone commit that way instead of requiring it to be HEAD."
+fix_shape = "edits"
+effort = "small"
+counter = "Refuted if the step 10 text already skips the commit when nothing prints; it does not. Distinct from backlog B-ef8adde8, which is about how porcelain output spells paths, not an empty set."
+grade = "high"
+evidence = [
+    "scratch repo probe: `git add --` prints 'Nothing specified, nothing added.' rc=0; `git commit -m msg --` prints 'nothing to commit, working tree clean' rc=1",
+    "drain.md:341: 'A failed commit ... stops the engine: report the hook's output, stamp nothing'",
+    "drain.md:368: stamps only when HEAD is the milestone commit; 'Otherwise run the gate again from step 7'",
+    "run-milestone.md:44: pre-flight tells the user to commit, move or discard any other dirty path",
+]
+anchor = "code|claude/skills/implement-v2-engine/references/drain.md|Commit"
+status = "exported"
+first_seen = 2026-11-10
+exported_as = "R30"
+export_ledger = ".claude/flows/jiggly-exploring-robin/review-ledger.toml"
+
+[[findings]]
+id = "F14"
+run = "U1"
+cell = "C4"
+seen_in = ["U1"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "tomlctl/tests/plan_view.rs"
+line = 468
+symbol = "human_prints_the_whole_plan_as_markdown"
+summary = "plan view --human doubles the full stop after a handover's when and done_when, and the test pins the 'Earlier.. Done when: Already true..' output"
+severity = "minor"
+failure_scenario = """A handover written as documented (plan-store.md example: when = "Once the run reports done.", done_when ending in '.') rendered by `plan view --human` prints 'When: Once the run reports done.. Done when: ... list.. (after task 3)' because view.rs records_block appends '.' after each field. The updated test asserts exactly that doubled-stop line, so it locks the wrong output in. A done handover with empty when/done_when prints 'When: . Done when: .'."""
+fix = "In tomlctl/src/plan/view.rs records_block, append the full stop only when the field text does not already end in sentence punctuation (or drop the literal '.' and print the field as written), and omit a 'When:'/'Done when:' clause whose text is empty. Update the two needles in plan_view.rs human_prints_the_whole_plan_as_markdown to the single-stop form ('When: Earlier. Done when: Already true. (after task 2)')."
+fix_shape = "edits"
+effort = "trivial"
+counter = "If the human view is meant to show stored text verbatim followed by a fixed separator and the double stop was accepted deliberately; no comment, doc or commit message (0f385a84) says so."
+grade = "high"
+evidence = [
+    'tomlctl/src/plan/view.rs:218 format string "- [{mark}] {} ({reason}): {} When: {}. Done when: {}. (after task {})\n"',
+    """claude/skills/tomlctl/references/plan-store.md:73-74 example handover: when = "Once the run reports done.", done_when = "The new command appears in a fresh session's command list."""",
+    "tomlctl/tests/plan_view.rs:468-469 needles assert 'When: Earlier.. Done when: Already true..' and 'When: After the run.. Done when: The new command is listed..'",
+]
+anchor = "code|tomlctl/tests/plan_view.rs|human_prints_the_whole_plan_as_markdown"
+status = "exported"
+first_seen = 2026-11-10
+exported_as = "R31"
+export_ledger = ".claude/flows/jiggly-exploring-robin/review-ledger.toml"
+
+[[findings]]
+id = "F15"
+run = "U1"
+cell = "C4"
+seen_in = ["U1"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "tomlctl/tests/capabilities.rs"
+line = 1823
+symbol = "capabilities_features_contains_every_plan_feature"
+summary = "The breaking handover reshape (handover add removed, set added, plan store schema 2) shipped under the same 0.21.0 version with no capability feature"
+severity = "minor"
+failure_scenario = "A tomlctl installed from 6454bc72 (0.21.0, all six engine features) but before 0f385a84 reports the same version and passes /implement-v2's pre-flight feature check and /plan-v2's review_apply check; the engines then run `tomlctl plan handover set --ndjson`, which that binary rejects as an unknown subcommand, and it refuses every schema_version 2 plan.toml as 'newer than the supported 1'. No pre-flight can tell the two 0.21.0 binaries apart."
+fix = "Advertise a feature for the reshaped handover surface (e.g. `plan_handover_set`) in tomlctl/src/capabilities.rs, add it to the expected list in capabilities_features_contains_every_plan_feature, and add it to the pre-flight feature lists in claude/commands/implement-v2.md (step 2) and claude/commands/plan-v2.md (step 2). Bump the crate version (Cargo.toml, glimpse/Cargo.lock, capabilities_version_matches_cargo_toml) so the BREAKING CHANGE is visible in --version too."
+fix_shape = "edits"
+effort = "small"
+counter = "If no binary was ever installed from the 6454bc72..0f385a84^ window, nothing hits it today; the gap still lets a future stale install pass the pre-flight. A feature named for handovers that I did not grep (capabilities.rs has no 'handover' match) would refute it."
+grade = "medium"
+evidence = [
+    """git log: 6454bc72 2026-11-10 00:04 'bump to 0.21.0 and advertise the engine features'; 0f385a84 2026-11-10 07:01 'feat(tomlctl)!: reshape the plan handover record' with BREAKING CHANGE; tomlctl/Cargo.toml:3 version = "0.21.0"""",
+    "grep -n handover tomlctl/src/capabilities.rs: no match",
+    "claude/commands/implement-v2.md:29 pre-flight checks only task_status_parked, tasks_ready_checkpoint, premise_probes_scoped, premise_probe_record, plan_drift_uncommitted, plan_view_writes_build",
+    "claude/skills/implement-v2-engine/SKILL.md:30 writes handovers with `tomlctl plan handover set`",
+    "0f385a84^:tomlctl/src/plan/schema.rs:356 refuses schema_version > 1",
+]
+anchor = "code|tomlctl/tests/capabilities.rs|capabilities_features_contains_every_plan_feature"
+status = "exported"
+first_seen = 2026-11-10
+exported_as = "R32"
+export_ledger = ".claude/flows/jiggly-exploring-robin/review-ledger.toml"
+
+[[findings]]
+id = "F16"
+run = "U1"
+cell = "C4"
+seen_in = ["U1"]
+family = "code"
+kind = "cleanup"
+lens = "test-gaps"
+route = "checker"
+file = "tomlctl/tests/plan_check.rs"
+line = 487
+symbol = "an_undone_handover_missing_when_is_incomplete"
+summary = 'handover-incomplete tests match "when" by substring, which "done_when" also satisfies, so a detail naming the wrong key still passes'
+effort = "trivial"
+counter = "If the detail text is meant to stay free to reword, an exact match is brittle; a token match on the backticked or comma-split key list would serve equally."
+edit = 'In an_undone_handover_missing_when_is_incomplete replace the contains pair with assert_eq!(detail, "handover H1 has no when"). In an_undone_handover_missing_every_field_names_all_four (line 498) replace the per-key contains loop with assert_eq!(detail, "handover H1 has no reason, action, when, done_when"). Both pin the exact key list check.rs handover_findings joins, so swapping or dropping `when` fails the test.'
+direction = "change"
+old = '        detail.contains("when") && !detail.contains("action"),'
+anchor = "code|tomlctl/tests/plan_check.rs|an_undone_handover_missing_when_is_incomplete"
+status = "exported"
+first_seen = 2026-11-10
+exported_as = "R33"
+export_ledger = ".claude/flows/jiggly-exploring-robin/review-ledger.toml"
+
+[[findings]]
+id = "F17"
+run = "U1"
+cell = "C4"
+seen_in = ["U1"]
+family = "code"
+kind = "cleanup"
+lens = "test-gaps"
+route = "checker"
+file = "tomlctl/tests/plan_probes.rs"
+line = 1116
+symbol = "a_task_list_restricts_both_modes_to_its_rows"
+summary = "The scoped-record refusal asserts only .failure(), which an unscoped record also produces, so it cannot catch --task or --milestone being ignored"
+effort = "small"
+counter = "The earlier success assertions in both tests already fail if scope is ignored; this line only adds the refusal side, so the gap is weak-assertion, not an uncaught regression of the success path."
+edit = '''Make `first` carry both rows: format!("head\t{SHA}\n1:0\tneg\tsha256={}\trc=0\t\t\n{}", digest("already-true"), row("2:0", "neg", 1, "")). Record it with --task 2 under --error-format json, assert the failure message contains "1:0" (record's leftover-key refusal) and that the store text is unchanged. Without scoping the same capture records both rows and succeeds, so the assertion now binds the scope. Apply the same edit to a_milestone_restricts_both_modes_to_its_checkpoint (line 824, --milestone B).'''
+direction = "change"
+old = '    record_with(&root, &first, &["--task", "2"]).failure();'
+instances = ["tomlctl/tests/plan_probes.rs"]
+anchor = "code|tomlctl/tests/plan_probes.rs|a_task_list_restricts_both_modes_to_its_rows"
+status = "exported"
+first_seen = 2026-11-10
+exported_as = "R34"
+export_ledger = ".claude/flows/jiggly-exploring-robin/review-ledger.toml"
+
+[[findings]]
+id = "F18"
+run = "U1"
+cell = "C4"
+seen_in = ["U1"]
+family = "code"
+kind = "cleanup"
+lens = "test-gaps"
+route = "checker"
+file = "tomlctl/tests/plan_drift.rs"
+line = 471
+symbol = "an_uncommitted_edit_a_done_row_without_a_commit_names_is_the_runs_own_work"
+summary = "own_work treats in-progress, failed and the new parked rows as the run's own uncommitted work, but only a done row is tested"
+effort = "small"
+counter = "If a unit test in drift.rs pins own_work per status; the module's tests cover only parse_log and parse_status."
+edit = """Loop the test body over ["done", "in-progress", "failed", "parked"], building each flow with TASKS where row 2's status = "done" is replaced by the loop status (and src/a.rs added to its files as now), asserting affected_ids is empty with no commit and [1] after record_commit(2, ...). A regression dropping Status::Parked (or InProgress/Failed) from drift.rs own_work then reports a parked worker's partial edit as drift on pending row 1."""
+direction = "change"
+old = "fn an_uncommitted_edit_a_done_row_without_a_commit_names_is_the_runs_own_work() {"
+anchor = "code|tomlctl/tests/plan_drift.rs|an_uncommitted_edit_a_done_row_without_a_commit_names_is_the_runs_own_work"
+status = "exported"
+first_seen = 2026-11-10
+exported_as = "R35"
+export_ledger = ".claude/flows/jiggly-exploring-robin/review-ledger.toml"
+
+[[findings]]
+id = "F19"
+run = "U1"
+cell = "C8"
+seen_in = ["U1"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "tomlctl/README.md"
+line = 549
+symbol = "plan_store"
+summary = "The breaking plan handover add->set change shipped at the same 0.21.0 version and feature list, so no capabilities check can tell the two binaries apart"
+severity = "minor"
+failure_scenario = "A user runs cargo install at 6454bc72 (0.21.0, the six engine features the /implement-v2 pre-flight requires). 0f385a84 then removes `plan handover add` and adds `plan handover set` without a version bump or a new feature. Both /plan-v2 and /implement-v2 pre-flights pass on the stale binary, and the engines' `tomlctl plan handover set --ndjson` call (drain.md:318, write-and-prove.md:69) fails with a clap unrecognized-subcommand error mid-run."
+fix = "Add a feature string (e.g. `plan_handover_set`) to FEATURES in tomlctl/src/cli/types/mod.rs, list it in the README capabilities JSON block and feature table, bump tomlctl to 0.22.0 (Cargo.toml, both Cargo.lock files, README version line), and add the feature to the /implement-v2 and /plan-v2 pre-flight capability checks."
+fix_shape = "edits"
+effort = "small"
+counter = "Refuted if FEATURES or capabilities.rs advertises the handover reshape under some name, or if the version was bumped after 0f385a84; `git log 6454bc72..HEAD -- tomlctl/Cargo.toml` shows no bump and grep finds no handover feature."
+grade = "high"
+evidence = [
+    "tomlctl/src/cli/types/mod.rs:175-182 FEATURES holds plan_store ... plan_view_writes_build and no handover feature",
+    "git log 6454bc72..HEAD -- tomlctl/src: 0f385a84 feat(tomlctl)!: reshape the plan handover record (BREAKING: plan handover add removed); Cargo.toml last bumped at 6454bc72 to 0.21.0",
+    "claude/commands/implement-v2.md:29 gates on six features none of which covers handover set; claude/commands/plan-v2.md:32 gates on review_apply only",
+    "claude/skills/implement-v2-engine/references/drain.md:318 and plan-v2-engine/references/write-and-prove.md:69 call `tomlctl plan handover set`",
+]
+anchor = "code|tomlctl/README.md|plan_store"
+status = "exported"
+first_seen = 2026-11-10
+exported_as = "R36"
+export_ledger = ".claude/flows/jiggly-exploring-robin/review-ledger.toml"
+
+[[findings]]
+id = "F20"
+run = "U1"
+cell = "C8"
+seen_in = ["U1"]
+family = "code"
+kind = "cleanup"
+lens = "doc-drift"
+route = "checker"
+file = "claude/skills/tomlctl/references/tasks-store.md"
+line = 91
+symbol = "[[specs]]"
+summary = "The task-row status vocabulary sits inside the [[specs]] paragraph, so the following 'An entry with no ref' sentence reads as if about rows"
+effort = "trivial"
+edit = """Remove the sentence "A row's `status` is `pending`, `in-progress`, `done`, `failed`, `deferred` or `parked`." from the [[specs]] paragraph (lines 90-91) and add it to the `[[items]]` paragraph at line 110, after the field list ending "`agent`, `commit`.", where the row fields are listed."""
+direction = "change"
+old = "`pending`, `in-progress`, `done`, `failed`, `deferred` or `parked`. An entry with no `ref` is dropped on read and on write."
+anchor = "code|claude/skills/tomlctl/references/tasks-store.md|[[specs]]"
+status = "exported"
+first_seen = 2026-11-10
+exported_as = "R37"
+export_ledger = ".claude/flows/jiggly-exploring-robin/review-ledger.toml"
+
+[[findings]]
+id = "F21"
+run = "U1"
+cell = "C1"
+seen_in = ["U1"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "tomlctl/src/plan/drift.rs"
+line = 132
+symbol = "changed_files"
+summary = "Committed drift skips only .claude/flows/<slug>/, so the unstamped flow-store commit's docs/flows/<slug>/notes/run/ files are listed as drift"
+severity = "minor"
+failure_scenario = "After any milestone the engine makes a second, unstamped flow-store commit holding .claude/flows/<slug>/, docs/flows/<slug>/notes/run/*.md and .claude/backlog.toml. The next `plan drift` lists docs/flows/<slug>/notes/run/<n>.md (and the backlog store) in changed_files as commits no row owns, while the same paths uncommitted are skipped as 'never drift' by uncommitted_files. The run's own notes are reported as drift."
+fix = "Build one skip list in run() — `.claude/flows/<slug>/` and `docs/flows/<slug>/` — and pass it to both parse_log and parse_status (parse_log taking &[String] like parse_status), so committed and uncommitted paths under either flow directory are dropped alike. Update the parse_log doc comment and the `plan drift` section of claude/skills/tomlctl/references/plan.md to say both directories are never listed in changed_files."
+fix_shape = "edits"
+effort = "small"
+counter = "If the docs/flows/<slug>/ asymmetry is deliberate (committed brief/design edits meant to surface as drift), this is a doc gap, not a defect; no comment, test or commit message (3c8f8d6c, e2a53fb0) states that reason."
+grade = "medium"
+evidence = [
+    'tomlctl/src/plan/drift.rs:132 parse_log skip is only format!(".claude/flows/{slug}/")',
+    "tomlctl/src/plan/drift.rs:197-200 uncommitted_files skips both .claude/flows/{slug}/ and docs/flows/{slug}/ as 'its stores and its run notes, which are never drift'",
+    "claude/skills/implement-v2-engine/references/drain.md:343-359 stamps only the work commit's sha; the flow-store commit with docs/flows/<slug>/notes/run/ and .claude/backlog.toml is never stamped, so is_owned never owns it",
+]
+anchor = "code|tomlctl/src/plan/drift.rs|changed_files"
+status = "exported"
+first_seen = 2026-11-10
+exported_as = "R38"
+export_ledger = ".claude/flows/jiggly-exploring-robin/review-ledger.toml"
+
+[[findings]]
+id = "F22"
+run = "U1"
+cell = "C1"
+seen_in = ["U1"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "tomlctl/src/plan/drift.rs"
+line = 60
+symbol = "refuse_unresolved"
+summary = "Drift accepts an approved commit that resolves but is no longer an ancestor of HEAD (pull --rebase), so the run's own rewritten commits read as drift"
+severity = "minor"
+failure_scenario = "Approve, run a milestone (stamped commit), then `git pull --rebase`: the approval and milestone commits are rewritten, the old approval still resolves from the reflog, so cat-file -e passes. `old..HEAD` then lists the rebased approval and milestone commits, whose new shas match no row's stamp, and their files land in changed_files and in `affected` for every pending row sharing a file. Reproduced in a scratch repo: cat-file rc=0, merge-base --is-ancestor rc=1, range lists work.rs from the rebased owned commit."
+fix = "After the cat-file check, run `git merge-base --is-ancestor --end-of-options <commit> HEAD` and refuse with the same kind=validation message and `plan approve --amend` hint when it exits 1. Note in plan.md's `plan drift` section that a rewritten approval is refused, not only a gc'd one."
+fix_shape = "edits"
+effort = "small"
+counter = "If flows never rebase (commits only on a branch that is never rewritten) the trigger is unreachable in practice; the repo history shows a 'Merge branch main of origin' pull, so merge, not rebase, may be the user's habit."
+grade = "high"
+evidence = [
+    "tomlctl/src/plan/drift.rs:58-60 doc names 'A rebase' as the case refuse_unresolved catches, but it only tests that the object exists",
+    "scratch repo: after rebase, `git cat-file -e --end-of-options <approved>^{commit}` rc=0; `git merge-base --is-ancestor <approved> HEAD` rc=1; `git log <approved>..HEAD --name-only` lists the rebased owned commit's work.rs under a new sha",
+]
+anchor = "code|tomlctl/src/plan/drift.rs|refuse_unresolved"
+status = "exported"
+first_seen = 2026-11-10
+exported_as = "R39"
+export_ledger = ".claude/flows/jiggly-exploring-robin/review-ledger.toml"
+
+[[findings]]
+id = "F23"
+run = "U1"
+cell = "C1"
+seen_in = ["U1"]
+family = "code"
+kind = "cleanup"
+lens = "correctness"
+route = "checker"
+file = "claude/skills/tomlctl/references/plan.md"
+line = 533
+symbol = "plan drift"
+summary = "plan drift reference says a commit touching only flow files counts as drift, but parse_log drops .claude/flows/<slug>/ paths from changed_files"
+effort = "trivial"
+counter = "If 'flow files' meant docs/flows/<slug>/ only, the sentence is accurate but ambiguous; e2a53fb0 added the .claude/flows exclusion after a9961bcf wrote the sentence and did not revise it."
+edit = 'Replace the sentence with: "A commit that no row records counts as drift, but its paths under `.claude/flows/<slug>/` are never listed in `changed_files`."'
+direction = "change"
+old = "A commit that no row records counts as drift even when it only touched flow files."
+anchor = "code|claude/skills/tomlctl/references/plan.md|plan drift"
+status = "exported"
+first_seen = 2026-11-10
+exported_as = "R40"
+export_ledger = ".claude/flows/jiggly-exploring-robin/review-ledger.toml"
+
+[[findings]]
+id = "F24"
+run = "U1"
+cell = "C1"
+seen_in = ["U1"]
+family = "code"
+kind = "cleanup"
+lens = "correctness"
+route = "verifier"
+file = "tomlctl/src/plan/target.rs"
+line = 154
+symbol = "parse"
+summary = "milestone target refusal says the id is empty when it is only padded with whitespace"
+effort = "trivial"
+edit = """In parse's milestone branch, reword the refusal to cover both conditions of `id.trim().is_empty() || id.trim() != id`: `refuse("the milestone id is empty or has surrounding whitespace")`."""
+direction = "change"
+old = 'return Err(refuse("the milestone id is empty"));'
+anchor = "code|tomlctl/src/plan/target.rs|parse"
+status = "exported"
+first_seen = 2026-11-10
+exported_as = "R41"
+export_ledger = ".claude/flows/jiggly-exploring-robin/review-ledger.toml"
+
+[[findings]]
+id = "F25"
+run = "U1"
+cell = "C3"
+seen_in = ["U1"]
+family = "code"
+kind = "cleanup"
+lens = "type-design"
+route = "verifier"
+file = "tomlctl/src/plan/check.rs"
+line = 352
+symbol = "premise_finding"
+summary = "plan check's premise_finding re-parses the canonical after:<id> inline though the change hoisted premise_target into tasks::schema to share it"
+effort = "trivial"
+counter = "If plan check is meant to judge a different canonical form than the writers (the doc says 'as at write time', i.e. the same), the copy would be deliberate; no comment or test says so."
+edit = '''In premise_finding, replace the inline parse (`let target = premise.at.strip_prefix("after:")?; let id = target.parse::<u32>().ok().filter(|id| id.to_string() == target);`) with `if !premise.at.starts_with("after:") { return None; } let id = premise_target(&premise.at);`, adding `premise_target` to the existing `crate::tasks::schema` import. Behaviour is unchanged: both forms refuse `after:007` and `after:+3`. sweep -e 'strip_prefix\("after:"\)' -e 'fn premise_target': 3 hits (schema.rs:286-287 the shared fn, plan/check.rs:352 the copy), complete.'''
+direction = "change"
+old = """
+    let target = premise.at.strip_prefix("after:")?;
+    let id = target
+        .parse::<u32>()
+        .ok()
+        .filter(|id| id.to_string() == target);"""
+anchor = "code|tomlctl/src/plan/check.rs|premise_finding"
+status = "exported"
+first_seen = 2026-11-10
+exported_as = "R42"
+export_ledger = ".claude/flows/jiggly-exploring-robin/review-ledger.toml"
+
+[[findings]]
+id = "F26"
+run = "U1"
+cell = "C3"
+seen_in = ["U1"]
+family = "code"
+kind = "cleanup"
+lens = "type-design"
+route = "verifier"
+file = "tomlctl/src/tasks/schema.rs"
+line = 264
+symbol = "Probe"
+summary = "Probe's doc still says it is a run against an Accept, but Premise.probe now reuses the type with a different verdict vocabulary"
+effort = "trivial"
+edit = "Change the `Probe` doc's first sentence to `One probe run against an `Accept` or a `Premise`.` so a reader of the type learns it carries both the accept verdicts (healthy, vacuous, ...) and the premise verdicts (holds, fails, broken)."
+direction = "change"
+old = "/// One probe run against an `Accept`. An rc is `None` for a control that did"
+anchor = "code|tomlctl/src/tasks/schema.rs|Probe"
+status = "exported"
+first_seen = 2026-11-10
+exported_as = "R43"
+export_ledger = ".claude/flows/jiggly-exploring-robin/review-ledger.toml"
+
+[[findings]]
+id = "F27"
+run = "U1"
+cell = "C9"
+seen_in = ["U1"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "claude/skills/plan-v2-engine/references/write-and-prove.md"
+line = 72
+symbol = "Handovers"
+summary = "v2 puts install/link landing work in milestone gates, but the gate always runs keep_going, so an install runs even after the tests before it fail"
+severity = "major"
+failure_scenario = "Milestone B of human-only-handovers gates `cargo test ... cli::dispatch::tests` then `cargo install --path tomlctl`. drain.md dispatches every gate with keep_going: true, so when the test gate fails the verification agent still runs the install: the PATH tomlctl is replaced by a binary from a tree that fails its tests (compiles, so install succeeds), before the writes_build accept checks even run. The engine's fix rounds then drive that binary, and an uncommitted milestone leaves it installed. v1's install: key runs last and only after every earlier command passed."
+fix = "Decide how an install/link step is separated from the checks it must follow, then make write-and-prove.md:72, drain.md's gate section and v2-pipeline.md:162 agree. Options: a separate milestone field (e.g. installs) the drain runs in a second verification dispatch without keep_going, only once every gate and accept check passed; or a drain rule that runs gates naming an install verb last and only on a clean first dispatch."
+fix_shape = "needs-plan"
+effort = "medium"
+counter = "Refuted if drain.md elsewhere withholds keep_going or reorders install-type gates after a passing run; I read drain.md:225-290 and found no such rule, and verification.md:21/117 runs every command under keep_going."
+grade = "high"
+evidence = [
+    "claude/skills/plan-v2-engine/references/write-and-prove.md:72 — 'an install or link is a gate on the last milestone'",
+    "claude/skills/implement-v2-engine/references/drain.md:254 — '`keep_going: true` is always passed'; :240 gates go before the writes_build accept checks",
+    "claude/agents/verification.md:117 — under keep_going every outcome goes on to the next command",
+    "tomlctl items list .claude/flows/human-only-handovers/tasks.toml --array milestones: B gates = [cargo test ... cli::dispatch::tests, cargo install --path tomlctl, cargo install --path glimpse]",
+    "claude/commands/implement.md:256 — v1 contract: install: commands come last so they run only when every command before them passed",
+]
+anchor = "code|claude/skills/plan-v2-engine/references/write-and-prove.md|Handovers"
+status = "superseded"
+first_seen = 2026-11-10
+
+[[findings]]
+id = "F28"
+run = "U1"
+cell = "C9"
+seen_in = ["U1"]
+family = "code"
+kind = "cleanup"
+lens = "doc-drift"
+route = "checker"
+file = "claude/skills/plan-v2-engine/references/write-and-prove.md"
+line = 205
+symbol = "4b. Premises"
+summary = "Premise record command omits the required --slug, so copied as written it is refused by clap"
+effort = "trivial"
+counter = "tomlctl plan probes --help: Usage `plan probes [OPTIONS] --slug <SLUG> <--emit|--record <PATH>>`."
+edit = "Replace with `tomlctl plan probes --slug <slug> --record <scratch>/premises.out --premises`, matching the --emit call above and the capture file it names."
+direction = "change"
+old = "`tomlctl plan probes --record <capture> --premises`"
+anchor = "code|claude/skills/plan-v2-engine/references/write-and-prove.md|4b. Premises"
+status = "superseded"
+first_seen = 2026-11-10
+
+[[findings]]
+id = "F29"
+run = "U1"
+cell = "C9"
+seen_in = ["U1"]
+family = "code"
+kind = "cleanup"
+lens = "doc-drift"
+route = "checker"
+file = "claude/agents/verification.md"
+line = 3
+symbol = "description"
+summary = "verification description lists its consumers but omits the /implement-v2 milestone gate, the keep_going consumer this change added"
+effort = "trivial"
+counter = "grep keep_going claude/: only drain.md:250,254 passes it."
+edit = "Append the new consumer: 'Used by /implement checkpoint gates and Phase 3, /implement-v2 milestone gates (with keep_going), /optimise-apply Step 5, /review-apply Step 5.'"
+direction = "change"
+old = "Used by /implement checkpoint gates and Phase 3, /optimise-apply Step 5, /review-apply Step 5."
+anchor = "code|claude/agents/verification.md|description"
+status = "superseded"
+first_seen = 2026-11-10
+
+[[findings]]
+id = "F30"
+run = "U1"
+cell = "C9"
+seen_in = ["U1"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "claude/skills/plan-v2-engine/references/write-and-prove.md"
+line = 72
+symbol = "Handovers"
+summary = "v2 puts install/link landing work in milestone gates, but the gate always runs keep_going, so an install runs even after the tests before it fail"
+severity = "major"
+failure_scenario = "Milestone B of human-only-handovers gates `cargo test ... cli::dispatch::tests` then `cargo install --path tomlctl`. drain.md dispatches every gate with keep_going: true, so when the test gate fails the verification agent still runs the install: the PATH tomlctl is replaced by a binary from a tree that fails its tests (compiles, so install succeeds), before the writes_build accept checks even run. The engine's fix rounds then drive that binary, and an uncommitted milestone leaves it installed. v1's install: key runs last and only after every earlier command passed."
+fix = "Decide how an install/link step is separated from the checks it must follow, then make write-and-prove.md:72, drain.md's gate section and v2-pipeline.md:162 agree. Options: a separate milestone field (e.g. installs) the drain runs in a second verification dispatch without keep_going, only once every gate and accept check passed; or a drain rule that runs gates naming an install verb last and only on a clean first dispatch."
+fix_shape = "needs-plan"
+effort = "medium"
+counter = "Refuted if drain.md elsewhere withholds keep_going or reorders install-type gates after a passing run; I read drain.md:225-290 and found no such rule, and verification.md:21/117 runs every command under keep_going."
+grade = "high"
+evidence = [
+    "claude/skills/plan-v2-engine/references/write-and-prove.md:72 — 'an install or link is a gate on the last milestone'",
+    "claude/skills/implement-v2-engine/references/drain.md:254 — '`keep_going: true` is always passed'; :240 gates go before the writes_build accept checks",
+    "claude/agents/verification.md:117 — under keep_going every outcome goes on to the next command",
+    "tomlctl items list .claude/flows/human-only-handovers/tasks.toml --array milestones: B gates = [cargo test ... cli::dispatch::tests, cargo install --path tomlctl, cargo install --path glimpse]",
+    "claude/commands/implement.md:256 — v1 contract: install: commands come last so they run only when every command before them passed",
+]
+anchor = "code|claude/skills/plan-v2-engine/references/write-and-prove.md|Handovers"
+status = "open"
+first_seen = 2026-11-10
+
+[[findings]]
+id = "F31"
+run = "U1"
+cell = "C9"
+seen_in = ["U1"]
+family = "code"
+kind = "defect"
+lens = "doc-drift"
+route = "verifier"
+file = "claude/skills/plan-v2-engine/references/write-and-prove.md"
+line = 57
+symbol = "Handovers"
+summary = "Global harness files cite design/handover.md#..., one flow's design file; by the engine's own rule it resolves to the current flow, where it is absent"
+severity = "minor"
+failure_scenario = "/plan-v2 on any flow other than human-only-handovers reads :57 and :72 under :55's rule that a `design/<name>.md#anchor` citation names docs/flows/<slug>/design/; docs/flows/<slug>/design/handover.md does not exist, so the six reasons and the homes for agent work are unreachable and the orchestrator improvises. The plan-risk lens is global (any repo), so its finder is told to move work 'to its home (design/handover.md#...)' that no file there holds."
+fix = "Cite the owning contracts instead of the flow-local design file: the reason table in claude/skills/tomlctl/references/plan.md (plan handover set, :148-160) and the After Merge rule in claude/skills/flow-contract-plan-output-format/SKILL.md:259-260, or inline the short home list. Sites: write-and-prove.md:57 and :72, claude/skills/review-v2-lenses/lenses/plan-risk.md:37, docs/ideas/v2-pipeline.md:162 (or give that one its full docs/flows/human-only-handovers/ path)."
+fix_shape = "edits"
+effort = "small"
+counter = "Refuted if the harness or tomlctl resolves design/ citations against a fixed flow for these skills, or the engine copies handover.md into every flow; ls docs/flows/*/design shows only human-only-handovers holds one."
+grade = "high"
+evidence = [
+    "claude/skills/plan-v2-engine/references/write-and-prove.md:55 — a task cites a section as design/<name>.md#<anchor> under docs/flows/<slug>/design/",
+    "ls -d docs/flows/*/design → only docs/flows/human-only-handovers/design",
+    "sweep 'design/handover.md' outside docs/flows: write-and-prove.md:57,:72; plan-risk.md:37; v2-pipeline.md:162 — complete",
+    "the source task (.claude/flows/human-only-handovers/tasks.toml:761) gave the full docs/flows/human-only-handovers path; the edits dropped it",
+]
+anchor = "code|claude/skills/plan-v2-engine/references/write-and-prove.md|Handovers"
+status = "exported"
+first_seen = 2026-11-10
+exported_as = "R44"
+export_ledger = ".claude/flows/jiggly-exploring-robin/review-ledger.toml"
+
+[[findings]]
+id = "F32"
+run = "U1"
+cell = "C9"
+seen_in = ["U1"]
+family = "code"
+kind = "cleanup"
+lens = "doc-drift"
+route = "checker"
+file = "claude/skills/plan-v2-engine/references/write-and-prove.md"
+line = 205
+symbol = "4b. Premises"
+summary = "Premise record command omits the required --slug, so copied as written it is refused by clap"
+effort = "trivial"
+counter = "tomlctl plan probes --help: Usage `plan probes [OPTIONS] --slug <SLUG> <--emit|--record <PATH>>`."
+edit = "Replace with `tomlctl plan probes --slug <slug> --record <scratch>/premises.out --premises`, matching the --emit call above and the capture file it names."
+direction = "change"
+old = "`tomlctl plan probes --record <capture> --premises`"
+anchor = "code|claude/skills/plan-v2-engine/references/write-and-prove.md|4b. Premises"
+status = "exported"
+first_seen = 2026-11-10
+exported_as = "R45"
+export_ledger = ".claude/flows/jiggly-exploring-robin/review-ledger.toml"
+
+[[findings]]
+id = "F33"
+run = "U1"
+cell = "C9"
+seen_in = ["U1"]
+family = "code"
+kind = "cleanup"
+lens = "doc-drift"
+route = "checker"
+file = "claude/agents/verification.md"
+line = 3
+symbol = "description"
+summary = "verification description lists its consumers but omits the /implement-v2 milestone gate, the keep_going consumer this change added"
+effort = "trivial"
+counter = "grep keep_going claude/: only drain.md:250,254 passes it."
+edit = "Append the new consumer: 'Used by /implement checkpoint gates and Phase 3, /implement-v2 milestone gates (with keep_going), /optimise-apply Step 5, /review-apply Step 5.'"
+direction = "change"
+old = "Used by /implement checkpoint gates and Phase 3, /optimise-apply Step 5, /review-apply Step 5."
+anchor = "code|claude/agents/verification.md|description"
+status = "exported"
+first_seen = 2026-11-10
+exported_as = "R46"
+export_ledger = ".claude/flows/jiggly-exploring-robin/review-ledger.toml"
+
+[[findings]]
+id = "F34"
+run = "U1"
+cell = "C15"
+seen_in = ["U1"]
+family = "code"
+kind = "cleanup"
+lens = "ripple"
+route = "checker"
+file = "claude/skills/tomlctl/references/plan.md"
+line = 55
+summary = "plan.md quoting note still names --command, which no plan template uses after handover add was removed"
+effort = "trivial"
+evidence = [
+    "grep -n -- '--command' claude/skills/tomlctl/references/plan.md: line 55 only; no plan template carries --command",
+    "grep 'handover add' over claude/ and tomlctl/ src: no hits",
+]
+edit = "Drop `--command` from the sentence so it reads: Commands in `--gate` values are single-quoted in the templates below. The rest of the paragraph stays."
+direction = "change"
+old = "Commands in `--command` and `--gate` values are single-quoted in the templates below. A command that"
+anchor = "code|claude/skills/tomlctl/references/plan.md|@55"
+status = "exported"
+first_seen = 2026-11-10
+exported_as = "R47"
+export_ledger = ".claude/flows/jiggly-exploring-robin/review-ledger.toml"
+
+[[findings]]
+id = "F35"
+run = "U1"
+cell = "C2"
+seen_in = ["U1"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "tomlctl/src/plan/schema.rs"
+line = 776
+symbol = "handover_from_toml"
+summary = "A schema_version 1 store's handover `command` text is dropped on read and lost on the next plan write, with no migration into `action`"
+severity = "minor"
+failure_scenario = 'A plan.toml written at schema_version 1 holds an undone [[handover]] whose only text is `command = "..."`. Any writing plan verb (plan run start, plan decide, plan approve) reads it through handover_from_toml, which takes only action, when and done_when and drops unknown keys, then writes the store back at version 2 with the command gone. plan check then reports the handover as having no reason, action, when or done_when, and the step survives only in git history.'
+fix = "In handover_from_toml, when `action` is absent and a string `command` is present, read `command` into `action`. Add a round-trip test over a schema_version 1 fixture carrying a handover `command`, asserting the text survives a plan write as `action`. Say in claude/skills/tomlctl/references/plan-store.md that a version 1 `command` is read as `action`."
+fix_shape = "edits"
+effort = "small"
+counter = "Refuted if handover_from_toml or from_toml already maps `command` to `action`, or if a schema_version 1 store is refused on write rather than rewritten at 2."
+grade = "high"
+evidence = [
+    "tomlctl/src/plan/schema.rs:776 handover_from_toml reads action, when and done_when only",
+    "0f385a84 feat(tomlctl)!: reshape the plan handover record — states a v1 store still reads and is written back at 2",
+]
+related = ["F7"]
+anchor = "code|tomlctl/src/plan/schema.rs|handover_from_toml"
+status = "exported"
+first_seen = 2026-11-10
+exported_as = "R48"
+export_ledger = ".claude/flows/jiggly-exploring-robin/review-ledger.toml"
+
+[[verdicts]]
+finding = "F1"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "claude/workflows/implement-v2-milestone.js:166-169"
+rationale = "Counter fails: RETURN_SCHEMA (js:30-42) has additionalProperties:false and no reason field, and plan-worker-lite.md:24 returns error before step 8 writes the note, so note is ''. toEntry hits the !ret.note branch and sets error 'wrote no note'. drain.md:35,38 and run-milestone.md:217 say error names the root mismatch and a wrong root stops the engine; no doc maps 'wrote no note' to wrong root, so the engine follows drain.md:118 (relaunch once, then park). Minor: wrong root needs a misbuilt root arg."
+
+[[verdicts]]
+finding = "F2"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "claude/workflows/implement-v2-milestone.js:128"
+rationale = "fileKey only folds backslashes and case, though its comment says two spellings of one file are one file. tomlctl/src/tasks/schema.rs:578-582 normal_path strips a leading ./ and says stored paths stay as written. No writer under tomlctl/src/tasks refuses or rewrites ./ (grep). graph.rs:340-355 overlap_pairs intersects raw strings, so plan check misses the pair too. run-milestone.md:149 takes files raw from the row into args, so nextWave can put both tasks in one wave. Minor: needs mixed spellings across unordered rows."
+
+[[verdicts]]
+finding = "F9"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/tasks/show.rs:170-175"
+rationale = "premises_json maps only claim/check/at, while accept_json (show.rs:153-163) emits each accept row's probe; Premise.probe exists (schema.rs:281) and probes.rs:623 records it, so `tasks show` drops a recorded premise verdict. tasks.md:83 lists premises under spec with no note that probes are hidden, and no test or comment pins the omission. update.rs:591 and :1677 reuse premises_json for move detection and compare-and-set, so a fix must keep the probe out of spec_value as accept does at update.rs:1679-1688. Minor severity stands: plan view still shows the verdict."
+
+[[verdicts]]
+finding = "F6"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/view.rs:218"
+rationale = """Anchor holds: view.rs:218 appends '.' after when and done_when, while the documented example (plan-store.md:73-74) and both test fixtures end those fields in '.', so tests/plan_view.rs:468-469 pin "Earlier.." and "After the run..". Commit 0f385a84 added the format with no stated intent for a doubled period: the test pins an oversight. upsert_handover (records.rs:572-595) takes free text with no newline check, and records_block skips one_line (view.rs:772) used for decision/contract headings. Edit stays in view.rs plus the named test file."""
+
+[[verdicts]]
+finding = "F3"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "claude/workflows/implement-v2-milestone.js:166-169"
+rationale = "Traced: wrong-root worker returns status error, note '' (plan-worker-lite.md:24,78). RETURN_SCHEMA (js:30-42) has no reason field and forbids extras; toEntry passes thrown/no-return/mismatch checks, hits !ret.note and sets error='wrote no note'. drain.md:35-38 promises `error` names the root mismatch and that a wrong root stops the engine; the index never carries it, so the drain falls to the no-return path. An orchestrator could infer it from status error without a thrown message, but nothing documents that. Minor holds."
+
+[[verdicts]]
+finding = "F4"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "claude/workflows/implement-v2-milestone.js:166-170"
+rationale = "toEntry keeps ret.status with error 'wrote no note' (or a wrong-path error at :171-175); settleBlocked (:198) checks only status, so dependents of a done-without-note task run. drain.md:31 acts on done only for deviations/handover; step 1 uses non-empty errors only to pick --outcome; the Status-line grep (:47) covers a disagreeing line, not an absent note; step 11 has no section for it. SKILL.md:29 makes a denied note write a real trigger under dontAsk. Minor holds."
+
+[[verdicts]]
+finding = "F5"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "claude/skills/implement-v2-engine/references/drain.md:212"
+rationale = "drain.md:36 and :118 prescribe one unchanged relaunch for error/no-return (and :36 routes mismatch to step 6, whose table at :118 omits mismatch). An unchanged relaunch moves no plan field (:78 status reset needs no reason, not a plan field), and a launch whose only worker threw moved no row to done, so :212's stop rule fires literally and contradicts the relaunch. After stopping, the row is pending; :212 and :384-407 report only failed/parked rows, so it is left out. Minor holds."
+
+[[verdicts]]
+finding = "F11"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "claude/skills/implement-v2-engine/SKILL.md:53"
+rationale = "Counter fails. SKILL.md:53 skips Drain and replan when there was no launch, but run-milestone.md:99, :129, :147 and :157 send withheld, empty-files and nothing-ready rows to the drain replan. Re-entry (SKILL.md:108) replans only failed rows, so a withheld pending row gets no replan. If the orchestrator follows run-milestone instead, drain.md:12 step 1 runs plan run finish, and records.rs:660-665 refuses it with no open run. The gate (row not done) and commit are skipped, and each invocation repeats the same empty round. Only the report's withheld: section surfaces it. Severity major stands."
+
+[[verdicts]]
+finding = "F10"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/stage.rs:168-170"
+rationale = """Counter fails. stage.rs:168-170 returns "done" when every task row is Done; commit is never read. run-milestone.md:17 stops on stage done first. SKILL.md:82 runs Re-entry (incl. unstamped-milestone settling, SKILL.md:104) only after the pre-flight's stage check. So when the last milestone ends with every row done and an empty commit (gate fails after round 2, drain.md:286, or session ends between gate pass and stamp, drain.md:368), the next invocation stops at pre-flight and never re-gates, commits or stamps it. Neither the carrier nor the Arguments section covers this."""
+
+[[verdicts]]
+finding = "F12"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "claude/skills/implement-v2-engine/references/drain.md:212"
+rationale = "Counter tested: the step 4 reset is not a replan field move. drain.md:78 says status is not a plan field and needs no reason, and drain.md:118 says to relaunch unchanged, so the replan moves nothing. If a launch's dispatched rows were all no-return (a stopped run per drain.md:23, or a one-task relaunch), no row reached done, and line 212's stop rule then ends relaunching before the one retry. The rows are left pending, and the report at drain.md:386-410 has no section for pending rows."
+
+[[verdicts]]
+finding = "F13"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "scratch repo: `git add --` -> 'Nothing specified, nothing added.' rc=0; `git commit -m msg --` -> 'nothing to commit, working tree clean' rc=1"
+rationale = "Step 10 (drain.md:329-335) has no branch for an empty set of git status paths. Re-entry goes back to the gate when HEAD is not the milestone commit (drain.md:368, SKILL.md:104). The pre-flight tells the user to commit other dirty paths (run-milestone.md:44), which moves HEAD. A milestone whose rows changed no files has the same gap. With no paths, the commit exits 1, and drain.md:341 then stops the engine with nothing stamped, so every re-entry repeats this. Reproduced in a scratch git repo."
+
+[[verdicts]]
+finding = "F24"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/target.rs:153-154"
+rationale = 'The old text sits at target.rs:154 under the guard `id.trim().is_empty() || id.trim() != id` (line 153), so a padded id such as `milestone: M1.goal` is refused as "empty", which is wrong. The edit only rewords that refusal string to cover both conditions. It changes no control flow and stays inside the one file. A Grep for the message text and for padded milestone targets found no test or doc that pins the current wording, so the reworded message is the only observable change, which is what the row says.'
+
+[[verdicts]]
+finding = "F19"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/cli/types/mod.rs:175-182; git log 6454bc72~1..HEAD -- tomlctl/Cargo.toml -> only 6454bc72 (0.21.0), 0f385a84 lands after it"
+rationale = "Counter tested and holds against the finding: Cargo.toml is still 0.21.0, last bumped at 6454bc72, which precedes 0f385a84 (the BREAKING removal of plan handover add). FEATURES ends at plan_view_writes_build and no feature names the handover reshape; grep for handover in types/mod.rs is empty. implement-v2.md:29 and plan-v2.md:32 gate only on older features, while drain.md:318 and write-and-prove.md:69 call plan handover set, so a 6454bc72-era binary passes both pre-flights and fails mid-run. Loud failure, narrow trigger: minor stands."
+
+[[verdicts]]
+finding = "F14"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/view.rs:218"
+rationale = "view.rs:218 formats 'When: {}. Done when: {}. (after task {})', appending a full stop after when and done_when verbatim. plan-store.md:73-74 documents both fields as sentences ending in '.', so any handover written per the docs renders '..'; plan_view.rs:468-469 pins exactly 'Earlier.. Done when: Already true..'. No comment or commit message (0f385a84, the commit that added the format via git log -S) marks the doubled stop as intended. Narrow cosmetic trigger on the human view only; minor holds."
+
+[[verdicts]]
+finding = "F15"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = 'git show 0f385a84 --stat: no tomlctl/Cargo.toml or src/capabilities.rs change; Cargo.toml:3 version = "0.21.0"'
+rationale = "6454bc72 (bump to 0.21.0 + engine features) is an ancestor of 0f385a84, whose BREAKING CHANGE removes plan handover add for set and moves the plan store to schema 2; 0f385a84^ schema.rs refuses schema_version > 1 and its cli/types/plan.rs has only Add/Done. 0f385a84 touches neither Cargo.toml nor capabilities.rs, no later commit does, and capabilities.rs has no handover feature, so the implement-v2.md:29 and plan-v2.md:32 feature pre-flights pass a stale 0.21.0 binary. Trigger needs an install from that window; minor holds."
+
+[[verdicts]]
+finding = "F21"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/drift.rs:132"
+rationale = "Counter tested: no comment, test or reference doc states the asymmetry is deliberate; plan.md:524-526 names the docs/flows/<slug>/ skip only for uncommitted_files. parse_log skips only .claude/flows/<slug>/ (drift.rs:132,164), while uncommitted_files skips both (drift.rs:197-200). drain.md:356-361 commits docs/flows/<slug>/notes/run/ in an unstamped flow-store commit, and drain.md:343-347 stamps only the work commit, so the notes land in changed_files on the next drift. Minor: affected stays clean unless a row names a note."
+
+[[verdicts]]
+finding = "F22"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "scratch repo: after pull --rebase, cat-file -e <approved>^{commit} rc=0; merge-base --is-ancestor rc=1; git log <approved>..HEAD lists rebased work.rs and plan.txt under new shas"
+rationale = "Reproduced in a scratch clone: approve, stamp a milestone, upstream commit, pull --rebase. refuse_unresolved (drift.rs:60-69) passes because the old approval still resolves, and the range lists the rebased approval and milestone commits, whose new shas match no stamp. plan.md:507-508 scopes the refusal to non-resolution (rebase plus gc) but does not say a rebased, still-resolving baseline is intended; the drift.rs:58 comment implies rebase is handled. Minor: needs a history rewrite mid-flow."
+
+[[verdicts]]
+finding = "F25"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/tasks/schema.rs:286"
+rationale = 'The old text is at check.rs:352-356. premise_target (schema.rs:286-289, pub(crate)) does the same work: it strips "after:", parses u32 and keeps the id only when it round-trips. The proposed edit returns None when there is no "after:" prefix (the same as the original `?`), then calls premise_target, so id is identical in every case, including after:007 and after:+3. The edit stays in check.rs, plus the existing crate::tasks::schema import at check.rs:26-28. Nothing observable changes, and no comment or test pins the inline copy as deliberate.'
+
+[[verdicts]]
+finding = "F26"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/tasks/schema.rs:281"
+rationale = 'Anchor holds: schema.rs:264 doc reads "One probe run against an `Accept`", yet Premise.probe (schema.rs:281) is also Option<Probe>, and plan/probes.rs:35-41 writes premise verdicts holds/fails beside accept verdicts vacuous/permanently-green etc. into the same verdict field. The doc is therefore incomplete. The edit touches only a doc comment, so nothing observable changes, and it stays within the file.'
+
+[[verdicts]]
+finding = "F31"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "claude/skills/plan-v2-engine/references/write-and-prove.md:55-72"
+rationale = "Anchor holds: :57 and :72 cite design/handover.md#..., and :55 defines such a citation as docs/flows/<slug>/design/. ls -d docs/flows/*/design shows only human-only-handovers; git grep finds the same bare cite in plan-risk.md:37 and v2-pipeline.md:162. The source task (tasks.toml:1050) used the bare form, which the edit copied; no resolver pins it. Impact is narrow: the six reason values are restated in tomlctl/references/plan.md:155 and plan-output-format SKILL.md:259, so minor stands."
+
+[[verdicts]]
+finding = "F30"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "claude/skills/implement-v2-engine/references/drain.md:254"
+rationale = "Counter fails: no v2 rule withholds keep_going or orders installs after a passing run. write-and-prove.md:72 and design/handover.md:45 route installs to last-milestone gates; drain.md:254 always passes keep_going: true; verification.md:21,117 then runs every command after a fail. human-only-handovers milestone B gates are [cargo test cli::dispatch::tests, cargo install tomlctl, cargo install glimpse], so a failing test still installs both binaries from the failing tree. v1 implement.md:256 ran install: last, only after all passed. Severity major stands."
+
+[[verdicts]]
+finding = "F16"
+run = "U1"
+by = "checker"
+verdict = "confirmed"
+citation = "tomlctl/tests/plan_check.rs:487"
+rationale = """Target exists. Old text present at plan_check.rs:487 (grep 'detail.contains("when") && !detail.contains("action"),'). Edit names only plan_check.rs (line 498 is in the same file). No dead-symbol claim."""
+
+[[verdicts]]
+finding = "F17"
+run = "U1"
+by = "checker"
+verdict = "confirmed"
+citation = "tomlctl/tests/plan_probes.rs:1116"
+rationale = """Target exists. Old text present at plan_probes.rs:1116 (grep 'record_with(&root, &first, &["--task", "2"]).failure();'). Instance site plan_probes.rs:824 (--milestone B) also present, same file as instances. No dead-symbol claim."""
+
+[[verdicts]]
+finding = "F18"
+run = "U1"
+by = "checker"
+verdict = "confirmed"
+citation = "tomlctl/tests/plan_drift.rs:471"
+rationale = "Target exists. Old text present at plan_drift.rs:471 (grep 'fn an_uncommitted_edit_a_done_row_without_a_commit_names_is_the_runs_own_work() {'). Edit stays in plan_drift.rs. No dead-symbol claim."
+
+[[verdicts]]
+finding = "F20"
+run = "U1"
+by = "checker"
+verdict = "confirmed"
+citation = "claude/skills/tomlctl/references/tasks-store.md:91"
+rationale = "Target exists. Old text present at tasks-store.md:91 (grep 'pending, in-progress, done, failed, deferred or parked. An entry with no ref is dropped...'). Anchor for the add part, 'agent, commit.', present at line 112 (not 110 as the edit says; a line-number drift, not a predicate failure). Edit stays in tasks-store.md."
+
+[[verdicts]]
+finding = "F23"
+run = "U1"
+by = "checker"
+verdict = "confirmed"
+citation = "claude/skills/tomlctl/references/plan.md:533"
+rationale = "Target exists. Old text 'A commit that no row records counts as drift even when it only touched flow files.' present at plan.md:533 (grep). Edit stays in plan.md. No dead-symbol claim."
+
+[[verdicts]]
+finding = "F32"
+run = "U1"
+by = "checker"
+verdict = "confirmed"
+citation = "claude/skills/plan-v2-engine/references/write-and-prove.md:205"
+rationale = "Target exists. Old text 'tomlctl plan probes --record <capture> --premises' present at write-and-prove.md:205 (grep, -o). Edit stays in write-and-prove.md. No dead-symbol claim."
+
+[[verdicts]]
+finding = "F33"
+run = "U1"
+by = "checker"
+verdict = "confirmed"
+citation = "claude/agents/verification.md:3"
+rationale = "Target exists. Old text 'Used by /implement checkpoint gates and Phase 3, /optimise-apply Step 5, /review-apply Step 5.' present at verification.md:3 (grep -o). Edit stays in verification.md. No dead-symbol claim."
+
+[[verdicts]]
+finding = "F34"
+run = "U1"
+by = "checker"
+verdict = "confirmed"
+citation = "claude/skills/tomlctl/references/plan.md:55"
+rationale = "P1 target exists. P2 old text found at plan.md:55 via grep for the sentence start. P3 dead claim: grep for --command in claude/skills/tomlctl shows no match in plan.md other than line 55, so plan templates do not use it; grep for handover add in claude/skills/tomlctl returns no matches, consistent with removal. P4 edit touches only plan.md. P5 not applicable (no same_as)."
+
+[[verdicts]]
+finding = "F35"
+run = "U1"
+by = "orchestrator"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/schema.rs:776"
+rationale = "converted from advisory F7 at triage"
+
+[[verdicts]]
+finding = "F35"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/schema.rs:776"
+rationale = "Counter fails. Pre-reshape reader (git show 0f385a84^:tomlctl/src/plan/schema.rs:755) stored a v1 handover's text only in `command`; the current reader (schema.rs:776-778) takes action/when/done_when and nothing maps `command` (grep of tomlctl/src/plan finds no read of it). The module header (schema.rs:14) and plan-store.md:80 drop unknown keys on every re-emit, and the schema_version 1 test (schema.rs:1136) shows v1 is rewritten at 2, not refused. A v1 undone handover thus loses its step on the next write. Minor stands: the only tracked plan.toml is v1 with no [[handover]]."
