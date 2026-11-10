@@ -14,7 +14,7 @@ The surveyor proposed judged signals (`trust-boundary`, `hot-path`, `new-seam`, 
 - `hot-path` — the code runs per request, per row, per file or inside a loop whose size the workload sets;
 - `new-seam` — the change introduces an interface, trait, extension point or module boundary other code will build on.
 
-Reject a candidate whose evidence shows only a name match, test code, or code outside the scope. Record every decision; an unrecorded candidate looks undecided in the run record:
+Reject a candidate whose evidence shows only a name match or test code, and reject any candidate that cites a file outside the scope, whatever its other paths show: the surveyor cites only scope files, so an outside path means its reading left the change. Record every decision; an unrecorded candidate looks undecided in the run record:
 
 ```bash
 tomlctl review run update <run> --slug <slug> --set-json 'signals=[{"name":"trust-boundary","accepted":true},{"name":"hot-path","accepted":false}]'
@@ -32,7 +32,7 @@ tomlctl review plan --run <run> --slug <slug> --propose --accept-signals trust-b
 - `--lens` repeats once per user `--lens` flag, passed through unchanged; omit it when the user gave none.
 - `--out` keeps the proposal in the run directory, where you edit it.
 
-The proposal is deterministic: floor lenses first, then signal-tier lenses whose signals matched, then lenses whose `always_at` is the run's depth, then candidate lenses ordered by how many of their signals matched, until the cell ceiling (about one cell per 100 changed lines, floor 3, capped by the depth). Each lens is sliced by its own `slice` rule, same-mode concerns with identical slices are bundled, repeat cells (`pass = 2`) are added at `standard` and `deep`, and every row carries `reason = "proposed"`. It also carries an estimated agent count, and lists the matched concerns that missed the ceiling as unselected. In the plan family, `plan-executor` cells hold up to 4 tasks each and sit outside the ceiling.
+The proposal is deterministic: floor lenses first, then signal-tier lenses whose signals matched, then lenses whose `always_at` is the run's depth, then candidate lenses ordered by how many of their signals matched, until the cell ceiling (about one cell per 100 changed lines, floor 3, capped by the depth). Each lens is sliced by its own `slice` rule, same-mode concerns with identical slices are bundled, repeat cells (`pass = 2`) are added at `standard` and `deep`, and every row carries `reason = "proposed"`. It never emits more cells than the ceiling minus the cells already planned, check cells included: floor-lens slices merge toward half that budget before a later tier is admitted, and a lens that fits an existing cell's bundle joins it rather than being cut. It slices sweeper cells itself, splitting a sweeper slice at 40 files into cells that each count against the ceiling; when the budget cannot hold them, slices keep merging down to one whole-scope cell per lens, and each sweeper cell left over 40 files is listed under `over_cap`. It also carries an estimated agent count, and lists the matched concerns that missed the ceiling under `unselected`, a cut check as `check:<id>` with reason `ceiling`. In the plan family, `plan-executor` cells hold up to 4 tasks each and sit outside the ceiling.
 
 Read it with the Read tool. The rows are the cells you will write; each holds `slice`, `concerns`, `agent`, `reason`, and where present `pass`, `question` and `facets`.
 
@@ -45,7 +45,7 @@ Edit `<run-dir>/proposal.ndjson` into the wave's cell file, `<run-dir>/payloads/
 The proposal slices by rule; you slice by risk.
 
 - **Hotspots get their own cell.** A churn hotspot from the surveyor's `hotspots:` that the proposal grouped with quiet files moves to a cell of its own, with the same concerns.
-- **Split a slice a single agent cannot hold.** A `per-subsystem` slice spanning many unrelated files, or a whole-scope slice over a large diff, splits along the subsystems `profile.md` names.
+- **Split a slice a single agent cannot hold.** A `per-subsystem` slice spanning many unrelated files, or a judgement lens's whole-scope slice over a large diff, splits along the subsystems `profile.md` names. Sweeper cells arrive already split at 40 files; re-split only an `over_cap` cell, and only when the ceiling has room for the extra cell.
 - **Merge slivers.** Two one-file cells with the same concerns over closely coupled files become one; the saved cell can go to a probe or a candidate lens.
 - **Keep slices repo-relative.** A slice entry is a path, a glob, or for `plan-executor` cells a task ref; never a directory outside the scope.
 
@@ -87,7 +87,7 @@ The carrier adds its own cells here; `/review-v2`'s context-free correctness cel
 
 ## 4. The agent-count statement
 
-Recompute the estimate for the edited map with the proposal's formula: cells, plus 1 surveyor, plus one verifier batch per cell, plus one checker batch per 20 expected cleanup rows (counted as 5 per cell), plus the `verification` dispatches already made. State it in your message before launching: `expected agents: <n> (<cells> cells)`. When it exceeds 25, add one sentence saying why the change needs that breadth; when you cannot justify it, cut cells until you can.
+Recompute the estimate for the edited map with the proposal's formula: cells, plus 1 surveyor, plus one verifier batch per cell, plus one checker batch per 20 expected cleanup rows (counted as 5 per cell), plus the one `verification` dispatch that carried every baseline command. State it in your message before launching: `expected agents: <n> (<cells> cells)`. When it exceeds 25, add one sentence saying why the change needs that breadth; when you cannot justify it, cut cells until you can.
 
 ## 5. Confirm at deep
 
@@ -135,6 +135,39 @@ After each wave, `review resolve` and `review digest --since-wave <wave>` give y
 An **unverified id** in the digest is a finding whose verification did not land: a lost return, a restarted agent, a checker batch that never came back, an unknown route. A mop-up is not a new wave of cells; it dispatches verifiers and checkers from the store, per `agent-waves.md` (Mop-up). Run it whenever the digest lists an unverified id, at every depth, and before deciding a follow-up. An id that fails a second mop-up stays unverified and is named in `run finish --incomplete-file`.
 
 A cell still `assigned` after its agent notified gets one re-dispatch with the identical prompt (`agent-waves.md`, The wave barrier). A cell that fails twice is a follow-up candidate, not a mop-up.
+
+### Duplicates
+
+The digest's `duplicate_candidates` are pairs from different cells whose places match. A candidate is a question, never a fold: decide each pair, and write one line of reasoning per pair, `<a>/<b>: linked <dup>=<target> — <why>` or `<a>/<b>: distinct — <why>`, with the Write tool to `<run-dir>/duplicates-w<wave>.md`.
+
+- **The same defect** — one failure, one fix, whatever lens or wording each cell gave it. Link it, the later-verified or weaker-evidenced row as the duplicate:
+
+  ```bash
+  tomlctl review resolve --run <run> --slug <slug> --same-as F12=F7 --same-as F15=F9
+  ```
+
+  Each `--same-as` sets the duplicate's `same_as` and resolves the pair in the same call by the target's status table, whatever wave the duplicate is in. A pair listed under `pending` is still awaiting the duplicate's verdicts; it resolves at the next `review resolve` once they land. One refused pair refuses the whole call and writes nothing: read the reasons, drop or fix that pair, and rerun.
+- **Distinct** — the same place, but a different failure or a different fix. Leave the pair alone; both rows export separately.
+
+A linked pair leaves the digest once the two rows' `same_as` / `merged_into` chains meet. Settle duplicates before the export: `export-v1` folds two findings into one v1 row only when one is merged into the other, so an unlinked true duplicate exports twice.
+
+### Rule-out hits
+
+Each `ruled_out_hits` row is a finding whose place another cell recorded as deliberate, with that cell's reason. The verifier saw the rule-out in its projection, so check that its verdict answers it:
+
+```bash
+tomlctl review show <finding> --slug <slug> --for audit
+```
+
+When the latest verifier rationale addresses the rule-out — says why the ruling cell's reason does not hold, or refutes the finding on it — the verdict stands. When it does not mention it, re-verify: dispatch one `review-verifier` for the finding with the Verifier prompt (`agent-waves.md`); its projection carries the rule-out, and its verdict replaces the earlier one. Re-verifications count in the run's `agents`. A finding refuted on the rule-out needs nothing further.
+
+### Escalations
+
+The wave's escalations arrive as the Workflow index's top-level `escalations`, `[{cell, text}]`, each cut to 300 characters; under the Agent-wave fallback, they are the `escalate` entries of the cell-returns. `escalations` is the index's last key, so a result cut short loses escalation text first: when the result says it was truncated, read the notification's output file before deciding. Give each escalation exactly one disposition:
+
+1. **A follow-up cell** — the escalation needs judgement in a place no cell covered: a `probe:<slug>` cell or a lens cell, by the Follow-up table below, within the allowance and the ceiling.
+2. **A mechanical row for the next cell** — the escalation is a grep-provable edit with exact `old` text that its cell could have written as an out-of-lens `ripple` or `hygiene` cleanup row. Put it in the `question` of a cell the next wave runs over that file, asking it to write the row; this adds no cell. With no such cell coming, it takes disposition 3.
+3. **A close-summary item** — out of budget, or anchored outside the scope and not a ripple row. Name it in the close summary and offer it as a backlog capture through the `backlog check` gate (`triage-and-close.md`).
 
 ### Follow-up
 
