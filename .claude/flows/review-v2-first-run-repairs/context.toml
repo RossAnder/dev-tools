@@ -1,0 +1,37 @@
+slug = "review-v2-first-run-repairs"
+plan_path = "docs/plans/review-v2-first-run-repairs.md"
+status = "review"
+created = 2026-11-10
+updated = 2026-11-10
+scope = [
+    "tomlctl/src/review/**",
+    "tomlctl/src/cli/types/**",
+    "tomlctl/src/flow/resolve.rs",
+    "tomlctl/src/capabilities.rs",
+    "tomlctl/tests/**",
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "tomlctl/README.md",
+    "glimpse/Cargo.lock",
+    "claude/workflows/**",
+    "claude/agents/**",
+    "claude/commands/review-v2.md",
+    "claude/commands/optimise-v2.md",
+    "claude/skills/review-v2-engine/**",
+    "claude/skills/review-v2-method/**",
+    "claude/skills/review-v2-lenses/**",
+    "claude/skills/tomlctl/**",
+]
+branch = "main"
+
+[tasks]
+total = 44
+completed = 44
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/review-v2-first-run-repairs/review-ledger.toml"
+optimise_findings = ".claude/flows/review-v2-first-run-repairs/optimise-findings.toml"
+execution_record = ".claude/flows/review-v2-first-run-repairs/execution-record.toml"
+plan_review_findings = ".claude/flows/review-v2-first-run-repairs/plan-review-findings.toml"
+tasks = ".claude/flows/review-v2-first-run-repairs/tasks.toml"

@@ -9871,3 +9871,965 @@ base_sha = "70a012ac9741618025934b4208ae2a17355163b5"
 related = ["B-a70a9da3"]
 resolved = 2026-11-10
 resolution = "docs/ideas/v2-pipeline.md Where things stand and the topic 4 row updated for the /implement-v2 run. The review commands are kept as never run: human-only-handovers skipped its Review step and no v2 review store exists in this repo."
+
+[[backlog]]
+id = "B-80c20e25"
+kind = "bug"
+summary = "flow resolve falls through to the latest active flow when an explicit --flow slug matches no flow"
+area = "tomlctl/src/flow"
+tags = [
+    "flow-resolve",
+    "review-v2",
+]
+status = "resolved"
+created = 2026-11-10T08:43:08Z
+last_seen = 2026-11-10T08:43:08Z
+seen_count = 1
+dedup_id = "80c20e25e67984d4"
+origin = "review-v2"
+flow = "jiggly-exploring-robin"
+context = "Seen 2026-11-10: /review-v2 --flow implement-v2, where no flow has that slug. flow resolve returned resolved=true, source=active-latest for another flow, with only a warning ('explicit --flow ... not found; falling through') inside an ok=true envelope, so a carrier gating on envelope.ok binds the wrong flow silently. An explicit override that matches nothing should fail the resolve, or flow-bootstrap should set ok=false. Until fixed, compare envelope.resolved.slug with the requested slug before binding."
+base_sha = "546121d3de8704cbfe1be975fa2d2f86547cccd6"
+related = ["B-d87efb6a"]
+promoted = 2026-11-10
+promoted_to = "review-v2-first-run-repairs"
+resolved = 2026-11-10
+resolution = "resolved by flow `review-v2-first-run-repairs` (tasks fail-flow-resolve-on-an-explicit-flow-miss)"
+resolved_flow = "review-v2-first-run-repairs"
+resolved_tasks = ["fail-flow-resolve-on-an-explicit-flow-miss"]
+resolved_commits = ["d33ca3fc"]
+
+[[backlog]]
+id = "B-827b9763"
+kind = "debt"
+summary = "review-v2 engine defines no scope and base rule for a flow-bound run on the default branch"
+area = "claude/skills/review-v2-engine"
+tags = [
+    "review-v2",
+    "scope",
+]
+status = "resolved"
+created = 2026-11-10T08:43:08Z
+last_seen = 2026-11-10T08:43:08Z
+seen_count = 1
+dedup_id = "827b976396ddb937"
+origin = "review-v2"
+flow = "jiggly-exploring-robin"
+context = "Stage 1 says the scope with no argument is the diff against HEAD~1 on the default branch, which for a flow already landed on main is one unrelated commit. Run U1 on jiggly-exploring-robin improvised: base = the commit before the flow's first implementation commit, scope = files changed since then that fall under the flow's scope globs (the globs themselves match over 200 files). That diff also pulled in a later flow's commits, so several findings belonged to another flow's change. The engine needs a stated rule; candidates are the flow's task-row commit stamps or the plan approval commit as base. Checked afterwards: about a third of U1's findings (F6, F7, F8, F14, F15, F16, F19, F31, F34, F35) are on the later human-only-handovers handover reshape, not this flow's work, and they were exported to this flow's review ledger. A base alone does not bound the diff; the rule needs an upper end too, such as the flow's last stamped commit, or a commit list taken from the task rows."
+base_sha = "546121d3de8704cbfe1be975fa2d2f86547cccd6"
+promoted = 2026-11-10
+promoted_to = "review-v2-first-run-repairs"
+resolved = 2026-11-10
+resolution = "resolved by flow `review-v2-first-run-repairs` (tasks add-the-head-run-field-and-the-ruled_out-cell-field, bound-a-run-with-review-run-start-head, read-the-surveys-diff-to-head-and-keep-hotspots-in-scope, carry-head-in-the-finder-assignment, state-run-bounds-stage-0-carry-over-and-the-new-index-in-the-engine-skill, read-signals-from-the-store-and-run-baselines-in-one-dispatch, update-the-finder-body-and-make-the-context-free-finder-context-free, define-a-swept-slice-for-the-sweeper-and-let-ripple-reach-past-the-scope, point-the-code-and-perf-carriers-at-the-new-scope-and-baseline-rules)"
+resolved_flow = "review-v2-first-run-repairs"
+resolved_tasks = [
+    "add-the-head-run-field-and-the-ruled_out-cell-field",
+    "bound-a-run-with-review-run-start-head",
+    "read-the-surveys-diff-to-head-and-keep-hotspots-in-scope",
+    "carry-head-in-the-finder-assignment",
+    "state-run-bounds-stage-0-carry-over-and-the-new-index-in-the-engine-skill",
+    "read-signals-from-the-store-and-run-baselines-in-one-dispatch",
+    "update-the-finder-body-and-make-the-context-free-finder-context-free",
+    "define-a-swept-slice-for-the-sweeper-and-let-ripple-reach-past-the-scope",
+    "point-the-code-and-perf-carriers-at-the-new-scope-and-baseline-rules",
+]
+resolved_commits = [
+    "3530f290",
+    "5022f89b",
+    "fcf12363",
+    "7476976a",
+    "fdfad52b",
+    "b6d1dab6",
+    "90d2dc8d",
+    "50eb381f",
+]
+
+[[backlog]]
+id = "B-d9cfd36e"
+kind = "debt"
+summary = "review-sweeper seals thin on large slices without reading any file in full"
+area = "claude/agents"
+tags = [
+    "review-v2",
+    "sweeper",
+]
+status = "resolved"
+created = 2026-11-10T08:43:08Z
+last_seen = 2026-11-10T08:43:08Z
+seen_count = 1
+dedup_id = "d9cfd36ee3a9cc92"
+origin = "review-v2"
+flow = "jiggly-exploring-robin"
+context = "Run U1: the proposed whole-scope ripple cell (about 100 files) sealed thin with 0 files read; a follow-up cell over 27 Rust sources sealed thin again the same way, while the 32-file prose cell and 12-file test cell covered. The re-slice spent the run's only follow-up wave for one finding. Options: have the sweeper work from the diff's hunks and removed names rather than whole files, or have review plan --propose slice ripple by line count. Until fixed, slice sweeper cells small at compose time rather than waiting for a thin seal. Checked afterwards: the thin and covered seals used the same method. C15 and C16 sealed covered having read no slice file in full either, on whole-tree greps for removed names, exactly what C11 and C14 did; only the slice size differed. review-sweeper.md says thin is 'when you could not sweep every file in the slice' without saying what sweeping a file is, so each sweeper decides. Define it (for example, every removed or renamed name from the slice's diff was grepped tree-wide) so covered means the same thing in every cell. One sweeper's repo-root Grep with a brace glob also hit the 20 second ripgrep timeout; narrower paths avoided it."
+base_sha = "546121d3de8704cbfe1be975fa2d2f86547cccd6"
+promoted = 2026-11-10
+promoted_to = "review-v2-first-run-repairs"
+resolved = 2026-11-10
+resolution = "resolved by flow `review-v2-first-run-repairs` (tasks keep-review-plan-propose-inside-its-ceiling, state-the-shared-agent-rules-in-the-method-skill, define-a-swept-slice-for-the-sweeper-and-let-ripple-reach-past-the-scope)"
+resolved_flow = "review-v2-first-run-repairs"
+resolved_tasks = [
+    "keep-review-plan-propose-inside-its-ceiling",
+    "state-the-shared-agent-rules-in-the-method-skill",
+    "define-a-swept-slice-for-the-sweeper-and-let-ripple-reach-past-the-scope",
+]
+resolved_commits = [
+    "3530f290",
+    "ffa23a0d",
+    "90d2dc8d",
+]
+
+[[backlog]]
+id = "B-39b9e713"
+kind = "debt"
+summary = "review plan --propose spends the cell ceiling on per-file correctness cells and leaves every signal-matched lens unselected"
+area = "tomlctl/src/review"
+tags = [
+    "review-v2",
+    "compose",
+]
+status = "resolved"
+created = 2026-11-10T08:43:08Z
+last_seen = 2026-11-10T08:43:08Z
+seen_count = 1
+dedup_id = "39b9e713631868eb"
+origin = "review-v2"
+flow = "jiggly-exploring-robin"
+context = "Run U1 (74 files, 4145 changed lines, standard): the proposal held 18 cells against a ceiling of 16, 17 of them single-concern correctness cells sliced per file or per directory, several over one-file prose diffs, plus one whole-scope sweeper. security, test-gaps, doc-drift, type-design and hygiene all came back unselected with reason ceiling. It also listed hotspots outside the scope. The orchestrator rewrote nearly every row. The floor lens's slice rule should merge small slices before signal-tier lenses are cut, and the proposal should never exceed its own ceiling."
+base_sha = "546121d3de8704cbfe1be975fa2d2f86547cccd6"
+promoted = 2026-11-10
+promoted_to = "review-v2-first-run-repairs"
+resolved = 2026-11-10
+resolution = "resolved by flow `review-v2-first-run-repairs` (tasks read-the-surveys-diff-to-head-and-keep-hotspots-in-scope, keep-review-plan-propose-inside-its-ceiling)"
+resolved_flow = "review-v2-first-run-repairs"
+resolved_tasks = [
+    "read-the-surveys-diff-to-head-and-keep-hotspots-in-scope",
+    "keep-review-plan-propose-inside-its-ceiling",
+]
+resolved_commits = [
+    "5022f89b",
+    "3530f290",
+]
+
+[[backlog]]
+id = "B-5d5bf09e"
+kind = "bug"
+summary = "review-v2 leaves duplicate findings across cells unlinked and export-v1 folds two different defects into one v1 row"
+area = "tomlctl/src/review"
+tags = [
+    "review-v2",
+    "export-v1",
+    "same-as",
+    "data-loss",
+]
+status = "resolved"
+created = 2026-11-10T08:43:08Z
+last_seen = 2026-11-10T08:43:08Z
+seen_count = 1
+dedup_id = "5d5bf09e5c46da85"
+origin = "review-v2"
+flow = "jiggly-exploring-robin"
+context = "Run U1 on jiggly-exploring-robin: review resolve settled nothing, yet F1/F3, F5/F12, F15/F19 and F6/F14 state the same issue from different cells (the context-free cells cannot see prior findings, so they cannot set same_as). export-v1 --all then reused v1 row R22 for F4 although F4 (missing note path) and F1 (wrong-root reason lost) are different defects on one file, while F3, the true duplicate of F1, was minted its own row R24. Check what key export-v1 reuses a row on, and consider a dedup pass at resolve for same-anchor findings from different cells. Checked afterwards: the fold loses content. R22 carries only F1's summary, fix and failure scenario; F4 survives only as a second v2_ref, so /review-apply closes R22 without fixing F4, and sync-v1 would then mark F4 fixed. Of the four duplicate pairs export folded one correctly (F5/F12 into R25, same file and line), one wrongly (F4 into R22, same file and symbol toEntry) and missed three. F6 and F14 are also one bug (the doubled full stop in plan/view.rs records_block) classified cleanup by C2 and defect by C4, exported as R26 and R31 with overlapping edits to the same pinned test lines, so the second to apply conflicts. Before /review-apply on R22-R48, give F4 its own row by hand and drop one of R26/R31. A reused row should append the second finding's text or refuse the fold when the summaries differ."
+base_sha = "546121d3de8704cbfe1be975fa2d2f86547cccd6"
+related = ["B-6601255f"]
+promoted = 2026-11-10
+promoted_to = "review-v2-first-run-repairs"
+resolved = 2026-11-10
+resolution = "resolved by flow `review-v2-first-run-repairs` (tasks fold-export-v1-rows-only-on-a-strict-key, list-duplicate-candidates-and-rule-out-hits-in-review-digest, link-duplicates-with-review-resolve-same-as, settle-duplicates-rule-out-hits-and-escalations-at-compose, update-the-plan-executor-and-the-plan-review-lead, repair-the-two-v1-ledger-folds-run-u1-left)"
+resolved_flow = "review-v2-first-run-repairs"
+resolved_tasks = [
+    "fold-export-v1-rows-only-on-a-strict-key",
+    "list-duplicate-candidates-and-rule-out-hits-in-review-digest",
+    "link-duplicates-with-review-resolve-same-as",
+    "settle-duplicates-rule-out-hits-and-escalations-at-compose",
+    "update-the-plan-executor-and-the-plan-review-lead",
+    "repair-the-two-v1-ledger-folds-run-u1-left",
+]
+resolved_commits = [
+    "32ae3181",
+    "ae3e0a1b",
+    "3530f290",
+    "8f593ca0",
+    "18d17dcf",
+    "07c2518f",
+]
+
+[[backlog]]
+id = "B-bc4a0080"
+kind = "annoyance"
+summary = "review-v2 Workflow index carries only escalation counts and out-of-scope escalations have nowhere to land"
+area = "claude/workflows"
+tags = [
+    "review-v2",
+    "escalate",
+]
+status = "resolved"
+created = 2026-11-10T08:43:08Z
+last_seen = 2026-11-10T08:43:08Z
+seen_count = 1
+dedup_id = "bc4a008098087535"
+origin = "review-v2"
+flow = "jiggly-exploring-robin"
+context = "The review-v2-pipeline index returns escalated as a count per cell, while stage 5 and compose.md tell the orchestrator to act on each escalate entry. The text is only in the Workflow journal, so the orchestrator greps journal.jsonl for the escalate arrays. Either return the entries in the index or store them on the cell so review digest lists them. Separately, an escalation anchored outside the run's scope cannot become a cell (slices stay in scope), so it is only reportable in the close summary."
+base_sha = "546121d3de8704cbfe1be975fa2d2f86547cccd6"
+promoted = 2026-11-10
+promoted_to = "review-v2-first-run-repairs"
+resolved = 2026-11-10
+resolution = "resolved by flow `review-v2-first-run-repairs` (tasks batch-cleanup-verification-and-return-escalations-and-an-agent-count, sum-the-agent-count-in-the-plan-review-workflow, state-run-bounds-stage-0-carry-over-and-the-new-index-in-the-engine-skill, settle-duplicates-rule-out-hits-and-escalations-at-compose, bring-the-agent-wave-fallback-in-line-with-the-workflow, record-every-audited-row-and-give-plan-and-escalation-dispositions-a-landing-place, update-the-plan-executor-and-the-plan-review-lead)"
+resolved_flow = "review-v2-first-run-repairs"
+resolved_tasks = [
+    "batch-cleanup-verification-and-return-escalations-and-an-agent-count",
+    "sum-the-agent-count-in-the-plan-review-workflow",
+    "state-run-bounds-stage-0-carry-over-and-the-new-index-in-the-engine-skill",
+    "settle-duplicates-rule-out-hits-and-escalations-at-compose",
+    "bring-the-agent-wave-fallback-in-line-with-the-workflow",
+    "record-every-audited-row-and-give-plan-and-escalation-dispositions-a-landing-place",
+    "update-the-plan-executor-and-the-plan-review-lead",
+]
+resolved_commits = [
+    "4f465e9c",
+    "9f0e727f",
+    "7476976a",
+    "8f593ca0",
+    "7ff8e82c",
+    "610d6550",
+    "18d17dcf",
+]
+
+[[backlog]]
+id = "B-99efd715"
+kind = "annoyance"
+summary = "no review verb reads back a run's recorded signals or baselines"
+area = "tomlctl/src/review"
+tags = [
+    "review-v2",
+    "survey",
+]
+status = "resolved"
+created = 2026-11-10T08:43:08Z
+last_seen = 2026-11-10T08:43:08Z
+seen_count = 1
+dedup_id = "99efd715c14eb579"
+origin = "review-v2"
+flow = "jiggly-exploring-robin"
+context = "survey.md says review survey's output is the only copy of the signals, so the orchestrator copies every signal name and root list into the surveyor prompt by hand; in run U1 that was several thousand characters, mostly roots outside the scope. Baseline keys are likewise tracked by hand for the stage 3 to 4 barrier. A read verb (or the surveyor reading signals from the store by run id) would remove both, and the signal roots could be filtered to the scope."
+base_sha = "546121d3de8704cbfe1be975fa2d2f86547cccd6"
+related = ["B-59118332"]
+promoted = 2026-11-10
+promoted_to = "review-v2-first-run-repairs"
+resolved = 2026-11-10
+resolution = "resolved by flow `review-v2-first-run-repairs` (tasks add-the-review-run-show-read-verb, sum-the-agent-count-in-the-plan-review-workflow, read-signals-from-the-store-and-run-baselines-in-one-dispatch, bring-the-agent-wave-fallback-in-line-with-the-workflow, update-the-plan-flow-reference-for-scope-staging-and-the-index, fix-the-surveyors-checks-evidence-and-writes)"
+resolved_flow = "review-v2-first-run-repairs"
+resolved_tasks = [
+    "add-the-review-run-show-read-verb",
+    "sum-the-agent-count-in-the-plan-review-workflow",
+    "read-signals-from-the-store-and-run-baselines-in-one-dispatch",
+    "bring-the-agent-wave-fallback-in-line-with-the-workflow",
+    "update-the-plan-flow-reference-for-scope-staging-and-the-index",
+    "fix-the-surveyors-checks-evidence-and-writes",
+]
+resolved_commits = [
+    "85f02e92",
+    "9f0e727f",
+    "fdfad52b",
+    "7ff8e82c",
+    "0befc2cd",
+    "0ffa7ea5",
+]
+
+[[backlog]]
+id = "B-989439ec"
+kind = "bug"
+summary = "review-surveyor skips project checks as having no executor and cites out-of-scope evidence for judged signals"
+area = "claude/agents"
+tags = [
+    "review-v2",
+    "surveyor",
+]
+status = "resolved"
+created = 2026-11-10T08:43:08Z
+last_seen = 2026-11-10T08:43:08Z
+seen_count = 1
+dedup_id = "989439ec7860bef7"
+origin = "review-v2"
+flow = "jiggly-exploring-robin"
+context = "Run U1: the digest reported harness-gates as 'not run, declares no executor' and left it off the verification list, though survey.md says a project [[checks]] entry is always a verification check with its command given; the orchestrator dispatched it from .claude/review-lenses/config.toml itself. The trust-boundary candidate cited tomlctl/src/payload.rs, which was not in the scope. profile.md said 12 open backlog rows where pack.md held 13. Fix in claude/agents/review-surveyor.md: list project checks under verification, and restrict candidate evidence to scope files. Checked afterwards: the surveyor also called Edit on profile.md, a tool its frontmatter does not grant, and fell back to rewriting the file; and it spent about 60k output tokens over 43 turns in 102 seconds, more than any sweeper and more than most Opus finders, for a clerk role. Tell it to rewrite with Write, and look at what it is generating."
+base_sha = "546121d3de8704cbfe1be975fa2d2f86547cccd6"
+related = ["B-4c8af16f"]
+promoted = 2026-11-10
+promoted_to = "review-v2-first-run-repairs"
+resolved = 2026-11-10
+resolution = "resolved by flow `review-v2-first-run-repairs` (tasks print-each-checks-executor-and-command-in-review-catalogue, read-signals-from-the-store-and-run-baselines-in-one-dispatch, fix-the-surveyors-checks-evidence-and-writes)"
+resolved_flow = "review-v2-first-run-repairs"
+resolved_tasks = [
+    "print-each-checks-executor-and-command-in-review-catalogue",
+    "read-signals-from-the-store-and-run-baselines-in-one-dispatch",
+    "fix-the-surveyors-checks-evidence-and-writes",
+]
+resolved_commits = [
+    "71d4e9c6",
+    "fdfad52b",
+    "0ffa7ea5",
+]
+
+[[backlog]]
+id = "B-0bdfc2dc"
+kind = "debt"
+summary = "review-v2 references still say no v2 plan has run under an engine and list the removed handover command field"
+area = "claude/skills/review-v2-engine"
+tags = [
+    "review-v2",
+    "doc-drift",
+]
+status = "resolved"
+created = 2026-11-10T08:43:08Z
+last_seen = 2026-11-10T08:43:08Z
+seen_count = 1
+dedup_id = "0bdfc2dcc7e1eb5b"
+origin = "review-v2"
+flow = "jiggly-exploring-robin"
+context = "Two stale lines found by run U1's cells but outside its scope, so no finding carries them: review-v2-engine/references/measurement.md says no v2 plan has run under an execution engine yet, false since /implement-v2 ran human-only-handovers; review-v2-method/references/plan-records.md lists command among the handover fields, which the handover reshape replaced with action, when and done_when. Both are one-line edits."
+base_sha = "546121d3de8704cbfe1be975fa2d2f86547cccd6"
+evidence = [
+    "claude/skills/review-v2-engine/references/measurement.md:154",
+    "claude/skills/review-v2-method/references/plan-records.md:49",
+]
+related = ["B-ef0d9fd7"]
+promoted = 2026-11-10
+promoted_to = "review-v2-first-run-repairs"
+resolved = 2026-11-10
+resolution = "resolved by flow `review-v2-first-run-repairs` (tasks add-the-leniency-readings-and-the-seeded-precision-probe-to-measurement, correct-the-method-references)"
+resolved_flow = "review-v2-first-run-repairs"
+resolved_tasks = [
+    "add-the-leniency-readings-and-the-seeded-precision-probe-to-measurement",
+    "correct-the-method-references",
+]
+resolved_commits = [
+    "3106df2b",
+    "64166cc8",
+]
+
+[[backlog]]
+id = "B-fc4d7f8b"
+kind = "bug"
+summary = "review stats counts a run as audited only from overturn verdicts, so a clean audit reads audited 0 and the overturn rate stays null"
+area = "tomlctl/src/review"
+tags = [
+    "review-v2",
+    "audit",
+    "stats",
+]
+status = "resolved"
+created = 2026-11-10T08:56:27Z
+last_seen = 2026-11-10T08:56:27Z
+seen_count = 1
+dedup_id = "fc4d7f8b7c119a4b"
+origin = "review-v2"
+flow = "jiggly-exploring-robin"
+context = "Run U1 on jiggly-exploring-robin recorded audit = {sampled: 4, overturned: 0} with run update, yet review stats --by run and --by lens print audited 0 and audit_overturn_rate null. triage-and-close.md records an audit verdict only for an overturn, so a row the audit upheld leaves no trace and the rate has no denominator; measurement.md's 10 and 20 percent overturn bands can then never read as healthy. Either record a --by audit verdict for every sampled row, upheld or not, or have stats read the run's audit.sampled as the denominator."
+base_sha = "546121d3de8704cbfe1be975fa2d2f86547cccd6"
+related = ["B-59118332"]
+promoted = 2026-11-10
+promoted_to = "review-v2-first-run-repairs"
+resolved = 2026-11-10
+resolution = "resolved by flow `review-v2-first-run-repairs` (tasks record-every-audited-row-and-give-plan-and-escalation-dispositions-a-landing-place, update-the-plan-executor-and-the-plan-review-lead)"
+resolved_flow = "review-v2-first-run-repairs"
+resolved_tasks = [
+    "record-every-audited-row-and-give-plan-and-escalation-dispositions-a-landing-place",
+    "update-the-plan-executor-and-the-plan-review-lead",
+]
+resolved_commits = [
+    "610d6550",
+    "18d17dcf",
+]
+
+[[backlog]]
+id = "B-1e1be4cf"
+kind = "debt"
+summary = "review-v2 verifiers confirmed every row and the audit is one unrecorded orchestrator turn, so nothing measures verifier leniency"
+area = "claude/agents"
+tags = [
+    "review-v2",
+    "verifier",
+    "audit",
+]
+status = "resolved"
+created = 2026-11-10T08:56:27Z
+last_seen = 2026-11-10T08:56:27Z
+seen_count = 1
+dedup_id = "1e1be4cf4b610b58"
+origin = "review-v2"
+flow = "jiggly-exploring-robin"
+context = "Run U1: 30 verified rows, 0 refuted, 0 plausible; audit of 4 sampled, 0 overturned. Verifier dispatches ran 15 to 53 seconds. The two read in full (the C12 and C13 minor batches) confirmed by reading the cited code and history and ran no reproduction, though review-verifier.md says to try to reproduce the trigger; F13 and F22 were reproduced, by their finders. The audit sample asks for two REFUTED defects and none existed, and the orchestrator judged the four rows in one turn about three seconds after reading the projection, with no per-row reasoning written anywhere. One run is not a rate, so treat this as a watch item: check the refute rate over the next runs, and consider a seeded false finding per run or a required per-row audit line so a lenient verifier is detectable."
+base_sha = "546121d3de8704cbfe1be975fa2d2f86547cccd6"
+related = ["B-9411e167"]
+promoted = 2026-11-10
+promoted_to = "review-v2-first-run-repairs"
+resolved = 2026-11-10
+resolution = "resolved by flow `review-v2-first-run-repairs` (tasks fill-the-audit-sample-when-nothing-was-refuted, record-every-audited-row-and-give-plan-and-escalation-dispositions-a-landing-place, add-the-leniency-readings-and-the-seeded-precision-probe-to-measurement)"
+resolved_flow = "review-v2-first-run-repairs"
+resolved_tasks = [
+    "fill-the-audit-sample-when-nothing-was-refuted",
+    "record-every-audited-row-and-give-plan-and-escalation-dispositions-a-landing-place",
+    "add-the-leniency-readings-and-the-seeded-precision-probe-to-measurement",
+]
+resolved_commits = [
+    "e8b754f7",
+    "610d6550",
+    "3106df2b",
+]
+
+[[backlog]]
+id = "B-dc721e5c"
+kind = "debt"
+summary = "a finder's ruled-out coverage note and another cell's finding on the same site are never compared, so the digest reports no contested rows"
+area = "tomlctl/src/review"
+tags = [
+    "review-v2",
+    "contested",
+    "coverage-note",
+]
+status = "resolved"
+created = 2026-11-10T08:56:27Z
+last_seen = 2026-11-10T08:56:27Z
+seen_count = 1
+dedup_id = "dc721e5c5879bcd1"
+origin = "review-v2"
+flow = "jiggly-exploring-robin"
+context = "Run U1, two cases, digest contested = [] throughout. C3's note ruled out 'premises_json omits probe' as deliberate (keeps the review compare-and-set round trip); C12 raised the same omission as defect F9 and its verifier confirmed it without seeing C3's note. C12's note ruled out the schema_version 1 handover command drop as decided in D3/D4; C2 raised it as advisory F7, C4 escalated it, and it closed as confirmed defect F35. Rule-outs live only in free-text cover notes capped at 600 characters, so nothing can join them to findings. Options: structured ruled-out entries (file, symbol, reason) on review cover, which resolve or digest match against findings from other cells and list as contested; or pass same-file rule-outs into the verifier projection."
+base_sha = "546121d3de8704cbfe1be975fa2d2f86547cccd6"
+related = [
+    "B-42c3a13c",
+    "B-5d5bf09e",
+]
+promoted = 2026-11-10
+promoted_to = "review-v2-first-run-repairs"
+resolved = 2026-11-10
+resolution = "resolved by flow `review-v2-first-run-repairs` (tasks add-the-head-run-field-and-the-ruled_out-cell-field, record-structured-rule-outs-with-review-cover-ruled-out, list-duplicate-candidates-and-rule-out-hits-in-review-digest, show-matching-rule-outs-in-the-verifier-and-audit-projections, sum-the-agent-count-in-the-plan-review-workflow, settle-duplicates-rule-out-hits-and-escalations-at-compose, state-the-shared-agent-rules-in-the-method-skill, update-the-finder-body-and-make-the-context-free-finder-context-free, tell-the-verifier-about-rule-outs-batches-and-the-cap-target, update-the-plan-executor-and-the-plan-review-lead)"
+resolved_flow = "review-v2-first-run-repairs"
+resolved_tasks = [
+    "add-the-head-run-field-and-the-ruled_out-cell-field",
+    "record-structured-rule-outs-with-review-cover-ruled-out",
+    "list-duplicate-candidates-and-rule-out-hits-in-review-digest",
+    "show-matching-rule-outs-in-the-verifier-and-audit-projections",
+    "sum-the-agent-count-in-the-plan-review-workflow",
+    "settle-duplicates-rule-out-hits-and-escalations-at-compose",
+    "state-the-shared-agent-rules-in-the-method-skill",
+    "update-the-finder-body-and-make-the-context-free-finder-context-free",
+    "tell-the-verifier-about-rule-outs-batches-and-the-cap-target",
+    "update-the-plan-executor-and-the-plan-review-lead",
+]
+resolved_commits = [
+    "3530f290",
+    "ae3e0a1b",
+    "af476769",
+    "9f0e727f",
+    "8f593ca0",
+    "ffa23a0d",
+    "b6d1dab6",
+    "57a290c1",
+    "18d17dcf",
+]
+
+[[backlog]]
+id = "B-30ba0a0a"
+kind = "debt"
+summary = "a review-finder that sees a grep-provable cleanup outside its lens escalates it instead of writing it, costing a follow-up wave"
+area = "claude/skills/review-v2-lenses"
+tags = [
+    "review-v2",
+    "lens-ownership",
+    "escalate",
+]
+status = "resolved"
+created = 2026-11-10T08:56:27Z
+last_seen = 2026-11-10T08:56:27Z
+seen_count = 1
+dedup_id = "30ba0a0ad8763bb1"
+origin = "review-v2"
+flow = "jiggly-exploring-robin"
+context = "Run U1: finder C8 (correctness and doc-drift) found the stale --command sentence at claude/skills/tomlctl/references/plan.md:55 in wave 1 and noted 'ripple owns, escalated' rather than writing a cleanup row. The whole-scope sweeper that did own ripple sealed thin, so the row only landed as F34 from a wave 2 sweeper, after a second sweeper had also escalated the same line. Let a finder write a cleanup row outside its bound lenses when the old text is exact and grep-provable, tagged with the owning lens, or have the orchestrator mint the row from the escalation without a wave."
+base_sha = "546121d3de8704cbfe1be975fa2d2f86547cccd6"
+related = [
+    "B-a756606c",
+    "B-bc4a0080",
+    "B-d9cfd36e",
+]
+promoted = 2026-11-10
+promoted_to = "review-v2-first-run-repairs"
+resolved = 2026-11-10
+resolution = "resolved by flow `review-v2-first-run-repairs` (tasks accept-a-mechanical-cleanup-row-from-any-cell, state-the-shared-agent-rules-in-the-method-skill, update-the-finder-body-and-make-the-context-free-finder-context-free, record-mechanical-lens-ownership-in-the-lens-catalogue, let-the-checker-refute-a-mechanical-cleanup-from-any-cell, tell-the-checker-which-rows-it-may-refute)"
+resolved_flow = "review-v2-first-run-repairs"
+resolved_tasks = [
+    "accept-a-mechanical-cleanup-row-from-any-cell",
+    "state-the-shared-agent-rules-in-the-method-skill",
+    "update-the-finder-body-and-make-the-context-free-finder-context-free",
+    "record-mechanical-lens-ownership-in-the-lens-catalogue",
+    "let-the-checker-refute-a-mechanical-cleanup-from-any-cell",
+    "tell-the-checker-which-rows-it-may-refute",
+]
+resolved_commits = [
+    "4efac13b",
+    "ffa23a0d",
+    "b6d1dab6",
+    "26487368",
+    "0a91146e",
+    "ccb387ec",
+]
+
+[[backlog]]
+id = "B-00ae0571"
+kind = "annoyance"
+summary = "review cover and review verdict refuse a note or rationale over 600 characters only after the agent has written it, costing a rewrite round"
+area = "tomlctl/src/review"
+tags = [
+    "review-v2",
+    "caps",
+]
+status = "resolved"
+created = 2026-11-10T08:56:27Z
+last_seen = 2026-11-10T08:56:27Z
+seen_count = 1
+dedup_id = "00ae057199ec5de0"
+origin = "review-v2"
+flow = "jiggly-exploring-robin"
+context = "Run U1: 7 of 39 agents were refused on the cap and rewrote: all four sweeper cover notes (626, 650, 833 and 950 characters) and three single-row verifier rationales (609, 647, 661). Each agent file states the cap, so restating it does not help; models cannot count characters while writing. Options: aim the agent files at a lower target such as 450, add a --truncate flag that cuts at the cap and says so, or raise the cap. Verdicts written through --ndjson batches were not refused in this run."
+base_sha = "546121d3de8704cbfe1be975fa2d2f86547cccd6"
+related = ["B-2d735ad5"]
+promoted = 2026-11-10
+promoted_to = "review-v2-first-run-repairs"
+resolved = 2026-11-10
+resolution = "resolved by flow `review-v2-first-run-repairs` (tasks state-the-shared-agent-rules-in-the-method-skill, correct-the-method-references, update-the-finder-body-and-make-the-context-free-finder-context-free, define-a-swept-slice-for-the-sweeper-and-let-ripple-reach-past-the-scope, tell-the-verifier-about-rule-outs-batches-and-the-cap-target, update-the-plan-executor-and-the-plan-review-lead)"
+resolved_flow = "review-v2-first-run-repairs"
+resolved_tasks = [
+    "state-the-shared-agent-rules-in-the-method-skill",
+    "correct-the-method-references",
+    "update-the-finder-body-and-make-the-context-free-finder-context-free",
+    "define-a-swept-slice-for-the-sweeper-and-let-ripple-reach-past-the-scope",
+    "tell-the-verifier-about-rule-outs-batches-and-the-cap-target",
+    "update-the-plan-executor-and-the-plan-review-lead",
+]
+resolved_commits = [
+    "ffa23a0d",
+    "64166cc8",
+    "b6d1dab6",
+    "90d2dc8d",
+    "57a290c1",
+    "18d17dcf",
+]
+
+[[backlog]]
+id = "B-e684aed8"
+kind = "debt"
+summary = "review-v2 Workflow gives each verifier-routed cleanup row its own Opus verifier instead of batching them as it does minor defects"
+area = "claude/workflows"
+tags = [
+    "review-v2",
+    "verifier",
+    "cost",
+]
+status = "resolved"
+created = 2026-11-10T08:56:27Z
+last_seen = 2026-11-10T08:56:27Z
+seen_count = 1
+dedup_id = "e684aed8ec46854d"
+origin = "review-v2"
+flow = "jiggly-exploring-robin"
+context = "Run U1: cleanup rows F6, F24, F25 and F26 each got a one-row review-verifier dispatch starting at about 49k tokens of context. F24 rewords one refusal message and F25 and F26 are a shared-helper swap and a doc comment; each verifier ran 15 to 34 seconds. Minor defects are already batched per cell (verify C1 minor x2 and so on). Batch verifier-routed cleanup per cell the same way in claude/workflows/review-v2.js, or pool it across cells as the checker batch is."
+base_sha = "546121d3de8704cbfe1be975fa2d2f86547cccd6"
+related = ["B-05cfc36b"]
+promoted = 2026-11-10
+promoted_to = "review-v2-first-run-repairs"
+resolved = 2026-11-10
+resolution = "resolved by flow `review-v2-first-run-repairs` (tasks batch-cleanup-verification-and-return-escalations-and-an-agent-count, bring-the-agent-wave-fallback-in-line-with-the-workflow, tell-the-verifier-about-rule-outs-batches-and-the-cap-target, let-the-checker-refute-a-mechanical-cleanup-from-any-cell)"
+resolved_flow = "review-v2-first-run-repairs"
+resolved_tasks = [
+    "batch-cleanup-verification-and-return-escalations-and-an-agent-count",
+    "bring-the-agent-wave-fallback-in-line-with-the-workflow",
+    "tell-the-verifier-about-rule-outs-batches-and-the-cap-target",
+    "let-the-checker-refute-a-mechanical-cleanup-from-any-cell",
+]
+resolved_commits = [
+    "4f465e9c",
+    "7ff8e82c",
+    "57a290c1",
+    "0a91146e",
+]
+
+[[backlog]]
+id = "B-ab53208e"
+kind = "annoyance"
+summary = "review-v2 baselines run as one verification dispatch per command in sequence, holding the first wave after the map is composed"
+area = "claude/skills/review-v2-engine"
+tags = [
+    "review-v2",
+    "baselines",
+]
+status = "resolved"
+created = 2026-11-10T08:56:27Z
+last_seen = 2026-11-10T08:56:27Z
+seen_count = 1
+dedup_id = "ab53208e9a021562"
+origin = "review-v2"
+flow = "jiggly-exploring-robin"
+context = "Run U1: three baselines (tomlctl clippy, glimpse clippy, harness-gates) went out as three verification dispatches one after another, each about 40 seconds plus an orchestrator turn to record its key. The coverage map was composed at 08:20:47 and the wave launched at 08:22:14, waiting on the last two. survey.md section 6 asks for one dispatch per command so a failing lint cannot hide the next baseline, but the verification agent now takes keep_going, which gives the same property in one dispatch. Change section 6 to one dispatch carrying every baseline command with keep_going, recording all keys from its one return."
+base_sha = "546121d3de8704cbfe1be975fa2d2f86547cccd6"
+related = [
+    "B-f278c33f",
+    "B-99efd715",
+]
+promoted = 2026-11-10
+promoted_to = "review-v2-first-run-repairs"
+resolved = 2026-11-10
+resolution = "resolved by flow `review-v2-first-run-repairs` (tasks sum-the-agent-count-in-the-plan-review-workflow, state-run-bounds-stage-0-carry-over-and-the-new-index-in-the-engine-skill, read-signals-from-the-store-and-run-baselines-in-one-dispatch, settle-duplicates-rule-out-hits-and-escalations-at-compose, update-the-plan-flow-reference-for-scope-staging-and-the-index, point-the-code-and-perf-carriers-at-the-new-scope-and-baseline-rules)"
+resolved_flow = "review-v2-first-run-repairs"
+resolved_tasks = [
+    "sum-the-agent-count-in-the-plan-review-workflow",
+    "state-run-bounds-stage-0-carry-over-and-the-new-index-in-the-engine-skill",
+    "read-signals-from-the-store-and-run-baselines-in-one-dispatch",
+    "settle-duplicates-rule-out-hits-and-escalations-at-compose",
+    "update-the-plan-flow-reference-for-scope-staging-and-the-index",
+    "point-the-code-and-perf-carriers-at-the-new-scope-and-baseline-rules",
+]
+resolved_commits = [
+    "9f0e727f",
+    "7476976a",
+    "fdfad52b",
+    "8f593ca0",
+    "0befc2cd",
+    "50eb381f",
+]
+
+[[backlog]]
+id = "B-75341a1d"
+kind = "debt"
+summary = "review-finder-cf preloads research-methods and reads plan decisions from flow stores, so the context-free cell is not context-free"
+area = "claude/agents"
+tags = [
+    "review-v2",
+    "finder-cf",
+]
+status = "resolved"
+created = 2026-11-10T08:56:27Z
+last_seen = 2026-11-10T08:56:27Z
+seen_count = 1
+dedup_id = "75341a1debc0c34e"
+origin = "review-v2"
+flow = "jiggly-exploring-robin"
+context = "Run U1: both review-finder-cf cells started with review-v2-method and research-methods preloaded, and research-methods tells the agent to drop a documented deliberate choice (a plan section, a CLAUDE.md rule). C12 then read .claude/flows/human-only-handovers/plan.toml and ruled out the schema_version 1 handover command drop as 'decided in D3/D4'; that issue closed as confirmed defect F35. The cell exists to judge the diff without the project's own justifications. The two cells gave four findings, two of them duplicates of context-bearing cells. Options: drop the research-methods preload from review-finder-cf.md, and tell it not to read .claude/flows or docs/flows."
+base_sha = "546121d3de8704cbfe1be975fa2d2f86547cccd6"
+related = ["B-c2c975d1"]
+promoted = 2026-11-10
+promoted_to = "review-v2-first-run-repairs"
+resolved = 2026-11-10
+resolution = "resolved by flow `review-v2-first-run-repairs` (tasks update-the-finder-body-and-make-the-context-free-finder-context-free)"
+resolved_flow = "review-v2-first-run-repairs"
+resolved_tasks = ["update-the-finder-body-and-make-the-context-free-finder-context-free"]
+resolved_commits = ["b6d1dab6"]
+
+[[backlog]]
+id = "B-ce9ebb4d"
+kind = "debt"
+summary = "a review-v2 needs-plan defect and a parked advisory have no landing place once the run finishes"
+area = "claude/skills/review-v2-engine"
+tags = [
+    "review-v2",
+    "triage",
+    "needs-plan",
+]
+status = "resolved"
+created = 2026-11-10T08:56:27Z
+last_seen = 2026-11-10T08:56:27Z
+seen_count = 1
+dedup_id = "ce9ebb4d4b917e91"
+origin = "review-v2"
+flow = "jiggly-exploring-robin"
+context = "Run U1: the 'plan F30' disposition makes no store write (triage-and-close.md), so major defect F30 stays open inside a finished run and only the close summary names /plan-new; export-v1 --all leaves needs-plan rows out, so no ledger carries it either. F8 was parked with a reason in the v2 store, and nothing lists parked rows at a later run or to /backlog. If the summary is missed both are lost. Options: have the plan disposition and park mint a backlog row or an inputs.toml capture carrying the review show command, or have the next run's stage 0 list open needs-plan and parked rows from earlier runs. Until then, read them with tomlctl review list --slug jiggly-exploring-robin --run U1 --for orchestrator."
+base_sha = "546121d3de8704cbfe1be975fa2d2f86547cccd6"
+related = ["B-0bdfc2dc"]
+promoted = 2026-11-10
+promoted_to = "review-v2-first-run-repairs"
+resolved = 2026-11-10
+resolution = "resolved by flow `review-v2-first-run-repairs` (tasks filter-review-list-by-fix-shape, state-run-bounds-stage-0-carry-over-and-the-new-index-in-the-engine-skill, record-every-audited-row-and-give-plan-and-escalation-dispositions-a-landing-place)"
+resolved_flow = "review-v2-first-run-repairs"
+resolved_tasks = [
+    "filter-review-list-by-fix-shape",
+    "state-run-bounds-stage-0-carry-over-and-the-new-index-in-the-engine-skill",
+    "record-every-audited-row-and-give-plan-and-escalation-dispositions-a-landing-place",
+]
+resolved_commits = [
+    "af476769",
+    "7476976a",
+    "610d6550",
+]
+
+[[backlog]]
+id = "B-27f5ba35"
+kind = "annoyance"
+summary = "review-v2 run bookkeeping is hand-kept: the agents count is set by the orchestrator, stats reports waves null, and the scope list is staged at the repo root"
+area = "tomlctl/src/review"
+tags = [
+    "review-v2",
+    "run-record",
+]
+status = "resolved"
+created = 2026-11-10T08:56:27Z
+last_seen = 2026-11-10T08:56:27Z
+seen_count = 1
+dedup_id = "27f5ba35e9ecb515"
+origin = "review-v2"
+flow = "jiggly-exploring-robin"
+context = "Run U1: the orchestrator set agents by hand three times (33, 37, 38) and ended one short of the 39 subagents the session ran, since the flow-bootstrap dispatch was not counted. review stats --by run prints waves null although the run had two. To pass the 74-file scope to review run start it wrote .review-v2-scope.json at the repo root and deleted it afterwards, and staged the list under the system temp directory rather than the run directory, which does not exist until run start returns. Options: have the review-v2-pipeline index return its agent count and the engine add it, derive waves from the cells, and let run start take the scope from a file outside the repo or from stdin."
+base_sha = "546121d3de8704cbfe1be975fa2d2f86547cccd6"
+related = [
+    "B-10cbeccd",
+    "B-99efd715",
+]
+promoted = 2026-11-10
+promoted_to = "review-v2-first-run-repairs"
+resolved = 2026-11-10
+resolution = "resolved by flow `review-v2-first-run-repairs` (tasks derive-waves-from-a-runs-cells-in-review-stats, batch-cleanup-verification-and-return-escalations-and-an-agent-count, sum-the-agent-count-in-the-plan-review-workflow, state-run-bounds-stage-0-carry-over-and-the-new-index-in-the-engine-skill, bring-the-agent-wave-fallback-in-line-with-the-workflow, update-the-plan-flow-reference-for-scope-staging-and-the-index)"
+resolved_flow = "review-v2-first-run-repairs"
+resolved_tasks = [
+    "derive-waves-from-a-runs-cells-in-review-stats",
+    "batch-cleanup-verification-and-return-escalations-and-an-agent-count",
+    "sum-the-agent-count-in-the-plan-review-workflow",
+    "state-run-bounds-stage-0-carry-over-and-the-new-index-in-the-engine-skill",
+    "bring-the-agent-wave-fallback-in-line-with-the-workflow",
+    "update-the-plan-flow-reference-for-scope-staging-and-the-index",
+]
+resolved_commits = [
+    "9d1b9e77",
+    "4f465e9c",
+    "9f0e727f",
+    "7476976a",
+    "7ff8e82c",
+    "0befc2cd",
+]
+
+[[backlog]]
+id = "B-607f983f"
+kind = "bug"
+summary = "review run close readiness counts only unverified rows under unresolved_same_as, so a verified pair linked by --same-as with an unverified target does not block close"
+area = "tomlctl/src/review/runs.rs"
+tags = [
+    "review-v2",
+    "same-as",
+]
+status = "open"
+created = 2026-11-10T13:50:41Z
+last_seen = 2026-11-10T13:50:41Z
+seen_count = 1
+dedup_id = "607f983fff14e90d"
+origin = "implement"
+flow = "review-v2-first-run-repairs"
+context = "review resolve --same-as now links verified (open or refuted) rows, and its waiting set covers any row with same_as set and no outcome. The close-readiness check in runs.rs still filters on unverified only. Until fixed, run a plain review resolve before run finish and confirm it reports nothing pending."
+base_sha = "18d17dcff260703f5f701855d50f09d81a2252f0"
+
+[[backlog]]
+id = "B-d6c93fd7"
+kind = "debt"
+summary = "Run.waves is still read, stored and written back in the review store but no command sets it and every reader now derives waves from cells"
+area = "tomlctl/src/review/store.rs"
+tags = [
+    "review-v2",
+    "dead-field",
+]
+status = "open"
+created = 2026-11-10T13:50:41Z
+last_seen = 2026-11-10T13:50:41Z
+seen_count = 1
+dedup_id = "d6c93fd7b752e938"
+origin = "implement"
+flow = "review-v2-first-run-repairs"
+context = "stats --by run, run list, run show and the digest run line all call stats::run_waves. The stored field can only hold a stale hand-written value; remove it from Run and the field catalogue so waves has one source."
+base_sha = "18d17dcff260703f5f701855d50f09d81a2252f0"
+
+[[backlog]]
+id = "B-6dfe5236"
+kind = "debt"
+summary = "review cells.rs repeats the mechanical-mode test inline at three sites and keeps a private within helper that duplicates the catalogue's"
+area = "tomlctl/src/review/cells.rs"
+tags = [
+    "review-v2",
+    "duplication",
+]
+status = "open"
+created = 2026-11-10T13:50:41Z
+last_seen = 2026-11-10T13:50:41Z
+seen_count = 1
+dedup_id = "6dfe523641b116b7"
+origin = "implement"
+flow = "review-v2-first-run-repairs"
+context = "catalogue.rs now exposes Entry::is_mechanical_lens and pub(super) meets / within, which add.rs, verdict.rs, cover.rs and run_show.rs share. cells.rs was held by another task while those were extracted. Compare the within bodies before replacing; the cells.rs copy was not diffed."
+base_sha = "18d17dcff260703f5f701855d50f09d81a2252f0"
+
+[[backlog]]
+id = "B-3abd0cce"
+kind = "debt"
+summary = "the REVIEW_STORE entries in capabilities MUTEX_GROUPS repeat what clap's ArgGroup on ReviewStore already publishes, and nothing tests them"
+area = "tomlctl/src/capabilities.rs"
+tags = ["capabilities"]
+status = "open"
+created = 2026-11-10T13:50:41Z
+last_seen = 2026-11-10T13:50:41Z
+seen_count = 1
+dedup_id = "3abd0cce93a11345"
+origin = "implement"
+flow = "review-v2-first-run-repairs"
+context = "Removing the review run show entry changed no capabilities output and no test failed. Each new review verb adds another no-op row. Either drop the review rows from the hand-kept table or add a test that fails when one is missing."
+base_sha = "18d17dcff260703f5f701855d50f09d81a2252f0"
+
+[[backlog]]
+id = "B-f438f85d"
+kind = "question"
+summary = "review stats --by model sums audited and overturned across the three audit classes, so the per-class 30-row floor and bands in measurement.md cannot be read from stats"
+area = "tomlctl/src/review/stats.rs"
+tags = [
+    "review-v2",
+    "measurement",
+]
+status = "open"
+created = 2026-11-10T13:50:41Z
+last_seen = 2026-11-10T13:50:41Z
+seen_count = 1
+dedup_id = "f438f85dd12dc15d"
+origin = "implement"
+flow = "review-v2-first-run-repairs"
+context = "measurement.md works around it by reading a model under 30 audited rows as insufficient on every band and counting per class with review list --kind ... --for audit per store. A per-class split (confirmed defect, refuted defect, checked cleanup) in stats would let the five-run review read the bands directly."
+base_sha = "18d17dcff260703f5f701855d50f09d81a2252f0"
+related = ["B-fc4d7f8b"]
+
+[[backlog]]
+id = "B-18a1a40e"
+kind = "debt"
+summary = "tdd.md's parent re-resolve reads parent_envelope.resolved.plan_path, but the flow resolve envelope is flat: plan_path is top-level and resolved is a bool"
+area = "claude/commands/tdd.md"
+tags = [
+    "tdd",
+    "flow-resolve",
+]
+status = "open"
+created = 2026-11-10T13:50:41Z
+last_seen = 2026-11-10T13:50:41Z
+seen_count = 1
+dedup_id = "18a1a40ee66f2e13"
+origin = "implement"
+flow = "review-v2-first-run-repairs"
+context = "Arrived cheap-in-file from the task that edited the same paragraph and was deferred because the final verification pass was already running. An agent following the prose literally reads a field that does not exist; the fix is to read plan_path from the top level of the resolve output."
+base_sha = "18d17dcff260703f5f701855d50f09d81a2252f0"
+
+[[backlog]]
+id = "B-6f17f239"
+kind = "question"
+summary = "a second-wave review plan --propose lists every floor lens as cut for ceiling once the budget reaches zero, even when the lens is already covered"
+area = "tomlctl/src/review/cells.rs"
+tags = [
+    "review-v2",
+    "propose",
+]
+status = "open"
+created = 2026-11-10T13:50:41Z
+last_seen = 2026-11-10T13:50:41Z
+seen_count = 1
+dedup_id = "6f17f23945f59c6f"
+origin = "implement"
+flow = "review-v2-first-run-repairs"
+context = "Follows from the ceiling becoming absolute. The stage-4 reading of unselected may take an already-covered floor lens for an uncovered one. Either leave covered lenses out of unselected or say so in compose.md's proposal paragraph."
+base_sha = "18d17dcff260703f5f701855d50f09d81a2252f0"
+related = ["B-39b9e713"]
+
+[[backlog]]
+id = "B-196e9471"
+kind = "debt"
+summary = "the shared finder body and review-v2-method still say where a lens, method or check asks for one note line per sweep, which nothing in the catalogue asks for any more"
+area = "claude/agents/review-finder.md"
+tags = [
+    "review-v2",
+    "prose",
+]
+status = "open"
+created = 2026-11-10T13:50:41Z
+last_seen = 2026-11-10T13:50:41Z
+seen_count = 1
+dedup_id = "196e9471c14327a9"
+origin = "implement"
+flow = "review-v2-first-run-repairs"
+context = "sweep.md and ripple.md now ask for counts. The sentence sits in the byte-identical review-finder-body block (both finder files) and near the coverage note in claude/skills/review-v2-method/SKILL.md; trim all three together and rerun scripts/verify-shared-blocks.sh."
+base_sha = "18d17dcff260703f5f701855d50f09d81a2252f0"
+
+[[backlog]]
+id = "B-91f446fe"
+kind = "question"
+summary = "a review cover rule-out with neither symbol nor line is accepted and stored but can never match a finding"
+area = "tomlctl/src/review/cover.rs"
+tags = [
+    "review-v2",
+    "rule-outs",
+]
+status = "open"
+created = 2026-11-10T13:50:41Z
+last_seen = 2026-11-10T13:50:41Z
+seen_count = 1
+dedup_id = "91f446fe1d99b66a"
+origin = "implement"
+flow = "review-v2-first-run-repairs"
+context = "matching::same_place needs equal symbols or two lines within the window. The method skill tells agents to always give one, and the reference documents the behaviour. Open decision: leave it, refuse such an entry at cover, or have a file-only rule-out match every finding in the file."
+base_sha = "18d17dcff260703f5f701855d50f09d81a2252f0"
+related = ["B-dc721e5c"]
+
+[[backlog]]
+id = "B-2e4898a7"
+kind = "debt"
+summary = "the checker refusal message still says a checker may refute only a row a sweeper wrote, though a mechanical-lens cleanup row is now allowed too"
+area = "tomlctl/src/review/verdict.rs"
+tags = [
+    "review-v2",
+    "messages",
+]
+status = "open"
+created = 2026-11-10T13:50:41Z
+last_seen = 2026-11-10T13:50:41Z
+seen_count = 1
+dedup_id = "2e4898a72e01152d"
+origin = "implement"
+flow = "review-v2-first-run-repairs"
+context = "The task that widened the rule was told to keep the message. Reword it to name both cases and update the tests that pin the text in tomlctl/tests/review_verdict.rs."
+base_sha = "18d17dcff260703f5f701855d50f09d81a2252f0"
+
+[[backlog]]
+id = "B-e57e08ff"
+kind = "annoyance"
+summary = "the pre-commit hook costs two to four minutes per commit touching tomlctl/src, which a per-task commit train pays once per commit"
+area = ".githooks/pre-commit"
+tags = [
+    "hooks",
+    "commit-train",
+]
+status = "open"
+created = 2026-11-10T13:50:41Z
+last_seen = 2026-11-10T13:50:41Z
+seen_count = 1
+dedup_id = "e57e08ffcee5b7dc"
+origin = "implement"
+flow = "review-v2-first-run-repairs"
+context = "Each such commit reruns the cli::dispatch::tests subset (one test alone takes over a minute) and glimpse clippy. An 11-commit train took about 40 minutes of hook time on an already gated tree. Workaround used: gate once with the hook's own checks added (the two parity verifiers, fmt, the full suite, glimpse clippy --locked), then commit the train with --no-verify."
+base_sha = "18d17dcff260703f5f701855d50f09d81a2252f0"
+
+[[backlog]]
+id = "B-fd05ff34"
+kind = "annoyance"
+summary = "items list --where-contains on a v2_ref matches by substring, so a query for finding F1 also matches F10 through F19"
+area = "tomlctl/src/query"
+tags = [
+    "query",
+    "ledger",
+]
+status = "open"
+created = 2026-11-10T13:50:41Z
+last_seen = 2026-11-10T13:50:41Z
+seen_count = 1
+dedup_id = "fd05ff34c35773b6"
+origin = "implement"
+flow = "review-v2-first-run-repairs"
+context = "Seen while repairing the jiggly-exploring-robin review ledger. Use --where-regex with an end anchor, or --where-suffix, when counting v1 rows per v2 finding id."
+base_sha = "18d17dcff260703f5f701855d50f09d81a2252f0"

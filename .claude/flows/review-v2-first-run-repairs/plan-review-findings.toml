@@ -1,0 +1,562 @@
+schema_version = 1
+last_updated = 2026-11-10
+round = 1
+
+[[vet_events]]
+timestamp = "2026-11-10T10:06:53Z"
+command = "review-plan"
+lens = "feasibility"
+tier = "deep"
+agent_index = 1
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = '8 findings, all high or medium. Verified before sampling: tomlctl/README.md has no version-history heading; every_leaf_command_has_a_case and the review run list case exist in tomlctl/tests/output_options.rs; base..HEAD at runs.rs and survey.rs; the "0.21.0" literal and README parity tests in tomlctl/tests/capabilities.rs; js_agent_calls in lint.rs; the v1 row builder in export.rs writes no lens. Nothing dropped or downgraded.'
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-10T10:06:53Z"
+command = "review-plan"
+lens = "completeness"
+tier = "deep"
+agent_index = 2
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "13 findings, all high, five sweep lines returned. Verified: claude/commands/tdd.md re-resolves with flow resolve --flow; coverage_accounting callers in digest.rs and runs.rs; run.waves read in run list and the digest run line; the one-at-a-time baseline lines in claude/commands/review-plan-v2.md and claude/workflows/plan-v2-review.js; six propose_ tests. Nothing dropped or downgraded."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-10T10:06:53Z"
+command = "review-plan"
+lens = "executability"
+tier = "deep"
+agent_index = 3
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "15 findings, 13 high and 2 medium. Verified: show_cell_carries_bound_catalogue_paths asserts the verifier refusal; role_sees in query.rs; coverage_accounting callers; waves readers; written_by_sweeper in verdict.rs. Nothing dropped or downgraded."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-10T10:06:53Z"
+command = "review-plan"
+lens = "risk"
+tier = "deep"
+agent_index = 4
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "12 findings, 8 high and 4 medium, Searched line present. Verified: R22 carries v2_ref F1 and F4; fields::route sends executable-path cleanups to the verifier; decide's single loose matches filter; B-5d5bf09e's hand-repair context; claude/commands/tdd.md direct caller. Nothing dropped or downgraded."
+dedup_id = "45ca31c3315a5978"
+
+[[items]]
+id = "P1"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 6. Fold `export-v1` rows only on a strict key [M]"
+summary = "The strict fold key compares `lens`, a field v1 ledger rows never carry"
+description = 'tomlctl/src/review/export.rs builds the v1 row with file, line, symbol, severity, effort, category, summary, description, first_flagged, rounds, status, v2_ref (the row builder ahead of check_v1) and no lens; the lens is reduced to category via v1_category. decide has nothing to compare. The implementer would choose between category (lossy), a v2_ref lookup into the store, or a new ledger column. Raised by three lenses. Approach, "Duplicates and rule-outs" strict-export-fold bullet needs the same wording.'
+anchor_old = "Reuse when the row already carries the finding's `v2_ref`, or when `file`, `symbol`, `lens` and `summary` are all equal;"
+anchor_new = "Reuse when the row already carries the finding's `v2_ref`, or when `file`, `symbol` and `summary` are all equal and the row's own `v2_ref` names a finding in this store whose `lens` equals this finding's. A v1 row carries no `lens`, so a row with no resolvable `v2_ref` never matches on this second clause;"
+dedup_id = "bed2b7dc66215f99"
+
+[[items]]
+id = "P2"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### 6. Fold `export-v1` rows only on a strict key [M]"
+summary = "The strict key would also switch off wontfix/defer suppression and regression detection"
+description = "In decide (tomlctl/src/review/export.rs) one loose matches filter (same file and same non-empty symbol or exact summary) feeds Reuse, Settled and Regression. Read literally, 'anything else mints' re-opens a defect re-found with a reworded summary against a wontfix, deferred or fixed row. export_regression_on_fixed_v1_match in tomlctl/tests/review_export.rs matches on summary with the symbol stripped and is not on the task's keep list. duplicate_candidates covers only the current run, so the Risks mitigation does not reach cross-run duplicates. Needs a decision; the anchor keeps today's loose match for Settled/Regression."
+anchor_old = "Anything else mints."
+anchor_new = "Today's loose match (same file and same non-empty symbol or exact summary) still decides `Settled` and `Regression`, so a dismissed, deferred or fixed v1 row keeps suppressing or flagging a re-found defect; a loose match on an open row that fails the strict key mints. Anything else mints. `export_regression_on_fixed_v1_match` must pass unchanged."
+dedup_id = "35d27c2909007d7b"
+
+[[items]]
+id = "P3"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "## Scope"
+summary = "The bad R22 fold already in the ledger survives the fix, and B-5d5bf09e's hand-repair instruction is dropped"
+description = "R22 in .claude/flows/jiggly-exploring-robin/review-ledger.toml carries v2_ref F1 and F4 (verified with tomlctl items get). decide returns Linked for a row that already names the finding, so the strict key never splits it; sync-v1 would mark F4 resolved when R22 is fixed. B-5d5bf09e's context says to give F4 its own row and drop one of R26/R31 before /review-apply; the plan closes that item and no task carries the repair. It is agent-performable ledger work, so it needs a task (a new task changes the task count: add it through the store)."
+anchor_old = "applying U1's own exported findings (R22–R48)."
+anchor_new = "applying U1's own exported findings (R22–R48) — except the repair B-5d5bf09e requires before any of them is applied: F4 split out of R22 into its own row and one of R26/R31 dropped, done by a small task after task 6."
+dedup_id = "9ceeec1154fef73d"
+
+[[items]]
+id = "P4"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "### Run bounds"
+summary = "A run without `--head` measures `base..HEAD`, not the working tree, and the project-layer guard gets no `--head` rule"
+description = "Plan assumes 'measures to the working tree as today' and 'the default stays merge-base to working tree'. Code: tomlctl/src/review/runs.rs changed_lines and project_layer_changes, and tomlctl/src/review/survey.rs load_diff all diff base..HEAD (committed history only); only the finder's `git diff <base>` reads the working tree. Task 24 would write the false claim into engine stage 1. With head behind HEAD, agents still read current files, so a later flow's edits to a scope file reach the cells: that gap needs a stated rule. The second bullet's 'merge-base to working tree' needs the same correction. Raised by three lenses."
+anchor_old = "when absent the run measures to the working tree as today."
+anchor_new = "when absent the run measures to `HEAD` as today (`changed_lines`, the survey's `load_diff` and `project_layer_changes` all diff `base..HEAD`, so uncommitted edits are invisible to them; only a finder's `git diff <base>` reads the working tree). With `--head`, `project_layer_changes` reads `base..head` too."
+dedup_id = "81745bf5db7e39e8"
+
+[[items]]
+id = "P5"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "### 10. Bound a run with `review run start --head` [M]"
+summary = "Task 10 leaves the project-layer guard reading `base..HEAD`"
+description = "start_catalogue's refusal goes through project_layer_changes in tomlctl/src/review/runs.rs, which diffs base..HEAD. With --head set below HEAD, a lens-layer commit outside the reviewed range still refuses the run. The file is already on the task's Files line."
+anchor_old = "Resolve `--head` exactly as `resolve_base` resolves `--base`; refuse a head that is not a descendant of the base."
+anchor_new = "Resolve `--head` exactly as `resolve_base` resolves `--base`; refuse a head that is not a descendant of the base. `project_layer_changes` also reads `base..head`, so a lens-layer commit after `head` does not refuse the run."
+dedup_id = "c695920b00f8953d"
+
+[[items]]
+id = "P6"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 11. Read the survey's diff to `head` and keep hotspots in scope [M]"
+summary = "Task 11 needs an edge to task 10: its test can only get a run with a `head` through `--head`"
+description = "tomlctl/tests/review_survey.rs creates runs only through `review run start`; START_FIELDS in tomlctl/src/review/runs.rs refuses any key but scope, models, substrate, rechecks, so only task 10's flag yields a run with head. Without the edge survey_diff_stops_at_head runs in parallel with task 10 and cannot pass. Same reasoning the plan gives for 15 -> 13. Depends on is rendered from the store: patch the row (tasks update 11 --unlock-import-fields --set needs=3,10) and re-render rather than editing only the markdown. Evidence medium: a literal-store fixture would avoid the edge."
+anchor_old = "**Depends on**: 3"
+anchor_new = "**Depends on**: 3, 10"
+dedup_id = "180c87734c442035"
+
+[[items]]
+id = "P7"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### 19. Add the `review run show` read verb [L]"
+summary = "Task 19's Files line omits three files it must edit"
+description = "Task 1 keeps ReviewRunOp in tomlctl/src/cli/types/review/mod.rs, so the Show variant lands there; tomlctl/src/cli/mod.rs re-exports each Review*Args by explicit name; tomlctl/tests/output_options.rs needs a case (see the every_leaf_command_has_a_case finding). None is claimed by a parallel task today, but Files is the implementer's budget and the rollback set. Raised by three lenses."
+anchor_old = "- **Files**: `tomlctl/src/review/run_show.rs` (new), `tomlctl/src/review/mod.rs`, `tomlctl/src/review/dispatch.rs`, `tomlctl/src/cli/types/review/run.rs`, `tomlctl/tests/review_run_show.rs` (new)"
+anchor_new = "- **Files**: `tomlctl/src/review/run_show.rs` (new), `tomlctl/src/review/mod.rs`, `tomlctl/src/review/dispatch.rs`, `tomlctl/src/cli/types/review/run.rs`, `tomlctl/src/cli/types/review/mod.rs`, `tomlctl/src/cli/mod.rs`, `tomlctl/tests/output_options.rs`, `tomlctl/tests/review_run_show.rs` (new)"
+dedup_id = "7d639f8f6a949168"
+
+[[items]]
+id = "P8"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 19. Add the `review run show` read verb [L]"
+summary = "The new leaf fails `every_leaf_command_has_a_case` at checkpoint B; no task adds its case"
+description = "every_leaf_command_has_a_case in tomlctl/tests/output_options.rs walks every leaf `tomlctl capabilities` reports and fails on one with no entry in cases(). Precedent: the `review run list` case beside it. Task 19's acceptance runs only binary(review_run_show), so the first sign is a red checkpoint-B gate. The honours group test also runs the case under the global output options, so run_show.rs must print through the shared output seam."
+anchor_old = "Tests: `run_show_prints_signals_with_roots_limited_to_scope`, `run_show_prints_recorded_baselines`, `run_show_derives_waves_from_cells`."
+anchor_new = "Tests: `run_show_prints_signals_with_roots_limited_to_scope`, `run_show_prints_recorded_baselines`, `run_show_derives_waves_from_cells`. Add a `review run show` read case beside the `review run list` one in `tomlctl/tests/output_options.rs`: `every_leaf_command_has_a_case` fails on a leaf with no case, and print through the shared output seam as `runs::list` does."
+dedup_id = "3cc074ae858fdc1e"
+
+[[items]]
+id = "P9"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### 2. Move `review cover` into its own module [M]"
+summary = "Moving `coverage_accounting` breaks two unlisted callers, one in task 9's file"
+description = "tomlctl/src/review/digest.rs imports super::cells::coverage_accounting and tomlctl/src/review/runs.rs uses cells::{self, Accounting} and cells::coverage_accounting. Neither is on task 2's Files line; digest.rs is task 9's file with no dependency path between 2 and 9. The acceptance (grep -c 'pub(crate) fn cover' prints 0) rules out leaving the function behind. A re-export keeps both callers untouched and still satisfies the grep. Raised by two lenses."
+anchor_old = "Helpers both halves use stay in `cells.rs` as `pub(super)`."
+anchor_new = "Helpers both halves use stay in `tomlctl/src/review/cells.rs` as `pub(super)`. Keep `coverage_accounting` and `Accounting` reachable as `cells::…` through `pub(crate) use super::cover::{coverage_accounting, Accounting};` in `tomlctl/src/review/cells.rs`, so `tomlctl/src/review/digest.rs` and `tomlctl/src/review/runs.rs` stay untouched."
+dedup_id = "0eeb55916f3622e3"
+
+[[items]]
+id = "P10"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### 7. Accept a mechanical cleanup row from any cell [M]"
+summary = "'Routes to the checker' is not how cleanup routing works, and `field_refusals` has a second caller in an undeclared file"
+description = """fields::route in tomlctl/src/review/fields.rs sends a cleanup editing an executable path to the verifier and only non-executable edits to the checker; forcing the checker route would let a finder's executable-path edit reach export-v1 on a grep check alone. field_refusals in tomlctl/src/review/add.rs takes root, row, family, cell; threading the catalogue (the marker is mode = "mechanical" on the ripple and hygiene lens files) changes its signature, and its second caller is the advisory convert in tomlctl/src/review/triage.rs, which is not on Files. State whether convert gets the exception. Tasks 31 and 39 would repeat the routing wording."""
+anchor_old = "Such a row routes to the checker."
+anchor_new = """Such a row keeps the route `route_of` computes for any cleanup (checker for a non-executable edit, verifier otherwise). The sweeper-executed marker is the lens file's `mode = "mechanical"`; if reading it changes `field_refusals`' signature, its second caller in `tomlctl/src/review/triage.rs` (advisory convert) is edited too and does not get the exception."""
+dedup_id = "70a599b74038e767"
+
+[[items]]
+id = "P11"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### Escalations and out-of-lens cleanup"
+summary = "A finder-written mechanical cleanup can never be refuted by the checker; 'like a sweeper's row' is false"
+description = "Decision needed. written_by_sweeper in tomlctl/src/review/verdict.rs refuses a checker `refuted` unless the producing cell's agent is review-sweeper; claude/workflows/review-v2.js builds the checker's `sweeper rows:` line from the cell's agentType; claude/agents/review-checker.md allows refuted only on those rows. A wrong finder-written row can only go unsettled and reroute to an Opus verifyOne, the cost B-e684aed8 is meant to remove. Either widen the three sites to any cleanup whose lens is mechanical (task 7 gains verdict.rs, task 22 the JS line, a new task the checker prose) or reword the Approach to 'confirmed or unsettled, never refuted'. No task owns claude/agents/review-checker.md."
+dedup_id = "a6fa1de773f95b44"
+
+[[items]]
+id = "P12"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### 3. Add the `head` run field and the `ruled_out` cell field [M]"
+summary = "Making cell `ruled_out` visible to verifier and audit breaks `show_cell_carries_bound_catalogue_paths`"
+description = "role_sees in tomlctl/src/review/query.rs is true when any field of the record is visible to the role; today no Cell field is visible to verifier or audit, so `review show <cell> --for verifier` is refused, and show_cell_carries_bound_catalogue_paths in tomlctl/tests/review_query.rs asserts that refusal (verified). A verifier-visible ruled_out makes the call succeed and the test go red at checkpoint A, in a file task 3 does not own. Task 16 already brings rule-outs to those roles on findings."
+anchor_old = '`field(Cell, "ruled_out", Ty::TableList, …)` beside `note`, visible to the orchestrator, verifier and audit roles.'
+anchor_new = '`field(Cell, "ruled_out", Ty::TableList, RECORD_STATE).computed()` beside `note` — orchestrator and report only. A verifier or audit column would make `role_sees` (`tomlctl/src/review/query.rs`) let `review show <cell> --for verifier` through, which `show_cell_carries_bound_catalogue_paths` in `tomlctl/tests/review_query.rs` refuses; task 16 brings rule-outs to those roles on findings.'
+dedup_id = "e93530699fe6f0c5"
+
+[[items]]
+id = "P13"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### 3. Add the `head` run field and the `ruled_out` cell field [M]"
+summary = "Task 3 leaves the per-entry validation mechanism to the implementer, and task 13 calls it"
+description = "check_value in tomlctl/src/review/fields.rs accepts any array of objects for Ty::TableList and schema_out publishes its items as a bare object; existing nested lists (Waiver, Signal, Binding in tomlctl/src/review/store.rs) use typed structs validated at the verb. Task 3 lists the key rules and a test but names no function; task 13 says entries 'validate through the field catalogue from task 3'. Task 3 is M and can go lite."
+anchor_old = "Entry keys are `file` (required, checked with `path_problem`), `symbol`, `line`, `reason` (required, 200-character cap); an unknown key is refused."
+anchor_new = "Entry keys are `file` (required, checked with `path_problem`), `symbol`, `line`, `reason` (required, 200-character cap); an unknown key is refused. `check_value` accepts any object for `Ty::TableList`, so follow the `Waiver` pattern: a typed `RuledOut` struct in `tomlctl/src/review/store.rs` with its `_from_toml`/`_to_toml` pair, plus `pub(crate) fn ruled_out_refusals(entry: &Map<String, JsonValue>) -> Vec<String>` in `tomlctl/src/review/fields.rs`, which task 13's `cover` calls."
+dedup_id = "d16496aa1fd83595"
+
+[[items]]
+id = "P14"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 20. Bump tomlctl to 0.22.0 and register the new surface [L]"
+summary = "The README has no version history; the parity and version tests need four edits the task does not name"
+description = """tomlctl/README.md's only ## headings are Install, Usage, Design, Contracts (verified). readme_feature_transcriptions_match_capabilities_features and readme_sample_version_matches_cargo_toml in tomlctl/tests/capabilities.rs compare the README sample block's version and features array and the Feature meanings table; capabilities_version_matches_cargo_toml hard-codes "0.21.0"; capabilities_features_contains_every_plan_feature has an expected array. The 0.21.0 bump (git show 6454bc72) edited all of them. Task 4 also makes the README's --strict-read paragraph about `flow resolve --flow` false. As written the task fails its own binary(capabilities) acceptance. Raised by three lenses."""
+anchor_old = "One README line under the version history."
+anchor_new = """In `tomlctl/README.md`, set the capabilities sample's `"version"` to `0.22.0`, add the five names to its `"features"` array and one "Feature meanings" row each (`readme_feature_transcriptions_match_capabilities_features` checks both), and correct the `--strict-read` paragraph's `flow resolve --flow` clause, which task 4 makes unconditional. In `tomlctl/tests/capabilities.rs`, add the five names to the expected array of `capabilities_features_contains_every_plan_feature` and change the `"0.21.0"` literal in `capabilities_version_matches_cargo_toml`."""
+dedup_id = "d79fad8af71c3e2c"
+
+[[items]]
+id = "P15"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 22. Batch cleanup verification and return escalations and an agent count [M]"
+summary = "A pass-through wrapper around `agent()` fails `workflow_scripts_name_real_agents`, the task's own guard"
+description = "js_agent_calls and js_agent_calls_without_type in tomlctl/src/cli/dispatch/tests/lint.rs flag every `agent(` call whose options object has no literal agentType. `(...a) => agent(...a)` is such a call. Task 23 inherits the pattern."
+anchor_old = "Wrap `agent()` in one counter and return its value as `agents`;"
+anchor_new = "Count each dispatch at its call site: either `agents++` beside each `agent(` call, or a thunk wrapper such as `counted(() => agent(prompt, { agentType: … }))` that keeps the literal options object on the `agent(` call. Never use a pass-through `(...args) => agent(...args)`, which `workflow_scripts_name_real_agents` refuses as an `agent()` call with no `agentType`. Return the total as `agents`;"
+dedup_id = "d02479f38a8b7132"
+
+[[items]]
+id = "P16"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### 23. Sum the agent count in the plan-review Workflow [S]"
+summary = "`plan-v2-review.js` undercounts its own agents and stays on the old signals and baseline design"
+description = "The script's own agent() calls include the surveyor and one per baseline, which 'the lead dispatches (compose, settle, audit)' omits: the undercount B-27f5ba35 records. It also copies every signal into the surveyor prompt (B-99efd715) and sends one verification dispatch per baseline under a `// One at a time` comment (B-ab53208e), while tasks 25 and 35 rewrite the engine prose and the surveyor to the opposite. SCRIPT_VERSION stays '1' though the index shape changes. claude/skills/review-v2-engine/references/plan-flow.md still says no read verb returns the signals; task 30 does not cover it. Moving the surveyor prompt to `review run show` puts a tomlctl span in the JS, so the task then needs an edge to 21. The task refers to 'the pattern task 22 uses', which its implementer never sees. Whether the plan family is in scope is a decision the Scope section does not record."
+anchor_old = "Count the lead dispatches (compose, settle, audit) with the same wrapper pattern task 22 uses."
+anchor_new = "Count every `agent()` call the script makes (the surveyor, each baseline dispatch, and the lead's compose, settle and audit) at its call site, keeping each call's literal `agentType`, and set `SCRIPT_VERSION` to `'2'`."
+dedup_id = "0feb3d737cd7d3ed"
+
+[[items]]
+id = "P17"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### 38. Point the code and perf carriers at the new scope and baseline rules [S]"
+summary = "`claude/commands/review-plan-v2.md` does restate the per-line baseline rule"
+description = "The carrier says to dispatch the verification agent once per line, one at a time, 'as the engine's survey reference says'; task 25 rewrites that reference to one keep_going dispatch, so the two contradict. Adding the file takes task 38 to three files (add it to Files; the mechanical merge reports it as files-drift). claude/commands/review-v2.md also says the finder reads the slice as `git diff <base>`, which task 33 changes."
+anchor_old = "`claude/commands/review-plan-v2.md` restates neither rule and is not edited."
+anchor_new = "`claude/commands/review-plan-v2.md` restates the per-line baseline rule and is edited the same way."
+dedup_id = "fc006b415057e7d5"
+
+[[items]]
+id = "P18"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### 37. Update the plan executor and the plan review lead [S]"
+summary = "In plan reviews nothing acts on duplicate candidates, rule-out hits or escalation text"
+description = "Decision needed. claude/agents/plan-review-lead.md's settle phase runs resolve and digest and decides a follow-up, with no step for duplicate_candidates, ruled_out_hits or escalations; leadPrompt in claude/workflows/plan-v2-review.js passes no escalation text; the lead cannot dispatch, so compose.md's re-verify step (task 26) is impossible for it. Fixing it changes the lead's return schema and the Workflow's settle prompt together. Either add that work or state in Scope that the plan family keeps today's settle."
+dedup_id = "41d71176fe07f359"
+
+[[items]]
+id = "P19"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### Reading a run back"
+summary = "`waves` is derived in two of the four places that report it, with two separate implementations"
+description = """`review run list` (tomlctl/src/review/runs.rs, "waves": r.waves) and the digest's run_line (tomlctl/src/review/digest.rs), which the report header uses, also read the never-written run.waves and stay null. Task 5 fixes stats, task 19 recomputes it with no edge to 5. Tasks 10 (runs.rs) and 15 (digest.rs) already own the two files; a shared helper needs edges to 5 added through the store. Raised by two lenses."""
+anchor_old = "`waves` is derived from the run's cells wherever it is reported (`review stats --by run`, `review run show`)."
+anchor_new = "`waves` is derived from the run's cells wherever it is reported (`review stats --by run`, `review run show`, `review run list` and the digest's run line, which `review report` prints), through one `pub(crate)` helper task 5 adds to `tomlctl/src/review/stats.rs`. Tasks 10, 15 and 19 call it and depend on 5."
+dedup_id = "18391f2aeede3a52"
+
+[[items]]
+id = "P20"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### 4. Fail `flow resolve` on an explicit `--flow` miss [M]"
+summary = "`/tdd` calls `flow resolve --flow` directly and halts on `resolved == false`, which can no longer occur"
+description = """claude/commands/tdd.md's bootstrap-missing fallback re-resolves the parent with `tomlctl flow resolve --flow <parent-slug>` (verified), parses stdout and halts on resolved == false. After task 4 a miss exits non-zero with no stdout. Approach, "Explicit flow miss" says no carrier needs a change. The module comment at the top of tomlctl/src/flow/resolve.rs also describes the strict-read-only error. The README clause is covered under task 20."""
+anchor_old = "- **Files**: `tomlctl/src/flow/resolve.rs`, `tomlctl/tests/flow_resolve.rs`"
+anchor_new = "- **Files**: `tomlctl/src/flow/resolve.rs`, `tomlctl/tests/flow_resolve.rs`, `claude/commands/tdd.md` — its parent re-resolve halts on the non-zero exit instead of on `resolved == false`"
+dedup_id = "98615f32e92ae925"
+
+[[items]]
+id = "P21"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### 12. Keep `review plan --propose` inside its ceiling [L]"
+summary = "Task 12 leaves the slicing parameters open and its absolute ceiling contradicts always-admitted floor lenses"
+description = "Decisions needed. (1) The sweeper file-count cap has no value, and propose_caps_sweeper_slice_by_file_count needs one. (2) 'Adjacent' is undefined: slices_for groups by stack root, top-level directory or parent directory. (3) 'Half the budget' does not say whether repeats count; at standard, repeats doubles every floor cell. (4) ripple is slice = whole-scope, so splitting it by file count needs an expansion rule for dir/* compactions. (5) The ceiling can be 3 (the .max(3) floor) while a 74-file scope needs more sweeper cells than that and floor lenses are always admitted: nothing says which gives way."
+dedup_id = "4d83c9932d2bf314"
+
+[[items]]
+id = "P22"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### 12. Keep `review plan --propose` inside its ceiling [L]"
+summary = "Six `propose_*` tests exist, not four, and none is named"
+description = "grep -n 'fn propose_' tomlctl/tests/review_cells.rs lists six; plan_executor_cells_batch_tasks_outside_ceiling also checks the ceiling."
+anchor_old = "The four existing `propose_*` tests named in `tomlctl/tests/review_cells.rs` must pass, adjusted only where they assert the old overshoot."
+anchor_new = "Every existing `propose_*` test (`grep -n 'fn propose_' tomlctl/tests/review_cells.rs`) and `plan_executor_cells_batch_tasks_outside_ceiling` in `tomlctl/tests/review_cells.rs` must pass, adjusted only where they assert the old overshoot."
+dedup_id = "9f4830cbde31e4f8"
+
+[[items]]
+id = "P23"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### 18. Link duplicates with `review resolve --same-as` [L]"
+summary = "The agree/differ rule does not match the `Outcome::for_target` table it calls the existing path"
+description = """In tomlctl/src/review/resolve.rs the outcome comes from the target's status and the row's verdict (repeat, contested, reopened, suppressed, regression), and apply marks the duplicate merged for every outcome but regression, contested included. 'Contested' is not an alternative to merged. The implementer would have to decide whether confirmed vs plausible agree and whether a same-run pair may reopen a refuted target. Approach, "Duplicates and rule-outs" needs matching wording."""
+anchor_old = "a linked pair whose deciding verdicts agree resolves as merged into the target (the existing `apply` path); differing verdicts mark the duplicate `contested`."
+anchor_new = "a linked duplicate resolves through the existing `apply` path and `Outcome::for_target` table unchanged: it becomes `merged` into the target with `outcome` repeat, contested, reopened or suppressed (or stays open as a regression), exactly as a row carrying `same_as` from `review add` would."
+dedup_id = "d6656605d63ac78d"
+
+[[items]]
+id = "P24"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "## Verification Commands"
+summary = "The two predicted success criteria are hand checks instead of `success:` keys"
+description = "The format makes every success criterion, predicted ones included, a success: key. Both run through cargo run with no install. Probed on the installed 0.21.0: `tomlctl flow resolve --flow no-such-flow-zz` exits 0 and binds review-v2-first-run-repairs through active-latest; `review run show --help` is an unrecognised subcommand. The prose sentence under the fence ('checked by hand') and the Success Criteria bullet then need the same change."
+anchor_old = "success: cargo doc --manifest-path tomlctl/Cargo.toml --lib --no-deps --document-private-items"
+anchor_new = """
+success: cargo doc --manifest-path tomlctl/Cargo.toml --lib --no-deps --document-private-items
+success: cargo run -q --manifest-path tomlctl/Cargo.toml -- --error-format json flow resolve --flow no-such-flow-zz 2>&1 | grep -q '"kind":"not_found"'
+success: cargo run -q --manifest-path tomlctl/Cargo.toml -- review run show --help"""
+dedup_id = "24a971812d95ac1a"
+
+[[items]]
+id = "P25"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### Workflow index"
+summary = "Escalation text inside each cell entry puts cell statuses, `verified` and `errors` at risk of the 8,000-character cut"
+description = "index in claude/workflows/review-v2.js orders run, wave, cells, verified, errors, script_version. At 32 cells roughly 19 escalations of 300 characters reach the cut, after which later cells' status and the trailing keys are lost. The cut and the output-file fallback come from a binary read; the installed workflow-authoring skill documents neither. Evidence medium. Tasks 22, 24, 27 and 30 describe the per-cell shape and need the same change."
+anchor_old = "Each cell entry keeps `escalated` (the count) and gains `escalations` (the `escalate` strings, each cut to 300 characters)."
+anchor_new = "Each cell entry keeps `escalated` (the count); the texts go in a top-level `escalations` array of `{cell, text}` (each cut to 300 characters) placed as the index's last key, so a result cut at 8,000 characters loses escalation text before any cell's `status`, `verified` or `errors`."
+dedup_id = "cf1364df30f229ca"
+
+[[items]]
+id = "P26"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### Audit and measurement"
+summary = "A 3-of-3 seeded-precision pass shows only a true-negative rate of at least 37%, and nothing records seed use"
+description = "By the plan's own Research Notes formula, n=3 false seeds all refuted bounds the true-negative rate at 0.05**(1/3) = 0.37 at 95%. Pass probability: 1.6% at a 25% rate, 12.5% at 50%, 73% at 90%. The two true seeds are unscored. 'Never reused' has no record behind it. Fine as a gross-leniency detector; a single pass must not read as the verifier cleared. Changes a detail of User Decision 6."
+anchor_old = "scored 3 of 3 pass, 2 inconclusive, 1 or fewer fail; seeds rotate and are never reused."
+anchor_new = "scored as a 95% lower bound on the verifier's true-negative rate, `0.05**(1/n)` over n false seeds all refuted and pooled across probes: one probe's 3 of 3 shows only at least 37%, so a single pass rules out gross leniency and nothing more; the two true seeds are scored as a confirm rate; each probe records its seed ids in its scratch run so reuse can be checked."
+dedup_id = "384949ceaf184899"
+
+[[items]]
+id = "P27"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### 24. State run bounds, stage-0 carry-over and the new index in the engine skill [M]"
+summary = "Nothing gates on the five new capability features, so a stale installed binary fails mid-run"
+description = "claude/skills/review-v2-engine/SKILL.md's pre-flight halts only when review_add, review_survey or review_catalogue is missing, and plan-flow.md checks review_apply. The new prose calls run show, --head, --ruled-out, --same-as and --fix-shape. Precedent: the /implement-v2 pre-flight refuses a binary missing new features."
+anchor_old = 'Stage 0: add the two `review list` reads from Approach, "Landing places".'
+anchor_new = 'Stage 0: add the two `review list` reads from Approach, "Landing places", and add `review_run_head`, `review_run_show`, `review_ruled_out`, `review_same_as_link` and `review_list_fix_shape` to the pre-flight `.features` gate.'
+dedup_id = "14519a4382d7cfc1"
+
+[[items]]
+id = "P28"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### 31. State the shared agent rules in the method skill [M]"
+summary = "Acceptance bullets lack polarity labels and falsifiers, and several greps pass on wrong output"
+description = """The **predicted, unverified** nextest bullets in tasks 3-21 carry no forward/falsifier/guard label; tasks 3, 4, 8, 9, 10, 11, 13-20 name no perturbation that turns the test red (5, 6, 7, 12 do). The `fn <test>` greps pass on an empty test body. `grep -c '450'` (tasks 31, 32, 37) matches 4500 or a line number. `grep -c 'escalations'` (task 22 and Success Criteria) is satisfied by a comment. `grep -c 'long = "head"'` / `'long = "fix-shape"'` (tasks 10, 17) go red on a correct `#[arg(long)]` field; tomlctl/src/cli/types/review.rs uses both spellings. All 78 negative controls were probed and match the plan's today values; every read-only success: key exits non-zero today."""
+anchor_old = "forward: `grep -c '450' claude/skills/review-v2-method/SKILL.md` prints at least `1` (today: `0`)."
+anchor_new = "forward: `grep -c '450 characters' claude/skills/review-v2-method/SKILL.md` prints at least `1` (today: `0`)."
+dedup_id = "8dd0ac32251de696"
+
+[[items]]
+id = "P29"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "## Success Criteria"
+summary = "14 of the 19 backlog items and two of the five Context groups have no success criterion"
+description = "Covered: B-fc4d7f8b, B-99efd715, B-bc4a0080, B-75341a1d, B-80c20e25 (predicted). 'Wrong scope' and 'Wasted coverage' have none; `test:` passes on today's tree so it cannot show the rest landed. Cheap keys already written as task acceptances: HEAD~1 gone from claude/skills/review-v2-engine/SKILL.md (B-827b9763), 'no store write' gone from triage-and-close.md (B-ce9ebb4d), 'one at a time' gone from claude/commands/optimise-v2.md (B-ab53208e), fn propose_never_exceeds_ceiling present (B-39b9e713). The version-bump criterion checks only that task 20 ran."
+dedup_id = "adc7caa7e095e9b3"
+
+[[items]]
+id = "P30"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "### 2. Move `review cover` into its own module [M]"
+summary = "Task 2 is tagged M but claims four inseparable files, which the format defines as L"
+description = "Retag through the store (tomlctl tasks update 2 --set effort=L, then render), not by editing the heading: the tag is not part of the ref, but the heading is rendered from the row."
+dedup_id = "7b3482ca3dc8c65b"
+
+[[items]]
+id = "P31"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "### 19. Add the `review run show` read verb [L]"
+summary = "Task prose uses abbreviated paths, several ambiguous between two directories"
+description = 'Instances: Approach "Audit and measurement" measurement.md (twice); task 1 Detail mod.rs, run.rs, cells.rs, verdicts.rs, read.rs, triage.rs, export.rs (cells.rs, export.rs, triage.rs, mod.rs also exist under tomlctl/src/review/); task 2 cells.rs; task 3 fields.rs; task 15 matching.rs; task 19 mod.rs, dispatch.rs, run.rs; task 21 review-runs.md, review.md; task 32 verifying.md; task 39 hygiene.md.'
+anchor_old = "Depends on 2 and 10 because they edit `mod.rs`, `dispatch.rs` and `run.rs`."
+anchor_new = "Depends on 2 and 10 because they edit `tomlctl/src/review/mod.rs`, `tomlctl/src/review/dispatch.rs` and `tomlctl/src/cli/types/review/run.rs`."
+dedup_id = "12d6f6c48faf81ce"
+
+[[items]]
+id = "P32"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "### 29. Add the leniency readings and the seeded-precision probe to measurement [M]"
+summary = "'The related forward-looking note' could be read as the engine contract section"
+description = "B-0bdfc2dc names one sentence. The 'Contract note for the execution engine' section of claude/skills/review-v2-engine/references/measurement.md holds binding rules that are still forward-looking. Evidence medium."
+anchor_old = 'Replace "No v2 plan has run under an execution engine yet" and the related forward-looking note with'
+anchor_new = 'In the "Plan seeded recall" section of `claude/skills/review-v2-engine/references/measurement.md`, replace the sentence "No v2 plan has run under an execution engine yet…" and the "Until one does," clause of the next sentence (leave the "Contract note for the execution engine" section untouched) with'
+dedup_id = "c1d42f9ab58abbb9"
+
+[[items]]
+id = "P33"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "### 33. Update the finder body and make the context-free finder context-free [M]"
+summary = "The finder body encloses two other shared blocks the task must not edit"
+description = "review-finder-body encloses review-v2-store-writer and research-delivering, which scripts/shared-blocks.toml shares with other agent files; tasks 34-37 edit files carrying review-v2-store-writer too. An edit inside either breaks parity for files this task does not own. Evidence medium: no planned rule requires such an edit."
+anchor_old = "The two files are inseparable: `scripts/verify-shared-blocks.sh` requires the block byte-identical."
+anchor_new = "The two files are inseparable: `scripts/verify-shared-blocks.sh` requires the block byte-identical. Edit nothing between the nested `review-v2-store-writer` and `research-delivering` markers inside the body: those blocks are shared with other agent files (`scripts/shared-blocks.toml`) that this task does not own."
+dedup_id = "c5fc6992b8931022"
+
+[[items]]
+id = "P34"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "### 13. Record structured rule-outs with `review cover --ruled-out` [M]"
+summary = "A rule-out is an unchecked channel into another cell's verifier"
+description = "Task 3 checks a rule-out's file only with path_problem; task 16 puts {cell, reason} on every matching finding's verifier and audit projection. The reason is up to 200 characters of agent text that may echo the reviewed file's comments, framed as another cell having judged the site deliberate. Task 36's rationale rule helps but does not bound where rule-outs come from. Evidence medium; all cells in a run are equally trusted."
+anchor_old = "Entries validate through the field catalogue from task 3; a refused entry refuses the whole cover and seals nothing."
+anchor_new = "Entries validate through the field catalogue from task 3, and an entry whose `file` lies outside the cell's slice is refused unless the cell binds a sweeper-executed lens; a refused entry refuses the whole cover and seals nothing."
+dedup_id = "df1605fbeaf7958a"
+
+[[items]]
+id = "P35"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "## Risks"
+summary = "New prose is live as soon as it is edited, long before the 0.22.0 binary is installed"
+description = "The skill directories under the Claude config dir are junctions and the agents and Workflow scripts symlinks into the repo, so tasks 24-39 are live when edited while the install: keys run only in Phase 3. A /review-v2 run in another session in between hits flags 0.21.0 lacks. Checkpoint B's only gate is after task 21, twelve tasks including the bump."
+anchor_old = "Mitigation: the two `install:` keys; until they run, the new prose names flags the installed binary lacks."
+anchor_new = "Mitigation: install 0.22.0 (`cargo install --path tomlctl`, then `--path glimpse`) at checkpoint B's gate, before task 24 edits the first prose file — prose under `claude/` is live through the config dir's junctions and symlinks as soon as it is edited, not when committed; the Phase 3 `install:` keys reinstall the final build."
+dedup_id = "560934cf288dbc97"
+
+[[items]]
+id = "P36"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "## Risks"
+summary = "The `flow resolve` mitigation is a wish, not a task, and its grep misses the one direct caller"
+description = "The grep for --flow-override is in no task or verification key and cannot find claude/commands/tdd.md, which passes --flow. The sweep was run during this review: every other --flow reaches flow resolve through flow-bootstrap, and every .claude/flows directory has a context.toml."
+anchor_old = "Mitigation: `command_lint` and a Grep for `--flow-override` across `claude/` at the gate; `flow-bootstrap` already maps a non-zero resolve to `ok: false`."
+anchor_new = "Mitigation: swept at plan review — every `--flow` reaches `flow resolve` through `flow-bootstrap`, which maps a non-zero resolve to `ok: false`, except `claude/commands/tdd.md`'s parent re-resolve, which task 4 edits."
+dedup_id = "66a2f892b4bd86e7"
+
+[[items]]
+id = "P37"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "### Run bounds"
+summary = "'Earliest' and 'latest' stamp are ambiguous on rebased history, and the range diff still carries other flows' lines"
+description = "Of the stamped commits checked on jiggly-exploring-robin, 11 share one committer timestamp and several tasks share one sha, so order must come from ancestry. A root stamp has no parent, and git show --name-only on a merge lists only files differing from every parent. base..head over scope files still contains interleaved commits' line changes to shared files. Related: 'A context-free cell reads nothing under .claude/flows/ or docs/flows/' collides with a flow-less run whose slice includes those paths. Evidence medium."
+anchor_old = "`base` is the parent of the earliest, `head` is the latest"
+anchor_new = "`base` is the first parent of the stamp every other stamp descends from (`git merge-base --is-ancestor`; committer dates tie on rebased work), `head` is the stamp that descends from all others — the orchestrator asks when the stamps are not on one ancestry line"
+dedup_id = "fa385b85ab62f53a"
+
+[[items]]
+id = "P38"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### 21. Document the new review surface in the tomlctl skill [M]"
+summary = "Task 21's documentation list omits output changes from five tasks"
+description = "Not listed: head on the finder projection (task 14), ruled_out on the verifier and audit projections (16), the survey's base..head diff and scope-limited hotspots (11; the reference says base..HEAD), head on run list rows and derived waves (10, 5), resolve's linked key (18). Root CLAUDE.md still says the review flag tables live in review.md only. The lints check only that documented flags exist, so none of this fails a test."
+anchor_old = "the mechanical-cleanup lens exception and the catalogue's `executor` / `command`."
+anchor_new = "the mechanical-cleanup lens exception, the catalogue's `executor` / `command`, the finder projection's `head`, the verifier and audit projections' `ruled_out`, the survey's `base..head` diff and scope-limited hotspots, `run list`'s `head` and derived `waves`, and `resolve`'s `linked` key."
+dedup_id = "88612eddf6dc11c0"
+
+[[items]]
+id = "P39"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### 39. Record mechanical-lens ownership in the lens catalogue [S]"
+summary = "Three descriptive lines still state a diff that stops at `HEAD`"
+description = "claude/skills/review-v2-lenses/SKILL.md's Diff detector line (`git diff -M <base>..HEAD`), claude/commands/review-v2.md's finder-reads-`git diff <base>` sentence (task 38's file) and claude/skills/review-v2-engine/SKILL.md's project-layer refusal over base..HEAD (task 24's file). Also stale after task 22: the engine skill's routing sentence and depth-table row that describe batching for minor defects only."
+anchor_old = "In `claude/skills/review-v2-lenses/SKILL.md`, where it says `ripple` and `hygiene` go to `review-sweeper`; in `hygiene.md`, beside its ownership section."
+anchor_new = "In `claude/skills/review-v2-lenses/SKILL.md`, where it says `ripple` and `hygiene` go to `review-sweeper`, and in its Diff detector line, which reads `base..head` when the run has a head; in `claude/skills/review-v2-lenses/lenses/hygiene.md`, beside its ownership section."
+dedup_id = "7afdd731ab8d30c6"
+
+[[items]]
+id = "P40"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "## Exploration Notes"
+summary = "Line-number drift and one count in the notes"
+description = """Symbols all exist; lines drifted: cells.rs cover :1294 (plan :1314), digest.rs run_line :463 (:487), stats.rs by_model :461 (:491) and by_run :595 (:615), query.rs assignment :234 (:294). The Files lines name 76 unique paths against 'about 70' in Summary and Risks. 'Sweeper-executed' is the lens frontmatter's mode = "mechanical"; there is no executor field on a lens."""
+dedup_id = "156e029f7467e455"

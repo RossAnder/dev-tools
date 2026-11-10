@@ -1,0 +1,1590 @@
+schema_version = 1
+last_updated = 2026-11-10
+plan_path = "docs/plans/review-v2-first-run-repairs.md"
+last_import_refs = [
+    "split-the-review-clap-types-into-per-verb-modules",
+    "move-review-cover-into-its-own-module",
+    "add-the-head-run-field-and-the-ruled_out-cell-field",
+    "fail-flow-resolve-on-an-explicit-flow-miss",
+    "derive-waves-from-a-runs-cells-in-review-stats",
+    "fold-export-v1-rows-only-on-a-strict-key",
+    "accept-a-mechanical-cleanup-row-from-any-cell",
+    "print-each-checks-executor-and-command-in-review-catalogue",
+    "fill-the-audit-sample-when-nothing-was-refuted",
+    "bound-a-run-with-review-run-start-head",
+    "read-the-surveys-diff-to-head-and-keep-hotspots-in-scope",
+    "keep-review-plan-propose-inside-its-ceiling",
+    "record-structured-rule-outs-with-review-cover-ruled-out",
+    "carry-head-in-the-finder-assignment",
+    "list-duplicate-candidates-and-rule-out-hits-in-review-digest",
+    "show-matching-rule-outs-in-the-verifier-and-audit-projections",
+    "filter-review-list-by-fix-shape",
+    "link-duplicates-with-review-resolve-same-as",
+    "add-the-review-run-show-read-verb",
+    "bump-tomlctl-to-0220-and-register-the-new-surface",
+    "document-the-new-review-surface-in-the-tomlctl-skill",
+    "batch-cleanup-verification-and-return-escalations-and-an-agent-count",
+    "sum-the-agent-count-in-the-plan-review-workflow",
+    "state-run-bounds-stage-0-carry-over-and-the-new-index-in-the-engine-skill",
+    "read-signals-from-the-store-and-run-baselines-in-one-dispatch",
+    "settle-duplicates-rule-out-hits-and-escalations-at-compose",
+    "bring-the-agent-wave-fallback-in-line-with-the-workflow",
+    "record-every-audited-row-and-give-plan-and-escalation-dispositions-a-landing-place",
+    "add-the-leniency-readings-and-the-seeded-precision-probe-to-measurement",
+    "update-the-plan-flow-reference-for-scope-staging-and-the-index",
+    "state-the-shared-agent-rules-in-the-method-skill",
+    "correct-the-method-references",
+    "update-the-finder-body-and-make-the-context-free-finder-context-free",
+    "define-a-swept-slice-for-the-sweeper-and-let-ripple-reach-past-the-scope",
+    "fix-the-surveyors-checks-evidence-and-writes",
+    "tell-the-verifier-about-rule-outs-batches-and-the-cap-target",
+    "update-the-plan-executor-and-the-plan-review-lead",
+    "point-the-code-and-perf-carriers-at-the-new-scope-and-baseline-rules",
+    "record-mechanical-lens-ownership-in-the-lens-catalogue",
+    "repair-the-two-v1-ledger-folds-run-u1-left",
+    "let-the-checker-refute-a-mechanical-cleanup-from-any-cell",
+    "tell-the-checker-which-rows-it-may-refute",
+    "share-one-mechanical-lens-helper-between-review-add-and-review-verdict",
+    "use-the-catalogues-root-overlap-rule-in-review-run-show",
+]
+
+[policy]
+checkpoints = "milestones"
+max_parallel = 6
+commit_granularity = "per-task"
+origin = "plan"
+note = ""
+
+[[checkpoints]]
+id = "A"
+rationale = "Foundations (type and module splits, new fields) and the repairs that need nothing else; builds and passes the suite alone"
+
+[[checkpoints]]
+id = "B"
+rationale = "Every CLI feature, the 0.22.0 bump and its reference docs; the binary the prose is written against"
+
+[[checkpoints]]
+id = "C"
+rationale = "Both Workflow scripts on the new index"
+
+[[checkpoints]]
+id = "D"
+rationale = "Agent and skill prose, gated by the dispatch lint suite against the new CLI"
+
+[[file_notes]]
+ref = "split-the-review-clap-types-into-per-verb-modules"
+file = "tomlctl/src/cli/types/review.rs"
+note = "(delete)"
+
+[[file_notes]]
+ref = "split-the-review-clap-types-into-per-verb-modules"
+file = "tomlctl/src/cli/types/review/mod.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "split-the-review-clap-types-into-per-verb-modules"
+file = "tomlctl/src/cli/types/review/run.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "split-the-review-clap-types-into-per-verb-modules"
+file = "tomlctl/src/cli/types/review/cells.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "split-the-review-clap-types-into-per-verb-modules"
+file = "tomlctl/src/cli/types/review/verdicts.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "split-the-review-clap-types-into-per-verb-modules"
+file = "tomlctl/src/cli/types/review/read.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "split-the-review-clap-types-into-per-verb-modules"
+file = "tomlctl/src/cli/types/review/triage.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "split-the-review-clap-types-into-per-verb-modules"
+file = "tomlctl/src/cli/types/review/export.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "move-review-cover-into-its-own-module"
+file = "tomlctl/src/review/cover.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "record-structured-rule-outs-with-review-cover-ruled-out"
+file = "tomlctl/tests/review_cover.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "add-the-review-run-show-read-verb"
+file = "tomlctl/src/review/run_show.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "add-the-review-run-show-read-verb"
+file = "tomlctl/tests/review_run_show.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "document-the-new-review-surface-in-the-tomlctl-skill"
+file = "claude/skills/tomlctl/references/review-runs.md"
+note = "(new)"
+
+[[backlog_links]]
+ref = "add-the-head-run-field-and-the-ruled_out-cell-field"
+closes = [
+    "B-827b9763",
+    "B-dc721e5c",
+]
+refs = []
+
+[[backlog_links]]
+ref = "fail-flow-resolve-on-an-explicit-flow-miss"
+closes = ["B-80c20e25"]
+refs = []
+
+[[backlog_links]]
+ref = "derive-waves-from-a-runs-cells-in-review-stats"
+closes = ["B-27f5ba35"]
+refs = []
+
+[[backlog_links]]
+ref = "fold-export-v1-rows-only-on-a-strict-key"
+closes = ["B-5d5bf09e"]
+refs = []
+
+[[backlog_links]]
+ref = "accept-a-mechanical-cleanup-row-from-any-cell"
+closes = ["B-30ba0a0a"]
+refs = []
+
+[[backlog_links]]
+ref = "print-each-checks-executor-and-command-in-review-catalogue"
+closes = ["B-989439ec"]
+refs = []
+
+[[backlog_links]]
+ref = "fill-the-audit-sample-when-nothing-was-refuted"
+closes = ["B-1e1be4cf"]
+refs = []
+
+[[backlog_links]]
+ref = "bound-a-run-with-review-run-start-head"
+closes = ["B-827b9763"]
+refs = []
+
+[[backlog_links]]
+ref = "read-the-surveys-diff-to-head-and-keep-hotspots-in-scope"
+closes = [
+    "B-827b9763",
+    "B-39b9e713",
+]
+refs = []
+
+[[backlog_links]]
+ref = "keep-review-plan-propose-inside-its-ceiling"
+closes = [
+    "B-39b9e713",
+    "B-d9cfd36e",
+]
+refs = []
+
+[[backlog_links]]
+ref = "record-structured-rule-outs-with-review-cover-ruled-out"
+closes = ["B-dc721e5c"]
+refs = []
+
+[[backlog_links]]
+ref = "carry-head-in-the-finder-assignment"
+closes = ["B-827b9763"]
+refs = []
+
+[[backlog_links]]
+ref = "list-duplicate-candidates-and-rule-out-hits-in-review-digest"
+closes = [
+    "B-5d5bf09e",
+    "B-dc721e5c",
+]
+refs = []
+
+[[backlog_links]]
+ref = "show-matching-rule-outs-in-the-verifier-and-audit-projections"
+closes = ["B-dc721e5c"]
+refs = []
+
+[[backlog_links]]
+ref = "filter-review-list-by-fix-shape"
+closes = ["B-ce9ebb4d"]
+refs = []
+
+[[backlog_links]]
+ref = "link-duplicates-with-review-resolve-same-as"
+closes = ["B-5d5bf09e"]
+refs = []
+
+[[backlog_links]]
+ref = "add-the-review-run-show-read-verb"
+closes = ["B-99efd715"]
+refs = []
+
+[[backlog_links]]
+ref = "batch-cleanup-verification-and-return-escalations-and-an-agent-count"
+closes = [
+    "B-e684aed8",
+    "B-bc4a0080",
+    "B-27f5ba35",
+]
+refs = []
+
+[[backlog_links]]
+ref = "sum-the-agent-count-in-the-plan-review-workflow"
+closes = [
+    "B-27f5ba35",
+    "B-99efd715",
+    "B-ab53208e",
+    "B-bc4a0080",
+    "B-dc721e5c",
+]
+refs = []
+
+[[backlog_links]]
+ref = "state-run-bounds-stage-0-carry-over-and-the-new-index-in-the-engine-skill"
+closes = [
+    "B-827b9763",
+    "B-ce9ebb4d",
+    "B-bc4a0080",
+    "B-27f5ba35",
+    "B-ab53208e",
+]
+refs = []
+
+[[backlog_links]]
+ref = "read-signals-from-the-store-and-run-baselines-in-one-dispatch"
+closes = [
+    "B-99efd715",
+    "B-ab53208e",
+    "B-989439ec",
+    "B-827b9763",
+]
+refs = []
+
+[[backlog_links]]
+ref = "settle-duplicates-rule-out-hits-and-escalations-at-compose"
+closes = [
+    "B-5d5bf09e",
+    "B-bc4a0080",
+    "B-ab53208e",
+    "B-dc721e5c",
+]
+refs = []
+
+[[backlog_links]]
+ref = "bring-the-agent-wave-fallback-in-line-with-the-workflow"
+closes = [
+    "B-e684aed8",
+    "B-bc4a0080",
+    "B-27f5ba35",
+    "B-99efd715",
+]
+refs = []
+
+[[backlog_links]]
+ref = "record-every-audited-row-and-give-plan-and-escalation-dispositions-a-landing-place"
+closes = [
+    "B-fc4d7f8b",
+    "B-1e1be4cf",
+    "B-ce9ebb4d",
+    "B-bc4a0080",
+]
+refs = []
+
+[[backlog_links]]
+ref = "add-the-leniency-readings-and-the-seeded-precision-probe-to-measurement"
+closes = [
+    "B-1e1be4cf",
+    "B-0bdfc2dc",
+]
+refs = []
+
+[[backlog_links]]
+ref = "update-the-plan-flow-reference-for-scope-staging-and-the-index"
+closes = [
+    "B-27f5ba35",
+    "B-99efd715",
+    "B-ab53208e",
+]
+refs = []
+
+[[backlog_links]]
+ref = "state-the-shared-agent-rules-in-the-method-skill"
+closes = [
+    "B-00ae0571",
+    "B-d9cfd36e",
+    "B-30ba0a0a",
+    "B-dc721e5c",
+]
+refs = []
+
+[[backlog_links]]
+ref = "correct-the-method-references"
+closes = [
+    "B-00ae0571",
+    "B-0bdfc2dc",
+]
+refs = []
+
+[[backlog_links]]
+ref = "update-the-finder-body-and-make-the-context-free-finder-context-free"
+closes = [
+    "B-75341a1d",
+    "B-30ba0a0a",
+    "B-00ae0571",
+    "B-dc721e5c",
+    "B-827b9763",
+]
+refs = []
+
+[[backlog_links]]
+ref = "define-a-swept-slice-for-the-sweeper-and-let-ripple-reach-past-the-scope"
+closes = [
+    "B-d9cfd36e",
+    "B-00ae0571",
+    "B-827b9763",
+]
+refs = []
+
+[[backlog_links]]
+ref = "fix-the-surveyors-checks-evidence-and-writes"
+closes = [
+    "B-989439ec",
+    "B-99efd715",
+]
+refs = []
+
+[[backlog_links]]
+ref = "tell-the-verifier-about-rule-outs-batches-and-the-cap-target"
+closes = [
+    "B-00ae0571",
+    "B-dc721e5c",
+    "B-e684aed8",
+]
+refs = []
+
+[[backlog_links]]
+ref = "update-the-plan-executor-and-the-plan-review-lead"
+closes = [
+    "B-00ae0571",
+    "B-fc4d7f8b",
+    "B-5d5bf09e",
+    "B-dc721e5c",
+    "B-bc4a0080",
+]
+refs = []
+
+[[backlog_links]]
+ref = "point-the-code-and-perf-carriers-at-the-new-scope-and-baseline-rules"
+closes = [
+    "B-827b9763",
+    "B-ab53208e",
+]
+refs = []
+
+[[backlog_links]]
+ref = "record-mechanical-lens-ownership-in-the-lens-catalogue"
+closes = ["B-30ba0a0a"]
+refs = []
+
+[[backlog_links]]
+ref = "repair-the-two-v1-ledger-folds-run-u1-left"
+closes = ["B-5d5bf09e"]
+refs = []
+
+[[backlog_links]]
+ref = "let-the-checker-refute-a-mechanical-cleanup-from-any-cell"
+closes = [
+    "B-30ba0a0a",
+    "B-e684aed8",
+]
+refs = []
+
+[[backlog_links]]
+ref = "tell-the-checker-which-rows-it-may-refute"
+closes = ["B-30ba0a0a"]
+refs = []
+
+[[items]]
+id = 1
+ref = "split-the-review-clap-types-into-per-verb-modules"
+title = "Split the review clap types into per-verb modules"
+effort = "L"
+status = "done"
+checkpoint = "A"
+phase = "Phase 1: CLI foundations and independent repairs"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/cli/types/review.rs",
+    "tomlctl/src/cli/types/review/mod.rs",
+    "tomlctl/src/cli/types/review/run.rs",
+    "tomlctl/src/cli/types/review/cells.rs",
+    "tomlctl/src/cli/types/review/verdicts.rs",
+    "tomlctl/src/cli/types/review/read.rs",
+    "tomlctl/src/cli/types/review/triage.rs",
+    "tomlctl/src/cli/types/review/export.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Move the contents of `tomlctl/src/cli/types/review.rs` into a `review/` module directory with no behaviour change."
+detail = "`mod.rs` keeps `ReviewOp`, `ReviewRunOp`, `ReviewStore`, `ReviewStatsStore` and re-exports every `*Args` type so no path outside the module changes. `run.rs` takes the four `ReviewRun*Args`; `cells.rs` takes `ReviewSurveyArgs`, `ReviewPlanArgs`, `ReviewCoverArgs`, `ReviewAddArgs`; `verdicts.rs` takes `ReviewVerdictArgs`, `ReviewResolveArgs`; `read.rs` takes `ReviewListArgs`, `ReviewShowArgs`, `ReviewDigestArgs`, `ReviewReportArgs`, `ReviewStatsArgs`; `triage.rs` takes `ReviewTriageArgs`, `ReviewTriageMode`, `ReviewApplyArgs`, `NOT_DEFER`, `NOT_CONVERT`; `export.rs` takes `ReviewSyncArgs`, `ReviewExportArgs`, `ReviewCatalogueArgs`, `ReviewSchemaArgs`. Help text, flag names and group attributes move byte-for-byte. This split exists so the later flag tasks touch different files."
+acceptance = """
+- forward: `test -f tomlctl/src/cli/types/review/mod.rs && test ! -f tomlctl/src/cli/types/review.rs && echo split` prints `split` (today: prints nothing).
+- guard, **predicted, unverified**: `cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets` reports no error; `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(command_lint)'` passes, which fails if any flag was dropped in the move."""
+agent = "implement-deep"
+commit = "3530f290"
+
+[[items]]
+id = 2
+ref = "move-review-cover-into-its-own-module"
+title = "Move `review cover` into its own module"
+effort = "L"
+status = "done"
+checkpoint = "A"
+phase = "Phase 1: CLI foundations and independent repairs"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/review/cells.rs",
+    "tomlctl/src/review/cover.rs",
+    "tomlctl/src/review/mod.rs",
+    "tomlctl/src/review/dispatch.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Move the `cover` verb and `coverage_accounting` out of `tomlctl/src/review/cells.rs` into `tomlctl/src/review/cover.rs`, with no behaviour change."
+detail = "Helpers both halves use stay in `tomlctl/src/review/cells.rs` as `pub(super)`. Keep `coverage_accounting` and `Accounting` reachable as `cells::…` through `pub(crate) use super::cover::{coverage_accounting, Accounting};` in `tomlctl/src/review/cells.rs`, so `tomlctl/src/review/digest.rs` and `tomlctl/src/review/runs.rs` stay untouched. `newest_wave` stays in `tomlctl/src/review/cells.rs`. Update the module list and the dispatch arm. The four files are inseparable: the move does not compile without the module and dispatch edits."
+acceptance = """
+- forward: `grep -c 'fn cover' tomlctl/src/review/cover.rs` prints at least `1` (today: no such file).
+- forward: `grep -c 'pub(crate) fn cover' tomlctl/src/review/cells.rs` prints `0` (today: `2`).
+- guard, **predicted, unverified**: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(review_cells)'` passes."""
+agent = "implement-deep"
+commit = "3530f290"
+
+[[items]]
+id = 3
+ref = "add-the-head-run-field-and-the-ruled_out-cell-field"
+title = "Add the `head` run field and the `ruled_out` cell field"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Phase 1: CLI foundations and independent repairs"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/review/fields.rs",
+    "tomlctl/src/review/store.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Declare `head` on runs and `ruled_out` on cells in the field catalogue and the typed store."
+detail = """Approach, "Run bounds" and "Duplicates and rule-outs". In `FIELDS`: `field(Run, "head", Ty::Str, RECORD_STATE)` beside `base`; `field(Cell, "ruled_out", Ty::TableList, RECORD_STATE).computed()` beside `note` — orchestrator and report only. A verifier or audit column would make `role_sees` (`tomlctl/src/review/query.rs`) let `review show <cell> --for verifier` through, which `show_cell_carries_bound_catalogue_paths` in `tomlctl/tests/review_query.rs` refuses; task 16 brings rule-outs to those roles on findings. Entry keys are `file` (required, checked with `path_problem`), `symbol`, `line`, `reason` (required, 200-character cap); an unknown key is refused. `check_value` accepts any object for `Ty::TableList`, so follow the `Waiver` pattern: a typed `RuledOut` struct in `tomlctl/src/review/store.rs` with its `_from_toml`/`_to_toml` pair, plus `pub(crate) fn ruled_out_refusals(entry: &Map<String, JsonValue>) -> Vec<String>` in `tomlctl/src/review/fields.rs`, which task 13's `cover` calls. Add `head: Option<String>` to `Run` and `ruled_out` to `Cell` so both round-trip; a store with neither writes back byte-identical. Add unit tests `run_head_round_trips` and `ruled_out_entry_refuses_unknown_key` in the `fields.rs` test module."""
+acceptance = """
+- forward: `grep -c 'field(Run, "head"' tomlctl/src/review/fields.rs` prints `1` (today: `0`).
+- forward: `grep -c 'field(Cell, "ruled_out"' tomlctl/src/review/fields.rs` prints `1` (today: `0`).
+- forward, **predicted, unverified**: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(ruled_out_entry_refuses_unknown_key) | test(run_head_round_trips)'` passes."""
+agent = "implement-deep"
+commit = "3530f290"
+
+[[items]]
+id = 4
+ref = "fail-flow-resolve-on-an-explicit-flow-miss"
+title = "Fail `flow resolve` on an explicit `--flow` miss"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Phase 1: CLI foundations and independent repairs"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/flow/resolve.rs",
+    "tomlctl/tests/flow_resolve.rs",
+    "claude/commands/tdd.md",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Make `resolve` return the `ErrorKind::NotFound` error for an explicit slug that matches no flow, whether or not `--strict-read` is set."
+detail = """Approach, "Explicit flow miss". Remove the fall-through warning branch in step 1 of `resolve`, and correct the module comment at the top of `tomlctl/src/flow/resolve.rs` that describes the error as strict-read-only. In `claude/commands/tdd.md`, the bootstrap-missing fallback's parent re-resolve (`tomlctl flow resolve --flow <parent-slug>`) halts on a non-zero exit instead of on `resolved == false`. Replace the test `explicit_flag_missing_falls_through_to_none_by_default` with `explicit_flag_missing_errors_with_not_found`, asserting a non-zero exit and the `not_found` kind under `--error-format json`; keep `explicit_flag_missing_strict_read_errors_with_not_found`. Security-adjacent (it decides which flow's stores a carrier writes), so not lite."""
+acceptance = """
+- falsifier: `grep -c 'explicit_flag_missing_falls_through_to_none_by_default' tomlctl/tests/flow_resolve.rs` prints `1` today — the test that pins the old behaviour exists and must go.
+- forward: `grep -c 'fn explicit_flag_missing_errors_with_not_found' tomlctl/tests/flow_resolve.rs` prints `1` (today: `0`).
+- forward, **predicted, unverified**: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(flow_resolve)'` passes."""
+agent = "implement-deep"
+commit = "d33ca3fc"
+
+[[items]]
+id = 5
+ref = "derive-waves-from-a-runs-cells-in-review-stats"
+title = "Derive `waves` from a run's cells in `review stats`"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = "Phase 1: CLI foundations and independent repairs"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/review/stats.rs",
+    "tomlctl/tests/review_stats.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Report `waves` in `review stats --by run` as the highest `wave` among the run's cells instead of the never-written `run.waves`."
+detail = """Add one `pub(crate)` helper in `tomlctl/src/review/stats.rs` that returns the highest `wave` among a run's cells (`0` for a run with none) and call it from `by_run`; tasks 10, 15 and 19 call the same helper (Approach, "Reading a run back"). Add the test `stats_by_run_reports_waves_from_cells` with a two-wave fixture asserting `waves` is `2`."""
+acceptance = """
+- forward: `grep -c 'fn stats_by_run_reports_waves_from_cells' tomlctl/tests/review_stats.rs` prints `1` (today: `0`).
+- forward, **predicted, unverified**: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(stats_by_run_reports_waves_from_cells)'` passes; it fails on today's code, which prints `null`."""
+agent = "implement-lite"
+commit = "9d1b9e77"
+
+[[items]]
+id = 6
+ref = "fold-export-v1-rows-only-on-a-strict-key"
+title = "Fold `export-v1` rows only on a strict key"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Phase 1: CLI foundations and independent repairs"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/review/export.rs",
+    "tomlctl/tests/review_export.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Restrict `decide`'s reuse of an existing v1 row to the strict key and stop two findings of one export call folding into each other."
+detail = """Approach, "Duplicates and rule-outs", strict export fold. Reuse when the row already carries the finding's `v2_ref`, or when `file`, `symbol` and `summary` are all equal and the row's own `v2_ref` names a finding in this store whose `lens` equals this finding's. A v1 row carries no `lens`, so a row with no resolvable `v2_ref` never matches on this second clause; additionally a finding `merged` into another exports onto that other's row. Today's loose match (same file and same non-empty symbol or exact summary) still decides `Settled` and `Regression`, so a dismissed, deferred or fixed v1 row keeps suppressing or flagging a re-found defect; a loose match on an open row that fails the strict key mints. Anything else mints. `export_regression_on_fixed_v1_match` must pass unchanged. Add `export_mints_separate_rows_for_different_defects_on_one_symbol` (two findings, same file and symbol, different summaries → two rows, each with its own text) and `export_does_not_fold_within_one_call`. Update `reuse_keeps_both_v2_refs` and `export_reuses_open_v1_id_and_bumps_rounds_once` to the strict key rather than deleting them; `export_is_idempotent_on_v2_ref` must pass unchanged."""
+acceptance = """
+- forward: `grep -c 'fn export_mints_separate_rows_for_different_defects_on_one_symbol' tomlctl/tests/review_export.rs` prints `1` (today: `0`).
+- guard: `grep -c 'fn export_is_idempotent_on_v2_ref' tomlctl/tests/review_export.rs` prints `1`.
+- forward, **predicted, unverified**: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(review_export)'` passes; the new test fails on today's `decide`, which folds on file + symbol."""
+agent = "implement-deep"
+commit = "32ae3181"
+
+[[items]]
+id = 7
+ref = "accept-a-mechanical-cleanup-row-from-any-cell"
+title = "Accept a mechanical cleanup row from any cell"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Phase 1: CLI foundations and independent repairs"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/review/add.rs",
+    "tomlctl/tests/review_add.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Let `review add` accept a `cleanup` row whose `lens` is a sweeper-executed lens the cell does not bind, and pin that a finding's file may lie outside the run's scope."
+detail = """Approach, "Escalations and out-of-lens cleanup" and "Run bounds". The lens check in `field_refusals` (the `` `lens` is …; cell … covers … `` refusal) gains one exception: kind `cleanup`, exact `old` present, and a lens the merged catalogue marks sweeper-executed (`ripple`, `hygiene` — the marker is the lens file's `mode = "mechanical"`; read it from the catalogue, do not hardcode the ids). Such a row keeps the route `route_of` computes for any cleanup (checker for a non-executable edit, verifier otherwise). The exception applies to `review add` only: keep `field_refusals`' signature and add the allowance beside it in `tomlctl/src/review/add.rs` (for example a `field_refusals_with` that `field_refusals` delegates to), so its second caller, the advisory convert in `tomlctl/src/review/triage.rs`, is untouched and gets no exception. Add `add_accepts_mechanical_cleanup_outside_cell_lenses`, `add_refuses_defect_outside_cell_lenses` and `add_accepts_ripple_finding_outside_run_scope`."""
+acceptance = """
+- forward: `grep -c 'fn add_accepts_mechanical_cleanup_outside_cell_lenses' tomlctl/tests/review_add.rs` prints `1` (today: `0`).
+- forward, **predicted, unverified**: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(review_add)'` passes; the first new test fails on today's lens check. If `add_accepts_ripple_finding_outside_run_scope` fails on unchanged code, stop and report: Approach, "Run bounds" assumes no scope check exists."""
+agent = "implement-deep"
+commit = "4efac13b"
+
+[[items]]
+id = 8
+ref = "print-each-checks-executor-and-command-in-review-catalogue"
+title = "Print each check's executor and command in `review catalogue`"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Phase 1: CLI foundations and independent repairs"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/review/catalogue.rs",
+    "tomlctl/src/review/catalogue_cmd.rs",
+    "tomlctl/tests/review_catalogue.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add `executor` and `command` to every check entry `review catalogue` prints."
+detail = 'Approach, "Reading a run back". A project `[[checks]]` entry prints `executor = "verification"` (already assigned in the catalogue loader) and its `command`; a built-in check prints its frontmatter executor and its command when it declares one. Add `catalogue_prints_project_check_executor_and_command`.'
+acceptance = """
+- forward: `grep -c 'fn catalogue_prints_project_check_executor_and_command' tomlctl/tests/review_catalogue.rs` prints `1` (today: `0`).
+- forward, **predicted, unverified**: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(review_catalogue)'` passes."""
+agent = "implement-lite"
+commit = "71d4e9c6"
+
+[[items]]
+id = 9
+ref = "fill-the-audit-sample-when-nothing-was-refuted"
+title = "Fill the audit sample when nothing was refuted"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Phase 1: CLI foundations and independent repairs"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/review/digest.rs",
+    "tomlctl/tests/review_digest.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Change `audit_sample` so empty refuted slots are filled with extra standing defects and plausible defects are sampled."
+detail = 'Approach, "Audit and measurement". The standing group is defects whose deciding verdict is `confirmed` or `plausible`. Pick `SAMPLE_SIZE` from it as today; then for each refuted slot left empty, pick one more standing defect not already chosen, by the same `spread` rule over the remainder. Output keys stay `confirmed_defects`, `refuted_defects`, `checked_cleanup`; the extra picks land in `confirmed_defects`. Add `digest_audit_sample_fills_empty_refuted_slots` and `digest_audit_sample_includes_plausible_defects`; `digest_audit_sample_is_chosen_by_index` must still pass on a fixture with two refuted rows.'
+acceptance = """
+- forward: `grep -c 'fn digest_audit_sample_fills_empty_refuted_slots' tomlctl/tests/review_digest.rs` prints `1` (today: `0`).
+- guard: `grep -c 'fn digest_audit_sample_is_chosen_by_index' tomlctl/tests/review_digest.rs` prints `1`.
+- forward, **predicted, unverified**: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(review_digest)'` passes."""
+agent = "implement-deep"
+commit = "e8b754f7"
+
+[[items]]
+id = 10
+ref = "bound-a-run-with-review-run-start-head"
+title = "Bound a run with `review run start --head`"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = "Phase 2: CLI features on the foundations"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/review/runs.rs",
+    "tomlctl/src/cli/types/review/run.rs",
+    "tomlctl/tests/review_runs.rs",
+]
+needs = [
+    1,
+    3,
+    5,
+]
+coupling = []
+deps_note = ""
+action = "Add the optional `--head <REV>` flag, store its sha on the run, and measure `changed_lines` over `base..head` when it is set."
+detail = """Approach, "Run bounds" and "Reading a run back". Resolve `--head` exactly as `resolve_base` resolves `--base`; refuse a head that is not a descendant of the base. `project_layer_changes` also reads `base..head`, so a lens-layer commit after `head` does not refuse the run. `run start`'s envelope prints `head` (null when absent). `run list` rows carry `head`, and their `waves` comes from task 5's helper in `tomlctl/src/review/stats.rs` instead of the never-written `run.waves`. Add `run_start_records_head_and_measures_to_it` (a commit after head does not change `changed_lines`), `run_start_refuses_head_not_descended_from_base` and `run_list_reports_waves_from_cells`."""
+acceptance = """
+- forward: `grep -c 'pub(crate) head' tomlctl/src/cli/types/review/run.rs` prints `1` (today: no such file).
+- forward, **predicted, unverified**: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(review_runs)'` passes."""
+agent = "implement-deep"
+commit = "3530f290"
+
+[[items]]
+id = 11
+ref = "read-the-surveys-diff-to-head-and-keep-hotspots-in-scope"
+title = "Read the survey's diff to `head` and keep hotspots in scope"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = "Phase 2: CLI features on the foundations"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/review/survey.rs",
+    "tomlctl/tests/review_survey.rs",
+]
+needs = [
+    3,
+    10,
+]
+coupling = []
+deps_note = ""
+action = "Make the diff detectors read `base..head` when the run has a `head`, and record `churn-hotspot` evidence only for files in the run's scope."
+detail = 'Approach, "Run bounds" and "Proposal ceiling and sweeper slices". `commits_per_file` still counts repo-wide history, but the evidence list and roots written for `churn-hotspot` keep only scope files. Add `survey_diff_stops_at_head` and `survey_hotspots_are_limited_to_scope`. Depends on 10 because the black-box harness in `tomlctl/tests/review_survey.rs` creates runs through `review run start`, and only `--head` yields a run with a `head`.'
+acceptance = """
+- forward: `grep -c 'fn survey_hotspots_are_limited_to_scope' tomlctl/tests/review_survey.rs` prints `1` (today: `0`).
+- forward, **predicted, unverified**: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(review_survey)'` passes."""
+agent = "implement-deep"
+commit = "5022f89b"
+
+[[items]]
+id = 12
+ref = "keep-review-plan-propose-inside-its-ceiling"
+title = "Keep `review plan --propose` inside its ceiling"
+effort = "L"
+status = "done"
+checkpoint = "B"
+phase = "Phase 2: CLI features on the foundations"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/review/cells.rs",
+    "tomlctl/tests/review_cells.rs",
+]
+needs = [2]
+coupling = []
+deps_note = ""
+action = "Rework `propose` so the proposal never exceeds the ceiling, merges small floor slices before cutting signal lenses, and caps sweeper slices by file count."
+detail = """Approach, "Proposal ceiling and sweeper slices" is the specification; every sentence there is a requirement, including the 40-file sweeper cap, the adjacency and half-budget rules, the whole-scope split and the `over_cap` list for a budget too small to hold the cells. Touch points: the budget in `propose`, the floor-tier admission, `add_check_cells` (must draw on the budget), the `stopped` flag (a lens that fits an existing bundle is not `ceiling`), `slices_for` and `bundle`. Add `propose_never_exceeds_ceiling` (a 74-file, many-directory fixture at `standard`), `propose_merges_small_floor_slices_before_cutting_signal_lenses`, `propose_counts_check_cells_against_ceiling`, `propose_caps_sweeper_slice_by_file_count` and `propose_reports_over_cap_cells_at_a_small_ceiling`. Every existing `propose_*` test (`grep -n 'fn propose_' tomlctl/tests/review_cells.rs`) and `plan_executor_cells_batch_tasks_outside_ceiling` in `tomlctl/tests/review_cells.rs` must pass, adjusted only where they assert the old overshoot."""
+acceptance = """
+- forward: `grep -c 'fn propose_never_exceeds_ceiling' tomlctl/tests/review_cells.rs` prints `1` (today: `0`).
+- guard: `grep -c 'fn propose_respects_scaled_ceiling' tomlctl/tests/review_cells.rs` prints `1`.
+- forward, **predicted, unverified**: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(review_cells)'` passes; `propose_never_exceeds_ceiling` fails on today's code, which admits floor and check cells regardless of budget."""
+agent = "implement-deep"
+commit = "3530f290"
+
+[[items]]
+id = 13
+ref = "record-structured-rule-outs-with-review-cover-ruled-out"
+title = "Record structured rule-outs with `review cover --ruled-out`"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = "Phase 2: CLI features on the foundations"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/review/cover.rs",
+    "tomlctl/src/cli/types/review/cells.rs",
+    "tomlctl/tests/review_cover.rs",
+    "tomlctl/src/review/fields.rs",
+]
+needs = [
+    1,
+    2,
+    3,
+]
+coupling = []
+deps_note = ""
+action = "Add `--ruled-out <SRC>` to `review cover`, validating and storing the entries on the cell."
+detail = """Approach, "Duplicates and rule-outs", rule-outs. `SRC` follows the group's convention (`-` for stdin, a path, a leading `@` accepted, a `.toml` record file). Entries validate through `ruled_out_refusals` from task 3 (`tomlctl/src/review/fields.rs`), and an entry whose `file` lies outside the cell's slice is refused unless the cell binds a sweeper-executed lens; a refused entry refuses the whole cover and seals nothing. Re-covering a cell replaces its `ruled_out`. Tests: `cover_stores_ruled_out_entries`, `cover_refuses_ruled_out_entry_without_reason`, `cover_without_ruled_out_leaves_the_cell_unchanged`."""
+acceptance = """
+- forward: `test -f tomlctl/tests/review_cover.rs && grep -c 'fn cover_stores_ruled_out_entries' tomlctl/tests/review_cover.rs` prints `1` (today: no such file).
+- forward, **predicted, unverified**: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(review_cover)'` passes."""
+agent = "implement-deep"
+commit = "3530f290"
+
+[[items]]
+id = 14
+ref = "carry-head-in-the-finder-assignment"
+title = "Carry `head` in the finder assignment"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = "Phase 2: CLI features on the foundations"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/review/query.rs",
+    "tomlctl/tests/review_query.rs",
+]
+needs = [3]
+coupling = []
+deps_note = ""
+action = "Add the run's `head` to the object `review show <cell> --for finder` prints, beside `base`."
+detail = "In `assignment`, emit `head` only when the run has one. Add `finder_assignment_carries_head_when_the_run_has_one`."
+acceptance = """
+- forward: `grep -c 'fn finder_assignment_carries_head_when_the_run_has_one' tomlctl/tests/review_query.rs` prints `1` (today: `0`).
+- forward, **predicted, unverified**: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(finder_assignment_carries_head_when_the_run_has_one)'` passes."""
+agent = "implement-lite"
+commit = "fcf12363"
+
+[[items]]
+id = 15
+ref = "list-duplicate-candidates-and-rule-out-hits-in-review-digest"
+title = "List duplicate candidates and rule-out hits in `review digest`"
+effort = "L"
+status = "done"
+checkpoint = "B"
+phase = "Phase 2: CLI features on the foundations"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/review/digest.rs",
+    "tomlctl/src/review/matching.rs",
+    "tomlctl/tests/review_digest.rs",
+]
+needs = [
+    5,
+    9,
+    13,
+]
+coupling = []
+deps_note = ""
+action = "Add the `duplicate_candidates` and `ruled_out_hits` keys to the digest, on one shared anchor matcher."
+detail = """Approach, "Duplicates and rule-outs" and "Reading a run back". `run_line` reads `waves` from task 5's helper in `tomlctl/src/review/stats.rs`; add `digest_run_line_reports_waves_from_cells`. In `tomlctl/src/review/matching.rs` add a `pub(crate)` anchor matcher (same file, and same non-empty symbol or lines within the existing candidate window) and use it for both joins. `duplicate_candidates` rows: `{a, b, file, symbol, cells}` with `a` the lower id; a pair already linked by `same_as` or `merged_into` is omitted. `ruled_out_hits` rows: `{finding, cell, ruled_out_by, reason}`; a cell's own findings never hit its own rule-outs. Both honour `--since-wave`. Tests: `digest_lists_duplicate_candidates_across_cells`, `digest_omits_linked_pairs_from_duplicate_candidates`, `digest_lists_findings_that_hit_another_cells_rule_out`. Depends on 13 because the black-box fixtures write rule-outs through `review cover`."""
+acceptance = """
+- forward: `grep -c 'fn digest_lists_duplicate_candidates_across_cells' tomlctl/tests/review_digest.rs` prints `1` (today: `0`).
+- forward: `grep -c 'ruled_out_hits' tomlctl/src/review/digest.rs` prints at least `1` (today: `0`).
+- forward, **predicted, unverified**: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(review_digest)'` passes."""
+agent = "implement-deep"
+commit = "ae3e0a1b"
+
+[[items]]
+id = 16
+ref = "show-matching-rule-outs-in-the-verifier-and-audit-projections"
+title = "Show matching rule-outs in the verifier and audit projections"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = "Phase 2: CLI features on the foundations"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/review/query.rs",
+    "tomlctl/tests/review_query.rs",
+]
+needs = [
+    14,
+    15,
+]
+coupling = []
+deps_note = ""
+action = "Add a `ruled_out` array to each finding printed `--for verifier` and `--for audit`, holding the other cells' rule-outs that match its anchor."
+detail = "Reuse the matcher task 15 adds to `tomlctl/src/review/matching.rs`. Each element is `{cell, reason}`. The key is absent when nothing matches, and never appears in the finder projection. Tests: `verifier_projection_carries_matching_rule_outs`, `finder_projection_never_carries_rule_outs`."
+acceptance = """
+- forward: `grep -c 'fn verifier_projection_carries_matching_rule_outs' tomlctl/tests/review_query.rs` prints `1` (today: `0`).
+- forward, **predicted, unverified**: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(review_query)'` passes."""
+agent = "implement-deep"
+commit = "af476769"
+
+[[items]]
+id = 17
+ref = "filter-review-list-by-fix-shape"
+title = "Filter `review list` by `--fix-shape`"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = "Phase 2: CLI features on the foundations"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/review/query.rs",
+    "tomlctl/src/cli/types/review/read.rs",
+    "tomlctl/tests/review_query.rs",
+]
+needs = [
+    1,
+    16,
+]
+coupling = []
+deps_note = ""
+action = "Add `--fix-shape <SHAPE>` to `review list`, keeping findings whose `fix_shape` equals it."
+detail = """Approach, "Landing places". Validate the value against the field catalogue's `fix_shape` vocabulary and refuse an unknown one with `kind=validation`. Test: `list_filters_by_fix_shape_across_runs` (two runs, one `needs-plan` defect each, no `--run`)."""
+acceptance = """
+- forward: `grep -c 'pub(crate) fix_shape' tomlctl/src/cli/types/review/read.rs` prints `1` (today: no such file).
+- forward, **predicted, unverified**: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(list_filters_by_fix_shape_across_runs)'` passes."""
+agent = "implement-lite"
+commit = "af476769"
+
+[[items]]
+id = 18
+ref = "link-duplicates-with-review-resolve-same-as"
+title = "Link duplicates with `review resolve --same-as`"
+effort = "L"
+status = "done"
+checkpoint = "B"
+phase = "Phase 2: CLI features on the foundations"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/review/resolve.rs",
+    "tomlctl/src/cli/types/review/verdicts.rs",
+    "tomlctl/tests/review_resolve.rs",
+]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "Add the repeatable `--same-as <DUP>=<TARGET>` flag, which sets `same_as` on the duplicate and resolves the pair in the same call."
+detail = """Approach, "Duplicates and rule-outs", duplicate candidates. Both ids must be findings of `--run`, of the same family, and neither superseded; a self-link, a cycle or a duplicate already merged elsewhere is refused before anything is written. The link applies to rows that are already verified, which today's pass skips: a linked duplicate resolves through the existing `apply` path and `Outcome::for_target` table unchanged: it becomes `merged` into the target with `outcome` repeat, contested, reopened or suppressed (or stays open as a regression), exactly as a row carrying `same_as` from `review add` would. Report linked pairs in the envelope under `linked`. Tests: `resolve_same_as_merges_a_verified_pair`, `resolve_same_as_marks_differing_verdicts_contested`, `resolve_same_as_refuses_a_cycle`."""
+acceptance = """
+- forward: `grep -c 'fn resolve_same_as_merges_a_verified_pair' tomlctl/tests/review_resolve.rs` prints `1` (today: `0`).
+- forward, **predicted, unverified**: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(review_resolve)'` passes."""
+agent = "implement-deep"
+commit = "3530f290"
+
+[[items]]
+id = 19
+ref = "add-the-review-run-show-read-verb"
+title = "Add the `review run show` read verb"
+effort = "L"
+status = "done"
+checkpoint = "B"
+phase = "Phase 2: CLI features on the foundations"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/review/run_show.rs",
+    "tomlctl/src/review/mod.rs",
+    "tomlctl/src/review/dispatch.rs",
+    "tomlctl/src/cli/types/review/run.rs",
+    "tomlctl/src/cli/types/review/mod.rs",
+    "tomlctl/src/cli/mod.rs",
+    "tomlctl/tests/output_options.rs",
+    "tomlctl/tests/review_run_show.rs",
+]
+needs = [
+    1,
+    2,
+    5,
+    10,
+]
+coupling = []
+deps_note = ""
+action = "Add `review run show <RUN>`, printing one run's bounds, signals, baselines, waves, agents and audit."
+detail = """Approach, "Reading a run back" gives the output. A `ReviewRunOp::Show` leaf taking the run id, the store group and the read-integrity bundle. An unknown run is `kind=not_found`. The `ReviewRunOp::Show` variant goes in `tomlctl/src/cli/types/review/mod.rs`, where task 1 keeps the enum, and the new args type joins the explicit `Review*Args` re-export list in `tomlctl/src/cli/mod.rs`. `waves` comes from task 5's helper in `tomlctl/src/review/stats.rs`. The files are inseparable (a verb needs its clap leaf, enum variant, re-export, dispatch arm, module entry and implementation). Depends on 2 and 10 because they edit `tomlctl/src/review/mod.rs`, `tomlctl/src/review/dispatch.rs` and `tomlctl/src/cli/types/review/run.rs`. Tests: `run_show_prints_signals_with_roots_limited_to_scope`, `run_show_prints_recorded_baselines`, `run_show_derives_waves_from_cells`. Add a `review run show` read case beside the `review run list` one in `tomlctl/tests/output_options.rs`: `every_leaf_command_has_a_case` fails on a leaf with no case, and print through the shared output seam as `runs::list` does."""
+acceptance = """
+- forward: `test -f tomlctl/src/review/run_show.rs && echo present` prints `present` (today: prints nothing).
+- forward, **predicted, unverified**: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(review_run_show)'` passes."""
+agent = "implement-deep"
+commit = "85f02e92"
+
+[[items]]
+id = 20
+ref = "bump-tomlctl-to-0220-and-register-the-new-surface"
+title = "Bump tomlctl to 0.22.0 and register the new surface"
+effort = "L"
+status = "done"
+checkpoint = "B"
+phase = "Phase 2: CLI features on the foundations"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "glimpse/Cargo.lock",
+    "tomlctl/README.md",
+    "tomlctl/src/capabilities.rs",
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/tests/capabilities.rs",
+]
+needs = [
+    4,
+    5,
+    6,
+    7,
+    8,
+    10,
+    11,
+    12,
+    13,
+    15,
+    16,
+    17,
+    18,
+    19,
+]
+coupling = []
+deps_note = ""
+action = "Set the version to 0.22.0 and register `review run show` and the new flags as capabilities."
+detail = """Follow the shape of the 0.21.0 bump (`git show 6454bc72 --stat`). Add `review run show` to `MUTEX_GROUPS` with the review store group and to the read-verb list in `tomlctl/tests/capabilities.rs`. Add `FEATURES` entries `review_run_head`, `review_run_show`, `review_ruled_out`, `review_same_as_link`, `review_list_fix_shape`. Refresh `glimpse/Cargo.lock` with `cargo tree --manifest-path glimpse/Cargo.toml >/dev/null`. In `tomlctl/README.md`, set the capabilities sample's `"version"` to `0.22.0`, add the five names to its `"features"` array and one "Feature meanings" row each (`readme_feature_transcriptions_match_capabilities_features` checks both), and correct the `--strict-read` paragraph's `flow resolve --flow` clause, which task 4 makes unconditional. In `tomlctl/tests/capabilities.rs`, add the five names to the expected array of `capabilities_features_contains_every_plan_feature` and change the `"0.21.0"` literal in `capabilities_version_matches_cargo_toml`. The seven files are inseparable: the pre-commit hook's `cargo clippy --manifest-path glimpse/Cargo.toml --locked` fails on a version bump without the refreshed lock."""
+acceptance = """
+- forward: `grep -c '^version = "0.22.0"' tomlctl/Cargo.toml` prints `1` (today: `0`).
+- forward: `grep -c 'review_run_show' tomlctl/src/cli/types/mod.rs` prints at least `1` (today: `0`).
+- forward, **predicted, unverified**: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(capabilities)'` and `cargo clippy --manifest-path glimpse/Cargo.toml --locked` pass."""
+agent = "implement-deep"
+commit = "7a3267c0"
+
+[[items]]
+id = 21
+ref = "document-the-new-review-surface-in-the-tomlctl-skill"
+title = "Document the new review surface in the tomlctl skill"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = "Phase 2: CLI features on the foundations"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "claude/skills/tomlctl/references/review.md",
+    "claude/skills/tomlctl/references/review-runs.md",
+    "claude/skills/tomlctl/SKILL.md",
+]
+needs = [20]
+coupling = []
+deps_note = ""
+action = "Move the `review run` section into a new reference and document every flag, verb, field and output key this plan adds."
+detail = "`claude/skills/tomlctl/references/review.md` is 583 lines against the 600-line reference ceiling (`skill_references_under_line_ceiling`), so the `review run` verbs move to `claude/skills/tomlctl/references/review-runs.md`, which gains `--head` and `run show`. `claude/skills/tomlctl/references/review.md` gains `cover --ruled-out`, the `ruled_out` cell field, `resolve --same-as`, `list --fix-shape`, the digest's `duplicate_candidates` and `ruled_out_hits`, the audit-sample fill, the strict export fold, the mechanical-cleanup lens exception and the checker's widened `refuted` rule, the catalogue's `executor` / `command`, the finder projection's `head`, the verifier and audit projections' `ruled_out`, the survey's `base..head` diff and scope-limited hotspots, `run list`'s `head` and derived `waves`, the proposal's `over_cap` list, and `resolve`'s `linked` key. State the 450-character target beside each 600 cap. Add the new file to the References list in `claude/skills/tomlctl/SKILL.md` and extend its Quick Reference `review` row with `run show`."
+acceptance = """
+- forward: `test -f claude/skills/tomlctl/references/review-runs.md && echo present` prints `present` (today: prints nothing).
+- forward: `grep -c -- '--ruled-out' claude/skills/tomlctl/references/review.md` prints at least `1` (today: `0`).
+- guard: `test "$(wc -l < claude/skills/tomlctl/references/review.md)" -le 600 && echo ok` prints `ok`.
+- forward, **predicted, unverified**: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(flag_table_lint) | test(command_lint) | test(skill_references_under_line_ceiling) | test(skill_markdown_links_resolve)'` passes."""
+agent = "implement-deep"
+commit = "3d6b063c"
+
+[[items]]
+id = 22
+ref = "batch-cleanup-verification-and-return-escalations-and-an-agent-count"
+title = "Batch cleanup verification and return escalations and an agent count"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Phase 3: Workflow scripts"
+phase_depth = 3
+heading_depth = 3
+files = ["claude/workflows/review-v2.js"]
+needs = []
+coupling = []
+deps_note = ""
+action = 'Change `routeCell` and `index` in `claude/workflows/review-v2.js` to the shape Approach, "Workflow index" gives.'
+detail = """In `routeCell`, a `verifier`-routed finding of kind `cleanup` joins a per-cell batch dispatched through `verifyBatch` (label `verify <cell> cleanup xN`, batch `verify-<cell>-cleanup`); a single row still goes through `verifyOne`. Collect each cell's `escalate` strings, cut to 300 characters, into the top-level `escalations` array of `{cell, text}`, the index's last key; each cell entry keeps its `escalated` count. Count each dispatch at its call site: either `agents++` beside each `agent(` call, or a thunk wrapper such as `counted(() => agent(prompt, { agentType: … }))` that keeps the literal options object on the `agent(` call. Never use a pass-through `(...args) => agent(...args)`, which `workflow_scripts_name_real_agents` refuses as an `agent()` call with no `agentType`. Return the total as `agents`; the early-return `index([],0)` reports `agents: 0`. Read the optional `mechanical_lenses` argument (an array of lens ids) and add a `mechanical lenses: <ids or none>` line beside the checker prompt's `sweeper rows:` line, per Approach, "Escalations and out-of-lens cleanup". Set `SCRIPT_VERSION` to `'2'` and correct the header comment. No `model` or `effort` override and no new `agentType` (`workflow_scripts_name_real_agents`)."""
+acceptance = """
+- forward: `grep -c 'escalations' claude/workflows/review-v2.js` prints at least `1` (today: `0`).
+- forward: `grep -c "SCRIPT_VERSION = '2'" claude/workflows/review-v2.js` prints `1` (today: `0`).
+- guard, **predicted, unverified**: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(workflow_scripts_name_real_agents) | test(command_lint)'` passes."""
+agent = "implement-deep"
+commit = "4f465e9c"
+
+[[items]]
+id = 23
+ref = "sum-the-agent-count-in-the-plan-review-workflow"
+title = "Sum the agent count in the plan-review Workflow"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Phase 3: Workflow scripts"
+phase_depth = 3
+heading_depth = 3
+files = ["claude/workflows/plan-v2-review.js"]
+needs = [
+    21,
+    22,
+]
+coupling = []
+deps_note = ""
+action = """Bring `claude/workflows/plan-v2-review.js` onto the rules Approach, "Workflow index" gives it: a full agent count, a signal-free surveyor prompt, one baseline dispatch, and escalations and re-verification through the lead's settle phase."""
+detail = "Read `ran.agents` beside `ran.verified`, defaulting to 0 when it is not an integer. Count every `agent()` call the script makes (the surveyor, the baseline dispatch, the lead's compose, settle and audit, and each re-verification) at its call site, keeping each call's literal `agentType`, and return the total with the waves' sums as `agents`; set `SCRIPT_VERSION` to `'2'`. Survey phase: drop the `signals:` lines from the surveyor prompt — the surveyor reads `tomlctl review run show <run>` by the run id the prompt already carries. Baselines: replace the per-command loop with one `verification` dispatch listing every resolved command, each with its `timeout`, and `keep_going: true`; widen `BASELINE_SCHEMA` to one `{key, outcome, log}` entry per command and build `baselineLines` from that return, keeping today's `none — …` line for a command with no log. Waves: pass the optional `mechanical_lenses` argument through to `review-v2-pipeline`; hand the wave's `ran.escalations` to the lead's `settle` prompt as an `escalations:` block (`none` when empty); add an optional `reverify` array of finding ids to the settle schema and dispatch one `review-verifier` per id beside the existing mop-up of `unverified`. Depends on 21 because the script then names `review run show`, which `command_lint` checks against the CLI."
+acceptance = """
+- forward: `grep -c 'ran.agents' claude/workflows/plan-v2-review.js` prints at least `1` (today: `0`).
+- forward: `grep -c 'One at a time' claude/workflows/plan-v2-review.js` prints `0` (today: `1`).
+- forward: `grep -c 'reverify' claude/workflows/plan-v2-review.js` prints at least `1` (today: `0`).
+- guard, **predicted, unverified**: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(workflow_scripts_name_real_agents)'` passes."""
+agent = "implement-deep"
+commit = "9f0e727f"
+
+[[items]]
+id = 24
+ref = "state-run-bounds-stage-0-carry-over-and-the-new-index-in-the-engine-skill"
+title = "State run bounds, stage-0 carry-over and the new index in the engine skill"
+effort = "M"
+status = "done"
+checkpoint = "D"
+phase = "Phase 4: Agent and skill prose"
+phase_depth = 3
+heading_depth = 3
+files = ["claude/skills/review-v2-engine/SKILL.md"]
+needs = [
+    21,
+    22,
+]
+coupling = []
+deps_note = ""
+action = "Rewrite the stage 0, stage 1, stage 3 baseline, stage 4 index and stage 5 escalation passages of `claude/skills/review-v2-engine/SKILL.md`."
+detail = """Stage 0: add the two `review list` reads from Approach, "Landing places", and add `review_run_head`, `review_run_show`, `review_ruled_out`, `review_same_as_link` and `review_list_fix_shape` to the pre-flight `.features` gate. Stage 1: replace the "against `HEAD~1` on the default branch" sentence with the three-case rule in Approach, "Run bounds", including `--head`, the scratch-staged `scope=@<path>` and the ripple sentence. Baselines: one dispatch, per Approach, "Agent prose rules". Stage 4: the index shape from Approach, "Workflow index"; `agents` is the index's `agents` summed over waves plus the orchestrator's own dispatches (bootstrap, surveyor, baselines), recorded with one `review run update`; the 8,000-character note. Stage 5: read `escalations` from the index, and `duplicate_candidates` and `ruled_out_hits` from the digest. Also correct three sentences the other tasks make stale: the project-layer refusal reads `base..head` when the run has a head; the routing sentence and the depth-table row that describe per-cell batching for minor defects only now cover verifier-routed cleanup rows too; and the Workflow launch passes `mechanical_lenses`, the ids `tomlctl review catalogue` lists with `mode = "mechanical"`. Keep the file under 500 lines."""
+acceptance = """
+- forward: `grep -c 'HEAD~1' claude/skills/review-v2-engine/SKILL.md` prints `0` (today: `1`).
+- forward: `grep -c -- '--head' claude/skills/review-v2-engine/SKILL.md` prints at least `1` (today: `0`)."""
+agent = "implement-deep"
+commit = "7476976a"
+
+[[items]]
+id = 25
+ref = "read-signals-from-the-store-and-run-baselines-in-one-dispatch"
+title = "Read signals from the store and run baselines in one dispatch"
+effort = "M"
+status = "done"
+checkpoint = "D"
+phase = "Phase 4: Agent and skill prose"
+phase_depth = 3
+heading_depth = 3
+files = ["claude/skills/review-v2-engine/references/survey.md"]
+needs = [21]
+coupling = []
+deps_note = ""
+action = "Rewrite the signals hand-off, the project-check rule and the baselines section of `claude/skills/review-v2-engine/references/survey.md`."
+detail = """Replace "Its output is your only copy of the signals" and the instruction to copy signals into the surveyor prompt: the surveyor prompt carries the run id and reads `tomlctl review run show <run>`. The diff reads `base..head` when the run has a head. Project checks: the surveyor takes executor and command from `tomlctl review catalogue`. Section 6: one `verification` dispatch with every baseline command and `keep_going: true`, each command's `timeout`, all keys recorded from the one return and read back with `review run show`. Remove every "one at a time" and "once per resolved command" sentence."""
+acceptance = """
+- forward: `grep -c 'only copy of the signals' claude/skills/review-v2-engine/references/survey.md` prints `0` (today: `1`).
+- forward: `grep -c 'keep_going' claude/skills/review-v2-engine/references/survey.md` prints at least `1` (today: `0`)."""
+agent = "implement-deep"
+commit = "fdfad52b"
+
+[[items]]
+id = 26
+ref = "settle-duplicates-rule-out-hits-and-escalations-at-compose"
+title = "Settle duplicates, rule-out hits and escalations at compose"
+effort = "M"
+status = "done"
+checkpoint = "D"
+phase = "Phase 4: Agent and skill prose"
+phase_depth = 3
+heading_depth = 3
+files = ["claude/skills/review-v2-engine/references/compose.md"]
+needs = [
+    21,
+    22,
+]
+coupling = []
+deps_note = ""
+action = "Add the stage-5 settling steps and correct the baseline and sweeper-slice lines of `claude/skills/review-v2-engine/references/compose.md`."
+detail = """Stage-5 decisions, in order: each `duplicate_candidates` pair is linked with `review resolve --same-as` or left as distinct, one line of reasoning each in the run directory; each `ruled_out_hits` row is checked against its verdict and re-verified when the verifier's rationale does not address the rule-out; each `escalations` entry becomes a follow-up cell, a mechanical row the orchestrator asks the next cell to write, or a close-summary item (Approach, "Escalations and out-of-lens cleanup"). Judged-signal candidates citing a file outside the scope are rejected. The baseline line points at the single dispatch. Note that the proposal now slices sweeper cells itself."""
+acceptance = """
+- forward: `grep -c 'duplicate_candidates' claude/skills/review-v2-engine/references/compose.md` prints at least `1` (today: `0`).
+- forward: `grep -c 'ruled_out_hits' claude/skills/review-v2-engine/references/compose.md` prints at least `1` (today: `0`)."""
+agent = "implement-deep"
+commit = "8f593ca0"
+
+[[items]]
+id = 27
+ref = "bring-the-agent-wave-fallback-in-line-with-the-workflow"
+title = "Bring the Agent-wave fallback in line with the Workflow"
+effort = "M"
+status = "done"
+checkpoint = "D"
+phase = "Phase 4: Agent and skill prose"
+phase_depth = 3
+heading_depth = 3
+files = ["claude/skills/review-v2-engine/references/agent-waves.md"]
+needs = [
+    21,
+    22,
+]
+coupling = []
+deps_note = ""
+action = "Update the routing table, the wave index, the signals lines and the agent total in `claude/skills/review-v2-engine/references/agent-waves.md`."
+detail = """Routing table: add the per-cell batch for verifier-routed cleanup rows, and the checker prompt's `mechanical lenses:` line beside `sweeper rows:`. Wave index: `escalations` and `agents` as in Approach, "Workflow index". The surveyor prompt lines stop copying signals (`review run show`). The agent total is counted once, from the wave indexes plus the orchestrator's own dispatches."""
+acceptance = "- forward: `grep -c 'escalations' claude/skills/review-v2-engine/references/agent-waves.md` prints at least `1` (today: `0`)."
+agent = "implement-deep"
+commit = "7ff8e82c"
+
+[[items]]
+id = 28
+ref = "record-every-audited-row-and-give-plan-and-escalation-dispositions-a-landing-place"
+title = "Record every audited row and give plan and escalation dispositions a landing place"
+effort = "M"
+status = "done"
+checkpoint = "D"
+phase = "Phase 4: Agent and skill prose"
+phase_depth = 3
+heading_depth = 3
+files = ["claude/skills/review-v2-engine/references/triage-and-close.md"]
+needs = [21]
+coupling = []
+deps_note = ""
+action = "Rewrite the stage-6 sample and recording passages and the `plan` grammar row of `claude/skills/review-v2-engine/references/triage-and-close.md`, and add unhandled escalations to the close summary."
+detail = 'Approach, "Audit and measurement" and "Landing places". The sample line describes the fill. Recording: one staged NDJSON batch of `--by audit` verdicts covering every sampled row, `confirmed` or `refuted` only, with the reason a `plausible` audit verdict is not used; `audit.sampled` equals the batch size. The `plan F5` row: mint the backlog row through the `backlog-capture` gate, then `review triage F5 --backlog-ref <B-id> --expect-status open`. Close summary: each escalation not turned into a cell, offered as a backlog capture.'
+acceptance = """
+- forward: `grep -c 'A row you agree with gets no verdict' claude/skills/review-v2-engine/references/triage-and-close.md` prints `0` (today: `1`).
+- forward: `grep -c 'no store write' claude/skills/review-v2-engine/references/triage-and-close.md` prints `0` (today: `1`)."""
+agent = "implement-deep"
+commit = "610d6550"
+
+[[items]]
+id = 29
+ref = "add-the-leniency-readings-and-the-seeded-precision-probe-to-measurement"
+title = "Add the leniency readings and the seeded-precision probe to measurement"
+effort = "M"
+status = "done"
+checkpoint = "D"
+phase = "Phase 4: Agent and skill prose"
+phase_depth = 3
+heading_depth = 3
+files = ["claude/skills/review-v2-engine/references/measurement.md"]
+needs = [21]
+coupling = []
+deps_note = ""
+action = "Add the low-side refute band, the audit-band floor and the seeded-precision probe section to `claude/skills/review-v2-engine/references/measurement.md`, and correct its two stale lines."
+detail = """Approach, "Audit and measurement", third and fourth bullets, written out as a Thresholds row, a floor sentence and a "Seeded precision check" section beside the existing seeded-recall one, using only existing verbs (`review run start --scope`, `review plan --ndjson`, `review add`, one unnamed `review-verifier` dispatch). Record as watch items, with the command that reads each: in-run planted negatives, and the share of verifier confirms citing only the finding's own anchor (11 of 22 in run U1, measured 2026-11-10 with `tomlctl review list --slug jiggly-exploring-robin --run U1 --for audit`). In the "Plan seeded recall" section of `claude/skills/review-v2-engine/references/measurement.md`, replace the sentence "No v2 plan has run under an execution engine yet…" and the "Until one does," clause of the next sentence (leave the "Contract note for the execution engine" section untouched) with the fact that `/implement-v2` has run `human-only-handovers`."""
+acceptance = """
+- forward: `grep -c 'No v2 plan has run under an execution engine yet' claude/skills/review-v2-engine/references/measurement.md` prints `0` (today: `1`).
+- forward: `grep -ci 'seeded precision' claude/skills/review-v2-engine/references/measurement.md` prints at least `1` (today: `0`)."""
+agent = "implement-deep"
+commit = "3106df2b"
+
+[[items]]
+id = 30
+ref = "update-the-plan-flow-reference-for-scope-staging-and-the-index"
+title = "Update the plan-flow reference for scope staging and the index"
+effort = "S"
+status = "done"
+checkpoint = "D"
+phase = "Phase 4: Agent and skill prose"
+phase_depth = 3
+heading_depth = 3
+files = ["claude/skills/review-v2-engine/references/plan-flow.md"]
+needs = [
+    21,
+    23,
+]
+coupling = []
+deps_note = ""
+action = "Update the scope lines, the pre-flight gate, the signals and baseline passages, the documented Workflow index, the agents line and the escalations line of `claude/skills/review-v2-engine/references/plan-flow.md`."
+detail = """Scope lists are staged in the scratch directory and passed as `scope=@<path>`. Section 1's `.features` gate gains `review_run_head`, `review_run_show`, `review_ruled_out`, `review_same_as_link` and `review_list_fix_shape`. Replace the sentence saying no read verb returns the signals: `tomlctl review run show <run>` does, and the surveyor reads it. The baseline passage describes one `verification` dispatch with `keep_going: true`. The `plan-v2-review` index gains `agents`; `agents` on the run is taken from it. Each wave's index carries the top-level `escalations` array, which the Workflow hands to the lead's `settle` phase, and the lead's settle return gains `reverify` (Approach, "Workflow index"). The launch passes `mechanical_lenses`."""
+acceptance = "forward: `grep -c 'scope=@' claude/skills/review-v2-engine/references/plan-flow.md` prints at least `1` (today: `0`)."
+agent = "implement-lite"
+commit = "0befc2cd"
+
+[[items]]
+id = 31
+ref = "state-the-shared-agent-rules-in-the-method-skill"
+title = "State the shared agent rules in the method skill"
+effort = "M"
+status = "done"
+checkpoint = "D"
+phase = "Phase 4: Agent and skill prose"
+phase_depth = 3
+heading_depth = 3
+files = ["claude/skills/review-v2-method/SKILL.md"]
+needs = [21]
+coupling = []
+deps_note = ""
+action = "Add the cap target, the swept-slice definition, the mechanical-cleanup lens exception and the structured rule-out to `claude/skills/review-v2-method/SKILL.md`."
+detail = """Approach, "Agent prose rules" (cap target), "Proposal ceiling and sweeper slices" (the swept definition, under the coverage statuses), "Escalations and out-of-lens cleanup" (beside the rule that `lens` is one of the cell's concerns) and "Duplicates and rule-outs" (the coverage note's ruled-out part becomes a staged `--ruled-out` file; the note keeps counts only). Show the `review cover` call with `--ruled-out`. Keep the file under 500 lines."""
+acceptance = """
+- forward: `grep -c '450 characters' claude/skills/review-v2-method/SKILL.md` prints at least `1` (today: `0`).
+- forward: `grep -c -- '--ruled-out' claude/skills/review-v2-method/SKILL.md` prints at least `1` (today: `0`)."""
+agent = "implement-deep"
+commit = "ffa23a0d"
+
+[[items]]
+id = 32
+ref = "correct-the-method-references"
+title = "Correct the method references"
+effort = "S"
+status = "done"
+checkpoint = "D"
+phase = "Phase 4: Agent and skill prose"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "claude/skills/review-v2-method/references/finding-kinds.md",
+    "claude/skills/review-v2-method/references/verifying.md",
+    "claude/skills/review-v2-method/references/plan-records.md",
+]
+needs = [21]
+coupling = []
+deps_note = ""
+action = "State the 450-character target where each reference states the 600 cap, and replace the stale handover field list."
+detail = "In `claude/skills/review-v2-method/references/plan-records.md` the handover fields are `reason`, `action`, `when`, `done_when`, `source_task`, `done`; `command` is gone. In `claude/skills/review-v2-method/references/verifying.md`, add one worked verdict that weighs a `ruled_out` entry from the projection."
+acceptance = """
+- forward: `grep -c 'done_when' claude/skills/review-v2-method/references/plan-records.md` prints at least `1` (today: `0`).
+- forward: `grep -c '450 characters' claude/skills/review-v2-method/references/verifying.md` prints at least `1` (today: `0`)."""
+agent = "implement-lite"
+commit = "64166cc8"
+
+[[items]]
+id = 33
+ref = "update-the-finder-body-and-make-the-context-free-finder-context-free"
+title = "Update the finder body and make the context-free finder context-free"
+effort = "M"
+status = "done"
+checkpoint = "D"
+phase = "Phase 4: Agent and skill prose"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "claude/agents/review-finder.md",
+    "claude/agents/review-finder-cf.md",
+]
+needs = [21]
+coupling = []
+deps_note = ""
+action = "Edit the shared `review-finder-body` block identically in both files, and change `claude/agents/review-finder-cf.md`'s frontmatter."
+detail = 'Approach, "Agent prose rules", context-free finder. Shared body: the `research-methods` sentence reworded to hold for both carriers; the slice diff reads `git diff <base> <head> -- <slice entries>` when the assignment carries `head`; a context-free cell reads nothing under `.claude/flows/` or `docs/flows/`; a mechanical cleanup outside the bound lenses is written under `ripple` or `hygiene`, not escalated; ruled-out candidates go in a staged `--ruled-out` file; the note aims for 450 characters. Frontmatter of the cf file only: drop `research-methods` from `skills:` and correct the description ("without the user, project and local CLAUDE.md"; path-scoped rules still load). The two files are inseparable: `scripts/verify-shared-blocks.sh` requires the block byte-identical. Edit nothing between the nested `review-v2-store-writer` and `research-delivering` markers inside the body: those blocks are shared with other agent files (`scripts/shared-blocks.toml`) that this task does not own. A context-free cell may still read a path under `.claude/flows/` or `docs/flows/` that is inside its own slice.'
+acceptance = """
+- forward: `sed -n '1,12p' claude/agents/review-finder-cf.md | grep -c 'research-methods'` prints `0` (today: `1`).
+- forward: `grep -c -- '--ruled-out' claude/agents/review-finder.md` prints at least `1` (today: `0`).
+- guard: `bash scripts/verify-shared-blocks.sh` exits 0."""
+agent = "implement-deep"
+commit = "b6d1dab6"
+
+[[items]]
+id = 34
+ref = "define-a-swept-slice-for-the-sweeper-and-let-ripple-reach-past-the-scope"
+title = "Define a swept slice for the sweeper and let ripple reach past the scope"
+effort = "M"
+status = "done"
+checkpoint = "D"
+phase = "Phase 4: Agent and skill prose"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "claude/agents/review-sweeper.md",
+    "claude/skills/review-v2-lenses/methods/sweep.md",
+    "claude/skills/review-v2-lenses/lenses/ripple.md",
+]
+needs = [21]
+coupling = []
+deps_note = ""
+action = "Rewrite the sweeper's sweep and seal steps and the two catalogue files they cite."
+detail = """Approach, "Proposal ceiling and sweeper slices" (the swept definition; work from the diff's removed and renamed names, not whole files) and "Run bounds" (a stale reference in an untouched file is a `ripple` finding on that file). Tell the sweeper to grep with narrow paths, one directory root per call, never a brace glob from the repository root. The note aims for 450 characters; `claude/skills/review-v2-lenses/methods/sweep.md` drops its "one note line per sweep" instruction, which the method skill overrides."""
+acceptance = """
+- forward: `grep -c 'could not sweep every file in the slice' claude/agents/review-sweeper.md` prints `0` (today: `1`).
+- forward: `grep -ci 'outside the scope' claude/skills/review-v2-lenses/lenses/ripple.md` prints at least `1` (today: `0`)."""
+agent = "implement-deep"
+commit = "90d2dc8d"
+
+[[items]]
+id = 35
+ref = "fix-the-surveyors-checks-evidence-and-writes"
+title = "Fix the surveyor's checks, evidence and writes"
+effort = "M"
+status = "done"
+checkpoint = "D"
+phase = "Phase 4: Agent and skill prose"
+phase_depth = 3
+heading_depth = 3
+files = ["claude/agents/review-surveyor.md"]
+needs = [21]
+coupling = []
+deps_note = ""
+action = "Rewrite the check-listing, candidate-evidence, signal-reading and file-writing steps of `claude/agents/review-surveyor.md`."
+detail = 'Approach, "Agent prose rules", surveyor. Replace "note its frontmatter `executor`" with reading `executor` and `command` from `tomlctl review catalogue`; every `verification` check, project checks included, is listed under `verification:` with its command. Candidate evidence paths must be scope files; a candidate with none is dropped. Signals come from `tomlctl review run show <run>`. `profile.md` and `pack.md` are each written once, whole, with Write; a correction rewrites the file. Add a line bounding its output: no restating of file contents in its turns.'
+acceptance = """
+- forward: `grep -c 'review run show' claude/agents/review-surveyor.md` prints at least `1` (today: `0`).
+- forward: `grep -c 'note its frontmatter' claude/agents/review-surveyor.md` prints `0` (today: `1`)."""
+agent = "implement-deep"
+commit = "0ffa7ea5"
+
+[[items]]
+id = 36
+ref = "tell-the-verifier-about-rule-outs-batches-and-the-cap-target"
+title = "Tell the verifier about rule-outs, batches and the cap target"
+effort = "S"
+status = "done"
+checkpoint = "D"
+phase = "Phase 4: Agent and skill prose"
+phase_depth = 3
+heading_depth = 3
+files = ["claude/agents/review-verifier.md"]
+needs = [21]
+coupling = []
+deps_note = ""
+action = "Add three rules to `claude/agents/review-verifier.md`."
+detail = "A finding's projection may carry `ruled_out`; the rationale must say why the rule-out does or does not defeat the finding. A batch may hold cleanup rows from one cell as well as minor defects. The rationale aims for 450 characters."
+acceptance = "forward: `grep -c 'ruled_out' claude/agents/review-verifier.md` prints at least `1` (today: `0`)."
+agent = "implement-lite"
+commit = "57a290c1"
+
+[[items]]
+id = 37
+ref = "update-the-plan-executor-and-the-plan-review-lead"
+title = "Update the plan executor and the plan review lead"
+effort = "M"
+status = "done"
+checkpoint = "D"
+phase = "Phase 4: Agent and skill prose"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "claude/agents/plan-executor.md",
+    "claude/agents/plan-review-lead.md",
+]
+needs = [
+    21,
+    23,
+]
+coupling = []
+deps_note = ""
+action = "State the cap target and the staged rule-out file in `claude/agents/plan-executor.md`, and make `claude/agents/plan-review-lead.md`'s audit phase record every sampled row and its settle phase act on duplicates, rule-out hits and escalations."
+detail = """The lead's `audit` phase follows Approach, "Audit and measurement", first bullet, in place of recording overturns only. Its `settle` phase follows Approach, "Duplicates and rule-outs" and "Workflow index": after `review resolve` and the digest, it links each `duplicate_candidates` pair it judges the same with `review resolve --run <run> --same-as <dup>=<target>`; it returns under a new `reverify` key the id of each `ruled_out_hits` finding whose verifier rationale does not address the rule-out (`[]` when none) — it cannot dispatch, so the Workflow re-verifies them; and it reads the wave's escalation text from the `escalations:` block of its assignment when deciding the follow-up. The return object becomes `{"next": …, "unverified": […], "reverify": […]}`, the shape task 23 gives the Workflow's settle schema."""
+acceptance = """
+- forward: `grep -c '450 characters' claude/agents/plan-executor.md` prints at least `1` (today: `0`).
+- forward: `grep -ci 'every sampled row' claude/agents/plan-review-lead.md` prints at least `1` (today: `0`).
+- forward: `grep -c 'reverify' claude/agents/plan-review-lead.md` prints at least `1` (today: `0`)."""
+agent = "implement-deep"
+commit = "18d17dcf"
+
+[[items]]
+id = 38
+ref = "point-the-code-and-perf-carriers-at-the-new-scope-and-baseline-rules"
+title = "Point the code and perf carriers at the new scope and baseline rules"
+effort = "S"
+status = "done"
+checkpoint = "D"
+phase = "Phase 4: Agent and skill prose"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "claude/commands/review-v2.md",
+    "claude/commands/optimise-v2.md",
+    "claude/commands/review-plan-v2.md",
+]
+needs = [21]
+coupling = []
+deps_note = ""
+action = "Replace each carrier's restated scope and per-command baseline sentences with a pointer to the engine's stage 1 and survey section 6."
+detail = """Carriers stay thin: no restatement of the rule. A scope argument may be a range, a commit list or paths, and each carrier names `--head` as the run's upper bound. Scope lists are staged outside the repository. `claude/commands/optimise-v2.md` drops "once per line, one at a time" for the single `keep_going` dispatch and its "measures `changed_lines` over `base..HEAD`" sentence for `base..head`. `claude/commands/review-plan-v2.md` restates the per-line baseline rule ("once per line, one at a time") and is edited the same way. `claude/commands/review-v2.md`'s sentence that the finder reads the slice as `git diff <base>` gains the `<head>` form for a bounded run."""
+acceptance = """
+- forward: `grep -c 'one at a time' claude/commands/review-plan-v2.md` prints `0` (today: `1`).
+- forward: `grep -c 'one at a time' claude/commands/optimise-v2.md` prints `0` (today: `1`).
+- forward: `grep -c -- '--head' claude/commands/review-v2.md` prints at least `1` (today: `0`)."""
+agent = "implement-lite"
+commit = "50eb381f"
+
+[[items]]
+id = 39
+ref = "record-mechanical-lens-ownership-in-the-lens-catalogue"
+title = "Record mechanical-lens ownership in the lens catalogue"
+effort = "S"
+status = "done"
+checkpoint = "D"
+phase = "Phase 4: Agent and skill prose"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "claude/skills/review-v2-lenses/SKILL.md",
+    "claude/skills/review-v2-lenses/lenses/hygiene.md",
+]
+needs = [21]
+coupling = []
+deps_note = ""
+action = "State that a sweeper-executed lens owns its rows but accepts one from any cell."
+detail = 'Approach, "Escalations and out-of-lens cleanup". In `claude/skills/review-v2-lenses/SKILL.md`, where it says `ripple` and `hygiene` go to `review-sweeper`, and in its Diff detector line, which reads `base..head` when the run has a head; in `claude/skills/review-v2-lenses/lenses/hygiene.md`, beside its ownership section.'
+acceptance = "forward: `grep -ci 'from any cell' claude/skills/review-v2-lenses/SKILL.md` prints at least `1` (today: `0`)."
+agent = "implement-lite"
+commit = "26487368"
+
+[[items]]
+id = 40
+ref = "repair-the-two-v1-ledger-folds-run-u1-left"
+title = "Repair the two v1 ledger folds run U1 left"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = "Phase 5: Ledger repair and checker refutation"
+phase_depth = 3
+heading_depth = 3
+files = [
+    ".claude/flows/jiggly-exploring-robin/review-ledger.toml",
+    ".claude/flows/jiggly-exploring-robin/review-ledger.toml.sha256",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Give finding F4 its own v1 row instead of riding on R22, and fold R31 into R26, in `.claude/flows/jiggly-exploring-robin/review-ledger.toml`."
+detail = "Every write goes through `tomlctl items` (load the `tomlctl` and `flow-contract-ledger-schema` skills first); never line-edit the ledger. R22 carries the `v2_ref` of both F1 and F4, which are different defects on one symbol: set R22's `v2_ref` to F1's alone, then mint a row for F4 with `tomlctl items add … --id-prefix R`, its fields taken from `tomlctl review show F4 --slug jiggly-exploring-robin --for implementer` and its `v2_ref` naming F4. R26 (finding F6) and R31 (finding F14) are one bug with overlapping edits: append F14's `v2_ref` and R31's test-file edit to R26's `v2_ref` and `description`, then close R31 as a duplicate of R26 with the status and companion fields the ledger schema gives a not-applied duplicate. Run no export and apply no finding. The ledger has uncommitted changes from run U1's export; this task's commit stages them with its own."
+acceptance = """
+- forward: `tomlctl items list .claude/flows/jiggly-exploring-robin/review-ledger.toml --where-contains 'v2_ref=review-v2.toml#F4' --get id` prints one id that is not `R22` (today: `R22`).
+- forward: `tomlctl items list .claude/flows/jiggly-exploring-robin/review-ledger.toml --where-contains 'v2_ref=review-v2.toml#F14' --get id` prints `R26` (today: `R31`)."""
+agent = "implement-deep"
+commit = "07c2518f"
+
+[[items]]
+id = 41
+ref = "let-the-checker-refute-a-mechanical-cleanup-from-any-cell"
+title = "Let the checker refute a mechanical cleanup from any cell"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Phase 5: Ledger repair and checker refutation"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/review/verdict.rs",
+    "tomlctl/tests/review_verdict.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Widen the checker's `refuted` allowance in `tomlctl/src/review/verdict.rs` from rows a sweeper cell wrote to those rows plus any cleanup row whose lens is mechanical."
+detail = """Approach, "Escalations and out-of-lens cleanup". Today `written_by_sweeper` allows a checker `refuted` only when the finding's cell agent is `review-sweeper`. Allow it also when the finding's kind is `cleanup` and the merged catalogue marks its `lens` `mode = "mechanical"` (read the marker from the catalogue; do not hardcode `ripple` and `hygiene`). Every other checker `refuted` stays refused with today's message. Add `checker_may_refute_a_mechanical_cleanup_from_a_finder_cell` and `checker_refute_of_a_non_mechanical_finder_row_is_refused`."""
+acceptance = """
+- forward: `grep -c 'fn checker_may_refute_a_mechanical_cleanup_from_a_finder_cell' tomlctl/tests/review_verdict.rs` prints `1` (today: `0`).
+- forward, **predicted, unverified**: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(review_verdict)'` passes; the first new test fails on today's `written_by_sweeper`, which refuses the verdict."""
+agent = "implement-deep"
+commit = "0a91146e"
+
+[[items]]
+id = 42
+ref = "tell-the-checker-which-rows-it-may-refute"
+title = "Tell the checker which rows it may refute"
+effort = "S"
+status = "done"
+checkpoint = "D"
+phase = "Phase 5: Ledger repair and checker refutation"
+phase_depth = 3
+heading_depth = 3
+files = ["claude/agents/review-checker.md"]
+needs = [
+    21,
+    22,
+    41,
+]
+coupling = []
+deps_note = ""
+action = "Widen the `refuted` rule in `claude/agents/review-checker.md` to cover mechanical-lens cleanup rows."
+detail = """Approach, "Escalations and out-of-lens cleanup". The rule that allows `refuted` only on a row the assignment's `sweeper rows:` line names also allows it on a cleanup row whose `lens` the assignment's `mechanical lenses:` line names; the conditions (a predicate is false and a grep shows it) are unchanged. Say that the assignment carries both lines. Edit nothing inside the `review-v2-store-writer` shared block."""
+acceptance = "forward: `grep -c 'mechanical lenses:' claude/agents/review-checker.md` prints at least `1` (today: `0`)."
+agent = "implement-lite"
+commit = "ccb387ec"
+
+[[items]]
+id = 43
+ref = "share-one-mechanical-lens-helper-between-review-add-and-review-verdict"
+title = "Share one mechanical-lens helper between `review add` and `review verdict`"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = "Phase 5: Ledger repair and checker refutation"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/review/catalogue.rs",
+    "tomlctl/src/review/add.rs",
+    "tomlctl/src/review/verdict.rs",
+    "tomlctl/src/review/cover.rs",
+]
+needs = [
+    7,
+    8,
+    13,
+    41,
+]
+coupling = []
+deps_note = ""
+action = """Replace the private copies of the mechanical-lens test — `swept_lenses` in `tomlctl/src/review/add.rs`, `mechanical_lenses` in `tomlctl/src/review/verdict.rs`, and the equivalent check `review cover` makes for an out-of-slice rule-out in `tomlctl/src/review/cover.rs` — with one `pub(crate)` helper in `tomlctl/src/review/catalogue.rs` that all three call, with no behaviour change. The helper returns the ids of the lenses the merged catalogue marks `mode = "mechanical"` that list the given family and are not disabled; where a caller today applies a narrower or wider filter than that, keep its behaviour and say so in the report rather than changing it. Keep each caller's error handling for an unreadable catalogue, and when it loads the catalogue, as they are today. Add no test; the existing `review_add`, `review_verdict` and `review_cover` suites are the guard."""
+detail = ""
+acceptance = """
+- forward: `grep -c 'fn swept_lenses' tomlctl/src/review/add.rs` prints `0` and `grep -c 'fn mechanical_lenses' tomlctl/src/review/verdict.rs` prints `0` (today: `1` each).
+- guard: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(review_add) | binary(review_verdict) | binary(review_cover)'` passes."""
+agent = "implement-deep"
+commit = "85f02e92"
+
+[[items]]
+id = 44
+ref = "use-the-catalogues-root-overlap-rule-in-review-run-show"
+title = "Use the catalogue's root-overlap rule in `review run show`"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = "Phase 5: Ledger repair and checker refutation"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/review/catalogue.rs",
+    "tomlctl/src/review/run_show.rs",
+]
+needs = [
+    19,
+    43,
+]
+coupling = []
+deps_note = ""
+action = "`tomlctl/src/review/run_show.rs` carries its own copy of the path-overlap rule `tomlctl/src/review/catalogue.rs` keeps private (`meets` / `within`: a signal root against a slice or scope entry). Widen the catalogue's functions to `pub(super)`, call them from `run_show.rs`, and delete the copy, with no behaviour change. If the two copies differ in any case, keep `review run show`'s current output and report the difference rather than changing either. Add no test; the existing `review_run_show` and `review_catalogue` suites are the guard."
+detail = ""
+acceptance = """
+- forward: `grep -c 'fn within' tomlctl/src/review/run_show.rs` prints `0` (today: `1`).
+- guard: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(review_run_show) | binary(review_catalogue)'` passes."""
+agent = "implement-lite"
+commit = "85f02e92"

@@ -976,3 +976,30 @@ scope = [
     "docs/plans/v2-planning.md",
     "CLAUDE.md",
 ]
+
+[[active]]
+slug = "review-v2-first-run-repairs"
+last_used = "2026-11-10T09:44:39.9869137Z"
+
+[active.binding]
+branch = "main"
+worktree = "."
+scope = [
+    "tomlctl/src/review/**",
+    "tomlctl/src/cli/types/**",
+    "tomlctl/src/flow/resolve.rs",
+    "tomlctl/src/capabilities.rs",
+    "tomlctl/tests/**",
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "tomlctl/README.md",
+    "glimpse/Cargo.lock",
+    "claude/workflows/**",
+    "claude/agents/**",
+    "claude/commands/review-v2.md",
+    "claude/commands/optimise-v2.md",
+    "claude/skills/review-v2-engine/**",
+    "claude/skills/review-v2-method/**",
+    "claude/skills/review-v2-lenses/**",
+    "claude/skills/tomlctl/**",
+]
