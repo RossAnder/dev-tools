@@ -8,6 +8,7 @@ scope = []
 [id_high_water]
 C = 3
 D = 14
+H = 1
 
 [[decision]]
 id = "D1"
@@ -407,3 +408,67 @@ started = 2026-11-10T18:55:28Z
 finished = 2026-11-10T19:51:07Z
 skip_reason = ""
 outcome = "ok"
+
+[[run]]
+step = "implement:A"
+workflow = "implement-v2-milestone"
+args_hash = "b96f15334bdde505f549afe39c1512172a87951a705e41e77bc9150995aa12c9"
+run_id = "wf_244863e8-d5e"
+session = "442794e1-30c8-4969-8675-5f5859824ecb"
+started = 2026-11-10T20:14:07Z
+finished = 2026-11-10T20:22:27Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "implement:A"
+workflow = "implement-v2-milestone"
+args_hash = "7e24d76641afceb168ba436f5185e657a76d419c3c0911e43624cde8c77ce620"
+run_id = "wf_d4d8206c-8a2"
+session = "442794e1-30c8-4969-8675-5f5859824ecb"
+started = 2026-11-10T20:22:52Z
+finished = 2026-11-10T20:32:53Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "implement:A"
+workflow = "implement-v2-milestone"
+args_hash = "965dd6010c7692d5efd07c8db02abd3c0d2ec56f0fd485c6db2186a97d7b0edd"
+run_id = "wf_1ba885bf-786"
+session = "442794e1-30c8-4969-8675-5f5859824ecb"
+started = 2026-11-10T20:33:18Z
+finished = 2026-11-10T20:51:13Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "implement:A"
+workflow = "implement-v2-milestone"
+args_hash = "5c0d5f628d27b4614082cb5b4c87faac4866bca464e695c36feb658cef0d143f"
+run_id = "wf_4bbed17e-0a6"
+session = "442794e1-30c8-4969-8675-5f5859824ecb"
+started = 2026-11-10T20:59:55Z
+finished = 2026-11-10T21:04:14Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "implement:A"
+workflow = "implement-v2-milestone"
+args_hash = "c6cea43532a4791b3514ad615a88297e6df15637ec2fc6e556d6b524a0e763f5"
+run_id = "wf_80064e8b-425"
+session = "442794e1-30c8-4969-8675-5f5859824ecb"
+started = 2026-11-10T21:05:00Z
+finished = 2026-11-10T21:05:42Z
+skip_reason = ""
+outcome = "ok"
+
+[[handover]]
+id = "H1"
+reason = "external"
+action = "Deploy the changed entries under claude/ to the Claude config dir (~/.claude-work) the way this machine does it: that directory holds real copies, not links, of the v2 commands, agents, skills and workflows, so scripts/link-v2-review.sh refuses them. Changed in milestone A: commands/implement-v2.md, skills/implement-v2-engine (SKILL.md, references/drain.md, new references/findings.md), skills/tomlctl (SKILL.md, references/review.md, new references/review-apply.md, references/tasks-store.md, references/tasks-write.md) and skills/review-v2-engine/references/measurement.md. commands/apply-v2.md and skills/apply-v2-engine are already linked."
+when = "After the milestone A commit"
+done_when = "`cmp claude/commands/implement-v2.md ~/.claude-work/commands/implement-v2.md` exits 0 and `~/.claude-work/skills/tomlctl/references/review-apply.md` exists"
+source_task = 11
+done = false

@@ -10913,3 +10913,122 @@ base_sha = "110579d720ea7060b0896737329588e0b48ac53a"
 related = ["B-dc721e5c"]
 resolved = 2026-11-10
 resolution = "fixed in 40aacc6a: review cover --ruled-out treats a v2 flow's tasks.toml and plan.toml as in reach of every plan-family cell"
+
+[[backlog]]
+id = "B-3bca1787"
+kind = "bug"
+summary = "review reconcile resolves a rescheduled finding through its old committed task's link when the new task row is removed"
+area = "tomlctl/src/review/reconcile.rs"
+tags = []
+status = "open"
+created = 2026-11-10T21:13:07Z
+last_seen = 2026-11-10T21:13:07Z
+seen_count = 1
+dedup_id = "3bca1787b84d864f"
+origin = "implement-v2"
+flow = "v2-apply"
+context = "When a finding's apply_task ref names no row, reconcile follows the last finding link whose ref names a row, treating it as a retitle. A finding fixed, committed, reopened and rescheduled, whose new task row is then removed, still has the old committed task's link, so it is resolved instead of reopened. Links carry no round or schedule marker; a marker on [[finding_links]], or dropping the finding from a committed link when schedule mints anew, would settle it."
+base_sha = "e42667b7f81f921261d8017ccbe4c95d800c18af"
+related = ["B-a58448f6"]
+
+[[backlog]]
+id = "B-b4451a42"
+kind = "question"
+summary = "tasks update --ndjson cannot edit a row's fixes or settles finding links"
+area = "tomlctl/src/tasks/update.rs"
+tags = []
+status = "open"
+created = 2026-11-10T21:13:07Z
+last_seen = 2026-11-10T21:13:07Z
+seen_count = 1
+dedup_id = "b4451a42ab1b7dc5"
+origin = "implement-v2"
+flow = "v2-apply"
+context = "Only tasks add-many writes [[finding_links]]; update re-keys them on a --ref rename but cannot amend them. Amending a link after minting needs remove-and-re-add. Decide whether review schedule or reconcile ever needs the amend before adding it."
+base_sha = "e42667b7f81f921261d8017ccbe4c95d800c18af"
+related = ["B-9e7c7e4c"]
+
+[[backlog]]
+id = "B-6a885338"
+kind = "debt"
+summary = "review schedule has no --dry-run, so the apply-v2 preview approximates the selection rule in prose"
+area = "tomlctl/src/cli/types/review/export.rs"
+tags = []
+status = "open"
+created = 2026-11-10T21:13:07Z
+last_seen = 2026-11-10T21:13:07Z
+seen_count = 1
+dedup_id = "6a885338ce0dbfc8"
+origin = "implement-v2"
+flow = "v2-apply"
+context = "The apply-v2-engine skill previews with review show and review list and restates schedule's rule, which can drift from the verb. When schedule then refuses everything the preview passed, the fix milestone is left empty and re-entry reuses it. A --dry-run on review schedule would let the skill preview with the verb itself."
+base_sha = "e42667b7f81f921261d8017ccbe4c95d800c18af"
+related = ["B-9e96ce7c"]
+
+[[backlog]]
+id = "B-7f672c06"
+kind = "debt"
+summary = "the apply reopen prefix is declared twice, in review reconcile and in review stats"
+area = "tomlctl/src/review/reconcile.rs"
+tags = []
+status = "open"
+created = 2026-11-10T21:13:07Z
+last_seen = 2026-11-10T21:13:07Z
+seen_count = 1
+dedup_id = "7f672c06b43b3ca4"
+origin = "implement-v2"
+flow = "v2-apply"
+context = "reconcile.rs keeps REOPEN_PREFIX private and stats.rs carries its own APPLY_REOPEN_PREFIX copy. If the two drift, review stats --apply stops counting reopens. Make the reconcile constant pub(super) and import it in stats.rs."
+base_sha = "e42667b7f81f921261d8017ccbe4c95d800c18af"
+related = ["B-10cbeccd"]
+
+[[backlog]]
+id = "B-c65b80e6"
+kind = "debt"
+summary = "select.rs refusal text for plan-family and advisory findings names a v1 ledger and export when review schedule is the caller"
+area = "tomlctl/src/review/select.rs"
+tags = []
+status = "open"
+created = 2026-11-10T21:13:07Z
+last_seen = 2026-11-10T21:13:07Z
+seen_count = 1
+dedup_id = "c65b80e62875b629"
+origin = "implement-v2"
+flow = "v2-apply"
+context = "review schedule reuses the selection module export-v1 uses, so a refused plan-family or advisory id is reported in export-v1's wording. A verb-neutral phrasing, or a caller-supplied noun, would serve both."
+base_sha = "e42667b7f81f921261d8017ccbe4c95d800c18af"
+related = ["B-7f4ae72f"]
+
+[[backlog]]
+id = "B-520f051d"
+kind = "question"
+summary = "run-milestone.md's clean-tree check and premise verdict table do not point to findings.md's linked-store exemption and anchor rule"
+area = "claude/skills/implement-v2-engine/references/run-milestone.md"
+tags = []
+status = "open"
+created = 2026-11-10T21:13:07Z
+last_seen = 2026-11-10T21:13:07Z
+seen_count = 1
+dedup_id = "520f051d2ad2b6f8"
+origin = "implement-v2"
+flow = "v2-apply"
+context = "The implement-v2 engine's findings.md adds an exemption for a dirty linked review store and a rule for anchor premises on apply rows. An orchestrator reading only run-milestone.md steps 1 and 3 would stop on the dirty store or withhold a started apply row. Check whether the later engine tasks of the v2-apply flow add the pointers before editing."
+base_sha = "e42667b7f81f921261d8017ccbe4c95d800c18af"
+related = ["B-6d577c72"]
+
+[[backlog]]
+id = "B-3f45d7d9"
+kind = "question"
+summary = "/apply-v2 on a reviewed flow with an unfinished earlier milestone runs that plan work before the fix milestone"
+area = "claude/skills/apply-v2-engine/SKILL.md"
+tags = []
+status = "open"
+created = 2026-11-10T21:13:07Z
+last_seen = 2026-11-10T21:13:07Z
+seen_count = 1
+dedup_id = "3f45d7d976464e1b"
+origin = "implement-v2"
+flow = "v2-apply"
+context = "The skill hands over to implement-v2-engine with the flow slug, which picks the first milestone with a row not done, and --milestone is refused while an earlier one is unfinished. The skill only announces this, so /apply-v2 can run plan work the user did not ask for. Decide whether it should stop and ask instead."
+base_sha = "e42667b7f81f921261d8017ccbe4c95d800c18af"
+related = ["B-ce9ebb4d"]

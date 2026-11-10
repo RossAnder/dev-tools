@@ -153,7 +153,7 @@ check = "grep -q 'pub(crate) struct BacklogLink' tomlctl/src/tasks/schema.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "faf0252188ecb577d5433e787bff3e7fe58c5377"
+at = "e42667b7f81f921261d8017ccbe4c95d800c18af"
 neg_rc = 0
 verdict = "holds"
 
@@ -217,7 +217,7 @@ check = "grep -q 'SCHEMA_VERSION: i64 = 1' tomlctl/src/review/store.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "faf0252188ecb577d5433e787bff3e7fe58c5377"
+at = "e42667b7f81f921261d8017ccbe4c95d800c18af"
 neg_rc = 0
 verdict = "holds"
 
@@ -227,7 +227,7 @@ check = """grep -q 'Exported => "exported"' tomlctl/src/review/fields.rs"""
 at = "base"
 
 [specs.premises.probe]
-at = "faf0252188ecb577d5433e787bff3e7fe58c5377"
+at = "e42667b7f81f921261d8017ccbe4c95d800c18af"
 neg_rc = 0
 verdict = "holds"
 
@@ -281,7 +281,7 @@ check = "grep -q 'fn refusal(f: &Finding, family: Family)' tomlctl/src/review/ex
 at = "base"
 
 [specs.premises.probe]
-at = "faf0252188ecb577d5433e787bff3e7fe58c5377"
+at = "e42667b7f81f921261d8017ccbe4c95d800c18af"
 neg_rc = 0
 verdict = "holds"
 
@@ -324,7 +324,7 @@ check = "grep -q 'fn check_old' tomlctl/src/review/add.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "faf0252188ecb577d5433e787bff3e7fe58c5377"
+at = "e42667b7f81f921261d8017ccbe4c95d800c18af"
 neg_rc = 0
 verdict = "holds"
 
@@ -367,6 +367,11 @@ writes_build = true
 claim = "the review store types a reproductions array"
 check = "grep -q 'reproductions' tomlctl/src/review/store.rs"
 at = "after:2"
+
+[specs.premises.probe]
+at = "e42667b7f81f921261d8017ccbe4c95d800c18af"
+neg_rc = 0
+verdict = "holds"
 
 [[specs]]
 ref = "add-the-review-schedule-verb"
@@ -432,10 +437,20 @@ claim = "the shared selection module exists"
 check = "test -f tomlctl/src/review/select.rs"
 at = "after:3"
 
+[specs.premises.probe]
+at = "e42667b7f81f921261d8017ccbe4c95d800c18af"
+neg_rc = 0
+verdict = "holds"
+
 [[specs.premises]]
 claim = "the task store accepts finding links"
 check = "grep -q 'finding_links' tomlctl/src/tasks/schema.rs"
 at = "after:1"
+
+[specs.premises.probe]
+at = "e42667b7f81f921261d8017ccbe4c95d800c18af"
+neg_rc = 0
+verdict = "holds"
 
 [[specs.premises]]
 claim = "add_many is the task store's batch entry point"
@@ -443,7 +458,7 @@ check = "grep -q 'pub(crate) fn add_many' tomlctl/src/tasks/add.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "faf0252188ecb577d5433e787bff3e7fe58c5377"
+at = "e42667b7f81f921261d8017ccbe4c95d800c18af"
 neg_rc = 0
 verdict = "holds"
 
@@ -496,6 +511,11 @@ claim = "review schedule exists"
 check = "test -f tomlctl/src/review/schedule.rs"
 at = "after:6"
 
+[specs.premises.probe]
+at = "e42667b7f81f921261d8017ccbe4c95d800c18af"
+neg_rc = 0
+verdict = "holds"
+
 [[specs]]
 ref = "show-a-tasks-findings-in-the-worker-view"
 outcome = "A worker on an apply row reads the findings it answers from the review store itself, in its task view, and a task with no finding link prints exactly what it prints today."
@@ -541,7 +561,7 @@ check = "grep -q 'fn worker(view: &Plan' tomlctl/src/plan/view.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "faf0252188ecb577d5433e787bff3e7fe58c5377"
+at = "e42667b7f81f921261d8017ccbe4c95d800c18af"
 neg_rc = 0
 verdict = "holds"
 
@@ -582,7 +602,7 @@ check = "grep -q 'fn outcomes' tomlctl/src/review/stats.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "faf0252188ecb577d5433e787bff3e7fe58c5377"
+at = "e42667b7f81f921261d8017ccbe4c95d800c18af"
 neg_rc = 0
 verdict = "holds"
 
@@ -659,7 +679,7 @@ check = """grep -q '^version = "0.22.0"' tomlctl/Cargo.toml"""
 at = "base"
 
 [specs.premises.probe]
-at = "faf0252188ecb577d5433e787bff3e7fe58c5377"
+at = "e42667b7f81f921261d8017ccbe4c95d800c18af"
 neg_rc = 0
 verdict = "holds"
 
@@ -669,7 +689,7 @@ check = """grep -q 'version, "0.22.0"' tomlctl/tests/capabilities.rs"""
 at = "base"
 
 [specs.premises.probe]
-at = "faf0252188ecb577d5433e787bff3e7fe58c5377"
+at = "e42667b7f81f921261d8017ccbe4c95d800c18af"
 neg_rc = 0
 verdict = "holds"
 
@@ -752,7 +772,7 @@ check = """grep -q '"implement-v2.md"' tomlctl/src/cli/dispatch/tests/skills.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "faf0252188ecb577d5433e787bff3e7fe58c5377"
+at = "e42667b7f81f921261d8017ccbe4c95d800c18af"
 neg_rc = 0
 verdict = "holds"
 
@@ -762,7 +782,7 @@ check = "grep -q 'commands/implement-v2.md' scripts/link-v2-review.sh"
 at = "base"
 
 [specs.premises.probe]
-at = "faf0252188ecb577d5433e787bff3e7fe58c5377"
+at = "e42667b7f81f921261d8017ccbe4c95d800c18af"
 neg_rc = 0
 verdict = "holds"
 
@@ -826,7 +846,7 @@ check = "grep -q 'Vetting, apply and harvest' claude/skills/implement-v2-engine/
 at = "base"
 
 [specs.premises.probe]
-at = "faf0252188ecb577d5433e787bff3e7fe58c5377"
+at = "e42667b7f81f921261d8017ccbe4c95d800c18af"
 neg_rc = 0
 verdict = "holds"
 
@@ -1737,6 +1757,199 @@ at = "faf0252188ecb577d5433e787bff3e7fe58c5377"
 neg_rc = 0
 verdict = "holds"
 
+[[specs]]
+ref = "make-the-worker-views-finding-block-pass-the-plan-finding-class-gate"
+outcome = "The plan finding-class gate reads every `Finding` it meets under tomlctl/src/plan, including the worker view's new findings block"
+constraints = [
+    "The gate's parser lives in tomlctl/src/cli/dispatch/tests/finding_classes.rs, which this task does not hold; change the code in view.rs (for example the binding name or pattern the parser trips on near the `Some(finding)` arm of the findings block), never the parser",
+    "The worker view's output stays byte-identical: the plan_view tests still pass unchanged",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "The plan finding-class gate passes"
+check = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests::finding_classes::documented_plan_classes_match_the_source"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.accept]]
+behaviour = "The worker view tests still pass"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(plan_view)'"
+kind = "guard"
+positive = ""
+writes_build = true
+
+[[specs]]
+ref = "make-the-apply-v2-engines-earlier-milestone-listing-parse"
+outcome = "Every `tomlctl` invocation in claude/skills/apply-v2-engine/SKILL.md parses under the real clap parser"
+constraints = [
+    "Suggested means: In the line `tomlctl tasks list --slug <flow> --where checkpoint=<earlier id> --where-not status=done --select id,status --lines`, replace the placeholder `<earlier id>` with one that holds no space, `<earlier-id>`, and use the same spelling wherever the surrounding prose names that placeholder",
+    "Change nothing else in the skill",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "The placeholder holds no space"
+check = "! grep -q 'checkpoint=<earlier id>' claude/skills/apply-v2-engine/SKILL.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[[specs.accept]]
+behaviour = "The command lint passes"
+check = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests::lint::command_lint"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs]]
+ref = "settle-the-schema-test-that-expects-an-entry-less-store-to-stay-at-version-1"
+outcome = "tasks::schema::tests::an_entry_with_no_key_is_dropped_on_both_sides passes, and a task store whose `[[finding_links]]` entries are all dropped as keyless is stamped as a store with no finding links is"
+constraints = [
+    "`finding_links` stays a v2 key: a store that holds at least one stored finding link is stamped schema_version 2",
+    "A finding-link entry with no `ref`, or with neither `fixes` nor `settles`, is dropped on read and on write and must not by itself raise the stamp; when the stamp is computed before such entries are dropped, fix the code, and change the test's expectation only when the test now holds a v2 key that legitimately survives",
+    "The tasks_finding_links integration tests still pass unchanged",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "The schema unit test passes"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(an_entry_with_no_key_is_dropped_on_both_sides)'"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.accept]]
+behaviour = "The schema unit tests and the finding-link tests still pass"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(tasks::schema::tests) | binary(tasks_finding_links)'"
+kind = "guard"
+positive = ""
+writes_build = true
+
+[[specs]]
+ref = "split-the-apply-verbs-out-of-reviewmd-into-their-own-reference"
+outcome = "claude/skills/tomlctl/references/review.md is under the 600-line ceiling, and its section `## Apply through a v2 flow` lives in the new claude/skills/tomlctl/references/review-apply.md, linked from review.md and from the tomlctl skill's References list"
+constraints = [
+    "Suggested means: Move the whole `## Apply through a v2 flow` section (the flag tables and output shapes of `review schedule`, `review reconcile`, `review anchor`, `review reproduce` and `review reproduce-status`) into review-apply.md with a title and a `## Contents` list as the sibling references carry; leave in review.md a short pointer under its Contents and where the section stood; add review-apply.md to SKILL.md's References list and re-point SKILL.md's capability-table link for the six apply features at the new file",
+    "Move text, do not rewrite it: every flag row and output key stays as written",
+    "review-apply.md is itself under 600 lines",
+    "No link to the moved section is left pointing at review.md; search claude/ for `review.md#apply` and report any hit outside this task's files in the note rather than editing it",
+    "The flag-table and command lints read these files; a flag table must keep the shape they parse",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "review.md is under the ceiling"
+check = 'test "$(wc -l < claude/skills/tomlctl/references/review.md)" -lt 600'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[[specs.accept]]
+behaviour = "The new reference documents review schedule and is linked from the skill"
+check = "grep -q 'review schedule' claude/skills/tomlctl/references/review-apply.md && grep -q 'references/review-apply.md' claude/skills/tomlctl/SKILL.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[[specs.accept]]
+behaviour = "The reference ceiling, flag-table and command lints pass"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(skill_references_under_line_ceiling) | test(command_lint) | test(flag_table_lint)'"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs]]
+ref = "give-the-five-apply-verbs-their-output-options-cases"
+outcome = "tomlctl/tests/output_options.rs carries a case for `review anchor`, `review reconcile`, `review reproduce`, `review reproduce-status` and `review schedule`, each in the shape the neighbouring review verbs' cases take; the two read verbs refuse a bad shaping flag as the other reads do; and `every_leaf_command_has_a_case` and the output-options suite pass"
+constraints = [
+    "Model each case on an existing review verb of the same kind: a read verb for `anchor` and `reproduce-status`, a write verb for `reproduce`, `schedule` and `reconcile`",
+    "Each case exercises the real verb against a fixture store; none is a stub that only names the command",
+    "Change no existing case",
+    "The five cases and the fixture rows an earlier run of this task left in tomlctl/tests/output_options.rs stay; build on them",
+    "In `anchor::run` (tomlctl/src/review/anchor.rs) and `reproduce::status` (tomlctl/src/review/reproduce.rs) print the report through the read emitter `print_json_line` in place of `print_json_compact`; `reproduce::record` is a write and keeps the lenient emitter",
+    "Neither verb's stdout changes when no shaping flag is passed, and each still exits 1 after printing when its anchor or expectation does not hold: tests/review_anchor.rs and tests/review_reproduce.rs pass unchanged",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "Every leaf command has a case"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(output_options) & test(every_leaf_command_has_a_case)'"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.accept]]
+behaviour = "The output-options suite passes"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(output_options)'"
+kind = "guard"
+positive = ""
+writes_build = true
+
+[[specs.accept]]
+behaviour = "The anchor and reproduce verb tests still pass"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(review_anchor) | binary(review_reproduce)'"
+kind = "guard"
+positive = ""
+writes_build = true
+
+[[specs]]
+ref = "re-point-the-apply-v2-engine-at-review-applymd-and-close-its-listing-fence"
+outcome = "claude/skills/apply-v2-engine/SKILL.md names the tomlctl skill's `references/review-apply.md` wherever it sends the reader to the `review schedule`, `review reconcile`, `review anchor`, `review reproduce` or `review reproduce-status` reference, and the code fence after the `--where checkpoint=<earlier-id>` listing closes on a line of its own"
+constraints = [
+    "The schedule-rule step currently reads: the `tomlctl` skill's `references/review.md`, section `tomlctl review schedule`; that section now lives in `references/review-apply.md`",
+    "A pointer to a section that still lives in review.md (for example `review stats`, `review show`, `review list`) stays as it is: check each against the two files' headings before changing it",
+    "The line holding the closing fence and the sentence `The engine's report is the run's outcome; ...` becomes a fence line, a blank line, then the sentence; no wording changes",
+    "Change nothing else in the skill",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "The schedule rule points at the new reference"
+check = "grep -q 'references/review-apply.md' claude/skills/apply-v2-engine/SKILL.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[[specs.accept]]
+behaviour = "No fence shares its line with prose"
+check = "! grep -q -E '^```[[:space:]]+[A-Z]' claude/skills/apply-v2-engine/SKILL.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[[specs.accept]]
+behaviour = "The command lint still passes"
+check = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests::lint::command_lint"
+kind = "guard"
+positive = ""
+writes_build = true
+
 [[milestones]]
 id = "A"
 gates = [
@@ -1746,7 +1959,6 @@ gates = [
     "cargo clippy --manifest-path glimpse/Cargo.toml --locked",
     "cargo install --path tomlctl",
     "cargo install --path glimpse",
-    "bash scripts/link-v2-review.sh",
 ]
 elaboration = "upfront"
 defer_reason = ""
@@ -1775,12 +1987,156 @@ gates = [
 elaboration = "upfront"
 defer_reason = ""
 
+[[changes]]
+at = 2026-11-10T20:59:32Z
+ref = "make-the-worker-views-finding-block-pass-the-plan-finding-class-gate"
+field = "*"
+old = ""
+new = "Make the worker view's finding block pass the plan finding-class gate"
+actor = "orchestrator"
+reason = "gate A round 1: cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast fails cli::dispatch::tests::finding_classes::documented_plan_classes_match_the_source: tomlctl/src/plan/view.rs:577, a `Finding` states its class in a shape the parser does not read"
+
+[[changes]]
+at = 2026-11-10T20:59:32Z
+ref = "make-the-apply-v2-engines-earlier-milestone-listing-parse"
+field = "*"
+old = ""
+new = "Make the apply-v2 engine's earlier-milestone listing parse"
+actor = "orchestrator"
+reason = "gate A round 1: cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast fails cli::dispatch::tests::lint::command_lint: claude/skills/apply-v2-engine/SKILL.md, `--where checkpoint=<earlier id>` is rejected with unexpected argument 'id>'"
+
+[[changes]]
+at = 2026-11-10T20:59:32Z
+ref = "settle-the-schema-test-that-expects-an-entry-less-store-to-stay-at-version-1"
+field = "*"
+old = ""
+new = "Settle the schema test that expects an entry-less store to stay at version 1"
+actor = "orchestrator"
+reason = "gate A round 1: cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast fails tasks::schema::tests::an_entry_with_no_key_is_dropped_on_both_sides: src/tasks/schema.rs:2182, left Some(Integer(2)), right Some(Integer(1))"
+
+[[changes]]
+at = 2026-11-10T20:59:32Z
+ref = "split-the-apply-verbs-out-of-reviewmd-into-their-own-reference"
+field = "*"
+old = ""
+new = "Split the apply verbs out of review.md into their own reference"
+actor = "orchestrator"
+reason = "gate A round 1: cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast fails cli::dispatch::tests::skills::skill_references_under_line_ceiling: claude/skills/tomlctl/references/review.md is 662 lines, 62 over the 600-line ceiling"
+
+[[changes]]
+at = 2026-11-10T20:59:32Z
+ref = "give-the-five-apply-verbs-their-output-options-cases"
+field = "*"
+old = ""
+new = "Give the five apply verbs their output-options cases"
+actor = "orchestrator"
+reason = "gate A round 1: cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast fails every_leaf_command_has_a_case (tests/output_options.rs:2136): commands without a case: review anchor, review reconcile, review reproduce, review reproduce-status, review schedule"
+
+[[changes]]
+at = 2026-11-10T20:59:41Z
+ref = "replace-fix_shape-with-blocked_on-in-the-finding-catalogue"
+field = "needs"
+old = "[7,9]"
+new = "[7,9,33]"
+actor = "orchestrator"
+reason = "gate A round 1: fix task 33 now holds tomlctl/tests/output_options.rs before this row; the row follows it"
+
+[[changes]]
+at = 2026-11-10T20:59:41Z
+ref = "bump-tomlctl-to-0240-and-document-the-blocked-finding-surface"
+field = "needs"
+old = "[10,21,22]"
+new = "[10,21,22,32]"
+actor = "orchestrator"
+reason = "gate A round 1: fix task 32 now holds claude/skills/tomlctl/references/review.md and SKILL.md before this row; the row follows it"
+
+[[changes]]
+at = 2026-11-10T20:59:41Z
+ref = "add-the-settle-drain-and-the-apply-row-failure-rules-to-the-engines"
+field = "needs"
+old = "[11,16,21]"
+new = "[11,16,21,30]"
+actor = "orchestrator"
+reason = "gate A round 1: fix task 30 now holds claude/skills/apply-v2-engine/SKILL.md before this row; the row follows it"
+
+[[changes]]
+at = 2026-11-10T21:04:42Z
+ref = "give-the-five-apply-verbs-their-output-options-cases"
+field = "files"
+old = '["tomlctl/tests/output_options.rs"]'
+new = '["tomlctl/tests/output_options.rs","tomlctl/src/review/anchor.rs","tomlctl/src/review/reproduce.rs"]'
+actor = "orchestrator"
+reason = "task 33 failed: its two read cases cannot pass while `review anchor` and `review reproduce-status` print through the lenient write emitter; the task now also holds those two source files and switches the emitter"
+
+[[changes]]
+at = 2026-11-10T21:04:42Z
+ref = "give-the-five-apply-verbs-their-output-options-cases"
+field = "needs"
+old = "[10]"
+new = "[10,4,5]"
+actor = "orchestrator"
+reason = "task 33 failed: its two read cases cannot pass while `review anchor` and `review reproduce-status` print through the lenient write emitter; the task now also holds those two source files and switches the emitter"
+
+[[changes]]
+at = 2026-11-10T21:04:42Z
+ref = "give-the-five-apply-verbs-their-output-options-cases"
+field = "spec.outcome"
+old = "tomlctl/tests/output_options.rs carries a case for `review anchor`, `review reconcile`, `review reproduce`, `review reproduce-status` and `review schedule`, each in the shape the neighbouring review verbs' cases take, and `every_leaf_command_has_a_case` passes"
+new = "tomlctl/tests/output_options.rs carries a case for `review anchor`, `review reconcile`, `review reproduce`, `review reproduce-status` and `review schedule`, each in the shape the neighbouring review verbs' cases take; the two read verbs refuse a bad shaping flag as the other reads do; and `every_leaf_command_has_a_case` and the output-options suite pass"
+actor = "orchestrator"
+reason = "task 33 failed: its two read cases cannot pass while `review anchor` and `review reproduce-status` print through the lenient write emitter; the task now also holds those two source files and switches the emitter"
+
+[[changes]]
+at = 2026-11-10T21:04:42Z
+ref = "give-the-five-apply-verbs-their-output-options-cases"
+field = "spec.constraints"
+old = '["Model each case on an existing review verb of the same kind: a read verb for `anchor` and `reproduce-status`, a write verb for `reproduce`, `schedule` and `reconcile`","Each case exercises the real verb against a fixture store; none is a stub that only names the command","Change no existing case"]'
+new = """["Model each case on an existing review verb of the same kind: a read verb for `anchor` and `reproduce-status`, a write verb for `reproduce`, `schedule` and `reconcile`","Each case exercises the real verb against a fixture store; none is a stub that only names the command","Change no existing case","The five cases and the fixture rows an earlier run of this task left in tomlctl/tests/output_options.rs stay; build on them","In `anchor::run` (tomlctl/src/review/anchor.rs) and `reproduce::status` (tomlctl/src/review/reproduce.rs) print the report through the read emitter `print_json_line` in place of `print_json_compact`; `reproduce::record` is a write and keeps the lenient emitter","Neither verb's stdout changes when no shaping flag is passed, and each still exits 1 after printing when its anchor or expectation does not hold: tests/review_anchor.rs and tests/review_reproduce.rs pass unchanged"]"""
+actor = "orchestrator"
+reason = "task 33 failed: its two read cases cannot pass while `review anchor` and `review reproduce-status` print through the lenient write emitter; the task now also holds those two source files and switches the emitter"
+
+[[changes]]
+at = 2026-11-10T21:04:42Z
+ref = "give-the-five-apply-verbs-their-output-options-cases"
+field = "spec.accept"
+old = """[{"behaviour":"Every leaf command has a case","check":"cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(output_options) & test(every_leaf_command_has_a_case)'","kind":"forward","positive":"","writes_build":true},{"behaviour":"The output-options suite passes","check":"cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(output_options)'","kind":"guard","positive":"","writes_build":true}]"""
+new = """[{"behaviour":"Every leaf command has a case","check":"cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(output_options) & test(every_leaf_command_has_a_case)'","kind":"forward","positive":"","writes_build":true},{"behaviour":"The output-options suite passes","check":"cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(output_options)'","kind":"guard","positive":"","writes_build":true},{"behaviour":"The anchor and reproduce verb tests still pass","check":"cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(review_anchor) | binary(review_reproduce)'","kind":"guard","positive":"","writes_build":true}]"""
+actor = "orchestrator"
+reason = "task 33 failed: its two read cases cannot pass while `review anchor` and `review reproduce-status` print through the lenient write emitter; the task now also holds those two source files and switches the emitter"
+
+[[changes]]
+at = 2026-11-10T21:04:42Z
+ref = "re-point-the-apply-v2-engine-at-review-applymd-and-close-its-listing-fence"
+field = "*"
+old = ""
+new = "Re-point the apply-v2 engine at review-apply.md and close its listing fence"
+actor = "orchestrator"
+reason = "milestone A's own work broke this file's pointers: task 32 moved the `tomlctl review schedule` section from references/review.md to references/review-apply.md, and the fence after the earlier-milestone listing closes on a line shared with prose"
+
+[[changes]]
+at = 2026-11-10T21:04:42Z
+ref = "milestone:A"
+field = "gates"
+old = '["cargo fmt --manifest-path tomlctl/Cargo.toml -- --check","cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets -- -D warnings","cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast","cargo clippy --manifest-path glimpse/Cargo.toml --locked","cargo install --path tomlctl","cargo install --path glimpse","bash scripts/link-v2-review.sh"]'
+new = '["cargo fmt --manifest-path tomlctl/Cargo.toml -- --check","cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets -- -D warnings","cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast","cargo clippy --manifest-path glimpse/Cargo.toml --locked","cargo install --path tomlctl","cargo install --path glimpse"]'
+actor = "orchestrator"
+reason = "user: drop `bash scripts/link-v2-review.sh` from the gates; this machine deploys the config dir by copy, so the script refuses the 28 real files in place and no fix task can make it pass"
+
+[[changes]]
+at = 2026-11-10T21:04:49Z
+ref = "add-the-settle-drain-and-the-apply-row-failure-rules-to-the-engines"
+field = "needs"
+old = "[11,16,21,30]"
+new = "[11,16,21,30,34]"
+actor = "orchestrator"
+reason = "task 34 now holds claude/skills/apply-v2-engine/SKILL.md before this row; the row follows it"
+
 [[items]]
 id = 1
 ref = "link-task-rows-to-review-findings-in-the-task-store"
 title = "Link task rows to review findings in the task store"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1799,15 +2155,15 @@ deps_note = ""
 action = "Add the `[[finding_links]]` array to the task store and the `fixes`, `settles` and `review_store` row keys to `tasks add-many`, mirroring how `[[backlog_links]]` and `closes` work."
 detail = "Document the array in tasks-store.md beside `[[backlog_links]]` and the row keys in tasks-write.md under `tasks add-many`. A title change through `tasks update` re-derives the row's ref and carries its backlog link to the new ref; carry the finding link the same way."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "9257466010baf02cacbf3a60be9c869dcd116849"
 
 [[items]]
 id = 2
 ref = "add-the-scheduled-status-apply-link-fields-and-reproductions-array-to-the-review-store"
 title = "Add the scheduled status, apply link fields and reproductions array to the review store"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1824,15 +2180,15 @@ deps_note = ""
 action = "Add the `scheduled` finding status with the `apply_flow` and `apply_task` link fields, type the top-level `[[reproductions]]` array, and let the review store read and write schema version 2."
 detail = "No verb writes the status or the array yet; this task makes the store able to hold them and makes every existing reader treat `scheduled` correctly."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "9257466010baf02cacbf3a60be9c869dcd116849"
 
 [[items]]
 id = 3
 ref = "lift-export-v1s-finding-selection-into-a-shared-module"
 title = "Lift export-v1's finding selection into a shared module"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1848,15 +2204,15 @@ deps_note = ""
 action = "Move the selection and refusal rules `review export-v1` applies (which findings may leave triage, what `--all` holds back, why an id is refused) into `tomlctl/src/review/select.rs`, and have `export-v1` call it."
 detail = ""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "9257466010baf02cacbf3a60be9c869dcd116849"
 
 [[items]]
 id = 4
 ref = "add-the-review-anchor-read-verb"
 title = "Add the review anchor read verb"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1876,15 +2232,15 @@ deps_note = ""
 action = "Add `tomlctl review anchor <id> [--gone]`, which exits 0 when a finding's anchor holds in the working tree and 1 when it does not."
 detail = "Reuse the `old`-text matching `review add` already applies when it accepts a cleanup row, so the verb and the write-time check cannot disagree. For a defect, take the symbol's text after its last `::`, `.` or `/` and test it with `crate::anchor::symbol_regex` (whole-word), as items sweep and orphans do."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "9257466010baf02cacbf3a60be9c869dcd116849"
 
 [[items]]
 id = 5
 ref = "add-the-review-reproduce-and-reproduce-status-verbs"
 title = "Add the review reproduce and reproduce-status verbs"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1906,15 +2262,15 @@ deps_note = ""
 action = "Add `tomlctl review reproduce --ndjson <path>`, which writes `[[reproductions]]` rows, and `tomlctl review reproduce-status <ids> --expect <verdict>`, which answers by exit code whether each finding's current reproduction has that verdict."
 detail = ""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "9257466010baf02cacbf3a60be9c869dcd116849"
 
 [[items]]
 id = 6
 ref = "add-the-review-schedule-verb"
 title = "Add the review schedule verb"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1941,15 +2297,15 @@ deps_note = ""
 action = "Add `tomlctl review schedule`, which mints fix task rows in a v2 flow's task store from selected findings and marks each finding `scheduled` with its link."
 detail = """In this milestone a blocked finding is one with `fix_shape = "needs-plan"`, and the verb refuses it; settle tasks and `--settle-checkpoint` come in a later task. No finding carries `decision_answer` or `fix_sketch` yet; a later task adds both, so leave them out. Mint rows through the same path `tasks add-many` uses, so the store's own validation and audit apply. A defect's accept entry carries no `writes_build` key, so the gate runs it."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "9257466010baf02cacbf3a60be9c869dcd116849"
 
 [[items]]
 id = 7
 ref = "add-the-review-reconcile-verb"
 title = "Add the review reconcile verb"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1968,15 +2324,15 @@ deps_note = ""
 action = "Add `tomlctl review reconcile <store flag> --flow <slug>`, which finds the store's scheduled findings whose `apply_flow` is that flow, looks each one's task up by `apply_task` in the flow's task store, and moves the finding by the transition table."
 detail = "Start from the review store's findings, not from the flow's links: a removed task row has no link entry left, and its finding must still return to open. A return to open writes a `reopen_reason` opening `apply: `."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "9257466010baf02cacbf3a60be9c869dcd116849"
 
 [[items]]
 id = 8
 ref = "show-a-tasks-findings-in-the-worker-view"
 title = "Show a task's findings in the worker view"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1993,15 +2349,15 @@ deps_note = ""
 action = "Make `tomlctl plan view --for worker --task <n>` print a block for each finding the task fixes or settles, read from the linked review store in the implementer projection."
 detail = "The review group's store and field modules are private to it. Add one crate-visible entry point in the review group that loads a store by path and returns named findings in the implementer projection, and call it from the view; do not re-implement the projection in the plan module."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "9257466010baf02cacbf3a60be9c869dcd116849"
 
 [[items]]
 id = 9
 ref = "add-review-stats-apply"
 title = "Add review stats --apply"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -2021,15 +2377,15 @@ deps_note = ""
 action = "Add `tomlctl review stats --apply`: apply outcomes (scheduled, resolved, reopened) and reproductions by verdict, read from the store alone."
 detail = "Describe the measure in measurement.md beside `--outcomes`, saying it is the native counterpart and that `--outcomes` still reads only v1 exports."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "9257466010baf02cacbf3a60be9c869dcd116849"
 
 [[items]]
 id = 10
 ref = "bump-tomlctl-to-0230-and-document-the-apply-verbs"
 title = "Bump tomlctl to 0.23.0 and document the apply verbs"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -2054,15 +2410,15 @@ deps_note = ""
 action = "Set the version to 0.23.0, add the milestone A features to the capability list and its tests, refresh both lock files, and document the new verbs and fields."
 detail = "`cargo tree --manifest-path tomlctl/Cargo.toml >/dev/null` and the same for glimpse rewrite the lock files without building. In review.md add a flag table and output shape for `review anchor`, `review reproduce`, `review reproduce-status`, `review schedule`, `review reconcile` and `review stats --apply`, the `scheduled` status with its link fields, and the `[[reproductions]]` array; add the verbs to the review row of the Quick Reference in SKILL.md and the features to README.md."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "9257466010baf02cacbf3a60be9c869dcd116849"
 
 [[items]]
 id = 11
 ref = "add-the-apply-v2-carrier-and-the-apply-v2-engine-skill"
 title = "Add the /apply-v2 carrier and the apply-v2-engine skill"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -2080,15 +2436,15 @@ deps_note = ""
 action = "Write the thin `/apply-v2` carrier and the `apply-v2-engine` skill it invokes, register the carrier's required skills in the carrier gate, and add both entries to the two link scripts."
 detail = "The skill covers pre-flight, resolving the home, opening and approving a new flow for a flow-less review, the milestones, scheduling, the commit, invoking `implement-v2-engine`, and the close summary. In this milestone it adds one fix milestone and no settle milestone. Model the carrier on `claude/commands/implement-v2.md` and the skill's voice on `claude/skills/implement-v2-engine/SKILL.md`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "9257466010baf02cacbf3a60be9c869dcd116849"
 
 [[items]]
 id = 12
 ref = "give-the-execution-engine-its-findings-reference-and-the-reconcile-step"
 title = "Give the execution engine its findings reference and the reconcile step"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -2105,8 +2461,8 @@ deps_note = ""
 action = "Create `references/findings.md` holding the engine's rules for apply rows, with the reconcile step; add its row to the step table in SKILL.md; point to it from drain.md's commit step; add the milestone A features to the carrier's pre-flight."
 detail = "This milestone writes what an apply row is, how the worker sees its findings, the rule for an anchor premise on a started row, the exemption of the linked review stores from the clean-tree check and the out-of-lane rule, and the Reconcile section. Later tasks add the reproduce check, the settle drain and the failure rules to the same file. In SKILL.md, change the out-of-scope line that lists apply so it no longer says apply is out of scope. The features to add to the carrier's pre-flight are `tasks_finding_links`, `review_schedule`, `review_reconcile`, `review_anchor`, `review_reproduce` and `review_stats_apply`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "9257466010baf02cacbf3a60be9c869dcd116849"
 
 [[items]]
 id = 13
@@ -2242,6 +2598,7 @@ files = [
 needs = [
     7,
     9,
+    33,
 ]
 coupling = []
 deps_note = ""
@@ -2424,6 +2781,7 @@ needs = [
     10,
     21,
     22,
+    32,
 ]
 coupling = []
 deps_note = ""
@@ -2546,6 +2904,8 @@ needs = [
     11,
     16,
     21,
+    30,
+    34,
 ]
 coupling = []
 deps_note = ""
@@ -2581,3 +2941,138 @@ detail = "The CLAUDE.md section follows the shape of the Implement v2 section: o
 acceptance = ""
 agent = ""
 commit = ""
+
+[[items]]
+id = 29
+ref = "make-the-worker-views-finding-block-pass-the-plan-finding-class-gate"
+title = "Make the worker view's finding block pass the plan finding-class gate"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/src/plan/view.rs"]
+needs = [8]
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-deep"
+commit = "9257466010baf02cacbf3a60be9c869dcd116849"
+
+[[items]]
+id = 30
+ref = "make-the-apply-v2-engines-earlier-milestone-listing-parse"
+title = "Make the apply-v2 engine's earlier-milestone listing parse"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/apply-v2-engine/SKILL.md"]
+needs = [11]
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "9257466010baf02cacbf3a60be9c869dcd116849"
+
+[[items]]
+id = 31
+ref = "settle-the-schema-test-that-expects-an-entry-less-store-to-stay-at-version-1"
+title = "Settle the schema test that expects an entry-less store to stay at version 1"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/src/tasks/schema.rs"]
+needs = [1]
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-deep"
+commit = "9257466010baf02cacbf3a60be9c869dcd116849"
+
+[[items]]
+id = 32
+ref = "split-the-apply-verbs-out-of-reviewmd-into-their-own-reference"
+title = "Split the apply verbs out of review.md into their own reference"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/tomlctl/references/review.md",
+    "claude/skills/tomlctl/references/review-apply.md",
+    "claude/skills/tomlctl/SKILL.md",
+]
+needs = [10]
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-deep"
+commit = "9257466010baf02cacbf3a60be9c869dcd116849"
+
+[[items]]
+id = 33
+ref = "give-the-five-apply-verbs-their-output-options-cases"
+title = "Give the five apply verbs their output-options cases"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/tests/output_options.rs",
+    "tomlctl/src/review/anchor.rs",
+    "tomlctl/src/review/reproduce.rs",
+]
+needs = [
+    10,
+    4,
+    5,
+]
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-deep"
+commit = "9257466010baf02cacbf3a60be9c869dcd116849"
+
+[[items]]
+id = 34
+ref = "re-point-the-apply-v2-engine-at-review-applymd-and-close-its-listing-fence"
+title = "Re-point the apply-v2 engine at review-apply.md and close its listing fence"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/apply-v2-engine/SKILL.md"]
+needs = [
+    30,
+    32,
+]
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "9257466010baf02cacbf3a60be9c869dcd116849"
