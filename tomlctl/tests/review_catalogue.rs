@@ -98,6 +98,26 @@ fn catalogue_prints_merged_index_with_hashes() {
 }
 
 #[test]
+fn catalogue_prints_project_check_executor_and_command() {
+    let tmp = catalogue();
+    let project = tmp.path().join("project");
+    write(
+        &project,
+        "config.toml",
+        "[[checks]]\nid = \"lint\"\nfamilies = [\"code\"]\ncommand = \"cargo clippy\"\n",
+    );
+    let json = run_json(&tmp, &["--project", project.to_str().unwrap()]);
+    let entries = json["entries"].as_array().unwrap();
+    let check = entries.iter().find(|e| e["id"] == "lint").unwrap();
+    assert_eq!(check["type"], "check");
+    assert_eq!(check["executor"], "verification");
+    assert_eq!(check["command"], "cargo clippy");
+    let lens = entries.iter().find(|e| e["id"] == "correctness").unwrap();
+    assert!(lens["executor"].is_null(), "{lens}");
+    assert!(lens["command"].is_null(), "{lens}");
+}
+
+#[test]
 fn catalogue_signals_marks_matched() {
     let tmp = catalogue();
     let json = run_json(&tmp, &["--signals", "lang:rust"]);

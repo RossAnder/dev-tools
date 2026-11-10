@@ -804,6 +804,8 @@ impl Catalogue {
                     },
                     "matched": matched,
                     "attaches_to": e.attaches_to,
+                    "executor": e.executor.map(Executor::as_str),
+                    "command": e.command,
                     "path": e.path_text(),
                     "layer": e.layer.as_str(),
                     "disabled": e.disabled,
