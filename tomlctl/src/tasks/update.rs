@@ -925,9 +925,9 @@ fn patch(
             // No row or audit trail holds `new_ref`, so anything keyed on it is
             // a removed row's leftover.
             store.drop_ref_entries(new_ref);
-            // The stamp, file notes, backlog links, spec and audit trail are
-            // keyed on `ref` like `last_import_refs`, so they follow the row
-            // rather than being stranded under the old key.
+            // The stamp, file notes, backlog and finding links, spec and audit
+            // trail are keyed on `ref` like `last_import_refs`, so they follow
+            // the row rather than being stranded under the old key.
             if let Some(entry) = store
                 .import_overrides
                 .iter_mut()
@@ -944,6 +944,13 @@ fn patch(
             }
             for link in store
                 .backlog_links
+                .iter_mut()
+                .filter(|link| link.r#ref == previous)
+            {
+                link.r#ref.clone_from(new_ref);
+            }
+            for link in store
+                .finding_links
                 .iter_mut()
                 .filter(|link| link.r#ref == previous)
             {

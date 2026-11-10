@@ -19,6 +19,7 @@ $entries = @(
     @{ Kind = 'commands'; Name = 'review-plan-v2.md' }
     @{ Kind = 'commands'; Name = 'plan-v2.md' }
     @{ Kind = 'commands'; Name = 'implement-v2.md' }
+    @{ Kind = 'commands'; Name = 'apply-v2.md' }
     @{ Kind = 'agents'; Name = 'review-surveyor.md' }
     @{ Kind = 'agents'; Name = 'review-sweeper.md' }
     @{ Kind = 'agents'; Name = 'review-checker.md' }
@@ -37,6 +38,7 @@ $entries = @(
     @{ Kind = 'skills'; Name = 'review-v2-lenses' }
     @{ Kind = 'skills'; Name = 'plan-v2-engine' }
     @{ Kind = 'skills'; Name = 'implement-v2-engine' }
+    @{ Kind = 'skills'; Name = 'apply-v2-engine' }
     @{ Kind = 'workflows'; Name = 'review-v2.js' }
     @{ Kind = 'workflows'; Name = 'plan-v2-review.js' }
     @{ Kind = 'workflows'; Name = 'plan-v2-investigate.js' }

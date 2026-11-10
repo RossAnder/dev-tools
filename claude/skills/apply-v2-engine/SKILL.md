@@ -1,0 +1,244 @@
+---
+name: apply-v2-engine
+description: "Orchestrator contract for applying the findings a v2 review's triage selected — the argument rules, resolving the flow the fixes go to and refusing a v1 flow, the preview, opening and approving a new flow for a flow-less review, the fix milestone and its gates, `review schedule`, the commits, the hand-over to `implement-v2-engine` and the close summary, with re-entry. Invoked by the /apply-v2 carrier after its pre-flight, before the first `tomlctl` call; not for direct use."
+---
+
+# Apply v2 engine
+
+This is the orchestrator's half of applying triaged review findings. The `/apply-v2` carrier checks that the session can run it and then invokes this skill. This skill schedules; the `implement-v2-engine` skill runs. Scheduling turns each selected finding into a fix task in a v2 flow's task store, linked both ways: the task names its findings through `[[finding_links]]`, and the finding moves to `scheduled` with `apply_flow` and `apply_task`. From then on the findings ride the flow's own milestone: the execution engine gates and commits it, and a finding becomes `resolved` only when its task is committed.
+
+`<store>` below is the review store's repo-relative path, and `<store flag>` the flag that names it to every `tomlctl review` verb: `--slug <slug>` for `.claude/flows/<slug>/review-v2.toml`, `--scope <scope>` for `.claude/review-v2/<scope>.toml`. `<flow>` is the flow that receives the tasks, its home, and `<id>` the fix milestone's id. The examples below spell the store flag as `--slug <slug>`; a flow-less store takes `--scope <scope>` in its place.
+
+## Your role
+
+- **Triage decided the selection.** Ask the user nothing about which findings to apply, whether to go on, or whether to approve a new flow. Every condition below that this skill cannot settle is a stop that names the condition, never a question. The execution engine asks its own questions once it runs.
+- **You run no build, test or gate.** The fix milestone's gates are commands for the execution engine's `verification` agent; you only choose them.
+- **You dispatch no agent.** Workers and the verifier are the execution engine's, launched as its own steps say.
+- **Every store write goes through a `tomlctl` verb.** `plan.toml`, `tasks.toml` and the review store are never written with Write or Edit. The one file this skill authors by hand is a new flow's `docs/flows/<flow>/brief.md`.
+
+## Rules
+
+1. **Invoke the `tomlctl` skill before the first `tomlctl` call.** Its guidance canon holds throughout: payloads are files staged with the Write tool in the session's scratchpad directory, never heredocs, never piped, and `tomlctl` output is never piped into a text tool or redirected with `2>/dev/null`.
+2. **Nothing is opened, added or scheduled before the preview passes.** A milestone once added cannot be removed, and a new flow once opened keeps its directories.
+3. **A home whose plan is approved takes every plan write with a `--reason`**, since its task store is audited. The reason is `apply <store>: <finding ids>`, the form `review schedule` writes on each row it mints.
+4. **Writes under `docs/flows/**` prompt in attended `default` mode and are denied under `dontAsk`.** The allow rule that pre-approves them is in the `plan-v2-engine` skill's [open-and-challenge.md](../plan-v2-engine/references/open-and-challenge.md), section "Writing under `docs/flows/`". Name it when a prompt or a denial interrupts the brief; add it to no settings file yourself.
+5. **Commits stage each path by name**, drafted through the `commit-conventions` skill. Never `git add -A`, `git add .`, `git add -f` or `commit -a`, and never `--no-verify`. Never stage an edit this skill did not make.
+
+## Arguments
+
+Read the arguments before anything else:
+
+- `<slug>` or `--scope <scope>`: exactly one. With neither, or both, stop and say `/apply-v2` needs one store.
+- `<finding ids>` or `--all`: exactly one. With neither, stop and say triage names the selection, as `/apply-v2 <store> F1,F4` or `/apply-v2 <store> --all`; never choose the findings yourself.
+
+Anything else is not an argument: say so and stop, rather than guess what it was meant to change.
+
+## Steps
+
+| Step | Skipped when |
+|---|---|
+| 1. Resolve the home | Never |
+| 2. Preview | Never |
+| 3. Resolve the gates | Re-entry found the fix milestone already added |
+| 4. Open the new flow | The home is the reviewed flow, or re-entry found the new flow already opened |
+| 5. Add the fix milestone | Re-entry found it already added |
+| 6. Schedule | Nothing selected is still `open` |
+| 7. Commit the new flow | The home is the reviewed flow, or the new flow is already approved |
+| 8. Approve the new flow | The home is the reviewed flow, or the new flow is already approved |
+| 9. Run | Never |
+| 10. Close | Never |
+
+### 1. Resolve the home
+
+For `--scope <scope>`, the home is a new flow; step 4 names it. For `<slug>`:
+
+```bash
+tomlctl plan stage --slug <slug>
+```
+
+| `plan stage` | Home |
+|---|---|
+| `approved`, `running` or `done` | `<slug>` itself. A `done` plan moves back to `running` once the fix milestone lands |
+| any other stage | none: stop, saying the plan of `<slug>` must be approved through `/plan-v2 <slug>` before findings can be applied to it |
+| refused, naming no `plan.toml` | Run `tomlctl flow list --select slug --lines`. When `<slug>` is listed, it is a v1 flow: stop, saying a review bound to a v1 flow has no apply path in `/apply-v2`, and that `/review-apply` or `/optimise-apply` applies it after `review export-v1`. When it is not listed, stop and say no flow `<slug>` exists |
+
+`blockers` other than an open run stop the command with the entry quoted, as the execution engine's pre-flight would. An open run is the execution engine's to settle at step 9, so it does not stop this step.
+
+### 2. Preview
+
+`review schedule` has no dry run, so read the selection before writing anything. For explicit ids:
+
+```bash
+tomlctl review show <ids> --slug <slug> --for orchestrator
+tomlctl review show <ids> --slug <slug> --for implementer
+```
+
+For `--all`, list the candidates of each kind the schedule rule takes:
+
+```bash
+tomlctl review list --slug <slug> --status open --kind defect --for orchestrator
+tomlctl review list --slug <slug> --status open --kind cleanup --for orchestrator
+```
+
+then `review show` the ids that remain after the rule below, `--for implementer`. Apply the schedule rule from the `tomlctl` skill's `references/review-apply.md`, section `tomlctl review schedule`: only `open` defects and cleanups of the `code` and `perf` families are taken; `fix_shape = needs-plan` and `effort = large` are refused; under `--all`, test removals and cleanups whose latest verdict is `plausible` are held. An explicit id that is unknown fails the read: stop and name it.
+
+- **Already scheduled.** A selected finding that is `scheduled` with `apply_flow` naming a flow is past this skill: Re-entry, below, says what follows.
+- **Nothing to schedule.** When no selected finding passes the rule and none is already scheduled, report each one with the reason it is held or refused and stop. No flow is opened and no milestone added.
+- **Dirty files.** Collect each passing finding's edited paths from the implementer rows: `target_file` when set, else `file`, and every `instances` path. Then:
+
+```bash
+git status --porcelain -- <every edited path>
+```
+
+  Any path it prints holds edits a fix worker would build on and the milestone commit would sweep in. Stop and name each; the user commits, moves or discards them, never this skill.
+
+Report what will be scheduled, held and refused, each with its reason, and go on.
+
+### 3. Resolve the gates
+
+The fix milestone is gated, since a fix that passes no gate proves nothing. The edited paths from step 2 place the fix in crates or packages: the nearest enclosing directory with a manifest (`Cargo.toml`, `package.json`, `pyproject.toml`, `go.mod`) and the commands the `CLAUDE.md` files name for it, read from the repository root's `CLAUDE.md` and that directory's own `CLAUDE.md` when it has one. A path no manifest encloses takes the commands the root `CLAUDE.md` names for that path's tree, such as a test it says runs when such paths change.
+
+- **On the reviewed flow**, start from the gates of the flow's latest milestone that has any:
+
+```bash
+tomlctl plan gate --slug <flow> --rows stops --lines
+```
+
+  The first line is the rest of the object; each later line is one `stops` row, `{kind, milestone, command}`, in store order. Take the commands of the last milestone those rows name. Add the build, test and lint commands of each crate or package the edited paths sit in that those commands do not already cover.
+- **For a new flow**, the gates are the build, test and lint commands the `CLAUDE.md` files name for the crates and packages the edited paths sit in.
+
+When no test command resolves, stop before step 4 and say so, naming the edited paths and the `CLAUDE.md` files read. Never write a gate the `CLAUDE.md` files do not name.
+
+### 4. Open the new flow
+
+Name it `<scope>-apply`, or `<scope>-apply-<n>` with the smallest `n` from 2 up when that is taken. A name is taken when this lists it:
+
+```bash
+tomlctl flow list --select slug --lines
+```
+
+Re-entry, below, says when an existing `<scope>-apply` flow is this skill's own unfinished one rather than a taken name. Open it:
+
+```bash
+tomlctl plan open --slug <flow>
+```
+
+`plan open` writes `docs/flows/<flow>/brief.md` with six empty sections. Fill the four `plan check` requires with the Edit tool, from the review run; read each run the selected findings came from with `tomlctl review run show <run> --scope <scope>`:
+
+- **Intent**: apply the selected findings of `<store>`, one line per finding, `<id>: <summary>`.
+- **Non-goals**: apply only; no change the selected findings do not name, and no finding outside the selection.
+- **Scope budget**: one fix milestone over the edited paths from step 2, and the run's bounds (its base and head, its scope).
+- **Success criteria**: each selected finding is `resolved` by the commit of the task that fixes it, after the milestone's gates pass.
+
+Leave Background and Unknowns empty, or put the store path and run ids under Background. Write no `design/` file: the tasks carry their own specs.
+
+### 5. Add the fix milestone
+
+The milestone's id is `apply-<n>`, with the smallest `n` from 1 up that no checkpoint of the home carries:
+
+```bash
+tomlctl items list .claude/flows/<flow>/tasks.toml --array checkpoints --select id --lines
+```
+
+Add it with one `--gate` per command from step 3, in the order step 3 resolved them. On a new flow, whose plan is a draft:
+
+```bash
+tomlctl plan milestone add --slug <flow> --id <id> --goal 'Fix <finding ids> from <store>' --gate '<command>'
+```
+
+On the reviewed flow, whose plan is approved, add `--reason 'apply <store>: <finding ids>'`.
+
+### 6. Schedule
+
+```bash
+tomlctl review schedule <ids> --slug <slug> --flow <flow> --checkpoint <id>
+```
+
+Pass `--all` in place of the ids when the arguments did. The verb mints the task rows with their specs and links under the task store's lock, then marks each finding `scheduled`. Report its `scheduled` rows as finding, task and `action` (`minted` or `linked`), and its `held`, `refused`, `dropped_deps` and `skipped_stale` rows each with its reason. When it fails, report its error and stop; a rerun resumes by Re-entry.
+
+When `scheduled` is empty, the milestone stays with no rows: report that, say a rerun with another selection reuses it, and stop. The execution engine passes over a milestone with no rows.
+
+### 7. Commit the new flow
+
+`plan approve` refuses while `git status` reports the flow's `tasks.toml`, `plan.toml` or `brief.md`, because its stamp names `HEAD`, and the execution engine's clean-tree check refuses the review store, which sits outside the flow. Commit both first.
+
+Check the registry the approval writes before staging anything:
+
+```bash
+git status --short -- .claude/active-flow.toml .claude/active-flow.toml.sha256
+```
+
+When it prints a path, that path holds edits this skill did not make, and the approval commit would sweep them in: stop and name it. The user commits or discards them and reruns.
+
+List what the commit holds, then check that no listed path is ignored:
+
+```bash
+git status --porcelain --untracked-files=all -- docs/flows/<flow>/ .claude/flows/<flow>/ <store> <store>.sha256
+git check-ignore <every path from the list>
+```
+
+Stage every listed path by name except any `git check-ignore` prints, and commit.
+
+### 8. Approve the new flow
+
+```bash
+tomlctl plan check --slug <flow>
+```
+
+On an error-class finding, report it and stop: the minted rows or the brief do not satisfy the plan's checks, and the fix is to the verb or the brief, never to the store by hand. Then approve. The triage is the approval:
+
+```bash
+tomlctl plan approve --slug <flow> --review skipped-flag --reason 'triage of <store> selected these findings'
+```
+
+When `transition.from` differs from `transition.to`, stage a one-line summary, `apply flow approved at <commit>`, with the Write tool in the scratchpad, record it and render the log:
+
+```bash
+tomlctl flow record --slug <flow> --type status-transition --set agent=apply-v2 --set from_status=draft --set to_status=in-progress --set-file summary=<staged-summary>
+tomlctl flow render-progress-log --slug <flow>
+```
+
+Take `from_status` and `to_status` from `transition`. Commit what the approval wrote at once, before the run, since the execution engine's clean-tree check refuses `.claude/active-flow.toml`: stage by name every path `git status --porcelain --untracked-files=all -- .claude/flows/<flow>/` lists, and `.claude/active-flow.toml` with `.claude/active-flow.toml.sha256`.
+
+### 9. Run
+
+Invoke the `implement-v2-engine` skill and follow it from its Arguments section with `<flow>` as the slug, and no `--milestone`. It picks the first milestone with a row that is not `done`: on the reviewed flow, a milestone of the plan still unfinished runs before the fix milestone, and the engine continues to the fix milestone while nothing is parked. Before invoking it, say so whenever an earlier checkpoint of the home, in the step 5 listing, still holds a row that is not `done`:
+
+```bash
+tomlctl tasks list --slug <flow> --where checkpoint=<earlier-id> --where-not status=done --select id,status --lines
+```
+
+The engine's report is the run's outcome; this skill adds nothing to it but the close.
+
+### 10. Close
+
+After the execution engine's report:
+
+```bash
+tomlctl review stats --slug <slug> --apply
+```
+
+Print it as the close summary: the findings scheduled, resolved and reopened per lens and kind, and the reproductions by verdict. A finding still `scheduled` is in flight, its task not yet committed; `/implement-v2 <flow>` carries it on.
+
+## Re-entry
+
+Every invocation reads where the apply stands from the stores, never from memory, so an interrupted run resumes by running `/apply-v2` again with the same arguments.
+
+- **A new flow already opened.** At step 4, a `<scope>-apply` or `<scope>-apply-<n>` flow is this store's own when its `brief.md` Intent names `<store>` and its plan is not yet approved, or when a selected finding's `apply_flow` names it. Take it as the home instead of a taken name, and skip `plan open`. A flow of that name whose brief names another store is taken.
+- **A fix milestone already added.** At step 5, an `apply-<n>` checkpoint of the home that holds no row is an earlier invocation's milestone that never got its tasks:
+
+```bash
+tomlctl tasks list --slug <flow> --where checkpoint=<id> --select id --lines
+```
+
+  Reuse the last such checkpoint, skipping steps 3 and 5.
+- **Findings already scheduled.** A selected finding that is `scheduled` into the home is not scheduled again; `review schedule` itself links a finding whose live task already holds it rather than minting a second. When every selected finding is already scheduled into the home, go to step 7 on a new flow that is not yet approved, and to step 9 otherwise. A finding `scheduled` into a different flow is reported with that flow and left alone.
+- **An approval already stamped.** When the new flow's `plan stage` reads `approved`, `running` or `done`, steps 7 and 8 are done, unless `git status` still lists the approval's writes, which step 8's last commit then takes.
+
+## Out of scope
+
+- **Settle milestones and blocked findings.** A finding the schedule rule refuses as `needs-plan` is reported, never scheduled; nothing here investigates or proposes.
+- **Plan-family findings.** `tomlctl review apply` writes them to plan records; `review schedule` refuses them.
+- **A v1 flow, its ledgers and `export-v1`.** A review bound to a v1 flow is refused at step 1.
+- **Running, gating, committing and reconciling the fix milestone.** These are `implement-v2-engine`'s.
+- **Closing the flow.** When every milestone is committed, the execution engine's report says the flow's status is still to be moved.

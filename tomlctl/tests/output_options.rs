@@ -173,8 +173,9 @@ Does it compute the right thing?
 
 /// Run `U1`, carrying one undecided judged signal, with `C1` sealed over
 /// `src/a.rs` and `C2` still assigned over `src/b.rs`; `F1` is a confirmed open defect and `F2` an unverified
-/// cleanup. `{base}` and `{builtin}` are filled in by the fixture.
-const REVIEW_STORE: &str = r#"schema_version = 1
+/// cleanup. `F1` was reproduced `gone`, and `F3` is scheduled to an apply-flow task that no longer exists.
+/// `{base}` and `{builtin}` are filled in by the fixture.
+const REVIEW_STORE: &str = r#"schema_version = 2
 last_updated = 2026-10-13
 
 [[runs]]
@@ -269,6 +270,32 @@ anchor = "code|src/a.rs|@1"
 status = "unverified"
 first_seen = 2026-10-13
 
+[[findings]]
+id = "F3"
+run = "U1"
+cell = "C1"
+seen_in = ["U1"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "src/a.rs"
+line = 1
+summary = "alpha leaks"
+severity = "minor"
+failure_scenario = "input y leaks"
+fix = "close y"
+fix_shape = "edits"
+effort = "small"
+counter = "none found"
+grade = "high"
+evidence = ["src/a.rs:1"]
+anchor = "code|src/a.rs|@1"
+status = "scheduled"
+apply_flow = "apply-fixture"
+apply_task = "retired-fix"
+first_seen = 2026-10-13
+
 [[verdicts]]
 finding = "F1"
 run = "U1"
@@ -276,6 +303,17 @@ by = "verifier"
 verdict = "confirmed"
 citation = "src/a.rs:1"
 rationale = "read it"
+
+[[reproductions]]
+finding = "F1"
+flow = "apply-fixture"
+milestone = "A"
+round = 1
+task = "add-guard"
+verdict = "gone"
+by = "verifier"
+citation = "src/a.rs:1"
+at = 2026-10-14
 "#;
 
 /// A flow holding a `plan.toml` refuses `tasks import-plan` and `tasks render`,
@@ -879,6 +917,38 @@ fn cases() -> Vec<Case> {
         write(
             &["review", "apply", "F1", "--slug", APPLY_SLUG, "--dry-run"],
             "ok",
+        ),
+        write(
+            &["review", "reproduce", "--slug", S, "--ndjson", "-"],
+            "ok",
+        )
+        .stdin(concat!(
+            r#"{"finding":"F2","flow":"apply-fixture","milestone":"A","round":1,"#,
+            r#""task":"add-guard","verdict":"reproduces","by":"verifier","citation":"src/a.rs:1"}"#
+        )),
+        write(
+            &[
+                "review",
+                "schedule",
+                "F1",
+                "--slug",
+                S,
+                "--flow",
+                APPLY_SLUG,
+                "--checkpoint",
+                "A",
+            ],
+            "flow",
+        ),
+        write(
+            &["review", "reconcile", "--slug", S, "--flow", APPLY_SLUG],
+            "flow",
+        ),
+        read(&["review", "anchor", "F1", "--slug", S], One, "id"),
+        read(
+            &["review", "reproduce-status", "F1", "--slug", S, "--expect", "gone"],
+            One,
+            "expect",
         ),
         read(&["review", "list", "--slug", S], Field("findings"), "id"),
         read(&["review", "run", "list", "--slug", S], Field("runs"), "id"),

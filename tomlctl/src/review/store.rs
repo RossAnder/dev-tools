@@ -3,11 +3,14 @@
 //! verbs read.
 //!
 //! ```toml
-//! schema_version = 1
+//! schema_version = 1       # 2 while it holds a reproduction or a scheduled finding
 //! last_updated = 2026-10-12
 //! [id_high_water]          # prefix = highest id a removal retired
-//! [[runs]] / [[cells]] / [[findings]] / [[verdicts]]
+//! [[runs]] / [[cells]] / [[findings]] / [[verdicts]] / [[reproductions]]
 //! ```
+//!
+//! A store is stamped version 2 only when it needs to be, so every other
+//! store stays readable by a binary that predates reproductions.
 //!
 //! Each record types the fields the verbs reason about; every other key of
 //! the row rides in `rest`, so the kind-specific prose of a finding survives
@@ -27,8 +30,8 @@ use toml::map::Map;
 use toml::value::Datetime;
 
 use super::fields::{
-    self, CellStatus, Depth, FIELDS, Family, FindingStatus, Kind, ProjectCtx, Record, Role, Route,
-    Ty,
+    self, CellStatus, Depth, FIELDS, Family, FindingStatus, Kind, ProjectCtx, Record, ReproduceBy,
+    ReproduceVerdict, Role, Route, Ty,
 };
 use crate::cli::{
     ReadIntegrityArgs, WriteIntegrityArgs, read_integrity_opts, write_integrity_opts,
@@ -40,7 +43,11 @@ use crate::io::{
     warn_if_created,
 };
 
-pub(crate) const SCHEMA_VERSION: i64 = 1;
+/// The newest version this binary reads; written only by a store that
+/// [`Store::holds_v2_rows`].
+pub(crate) const SCHEMA_VERSION: i64 = 2;
+/// The version every other store is written as.
+pub(crate) const BASE_SCHEMA_VERSION: i64 = 1;
 
 /// Basename of the per-flow store under `.claude/flows/<slug>/`.
 const STORE_FILE: &str = "review-v2.toml";
@@ -90,6 +97,9 @@ pub(crate) struct Store {
     pub(crate) cells: Vec<Cell>,
     pub(crate) findings: Vec<Finding>,
     pub(crate) verdicts: Vec<Verdict>,
+    /// In write order; a finding's current reproduction is its last row.
+    /// No verdict reader reads them.
+    pub(crate) reproductions: Vec<Reproduction>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -209,21 +219,50 @@ pub(crate) struct Verdict {
     pub(crate) rest: Table,
 }
 
+/// A reproduce check's verdict on a finding whose fix an apply flow ran,
+/// keyed by `(finding, flow, milestone, round, by)`. It never changes the
+/// finding's status.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Reproduction {
+    pub(crate) finding: String,
+    pub(crate) flow: String,
+    pub(crate) milestone: String,
+    pub(crate) round: u32,
+    /// The apply task's ref.
+    pub(crate) task: String,
+    pub(crate) verdict: ReproduceVerdict,
+    pub(crate) by: ReproduceBy,
+    pub(crate) citation: String,
+    pub(crate) at: Option<Datetime>,
+    pub(crate) rest: Table,
+}
+
 impl Default for Store {
     fn default() -> Self {
         Self {
-            schema_version: SCHEMA_VERSION,
+            schema_version: BASE_SCHEMA_VERSION,
             last_updated: None,
             id_high_water: Vec::new(),
             runs: Vec::new(),
             cells: Vec::new(),
             findings: Vec::new(),
             verdicts: Vec::new(),
+            reproductions: Vec::new(),
         }
     }
 }
 
 impl Store {
+    /// Whether the store holds a row that a binary reading only version 1
+    /// would drop or refuse: a reproduction, or a scheduled finding.
+    pub(crate) fn holds_v2_rows(&self) -> bool {
+        !self.reproductions.is_empty()
+            || self
+                .findings
+                .iter()
+                .any(|f| f.status() == FindingStatus::Scheduled)
+    }
+
     /// Replaces the verdict holding `record`'s (finding, by, seat), or appends
     /// it. A changed verdict moves to the end, where readers take the latest
     /// from; an identical one keeps its place, so a replay changes nothing.
@@ -368,7 +407,7 @@ pub(crate) fn from_toml(doc: &TomlValue) -> Result<Store> {
     let schema_version = root
         .get("schema_version")
         .and_then(TomlValue::as_integer)
-        .unwrap_or(SCHEMA_VERSION);
+        .unwrap_or(BASE_SCHEMA_VERSION);
     // The next write would re-emit a newer store in this shape, still stamped
     // with its own version, silently dropping what this binary cannot type.
     if schema_version > SCHEMA_VERSION {
@@ -398,15 +437,21 @@ pub(crate) fn from_toml(doc: &TomlValue) -> Result<Store> {
         cells: rows(root, "cells", cell_from_toml)?,
         findings: rows(root, "findings", finding_from_toml)?,
         verdicts: rows(root, "verdicts", verdict_from_toml)?,
+        reproductions: rows(root, "reproductions", reproduction_from_toml)?,
     })
 }
 
+/// The store as a document, stamped [`SCHEMA_VERSION`] when it
+/// [`Store::holds_v2_rows`] and [`BASE_SCHEMA_VERSION`] otherwise, whatever
+/// version it was read as.
 pub(crate) fn to_toml(store: &Store) -> TomlValue {
+    let stamp = if store.holds_v2_rows() {
+        SCHEMA_VERSION
+    } else {
+        BASE_SCHEMA_VERSION
+    };
     let mut root = Table::new();
-    root.insert(
-        "schema_version".to_string(),
-        TomlValue::Integer(store.schema_version),
-    );
+    root.insert("schema_version".to_string(), TomlValue::Integer(stamp));
     if let Some(date) = store.last_updated {
         root.insert("last_updated".to_string(), TomlValue::Datetime(date));
     }
@@ -432,6 +477,14 @@ pub(crate) fn to_toml(store: &Store) -> TomlValue {
             "verdicts",
             store.verdicts.iter().map(verdict_to_toml).collect(),
         ),
+        (
+            "reproductions",
+            store
+                .reproductions
+                .iter()
+                .map(reproduction_to_toml)
+                .collect(),
+        ),
     ];
     for (name, values) in arrays {
         if !values.is_empty() {
@@ -441,7 +494,7 @@ pub(crate) fn to_toml(store: &Store) -> TomlValue {
     TomlValue::Table(root)
 }
 
-pub(super) type Row = serde_json::Map<String, JsonValue>;
+pub(crate) type Row = serde_json::Map<String, JsonValue>;
 
 /// The store's rows as the JSON maps [`fields::project`] reads, with each
 /// finding's verdicts in store order, which is oldest first.
@@ -866,6 +919,61 @@ fn verdict_to_toml(v: &Verdict) -> TomlValue {
     ordered(Record::Verdict, t, &v.rest)
 }
 
+const REPRODUCTION_CORE: &[&str] = &[
+    "finding",
+    "flow",
+    "milestone",
+    "round",
+    "task",
+    "verdict",
+    "by",
+    "citation",
+    "at",
+];
+
+fn reproduction_from_toml(t: &Table, at: &str) -> Result<Reproduction> {
+    let checked = match t.get("at") {
+        None => None,
+        Some(value) => Some(as_date(value).ok_or_else(|| anyhow!("{at}: `at` is not a date"))?),
+    };
+    Ok(Reproduction {
+        finding: required(t, "finding", at)?,
+        flow: required(t, "flow", at)?,
+        milestone: required(t, "milestone", at)?,
+        round: count(t, "round", at)?.ok_or_else(|| anyhow!("{at}: `round` is missing"))?,
+        task: text(t, "task"),
+        verdict: parsed(t, "verdict", at, ReproduceVerdict::parse)?,
+        by: parsed(t, "by", at, ReproduceBy::parse)?,
+        citation: text(t, "citation"),
+        at: checked,
+        rest: t
+            .iter()
+            .filter(|(key, _)| !REPRODUCTION_CORE.contains(&key.as_str()))
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect(),
+    })
+}
+
+/// The core keys in [`REPRODUCTION_CORE`] order, then unknown keys as read.
+fn reproduction_to_toml(r: &Reproduction) -> TomlValue {
+    let mut t = Table::new();
+    put_text(&mut t, "finding", &r.finding);
+    put_text(&mut t, "flow", &r.flow);
+    put_text(&mut t, "milestone", &r.milestone);
+    put_count(&mut t, "round", Some(r.round));
+    put_text(&mut t, "task", &r.task);
+    put_text(&mut t, "verdict", r.verdict.as_str());
+    put_text(&mut t, "by", r.by.as_str());
+    put_text(&mut t, "citation", &r.citation);
+    if let Some(date) = r.at {
+        t.insert("at".to_string(), TomlValue::Datetime(date));
+    }
+    for (key, value) in &r.rest {
+        t.insert(key.clone(), value.clone());
+    }
+    TomlValue::Table(t)
+}
+
 /// A date, also accepting the string a JSON-minted row carries: `items`
 /// coerces only its own date keys, and the catalogue's are not among them.
 fn as_date(value: &TomlValue) -> Option<Datetime> {
@@ -1168,6 +1276,29 @@ pub(crate) fn load(path: &Path, integrity: &ReadIntegrityArgs) -> Result<Store> 
     read_doc(path, read_integrity_opts(integrity), from_toml)
 }
 
+/// Each of `ids` from the store at `path` in the implementer projection, in
+/// the order given, paired with `None` when the store holds no such finding.
+/// The one entry point for readers outside the review group.
+pub(crate) fn implementer_findings(
+    path: &Path,
+    ids: &[String],
+    integrity: &ReadIntegrityArgs,
+) -> Result<Vec<(String, Option<Row>)>> {
+    let stored = load(path, integrity)?;
+    let view = View::new(&stored);
+    Ok(ids
+        .iter()
+        .map(|id| {
+            let projected = stored
+                .findings
+                .iter()
+                .position(|f| &f.id == id)
+                .map(|index| view.project(Role::Implementer, index, false));
+            (id.clone(), projected)
+        })
+        .collect())
+}
+
 /// Run `f` over the parsed store under the write lock and write it back with
 /// `last_updated` restamped. `f` returning `Err` persists nothing.
 pub(crate) fn mutate<T>(
@@ -1359,6 +1490,34 @@ rationale = "reproduced"
     }
 
     #[test]
+    fn version_two_is_stamped_only_while_needed() {
+        let v1 = parse(FULL);
+        let mut store = from_toml(&v1).expect("reads");
+        assert_eq!(to_toml(&store)["schema_version"].as_integer(), Some(1));
+
+        store.findings[0].set_status(FindingStatus::Scheduled, &[]);
+        assert_eq!(to_toml(&store)["schema_version"].as_integer(), Some(2));
+        store.findings[0].set_status(FindingStatus::Open, &[]);
+        assert_eq!(to_toml(&store)["schema_version"].as_integer(), Some(1));
+
+        let doc = parse(
+            "schema_version = 2\n\n[[reproductions]]\nfinding = \"F1\"\nflow = \"auth-apply\"\nmilestone = \"B\"\nround = 1\ntask = \"fix-the-retry-bound\"\nverdict = \"gone\"\nby = \"verifier\"\ncitation = \"src/retry.rs:40\"\nat = 2026-11-12\nnote = \"kept\"\n",
+        );
+        let store = from_toml(&doc).expect("a version-2 store reads");
+        assert_eq!(store.reproductions[0].verdict, ReproduceVerdict::Gone);
+        assert_eq!(store.reproductions[0].by, ReproduceBy::Verifier);
+        assert!(store.verdicts.is_empty(), "a reproduction is not a verdict");
+        assert_eq!(to_toml(&store), doc, "the store writes back as read");
+
+        let newer = parse("schema_version = 3\n");
+        assert!(from_toml(&newer).is_err(), "a newer store is refused");
+        let bad = parse(
+            "[[reproductions]]\nfinding = \"F1\"\nflow = \"a\"\nmilestone = \"B\"\nround = 1\nverdict = \"fixed\"\nby = \"verifier\"\n",
+        );
+        assert!(from_toml(&bad).is_err(), "an unknown verdict is refused");
+    }
+
+    #[test]
     fn round_trips_id_high_water() {
         let doc = parse(
             "schema_version = 1\n\n[id_high_water]\nF = 7\nU = 2\n\n[[findings]]\nid = \"F3\"\nfamily = \"code\"\nkind = \"advisory\"\nstatus = \"open\"\n",
@@ -1500,6 +1659,22 @@ rationale = "reproduced"
         g.set_status(FindingStatus::Exported, &[]);
         assert_eq!(g.status(), FindingStatus::Exported);
         assert_eq!(companion(&g, "dismiss_reason"), None, "{:?}", g.rest);
+    }
+
+    #[test]
+    fn scheduled_to_resolved_keeps_the_apply_link() {
+        let mut f = finding(
+            "status = \"scheduled\"\napply_flow = \"auth-apply\"\napply_task = \"fix-it\"\n",
+        );
+        f.set_status(
+            FindingStatus::Resolved,
+            &[(
+                "resolution",
+                TomlValue::String("auth-apply fix-it 4f0c2aa".into()),
+            )],
+        );
+        assert_eq!(companion(&f, "apply_flow"), Some("auth-apply"));
+        assert_eq!(companion(&f, "apply_task"), Some("fix-it"));
     }
 
     #[test]

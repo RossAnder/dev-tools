@@ -876,6 +876,198 @@ fn plan_outcomes_count_tiers_and_dispositions() {
     assert_eq!(total["growth"]["edits"], 3, "{total}");
 }
 
+const APPLY_STORE_PATH: &str = ".claude/review-v2/applied.toml";
+
+const APPLY_STORE: &str = r#"schema_version = 2
+
+[[runs]]
+id = "U1"
+command = "review-v2"
+family = "code"
+depth = "standard"
+started = "2026-11-01T10:00:00Z"
+
+[[findings]]
+id = "F1"
+run = "U1"
+family = "code"
+kind = "defect"
+lens = "correctness"
+file = "src/lib.rs"
+line = 10
+summary = "off by one"
+status = "scheduled"
+apply_flow = "fix-apply"
+apply_task = "fix-off-by-one"
+
+[[findings]]
+id = "F2"
+run = "U1"
+family = "code"
+kind = "defect"
+lens = "correctness"
+file = "src/lib.rs"
+line = 20
+summary = "unchecked index"
+status = "resolved"
+resolution = "abc123 checked the index"
+resolved = 2026-11-03
+apply_flow = "fix-apply"
+apply_task = "check-the-index"
+
+[[findings]]
+id = "F3"
+run = "U1"
+family = "code"
+kind = "defect"
+lens = "correctness"
+file = "src/lib.rs"
+line = 30
+summary = "missing guard"
+status = "resolved"
+resolution = "fixed by hand"
+resolved = 2026-11-03
+
+[[findings]]
+id = "F4"
+run = "U1"
+family = "code"
+kind = "cleanup"
+lens = "hygiene"
+file = "src/io.rs"
+line = 5
+summary = "dead branch"
+status = "open"
+reopen_reason = "apply: task deferred"
+
+[[findings]]
+id = "F5"
+run = "U1"
+family = "code"
+kind = "cleanup"
+lens = "hygiene"
+file = "src/io.rs"
+line = 9
+summary = "stale comment"
+status = "open"
+reopen_reason = "the user changed their mind"
+
+[[findings]]
+id = "F6"
+run = "U1"
+family = "code"
+kind = "defect"
+lens = "correctness"
+file = "src/lib.rs"
+line = 40
+summary = "replaced by a resubmission"
+status = "superseded"
+
+[[reproductions]]
+finding = "F2"
+flow = "fix-apply"
+milestone = "A"
+round = 1
+task = "check-the-index"
+verdict = "reproduces"
+by = "verifier"
+citation = "src/lib.rs:20"
+
+[[reproductions]]
+finding = "F2"
+flow = "fix-apply"
+milestone = "A"
+round = 2
+task = "check-the-index"
+verdict = "gone"
+by = "verifier"
+citation = "src/lib.rs:21"
+
+[[reproductions]]
+finding = "F4"
+flow = "fix-apply"
+milestone = "A"
+round = 1
+task = "drop-the-branch"
+verdict = "unsettled"
+by = "orchestrator"
+citation = "src/io.rs:5"
+
+[[reproductions]]
+finding = "F6"
+flow = "fix-apply"
+milestone = "A"
+round = 1
+task = "replaced"
+verdict = "reproduces"
+by = "verifier"
+citation = "src/lib.rs:40"
+"#;
+
+#[test]
+fn stats_apply_counts_outcomes_and_reproductions_from_the_store() {
+    let repo = Repo::new();
+    repo.write(APPLY_STORE_PATH, APPLY_STORE);
+    let out = repo.stats(&["--scope", "applied", "--apply"]);
+    assert!(
+        out.get("rows").is_none(),
+        "a section alone prints no rows: {out}"
+    );
+    assert!(out.get("outcomes").is_none(), "{out}");
+    let apply = &out["apply"];
+    assert_eq!(
+        apply["outcomes"],
+        json!([
+            {
+                "lens": "correctness",
+                "kind": "defect",
+                "scheduled": 1,
+                "resolved": 1,
+                "reopened": 0,
+                "reproductions": {"gone": 1, "reproduces": 0, "unsettled": 0},
+            },
+            {
+                "lens": "hygiene",
+                "kind": "cleanup",
+                "scheduled": 0,
+                "resolved": 0,
+                "reopened": 1,
+                "reproductions": {"gone": 0, "reproduces": 0, "unsettled": 1},
+            },
+        ]),
+        "a resolve without an apply link, a reopen not made by apply and a superseded row are not counted: {apply}"
+    );
+    assert_eq!(
+        apply["reproductions"],
+        json!({
+            "rows": {"gone": 1, "reproduces": 1, "unsettled": 1},
+            "findings": {"gone": 1, "reproduces": 0, "unsettled": 1},
+        }),
+        "every row counts once, and each finding by its last row: {apply}"
+    );
+    assert_eq!(
+        repo.read(APPLY_STORE_PATH),
+        APPLY_STORE,
+        "the store is only read"
+    );
+}
+
+#[test]
+fn stats_apply_reads_no_v1_ledger_and_leaves_outcomes_alone() {
+    let repo = Repo::new();
+    let before = repo.stats(&["--scope", "t", "--outcomes"]);
+    fs::remove_file(repo.root.join(REVIEW_LEDGER)).unwrap();
+    let out = repo.stats(&["--scope", "t", "--apply"]);
+    assert_eq!(
+        out["apply"]["outcomes"],
+        json!([]),
+        "an exported finding is not a native apply outcome: {out}"
+    );
+    repo.write(REVIEW_LEDGER, REVIEW);
+    let both = repo.stats(&["--scope", "t", "--outcomes", "--apply"]);
+    assert_eq!(both["outcomes"], before["outcomes"], "{both}");
+}
+
 #[test]
 fn a_dismissal_is_a_veto_only_on_a_user_row_or_after_approval() {
     let repo = Repo::new();

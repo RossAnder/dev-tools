@@ -13,15 +13,14 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::Result;
-use globset::GlobSet;
 use serde_json::{Map, Value as JsonValue, json};
 use toml::Value as TomlValue;
 use toml::value::Datetime;
 
-use super::catalogue::run_catalogue;
-use super::fields::{self, Family, FindingStatus, Kind, Role};
+use super::fields::{Family, FindingStatus, Kind};
 use super::invalid;
-use super::store::{self, Finding, Row, Store, Target, View};
+use super::select::{self, text};
+use super::store::{self, Finding, Row, Store, Target};
 use super::sync::{map_status, v2_refs};
 use crate::cli::{ReadIntegrityArgs, ReviewExportArgs, write_integrity_opts};
 use crate::io::{
@@ -119,7 +118,7 @@ pub(crate) fn run(target: &Target, args: ReviewExportArgs) -> Result<()> {
     let ledger_rel = relativise_under(&root, &ledger_abs).unwrap_or_else(|| slashed(&ledger_abs));
     let store_rel = relativise_under(&root, &target.path).unwrap_or_else(|| slashed(&target.path));
 
-    let selection = Selection::new(&stored, &root, family, &args)?;
+    let selection = select::Selection::new(VERB, &stored, &root, family, args.all, &args.ids)?;
     let mut refused = selection.refused;
     let mut candidates = Vec::new();
     for index in selection.chosen {
@@ -227,112 +226,6 @@ pub(crate) fn run(target: &Target, args: ReviewExportArgs) -> Result<()> {
         report.extend(fields);
     }
     print_json_compact(&JsonValue::Object(report))
-}
-
-/// The findings an export considers, with each finding's implementer
-/// projection.
-struct Selection {
-    chosen: Vec<usize>,
-    /// `--all`'s exclusions that an explicit id still exports.
-    held: Vec<JsonValue>,
-    refused: Vec<JsonValue>,
-    projected: Vec<Row>,
-}
-
-impl Selection {
-    fn new(stored: &Store, root: &Path, family: Family, args: &ReviewExportArgs) -> Result<Self> {
-        let view = View::new(stored);
-        let projected = (0..stored.findings.len())
-            .map(|index| view.project(Role::Implementer, index, false))
-            .collect();
-        let mut chosen = Vec::new();
-        let mut held = Vec::new();
-        let mut refused = Vec::new();
-        if args.all {
-            let mut tests = TestGlobs::new(root);
-            for (index, f) in stored.findings.iter().enumerate() {
-                let exportable = f.status() == FindingStatus::Open
-                    && f.family == family
-                    && matches!(f.kind, Kind::Defect | Kind::Cleanup)
-                    && text(f, "fix_shape") != "needs-plan";
-                if !exportable {
-                    continue;
-                }
-                if let Some(reason) = refusal(f, family) {
-                    refused.push(json!({"finding": f.id, "reason": reason}));
-                    continue;
-                }
-                let reason =
-                    if f.kind == Kind::Cleanup && latest_verdict(stored, &f.id) == "plausible" {
-                        Some("cleanup verified only plausible")
-                    } else if tests.is_test_removal(stored, f)? {
-                        Some("test removal")
-                    } else {
-                        None
-                    };
-                match reason {
-                    Some(reason) => held.push(json!({"finding": f.id, "reason": reason})),
-                    None => chosen.push(index),
-                }
-            }
-        } else {
-            let mut seen: Vec<&str> = Vec::new();
-            for id in args
-                .ids
-                .iter()
-                .map(|id| id.trim())
-                .filter(|id| !id.is_empty())
-            {
-                if seen.contains(&id) {
-                    continue;
-                }
-                seen.push(id);
-                match stored.findings.iter().position(|f| f.id == id) {
-                    None => refused.push(json!({
-                        "finding": id,
-                        "reason": "no such finding in this store",
-                    })),
-                    Some(index) => match refusal(&stored.findings[index], family) {
-                        Some(reason) => refused.push(json!({"finding": id, "reason": reason})),
-                        None => chosen.push(index),
-                    },
-                }
-            }
-        }
-        Ok(Self {
-            chosen,
-            held,
-            refused,
-            projected,
-        })
-    }
-}
-
-/// Why `f` may not be exported to a ledger of `family`, if it may not.
-fn refusal(f: &Finding, family: Family) -> Option<String> {
-    if f.family == Family::Plan {
-        return Some("plan-family findings merge into the plan, not a v1 ledger".into());
-    }
-    if f.kind == Kind::Advisory {
-        return Some("advisory is parked or picked for the backlog, never exported".into());
-    }
-    if f.status() != FindingStatus::Open {
-        return Some(format!("status is {}, not open", f.status().as_str()));
-    }
-    if f.family != family {
-        return Some(format!(
-            "a {} finding does not belong in a {} ledger",
-            f.family.as_str(),
-            family.as_str()
-        ));
-    }
-    if text(f, "fix_shape") == "needs-plan" {
-        return Some("fix_shape is needs-plan".into());
-    }
-    if text(f, "effort") == "large" {
-        return Some("effort is large".into());
-    }
-    None
 }
 
 /// The finding's v1 row, or why it fails the v1 required-field contract.
@@ -466,7 +359,7 @@ fn category(stored: &Store, f: &Finding, family: Family) -> String {
 
 /// `fix` or `edit` (with `old`, `target_file` and `instances`), then
 /// `failure_scenario`, one per line.
-fn description(projected: &Row) -> String {
+pub(super) fn description(projected: &Row) -> String {
     let get = |key: &str| {
         projected
             .get(key)
@@ -500,71 +393,6 @@ fn description(projected: &Row) -> String {
         lines.push(format!("Failure scenario: {scenario}"));
     }
     lines.join("\n")
-}
-
-/// The finding's verdicts' latest `verdict`, or `""` when it has none.
-fn latest_verdict(stored: &Store, finding: &str) -> String {
-    stored
-        .verdicts
-        .iter()
-        .rev()
-        .find(|v| v.finding == finding)
-        .map(|v| v.verdict.clone())
-        .unwrap_or_default()
-}
-
-fn text<'a>(f: &'a Finding, key: &str) -> &'a str {
-    f.rest
-        .get(key)
-        .and_then(TomlValue::as_str)
-        .unwrap_or_default()
-}
-
-/// The vocabulary's `[routing]` test globs, per run, loaded only for a
-/// cleanup that removes something.
-struct TestGlobs<'a> {
-    root: &'a Path,
-    by_run: HashMap<String, GlobSet>,
-}
-
-impl<'a> TestGlobs<'a> {
-    fn new(root: &'a Path) -> Self {
-        Self {
-            root,
-            by_run: HashMap::new(),
-        }
-    }
-
-    /// Whether `f` is a cleanup removing something at a test path: its edit
-    /// target (`target_file`, else `file`) or any of its `instances`.
-    fn is_test_removal(&mut self, stored: &Store, f: &Finding) -> Result<bool> {
-        if f.kind != Kind::Cleanup || text(f, "direction") != "remove" {
-            return Ok(false);
-        }
-        if !self.by_run.contains_key(&f.run) {
-            let run = stored.runs.iter().find(|r| r.id == f.run).ok_or_else(|| {
-                invalid(format!(
-                    "{VERB}: finding {} names run {}, which is not in this store",
-                    f.id, f.run
-                ))
-            })?;
-            // Only the tests list: a bad executable glob must not fail export.
-            let globs = fields::compile("tests", &run_catalogue(self.root, run)?.routing().tests)?;
-            self.by_run.insert(f.run.clone(), globs);
-        }
-        let globs = &self.by_run[&f.run];
-        let instances = f
-            .rest
-            .get("instances")
-            .and_then(TomlValue::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(TomlValue::as_str);
-        Ok(
-            fields::edited_paths(&f.file, Some(text(f, "target_file")), instances)
-                .any(|path| globs.is_match(path)),
-        )
-    }
 }
 
 /// The newest date among the exported findings' `seen_in` runs (their own

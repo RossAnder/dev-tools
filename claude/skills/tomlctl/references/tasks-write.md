@@ -141,18 +141,20 @@ printf '%s\n' '{"title":"Add the retry guard","effort":"S","files":["src/retry.r
 | `--ndjson` | `-`, path, or `@path` | NDJSON source; `-` reads stdin. Required. | — |
 
 Accepted row keys are exactly `title`, `effort`, `files`, `needs`, `coupling`, `deps_note`,
-`checkpoint`, `action`, `detail`, `acceptance`, `spec`, `reason`, `actor`, `file_notes`, `closes`
-and `refs`. **An unknown key is a hard error** naming the
+`checkpoint`, `action`, `detail`, `acceptance`, `spec`, `reason`, `actor`, `file_notes`, `closes`,
+`refs`, `review_store`, `fixes` and `settles`. **An unknown key is a hard error** naming the
 row's 1-based index and listing that set — a mistyped `neds` would otherwise silently discard
 an edge. An absent key is the empty value; a wrong JSON type names the key and the type it got.
 
-The last six keys are the v2 additions; a row without them behaves as before.
+The last nine keys are the v2 additions; a row without them behaves as before.
 
 | Key | Value | Meaning |
 |---|---|---|
 | `spec` | table | The row's `[[specs]]` entry: `outcome`, `constraints`, `accept`, `premises`, `means`, `design`, `precedent`, `executor`. An unknown key inside `spec`, an `accept` entry, a `premises` entry or a `means` entry is refused, naming the accepted set. An `accept` entry with a `check` needs a `kind` (`forward`, `falsifier` or `guard`); one with an empty `check` may omit it. A supplied `probe` is refused. A `means` entry needs `binding` (`required` or `suggested`). A premise's `at` is `base` or `after:<id>`, the id a row in the store or the batch. `executor` is `tool`, `clerk`, `lite` or `deep`. |
 | `file_notes` | object | Path → annotation. Each path must be on the row's `files` and each annotation non-blank; they land in `[[file_notes]]`. |
 | `closes`, `refs` | string lists | Backlog ids, landing in the row's `[[backlog_links]]` entry. |
+| `review_store` | text | The review store's repo-relative path, landing as `store` in the row's `[[finding_links]]` entry. Alone, with neither list below, it links nothing and is not stored. |
+| `fixes`, `settles` | string lists | Finding ids the task resolves (`fixes`) or investigates and proposes a fix for (`settles`), landing in the row's `[[finding_links]]` entry, which raises the store to `schema_version = 2`. A non-empty list needs a non-blank `review_store`, and a blank id is refused. |
 | `reason` | text | Required and non-blank on every row of an audited store, which also appends a `[[changes]]` row (`field = "*"`, `new` the title) per added task. |
 | `actor` | text | Names the author in that row; `orchestrator` when absent. |
 
@@ -230,7 +232,7 @@ row moves.
 
 An unlocked patch records the value it replaced as the stamp's *base*. The base is the plan's own value, so a second patch keeps
 the first one's base rather than overwriting it, and a patch back to the base drops the stamp —
-a row that agrees with the plan overrides nothing. `--ref` re-keys the stamp to the new `ref`, together with the row's file notes and backlog links.
+a row that agrees with the plan overrides nothing. `--ref` re-keys the stamp to the new `ref`, together with the row's file notes, backlog links and finding links.
 There are three ways out: publish the patch with `tasks render` and re-import, let the plan
 change the line, or `--relock-import-fields`. The unlock is not a pin: `tasks render --check`
 reports the divergence as `render/drift` from the moment of the patch, and every import that
@@ -301,8 +303,9 @@ train's SHA both join on it — and a row other rows depend on, named with those
 refusal writes nothing.
 
 On a v2 flow (a `plan.toml` in the flow directory, or a store already holding a v2 key) the removal
-also drops the row's `[[file_notes]]` and `[[backlog_links]]` entries, since no import follows to
-clear them. On a v1 flow they stay until the next import rebuilds both tables.
+also drops the row's `[[file_notes]]`, `[[backlog_links]]` and `[[finding_links]]` entries, since no
+import follows to clear them. On a v1 flow the first two stay until the next import rebuilds both
+tables; a store holding a finding link is a v2 store, so its link always goes with the row.
 
 Under `--force` the removed id is pruned from every dependent's `needs` and `coupling`, **and
 the removed row's own `needs` are spliced into each dependent's `needs`**: a dependent left one

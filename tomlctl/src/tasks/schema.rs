@@ -25,7 +25,7 @@ use toml::map::Map;
 use toml::value::Datetime;
 
 /// The newest version this binary reads, stamped on a store holding `specs`,
-/// `milestones`, `changes`, `audit` or `id_high_water`. A binary that only knows
+/// `milestones`, `changes`, `finding_links`, `audit` or `id_high_water`. A binary that only knows
 /// [`BASE_SCHEMA_VERSION`] refuses that stamp rather than dropping those keys.
 pub(crate) const SCHEMA_VERSION: i64 = 2;
 
@@ -103,6 +103,9 @@ pub(crate) struct Store {
     /// Backlog items a row closes or references, keyed by `ref`. On a v1 flow a
     /// link whose ref no row carries is kept until the next import.
     pub(crate) backlog_links: Vec<BacklogLink>,
+    /// Review findings a row fixes or settles, keyed by `ref`. Unlike a backlog
+    /// link no import rebuilds one, so holding any makes the store v2.
+    pub(crate) finding_links: Vec<FindingLink>,
     /// Set by approval: from then on a plan field changes only with a reason,
     /// and each change leaves a row in `changes`.
     pub(crate) audit: bool,
@@ -229,6 +232,23 @@ pub(crate) struct BacklogLink {
 impl BacklogLink {
     fn is_empty(&self) -> bool {
         self.r#ref.is_empty() || (self.closes.is_empty() && self.refs.is_empty())
+    }
+}
+
+/// `store` is the review store's repo-relative path. `fixes` are findings the
+/// row's work resolves; `settles` are findings it investigates and proposes a
+/// fix for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct FindingLink {
+    pub(crate) r#ref: String,
+    pub(crate) store: String,
+    pub(crate) fixes: Vec<String>,
+    pub(crate) settles: Vec<String>,
+}
+
+impl FindingLink {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.r#ref.is_empty() || (self.fixes.is_empty() && self.settles.is_empty())
     }
 }
 
@@ -379,6 +399,7 @@ impl Default for Store {
             import_overrides: Vec::new(),
             file_notes: Vec::new(),
             backlog_links: Vec::new(),
+            finding_links: Vec::new(),
             audit: false,
             id_high_water: 0,
             specs: Vec::new(),
@@ -423,6 +444,7 @@ impl Store {
             || !self.specs.is_empty()
             || !self.milestones.is_empty()
             || !self.changes.is_empty()
+            || self.finding_links.iter().any(|link| !link.is_empty())
     }
 
     pub(crate) fn find(&self, id: u32) -> Option<&TaskRow> {
@@ -464,12 +486,14 @@ impl Store {
             .filter(|r#ref| !r#ref.starts_with(MILESTONE_REF_PREFIX))
     }
 
-    /// Drops the file notes, backlog links and spec keyed on `ref`, so a row
-    /// claiming a freed `ref` does not read a removed row's entries as its own.
-    /// `changes` stays: a tombstone must outlive the row it records.
+    /// Drops the file notes, backlog links, finding links and spec keyed on
+    /// `ref`, so a row claiming a freed `ref` does not read a removed row's
+    /// entries as its own. `changes` stays: a tombstone must outlive the row it
+    /// records.
     pub(crate) fn drop_ref_entries(&mut self, r#ref: &str) {
         self.file_notes.retain(|entry| entry.r#ref != r#ref);
         self.backlog_links.retain(|entry| entry.r#ref != r#ref);
+        self.finding_links.retain(|entry| entry.r#ref != r#ref);
         self.specs.retain(|entry| entry.r#ref != r#ref);
     }
 
@@ -628,6 +652,12 @@ pub(crate) fn from_toml(doc: &TomlValue) -> Result<Store> {
         .map(|(index, value)| backlog_link_from_toml(value, index))
         .collect::<Result<Vec<_>>>()?;
     backlog_links.retain(|entry| !entry.is_empty());
+    let mut finding_links = table_array(root, "finding_links")?
+        .iter()
+        .enumerate()
+        .map(|(index, value)| finding_link_from_toml(value, index))
+        .collect::<Result<Vec<_>>>()?;
+    finding_links.retain(|entry| !entry.is_empty());
     let mut specs = table_array(root, "specs")?
         .iter()
         .enumerate()
@@ -678,6 +708,7 @@ pub(crate) fn from_toml(doc: &TomlValue) -> Result<Store> {
         import_overrides,
         file_notes,
         backlog_links,
+        finding_links,
         audit,
         id_high_water,
         specs,
@@ -699,6 +730,7 @@ pub(crate) fn to_toml(store: &Store) -> TomlValue {
         import_overrides,
         file_notes,
         backlog_links,
+        finding_links,
         audit,
         id_high_water,
         specs,
@@ -707,6 +739,11 @@ pub(crate) fn to_toml(store: &Store) -> TomlValue {
         items,
     } = store;
 
+    let finding_links: Vec<TomlValue> = finding_links
+        .iter()
+        .filter(|entry| !entry.is_empty())
+        .map(finding_link_to_toml)
+        .collect();
     let specs: Vec<TomlValue> = specs
         .iter()
         .filter(|entry| !entry.r#ref.is_empty())
@@ -726,7 +763,8 @@ pub(crate) fn to_toml(store: &Store) -> TomlValue {
         || *id_high_water > 0
         || !specs.is_empty()
         || !milestones.is_empty()
-        || !changes.is_empty();
+        || !changes.is_empty()
+        || !finding_links.is_empty();
     let stamp = match holds_v2_keys {
         true => SCHEMA_VERSION,
         false => BASE_SCHEMA_VERSION,
@@ -795,6 +833,7 @@ pub(crate) fn to_toml(store: &Store) -> TomlValue {
     }
     // Omitted while empty, so a v1 store writes back byte-identical.
     for (key, entries) in [
+        ("finding_links", finding_links),
         ("specs", specs),
         ("milestones", milestones),
         ("changes", changes),
@@ -987,6 +1026,33 @@ fn backlog_link_to_toml(entry: &BacklogLink) -> TomlValue {
     table.insert("ref".to_string(), TomlValue::String(r#ref.clone()));
     table.insert("closes".to_string(), str_arr_value(closes));
     table.insert("refs".to_string(), str_arr_value(refs));
+    TomlValue::Table(table)
+}
+
+fn finding_link_from_toml(value: &TomlValue, index: usize) -> Result<FindingLink> {
+    let table = value
+        .as_table()
+        .ok_or_else(|| anyhow!("finding_links[{index}] is not a table"))?;
+    Ok(FindingLink {
+        r#ref: str_or(table, "ref", ""),
+        store: str_or(table, "store", ""),
+        fixes: str_array(table, "fixes"),
+        settles: str_array(table, "settles"),
+    })
+}
+
+fn finding_link_to_toml(entry: &FindingLink) -> TomlValue {
+    let FindingLink {
+        r#ref,
+        store,
+        fixes,
+        settles,
+    } = entry;
+    let mut table = Table::new();
+    table.insert("ref".to_string(), TomlValue::String(r#ref.clone()));
+    table.insert("store".to_string(), TomlValue::String(store.clone()));
+    table.insert("fixes".to_string(), str_arr_value(fixes));
+    table.insert("settles".to_string(), str_arr_value(settles));
     TomlValue::Table(table)
 }
 
@@ -1532,6 +1598,7 @@ mod tests {
                 closes: vec!["B3".to_string()],
                 refs: vec!["B1".to_string(), "B7".to_string()],
             }],
+            finding_links: Vec::new(),
             audit: false,
             id_high_water: 0,
             specs: Vec::new(),
@@ -1909,6 +1976,12 @@ mod tests {
                 actor: "orchestrator".to_string(),
                 reason: "the probe failed".to_string(),
             }],
+            finding_links: vec![FindingLink {
+                r#ref: "wire-the-renderer".to_string(),
+                store: ".claude/review-v2/auth.toml".to_string(),
+                fixes: vec!["F3".to_string(), "F7".to_string()],
+                settles: Vec::new(),
+            }],
             ..fixture()
         }
     }
@@ -1981,12 +2054,19 @@ commit = ""
         assert_eq!(toml::to_string(&to_toml(&read)).expect("serialises"), text);
     }
 
-    /// Any one of the five is enough: the older binary refuses version 2 but
+    /// Any one of the six is enough: the older binary refuses version 2 but
     /// drops each of these keys silently at version 1.
     #[test]
     fn each_v2_key_alone_raises_the_stamp() {
         let full = v2_fixture();
-        let only: [(&str, Store); 5] = [
+        let only: [(&str, Store); 6] = [
+            (
+                "finding_links",
+                Store {
+                    finding_links: full.finding_links.clone(),
+                    ..fixture()
+                },
+            ),
             (
                 "specs",
                 Store {
@@ -2049,7 +2129,14 @@ commit = ""
             root.get("schema_version"),
             Some(&TomlValue::Integer(BASE_SCHEMA_VERSION))
         );
-        for key in ["audit", "id_high_water", "specs", "milestones", "changes"] {
+        for key in [
+            "audit",
+            "id_high_water",
+            "specs",
+            "milestones",
+            "changes",
+            "finding_links",
+        ] {
             assert!(!root.contains_key(key), "`{key}` was written while empty");
         }
     }
@@ -2071,7 +2158,7 @@ commit = ""
     #[test]
     fn an_entry_with_no_key_is_dropped_on_both_sides() {
         let mut raw = to_toml(&fixture());
-        for key in ["specs", "milestones", "changes"] {
+        for key in ["specs", "milestones", "changes", "finding_links"] {
             let mut entry = Table::new();
             entry.insert("outcome".to_string(), TomlValue::String("x".to_string()));
             root_mut(&mut raw).insert(
@@ -2083,6 +2170,7 @@ commit = ""
         assert_eq!(read.specs, vec![]);
         assert_eq!(read.milestones, vec![]);
         assert_eq!(read.changes, vec![]);
+        assert_eq!(read.finding_links, vec![]);
 
         let mut keyless = v2_fixture();
         keyless.audit = false;
@@ -2090,13 +2178,14 @@ commit = ""
         keyless.specs[0].r#ref = String::new();
         keyless.milestones[0].id = String::new();
         keyless.changes[0].r#ref = String::new();
+        keyless.finding_links[0].r#ref = String::new();
         let doc = to_toml(&keyless);
         let root = doc.as_table().expect("root table");
         assert_eq!(
             root.get("schema_version"),
             Some(&TomlValue::Integer(BASE_SCHEMA_VERSION))
         );
-        for key in ["specs", "milestones", "changes"] {
+        for key in ["specs", "milestones", "changes", "finding_links"] {
             assert!(!root.contains_key(key), "`{key}` kept a keyless entry");
         }
     }

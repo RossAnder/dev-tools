@@ -6,7 +6,7 @@
 //! in. A `merged` target is followed through `merged_into` to the row it
 //! joined, and a `converted` advisory through `converted_to` to its
 //! replacement. The outcome by target status and the row's verdict:
-//!   open, exported:  confirmed or plausible → repeat; refuted → contested
+//!   open, exported, scheduled: confirmed or plausible → repeat; refuted → contested
 //!   refuted:         confirmed → reopened; plausible → contested; refuted → repeat
 //!   resolved:        confirmed → regression; plausible → contested; refuted → repeat
 //!   dismissed, deferred, parked, backlogged → suppressed
@@ -56,11 +56,11 @@ enum Outcome {
 
 impl Outcome {
     fn for_target(status: FindingStatus, call: Call) -> Option<Self> {
-        use FindingStatus::{Exported, Open, Refuted, Resolved};
+        use FindingStatus::{Exported, Open, Refuted, Resolved, Scheduled};
         Some(match (status, call) {
             (s, _) if s.is_suppressing() => Self::Suppressed,
-            (Open | Exported, Call::Refuted) => Self::Contested,
-            (Open | Exported, _) => Self::Repeat,
+            (Open | Exported | Scheduled, Call::Refuted) => Self::Contested,
+            (Open | Exported | Scheduled, _) => Self::Repeat,
             (Refuted | Resolved, Call::Plausible) => Self::Contested,
             (Refuted | Resolved, Call::Refuted) => Self::Repeat,
             (Refuted, Call::Confirmed) => Self::Reopened,

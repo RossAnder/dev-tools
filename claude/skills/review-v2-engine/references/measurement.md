@@ -9,6 +9,7 @@ No lens, facet or activation tier is retuned on fewer than **five runs** of evid
 | Signal | Read with | What it measures |
 |---|---|---|
 | Apply outcomes | `review stats --outcomes` | Exported findings joined to their v1 status through `v2_ref` — fixed, wontfix with reasons, deferred, verified-clean — per lens and kind |
+| Native apply outcomes | `review stats --apply` | Findings applied through an apply flow, per lens and kind: `scheduled` (held by a live task), `resolved` (resolved with its apply link kept), `reopened` (`open` with a `reopen_reason` opening `apply: `); and reproductions by verdict (`gone`, `reproduces`, `unsettled`), every row and each finding's last row |
 | Escapes | `review stats --escapes` | Findings minted in a file and concern that an earlier run's cell had sealed `covered`: the recall proxy for composed coverage |
 | Refute rate | `review stats --by lens` | Share of a lens's verified rows its verifiers refuted |
 | Audit overturns | `review stats --by lens`; `review stats --by model` | Overturn rate on CONFIRMED and REFUTED defects and on checked cleanup, per lens; and per agent model, grouped by the model the run's `models` records for the verifying role (`verifier` and `panel` read the verifier's model, `checker` the checker's), `unknown` when the run records none |
@@ -30,7 +31,10 @@ tomlctl review stats --all --by probe
 tomlctl review stats --all --by model
 tomlctl review stats --all --family perf --by lens
 tomlctl review stats --all --plan-outcomes
+tomlctl review stats --all --apply
 ```
+
+`--apply` is the native counterpart of `--outcomes`: it reads the review store alone, so it needs no v1 ledger and counts no exported finding. `--outcomes` is unchanged and still reads only findings exported to a v1 ledger; a store whose findings went both ways needs both flags. A reproduction never moves a finding, so a group's `reproduces` count is read beside its `resolved` count, never subtracted from it.
 
 `--plan-outcomes` reads plan-family runs only and refuses `--scope`: name the flow with `--slug`, or pass `--all`, which skips flow-less stores.
 

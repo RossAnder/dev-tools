@@ -1,5 +1,5 @@
-//! Arguments of `review sync-v1`, `review export-v1`, `review catalogue`
-//! and `review schema`.
+//! Arguments of `review sync-v1`, `review export-v1`, `review schedule`,
+//! `review reconcile`, `review catalogue` and `review schema`.
 
 use std::path::PathBuf;
 
@@ -41,6 +41,54 @@ pub(crate) struct ReviewExportArgs {
         help = "Preview the operation without writing. Emits a would_change summary; no file or sidecar touch."
     )]
     pub(crate) dry_run: bool,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct ReviewScheduleArgs {
+    #[arg(
+        value_name = "ID,...",
+        num_args = 1..,
+        value_delimiter = ',',
+        required_unless_present = "all",
+        conflicts_with = "all",
+        help = "Finding ids, comma- or space-separated"
+    )]
+    pub(crate) ids: Vec<String>,
+    #[command(flatten)]
+    pub(crate) store: ReviewStore,
+    #[arg(
+        long = "all",
+        help = "Every open code or perf defect and cleanup, less needs-plan, test removals and plausible cleanup"
+    )]
+    pub(crate) all: bool,
+    #[arg(
+        long = "flow",
+        value_name = "SLUG",
+        help = "The v2 flow whose tasks.toml receives the fix tasks"
+    )]
+    pub(crate) flow: String,
+    #[arg(
+        long = "checkpoint",
+        value_name = "ID",
+        help = "The checkpoint group every minted task joins"
+    )]
+    pub(crate) checkpoint: String,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct ReviewReconcileArgs {
+    #[command(flatten)]
+    pub(crate) store: ReviewStore,
+    #[arg(
+        long = "flow",
+        value_name = "SLUG",
+        help = "The v2 flow whose tasks.toml holds the scheduled findings' tasks"
+    )]
+    pub(crate) flow: String,
     #[command(flatten)]
     pub(crate) integrity: WriteIntegrityArgs,
 }

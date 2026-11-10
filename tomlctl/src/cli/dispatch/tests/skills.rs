@@ -1655,6 +1655,15 @@ fn carrier_invokes_required_skills() {
                 "backlog-capture",
             ],
         ),
+        (
+            "apply-v2.md",
+            &[
+                "tomlctl",
+                "apply-v2-engine",
+                "commit-conventions",
+                "backlog-capture",
+            ],
+        ),
     ];
 
     let mut missing: Vec<String> = Vec::new();

@@ -1,5 +1,5 @@
-//! Arguments of the read verbs: `list`, `show`, `digest`, `report` and
-//! `stats`.
+//! Arguments of the read verbs: `list`, `show`, `anchor`, `digest`, `report`
+//! and `stats`.
 
 use std::path::PathBuf;
 
@@ -73,6 +73,21 @@ pub(crate) struct ReviewShowArgs {
 }
 
 #[derive(Args)]
+pub(crate) struct ReviewAnchorArgs {
+    #[arg(value_name = "ID", help = "Finding id (F<n>)")]
+    pub(crate) id: String,
+    #[command(flatten)]
+    pub(crate) store: ReviewStore,
+    #[arg(
+        long = "gone",
+        help = "For a `remove` cleanup: exit 0 when `old` occurs nowhere in its edit target file"
+    )]
+    pub(crate) gone: bool,
+    #[command(flatten)]
+    pub(crate) integrity: ReadIntegrityArgs,
+}
+
+#[derive(Args)]
 pub(crate) struct ReviewDigestArgs {
     #[command(flatten)]
     pub(crate) store: ReviewStore,
@@ -134,6 +149,11 @@ pub(crate) struct ReviewStatsArgs {
         help = "Join exported findings to their v1 status through `v2_ref`"
     )]
     pub(crate) outcomes: bool,
+    #[arg(
+        long = "apply",
+        help = "Natively applied findings per lens and kind (scheduled, resolved, reopened) and reproductions by verdict, from the store alone"
+    )]
+    pub(crate) apply: bool,
     #[arg(
         long = "escapes",
         help = "Count findings minted where an earlier run's cell sealed `covered`"

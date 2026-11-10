@@ -26,6 +26,7 @@ commands/optimise-v2.md
 commands/review-plan-v2.md
 commands/plan-v2.md
 commands/implement-v2.md
+commands/apply-v2.md
 agents/review-surveyor.md
 agents/review-sweeper.md
 agents/review-checker.md
@@ -44,6 +45,7 @@ skills/review-v2-method
 skills/review-v2-lenses
 skills/plan-v2-engine
 skills/implement-v2-engine
+skills/apply-v2-engine
 workflows/review-v2.js
 workflows/plan-v2-review.js
 workflows/plan-v2-investigate.js

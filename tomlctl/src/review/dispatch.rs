@@ -8,8 +8,8 @@ use anyhow::Result;
 
 use super::store::{self, Target};
 use super::{
-    add, apply, catalogue_cmd, cells, cover, digest, export, query, resolve, run_show, runs,
-    schema_out, stats, survey, sync, triage, verdict,
+    add, anchor, apply, catalogue_cmd, cells, cover, digest, export, query, reconcile, reproduce,
+    resolve, run_show, runs, schedule, schema_out, stats, survey, sync, triage, verdict,
 };
 use crate::cli::{ReviewOp, ReviewRunOp, ReviewStore};
 
@@ -29,14 +29,40 @@ pub(crate) fn dispatch(op: ReviewOp) -> Result<()> {
         ReviewOp::Add(args) => add::run(&target(&args.store)?, args),
         ReviewOp::Verdict(args) => verdict::run(&target(&args.store)?, args),
         ReviewOp::Resolve(args) => resolve::run(&target(&args.store)?, args),
+        ReviewOp::Reproduce(args) => {
+            reproduce::record(&target(&args.store)?, &args.ndjson, &args.integrity)
+        }
+        ReviewOp::ReproduceStatus(args) => reproduce::status(
+            &target(&args.store)?,
+            &args.ids,
+            &args.expect,
+            &args.integrity,
+        ),
         ReviewOp::List(args) => query::list(&target(&args.store)?, args),
         ReviewOp::Show(args) => query::show(&target(&args.store)?, args),
+        ReviewOp::Anchor(args) => {
+            anchor::run(&target(&args.store)?, &args.id, args.gone, &args.integrity)
+        }
         ReviewOp::Digest(args) => digest::digest(&target(&args.store)?, args),
         ReviewOp::Report(args) => digest::report(&target(&args.store)?, args),
         ReviewOp::Triage(args) => triage::run(&target(&args.store)?, args),
         ReviewOp::Apply(args) => apply::run(&target(&args.store)?, args),
         ReviewOp::Stats(args) => stats::run(args),
         ReviewOp::ExportV1(args) => export::run(&target(&args.store)?, args),
+        ReviewOp::Schedule(args) => schedule::run(
+            &target(&args.store)?,
+            &args.store,
+            schedule::Request {
+                ids: &args.ids,
+                all: args.all,
+                flow: &args.flow,
+                checkpoint: &args.checkpoint,
+            },
+            &args.integrity,
+        ),
+        ReviewOp::Reconcile(args) => {
+            reconcile::run(&target(&args.store)?, &args.flow, &args.integrity)
+        }
         ReviewOp::Catalogue(args) => catalogue_cmd::run(args),
         ReviewOp::Schema(args) => schema_out::run(args),
     }

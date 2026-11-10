@@ -435,6 +435,168 @@ fn a_task_with_no_spec_says_so_to_the_worker() {
     assert!(worker.contains("_No spec._"), "{worker}");
 }
 
+const REVIEW_STORE: &str = ".claude/review-v2/t.toml";
+
+const REVIEW: &str = r#"schema_version = 2
+
+[[runs]]
+id = "U1"
+command = "review-v2"
+family = "code"
+depth = "standard"
+started = "2026-10-01T10:00:00Z"
+
+[[cells]]
+id = "C1"
+run = "U1"
+wave = 1
+slice = ["src/**"]
+concerns = ["correctness"]
+agent = "review-finder"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = "done"
+
+[[findings]]
+id = "F1"
+run = "U1"
+cell = "C1"
+seen_in = ["U1"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "src/a.rs"
+line = 1
+symbol = "alpha"
+summary = "Fixed-summary-marker."
+severity = "major"
+failure_scenario = "Failure-marker."
+fix = "Fix-marker."
+fix_shape = "edits"
+effort = "small"
+status = "scheduled"
+apply_flow = "plan-view"
+apply_task = "add-guard"
+
+[[findings]]
+id = "F2"
+run = "U1"
+cell = "C1"
+seen_in = ["U1"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "src/a.rs"
+line = 9
+symbol = "beta"
+summary = "Settled-summary-marker."
+severity = "minor"
+failure_scenario = "Other-failure-marker."
+fix = "Other-fix-marker."
+fix_shape = "edits"
+effort = "small"
+status = "scheduled"
+apply_flow = "plan-view"
+apply_task = "add-guard"
+"#;
+
+fn linked_tasks(store: &str, fixes: &str, settles: &str) -> String {
+    format!(
+        "{TASKS}\n[[finding_links]]\nref = \"add-guard\"\nstore = \"{store}\"\nfixes = {fixes}\nsettles = {settles}\n"
+    )
+}
+
+fn linked_flow(store: &str, fixes: &str, settles: &str) -> Flow {
+    let tasks = linked_tasks(store, fixes, settles);
+    let flow = Flow::seeded(Some(&tasks), PLAN, Some(BRIEF.as_bytes()));
+    let review = flow.root.join(REVIEW_STORE);
+    fs::create_dir_all(review.parent().expect("review dir")).expect("review dir");
+    fs::write(&review, REVIEW).expect("review store");
+    flow
+}
+
+#[test]
+fn a_linked_task_shows_each_finding_it_fixes_or_settles() {
+    let flow = linked_flow(REVIEW_STORE, "[\"F1\"]", "[\"F2\"]");
+    let worker = flow.view(&["--for", "worker", "--task", "1"]);
+    for present in [
+        "## Findings",
+        "### `F1` (fixes), from `.claude/review-v2/t.toml`",
+        "### `F2` (settles), from `.claude/review-v2/t.toml`",
+        "Fixed-summary-marker.",
+        "Fix-marker.",
+        "Failure-marker.",
+        "Settled-summary-marker.",
+        "Other-fix-marker.",
+    ] {
+        assert!(worker.contains(present), "{present} missing:\n{worker}");
+    }
+    let fixed = worker.find("Fixed-summary-marker.").expect("F1 shown");
+    let settled = worker.find("Settled-summary-marker.").expect("F2 shown");
+    assert!(fixed < settled, "{worker}");
+    for absent in ["**lens:**", "**status:**", "**route:**", "**cell:**"] {
+        assert!(
+            !worker.contains(absent),
+            "{absent} is outside the implementer projection:\n{worker}"
+        );
+    }
+}
+
+#[test]
+fn a_finding_is_read_from_the_store_at_view_time() {
+    let flow = linked_flow(REVIEW_STORE, "[\"F1\"]", "[]");
+    fs::write(
+        flow.root.join(REVIEW_STORE),
+        REVIEW.replace("Fixed-summary-marker.", "Rewritten-summary-marker."),
+    )
+    .expect("rewrite the review store");
+    let worker = flow.view(&["--for", "worker", "--task", "1"]);
+    assert!(worker.contains("Rewritten-summary-marker."), "{worker}");
+    assert!(!worker.contains("Fixed-summary-marker."), "{worker}");
+}
+
+#[test]
+fn a_finding_link_to_an_absent_store_prints_one_line() {
+    let flow = linked_flow(".claude/review-v2/gone.toml", "[\"F1\", \"F2\"]", "[]");
+    let worker = flow.view(&["--for", "worker", "--task", "1"]);
+    let lines: Vec<&str> = worker
+        .lines()
+        .filter(|line| line.contains("gone.toml"))
+        .collect();
+    assert_eq!(lines.len(), 1, "{worker}");
+    assert!(lines[0].contains("cannot be read"), "{worker}");
+    assert!(worker.contains("Row-action-marker."), "{worker}");
+}
+
+#[test]
+fn a_finding_the_store_does_not_hold_prints_one_line() {
+    let flow = linked_flow(REVIEW_STORE, "[\"F1\", \"F9\"]", "[]");
+    let worker = flow.view(&["--for", "worker", "--task", "1"]);
+    let lines: Vec<&str> = worker.lines().filter(|line| line.contains("F9")).collect();
+    assert_eq!(
+        lines,
+        ["_Finding `F9` (fixes) is not in `.claude/review-v2/t.toml`._"],
+        "{worker}"
+    );
+    assert!(worker.contains("Fixed-summary-marker."), "{worker}");
+}
+
+#[test]
+fn a_finding_linked_to_another_task_stays_out_of_this_view() {
+    let flow = linked_flow(REVIEW_STORE, "[\"F1\"]", "[]");
+    let linked = flow.view(&["--for", "worker", "--task", "1"]);
+    assert!(linked.contains("## Findings"), "{linked}");
+    let other = flow.view(&["--for", "worker", "--task", "2"]);
+    assert_eq!(
+        other,
+        Flow::standard().view(&["--for", "worker", "--task", "2"])
+    );
+    assert!(!other.contains("## Findings"), "{other}");
+}
+
 #[test]
 fn a_command_holding_backticks_survives_its_code_span() {
     let tasks = TASKS.replace(

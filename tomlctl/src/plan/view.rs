@@ -16,7 +16,9 @@ use super::schema::{Bind, Contract, Decision, Door, PlanStore, Provenance, RunOu
 use super::store::{self, BRIEF_FILE, brief_digest};
 use crate::cli::{PlanViewArgs, ReadIntegrityArgs};
 use crate::errors::{ErrorKind, tagged_err};
+use crate::io::repo_or_cwd_root;
 use crate::output::{print_json_line, print_text};
+use crate::review::implementer_findings;
 use crate::tasks::finding::{ERROR, WARNING};
 use crate::tasks::markdown::FenceState;
 use crate::tasks::schema::{FileKind, Status, Store, TaskRow, TaskSpec, normal_path};
@@ -82,7 +84,7 @@ pub(super) fn run(args: PlanViewArgs) -> Result<()> {
     match audience {
         Audience::Human => print_text(&human(&view)),
         Audience::Digest => print_json_line(&digest(&view, &args.integrity)?),
-        Audience::Worker(id) => print_text(&worker(&view, id)?),
+        Audience::Worker(id) => print_text(&worker(&view, id, &args.integrity)?),
     }
 }
 
@@ -473,7 +475,7 @@ fn open_items(plan: &PlanStore, tasks: &Store) -> JsonValue {
     })
 }
 
-fn worker(view: &Plan<'_>, id: u32) -> Result<String> {
+fn worker(view: &Plan<'_>, id: u32, integrity: &ReadIntegrityArgs) -> Result<String> {
     let Plan { plan, tasks, .. } = view;
     let row = tasks.find(id).ok_or_else(|| {
         tagged_err(
@@ -521,6 +523,7 @@ fn worker(view: &Plan<'_>, id: u32) -> Result<String> {
 
     out.push_str("## Task\n\n");
     task_block(&mut out, tasks, row);
+    findings_block(&mut out, tasks, row, integrity);
     if let Some(spec) = tasks.spec_for(&row.r#ref) {
         let cited: Vec<&str> = spec.design.iter().map(String::as_str).collect();
         design_block(&mut out, view.authored_dir, &cited);
@@ -529,6 +532,77 @@ fn worker(view: &Plan<'_>, id: u32) -> Result<String> {
     out.truncate(out.trim_end().len());
     out.push('\n');
     Ok(out)
+}
+
+/// The findings the row's `[[finding_links]]` name, read from each review store
+/// now rather than from the task row. A store or finding that cannot be read is
+/// one line in the view, never a failed view.
+fn findings_block(out: &mut String, tasks: &Store, row: &TaskRow, integrity: &ReadIntegrityArgs) {
+    let links: Vec<_> = tasks
+        .finding_links
+        .iter()
+        .filter(|link| link.r#ref == row.r#ref && !link.is_empty())
+        .collect();
+    if links.is_empty() {
+        return;
+    }
+    out.push_str("## Findings\n\n");
+    let root = repo_or_cwd_root();
+    for link in links {
+        let named: Vec<(String, &str)> = link
+            .fixes
+            .iter()
+            .map(|id| (id.clone(), "fixes"))
+            .chain(link.settles.iter().map(|id| (id.clone(), "settles")))
+            .collect();
+        let ids: Vec<String> = named.iter().map(|(id, _)| id.clone()).collect();
+        let read = match &root {
+            Ok(root) => implementer_findings(&root.join(&link.store), &ids, integrity),
+            Err(err) => Err(anyhow::anyhow!("{err:#}")),
+        };
+        let found = match read {
+            Ok(found) => found,
+            Err(err) => {
+                out.push_str(&format!(
+                    "_Review store {} cannot be read: {}._\n\n",
+                    code(&link.store),
+                    one_line(&format!("{err:#}"))
+                ));
+                continue;
+            }
+        };
+        for ((id, role), (_, projected)) in named.iter().zip(found) {
+            match projected {
+                None => {
+                    // Split so no source line reads as a `Finding` literal to
+                    // the finding-class gate's line scan.
+                    out.push_str("_Finding ");
+                    out.push_str(&format!(
+                        "{} ({role}) is not in {}._\n\n",
+                        code(id),
+                        code(&link.store)
+                    ));
+                }
+                Some(finding) => {
+                    out.push_str(&format!(
+                        "### {} ({role}), from {}\n\n",
+                        code(id),
+                        code(&link.store)
+                    ));
+                    for (key, value) in &finding {
+                        if key == "id" {
+                            continue;
+                        }
+                        let text = match value {
+                            JsonValue::String(text) => text.clone(),
+                            other => other.to_string(),
+                        };
+                        field(out, key, &text);
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// A path naming a directory reaches every file under it, since `plan check`

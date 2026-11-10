@@ -106,10 +106,15 @@ tomlctl review report --slug <s> --run <U> --out <path> [--allow-outside]   # ma
 tomlctl review triage <ids> --slug <s> --dismiss-file <path> [--expect-status open]   # or --defer/--reopen/--park/--resolve, --backlog-ref, --convert [--run <open U>]
 tomlctl review apply <ids> --slug <s> [--user-accepted] [--dry-run]   # write plan findings' record edits on a v2 flow, compare-and-set on expect
 tomlctl review export-v1 <ids> --slug <s> --to <v1-ledger> [--dry-run]   # or --all: every open defect and cleanup of the ledger's family
+tomlctl review schedule <ids> --slug <s> --flow <apply-slug> --checkpoint <id>   # or --all: mint fix tasks in a v2 flow's tasks.toml and mark each finding scheduled
+tomlctl review reconcile --slug <s> --flow <apply-slug>   # move scheduled findings by their task: resolved once committed, open when gone or deferred
+tomlctl review anchor <F> --slug <s> [--gone]          # exit 0 when the finding's anchor holds (or, --gone, a remove cleanup's old text is gone); read-only
+tomlctl review reproduce --slug <s> --ndjson <path>    # upsert reproduce verdicts on (finding, flow, milestone, round, by); never moves a status
+tomlctl review reproduce-status <ids> --slug <s> --expect gone   # exit 0 when each finding's current reproduction has that verdict; read-only
 tomlctl review run finish <U> --slug <s> [--incomplete-file <path>]   # stamp finished + counts; refuses open gaps without --incomplete
 tomlctl review run list --slug <s> [--open|--finished]   # the store's runs ordered by id; read-only
 tomlctl review run show <U> --slug <s>                 # one run's bounds, signals, baselines, waves, agents and audit; read-only
-tomlctl review stats --all [--by lens] [--outcomes] [--escapes] [--calibration]   # read-only rates per lens, probe, run or model; --plan-outcomes for plan-family runs
+tomlctl review stats --all [--by lens] [--outcomes] [--apply] [--escapes] [--calibration]   # read-only rates per lens, probe, run or model; --plan-outcomes for plan-family runs
 tomlctl review catalogue [--check] [--vocabulary] [--owners]   # the merged lens catalogue's index, or its validation
 tomlctl review schema finding [--kind <k>]             # JSON Schema from the field catalogue; or cell-return, verdict-return
 
@@ -325,7 +330,7 @@ downstream flow-command templates can feature-gate at boot without parsing
 
 ```json
 {
-  "version": "0.22.0",
+  "version": "0.23.0",
   "features": ["count_distinct", "raw", "lines", "infer_prefix",
                "dedupe_by", "dedup_id_auto", "find_duplicates_across",
                "fingerprint", "capabilities", "error_format_json",
@@ -373,7 +378,10 @@ downstream flow-command templates can feature-gate at boot without parsing
                "premise_probe_record", "plan_drift_uncommitted",
                "plan_view_writes_build", "review_run_head",
                "review_run_show", "review_ruled_out",
-               "review_same_as_link", "review_list_fix_shape"],
+               "review_same_as_link", "review_list_fix_shape",
+               "tasks_finding_links", "review_schedule",
+               "review_reconcile", "review_anchor", "review_reproduce",
+               "review_stats_apply"],
   "subcommands": ["parse", "get", "set", "set-json", "validate",
                   "items", "blocks", "array-append", "capabilities",
                   "integrity", "flow", "json", "backlog", "tasks",
@@ -562,3 +570,9 @@ Feature meanings:
 | `review_ruled_out` | `review cover --ruled-out <SRC>` stores the sites a cell judged deliberate on the cell as `ruled_out` (`file`, a `symbol` or a `line`, `reason`; an entry with neither is refused); `review digest` lists other cells' findings on a matching anchor under `ruled_out_hits`, and the verifier and audit projections carry the matching rule-outs on each finding |
 | `review_same_as_link` | `review resolve --run <RUN> --same-as <DUP>=<TARGET>` (repeatable) sets the duplicate's `same_as` and resolves the pair in the same call, refusing a self-link, a second target or a cycle; the envelope lists the pairs under `linked`, and `review digest` lists unlinked pairs from different cells on a matching anchor under `duplicate_candidates` |
 | `review_list_fix_shape` | `review list --fix-shape <SHAPE>` keeps only findings whose `fix_shape` is `SHAPE` (`edits` or `needs-plan`) |
+| `tasks_finding_links` | the task store's `[[finding_links]]` table (`ref`, `store`, `fixes`, `settles`), written by `tasks add-many` from a row's `review_store`, `fixes` and `settles` keys, dropped by `tasks remove` and re-keyed by `tasks update --ref`; it raises the store to `schema_version = 2`, and `plan view --for worker` prints the linked findings, read from their review store, under `## Findings` |
+| `review_schedule` | `review schedule <ID>... \| --all --flow <SLUG> --checkpoint <ID>` — mint fix tasks in a v2 flow's `tasks.toml` from open code and perf defect and cleanup findings, one task per group of findings whose edited paths overlap, each linked through `[[finding_links]]`, and mark each finding `scheduled` with `apply_flow` and `apply_task`; selection is `export-v1`'s, and a rerun finds a still-live linked task rather than minting again |
+| `review_reconcile` | `review reconcile --flow <SLUG>` — move each finding scheduled into that flow by its task: `resolved` once the task is `done` with a `commit`, `open` (with an `apply: ` `reopen_reason`) when the task is gone, deferred, or a committed task only settles it; a retitled task is followed through its finding link |
+| `review_anchor` | `review anchor <F>` — exit 0 when a finding's anchor holds in the working tree (a cleanup's `old`, as `review add` matches it; a defect's file and symbol), 1 when it does not; `--gone` asks that a `remove` cleanup's `old` occurs nowhere in its edit target; writes nothing |
+| `review_reproduce` | `review reproduce --ndjson <SRC>` upserts reproduce verdicts (`gone`, `reproduces`, `unsettled`) into the store's `[[reproductions]]`, keyed on (finding, flow, milestone, round, by) and never moving a finding's status; `review reproduce-status <ID>... --expect <VERDICT>` exits 0 when each finding's current reproduction has that verdict; the review store is stamped `schema_version = 2` while it holds a reproduction or a `scheduled` finding |
+| `review_stats_apply` | `review stats --apply` — per lens and kind, the natively applied findings `scheduled`, `resolved` and `reopened`, with each finding's current reproduction verdict, plus reproduction counts by verdict over every row and over each finding's current one; read from the store alone |

@@ -64,6 +64,8 @@ fn read_only_subcommands_hide_write_integrity_flags_in_help() {
         &["inputs", "list", "--help"],
         &["review", "list", "--help"],
         &["review", "show", "--help"],
+        &["review", "anchor", "--help"],
+        &["review", "reproduce-status", "--help"],
         &["review", "digest", "--help"],
         // `review report` writes derived markdown with no sidecar, like
         // `tasks render`; its `--out` takes `--allow-outside`, exempted below.
@@ -153,8 +155,11 @@ fn write_subcommands_expose_all_integrity_flags_in_help() {
         &["review", "add", "--help"],
         &["review", "verdict", "--help"],
         &["review", "resolve", "--help"],
+        &["review", "reproduce", "--help"],
         &["review", "triage", "--help"],
         &["review", "export-v1", "--help"],
+        &["review", "schedule", "--help"],
+        &["review", "reconcile", "--help"],
         &["review", "apply", "--help"],
         &["plan", "open", "--help"],
         &["plan", "decide", "--help"],
@@ -1828,6 +1833,13 @@ fn capabilities_features_contains_every_plan_feature() {
         "review_ruled_out",
         "review_same_as_link",
         "review_list_fix_shape",
+        // Native apply of review findings through a v2 flow's task store.
+        "tasks_finding_links",
+        "review_schedule",
+        "review_reconcile",
+        "review_anchor",
+        "review_reproduce",
+        "review_stats_apply",
     ];
     for name in expected {
         assert!(
@@ -1862,8 +1874,8 @@ fn capabilities_version_matches_cargo_toml() {
         .and_then(|s| s.as_str())
         .expect("`version` must be a string");
     assert_eq!(
-        version, "0.22.0",
-        "expected version `0.22.0` (the minor bump for `review run start --head`, `review run show`, `review cover --ruled-out`, `review resolve --same-as` and `review list --fix-shape`); got `{version}`"
+        version, "0.23.0",
+        "expected version `0.23.0` (the minor bump for `[[finding_links]]`, `review schedule`, `review reconcile`, `review anchor`, `review reproduce` and `review stats --apply`); got `{version}`"
     );
 }
 

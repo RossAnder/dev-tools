@@ -1,11 +1,12 @@
-//! Arguments of `review verdict` and `review resolve`.
+//! Arguments of `review verdict`, `review resolve`, `review reproduce` and
+//! `review reproduce-status`.
 
 use std::path::PathBuf;
 
 use clap::Args;
 
 use super::ReviewStore;
-use crate::cli::types::WriteIntegrityArgs;
+use crate::cli::types::{ReadIntegrityArgs, WriteIntegrityArgs};
 
 // The single-verdict flags conflict with `--ndjson`, whose rows carry their
 // own. Citation and rationale are left to the verb, so a missing one is a
@@ -107,4 +108,42 @@ pub(crate) struct ReviewResolveArgs {
     pub(crate) same_as: Vec<String>,
     #[command(flatten)]
     pub(crate) integrity: WriteIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct ReviewReproduceArgs {
+    #[command(flatten)]
+    pub(crate) store: ReviewStore,
+    #[arg(
+        long = "ndjson",
+        value_name = "SRC",
+        required = true,
+        help = "Reproductions, one JSON object per line (finding, flow, milestone, round, task, verdict, by, citation): `-` for stdin, otherwise a file path (a leading `@` is accepted)"
+    )]
+    pub(crate) ndjson: String,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct ReviewReproduceStatusArgs {
+    #[arg(
+        value_name = "ID,...",
+        required = true,
+        num_args = 1..,
+        value_delimiter = ',',
+        help = "Finding ids, comma- or space-separated"
+    )]
+    pub(crate) ids: Vec<String>,
+    #[command(flatten)]
+    pub(crate) store: ReviewStore,
+    #[arg(
+        long = "expect",
+        value_name = "VERDICT",
+        required = true,
+        help = "gone|reproduces|unsettled"
+    )]
+    pub(crate) expect: String,
+    #[command(flatten)]
+    pub(crate) integrity: ReadIntegrityArgs,
 }

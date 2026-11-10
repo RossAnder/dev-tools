@@ -378,9 +378,7 @@ pub(super) fn text_refusals(
     if kind == Kind::Cleanup
         && let Some(old) = str_of(row, "old")
     {
-        let at = str_of(row, "target_file")
-            .filter(|t| root.join(t).is_file())
-            .unwrap_or(file);
+        let at = edit_target(root, file, str_of(row, "target_file"));
         if let Err(reason) = check_old(root, at, old, line_of(row)) {
             reasons.push(reason);
         }
@@ -651,13 +649,21 @@ pub(super) fn route_of(
     )
 }
 
-fn read_normalised(root: &Path, rel: &str) -> Option<String> {
+/// The file a cleanup's `old` is checked in: `target_file` when it exists,
+/// otherwise `file`.
+pub(super) fn edit_target<'a>(root: &Path, file: &'a str, target_file: Option<&'a str>) -> &'a str {
+    target_file
+        .filter(|t| !t.is_empty() && root.join(t).is_file())
+        .unwrap_or(file)
+}
+
+pub(super) fn read_normalised(root: &Path, rel: &str) -> Option<String> {
     let bytes = std::fs::read(root.join(rel)).ok()?;
     Some(String::from_utf8_lossy(&bytes).replace("\r\n", "\n"))
 }
 
 /// Every byte offset at which `needle` starts in `hay`, overlaps included.
-fn occurrences(hay: &str, needle: &str) -> Vec<usize> {
+pub(super) fn occurrences(hay: &str, needle: &str) -> Vec<usize> {
     let mut found = Vec::new();
     let mut from = 0;
     while let Some(at) = hay[from..].find(needle) {

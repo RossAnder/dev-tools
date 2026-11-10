@@ -52,11 +52,24 @@ pub(crate) enum ReviewOp {
     /// Resolve every finding whose `same_as` has complete verdicts, after linking each `--same-as` pair.
     Resolve(ReviewResolveArgs),
 
+    /// Record reproduce verdicts on findings from NDJSON, upserted on
+    /// (finding, flow, milestone, round, by). Never changes a finding's status.
+    Reproduce(ReviewReproduceArgs),
+
+    /// Exit 0 when each named finding's current reproduction has the
+    /// `--expect` verdict, 1 otherwise. Writes nothing.
+    #[command(name = "reproduce-status")]
+    ReproduceStatus(ReviewReproduceStatusArgs),
+
     /// List findings, filtered, through a role projection.
     List(ReviewListArgs),
 
     /// Print findings or cells through a role projection.
     Show(ReviewShowArgs),
+
+    /// Exit 0 when a finding's anchor holds in the working tree, 1 when it
+    /// does not. Writes nothing.
+    Anchor(ReviewAnchorArgs),
 
     /// A run's counts, coverage gaps, unverified ids and items awaiting a decision.
     Digest(ReviewDigestArgs),
@@ -77,6 +90,14 @@ pub(crate) enum ReviewOp {
     /// Export open defect and cleanup findings into a v1 ledger.
     #[command(name = "export-v1")]
     ExportV1(ReviewExportArgs),
+
+    /// Mint fix tasks in a v2 flow's task store from open defect and cleanup
+    /// findings, and mark each finding `scheduled` with its task.
+    Schedule(ReviewScheduleArgs),
+
+    /// Move each finding scheduled into a flow by its task's state: resolved
+    /// once the task is committed, open again when the task is gone or deferred.
+    Reconcile(ReviewReconcileArgs),
 
     /// Merge the lens catalogue's layers and print its index.
     Catalogue(ReviewCatalogueArgs),

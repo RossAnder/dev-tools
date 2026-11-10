@@ -5,7 +5,7 @@ description: "Orchestrator contract for running an approved v2 plan one mileston
 
 # Implement v2 engine
 
-This is the orchestrator's half of running an approved v2 plan. The `/implement-v2` carrier checks that the session can run it and then invokes this skill; everything from reading the arguments to the closing report is here and in the two references. The workers' half is the `plan-worker-lite` and `plan-worker-deep` agents and their shared procedure: the `implement-v2-milestone` Workflow gives each one a task, never a restatement of its method.
+This is the orchestrator's half of running an approved v2 plan. The `/implement-v2` carrier checks that the session can run it and then invokes this skill; everything from reading the arguments to the closing report is here and in its references. The workers' half is the `plan-worker-lite` and `plan-worker-deep` agents and their shared procedure: the `implement-v2-milestone` Workflow gives each one a task, never a restatement of its method.
 
 A v2 plan lives in `.claude/flows/<slug>/` (`plan.toml` and `tasks.toml`, written only through `tomlctl` verbs) and in `docs/flows/<slug>/` (the brief, `design/` and the notes, all committed). This engine runs one milestone per Workflow run: it checks the milestone's premises, launches its dispatchable tasks, drains what comes back, gates the milestone and commits it once. It then continues to the next milestone while nothing in the flow is parked.
 
@@ -48,13 +48,15 @@ Anything else is not an argument: say so and stop, rather than guess what it was
 | Pre-flight | — | Never | [run-milestone.md](references/run-milestone.md), section 1 |
 | Pick the milestone | — | Never; `--milestone` names it | [run-milestone.md](references/run-milestone.md), section 2 |
 | Re-entry settling | — | Nothing is open, parked, failed or unstamped; open runs and unstamped milestones settle before the pick | Re-entry, below |
-| Premises | — | The dispatch set is empty | [run-milestone.md](references/run-milestone.md), section 3 |
+| Linked review stores | — | The flow has no `[[finding_links]]` | [findings.md](references/findings.md), section "Linked review stores in the clean-tree and lane checks"; read with the pre-flight and the drain's drift |
+| Premises | — | The dispatch set is empty | [run-milestone.md](references/run-milestone.md), section 3; an apply row's anchor premises by [findings.md](references/findings.md), section "Anchor premises on a started row" |
 | Launch | `implement:<id>` (start) | No member of the dispatch set is `ready` or `held` | [run-milestone.md](references/run-milestone.md), section 4 |
 | Drain and replan | `implement:<id>` (finish) | No launch this round | [drain.md](references/drain.md), steps 1 to 6 |
 | Gate | — | A row of the milestone is not `done`; an empty `gates` list with no accept check left to the gate runs nothing | [drain.md](references/drain.md), step 7 |
 | Tangential discoveries | — | No note or block carries one | [drain.md](references/drain.md), step 8 |
 | Handovers | — | No worker proposed one | [drain.md](references/drain.md), step 9 |
 | Commit | — | The gate has not passed | [drain.md](references/drain.md), step 10 |
+| Reconcile | — | The milestone holds no apply row | [findings.md](references/findings.md), section "Reconcile"; between the stamp and the flow-store commit |
 | `needs_human` report | — | Never | [drain.md](references/drain.md), step 11 |
 
 Between the drain and the gate the engine loops: a replan that leaves a dispatchable row goes back to the premises with the launch count raised by one, and the gate's fix rounds go back the same way. After a commit, the engine picks the next milestone while nothing in the flow is parked and `--milestone` was not given; otherwise it ends with the report.
@@ -63,6 +65,7 @@ The references hold the procedure:
 
 - [references/run-milestone.md](references/run-milestone.md): the pre-flight with its clean-tree check and stale-row reset, picking the milestone, the premise script and its verdicts, building the dispatch set, the args file, the launch and what the index holds.
 - [references/drain.md](references/drain.md): closing the run, reading the index and the notes, drift, rows left in progress, store changes during the run, the replan with its fix tasks, the gate and its two fix rounds, tangential discoveries, handovers, the two commits, stamping, the `needs_human` report, and the parked re-ask.
+- [references/findings.md](references/findings.md): the rules for apply rows, the rows a `[[finding_links]]` entry names — what an apply row is, the findings its worker sees, anchor premises on a started row, the linked review stores exempt from the clean-tree and lane checks, and reconciling the findings after the milestone commit. A milestone with no apply row reads none of it.
 
 ## Out of scope
 
@@ -70,7 +73,7 @@ This engine stops, and says so in the `needs_human` report, rather than reach fo
 
 - **A `tool` or `clerk` executor.** Such a row has no worker yet; the launch lists it under `no worker` with every member that needs it.
 - **A deferred milestone.** Its tasks carry no checks or premises; the engine stops and says it must be elaborated first.
-- **Vetting, apply and harvest.** There is no vet pass over a worker's return; the drain's drift and store checks are the only cross-check.
+- **Vetting and harvest.** There is no vet pass over a worker's return; the drain's drift and store checks are the only cross-check. Apply rows are in scope, by [findings.md](references/findings.md).
 - **Worktree isolation.** Workers edit the main working tree, in disjoint `files` per wave.
 - **An Agent-tool fallback** when the Workflow is unavailable or refuses a launch.
 - **Closing the flow.** When every milestone is committed, the report says the flow's status is still to be moved; the engine does not move it.

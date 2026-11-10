@@ -58,7 +58,7 @@ Run it before any status moves, so the run's own rows are still past `pending` a
 
 Read it two ways:
 
-- **Out-of-lane edits.** Every path in `uncommitted_files` should be in the `files` of a started row, as the pre-flight in [run-milestone.md](run-milestone.md), step 1, defines it, or be `.claude/backlog.toml` or its sidecar. Paths under `.claude/flows/<slug>/` and `docs/flows/<slug>/` are never listed. Any other path is an edit outside every worker's lane, and an `affected` entry with an `uncommitted` array is one landing on a pending row's file, unless that row is itself started: `plan drift` counts only rows past `pending` as their own work, so a started row back at `pending` shows its own partial edits there. Look for the worker that made it in the notes you read and in the `files_touched` they name. When a note accounts for the path and the task needed it, widen that task's `files` through the replan (step 6) so the edit is in its lane. Otherwise list the path in `needs_human` and do not gate: the engine never commits, moves or discards an edit nobody owns.
+- **Out-of-lane edits.** Every path in `uncommitted_files` should be in the `files` of a started row, as the pre-flight in [run-milestone.md](run-milestone.md), step 1, defines it, or be `.claude/backlog.toml` or its sidecar, or be a review store the flow's `[[finding_links]]` name or its sidecar, by [findings.md](findings.md), section "Linked review stores in the clean-tree and lane checks". Paths under `.claude/flows/<slug>/` and `docs/flows/<slug>/` are never listed. Any other path is an edit outside every worker's lane, and an `affected` entry with an `uncommitted` array is one landing on a pending row's file, unless that row is itself started: `plan drift` counts only rows past `pending` as their own work, so a started row back at `pending` shows its own partial edits there. Look for the worker that made it in the notes you read and in the `files_touched` they name. When a note accounts for the path and the task needed it, widen that task's `files` through the replan (step 6) so the edit is in its lane. Otherwise list the path in `needs_human` and do not gate: the engine never commits, moves or discards an edit nobody owns.
 - **Committed drift.** `changed_files` and the `affected` entries without `uncommitted` are commits since approval that no row owns. They need no action here: every launch re-runs the premises of the rows they touch, which is what answers them.
 
 ## 4. Rows left in progress
@@ -352,6 +352,8 @@ A backlog row a milestone task closes may now be complete; reconcile it before t
 ```bash
 tomlctl backlog reconcile --flow <slug> --apply
 ```
+
+When the milestone holds an apply row, reconcile its findings here too, by [findings.md](findings.md), section "Reconcile", which also names the review stores this commit stages.
 
 **The flow-store commit.** The stores, the run's notes and the backlog go in a second, small commit of their own, with its message from the `commit-conventions` skill too:
 

@@ -128,6 +128,7 @@ str_enum!(
         Converted => "converted",
         Resolved => "resolved",
         Exported => "exported",
+        Scheduled => "scheduled",
     }
 );
 
@@ -144,16 +145,21 @@ impl FindingStatus {
             Self::Converted => &["converted_to"],
             Self::Resolved => &["resolution", "resolved"],
             Self::Open => &["reopen_reason"],
-            Self::Unverified | Self::Superseded | Self::Refuted | Self::Exported => &[],
+            Self::Unverified
+            | Self::Superseded
+            | Self::Refuted
+            | Self::Exported
+            | Self::Scheduled => &[],
         }
     }
 
     /// No disposition moves these: withdrawn, merged into another row,
-    /// replaced by a conversion, or owned by a v1 ledger since export.
+    /// replaced by a conversion, owned by a v1 ledger since export, or held
+    /// by a live task in an apply flow.
     pub(crate) fn is_settled(self) -> bool {
         matches!(
             self,
-            Self::Superseded | Self::Merged | Self::Converted | Self::Exported
+            Self::Superseded | Self::Merged | Self::Converted | Self::Exported | Self::Scheduled
         )
     }
 
@@ -230,6 +236,20 @@ pub(crate) const ALL_COMPANIONS: &[&str] = &ALL_COMPANION_ARRAY;
 pub(crate) const LINK_FIELDS: &[&str] = &["exported_as", "export_ledger"];
 
 pub(crate) const FINDING_STATUSES: &[&str] = FindingStatus::VALUES;
+
+str_enum!(
+    /// What a reproduce check found of a finding after its fix landed.
+    ReproduceVerdict {
+        Gone => "gone",
+        Reproduces => "reproduces",
+        Unsettled => "unsettled",
+    }
+);
+
+str_enum!(ReproduceBy {
+    Verifier => "verifier",
+    Orchestrator => "orchestrator",
+});
 pub(crate) const OUTCOMES: &[&str] = &[
     "repeat",
     "contested",
@@ -673,6 +693,10 @@ pub(crate) const FIELDS: &[FieldSpec] = &[
     field(Finding, "resolved", Ty::Date, STATUS).computed(),
     field(Finding, "exported_as", Ty::Str, STATUS).computed(),
     field(Finding, "export_ledger", Ty::Str, STATUS).computed(),
+    // The apply flow's slug and task ref of a scheduled finding. Not
+    // companions: a move to resolved keeps them.
+    field(Finding, "apply_flow", Ty::Str, STATUS).computed(),
+    field(Finding, "apply_task", Ty::Str, STATUS).computed(),
     field(Finding, "retired_links", Ty::StrList, STATUS).computed(),
     // verdicts
     field(Verdict, "finding", Ty::Str, AUDIT_ONLY).required(),
@@ -1416,6 +1440,8 @@ mod tests {
         (Finding, "resolved", None, "R - - - R - - R"),
         (Finding, "exported_as", None, "R - - - R - - R"),
         (Finding, "export_ledger", None, "R - - - R - - R"),
+        (Finding, "apply_flow", None, "R - - - R - - R"),
+        (Finding, "apply_task", None, "R - - - R - - R"),
         (Finding, "retired_links", None, "R - - - R - - R"),
         (Finding, "lens", None, "- R R - R R R R"),
         (Finding, "cell", None, "- R - - R R R R"),
@@ -1530,7 +1556,13 @@ mod tests {
         };
         assert_eq!(
             set(FindingStatus::is_settled),
-            sorted(vec!["superseded", "merged", "converted", "exported"])
+            sorted(vec![
+                "superseded",
+                "merged",
+                "converted",
+                "exported",
+                "scheduled"
+            ])
         );
         assert_eq!(
             set(FindingStatus::is_reopenable),
@@ -1582,6 +1614,7 @@ mod tests {
                 "converted",
                 "resolved",
                 "exported",
+                "scheduled",
             ]
         );
         assert_eq!(
@@ -1600,6 +1633,11 @@ mod tests {
             ])
         );
         assert!(ALL_COMPANIONS.iter().all(|c| !LINK_FIELDS.contains(c)));
+        assert!(
+            ALL_COMPANIONS
+                .iter()
+                .all(|c| !["apply_flow", "apply_task"].contains(c))
+        );
     }
 
     fn globs() -> RoutingGlobs {

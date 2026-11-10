@@ -9,8 +9,9 @@
 //! A batch is one candidate graph, so two rows in the same `add-many` may
 //! reference each other; a cycle between them is still refused.
 //!
-//! An `add-many` row may also carry a `spec`, its `[[file_notes]]` and
-//! `[[backlog_links]]` entries, and the `reason` an audited store requires.
+//! An `add-many` row may also carry a `spec`, its `[[file_notes]]`,
+//! `[[backlog_links]]` and `[[finding_links]]` entries, and the `reason` an
+//! audited store requires.
 //! Only row shape is checked before the lock; what depends on the store is
 //! checked inside `store::mutate`, so a refusal there also persists nothing.
 
@@ -24,7 +25,8 @@ use serde_json::{Map as JsonMap, Value as JsonValue};
 use super::graph::{Node, Tense, build_or_refuse};
 use super::schema::{
     ACCEPT_KINDS, Accept, BacklogLink, Change, DEFAULT_ACTOR, DEFAULT_HEADING_DEPTH, Effort,
-    FileNote, MEANS_BINDINGS, Means, Premise, Status, Store, TaskRow, TaskSpec, premise_target,
+    FileNote, FindingLink, MEANS_BINDINGS, Means, Premise, Status, Store, TaskRow, TaskSpec,
+    premise_target,
 };
 use super::{slug, store};
 use crate::cli::WriteIntegrityArgs;
@@ -62,7 +64,7 @@ pub(crate) struct AddOutcome {
 
 /// Row fields an NDJSON line may carry. Anything else is refused rather than
 /// dropped: a mistyped `neds` would otherwise silently discard an edge.
-const ROW_FIELDS: [&str; 16] = [
+const ROW_FIELDS: [&str; 19] = [
     "title",
     "effort",
     "files",
@@ -79,6 +81,9 @@ const ROW_FIELDS: [&str; 16] = [
     "file_notes",
     "closes",
     "refs",
+    "review_store",
+    "fixes",
+    "settles",
 ];
 
 const SPEC_FIELDS: [&str; 8] = [
@@ -108,6 +113,8 @@ struct RowExtras {
     file_notes: Vec<(String, String)>,
     closes: Vec<String>,
     refs: Vec<String>,
+    /// `None` when the row names no finding.
+    finding_link: Option<FindingLink>,
 }
 
 /// A row's `spec` key, validated. A field left `None` was not supplied.
@@ -150,16 +157,29 @@ pub(crate) fn add_many(
     integrity: &WriteIntegrityArgs,
     ndjson: &str,
 ) -> Result<Vec<AddOutcome>> {
-    let rows = parse_ndjson_objects(ndjson)?;
-    let tasks = rows
+    let tasks = parse_rows(ndjson)?;
+    store::mutate(path, integrity, |store| append(store, tasks))
+}
+
+impl Store {
+    /// `add-many` over a store the caller already holds inside
+    /// `store::mutate`, for a verb that reads the store to compose its rows.
+    /// The rows meet the same parse, refusals and audit as `add-many`'s.
+    pub(crate) fn add_many_locked(&mut self, ndjson: &str) -> Result<Vec<AddOutcome>> {
+        let tasks = parse_rows(ndjson)?;
+        append(self, tasks)
+    }
+}
+
+fn parse_rows(ndjson: &str) -> Result<Vec<(NewTask, RowExtras)>> {
+    parse_ndjson_objects(ndjson)?
         .iter()
         .map(|(line, row)| {
             let task = task_from_row(*line, row)?;
             let extras = extras_from_row(*line, row, &task.files)?;
             Ok((task, extras))
         })
-        .collect::<Result<Vec<_>>>()?;
-    store::mutate(path, integrity, |store| append(store, tasks))
+        .collect()
 }
 
 /// Resolve a `--<body>` / `--<body>-file` pair. Both absent is a blank body,
@@ -353,6 +373,7 @@ impl RowExtras {
             file_notes,
             closes,
             refs,
+            finding_link,
         } = self;
 
         if let Some(patch) = spec {
@@ -382,6 +403,12 @@ impl RowExtras {
                 r#ref: row.r#ref.clone(),
                 closes,
                 refs,
+            });
+        }
+        if let Some(link) = finding_link {
+            store.finding_links.push(FindingLink {
+                r#ref: row.r#ref.clone(),
+                ..link
             });
         }
         if store.audit {
@@ -797,7 +824,45 @@ fn extras_from_row(
         file_notes,
         closes: strings("closes")?,
         refs: strings("refs")?,
+        finding_link: finding_link_from_row(
+            line,
+            text("review_store")?,
+            strings("fixes")?,
+            strings("settles")?,
+        )?,
     })
+}
+
+/// Finding ids mean nothing without the store that holds them, so ids without
+/// a `review_store` are refused. A `review_store` naming no finding links
+/// nothing and is not stored.
+fn finding_link_from_row(
+    line: usize,
+    review_store: String,
+    fixes: Vec<String>,
+    settles: Vec<String>,
+) -> Result<Option<FindingLink>> {
+    if fixes.is_empty() && settles.is_empty() {
+        return Ok(None);
+    }
+    if review_store.trim().is_empty() {
+        return Err(row_err(
+            line,
+            "`fixes` and `settles` name findings in a review store — the row needs a \
+             `review_store`",
+        ));
+    }
+    for (key, ids) in [("fixes", &fixes), ("settles", &settles)] {
+        if ids.iter().any(|id| id.trim().is_empty()) {
+            return Err(row_err(line, format!("`{key}` holds a blank finding id")));
+        }
+    }
+    Ok(Some(FindingLink {
+        r#ref: String::new(),
+        store: review_store,
+        fixes,
+        settles,
+    }))
 }
 
 /// A blank annotation is refused rather than stored, because the store drops

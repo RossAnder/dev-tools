@@ -15,6 +15,7 @@ The flag surface of the `tomlctl review` group and the shape of the v2 review st
 - [Plan records](#plan-records) — flow mode, `target`, `tier`, `proof`, `apply`
 - [Reads](#reads) — `list`, `show`, `digest`, `report`, `stats`
 - [Dispositions and export](#dispositions-and-export) — `triage`, `export-v1`
+- [Apply through a v2 flow](#apply-through-a-v2-flow) — `schedule`, `reconcile`, `anchor`, `reproduce`, `reproduce-status` are [review-apply.md](review-apply.md)
 - [Catalogue and schema](#catalogue-and-schema) — `catalogue`, `schema`
 
 ## Shared behaviour
@@ -22,17 +23,17 @@ The flag surface of the `tomlctl review` group and the shape of the v2 review st
 - **Store target.** Every verb except `catalogue` and `schema` takes exactly one of `--slug` (the flow store) or `--scope` (the flow-less store); `stats` also accepts `--all`. Both names are validated like a flow slug. The store stamps its own `last_updated`, so no verb takes `--no-stamp`.
 - **Run directory.** `.review-v2-runs/<store-key>/U<n>/` at the repo root, where `<store-key>` is the slug or `scope-<scope>`. `run start` creates it with a `payloads/` subdirectory, where agents stage their NDJSON payloads, and writes a `.gitignore` holding `*` at `.review-v2-runs/` when none is there. It and every `--out` must resolve, symlinks followed, under `.review-v2-runs/` or `.claude/`; `run start`, `plan --propose` and `report` take `--allow-outside` to override that.
 - **Catalogue drift.** A verb that reads a run's catalogue — `survey`, `plan`, `add`, `run finish` and the others that bind or route against it — reloads it from the roots the run recorded and fails `kind=validation` naming `tree_sha` or `config_sha` when either no longer matches the value `run start` recorded; start a new run. A run recorded without `tree_sha` is not checked.
-- **Integrity flags.** The writing verbs (`sync-v1`, `run *`, `survey`, `plan`, `cover`, `add`, `verdict`, `resolve`, `apply`, `triage`, `export-v1`) carry the write bundle — `--allow-outside`, `--no-write-integrity`, `--verify-integrity`, `--strict-integrity`, `--no-create`. The reading verbs (`run list`, `run show`, `list`, `show`, `digest`, `report`, `stats`, `catalogue`, `schema`) carry `--verify-integrity` and `--strict-read`; `report` also takes `--allow-outside`, for its `--out`. The flag tables below leave both bundles out.
-- **Missing store.** `sync-v1` and `stats` read an absent store as empty and create nothing; `run start` seeds one; every other verb fails `kind=not_found`.
+- **Integrity flags.** The writing verbs (`sync-v1`, `run *`, `survey`, `plan`, `cover`, `add`, `verdict`, `resolve`, `reproduce`, `apply`, `triage`, `export-v1`, `schedule`, `reconcile`) carry the write bundle — `--allow-outside`, `--no-write-integrity`, `--verify-integrity`, `--strict-integrity`, `--no-create`. The reading verbs (`run list`, `run show`, `list`, `show`, `anchor`, `reproduce-status`, `digest`, `report`, `stats`, `catalogue`, `schema`) carry `--verify-integrity` and `--strict-read`; `report` also takes `--allow-outside`, for its `--out`. The flag tables below leave both bundles out.
+- **Missing store.** `sync-v1`, `stats` and `reconcile` read an absent store as empty and create nothing; `run start` seeds one; every other verb fails `kind=not_found`.
 - **Payload sources.** Each `--ndjson` takes `-` for stdin, otherwise a file path; a leading `@` is accepted. Prose flags (`--note`, `--rationale`, `--incomplete`, the triage reasons, `--trigger`) read stdin when given `-`, and each has a `-file` twin that reads a file the Write tool staged. Text is read with `\r\n` as `\n` and trimmed; an empty value is refused.
-- **Replays are harmless.** `cover`, `verdict`, `resolve`, `sync-v1` and `triage` compute their result against the stored rows first and write nothing when it changes nothing, and `plan --ndjson` recognises the wave it already minted, so replaying a call that succeeded reports itself `unchanged` rather than writing a duplicate.
-- **Partial batches.** `add`, `plan --ndjson`, `verdict --ndjson`, `triage` and `export-v1` refuse a failing row or id with its reasons, under `refused`, while the rest land. A call whose every row is refused fails `kind=validation` and writes nothing, as does a refused single `verdict`; `export-v1 --all` reports its refusals and exits 0.
+- **Replays are harmless.** `cover`, `verdict`, `resolve`, `reproduce`, `sync-v1`, `triage` and `reconcile` compute their result against the stored rows first and write nothing when it changes nothing, and `plan --ndjson` recognises the wave it already minted, so replaying a call that succeeded reports itself `unchanged` rather than writing a duplicate.
+- **Partial batches.** `add`, `plan --ndjson`, `verdict --ndjson`, `reproduce`, `triage`, `export-v1` and `schedule` refuse a failing row or id with its reasons, under `refused`, while the rest land. A call whose every row is refused fails `kind=validation` and writes nothing, as does a refused single `verdict`; `export-v1 --all` and `schedule --all` report their refusals and exit 0.
 - **Output.** Writes print a compact `{"ok":true,…}` envelope. `list` and `show` are row reports ([Rows and header](../SKILL.md#rows-and-header-per-command)); `plan --propose` without `--out` prints NDJSON text. Errors are `kind=validation` unless named otherwise.
 
 ## Store shape
 
 ```toml
-schema_version = 1
+schema_version = 1                 # 2 while the store holds a reproduction or a scheduled finding
 last_updated = 2026-10-12
 
 [id_high_water]                    # prefix → highest id a removal retired
@@ -81,13 +82,28 @@ finding = "F1"
 by = "verifier"                    # verifier | panel | checker | audit | orchestrator | sync
 verdict = "confirmed"              # confirmed | plausible | refuted | unsettled
 citation = "tomlctl/src/review/verdict.rs:88"
+
+[[reproductions]]
+finding = "F1"
+flow = "auth-apply"                # the apply flow that ran the fix
+milestone = "B"
+round = 1                          # positive integer
+task = "fix-the-retry-bound"       # the apply task's ref; optional
+verdict = "gone"                   # gone | reproduces | unsettled
+by = "verifier"                    # verifier | orchestrator
+citation = "src/retry.rs:40"
+at = 2026-11-12                    # stamped by `reproduce`
 ```
 
-Ids are minted inside the write lock with the prefixes `U` (runs), `C` (cells) and `F` (findings); verdicts carry no id and are keyed by (finding, `by`, `seat`). Rows are written in field-catalogue order with unknown keys last, and an empty string, list or absent number is omitted.
+Ids are minted inside the write lock with the prefixes `U` (runs), `C` (cells) and `F` (findings); verdicts carry no id and are keyed by (finding, `by`, `seat`), and reproductions by (finding, `flow`, `milestone`, `round`, `by`). Rows are written in field-catalogue order with unknown keys last, and an empty string, list or absent number is omitted.
 
-**Finding statuses:** `unverified`, `superseded`, `open`, `refuted`, `merged`, `parked`, `dismissed`, `deferred`, `backlogged`, `converted`, `resolved`, `exported`. A status owns its companions: `merged` → `merged_into`, `parked` → `park_reason`, `dismissed` → `dismiss_reason`, `deferred` → `defer_reason` + `defer_trigger`, `backlogged` → `backlog_ref`, `converted` → `converted_to`, `resolved` → `resolution` + `resolved`, `open` → `reopen_reason`; the rest own none. Every status write that changes the status, or supplies companions, clears every other status's companions first. `outcome` (`repeat`, `contested`, `reopened`, `regression`, `suppressed`) is set by `resolve`.
+**Schema version.** Every write stamps `schema_version = 2` while the store holds a `[[reproductions]]` row or a `scheduled` finding, and `1` otherwise, so a store that needs neither stays readable by a binary that predates them. A store stamped above `2` is refused.
+
+**Finding statuses:** `unverified`, `superseded`, `open`, `refuted`, `merged`, `parked`, `dismissed`, `deferred`, `backlogged`, `converted`, `resolved`, `exported`, `scheduled`. A status owns its companions: `merged` → `merged_into`, `parked` → `park_reason`, `dismissed` → `dismiss_reason`, `deferred` → `defer_reason` + `defer_trigger`, `backlogged` → `backlog_ref`, `converted` → `converted_to`, `resolved` → `resolution` + `resolved`, `open` → `reopen_reason`; the rest own none. Every status write that changes the status, or supplies companions, clears every other status's companions first. `outcome` (`repeat`, `contested`, `reopened`, `regression`, `suppressed`) is set by `resolve`.
 
 **Link fields.** `exported_as` and `export_ledger` name the v1 row a finding was exported to. They are not companions: they survive the moves `sync-v1` makes from `exported` to `resolved`, `dismissed` or `deferred`. A `triage --reopen` of a finding carrying `exported_as` retires the link: it appends `<export_ledger>#<exported_as>` to the computed list `retired_links` and drops both link fields. `sync-v1` and `stats --outcomes` skip a retired link, and `export-v1` follows it only as described under [Matching](#tomlctl-review-export-v1). On the v1 side, a row's `v2_ref` is a string, or an array once two findings share the row.
+
+**Apply link.** `apply_flow` and `apply_task` name the v2 flow and the task `ref` a `scheduled` finding is held by; `schedule` sets them and they are computed, never supplied. They are not companions either: `reconcile`'s move to `resolved` keeps them, and its move back to `open` clears them. `scheduled` owns no companion and, like `superseded`, `merged`, `converted` and `exported`, is never moved by `triage`; only `reconcile` moves it. As a `resolve` target it reads as `open` does.
 
 ## Field catalogue
 
@@ -271,7 +287,7 @@ Resolves every `unverified` finding of the run whose `same_as` has complete verd
 
 | Target status | `confirmed` | `plausible` | `refuted` |
 |---|---|---|---|
-| `open`, `exported` | repeat | repeat | contested |
+| `open`, `exported`, `scheduled` | repeat | repeat | contested |
 | `refuted` | reopened | contested | repeat |
 | `resolved` | regression | contested | repeat |
 | `dismissed`, `deferred`, `parked`, `backlogged` | suppressed | suppressed | suppressed |
@@ -417,19 +433,21 @@ tomlctl review report --slug <slug> --run U1 --out <run-dir>/report.md
 
 ### `tomlctl review stats`
 
-Rates per lens, probe, run or model over one store or all of them. Writes nothing. Prints `{ok, stores: [paths], by?, rows?, outcomes?, escapes?, calibration?, plan_outcomes?}`.
+Rates per lens, probe, run or model over one store or all of them. Writes nothing. Prints `{ok, stores: [paths], by?, rows?, outcomes?, apply?, escapes?, calibration?, plan_outcomes?}`.
 
 - **Rows** (`--by`, or no section flag): `key`, `families`, `runs`, `cells`, `findings` by kind, `yield_per_cell`, `verified`, `refuted`, `refute_rate`, `audited`, `overturned`, `audit_overturn_rate`, `dismissed`, `dismissal_rate`, `thin`, `uncovered`, `uncovered_rate`; per lens also `hashes`, `waived` and `waiver_rate`, per probe tag `probes`. A rate over zero is `null`. A probe groups under the tag its `reason` opens with (`nearest <tag>:`), else `untagged`.
 - **`--by run`** rows also carry `store`, `command`, `depth`, `started`, `finished`, `waves` (derived from the run's cells, as `run list` does), `agents` and `waivers` (`concerns`, `files`).
 - **`--by model`** rows are keyed by the model of the verifying role that decided each finding — `models.verifier` for `verifier` and `panel`, `models.checker` for `checker`, read from the run that verdict names — and carry `roles`, `runs`, `verified`, `refuted`, `refute_rate`, `audited`, `overturned` and `audit_overturn_rate`. A run without `models`, or without the role, keys as `unknown`.
 - **`plan_outcomes`** (`--plan-outcomes`; `--slug` or `--all`, flow stores only, plan family only): per run and in `total`, `tiers` (tier → disposition → count; dispositions `applied`, `applied-disclosed` for cited, `user-accepted`, `user-vetoed` for a dismissed `user` row or a dismissed non-advisory tiered row of a run started at or after the plan's first `[[approval]]`, `user-answered` for a `question` row resolved without an edit, else the status), `veto_rate` (vetoed over accepted plus vetoed; `user-answered` counts on neither side), `growth` (`edits`, net `chars_added`, `entries_added`, `entries_removed`), `recheck_yield` (findings minted by a run with `rechecks`), and `cost` (`agents`, `minutes`); each run also names `rechecks`. A rate or yield with nothing to count is `null`.
 - **`outcomes`**: per lens and kind, `exported`, `linked`, the v1 statuses, the mapped v2 statuses and `wontfix_reasons`, through `v2_ref` with `sync-v1`'s mapping; a retired link is not counted.
+- **`apply`** (`--apply`): the native counterpart of `outcomes`, read from the store alone with no v1 ledger opened. `outcomes` holds one row per lens and kind with any natively applied finding — `{lens, kind, scheduled, resolved, reopened, reproductions}` — where `scheduled` counts findings at that status, `resolved` resolved findings that keep an `apply_flow`, `reopened` open findings whose `reopen_reason` starts `apply: `, and `reproductions` maps each verdict (`gone`, `reproduces`, `unsettled`) to the findings whose current reproduction has it. `reproductions` is `{rows, findings}`, each a verdict → count map: `rows` over every reproduction row, `findings` over each finding's current one. A reproduction of a finding `--family` drops is not counted.
 - **`escapes`**: `count`, `by_concern` and `findings` minted in a file and concern an earlier run's cell had sealed `covered`.
 - **`calibration`**: per area, the top exemplar sentences with `count` and `sources`, drawn only from user dismissals, v1 wontfix reasons and audit overturns.
 
 ```bash
 tomlctl review stats --all --by lens
 tomlctl review stats --slug <slug> --outcomes --escapes --calibration --exemplars 3
+tomlctl review stats --all --apply
 tomlctl review stats --all --plan-outcomes --by model
 ```
 
@@ -440,6 +458,7 @@ tomlctl review stats --all --plan-outcomes --by model
 | `--by` | `lens` \| `probe` \| `run` \| `model` | The grouping axis of `rows`. | `lens` |
 | `--plan-outcomes` | bool | Add the plan-review outcomes; refused with `--scope`. | off |
 | `--outcomes` | bool | Add the v1 apply outcomes. | off |
+| `--apply` | bool | Add the native apply outcomes and reproductions. | off |
 | `--escapes` | bool | Add the coverage escapes. | off |
 | `--calibration` | bool | Add the calibration exemplars. | off |
 | `--exemplars` | N | Exemplars per area; needs `--calibration`. | 5 |
@@ -448,7 +467,7 @@ tomlctl review stats --all --plan-outcomes --by model
 
 ### `tomlctl review triage`
 
-Applies one disposition to each id. A row already in the requested end state is `unchanged`; under `--expect-status`, an id no longer at that status lands under `skipped_stale` as `{id, field, expected, found}`, checked inside the locked write. A move clears every earlier disposition's companions. A `--reopen` also retires the finding's v1 link (see [Link fields](#store-shape)), so the next `sync-v1` does not undo it and a re-export mints a regression row. A `superseded`, `merged`, `converted` or `exported` finding is never moved. Prints `{ok, mode, applied: [{id, from, status}], unchanged, skipped_stale, refused, minted?}`.
+Applies one disposition to each id. A row already in the requested end state is `unchanged`; under `--expect-status`, an id no longer at that status lands under `skipped_stale` as `{id, field, expected, found}`, checked inside the locked write. A move clears every earlier disposition's companions. A `--reopen` also retires the finding's v1 link (see [Link fields](#store-shape)), so the next `sync-v1` does not undo it and a re-export mints a regression row. A `superseded`, `merged`, `converted`, `exported` or `scheduled` finding is never moved. Prints `{ok, mode, applied: [{id, from, status}], unchanged, skipped_stale, refused, minted?}`.
 
 ```bash
 tomlctl review triage F3,F9 --slug <slug> --dismiss-file <run-dir>/payloads/dismiss.txt --expect-status open
@@ -503,6 +522,10 @@ tomlctl review export-v1 --all --slug <slug> --to .claude/flows/<slug>/review-le
 | `--all` | bool | Every exportable finding of the ledger's family in this store. | off |
 | `--to` | path | The v1 ledger written. | required |
 | `--dry-run` | bool | Report `would_change` without writing either file. | off |
+
+## Apply through a v2 flow
+
+`schedule`, `reconcile`, `anchor`, `reproduce` and `reproduce-status` — fixing code and perf findings through a v2 flow's task store, and the build-free checks a fix task asks — are documented in [review-apply.md](review-apply.md).
 
 ## Catalogue and schema
 

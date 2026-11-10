@@ -8,6 +8,7 @@ mod matching;
 mod store;
 
 mod add;
+mod anchor;
 mod apply;
 mod catalogue_cmd;
 mod cells;
@@ -15,10 +16,14 @@ mod cover;
 mod digest;
 mod export;
 mod query;
+mod reconcile;
+mod reproduce;
 mod resolve;
 mod run_show;
 mod runs;
+mod schedule;
 mod schema_out;
+mod select;
 mod stats;
 mod survey;
 mod sync;
@@ -27,6 +32,7 @@ mod tier;
 mod triage;
 mod verdict;
 
+pub(crate) use store::implementer_findings;
 pub(crate) use tier::Tier;
 
 /// A `validation`-kind error, for input a review verb refuses.

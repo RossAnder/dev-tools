@@ -9,7 +9,9 @@
 //! dismissals, v1 wontfix reasons and audit overturns, so a verifier's own
 //! refutation never teaches a finder anything. `--plan-outcomes` derives a
 //! plan finding's disposition from `tier`, status and `applied`, so it needs
-//! no status of its own.
+//! no status of its own. `--apply` is the native counterpart of `--outcomes`:
+//! it reads a finding's apply link, its `reopen_reason` and the store's
+//! reproductions, and opens no v1 ledger.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -18,7 +20,7 @@ use anyhow::Result;
 use serde_json::{Value as JsonValue, json};
 
 use super::cells::PathSet;
-use super::fields::{CellStatus, Family, FindingStatus, Kind, Route};
+use super::fields::{CellStatus, Family, FindingStatus, Kind, ReproduceVerdict, Route};
 use super::invalid;
 use super::store::{self, Cell, Finding, Store, Verdict};
 use super::sync::{SYNC_REASON_PREFIX, V1Outcome, ledger_paths, linked_rows};
@@ -107,7 +109,8 @@ pub(crate) fn run(args: ReviewStatsArgs) -> Result<()> {
         "ok": true,
         "stores": stores.iter().map(|s| s.label.clone()).collect::<Vec<_>>(),
     });
-    let sections = args.outcomes || args.escapes || args.calibration || args.plan_outcomes;
+    let sections =
+        args.outcomes || args.apply || args.escapes || args.calibration || args.plan_outcomes;
     if axis.is_some() || !sections {
         let axis = axis.unwrap_or(Axis::Lens);
         out["by"] = json!(axis.as_str());
@@ -119,6 +122,9 @@ pub(crate) fn run(args: ReviewStatsArgs) -> Result<()> {
     }
     if args.outcomes {
         out["outcomes"] = outcomes(&view, linked.as_deref().unwrap_or_default());
+    }
+    if args.apply {
+        out["apply"] = apply_outcomes(&view);
     }
     if args.escapes {
         out["escapes"] = escapes(&view);
@@ -731,6 +737,107 @@ fn outcomes(view: &View, links: &[Link]) -> JsonValue {
         })
         .collect();
     JsonValue::Array(rows)
+}
+
+/// The prefix `review reconcile` writes on the `reopen_reason` of a finding
+/// an apply flow returned to `open`.
+const APPLY_REOPEN_PREFIX: &str = "apply: ";
+
+/// Where a finding stands in an apply flow, read from its own row: held by a
+/// live task, resolved with its apply link kept, or returned to `open` by
+/// reconcile. A finding scheduled again after a reopen counts as scheduled.
+fn apply_state(finding: &Finding) -> Option<&'static str> {
+    let text = |key: &str| {
+        finding
+            .rest
+            .get(key)
+            .and_then(toml::Value::as_str)
+            .unwrap_or_default()
+    };
+    match finding.status() {
+        FindingStatus::Scheduled => Some("scheduled"),
+        FindingStatus::Resolved if !text("apply_flow").is_empty() => Some("resolved"),
+        FindingStatus::Open if text("reopen_reason").starts_with(APPLY_REOPEN_PREFIX) => {
+            Some("reopened")
+        }
+        _ => None,
+    }
+}
+
+fn verdict_counts() -> BTreeMap<&'static str, usize> {
+    ReproduceVerdict::VALUES.iter().map(|&v| (v, 0)).collect()
+}
+
+/// Natively applied findings per (lens, kind), and reproductions by verdict:
+/// every row, and each finding's current one, its last row. Read from the
+/// store alone; a reproduction of a finding the view drops is not counted.
+fn apply_outcomes(view: &View) -> JsonValue {
+    struct Group {
+        scheduled: usize,
+        resolved: usize,
+        reopened: usize,
+        reproductions: BTreeMap<&'static str, usize>,
+    }
+    type Groups = BTreeMap<(String, &'static str), Group>;
+    fn group_of<'g>(groups: &'g mut Groups, f: &Finding) -> &'g mut Group {
+        groups
+            .entry((f.lens.clone(), f.kind.as_str()))
+            .or_insert_with(|| Group {
+                scheduled: 0,
+                resolved: 0,
+                reopened: 0,
+                reproductions: verdict_counts(),
+            })
+    }
+    let mut groups = Groups::new();
+    let mut rows = verdict_counts();
+    let mut current = verdict_counts();
+    for sv in &view.stores {
+        let kept: BTreeMap<&str, &Finding> =
+            sv.findings.iter().map(|f| (f.id.as_str(), *f)).collect();
+        for f in &sv.findings {
+            let Some(state) = apply_state(f) else {
+                continue;
+            };
+            let group = group_of(&mut groups, f);
+            match state {
+                "scheduled" => group.scheduled += 1,
+                "resolved" => group.resolved += 1,
+                _ => group.reopened += 1,
+            }
+        }
+        let mut latest: BTreeMap<&str, ReproduceVerdict> = BTreeMap::new();
+        for r in &sv.loaded.store.reproductions {
+            if kept.contains_key(r.finding.as_str()) {
+                *rows.entry(r.verdict.as_str()).or_default() += 1;
+                latest.insert(r.finding.as_str(), r.verdict);
+            }
+        }
+        for (id, verdict) in latest {
+            *current.entry(verdict.as_str()).or_default() += 1;
+            *group_of(&mut groups, kept[id])
+                .reproductions
+                .entry(verdict.as_str())
+                .or_default() += 1;
+        }
+    }
+    let outcomes: Vec<JsonValue> = groups
+        .into_iter()
+        .map(|((lens, kind), g)| {
+            json!({
+                "lens": lens,
+                "kind": kind,
+                "scheduled": g.scheduled,
+                "resolved": g.resolved,
+                "reopened": g.reopened,
+                "reproductions": g.reproductions,
+            })
+        })
+        .collect();
+    json!({
+        "outcomes": outcomes,
+        "reproductions": {"rows": rows, "findings": current},
+    })
 }
 
 /// Findings minted in a (file, concern) that an earlier run of the same store

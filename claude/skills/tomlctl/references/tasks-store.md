@@ -19,13 +19,13 @@ adopting carriers are entitled to rely on. The flag surface of the verbs that re
 
 `.claude/flows/<slug>/tasks.toml` carries four top-level keys, an optional `minted_refs`, a
 `[policy]` table, a `[[checkpoints]]` array, optional `[[import_overrides]]`, `[[file_notes]]` and `[[backlog_links]]`
-arrays and an `[[items]]` array. A v2 store adds `audit`, `id_high_water`, `[[specs]]`,
-`[[milestones]]` and `[[changes]]`, below. Keys are written in that order and the order is stable across writes, so a
+arrays and an `[[items]]` array. A v2 store adds `audit`, `id_high_water`, `[[finding_links]]`,
+`[[specs]]`, `[[milestones]]` and `[[changes]]`, below. Keys are written in that order and the order is stable across writes, so a
 re-render is a clean diff.
 
 | Key | Set by |
 |---|---|
-| `schema_version` | seeded to `1` by `flow init` and by the auto-create write path; every write re-stamps it `2` while the store holds `audit`, `id_high_water`, `specs`, `milestones` or `changes`, else `1`. A binary that knows only `1` refuses a `2` store. |
+| `schema_version` | seeded to `1` by `flow init` and by the auto-create write path; every write re-stamps it `2` while the store holds `audit`, `id_high_water`, `finding_links`, `specs`, `milestones` or `changes`, else `1`. A binary that knows only `1` refuses a `2` store. |
 | `audit` | `true` once the plan is approved; omitted otherwise. A non-boolean value is an error. Written between `last_import_refs` and `[policy]`. |
 | `id_high_water` | `tasks remove`, on a store in a flow with a `plan.toml` or already holding a v2 key: the highest id a removal retired. `tasks add` and `add-many` mint past it, so an id never names a second task. A bare integer, omitted while `0`; anything but a non-negative integer is an error. Written after `audit`. |
 | `last_updated` | a bare TOML date, restamped on every mutation |
@@ -82,6 +82,26 @@ carries, while on a v2 store it drops the row's entry, and
 is never a `ref` holding a `[[changes]]` trail. An entry with no `ref` or no id is dropped on read and on write, and the table is omitted while
 empty on the same terms as `[[import_overrides]]`.
 
+`[[finding_links]]`: `ref`, `store`, `fixes` and `settles` — the review findings a task answers,
+shaped like `[[backlog_links]]` and keyed the same way. `store` is the review store's repo-relative
+path; `fixes` holds the findings the task's work resolves, `settles` the ones it investigates and
+proposes a fix for. Both lists are always written, an empty one as `[]`:
+
+```toml
+[[finding_links]]
+ref = "fix-the-retry-bound"
+store = ".claude/review-v2/auth.toml"
+fixes = ["F3", "F7"]
+settles = []
+```
+
+It is the one link from a task to its findings. `tasks add-many` writes it from a row's
+`review_store`, `fixes` and `settles` keys; no import rebuilds it, so the table is a v2 key and
+raises `schema_version` to `2`. `tasks remove` drops the row's entry, `tasks update --ref` re-keys
+it, and `tasks add` and `tasks update --ref` drop any entry already keyed on the `ref` they claim.
+An entry with no `ref`, or with neither `fixes` nor `settles`, is not stored: it is dropped on read
+and on write, and the table is omitted while empty.
+
 `[[specs]]`: one entry per v2 row, keyed on `ref` — `outcome`, `constraints`, `accept`, `premises`,
 `means`, `design`, `precedent` and `executor`. `accept` entries carry `behaviour`, `check`, `kind`,
 `positive`, `writes_build` (absent reads `true`) and a `probe` only `plan probes --record` writes;
@@ -103,8 +123,8 @@ outlives the row it records, so a removal stays as a tombstone, and its `ref` (a
 excepted) stays retired: `tasks add` suffixes past it and `tasks update --ref` refuses it. A rename
 moves the row's trail to the new `ref`, freeing the old key.
 
-`[[specs]]`, `[[milestones]]` and `[[changes]]` follow `[[backlog_links]]` and are omitted while
-empty, so a v1 store round-trips byte-identical. A flow directory holding a `plan.toml` is a v2
+`[[finding_links]]`, `[[specs]]`, `[[milestones]]` and `[[changes]]` follow `[[backlog_links]]`, in
+that order, and are omitted while empty, so a v1 store round-trips byte-identical. A flow directory holding a `plan.toml` is a v2
 flow: `import-plan` and `render` refuse it.
 
 `[[items]]`: `id`, `ref`, `title`, `effort`, `status`, `checkpoint`, `phase`, `phase_depth`,

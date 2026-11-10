@@ -186,6 +186,13 @@ pub(crate) const FEATURES: &[&str] = &[
     "review_ruled_out",
     "review_same_as_link",
     "review_list_fix_shape",
+    // Native apply of review findings through a v2 flow's task store.
+    "tasks_finding_links",
+    "review_schedule",
+    "review_reconcile",
+    "review_anchor",
+    "review_reproduce",
+    "review_stats_apply",
 ];
 
 /// User-facing top-level subcommand names, as they appear in
