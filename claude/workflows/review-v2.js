@@ -4,32 +4,39 @@ export const meta = {
   whenToUse: 'Launched by the review-v2-engine skill at stage 4 with the run, wave, cells and schemas as args; not for direct use',
   phases: [
     { title: 'Cells', detail: 'one review-finder, review-finder-cf, review-sweeper or plan-executor per cell; each writes and seals its cell' },
-    { title: 'Verify', detail: 'review-verifier per routed finding (panel: three seats), minor-defect batches, pooled review-checker batches' },
+    { title: 'Verify', detail: 'review-verifier per routed finding (panel: three seats), per-cell minor-defect and cleanup batches, pooled review-checker batches' },
   ],
 }
 
 // Agents persist their own findings and verdicts in the store, so this returns
-// only an index. Only cell prompts are built from `args` alone: verifier and
-// checker prompts embed the finding ids agents return, and checker batches fill
-// in completion order, so a same-args relaunch can miss the journal from the
-// first reshuffled batch. Store writes are idempotent either way. The review-v2-engine
-// skill's references/agent-waves.md states what recovery costs.
-const SCRIPT_VERSION = '1'
+// only an index: per-cell counts, the number of agents launched, and each
+// escalation's text, last so a truncated result loses those texts first. Only cell
+// prompts are built from `args` alone: verifier and checker prompts embed the
+// finding ids agents return, and checker batches fill in completion order, so a
+// same-args relaunch can miss the journal from the first reshuffled batch. Store
+// writes are idempotent either way. The review-v2-engine skill's
+// references/agent-waves.md states what recovery costs.
+const SCRIPT_VERSION = '2'
 const CELL_AGENTS = ['review-finder', 'review-finder-cf', 'review-sweeper', 'plan-executor']
 // The context-free correctness cell runs without the pack, so its prompt omits the `pack:` line.
 const CONTEXT_FREE_AGENT = 'review-finder-cf'
 const CHECKER_BATCH = 20
 const PANEL_SEATS = 3
+const ESCALATION_CHARS = 300
 
 const errors = []
 const fail = (msg) => { errors.push(msg); log(msg) }
+const escalations = []
+// Incremented beside every dispatch, so the count matches the launches the run paid for.
+let agents = 0
 
 const a = args || {}
-const index = (cells, verified) => ({ run: a.run || null, wave: a.wave ?? null, cells, verified, errors, script_version: SCRIPT_VERSION })
+const index = (cells, verified) => ({ run: a.run || null, wave: a.wave ?? null, cells, verified, agents, errors, script_version: SCRIPT_VERSION, escalations })
 
 const store = a.store || {}
 const storeFlag = store.slug ? `--slug ${store.slug}` : store.scope ? `--scope ${store.scope}` : null
 const schemas = a.schemas || {}
+const mechanicalLenses = Array.isArray(a.mechanical_lenses) ? a.mechanical_lenses.filter((l) => typeof l === 'string' && l) : []
 const missing = ['run', 'wave', 'depth', 'pack_path'].filter((k) => a[k] === undefined || a[k] === null || a[k] === '')
 if (!Array.isArray(a.cells)) missing.push('cells')
 if (!storeFlag) missing.push('store.slug|store.scope')
@@ -70,11 +77,13 @@ findings: ${ids.join(', ')}
 ${batch ? `batch: ${batch}\n` : ''}${seat ? `panel seat: ${seat} of ${PANEL_SEATS}\n` : ''}
 Fetch each finding with \`tomlctl review show ${ids.join(',')} --for verifier ${storeFlag}\`, verify it refute-first, and record each verdict with \`tomlctl review verdict\` using ${seat ? `\`--by panel --seat ${seat}\`` : '`--by verifier`'}. Return ${!batch ? 'the verdict-return object' : 'one verdict-return object per finding under `verdicts`'}.`
 
-// The checker may refute only a sweeper cell's row, and its projection does not carry the cell.
+// The checker may refute only a sweeper cell's row or a cleanup row in a mechanical
+// lens, and its projection carries neither the cell nor the lens's mode.
 const checkerPrompt = (ids, batch, sweeperIds) => `${preamble}
 findings: ${ids.join(', ')}
 batch: ${batch}
 sweeper rows: ${sweeperIds.length ? sweeperIds.join(', ') : 'none'}
+mechanical lenses: ${mechanicalLenses.length ? mechanicalLenses.join(', ') : 'none'}
 
 Fetch the rows with \`tomlctl review show ${ids.join(',')} --for checker ${storeFlag}\`, check each by your predicates, and record each verdict with \`tomlctl review verdict --by checker\`. Return one verdict-return object per finding under \`verdicts\`.`
 
@@ -94,18 +103,21 @@ const record = (expected, ret, label) => {
 }
 
 const verifyOne = async (id) => {
+  agents++
   const ret = await agent(verifierPrompt([id]), { agentType: 'review-verifier', schema: schemas.verdict_return, label: `verify ${id}`, phase: 'Verify' })
   record([id], ret, `verify ${id}`)
 }
 
 const verifyPanel = (id) => parallel(Array.from({ length: PANEL_SEATS }, (_, i) => async () => {
+  agents++
   const ret = await agent(verifierPrompt([id], i + 1), { agentType: 'review-verifier', schema: schemas.verdict_return, label: `panel ${id} seat ${i + 1}`, phase: 'Verify' })
   record([id], ret, `panel ${id} seat ${i + 1}`)
 }))
 
-const verifyBatch = async (cellId, ids) => {
-  const ret = await agent(verifierPrompt(ids, null, `verify-${cellId}-minor`), { agentType: 'review-verifier', schema: batchSchema, label: `verify ${cellId} minor x${ids.length}`, phase: 'Verify' })
-  record(ids, ret, `verify ${cellId} minor batch`)
+const verifyBatch = async (cellId, ids, kind) => {
+  agents++
+  const ret = await agent(verifierPrompt(ids, null, `verify-${cellId}-${kind}`), { agentType: 'review-verifier', schema: batchSchema, label: `verify ${cellId} ${kind} x${ids.length}`, phase: 'Verify' })
+  record(ids, ret, `verify ${cellId} ${kind} batch`)
 }
 
 // Checker rows are pooled across cells: a batch launches as soon as the pool
@@ -118,6 +130,7 @@ const launchChecker = (rows) => {
   const ids = rows.map((r) => r.id)
   const sweeperIds = rows.filter((r) => r.agentType === 'review-sweeper').map((r) => r.id)
   checkerRuns.push((async () => {
+    agents++
     const ret = await agent(checkerPrompt(ids, `check-${a.wave}-${n}`, sweeperIds), { agentType: 'review-checker', schema: batchSchema, label: `check batch ${n} x${ids.length}`, phase: 'Verify' })
     const list = record(ids, ret, `check batch ${n}`)
     const reroute = new Set()
@@ -142,6 +155,7 @@ const runCell = async (cell) => {
     fail(`skipped cell ${cell && cell.id ? cell.id : '(no id)'}: agentType ${cell && cell.agentType ? cell.agentType : '(none)'} is not one of ${CELL_AGENTS.join(', ')}`)
     return { skipped: true }
   }
+  agents++
   const ret = await agent(cellPrompt(cell), { agentType: cell.agentType, schema: schemas.cell_return, label: `cell ${cell.id} ${cell.agentType}`, phase: 'Cells' })
   if (!ret) fail(`cell ${cell.id}: agent returned nothing; the digest shows whether it sealed`)
   return ret
@@ -153,28 +167,36 @@ const routeCell = async (ret, cell) => {
   if (!ret) return { id, status: 'no-return', findings: 0 }
   const findings = Array.isArray(ret.findings) ? ret.findings : []
   const escalate = Array.isArray(ret.escalate) ? ret.escalate : ret.escalate ? [ret.escalate] : []
-  for (const e of escalate) log(`cell ${cell.id} escalated: ${typeof e === 'string' ? e : JSON.stringify(e)}`)
+  for (const e of escalate) {
+    const text = typeof e === 'string' ? e : JSON.stringify(e)
+    log(`cell ${cell.id} escalated: ${text}`)
+    escalations.push({ cell: cell.id, text: text.length > ESCALATION_CHARS ? text.slice(0, ESCALATION_CHARS) : text })
+  }
   if (ret.status && ret.status !== 'covered') log(`cell ${cell.id} sealed ${ret.status}`)
 
   const singles = []
   const panels = []
   const minors = []
+  const cleanups = []
   const checks = []
   for (const f of findings) {
     if (!f || !f.id) continue
     if (f.route === 'panel') panels.push(f.id)
     else if (f.route === 'checker') checks.push(f.id)
     else if (f.route === 'verifier') {
-      if (f.kind === 'defect' && f.severity === 'minor' && a.depth !== 'deep') minors.push(f.id)
+      if (f.kind === 'cleanup') cleanups.push(f.id)
+      else if (f.kind === 'defect' && f.severity === 'minor' && a.depth !== 'deep') minors.push(f.id)
       else singles.push(f.id)
     } else if (f.route && f.route !== 'none') fail(`cell ${cell.id}: ${f.id} has unknown route ${f.route}; left unverified`)
   }
   if (checks.length) poolChecker(checks, cell.agentType)
+  if (cleanups.length === 1) singles.push(cleanups.pop())
 
   const work = [
     ...singles.map((id) => () => verifyOne(id)),
     ...panels.map((id) => () => verifyPanel(id)),
-    ...(minors.length ? [() => verifyBatch(cell.id, minors)] : []),
+    ...(minors.length ? [() => verifyBatch(cell.id, minors, 'minor')] : []),
+    ...(cleanups.length ? [() => verifyBatch(cell.id, cleanups, 'cleanup')] : []),
   ]
   if (work.length) await parallel(work)
   return { id: cell.id, status: ret.status || null, findings: findings.length, escalated: escalate.length }
