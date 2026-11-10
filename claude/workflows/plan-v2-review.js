@@ -3,9 +3,9 @@ export const meta = {
   description: 'Review a v2 plan over its flow directory: survey and baselines, a lead-composed coverage map, review-v2-pipeline waves the lead settles, then the lead audit',
   whenToUse: 'Launched by the plan-v2-engine skill review procedure and by /review-plan-v2 in flow mode, full or recheck, with the slug, the started run and the run directory as args; not for direct use',
   phases: [
-    { title: 'Survey', detail: 'full mode: one review-surveyor, then one verification agent per resolved baseline, in sequence' },
+    { title: 'Survey', detail: 'full mode: one review-surveyor, then one verification agent for every resolved baseline' },
     { title: 'Compose', detail: 'plan-review-lead writes the coverage map, its cells and waivers' },
-    { title: 'Waves', detail: 'review-v2-pipeline per wave, then plan-review-lead settles it and decides a follow-up' },
+    { title: 'Waves', detail: 'review-v2-pipeline per wave, then plan-review-lead settles it and decides a follow-up, and review-verifier re-verifies what it names' },
     { title: 'Audit', detail: 'plan-review-lead audits the digest sample' },
   ],
 }
@@ -15,7 +15,7 @@ export const meta = {
 // returned `unverified` ids and falls back to the engine at the first stage the
 // store shows incomplete. Every prompt is built from `args` and earlier returns,
 // so a same-args relaunch replays the journal; a re-check is always a fresh launch.
-const SCRIPT_VERSION = '1'
+const SCRIPT_VERSION = '2'
 const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/
 const RUN = /^U[1-9][0-9]*$/
 const CELL = /^C[1-9][0-9]*$/
@@ -35,6 +35,8 @@ const signals = a.signals || {}
 const unverified = new Set()
 const waves = []
 let audit = null
+// This script's own dispatches, incremented at each call site; each wave adds the pipeline's count.
+let agents = 0
 const index = () => ({
   slug: a.slug || null,
   run: a.run || null,
@@ -42,6 +44,7 @@ const index = () => ({
   waves,
   unverified: [...unverified],
   audit,
+  agents,
   errors,
   script_version: SCRIPT_VERSION,
 })
@@ -65,14 +68,10 @@ const argProblems = () => {
   if (signals.steering !== undefined && !lineList(signals.steering)) {
     problems.push('signals.steering must be an array of one-line flags, because a later line could pose as a prompt key')
   }
-  if (a.mode === 'full') {
-    const detected = signals.survey
-    if (!Array.isArray(detected)) problems.push('signals.survey must be the array of {name, roots} `review survey` printed')
-    else detected.forEach((s, i) => {
-      if (!s || !oneLine(s.name) || !lineList(s.roots || [])) problems.push(`signals.survey ${i}: needs a one-line name and an array of one-line roots`)
-    })
-    if (a.targets !== undefined && !(Array.isArray(a.targets) && !a.targets.length)) problems.push('targets is for recheck mode only')
+  if (a.mechanical_lenses !== undefined && !lineList(a.mechanical_lenses)) {
+    problems.push('mechanical_lenses must be an array of one-line lens ids, the `mode = "mechanical"` lenses `review catalogue` lists')
   }
+  if (a.mode === 'full' && a.targets !== undefined && !(Array.isArray(a.targets) && !a.targets.length)) problems.push('targets is for recheck mode only')
   if (a.mode === 'recheck') {
     if (!lineList(a.targets) || !a.targets.length) problems.push('targets must be a non-empty array of one-line targets in recheck mode')
     if (a.depth !== 'quick') problems.push('a recheck runs at depth quick')
@@ -116,7 +115,7 @@ const LEAD_SCHEMAS = {
   compose: WAVE,
   settle: {
     type: 'object',
-    properties: { next: { anyOf: [{ type: 'null' }, WAVE] }, unverified: IDS },
+    properties: { next: { anyOf: [{ type: 'null' }, WAVE] }, unverified: IDS, reverify: IDS },
     required: ['next', 'unverified'],
     additionalProperties: false,
   },
@@ -156,8 +155,18 @@ const SURVEY_SCHEMA = {
 
 const BASELINE_SCHEMA = {
   type: 'object',
-  properties: { outcome: { type: 'string', enum: ['pass', 'fail', 'timeout', 'flaky'] }, log: STR },
-  required: ['outcome', 'log'],
+  properties: {
+    baselines: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { key: STR, outcome: { type: 'string', enum: ['pass', 'fail', 'timeout', 'flaky'] }, log: STR },
+        required: ['key', 'outcome', 'log'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['baselines'],
   additionalProperties: false,
 }
 
@@ -177,12 +186,32 @@ const leadPrompt = (phaseName, wave, extra) => [
   `Run phase ${phaseName} as your procedure says and return only its object.`,
 ].filter((l) => l !== null).join('\n')
 
-const lead = (phaseName, wave, extra) => caught(() => agent(leadPrompt(phaseName, wave, extra), {
-  agentType: 'plan-review-lead',
-  schema: LEAD_SCHEMAS[phaseName],
-  label: wave ? `lead ${phaseName} wave ${wave}` : `lead ${phaseName}`,
-  phase: phaseName === 'compose' ? 'Compose' : phaseName === 'audit' ? 'Audit' : 'Waves',
-}))
+const lead = (phaseName, wave, extra) => caught(() => {
+  agents++
+  return agent(leadPrompt(phaseName, wave, extra), {
+    agentType: 'plan-review-lead',
+    schema: LEAD_SCHEMAS[phaseName],
+    label: wave ? `lead ${phaseName} wave ${wave}` : `lead ${phaseName}`,
+    phase: phaseName === 'compose' ? 'Compose' : phaseName === 'audit' ? 'Audit' : 'Waves',
+  })
+})
+
+const reverifyPrompt = (id, wave) => [
+  a.ledger_line,
+  `run: ${a.run}`,
+  `wave: ${wave}`,
+  `store: ${storeFlag}`,
+  `pack: ${runDir}/pack.md`,
+  `run directory: ${runDir}`,
+  `findings: ${id}`,
+  '',
+  `Fetch the finding with \`tomlctl review show ${id} --for verifier ${storeFlag}\`, verify it refute-first, weighing each rule-out its row carries, and record the verdict with \`tomlctl review verdict\` using \`--by verifier\`. Return the verdict-return object.`,
+].join('\n')
+
+const reverify = (id, wave) => caught(() => {
+  agents++
+  return agent(reverifyPrompt(id, wave), { agentType: 'review-verifier', schema: a.schemas.verdict_return, label: `reverify ${id}`, phase: 'Waves' })
+})
 
 const validWave = (w) => w && Number.isInteger(w.wave) && w.wave >= 1 && Array.isArray(w.cells) && w.cells.length > 0
   && w.cells.every((c) => matches(CELL, c.id))
@@ -193,7 +222,6 @@ const baselineLines = []
 
 if (!recheck) {
   phase('Survey')
-  const detected = signals.survey.map((s) => `- ${s.name} — roots: ${(s.roots || []).length ? s.roots.join(', ') : 'none'}`)
   const surveyorPrompt = [
     a.ledger_line,
     `run: ${a.run}`,
@@ -204,11 +232,13 @@ if (!recheck) {
     'family: plan',
     `scope: docs/flows/${a.slug}/brief.md, docs/flows/${a.slug}/design/*.md`,
     `flow: ${a.slug}`,
-    ...(detected.length ? ['signals:', ...detected] : ['signals: none']),
     '',
-    'Run the survey for this run as your procedure says and return your digest under `digest`, exactly as your procedure shapes it. Return each of its `verification:` lines again under `verification`, as `{key, command}`: `command` holds the resolved command, or `none — <reason>` when the check resolved none.',
+    `Run the survey for this run as your procedure says, reading its signals with \`tomlctl review run show ${a.run} ${storeFlag}\`, and return your digest under \`digest\`, exactly as your procedure shapes it. Return each of its \`verification:\` lines again under \`verification\`, as \`{key, command}\`: \`command\` holds the resolved command, or \`none — <reason>\` when the check resolved none.`,
   ].join('\n')
-  const ret = await caught(() => agent(surveyorPrompt, { agentType: 'review-surveyor', schema: SURVEY_SCHEMA, label: 'surveyor', phase: 'Survey' }))
+  const ret = await caught(() => {
+    agents++
+    return agent(surveyorPrompt, { agentType: 'review-surveyor', schema: SURVEY_SCHEMA, label: 'surveyor', phase: 'Survey' })
+  })
   if (failed(ret)) {
     fail(`surveyor ${why(ret)}; no cell composed`)
     return index()
@@ -220,31 +250,48 @@ if (!recheck) {
   survey = ret.digest
 
   const seen = new Set()
+  const toRun = []
   for (const v of ret.verification) {
     if (!matches(BASELINE_KEY, v.key) || seen.has(v.key) || !oneLine(v.command)) {
       fail(`surveyor verification line ${JSON.stringify(v)} is malformed or repeats its key; not dispatched, the lead records nothing for it`)
       continue
     }
     seen.add(v.key)
-    if (/^none\b/.test(v.command.trim())) {
-      baselineLines.push(`${v.key}: ${v.command.trim()}`)
-      continue
-    }
-    // One at a time: the commands share the build's target directory and its lock.
-    const prompt = `${a.ledger_line}
-commands:
-- ${v.command}
-  timeout: ${BASELINE_TIMEOUT}
+    if (/^none\b/.test(v.command.trim())) baselineLines.push(`${v.key}: ${v.command.trim()}`)
+    else toRun.push(v)
+  }
 
-Run the command as your procedure says, then return its \`outcome\` and its \`log\` path.`
-    const b = await caught(() => agent(prompt, { agentType: 'verification', schema: BASELINE_SCHEMA, label: `baseline ${v.key}`, phase: 'Survey' }))
-    if (failed(b) || !oneLine(b.log)) {
-      fail(`baseline ${v.key}: verification ${failed(b) ? why(b) : 'returned no log'}`)
-      baselineLines.push(`${v.key}: none — the verification agent returned no log`)
-      continue
+  if (toRun.length) {
+    // The verification agent runs its list in order, so commands sharing a build lock never overlap.
+    const prompt = [
+      a.ledger_line,
+      'commands:',
+      ...toRun.flatMap((v) => [`- ${v.command}`, `  timeout: ${BASELINE_TIMEOUT}`]),
+      'keep_going: true',
+      '',
+      'Run the commands as your procedure says. Return one entry per command under `baselines`, as `{key, outcome, log}`: `key` is the baseline key below for that command, `log` its log path.',
+      ...block('keys', toRun.map((v) => `${v.key}: ${v.command}`)),
+    ].join('\n')
+    const b = await caught(() => {
+      agents++
+      return agent(prompt, { agentType: 'verification', schema: BASELINE_SCHEMA, label: `baselines x${toRun.length}`, phase: 'Survey' })
+    })
+    if (failed(b)) fail(`baselines: verification ${why(b)}`)
+    const returned = new Map()
+    for (const r of failed(b) ? [] : b.baselines) {
+      if (toRun.some((v) => v.key === r.key) && !returned.has(r.key)) returned.set(r.key, r)
+      else fail(`baselines: verification returned an unknown or repeated key ${JSON.stringify(r.key)}`)
     }
-    if (b.outcome === 'timeout') log(`baseline ${v.key}: timeout, its log is partial`)
-    baselineLines.push(`${v.key}: ${b.log}`)
+    for (const v of toRun) {
+      const r = returned.get(v.key)
+      if (!r || !oneLine(r.log)) {
+        if (!failed(b)) fail(`baseline ${v.key}: verification returned no log`)
+        baselineLines.push(`${v.key}: none — the verification agent returned no log`)
+        continue
+      }
+      if (r.outcome === 'timeout') log(`baseline ${v.key}: timeout, its log is partial`)
+      baselineLines.push(`${v.key}: ${r.log}`)
+    }
   }
 }
 
@@ -285,17 +332,20 @@ while (current) {
     store: { slug: a.slug },
     schemas: { cell_return: a.schemas.cell_return, verdict_return: a.schemas.verdict_return },
     ledger_line: a.ledger_line,
+    ...(a.mechanical_lenses !== undefined ? { mechanical_lenses: a.mechanical_lenses } : {}),
   }))
   if (failed(ran)) {
     fail(`wave ${current.wave}: review-v2-pipeline ${why(ran)}; the store shows which cells sealed`)
-    waves.push({ wave: current.wave, cells: [], verified: 0, settled: false })
+    waves.push({ wave: current.wave, cells: [], verified: 0, agents: 0, settled: false })
     halted = true
     break
   }
   const childErrors = Array.isArray(ran.errors) ? ran.errors : []
   childErrors.forEach((e) => fail(`wave ${current.wave}: ${e}`))
   const cells = Array.isArray(ran.cells) ? ran.cells : []
-  const entry = { wave: current.wave, cells, verified: Number.isInteger(ran.verified) ? ran.verified : 0, settled: false }
+  const waveAgents = Number.isInteger(ran.agents) ? ran.agents : 0
+  agents += waveAgents
+  const entry = { wave: current.wave, cells, verified: Number.isInteger(ran.verified) ? ran.verified : 0, agents: waveAgents, settled: false }
   waves.push(entry)
   if (!cells.length) {
     fail(`wave ${current.wave}: review-v2-pipeline ran no cell`)
@@ -303,7 +353,10 @@ while (current) {
     break
   }
 
-  const settled = await lead('settle', current.wave)
+  const escalated = (Array.isArray(ran.escalations) ? ran.escalations : [])
+    .filter((e) => e && typeof e.text === 'string')
+    .map((e) => `${typeof e.cell === 'string' ? e.cell : '?'}: ${e.text.replace(/\s*[\r\n]+\s*/g, ' ').trim()}`)
+  const settled = await lead('settle', current.wave, block('escalations', escalated.length ? escalated : ['none']))
   if (failed(settled)) {
     fail(`lead settle wave ${current.wave} ${why(settled)}; read the digest for unverified ids`)
     halted = true
@@ -314,6 +367,22 @@ while (current) {
     if (matches(FINDING, id)) unverified.add(id)
     else fail(`lead settle wave ${current.wave} returned unverified id ${JSON.stringify(id)}`)
   })
+
+  // An id the orchestrator mops up as unverified is verified once, there.
+  const again = [...new Set(Array.isArray(settled.reverify) ? settled.reverify : [])].filter((id) => {
+    if (!matches(FINDING, id)) { fail(`lead settle wave ${current.wave} returned reverify id ${JSON.stringify(id)}`); return false }
+    return !unverified.has(id)
+  })
+  if (again.length) {
+    log(`wave ${current.wave}: re-verifying ${again.join(', ')}`)
+    const rets = await parallel(again.map((id) => () => reverify(id, current.wave)))
+    rets.forEach((r, i) => {
+      if (failed(r)) {
+        fail(`reverify ${again[i]}: review-verifier ${why(r)}; left for the orchestrator's mop-up`)
+        unverified.add(again[i])
+      } else if (r.verdict && r.verdict !== 'unsettled') entry.verified++
+    })
+  }
 
   const next = settled.next
   if (!next) { current = null; continue }
