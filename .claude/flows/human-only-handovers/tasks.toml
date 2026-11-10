@@ -408,6 +408,11 @@ claim = "the template lists a memory-note update as an After Merge step"
 check = "grep -q 'update a memory note' claude/skills/flow-contract-plan-output-format/SKILL.md"
 at = "base"
 
+[specs.premises.probe]
+at = "617c4c3b9a1828c15349b129335addf2918e6092"
+neg_rc = 0
+verdict = "holds"
+
 [[specs]]
 ref = "point-plan-new-and-implement-at-the-human-only-rule"
 outcome = "/plan-new no longer seeds agent work into After Merge, and /implement performs the agent-performable landing work itself."
@@ -462,6 +467,11 @@ claim = "implement describes After Merge as steps the user must take by hand"
 check = "grep -q 'steps the user must take by hand' claude/commands/implement.md"
 at = "base"
 
+[specs.premises.probe]
+at = "617c4c3b9a1828c15349b129335addf2918e6092"
+neg_rc = 0
+verdict = "holds"
+
 [[specs]]
 ref = "invert-the-plan-review-lenses-on-post-landing-steps"
 outcome = "Plan review pushes post-landing work into the run and flags any handover a person should not be doing."
@@ -515,6 +525,11 @@ claim = "plan-risk offers an After Merge line as an add edit"
 check = "grep -q 'an After Merge or Risks line' claude/skills/review-v2-lenses/lenses/plan-risk.md"
 at = "base"
 
+[specs.premises.probe]
+at = "617c4c3b9a1828c15349b129335addf2918e6092"
+neg_rc = 0
+verdict = "holds"
+
 [[specs]]
 ref = "teach-the-v2-engine-when-a-step-becomes-a-handover"
 outcome = "The v2 planner records a handover only for a human-only step, and the user sees each one in full at approval."
@@ -556,6 +571,11 @@ claim = "approve.md lists undone handovers under stops"
 check = "grep -q 'gate command and undone handover' claude/skills/plan-v2-engine/references/approve.md"
 at = "base"
 
+[specs.premises.probe]
+at = "617c4c3b9a1828c15349b129335addf2918e6092"
+neg_rc = 0
+verdict = "holds"
+
 [[specs]]
 ref = "set-the-handover-contract-for-the-v2-execution-engine"
 outcome = "The v2 execution engine's design starts from the human-only handover rule."
@@ -581,6 +601,11 @@ verdict = "healthy"
 claim = "the idea doc says an agent can be told to run the handovers"
 check = "grep -q 'an agent can be told to run' docs/ideas/v2-pipeline.md"
 at = "base"
+
+[specs.premises.probe]
+at = "617c4c3b9a1828c15349b129335addf2918e6092"
+neg_rc = 0
+verdict = "holds"
 
 [[specs]]
 ref = "move-the-plan-target-test-to-the-reshaped-handover-keys"
@@ -922,7 +947,7 @@ id = 8
 ref = "rewrite-the-v1-after-merge-contract"
 title = "Rewrite the v1 After Merge contract"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -941,15 +966,15 @@ The `## After Merge` template text: only steps no agent can perform, one step pe
 
 `**Format rules:**` block: add one bullet carrying the After Merge rule, the six reasons by name, the one-step shape, and where each agent-performable kind goes instead (design/handover.md#where-agent-performable-steps-go-instead), in at most six lines. This block is what plan review reads, so the rule must be here, not only in the template."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "37be1004327850d42ccaafadced687148e8b8e70"
 
 [[items]]
 id = 9
 ref = "point-plan-new-and-implement-at-the-human-only-rule"
 title = "Point /plan-new and /implement at the human-only rule"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -971,15 +996,15 @@ implement.md:
 - Phase 4, after the backlog harvest: update any auto-memory note this run made stale, and capture as backlog items any follow-on work the plan's After Merge or Risks names, through the same gate.
 - The report's `### After Merge` keeps the plan's bullets verbatim, and the paragraph after it says they are steps only the user can take, per the plan-output-format rule. Replace "steps the user must take by hand" accordingly."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "37be1004327850d42ccaafadced687148e8b8e70"
 
 [[items]]
 id = 10
 ref = "invert-the-plan-review-lenses-on-post-landing-steps"
 title = "Invert the plan-review lenses on post-landing steps"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -997,15 +1022,15 @@ plan-risk.md: the back-compat bullet asks that a break name its migration as a t
 
 plan-structure.md: a predicted criterion is a goal left unproven unless a `success:` key or accept check runs it; a human-only `attended` or `observe` handover counts only when it names the criterion. Remove After Merge from the places `critical` and the `risk` advisory count as verifying a goal."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "37be1004327850d42ccaafadced687148e8b8e70"
 
 [[items]]
 id = 11
 ref = "teach-the-v2-engine-when-a-step-becomes-a-handover"
 title = "Teach the v2 engine when a step becomes a handover"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -1026,15 +1051,15 @@ write-and-prove.md, section 1 Design, after Milestones: a **Handovers** paragrap
 
 approve.md, section 3: item 7 `stops` becomes milestone gate commands only, and a new item after it shows `handovers`, each with reason, action, when and done-when. Renumber as needed and keep the rule that an empty array shows as `none`."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "37be1004327850d42ccaafadced687148e8b8e70"
 
 [[items]]
 id = 12
 ref = "set-the-handover-contract-for-the-v2-execution-engine"
 title = "Set the handover contract for the v2 execution engine"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -1046,8 +1071,8 @@ deps_note = ""
 action = "Rewrite the After Merge bullet of Smaller fixes as the contract the v2 execution engine must honour."
 detail = """The bullet says the handover store is one "an agent can be told to run". Replace it: `[[handover]]` holds only human-only steps (design/handover.md#reasons), each one step with reason, action, when and done-when; the execution engine runs every agent-performable landing step itself (gates on the last milestone, memory, backlog captures) and, at the end, reports each undone handover in that shape and nothing else. Keep the bullet's label and its place in the list; one to three sentences."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "37be1004327850d42ccaafadced687148e8b8e70"
 
 [[items]]
 id = 13
