@@ -596,3 +596,496 @@ evidence = [
 dedup_id = "cfbc20bfffd06163"
 resolved = 2026-11-10
 resolution = "Uncommitted. plan_view test gained a case asserting an empty check prints 'Check: none yet' and no Writes build line."
+
+[[items]]
+id = "R22"
+file = "claude/workflows/implement-v2-milestone.js"
+line = 166
+symbol = "toEntry"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "A worker's wrong-root `error` return reaches the index with `error: 'wrote no note'`, not the root mismatch the drain reads to stop the engine"
+description = """
+Fix: Add a `reason` string to RETURN_SCHEMA (required, '' unless status is error) and to the worker return contract in plan-worker-lite.md and plan-worker-deep.md (shared block, line 78). In toEntry, before the note check, map ret.status === 'error' to fail(`task N: worker returned error: ${ret.reason}`) and entry(t.id, 'error', {...fields, error: ret.reason || 'worker returned error with no reason'}). Update the prompt's return shape at workerPrompt and the index tables in run-milestone.md and drain.md if the field name changes.
+Failure scenario: A worker finds `git rev-parse --show-toplevel` differs from `root:`, changes nothing and returns {status:'error', note:''}. RETURN_SCHEMA has no field for the two paths, so toEntry takes the `!ret.note` branch and emits {status:'error', error:'wrote no note'}. drain.md says `error` names the root mismatch and a wrong root stops the engine, otherwise treat as no-return; the engine sees no mismatch, relaunches every task, then parks each on the second error. A wrong-root return that does carry a note gets error null and no fail(), so the run closes `ok`."""
+first_flagged = 2026-11-10
+rounds = 2
+status = "open"
+v2_ref = ".claude/flows/jiggly-exploring-robin/review-v2.toml#F1"
+related = ["R49"]
+
+[[items]]
+id = "R23"
+file = "claude/workflows/implement-v2-milestone.js"
+line = 128
+symbol = "fileKey"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "fileKey folds case and backslashes but not a leading `./`, so `./src/a.rs` and `src/a.rs` on two tasks land in one wave"
+description = '''
+Fix: Make fileKey match normal_path: `f.replace(/\\/g, '/').replace(/^(\.\/)+/, '').toLowerCase()`, and update the comment above it to name the `./` spelling. Same pattern outside the slice: tomlctl/src/tasks/graph.rs overlap_pairs and first_claim compare node.files raw, so tasks check's dag/unreachable-claim and tasks ready's held miss the same pair; normalising there through normal_path is a separate edit.
+Failure scenario: Two dispatched tasks with no needs path between them hold `files: ["./tomlctl/src/x.rs"]` and `["tomlctl/src/x.rs"]`. fileKey maps them to distinct keys, nextWave puts both in the same wave, and two workers edit one file concurrently, each seeing the other's half-written edit and one overwriting the other. tomlctl itself treats the two spellings as one file (tasks::schema::normal_path strips a leading `./`), and stored paths keep the spelling as written.'''
+first_flagged = 2026-11-10
+rounds = 1
+status = "open"
+v2_ref = ".claude/flows/jiggly-exploring-robin/review-v2.toml#F2"
+
+[[items]]
+id = "R24"
+file = "claude/workflows/implement-v2-milestone.js"
+line = 30
+symbol = "RETURN_SCHEMA"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "A wrong-root worker's reason never reaches the index `error`, so the drain cannot tell a wrong root from a crash and never stops the engine"
+description = """
+Fix: Add a required string `reason` to RETURN_SCHEMA (empty unless status is error) and to the workers' Return section; in toEntry, when ret.status === 'error', set the entry's error to ret.reason (falling back to 'wrote no note' only for other statuses). Alternatively have the Workflow compare root itself before dispatch. Keep drain.md step 2's claim and run-milestone.md's index table in step with whichever field carries it.
+Failure scenario: Worker finds git toplevel != root, changes nothing, returns {status:'error', note:''} (plan-worker procedure step 1; note is '' when none written). RETURN_SCHEMA has no reason field, so toEntry hits `!ret.note` and sets error='wrote no note'. drain.md step 2 says `error` names the root mismatch and a wrong root stops the engine; with no such text the drain treats it as no-return, relaunches into the same wrong root, then parks the task instead of stopping."""
+first_flagged = 2026-11-10
+rounds = 1
+status = "open"
+v2_ref = ".claude/flows/jiggly-exploring-robin/review-v2.toml#F3"
+
+[[items]]
+id = "R25"
+file = "claude/skills/implement-v2-engine/references/drain.md"
+line = 212
+symbol = "Relaunch or stop"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "The stop rule forbids the one unchanged relaunch that error, no-return and mismatch are promised, and leaves those pending rows out of the report"
+description = """
+Fix: Reword the stop rule to exclude the owed relaunch: 'Stop relaunching when a launch moved no row to done, the replan moved no field, and no row is owed its one unchanged relaunch for error, no-return or mismatch.' Add mismatch to step 6's 'error or no-return' row. Add a needs_human line for a row left pending when relaunching stopped.
+Failure scenario: A launch whose only dispatched worker throws (or returns nothing, or another task id). Step 4 resets the row to pending; step 6 says relaunch unchanged once, so the replan moves no field. Step 6's stop rule then fires: the launch moved no row to done and the replan moved no field. The engine goes to step 8 without relaunching; the row is pending, not failed or parked, so no needs_human section lists it. mismatch is also absent from step 6's table though step 2 routes it there."""
+first_flagged = 2026-11-10
+rounds = 2
+status = "open"
+v2_ref = [
+    ".claude/flows/jiggly-exploring-robin/review-v2.toml#F5",
+    ".claude/flows/jiggly-exploring-robin/review-v2.toml#F12",
+]
+
+[[items]]
+id = "R26"
+file = "tomlctl/src/plan/view.rs"
+line = 218
+symbol = "records_block"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "plan view --for human renders handover when/done_when with a doubled period and breaks the bullet on multi-line action text"
+description = '''
+Edit (change): In records_block, stop appending '.' after when and done_when (or trim one trailing '.' from each before formatting), and pass action, when and done_when through one_line() as decision_block does for its heading, so a stored newline cannot split the list item. Update the two pinned lines in tests/plan_view.rs ("When: Earlier.. Done when: Already true.." and "When: After the run.. Done when: The new command is listed..") to the corrected form.
+Old text: "- [{mark}] {} ({reason}): {} When: {}. Done when: {}. (after task {})\n",
+Instances: tomlctl/tests/plan_view.rs
+Also (folded from R31, finding F14): omit a 'When:' or 'Done when:' clause whose text is empty, so a done handover with empty when/done_when does not print 'When: . Done when: .'. Test edit: in tomlctl/tests/plan_view.rs human_prints_the_whole_plan_as_markdown (line 468), change the two needles to the single-stop form, e.g. 'When: Earlier. Done when: Already true. (after task 2)'.'''
+first_flagged = 2026-11-10
+rounds = 1
+status = "open"
+v2_ref = [
+    ".claude/flows/jiggly-exploring-robin/review-v2.toml#F6",
+    ".claude/flows/jiggly-exploring-robin/review-v2.toml#F14",
+]
+related = ["R31"]
+
+[[items]]
+id = "R27"
+file = "tomlctl/src/tasks/schema.rs"
+line = 281
+symbol = "Premise::probe"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "Premise gained a recorded `probe` but `tasks show`'s premises_json never emits it, so a recorded premise verdict is invisible there while accept probes show"
+description = """
+Fix: In tomlctl/src/tasks/show.rs premises_json, add a `probe` object (at, neg_rc, pos_rc, verdict) when `p.probe` is Some, mirroring accept_json. Then, as spec_value already does for `accept`, strip premise probes before premises_json in tasks/update.rs spec_value (the `premises` expect value) and spec_moves, so an `expect` a caller can supply still matches and a probe-only difference is not reported as a move.
+Failure scenario: Run `plan probes --record <capture> --premises --slug s` so task 4's premises[0] stores probe {verdict: fails}. `tasks show 4 --slug s` prints premises via show.rs premises_json, which maps only claim/check/at, so the verdict and its `at` commit are absent; the same command does print each accept row's probe via accept_json. A caller gating dispatch on `tasks show` sees no premise result."""
+first_flagged = 2026-11-10
+rounds = 1
+status = "open"
+v2_ref = ".claude/flows/jiggly-exploring-robin/review-v2.toml#F9"
+
+[[items]]
+id = "R28"
+file = "claude/skills/implement-v2-engine/references/run-milestone.md"
+line = 17
+symbol = "Pre-flight"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "Pre-flight stops on stage done, but stage is done whenever every row is done, so an uncommitted final milestone is never re-gated or stamped"
+description = """
+Fix: In run-milestone.md section 1, treat stage done as done only when `tasks list --where-missing commit` prints no row; otherwise continue to Re-entry's unstamped-milestone settling. Align SKILL.md Arguments (line 37, 'stage is not approved or running is refused') and commands/implement-v2.md Bindings (line 18) with the same exception. Alternatively make plan stage report running while any row lacks a commit.
+Failure scenario: The final milestone's gate fails after round 2 (drain step 7 leaves its fix rows done) or times out twice, or the session ends between gate pass and stamp. Every row is now done with an empty commit. The next /implement-v2 runs plan stage, which returns done (stage.rs: all rows Done, commit ignored); pre-flight reports 'nothing to run, status still to be moved' and stops before Re-entry's unstamped-milestone settling, so the milestone's work is never gated, committed or stamped."""
+first_flagged = 2026-11-10
+rounds = 1
+status = "open"
+v2_ref = ".claude/flows/jiggly-exploring-robin/review-v2.toml#F10"
+
+[[items]]
+id = "R29"
+file = "claude/skills/implement-v2-engine/SKILL.md"
+line = 53
+symbol = "Steps"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "A round with nothing to launch has no drain path: the step table skips drain and replan, and drain step 1's run finish is refused with no open run"
+description = """
+Fix: Define the no-launch round: in SKILL.md's table make Drain and replan skip only steps 1 to 5 when no launch ran, and still run step 6 (the replan) for withheld rows and rows dropped at launch; in drain.md step 1 say it is skipped when this round launched nothing. run-milestone.md:147 and :157 then point at drain step 6.
+Failure scenario: A milestone whose only pending row has a base premise that fails (or every member is withheld, has empty files or no spec): the dispatch set is empty, so nothing launches. run-milestone.md:157 says go to the drain, but SKILL.md's table skips Drain and replan when there was no launch, so the withheld row is never re-specced; the gate is skipped (row not done) and every later invocation repeats the same empty round. Following run-milestone instead, drain step 1 runs plan run finish, which refuses: no unfinished run of step implement:<id>."""
+first_flagged = 2026-11-10
+rounds = 1
+status = "open"
+v2_ref = ".claude/flows/jiggly-exploring-robin/review-v2.toml#F11"
+
+[[items]]
+id = "R30"
+file = "claude/skills/implement-v2-engine/references/drain.md"
+line = 329
+symbol = "Commit"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "Commit step has no branch for an empty candidate set: git commit with no paths fails, the engine stops unstamped, and re-entry re-gates into the same failure"
+description = """
+Fix: In step 10, when git status prints none of the candidates, make no milestone commit and stamp the rows with `git log -1 --format=%H -- <paths>`. In 'Stamping on re-entry', find the milestone commit that way instead of requiring it to be HEAD.
+Failure scenario: An invocation ends after the milestone commit but before the stamp, and before re-entry the user commits an unrelated dirty file (as the pre-flight tells them to), so HEAD no longer lists the rows' files. Stamping on re-entry then runs the gate again; at step 10 git status prints none of the rows' files, so git add -- gets no paths and `git commit -m msg --` exits 1 'nothing to commit'. A failed commit stops the engine and stamps nothing, so every later invocation loops. The same applies to a milestone whose rows changed no file."""
+first_flagged = 2026-11-10
+rounds = 1
+status = "open"
+v2_ref = ".claude/flows/jiggly-exploring-robin/review-v2.toml#F13"
+
+[[items]]
+id = "R31"
+file = "tomlctl/tests/plan_view.rs"
+line = 468
+symbol = "human_prints_the_whole_plan_as_markdown"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "plan view --human doubles the full stop after a handover's when and done_when, and the test pins the 'Earlier.. Done when: Already true..' output"
+description = """
+Fix: In tomlctl/src/plan/view.rs records_block, append the full stop only when the field text does not already end in sentence punctuation (or drop the literal '.' and print the field as written), and omit a 'When:'/'Done when:' clause whose text is empty. Update the two needles in plan_view.rs human_prints_the_whole_plan_as_markdown to the single-stop form ('When: Earlier. Done when: Already true. (after task 2)').
+Failure scenario: A handover written as documented (plan-store.md example: when = "Once the run reports done.", done_when ending in '.') rendered by `plan view --human` prints 'When: Once the run reports done.. Done when: ... list.. (after task 3)' because view.rs records_block appends '.' after each field. The updated test asserts exactly that doubled-stop line, so it locks the wrong output in. A done handover with empty when/done_when prints 'When: . Done when: .'."""
+first_flagged = 2026-11-10
+rounds = 1
+status = "wontfix"
+related = ["R26"]
+wontfix_rationale = "Duplicate of R26: findings F14 and F6 are one bug in tomlctl/src/plan/view.rs records_block (doubled full stop after a handover's when and done_when) with overlapping edits. F14's v2_ref, its empty-clause case and its plan_view.rs test edit are folded into R26; apply R26 only."
+
+[[items]]
+id = "R32"
+file = "tomlctl/tests/capabilities.rs"
+line = 1823
+symbol = "capabilities_features_contains_every_plan_feature"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "The breaking handover reshape (handover add removed, set added, plan store schema 2) shipped under the same 0.21.0 version with no capability feature"
+description = """
+Fix: Advertise a feature for the reshaped handover surface (e.g. `plan_handover_set`) in tomlctl/src/capabilities.rs, add it to the expected list in capabilities_features_contains_every_plan_feature, and add it to the pre-flight feature lists in claude/commands/implement-v2.md (step 2) and claude/commands/plan-v2.md (step 2). Bump the crate version (Cargo.toml, glimpse/Cargo.lock, capabilities_version_matches_cargo_toml) so the BREAKING CHANGE is visible in --version too.
+Failure scenario: A tomlctl installed from 6454bc72 (0.21.0, all six engine features) but before 0f385a84 reports the same version and passes /implement-v2's pre-flight feature check and /plan-v2's review_apply check; the engines then run `tomlctl plan handover set --ndjson`, which that binary rejects as an unknown subcommand, and it refuses every schema_version 2 plan.toml as 'newer than the supported 1'. No pre-flight can tell the two 0.21.0 binaries apart."""
+first_flagged = 2026-11-10
+rounds = 1
+status = "open"
+v2_ref = ".claude/flows/jiggly-exploring-robin/review-v2.toml#F15"
+
+[[items]]
+id = "R33"
+file = "tomlctl/tests/plan_check.rs"
+line = 487
+symbol = "an_undone_handover_missing_when_is_incomplete"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = 'handover-incomplete tests match "when" by substring, which "done_when" also satisfies, so a detail naming the wrong key still passes'
+description = """
+Edit (change): In an_undone_handover_missing_when_is_incomplete replace the contains pair with assert_eq!(detail, "handover H1 has no when"). In an_undone_handover_missing_every_field_names_all_four (line 498) replace the per-key contains loop with assert_eq!(detail, "handover H1 has no reason, action, when, done_when"). Both pin the exact key list check.rs handover_findings joins, so swapping or dropping `when` fails the test.
+Old text: detail.contains("when") && !detail.contains("action"),"""
+first_flagged = 2026-11-10
+rounds = 1
+status = "open"
+v2_ref = ".claude/flows/jiggly-exploring-robin/review-v2.toml#F16"
+
+[[items]]
+id = "R34"
+file = "tomlctl/tests/plan_probes.rs"
+line = 1116
+symbol = "a_task_list_restricts_both_modes_to_its_rows"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "The scoped-record refusal asserts only .failure(), which an unscoped record also produces, so it cannot catch --task or --milestone being ignored"
+description = '''
+Edit (change): Make `first` carry both rows: format!("head\t{SHA}\n1:0\tneg\tsha256={}\trc=0\t\t\n{}", digest("already-true"), row("2:0", "neg", 1, "")). Record it with --task 2 under --error-format json, assert the failure message contains "1:0" (record's leftover-key refusal) and that the store text is unchanged. Without scoping the same capture records both rows and succeeds, so the assertion now binds the scope. Apply the same edit to a_milestone_restricts_both_modes_to_its_checkpoint (line 824, --milestone B).
+Old text: record_with(&root, &first, &["--task", "2"]).failure();
+Instances: tomlctl/tests/plan_probes.rs'''
+first_flagged = 2026-11-10
+rounds = 1
+status = "open"
+v2_ref = ".claude/flows/jiggly-exploring-robin/review-v2.toml#F17"
+
+[[items]]
+id = "R35"
+file = "tomlctl/tests/plan_drift.rs"
+line = 471
+symbol = "an_uncommitted_edit_a_done_row_without_a_commit_names_is_the_runs_own_work"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "own_work treats in-progress, failed and the new parked rows as the run's own uncommitted work, but only a done row is tested"
+description = """
+Edit (change): Loop the test body over ["done", "in-progress", "failed", "parked"], building each flow with TASKS where row 2's status = "done" is replaced by the loop status (and src/a.rs added to its files as now), asserting affected_ids is empty with no commit and [1] after record_commit(2, ...). A regression dropping Status::Parked (or InProgress/Failed) from drift.rs own_work then reports a parked worker's partial edit as drift on pending row 1.
+Old text: fn an_uncommitted_edit_a_done_row_without_a_commit_names_is_the_runs_own_work() {"""
+first_flagged = 2026-11-10
+rounds = 1
+status = "open"
+v2_ref = ".claude/flows/jiggly-exploring-robin/review-v2.toml#F18"
+
+[[items]]
+id = "R36"
+file = "tomlctl/README.md"
+line = 549
+symbol = "plan_store"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "The breaking plan handover add->set change shipped at the same 0.21.0 version and feature list, so no capabilities check can tell the two binaries apart"
+description = """
+Fix: Add a feature string (e.g. `plan_handover_set`) to FEATURES in tomlctl/src/cli/types/mod.rs, list it in the README capabilities JSON block and feature table, bump tomlctl to 0.22.0 (Cargo.toml, both Cargo.lock files, README version line), and add the feature to the /implement-v2 and /plan-v2 pre-flight capability checks.
+Failure scenario: A user runs cargo install at 6454bc72 (0.21.0, the six engine features the /implement-v2 pre-flight requires). 0f385a84 then removes `plan handover add` and adds `plan handover set` without a version bump or a new feature. Both /plan-v2 and /implement-v2 pre-flights pass on the stale binary, and the engines' `tomlctl plan handover set --ndjson` call (drain.md:318, write-and-prove.md:69) fails with a clap unrecognized-subcommand error mid-run."""
+first_flagged = 2026-11-10
+rounds = 1
+status = "open"
+v2_ref = ".claude/flows/jiggly-exploring-robin/review-v2.toml#F19"
+
+[[items]]
+id = "R37"
+file = "claude/skills/tomlctl/references/tasks-store.md"
+line = 91
+symbol = "[[specs]]"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "The task-row status vocabulary sits inside the [[specs]] paragraph, so the following 'An entry with no ref' sentence reads as if about rows"
+description = """
+Edit (change): Remove the sentence "A row's `status` is `pending`, `in-progress`, `done`, `failed`, `deferred` or `parked`." from the [[specs]] paragraph (lines 90-91) and add it to the `[[items]]` paragraph at line 110, after the field list ending "`agent`, `commit`.", where the row fields are listed.
+Old text: `pending`, `in-progress`, `done`, `failed`, `deferred` or `parked`. An entry with no `ref` is dropped on read and on write."""
+first_flagged = 2026-11-10
+rounds = 1
+status = "open"
+v2_ref = ".claude/flows/jiggly-exploring-robin/review-v2.toml#F20"
+
+[[items]]
+id = "R38"
+file = "tomlctl/src/plan/drift.rs"
+line = 132
+symbol = "changed_files"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "Committed drift skips only .claude/flows/<slug>/, so the unstamped flow-store commit's docs/flows/<slug>/notes/run/ files are listed as drift"
+description = """
+Fix: Build one skip list in run() — `.claude/flows/<slug>/` and `docs/flows/<slug>/` — and pass it to both parse_log and parse_status (parse_log taking &[String] like parse_status), so committed and uncommitted paths under either flow directory are dropped alike. Update the parse_log doc comment and the `plan drift` section of claude/skills/tomlctl/references/plan.md to say both directories are never listed in changed_files.
+Failure scenario: After any milestone the engine makes a second, unstamped flow-store commit holding .claude/flows/<slug>/, docs/flows/<slug>/notes/run/*.md and .claude/backlog.toml. The next `plan drift` lists docs/flows/<slug>/notes/run/<n>.md (and the backlog store) in changed_files as commits no row owns, while the same paths uncommitted are skipped as 'never drift' by uncommitted_files. The run's own notes are reported as drift."""
+first_flagged = 2026-11-10
+rounds = 1
+status = "open"
+v2_ref = ".claude/flows/jiggly-exploring-robin/review-v2.toml#F21"
+
+[[items]]
+id = "R39"
+file = "tomlctl/src/plan/drift.rs"
+line = 60
+symbol = "refuse_unresolved"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "Drift accepts an approved commit that resolves but is no longer an ancestor of HEAD (pull --rebase), so the run's own rewritten commits read as drift"
+description = """
+Fix: After the cat-file check, run `git merge-base --is-ancestor --end-of-options <commit> HEAD` and refuse with the same kind=validation message and `plan approve --amend` hint when it exits 1. Note in plan.md's `plan drift` section that a rewritten approval is refused, not only a gc'd one.
+Failure scenario: Approve, run a milestone (stamped commit), then `git pull --rebase`: the approval and milestone commits are rewritten, the old approval still resolves from the reflog, so cat-file -e passes. `old..HEAD` then lists the rebased approval and milestone commits, whose new shas match no row's stamp, and their files land in changed_files and in `affected` for every pending row sharing a file. Reproduced in a scratch repo: cat-file rc=0, merge-base --is-ancestor rc=1, range lists work.rs from the rebased owned commit."""
+first_flagged = 2026-11-10
+rounds = 1
+status = "open"
+v2_ref = ".claude/flows/jiggly-exploring-robin/review-v2.toml#F22"
+
+[[items]]
+id = "R40"
+file = "claude/skills/tomlctl/references/plan.md"
+line = 533
+symbol = "plan drift"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "plan drift reference says a commit touching only flow files counts as drift, but parse_log drops .claude/flows/<slug>/ paths from changed_files"
+description = """
+Edit (change): Replace the sentence with: "A commit that no row records counts as drift, but its paths under `.claude/flows/<slug>/` are never listed in `changed_files`."
+Old text: A commit that no row records counts as drift even when it only touched flow files."""
+first_flagged = 2026-11-10
+rounds = 1
+status = "open"
+v2_ref = ".claude/flows/jiggly-exploring-robin/review-v2.toml#F23"
+
+[[items]]
+id = "R41"
+file = "tomlctl/src/plan/target.rs"
+line = 154
+symbol = "parse"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "milestone target refusal says the id is empty when it is only padded with whitespace"
+description = """
+Edit (change): In parse's milestone branch, reword the refusal to cover both conditions of `id.trim().is_empty() || id.trim() != id`: `refuse("the milestone id is empty or has surrounding whitespace")`.
+Old text: return Err(refuse("the milestone id is empty"));"""
+first_flagged = 2026-11-10
+rounds = 1
+status = "open"
+v2_ref = ".claude/flows/jiggly-exploring-robin/review-v2.toml#F24"
+
+[[items]]
+id = "R42"
+file = "tomlctl/src/plan/check.rs"
+line = 352
+symbol = "premise_finding"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "plan check's premise_finding re-parses the canonical after:<id> inline though the change hoisted premise_target into tasks::schema to share it"
+description = '''
+Edit (change): In premise_finding, replace the inline parse (`let target = premise.at.strip_prefix("after:")?; let id = target.parse::<u32>().ok().filter(|id| id.to_string() == target);`) with `if !premise.at.starts_with("after:") { return None; } let id = premise_target(&premise.at);`, adding `premise_target` to the existing `crate::tasks::schema` import. Behaviour is unchanged: both forms refuse `after:007` and `after:+3`. sweep -e 'strip_prefix\("after:"\)' -e 'fn premise_target': 3 hits (schema.rs:286-287 the shared fn, plan/check.rs:352 the copy), complete.
+Old text: let target = premise.at.strip_prefix("after:")?;
+    let id = target
+        .parse::<u32>()
+        .ok()
+        .filter(|id| id.to_string() == target);'''
+first_flagged = 2026-11-10
+rounds = 1
+status = "open"
+v2_ref = ".claude/flows/jiggly-exploring-robin/review-v2.toml#F25"
+
+[[items]]
+id = "R43"
+file = "tomlctl/src/tasks/schema.rs"
+line = 264
+symbol = "Probe"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "Probe's doc still says it is a run against an Accept, but Premise.probe now reuses the type with a different verdict vocabulary"
+description = """
+Edit (change): Change the `Probe` doc's first sentence to `One probe run against an `Accept` or a `Premise`.` so a reader of the type learns it carries both the accept verdicts (healthy, vacuous, ...) and the premise verdicts (holds, fails, broken).
+Old text: /// One probe run against an `Accept`. An rc is `None` for a control that did"""
+first_flagged = 2026-11-10
+rounds = 1
+status = "open"
+v2_ref = ".claude/flows/jiggly-exploring-robin/review-v2.toml#F26"
+
+[[items]]
+id = "R44"
+file = "claude/skills/plan-v2-engine/references/write-and-prove.md"
+line = 57
+symbol = "Handovers"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "Global harness files cite design/handover.md#..., one flow's design file; by the engine's own rule it resolves to the current flow, where it is absent"
+description = """
+Fix: Cite the owning contracts instead of the flow-local design file: the reason table in claude/skills/tomlctl/references/plan.md (plan handover set, :148-160) and the After Merge rule in claude/skills/flow-contract-plan-output-format/SKILL.md:259-260, or inline the short home list. Sites: write-and-prove.md:57 and :72, claude/skills/review-v2-lenses/lenses/plan-risk.md:37, docs/ideas/v2-pipeline.md:162 (or give that one its full docs/flows/human-only-handovers/ path).
+Failure scenario: /plan-v2 on any flow other than human-only-handovers reads :57 and :72 under :55's rule that a `design/<name>.md#anchor` citation names docs/flows/<slug>/design/; docs/flows/<slug>/design/handover.md does not exist, so the six reasons and the homes for agent work are unreachable and the orchestrator improvises. The plan-risk lens is global (any repo), so its finder is told to move work 'to its home (design/handover.md#...)' that no file there holds."""
+first_flagged = 2026-11-10
+rounds = 1
+status = "open"
+v2_ref = ".claude/flows/jiggly-exploring-robin/review-v2.toml#F31"
+
+[[items]]
+id = "R45"
+file = "claude/skills/plan-v2-engine/references/write-and-prove.md"
+line = 205
+symbol = "4b. Premises"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Premise record command omits the required --slug, so copied as written it is refused by clap"
+description = """
+Edit (change): Replace with `tomlctl plan probes --slug <slug> --record <scratch>/premises.out --premises`, matching the --emit call above and the capture file it names.
+Old text: `tomlctl plan probes --record <capture> --premises`"""
+first_flagged = 2026-11-10
+rounds = 1
+status = "open"
+v2_ref = ".claude/flows/jiggly-exploring-robin/review-v2.toml#F32"
+
+[[items]]
+id = "R46"
+file = "claude/agents/verification.md"
+line = 3
+symbol = "description"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "verification description lists its consumers but omits the /implement-v2 milestone gate, the keep_going consumer this change added"
+description = """
+Edit (change): Append the new consumer: 'Used by /implement checkpoint gates and Phase 3, /implement-v2 milestone gates (with keep_going), /optimise-apply Step 5, /review-apply Step 5.'
+Old text: Used by /implement checkpoint gates and Phase 3, /optimise-apply Step 5, /review-apply Step 5."""
+first_flagged = 2026-11-10
+rounds = 1
+status = "open"
+v2_ref = ".claude/flows/jiggly-exploring-robin/review-v2.toml#F33"
+
+[[items]]
+id = "R47"
+file = "claude/skills/tomlctl/references/plan.md"
+line = 55
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "plan.md quoting note still names --command, which no plan template uses after handover add was removed"
+description = """
+Edit (change): Drop `--command` from the sentence so it reads: Commands in `--gate` values are single-quoted in the templates below. The rest of the paragraph stays.
+Old text: Commands in `--command` and `--gate` values are single-quoted in the templates below. A command that"""
+first_flagged = 2026-11-10
+rounds = 1
+status = "open"
+v2_ref = ".claude/flows/jiggly-exploring-robin/review-v2.toml#F34"
+
+[[items]]
+id = "R48"
+file = "tomlctl/src/plan/schema.rs"
+line = 776
+symbol = "handover_from_toml"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "A schema_version 1 store's handover `command` text is dropped on read and lost on the next plan write, with no migration into `action`"
+description = """
+Fix: In handover_from_toml, when `action` is absent and a string `command` is present, read `command` into `action`. Add a round-trip test over a schema_version 1 fixture carrying a handover `command`, asserting the text survives a plan write as `action`. Say in claude/skills/tomlctl/references/plan-store.md that a version 1 `command` is read as `action`.
+Failure scenario: A plan.toml written at schema_version 1 holds an undone [[handover]] whose only text is `command = "..."`. Any writing plan verb (plan run start, plan decide, plan approve) reads it through handover_from_toml, which takes only action, when and done_when and drops unknown keys, then writes the store back at version 2 with the command gone. plan check then reports the handover as having no reason, action, when or done_when, and the step survives only in git history."""
+first_flagged = 2026-11-10
+rounds = 1
+status = "open"
+v2_ref = ".claude/flows/jiggly-exploring-robin/review-v2.toml#F35"
+
+[[items]]
+id = "R49"
+file = "claude/workflows/implement-v2-milestone.js"
+line = 169
+symbol = "toEntry"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "A done or failed return with no note or a wrong note path keeps its status with an `error` the drain never reads, so dependents run and the gap goes unreported"
+description = """
+Fix: In drain.md step 2, add a rule: any entry whose `error` is non-null alongside a worker status (done, failed, parked) is read and reported in needs_human (e.g. under `reconcile:` as 'task <n>: <error>'); for a missing note on failed or parked, read the row's status and treat it as no-return for relaunch. Optionally make the Workflow treat a note-less `done` as not done for settleBlocked so dependents are held.
+Failure scenario: Worker sets its row done but its note Write under docs/flows/ is denied (SKILL.md rule 6: denied under dontAsk) and it returns note ''. toEntry keeps status 'done' with error 'wrote no note'; settleBlocked treats it as done and dispatches dependents. drain.md step 2 maps done to 'Nothing, unless deviations or a handover' and has no case for a non-null `error`, so the missing note reaches no needs_human section; a failed return with no note leaves step 6's 'Read its note' nothing to read."""
+first_flagged = 2026-11-10
+rounds = 1
+related = ["R22"]
+status = "open"
+v2_ref = ".claude/flows/jiggly-exploring-robin/review-v2.toml#F4"
+dedup_id = "375d82e06305ae07"
