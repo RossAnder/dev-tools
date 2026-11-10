@@ -10894,3 +10894,20 @@ base_sha = "ff59092f71ff8fe05ffb45887c62276d313399ce"
 related = ["B-771b57e7"]
 resolved = 2026-11-10
 resolution = "Decided with the user: run_catalogue refuses a vanished recorded built-in root when the record has no tree_sha, since nothing could check the substitute; with tree_sha the fallback stays and the drift check guards it. Test checker_refute_is_refused_when_an_unchecked_catalogue_root_is_gone. Uncommitted when recorded."
+
+[[backlog]]
+id = "B-7f4ae72f"
+kind = "bug"
+summary = "review cover --ruled-out refuses rule-outs naming a v2 flow's tasks.toml or plan.toml, so plan cells on a v2 flow are sealed without them"
+area = "tomlctl/src/review"
+tags = ["review-v2"]
+status = "open"
+created = 2026-11-10T19:53:13Z
+last_seen = 2026-11-10T19:53:13Z
+seen_count = 1
+dedup_id = "7f4ae72fc2f93880"
+origin = "plan-v2"
+flow = "v2-apply"
+context = "Seen in the v2-apply plan review: plan-executor cells (slice of task refs) and the plan-checks cell (slice of brief.md and design/*.md) anchor findings and rule-outs on .claude/flows/<slug>/tasks.toml and plan.toml, which cover reads as outside the slice and refuses. Four cells across runs U1 and U2 were sealed without their rule-outs, so ruled_out_hits misses them. Either let a rule-out name a flow record file when the cell's slice holds task refs, or have review plan include the record files in a flow-mode plan cell's slice. Workaround: none needed to finish a run; the cell seals without --ruled-out."
+base_sha = "110579d720ea7060b0896737329588e0b48ac53a"
+related = ["B-dc721e5c"]

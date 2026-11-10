@@ -21,7 +21,7 @@ The goal is one v2 chain from planning through implementation, review and apply.
 | 2 | Planning flow | Decided by `docs/plans/v2-planning.md` (Approach) |
 | 3 | Plan review | Decided |
 | 4 | Execution engine | First slice built and run (`docs/plans/jiggly-exploring-robin.md`); `tool`, `clerk` and vetting open |
-| 5 | Apply | Partly decided |
+| 5 | Apply | Decided 2026-11-10 (see **Apply** below); trials and the `tool` executor are later slices |
 | 6 | Flow state and glimpse | Open |
 | 7 | Re-audit of the built review stage | Open |
 | 8 | Naming, coexistence, gates, carrier shape | Open |
@@ -155,6 +155,56 @@ Decided 2026-11-09. These add to the plan's Approach, "After approval", which st
 - **Order inside a milestone:** the Workflow script walks the milestone's task graph in waves from its `args`, one run per milestone, not one per layer.
 - **Partial attempts:** the worker procedure checks the diff of its own files before it starts, because the runtime can restart a stalled writer with its edits left in place. Task specs do not carry this.
 - **Gate failure:** a failed milestone gate is a drain input. The orchestrator mints fix tasks through audited verbs and relaunches, for at most two rounds, then parks the milestone for the user.
+
+### Apply
+
+Decided 2026-11-10. These add to the Pipeline decision above, which still binds. One plan builds the first three parts below, as three milestones.
+
+**Apply core**
+
+- **Task home:** a verb mints task rows from triaged findings. With a flow, they join an apply milestone appended to that flow's plan through the audited verbs. A flow-less review mints a minimal flow at triage, so there is one task home.
+- **Approval:** triage is the user gate and stands in for plan approval. Apply tasks get no brief, cold readers or plan review.
+- **Spec:** the verb fills the row from the finding (anchor to `files`, `old` text or trigger to `premises`, the fix to `outcome`). The orchestrator only groups and escalates. Findings sharing a file fold into one task, so the link is many-to-one.
+- **Executor:** cleanups run on `lite` until the `tool` executor exists.
+- **Resolution:** a finding resolves when its milestone gate passes and the commit is stamped, not on a worker's `done`. Workers never write the review store.
+- **Dropped from v1:** the freshness gate, replaced by premise checks, and the stash-and-restore rollback, replaced by the engine's gate failure, fix tasks and two rounds then park.
+- **Open for the plan:** the carrier and verb names, since `review apply` already means plan-record edits.
+
+**Blocked findings: settle, then fix**
+
+The binary `fix_shape = needs-plan` is replaced by what the finding is blocked on.
+
+| Blocked on | Handling |
+|---|---|
+| A decision | Asked at triage, batched, the answer recorded on the finding; it then becomes an ordinary fix task |
+| Evidence (root cause, or which fix is right) | A settle task: an investigator writes a note with a proposed fix and touches no code |
+| Measurement, alternatives | A trial task; designed into the field, built in the trials slice |
+| Design | Routed to `/plan-v2` with the finding as intent |
+
+- **Two milestones:** a settle milestone runs first. Its outputs are drain inputs, and the orchestrator mints the fix tasks through the audited verbs for the fix milestone that follows.
+- **Tiers:** each settle proposal takes plan review's evidence tiers. Mechanical evidence proceeds, a cited reading proceeds and is disclosed, anything else comes to the user.
+- **One user gate:** everything needing the user is collected between the two milestones. An unanswered proposal leaves its finding open with the note attached.
+
+**Blocked is a claim with a burden of proof**
+
+These keep the blocked routes from becoming a dumping ground for cautious or work-avoiding agents.
+
+- **Default is fixable:** a finding is `edits` unless it names the missing thing, and the write verb refuses a blocked-on value without it. A decision needs at least two concrete options, with consequences and why the code and docs do not settle it; evidence needs the exact unknown; measurement needs the metric and the command.
+- **Verifier downgrade:** refute-first extends to the classification. A blocked claim the verifier can answer returns as an `edits` row for a worker, with the verifier's fix sketch in its verdict. Verifiers stay read-only on the tree.
+- **Settle outputs:** an edit-level proposal or a cited refutation of the finding. "Needs more investigation" is a failed task. One settle round per finding, then it goes to the user with the note.
+- **No worker reclassification:** a fix worker that returns "needs a decision" has `failed`, and the task goes up a tier before it can reach the user. `parked` keeps its bar of a named human-only reason.
+- **Design is the highest bar:** it requires a contract change across files or milestones, stated on the finding, and stays a user pick at triage.
+- **Ageing:** an unanswered proposal shows its age, and after a set number of runs becomes a forced disposition at triage. Agents cannot park or backlog on their own.
+- **Measured, not capped:** `review stats` reports the blocked rate per lens and agent, and how many settle tasks came back at the mechanical tier. Both show in the close summary. There is no hard cap, since a cap pushes agents to force fixes on findings that need a decision.
+
+**Reproduce-check vetting**
+
+Apply is vetting's first consumer: one cell per task at milestone drain, before the gate, checking that the finding no longer reproduces, with verdicts in the review store. The rest of the **Vetting** table waits for implement.
+
+**Later slices**
+
+- The `tool` executor, first used for grep-proven cleanups with exact `old` and `new`.
+- Trials: worktree isolation, a noise policy for benchmarks and a budget cap. Until then, a perf finding whose benefit is only a measurement waits.
 
 ### Smaller fixes
 
