@@ -4,8 +4,8 @@
 //! Each finding's v1 row is built from its implementer projection and held
 //! to the v1 required-field contract here: the v1 write path checks only
 //! `id`, and the apply flows skip a malformed row without a word. A finding
-//! is matched to a v1 row first by `v2_ref`, then by the v1 merge rule (same
-//! `file`, and the same non-empty `symbol` or the exact `summary`). The v1
+//! reuses an open v1 row only on a strict key (see `decide`); the looser v1
+//! merge rule still finds the settled and fixed rows a re-find answers to. The v1
 //! ledger is written and committed before the store is opened, so a crash
 //! between the two writes converges on a re-export through `v2_ref`.
 
@@ -74,12 +74,15 @@ fn categories(family: Family) -> &'static [&'static str] {
     v1_kind(family).categories().unwrap_or_default()
 }
 
-/// A finding cleared for export: its v1 row (no `id`), its `v2_ref`, the
-/// F-ids it depends on, and the target ledger's v1 ids it has retired.
+/// A finding cleared for export: its v1 row (no `id`), its `v2_ref`, its
+/// lens, the `v2_ref` of the finding its `same_as` names, the F-ids it
+/// depends on, and the target ledger's v1 ids it has retired.
 struct Candidate {
     finding: String,
     row: Row,
     v2_ref: String,
+    lens: String,
+    same_as: Option<String>,
     depends_on: Vec<String>,
     retired: Vec<String>,
 }
@@ -153,6 +156,11 @@ pub(crate) fn run(target: &Target, args: ReviewExportArgs) -> Result<()> {
             (!v1.is_empty()).then(|| (f.id.clone(), v1.to_string()))
         })
         .collect();
+    let lenses: HashMap<String, String> = stored
+        .findings
+        .iter()
+        .map(|f| (format!("{store_rel}#{}", f.id), f.lens.clone()))
+        .collect();
     let date = newest_run_date(&stored, &candidates)?;
     let prefix = id_prefix(family);
 
@@ -167,7 +175,7 @@ pub(crate) fn run(target: &Target, args: ReviewExportArgs) -> Result<()> {
         } else {
             seed(date)
         };
-        place(&mut doc, &candidates, prefix, &prior, date)?
+        place(&mut doc, &candidates, prefix, &prior, &lenses, date)?
     } else {
         let on_missing = if args.integrity.no_create {
             OnMissing::Error
@@ -181,7 +189,7 @@ pub(crate) fn run(target: &Target, args: ReviewExportArgs) -> Result<()> {
             write_integrity_opts(&args.integrity),
             on_missing,
             |doc| {
-                outcome = Some(place(doc, &candidates, prefix, &prior, date)?);
+                outcome = Some(place(doc, &candidates, prefix, &prior, &lenses, date)?);
                 Ok(())
             },
         )?;
@@ -393,6 +401,8 @@ fn candidate(
         finding: f.id.clone(),
         row,
         v2_ref,
+        lens: f.lens.clone(),
+        same_as: (!f.same_as.is_empty()).then(|| format!("{store_rel}#{}", f.same_as)),
         depends_on: f.depends_on.clone(),
         retired,
     })
@@ -606,19 +616,22 @@ fn seed(date: Datetime) -> TomlValue {
 
 /// Places every candidate in the v1 ledger `doc`, then maps `depends_on`
 /// for the rows this call minted or reused. Raises the root `last_updated`
-/// to `date` when any row changed.
+/// to `date` when any row changed. `lenses` maps each store finding's
+/// `v2_ref` to its lens.
 fn place(
     doc: &mut TomlValue,
     candidates: &[Candidate],
     prefix: &str,
     prior: &HashMap<String, String>,
+    lenses: &HashMap<String, String>,
     date: Datetime,
 ) -> Result<V1Outcome> {
     let mut outcome = V1Outcome::default();
     let mut changed = false;
     let mut written: Vec<(usize, String)> = Vec::new();
     for (at, c) in candidates.iter().enumerate() {
-        let decided = decide(doc, c);
+        let this_call: Vec<&str> = written.iter().map(|(_, id)| id.as_str()).collect();
+        let decided = decide(doc, c, lenses, &this_call);
         let (v1_id, action) = match decided {
             Decision::Linked(id) => (id, "linked"),
             Decision::Reuse(id) => {
@@ -725,12 +738,22 @@ enum Decision {
     New,
 }
 
-/// The v1 merge rule over `doc`'s rows: `v2_ref` first, then the same `file`
-/// with the same non-empty `symbol` or the exact `summary`, preferring an
-/// open match, then a settled one, then a fixed one. An unknown v1 status
-/// reads as open. A row the finding retired on reopen is never `Linked` and
-/// never `Settled`: open it is reused, otherwise the finding regressed.
-fn decide(doc: &TomlValue, c: &Candidate) -> Decision {
+/// Where `c` goes in `doc`. A row carrying its `v2_ref` links. An open row
+/// is reused only when it carries the `v2_ref` of the finding `c`'s
+/// `same_as` names, or has equal `file`, `symbol` and `summary` and a
+/// `v2_ref` naming a finding of `c`'s lens — never a row this call wrote
+/// (`this_call`) on that second clause. Otherwise the v1 merge rule (same
+/// `file`, and the same non-empty `symbol` or the exact `summary`) finds a
+/// dismissed or deferred row to skip against, else a fixed one to regress.
+/// An unknown v1 status reads as open. A row the finding retired on reopen
+/// is never `Linked` and never `Settled`: open it is reused, otherwise the
+/// finding regressed.
+fn decide(
+    doc: &TomlValue,
+    c: &Candidate,
+    lenses: &HashMap<String, String>,
+    this_call: &[&str],
+) -> Decision {
     let rows: Vec<&toml::map::Map<String, TomlValue>> = doc
         .get("items")
         .and_then(TomlValue::as_array)
@@ -757,6 +780,28 @@ fn decide(doc: &TomlValue, c: &Candidate) -> Decision {
             .unwrap_or_default()
     };
     let (file, symbol, summary) = (want("file"), want("symbol"), want("summary"));
+    // A match `sync-v1` would resolve is a regression; one it would dismiss
+    // or defer is settled, and a new finding is not re-reported against it.
+    let settled = |s: &str| matches!(map_status(s), Some("dismissed" | "deferred"));
+    let fixed = |s: &str| map_status(s) == Some("resolved");
+    let strict = |row: &toml::map::Map<String, TomlValue>| {
+        let refs = || v2_refs(row.get("v2_ref"));
+        (retired(row) && names_us(row))
+            || c.same_as
+                .as_deref()
+                .is_some_and(|target| refs().any(|r| r == target))
+            || (!this_call.contains(&get(row, "id").as_str())
+                && get(row, "file") == file
+                && get(row, "symbol") == symbol
+                && get(row, "summary") == summary
+                && refs().any(|r| lenses.get(r).is_some_and(|lens| *lens == c.lens)))
+    };
+    if let Some(row) = rows.iter().find(|r| {
+        let status = get(r, "status");
+        strict(r) && !settled(&status) && !fixed(&status) && !get(r, "id").is_empty()
+    }) {
+        return Decision::Reuse(get(row, "id"));
+    }
     // (id, v1 status, retired by this finding)
     let matches: Vec<(String, String, bool)> = rows
         .iter()
@@ -769,13 +814,6 @@ fn decide(doc: &TomlValue, c: &Candidate) -> Decision {
         .map(|r| (get(r, "id"), get(r, "status"), retired(r)))
         .filter(|(id, _, _)| !id.is_empty())
         .collect();
-    // A match `sync-v1` would resolve is a regression; one it would dismiss
-    // or defer is settled, and a new finding is not re-reported against it.
-    let settled = |s: &str| matches!(map_status(s), Some("dismissed" | "deferred"));
-    let fixed = |s: &str| map_status(s) == Some("resolved");
-    if let Some((id, _, _)) = matches.iter().find(|(_, s, _)| !settled(s) && !fixed(s)) {
-        return Decision::Reuse(id.clone());
-    }
     if let Some((id, s, _)) = matches
         .iter()
         .find(|(_, s, retired)| !retired && settled(s))

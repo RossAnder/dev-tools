@@ -292,6 +292,14 @@ impl Repo {
         repo
     }
 
+    /// The seeded store with `extra` findings appended.
+    fn with_findings(extra: &str) -> Self {
+        let mut repo = Self::new();
+        repo.store.push_str(extra);
+        repo.reset_store();
+        repo
+    }
+
     /// Rewrites the store as seeded, as if an export's v2 write never landed.
     fn reset_store(&self) {
         self.write(STORE_PATH, &self.store);
@@ -567,21 +575,48 @@ fn export_category_from_cell_binding() {
     );
 }
 
+/// `OPEN_IO_LOCK` with F7's summary and `v2_ref` as the row's own.
+fn open_io_lock_strict(v2_ref: &str) -> String {
+    OPEN_IO_LOCK
+        .replace(
+            "lock guard dropped before the rename",
+            "the lock is released early",
+        )
+        .replace(
+            "status = \"open\"\n",
+            &format!("status = \"open\"\nv2_ref = \"{v2_ref}\"\n"),
+        )
+}
+
 #[test]
 fn export_reuses_open_v1_id_and_bumps_rounds_once() {
+    let loose = Repo::new();
+    loose.write(LEDGER, OPEN_IO_LOCK);
+    let out = loose.exported(&["F7"]);
+    assert_eq!(
+        out["exported"][0]["action"], "minted",
+        "an open row matching only on file and symbol is not reused: {out}"
+    );
+    assert_eq!(loose.rows().len(), 2);
+
     let repo = Repo::new();
-    repo.write(LEDGER, OPEN_IO_LOCK);
+    let f3 = format!("{STORE_PATH}#F3");
+    repo.write(LEDGER, &open_io_lock_strict(&f3));
     let out = repo.exported(&["F7"]);
     assert_eq!(out["exported"][0]["v1"], "R1", "{out}");
     assert_eq!(out["exported"][0]["action"], "reused", "{out}");
     assert_eq!(repo.rows().len(), 1);
     let row = repo.row("R1");
     assert_eq!(row["rounds"].as_integer(), Some(2));
-    assert_eq!(text(&row, "v2_ref"), format!("{STORE_PATH}#F7"));
+    let f7 = format!("{STORE_PATH}#F7");
     assert_eq!(
-        text(&row, "summary"),
-        "lock guard dropped before the rename",
-        "the v1 row keeps its text"
+        row["v2_ref"],
+        toml::Value::Array(vec![f3.as_str().into(), f7.as_str().into()]),
+    );
+    assert_eq!(
+        row["line"].as_integer(),
+        Some(48),
+        "the v1 row keeps its anchor"
     );
 
     repo.reset_store();
@@ -750,15 +785,29 @@ fn reuse_of_a_retired_row_restores_the_link() {
 
 #[test]
 fn reuse_keeps_both_v2_refs() {
-    let repo = Repo::new();
-    let other = ".claude/review-v2/other.toml#F3";
-    repo.write(
+    let elsewhere = Repo::new();
+    elsewhere.write(
         LEDGER,
-        &OPEN_IO_LOCK.replace(
-            "status = \"open\"\n",
-            &format!("status = \"open\"\nv2_ref = \"{other}\"\n"),
-        ),
+        &open_io_lock_strict(".claude/review-v2/other.toml#F3"),
     );
+    let out = elsewhere.exported(&["F7"]);
+    assert_eq!(
+        out["exported"][0]["action"], "minted",
+        "a v2_ref into another store names no lens to match: {out}"
+    );
+
+    let different_lens = Repo::new();
+    different_lens.write(LEDGER, &open_io_lock_strict(&format!("{STORE_PATH}#F1")));
+    let out = different_lens.exported(&["F7"]);
+    assert_eq!(
+        out["exported"][0]["action"], "minted",
+        "a row first found under another lens is not reused: {out}"
+    );
+
+    let repo = Repo::new();
+    let other = format!("{STORE_PATH}#F3");
+    let other = other.as_str();
+    repo.write(LEDGER, &open_io_lock_strict(other));
     let out = repo.exported(&["F7"]);
     assert_eq!(out["exported"][0]["action"], "reused", "{out}");
     let ours = format!("{STORE_PATH}#F7");
@@ -774,6 +823,77 @@ fn reuse_keeps_both_v2_refs() {
         "an array v2_ref still links: {out}"
     );
     assert_eq!(repo.row("R1")["rounds"].as_integer(), Some(2));
+}
+
+/// An open minor defect on F7's `io::lock` anchor, with `extra` fields.
+fn io_lock_defect(id: &str, summary: &str, extra: &str) -> String {
+    format!(
+        r#"
+[[findings]]
+id = "{id}"
+run = "U1"
+cell = "C1"
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "src/io.rs"
+line = 50
+symbol = "io::lock"
+summary = "{summary}"
+severity = "minor"
+failure_scenario = "two writers interleave"
+fix = "hold the guard"
+fix_shape = "edits"
+effort = "trivial"
+status = "open"
+first_seen = 2026-10-12
+{extra}"#
+    )
+}
+
+#[test]
+fn export_mints_separate_rows_for_different_defects_on_one_symbol() {
+    let other = "the lock file is never removed";
+    let repo = Repo::with_findings(&io_lock_defect("F10", other, ""));
+    let out = repo.exported(&["F7,F10"]);
+    let actions: Vec<&str> = out["exported"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["action"].as_str().unwrap())
+        .collect();
+    assert_eq!(actions, ["minted", "minted"], "{out}");
+    assert_eq!(repo.rows().len(), 2);
+    assert_eq!(
+        text(&repo.row_for("F7"), "summary"),
+        "the lock is released early"
+    );
+    assert_eq!(text(&repo.row_for("F10"), "summary"), other);
+}
+
+#[test]
+fn export_does_not_fold_within_one_call() {
+    let twin = io_lock_defect("F10", "the lock is released early", "");
+    let merged = io_lock_defect(
+        "F11",
+        "the guard is dropped before the rename",
+        "same_as = \"F7\"\n",
+    );
+    let repo = Repo::with_findings(&format!("{twin}{merged}"));
+    let out = repo.exported(&["F7,F10,F11"]);
+    let placed: Vec<(&str, &str)> = out["exported"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| (e["v1"].as_str().unwrap(), e["action"].as_str().unwrap()))
+        .collect();
+    assert_eq!(
+        placed,
+        [("R1", "minted"), ("R2", "minted"), ("R1", "reused")],
+        "an identical twin mints; a finding naming F7 in same_as joins its row: {out}"
+    );
+    assert_eq!(repo.rows().len(), 2);
 }
 
 fn snapshot(repo: &Repo, rel: &str) -> (Option<Vec<u8>>, Option<Vec<u8>>) {
