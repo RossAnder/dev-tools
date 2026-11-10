@@ -113,6 +113,7 @@ Each threshold applies per lens over at least five runs, and to an outcome rate 
 | Resolved precision per lens | at or above its `v1_category`'s precision | more than 5 points below it, or below 85% |
 | Post-verification leak (wontfix + verified-clean share of exported outcomes) | ≤ 5.8% code, ≤ 8.0% perf | > 8.7% code, > 12.0% perf (1.5× v1) |
 | Verifier refute rate per lens, against its v1 vet-drop | at or below the v1 lens's vet-drop | above twice it, or above 30% |
+| Verifier refute rate per lens, low side (`review stats --all --by lens`, pooled across runs) | at or above half the v1 lens's vet-drop | below half it over at least 30 verified rows reads `suspect`, whatever the run count: run the seeded precision check (below) before trusting that lens's confirms |
 | Cleanup share of a judgement lens's defect and cleanup output | 48% or more (v1's lowest suggestion share) | below 40%: small details are being lost |
 | Orchestrator context, `/review-v2` + `/review-apply` | ≤ 300k (25% under v1) | > 401k |
 | Orchestrator context, `/review-plan-v2` | ≤ 250k (25% under v1) | > 329k |
@@ -127,6 +128,15 @@ Thresholds with no v1 counterpart, because v1 never measured them:
 - **Audit overturn per agent model** (`review stats --by model`): the same 10% and 20% bands, read per model. A model above them while another model in the same role sits inside them points at the model assignment in the agent's frontmatter before the verifier's procedure.
 - **Plan family**: v1 merged 98% of its plan findings and discarded none, so the merge measured nothing. A v2 plan lens is worse when its audit overturn on CONFIRMED defects exceeds 20%, or when its user-veto rate in `review stats --plan-outcomes` (user-vetoed over user-accepted plus user-vetoed; a `user-answered` question row counts on neither side, and a draft-time dismissal of a mechanical or cited row is `dismissed`, not a veto) exceeds a third. Plan seeded recall (below) holds the plan family to the same bands as code seeded recall.
 - **Cost**: a run whose `agents` exceeds the proposal's estimate by more than half, or exceeds 25 without the composed map stating why, is a composition finding for compose, not a lens finding.
+
+A refute rate this low is the leniency the high-side band cannot see: v1's vet dropped 7–23% of each code lens's sample, and a verifier that confirms nearly everything sits inside every other band. A v1 lens whose vet-drop is 0% (optimise) has no low side. The 30-row floor is reached by pooling; one run rarely verifies 30 rows of one lens.
+
+The audit-overturn bands read `insufficient` below **30 audited rows per class** — CONFIRMED defects, REFUTED defects and checked cleanup counted apart — and are read pooled across runs and lenses per model, with `review stats --all --by model`, not per lens per run. That row's `audited` sums the three classes, so a model under 30 there is `insufficient` on every band; above it, count each class from the audit verdicts in `review list --slug <slug> --kind defect --for audit` and `review list --slug <slug> --kind cleanup --route checker --for audit`, per store. The audit samples two rows per class per run, so 30 per class takes about fifteen runs.
+
+Watch items, not yet thresholds; read each at the five-run review and record what it shows:
+
+- **In-run planted negatives.** No run seeds a known-false finding among its real ones, so a verifier's leniency is measured only offline, by the seeded precision check. Reconsider in-run seeding when that check fails, or when a lens reads `suspect` while its pooled audit overturn on CONFIRMED defects sits inside the 10% band. Read with `review stats --all --by lens` and `review stats --all --by model`.
+- **Self-anchored confirms.** The share of `verifier` confirms whose `citation` names only the finding's own `file:line`, with no second path, test or command output. Run U1 had 11 of 22 (measured 2026-11-10 with `tomlctl review list --slug jiggly-exploring-robin --run U1 --for audit`). A confirm that re-reads the anchor it was handed has not tried to break the finding; a rising share is leniency the refute rate cannot show. Read per run with `tomlctl review list --slug <slug> --run <run> --for audit`.
 
 A **better** result on a measure is evidence to keep a lens's current text and activation; a **worse** one names the lens, facet or activation to rework, which ships as a new `experimental` id opted into beside the old one rather than as an edit in place.
 
@@ -149,9 +159,37 @@ Record each check below, newest first, one row per item:
 
 No check has been run yet.
 
+## Seeded precision check
+
+An offline leniency probe for the verifier: it is handed findings known to be false and must refute them. Run it when a lens reads `suspect` on the low-side refute band, after any change to `review-verifier`'s procedure or model, and after merge.
+
+1. Pick seeds no earlier row of the table below names: two v1 `fixed` items whose fixes landed in one commit you can name (the **true seeds**), and three v1 `verified-clean` items (the **false seeds**), from at least two categories.
+2. Create a scratch worktree at the fix commit's parent, outside this checkout. Read each false seed's file there: drop and replace any seed whose code no longer matches what its v1 `resolution` reasons over. Delete from the worktree every v1 ledger that carries a seed, so the verifier cannot read the answer.
+3. In that worktree, start a flow-less scratch run and plan one cell over the seed files:
+   ```bash
+   tomlctl review run start --scope precision-probe --command review-v2 --family code --depth standard --base HEAD
+   tomlctl review plan --scope precision-probe --run <run> --ndjson <scratch>/cell.ndjson
+   ```
+   `<run>` is the id `run start` prints. `cell.ndjson` holds one row: `slice` the five seed files, `concerns` `["correctness"]`, `agent` `review-finder`, `reason` `precision probe`.
+4. Write the five seeds as `major` defect rows with `review add --scope precision-probe --run <run> --cell <cell> --ndjson <scratch>/seeds.ndjson`, in a shuffled order, each carrying the v1 item's file, line, symbol and claim in the fields `tomlctl review schema finding --kind defect` requires. Word the false seeds as confidently as the true ones; nothing in a row says it is a seed.
+5. Dispatch one `review-verifier`, unnamed, naming the run, `--scope precision-probe`, the run directory, `by: verifier` and the five finding ids, and nothing else.
+6. Read the verdicts with `tomlctl review list --scope precision-probe --run <run> --for audit`. Then seal the cell with the seed map, so the run records which v1 id each finding was: `tomlctl review cover <cell> --scope precision-probe --status covered --note "seeds: F1=<ledger>:<id> false, …"`. Sealing comes after the verifier, so its note cannot leak the answer.
+7. Record the rows below, then remove the scratch worktree.
+
+**Scoring.** A false seed scores a **true negative** only when its verdict is `refuted`; `plausible` and `confirmed` both count against the verifier, as `review stats` counts every verdict that is not `refuted` as standing. Pool the false seeds of every recorded probe: with k of n refuted, the one-sided 95% lower bound on the verifier's true-negative rate is the Clopper–Pearson bound `python -c "from scipy.stats import beta; print(beta.ppf(0.05, k, n - k + 1))"`, which is `0.05**(1/n)` when every one was refuted. One probe's 3 of 3 shows a true-negative rate of at least 37% and nothing more: a verifier refuting fewer than about one false finding in three would pass it under 5% of the time, so a single pass rules out gross leniency only. Six refuted of six reach 61%, fifteen 82%, thirty 90%.
+
+A probe **fails** when any false seed is not refuted; the `suspect` reading stands, and the verifier's rationale on that seed is what gets read, before any lens text changes. The true seeds are scored separately, as a confirm rate (`confirmed` or `plausible` over seeds): a refuted true seed is recall loss, read against the REFUTED-defect audit band, and makes the probe inconclusive rather than a pass, since a verifier refuting everything scores perfectly on the false seeds.
+
+Record each probe below, newest first, one row per seed; reused seeds add nothing to the pooled n, so check the v1 ids here before picking:
+
+| Date | v1 id | Ledger | Category | True or false | Base commit | Finding | Verdict | Notes |
+|---|---|---|---|---|---|---|---|---|
+
+No check has been run yet.
+
 ## Plan seeded recall
 
-No v2 plan has run under an execution engine yet, so no deviation, revert or post-approval change exists to join plan findings against. Until one does, plan review is measured by the run measures from `review stats --plan-outcomes` and `review stats --by model`, and by this probe, run after merge and again after any change to the plan lenses, the plan checks or the tier rules.
+`/implement-v2` has run a v2 plan, `human-only-handovers`, through its milestones, but that flow holds no `review-v2.toml`, so no plan finding exists to join its deviations, reverts or post-approval changes against, and no join is built (the contract note below binds it). Plan review is measured by the run measures from `review stats --plan-outcomes` and `review stats --by model`, and by this probe, run after merge and again after any change to the plan lenses, the plan checks or the tier rules.
 
 1. Pick a v2 flow that was later approved, and create a scratch worktree, outside this checkout, at the commit just before its approval, so its `plan.toml` holds no `[[approval]]` and it reviews as a draft. Delete the flow's `review-v2.toml` there if one exists, so the probe's run is the store's only one.
 2. Seed five defects into that flow through the store's own write verbs, never by hand-editing the TOML, one per row below, each on a different task or record. Note each seeded target.
