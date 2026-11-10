@@ -194,6 +194,11 @@ impl Fixture {
     }
 
     fn start(&self, base: &str) -> String {
+        self.start_with(base, &[])
+    }
+
+    /// [`Self::start`] with extra `review run start` arguments.
+    fn start_with(&self, base: &str, extra: &[&str]) -> String {
         let out = self
             .tomlctl()
             .args([
@@ -212,6 +217,7 @@ impl Fixture {
                 "--builtin",
             ])
             .arg(&self.builtin)
+            .args(extra)
             .assert()
             .success();
         let json: JsonValue =
@@ -548,6 +554,108 @@ detect = { contains = ['^deleted file mode '] }
         roots(&out, "tests-touched"),
         None,
         "tests/t.rs changed only before the base"
+    );
+}
+
+#[test]
+fn survey_diff_stops_at_head() {
+    let vocabulary = r#"
+[signals.rename-or-removal]
+kind = "diff"
+meaning = "a removed pub fn"
+detect = { contains = ['^-[ \t]*pub fn'] }
+
+[signals.docs-touched]
+kind = "diff"
+meaning = "docs"
+detect = { files = ["**/*.md"] }
+
+[signals.tests-touched]
+kind = "diff"
+meaning = "tests"
+detect = { files = ["**/tests/**"] }
+
+[signals.tokio-touched]
+kind = "diff"
+meaning = "a changed manifest with tokio"
+detect = { files = ["**/Cargo.toml"], manifest = ["dependencies.tokio"] }
+"#;
+    let Some(fx) = Fixture::new(vocabulary) else {
+        return;
+    };
+    fx.write("src/lib.rs", "pub fn old() {}\npub fn keep() {}\n")
+        .write("core/Cargo.toml", "[package]\nname = \"core\"\n");
+    let base = fx.commit("first");
+    fx.write("docs/readme.md", "# docs\n").write(
+        "core/Cargo.toml",
+        "[package]\nname = \"core\"\n\n[dependencies]\ntokio = \"1\"\n",
+    );
+    let head = fx.commit("bounded");
+    fx.write("src/lib.rs", "pub fn keep() {}\n")
+        .write("tests/t.rs", "#[test]\nfn t() {}\n")
+        .write("core/Cargo.toml", "[package]\nname = \"core\"\n");
+    fx.commit("after head");
+    let run = fx.start_with(&base, &["--head", &head]);
+    let out = fx.survey(&run);
+
+    assert_eq!(roots(&out, "docs-touched"), Some(vec!["docs".to_string()]));
+    assert_eq!(
+        roots(&out, "tests-touched"),
+        None,
+        "tests/t.rs changed only after the head"
+    );
+    assert_eq!(
+        roots(&out, "rename-or-removal"),
+        None,
+        "the pub fn was removed only after the head"
+    );
+    assert_eq!(
+        roots(&out, "tokio-touched"),
+        Some(vec!["core".to_string()]),
+        "the manifest is read at the head, not in the working tree"
+    );
+}
+
+#[test]
+fn survey_hotspots_are_limited_to_scope() {
+    let vocabulary = r#"
+[signals.churn-hotspot]
+kind = "health"
+meaning = "touched by two commits"
+detect = { files = ["**/*.rs"], window = 90, threshold = 2 }
+"#;
+    let Some(fx) = Fixture::new(vocabulary) else {
+        return;
+    };
+    fx.write("a/hot.rs", "1\n").write("b/hot.rs", "1\n");
+    fx.commit("one");
+    fx.write("a/hot.rs", "2\n").write("b/hot.rs", "2\n");
+    let head = fx.commit("two");
+    let run = fx.start_with(&head, &["--set-json", r#"scope=["a/**"]"#]);
+    let out = fx.survey(&run);
+
+    assert_eq!(
+        roots(&out, "churn-hotspot"),
+        Some(vec!["a".to_string()]),
+        "b/hot.rs is outside the scope"
+    );
+    let churn = out["signals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["name"] == "churn-hotspot")
+        .unwrap()
+        .clone();
+    assert_eq!(
+        churn["evidence"],
+        serde_json::json!(["a/hot.rs"]),
+        "commits before the base still count toward a scope file"
+    );
+    let stored = stored(&fx.stored_signals(), "churn-hotspot").expect("the hotspot is stored");
+    assert_eq!(
+        stored["evidence"],
+        toml::Value::Array(vec!["a/hot.rs".into()]),
+        "the stored evidence keeps only scope files"
     );
 }
 

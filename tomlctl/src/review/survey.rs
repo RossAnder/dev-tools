@@ -2,11 +2,13 @@
 //! run's signals.
 //!
 //! Stack detectors run over `git ls-files`, diff detectors over the run's
-//! `base..HEAD` patch inside its scope, and health detectors over the tree at
-//! HEAD or a `git log` window. A true signal is recorded with `source =
-//! "detector"` and its `roots`; a detector that cannot be evaluated is
-//! recorded with `source = "unknown"` and the reason as its only `evidence`,
-//! never dropped as false. Re-running replaces both and keeps judged signals.
+//! `base..head` patch inside its scope (`base..HEAD` when the run records no
+//! `head`), and health detectors over the tree at HEAD or a `git log` window;
+//! a commits-per-file detector's evidence keeps only files in the run's
+//! scope, though it counts their commits repo-wide. A true signal is recorded
+//! with `source = "detector"` and its `roots`; a detector that cannot be
+//! evaluated is recorded with `source = "unknown"` and the reason as its only
+//! `evidence`, never dropped as false. Re-running replaces both and keeps judged signals.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
@@ -163,6 +165,7 @@ fn evaluate(root: &Path, run: &Run, detectors: &[&super::catalogue::Signal]) -> 
     let mut repo = Repo {
         root,
         base: &run.base,
+        head: run.head.as_deref(),
         scope: &run.scope,
         tracked: list_tracked(root),
         diff: None,
@@ -469,6 +472,7 @@ type LiveEntry<'e> = (&'e CountEntry, Option<&'e [String]>);
 struct Repo<'a> {
     root: &'a Path,
     base: &'a str,
+    head: Option<&'a str>,
     scope: &'a [String],
     tracked: Result<Vec<String>, String>,
     diff: Option<Result<Vec<Changed>, String>>,
@@ -477,6 +481,23 @@ struct Repo<'a> {
 impl Repo<'_> {
     fn tracked(&self) -> Result<&[String], String> {
         self.tracked.as_deref().map_err(Clone::clone)
+    }
+
+    fn pathspecs(&self) -> Vec<String> {
+        self.scope.iter().map(|s| format!(":(glob){s}")).collect()
+    }
+
+    /// A changed file's bytes at the run's `head`, or in the working tree when
+    /// the run records none; empty when the file is absent there.
+    fn changed_bytes(&self, path: &str) -> Vec<u8> {
+        match self.head {
+            Some(head) => git_output(
+                git(self.root).args(["show", &format!("{head}:{path}")]),
+                "git show",
+            )
+            .unwrap_or_default(),
+            None => fs::read(self.root.join(path)).unwrap_or_default(),
+        }
     }
 
     // -------------------------------------------------------- stack
@@ -534,8 +555,8 @@ impl Repo<'_> {
         if self.base.is_empty() {
             return Err("the run records no base".into());
         }
-        let range = format!("{}..HEAD", self.base);
-        let specs: Vec<String> = self.scope.iter().map(|s| format!(":(glob){s}")).collect();
+        let range = format!("{}..{}", self.base, self.head.unwrap_or("HEAD"));
+        let specs = self.pathspecs();
         let common = ["--no-ext-diff", "--no-textconv", "--no-color", "-M"];
         let names = git_output(
             git(self.root)
@@ -602,10 +623,11 @@ impl Repo<'_> {
     }
 
     fn diff_signal(&mut self, detect: &Detect) -> Outcome {
-        let root = self.root;
-        let changed = match self.changed() {
-            Ok(c) => c,
-            Err(e) => return Outcome::Unknown(e),
+        if let Err(e) = self.changed() {
+            return Outcome::Unknown(e);
+        }
+        let Some(Ok(changed)) = self.diff.as_ref() else {
+            unreachable!("changed() filled the diff");
         };
         let mut roots = BTreeSet::new();
         let mut errors = Vec::new();
@@ -616,7 +638,7 @@ impl Repo<'_> {
                 continue;
             }
             if !detect.manifest.is_empty() {
-                let bytes = fs::read(root.join(&file.path)).unwrap_or_default();
+                let bytes = self.changed_bytes(&file.path);
                 match manifest_passes(&file.path, &bytes, &detect.manifest) {
                     Ok(true) => {}
                     Ok(false) => continue,
@@ -791,9 +813,10 @@ impl Repo<'_> {
         Outcome::settle(roots, &errors)
     }
 
-    /// Commits in the window touching each tracked file the `files` globs
-    /// select; `contains` filters the commits by subject line. The files that
-    /// reach the threshold are the evidence, most commits first.
+    /// Commits in the window touching each tracked file in the run's scope
+    /// that the `files` globs select; `contains` filters the commits by
+    /// subject line. The files that reach the threshold are the evidence, most
+    /// commits first.
     fn commits_per_file(&self, detect: &Detect, days: i64, threshold: &Threshold) -> Outcome {
         let Threshold::AtLeast(min) = *threshold else {
             return Outcome::Unknown(
@@ -813,7 +836,9 @@ impl Repo<'_> {
                     "--no-renames",
                     "--format=%x1e%s",
                 ])
-                .args(window_filter(days)),
+                .args(window_filter(days))
+                .arg("--")
+                .args(self.pathspecs()),
             "git log --name-only",
         ) {
             Ok(l) => l,
