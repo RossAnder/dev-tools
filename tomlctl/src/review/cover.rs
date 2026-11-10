@@ -1,105 +1,17 @@
 //! `review cover` — sealing a cell with its coverage status, note and
-//! rule-outs — and
-//! [`coverage_accounting`], which `plan`, `digest` and `run finish` read to
-//! list what is neither in a cell nor waived.
-
-use std::collections::BTreeSet;
-use std::path::Path;
+//! rule-outs.
 
 use anyhow::Result;
 use serde_json::{Value as JsonValue, json};
 
 use super::catalogue::run_catalogue;
-use super::cells::{
-    PathSet, ScopeView, Signals, disabled_lenses, find_run, list_tracked, pick_checks, pick_lenses,
-    read_args,
-};
-use super::fields::{self, Record};
+use super::cells::{PathSet, find_run, read_args};
+use super::fields::{self, CellStatus, Record};
 use super::invalid;
 use super::store::{self, RuledOut, Store, Target};
 use crate::cli::ReviewCoverArgs;
 use crate::io::{read_ndjson_source, read_prose, repo_or_cwd_root};
 use crate::output::print_json_compact;
-
-// ------------------------------------------------------------ accounting
-
-/// What a run's cells and waivers leave unaccounted for.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct Accounting {
-    /// Matched concerns — lens ids and `check:<id>` — in no cell and not waived.
-    pub(crate) unselected: Vec<String>,
-    /// Scope files no cell's slice reaches and no file waiver names.
-    pub(crate) unsliced: Vec<String>,
-    /// Lenses the project config disabled; they need no waiver.
-    pub(crate) disabled: Vec<String>,
-}
-
-impl Accounting {
-    pub(crate) fn to_json(&self) -> JsonValue {
-        json!({
-            "unselected": self.unselected,
-            "unsliced": self.unsliced,
-            "disabled": self.disabled,
-        })
-    }
-}
-
-/// The run's unselected matched concerns and unsliced scope files, each
-/// without a waiver. Matching follows the proposal's tiers without its
-/// command-line `--lens` edits, and a judged signal counts only once the
-/// run records it `accepted`.
-pub(crate) fn coverage_accounting(root: &Path, store: &Store, run_id: &str) -> Result<Accounting> {
-    let run = find_run(store, run_id, "coverage accounting")?;
-    let catalogue = run_catalogue(root, run)?;
-    let signals = Signals::of(run, &catalogue, &[]);
-    let scope = ScopeView::new(&run.scope, list_tracked(root));
-    let cells: Vec<&store::Cell> = store.cells.iter().filter(|c| c.run == run.id).collect();
-
-    let in_cells: BTreeSet<&str> = cells
-        .iter()
-        .flat_map(|c| c.concerns.iter().map(String::as_str))
-        .collect();
-    let waived = |concern: &str| run.waivers.iter().any(|w| w.concern == concern);
-    let matched = pick_lenses(&catalogue, run, &signals, &scope, &[])
-        .into_iter()
-        .filter(|p| p.accountable)
-        .map(|p| p.lens.id.clone())
-        .chain(
-            pick_checks(&catalogue, run.family, &signals)
-                .into_iter()
-                .map(|c| format!("check:{}", c.id)),
-        );
-    let unselected = matched
-        .filter(|id| !in_cells.contains(id.as_str()) && !waived(id))
-        .collect();
-
-    let sliced = PathSet::new(
-        &cells
-            .iter()
-            .flat_map(|c| c.slice.iter().cloned())
-            .collect::<Vec<_>>(),
-    );
-    let file_waivers = PathSet::new(
-        &run.waivers
-            .iter()
-            .filter(|w| !w.file.is_empty())
-            .map(|w| w.file.clone())
-            .collect::<Vec<_>>(),
-    );
-    let unsliced = scope
-        .files
-        .iter()
-        .filter(|f| !sliced.matches(f) && !file_waivers.matches(f))
-        .cloned()
-        .collect();
-    Ok(Accounting {
-        unselected,
-        unsliced,
-        disabled: disabled_lenses(&catalogue, run.family),
-    })
-}
-
-// ------------------------------------------------------------ cover
 
 const VERB: &str = "review cover";
 
@@ -171,15 +83,23 @@ fn check_ruled_out_reach(store: &Store, cell: &store::Cell, entries: &[RuledOut]
 
 pub(crate) fn cover(target: &Target, args: ReviewCoverArgs) -> Result<()> {
     let verb = VERB;
-    let status = args.status.as_str();
     // A cell can be sealed as any status but the `assigned` it starts in.
-    let sealable = || fields::CELL_STATUSES.iter().filter(|s| **s != "assigned");
-    if !sealable().any(|s| *s == status) {
-        let listed = sealable().copied().collect::<Vec<_>>().join(", ");
+    let sealable = || {
+        CellStatus::ALL
+            .iter()
+            .copied()
+            .filter(|s| *s != CellStatus::Assigned)
+    };
+    let Some(status) = sealable().find(|s| s.as_str() == args.status) else {
+        let listed = sealable()
+            .map(CellStatus::as_str)
+            .collect::<Vec<_>>()
+            .join(", ");
         return Err(invalid(format!(
-            "{verb}: --status {status:?} is not one of {listed}"
+            "{verb}: --status {:?} is not one of {listed}",
+            args.status.as_str()
         )));
-    }
+    };
     let Some(note) = read_prose(
         verb,
         "note",
@@ -208,7 +128,8 @@ pub(crate) fn cover(target: &Target, args: ReviewCoverArgs) -> Result<()> {
         }
         Err(invalid(format!(
             "{verb}: cell {} is already sealed as `{}` with a different note; a sealed cell's coverage is final",
-            cell.id, cell.status
+            cell.id,
+            cell.status.as_str()
         )))
     };
     let missing = || invalid(format!("{verb}: no cell {} in this store", args.cell));
@@ -251,7 +172,7 @@ pub(crate) fn cover(target: &Target, args: ReviewCoverArgs) -> Result<()> {
             if sealed_as(cell)? {
                 return Ok(true);
             }
-            cell.status = status.to_string();
+            cell.status = status;
             cell.note.clone_from(&note);
             cell.sealed = true;
             if let Some(entries) = &ruled_out {
@@ -263,7 +184,7 @@ pub(crate) fn cover(target: &Target, args: ReviewCoverArgs) -> Result<()> {
     let mut out = json!({
         "ok": true,
         "cell": args.cell,
-        "status": status,
+        "status": status.as_str(),
         "sealed": true,
         "unchanged": unchanged,
     });

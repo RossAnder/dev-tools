@@ -96,6 +96,7 @@
 | E85 | The orchestrator added a sentence pointing the close summary at the lead's escalation files, in claude/skills/review-v2-engine/references/plan-flow.md | 2026-11-10 | | The plan review lead, updated in parallel, writes escalations that get no follow-up cell to payloads/escalations-w<wave>.md because the plan-review Workflow index carries no escalations key; nothing told the orchestrator to read them at close. | — |
 | E90 | The seed map goes in the seed cell's review cover note, sealed after the verifier returns, plus a record table in claude/skills/review-v2-engine/references/measurement.md | 2026-11-10 | | review run start and run update accept only a fixed set of --set keys, so a run cannot carry a seed list. | — |
 | E91 | True seeds are two fixed items one commit fixed, read in a scratch worktree at that commit's parent with the seeds' v1 ledgers deleted there, in claude/skills/review-v2-engine/references/measurement.md | 2026-11-10 | | A v1 fixed item is already fixed in the current tree, so a true seed can only be read where its defect still stands. | — |
+| E123 | run start's project-lens-layer guard compares --base with the working tree (tracked diff plus untracked and ignored files under .claude/review-lenses) instead of the commit range base..head; applied by /review-apply from review finding R1, uncommitted at the time of recording | 2026-11-10 | | The layer a run loads is the working tree's and can carry project check commands that a verification agent runs, so a layer changed after --head or left uncommitted was loaded without the refusal. The guard has to cover what is loaded; changed_lines and the survey still measure base..head | — |
 
 ---
 
@@ -111,4 +112,4 @@
 
 | Date | Changes | Commits |
 |------|---------|---------|
-| 2026-11-10 | 122 entries: status-transition × 2, task-completion × 44, deviation × 37, verification × 36, checkpoint × 3 | 07c2518f, 0a91146e, 0befc2cd, 0ffa7ea5, 18d17dcf, 26487368, 3106df2b, 32ae3181, 3530f290, 3d6b063c, 4efac13b, 4f465e9c, 5022f89b, 50eb381f, 57a290c1, 610d6550, 64166cc8, 71d4e9c6, 7476976a, 7a3267c0, 7ff8e82c, 85f02e92, 8f593ca0, 90d2dc8d, 9d1b9e77, 9f0e727f, ae3e0a1b, af476769, b6d1dab6, ccb387ec, d33ca3fc, e8b754f7, fcf12363, fdfad52b, ffa23a0d |
+| 2026-11-10 | 123 entries: status-transition × 2, task-completion × 44, deviation × 38, verification × 36, checkpoint × 3 | 07c2518f, 0a91146e, 0befc2cd, 0ffa7ea5, 18d17dcf, 26487368, 3106df2b, 32ae3181, 3530f290, 3d6b063c, 4efac13b, 4f465e9c, 5022f89b, 50eb381f, 57a290c1, 610d6550, 64166cc8, 71d4e9c6, 7476976a, 7a3267c0, 7ff8e82c, 85f02e92, 8f593ca0, 90d2dc8d, 9d1b9e77, 9f0e727f, ae3e0a1b, af476769, b6d1dab6, ccb387ec, d33ca3fc, e8b754f7, fcf12363, fdfad52b, ffa23a0d |

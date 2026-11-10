@@ -246,14 +246,21 @@ pub(crate) const VERDICT_BY: &[&str] = &[
     "orchestrator",
     "sync",
 ];
-pub(crate) const CELL_STATUSES: &[&str] = &["assigned", "covered", "thin", "uncovered"];
+str_enum!(CellStatus {
+    Assigned => "assigned",
+    Covered => "covered",
+    Thin => "thin",
+    Uncovered => "uncovered",
+});
+
+pub(crate) const CELL_STATUSES: &[&str] = CellStatus::VALUES;
 pub(super) const FINDER: &str = "review-finder";
 /// The finder run without CLAUDE.md, for a correctness-only cell.
 pub(super) const FINDER_CF: &str = "review-finder-cf";
 pub(super) const SWEEPER: &str = "review-sweeper";
 pub(super) const EXECUTOR: &str = "plan-executor";
 pub(crate) const CELL_AGENTS: &[&str] = &[FINDER, FINDER_CF, SWEEPER, EXECUTOR];
-const FIX_SHAPES: &[&str] = &["edits", "needs-plan"];
+pub(crate) const FIX_SHAPES: &[&str] = &["edits", "needs-plan"];
 const EFFORTS: &[&str] = &["trivial", "small", "medium", "large"];
 const GRADES: &[&str] = &["high", "medium", "low"];
 const ANGLES: &[&str] = &["risk", "challenge", "probe", "alternative", "direction"];
@@ -430,7 +437,9 @@ const UNTRIAGED: Vis = Vis::UntilTriaged;
 // Columns: finder, verifier, checker, implementer, orchestrator, audit, backlog, report.
 const IDENT: [Vis; 8] = [R, R, R, R, R, R, R, R];
 const STATUS: [Vis; 8] = [R, N, N, N, R, N, N, R];
-const LENS: [Vis; 8] = [N, R, N, N, R, R, R, R];
+// The checker reads `lens` to tell whether a row's lens is a mechanical one.
+const LENS: [Vis; 8] = [N, R, R, N, R, R, R, R];
+const CELL_OF: [Vis; 8] = [N, R, N, N, R, R, R, R];
 const SEVERITY: [Vis; 8] = [N, R, N, R, R, R, N, R];
 const FAILURE: [Vis; 8] = [N, R, N, R, CONTESTED, R, N, R];
 const COUNTER: [Vis; 8] = [N, R, N, N, N, R, N, N];
@@ -514,7 +523,7 @@ pub(crate) const FIELDS: &[FieldSpec] = &[
     // findings: identity and bookkeeping
     field(Finding, "id", Ty::Str, IDENT).computed(),
     field(Finding, "run", Ty::Str, INTERNAL).computed(),
-    field(Finding, "cell", Ty::Str, LENS).computed(),
+    field(Finding, "cell", Ty::Str, CELL_OF).computed(),
     field(Finding, "seen_in", Ty::StrList, INTERNAL).computed(),
     field(Finding, "family", Ty::Str, INTERNAL)
         .values(Family::VALUES)
@@ -1007,6 +1016,13 @@ pub(crate) fn ruled_out_refusals(entry: &Map<String, JsonValue>) -> Vec<String> 
                 .is_some_and(|n| n >= 1 && n <= i64::from(u32::MAX)) => {}
         Some(_) => reasons.push("`line` must be a positive integer".to_string()),
     }
+    let symbol = matches!(entry.get("symbol"), Some(JsonValue::String(s)) if !s.is_empty());
+    if !symbol && entry.get("line").is_none_or(JsonValue::is_null) {
+        reasons.push(
+            "`symbol` or `line` is required; a rule-out with neither matches no finding"
+                .to_string(),
+        );
+    }
     match entry.get("reason") {
         Some(JsonValue::String(reason)) if !reason.trim().is_empty() => {
             let len = reason.chars().count();
@@ -1401,7 +1417,7 @@ mod tests {
         (Finding, "exported_as", None, "R - - - R - - R"),
         (Finding, "export_ledger", None, "R - - - R - - R"),
         (Finding, "retired_links", None, "R - - - R - - R"),
-        (Finding, "lens", None, "- R - - R R R R"),
+        (Finding, "lens", None, "- R R - R R R R"),
         (Finding, "cell", None, "- R - - R R R R"),
         (Finding, "severity", None, "- R - R R R - R"),
         (Finding, "failure_scenario", None, "- R - R ct R - R"),
@@ -1793,6 +1809,7 @@ mod tests {
         );
         let refused = ruled_out_refusals(&entry(json!({
             "file": "src/a.rs",
+            "line": 12,
             "reason": "the pad is deliberate",
             "lens": "correctness",
         })));
@@ -1812,14 +1829,22 @@ mod tests {
             ruled_out_refusals(&entry(json!({"reason": "r"})))[0].contains("`file` is required")
         );
         assert!(
-            ruled_out_refusals(&entry(json!({"file": "src/a.rs"})))[0]
+            ruled_out_refusals(&entry(json!({"file": "src/a.rs", "line": 1})))[0]
                 .contains("`reason` is required")
         );
         assert!(
             ruled_out_refusals(&entry(
-                json!({"file": "src/a.rs", "reason": "x".repeat(200)})
+                json!({"file": "src/a.rs", "symbol": "a::run", "reason": "x".repeat(200)})
             ))
             .is_empty()
         );
+        for neither in [
+            json!({"file": "src/a.rs", "reason": "r"}),
+            json!({"file": "src/a.rs", "symbol": "", "line": null, "reason": "r"}),
+        ] {
+            let refused = ruled_out_refusals(&entry(neither));
+            assert_eq!(refused.len(), 1, "{refused:?}");
+            assert!(refused[0].starts_with("`symbol` or `line` is required"));
+        }
     }
 }

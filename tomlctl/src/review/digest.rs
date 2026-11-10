@@ -13,10 +13,9 @@ use serde_json::{Map, Value as JsonValue, json};
 use toml::Value as TomlValue;
 
 use super::cells::coverage_accounting;
-use super::fields::{FindingStatus, Kind, Role, Route, SWEEPER, Severity};
-use super::matching::{Place, same_place};
-use super::stats::run_waves;
-use super::store::{self, Cell, Finding, Row, Run, Store, Target, Verdict, View};
+use super::fields::{CellStatus, FindingStatus, Kind, Role, Route, SWEEPER, Severity};
+use super::matching::{Place, rule_outs_at, same_place};
+use super::store::{self, Cell, Finding, Row, Run, Store, Target, Verdict, View, run_waves};
 use crate::cli::{ReviewDigestArgs, ReviewReportArgs};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{atomic_write, relativise, repo_or_cwd_root};
@@ -85,8 +84,8 @@ pub(crate) fn digest(target: &Target, args: ReviewDigestArgs) -> Result<()> {
         .collect();
     let notes: Vec<JsonValue> = cells
         .iter()
-        .filter(|c| matches!(c.status.as_str(), "thin" | "uncovered"))
-        .map(|c| json!({"id": c.id, "status": c.status, "note": c.note}))
+        .filter(|c| matches!(c.status, CellStatus::Thin | CellStatus::Uncovered))
+        .map(|c| json!({"id": c.id, "status": c.status.as_str(), "note": c.note}))
         .collect();
 
     let unverified: Vec<JsonValue> = each()
@@ -131,10 +130,9 @@ pub(crate) fn digest(target: &Target, args: ReviewDigestArgs) -> Result<()> {
         .map(|(i, _)| JsonValue::Object(rows.project(Role::Orchestrator, i, false)))
         .collect();
 
-    let run_cells: Vec<&Cell> = stored.cells.iter().filter(|c| c.run == run.id).collect();
     let in_window = |f: &Finding| in_wave(cell_of(&stored, f).and_then(|c| c.wave));
     let duplicates = duplicate_candidates(&stored, &run.id, in_window);
-    let hits = ruled_out_hits(&run_cells, each().map(|(_, f)| f));
+    let hits = ruled_out_hits(&stored.cells, each().map(|(_, f)| f));
 
     let mut out = Map::new();
     out.insert("run".into(), json!(run.id));
@@ -199,23 +197,18 @@ fn rest_str<'f>(finding: &'f Finding, key: &str) -> &'f str {
         .unwrap_or_default()
 }
 
-/// The finding's id and every id its `same_as` / `merged_into` links reach,
-/// stopping at a dangling link or a cycle. Two findings whose chains meet are
-/// already joined, directly or through a shared target.
+/// The finding's id and every id its identity links (`same_as`,
+/// `merged_into`, `converted_to`) reach, stopping at a dangling link or a
+/// cycle. Two findings whose chains meet are already joined, directly or
+/// through a shared target.
 fn link_chain<'s>(store: &'s Store, finding: &'s Finding) -> Vec<&'s str> {
     let mut chain = vec![finding.id.as_str()];
     let mut at = finding;
     loop {
-        let link = |key: &str| match key {
-            "same_as" => at.same_as.as_str(),
-            _ => rest_str(at, key),
-        };
-        let next = store.findings.iter().find(|f| {
-            !chain.contains(&f.id.as_str())
-                && ["same_as", "merged_into"]
-                    .iter()
-                    .any(|key| !link(key).is_empty() && link(key) == f.id)
-        });
+        let next = store
+            .findings
+            .iter()
+            .find(|f| !chain.contains(&f.id.as_str()) && at.identity_links().any(|id| id == f.id));
         match next {
             Some(f) => {
                 chain.push(&f.id);
@@ -238,7 +231,7 @@ fn id_order(id: &str) -> (u64, &str) {
 }
 
 /// Pairs of the run's live findings from different cells whose places match
-/// and that no `same_as` or `merged_into` chain already joins. A pair is
+/// and that no [`link_chain`] already joins. A pair is
 /// listed when either member is in the `--since-wave` window, so a late cell
 /// restating an early one still surfaces.
 fn duplicate_candidates(
@@ -287,25 +280,21 @@ fn duplicate_candidates(
 /// the run, once per matching entry. Every cell's rule-outs count whatever
 /// its wave; only the findings are windowed.
 fn ruled_out_hits<'s>(
-    cells: &[&'s Cell],
+    cells: &'s [Cell],
     findings: impl Iterator<Item = &'s Finding>,
 ) -> Vec<JsonValue> {
-    let mut hits = Vec::new();
-    for finding in findings {
-        for cell in cells.iter().filter(|c| c.id != finding.cell) {
-            for entry in &cell.ruled_out {
-                if same_place(&Place::of(finding), &Place::ruled_out(entry)) {
-                    hits.push(json!({
-                        "finding": finding.id,
-                        "cell": finding.cell,
-                        "ruled_out_by": cell.id,
-                        "reason": entry.reason,
-                    }));
-                }
-            }
-        }
-    }
-    hits
+    findings
+        .flat_map(|finding| {
+            rule_outs_at(cells, finding).map(move |(cell, entry)| {
+                json!({
+                    "finding": finding.id,
+                    "cell": finding.cell,
+                    "ruled_out_by": cell.id,
+                    "reason": entry.reason,
+                })
+            })
+        })
+        .collect()
 }
 
 /// The finding's latest verdict other than an audit's, so an audit overturn
@@ -471,7 +460,10 @@ impl Counts {
             suppressed: of(&|f| f.outcome == "suppressed"),
             unverified: of(&|f| f.status() == FindingStatus::Unverified),
             cells: cells.len(),
-            uncovered: cells.iter().filter(|c| c.status == "uncovered").count(),
+            uncovered: cells
+                .iter()
+                .filter(|c| c.status == CellStatus::Uncovered)
+                .count(),
         }
     }
 
@@ -813,7 +805,7 @@ fn coverage(store: &Store, run: &Run) -> String {
                 }
             })
             .collect();
-        let mut status = cell.status.clone();
+        let mut status = cell.status.as_str().to_string();
         if !cell.sealed {
             status.push_str(" (unsealed)");
         }

@@ -83,7 +83,7 @@ One pattern across many sites is **one** row with `instances`, not a row per sit
 
 #### Mechanical-cleanup exception
 
-A mechanical cleanup you see outside your cell's concerns — a stale reference, dead code, an unused setting — is written, not escalated. Its `lens` may be any lens the run's catalogue marks `mode = "mechanical"` (`tomlctl review catalogue --family <family> --rows entries --where type=lens --where mode=mechanical --select id --lines` lists them), from any cell, provided the row is a `cleanup` carrying exact `old`. It is routed like any other cleanup, and a checker may refute it as it refutes a sweeper's row. `review add` refuses every other lens outside the cell's concerns; escalate what this exception cannot carry.
+A mechanical cleanup you see outside your cell's concerns — a stale reference, dead code, an unused setting — is written, not escalated. Its `lens` may be any lens the run's catalogue marks `mode = "mechanical"` and not disabled (`tomlctl review catalogue --family <family> --rows entries --where type=lens --where mode=mechanical --where disabled=false --select id --lines` lists them), from any cell, provided the row is a `cleanup` carrying exact `old`. It is routed like any other cleanup, and a checker may refute it as it refutes a sweeper's row. `review add` refuses every other lens outside the cell's concerns; escalate what this exception cannot carry.
 
 ### `advisory`
 
@@ -168,7 +168,7 @@ Aim for 450 characters in a note and in a verdict `rationale`; 600 is the limit 
 
 The note holds counts only: the files read in full and the checks, probes and searches run, and, for `thin` or `uncovered`, what went unexamined and why. A clean check or probe is a count, never a line of its own.
 
-**Precedence.** Where a bound lens, method or check asks for one note line per sweep, probe, task or pair, a count plus the failing items satisfies it. The 600-character cap wins over any per-item ask.
+**Precedence.** The 600-character cap wins over any per-item ask.
 
 ### Rule-outs
 
@@ -181,7 +181,7 @@ One JSON object per line, staged with the Write tool in the run directory's `pay
 ```
 
 - `file` is required and repo-relative, inside your slice unless one of your concerns is a mechanical lens.
-- Give `symbol` or `line` (a positive integer) on every entry: an entry with neither matches nothing.
+- Give `symbol` or `line` (a positive integer) on every entry: `review cover` refuses an entry with neither.
 - `reason` is required, at most 200 characters.
 - No other key. One refused entry refuses the whole `review cover` call and seals nothing; fix it and seal again.
 

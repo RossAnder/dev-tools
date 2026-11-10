@@ -570,6 +570,99 @@ fn resolve_same_as_refuses_a_cycle() {
 }
 
 #[test]
+fn resolve_same_as_refusals_name_their_reason_and_write_nothing() {
+    let repo = Repo::new(&[
+        defect("F1", "U2", "C2", "unverified", "", ""),
+        defect("F2", "U2", "C3", "unverified", "", ""),
+        defect("F3", "U2", "C3", "unverified", "", ""),
+        target("F4", "open", ""),
+        defect("F5", "U2", "C2", "superseded", "", ""),
+        defect("F6", "U2", "C2", "unverified", "", "")
+            .replace("family = \"code\"", "family = \"perf\""),
+        defect(
+            "F7",
+            "U2",
+            "C2",
+            "merged",
+            "",
+            "merged_into = \"F1\"\noutcome = \"repeat\"\n",
+        ),
+        defect("F8", "U2", "C2", "unverified", "F1", ""),
+        defect(
+            "F9",
+            "U2",
+            "C2",
+            "parked",
+            "",
+            "park_reason = \"waits on the v3 store\"\n",
+        ),
+    ]);
+    let before = repo.raw();
+    let cases: &[(&[&str], &str)] = &[
+        (&["--same-as", "F2"], "is not DUP=TARGET"),
+        (&["--same-as", "F2=F99"], "no finding F99 in this store"),
+        (&["--same-as", "F2=F4"], "F4 is from run U1, not U2"),
+        (&["--same-as", "F2=F5"], "F5 is superseded"),
+        (&["--same-as", "F2=F6"], "a pair shares its family"),
+        (&["--same-as", "F7=F2"], "F7 is already merged into F1"),
+        (&["--same-as", "F8=F2"], "F8 already names F1 in `same_as`"),
+        (
+            &["--same-as", "F9=F1"],
+            "F9 is parked; only an unverified, open or refuted row can be linked",
+        ),
+        (
+            &["--same-as", "F2=F1", "--same-as", "F2=F3"],
+            "F2 is linked to both F1 and F3",
+        ),
+    ];
+    for (args, reason) in cases {
+        let stderr = repo.resolve_refused(args);
+        assert!(
+            stderr.contains(reason),
+            "{args:?} names {reason:?}: {stderr}"
+        );
+        assert_eq!(repo.raw(), before, "{args:?} writes nothing");
+    }
+}
+
+/// `F2` is linked to `F1`, which awaits its own verdict, so `F3`, naming
+/// `F2`, waits on `F2`'s `same_as` in turn.
+#[test]
+fn resolve_same_as_target_awaiting_its_own_same_as_stays_pending() {
+    let repo = Repo::new(&[
+        defect("F1", "U2", "C2", "unverified", "", ""),
+        defect("F2", "U2", "C3", "unverified", "", ""),
+        defect("F3", "U2", "C3", "unverified", "F2", ""),
+    ]);
+    repo.verdict("F2", "confirmed");
+    repo.verdict("F3", "confirmed");
+
+    let out = repo.resolve(&["--same-as", "F2=F1"]);
+    let pending = out["pending"].as_array().unwrap();
+    let reason = |id: &str| {
+        pending
+            .iter()
+            .find(|p| p["finding"] == id)
+            .unwrap_or_else(|| panic!("{id} is pending: {out}"))["reason"]
+            .clone()
+    };
+    assert_eq!(reason("F2"), "target F1 is unverified", "{out}");
+    assert_eq!(reason("F3"), "target F2 awaits its own `same_as`", "{out}");
+    assert_eq!(out["resolved"], serde_json::json!([]), "{out}");
+}
+
+#[test]
+fn resolve_same_as_pair_resolves_outside_the_wave() {
+    let repo = verified_pair("confirmed");
+    let out = repo.resolve(&["--wave", "1", "--same-as", "F2=F1"]);
+    assert_eq!(
+        out["resolved"][0]["finding"], "F2",
+        "the duplicate's cell is in wave 2: {out}"
+    );
+    repo.assert_merged("F2", "F1", "repeat");
+}
+
+#[test]
 fn resolve_is_idempotent() {
     let repo = Repo::new(&[
         target("F1", "unverified", ""),

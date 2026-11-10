@@ -18,31 +18,9 @@ const MUTEX_GROUPS: &[(&str, &[&[&str]])] = &[
         "items list",
         &[&["count", "count_by", "group_by", "pluck", "count_distinct"]],
     ),
-    ("review sync-v1", REVIEW_STORE),
-    ("review run start", REVIEW_STORE),
-    ("review run update", REVIEW_STORE),
-    ("review run finish", REVIEW_STORE),
-    ("review run list", REVIEW_STORE),
-    ("review run show", REVIEW_STORE),
-    ("review survey", REVIEW_STORE),
-    ("review plan", REVIEW_STORE),
-    ("review cover", REVIEW_STORE),
-    ("review add", REVIEW_STORE),
-    ("review verdict", REVIEW_STORE),
-    ("review resolve", REVIEW_STORE),
-    ("review list", REVIEW_STORE),
-    ("review show", REVIEW_STORE),
-    ("review digest", REVIEW_STORE),
-    ("review report", REVIEW_STORE),
-    ("review triage", REVIEW_STORE),
-    ("review apply", REVIEW_STORE),
-    ("review export-v1", REVIEW_STORE),
     ("review stats", &[&["slug", "scope", "all"]]),
     ("plan probes", &[&["emit", "record"]]),
 ];
-
-/// Every `review` verb but `catalogue` and `schema` names one store.
-const REVIEW_STORE: &[&[&str]] = &[&["slug", "scope"]];
 
 /// Fallback enum value sets for `ValueEnum` flags whose
 /// `get_value_parser().possible_values()` returns `None` (a clap edge case

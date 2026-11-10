@@ -13,7 +13,7 @@ The `tomlctl review run` verbs: starting, patching, finishing, listing and readi
 
 ## Bounds
 
-A run is measured from `base` to `head`, both stored as commit shas. `head` is optional: a run without one measures to `HEAD`, read afresh by each verb. `changed_lines`, the project-layer check of `run start` and the survey's diff detectors all read `base..head` (or `base..HEAD`), so uncommitted edits are invisible to them; with `head` set, the survey reads each changed file's bytes at `head` rather than from the working tree. The finder assignment of a `review-finder-cf` cell carries `base`, and `head` when the run records one.
+A run is measured from `base` to `head`, both stored as commit shas. `head` is optional: a run without one measures to `HEAD`, read afresh by each verb. `changed_lines` and the survey's diff detectors read `base..head` (or `base..HEAD`), so uncommitted edits are invisible to them, while the project-layer check of `run start` compares `base` with the working tree; with `head` set, the survey reads each changed file's bytes at `head` rather than from the working tree. The finder assignment of a `review-finder-cf` cell carries `base`, and `head` when the run records one.
 
 Agents read files from the working tree whatever the bounds are, so a `head` behind `HEAD` leaves later commits' edits in what an agent reads.
 
@@ -25,7 +25,7 @@ Mints `U<n>`, stamps `started`, resolves `--base` (and `--head`, when given) to 
 
 `--head` is refused unless `base` is its ancestor (`git merge-base --is-ancestor`); a `--head` equal to `--base` is accepted.
 
-Without `--project`, it refuses when `base..head` adds, edits or deletes anything under `.claude/review-lenses`, listing those paths: the change under review would otherwise configure its own review. Passing `--project <dir>` accepts the layer, and the changed paths are recorded as `catalogue.project_layer_changed` for the orchestrator to show the user.
+Without `--project`, it refuses when `.claude/review-lenses` in the working tree differs from `--base` — an added, edited or deleted path, committed after `base` (including after `--head`) or uncommitted — listing those paths. The layer the run loads is the working tree's, and it can carry check commands, so a change to it would otherwise configure its own review. Passing `--project <dir>` accepts the layer, and the changed paths are recorded as `catalogue.project_layer_changed` for the orchestrator to show the user.
 
 ```bash
 tomlctl review run start --slug <slug> --command review-v2 --family code --depth standard --base HEAD~3 --head HEAD~1 --set-json 'scope=@<run-scratch>/scope.json' --set substrate=workflow
@@ -40,7 +40,7 @@ tomlctl review run start --slug <slug> --command review-v2 --family code --depth
 | `--base` | rev | The commit the change is measured from; stored as its sha. | required |
 | `--head` | rev | The commit the change is measured to, a descendant of `--base`; stored as its sha in `head`. | `HEAD`, unrecorded |
 | `--builtin` | dir | The built-in catalogue root, recorded as an absolute path; the default is left unrecorded and resolved again by each later verb. | `<claude dir>/skills/review-v2-lenses` |
-| `--project` | dir | The project catalogue layer; a named directory must exist (`kind=not_found`). Passing it accepts a layer `base..head` changed. | `.claude/review-lenses` when present |
+| `--project` | dir | The project catalogue layer; a named directory must exist (`kind=not_found`). Passing it accepts a layer that differs from `base`. | `.claude/review-lenses` when present |
 | `--set` / `--set-json` / `--set-file` | `KEY=…` | Only `scope` (repo-relative paths or globs), `models` (a table), `substrate` (`workflow` \| `agent-waves`) and `rechecks` (the run id a plan re-check run re-reads; `stats --plan-outcomes` counts its findings as re-check yield). `--set-json KEY=@<path>` reads the JSON value from a file the Write tool staged. A field tomlctl computes, such as `incomplete` or `counts`, is refused as set by tomlctl. | none |
 
 The claude dir is `CLAUDE_CONFIG_DIR`, else `USERPROFILE` or `HOME` joined with `.claude`.

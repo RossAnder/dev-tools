@@ -255,7 +255,7 @@ tomlctl review catalogue --builtin <dir> --project <dir> --check
 tomlctl review stats --all --by probe
 ```
 
-The default output is one row per entry: `type`, `id`, `hash`, `status`, `families`, `mode`, `produces`, effective `activation`, `apply_when`, `matched` (its signals among `--signals`), `attaches_to`, `path`, `layer` and `disabled`. `--builtin` defaults to `<claude dir>/skills/review-v2-lenses`, and `--project` to `.claude/review-lenses` at the repo root. `--check` prints `{"ok":true}`, or fails listing every error with the file to fix. In this repo, the `catalogue_validates` dispatch gate runs the same validation over the built-in catalogue plus `.claude/review-lenses/`, and the command lint parses every `tomlctl` line in a bash fence of an entry.
+The default output is one row per entry: `type`, `id`, `hash`, `status`, `families`, `mode`, `produces`, effective `activation`, `apply_when`, `matched` (its signals among `--signals`), `attaches_to`, `executor`, `command` (both set on checks, `null` on the other types), `path`, `layer` and `disabled`. `--builtin` defaults to `<claude dir>/skills/review-v2-lenses`, and `--project` to `.claude/review-lenses` at the repo root. `--check` prints `{"ok":true}`, or fails listing every error with the file to fix. In this repo, the `catalogue_validates` dispatch gate runs the same validation over the built-in catalogue plus `.claude/review-lenses/`, and the command lint parses every `tomlctl` line in a bash fence of an entry.
 
 ## lumina mapping
 

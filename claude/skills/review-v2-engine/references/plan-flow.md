@@ -37,7 +37,7 @@ The engine's role rules hold throughout: read digests and projections, never row
 
    Stop when `review_apply`, `review_run_head`, `review_run_show`, `review_ruled_out`, `review_same_as_link` or `review_list_fix_shape` is absent, naming `cargo install --path tomlctl` in the dev-tools checkout and a restart.
 2. Bind `<slug>`. `/plan-v2` has it already. `/review-plan-v2` takes it from the envelope its engine stage 0 built.
-3. Skip the engine's stage 0 steps 4 and 5. `review sync-v1` reads v1 ledgers, and the plan family never exports to one. The import is refused on a v2 flow.
+3. Skip the engine's stage 0 steps 4 and 6. Step 4's `review sync-v1` reads v1 ledgers, and the plan family never exports to one. Step 6's task import is refused on a v2 flow. Step 5's listing of parked advisory and open needs-plan findings still runs.
 4. Read where the plan stands:
 
    ```bash
@@ -66,12 +66,12 @@ tomlctl review survey --run <run> --slug <slug>
 
 For each `unknown` signal it prints that would have activated a lens, add `--lens +<id>` to the steering, or leave it and name it in the close summary.
 
-Fetch the two return schemas the waves need, and the ids of the catalogue's mechanical lenses, which the wrapper passes to the pipeline as `mechanical_lenses`:
+Fetch the two return schemas the waves need, and the ids of the catalogue's mechanical lenses that are not disabled, which the wrapper passes to the pipeline as `mechanical_lenses`:
 
 ```bash
 tomlctl review schema cell-return
 tomlctl review schema verdict-return
-tomlctl review catalogue --family plan --rows entries --where type=lens --where mode=mechanical --select id --lines
+tomlctl review catalogue --family plan --rows entries --where type=lens --where mode=mechanical --where disabled=false --select id --lines
 ```
 
 ## 4. Launch
@@ -112,7 +112,7 @@ End the turn and resume on the task notification. The wrapper writes nothing bac
 
 ## 5. Reading the return, and the fallback
 
-The return is `{slug, run, mode, waves: [{wave, cells, verified, agents, settled}], unverified, audit, agents, errors, script_version}`. `agents` counts every dispatch the wrapper made, its own and each wave's. Each wave's pipeline index also carries a top-level `escalations` array of `{cell, text}`; the wrapper hands it to the lead's `settle` phase, whose return may carry `reverify`, ids of findings the wrapper re-verifies once. The index does not return the escalations: the lead writes each one that gets no follow-up cell to `<run-dir>/payloads/escalations-w<wave>.md`, which the close summary in `triage-and-close.md` reads. With `errors` empty, every wave settled and `audit` set, go to section 6.
+The return is `{slug, run, mode, waves: [{wave, cells, verified, agents, settled}], unverified, audit, agents, errors, script_version}`. `agents` counts every dispatch the wrapper made, its own and each wave's. Each wave's pipeline index also carries a top-level `escalations` array of `{cell, text}`; the wrapper hands it to the lead's `settle` phase, whose return may carry `reverify`, ids of findings the wrapper re-verifies once. The index does not return the escalations: the lead writes each one that gets no follow-up cell to `<run-dir>/payloads/escalations-w<wave>.md`, which the close summary in section 11 reads. With `errors` empty, every wave settled and `audit` set, go to section 6.
 
 Otherwise, fall back to the engine at the first stage the store shows incomplete, and stay on the engine for the rest of the run. Never relaunch the wrapper over a run that already holds a wave: its compose phase would mint a second wave over the first. Read the store state with the digest and the run directory:
 
@@ -151,11 +151,7 @@ tomlctl review digest --run <run> --slug <slug>
 
 The audit sampled the digest before the mop-up, so findings verified here are not in its sample. Do not re-audit them.
 
-Record the run's agent total: the `agents` the Workflow's index reports, plus every mop-up and fallback dispatch.
-
-```bash
-tomlctl review run update <run> --slug <slug> --set-json agents=<total>
-```
+The run's agent total is the engine's stage 4 definition, with the wrapper's index standing as a wave index: its `agents` already counts the wrapper's own dispatches, so add only what you dispatch outside it. Section 9 records it before the finish.
 
 At `deep`, the lead wrote the map without asking the user. Say in the close summary that the map was not confirmed.
 
@@ -275,9 +271,10 @@ In this order:
    tomlctl review report --run <run> --slug <slug> --out <run-dir>/report.md
    ```
 
-3. **Finish.**
+3. **Finish.** Record the run's agent total first, as section 6 says:
 
    ```bash
+   tomlctl review run update <run> --slug <slug> --set-json agents=<total>
    tomlctl review run finish <run> --slug <slug>
    ```
 
@@ -362,6 +359,7 @@ Then `/plan-v2` goes on to its gate, which shows `review_edits` and `risks`, and
 - `user tier pending` when questions went unanswered;
 - the re-check's yield, its open findings and any user-tier findings it asked;
 - the backlog ids;
+- each unhandled escalation the lead wrote to `<run-dir>/payloads/escalations-w*.md`, by cell and text, each offered as a backlog capture; capture only the ones the user accepts, through `backlog-capture`'s check-then-add gate, and the rest are dropped with the run;
 - a fallback, if one fired;
 - `map not confirmed` at `deep`.
 

@@ -1597,3 +1597,13 @@ to_status = "review"
 summary = "status in-progress -> review: all 44 tasks done and the final verification pass green"
 type = "status-transition"
 date = 2026-11-10
+
+[[items]]
+id = "E123"
+agent = "plan-update"
+summary = "run start's project-lens-layer guard compares --base with the working tree (tracked diff plus untracked and ignored files under .claude/review-lenses) instead of the commit range base..head; applied by /review-apply from review finding R1, uncommitted at the time of recording"
+original_intent = "With --head, every run-start measurement, the project-layer check included, reads base..head"
+rationale = "The layer a run loads is the working tree's and can carry project check commands that a verification agent runs, so a layer changed after --head or left uncommitted was loaded without the refusal. The guard has to cover what is loaded; changed_lines and the survey still measure base..head"
+type = "deviation"
+task_ref = "bound-a-run-with-review-run-start-head"
+date = 2026-11-10

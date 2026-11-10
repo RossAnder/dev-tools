@@ -1,5 +1,6 @@
 //! `review plan` — a run's coverage cells, from proposal to minted wave —
-//! and the run inputs and lens matching `review cover`'s accounting shares.
+//! and [`coverage_accounting`], which `plan`, `digest` and `run finish` read
+//! to list what is neither in a cell nor waived.
 //!
 //! `plan --propose` is deterministic: lenses are picked in tier order (floor,
 //! forced, signal, `always_at`, candidate), sliced by their `slice` rule,
@@ -20,7 +21,7 @@ use toml::Value as TomlValue;
 
 use super::catalogue::{
     Activation, Catalogue, Entry, EntryType, Executor, Mode, SignalKind, SliceRule, Status,
-    run_catalogue,
+    run_catalogue, within,
 };
 use super::fields::{
     self, Depth, EXECUTOR, FINDER, FINDER_CF, Family, Record, RowContext, SWEEPER,
@@ -30,8 +31,6 @@ use super::store::{self, Minted, Run, Store, Target};
 use crate::cli::{ReadIntegrityArgs, ReviewPlanArgs};
 use crate::io::{atomic_write, read_ndjson_source, relativise, repo_or_cwd_root};
 use crate::output::{print_json_compact, print_text};
-
-pub(crate) use super::cover::{Accounting, coverage_accounting};
 
 const PROPOSED: &str = "proposed";
 /// The summary line's only key; `plan --ndjson` skips a row holding just it.
@@ -172,14 +171,6 @@ impl PathSet {
     }
 }
 
-fn within(path: &str, dir: &str) -> bool {
-    !dir.is_empty()
-        && (path == dir
-            || path
-                .strip_prefix(dir)
-                .is_some_and(|rest| rest.starts_with('/')))
-}
-
 fn parent_dir(path: &str) -> &str {
     path.rsplit_once('/').map_or(".", |(dir, _)| dir)
 }
@@ -293,6 +284,82 @@ enum Tier {
     Signal,
     AlwaysAt,
     Candidate,
+}
+
+/// What a run's cells and waivers leave unaccounted for.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Accounting {
+    /// Matched concerns — lens ids and `check:<id>` — in no cell and not waived.
+    pub(crate) unselected: Vec<String>,
+    /// Scope files no cell's slice reaches and no file waiver names.
+    pub(crate) unsliced: Vec<String>,
+    /// Lenses the project config disabled; they need no waiver.
+    pub(crate) disabled: Vec<String>,
+}
+
+impl Accounting {
+    pub(crate) fn to_json(&self) -> JsonValue {
+        json!({
+            "unselected": self.unselected,
+            "unsliced": self.unsliced,
+            "disabled": self.disabled,
+        })
+    }
+}
+
+/// The run's unselected matched concerns and unsliced scope files, each
+/// without a waiver. Matching follows the proposal's tiers without its
+/// command-line `--lens` edits, and a judged signal counts only once the
+/// run records it `accepted`.
+pub(crate) fn coverage_accounting(root: &Path, store: &Store, run_id: &str) -> Result<Accounting> {
+    let run = find_run(store, run_id, "coverage accounting")?;
+    let catalogue = run_catalogue(root, run)?;
+    let signals = Signals::of(run, &catalogue, &[]);
+    let scope = ScopeView::new(&run.scope, list_tracked(root));
+    let cells: Vec<&store::Cell> = store.cells.iter().filter(|c| c.run == run.id).collect();
+
+    let in_cells: BTreeSet<&str> = cells
+        .iter()
+        .flat_map(|c| c.concerns.iter().map(String::as_str))
+        .collect();
+    let waived = |concern: &str| run.waivers.iter().any(|w| w.concern == concern);
+    let matched = pick_lenses(&catalogue, run, &signals, &scope, &[])
+        .into_iter()
+        .filter(|p| p.accountable)
+        .map(|p| p.lens.id.clone())
+        .chain(
+            pick_checks(&catalogue, run.family, &signals)
+                .into_iter()
+                .map(|c| format!("check:{}", c.id)),
+        );
+    let unselected = matched
+        .filter(|id| !in_cells.contains(id.as_str()) && !waived(id))
+        .collect();
+
+    let sliced = PathSet::new(
+        &cells
+            .iter()
+            .flat_map(|c| c.slice.iter().cloned())
+            .collect::<Vec<_>>(),
+    );
+    let file_waivers = PathSet::new(
+        &run.waivers
+            .iter()
+            .filter(|w| !w.file.is_empty())
+            .map(|w| w.file.clone())
+            .collect::<Vec<_>>(),
+    );
+    let unsliced = scope
+        .files
+        .iter()
+        .filter(|f| !sliced.matches(f) && !file_waivers.matches(f))
+        .cloned()
+        .collect();
+    Ok(Accounting {
+        unselected,
+        unsliced,
+        disabled: disabled_lenses(&catalogue, run.family),
+    })
 }
 
 pub(super) struct Pick<'a> {
@@ -665,8 +732,11 @@ impl FloorFit<'_> {
         scope: &ScopeView,
         binds: &dyn Fn(&[String]) -> bool,
     ) -> Option<Vec<Slice>> {
-        let capped: Option<usize> =
-            (self.pick.lens.mode == Some(Mode::Mechanical)).then_some(SWEEPER_SLICE_CAP);
+        let capped: Option<usize> = self
+            .pick
+            .lens
+            .is_mechanical_lens()
+            .then_some(SWEEPER_SLICE_CAP);
         let soft_rules: [MergeRule; 2] = [(true, capped), (false, capped)];
         let hard_rules: [MergeRule; 4] =
             [soft_rules[0], soft_rules[1], (true, None), (false, None)];
@@ -998,7 +1068,7 @@ fn propose(target: &Target, args: &ReviewPlanArgs) -> Result<()> {
             continue;
         }
         let whole = (slices.len() == count).then_some(scope.whole.as_slice());
-        let sweeper = pick.lens.mode == Some(Mode::Mechanical);
+        let sweeper = pick.lens.is_mechanical_lens();
         let key = (sweeper, slices);
         let start = shaped.get(&key).cloned().unwrap_or_else(|| {
             let own: Vec<Slice> = key.1.iter().map(|s| Slice::of(s.clone(), &scope)).collect();
@@ -1036,6 +1106,16 @@ fn propose(target: &Target, args: &ReviewPlanArgs) -> Result<()> {
     if !checks_added {
         add_check_cells(&mut cells, &checks, &scope.whole, budget, &mut unselected);
     }
+    // A concern an earlier wave's cell already carries was not cut by the ceiling.
+    let covered: BTreeSet<&str> = stored
+        .cells
+        .iter()
+        .filter(|c| c.run == run.id)
+        .flat_map(|c| c.concerns.iter().map(String::as_str))
+        .collect();
+    unselected.retain(|u| {
+        u["reason"] != "ceiling" || !u["concern"].as_str().is_some_and(|c| covered.contains(c))
+    });
     let room = budget.saturating_sub(cells.len());
     let repeat_cells: Vec<Proposed> = repeats(&cells, run.depth, &signals.hotspots)
         .into_iter()
@@ -1303,7 +1383,10 @@ fn prepare_cell(
     if !facets.is_empty() {
         out.insert("facets".into(), json!(facets));
     }
-    out.insert("status".into(), json!("assigned"));
+    out.insert(
+        "status".into(),
+        json!(fields::CellStatus::Assigned.as_str()),
+    );
     Ok(out)
 }
 
@@ -1415,7 +1498,10 @@ fn replayed_wave(store: &Store, run: &str, ready: &[JsonValue]) -> Option<(Vec<S
         .iter()
         .filter(|c| c.run == run && c.wave == Some(wave))
         .collect();
-    if cells.iter().any(|c| c.sealed || c.status != "assigned") {
+    if cells
+        .iter()
+        .any(|c| c.sealed || c.status != fields::CellStatus::Assigned)
+    {
         return None;
     }
     let mut stored: Vec<Key> = cells

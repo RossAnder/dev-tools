@@ -96,7 +96,7 @@ pub(crate) struct ReviewResolveArgs {
     #[arg(
         long = "wave",
         value_name = "N",
-        help = "Only findings from cells of this wave"
+        help = "Only findings from cells of this wave; a `--same-as` duplicate resolves whatever its wave"
     )]
     pub(crate) wave: Option<u32>,
     #[arg(

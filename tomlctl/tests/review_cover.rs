@@ -150,7 +150,8 @@ fn cover_stores_ruled_out_entries() {
     assert!(entries[1].get("symbol").is_none());
 
     // The same seal with another set replaces the first.
-    let payload = repo.payload(&[json!({"file": "src/a.rs", "reason": "kept on purpose"})]);
+    let payload =
+        repo.payload(&[json!({"file": "src/a.rs", "line": 4, "reason": "kept on purpose"})]);
     let out = repo.cover(Some(&payload)).success();
     assert_eq!(stdout_json(&out)["unchanged"], json!(false));
     let entries = ruled_out(&repo.cell());
@@ -164,7 +165,7 @@ fn cover_refuses_ruled_out_entry_without_reason() {
     repo.seed("correctness", "review-finder", "status = \"assigned\"\n");
     let before = fs::read(repo.store_path()).unwrap();
     let payload = repo.payload(&[
-        json!({"file": "src/a.rs", "reason": "fine"}),
+        json!({"file": "src/a.rs", "line": 3, "reason": "fine"}),
         json!({"file": "src/a.rs", "symbol": "a::pad"}),
     ]);
     let out = repo.cover(Some(&payload)).failure();
@@ -178,6 +179,25 @@ fn cover_refuses_ruled_out_entry_without_reason() {
         before,
         "a refused entry seals nothing"
     );
+}
+
+#[test]
+fn cover_refuses_ruled_out_entry_with_neither_symbol_nor_line() {
+    let repo = Repo::new();
+    repo.seed("correctness", "review-finder", "status = \"assigned\"\n");
+    let before = fs::read(repo.store_path()).unwrap();
+    let payload = repo.payload(&[
+        json!({"file": "src/a.rs", "line": 3, "reason": "fine"}),
+        json!({"file": "src/a.rs", "symbol": "", "reason": "fine"}),
+    ]);
+    let out = repo.cover(Some(&payload)).failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr);
+    assert!(
+        stderr.contains("line 2") && stderr.contains("`symbol` or `line` is required"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("line 1"), "{stderr}");
+    assert_eq!(fs::read(repo.store_path()).unwrap(), before);
 }
 
 #[test]
@@ -203,7 +223,7 @@ fn cover_refuses_ruled_out_outside_a_judgement_cells_slice() {
     let repo = Repo::new();
     repo.seed("correctness", "review-finder", "status = \"assigned\"\n");
     let before = fs::read(repo.store_path()).unwrap();
-    let payload = repo.payload(&[json!({"file": "src/b.rs", "reason": "deliberate"})]);
+    let payload = repo.payload(&[json!({"file": "src/b.rs", "line": 2, "reason": "deliberate"})]);
     let out = repo.cover(Some(&payload)).failure();
     let stderr = String::from_utf8_lossy(&out.get_output().stderr);
     assert!(
@@ -217,8 +237,9 @@ fn cover_refuses_ruled_out_outside_a_judgement_cells_slice() {
 fn cover_accepts_ruled_out_outside_a_mechanical_cells_slice() {
     let repo = Repo::new();
     repo.seed("ripple", "review-sweeper", "status = \"assigned\"\n");
-    let payload =
-        repo.payload(&[json!({"file": "src/b.rs", "reason": "an alias kept for callers"})]);
+    let payload = repo.payload(&[
+        json!({"file": "src/b.rs", "symbol": "b::alias", "reason": "an alias kept for callers"}),
+    ]);
     repo.cover(Some(&payload)).success();
     let entries = ruled_out(&repo.cell());
     assert_eq!(entries.len(), 1);

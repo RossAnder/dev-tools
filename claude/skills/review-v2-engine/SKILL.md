@@ -112,7 +112,7 @@ Resolve the run's inputs:
 tomlctl review run start --slug <slug> --command review-v2 --family code --depth standard --base <base-sha> --head <head-sha> --set-json 'scope=@<scratch>/scope.json' --set-json 'models={"surveyor":"haiku","sweeper":"haiku","checker":"haiku","finder":"opus","finder-cf":"opus","verifier":"opus","executor":"opus"}' --set substrate=workflow
 ```
 
-Omit `--head` when the run measures to `HEAD`. It mints the run (`U<n>`), resolves `--base` and `--head` to shas, computes `changed_lines` over `base..head`, records the catalogue roots and shas, and validates the merged catalogue. A validation error halts the run: report the offending file and stop, because a project-layer error is the project's to fix. It also refuses when `base..head` (`base..HEAD` for a run without a head) changes anything under `.claude/review-lenses`, since the change under review would configure its own review: show the user the listed paths and pass `--project .claude/review-lenses` only on their say-so. A run started that way records the paths as `catalogue.project_layer_changed`; name them to the user in the close summary. It prints `{run, dir, base, head, changed_lines}`, `head` being `null` without `--head`. Bind `<run>` and `<run-dir>` (the printed `dir`); `pack.md` and `profile.md` are written there, and every payload you stage goes in `<run-dir>/payloads/`.
+Omit `--head` when the run measures to `HEAD`. It mints the run (`U<n>`), resolves `--base` and `--head` to shas, computes `changed_lines` over `base..head`, records the catalogue roots and shas, and validates the merged catalogue. A validation error halts the run: report the offending file and stop, because a project-layer error is the project's to fix. It also refuses when `.claude/review-lenses` in the working tree differs from `--base` — committed after `base`, `--head` included, or uncommitted — since the layer it loads is the working tree's and can carry check commands, so the change would configure its own review: show the user the listed paths and pass `--project .claude/review-lenses` only on their say-so. A run started that way records the paths as `catalogue.project_layer_changed`; name them to the user in the close summary. It prints `{run, dir, base, head, changed_lines}`, `head` being `null` without `--head`. Bind `<run>` and `<run-dir>` (the printed `dir`); `pack.md` and `profile.md` are written there, and every payload you stage goes in `<run-dir>/payloads/`.
 
 ### Stage 2 — Survey
 
@@ -159,18 +159,14 @@ Workflow({
 
 - `store` is `{ scope: "<scope>" }` for a flow-less store, and `ledger_line` is then omitted.
 - `cells` lists this wave's cells only, each with the `agent` the composed map gave it.
-- `mechanical_lenses` is the ids of the catalogue's `mode = "mechanical"` lenses, read once per run with `tomlctl review catalogue --family <family> --rows entries --where type=lens --where mode=mechanical --select id --lines`; a checker may refute a cleanup row a sweeper did not write only when its lens is one of them.
+- `mechanical_lenses` is the ids of the catalogue's `mode = "mechanical"` lenses that are not disabled, read once per run with `tomlctl review catalogue --family <family> --rows entries --where type=lens --where mode=mechanical --where disabled=false --select id --lines`; a checker may refute a cleanup row a sweeper did not write only when its lens is one of them.
 - After the launch reports `async_launched`, end your turn. Resume on the task notification.
 
 The Workflow runs one agent per cell, then routes each returned finding by the `route` `review add` computed: one `review-verifier` per finding (three seats for `panel`); one verifier batch per cell for minor defects at `quick` and `standard`, and one per cell for verifier-routed cleanup rows at every depth; and pooled `review-checker` batches of up to 20 cleanup rows, with a checker's `unsettled` rows re-routed to a verifier. It returns only the index `{run, wave, cells: [{id, status, findings, escalated}], verified, agents, errors, script_version, escalations}`; the findings are already in the store. `agents` counts the Workflow's own agent launches; `escalations` is `[{cell, text}]`, each text cut to 300 characters, and sits last so a cut result loses escalation text before any cell's status. The conversation sees at most 8,000 characters of a Workflow result: when the result says it was truncated, read the notification's output file for the whole index.
 
 **Fallback.** Run the wave as Agent waves per `references/agent-waves.md` when the Workflow tool is disabled or absent, the name is unknown, the launch reports `error`, or the run ends with no result or with an index showing no cell launched. A Workflow that completed with some cells `no-return` or `error` is not a fallback case: go to stage 5 and let the mop-up cover them. Once the fallback fires, the rest of the run stays on it; `review run update` does not take `substrate`, so record the switch in the close summary as `agent-waves.md` describes.
 
-Keep the run's agent total as you go: each wave index's `agents`, plus every agent you dispatch yourself — `flow-bootstrap`, the surveyor, the baseline `verification` dispatch, and any Agent-wave or mop-up dispatch. Record it with one update once the last wave is resolved, before stage 6:
-
-```bash
-tomlctl review run update <run> --slug <slug> --set-json agents=23
-```
+**The agent total.** The run's `agents` is the sum of every wave index's `agents`, whichever substrate ran the wave, plus every agent you dispatch for the run outside a wave index: `flow-bootstrap`, the surveyor, the baseline `verification` dispatch, each mop-up dispatch, each rule-out re-verification, and any verifier stage 7 dispatches after a convert. An Agent-wave fallback keeps its own wave index, so its agents arrive through that index. Never add a wave twice, and never count an agent an index already counts. Keep the total as you go, and record it once, immediately before `review run finish` (stages 6 to 8).
 
 ### Stage 5 — Resolve and digest
 
@@ -202,7 +198,10 @@ Then decide, in this order:
 
 Audit the digest's sample through the `audit` projection; write the report and present the counts, the Needs-a-plan group, contested items and the advisory list with a recommendation per item; take the user's dispositions; park untriaged advisory, hand user-picked items to the backlog through the `backlog-capture` skill, export with `review export-v1`, hand off to `/review-apply` or `/optimise-apply`, and finish the run. Follow `references/triage-and-close.md`. Triage is a user gate: an instruction to proceed autonomously does not cover it.
 
+Record the agent total, as stage 4 defines it, then finish:
+
 ```bash
+tomlctl review run update <run> --slug <slug> --set-json agents=23
 tomlctl review run finish <run> --slug <slug>
 ```
 

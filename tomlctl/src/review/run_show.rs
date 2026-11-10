@@ -34,7 +34,7 @@ pub(crate) fn show(target: &Target, args: ReviewRunShowArgs) -> Result<()> {
         "scope": run.scope,
         "depth": run.depth.as_str(),
         "baselines": rest("baselines").unwrap_or_else(|| json!({})),
-        "waves": super::stats::run_waves(&stored.cells, &run.id),
+        "waves": store::run_waves(&stored.cells, &run.id),
         "agents": run.agents,
         "audit": rest("audit"),
         "signals": signals,

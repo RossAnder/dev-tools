@@ -265,10 +265,10 @@ fn severity_or_null() -> Vec<JsonValue> {
 
 /// The statuses `review cover` seals a cell with.
 fn sealed_statuses() -> Vec<&'static str> {
-    fields::CELL_STATUSES
+    fields::CellStatus::ALL
         .iter()
-        .copied()
-        .filter(|s| *s != "assigned")
+        .filter(|s| **s != fields::CellStatus::Assigned)
+        .map(|s| s.as_str())
         .collect()
 }
 

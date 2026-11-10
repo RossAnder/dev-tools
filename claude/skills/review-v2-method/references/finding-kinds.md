@@ -85,7 +85,13 @@ A probe cell's answer that turns on a decision. `lens` is the cell's `probe:<slu
 Not a row: the text staged as `payloads/<cell>.note.md` and passed with `review cover --note-file`, aiming for 450 characters, at most 600 (see Length in `SKILL.md`).
 
 ```text
-Read in full: src/store/merge.rs, src/store/io.rs. correctness: traced apply_rows for 0, 1, CHUNK and 2*CHUNK rows; empty batch returns early (merge.rs:131), fine. type-design: grep `String` ids in store/ — all wrapped in RowId. Ruled out: lock timeout on 0 s poll (io.rs:44 floors it at 1 s). Covered.
+Read in full: src/store/merge.rs, src/store/io.rs. correctness: traced apply_rows for 4 batch sizes, all clean. type-design: 1 grep of `String` ids in store/, clean. Covered.
+```
+
+The rule-out that the note leaves out is one line of the cell's `payloads/<cell>.ruled-out.ndjson`, passed as `--ruled-out`:
+
+```json
+{"file": "src/store/io.rs", "line": 44, "reason": "lock timeout on a 0 s poll is deliberate: the floor is 1 s"}
 ```
 
 ## Not a finding

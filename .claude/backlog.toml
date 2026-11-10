@@ -10615,7 +10615,7 @@ tags = [
     "review-v2",
     "same-as",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-10T13:50:41Z
 last_seen = 2026-11-10T13:50:41Z
 seen_count = 1
@@ -10624,6 +10624,8 @@ origin = "implement"
 flow = "review-v2-first-run-repairs"
 context = "review resolve --same-as now links verified (open or refuted) rows, and its waiting set covers any row with same_as set and no outcome. The close-readiness check in runs.rs still filters on unverified only. Until fixed, run a plain review resolve before run finish and confirm it reports nothing pending."
 base_sha = "18d17dcff260703f5f701855d50f09d81a2252f0"
+resolved = 2026-11-10
+resolution = "Gaps::of in tomlctl/src/review/runs.rs now counts every row resolve::awaits_resolution reports, verified or not; test finish_refuses_a_verified_row_awaiting_its_same_as. Uncommitted when recorded."
 
 [[backlog]]
 id = "B-d6c93fd7"
@@ -10634,7 +10636,7 @@ tags = [
     "review-v2",
     "dead-field",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-10T13:50:41Z
 last_seen = 2026-11-10T13:50:41Z
 seen_count = 1
@@ -10643,6 +10645,8 @@ origin = "implement"
 flow = "review-v2-first-run-repairs"
 context = "stats --by run, run list, run show and the digest run line all call stats::run_waves. The stored field can only hold a stale hand-written value; remove it from Run and the field catalogue so waves has one source."
 base_sha = "18d17dcff260703f5f701855d50f09d81a2252f0"
+resolved = 2026-11-10
+resolution = "Run.waves removed from the struct and from read and write in tomlctl/src/review/store.rs; the key stays in RUN_CORE so a stored value is dropped on the next write, and the computed field row stays for output. Uncommitted when recorded."
 
 [[backlog]]
 id = "B-6dfe5236"
@@ -10653,7 +10657,7 @@ tags = [
     "review-v2",
     "duplication",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-10T13:50:41Z
 last_seen = 2026-11-10T13:50:41Z
 seen_count = 1
@@ -10662,6 +10666,8 @@ origin = "implement"
 flow = "review-v2-first-run-repairs"
 context = "catalogue.rs now exposes Entry::is_mechanical_lens and pub(super) meets / within, which add.rs, verdict.rs, cover.rs and run_show.rs share. cells.rs was held by another task while those were extracted. Compare the within bodies before replacing; the cells.rs copy was not diffed."
 base_sha = "18d17dcff260703f5f701855d50f09d81a2252f0"
+resolved = 2026-11-10
+resolution = "cells.rs uses catalogue::within and Entry::is_mechanical_lens; the empty-dir guard the cells.rs copy had moved into the shared within. agent_for's three-way match on mode is left. Uncommitted when recorded."
 
 [[backlog]]
 id = "B-3abd0cce"
@@ -10669,7 +10675,7 @@ kind = "debt"
 summary = "the REVIEW_STORE entries in capabilities MUTEX_GROUPS repeat what clap's ArgGroup on ReviewStore already publishes, and nothing tests them"
 area = "tomlctl/src/capabilities.rs"
 tags = ["capabilities"]
-status = "open"
+status = "resolved"
 created = 2026-11-10T13:50:41Z
 last_seen = 2026-11-10T13:50:41Z
 seen_count = 1
@@ -10678,6 +10684,8 @@ origin = "implement"
 flow = "review-v2-first-run-repairs"
 context = "Removing the review run show entry changed no capabilities output and no test failed. Each new review verb adds another no-op row. Either drop the review rows from the hand-kept table or add a test that fails when one is missing."
 base_sha = "18d17dcff260703f5f701855d50f09d81a2252f0"
+resolved = 2026-11-10
+resolution = "The review rows and REVIEW_STORE removed from MUTEX_GROUPS in tomlctl/src/capabilities.rs; tomlctl capabilities output is byte-identical before and after. Uncommitted when recorded."
 
 [[backlog]]
 id = "B-f438f85d"
@@ -10708,7 +10716,7 @@ tags = [
     "tdd",
     "flow-resolve",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-10T13:50:41Z
 last_seen = 2026-11-10T13:50:41Z
 seen_count = 1
@@ -10717,6 +10725,8 @@ origin = "implement"
 flow = "review-v2-first-run-repairs"
 context = "Arrived cheap-in-file from the task that edited the same paragraph and was deferred because the final verification pass was already running. An agent following the prose literally reads a field that does not exist; the fix is to read plan_path from the top level of the resolve output."
 base_sha = "18d17dcff260703f5f701855d50f09d81a2252f0"
+resolved = 2026-11-10
+resolution = "claude/commands/tdd.md reads plan_path from the top level of the flow resolve output. Uncommitted when recorded."
 
 [[backlog]]
 id = "B-6f17f239"
@@ -10727,7 +10737,7 @@ tags = [
     "review-v2",
     "propose",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-10T13:50:41Z
 last_seen = 2026-11-10T13:50:41Z
 seen_count = 1
@@ -10737,6 +10747,8 @@ flow = "review-v2-first-run-repairs"
 context = "Follows from the ceiling becoming absolute. The stage-4 reading of unselected may take an already-covered floor lens for an uncovered one. Either leave covered lenses out of unselected or say so in compose.md's proposal paragraph."
 base_sha = "18d17dcff260703f5f701855d50f09d81a2252f0"
 related = ["B-39b9e713"]
+resolved = 2026-11-10
+resolution = "Decided with the user: review plan --propose drops a ceiling cut whose concern an existing cell of the run already carries; compose.md says so. A second propose with budget left still proposes cells for covered lenses, which is unchanged. Uncommitted when recorded."
 
 [[backlog]]
 id = "B-196e9471"
@@ -10747,7 +10759,7 @@ tags = [
     "review-v2",
     "prose",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-10T13:50:41Z
 last_seen = 2026-11-10T13:50:41Z
 seen_count = 1
@@ -10756,6 +10768,8 @@ origin = "implement"
 flow = "review-v2-first-run-repairs"
 context = "sweep.md and ripple.md now ask for counts. The sentence sits in the byte-identical review-finder-body block (both finder files) and near the coverage note in claude/skills/review-v2-method/SKILL.md; trim all three together and rerun scripts/verify-shared-blocks.sh."
 base_sha = "18d17dcff260703f5f701855d50f09d81a2252f0"
+resolved = 2026-11-10
+resolution = "Sentence removed from both finder bodies and from review-v2-method/SKILL.md; verify-shared-blocks passes. Uncommitted when recorded."
 
 [[backlog]]
 id = "B-91f446fe"
@@ -10766,7 +10780,7 @@ tags = [
     "review-v2",
     "rule-outs",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-10T13:50:41Z
 last_seen = 2026-11-10T13:50:41Z
 seen_count = 1
@@ -10776,6 +10790,8 @@ flow = "review-v2-first-run-repairs"
 context = "matching::same_place needs equal symbols or two lines within the window. The method skill tells agents to always give one, and the reference documents the behaviour. Open decision: leave it, refuse such an entry at cover, or have a file-only rule-out match every finding in the file."
 base_sha = "18d17dcff260703f5f701855d50f09d81a2252f0"
 related = ["B-dc721e5c"]
+resolved = 2026-11-10
+resolution = "Decided with the user: fields::ruled_out_refusals refuses an entry with neither symbol nor line; agent bodies, the method skill, review.md and the README say so. Uncommitted when recorded."
 
 [[backlog]]
 id = "B-2e4898a7"
@@ -10786,7 +10802,7 @@ tags = [
     "review-v2",
     "messages",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-10T13:50:41Z
 last_seen = 2026-11-10T13:50:41Z
 seen_count = 1
@@ -10795,6 +10811,8 @@ origin = "implement"
 flow = "review-v2-first-run-repairs"
 context = "The task that widened the rule was told to keep the message. Reword it to name both cases and update the tests that pin the text in tomlctl/tests/review_verdict.rs."
 base_sha = "18d17dcff260703f5f701855d50f09d81a2252f0"
+resolved = 2026-11-10
+resolution = "The refusal in tomlctl/src/review/verdict.rs names both cases and the row's kind and lens; the pinned text in tests/review_verdict.rs follows. Uncommitted when recorded."
 
 [[backlog]]
 id = "B-e57e08ff"
@@ -10833,3 +10851,46 @@ origin = "implement"
 flow = "review-v2-first-run-repairs"
 context = "Seen while repairing the jiggly-exploring-robin review ledger. Use --where-regex with an end anchor, or --where-suffix, when counting v1 rows per v2 finding id."
 base_sha = "18d17dcff260703f5f701855d50f09d81a2252f0"
+
+[[backlog]]
+id = "B-c866bda9"
+kind = "debt"
+summary = "the Workflow-script gate cannot see the logic of review-v2.js and plan-v2-review.js: agent counts, escalation threading, reverify, baseline key matching"
+area = "claude/workflows"
+tags = [
+    "review-v2",
+    "tests",
+]
+status = "open"
+created = 2026-11-10T16:59:57Z
+last_seen = 2026-11-10T16:59:57Z
+seen_count = 1
+dedup_id = "c866bda921f4bfe1"
+origin = "review-apply"
+flow = "review-v2-first-run-repairs"
+context = "command_lint in tomlctl/src/cli/dispatch/tests/lint.rs only checks that tomlctl backtick spans parse under clap and that launches name saved scripts. The scripts' own logic is pure functions of agent returns, so a small JS harness with stubbed agent/parallel would cover it, but the runtime (node --test, bun) and the stub shape need a decision first. Until then drift between the scripts and agent-waves.md is caught by reading only. Moved from review ledger item R24 of flow review-v2-first-run-repairs at the user's instruction."
+base_sha = "ff59092f71ff8fe05ffb45887c62276d313399ce"
+evidence = [
+    "tomlctl/src/cli/dispatch/tests/lint.rs:150",
+    "claude/workflows/plan-v2-review.js:383",
+]
+related = ["B-bc4a0080"]
+
+[[backlog]]
+id = "B-654e5874"
+kind = "question"
+summary = "run_catalogue falls back to the default builtin root when a run's recorded builtin dir is gone, and a store without tree_sha skips the drift check"
+area = "tomlctl/src/review/catalogue.rs"
+tags = ["review-v2"]
+status = "resolved"
+created = 2026-11-10T17:09:13Z
+last_seen = 2026-11-10T17:09:13Z
+seen_count = 1
+dedup_id = "654e58748424f3b1"
+origin = "review-apply"
+flow = "review-v2-first-run-repairs"
+context = "A moved or deleted catalogue can silently change which lenses count as mechanical for a checker's refute, because the fallback loads whatever catalogue the developer has installed. Seen while writing a test for the unreadable-catalogue refusal: removing the recorded builtin dir did not produce an error, so the test uses a tree_sha mismatch instead. Decide whether a vanished recorded root should be an error."
+base_sha = "ff59092f71ff8fe05ffb45887c62276d313399ce"
+related = ["B-771b57e7"]
+resolved = 2026-11-10
+resolution = "Decided with the user: run_catalogue refuses a vanished recorded built-in root when the record has no tree_sha, since nothing could check the substitute; with tree_sha the fallback stays and the drift check guards it. Test checker_refute_is_refused_when_an_unchecked_catalogue_root_is_gone. Uncommitted when recorded."

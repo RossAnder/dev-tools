@@ -5,7 +5,7 @@
 //! decides identity — only a `same_as` naming one does.
 
 use super::fields::{Family, FindingStatus};
-use super::store::{Finding, RuledOut};
+use super::store::{Cell, Finding, RuledOut};
 
 /// How far apart two symbol-less rows' lines may be and still match.
 pub(crate) const LINE_WINDOW: u32 = 10;
@@ -87,6 +87,20 @@ pub(crate) fn same_place(a: &Place<'_>, b: &Place<'_>) -> bool {
         (Some(x), Some(y)) => x.abs_diff(y) <= LINE_WINDOW,
         _ => false,
     }
+}
+
+/// The rule-outs other cells of `finding`'s run recorded at its place, in
+/// store order. A cell's own rule-outs never count against its findings.
+pub(crate) fn rule_outs_at<'s>(
+    cells: &'s [Cell],
+    finding: &'s Finding,
+) -> impl Iterator<Item = (&'s Cell, &'s RuledOut)> {
+    let place = Place::of(finding);
+    cells
+        .iter()
+        .filter(move |c| c.run == finding.run && c.id != finding.cell)
+        .flat_map(|c| c.ruled_out.iter().map(move |entry| (c, entry)))
+        .filter(move |(_, entry)| same_place(&place, &Place::ruled_out(entry)))
 }
 
 fn matches_at(finding: &Finding, site: &Site<'_>) -> bool {

@@ -285,13 +285,12 @@ fn leads_to(store: &Store, from: &str, to: &str, accepted: &[Link]) -> bool {
             .find(|a| a.dup == id)
             .map(|a| a.target.as_str())
             .or_else(|| {
-                let f = store.findings.iter().find(|f| f.id == id)?;
-                if !f.same_as.is_empty() {
-                    return Some(f.same_as.as_str());
-                }
-                ["merged_into", "converted_to"]
+                store
+                    .findings
                     .iter()
-                    .find_map(|k| f.rest.get(*k).and_then(TomlValue::as_str))
+                    .find(|f| f.id == id)?
+                    .identity_links()
+                    .next()
             });
         match next {
             Some(n) => id = n,
@@ -302,7 +301,7 @@ fn leads_to(store: &Store, from: &str, to: &str, accepted: &[Link]) -> bool {
 
 /// A row whose `same_as` has not yet been resolved: its verdict decides its
 /// status and no outcome has been recorded.
-fn awaits_resolution(f: &Finding) -> bool {
+pub(super) fn awaits_resolution(f: &Finding) -> bool {
     !f.same_as.is_empty() && f.outcome.is_empty() && f.status().decided_by_verdict()
 }
 

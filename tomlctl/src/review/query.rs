@@ -19,7 +19,7 @@ use super::fields::{
     self, FIELDS, Family, FindingStatus, Kind, ProjectCtx, Record, Role, Route, Vis,
 };
 use super::invalid;
-use super::matching::{Place, same_place};
+use super::matching::rule_outs_at;
 use super::store::{self, Cell, Finding, Row, Run, Store, Target, View};
 use crate::cli::{ReviewListArgs, ReviewShowArgs};
 use crate::convert::toml_to_json;
@@ -52,11 +52,7 @@ pub(crate) fn list(target: &Target, args: ReviewListArgs) -> Result<()> {
     check_value("--kind", args.kind.as_deref(), Kind::VALUES)?;
     check_value("--status", args.status.as_deref(), fields::FINDING_STATUSES)?;
     check_value("--route", args.route.as_deref(), Route::VALUES)?;
-    let fix_shapes = FIELDS
-        .iter()
-        .find(|s| s.record == Record::Finding && s.name == "fix_shape")
-        .map_or(&[][..], |s| s.values);
-    check_value("--fix-shape", args.fix_shape.as_deref(), fix_shapes)?;
+    check_value("--fix-shape", args.fix_shape.as_deref(), fields::FIX_SHAPES)?;
     let within = args.in_glob.as_deref().map(Within::new).transpose()?;
 
     let stored = store::load(&target.path, &args.integrity)?;
@@ -228,7 +224,9 @@ fn finding_row(view: &View, store: &Store, role: Role, index: usize, root: &Path
     let mut row = view.project(role, index, true);
     let finding = &store.findings[index];
     if matches!(role, Role::Verifier | Role::Audit) {
-        let ruled_out = rule_outs_at(store, finding);
+        let ruled_out: Vec<JsonValue> = rule_outs_at(&store.cells, finding)
+            .map(|(c, entry)| json!({"cell": c.id, "reason": entry.reason}))
+            .collect();
         if !ruled_out.is_empty() {
             row.insert("ruled_out".into(), JsonValue::Array(ruled_out));
         }
@@ -244,20 +242,6 @@ fn finding_row(view: &View, store: &Store, role: Role, index: usize, root: &Path
         _ => {}
     }
     row
-}
-
-/// The rule-outs other cells of the finding's run recorded at its place, as
-/// `{cell, reason}`. A cell's own rule-outs never count against its findings.
-fn rule_outs_at(store: &Store, finding: &Finding) -> Vec<JsonValue> {
-    let place = Place::of(finding);
-    store
-        .cells
-        .iter()
-        .filter(|c| c.run == finding.run && c.id != finding.cell)
-        .flat_map(|c| c.ruled_out.iter().map(move |entry| (c, entry)))
-        .filter(|(_, entry)| same_place(&place, &Place::ruled_out(entry)))
-        .map(|(c, entry)| json!({"cell": c.id, "reason": entry.reason}))
-        .collect()
 }
 
 /// What a finder needs beyond the cell's projection: the absolute paths of

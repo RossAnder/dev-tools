@@ -146,9 +146,10 @@ The plan family never exports: its eligible findings go through the carrier's me
 
 **4. Apply hand-off.** Name the apply command and the v1 ids `export-v1` printed: `/review-apply <ids>` for code, `/optimise-apply <ids>` for perf. Do not start it; the user runs it.
 
-**5. Finish the run.**
+**5. Finish the run.** Record the run's agent total first, as the engine's stage 4 defines it, so it includes any verifier dispatched after a convert:
 
 ```bash
+tomlctl review run update <run> --slug <slug> --set-json agents=<total>
 tomlctl review run finish <run> --slug <slug>
 ```
 

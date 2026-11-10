@@ -466,6 +466,16 @@ fn header_path(raw: &[u8]) -> String {
         .to_string()
 }
 
+/// The range a run reviews: `base..head`, or `base..HEAD` when it records no `head`.
+pub(super) fn run_range(base: &str, head: Option<&str>) -> String {
+    format!("{base}..{}", head.unwrap_or("HEAD"))
+}
+
+/// A run's `scope` entries as git glob pathspecs.
+pub(super) fn scope_pathspecs(scope: &[String]) -> Vec<String> {
+    scope.iter().map(|s| format!(":(glob){s}")).collect()
+}
+
 /// A `count` entry whose stack is true, with that stack's roots (`None` for `"*"`).
 type LiveEntry<'e> = (&'e CountEntry, Option<&'e [String]>);
 
@@ -484,19 +494,19 @@ impl Repo<'_> {
     }
 
     fn pathspecs(&self) -> Vec<String> {
-        self.scope.iter().map(|s| format!(":(glob){s}")).collect()
+        scope_pathspecs(self.scope)
     }
 
     /// A changed file's bytes at the run's `head`, or in the working tree when
     /// the run records none; empty when the file is absent there.
-    fn changed_bytes(&self, path: &str) -> Vec<u8> {
-        match self.head {
+    fn changed_bytes(root: &Path, head: Option<&str>, path: &str) -> Vec<u8> {
+        match head {
             Some(head) => git_output(
-                git(self.root).args(["show", &format!("{head}:{path}")]),
+                git(root).args(["show", &format!("{head}:{path}")]),
                 "git show",
             )
             .unwrap_or_default(),
-            None => fs::read(self.root.join(path)).unwrap_or_default(),
+            None => fs::read(root.join(path)).unwrap_or_default(),
         }
     }
 
@@ -555,7 +565,7 @@ impl Repo<'_> {
         if self.base.is_empty() {
             return Err("the run records no base".into());
         }
-        let range = format!("{}..{}", self.base, self.head.unwrap_or("HEAD"));
+        let range = run_range(self.base, self.head);
         let specs = self.pathspecs();
         let common = ["--no-ext-diff", "--no-textconv", "--no-color", "-M"];
         let names = git_output(
@@ -623,11 +633,10 @@ impl Repo<'_> {
     }
 
     fn diff_signal(&mut self, detect: &Detect) -> Outcome {
-        if let Err(e) = self.changed() {
-            return Outcome::Unknown(e);
-        }
-        let Some(Ok(changed)) = self.diff.as_ref() else {
-            unreachable!("changed() filled the diff");
+        let (root, head) = (self.root, self.head);
+        let changed = match self.changed() {
+            Ok(changed) => changed,
+            Err(e) => return Outcome::Unknown(e),
         };
         let mut roots = BTreeSet::new();
         let mut errors = Vec::new();
@@ -638,7 +647,7 @@ impl Repo<'_> {
                 continue;
             }
             if !detect.manifest.is_empty() {
-                let bytes = self.changed_bytes(&file.path);
+                let bytes = Self::changed_bytes(root, head, &file.path);
                 match manifest_passes(&file.path, &bytes, &detect.manifest) {
                     Ok(true) => {}
                     Ok(false) => continue,

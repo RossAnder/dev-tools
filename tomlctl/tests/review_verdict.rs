@@ -391,8 +391,8 @@ fn checker_cannot_refute_a_finder_row() {
     assert!(
         out["refused"][0]["reasons"]
             .to_string()
-            .contains("only a row a sweeper wrote"),
-        "{out}"
+            .contains("records no catalogue"),
+        "a run with no catalogue cannot say the lens is mechanical: {out}"
     );
     assert_eq!(repo.status("F2"), "unverified");
     assert_eq!(repo.status("F3"), "refuted");
@@ -428,9 +428,56 @@ fn checker_refute_of_a_non_mechanical_finder_row_is_refused() {
     assert_eq!(
         out["refused"][0]["reasons"],
         json!([
-            "a checker may refute only a row a sweeper wrote; F2 is from cell C1, which is not a review-sweeper cell"
+            "a checker may refute only a row a sweeper wrote or a cleanup under a mechanical lens; \
+             F2 is a cleanup under lens \"correctness\" from cell C1, which is not a review-sweeper cell"
         ]),
         "{out}"
+    );
+    assert_eq!(repo.status("F2"), "unverified");
+}
+
+#[test]
+fn checker_refute_names_only_the_catalogue_failure_when_it_cannot_be_read() {
+    let repo = Repo::with_catalogue();
+    let drifted = repo.raw().replacen(
+        "catalogue = { builtin = ",
+        "catalogue = { tree_sha = \"0\", builtin = ",
+        1,
+    );
+    fs::write(repo.root.join(".claude/review-v2/t.toml"), drifted).unwrap();
+    let refused = repo.batch(&[row("F2", "checker", "refuted")]).failure();
+    let err = parse_json_error_envelope(&String::from_utf8_lossy(&refused.get_output().stderr));
+    let message = err["message"].as_str().unwrap();
+    let (_, line) = message.split_once('\n').expect("the refused row follows");
+    let out: JsonValue = serde_json::from_str(line).expect("the refused row is JSON");
+    assert_eq!(out["finding"], "F2", "{out}");
+    assert_eq!(
+        out["reasons"],
+        json!([
+            "run U1's catalogue, which says whether lens \"correctness\" is mechanical, could not be read: \
+             run U1: the lens catalogue changed since the run started (tree_sha no longer matches); \
+             start a new run with `review run start`"
+        ]),
+        "{out}"
+    );
+    assert_eq!(repo.status("F2"), "unverified");
+}
+
+#[test]
+fn checker_refute_is_refused_when_an_unchecked_catalogue_root_is_gone() {
+    let repo = Repo::with_catalogue();
+    let builtin = repo
+        ._catalogue
+        .as_ref()
+        .unwrap()
+        .path()
+        .join("review-v2-lenses");
+    fs::remove_dir_all(builtin).unwrap();
+    let refused = repo.batch(&[row("F2", "checker", "refuted")]).failure();
+    let stderr = String::from_utf8_lossy(&refused.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("recorded built-in catalogue root") && stderr.contains("is gone"),
+        "{stderr}"
     );
     assert_eq!(repo.status("F2"), "unverified");
 }

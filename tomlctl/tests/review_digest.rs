@@ -499,17 +499,20 @@ fn digest_omits_linked_pairs_from_duplicate_candidates() {
     let Some(repo) = Repo::new(&["src/a.rs"]) else {
         return;
     };
-    let merged_into_f1 = format!(
-        "{}same_as = \"F1\"\noutcome = \"repeat\"\nmerged_into = \"F1\"\n",
-        symbol("a::run")
+    let same_as_f1 = format!("{}same_as = \"F1\"\n", symbol("a::run"));
+    let merged_into_f3 = format!(
+        "{}outcome = \"repeat\"\nmerged_into = \"F3\"\n",
+        symbol("b::step")
     );
     let rows = [
         cell("C1", 1, "review-finder", "covered"),
         cell("C2", 1, "review-finder", "covered"),
         cell("C3", 1, "review-finder", "covered"),
         defect("F1", "C1", "open", &symbol("a::run")),
-        defect("F2", "C2", "merged", &merged_into_f1),
-        defect("F3", "C3", "merged", &merged_into_f1),
+        defect("F2", "C2", "unverified", &same_as_f1),
+        defect("F3", "C1", "open", &symbol("b::step")),
+        defect("F4", "C2", "merged", &merged_into_f3),
+        defect("F5", "C3", "merged", &merged_into_f3),
     ]
     .concat();
     repo.seed(ALL_WAIVED, &rows);
@@ -517,8 +520,37 @@ fn digest_omits_linked_pairs_from_duplicate_candidates() {
     assert_eq!(
         digest["duplicate_candidates"],
         json!([]),
-        "pairs joined directly or through one target are settled: {digest}"
+        "pairs joined by an unresolved `same_as`, by `merged_into`, or through one target are settled: {digest}"
     );
+}
+
+/// `F1`, an advisory converted to `F3`, is the target `F2` merged into, so
+/// `F2` and `F3` are joined through the conversion.
+#[test]
+fn digest_omits_pairs_joined_through_a_conversion() {
+    let Some(repo) = Repo::new(&["src/a.rs"]) else {
+        return;
+    };
+    let advisory = format!(
+        "route = \"none\"\nangle = \"alternative\"\nrationale = \"callers pass a length\"\n\
+         adoption_cost = \"one comparison\"\nconverted_to = \"F3\"\n{}",
+        symbol("a::run")
+    );
+    let merged_into_f1 = format!(
+        "{}same_as = \"F1\"\noutcome = \"repeat\"\nmerged_into = \"F1\"\n",
+        symbol("a::run")
+    );
+    let rows = [
+        cell("C1", 1, "review-finder", "covered"),
+        cell("C2", 1, "review-finder", "covered"),
+        finding("F1", "C1", "advisory", "converted", &advisory),
+        defect("F2", "C2", "merged", &merged_into_f1),
+        defect("F3", "C1", "open", &symbol("a::run")),
+    ]
+    .concat();
+    repo.seed(ALL_WAIVED, &rows);
+    let digest = repo.digest(&[]);
+    assert_eq!(digest["duplicate_candidates"], json!([]), "{digest}");
 }
 
 #[test]

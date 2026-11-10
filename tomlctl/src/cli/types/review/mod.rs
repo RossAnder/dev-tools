@@ -49,7 +49,7 @@ pub(crate) enum ReviewOp {
     /// Upsert a verdict on (finding, `--by`, `--seat`), or a batch from NDJSON.
     Verdict(ReviewVerdictArgs),
 
-    /// Resolve every finding whose `same_as` has complete verdicts.
+    /// Resolve every finding whose `same_as` has complete verdicts, after linking each `--same-as` pair.
     Resolve(ReviewResolveArgs),
 
     /// List findings, filtered, through a role projection.

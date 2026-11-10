@@ -1354,11 +1354,13 @@ pub(super) fn meets(slice_entry: &str, root: &str) -> bool {
     dir.is_empty() || within(dir, root) || within(root, dir)
 }
 
+/// Whether `path` is `dir` or lies under it; an empty `dir` holds nothing.
 pub(super) fn within(path: &str, dir: &str) -> bool {
-    path == dir
-        || path
-            .strip_prefix(dir)
-            .is_some_and(|rest| rest.starts_with('/'))
+    !dir.is_empty()
+        && (path == dir
+            || path
+                .strip_prefix(dir)
+                .is_some_and(|rest| rest.starts_with('/')))
 }
 
 /// The closed single-backtick inline-code spans of each paragraph, in order.
@@ -2240,7 +2242,8 @@ pub(crate) fn project_layer(root: &Path, explicit: Option<PathBuf>) -> Result<Op
 /// refused when its content no longer matches the recorded shas. An absent or
 /// vanished built-in root resolves to [`default_builtin_root`], so a store
 /// moved between machines still loads; a relative project root resolves
-/// against the repo `root`. A record without `tree_sha` predates the check.
+/// against the repo `root`. A record without `tree_sha` predates the check,
+/// so its vanished root is refused: nothing could vouch for the substitute.
 pub(crate) fn run_catalogue(root: &Path, run: &Run) -> Result<Catalogue> {
     let record = run
         .rest
@@ -2260,8 +2263,21 @@ pub(crate) fn run_catalogue(root: &Path, run: &Run) -> Result<Catalogue> {
         .get("builtin")
         .and_then(TomlValue::as_str)
         .map(PathBuf::from);
+    let checked = record.contains_key("tree_sha");
     let builtin = match recorded {
         Some(path) if path.is_dir() => path,
+        Some(path) if !checked => {
+            return Err(tagged_err(
+                ErrorKind::Validation,
+                None,
+                format!(
+                    "run {}: its recorded built-in catalogue root {} is gone, and the record has no \
+                     tree_sha to check another root against; start a new run with `review run start`",
+                    run.id,
+                    path.display()
+                ),
+            ));
+        }
         recorded => default_builtin_root().or(recorded).ok_or_else(|| {
             tagged_err(
                 ErrorKind::NotFound,

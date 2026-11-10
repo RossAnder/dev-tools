@@ -255,7 +255,7 @@ fn refuse_sealed(store: &Store, cell: &Cell) -> Result<()> {
         "ok": false,
         "sealed": true,
         "cell": cell.id,
-        "status": cell.status,
+        "status": cell.status.as_str(),
         "findings": findings,
     }))?;
     Err(invalid(format!(

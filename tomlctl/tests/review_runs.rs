@@ -251,6 +251,8 @@ fn run_start_records_catalogue_and_changed_lines() {
             r#"scope=["src/**"]"#,
             "--set",
             "substrate=workflow",
+            "--project",
+            ".claude/review-lenses",
         ],
     );
     assert_eq!(
@@ -279,12 +281,16 @@ fn run_start_records_catalogue_and_changed_lines() {
         assert_eq!(value.len(), 64, "{sha} is a sha256: {value:?}");
     }
 
-    let unchanged = repo.start("HEAD", &["--set-json", r#"scope=["src/**"]"#]);
+    let accept = ["--project", ".claude/review-lenses"];
+    let unchanged = repo.start(
+        "HEAD",
+        &["--set-json", r#"scope=["src/**"]"#, accept[0], accept[1]],
+    );
     assert_eq!(
         unchanged["changed_lines"], 4,
         "no diff falls back to the scope's tracked line count"
     );
-    let whole = repo.start(&repo.first, &[]);
+    let whole = repo.start(&repo.first, &accept);
     assert_eq!(whole["changed_lines"], 8, "no scope is the whole repo");
 }
 
@@ -345,6 +351,63 @@ fn run_start_refuses_a_project_layer_the_range_changes() {
         repo.run(1)["catalogue"]
             .get("project_layer_changed")
             .is_none()
+    );
+}
+
+#[test]
+fn run_start_refuses_a_project_layer_changed_after_head() {
+    let Some(repo) = repo() else { return };
+    let head = git(&repo.root, &["rev-parse", "HEAD"]);
+    commit_project_layer(&repo);
+    let stderr = repo.start_fails(&repo.first, &["--head", &head]);
+    assert!(
+        stderr.contains(".claude/review-lenses/config.toml") && stderr.contains("--project"),
+        "a layer committed past --head is still the one loaded: {stderr}"
+    );
+    assert!(!repo.store().exists(), "no run is minted");
+
+    repo.start(
+        &repo.first,
+        &["--head", &head, "--project", ".claude/review-lenses"],
+    );
+    assert_eq!(
+        repo.run(0)["catalogue"]["project_layer_changed"],
+        toml::Value::Array(vec![".claude/review-lenses/config.toml".into()]),
+    );
+}
+
+#[test]
+fn run_start_refuses_an_uncommitted_project_layer() {
+    let Some(repo) = repo() else { return };
+    commit_project_layer(&repo);
+    let layer = repo.root.join(".claude/review-lenses");
+    fs::write(layer.join("config.toml"), "enable = []\n# edited\n").unwrap();
+    let stderr = repo.start_fails("HEAD", &[]);
+    assert!(
+        stderr.contains(".claude/review-lenses/config.toml") && stderr.contains("--project"),
+        "an unstaged edit is refused: {stderr}"
+    );
+
+    git(
+        &repo.root,
+        &["checkout", "--", ".claude/review-lenses/config.toml"],
+    );
+    fs::create_dir_all(layer.join("lenses")).unwrap();
+    fs::write(layer.join("lenses/extra.md"), "untracked\n").unwrap();
+    let stderr = repo.start_fails("HEAD", &[]);
+    assert!(
+        stderr.contains(".claude/review-lenses/lenses/extra.md"),
+        "an untracked file is refused: {stderr}"
+    );
+    assert!(!repo.store().exists(), "no run is minted");
+
+    fs::remove_file(layer.join("lenses/extra.md")).unwrap();
+    fs::write(layer.join("config.toml"), "enable = []\n# edited\n").unwrap();
+    repo.start("HEAD", &["--project", ".claude/review-lenses"]);
+    assert_eq!(
+        repo.run(0)["catalogue"]["project_layer_changed"],
+        toml::Value::Array(vec![".claude/review-lenses/config.toml".into()]),
+        "an explicit --project accepts the edited layer"
     );
 }
 
@@ -422,7 +485,7 @@ fn run_start_halts_on_invalid_project_catalogue() {
         "disable = [\"no-such-lens\"]\n",
     )
     .unwrap();
-    let stderr = repo.start_fails(&repo.first, &[]);
+    let stderr = repo.start_fails(&repo.first, &["--project", ".claude/review-lenses"]);
     assert!(
         stderr.contains("config.toml") && stderr.contains("no-such-lens"),
         "names the offending file and id: {stderr}"

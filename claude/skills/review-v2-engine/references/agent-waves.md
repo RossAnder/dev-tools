@@ -82,7 +82,7 @@ Fetch each finding with `tomlctl review show <ids, comma-separated> --for verifi
 
 ### Checker prompt
 
-A pooled batch of up to 20 cleanup rows, the same template the Workflow builds. The checker may return `refuted` only on a row a sweeper cell wrote or on a `cleanup` row whose lens the catalogue marks `mode = "mechanical"`, and its projection carries neither the row's cell nor its lens's mode, so the prompt names both. Write `sweeper rows: none` when no row in the batch came from a `review-sweeper` cell. The `mechanical lenses:` line lists the `id` of every `lens` entry whose `mode` is `mechanical` in `tomlctl review catalogue --family <family>`, read once per run, or `none` when there are none.
+A pooled batch of up to 20 cleanup rows, the same template the Workflow builds. The checker may return `refuted` only on a row a sweeper cell wrote or on a `cleanup` row whose lens the catalogue marks `mode = "mechanical"` and not disabled, and its projection carries neither the row's cell nor its lens's mode, so the prompt names both. Write `sweeper rows: none` when no row in the batch came from a `review-sweeper` cell. The `mechanical lenses:` line lists the `id` of every `lens` entry whose `mode` is `mechanical` and that is not disabled, as `tomlctl review catalogue --family <family> --rows entries --where type=lens --where mode=mechanical --where disabled=false --select id --lines` prints them, read once per run, or `none` when there are none.
 
 ```text
 findings: <id>, <id>, …
@@ -147,11 +147,7 @@ The Workflow's index also carries `script_version`; a fallback wave has none to 
 
 ### The agent total
 
-The run's `agents` is counted once, after the run's last wave and mop-up and before `review run finish`: the sum of every wave index's `agents`, whichever substrate ran it, plus the orchestrator's own dispatches outside the waves — the surveyor, each `verification` agent and each mop-up dispatch. Never add a wave twice, and never count an agent a Workflow index already counts.
-
-```bash
-tomlctl review run update <run> --slug <slug> --set-json agents=<total>
-```
+The run's `agents` is defined, and recorded immediately before `review run finish`, by the engine's stage 4 (The agent total). A fallback wave's index counts toward it exactly as a Workflow index does. Never add a wave twice, and never count an agent an index already counts.
 
 ## Mop-up
 

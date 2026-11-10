@@ -1,0 +1,812 @@
+schema_version = 1
+last_updated = 2026-11-10
+
+[[vet_events]]
+timestamp = "2026-11-10T16:17:44Z"
+command = "review"
+lens = "quality"
+tier = "deep"
+rationale = "Sampled anchors matched; one finding merged with architecture's identity-walk finding, one with its rule-out join finding"
+agent_index = 1
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-10T16:17:44Z"
+command = "review"
+lens = "security"
+tier = "deep"
+rationale = "runs.rs:74 range and working-tree layer load confirmed"
+agent_index = 2
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-10T16:17:44Z"
+command = "review"
+lens = "architecture"
+tier = "deep"
+rationale = "All cited anchors matched; two merged into quality items on the same symbol"
+agent_index = 3
+sampled_count = 7
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-10T16:17:44Z"
+command = "review"
+lens = "completeness"
+tier = "lite"
+rationale = "All anchors matched; agent-total finding merged into the package-quality item"
+agent_index = 4
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-10T16:17:44Z"
+command = "review"
+lens = "testability"
+tier = "lite"
+rationale = "Dropped pre-mint: untested merge-base exit>1 arm, agent rated it wontfix and it needs a corrupt object to reach"
+agent_index = 5
+sampled_count = 4
+dropped_count = 1
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-10T16:17:44Z"
+command = "review"
+lens = "package-quality"
+tier = "lite"
+rationale = "All cited lines matched"
+agent_index = 6
+sampled_count = 6
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-10T17:00:25Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "All three read; orchestrator corrected one copied clause in the sweeper rule-out line (slice restriction does not apply to a sweeper)"
+agent_index = 3
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-11-10T17:00:30Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "All three diffs read"
+agent_index = 4
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[items]]
+id = "R1"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "review-v2-first-run-repairs"
+file = "tomlctl/src/review/runs.rs"
+line = 74
+symbol = "start"
+severity = "warning"
+effort = "small"
+category = "security"
+summary = "With --head, the project-lens-layer guard checks base..head but the layer is loaded from the working tree"
+description = "run start refuses when the reviewed range touches .claude/review-lenses, since that config can carry a project check command the verification agent runs. With --head the guard range is base..head (runs.rs:74, passed to project_layer_changes at runs.rs:274), but catalogue::project_layer still loads the working-tree layer and require_descendant never ties head to HEAD. A commit in head..HEAD (or an uncommitted edit, even without --head) that changes the layer is loaded unguarded. Fix: diff base against the working tree (git diff --name-only <base> -- .claude/review-lenses), update review-runs.md:28 and review-v2-engine/SKILL.md:115, add a --head case beside the layer-refusal test in tests/review_runs.rs."
+evidence = [
+    "tomlctl/src/review/runs.rs:62-74",
+    "tomlctl/src/review/runs.rs:273-274",
+    "tomlctl/src/review/catalogue.rs:2227-2236",
+    "repro on tomlctl 0.22.0: run start --base HEAD~2 --head HEAD~1 returned ok with a project check command=echo pwned listed by review catalogue; same start without --head was refused",
+]
+dedup_id = "9ef59f4a7fb7727f"
+resolved = 2026-11-10
+resolution = "uncommitted: project_layer_changes compares --base with the working tree (tracked diff plus untracked and ignored files), so a layer changed after --head or left uncommitted is refused; tests added in review_runs.rs; review-runs.md and review-v2-engine/SKILL.md state the rule"
+
+[[items]]
+id = "R2"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "review-v2-first-run-repairs"
+file = "tomlctl/src/review/digest.rs"
+line = 205
+symbol = "link_chain"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "digest duplicate_candidates ignores converted_to, listing pairs resolve --same-as then refuses"
+description = "link_chain follows same_as and merged_into but not converted_to, while resolve::leads_to and resolve::settled_target follow it. A duplicate merged into an advisory later converted is reported as a candidate of the converted row; resolve --same-as then refuses with already merged. The identity chain is walked three times with three link sets and no single owner. Fix: one shared next-identity-link helper used by link_chain, leads_to and settled_target, following converted_to; add a review_digest test for the converted case."
+evidence = [
+    "tomlctl/src/review/digest.rs:205-232",
+    "tomlctl/src/review/resolve.rs:272-297",
+    "tomlctl/src/review/resolve.rs:405-447",
+    "repro on tomlctl 0.22.0: digest listed {a:F2,b:F3}; resolve --same-as F2=F3 refused: F2 is already merged into F1",
+]
+instances = [
+    "tomlctl/src/review/digest.rs:link_chain",
+    "tomlctl/src/review/resolve.rs:leads_to",
+    "tomlctl/src/review/resolve.rs:settled_target",
+]
+enumeration = "complete"
+dedup_id = "17011e9c44cb03a5"
+resolved = 2026-11-10
+resolution = "uncommitted: Finding::identity_links() in store.rs owns the same_as/merged_into/converted_to link set; digest link_chain and resolve leads_to use it; settled_target left as is (status-conditional); test digest_omits_pairs_joined_through_a_conversion added"
+
+[[items]]
+id = "R3"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "review-v2-first-run-repairs"
+file = "tomlctl/src/review/fields.rs"
+line = 525
+symbol = "LENS"
+severity = "warning"
+effort = "trivial"
+category = "architecture"
+summary = "review show --for checker hides lens, so the checker cannot apply the mechanical-lens refute exception"
+description = "LENS visibility hides lens (and cell) in the Checker column, but review-checker.md:19 tells the checker to refute a cleanup row whose lens its mechanical lenses: line names. The checker has nothing to compare against, so such rows end unsettled or are guessed. Fix: give Finding.lens a visibility that includes Checker (leave cell hidden) and update the pinned table row at fields.rs:1404."
+evidence = [
+    "tomlctl/src/review/fields.rs:433",
+    "tomlctl/src/review/fields.rs:525",
+    "tomlctl/src/review/fields.rs:1404",
+    "claude/agents/review-checker.md:19",
+    "tomlctl review show F34 --slug jiggly-exploring-robin --for checker prints no lens",
+]
+dedup_id = "e8cd57f844cba1bf"
+resolved = 2026-11-10
+resolution = "uncommitted: Finding.lens is visible to the checker (LENS widened, new CELL_OF keeps cell hidden); pinned field-table row and the checker row in tomlctl/references/review.md updated"
+
+[[items]]
+id = "R4"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "review-v2-first-run-repairs"
+file = "claude/skills/review-v2-engine/SKILL.md"
+line = 162
+symbol = "mechanical_lenses"
+severity = "warning"
+effort = "medium"
+category = "architecture"
+summary = "The mechanical-lens set is re-derived in prose and Workflow args and diverges from the CLI on disabled lenses"
+description = "needs-plan. Catalogue::mechanical_lenses(family) owns the set and drops disabled lenses (catalogue.rs:732-738). The orchestrator rebuilds it with review catalogue --where type=lens --where mode=mechanical, whose index includes disabled entries, and passes it through two Workflow scripts and four prose files. In a project that disables a mechanical lens, checkers and finders are told it is usable and the CLI refuses both. Fix shape: the CLI publishes the set (finder assignment and checker rows carry it, or a per-row refutable), and the mechanical_lenses arg and prose queries are removed together."
+evidence = [
+    "tomlctl/src/review/catalogue.rs:732-738",
+    "tomlctl/src/review/catalogue.rs:792-827",
+]
+instances = [
+    "claude/skills/review-v2-engine/SKILL.md:162",
+    "claude/skills/review-v2-engine/references/agent-waves.md:85",
+    "claude/skills/review-v2-engine/references/plan-flow.md:69",
+    "claude/skills/review-v2-method/SKILL.md:86",
+    "claude/workflows/review-v2.js:39",
+    "claude/workflows/review-v2.js:86",
+    "claude/workflows/plan-v2-review.js:71",
+    "claude/workflows/plan-v2-review.js:335",
+    "claude/agents/review-checker.md:19",
+    "claude/agents/review-checker.md:37",
+    "tomlctl/src/review/query.rs:assignment",
+]
+sweep = [
+    "where mode=mechanical",
+    "mechanical_lenses|mechanical lenses",
+]
+enumeration = "complete"
+dedup_id = "7e481731d9c84a26"
+resolved = 2026-11-10
+resolution = "uncommitted: point fix decided at apply time instead of a restructure: every prose copy of the mechanical-lens catalogue query carries --where disabled=false and the worded descriptions say not disabled, matching Catalogue::mechanical_lenses; the Workflow arg is unchanged"
+
+[[items]]
+id = "R5"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "review-v2-first-run-repairs"
+file = "claude/agents/review-finder.md"
+line = 42
+symbol = "review-finder-body"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "Shared finder body hardcodes ripple/hygiene as accepted from any cell, false for perf runs and for hygiene in plan runs"
+description = "The body tells every finder to write an out-of-concern mechanical cleanup under the ripple or hygiene lens, which review add accepts from any cell. review add accepts it only when the lens is in mechanical_lenses(run.family) (add.rs:109, 351-362); ripple is code+plan and hygiene is code only, so the set is empty for perf. An /optimise-v2 finder following the body gets refused and resubmits. Fix: say a lens the run's catalogue marks mechanical for this family; same edit in compose.md:169. The block is byte-identity gated, so review-finder.md and review-finder-cf.md change together."
+evidence = [
+    "tomlctl/src/review/add.rs:351-362",
+    "claude/skills/review-v2-lenses/lenses/ripple.md:4",
+    "claude/skills/review-v2-lenses/lenses/hygiene.md:4",
+]
+instances = [
+    "claude/agents/review-finder.md:42",
+    "claude/agents/review-finder-cf.md:42",
+    "claude/skills/review-v2-engine/references/compose.md:169",
+]
+enumeration = "complete"
+dedup_id = "98acdd4482ea916e"
+resolved = 2026-11-10
+resolution = "uncommitted: review-finder body (both carriers) and compose.md disposition 2 name a lens the run's catalogue marks mechanical for the family, and escalate when the family has none; shared-block parity OK"
+
+[[items]]
+id = "R6"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "review-v2-first-run-repairs"
+file = "claude/agents/review-sweeper.md"
+line = 39
+symbol = "Procedure"
+severity = "warning"
+effort = "trivial"
+category = "completeness"
+summary = "The sweeper is never told to stage or pass --ruled-out"
+description = "cover.rs check_ruled_out_reach gives mechanical-lens cells an outside-slice rule-out allowance, and review-finder.md:49 and plan-executor.md:43 add --ruled-out to their seal step, but the sweeper's step 8 has no judged-deliberate branch and its seal step 12 has no --ruled-out clause. Whole-tree ripple sweeps therefore never produce rule-outs for the digest's ruled_out_hits join. Fix: add the rule-out branch to step 8 and the --ruled-out clause to step 12, worded as in review-finder.md:49."
+evidence = [
+    "claude/agents/review-sweeper.md:31-39",
+    "claude/agents/review-finder.md:48-49",
+    "claude/agents/plan-executor.md:42-43",
+    "tomlctl/src/review/cover.rs:146",
+]
+dedup_id = "f95d0efbf43aa6e8"
+resolved = 2026-11-10
+resolution = "uncommitted: review-sweeper.md step 8 gains a rule-out branch and step 12 passes --ruled-out when one was staged"
+
+[[items]]
+id = "R7"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "review-v2-first-run-repairs"
+file = "claude/skills/review-v2-engine/references/plan-flow.md"
+line = 40
+symbol = "1. Pre-flight"
+severity = "warning"
+effort = "trivial"
+category = "package-quality"
+summary = "Flow mode still skips stage-0 steps 4 and 5 after the renumbering, dropping the new parked/needs-plan listing"
+description = "This change added a new stage-0 step 5 (list parked and open needs-plan findings) and moved the plan-family import to step 6 (SKILL.md:86-93). plan-flow.md still says skip steps 4 and 5 and justifies it with the import refusal, which is now step 6. Fix: steps 4 and 6, or state whether step 5 runs in flow mode."
+evidence = [
+    "claude/skills/review-v2-engine/references/plan-flow.md:40",
+    "claude/skills/review-v2-engine/SKILL.md:86-93",
+]
+dedup_id = "2e83b8e5cdc41d0d"
+resolved = 2026-11-10
+resolution = "uncommitted: plan-flow.md skips stage-0 steps 4 and 6 and says step 5's listing still runs"
+
+[[items]]
+id = "R8"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "review-v2-first-run-repairs"
+file = "claude/skills/review-v2-engine/references/plan-flow.md"
+line = 115
+symbol = "5. Reading the return, and the fallback"
+severity = "warning"
+effort = "small"
+category = "package-quality"
+summary = "Nothing reads the lead's payloads/escalations-w<wave>.md at close in flow mode"
+description = "plan-flow.md:115 says the close summary in triage-and-close.md reads the file, but triage-and-close.md:161 lists escalations only from a wave index, and flow mode's own close summary (plan-flow.md:357-366) has no escalations item. Unhandled escalations are never shown or offered for the backlog. Fix: add an unhandled-escalations bullet to plan-flow section 11's close summary and correct the pointer at line 115."
+evidence = [
+    "claude/skills/review-v2-engine/references/plan-flow.md:115",
+    "claude/skills/review-v2-engine/references/plan-flow.md:357-366",
+    "claude/skills/review-v2-engine/references/triage-and-close.md:161",
+    "claude/agents/plan-review-lead.md:102",
+    "grep escalations-w over claude/: only the writer and the pointer",
+]
+dedup_id = "089caea7afa5e2e3"
+resolved = 2026-11-10
+resolution = "uncommitted: plan-flow.md section 11 close summary lists unhandled escalations from payloads/escalations-w*.md as backlog offers; the section 5 pointer names it"
+
+[[items]]
+id = "R9"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "review-v2-first-run-repairs"
+file = "tomlctl/src/review/verdict.rs"
+line = 230
+symbol = "apply_one"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "Unreadable-catalogue checker refusal is untested and leads with the wrong reason"
+description = "When checker_may_refute returns Err, apply_one pushes the stale not-a-sweeper-cell reason first and the catalogue error second. No test reaches the Err branch, so a regression to silent Ok(false) would pass. Fix: push only the catalogue reason on Err; add a test pointing the run's catalogue.builtin at a missing directory and asserting the exact reasons array."
+evidence = ["tomlctl/src/review/verdict.rs:230-244"]
+dedup_id = "6a9d93f8539259d5"
+resolved = 2026-11-10
+resolution = "uncommitted: the refuted arm pushes only the catalogue reason on Err and only the sweeper refusal on Ok(false); test checker_refute_names_only_the_catalogue_failure_when_it_cannot_be_read added (uses a tree_sha mismatch); checker_cannot_refute_a_finder_row now expects the records-no-catalogue reason alone"
+
+[[items]]
+id = "R10"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "review-v2-first-run-repairs"
+file = "tomlctl/src/review/resolve.rs"
+line = 198
+symbol = "check_link"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "Most resolve --same-as refusals and the target-awaiting branch have no test"
+description = "Only the cycle and self-link refusals are tested. Untested: parse_links not DUP=TARGET, unknown id, another run, superseded, family mismatch, already merged, conflicting same_as, undecided status, linked to both, and settled_target's target awaits its own same_as (resolve.rs:438). check_link must leave the store byte-identical on any refusal and only the cycle test asserts that. Fix: a table-driven test in tests/review_resolve.rs asserting each reason and unchanged raw store, plus a chained-target case."
+evidence = [
+    "tomlctl/src/review/resolve.rs:438",
+    "grep of tests/*.rs for awaits its own, not DUP=TARGET, linked to both: no hits",
+]
+dedup_id = "67b21ffa0c14059e"
+resolved = 2026-11-10
+resolution = "uncommitted: table-driven test resolve_same_as_refusals_name_their_reason_and_write_nothing covers nine refusals with an unchanged-store assert; resolve_same_as_target_awaiting_its_own_same_as_stays_pending covers the chained target"
+
+[[items]]
+id = "R11"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "review-v2-first-run-repairs"
+file = "claude/workflows/plan-v2-review.js"
+line = 383
+symbol = "reverify"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "A re-verified id increments the wave's verified a second time"
+description = "entry.verified starts from the pipeline's ran.verified (line 348) and line 383 does entry.verified++ for each reverify verdict, though the id already counted when its first verdict landed. agent-waves.md:141 defines verified as the number of distinct finding ids with a non-unsettled verdict. Fix: do not increment for ids the wave already verified, or track a set."
+evidence = [
+    "claude/workflows/plan-v2-review.js:348",
+    "claude/workflows/plan-v2-review.js:383",
+    "claude/skills/review-v2-engine/references/agent-waves.md:141",
+]
+dedup_id = "c06e169f8a8682a8"
+resolved = 2026-11-10
+resolution = "uncommitted: plan-v2-review.js drops the reverify increment; every reverified id already holds a verdict the wave counted"
+
+[[items]]
+id = "R12"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "review-v2-first-run-repairs"
+file = "tomlctl/src/review/query.rs"
+line = 251
+symbol = "rule_outs_at"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "The rule-out-to-finding join is implemented twice (digest and verifier projection)"
+description = "digest::ruled_out_hits and query::rule_outs_at both filter same run, different cell, same_place. compose.md's re-verify step relies on them agreeing: a digest hit must be one the verifier's projection carries. Fix: one function (e.g. in matching.rs) returning (&Cell, &RuledOut) that both callers shape."
+evidence = [
+    "tomlctl/src/review/digest.rs:289-310",
+    "tomlctl/src/review/query.rs:251-262",
+    "claude/skills/review-v2-engine/references/compose.md:162",
+]
+instances = [
+    "tomlctl/src/review/digest.rs:ruled_out_hits",
+    "tomlctl/src/review/query.rs:rule_outs_at",
+]
+enumeration = "complete"
+dedup_id = "81981b6ed42a1157"
+resolved = 2026-11-10
+resolution = "uncommitted: matching::rule_outs_at is the one join; digest ruled_out_hits and query finding_row shape its output"
+
+[[items]]
+id = "R13"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "review-v2-first-run-repairs"
+file = "tomlctl/src/review/survey.rs"
+line = 558
+symbol = "load_diff"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "The run's base..head range and :(glob) scope pathspecs are built separately in runs.rs and survey.rs"
+description = "Both modules had to learn head in this change; run start's changed_lines and layer check and survey's diff detectors must measure the same range over the same pathspecs. Fix: one Run::range() and one scope_pathspecs(scope) called from runs::start and survey's Repo."
+evidence = [
+    "tomlctl/src/review/runs.rs:74",
+    "tomlctl/src/review/survey.rs:558",
+    "tomlctl/src/review/runs.rs:337",
+    "tomlctl/src/review/survey.rs:486",
+]
+instances = [
+    "tomlctl/src/review/runs.rs:74",
+    "tomlctl/src/review/runs.rs:pathspecs",
+    "tomlctl/src/review/survey.rs:558",
+    "tomlctl/src/review/survey.rs:pathspecs",
+]
+enumeration = "complete"
+dedup_id = "d2a52752740baa81"
+resolved = 2026-11-10
+resolution = "uncommitted: survey::run_range and survey::scope_pathspecs are shared by runs.rs and survey.rs"
+
+[[items]]
+id = "R14"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "review-v2-first-run-repairs"
+file = "tomlctl/src/review/survey.rs"
+line = 625
+symbol = "diff_signal"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "diff_signal uses unreachable! to sidestep a borrow the earlier copy-out idiom avoided"
+description = "The function calls self.changed() only for its error, then re-borrows self.diff behind let Some(Ok(changed)) = ... else { unreachable!() } so changed_bytes can take &self. Fix: bind (root, head) from self first, keep the slice changed() returns, and make changed_bytes an associated fn over root and head."
+evidence = [
+    "tomlctl/src/review/survey.rs:625-631",
+    "tomlctl/src/review/survey.rs:492",
+]
+dedup_id = "49887e1e6f60f5f0"
+resolved = 2026-11-10
+resolution = "uncommitted: diff_signal copies root and head first and uses the slice changed() returns; changed_bytes is an associated fn; unreachable! removed"
+
+[[items]]
+id = "R15"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "review-v2-first-run-repairs"
+file = "tomlctl/src/review/query.rs"
+line = 55
+symbol = "list"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "--fix-shape scans FIELDS inline for its allowed values instead of an exported constant"
+description = "--kind, --status and --route validate against exported value lists; --fix-shape scans FIELDS and falls back to an empty list, so a field rename would refuse every value with an empty expected-one-of. Fix: export fields::FIX_SHAPES (or a str_enum FixShape) and pass it to check_value."
+evidence = [
+    "tomlctl/src/review/query.rs:51-59",
+    "tomlctl/src/review/fields.rs:256",
+]
+dedup_id = "8d2fa6aa0f9f69cc"
+resolved = 2026-11-10
+resolution = "uncommitted: fields::FIX_SHAPES is pub(crate) and passed to check_value"
+
+[[items]]
+id = "R16"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "review-v2-first-run-repairs"
+file = "tomlctl/src/review/cover.rs"
+line = 176
+symbol = "cover"
+severity = "suggestion"
+effort = "medium"
+category = "quality"
+summary = "Cell status is a closed set stored as String and matched by literals across modules"
+description = "Cell.status is validated against CELL_STATUSES on load, then compared to assigned/covered/thin/uncovered literals in six modules, while Finding.status is a typed FindingStatus via str_enum!. A typo compiles and matches nothing. Fix: str_enum!(CellStatus), derive CELL_STATUSES from it, type Cell.status, replace the literal comparisons."
+evidence = [
+    "tomlctl/src/review/fields.rs:249",
+    "tomlctl/src/review/store.rs:147",
+    "tomlctl/src/review/store.rs:193",
+    "tomlctl/src/review/store.rs:648",
+]
+instances = [
+    "tomlctl/src/review/fields.rs:249",
+    "tomlctl/src/review/store.rs:648",
+    "tomlctl/src/review/store.rs:672",
+    "tomlctl/src/review/cover.rs:176",
+    "tomlctl/src/review/cover.rs:206",
+    "tomlctl/src/review/cover.rs:254",
+    "tomlctl/src/review/cells.rs:1306",
+    "tomlctl/src/review/cells.rs:1418",
+    "tomlctl/src/review/digest.rs:79",
+    "tomlctl/src/review/digest.rs:88",
+    "tomlctl/src/review/digest.rs:474",
+    "tomlctl/src/review/digest.rs:816",
+    "tomlctl/src/review/stats.rs:340",
+    "tomlctl/src/review/stats.rs:393",
+    "tomlctl/src/review/stats.rs:766",
+    "tomlctl/src/review/schema_out.rs:268",
+    "tomlctl/src/review/add.rs:258",
+]
+sweep = [
+    '"(assigned|covered|thin|uncovered)"',
+    "CELL_STATUSES",
+]
+enumeration = "complete"
+dedup_id = "372bfe0c5ad52098"
+resolved = 2026-11-10
+resolution = "uncommitted: CellStatus str_enum types Cell.status; CELL_STATUSES derives from it and the literal comparisons in cover, cells, digest, stats, schema_out and add use the enum; stored and printed forms unchanged"
+
+[[items]]
+id = "R17"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "review-v2-first-run-repairs"
+file = "tomlctl/src/review/cells.rs"
+line = 34
+symbol = "coverage_accounting"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "cover.rs and cells.rs depend on each other through a re-export shim"
+description = "Extracting review cover moved coverage_accounting into cover.rs, whose inputs are cells.rs's lens-selection internals (cover.rs:13-16), and cells.rs re-exports it back (cells.rs:34) for plan, digest.rs and runs.rs. Fix: move Accounting and coverage_accounting back beside pick_lenses, or move the selection machinery into one module both import; delete the re-export."
+evidence = [
+    "tomlctl/src/review/cells.rs:34",
+    "tomlctl/src/review/cover.rs:13-16",
+    "tomlctl/src/review/digest.rs:15",
+    "tomlctl/src/review/runs.rs:12",
+]
+dedup_id = "418559fb06e89c3a"
+resolved = 2026-11-10
+resolution = "uncommitted: Accounting and coverage_accounting moved back into cells.rs beside pick_lenses; the re-export is gone and cover.rs imports only PathSet, find_run and read_args"
+
+[[items]]
+id = "R18"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "review-v2-first-run-repairs"
+file = "tomlctl/src/review/stats.rs"
+line = 596
+symbol = "run_waves"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "run_waves lives in the stats verb module but is read by run show, run finish and digest"
+description = "Three of its four consumers are outside stats.rs (run_show.rs:37, runs.rs:745, digest.rs:618). Move it to store.rs as a Store or Run method, in the same change that removes the dead stored Run.waves (backlog B-d6c93fd7)."
+evidence = [
+    "tomlctl/src/review/stats.rs:595-603",
+    "tomlctl/src/review/run_show.rs:37",
+    "tomlctl/src/review/runs.rs:745",
+    "tomlctl/src/review/digest.rs:618",
+]
+dedup_id = "569c6b8bba95c101"
+resolved = 2026-11-10
+resolution = "uncommitted: run_waves lives in store.rs; run_show, runs, digest and stats call it there"
+
+[[items]]
+id = "R19"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "review-v2-first-run-repairs"
+file = "claude/agents/review-surveyor.md"
+line = 28
+symbol = "Procedure"
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "The surveyor's catalogue select drops apply_when, so path-gated project checks get a baseline for every scope"
+description = "Step 4 selects id,executor,command,path only, and step 8 gives every verification check a line, project checks included. survey.md:90 and :114 say a project check runs only when its paths meet the scope. Fix: add apply_when to the select and have step 8 skip a project check whose apply_when.paths miss the scope."
+evidence = [
+    "claude/agents/review-surveyor.md:28",
+    "claude/agents/review-surveyor.md:32",
+    "claude/skills/review-v2-engine/references/survey.md:114",
+]
+dedup_id = "9f148c890e1095e2"
+resolved = 2026-11-10
+resolution = "uncommitted: review-surveyor.md selects apply_when and gives no verification line to a project check whose paths miss the scope"
+
+[[items]]
+id = "R20"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "review-v2-first-run-repairs"
+file = "claude/skills/review-v2-lenses/SKILL.md"
+line = 258
+symbol = "review catalogue default output"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "The lens skill's catalogue column list omits the new executor and command columns"
+description = "catalogue.rs now emits executor and command per entry and tomlctl/references/review.md documents them; the lens skill's list still ends at attaches_to, path, layer and disabled. Fix: add executor and command (checks only, null otherwise)."
+evidence = [
+    "claude/skills/review-v2-lenses/SKILL.md:258",
+    "git diff 546121d3 9c2ff9aa -- tomlctl/src/review/catalogue.rs adds executor and command",
+]
+dedup_id = "77cc248f50b23846"
+resolved = 2026-11-10
+resolution = "uncommitted: review-v2-lenses/SKILL.md lists executor and command in the catalogue output"
+
+[[items]]
+id = "R21"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "review-v2-first-run-repairs"
+file = "tomlctl/README.md"
+line = 561
+symbol = "review_run_show"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "README says run show keeps only roots under a scope entry; the code also keeps roots above one and the repo root"
+description = "run_show partitions with catalogue::meets, which keeps a root containing a scope entry and an empty or . root. review-runs.md:98 states it correctly. Fix: match review-runs.md's wording."
+evidence = [
+    "tomlctl/README.md:561",
+    "tomlctl/src/review/catalogue.rs:1344-1348",
+]
+dedup_id = "19eec04952f47bd9"
+resolved = 2026-11-10
+resolution = "uncommitted: README review_run_show row says roots that meet a scope entry (under it, above it, or the repository root)"
+
+[[items]]
+id = "R22"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "review-v2-first-run-repairs"
+file = "tomlctl/src/cli/types/review/verdicts.rs"
+line = 99
+symbol = "ReviewResolveArgs"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "--wave help is wrong when combined with --same-as, and the combination is untested"
+description = "Help says only findings from cells of this wave, but a pair linked in the same call resolves whatever its wave (resolve.rs:327). The subcommand doc at cli/types/review/mod.rs:52 never mentions that --same-as links pairs. Fix: amend both help strings and add a review_resolve test with the duplicate's cell in another wave."
+evidence = [
+    "tomlctl/src/cli/types/review/verdicts.rs:99",
+    "tomlctl/src/review/resolve.rs:326-328",
+    "tomlctl/src/cli/types/review/mod.rs:52",
+]
+dedup_id = "2b71f019440f6885"
+resolved = 2026-11-10
+resolution = "uncommitted: --wave help and the resolve subcommand doc mention --same-as pairs; test resolve_same_as_pair_resolves_outside_the_wave added"
+
+[[items]]
+id = "R23"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "review-v2-first-run-repairs"
+file = "tomlctl/tests/review_digest.rs"
+line = 498
+symbol = "digest_omits_linked_pairs_from_duplicate_candidates"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "The linked-pairs digest test cannot tell same_as following from merged_into following"
+description = "F2 and F3 carry both same_as = F1 and merged_into = F1, so the test passes if link_chain stops following either key. Fix: split the fixture so one pair is joined only by same_as and another only by merged_into; optionally add a dangling target and a cycle."
+evidence = [
+    "tomlctl/tests/review_digest.rs:498-519",
+    "tomlctl/src/review/digest.rs:205-228",
+]
+dedup_id = "47d122ab7cdc3161"
+resolved = 2026-11-10
+resolution = "uncommitted: the fixture joins one pair only by same_as, one only by merged_into and one through a shared target"
+
+[[items]]
+id = "R24"
+first_flagged = 2026-11-10
+rounds = 1
+status = "deferred"
+flow = "review-v2-first-run-repairs"
+file = "claude/workflows/plan-v2-review.js"
+line = 0
+symbol = "reverify"
+severity = "suggestion"
+effort = "medium"
+category = "testability"
+summary = "The Workflow-script gate cannot see the scripts' new logic (agent counts, escalation threading, reverify, baseline keys)"
+description = "needs-plan. command_lint checks only that tomlctl spans parse and that launches name saved scripts. It cannot see agents counts, escalation truncation and threading into settle, reverify dedupe and counting, batched-baseline key matching, the single-cleanup fall-through or mechanical_lenses validation in review-v2.js and plan-v2-review.js. These are pure functions of agent returns; a small node harness with stubbed agent/parallel would cover them, but the runtime and stubs need deciding."
+evidence = [
+    "tomlctl/src/cli/dispatch/tests/lint.rs:150-160",
+    "tomlctl/src/cli/dispatch/tests/lint.rs:418-440",
+]
+instances = [
+    "claude/workflows/plan-v2-review.js:reverify",
+    "claude/workflows/review-v2.js:escalations",
+]
+enumeration = "incomplete"
+dedup_id = "5e3707428e54c481"
+defer_reason = "Needs a plan (a JS test harness for the Workflow scripts needs a runtime and stub decision); moved to backlog B-c866bda9 at the user's instruction"
+defer_trigger = "when backlog item B-c866bda9 is promoted to a flow or resolved"
+
+[[items]]
+id = "R25"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "review-v2-first-run-repairs"
+file = "claude/skills/review-v2-method/references/finding-kinds.md"
+line = 88
+symbol = "Coverage note"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "The worked coverage note still carries a Ruled out: clause the method now forbids"
+description = "review-v2-method/SKILL.md:175 says rule-outs go in --ruled-out, never in the note, and the note holds counts only. The example teaches the old shape, so a copied rule-out never reaches ruled_out_hits. Fix: drop the clause and show the entry as a .ruled-out.ndjson line beside the note."
+evidence = [
+    "claude/skills/review-v2-method/references/finding-kinds.md:88",
+    "claude/skills/review-v2-method/SKILL.md:175",
+]
+dedup_id = "038fac5239ce04ba"
+resolved = 2026-11-10
+resolution = "uncommitted: the coverage-note example holds counts only and shows its rule-out as a .ruled-out.ndjson line"
+
+[[items]]
+id = "R26"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "review-v2-first-run-repairs"
+file = "claude/skills/review-v2-engine/references/compose.md"
+line = 141
+symbol = "Duplicates"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "compose.md writes the duplicates reasoning to <run-dir>/duplicates-w<wave>.md; the lead writes payloads/duplicates-w<wave>.md"
+description = "plan-review-lead.md:94 follows compose.md section 7 but may write only under payloads/, and the engine says every staged payload goes in <run-dir>/payloads/. Fix: change compose.md to <run-dir>/payloads/duplicates-w<wave>.md."
+evidence = [
+    "claude/skills/review-v2-engine/references/compose.md:141",
+    "claude/agents/plan-review-lead.md:94",
+]
+dedup_id = "d05cf9959a8ae159"
+resolved = 2026-11-10
+resolution = "uncommitted: compose.md writes duplicates reasoning to <run-dir>/payloads/duplicates-w<wave>.md"
+
+[[items]]
+id = "R27"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "review-v2-first-run-repairs"
+file = "claude/skills/review-v2-engine/references/agent-waves.md"
+line = 150
+symbol = "The agent total"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "Four engine files define the run's agents total differently, in what counts and when it is recorded"
+description = "SKILL.md:169 counts flow-bootstrap, surveyor, baseline dispatch, Agent-wave and mop-up dispatches and records before stage 6; agent-waves.md:150 omits flow-bootstrap, says each verification agent and records before run finish; plan-flow.md:154 counts only mop-up and fallback; compose.md:162 adds rule-out re-verifications; triage-and-close.md:112 dispatches a verifier after SKILL.md's recording point. measurement.md compares agents to a threshold. Fix: one definition in SKILL.md, the references pointing at it."
+evidence = [
+    "claude/skills/review-v2-engine/SKILL.md:169",
+    "claude/skills/review-v2-engine/references/agent-waves.md:150",
+    "claude/skills/review-v2-engine/references/plan-flow.md:154",
+    "claude/skills/review-v2-engine/references/compose.md:162",
+    "claude/skills/review-v2-engine/references/triage-and-close.md:112",
+]
+instances = [
+    "claude/skills/review-v2-engine/SKILL.md:169",
+    "claude/skills/review-v2-engine/references/agent-waves.md:150",
+    "claude/skills/review-v2-engine/references/plan-flow.md:154",
+    "claude/skills/review-v2-engine/references/compose.md:162",
+]
+enumeration = "complete"
+dedup_id = "ef8411ddfec9eb4a"
+resolved = 2026-11-10
+resolution = "uncommitted: one definition of the run's agents total in review-v2-engine/SKILL.md, recorded immediately before review run finish; agent-waves, plan-flow and compose point at it; the run update line sits before each run finish (triage-and-close step 5, plan-flow section 9). Agent-wave dispatches are left out of the extra list because a fallback wave keeps its own index"
+
+[[items]]
+id = "R28"
+first_flagged = 2026-11-10
+rounds = 1
+status = "fixed"
+flow = "review-v2-first-run-repairs"
+file = "claude/agents/review-sweeper.md"
+line = 30
+symbol = "Procedure step 7"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "The globally installed sweeper names this repo's directories (tomlctl/src, claude/skills) as its sweep-root example"
+description = "The agent runs in any project; a literal reading searches directories that do not exist elsewhere. methods/sweep.md:18 states the rule generically. Fix: use <dir> placeholders or each top-level source root."
+evidence = ["claude/agents/review-sweeper.md:30"]
+dedup_id = "516a0b10ed8268f9"
+resolved = 2026-11-10
+resolution = "uncommitted: review-sweeper.md step 7 names each top-level source root instead of this repository's directories"

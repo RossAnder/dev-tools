@@ -194,6 +194,37 @@ fn finish_refuses_unverified_findings() {
 }
 
 #[test]
+fn finish_refuses_a_verified_row_awaiting_its_same_as() {
+    let Some(repo) = Repo::new() else {
+        return;
+    };
+    let linked = |extra: &str| {
+        format!(
+            "{}{}{}",
+            full_cell(),
+            finding("F1", "U1", r#""U1""#, "defect", "open", ""),
+            finding(
+                "F2",
+                "U1",
+                r#""U1""#,
+                "defect",
+                "open",
+                &format!("same_as = \"F1\"\n{extra}")
+            ),
+        )
+    };
+    repo.seed(&linked(""));
+    let refused = repo.finish(&[]).failure();
+    let err = stderr(&refused);
+    assert!(err.contains("unresolved same_as: F2"), "{err}");
+    assert!(!err.contains("unverified findings"), "{err}");
+    assert_unfinished(&repo.path());
+
+    repo.seed(&linked("outcome = \"contested\"\n"));
+    repo.finish(&[]).success();
+}
+
+#[test]
 fn finish_refuses_unwaived_coverage() {
     let Some(repo) = Repo::new() else {
         return;

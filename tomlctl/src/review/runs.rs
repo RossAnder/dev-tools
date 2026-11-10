@@ -1,6 +1,7 @@
 //! `review run start`, `run update` and `run finish` — a run's lifecycle —
 //! and `run list`, its read.
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -13,7 +14,9 @@ use super::cells::{self, Accounting};
 use super::digest::Counts;
 use super::fields::{self, Family, FindingStatus, Origin, Record, RowContext};
 use super::invalid;
+use super::resolve;
 use super::store::{self, Minted, Run, Signal, Store, Target, Waiver};
+use super::survey::{run_range, scope_pathspecs};
 use crate::cli::{ReviewRunFinishArgs, ReviewRunListArgs, ReviewRunStartArgs, ReviewRunUpdateArgs};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::fields::FieldArgs;
@@ -71,8 +74,8 @@ pub(crate) fn start(target: &Target, args: ReviewRunStartArgs) -> Result<()> {
         }
         None => None,
     };
-    let range = format!("{base}..{}", head.as_deref().unwrap_or("HEAD"));
-    let catalogue_record = start_catalogue(&root, &range, args.builtin, args.project)?;
+    let range = run_range(&base, head.as_deref());
+    let catalogue_record = start_catalogue(&root, &base, args.builtin, args.project)?;
     let changed_lines = match family {
         Family::Plan => None,
         Family::Code | Family::Perf => Some(changed_lines(&root, &range, &scope)?),
@@ -253,10 +256,10 @@ fn require_descendant(root: &Path, base: &str, head: &str, given: &str) -> Resul
 
 /// Loads and validates the merged catalogue, returning the run's
 /// `catalogue` record. Any validation error halts the start, as does a
-/// default project layer the reviewed `range` itself changed.
+/// default project layer whose working-tree content differs from `base`.
 fn start_catalogue(
     root: &Path,
-    range: &str,
+    base: &str,
     builtin: Option<PathBuf>,
     project: Option<PathBuf>,
 ) -> Result<JsonValue> {
@@ -271,11 +274,11 @@ fn start_catalogue(
     };
     let explicit_project = project.is_some();
     let project = catalogue::project_layer(root, project)?;
-    let layer_changed = project_layer_changes(root, range)?;
+    let layer_changed = project_layer_changes(root, base)?;
     if !explicit_project && !layer_changed.is_empty() {
         return Err(invalid(format!(
-            "review run start: the reviewed range {range} changes the project lens layer, \
-             which would configure its own review:\n{}\n\
+            "review run start: the working-tree project lens layer differs from --base {base}, \
+             so the change under review would configure its own review:\n{}\n\
              pass --project <dir> explicitly to accept that layer",
             layer_changed
                 .iter()
@@ -316,32 +319,42 @@ fn start_catalogue(
     Ok(JsonValue::Object(record))
 }
 
-/// Paths under `.claude/review-lenses` that `range` adds, edits or deletes.
-/// Renames are split so a file moved out of the layer still counts.
-fn project_layer_changes(root: &Path, range: &str) -> Result<Vec<String>> {
-    let listed = git_output(
+/// Paths under `.claude/review-lenses` where the working tree, which is what
+/// a run loads, differs from `base`: tracked adds, edits and deletes, and
+/// every untracked file, ignored ones included. Renames are split so a file
+/// moved out of the layer still counts.
+fn project_layer_changes(root: &Path, base: &str) -> Result<Vec<String>> {
+    const LAYER: &str = ".claude/review-lenses";
+    let tracked = git_output(
         root,
         git(root)
             .args(["diff", "--name-only", "-z", "--no-ext-diff", "--no-renames"])
-            .arg(range)
-            .args(["--", ".claude/review-lenses"]),
+            .arg(base)
+            .args(["--", LAYER]),
         "git diff --name-only",
     )?;
-    Ok(String::from_utf8_lossy(&listed)
-        .split('\0')
-        .filter(|p| !p.is_empty())
-        .map(str::to_string)
-        .collect())
-}
-
-fn pathspecs(scope: &[String]) -> Vec<String> {
-    scope.iter().map(|s| format!(":(glob){s}")).collect()
+    let untracked = git_output(
+        root,
+        git(root).args(["ls-files", "-z", "--others", "--", LAYER]),
+        "git ls-files --others",
+    )?;
+    let paths: BTreeSet<String> = [tracked, untracked]
+        .iter()
+        .flat_map(|listed| {
+            String::from_utf8_lossy(listed)
+                .split('\0')
+                .filter(|p| !p.is_empty())
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    Ok(paths.into_iter().collect())
 }
 
 /// Lines added plus removed over `scope` in `range`; when that is 0, the
 /// scope's tracked line count.
 fn changed_lines(root: &Path, range: &str, scope: &[String]) -> Result<i64> {
-    let specs = pathspecs(scope);
+    let specs = scope_pathspecs(scope);
     let numstat = git_output(
         root,
         git(root)
@@ -742,7 +755,7 @@ pub(crate) fn list(target: &Target, args: ReviewRunListArgs) -> Result<()> {
                 "scope": r.scope,
                 "substrate": text(&r.substrate),
                 "rechecks": rest_text(r, "rechecks"),
-                "waves": super::stats::run_waves(&stored.cells, &r.id),
+                "waves": store::run_waves(&stored.cells, &r.id),
                 "agents": r.agents,
                 "incomplete": rest_text(r, "incomplete"),
             })
@@ -764,7 +777,7 @@ fn run_number(id: &str) -> (u64, String) {
 struct Gaps {
     /// Findings still `unverified` with no `same_as`.
     unverified: Vec<String>,
-    /// Findings still `unverified` whose `same_as` awaits `review resolve`.
+    /// Findings, verified or not, whose `same_as` awaits `review resolve`.
     unresolved_same_as: Vec<String>,
     unselected: Vec<String>,
     unsliced: Vec<String>,
@@ -774,12 +787,12 @@ struct Gaps {
 
 impl Gaps {
     fn of(store: &Store, run: &str, accounting: &Accounting) -> Self {
-        let pending = store
-            .findings
-            .iter()
-            .filter(|f| f.run == run && f.status() == FindingStatus::Unverified);
-        let (unresolved_same_as, unverified): (Vec<_>, Vec<_>) =
-            pending.partition(|f| !f.same_as.is_empty());
+        let in_run = || store.findings.iter().filter(|f| f.run == run);
+        let unresolved_same_as: Vec<_> =
+            in_run().filter(|f| resolve::awaits_resolution(f)).collect();
+        let unverified: Vec<_> = in_run()
+            .filter(|f| f.status() == FindingStatus::Unverified && f.same_as.is_empty())
+            .collect();
         let ids = |rows: Vec<&store::Finding>| rows.into_iter().map(|f| f.id.clone()).collect();
         Self {
             unverified: ids(unverified),

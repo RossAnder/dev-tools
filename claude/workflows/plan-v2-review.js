@@ -376,11 +376,13 @@ while (current) {
   if (again.length) {
     log(`wave ${current.wave}: re-verifying ${again.join(', ')}`)
     const rets = await parallel(again.map((id) => () => reverify(id, current.wave)))
+    // A reverify id is a finding of this wave that already holds a verdict, so the
+    // pipeline's `verified` counts it; a second verdict adds no distinct id.
     rets.forEach((r, i) => {
       if (failed(r)) {
         fail(`reverify ${again[i]}: review-verifier ${why(r)}; left for the orchestrator's mop-up`)
         unverified.add(again[i])
-      } else if (r.verdict && r.verdict !== 'unsettled') entry.verified++
+      }
     })
   }
 

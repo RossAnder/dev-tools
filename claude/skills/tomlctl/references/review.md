@@ -116,7 +116,7 @@ A cell row takes `slice`, `concerns` (1–3), `agent` and `reason`, plus `questi
 |---|---|
 | `finder` | The identity fields and status, for a slice's `PRIOR`. A cell carries its assignment: slice, concerns with bound paths, facet and method paths, `pack`, `baselines`. A `review-finder-cf` cell carries no `pack`; it carries the run's `base` instead, to read the slice as `git diff <base>`, and the run's `head` beside it when the run records one. No other cell carries `head`. A plan-family cell adds `plan_documents`, the run's scope, with the plan first, and in flow mode `flow`, the slug. |
 | `verifier` | The claim to refute (`failure_scenario`, `counter`, `evidence`) and the `same_as` target; never `grade` or `fix`; the edit fields only when routed to it. |
-| `checker` | The cleanup edit fields and the `same_as` target. |
+| `checker` | The cleanup edit fields, the `lens` and the `same_as` target. |
 | `implementer` | The fix, what done means, and the latest citation. |
 | `orchestrator` | Status, `fix_shape`, the latest verdict, and the advisory fields until triaged; `failure_scenario` only when contested; never `evidence`. |
 | `audit` | The verifier view plus every verdict and `excerpts`: ±5 lines around the finding's `file:line` and each `path:line` citation. |
@@ -205,7 +205,7 @@ A cell row is refused when a `slice` entry is not repo-relative, its `concerns` 
 
 Records a cell's coverage status and note, and its rule-outs when `--ruled-out` is passed, and seals the cell. A cell already sealed with the same status and note succeeds unchanged, unless `--ruled-out` brings a different set, which replaces the stored `ruled_out`; a different status or note is refused, and so is any write to a finished run's cell. Without `--ruled-out` the stored rule-outs are kept. Prints `{ok, cell, status, sealed, unchanged}`, plus `ruled_out` (the entry count) only when the flag is passed.
 
-**Rule-outs.** Each `--ruled-out` entry is one site the cell judged deliberate: `file` (required, repo-relative), optional `symbol` and `line` (a positive integer), and `reason` (required, at most 200 characters); any other key is refused. One refused entry refuses the whole call, and nothing is sealed. An entry whose `file` lies outside the cell's slice is refused unless one of the cell's concerns is a mechanical lens, whose sweep reaches past the slice. An entry matches a finding by the digest's place rule, so an entry with neither `symbol` nor `line` matches nothing.
+**Rule-outs.** Each `--ruled-out` entry is one site the cell judged deliberate: `file` (required, repo-relative), a `symbol` or a `line` (a positive integer) or both, and `reason` (required, at most 200 characters); any other key is refused. One refused entry refuses the whole call, and nothing is sealed. An entry whose `file` lies outside the cell's slice is refused unless one of the cell's concerns is a mechanical lens, whose sweep reaches past the slice. An entry matches a finding by the digest's place rule, which needs a symbol or a line, so an entry with neither is refused.
 
 ```bash
 tomlctl review cover C3 --slug <slug> --status thin --note-file <run-dir>/payloads/C3-note.txt

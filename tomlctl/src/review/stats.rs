@@ -18,7 +18,7 @@ use anyhow::Result;
 use serde_json::{Value as JsonValue, json};
 
 use super::cells::PathSet;
-use super::fields::{Family, FindingStatus, Kind, Route};
+use super::fields::{CellStatus, Family, FindingStatus, Kind, Route};
 use super::invalid;
 use super::store::{self, Cell, Finding, Store, Verdict};
 use super::sync::{SYNC_REASON_PREFIX, V1Outcome, ledger_paths, linked_rows};
@@ -323,7 +323,7 @@ struct Tally {
     hashes: BTreeSet<String>,
     probes: BTreeSet<String>,
     cells: usize,
-    cell_status: BTreeMap<String, usize>,
+    cell_status: BTreeMap<CellStatus, usize>,
     waived_runs: BTreeSet<String>,
     kinds: [usize; Kind::ALL.len()],
     verified: usize,
@@ -337,7 +337,7 @@ impl Tally {
     fn add_cell(&mut self, sv: &StoreView, cell: &Cell, concern: Option<&str>) {
         self.runs.insert(sv.run_key(&cell.run));
         self.cells += 1;
-        *self.cell_status.entry(cell.status.clone()).or_default() += 1;
+        *self.cell_status.entry(cell.status).or_default() += 1;
         for b in &cell.bound {
             if concern.is_none_or(|c| c == b.concern) && !b.hash.is_empty() {
                 self.hashes.insert(b.hash.clone());
@@ -366,8 +366,8 @@ impl Tally {
         self.kinds.iter().sum()
     }
 
-    fn status(&self, status: &str) -> usize {
-        self.cell_status.get(status).copied().unwrap_or(0)
+    fn status(&self, status: CellStatus) -> usize {
+        self.cell_status.get(&status).copied().unwrap_or(0)
     }
 
     fn to_json(&self, axis: Axis, key: &str) -> JsonValue {
@@ -390,9 +390,9 @@ impl Tally {
             "audit_overturn_rate": rate(self.overturned, self.audited),
             "dismissed": self.dismissed,
             "dismissal_rate": rate(self.dismissed, self.findings()),
-            "thin": self.status("thin"),
-            "uncovered": self.status("uncovered"),
-            "uncovered_rate": rate(self.status("uncovered"), self.cells),
+            "thin": self.status(CellStatus::Thin),
+            "uncovered": self.status(CellStatus::Uncovered),
+            "uncovered_rate": rate(self.status(CellStatus::Uncovered), self.cells),
         });
         match axis {
             Axis::Lens => {
@@ -592,16 +592,6 @@ fn by_probe(view: &View) -> Vec<JsonValue> {
         .collect()
 }
 
-/// The highest `wave` among `cells` that belong to `run`; `0` when none carries one.
-pub(crate) fn run_waves<'a>(cells: impl IntoIterator<Item = &'a Cell>, run: &str) -> u32 {
-    cells
-        .into_iter()
-        .filter(|c| c.run == run)
-        .filter_map(|c| c.wave)
-        .max()
-        .unwrap_or(0)
-}
-
 fn by_run(view: &View) -> Vec<JsonValue> {
     let mut rows = Vec::new();
     for sv in &view.stores {
@@ -622,7 +612,7 @@ fn by_run(view: &View) -> Vec<JsonValue> {
             row["depth"] = json!(run.depth.as_str());
             row["started"] = json!(run.started);
             row["finished"] = json!(run.finished);
-            row["waves"] = json!(run_waves(sv.cells.iter().copied(), &run.id));
+            row["waves"] = json!(store::run_waves(sv.cells.iter().copied(), &run.id));
             row["agents"] = json!(run.agents);
             row["waivers"] = json!({
                 "concerns": waived_concerns,
@@ -763,7 +753,7 @@ fn escapes(view: &View) -> JsonValue {
         let covered: Vec<(&Cell, PathSet)> = sv
             .cells
             .iter()
-            .filter(|c| c.sealed && c.status == "covered")
+            .filter(|c| c.sealed && c.status == CellStatus::Covered)
             .map(|c| (*c, PathSet::new(&c.slice)))
             .collect();
         for f in &sv.findings {

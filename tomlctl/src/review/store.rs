@@ -27,7 +27,8 @@ use toml::map::Map;
 use toml::value::Datetime;
 
 use super::fields::{
-    self, Depth, FIELDS, Family, FindingStatus, Kind, ProjectCtx, Record, Role, Route, Ty,
+    self, CellStatus, Depth, FIELDS, Family, FindingStatus, Kind, ProjectCtx, Record, Role, Route,
+    Ty,
 };
 use crate::cli::{
     ReadIntegrityArgs, WriteIntegrityArgs, read_integrity_opts, write_integrity_opts,
@@ -107,7 +108,6 @@ pub(crate) struct Run {
     pub(crate) substrate: String,
     pub(crate) signals: Vec<Signal>,
     pub(crate) waivers: Vec<Waiver>,
-    pub(crate) waves: Option<u32>,
     pub(crate) agents: Option<u32>,
     pub(crate) rest: Table,
 }
@@ -144,7 +144,7 @@ pub(crate) struct Cell {
     pub(crate) reason: String,
     pub(crate) bound: Vec<Binding>,
     pub(crate) facets: Vec<String>,
-    pub(crate) status: String,
+    pub(crate) status: CellStatus,
     pub(crate) sealed: bool,
     pub(crate) note: String,
     pub(crate) ruled_out: Vec<RuledOut>,
@@ -335,6 +335,30 @@ impl Finding {
             self.rest.remove("retired_links");
         }
     }
+
+    /// The ids this row's identity links name, in the order a chain prefers
+    /// them: `same_as`, then `merged_into`, then `converted_to`.
+    pub(crate) fn identity_links(&self) -> impl Iterator<Item = &str> {
+        let rest = ["merged_into", "converted_to"].into_iter().map(|key| {
+            self.rest
+                .get(key)
+                .and_then(TomlValue::as_str)
+                .unwrap_or_default()
+        });
+        std::iter::once(self.same_as.as_str())
+            .chain(rest)
+            .filter(|id| !id.is_empty())
+    }
+}
+
+/// The highest `wave` among `cells` that belong to `run`; `0` when none carries one.
+pub(crate) fn run_waves<'a>(cells: impl IntoIterator<Item = &'a Cell>, run: &str) -> u32 {
+    cells
+        .into_iter()
+        .filter(|c| c.run == run)
+        .filter_map(|c| c.wave)
+        .max()
+        .unwrap_or(0)
 }
 
 pub(crate) fn from_toml(doc: &TomlValue) -> Result<Store> {
@@ -527,6 +551,7 @@ const RUN_CORE: &[&str] = &[
     "substrate",
     "signals",
     "waivers",
+    // Derived from the cells by `run_waves`; a stored value is dropped on the next write.
     "waves",
     "agents",
 ];
@@ -546,7 +571,6 @@ fn run_from_toml(t: &Table, at: &str) -> Result<Run> {
         substrate: text(t, "substrate"),
         signals: nested(t, "signals", at, signal_from_toml)?,
         waivers: nested(t, "waivers", at, waiver_from_toml)?,
-        waves: count(t, "waves", at)?,
         agents: count(t, "agents", at)?,
         rest: rest(Record::Run, t, RUN_CORE),
     })
@@ -571,7 +595,6 @@ fn run_to_toml(run: &Run) -> TomlValue {
     put_text(&mut t, "substrate", &run.substrate);
     put_tables(&mut t, "signals", run.signals.iter().map(signal_to_toml));
     put_tables(&mut t, "waivers", run.waivers.iter().map(waiver_to_toml));
-    put_count(&mut t, "waves", run.waves);
     put_count(&mut t, "agents", run.agents);
     ordered(Record::Run, t, &run.rest)
 }
@@ -645,7 +668,7 @@ fn cell_from_toml(t: &Table, at: &str) -> Result<Cell> {
         reason: text(t, "reason"),
         bound: nested(t, "bound", at, binding_from_toml)?,
         facets: texts(t, "facets"),
-        status: listed(t, "status", at, fields::CELL_STATUSES)?,
+        status: cell_status(t, at)?,
         sealed: t
             .get("sealed")
             .and_then(TomlValue::as_bool)
@@ -669,7 +692,7 @@ fn cell_to_toml(cell: &Cell) -> TomlValue {
     put_text(&mut t, "reason", &cell.reason);
     put_tables(&mut t, "bound", cell.bound.iter().map(binding_to_toml));
     put_texts(&mut t, "facets", &cell.facets);
-    put_text(&mut t, "status", &cell.status);
+    put_text(&mut t, "status", cell.status.as_str());
     if cell.sealed {
         t.insert("sealed".to_string(), TomlValue::Boolean(true));
     }
@@ -902,6 +925,12 @@ fn finding_status(t: &Table, at: &str) -> Result<FindingStatus> {
     let raw = listed(t, "status", at, fields::FINDING_STATUSES)?;
     FindingStatus::parse(&raw)
         .ok_or_else(|| anyhow!("{at}: `status` = {raw:?} is not a known value"))
+}
+
+/// `status`, refused with `listed`'s message when it names no cell status.
+fn cell_status(t: &Table, at: &str) -> Result<CellStatus> {
+    let raw = listed(t, "status", at, fields::CELL_STATUSES)?;
+    CellStatus::parse(&raw).ok_or_else(|| anyhow!("{at}: `status` = {raw:?} is not a known value"))
 }
 
 fn optional_listed(t: &Table, key: &str, at: &str, values: &[&str]) -> Result<String> {
@@ -1233,7 +1262,6 @@ substrate = "workflow"
 models = { finder = "opus" }
 signals = [{ name = "lang:rust", source = "detector", roots = ["tomlctl"] }, { name = "trust-boundary", source = "judged", accepted = true, evidence = ["tomlctl/src/io.rs"] }]
 waivers = [{ concern = "security", reason = "no input handling" }, { file = "tomlctl/README.md", reason = "prose only" }]
-waves = 2
 agents = 23
 counts = { cells = 1 }
 

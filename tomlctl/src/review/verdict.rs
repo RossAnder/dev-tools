@@ -227,21 +227,19 @@ fn apply_one(
             "plausible" => {
                 reasons.push("a checker returns confirmed, unsettled or refuted".to_string());
             }
-            "refuted" => {
-                let allowed = checker_may_refute(store, finding, mechanical);
-                if allowed != Ok(true) {
-                    reasons.push(format!(
-                        "a checker may refute only a row a sweeper wrote; {id} is from cell {}, which is not a {SWEEPER} cell",
-                        finding.cell
-                    ));
-                }
-                if let Err(err) = allowed {
-                    reasons.push(format!(
-                        "run {}'s catalogue, which says whether lens {:?} is mechanical, could not be read: {err}",
-                        finding.run, finding.lens
-                    ));
-                }
-            }
+            "refuted" => match checker_may_refute(store, finding, mechanical) {
+                Ok(true) => {}
+                Ok(false) => reasons.push(format!(
+                    "a checker may refute only a row a sweeper wrote or a cleanup under a mechanical lens; {id} is a {} under lens {:?} from cell {}, which is not a {SWEEPER} cell",
+                    finding.kind.as_str(),
+                    finding.lens,
+                    finding.cell
+                )),
+                Err(err) => reasons.push(format!(
+                    "run {}'s catalogue, which says whether lens {:?} is mechanical, could not be read: {err}",
+                    finding.run, finding.lens
+                )),
+            },
             _ => {}
         }
     }

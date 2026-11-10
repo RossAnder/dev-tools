@@ -591,6 +591,41 @@ fn propose_respects_scaled_ceiling() {
 }
 
 #[test]
+fn propose_after_a_planned_wave_lists_only_uncovered_concerns_as_ceiling_cuts() {
+    let Some(repo) = Repo::new(&["src/a/x.rs", "src/b/y.rs", "src/c/z.rs", "src/d/w.rs"]) else {
+        return;
+    };
+    repo.seed(&[RunSpec {
+        id: "U1",
+        family: "code",
+        depth: "quick",
+        changed_lines: Some(250),
+        scope: &["src/**"],
+        signals: r#"[{ name = "docs-touched", source = "detector", roots = ["src"] }]"#,
+    }]);
+    let (rows, first) = repo.propose(STORE, "U1", &[]);
+    assert!(ceiling_cut(&first, "doc-drift"), "{first}");
+    let planned: Vec<String> = rows.iter().flat_map(concerns).collect();
+    assert!(!planned.is_empty());
+    let pad = (rows.len()..3).map(|i| {
+        json!({"slice": ["src/**"], "concerns": [format!("probe:pad-{i}")], "agent": "review-finder",
+               "reason": "fills the ceiling", "question": "Is the ceiling spent?"})
+    });
+    let wave: Vec<JsonValue> = rows.iter().cloned().chain(pad).collect();
+    repo.plan("U1", &wave);
+
+    let (rows, second) = repo.propose(STORE, "U1", &[]);
+    assert!(rows.is_empty(), "the ceiling is spent: {rows:?}");
+    for concern in &planned {
+        assert!(
+            !ceiling_cut(&second, concern),
+            "{concern} already has a cell: {second}"
+        );
+    }
+    assert!(ceiling_cut(&second, "doc-drift"), "{second}");
+}
+
+#[test]
 fn propose_scope_without_diff_uses_line_count() {
     if !git_available() {
         eprintln!("skipping: git is not available");
