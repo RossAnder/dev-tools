@@ -12284,7 +12284,7 @@ tags = [
     "implement-v2",
     "needs-discussion",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-11-11T12:05:58Z
 last_seen = 2026-11-11T12:05:58Z
 seen_count = 1
@@ -12296,6 +12296,11 @@ base_sha = "a1f20889ff34c5b5384b2547727d0489e4d76f9e"
 related = ["B-56a8a9ff"]
 promoted = 2026-11-11
 promoted_to = "milestone-cadence"
+resolved = 2026-11-11
+resolution = "resolved by flow `milestone-cadence` (tasks say-in-the-plan-v2-design-and-prove-steps-how-to-cut-milestones)"
+resolved_flow = "milestone-cadence"
+resolved_tasks = ["say-in-the-plan-v2-design-and-prove-steps-how-to-cut-milestones"]
+resolved_commits = ["8686bc0840a6c230713697c34258b57dac8139f2"]
 
 [[backlog]]
 id = "B-df3ffc6a"
@@ -12615,3 +12620,20 @@ base_sha = "d9c511b45fc0fde1fdd3200103ef518b00e61088"
 related = ["B-f8331d1a"]
 resolved = 2026-11-11
 resolution = "fixed in commit 3cf64fa3"
+
+[[backlog]]
+id = "B-ccdfe310"
+kind = "bug"
+summary = "plan emit lane-check reports the orchestrator's own tasks add-many as a store write when its trail row is stamped in the same second as digest_at"
+area = "tomlctl/src/plan/lane.rs"
+tags = []
+status = "open"
+created = 2026-11-11T15:26:53Z
+last_seen = 2026-11-11T15:26:53Z
+seen_count = 1
+dedup_id = "ccdfe3106107554a"
+origin = "implement-v2"
+flow = "milestone-cadence"
+context = "Seen on milestone-cadence round 2 (run wf_e4e1c361-78b): the fix task minted at 15:23:04Z and the launch-args digest taken at 15:23:04Z gave clean=false with one trail row, actor orchestrator, digest matched. The trail window is inclusive of digest_at at one-second resolution, so a replan written just before the emit is counted as a write during the run."
+base_sha = "8686bc0840a6c230713697c34258b57dac8139f2"
+related = ["B-add009dc"]

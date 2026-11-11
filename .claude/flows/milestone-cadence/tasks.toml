@@ -70,7 +70,7 @@ check = "grep -q 'fn file_chain_findings' tomlctl/src/plan/check.rs && grep -q '
 at = "base"
 
 [specs.premises.probe]
-at = "2596fcf03a3fce2078e1d0645e3e435c103d6cc1"
+at = "f8de31942b6f717afe87211205d71357f3912b30"
 neg_rc = 0
 verdict = "holds"
 
@@ -116,7 +116,7 @@ check = "grep -q 'plan/file-only-chain' claude/skills/tomlctl/references/plan.md
 at = "base"
 
 [specs.premises.probe]
-at = "2596fcf03a3fce2078e1d0645e3e435c103d6cc1"
+at = "f8de31942b6f717afe87211205d71357f3912b30"
 neg_rc = 0
 verdict = "holds"
 
@@ -175,7 +175,7 @@ check = "grep -q 'plan/file-only-chain' claude/skills/plan-v2-engine/references/
 at = "base"
 
 [specs.premises.probe]
-at = "2596fcf03a3fce2078e1d0645e3e435c103d6cc1"
+at = "f8de31942b6f717afe87211205d71357f3912b30"
 neg_rc = 0
 verdict = "holds"
 
@@ -221,9 +221,36 @@ check = "grep -q -e '--depth quick' claude/commands/plan-v2.md && grep -q -e '--
 at = "base"
 
 [specs.premises.probe]
-at = "2596fcf03a3fce2078e1d0645e3e435c103d6cc1"
+at = "f8de31942b6f717afe87211205d71357f3912b30"
 neg_rc = 0
 verdict = "holds"
+
+[[specs]]
+ref = "expect-the-milestone-width-finding-in-the-plan-lifecycle-test"
+outcome = "The plan lifecycle test expects the plan/milestone-width finding its fixture now raises."
+constraints = [
+    "Change the test's expectations only, never its fixture or tomlctl/src.",
+    "Touch no file outside this task's files.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the lifecycle test names the new class"
+check = "grep -q 'plan/milestone-width' tomlctl/tests/plan_lifecycle.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[[specs.accept]]
+behaviour = "the lifecycle test passes"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(a_plan_runs_from_open_to_drift)'"
+kind = "forward"
+positive = ""
+writes_build = true
 
 [[milestones]]
 id = "A"
@@ -237,12 +264,21 @@ gates = [
 elaboration = "upfront"
 defer_reason = ""
 
+[[changes]]
+at = 2026-11-11T15:23:04Z
+ref = "expect-the-milestone-width-finding-in-the-plan-lifecycle-test"
+field = "*"
+old = ""
+new = "Expect the milestone-width finding in the plan lifecycle test"
+actor = "orchestrator"
+reason = "gate A round 1: cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast fails a_plan_runs_from_open_to_drift, whose expected class list lacks plan/milestone-width"
+
 [[items]]
 id = 1
 ref = "report-rows-waiting-behind-a-milestone-boundary-in-plan-check"
 title = "Report rows waiting behind a milestone boundary in plan check"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -262,15 +298,15 @@ Milestone order is the store's `[[checkpoints]]` order. For a row in the milesto
 
 Tests go in `tomlctl/tests/plan_check.rs`, with `milestone_width` in each test name: a two-milestone unapproved store whose second milestone holds a row with no needs is reported at info with that row's id and exit 0; a row needing a row of the milestone just before its own is not reported; an approved store gets no such finding; a one-milestone store gets none. An existing fixture in `plan_check.rs`, `plan_milestone.rs` or `plan_probes.rs` that now raises the finding is changed by giving its later row a need on the earlier milestone, or by asserting the new finding where the test is about findings. Run only `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(plan_check) | binary(plan_milestone) | binary(plan_probes)'`."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "8686bc0840a6c230713697c34258b57dac8139f2"
 
 [[items]]
 id = 2
 ref = "document-the-milestone-width-class-in-the-tomlctl-references"
 title = "Document the milestone-width class in the tomlctl references"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -288,15 +324,15 @@ In `claude/skills/tomlctl/references/plan.md`, add one table row directly under 
 
 In `claude/skills/tomlctl/references/tasks.md`, the `severity` row says `plan check` adds `plan/file-only-chain`; make it say `plan check` adds `plan/file-only-chain` and `plan/milestone-width`."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "8686bc0840a6c230713697c34258b57dac8139f2"
 
 [[items]]
 id = 3
 ref = "say-in-the-plan-v2-design-and-prove-steps-how-to-cut-milestones"
 title = "Say in the plan-v2 Design and Prove steps how to cut milestones"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -316,15 +352,15 @@ In section 1, after the `plan milestone add` command block and before the gate-p
 
 In section 4a, after the sentence about `plan/file-only-chain`, add: a `plan/milestone-width` info finding names rows that could start with an earlier milestone; move each to the milestone its `detail` names with `tasks update --ndjson`, or merge the two milestones, unless the boundary is one the `How many` rule calls for, and with `--milestones few` clear every one."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "8686bc0840a6c230713697c34258b57dac8139f2"
 
 [[items]]
 id = 4
 ref = "take-milestones-in-the-plan-v2-carrier-and-engine-arguments"
 title = "Take --milestones in the plan-v2 carrier and engine arguments"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -342,5 +378,25 @@ In `claude/commands/plan-v2.md`: add `[--milestones few|default]` to the frontma
 
 In `claude/skills/plan-v2-engine/SKILL.md`, Arguments section, add a bullet after `--depth`: `--milestones few|default`: how the Design step cuts the plan. `default` follows the `How many` rule of `references/write-and-prove.md`; `few` asks for one milestone, with another only where one must be deferred. Default `default`. In the Re-entry section, the sentence listing the arguments that are not stored (`--depth`, `--no-review` and `--review`) gains `--milestones`.'''
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "8686bc0840a6c230713697c34258b57dac8139f2"
+
+[[items]]
+id = 5
+ref = "expect-the-milestone-width-finding-in-the-plan-lifecycle-test"
+title = "Expect the milestone-width finding in the plan lifecycle test"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/tests/plan_lifecycle.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add plan/milestone-width to the class list a_plan_runs_from_open_to_drift expects from plan check before approval."
+detail = """In `tomlctl/tests/plan_lifecycle.rs`, test `a_plan_runs_from_open_to_drift`, the `assert_eq!` on `finding_classes(&check)` expects `["backlog/unpromoted", "plan/milestone-no-gate"]`. The fixture's milestone B rows 3 and 4 need nothing in milestone A, so plan check now also reports `plan/milestone-width` at info. Make the expected list `["backlog/unpromoted", "plan/milestone-no-gate", "plan/milestone-width"]`. Change nothing else; if a later assertion in the same test fails for the same reason, fix it the same way. Run only `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(a_plan_runs_from_open_to_drift)'`."""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "8686bc0840a6c230713697c34258b57dac8139f2"

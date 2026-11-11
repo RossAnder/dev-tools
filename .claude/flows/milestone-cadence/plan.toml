@@ -130,3 +130,48 @@ run_id = ""
 started = 2026-11-11T15:18:25Z
 finished = ""
 skip_reason = "the user passed --no-review"
+
+[[run]]
+step = "implement:A"
+workflow = "implement-v2-milestone"
+args_hash = "95d63d9ce98111aca026445dededdb1fde8151a720a5587e700624ceb944c58d"
+run_id = "wf_7e4e01a5-2ff"
+session = "dc017360-3500-427d-ae34-40a00675850f"
+started = 2026-11-11T15:19:58Z
+finished = 2026-11-11T15:21:49Z
+skip_reason = ""
+outcome = "ok"
+tasks = [
+    1,
+    2,
+    3,
+    4,
+]
+digest_at = 2026-11-11T15:19:45Z
+
+[run.store_digest]
+changes = "4f53cda18c2baa0c"
+milestones = "acc60f5a3552a68d"
+rest = "3d600006a3ef15cb"
+rows = "806a14e13fbf0034"
+specs = "4ae35979352b81f9"
+
+[[run]]
+step = "implement:A"
+workflow = "implement-v2-milestone"
+args_hash = "6c1020298dadf4c4ade894321101f36807b291cbe21b1c0f42ea04d2f28efd46"
+run_id = "wf_e4e1c361-78b"
+session = "dc017360-3500-427d-ae34-40a00675850f"
+started = 2026-11-11T15:23:13Z
+finished = 2026-11-11T15:23:35Z
+skip_reason = ""
+outcome = "ok"
+tasks = [5]
+digest_at = 2026-11-11T15:23:04Z
+
+[run.store_digest]
+changes = "4f53cda18c2baa0c"
+milestones = "acc60f5a3552a68d"
+rest = "3d600006a3ef15cb"
+rows = "d4e071cb92089dd1"
+specs = "4d02cf08fea97a35"
