@@ -80,22 +80,41 @@ fn subagent_transcript_with(
 ) -> Option<PathBuf> {
     let root = Path::new(transcript_path).parent()?;
     let candidate = match agent_transcript_path.filter(|p| !p.is_empty()) {
-        Some(p) => PathBuf::from(p),
+        Some(p) => {
+            let p = PathBuf::from(p);
+            if !wait_for_file(&p, attempts) {
+                return None;
+            }
+            p
+        }
         None => {
             if session_id.is_empty() || agent_id.is_empty() {
                 return None;
             }
-            root.join(session_id)
-                .join("subagents")
-                .join(format!("agent-{agent_id}.jsonl"))
+            let subagents = root.join(session_id).join("subagents");
+            wait_for(attempts, || derived_transcript(&subagents, agent_id))?
         }
     };
-    if !wait_for_file(&candidate, attempts) {
-        return None;
-    }
     let canonical = std::fs::canonicalize(&candidate).ok()?;
     let root = std::fs::canonicalize(root).ok()?;
     canonical.starts_with(&root).then_some(canonical)
+}
+
+/// The transcript of `agent_id` under a session's `subagents/` directory: at
+/// its top level for an Agent-tool dispatch, or one level under
+/// `workflows/<run>/` for an agent a Workflow script dispatched. The
+/// `SubagentStart` payload names neither.
+fn derived_transcript(subagents: &Path, agent_id: &str) -> Option<PathBuf> {
+    let file = format!("agent-{agent_id}.jsonl");
+    let direct = subagents.join(&file);
+    if direct.is_file() {
+        return Some(direct);
+    }
+    std::fs::read_dir(subagents.join("workflows"))
+        .ok()?
+        .filter_map(Result::ok)
+        .map(|run| run.path().join(&file))
+        .find(|path| path.is_file())
 }
 
 /// The latest dispatch in `path`: the newest user-authored line carrying at
@@ -109,27 +128,69 @@ pub(crate) fn latest_dispatch(path: &Path) -> Option<Dispatch> {
 }
 
 fn latest_dispatch_with(path: &Path, prompt_of: fn(&str) -> Option<String>) -> Option<Dispatch> {
-    dispatch_in(&read_tail(path)?, prompt_of).or_else(|| head_dispatch(path, prompt_of))
+    dispatch_in(&read_tail(path)?, prompt_of)
+        .or_else(|| head_dispatch(path, prompt_of, WHOLE_READ_MAX))
 }
 
-/// The dispatch on a transcript's first line, for a file too large to be read
-/// whole: the spawn prompt sits at the head, outside the tail window.
-fn head_dispatch(path: &Path, prompt_of: fn(&str) -> Option<String>) -> Option<Dispatch> {
+/// The newest dispatch among the whole lines of a transcript's first
+/// `TAIL_BYTES`, where the spawn prompt sits, for a file longer than `read`,
+/// the window its caller has already searched; `None` for a shorter one.
+fn head_dispatch(
+    path: &Path,
+    prompt_of: fn(&str) -> Option<String>,
+    read: u64,
+) -> Option<Dispatch> {
     let file = std::fs::File::open(path).ok()?;
-    if file.metadata().ok()?.len() <= WHOLE_READ_MAX {
+    if file.metadata().ok()?.len() <= read {
         return None;
     }
+    dispatch_in(&read_head(file)?, prompt_of)
+}
+
+/// The whole lines among a file's first `TAIL_BYTES`, or the whole file when
+/// it is no longer.
+fn read_head(file: std::fs::File) -> Option<String> {
     let mut bytes = Vec::new();
-    file.take(TAIL_BYTES).read_to_end(&mut bytes).ok()?;
-    if let Some(end) = memchr::memchr(b'\n', &bytes) {
+    file.take(TAIL_BYTES + 1).read_to_end(&mut bytes).ok()?;
+    if bytes.len() as u64 > TAIL_BYTES {
+        let end = memchr::memrchr(b'\n', &bytes[..TAIL_BYTES as usize]).unwrap_or(0);
         bytes.truncate(end);
     }
-    dispatch_in(&into_text(bytes), prompt_of)
+    Some(into_text(bytes))
+}
+
+/// The dispatch at the head of a transcript longer than the stop's tail
+/// window, which [`dispatch_and_tokens`] cannot see: the spawn prompt of a
+/// long run. A teammate retasked since may have moved on from it, so it only
+/// fills what the tail read left unknown.
+pub(crate) fn spawn_dispatch(path: &Path) -> Option<Dispatch> {
+    head_dispatch(path, user_text, TAIL_BYTES)
+}
+
+/// [`spawn_dispatch`] over a Codex rollout.
+pub(crate) fn codex_spawn_dispatch(path: &Path) -> Option<Dispatch> {
+    head_dispatch(path, codex_user_text, TAIL_BYTES)
+}
+
+/// The `timestamp` of the first transcript line carrying one, as written:
+/// when the agent began, for a record whose start event was lost. Claude Code
+/// and Codex lines both carry the field at the top level.
+pub(crate) fn first_timestamp(path: &Path) -> Option<String> {
+    let head = read_head(std::fs::File::open(path).ok()?)?;
+    head.lines().find_map(|line| {
+        let value: JsonValue = serde_json::from_str(line).ok()?;
+        let stamp = value.get("timestamp")?.as_str()?;
+        stamp
+            .parse::<jiff::Timestamp>()
+            .is_ok()
+            .then(|| stamp.to_string())
+    })
 }
 
 /// The dispatch and the context size at the last assistant turn, from one read
 /// of the last `TAIL_BYTES` of `path`, for a stop that needs both. A dispatch
-/// outside that window, such as the spawn prompt of a long run, gives `None`.
+/// outside that window, such as the spawn prompt of a long run, gives `None`;
+/// [`spawn_dispatch`] reads that one.
 pub(crate) fn dispatch_and_tokens(path: &Path) -> (Option<Dispatch>, u64) {
     dispatch_and_tokens_with(path, user_text, tokens_in)
 }
@@ -498,13 +559,18 @@ fn read_capped(path: &Path, cap: u64) -> Option<String> {
 
 /// Wait for a file the harness may not have written yet.
 fn wait_for_file(path: &Path, attempts: u32) -> bool {
+    wait_for(attempts, || path.is_file().then_some(())).is_some()
+}
+
+/// Poll `probe` until it answers, at most `attempts` retries apart.
+fn wait_for<T>(attempts: u32, probe: impl Fn() -> Option<T>) -> Option<T> {
     for _ in 0..attempts {
-        if path.is_file() {
-            return true;
+        if let Some(found) = probe() {
+            return Some(found);
         }
         std::thread::sleep(RETRY_DELAY);
     }
-    path.is_file()
+    probe()
 }
 
 #[cfg(test)]
@@ -901,6 +967,92 @@ mod tests {
             latest_dispatch(&agent).map(|d| d.slug),
             Some("old-flow".to_string())
         );
+    }
+
+    /// A worker's transcript as a Workflow writes it: the relayed request,
+    /// then the computed task naming the dispatch, then turns that quote the
+    /// slug only in assistant and request-blob lines, past the stop's window.
+    fn long_worker_transcript() -> String {
+        let mut body = [
+            user_line("[Workflow harness — user request] /implement-v2 my-flow"),
+            user_line("slug: my-flow\n- `tomlctl plan view --slug my-flow --for worker --task 11`"),
+        ]
+        .join("\n");
+        body.push('\n');
+        let assistant = serde_json::json!({"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "input": {"command": "tomlctl tasks show 8 --slug my-flow"}},
+            {"type": "text", "text": "x".repeat(1000)}]}})
+        .to_string();
+        let blob = serde_json::json!({"type": "api-request-blob", "message": {"content": [
+            {"type": "text", "text": "tomlctl tasks show 8 --slug my-flow"}]}})
+        .to_string();
+        while (body.len() as u64) <= TAIL_BYTES + 64 * 1024 {
+            body.push_str(&assistant);
+            body.push('\n');
+            body.push_str(&blob);
+            body.push('\n');
+        }
+        body
+    }
+
+    #[test]
+    fn a_stop_past_the_tail_window_finds_the_spawn_dispatch_at_the_head() {
+        let (_tmp, _, agent) = session_tree(&[]);
+        std::fs::write(&agent, long_worker_transcript()).expect("transcript");
+        assert!(std::fs::metadata(&agent).expect("stat").len() <= WHOLE_READ_MAX);
+        // The tail holds no user line naming the dispatch.
+        assert_eq!(dispatch_and_tokens(&agent).0, None);
+        let task_11 = Some(Dispatch {
+            slug: "my-flow".into(),
+            task_ids: vec![11],
+            item_ids: Vec::new(),
+        });
+        assert_eq!(spawn_dispatch(&agent), task_11);
+        assert_eq!(latest_dispatch(&agent), task_11);
+    }
+
+    #[test]
+    fn a_short_transcript_has_no_separate_spawn_dispatch() {
+        let (_tmp, _, agent) = session_tree(&[user_line("tasks show 1 --slug my-flow")]);
+        assert_eq!(spawn_dispatch(&agent), None);
+    }
+
+    #[test]
+    fn a_workflow_agent_transcript_is_found_under_its_run() {
+        let (tmp, parent, _) = session_tree(&[]);
+        let run = tmp
+            .path()
+            .join("proj")
+            .join("s1")
+            .join("subagents")
+            .join("workflows")
+            .join("wf_1");
+        std::fs::create_dir_all(&run).expect("run dir");
+        std::fs::write(run.join("agent-w1.jsonl"), "").expect("transcript");
+        let found = subagent_transcript_with(&parent, "s1", "w1", None, 0).expect("found");
+        assert!(
+            found.ends_with("workflows/wf_1/agent-w1.jsonl"),
+            "{found:?}"
+        );
+        assert_eq!(subagent_transcript_with(&parent, "s1", "w2", None, 0), None);
+    }
+
+    #[test]
+    fn first_timestamp_reads_the_earliest_stamped_line() {
+        let lines = [
+            serde_json::json!({"type": "queue-operation"}).to_string(),
+            serde_json::json!({"type": "user", "timestamp": "not a time"}).to_string(),
+            serde_json::json!({"type": "user", "timestamp": "2026-11-11T10:20:13.405Z"})
+                .to_string(),
+            serde_json::json!({"type": "user", "timestamp": "2026-11-11T10:21:00Z"}).to_string(),
+        ];
+        let (_tmp, _, agent) = session_tree(&lines);
+        assert_eq!(
+            first_timestamp(&agent).as_deref(),
+            Some("2026-11-11T10:20:13.405Z")
+        );
+        std::fs::write(&agent, "").expect("empty");
+        assert_eq!(first_timestamp(&agent), None);
     }
 
     #[test]

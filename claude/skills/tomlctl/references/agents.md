@@ -170,7 +170,7 @@ and any key not listed here is dropped.
 | `name` | text | Teammate name; `""` for a subagent. The key an idle event matches on. |
 | `team` | text | Team name from the `.meta.json`; informational only, never matched. |
 | `status` | `running` \| `idle` \| `stopped` | See [Events](#events). Absent reads as `running`. |
-| `started_at` | RFC 3339 UTC | When the row was created. Every timestamp in the store is the time `tomlctl` handled the event, not a time taken from the payload. |
+| `started_at` | RFC 3339 UTC | When the row was created. Every timestamp in the store is the time `tomlctl` handled the event, not a time taken from the payload, with one exception: a row a stop creates takes the `timestamp` of its transcript's first stamped line, when that is no later than the stop. |
 | `updated_at` | RFC 3339 UTC | The last event that changed the row. Breaks ties in [flow selection](#flow-selection). |
 | `ended_at` | RFC 3339 UTC or `""` | Set when a subagent stops; cleared by a later start. A teammate's stays `""`. |
 | `transcript_path` | path | The agent's own transcript, canonicalised. |
@@ -198,7 +198,7 @@ Both adapters read the payload's `hook_event_name`. Any other event prints
 | Hook event | Label | Effect |
 |---|---|---|
 | `SubagentStart` | `start` | Upserts the row on `(session_id, agent_id)` and opens a segment on the dispatched task set, closing any open one first. If the open segment already covers the same set and the row is `running`, nothing changes. Sets `running` and clears `ended_at`. A start whose time is earlier than the `ended_at` already recorded on a `stopped` row is ignored and prints `{"recorded":false,"reason":"stale-start"}`; a resume started after the stop still reopens the row. Fills `agent_type`, `transcript_path`, `name` and `team` from the payload and `.meta.json`, never blanking a value an earlier event recorded. Claude Code fires this on a spawn, on a resume, and each time a teammate takes a new message, so this one path covers re-tasking a pool worker. |
-| `SubagentStop` | `stop` | Closes the open segment and sets `stopped` with `ended_at` for a subagent, or `idle` for a teammate — a teammate that stops is parked, not finished. Stores the summary and the context size. A stop whose agent no row holds (it outran its own start) creates the row only when its transcript's dispatch names a flow; otherwise it prints `no-flow`. |
+| `SubagentStop` | `stop` | Closes the open segment and sets `stopped` with `ended_at` for a subagent, or `idle` for a teammate — a teammate that stops is parked, not finished. Stores the summary and the context size. A stop whose agent no row holds (its start was lost or outrun) creates the row only when its transcript's dispatch names a flow, starting the row and its segment at the transcript's first timestamp; otherwise it prints `no-flow`. |
 | `TeammateIdle` | `idle` | Finds the teammate's latest row by `(session_id, teammate_name)` — `team_name` is not matched — closes its open segment and sets `idle`. Never creates a row. |
 
 **Reaping.** Every recorded event also reaps the store it wrote to: any other `running` row
@@ -218,9 +218,11 @@ for its internal agents.
 
 A payload names no flow, so `record` works out which flow's store owns the event. It first
 reads the agent's transcript — the payload's `agent_transcript_path` when present, else
-`<dirname(transcript_path)>/<session_id>/subagents/agent-<agent_id>.jsonl`, waiting up to a
-second for it to appear — and accepts it only when it canonicalises inside the session's own
-transcript directory. An idle event uses the `transcript_path` already on the teammate's row.
+`<dirname(transcript_path)>/<session_id>/subagents/agent-<agent_id>.jsonl`, or for an agent a
+Workflow script dispatched `…/subagents/workflows/<run>/agent-<agent_id>.jsonl`, waiting up to a
+second for either to appear — and accepts it only when it canonicalises inside the session's own
+transcript directory. A `SubagentStart` payload carries no `agent_transcript_path`, so a start
+always takes the derived path. An idle event uses the `transcript_path` already on the teammate's row.
 
 Under `--harness codex` the transcript is the child's rollout: the stop payload's
 `agent_transcript_path`, and the start payload's `transcript_path`, which on a start names the
@@ -230,7 +232,8 @@ accepted only when its canonical file name is `rollout-*.jsonl` and carries the 
 `agent_id`. Either path may be `null`, which leaves the event with no transcript.
 
 The **dispatch** is the newest user-authored line in that transcript carrying at least one
-`tasks show <id> --slug <slug>` command — the fetch line every task dispatch prompt contains —
+`tasks show <id> --slug <slug>` command — the fetch line every task dispatch prompt contains,
+a v2 worker's `plan view --slug <slug> --for worker --task <id>` counting the same —
 or a [ledger line](#ledger-attribution), which review, optimise, plan-review and apply
 dispatches carry. In a Codex rollout that is a user-role `response_item` message's
 `input_text`, or an `inter_agent_communication` item's `content`.
@@ -239,10 +242,12 @@ whose `tasks show` commands and ledger lines name two different slugs yields no 
 a line that is a tool result echoing such a command is not a prompt and is skipped.
 
 **How much is read.** A start or idle event reads a transcript up to 4 MiB whole; past that
-it reads the last 1 MiB, then falls back to the first line, where a long run's spawn prompt
-sits. A stop reads only the last 1 MiB, whatever the size, and never falls back to the head:
-the same read yields the context size, and the segment it closes already carries the ids
-recorded at start or at the previous idle.
+it reads the last 1 MiB, then falls back to the newest dispatch among the whole lines of the
+first 1 MiB, where a long run's spawn prompt sits. A stop reads the last 1 MiB, which also
+yields the context size. When that finds no dispatch in a transcript longer than 1 MiB, the
+stop reads the head the same way, but that **spawn dispatch** only names a segment that holds
+no task or item ids and a row the stop creates, and picks the flow only where the tail
+dispatch would have: a teammate retasked since its spawn keeps what start or idle recorded.
 
 Every flow's `agents.toml` under `<root>/.claude/flows/` is then scanned, and the owner is
 chosen per event:

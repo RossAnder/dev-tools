@@ -27,7 +27,8 @@ const SUMMARY_MAX_CHARS: usize = 600;
 /// One lifecycle event, already correlated. `task_ids` and `item_ids` on
 /// `Stop` and `Idle` are the dispatch read again at close time, `None` when
 /// none resolved; the transcript lags the hook, so it can correct what the
-/// start recorded.
+/// start recorded. A stop's `spawn` is the dispatch at the head of a
+/// transcript too long for that read, and `began_at` its first timestamp.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Event {
     Start {
@@ -55,6 +56,8 @@ pub(crate) enum Event {
         transcript_path: String,
         task_ids: Option<Vec<u32>>,
         item_ids: Option<Vec<String>>,
+        spawn: Option<(Vec<u32>, Vec<String>)>,
+        began_at: Option<String>,
     },
     Idle {
         session_id: String,
@@ -155,13 +158,21 @@ pub(crate) fn apply(store: &mut AgentsStore, event: Event, now: &str) -> Outcome
             transcript_path,
             task_ids,
             item_ids,
+            spawn,
+            began_at,
         } => {
             if store.find_mut(&session_id, &agent_id).is_none() {
-                // A stop that outran its own start: only its dispatch placed
-                // it in this flow, so without one there is nothing to own it.
-                let Some(ids) = task_ids.as_deref() else {
-                    return Outcome::NotRecorded("no-flow");
+                // A stop whose start was never recorded: only its dispatch
+                // placed it in this flow, so without one there is nothing to
+                // own it.
+                let (ids, items) = match (&task_ids, &spawn) {
+                    (Some(ids), _) => (ids.as_slice(), item_ids.as_deref().unwrap_or_default()),
+                    (None, Some((ids, items))) => (ids.as_slice(), items.as_slice()),
+                    (None, None) => return Outcome::NotRecorded("no-flow"),
                 };
+                let started_at = began_at
+                    .filter(|began| not_after(began, now))
+                    .unwrap_or_else(|| now.to_string());
                 let id = store.next_id();
                 let mut row = AgentRecord {
                     id,
@@ -172,15 +183,26 @@ pub(crate) fn apply(store: &mut AgentsStore, event: Event, now: &str) -> Outcome
                     kind,
                     name,
                     team,
-                    started_at: now.to_string(),
+                    started_at: started_at.clone(),
                     ..AgentRecord::default()
                 };
-                row.open_segment(ids, item_ids.as_deref().unwrap_or_default(), now);
+                row.open_segment(ids, items, &started_at);
                 store.agents.push(row);
             }
             let row = store
                 .find_mut(&session_id, &agent_id)
                 .expect("row exists: found or just pushed");
+            // The spawn dispatch only names a segment nothing else named.
+            let (task_ids, item_ids) = match (task_ids, item_ids, spawn) {
+                (None, None, Some((ids, items)))
+                    if row.open_segment_ref().is_some_and(|open| {
+                        open.task_ids.is_empty() && open.item_ids.is_empty()
+                    }) =>
+                {
+                    (Some(ids), Some(items))
+                }
+                (task_ids, item_ids, _) => (task_ids, item_ids),
+            };
             close(row, task_ids.as_deref(), item_ids.as_deref(), now);
             row.status = match row.kind {
                 AgentKind::Teammate => AgentStatus::Idle,
@@ -288,6 +310,17 @@ fn stopped_after(ended_at: &str, now: &str) -> bool {
         now.parse::<jiff::Timestamp>(),
     ) {
         (Ok(ended), Ok(now)) => ended > now,
+        _ => false,
+    }
+}
+
+/// Whether `at` is no later than `now`; either side unparseable reads as false.
+fn not_after(at: &str, now: &str) -> bool {
+    match (
+        at.parse::<jiff::Timestamp>(),
+        now.parse::<jiff::Timestamp>(),
+    ) {
+        (Ok(at), Ok(now)) => at <= now,
         _ => false,
     }
 }
@@ -486,14 +519,25 @@ pub(crate) fn record(
         (_, Some(path)) if codex => (correlate::codex_latest_dispatch(path), 0),
         (_, Some(path)) => (correlate::latest_dispatch(path), 0),
     };
+    let spawn = match (kind, &dispatch, transcript.as_deref()) {
+        (Kind::Stop, None, Some(path)) if codex => correlate::codex_spawn_dispatch(path),
+        (Kind::Stop, None, Some(path)) => correlate::spawn_dispatch(path),
+        _ => None,
+    };
     // A start that names its flow never consults the other stores.
     let flows = match (kind, &dispatch) {
         (Kind::Start, Some(_)) => Vec::new(),
         _ => idle_flows.unwrap_or_else(|| load_flows(&root, session_id)),
     };
 
-    let Some(slug) = choose_flow(kind, &flows, session_id, agent_id, name, dispatch.as_ref())
-    else {
+    let Some(slug) = choose_flow(
+        kind,
+        &flows,
+        session_id,
+        agent_id,
+        name,
+        dispatch.as_ref().or(spawn.as_ref()),
+    ) else {
         return Ok(not_recorded("no-flow"));
     };
     crate::flow::validate_slug(&slug)?;
@@ -513,6 +557,21 @@ pub(crate) fn record(
     let (task_ids, item_ids) = match dispatch.filter(|d| d.slug == slug) {
         Some(d) => (Some(d.task_ids), Some(d.item_ids)),
         None => (None, None),
+    };
+    let spawn = spawn
+        .filter(|d| d.slug == slug)
+        .map(|d| (d.task_ids, d.item_ids));
+    // Only a stop that finds no row of its own needs the transcript's start.
+    let held = flows.iter().any(|(s, store)| {
+        *s == slug
+            && store
+                .agents
+                .iter()
+                .any(|row| row.session_id == session_id && row.agent_id == agent_id)
+    });
+    let began_at = match (kind, transcript.as_deref()) {
+        (Kind::Stop, Some(path)) if !held => correlate::first_timestamp(path),
+        _ => None,
     };
     let transcript_path = transcript
         .as_deref()
@@ -551,6 +610,8 @@ pub(crate) fn record(
             transcript_path,
             task_ids,
             item_ids,
+            spawn,
+            began_at,
         },
         Kind::Idle => Event::Idle {
             session_id: session_id.to_string(),
@@ -680,7 +741,23 @@ mod tests {
             transcript_path: String::new(),
             task_ids: task_ids.map(<[u32]>::to_vec),
             item_ids: task_ids.map(|_| Vec::new()),
+            spawn: None,
+            began_at: None,
         }
+    }
+
+    fn spawn_stop(agent_id: &str, spawn: &[u32], began_at: Option<&str>) -> Event {
+        let mut event = stop(agent_id, None);
+        if let Event::Stop {
+            spawn: slot,
+            began_at: began,
+            ..
+        } = &mut event
+        {
+            *slot = Some((spawn.to_vec(), Vec::new()));
+            *began = began_at.map(str::to_string);
+        }
+        event
     }
 
     fn recorded_id(outcome: &Outcome) -> &str {
@@ -923,6 +1000,48 @@ mod tests {
                 ended_at: "t1".into(),
             }]
         );
+    }
+
+    #[test]
+    fn a_spawn_dispatch_names_a_segment_the_start_left_empty() {
+        let mut store = AgentsStore::default();
+        apply(&mut store, start("a1", &[]), "t0");
+        apply(&mut store, start("a2", &[3]), "t0");
+        apply(&mut store, spawn_stop("a1", &[11], None), "t1");
+        apply(&mut store, spawn_stop("a2", &[11], None), "t1");
+        assert_eq!(store.agents[0].segments[0].task_ids, vec![11]);
+        assert_eq!(store.agents[0].segments[0].ended_at, "t1");
+        // A segment that already names its work keeps it.
+        assert_eq!(store.agents[1].segments[0].task_ids, vec![3]);
+    }
+
+    #[test]
+    fn a_stop_without_a_recorded_start_begins_at_the_transcript_start() {
+        let began = "2026-11-11T10:20:13.405Z";
+        let now = "2026-11-11T10:21:06.423992688Z";
+        let mut store = AgentsStore::default();
+        apply(&mut store, spawn_stop("a1", &[4], Some(began)), now);
+        let row = &store.agents[0];
+        assert_eq!(row.started_at, began);
+        assert_eq!(row.ended_at, now);
+        assert_eq!(
+            row.segments,
+            vec![Segment {
+                task_ids: vec![4],
+                item_ids: Vec::new(),
+                started_at: began.into(),
+                ended_at: now.into(),
+            }]
+        );
+
+        // A transcript stamp later than the stop is not a start.
+        let mut store = AgentsStore::default();
+        apply(
+            &mut store,
+            spawn_stop("a1", &[4], Some("2026-11-11T10:30:00Z")),
+            now,
+        );
+        assert_eq!(store.agents[0].started_at, now);
     }
 
     #[test]
@@ -1177,6 +1296,73 @@ mod tests {
                 not_recorded("internal-agent")
             );
             assert!(record(Harness::Manual, &payload, &args).is_err());
+        });
+    }
+
+    /// A Workflow-dispatched agent of a session no flow has seen yet: its
+    /// transcript sits under `subagents/workflows/<run>/`, which the start
+    /// payload does not name.
+    #[test]
+    fn record_resolves_a_workflow_agent_on_start_and_dates_a_stop_only_row() {
+        crate::test_support::with_root(|root| {
+            let proj = root.join("proj");
+            let run = proj
+                .join("s1")
+                .join("subagents")
+                .join("workflows")
+                .join("wf_1");
+            std::fs::create_dir_all(&run).expect("workflow run dir");
+            std::fs::write(proj.join("s1.jsonl"), "").expect("parent transcript");
+            let lines = [
+                json!({"type": "user", "timestamp": "2026-11-11T10:20:13.405Z",
+                       "message": {"content": "[Workflow harness — user request] /implement-v2"}}),
+                json!({"type": "user", "timestamp": "2026-11-11T10:20:13.405Z",
+                       "message": {"content":
+                           "`tomlctl plan view --slug live-flow --for worker --task 4`"}}),
+            ];
+            for agent in ["a1", "a2"] {
+                std::fs::write(
+                    run.join(format!("agent-{agent}.jsonl")),
+                    lines.iter().map(|l| format!("{l}\n")).collect::<String>(),
+                )
+                .expect("agent transcript");
+            }
+            let flow_dir = root.join(".claude").join("flows").join("live-flow");
+            std::fs::create_dir_all(&flow_dir).expect("flow dir");
+            std::fs::write(flow_dir.join("context.toml"), "slug = \"live-flow\"\n")
+                .expect("context");
+            let args = WriteIntegrityArgs {
+                allow_outside: false,
+                no_write_integrity: false,
+                verify_integrity: false,
+                strict_integrity: false,
+                no_create: false,
+            };
+            let parent = proj.join("s1.jsonl").to_string_lossy().into_owned();
+
+            let start = json!({"hook_event_name": "SubagentStart", "session_id": "s1",
+                               "agent_id": "a1", "agent_type": "plan-worker-lite",
+                               "transcript_path": parent});
+            assert_eq!(
+                record(Harness::ClaudeCode, &start, &args).expect("records"),
+                json!({"recorded": true, "slug": "live-flow", "event": "start",
+                       "id": "A1", "task_ids": [4], "item_ids": []})
+            );
+
+            let stop = json!({"hook_event_name": "SubagentStop", "session_id": "s1",
+                              "agent_id": "a2", "agent_type": "plan-worker-lite",
+                              "transcript_path": parent,
+                              "agent_transcript_path": run.join("agent-a2.jsonl").to_string_lossy()});
+            record(Harness::ClaudeCode, &stop, &args).expect("records");
+            let store = schema::from_toml(
+                &io::read_toml(&flow_dir.join(STORE_FILE)).expect("store written"),
+            )
+            .expect("store reads");
+            let row = &store.agents[1];
+            assert_eq!(row.agent_id, "a2");
+            assert_eq!(row.started_at, "2026-11-11T10:20:13.405Z");
+            assert_ne!(row.ended_at, row.started_at);
+            assert_eq!(row.segments[0].task_ids, vec![4]);
         });
     }
 
