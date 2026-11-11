@@ -781,3 +781,61 @@ fn a_rerun_over_a_committed_task_mints_a_new_one() {
         Some(new.as_str())
     );
 }
+
+#[test]
+fn a_dry_run_reports_the_rows_and_writes_nothing() {
+    let large = defect(Defect {
+        id: "F3",
+        file: "src/c.rs",
+        symbol: "gamma",
+        effort: "large",
+        blocked: "",
+        depends_on: &[],
+    });
+    let repo = Repo::new(&[
+        evidence_bug("F1", EVIDENCE),
+        bug("F2", "src/b.rs", "beta"),
+        large,
+    ]);
+    let tasks_before = fs::read(&repo.tasks).unwrap();
+    let review_before = repo.review_bytes();
+
+    let out = repo.schedule(&["F1,F2,F3", "--dry-run"]);
+    assert_eq!(out["dry_run"].as_bool(), Some(true), "{out}");
+    let row = &out["scheduled"][0];
+    assert_eq!(row["finding"], "F2", "{out}");
+    assert_eq!(row["action"], "would-mint", "{out}");
+    assert_eq!(row["task"], 2, "{out}");
+    assert_eq!(row["executor"], "lite", "{out}");
+    assert_eq!(row["files"], serde_json::json!(["src/b.rs"]), "{out}");
+    assert_eq!(out["settle"][0]["finding"], "F1", "{out}");
+    assert_eq!(out["settle"][0]["task"], 3, "{out}");
+    assert_eq!(out["refused"][0]["finding"], "F3", "{out}");
+    assert_eq!(fs::read(&repo.tasks).unwrap(), tasks_before);
+    assert_eq!(repo.review_bytes(), review_before);
+
+    let out = repo.schedule(&["F3", "--dry-run"]);
+    assert_eq!(out["scheduled"].as_array().unwrap().len(), 0, "{out}");
+    assert_eq!(out["refused"][0]["finding"], "F3", "{out}");
+}
+
+#[test]
+fn a_dry_run_needs_no_flow() {
+    let repo = Repo::new(&[bug("F1", "src/a.rs", "alpha")]);
+    let review_before = repo.review_bytes();
+    let out = cli(&repo.root)
+        .current_dir(&repo.root)
+        .args(["review", "schedule", "--all", "--scope", SCOPE, "--dry-run"])
+        .assert()
+        .success();
+    let out = stdout_json(&out);
+    assert_eq!(out["scheduled"][0]["finding"], "F1", "{out}");
+    assert_eq!(out["scheduled"][0]["task"], 1, "{out}");
+    assert_eq!(repo.review_bytes(), review_before);
+
+    cli(&repo.root)
+        .current_dir(&repo.root)
+        .args(["review", "schedule", "--all", "--scope", SCOPE])
+        .assert()
+        .failure();
+}

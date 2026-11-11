@@ -28,9 +28,12 @@ Mints fix tasks in the `--flow` flow's task store from open defect and cleanup f
 
 Prints `{ok, flow, review_store, scheduled: [{finding, task, ref, action}], settle, held, refused, dropped_deps, skipped_stale}`, where `action` is `minted` or `linked`, and `settle` lists the settle tasks in the same shape. Settle rows follow the fix rows, and a finding a live settle task already `settles` is `linked` to it.
 
+- **Dry run.** `--dry-run` runs the same selection, grouping and executor rule and writes neither store. It prints the same object with `dry_run: true` and no `skipped_stale`; a row a real run would mint is `{finding, task, action: "would-mint", title, executor, files}`, `task` being the id it would take. `--flow` and `--checkpoint` may be left out before the flow exists: ids then count from 1, and nothing is `linked`. An evidence-blocked finding with no `proposal` is listed under `settle` whether or not `--settle-checkpoint` is given, and a selection refused whole is reported under `refused` with exit 0.
+
 ```bash
 tomlctl review schedule F3,F7 --scope <scope> --flow <apply-slug> --checkpoint A
 tomlctl review schedule --all --slug <slug> --flow <apply-slug> --checkpoint A --settle-checkpoint A
+tomlctl review schedule --all --scope <scope> --dry-run
 ```
 
 | Flag | Value | Meaning | Default |
@@ -38,9 +41,10 @@ tomlctl review schedule --all --slug <slug> --flow <apply-slug> --checkpoint A -
 | *(positional)* | ids | Finding ids, comma- or space-separated. Excludes `--all`. | required without `--all` |
 | `--slug` / `--scope` | name | The review store. | required, one of |
 | `--all` | bool | Every schedulable open code or perf defect and cleanup in this store. | off |
-| `--flow` | slug | The v2 flow whose `tasks.toml` receives the fix tasks. | required |
-| `--checkpoint` | id | The checkpoint group every minted task joins. | required |
+| `--flow` | slug | The v2 flow whose `tasks.toml` receives the fix tasks. | required without `--dry-run` |
+| `--checkpoint` | id | The checkpoint group every minted task joins. | required without `--dry-run` |
 | `--settle-checkpoint` | id | The checkpoint group a settle task joins; without it an evidence-blocked finding is refused. | none |
+| `--dry-run` | bool | Report what would be scheduled, held and refused; write nothing. | off |
 
 ### `tomlctl review settle`
 

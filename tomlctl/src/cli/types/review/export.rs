@@ -66,21 +66,28 @@ pub(crate) struct ReviewScheduleArgs {
     #[arg(
         long = "flow",
         value_name = "SLUG",
+        required_unless_present = "dry_run",
         help = "The v2 flow whose tasks.toml receives the fix tasks"
     )]
-    pub(crate) flow: String,
+    pub(crate) flow: Option<String>,
     #[arg(
         long = "checkpoint",
         value_name = "ID",
+        required_unless_present = "dry_run",
         help = "The checkpoint group every minted task joins"
     )]
-    pub(crate) checkpoint: String,
+    pub(crate) checkpoint: Option<String>,
     #[arg(
         long = "settle-checkpoint",
         value_name = "ID",
         help = "The checkpoint group a settle task joins; without it an evidence-blocked finding is refused"
     )]
     pub(crate) settle_checkpoint: Option<String>,
+    #[arg(
+        long = "dry-run",
+        help = "Report what would be scheduled, held and refused, and write nothing. --flow and --checkpoint may be left out before the flow exists; an evidence-blocked finding is then listed under `settle` without --settle-checkpoint"
+    )]
+    pub(crate) dry_run: bool,
     #[command(flatten)]
     pub(crate) integrity: WriteIntegrityArgs,
 }

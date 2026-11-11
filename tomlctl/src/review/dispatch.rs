@@ -69,9 +69,10 @@ pub(crate) fn dispatch(op: ReviewOp) -> Result<()> {
             schedule::Request {
                 ids: &args.ids,
                 all: args.all,
-                flow: &args.flow,
-                checkpoint: &args.checkpoint,
+                flow: args.flow.as_deref().unwrap_or_default(),
+                checkpoint: args.checkpoint.as_deref().unwrap_or_default(),
                 settle_checkpoint: args.settle_checkpoint.as_deref(),
+                dry_run: args.dry_run,
             },
             &args.integrity,
         ),

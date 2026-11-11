@@ -66,27 +66,26 @@ tomlctl plan stage --slug <slug>
 
 ### 2. Preview
 
-`review schedule` has no dry run, so read the selection before writing anything. For explicit ids:
+Ask `review schedule` itself what it would do, writing nothing. On the reviewed flow, name it; for a flow-less review the home does not exist yet, so leave `--flow` out:
 
 ```bash
-tomlctl review show <ids> --slug <slug> --for orchestrator
-tomlctl review show <ids> --slug <slug> --for implementer
+tomlctl review schedule <ids | --all> --slug <slug> --flow <slug> --dry-run
+tomlctl review schedule <ids | --all> --scope <scope> --dry-run
 ```
 
-For `--all`, list the candidates of each kind the schedule rule takes:
+It prints `{scheduled, settle, held, refused, dropped_deps}`. A `scheduled` or `settle` row with `action: "would-mint"` carries the task's `title`, `executor` and `files`; one with `action: "linked"` is already on a live task of the flow. Each `held` and `refused` row carries its reason. The rule it applies is the `tomlctl` skill's `references/review-apply.md`, section `tomlctl review schedule`; never restate or second-guess it here. An explicit id that is unknown is a `refused` row: stop and name it.
+
+Then read the findings that pass, for the report and the gates:
 
 ```bash
-tomlctl review list --slug <slug> --status open --kind defect --for orchestrator
-tomlctl review list --slug <slug> --status open --kind cleanup --for orchestrator
+tomlctl review show <passing ids> --slug <slug> --for implementer
 ```
 
-then `review show` the ids that remain after the rule below, `--for implementer`. Apply the schedule rule from the `tomlctl` skill's `references/review-apply.md`, section `tomlctl review schedule`: only `open` defects and cleanups of the `code` and `perf` families are taken; a finding with a `blocked_on` is refused, except one blocked on `evidence` with no `proposal` yet, which gets a settle task in a settle milestone (step 5) instead of a fix task; `effort = large` is refused; under `--all`, test removals and cleanups whose latest verdict is `plausible` are held. An explicit id that is unknown fails the read: stop and name it.
+- **Blocked on evidence.** Note each finding under `settle`: those make step 5 add a settle milestone. Such a finding edits nothing yet, so it takes no part in the dirty-files check below or in step 3's gates.
 
-- **Blocked on evidence.** Note each passing finding whose `blocked_on` is `evidence`: those make step 5 add a settle milestone. Such a finding edits nothing yet, so it takes no part in the dirty-files check below or in step 3's gates.
-
-- **Already scheduled.** A selected finding that is `scheduled` with `apply_flow` naming a flow is past this skill: Re-entry, below, says what follows.
+- **Already scheduled.** A finding refused with `status is scheduled, not open` already has `apply_flow` naming a flow and is past this skill: Re-entry, below, says what follows.
 - **Nothing to schedule.** When no selected finding passes the rule and none is already scheduled, report each one with the reason it is held or refused and stop. No flow is opened and no milestone added.
-- **Dirty files.** Collect each passing finding's edited paths from the implementer rows: `target_file` when set, else `file`, and every `instances` path. Then:
+- **Dirty files.** Collect the `files` of every `would-mint` row under `scheduled`. Then:
 
 ```bash
 git status --porcelain -- <every edited path>

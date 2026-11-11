@@ -36,6 +36,9 @@ pub(crate) struct Request<'a> {
     pub(crate) flow: &'a str,
     pub(crate) checkpoint: &'a str,
     pub(crate) settle_checkpoint: Option<&'a str>,
+    /// Report what a run would schedule and write nothing. `flow` may then
+    /// be empty, and the rows are composed against an empty task store.
+    pub(crate) dry_run: bool,
 }
 
 /// One task's worth of findings, as indexes into the review store's findings.
@@ -65,8 +68,16 @@ pub(crate) fn run(
     request: Request<'_>,
     integrity: &WriteIntegrityArgs,
 ) -> Result<()> {
-    let tasks_path = crate::tasks::resolve_store_path(Some(request.flow), None)?;
-    if !crate::tasks::is_v2_flow(&tasks_path) {
+    let unbound = request.dry_run && request.flow.is_empty();
+    let tasks_path = if unbound {
+        None
+    } else {
+        Some(crate::tasks::resolve_store_path(Some(request.flow), None)?)
+    };
+    if tasks_path
+        .as_deref()
+        .is_some_and(|path| !crate::tasks::is_v2_flow(path))
+    {
         return Err(invalid(format!(
             "{VERB}: flow {} has no plan store (.claude/flows/{}/plan.toml); fix tasks are \
              scheduled only into a v2 flow, and a v1 flow's findings go through export-v1",
@@ -96,7 +107,12 @@ pub(crate) fn run(
         },
         settle,
     ) = selection(&stored, &root, &request)?;
-    if !request.all && chosen.is_empty() && settle.is_empty() && !refused.is_empty() {
+    if !request.dry_run
+        && !request.all
+        && chosen.is_empty()
+        && settle.is_empty()
+        && !refused.is_empty()
+    {
         let lines: Vec<String> = refused.iter().map(JsonValue::to_string).collect();
         return Err(invalid(format!(
             "{VERB}: every finding was refused; nothing was written:\n{}",
@@ -109,7 +125,7 @@ pub(crate) fn run(
         projected: &projected,
         store_rel: &store_rel,
         store_flag: &store_flag,
-        flow: request.flow,
+        flow: if unbound { "<flow>" } else { request.flow },
         checkpoint: request.checkpoint,
         settle_checkpoint: request.settle_checkpoint.unwrap_or_default(),
     };
@@ -120,12 +136,25 @@ pub(crate) fn run(
             verify_integrity: integrity.verify_integrity,
             strict_read: false,
         };
-        let current = crate::tasks::load_store(&tasks_path, &tasks_read)?;
+        let current = match &tasks_path {
+            Some(path) => crate::tasks::load_store(path, &tasks_read)?,
+            None => crate::tasks::Store::default(),
+        };
         let (rows, linked) = compose.plan(&current, &groups, &settle);
+        let Some(tasks_path) = tasks_path.as_deref().filter(|_| !request.dry_run) else {
+            return print_json_compact(&preview(
+                request.flow,
+                &store_rel,
+                &rows,
+                &linked,
+                current.next_id(),
+                (held, refused),
+            ));
+        };
         outcome = if rows.is_empty() {
             linked
         } else {
-            crate::tasks::mutate_store(&tasks_path, integrity, |tasks| {
+            crate::tasks::mutate_store(tasks_path, integrity, |tasks| {
                 let (rows, mut outcome) = compose.plan(tasks, &groups, &settle);
                 if rows.is_empty() {
                     return Ok(outcome);
@@ -157,6 +186,16 @@ pub(crate) fn run(
     }
 
     let mut stale = Vec::new();
+    if request.dry_run {
+        return print_json_compact(&preview(
+            request.flow,
+            &store_rel,
+            &[],
+            &outcome,
+            0,
+            (held, refused),
+        ));
+    }
     if !outcome.placed.is_empty() {
         stale = store::mutate(&target.path, integrity, |store| {
             Ok(mark_scheduled(store, &outcome.placed, request.flow))
@@ -182,6 +221,51 @@ pub(crate) fn run(
         "dropped_deps": outcome.dropped_deps,
         "skipped_stale": stale,
     }))
+}
+
+/// The report of a dry run: each row a real run would mint, under the task id
+/// it would take from `first`, beside the findings already linked.
+fn preview(
+    flow: &str,
+    store_rel: &str,
+    rows: &[NewRow],
+    linked: &TaskOutcome,
+    first: u32,
+    (held, refused): (Vec<JsonValue>, Vec<JsonValue>),
+) -> JsonValue {
+    let placed = |settle: bool| -> Vec<JsonValue> {
+        let linked = linked.placed.iter().filter(|p| p.settle == settle).map(
+            |p| json!({"finding": p.finding, "task": p.task, "ref": p.r#ref, "action": p.action}),
+        );
+        let minted = rows
+            .iter()
+            .enumerate()
+            .filter(|(_, row)| row.settle == settle)
+            .flat_map(|(at, row)| {
+                row.findings.iter().map(move |finding| {
+                    json!({
+                        "finding": finding,
+                        "task": first + at as u32,
+                        "action": "would-mint",
+                        "title": row.row["title"],
+                        "executor": row.row["spec"]["executor"],
+                        "files": row.row["files"],
+                    })
+                })
+            });
+        linked.chain(minted).collect()
+    };
+    json!({
+        "ok": true,
+        "dry_run": true,
+        "flow": flow,
+        "review_store": store_rel,
+        "scheduled": placed(false),
+        "settle": placed(true),
+        "held": held,
+        "refused": refused,
+        "dropped_deps": linked.dropped_deps,
+    })
 }
 
 /// `export-v1`'s selection run once per family a fix task can take, merged
@@ -223,7 +307,8 @@ fn selection(
     let mut refused = Vec::new();
     let mut route = |index: usize, block: BlockedOn, refused: &mut Vec<JsonValue>| {
         let f = &stored.findings[index];
-        match settle_refusal(f, block, request.settle_checkpoint.is_some()) {
+        let settles = request.settle_checkpoint.is_some() || request.dry_run;
+        match settle_refusal(f, block, settles) {
             None => settle.push(index),
             Some(reason) => refused.push(json!({"finding": f.id, "reason": reason})),
         }
