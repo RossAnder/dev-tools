@@ -640,7 +640,8 @@ pub(super) fn run_start(args: PlanRunStartArgs) -> Result<()> {
             };
             let instant: jiff::Timestamp = at.parse().map_err(|_| not_a_stamp())?;
             let now: jiff::Timestamp = started.to_string().parse().map_err(|_| not_a_stamp())?;
-            if instant > now {
+            // `window_open` may print the second after the emit.
+            if instant.as_second() > now.as_second() + 1 {
                 return Err(refusal(format!(
                     "`--digest-at {at}` is later than now ({started}): the digest is taken \
                      before the launch"

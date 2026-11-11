@@ -109,7 +109,7 @@ Prints `{args, args_sha256, store_digest, digest_at, after_checks, dropped}`.
 | `args` | The Workflow's input: `slug`, `milestone`, `root`, `max_parallel`, `max_compile_parallel` when given, and `tasks[]` of `id`, `executor`, `needs`, `after`, `files`. |
 | `args_sha256` | The SHA-256 of `args` as compact JSON, `max_compile_parallel` included, for `plan run start --args-hash`. |
 | `store_digest` | The task store's digest for the tasks in `args`, as one token, `<section>:<hex>` per section joined by commas, for `plan run start --store-digest`. |
-| `digest_at` | When the digest was taken, an RFC 3339 timestamp to the second, for `plan run start --digest-at`. |
+| `digest_at` | When the digest was taken, an RFC 3339 timestamp to the second, for `plan run start --digest-at`. It is the second after the newest `[[changes]]` row when that row carries the current second, so a replan written just before the emit stays outside the window. |
 | `after_checks` | One row per `after:<m>` premise whose task `m` is dispatched in this launch: `task`, `premise`, `after`, `check`. The task stays in `args` with `m` in its `after`. |
 | `dropped` | Each row left out, with `reason`: `not-pending`, `withheld:<task>:<premise>:<verdict>`, `needs-withheld:<task>`, `executor:<value>`, `no-files` or `need-not-done:<task>:<status>`. |
 

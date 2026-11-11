@@ -456,6 +456,8 @@ struct Case {
     /// Runs on its own copy of the fixture; set for every write.
     isolated: bool,
     git: bool,
+    /// The report carries the time of day, so runs a second apart differ.
+    clock: bool,
     /// The stderr text of the command's refusal of `--lines`, for a command
     /// that refuses it.
     refuses_lines: Option<&'static str>,
@@ -470,6 +472,7 @@ const fn read(argv: &'static [&'static str], shape: Shape, key: &'static str) ->
         write: false,
         isolated: false,
         git: false,
+        clock: false,
         refuses_lines: None,
     }
 }
@@ -483,6 +486,7 @@ const fn write(argv: &'static [&'static str], key: &'static str) -> Case {
         write: true,
         isolated: true,
         git: false,
+        clock: false,
         refuses_lines: None,
     }
 }
@@ -512,6 +516,11 @@ impl Case {
 
     const fn git(mut self) -> Self {
         self.git = true;
+        self
+    }
+
+    const fn clock(mut self) -> Self {
+        self.clock = true;
         self
     }
 
@@ -1232,7 +1241,8 @@ fn cases() -> Vec<Case> {
             One,
             "args",
         )
-        .git(),
+        .git()
+        .clock(),
         read(
             &[
                 "plan",
@@ -1922,7 +1932,20 @@ fn keys(v: &Value) -> Vec<&String> {
 }
 
 /// Every failure of `case`, as messages; empty when it passes.
+/// `check_once`, run again for a `clock` case that failed: its runs straddled
+/// a second boundary unless it fails every time.
 fn check(fx: &Fixture, case: &Case) -> Vec<String> {
+    let mut fails = check_once(fx, case);
+    for _ in 0..2 {
+        if fails.is_empty() || !case.clock {
+            break;
+        }
+        fails = check_once(fx, case);
+    }
+    fails
+}
+
+fn check_once(fx: &Fixture, case: &Case) -> Vec<String> {
     let what = case.argv.join(" ");
     let mut fails = Vec::new();
     let mut fail = |msg: String| fails.push(format!("`{what}`: {msg}"));

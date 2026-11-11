@@ -188,6 +188,26 @@ pub(super) fn decode_digest(token: &str) -> Result<BTreeMap<String, String>> {
     Ok(digest)
 }
 
+/// When a digest of `store` taken at `now` opens its window: `now`, or the
+/// second after the newest trail row when that row carries `now`'s second or a
+/// later one. Stamps are whole seconds, so such a row was written before the
+/// digest yet would read as written during the run; a write later in that
+/// second falls before the window and changes the `changes` digest instead.
+pub(super) fn window_open(store: &Store, now: &Datetime) -> Result<Datetime> {
+    let newest = store
+        .changes
+        .iter()
+        .filter_map(|change| change.at.as_ref().and_then(instant))
+        .max();
+    match (newest, instant(now)) {
+        (Some(newest), Some(taken)) if newest >= taken => {
+            let text = Timestamp::from_second(newest.as_second() + 1)?.to_string();
+            Ok(text.parse()?)
+        }
+        _ => Ok(*now),
+    }
+}
+
 /// Where the run's window opens: when its digest was taken.
 fn window_start(run: &Run) -> &Datetime {
     run.digest_at.as_ref().unwrap_or(&run.started)
@@ -406,6 +426,41 @@ mod tests {
             }],
             ..Store::default()
         }
+    }
+
+    #[test]
+    fn window_open_steps_past_a_trail_row_of_the_same_second() {
+        let now = at("2026-11-11T15:23:04Z");
+        let mut tasks = store();
+        assert_eq!(window_open(&tasks, &now).unwrap(), now);
+        tasks.changes.push(change("2026-11-11T15:23:03Z", "detail"));
+        assert_eq!(window_open(&tasks, &now).unwrap(), now);
+        tasks.changes.push(change("2026-11-11T15:23:04Z", "detail"));
+        let open = window_open(&tasks, &now).unwrap();
+        assert_eq!(open, at("2026-11-11T15:23:05Z"));
+
+        let run = Run {
+            step: "implement:A".to_string(),
+            workflow: String::new(),
+            args_hash: String::new(),
+            run_id: "wf_1".to_string(),
+            session: String::new(),
+            started: at("2026-11-11T15:23:09Z"),
+            finished: None,
+            skip_reason: String::new(),
+            outcome: None,
+            reason: String::new(),
+            tasks: vec![1],
+            store_digest: BTreeMap::new(),
+            digest_at: Some(open),
+        };
+        assert!(trail_writes(&tasks, &run).is_empty());
+        let taken = store_digest(&tasks, &[1], &open);
+        tasks.changes.push(change("2026-11-11T15:23:04Z", "files"));
+        assert_ne!(
+            store_digest(&tasks, &[1], &open)["changes"],
+            taken["changes"]
+        );
     }
 
     fn change(when: &str, field: &str) -> Change {

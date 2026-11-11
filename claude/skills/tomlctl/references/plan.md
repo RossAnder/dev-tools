@@ -209,7 +209,7 @@ tomlctl plan run start --slug <slug> --step <step> [--workflow <workflow>] [--ar
 | `--session` | id | The session launching the step; a carrier passes `CLAUDE_CODE_SESSION_ID`. | absent |
 | `--tasks` | ids, comma-separated | The task ids the launch dispatched, stored as the run's `tasks` in the order given with repeats dropped; `plan emit reproduce-units --since-launch` and `plan emit lane-check` read them. | none |
 | `--store-digest` | token | The `store_digest` [`plan emit launch-args`](plan-engine.md#plan-emit-launch-args) printed, stored as the run's `store_digest`. Only on an `implement:<id>` step; refused unless it names each of `changes`, `milestones`, `rest`, `rows` and `specs` once as `<section>:<16 lowercase hex>`, comma-joined. Needs `--digest-at`. | absent: taken now |
-| `--digest-at` | RFC 3339 timestamp | The `digest_at` printed beside it, stored as the run's `digest_at`. Refused when later than now. Needs `--store-digest`. | absent |
+| `--digest-at` | RFC 3339 timestamp | The `digest_at` printed beside it, stored as the run's `digest_at`. Refused when more than a second later than now. Needs `--store-digest`. | absent |
 
 Prints `{"ok":true}`.
 

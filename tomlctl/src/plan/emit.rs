@@ -98,10 +98,11 @@ fn launch_args(args: PlanEmitLaunchArgs) -> Result<()> {
             "`--max-compile-parallel {cap}` must be from 1 to {MAX_PARALLEL}"
         )));
     }
-    // Stamped before the read, so a trail row written after the read always
-    // falls inside the lane check's window.
-    let digest_at = crate::time::now_toml_datetime()?;
+    // Stamped before the read, so a trail row written after the read never
+    // escapes both the lane check's window and its digest.
+    let taken = crate::time::now_toml_datetime()?;
     let tasks = load_milestone_store(&target.slug, &milestone, integrity.verify_integrity)?;
+    let digest_at = super::lane::window_open(&tasks, &taken)?;
     let process_root = repo_or_cwd_root()?;
     let root = git(&process_root, &["rev-parse", "--show-toplevel"])?;
     let head = git(&process_root, &["rev-parse", "--verify", "HEAD^{commit}"])?;
