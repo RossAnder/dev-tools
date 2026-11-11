@@ -1,0 +1,345 @@
+schema_version = 2
+last_updated = 2026-11-11
+plan_path = ""
+last_import_refs = []
+
+[policy]
+checkpoints = "milestones"
+max_parallel = 6
+commit_granularity = "per-task"
+origin = "plan"
+note = ""
+
+[[checkpoints]]
+id = "A"
+rationale = "plan check reports rows waiting behind a milestone boundary, and the plan-v2 carrier and engine say how to cut milestones and take --milestones"
+
+[[backlog_links]]
+ref = "say-in-the-plan-v2-design-and-prove-steps-how-to-cut-milestones"
+closes = ["B-1fa8d53f"]
+refs = []
+
+[[specs]]
+ref = "report-rows-waiting-behind-a-milestone-boundary-in-plan-check"
+outcome = "tomlctl plan check on an unapproved plan reports, at info, each milestone holding rows whose direct needs would let them start with an earlier milestone, naming the rows."
+constraints = [
+    "The finding is info: it never changes the exit code or the report's ok.",
+    "No finding on a store with an approval, or with one milestone.",
+    "Touch no file outside this task's files, and add no capability feature.",
+]
+means = []
+design = []
+precedent = ["tomlctl/src/plan/check.rs"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "plan check has a plan/milestone-width class"
+check = "grep -q 'plan/milestone-width' tomlctl/src/plan/check.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "2596fcf03a3fce2078e1d0645e3e435c103d6cc1"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the class has tests named for it"
+check = "grep -q 'milestone_width' tomlctl/tests/plan_check.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "2596fcf03a3fce2078e1d0645e3e435c103d6cc1"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "an unapproved plan's row with no needs in a later milestone is reported at info, and an approved or one-milestone plan is not"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(milestone_width)'"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.premises]]
+claim = "file_chain_findings exists in plan check and runs only before the first approval"
+check = "grep -q 'fn file_chain_findings' tomlctl/src/plan/check.rs && grep -q 'plan.approvals.is_empty()' tomlctl/src/plan/check.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "2596fcf03a3fce2078e1d0645e3e435c103d6cc1"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "document-the-milestone-width-class-in-the-tomlctl-references"
+outcome = "The tomlctl references describe the plan/milestone-width class where they describe plan/file-only-chain."
+constraints = [
+    "Change only the two places named.",
+    "Touch no file outside this task's files.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the plan check class table lists plan/milestone-width"
+check = "grep -q 'plan/milestone-width' claude/skills/tomlctl/references/plan.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "2596fcf03a3fce2078e1d0645e3e435c103d6cc1"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "tasks.md names plan/milestone-width as an info class"
+check = "grep -q 'plan/milestone-width' claude/skills/tomlctl/references/tasks.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "2596fcf03a3fce2078e1d0645e3e435c103d6cc1"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "both references name plan/file-only-chain"
+check = "grep -q 'plan/file-only-chain' claude/skills/tomlctl/references/plan.md && grep -q 'plan/file-only-chain' claude/skills/tomlctl/references/tasks.md"
+at = "base"
+
+[specs.premises.probe]
+at = "2596fcf03a3fce2078e1d0645e3e435c103d6cc1"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "say-in-the-plan-v2-design-and-prove-steps-how-to-cut-milestones"
+outcome = "The plan-v2 engine's Design step tells the planner when to cut a milestone and when not to, and its Prove step says what to do with a plan/milestone-width finding."
+constraints = [
+    "Add no fenced tomlctl command.",
+    "Keep every existing sentence of the file as it is.",
+    "Touch no file outside this task's files.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the Design step carries the How many rule"
+check = "grep -q 'How many' claude/skills/plan-v2-engine/references/write-and-prove.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "2596fcf03a3fce2078e1d0645e3e435c103d6cc1"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the Prove step names the plan/milestone-width finding"
+check = "grep -q 'plan/milestone-width' claude/skills/plan-v2-engine/references/write-and-prove.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "2596fcf03a3fce2078e1d0645e3e435c103d6cc1"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the guidance says what --milestones few means"
+check = "grep -q -e '--milestones few' claude/skills/plan-v2-engine/references/write-and-prove.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "2596fcf03a3fce2078e1d0645e3e435c103d6cc1"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "section 4a names plan/file-only-chain and section 1 has the milestone add command"
+check = "grep -q 'plan/file-only-chain' claude/skills/plan-v2-engine/references/write-and-prove.md && grep -q 'tomlctl plan milestone add' claude/skills/plan-v2-engine/references/write-and-prove.md"
+at = "base"
+
+[specs.premises.probe]
+at = "2596fcf03a3fce2078e1d0645e3e435c103d6cc1"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "take-milestones-in-the-plan-v2-carrier-and-engine-arguments"
+outcome = "/plan-v2 accepts --milestones few|default, and the engine says what each value does and that a resumed session passes it again."
+constraints = [
+    "Add no fenced tomlctl command.",
+    "Touch no file outside this task's files.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the carrier's argument hint and bindings carry --milestones"
+check = "test $(grep -c -e '--milestones few' claude/commands/plan-v2.md) -ge 2"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "2596fcf03a3fce2078e1d0645e3e435c103d6cc1"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the engine's Arguments section describes --milestones"
+check = "grep -q -e '--milestones few|default' claude/skills/plan-v2-engine/SKILL.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "2596fcf03a3fce2078e1d0645e3e435c103d6cc1"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the carrier and the engine both bind --depth"
+check = "grep -q -e '--depth quick' claude/commands/plan-v2.md && grep -q -e '--depth quick|standard|deep' claude/skills/plan-v2-engine/SKILL.md"
+at = "base"
+
+[specs.premises.probe]
+at = "2596fcf03a3fce2078e1d0645e3e435c103d6cc1"
+neg_rc = 0
+verdict = "holds"
+
+[[milestones]]
+id = "A"
+gates = [
+    "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check",
+    "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets",
+    "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast",
+    "cargo clippy --manifest-path glimpse/Cargo.toml --locked",
+    "cargo install --path tomlctl",
+]
+elaboration = "upfront"
+defer_reason = ""
+
+[[items]]
+id = 1
+ref = "report-rows-waiting-behind-a-milestone-boundary-in-plan-check"
+title = "Report rows waiting behind a milestone boundary in plan check"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/tests/plan_check.rs",
+    "tomlctl/tests/plan_milestone.rs",
+    "tomlctl/tests/plan_probes.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add the info class plan/milestone-width to tomlctl plan check, raised before the first approval only, beside file_chain_findings."
+detail = """
+Milestone order is the store's `[[checkpoints]]` order. For a row in the milestone at index i > 0, take the highest index among the milestones holding its direct `needs` (0 when it has none; a need in the row's own milestone gives i). The row waits behind a boundary when that index is below i - 1, or when it has no needs at all. Raise one finding per milestone holding such rows: `ids` the rows, sorted; `detail` naming the milestone, for each row the earliest milestone it could join, and the count of such rows against the milestone's row count. Call it from the same `plan.approvals.is_empty()` branch as `file_chain_findings`, and update the module doc line that says which classes are info.
+
+Tests go in `tomlctl/tests/plan_check.rs`, with `milestone_width` in each test name: a two-milestone unapproved store whose second milestone holds a row with no needs is reported at info with that row's id and exit 0; a row needing a row of the milestone just before its own is not reported; an approved store gets no such finding; a one-milestone store gets none. An existing fixture in `plan_check.rs`, `plan_milestone.rs` or `plan_probes.rs` that now raises the finding is changed by giving its later row a need on the earlier milestone, or by asserting the new finding where the test is about findings. Run only `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(plan_check) | binary(plan_milestone) | binary(plan_probes)'`."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 2
+ref = "document-the-milestone-width-class-in-the-tomlctl-references"
+title = "Document the milestone-width class in the tomlctl references"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/tomlctl/references/plan.md",
+    "claude/skills/tomlctl/references/tasks.md",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add the plan/milestone-width row to the plan check class table and name it beside plan/file-only-chain in tasks.md."
+detail = """
+In `claude/skills/tomlctl/references/plan.md`, add one table row directly under the `plan/file-only-chain` row: class `plan/milestone-width`, severity info, text: "Before the first approval only: one finding per milestone, after the first, holding rows whose direct `needs` all sit in a milestone earlier than the one just before it, or that have no `needs`. `ids` names the rows; `detail` gives the earliest milestone each could join and how many of the milestone's rows wait. Moving the rows earlier, or merging the milestones, lets them run sooner."
+
+In `claude/skills/tomlctl/references/tasks.md`, the `severity` row says `plan check` adds `plan/file-only-chain`; make it say `plan check` adds `plan/file-only-chain` and `plan/milestone-width`."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 3
+ref = "say-in-the-plan-v2-design-and-prove-steps-how-to-cut-milestones"
+title = "Say in the plan-v2 Design and Prove steps how to cut milestones"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/plan-v2-engine/references/write-and-prove.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add milestone-cut guidance to section 1's Milestones paragraph and the plan/milestone-width finding to section 4a."
+detail = """
+In section 1, after the `plan milestone add` command block and before the gate-probe paragraph, add a paragraph headed `**How many.**` saying, in the file's own plain style:
+- `/implement-v2` launches one milestone at a time and stops at each boundary for a drain, a gate and two commits, so a row waits for its milestone even when everything it needs is done.
+- Default to one milestone. Cut another only where the plan wants a gate that must pass before later work starts, a point to replan from what earlier rows produce, or a deferred milestone.
+- Do not cut by theme: rows about different subjects that need nothing from each other belong in one milestone, where the pool runs them together.
+- A row goes in the earliest milestone its `needs` allow.
+- With `--milestones few` the plan has one milestone, and a second only where one must be deferred; say at the gate when a wanted gate or replan point was given up for it.
+
+In section 4a, after the sentence about `plan/file-only-chain`, add: a `plan/milestone-width` info finding names rows that could start with an earlier milestone; move each to the milestone its `detail` names with `tasks update --ndjson`, or merge the two milestones, unless the boundary is one the `How many` rule calls for, and with `--milestones few` clear every one."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 4
+ref = "take-milestones-in-the-plan-v2-carrier-and-engine-arguments"
+title = "Take --milestones in the plan-v2 carrier and engine arguments"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/commands/plan-v2.md",
+    "claude/skills/plan-v2-engine/SKILL.md",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Bind --milestones few|default in the carrier and describe it in the engine's Arguments and Re-entry sections."
+detail = '''
+In `claude/commands/plan-v2.md`: add `[--milestones few|default]` to the frontmatter `argument-hint` after `[--depth quick|standard|deep]`, and a Bindings table row after the `--depth` row: `--milestones few\|default` with the value "Default `default`; how each value cuts the plan is the engine's Arguments section".
+
+In `claude/skills/plan-v2-engine/SKILL.md`, Arguments section, add a bullet after `--depth`: `--milestones few|default`: how the Design step cuts the plan. `default` follows the `How many` rule of `references/write-and-prove.md`; `few` asks for one milestone, with another only where one must be deferred. Default `default`. In the Re-entry section, the sentence listing the arguments that are not stored (`--depth`, `--no-review` and `--review`) gains `--milestones`.'''
+acceptance = ""
+agent = ""
+commit = ""

@@ -1,0 +1,18 @@
+slug = "milestone-cadence"
+plan_path = "docs/flows/milestone-cadence/brief.md"
+status = "draft"
+created = 2026-11-11
+updated = 2026-11-11
+scope = []
+
+[tasks]
+total = 0
+completed = 0
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/milestone-cadence/review-ledger.toml"
+optimise_findings = ".claude/flows/milestone-cadence/optimise-findings.toml"
+execution_record = ".claude/flows/milestone-cadence/execution-record.toml"
+plan_review_findings = ".claude/flows/milestone-cadence/plan-review-findings.toml"
+tasks = ".claude/flows/milestone-cadence/tasks.toml"
