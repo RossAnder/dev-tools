@@ -710,3 +710,36 @@ fn answer_is_refused_on_a_finding_not_blocked_on_a_decision() {
     let empty = repo.staged("empty.md", " \r\n");
     repo.triage("F3", &["--answer-file", &empty]).failure();
 }
+
+#[test]
+fn answer_is_refused_on_a_decision_blocked_finding_that_is_not_open() {
+    for status in ["refuted", "unverified"] {
+        let repo = Repo::new();
+        block_f3(&repo, "decision");
+        let staged = repo.rewrite(|doc| {
+            let f3 = doc["findings"]
+                .as_array_mut()
+                .unwrap()
+                .iter_mut()
+                .find(|f| f["id"].as_str() == Some("F3"))
+                .unwrap()
+                .as_table_mut()
+                .unwrap();
+            f3.insert("status".into(), status.into());
+        });
+        let answer = repo.staged("answer.md", "inclusive");
+
+        let refused = repo.triage("F3", &["--answer-file", &answer]).failure();
+        let err = String::from_utf8_lossy(&refused.get_output().stderr).to_string();
+        assert!(
+            err.contains("--answer-file answers an open finding"),
+            "{status}: {err}"
+        );
+
+        let after = fs::read_to_string(repo.root.join(".claude/review-v2/t.toml")).unwrap();
+        assert_eq!(staged, after, "{status}: a refused answer writes nothing");
+        let f3 = repo.finding("F3");
+        assert_eq!(text(&f3, "blocked_on"), Some("decision"));
+        assert_eq!(text(&f3, "status"), Some(status));
+    }
+}

@@ -152,7 +152,7 @@ tomlctl review reproduce --slug <slug> --ndjson <scratch>/reproduce-<id>-<round>
 
 A finding that still reproduces gets one fix task in this milestone, minted with `tasks add-many` in the shape of [drain.md](drain.md), step 6, "New tasks":
 
-- `reason` opens `reproduce <id> round <n>: `, then the finding and the verifier's citation. That prefix is how a later invocation counts the rounds already spent.
+- `reason` opens `reproduce <id> round <n>: `, then the finding and the verifier's citation, where `<n>` is one more than the highest `<n>` the count under **Two rounds at most** prints, or 1 when it prints none: the fix rounds spent, never the check's `round`, which also rises on a relaunch and after a gate fix round. That prefix is how a later invocation counts the rounds already spent.
 - `files` are those of the row that fixed the finding, and `needs` follows the files as that section says.
 - `review_store` is the store's repo-relative path and `fixes` names the finding, so the row is an apply row and its finding is checked again under its unit.
 - It carries no `review anchor` premise: the code no longer reads as the finding first said, and the anchor would withhold the row.
@@ -258,7 +258,7 @@ tomlctl review reconcile --slug <s> --flow <slug>
 tomlctl review reconcile --scope <scope> --flow <slug>
 ```
 
-It moves each finding scheduled into `<slug>` by the state of its task: a `fixes` finding whose task is `done` with a commit is `resolved`; a `settles` finding whose task is committed goes back to `open`; a finding whose task is deferred or gone goes back to `open` with its apply link cleared; anything else stays `scheduled`. It prints `{ok, flow, review_store, resolved, reopened, in_flight, retitled}` and writes the store only when something moved. A finding listed under `in_flight` after its milestone is stamped belongs to a row of another milestone; it is not an error.
+It moves each finding scheduled into `<slug>` by its task's state, by the table in the `tomlctl` skill's references/review-apply.md, section `tomlctl review reconcile`. A finding listed under `in_flight` after its milestone is stamped belongs to a row of another milestone; it is not an error.
 
 A refusal stops the engine before the flow-store commit, as a failed commit does: make no flow-store commit, leave the milestone commit and its stamps in place, and report the store and the refusal in `needs_human`, so the user fixes the store and the reconcile and the flow-store commit are made by hand or by a later invocation.
 

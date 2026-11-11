@@ -427,6 +427,31 @@ fn findings_sharing_a_file_fold_into_one_task() {
 }
 
 #[test]
+fn a_finding_bridging_two_groups_merges_them_in_chosen_order() {
+    let bridge = format!(
+        "{}instances = [\"src/b.rs\"]\n",
+        cleanup("F3", "src/a.rs", "change", "let fast = \"--fast\";")
+    );
+    let repo = Repo::new(&[
+        bug("F1", "src/a.rs", "alpha"),
+        bug("F2", "src/b.rs", "beta"),
+        bridge,
+    ]);
+    let out = repo.schedule(&["F1", "F2", "F3"]);
+    let merged = scheduled_ref(&out, "F1");
+    assert_eq!(scheduled_ref(&out, "F2"), merged);
+    assert_eq!(scheduled_ref(&out, "F3"), merged);
+
+    let doc = repo.tasks_doc();
+    assert_eq!(items(&doc).len(), 2);
+    assert_eq!(strings(&link(&doc, &merged)["fixes"]), ["F1", "F2", "F3"]);
+    assert_eq!(
+        strings(&row(&doc, &merged)["files"]),
+        ["src/a.rs", "src/b.rs"]
+    );
+}
+
+#[test]
 fn a_medium_defect_or_a_third_file_runs_deep() {
     let repo = Repo::new(&[defect(Defect {
         id: "F1",
@@ -585,6 +610,38 @@ fn depends_on_becomes_needs() {
         .unwrap();
     let needs = row(&doc, &scheduled_ref(&out, "F2"))["needs"].clone();
     assert_eq!(needs.as_array().unwrap(), &[Value::Integer(first)]);
+}
+
+#[test]
+fn depends_on_reaches_an_earlier_call_and_reports_an_unscheduled_dep() {
+    let dependent = |id: &'static str, file, symbol, dep: &'static [&'static str]| {
+        defect(Defect {
+            id,
+            file,
+            symbol,
+            effort: "small",
+            blocked: "",
+            depends_on: dep,
+        })
+    };
+    let repo = Repo::new(&[
+        bug("F1", "src/a.rs", "alpha"),
+        dependent("F2", "src/b.rs", "beta", &["F1"]),
+        dependent("F3", "src/c.rs", "gamma", &["F9"]),
+    ]);
+    let first = repo.schedule(&["F1"]);
+    let out = repo.schedule(&["F2,F3"]);
+
+    let doc = repo.tasks_doc();
+    let earlier = row(&doc, &scheduled_ref(&first, "F1"))["id"]
+        .as_integer()
+        .unwrap();
+    let needs = row(&doc, &scheduled_ref(&out, "F2"))["needs"].clone();
+    assert_eq!(needs.as_array().unwrap(), &[Value::Integer(earlier)]);
+    assert_eq!(
+        out["dropped_deps"],
+        serde_json::json!([{"finding": "F3", "depends_on": "F9"}])
+    );
 }
 
 #[test]

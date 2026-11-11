@@ -126,13 +126,7 @@ pub(crate) fn cover(target: &Target, args: ReviewCoverArgs) -> Result<()> {
     else {
         return Err(invalid(format!("{verb}: pass --note or --note-file")));
     };
-    let len = note.chars().count();
-    let note_cap = fields::cap(Record::Cell, "note");
-    if len > note_cap {
-        return Err(invalid(format!(
-            "{verb}: the note is {len} characters; the cap is {note_cap}"
-        )));
-    }
+    fields::check_cap(verb, "the note", Record::Cell, "note", &note)?;
     let ruled_out = args.ruled_out.as_deref().map(read_ruled_out).transpose()?;
     // A sealed cell's status and note are final; covering it again with the
     // same seal still replaces its rule-outs.

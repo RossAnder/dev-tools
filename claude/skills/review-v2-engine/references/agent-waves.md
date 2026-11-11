@@ -73,12 +73,12 @@ findings: <id>[, <id>…]
 batch: verify-<cell id>-<minor|cleanup>
 panel seat: <seat> of 3
 
-Fetch each finding with `tomlctl review show <ids, comma-separated> --for verifier <store flag>`, verify it refute-first, and record each verdict with `tomlctl review verdict` using `--by verifier`. Return the verdict-return object.
+Fetch each finding with `tomlctl review show <ids, comma-separated> --for verifier <store flag>`, verify it refute-first, and record each verdict with `tomlctl review verdict` using `--by verifier`. A finding with `blocked_on` claims its fix cannot be written; refute that claim too by trying to write the fix. When you can, record a confirmed or plausible verdict that unblocks it: `--unblocks --fix-sketch-file <run dir>/payloads/<finding>.sketch.md` on a single verdict, or `"unblocks": true` with a `"fix_sketch"` on its batch line. Edit no code to do it. Return the verdict-return object.
 ```
 
 - Single finding: omit `batch:` and `panel seat:`; the instruction ends `Return the verdict-return object.`
 - Minor or cleanup batch: keep `batch:`, omit `panel seat:`; the instruction ends `Return one verdict-return object per finding under \`verdicts\`.`
-- Panel seat: omit `batch:`; keep `panel seat:` and replace `--by verifier` with `--by panel --seat <seat>`.
+- Panel seat: omit `batch:`; keep `panel seat:` and replace `--by verifier` with `--by panel --seat <seat>`, and replace the unblock sentence with `A panel seat cannot unblock: when you could write the fix, say so in the rationale.`
 
 ### Checker prompt
 

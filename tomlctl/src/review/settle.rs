@@ -107,15 +107,13 @@ fn read_outcome(args: &Request<'_>) -> Result<Outcome> {
         }
         let fix = read_prose(VERB, "fix", None, args.fix_file)?
             .ok_or_else(|| invalid(format!("{VERB}: --accept needs --fix-file")))?;
-        let cap = fields::spec(Record::Finding, "fix_sketch", None).and_then(|s| s.cap);
-        if let Some(cap) = cap
-            && fix.chars().count() > cap
-        {
-            return Err(invalid(format!(
-                "{VERB}: the --fix-file text is {} characters; the cap is {cap}",
-                fix.chars().count()
-            )));
-        }
+        fields::check_cap(
+            VERB,
+            "the --fix-file text",
+            Record::Finding,
+            "fix_sketch",
+            &fix,
+        )?;
         return Ok(Outcome::Accept {
             tier: tier.to_string(),
             fix,
@@ -160,34 +158,31 @@ fn proposal_path(path: &Path) -> Result<String> {
     })
 }
 
-fn text<'f>(finding: &'f Finding, key: &str) -> Option<&'f str> {
-    finding.rest.get(key).and_then(TomlValue::as_str)
-}
-
 /// Whether `finding` already carries `outcome`, so a replay writes nothing.
 fn recorded(store: &Store, finding: &Finding, outcome: &Outcome) -> bool {
-    let unlinked = text(finding, "apply_flow").is_none() && text(finding, "apply_task").is_none();
+    let unlinked = fields::APPLY_LINK_FIELDS
+        .iter()
+        .all(|key| finding.text(key).is_none());
     unlinked
         && match outcome {
             Outcome::Accept { tier, fix } => {
                 finding.status() == FindingStatus::Open
                     && fields::blocked_on(finding).is_none()
-                    && text(finding, "unblocked_by") == Some("settle")
-                    && text(finding, "settle_tier") == Some(tier)
-                    && text(finding, "fix_sketch") == Some(fix)
+                    && finding.text("unblocked_by") == Some("settle")
+                    && finding.text("settle_tier") == Some(tier)
+                    && finding.text("fix_sketch") == Some(fix)
             }
             Outcome::Refute { citation } => {
                 finding.status() == FindingStatus::Refuted
                     && store.verdicts.iter().any(|v| {
                         v.finding == finding.id
-                            && v.by == "orchestrator"
-                            && v.verdict == "refuted"
+                            && verdict::settle_refute(finding, &v.by, &v.verdict)
                             && &v.citation == citation
                     })
             }
             Outcome::Defer { proposal } => {
                 finding.status() == FindingStatus::Open
-                    && text(finding, "proposal") == Some(proposal)
+                    && finding.text("proposal") == Some(proposal)
             }
         }
 }
@@ -214,7 +209,7 @@ fn refusals(finding: &Finding, outcome: &Outcome) -> Vec<String> {
         )),
     }
     if let Outcome::Defer { .. } = outcome
-        && let Some(existing) = text(finding, "proposal")
+        && let Some(existing) = finding.text("proposal")
     {
         reasons.push(format!(
             "{id} already carries proposal {existing}; a deferral is not renewed — accept or refute it"
@@ -247,9 +242,7 @@ fn settle(
 
     let finding = &mut store.findings[index];
     finding.set_status(FindingStatus::Open, &[]);
-    finding.rest.remove("apply_flow");
-    finding.rest.remove("apply_task");
-    finding.rest.remove("apply_task_id");
+    finding.clear_apply_link();
     match outcome {
         Outcome::Accept { tier, fix } => {
             fields::clear_block(finding, &[]);
@@ -312,7 +305,7 @@ pub(super) fn deferred(store: &Store, family: Family) -> Vec<Deferred<'_>> {
         .filter(|f| {
             f.family == family
                 && f.status() == FindingStatus::Open
-                && text(f, "proposal").is_some_and(|p| !p.trim().is_empty())
+                && f.text("proposal").is_some_and(|p| !p.trim().is_empty())
         })
         .map(|finding| {
             let at = proposal_at(finding);
@@ -337,4 +330,32 @@ fn proposal_at(finding: &Finding) -> Option<Timestamp> {
         _ => return None,
     };
     raw.parse().ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_settle_refute_decides_a_regression_row() {
+        let doc: TomlValue = toml::from_str(
+            "schema_version = 2\n\n[[findings]]\nid = \"F1\"\nrun = \"U1\"\ncell = \"C1\"\n\
+             family = \"code\"\nkind = \"defect\"\nlens = \"correctness\"\nfile = \"src/a.rs\"\n\
+             summary = \"s\"\nseverity = \"minor\"\nstatus = \"scheduled\"\nsame_as = \"F0\"\n\
+             outcome = \"regression\"\nblocked_on = \"evidence\"\nblocked_missing = \"a trace\"\n\
+             apply_flow = \"x\"\napply_task = \"settle-f1\"\napply_task_id = 3\n",
+        )
+        .expect("the fixture parses");
+        let mut store = store::from_toml(&doc).expect("the fixture reads");
+        let outcome = Outcome::Refute {
+            citation: "src/a.rs:1".into(),
+        };
+        let now = "2026-11-11T00:00:00Z".parse().expect("a datetime");
+        let out = settle(&mut store, "F1", &outcome, now, None).expect("settles");
+        assert_eq!(out["status"], "refuted", "{out}");
+        let f = &store.findings[0];
+        assert_eq!(f.status(), FindingStatus::Refuted);
+        assert!(f.text("apply_flow").is_none() && !f.rest.contains_key("apply_task_id"));
+        assert!(recorded(&store, f, &outcome), "a replay writes nothing");
+    }
 }

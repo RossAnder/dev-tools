@@ -12,7 +12,6 @@ use std::path::Path;
 
 use anyhow::Result;
 use serde_json::json;
-use toml::Value as TomlValue;
 
 use super::add::{check_old, edit_target, occurrences, read_normalised};
 use super::fields::{Direction, Kind};
@@ -64,23 +63,16 @@ pub(crate) fn run(
     Ok(())
 }
 
-fn rest_str<'a>(finding: &'a Finding, key: &str) -> Option<&'a str> {
-    finding
-        .rest
-        .get(key)
-        .and_then(TomlValue::as_str)
-        .filter(|s| !s.is_empty())
-}
-
 /// The outer `Err` refuses the finding; the inner one says why its anchor
 /// does not hold.
 type Answer = Result<std::result::Result<(), String>>;
 
 fn holds(root: &Path, finding: &Finding) -> Answer {
     match finding.kind {
-        Kind::Cleanup => Ok(match rest_str(finding, "old") {
+        Kind::Cleanup => Ok(match finding.text("old").filter(|s| !s.is_empty()) {
             Some(old) => {
-                let at = edit_target(root, &finding.file, rest_str(finding, "target_file"));
+                let target = finding.text("target_file").filter(|s| !s.is_empty());
+                let at = edit_target(root, &finding.file, target);
                 check_old(root, at, old, finding.line)
             }
             None => file_exists(root, &finding.file),
@@ -95,7 +87,7 @@ fn holds(root: &Path, finding: &Finding) -> Answer {
 }
 
 fn gone(root: &Path, finding: &Finding) -> Answer {
-    let direction = rest_str(finding, "direction").and_then(Direction::parse);
+    let direction = finding.text("direction").and_then(Direction::parse);
     if finding.kind != Kind::Cleanup || direction != Some(Direction::Remove) {
         let what = match (finding.kind, direction) {
             (Kind::Cleanup, Some(d)) => format!("a {} cleanup", d.as_str()),
@@ -106,13 +98,14 @@ fn gone(root: &Path, finding: &Finding) -> Answer {
             finding.id
         )));
     }
-    let Some(old) = rest_str(finding, "old") else {
+    let Some(old) = finding.text("old").filter(|s| !s.is_empty()) else {
         return Err(invalid(format!(
             "{VERB}: --gone needs `old`; {} carries none",
             finding.id
         )));
     };
-    let at = edit_target(root, &finding.file, rest_str(finding, "target_file"));
+    let target = finding.text("target_file").filter(|s| !s.is_empty());
+    let at = edit_target(root, &finding.file, target);
     let Some(text) = read_normalised(root, at) else {
         return Ok(Ok(()));
     };

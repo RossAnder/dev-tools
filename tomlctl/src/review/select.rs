@@ -8,7 +8,6 @@ use std::path::Path;
 use anyhow::Result;
 use globset::GlobSet;
 use serde_json::{Value as JsonValue, json};
-use toml::Value as TomlValue;
 
 use super::catalogue::run_catalogue;
 use super::fields::{self, Family, FindingStatus, Kind, Role};
@@ -119,14 +118,14 @@ pub(super) fn refusal(f: &Finding, family: Family) -> Option<String> {
         ));
     }
     if let Some(blocked) = fields::blocked_on(f) {
-        let legacy = if text(f, "blocked_on").trim().is_empty() {
+        let legacy = if f.text("blocked_on").unwrap_or_default().trim().is_empty() {
             " (a stored fix_shape = needs-plan)"
         } else {
             ""
         };
         return Some(format!("blocked on {}{legacy}", blocked.as_str()));
     }
-    if text(f, "effort") == "large" {
+    if f.text("effort") == Some("large") {
         return Some("effort is large".into());
     }
     None
@@ -140,14 +139,6 @@ fn latest_verdict(stored: &Store, finding: &str) -> String {
         .rev()
         .find(|v| v.finding == finding)
         .map(|v| v.verdict.clone())
-        .unwrap_or_default()
-}
-
-/// The finding's string field `key` from its open fields, or `""`.
-pub(super) fn text<'a>(f: &'a Finding, key: &str) -> &'a str {
-    f.rest
-        .get(key)
-        .and_then(TomlValue::as_str)
         .unwrap_or_default()
 }
 
@@ -171,7 +162,7 @@ impl<'a> TestGlobs<'a> {
     /// Whether `f` is a cleanup removing something at a test path: its edit
     /// target (`target_file`, else `file`) or any of its `instances`.
     fn is_test_removal(&mut self, stored: &Store, f: &Finding) -> Result<bool> {
-        if f.kind != Kind::Cleanup || text(f, "direction") != "remove" {
+        if f.kind != Kind::Cleanup || f.text("direction") != Some("remove") {
             return Ok(false);
         }
         if !self.by_run.contains_key(&f.run) {
@@ -186,16 +177,6 @@ impl<'a> TestGlobs<'a> {
             self.by_run.insert(f.run.clone(), globs);
         }
         let globs = &self.by_run[&f.run];
-        let instances = f
-            .rest
-            .get("instances")
-            .and_then(TomlValue::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(TomlValue::as_str);
-        Ok(
-            fields::edited_paths(&f.file, Some(text(f, "target_file")), instances)
-                .any(|path| globs.is_match(path)),
-        )
+        Ok(f.edited_paths().any(|path| globs.is_match(path)))
     }
 }

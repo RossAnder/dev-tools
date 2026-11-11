@@ -21,10 +21,10 @@ use toml::Value as TomlValue;
 use super::export::description;
 use super::fields::{self, BlockedOn, Family, FindingStatus, Kind};
 use super::invalid;
-use super::select::{self, Selection, text};
+use super::select::{self, Selection};
 use super::store::{self, Finding, Row, Store, Target};
 use crate::cli::{ReadIntegrityArgs, ReviewStore, WriteIntegrityArgs};
-use crate::io::{relativise_under, repo_or_cwd_root};
+use crate::io::repo_or_cwd_root;
 use crate::output::print_json_compact;
 use crate::tasks::schema::{Status, TaskRow};
 
@@ -90,8 +90,7 @@ pub(crate) fn run(
         strict_read: true,
     };
     let stored = store::load(&target.path, &read)?;
-    let store_rel = relativise_under(&root, &target.path)
-        .unwrap_or_else(|| target.path.to_string_lossy().replace('\\', "/"));
+    let store_rel = target.rel();
     let store_flag = match (&store_args.slug, &store_args.scope) {
         (Some(slug), _) => format!("--slug {slug}"),
         (None, Some(scope)) => format!("--scope {scope}"),
@@ -352,7 +351,7 @@ fn blocked(f: &Finding) -> Option<BlockedOn> {
 fn settle_refusal(f: &Finding, block: BlockedOn, settle_checkpoint: bool) -> Option<String> {
     match block {
         BlockedOn::Evidence => {
-            let proposal = text(f, "proposal").trim();
+            let proposal = f.text("proposal").unwrap_or_default().trim();
             if !proposal.is_empty() {
                 Some(format!(
                     "blocked on evidence; its proposal {proposal} is already made, and a \
@@ -380,15 +379,8 @@ fn settle_refusal(f: &Finding, block: BlockedOn, settle_checkpoint: bool) -> Opt
 
 /// The paths a finding's fix edits: its edit target and its `instances`.
 fn edited(f: &Finding) -> Vec<String> {
-    let instances = f
-        .rest
-        .get("instances")
-        .and_then(TomlValue::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(TomlValue::as_str);
     let mut paths: Vec<String> = Vec::new();
-    for path in fields::edited_paths(&f.file, Some(text(f, "target_file")), instances) {
+    for path in f.edited_paths() {
         let path = path.trim();
         if !path.is_empty() && !paths.iter().any(|p| p == path) {
             paths.push(path.to_string());
@@ -550,7 +542,7 @@ impl Compose<'_> {
     fn settle_row(&self, index: usize) -> NewRow {
         let f = &self.stored.findings[index];
         let note = format!("docs/flows/{}/notes/settle/{}.md", self.flow, f.id);
-        let missing = match text(f, "blocked_missing").trim() {
+        let missing = match f.text("blocked_missing").unwrap_or_default().trim() {
             "" => f.summary.trim(),
             missing => missing,
         };
@@ -628,7 +620,7 @@ impl Compose<'_> {
             1 => found[0].summary.trim().to_string(),
             n => format!("{} (and {} more)", found[0].summary.trim(), n - 1),
         };
-        let effort = if found.iter().any(|f| text(f, "effort") == "medium") {
+        let effort = if found.iter().any(|f| f.text("effort") == Some("medium")) {
             "M"
         } else {
             "S"
@@ -642,7 +634,7 @@ impl Compose<'_> {
             .map(|&i| {
                 let f = &self.stored.findings[i];
                 let mut block = format!("{}:\n{}", f.id, description(&self.projected[i]));
-                let sketch = text(f, "fix_sketch").trim();
+                let sketch = f.text("fix_sketch").unwrap_or_default().trim();
                 if !sketch.is_empty() {
                     block.push_str(&format!("\nFix sketch: {sketch}"));
                 }
@@ -654,7 +646,7 @@ impl Compose<'_> {
             "Change no behaviour the finding does not name.".to_string(),
         ];
         for f in &found {
-            let answer = text(f, "decision_answer").trim();
+            let answer = f.text("decision_answer").unwrap_or_default().trim();
             if answer.is_empty() {
                 continue;
             }
@@ -678,7 +670,7 @@ impl Compose<'_> {
         let accept: Vec<JsonValue> = found.iter().map(|f| self.accept(f)).collect();
         let lite = files.len() <= 2
             && found.iter().all(|f| {
-                f.kind == Kind::Cleanup || matches!(text(f, "effort"), "trivial" | "small")
+                f.kind == Kind::Cleanup || matches!(f.text("effort"), Some("trivial" | "small"))
             });
         let mut row = Map::new();
         row.insert("title".into(), json!(title));
@@ -716,8 +708,8 @@ impl Compose<'_> {
     /// verdict, which the gate reads.
     fn accept(&self, f: &Finding) -> JsonValue {
         let removes = f.kind == Kind::Cleanup
-            && text(f, "direction") == "remove"
-            && !text(f, "old").trim().is_empty();
+            && f.text("direction") == Some("remove")
+            && !f.text("old").unwrap_or_default().trim().is_empty();
         if removes {
             json!({
                 "behaviour": format!("{}'s removed text is gone from its edit target", f.id),
@@ -741,7 +733,7 @@ impl Compose<'_> {
 fn outcome(f: &Finding) -> String {
     match f.kind {
         Kind::Defect => {
-            let scenario = text(f, "failure_scenario").trim();
+            let scenario = f.text("failure_scenario").unwrap_or_default().trim();
             let scenario = if scenario.is_empty() {
                 f.summary.trim()
             } else {

@@ -441,9 +441,9 @@ impl Store {
     pub(crate) fn holds_v2_keys(&self) -> bool {
         self.audit
             || self.id_high_water > 0
-            || !self.specs.is_empty()
-            || !self.milestones.is_empty()
-            || !self.changes.is_empty()
+            || self.specs.iter().any(|entry| !entry.r#ref.is_empty())
+            || self.milestones.iter().any(|entry| !entry.id.is_empty())
+            || self.changes.iter().any(|entry| !entry.r#ref.is_empty())
             || self.finding_links.iter().any(|link| !link.is_empty())
     }
 
@@ -759,13 +759,7 @@ pub(crate) fn to_toml(store: &Store) -> TomlValue {
         .filter(|entry| !entry.r#ref.is_empty())
         .map(change_to_toml)
         .collect();
-    let holds_v2_keys = *audit
-        || *id_high_water > 0
-        || !specs.is_empty()
-        || !milestones.is_empty()
-        || !changes.is_empty()
-        || !finding_links.is_empty();
-    let stamp = match holds_v2_keys {
+    let stamp = match store.holds_v2_keys() {
         true => SCHEMA_VERSION,
         false => BASE_SCHEMA_VERSION,
     };

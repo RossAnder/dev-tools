@@ -93,6 +93,6 @@ At audit, a CONFIRMED perf defect whose citation shows no sourced input size is 
 
 ## Stage 8 — hand-off
 
-Name the apply hand-off from the bindings table with the finding ids the user picked under `apply`, `/apply-v2 --scope <scope> F2,F5`, or with `--all` for `apply all`, as the engine's triage-and-close reference says, and stop; the user runs it. `--all` takes every open perf defect and cleanup in the store, earlier runs' included, so show the user that list before naming it, and say which picks the schedule rule will refuse or hold back, with the reason.
+Name the apply hand-off from the bindings table with the finding ids the user picked under `apply`, `/apply-v2 --scope <scope> F2,F5`, or with `--all` for `apply all`, as the engine's triage-and-close reference says, and stop; the user runs it. `--all` is not limited to perf: on a store a `/review-v2` run shares, it schedules that run's open code findings too, so offer this run's perf ids explicitly when the user meant only those.
 
 For each advisory item the user picks for the backlog at triage, invoke the `backlog-capture` skill at this stage, as the engine's close step describes, and run its check-then-add gate before any backlog write.

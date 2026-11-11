@@ -377,7 +377,7 @@ Each store's `.sha256` sidecar is staged beside it; the pre-commit hook compares
 
 ### Stamping on re-entry
 
-A milestone whose rows are all `done` with an empty `commit` is one whose run ended between the commit and the stamp, or before the gate. When `HEAD` is a milestone commit holding the rows' files, so that `git status --porcelain -- <paths>` prints none of them and `git show --name-only --format= HEAD` lists them, stamp `HEAD`'s sha as above and make the flow-store commit. Otherwise run the gate again from step 7.
+A milestone whose rows are all `done` with an empty `commit` is one whose run ended between the commit and the stamp, or before the gate. When `HEAD` is a milestone commit holding the rows' files, so that `git status --porcelain -- <paths>` prints none of them and `git show --name-only --format= HEAD` lists them, stamp `HEAD`'s sha as above, then, when the milestone holds an apply row, run [findings.md](findings.md) **Reconcile** before the flow-store commit, and make the flow-store commit. Otherwise a milestone holding no apply row runs the gate again from step 7, and one holding an apply row goes back through the tail of step 6 first: the **Reproduce check** when a row fixes a finding, then the **Settle drain** when a row settles one, then the gate. Running the settle drain again is safe: it skips a finding an earlier pass recorded.
 
 ### Next
 

@@ -162,7 +162,16 @@ tomlctl review show <ids, comma-separated> --slug <slug> --for backlog
 
 Run the skill's check-then-add gate per row. Record each minted or matched backlog id with `review triage <id> --backlog-ref <B-id> --expect-status open`. A row the gate reports as a duplicate of an existing item takes that item's id; a row the gate refuses to mint is reported back to the user and stays parked.
 
-**3. Apply picks.** Nothing is written at this step; `/apply-v2` reads the selection from the store when the user runs it. Keep the ids the user named under `apply`, exactly as named, for step 4. Before naming them, say which of them the schedule rule will refuse — advisory, a finding still blocked on `decision`, `design`, `measurement` or `alternatives`, an `evidence` block that already carries a `proposal`, `effort = "large"`, a status other than `open`, the plan family — and which `evidence` picks become settle tasks rather than fixes, so the user is not surprised at the preview; `/apply-v2` reports each refusal and hold-back with its reason itself. A decision answered at this triage is no longer blocked and schedules as a fix. `apply all` takes every open code or perf defect and cleanup in the store that is not blocked, earlier runs' included, schedules a settle task for each `evidence` block without a proposal, and holds back test removals and cleanup whose latest verdict is PLAUSIBLE, which apply only by explicit id; list the open defects and cleanup before naming it:
+**3. Apply picks.** Nothing is written at this step; `/apply-v2` reads the selection from the store when the user runs it. Keep the ids the user named under `apply`, exactly as named, for step 4. Which findings schedule, settle, hold back or are refused is the schedule rule's, owned by `tomlctl review schedule` in the `tomlctl` skill's `references/review-apply.md`; do not restate it. Before naming the picks, preview them with the verb itself, which writes nothing and needs no flow or checkpoint:
+
+```bash
+tomlctl review schedule <picked-ids> --slug <slug> --dry-run
+tomlctl review schedule --all --slug <slug> --dry-run
+```
+
+Use `--scope <scope>` in place of `--slug <slug>` for a flow-less store, and the second form for `apply all`. Report its `refused` and `held` rows with their reasons, and its `settle` rows as settle tasks rather than fixes, so the user is not surprised when `/apply-v2` runs. A decision answered at this triage is no longer blocked, so run the preview after recording the answers.
+
+`apply all` is not scoped to this run or this family: it takes the store's open code and perf findings alike, earlier runs' included, so a `/review-v2` and an `/optimise-v2` run on the same store share one selection. List the open defects and cleanup before naming it, show the user that whole list, and when the user meant only this run's findings, offer those ids explicitly instead:
 
 ```bash
 tomlctl review list --slug <slug> --status open --kind defect

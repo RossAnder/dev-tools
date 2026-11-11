@@ -235,6 +235,9 @@ pub(crate) const ALL_COMPANIONS: &[&str] = &ALL_COMPANION_ARRAY;
 /// deferred.
 pub(crate) const LINK_FIELDS: &[&str] = &["exported_as", "export_ledger"];
 
+/// A scheduled finding's link to its fix task in an apply flow.
+pub(crate) const APPLY_LINK_FIELDS: &[&str] = &["apply_flow", "apply_task", "apply_task_id"];
+
 pub(crate) const FINDING_STATUSES: &[&str] = FindingStatus::VALUES;
 
 str_enum!(
@@ -296,10 +299,9 @@ str_enum!(
 /// What `finding` is blocked on, or `None` when it is fixable. A stored row
 /// with `fix_shape = "needs-plan"` and no `blocked_on` is blocked on design.
 pub(crate) fn blocked_on(finding: &super::store::Finding) -> Option<BlockedOn> {
-    let text = |key: &str| finding.rest.get(key).and_then(toml::Value::as_str);
-    match text("blocked_on").map(str::trim) {
+    match finding.text("blocked_on").map(str::trim) {
         Some(value) if !value.is_empty() => BlockedOn::parse(value),
-        _ if text("fix_shape") == Some("needs-plan") => Some(BlockedOn::Design),
+        _ if finding.text("fix_shape") == Some("needs-plan") => Some(BlockedOn::Design),
         _ => None,
     }
 }
@@ -323,7 +325,7 @@ pub(crate) fn clear_block(finding: &mut super::store::Finding, keep: &[&str]) {
             finding.rest.remove(key);
         }
     }
-    if finding.rest.get("fix_shape").and_then(toml::Value::as_str) == Some("needs-plan") {
+    if finding.text("fix_shape") == Some("needs-plan") {
         finding.rest.remove("fix_shape");
     }
 }
@@ -859,6 +861,25 @@ pub(crate) fn cap(record: Record, name: &str) -> usize {
         .unwrap_or_else(|| panic!("the field catalogue sets no cap on {record:?}.{name}"))
 }
 
+/// Refuses `text` bound for `name` of `record` when it runs past the field's
+/// cap; `what` names the text in the refusal.
+pub(crate) fn check_cap(
+    verb: &str,
+    what: &str,
+    record: Record,
+    name: &str,
+    text: &str,
+) -> Result<()> {
+    let len = text.chars().count();
+    let cap = cap(record, name);
+    if len > cap {
+        return Err(super::invalid(format!(
+            "{verb}: {what} is {len} characters; the cap is {cap}"
+        )));
+    }
+    Ok(())
+}
+
 /// One reason a row was refused, naming the field it concerns.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Refusal {
@@ -1083,6 +1104,13 @@ fn check_value(spec: &FieldSpec, value: &JsonValue) -> std::result::Result<(), S
         },
         Ty::StrList => {
             let list = value.as_array().ok_or("must be an array of strings")?;
+            // A blank entry must not pad the count `min_items` asks for.
+            for (i, element) in list.iter().enumerate() {
+                let text = element.as_str().ok_or("must be an array of strings")?;
+                if text.trim().is_empty() {
+                    return Err(format!("entry {i} is blank"));
+                }
+            }
             if let Some(max) = spec.max_items
                 && list.len() > max
             {
@@ -1537,6 +1565,21 @@ mod tests {
     }
 
     #[test]
+    fn a_blank_option_does_not_count_toward_the_minimum() {
+        for options in [json!(["a real option", "  "]), json!(["", ""])] {
+            let mut decision = defect();
+            decision.insert("blocked_on".into(), json!("decision"));
+            decision.insert("blocked_missing".into(), json!("which owner"));
+            decision.insert("blocked_options".into(), options.clone());
+            let refusals =
+                validate_row(Record::Finding, &decision, &ctx(Family::Code)).unwrap_err();
+            assert_eq!(refusals.len(), 1, "{options}: {refusals:?}");
+            assert_eq!(refusals[0].field, "blocked_options", "{options}");
+            assert!(refusals[0].reason.contains("is blank"), "{refusals:?}");
+        }
+    }
+
+    #[test]
     fn a_legacy_needs_plan_row_reads_as_blocked_on_design() {
         use super::super::store::from_toml;
         let store = |extra: &str| {
@@ -1903,7 +1946,7 @@ mod tests {
         assert!(
             ALL_COMPANIONS
                 .iter()
-                .all(|c| !["apply_flow", "apply_task", "apply_task_id"].contains(c))
+                .all(|c| !APPLY_LINK_FIELDS.contains(c))
         );
     }
 

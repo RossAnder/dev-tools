@@ -83,8 +83,14 @@ tomlctl review show <passing ids> --slug <slug> --for implementer
 
 - **Blocked on evidence.** Note each finding under `settle`: those make step 5 add a settle milestone. Such a finding edits nothing yet, so it takes no part in the dirty-files check below or in step 3's gates.
 
-- **Already scheduled.** A finding refused with `status is scheduled, not open` already has `apply_flow` naming a flow and is past this skill: Re-entry, below, says what follows.
-- **Nothing to schedule.** When no selected finding passes the rule and none is already scheduled, report each one with the reason it is held or refused and stop. No flow is opened and no milestone added.
+- **Already scheduled.** A finding refused with `status is scheduled, not open` already has `apply_flow` naming a flow and is past this skill: Re-entry, below, says what follows. With `--all` the verb skips non-open findings without a refused row, so find them from the home's links instead: for `<slug>` the home is `<slug>`, and for `--scope` it is the flow Re-entry's "A new flow already opened" finds by its brief (none when no such flow exists).
+
+```bash
+tomlctl items list .claude/flows/<flow>/tasks.toml --array finding_links --select ref,store,fixes,settles --lines
+```
+
+  Keep the rows whose `store` is `<store>`; their findings are the already-scheduled set, and `--all` reports no refused row for them.
+- **Nothing to schedule.** When no selected finding passes the rule and the already-scheduled set is empty too, report each one with the reason it is held or refused and stop. No flow is opened and no milestone added.
 - **Dirty files.** Collect the `files` of every `would-mint` row under `scheduled`. Then:
 
 ```bash
@@ -184,45 +190,18 @@ When `scheduled` and `settle` are both empty, the milestones stay with no rows: 
 
 ### 7. Commit the new flow
 
-`plan approve` refuses while `git status` reports the flow's `tasks.toml`, `plan.toml` or `brief.md`, because its stamp names `HEAD`, and the execution engine's clean-tree check refuses the review store, which sits outside the flow. Commit both first.
+`plan approve` refuses while `git status` reports the flow's `tasks.toml`, `plan.toml` or `brief.md`, because its stamp names `HEAD`. The review store, which sits outside the flow, holds the `scheduled` marks those rows answer, so the two land in one commit. Commit both first.
 
-Check the registry the approval writes before staging anything:
+Steps 7 and 8 follow the `plan-v2-engine` skill's [approve.md](../plan-v2-engine/references/approve.md), sections 4 to 7 (commit the plan, stamp the approval, record the transition, commit what the stamp wrote), with `<flow>` as the slug and these deltas only:
 
-```bash
-git status --short -- .claude/active-flow.toml .claude/active-flow.toml.sha256
-```
-
-When it prints a path, that path holds edits this skill did not make, and the approval commit would sweep them in: stop and name it. The user commits or discards them and reruns.
-
-List what the commit holds, then check that no listed path is ignored:
-
-```bash
-git status --porcelain --untracked-files=all -- docs/flows/<flow>/ .claude/flows/<flow>/ <store> <store>.sha256
-git check-ignore <every path from the list>
-```
-
-Stage every listed path by name except any `git check-ignore` prints, and commit.
+- **Dirty registry.** When `git status --short -- .claude/active-flow.toml .claude/active-flow.toml.sha256` prints a path, stop and name it; the user commits or discards those edits and reruns. Offer no options.
+- **First commit's listing.** `<store>` and `<store>.sha256` join the paths section 4 lists, and go through the same `git check-ignore` check.
+- **No gate screen.** Skip section 3. Run `tomlctl plan check --slug <flow>` and, on an error-class finding, report it and stop: the fix is to the verb or the brief, never to the store by hand. Then stamp with `tomlctl plan approve --slug <flow> --review skipped-flag --reason 'triage of <store> selected these findings'`. The triage is the approval.
+- **The record** carries `agent=apply-v2`, and its summary reads `apply flow approved at <commit>`.
 
 ### 8. Approve the new flow
 
-```bash
-tomlctl plan check --slug <flow>
-```
-
-On an error-class finding, report it and stop: the minted rows or the brief do not satisfy the plan's checks, and the fix is to the verb or the brief, never to the store by hand. Then approve. The triage is the approval:
-
-```bash
-tomlctl plan approve --slug <flow> --review skipped-flag --reason 'triage of <store> selected these findings'
-```
-
-When `transition.from` differs from `transition.to`, stage a one-line summary, `apply flow approved at <commit>`, with the Write tool in the scratchpad, record it and render the log:
-
-```bash
-tomlctl flow record --slug <flow> --type status-transition --set agent=apply-v2 --set from_status=draft --set to_status=in-progress --set-file summary=<staged-summary>
-tomlctl flow render-progress-log --slug <flow>
-```
-
-Take `from_status` and `to_status` from `transition`. Commit what the approval wrote at once, before the run, since the execution engine's clean-tree check refuses `.claude/active-flow.toml`: stage by name every path `git status --porcelain --untracked-files=all -- .claude/flows/<flow>/` lists, and `.claude/active-flow.toml` with `.claude/active-flow.toml.sha256`.
+Covered by step 7's pointer: the plan check, the stamp, the record and the second commit. Section 8 of approve.md, the v1-carrier warning, is printed in step 10.
 
 ### 9. Run
 
@@ -240,6 +219,8 @@ tomlctl review stats --slug <slug> --apply
 
 Print it as the close summary: the findings scheduled, resolved and reopened per lens and kind, and the reproductions by verdict. A finding still `scheduled` is in flight, its task not yet committed; `/implement-v2 <flow>` carries it on.
 
+When step 8 approved a new flow, print the v1-carrier warning that approve.md prints at its section 8: the block from its section 3, verbatim as a quoted block with `<flow>` filled in as the slug, never paraphrased or shortened.
+
 ## Re-entry
 
 Every invocation reads where the apply stands from the stores, never from memory, so an interrupted run resumes by running `/apply-v2` again with the same arguments.
@@ -251,7 +232,7 @@ Every invocation reads where the apply stands from the stores, never from memory
 tomlctl tasks list --slug <flow> --where checkpoint=<id> --select id --lines
 ```
 
-  Reuse the last such checkpoint, skipping steps 3 and 5, unless a `settle-<n>` checkpoint of the same `n` holds a row: that `apply-<n>` is waiting for its settle drain, so it is not reused, and step 5 adds new milestones. A `settle-<n>` with no row beside an empty `apply-<n>` is reused with it, and passed to step 6 as `--settle-checkpoint` when a selected finding is blocked on evidence.
+  Do not reuse an empty `apply-<n>` when a selected finding is blocked on evidence with no proposal and no `settle-<n>` sits beside it: step 5 adds `settle-<m>` and `apply-<m>` with a fresh `n`, so the settle milestone precedes its fix milestone. Otherwise reuse the last such checkpoint, skipping steps 3 and 5, unless a `settle-<n>` checkpoint of the same `n` holds a row: that `apply-<n>` is waiting for its settle drain, so it is not reused, and step 5 adds new milestones. A `settle-<n>` with no row beside an empty `apply-<n>` is reused with it, and passed to step 6 as `--settle-checkpoint` when a selected finding is blocked on evidence.
 - **Findings already scheduled.** A selected finding that is `scheduled` into the home is not scheduled again; `review schedule` itself links a finding whose live task already holds it rather than minting a second. When every selected finding is already scheduled into the home, go to step 7 on a new flow that is not yet approved, and to step 9 otherwise. A finding `scheduled` into a different flow is reported with that flow and left alone.
 - **An approval already stamped.** When the new flow's `plan stage` reads `approved`, `running` or `done`, steps 7 and 8 are done, unless `git status` still lists the approval's writes, which step 8's last commit then takes.
 

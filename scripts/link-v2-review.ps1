@@ -1,4 +1,4 @@
-# Links every v2 command, agent, skill and Workflow (review, plan and implement) into the
+# Links every v2 command, agent, skill and Workflow (review, plan, implement and apply) into the
 # Claude config dir ($env:CLAUDE_CONFIG_DIR, else ~/.claude). Idempotent: an entry already linked to its
 # source is skipped. Nothing under the config dir is ever deleted or overwritten: a real
 # file or directory, or a link pointing elsewhere, in an entry's place is reported and

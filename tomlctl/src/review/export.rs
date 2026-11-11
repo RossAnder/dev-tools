@@ -19,7 +19,7 @@ use toml::value::Datetime;
 
 use super::fields::{Family, FindingStatus, Kind};
 use super::invalid;
-use super::select::{self, text};
+use super::select;
 use super::store::{self, Finding, Row, Store, Target};
 use super::sync::{map_status, v2_refs};
 use crate::cli::{ReadIntegrityArgs, ReviewExportArgs, write_integrity_opts};
@@ -116,7 +116,7 @@ pub(crate) fn run(target: &Target, args: ReviewExportArgs) -> Result<()> {
         std::env::current_dir()?.join(&args.to)
     };
     let ledger_rel = relativise_under(&root, &ledger_abs).unwrap_or_else(|| slashed(&ledger_abs));
-    let store_rel = relativise_under(&root, &target.path).unwrap_or_else(|| slashed(&target.path));
+    let store_rel = target.rel();
 
     let selection = select::Selection::new(VERB, &stored, &root, family, args.all, &args.ids)?;
     let mut refused = selection.refused;
@@ -149,9 +149,9 @@ pub(crate) fn run(target: &Target, args: ReviewExportArgs) -> Result<()> {
     let prior: HashMap<String, String> = stored
         .findings
         .iter()
-        .filter(|f| text(f, "export_ledger") == ledger_rel)
+        .filter(|f| f.text("export_ledger").unwrap_or_default() == ledger_rel)
         .filter_map(|f| {
-            let v1 = text(f, "exported_as");
+            let v1 = f.text("exported_as").unwrap_or_default();
             (!v1.is_empty()).then(|| (f.id.clone(), v1.to_string()))
         })
         .collect();
@@ -269,7 +269,7 @@ fn candidate(
     row.insert("effort".into(), json!(get("effort")));
     row.insert("category".into(), json!(category(stored, f, family)));
     row.insert("summary".into(), json!(f.summary.trim()));
-    let description = description(projected);
+    let description = with_answers(description(projected), f);
     if !description.is_empty() {
         row.insert("description".into(), json!(description));
     }
@@ -391,6 +391,25 @@ pub(super) fn description(projected: &Row) -> String {
     }
     if let Some(scenario) = get("failure_scenario") {
         lines.push(format!("Failure scenario: {scenario}"));
+    }
+    lines.join("\n")
+}
+
+/// `description` with the answers that unblocked `f`, its `fix_sketch` and
+/// `decision_answer`, one per line, as `review schedule` adds them.
+fn with_answers(description: String, f: &Finding) -> String {
+    let mut lines: Vec<String> = Vec::new();
+    if !description.is_empty() {
+        lines.push(description);
+    }
+    for (key, label) in [
+        ("fix_sketch", "Fix sketch"),
+        ("decision_answer", "Decision"),
+    ] {
+        let answer = f.text(key).unwrap_or_default().trim();
+        if !answer.is_empty() {
+            lines.push(format!("{label}: {answer}"));
+        }
     }
     lines.join("\n")
 }
@@ -759,5 +778,25 @@ mod tests {
             d("2026-10-12")
         );
         assert_eq!(later(None, d("2026-10-12")), d("2026-10-12"));
+    }
+
+    #[test]
+    fn an_unblocked_findings_answers_reach_the_description() {
+        let doc: TomlValue = toml::from_str(
+            "schema_version = 1\n\n[[findings]]\nid = \"F1\"\nfamily = \"code\"\nkind = \"defect\"\n\
+             status = \"open\"\nunblocked_by = \"user\"\ndecision_answer = \" keep the cache \"\n\n\
+             [[findings]]\nid = \"F2\"\nfamily = \"code\"\nkind = \"defect\"\nstatus = \"open\"\n\
+             unblocked_by = \"verifier\"\nfix_sketch = \"count from zero\"\n",
+        )
+        .expect("the fixture parses");
+        let stored = store::from_toml(&doc).expect("the fixture reads");
+        assert_eq!(
+            with_answers("Fix: a".into(), &stored.findings[0]),
+            "Fix: a\nDecision: keep the cache"
+        );
+        assert_eq!(
+            with_answers(String::new(), &stored.findings[1]),
+            "Fix sketch: count from zero"
+        );
     }
 }

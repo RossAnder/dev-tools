@@ -230,7 +230,7 @@ fn apply_one(
             "{id} is not routed to the panel; a panel verdict needs a panel-routed finding"
         )),
         "panel" | "audit" | "" => {}
-        "orchestrator" if settle_refute(finding, verdict) => {}
+        "orchestrator" if settle_refute(finding, by, verdict) => {}
         _ if panel_routed => reasons.push(format!(
             "{id} is routed to the panel; only panel seats and the audit give its verdict, not {by:?}"
         )),
@@ -332,7 +332,7 @@ fn apply_one(
             toml::Value::String("verifier".into()),
         );
     }
-    if finding.same_as.is_empty() && finding.status().decided_by_verdict() {
+    if !super::resolve::awaits_resolution(finding) && finding.status().decided_by_verdict() {
         finding.set_status(decided, &[]);
         if decided == FindingStatus::Open
             && let Some(slug) = slug
@@ -451,8 +451,10 @@ fn checker_may_refute(
 
 /// Whether an `orchestrator` verdict is a settle task's refutation: the only
 /// call the orchestrator makes on a finding blocked on evidence.
-fn settle_refute(finding: &Finding, verdict: &str) -> bool {
-    verdict == "refuted" && fields::blocked_on(finding) == Some(fields::BlockedOn::Evidence)
+pub(super) fn settle_refute(finding: &Finding, by: &str, verdict: &str) -> bool {
+    by == "orchestrator"
+        && verdict == "refuted"
+        && fields::blocked_on(finding) == Some(fields::BlockedOn::Evidence)
 }
 
 /// The status the verdict just written gives its finding. An audit verdict,
@@ -462,7 +464,7 @@ fn decide(store: &Store, index: usize, by: &str, verdict: &str) -> FindingStatus
     let finding = &store.findings[index];
     let settled = match (by, verdict) {
         ("audit", _) => Some(verdict),
-        ("orchestrator", _) if settle_refute(finding, verdict) => Some(verdict),
+        _ if settle_refute(finding, by, verdict) => Some(verdict),
         (_, "unsettled") => None,
         _ => {
             let mine: Vec<&Verdict> = store

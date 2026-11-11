@@ -106,7 +106,7 @@ pub(crate) fn digest(target: &Target, args: ReviewDigestArgs) -> Result<()> {
         .filter(|(_, f)| f.outcome == "contested")
         .map(|(i, f)| {
             let mut row = rows.project(Role::Orchestrator, i, false);
-            let into = rest_str(f, "merged_into");
+            let into = f.text("merged_into").unwrap_or_default();
             if let Some(t) = stored
                 .findings
                 .iter()
@@ -175,7 +175,7 @@ fn proposals(store: &Store, run: &Run) -> JsonValue {
                 "id": f.id,
                 "kind": f.kind.as_str(),
                 "summary": f.summary,
-                "proposal": rest_str(f, "proposal"),
+                "proposal": f.text("proposal").unwrap_or_default(),
                 "proposal_at": match f.rest.get("proposal_at") {
                     Some(TomlValue::Datetime(at)) => Some(at.to_string()),
                     Some(TomlValue::String(at)) => Some(at.clone()),
@@ -216,14 +216,6 @@ fn find_run<'s>(store: &'s Store, id: &str, target: &Target, verb: &str) -> Resu
 
 fn cell_of<'s>(store: &'s Store, finding: &Finding) -> Option<&'s Cell> {
     store.cells.iter().find(|c| c.id == finding.cell)
-}
-
-fn rest_str<'f>(finding: &'f Finding, key: &str) -> &'f str {
-    finding
-        .rest
-        .get(key)
-        .and_then(TomlValue::as_str)
-        .unwrap_or_default()
 }
 
 /// The finding's id and every id its identity links (`same_as`,

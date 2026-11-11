@@ -103,17 +103,16 @@ impl Mode {
 
     /// Whether `finding` already carries what this mode records.
     fn recorded(&self, finding: &Finding) -> bool {
-        let text = |key: &str| finding.rest.get(key).and_then(TomlValue::as_str);
         match self {
             Self::Answer(answer) => {
-                text("decision_answer") == Some(answer.as_str())
-                    && text("unblocked_by") == Some("user")
+                finding.text("decision_answer") == Some(answer.as_str())
+                    && finding.text("unblocked_by") == Some("user")
                     && fields::blocked_on(finding).is_none()
             }
             _ => self
                 .companions()
                 .into_iter()
-                .all(|(key, value)| text(key) == Some(value)),
+                .all(|(key, value)| finding.text(key) == Some(value)),
         }
     }
 
@@ -253,15 +252,13 @@ fn read_mode(args: &ReviewTriageArgs) -> Result<Mode> {
         return Ok(Mode::Backlog(reference.to_string()));
     }
     if let Some(answer) = read_prose(VERB, "answer", None, m.answer_file.as_deref())? {
-        let cap = fields::spec(Record::Finding, "decision_answer", None).and_then(|s| s.cap);
-        if let Some(cap) = cap
-            && answer.chars().count() > cap
-        {
-            return Err(invalid(format!(
-                "{VERB}: the --answer-file text is {} characters; the cap is {cap}",
-                answer.chars().count()
-            )));
-        }
+        fields::check_cap(
+            VERB,
+            "the --answer-file text",
+            Record::Finding,
+            "decision_answer",
+            &answer,
+        )?;
         return Ok(Mode::Answer(answer));
     }
     if let Some(kind) = &m.convert {

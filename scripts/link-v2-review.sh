@@ -1,5 +1,5 @@
 #!/bin/sh
-# Links every v2 command, agent, skill and Workflow (review, plan and implement) into the
+# Links every v2 command, agent, skill and Workflow (review, plan, implement and apply) into the
 # Claude config dir ($CLAUDE_CONFIG_DIR, else ~/.claude) with symbolic links; the POSIX sibling of
 # link-v2-review.ps1, linking the same entries. Idempotent: an entry already linked to its
 # source is skipped. Nothing under the config dir is ever deleted or overwritten: a real

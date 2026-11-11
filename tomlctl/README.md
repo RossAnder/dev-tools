@@ -107,7 +107,7 @@ tomlctl review triage <ids> --slug <s> --dismiss-file <path> [--expect-status op
 tomlctl review settle <F> --slug <s> --accept --tier cited --fix-file <path>   # or --refute --citation <c>, --defer --proposal <note>: the outcome of an evidence-blocked finding's settle task
 tomlctl review apply <ids> --slug <s> [--user-accepted] [--dry-run]   # write plan findings' record edits on a v2 flow, compare-and-set on expect
 tomlctl review export-v1 <ids> --slug <s> --to <v1-ledger> [--dry-run]   # or --all: every open defect and cleanup of the ledger's family
-tomlctl review schedule <ids> --slug <s> --flow <apply-slug> --checkpoint <id> [--settle-checkpoint <id>]   # or --all: mint fix and settle tasks in a v2 flow's tasks.toml and mark each finding scheduled
+tomlctl review schedule <ids> --slug <s> --flow <apply-slug> --checkpoint <id> [--settle-checkpoint <id>] [--dry-run]   # or --all: mint fix and settle tasks in a v2 flow's tasks.toml and mark each finding scheduled; --dry-run writes nothing and may omit --flow and --checkpoint
 tomlctl review reconcile --slug <s> --flow <apply-slug>   # move scheduled findings by their task: resolved once committed, open when gone or deferred
 tomlctl review anchor <F> --slug <s> [--gone]          # exit 0 when the finding's anchor holds (or, --gone, a remove cleanup's old text is gone); read-only
 tomlctl review reproduce --slug <s> --ndjson <path>    # upsert reproduce verdicts on (finding, flow, milestone, round, by); never moves a status

@@ -313,7 +313,7 @@ fn judge(
             status.as_str()
         ));
     }
-    let tier = match text(finding, "tier") {
+    let tier = match finding.text("tier") {
         None => {
             reasons.push(format!(
                 "{id} carries no `tier`; a flow-mode finding gets one when it settles open"
@@ -350,7 +350,7 @@ fn judge(
             "the plan is approved, so {id} applies only with --user-accepted"
         ));
     }
-    let target = match text(finding, "target").filter(|raw| !raw.is_empty()) {
+    let target = match finding.text("target").filter(|raw| !raw.is_empty()) {
         None => {
             reasons.push(format!("{id} carries no `target`"));
             None
@@ -399,10 +399,6 @@ fn judge(
         row.proven(slug).map_err(|why| vec![why])?;
     }
     Ok(row)
-}
-
-fn text<'f>(finding: &'f Finding, key: &str) -> Option<&'f str> {
-    finding.rest.get(key).and_then(TomlValue::as_str)
 }
 
 /// The stored `expect` or `new` decoded, `None` when the finding carries none.
@@ -960,7 +956,7 @@ new = '"parse and tokenise"'
             let f1 = finding("F1");
             assert_eq!(f1.status(), FindingStatus::Resolved);
             assert_eq!(
-                text(&f1, "resolution"),
+                f1.text("resolution"),
                 Some("applied to task:parse-it.files")
             );
             let applied = f1.rest["applied"].as_table().unwrap();

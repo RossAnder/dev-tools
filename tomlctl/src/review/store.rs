@@ -39,8 +39,8 @@ use crate::cli::{
 use crate::convert::toml_to_json;
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{
-    OnMissing, guard_write_path, mutate_doc, read_doc, repo_or_cwd_root, schema_seed,
-    warn_if_created,
+    OnMissing, guard_write_path, mutate_doc, read_doc, relativise_under, repo_or_cwd_root,
+    schema_seed, warn_if_created,
 };
 
 /// The newest version this binary reads; written only by a store that
@@ -387,6 +387,35 @@ impl Finding {
         std::iter::once(self.same_as.as_str())
             .chain(rest)
             .filter(|id| !id.is_empty())
+    }
+
+    /// The open field `key` when it is a string.
+    pub(crate) fn text(&self, key: &str) -> Option<&str> {
+        self.rest.get(key).and_then(TomlValue::as_str)
+    }
+
+    /// Drops the link to the fix task an apply flow scheduled.
+    pub(crate) fn clear_apply_link(&mut self) {
+        for key in fields::APPLY_LINK_FIELDS {
+            self.rest.remove(*key);
+        }
+    }
+
+    /// The paths a fix of this finding edits: its edit target (`target_file`,
+    /// else `file`) and its `instances`.
+    pub(crate) fn edited_paths(&self) -> impl Iterator<Item = &str> {
+        let instances = self
+            .rest
+            .get("instances")
+            .and_then(TomlValue::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(TomlValue::as_str);
+        fields::edited_paths(
+            &self.file,
+            Some(self.text("target_file").unwrap_or_default()),
+            instances,
+        )
     }
 }
 
@@ -919,7 +948,7 @@ fn verdict_to_toml(v: &Verdict) -> TomlValue {
     ordered(Record::Verdict, t, &v.rest)
 }
 
-const REPRODUCTION_CORE: &[&str] = &[
+pub(super) const REPRODUCTION_CORE: &[&str] = &[
     "finding",
     "flow",
     "milestone",
@@ -1192,6 +1221,13 @@ pub(crate) fn resolve(slug: Option<&str>, scope: Option<&str>) -> Result<Target>
 }
 
 impl Target {
+    /// The store path relative to the repo root, `/`-separated; the key a
+    /// `[[finding_links]]` entry names this store by.
+    pub(crate) fn rel(&self) -> String {
+        relativise_under(&self.root, &self.path)
+            .unwrap_or_else(|| self.path.to_string_lossy().replace('\\', "/"))
+    }
+
     /// `<root>/.review-v2-runs/<key>/<run>/`, not created. `run` must be a
     /// minted run id, which keeps it from naming anything outside the key's
     /// directory.
@@ -1634,7 +1670,7 @@ rationale = "reproduced"
     }
 
     fn companion<'f>(f: &'f Finding, key: &str) -> Option<&'f str> {
-        f.rest.get(key).and_then(TomlValue::as_str)
+        f.text(key)
     }
 
     #[test]

@@ -7,7 +7,7 @@ The goal is one v2 chain from planning through implementation, review and apply.
 
 ## Where things stand
 
-- Built and linked, with no run recorded in this repo: `/review-v2`, `/optimise-v2`, `/review-plan-v2`, the `tomlctl review` group, the lens catalogue and `claude/workflows/review-v2.js`. The Review step of `human-only-handovers` was skipped, because plan review was not built when that plan was authored.
+- Built and linked: `/review-v2`, `/optimise-v2`, `/review-plan-v2`, the `tomlctl review` group, the lens catalogue and `claude/workflows/review-v2.js`. `/review-v2` has run on jiggly-exploring-robin and v2-apply, and `/review-plan-v2` on v2-apply (see each flow's review-v2.toml); `/optimise-v2` has no run recorded. The Review step of `human-only-handovers` was skipped, because plan review was not built when that plan was authored.
 - Run once for real work: `/plan-v2` (v2 planning), which planned and approved `human-only-handovers`, the proof recorded in `docs/ideas/plan-v2-probes.md`.
 - Run once for real work: `/implement-v2`, the execution engine's first slice (`docs/plans/jiggly-exploring-robin.md`), which ran `human-only-handovers` end to end on 2026-11-10, both milestones gated and committed.
 - Built: `/apply-v2`, native apply over the shared execution engine, with settle tasks for blocked findings and the reproduce check (see **Apply** below). Not started: trials, the `tool` and `clerk` executors, the rest of vetting, and harvest and clearance.

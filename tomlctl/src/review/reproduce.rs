@@ -14,7 +14,7 @@ use serde_json::{Map, Value as JsonValue, json};
 
 use super::fields::{ReproduceBy, ReproduceVerdict};
 use super::invalid;
-use super::store::{self, Reproduction, Store, Target};
+use super::store::{self, REPRODUCTION_CORE, Reproduction, Store, Target};
 use crate::cli::{ReadIntegrityArgs, WriteIntegrityArgs};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::read_ndjson_source;
@@ -22,17 +22,6 @@ use crate::output::{print_json_compact, print_json_line};
 
 const RECORD: &str = "review reproduce";
 const STATUS: &str = "review reproduce-status";
-
-const KEYS: &[&str] = &[
-    "finding",
-    "flow",
-    "milestone",
-    "round",
-    "task",
-    "verdict",
-    "by",
-    "citation",
-];
 
 struct Applied {
     returns: Vec<JsonValue>,
@@ -123,16 +112,23 @@ fn parse_row(
     today: toml::value::Datetime,
 ) -> std::result::Result<Reproduction, Vec<String>> {
     let mut reasons = Vec::new();
-    for key in row.keys().filter(|k| !KEYS.contains(&k.as_str())) {
+    // `at` is stamped by the verb, never supplied.
+    let supplied = |k: &str| REPRODUCTION_CORE.contains(&k) && k != "at";
+    for key in row.keys().filter(|k| !supplied(k)) {
+        let keys: Vec<&str> = REPRODUCTION_CORE
+            .iter()
+            .copied()
+            .filter(|k| supplied(k))
+            .collect();
         reasons.push(format!(
             "unknown key `{key}`; a reproduction carries {}",
-            KEYS.join(", ")
+            keys.join(", ")
         ));
     }
     let mut text = |key: &str, needed: bool| -> String {
         match row.get(key) {
             Some(JsonValue::String(s)) if !s.trim().is_empty() => s.trim().to_string(),
-            None | Some(JsonValue::Null) if !needed => String::new(),
+            Some(JsonValue::String(_)) | None | Some(JsonValue::Null) if !needed => String::new(),
             Some(JsonValue::String(_)) | None | Some(JsonValue::Null) => {
                 reasons.push(format!("`{key}` is required"));
                 String::new()
@@ -290,4 +286,50 @@ pub(crate) fn status(
         std::process::exit(1);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn store() -> Store {
+        let doc: toml::Value = toml::from_str(
+            "schema_version = 1\n\n[[findings]]\nid = \"F1\"\nfamily = \"code\"\nkind = \"defect\"\n\
+             status = \"open\"\n",
+        )
+        .expect("the fixture parses");
+        store::from_toml(&doc).expect("the fixture reads")
+    }
+
+    fn row(extra: JsonValue) -> Map<String, JsonValue> {
+        let mut row = json!({
+            "finding": "F1", "flow": "x", "milestone": "a", "round": 1,
+            "verdict": "gone", "by": "verifier", "citation": "src/a.rs:1",
+        });
+        row.as_object_mut()
+            .expect("an object")
+            .extend(extra.as_object().expect("an object").clone());
+        row.as_object().expect("an object").clone()
+    }
+
+    #[test]
+    fn a_blank_optional_task_is_recorded_as_none() {
+        let today = "2026-11-11".parse().expect("a date");
+        let record = parse_row(&store(), &row(json!({"task": "  "})), today).expect("lands");
+        assert_eq!(record.task, "");
+        let reasons = parse_row(&store(), &row(json!({"citation": ""})), today).unwrap_err();
+        assert_eq!(reasons, ["`citation` is required"]);
+    }
+
+    #[test]
+    fn at_is_not_a_key_a_batch_supplies() {
+        let today = "2026-11-11".parse().expect("a date");
+        let reasons = parse_row(&store(), &row(json!({"at": "2026-01-01"})), today).unwrap_err();
+        assert_eq!(
+            reasons,
+            [
+                "unknown key `at`; a reproduction carries finding, flow, milestone, round, task, verdict, by, citation"
+            ]
+        );
+    }
 }

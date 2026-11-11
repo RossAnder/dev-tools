@@ -24,7 +24,6 @@ use super::fields::FindingStatus;
 use super::invalid;
 use super::store::{self, Finding, Store, Target};
 use crate::cli::{ReadIntegrityArgs, WriteIntegrityArgs};
-use crate::io::{relativise_under, repo_or_cwd_root};
 use crate::output::print_json_compact;
 use crate::tasks::schema::TaskRow;
 use crate::tasks::{Status, Store as TaskStore};
@@ -50,9 +49,7 @@ impl Report {
 }
 
 pub(crate) fn run(target: &Target, flow: &str, integrity: &WriteIntegrityArgs) -> Result<()> {
-    let root = repo_or_cwd_root()?;
-    let store_rel = relativise_under(&root, &target.path)
-        .unwrap_or_else(|| target.path.to_string_lossy().replace('\\', "/"));
+    let store_rel = target.rel();
     let read = ReadIntegrityArgs {
         verify_integrity: integrity.verify_integrity,
         strict_read: true,
@@ -97,15 +94,8 @@ pub(crate) fn run(target: &Target, flow: &str, integrity: &WriteIntegrityArgs) -
 }
 
 fn scheduled_into(f: &Finding, flow: &str) -> bool {
-    f.status() == FindingStatus::Scheduled && link_text(f, "apply_flow") == flow
-}
-
-fn link_text<'f>(f: &'f Finding, key: &str) -> &'f str {
-    f.rest
-        .get(key)
-        .and_then(TomlValue::as_str)
-        .unwrap_or_default()
-        .trim()
+    f.status() == FindingStatus::Scheduled
+        && f.text("apply_flow").unwrap_or_default().trim() == flow
 }
 
 fn reconcile(
@@ -121,8 +111,16 @@ fn reconcile(
             continue;
         }
         let id = finding.id.clone();
-        let named = link_text(finding, "apply_task").to_string();
-        let mut row = tasks.items.iter().find(|row| row.r#ref == named);
+        let named = finding
+            .text("apply_task")
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        let mut row = tasks
+            .items
+            .iter()
+            .find(|row| row.r#ref == named)
+            .filter(|row| is_own(tasks, store_rel, finding, row));
         if row.is_none() {
             row = retitled(tasks, store_rel, finding);
             if let Some(row) = row {
@@ -203,14 +201,37 @@ fn retitled<'t>(tasks: &'t TaskStore, store_rel: &str, finding: &Finding) -> Opt
                     .any(|f| *f == finding.id)
         })
         .filter_map(|link| tasks.items.iter().find(|row| row.r#ref == link.r#ref));
-    match finding
-        .rest
-        .get("apply_task_id")
-        .and_then(TomlValue::as_integer)
-    {
+    match task_id(finding) {
         Some(id) => linked.find(|row| i64::from(row.id) == id),
         None => linked.next(),
     }
+}
+
+/// Whether `row`, found by `finding`'s `apply_task` ref, is the task schedule
+/// recorded: its id matches `apply_task_id`, or a `[[finding_links]]` entry of
+/// this store ties it to the finding. A ref freed by a retitle can be reused
+/// by another finding's task.
+fn is_own(tasks: &TaskStore, store_rel: &str, finding: &Finding, row: &TaskRow) -> bool {
+    match task_id(finding) {
+        None => true,
+        Some(id) if i64::from(row.id) == id => true,
+        Some(_) => tasks.finding_links.iter().any(|link| {
+            link.store == store_rel
+                && link.r#ref == row.r#ref
+                && link
+                    .fixes
+                    .iter()
+                    .chain(&link.settles)
+                    .any(|f| *f == finding.id)
+        }),
+    }
+}
+
+fn task_id(finding: &Finding) -> Option<i64> {
+    finding
+        .rest
+        .get("apply_task_id")
+        .and_then(TomlValue::as_integer)
 }
 
 fn settles(tasks: &TaskStore, store_rel: &str, r#ref: &str, finding: &str) -> bool {
@@ -227,7 +248,56 @@ fn reopen(finding: &mut Finding, reason: &str) {
             TomlValue::String(format!("{REOPEN_PREFIX}{reason}")),
         )],
     );
-    finding.rest.remove("apply_flow");
-    finding.rest.remove("apply_task");
-    finding.rest.remove("apply_task_id");
+    finding.clear_apply_link();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const STORE: &str = ".claude/review-v2/t.toml";
+
+    #[test]
+    fn a_freed_ref_reused_by_another_findings_task_is_not_followed() {
+        let review: TomlValue = toml::from_str(
+            "schema_version = 2\n\n[[findings]]\nid = \"F1\"\nrun = \"U1\"\ncell = \"C1\"\n\
+             family = \"code\"\nkind = \"defect\"\nlens = \"correctness\"\nfile = \"src/a.rs\"\n\
+             summary = \"s\"\nseverity = \"minor\"\nstatus = \"scheduled\"\napply_flow = \"x\"\n\
+             apply_task = \"fix-alpha\"\napply_task_id = 1\n",
+        )
+        .expect("the review fixture parses");
+        let mut review = store::from_toml(&review).expect("the review fixture reads");
+        let row = |id: u32, r#ref: &str, status: &str, commit: &str| {
+            format!(
+                "\n[[items]]\nid = {id}\nref = \"{r}\"\ntitle = \"{r}\"\neffort = \"S\"\n\
+                 status = \"{status}\"\ncheckpoint = \"A\"\nfiles = [\"src/a.rs\"]\nneeds = []\n\
+                 coupling = []\ndeps_note = \"\"\naction = \"\"\ndetail = \"\"\nacceptance = \"\"\n\
+                 agent = \"\"\ncommit = \"{commit}\"\n",
+                r = r#ref
+            )
+        };
+        let link = |r: &str, id: &str| {
+            format!(
+                "\n[[finding_links]]\nref = \"{r}\"\nstore = \"{STORE}\"\nfixes = [\"{id}\"]\n\
+                 settles = []\n"
+            )
+        };
+        let tasks = format!(
+            "schema_version = 2\nlast_updated = 2026-09-07\n\n[[checkpoints]]\nid = \"A\"\n\
+             rationale = \"the fixes\"\n{}{}{}{}",
+            row(1, "fix-alpha-bound", "in-progress", ""),
+            row(2, "fix-alpha", "done", "4f0c2aa"),
+            link("fix-alpha-bound", "F1"),
+            link("fix-alpha", "F2"),
+        );
+        let tasks: TomlValue = toml::from_str(&tasks).expect("the task fixture parses");
+        let tasks = crate::tasks::schema::from_toml(&tasks).expect("the task fixture reads");
+        let today = "2026-11-11".parse().expect("a date");
+        let report = reconcile(&mut review, &tasks, "x", STORE, today);
+        assert!(report.resolved.is_empty(), "{:?}", report.resolved);
+        assert_eq!(report.in_flight.len(), 1, "{:?}", report.in_flight);
+        let f = &review.findings[0];
+        assert_eq!(f.status(), FindingStatus::Scheduled);
+        assert_eq!(f.text("apply_task"), Some("fix-alpha-bound"));
+    }
 }

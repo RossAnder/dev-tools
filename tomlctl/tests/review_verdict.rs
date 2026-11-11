@@ -845,3 +845,51 @@ fn rationale_and_sketch_both_from_stdin_are_refused() {
     assert!(stderr.contains("both read stdin"), "{stderr}");
     assert!(repo.verdicts().is_empty());
 }
+
+const PANEL_BLOCKED: &str = r#"
+[[findings]]
+id = "F9"
+run = "U1"
+cell = "C1"
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "panel"
+file = "src/lib.rs"
+line = 60
+symbol = "lib::sync"
+summary = "sync may reorder writes"
+severity = "major"
+blocked_on = "evidence"
+blocked_missing = "whether two writers can interleave"
+status = "unverified"
+
+[[findings]]
+id = "F10"
+run = "U1"
+cell = "C1"
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "panel"
+file = "src/lib.rs"
+line = 70
+symbol = "lib::drain"
+summary = "drain skips the last row"
+severity = "major"
+status = "unverified"
+"#;
+
+#[test]
+fn orchestrator_verdict_on_a_panel_finding_is_refused_unless_it_refutes_a_blocked_one() {
+    let repo = Repo::seeded(format!("{STORE}{PANEL_BLOCKED}"), None);
+    for (finding, verdict) in [("F9", "confirmed"), ("F10", "refuted")] {
+        let refused = repo
+            .batch(&[row(finding, "orchestrator", verdict)])
+            .failure();
+        let stderr = String::from_utf8_lossy(&refused.get_output().stderr).to_string();
+        assert!(stderr.contains("is routed to the panel"), "{stderr}");
+        assert_eq!(repo.status(finding), "unverified");
+    }
+    assert!(repo.verdicts().is_empty());
+}

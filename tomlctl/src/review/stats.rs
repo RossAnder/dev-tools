@@ -28,7 +28,7 @@ use super::reconcile::REOPEN_PREFIX;
 use super::store::{self, Cell, Finding, Store, Verdict};
 use super::sync::{SYNC_REASON_PREFIX, V1Outcome, ledger_paths, linked_rows};
 use super::tier::Tier;
-use super::verdict::settle;
+use super::verdict::{settle, settle_refute};
 use crate::cli::ReviewStatsArgs;
 use crate::convert::decode_json_text;
 use crate::io::{relativise_under, repo_or_cwd_root};
@@ -746,13 +746,7 @@ fn outcomes(view: &View, links: &[Link]) -> JsonValue {
 /// live task, resolved with its apply link kept, or returned to `open` by
 /// reconcile. A finding scheduled again after a reopen counts as scheduled.
 fn apply_state(finding: &Finding) -> Option<&'static str> {
-    let text = |key: &str| {
-        finding
-            .rest
-            .get(key)
-            .and_then(toml::Value::as_str)
-            .unwrap_or_default()
-    };
+    let text = |key: &str| finding.text(key).unwrap_or_default();
     match finding.status() {
         FindingStatus::Scheduled => Some("scheduled"),
         FindingStatus::Resolved if !text("apply_flow").is_empty() => Some("resolved"),
@@ -854,11 +848,10 @@ fn block_of(finding: &Finding) -> Option<&'static str> {
     if let Some(block) = fields::blocked_on(finding) {
         return Some(block.as_str());
     }
-    let text = |key: &str| finding.rest.get(key).and_then(toml::Value::as_str);
-    if let Some(block) = text("unblocked_from").and_then(BlockedOn::parse) {
+    if let Some(block) = finding.text("unblocked_from").and_then(BlockedOn::parse) {
         return Some(block.as_str());
     }
-    match text("unblocked_by") {
+    match finding.text("unblocked_by") {
         Some("user") => Some(BlockedOn::Decision.as_str()),
         Some("settle") => Some(BlockedOn::Evidence.as_str()),
         Some("verifier") => Some(UNRECORDED_BLOCK),
@@ -870,14 +863,7 @@ fn block_of(finding: &Finding) -> Option<&'static str> {
 /// `refuted`, or `deferred`. A settle refute keeps the evidence block, so it
 /// is an evidence-blocked finding refuted by an `orchestrator` verdict.
 fn settle_outcome(sv: &StoreView, finding: &Finding) -> Option<&'static str> {
-    let text = |key: &str| {
-        finding
-            .rest
-            .get(key)
-            .and_then(toml::Value::as_str)
-            .map(str::trim)
-            .unwrap_or_default()
-    };
+    let text = |key: &str| finding.text(key).map(str::trim).unwrap_or_default();
     if text("unblocked_by") == "settle" {
         return fields::SETTLE_TIERS
             .iter()
@@ -886,11 +872,10 @@ fn settle_outcome(sv: &StoreView, finding: &Finding) -> Option<&'static str> {
     }
     match finding.status() {
         FindingStatus::Refuted
-            if fields::blocked_on(finding) == Some(BlockedOn::Evidence)
-                && sv
-                    .verdicts_of(&finding.id)
-                    .iter()
-                    .any(|v| v.by == "orchestrator" && v.verdict == "refuted") =>
+            if sv
+                .verdicts_of(&finding.id)
+                .iter()
+                .any(|v| settle_refute(finding, &v.by, &v.verdict)) =>
         {
             Some("refuted")
         }
@@ -936,11 +921,7 @@ impl BlockTally {
             self.blocked += 1;
             *self.blocked_on.entry(block).or_default() += 1;
         }
-        let unblocked_by = finding
-            .rest
-            .get("unblocked_by")
-            .and_then(toml::Value::as_str);
-        self.verifier_unblocked += usize::from(unblocked_by == Some("verifier"));
+        self.verifier_unblocked += usize::from(finding.text("unblocked_by") == Some("verifier"));
         if let Some(outcome) = settled {
             *self.settle.entry(outcome).or_default() += 1;
         }
