@@ -35,6 +35,9 @@ use crate::io::{read_ndjson_source, read_prose, repo_or_cwd_root};
 use crate::output::print_json_compact;
 
 const VERB: &str = "review triage";
+
+/// The kinds `--convert` mints an advisory's replacement as.
+pub(crate) const CONVERT_KINDS: &[&str] = &["cleanup", "defect"];
 /// The reopenable statuses in the order the `--reopen` refusal names them;
 /// a unit test holds it to [`FindingStatus::is_reopenable`].
 const REOPENABLE_ORDER: &[FindingStatus] = &[
@@ -323,9 +326,9 @@ fn read_mode(args: &ReviewTriageArgs) -> Result<Mode> {
         return Ok(Mode::Answer(answer));
     }
     if let Some(kind) = &m.convert {
-        return match Kind::parse(kind) {
-            Some(kind @ (Kind::Cleanup | Kind::Defect)) => Ok(Mode::Convert(kind)),
-            _ => Err(invalid(format!(
+        return match Kind::parse(kind).filter(|_| CONVERT_KINDS.contains(&kind.as_str())) {
+            Some(kind) => Ok(Mode::Convert(kind)),
+            None => Err(invalid(format!(
                 "{VERB}: --convert is {kind:?}; expected cleanup or defect"
             ))),
         };
@@ -395,9 +398,7 @@ fn judge(store: &Store, id: &str, mode: &Mode, expect: Option<&str>) -> Step {
         ));
     }
     let users = finding
-        .rest
-        .get("tier")
-        .and_then(TomlValue::as_str)
+        .text("tier")
         .and_then(Tier::parse)
         .filter(|tier| tier.is_users());
     if let (Mode::Park(_), Some(tier)) = (mode, users) {
@@ -690,14 +691,12 @@ fn replacement_of(store: &Store, advisory: &str) -> Option<JsonValue> {
         .findings
         .iter()
         .find(|f| f.id == advisory)?
-        .rest
-        .get("converted_to")?
-        .as_str()?;
+        .text("converted_to")?;
     let f = store.findings.iter().find(|f| f.id == converted_to)?;
     Some(json!({
         "id": f.id,
         "kind": f.kind.as_str(),
-        "severity": f.rest.get("severity").and_then(TomlValue::as_str),
+        "severity": f.text("severity"),
         "route": f.route.unwrap_or(Route::Unrouted).as_str(),
         "status": f.status().as_str(),
     }))
@@ -801,9 +800,7 @@ fn replacement_row(
         (
             "target",
             advisory
-                .rest
-                .get("target")
-                .and_then(|t| t.as_str())
+                .text("target")
                 .map_or(JsonValue::Null, |t| json!(t)),
         ),
     ];

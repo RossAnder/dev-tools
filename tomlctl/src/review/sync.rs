@@ -119,10 +119,7 @@ pub(crate) fn ledger_paths(
         }
     };
     for finding in &store.findings {
-        if let Some(ledger) = finding
-            .rest
-            .get("export_ledger")
-            .and_then(TomlValue::as_str)
+        if let Some(ledger) = finding.text("export_ledger")
             && !ledger.is_empty()
         {
             push(under_root(root, ledger));

@@ -44,6 +44,9 @@ const UNKNOWN_MODEL: &str = "unknown";
 /// The tier key of a plan finding that never settled open in flow mode.
 const UNTIERED: &str = "none";
 
+/// What `review stats --by` accepts, in the order [`Axis`] declares them.
+pub(crate) const AXES: &[&str] = &["lens", "probe", "run", "model"];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Axis {
     Lens,
@@ -84,14 +87,13 @@ struct Loaded {
 }
 
 pub(crate) fn run(args: ReviewStatsArgs) -> Result<()> {
-    let axis = match args.by.as_deref() {
-        None => None,
-        Some(raw) => Some(Axis::parse(raw).ok_or_else(|| {
-            invalid(format!(
-                "--by {raw:?} is not one of lens, probe, run, model"
-            ))
-        })?),
-    };
+    let axis =
+        match args.by.as_deref() {
+            None => None,
+            Some(raw) => Some(Axis::parse(raw).ok_or_else(|| {
+                invalid(format!("--by {raw:?} is not one of {}", AXES.join(", ")))
+            })?),
+        };
     if args.plan_outcomes && args.store.scope.is_some() {
         return Err(invalid(
             "review stats --plan-outcomes reads a flow's plan runs, so name the flow with --slug, or pass --all",
@@ -317,11 +319,7 @@ fn user_dismissal(finding: &Finding) -> Option<&str> {
     if finding.status() != FindingStatus::Dismissed {
         return None;
     }
-    let reason = finding
-        .rest
-        .get("dismiss_reason")
-        .and_then(toml::Value::as_str)
-        .unwrap_or_default();
+    let reason = finding.text("dismiss_reason").unwrap_or_default();
     (!reason.starts_with(SYNC_REASON_PREFIX)).then_some(reason)
 }
 
@@ -1126,9 +1124,7 @@ struct PlanTally {
 impl PlanTally {
     fn add_finding(&mut self, finding: &Finding, after_approval: bool) {
         let tier = finding
-            .rest
-            .get("tier")
-            .and_then(toml::Value::as_str)
+            .text("tier")
             .filter(|t| !t.is_empty())
             .unwrap_or(UNTIERED);
         let disposition = disposition(tier, finding, after_approval);
@@ -1355,9 +1351,7 @@ fn calibration(view: &View, links: &[Link], n: usize) -> JsonValue {
                 add(&f.lens, "dismissal", reason);
             }
             let synced = f
-                .rest
-                .get("dismiss_reason")
-                .and_then(toml::Value::as_str)
+                .text("dismiss_reason")
                 .filter(|_| f.status() == FindingStatus::Dismissed)
                 .and_then(synced_wontfix);
             if let Some(reason) = synced
@@ -1392,6 +1386,15 @@ fn calibration(view: &View, links: &[Link], n: usize) -> JsonValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn axes_are_exactly_the_words_axis_parses() {
+        for axis in AXES {
+            assert_eq!(Axis::parse(axis).map(Axis::as_str), Some(*axis));
+        }
+        let every = [Axis::Lens, Axis::Probe, Axis::Run, Axis::Model].map(Axis::as_str);
+        assert_eq!(AXES, every.as_slice());
+    }
 
     #[test]
     fn probe_tag_reads_the_nearest_prefix() {

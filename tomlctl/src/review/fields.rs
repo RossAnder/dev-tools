@@ -340,7 +340,7 @@ const RETIRED: &[(&str, &str)] = &[(
 const EFFORTS: &[&str] = &["trivial", "small", "medium", "large"];
 const GRADES: &[&str] = &["high", "medium", "low"];
 const ANGLES: &[&str] = &["risk", "challenge", "probe", "alternative", "direction"];
-const COMMANDS: &[&str] = &["review-v2", "optimise-v2", "review-plan-v2"];
+pub(crate) const COMMANDS: &[&str] = &["review-v2", "optimise-v2", "review-plan-v2"];
 const SUBSTRATES: &[&str] = &["workflow", "agent-waves"];
 
 /// A set of finding kinds, as a bitmask over [`Kind`].

@@ -236,7 +236,7 @@ fn check_link(
         ));
     }
     if dup.status() == FindingStatus::Merged {
-        let into = dup.rest.get("merged_into").and_then(TomlValue::as_str);
+        let into = dup.text("merged_into");
         return if into == Some(target_id) {
             Ok(())
         } else {
@@ -419,16 +419,12 @@ fn settled_target(store: &Store, row: &Finding) -> std::result::Result<usize, St
         };
         if let Some(link) = link {
             visited.push(id);
-            id = target
-                .rest
-                .get(link)
-                .and_then(TomlValue::as_str)
-                .ok_or_else(|| {
-                    format!(
-                        "target {id} is {} but names no `{link}`",
-                        target.status().as_str()
-                    )
-                })?;
+            id = target.text(link).ok_or_else(|| {
+                format!(
+                    "target {id} is {} but names no `{link}`",
+                    target.status().as_str()
+                )
+            })?;
             continue;
         }
         match target.status() {

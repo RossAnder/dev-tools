@@ -336,9 +336,7 @@ impl Finding {
     /// A no-op on a finding with no `exported_as`.
     pub(crate) fn retire_link(&mut self) {
         let Some(v1_id) = self
-            .rest
-            .get("exported_as")
-            .and_then(TomlValue::as_str)
+            .text("exported_as")
             .filter(|id| !id.is_empty())
             .map(str::to_string)
         else {
@@ -384,12 +382,9 @@ impl Finding {
     /// The ids this row's identity links name, in the order a chain prefers
     /// them: `same_as`, then `merged_into`, then `converted_to`.
     pub(crate) fn identity_links(&self) -> impl Iterator<Item = &str> {
-        let rest = ["merged_into", "converted_to"].into_iter().map(|key| {
-            self.rest
-                .get(key)
-                .and_then(TomlValue::as_str)
-                .unwrap_or_default()
-        });
+        let rest = ["merged_into", "converted_to"]
+            .into_iter()
+            .map(|key| self.text(key).unwrap_or_default());
         std::iter::once(self.same_as.as_str())
             .chain(rest)
             .filter(|id| !id.is_empty())
@@ -1332,10 +1327,20 @@ pub(crate) fn require(path: &Path) -> Result<()> {
 
 /// Read the store at `path`; a missing store is always an error. Under
 /// `--verify-integrity` the sidecar check runs first, under a shared lock,
-/// so a write mid-swap is not read as a mismatch.
+/// so a write mid-swap is not read as a mismatch. A store that parses as TOML
+/// but not as a review store fails `kind=parse` naming the path, since a repo
+/// can hold several review stores.
 pub(crate) fn load(path: &Path, integrity: &ReadIntegrityArgs) -> Result<Store> {
     require(path)?;
-    read_doc(path, read_integrity_opts(integrity), from_toml)
+    read_doc(path, read_integrity_opts(integrity), |doc| {
+        from_toml(doc).map_err(|err| {
+            tagged_err(
+                ErrorKind::Parse,
+                Some(path.to_path_buf()),
+                format!("parsing {}: {err:#}", path.display()),
+            )
+        })
+    })
 }
 
 /// Each of `ids` from the store at `path` in the implementer projection, in
@@ -1682,10 +1687,7 @@ rationale = "reproduced"
         assert_eq!(store.findings[0].line, Some(88));
         assert_eq!(store.findings[1].route, Some(Route::Unrouted));
         assert_eq!(
-            store.findings[0]
-                .rest
-                .get("severity")
-                .and_then(TomlValue::as_str),
+            store.findings[0].text("severity"),
             Some("major"),
             "a kind field must ride in `rest`"
         );
@@ -2167,5 +2169,30 @@ verdict = "confirmed"
             reproduce_state(&path, "f", "C", &read).unwrap().max_round,
             0
         );
+    }
+
+    #[test]
+    fn load_tags_a_store_the_typed_reader_refuses_kind_parse_with_its_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(STORE_FILE);
+        fs::write(
+            &path,
+            "[[findings]]\nid = \"F1\"\nfamily = \"code\"\nkind = \"cleanup\"\nstatus = \"open\"\nfirst_seen = \"soon\"\n",
+        )
+        .unwrap();
+        let read = ReadIntegrityArgs {
+            verify_integrity: false,
+            strict_read: false,
+        };
+
+        let err = load(&path, &read).expect_err("an undated first_seen is refused");
+        let tagged = err
+            .downcast_ref::<crate::errors::TaggedError>()
+            .unwrap_or_else(|| panic!("a tagged error, got: {err:#}"));
+        assert!(matches!(tagged.kind, ErrorKind::Parse), "{tagged:?}");
+        assert_eq!(tagged.file.as_deref(), Some(path.as_path()));
+        let message = format!("{err:#}");
+        assert!(message.contains(&path.display().to_string()), "{message}");
+        assert!(message.contains("findings[0] (F1)"), "{message}");
     }
 }

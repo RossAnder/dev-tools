@@ -1146,20 +1146,14 @@ done = false
 
             let mut finding = fresh.clone();
             stamp(&mut finding, SLUG, &[]).unwrap();
-            assert_eq!(
-                finding.rest.get(TIER_KEY).and_then(TomlValue::as_str),
-                Some("user")
-            );
+            assert_eq!(finding.text(TIER_KEY), Some("user"));
 
             let mut frozen = fresh.clone();
             frozen
                 .rest
                 .insert(TIER_KEY.into(), TomlValue::String("cited".into()));
             stamp(&mut frozen, SLUG, &[]).unwrap();
-            assert_eq!(
-                frozen.rest.get(TIER_KEY).and_then(TomlValue::as_str),
-                Some("cited")
-            );
+            assert_eq!(frozen.text(TIER_KEY), Some("cited"));
 
             std::fs::write(root.join(".claude/flows/tiers/tasks.toml"), "items = 3").unwrap();
             let mut unread = fresh;

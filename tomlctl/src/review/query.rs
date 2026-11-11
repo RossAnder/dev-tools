@@ -16,7 +16,7 @@ use serde_json::{Map, Value as JsonValue, json};
 
 use super::catalogue::{self, Catalogue, EntryType, run_catalogue};
 use super::fields::{
-    self, BlockedOn, FIELDS, Family, FindingStatus, Kind, ProjectCtx, Record, Role, Route, Vis,
+    self, FIELDS, Family, FindingStatus, Kind, ProjectCtx, Record, Role, Route, Vis,
 };
 use super::invalid;
 use super::matching::rule_outs_at;
@@ -26,6 +26,17 @@ use crate::convert::toml_to_json;
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{relativise, repo_or_cwd_root};
 use crate::output::{Rows, print_report};
+
+/// What `review list --blocked-on` accepts: each block, `any` and `none`.
+pub(crate) const BLOCKED_ON_FILTERS: &[&str] = &[
+    "decision",
+    "evidence",
+    "measurement",
+    "alternatives",
+    "design",
+    "any",
+    "none",
+];
 
 /// Lines shown either side of a cited line in the audit projection.
 const EXCERPT_CONTEXT: usize = 5;
@@ -52,12 +63,11 @@ pub(crate) fn list(target: &Target, args: ReviewListArgs) -> Result<()> {
     check_value("--kind", args.kind.as_deref(), Kind::VALUES)?;
     check_value("--status", args.status.as_deref(), fields::FINDING_STATUSES)?;
     check_value("--route", args.route.as_deref(), Route::VALUES)?;
-    let blocked_filter: Vec<&str> = BlockedOn::VALUES
-        .iter()
-        .copied()
-        .chain(["any", "none"])
-        .collect();
-    check_value("--blocked-on", args.blocked_on.as_deref(), &blocked_filter)?;
+    check_value(
+        "--blocked-on",
+        args.blocked_on.as_deref(),
+        BLOCKED_ON_FILTERS,
+    )?;
     let within = args.in_glob.as_deref().map(Within::new).transpose()?;
 
     let stored = store::load(&target.path, &args.integrity)?;
@@ -477,6 +487,16 @@ fn backlog_row(projected: &Row) -> Row {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn blocked_on_filters_are_every_block_then_any_and_none() {
+        let expected: Vec<&str> = fields::BlockedOn::VALUES
+            .iter()
+            .copied()
+            .chain(["any", "none"])
+            .collect();
+        assert_eq!(BLOCKED_ON_FILTERS, expected.as_slice());
+    }
 
     #[test]
     fn citation_forms() {

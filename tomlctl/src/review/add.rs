@@ -16,7 +16,6 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use serde_json::{Map, Value as JsonValue, json};
-use toml::Value as TomlValue;
 
 use super::catalogue::run_catalogue;
 use super::fields::{
@@ -259,7 +258,7 @@ fn refuse_sealed(store: &Store, cell: &Cell) -> Result<()> {
             f.cell == cell.id && f.run == cell.run && f.status() != FindingStatus::Superseded
         })
         .map(|f| {
-            let severity = f.rest.get("severity").and_then(TomlValue::as_str);
+            let severity = f.text("severity");
             json!({
                 "id": f.id,
                 "kind": f.kind.as_str(),

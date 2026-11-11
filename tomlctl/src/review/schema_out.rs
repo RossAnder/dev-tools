@@ -19,7 +19,7 @@ use crate::cli::ReviewSchemaArgs;
 use crate::output::print_json;
 
 const DIALECT: &str = "https://json-schema.org/draft/2020-12/schema";
-const TARGETS: &[&str] = &["finding", "cell-return", "verdict-return"];
+pub(crate) const TARGETS: &[&str] = &["finding", "cell-return", "verdict-return"];
 
 pub(crate) fn run(args: ReviewSchemaArgs) -> Result<()> {
     let kind = match args.kind.as_deref() {

@@ -95,7 +95,44 @@ const SCOPED_ENUM_VALUES: &[(&str, &str, &[&str])] = &[
         "review",
         crate::plan::schema::ReviewOutcome::VOCABULARY,
     ),
+    ("review run start", "command", crate::review::COMMANDS),
+    ("review run start", "family", crate::review::Family::VALUES),
+    ("review run start", "depth", crate::review::Depth::VALUES),
+    ("review cover", "status", crate::review::SEAL_STATUSES),
+    ("review verdict", "verdict", crate::review::VERDICTS),
+    ("review verdict", "by", crate::review::VERDICT_BY),
+    (
+        "review verdict",
+        "severity",
+        crate::review::Severity::VALUES,
+    ),
+    (
+        "review reproduce-status",
+        "expect",
+        crate::review::ReproduceVerdict::VALUES,
+    ),
+    ("review list", "kind", crate::review::Kind::VALUES),
+    ("review list", "status", crate::review::FINDING_STATUSES),
+    ("review list", "route", crate::review::Route::VALUES),
+    (
+        "review list",
+        "blocked_on",
+        crate::review::BLOCKED_ON_FILTERS,
+    ),
+    ("review list", "for_role", crate::review::Role::VALUES),
+    ("review show", "for_role", crate::review::Role::VALUES),
+    (
+        "review triage",
+        "expect_status",
+        crate::review::FINDING_STATUSES,
+    ),
+    ("review triage", "convert", crate::review::CONVERT_KINDS),
     ("review settle", "tier", crate::review::SETTLE_TIERS),
+    ("review stats", "family", crate::review::Family::VALUES),
+    ("review stats", "by", crate::review::STATS_AXES),
+    ("review catalogue", "family", crate::review::Family::VALUES),
+    ("review schema", "target", crate::review::SCHEMA_TARGETS),
+    ("review schema", "kind", crate::review::Kind::VALUES),
 ];
 
 const BACKLOG_KINDS: &[&str] = &[
@@ -522,6 +559,26 @@ mod tests {
                 ("plan view", "for_role") => crate::plan::VIEW_ROLES,
                 ("plan approve", "review") => crate::plan::schema::ReviewOutcome::VOCABULARY,
                 ("review settle", "tier") => crate::review::SETTLE_TIERS,
+                ("review run start", "command") => crate::review::COMMANDS,
+                ("review run start" | "review stats" | "review catalogue", "family") => {
+                    crate::review::Family::VALUES
+                }
+                ("review run start", "depth") => crate::review::Depth::VALUES,
+                ("review cover", "status") => crate::review::SEAL_STATUSES,
+                ("review verdict", "verdict") => crate::review::VERDICTS,
+                ("review verdict", "by") => crate::review::VERDICT_BY,
+                ("review verdict", "severity") => crate::review::Severity::VALUES,
+                ("review reproduce-status", "expect") => crate::review::ReproduceVerdict::VALUES,
+                ("review list" | "review schema", "kind") => crate::review::Kind::VALUES,
+                ("review list", "status") | ("review triage", "expect_status") => {
+                    crate::review::FINDING_STATUSES
+                }
+                ("review list", "route") => crate::review::Route::VALUES,
+                ("review list", "blocked_on") => crate::review::BLOCKED_ON_FILTERS,
+                ("review list" | "review show", "for_role") => crate::review::Role::VALUES,
+                ("review triage", "convert") => crate::review::CONVERT_KINDS,
+                ("review stats", "by") => crate::review::STATS_AXES,
+                ("review schema", "target") => crate::review::SCHEMA_TARGETS,
                 other => panic!(
                     "SCOPED_ENUM_VALUES references `{other:?}` — add a branch naming its validator's vocabulary"
                 ),

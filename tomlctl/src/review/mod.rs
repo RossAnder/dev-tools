@@ -34,7 +34,17 @@ mod tier;
 mod triage;
 mod verdict;
 
-pub(crate) use fields::SETTLE_TIERS;
+// The vocabularies review verbs check their flags against after parsing, for
+// `capabilities` to publish.
+pub(crate) use cover::SEAL_STATUSES;
+pub(crate) use fields::{
+    COMMANDS, Depth, FINDING_STATUSES, Family, Kind, ReproduceVerdict, Role, Route, SETTLE_TIERS,
+    Severity, VERDICT_BY, VERDICTS,
+};
+pub(crate) use query::BLOCKED_ON_FILTERS;
+pub(crate) use schema_out::TARGETS as SCHEMA_TARGETS;
+pub(crate) use stats::AXES as STATS_AXES;
+pub(crate) use triage::CONVERT_KINDS;
 // The entry points for readers outside the review group, so that no field
 // name of the store is spelled outside it.
 pub(crate) use store::{implementer_findings, plan_family, reproduce_state};

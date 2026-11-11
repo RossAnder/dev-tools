@@ -16,6 +16,10 @@ use crate::output::print_json_compact;
 
 const VERB: &str = "review cover";
 
+/// The statuses a cell is sealed with: every [`CellStatus`] but `assigned`,
+/// the one it starts in.
+pub(crate) const SEAL_STATUSES: &[&str] = &["covered", "thin", "uncovered"];
+
 /// `text` cut to at most `cap` characters, ending `…(+K)` with K the
 /// characters cut, and K; `text` itself and 0 when it is within the cap.
 fn cut_to_cap(text: &str, cap: usize) -> (String, usize) {
@@ -128,21 +132,15 @@ fn check_ruled_out_reach(
 
 pub(crate) fn cover(target: &Target, args: ReviewCoverArgs) -> Result<()> {
     let verb = VERB;
-    // A cell can be sealed as any status but the `assigned` it starts in.
-    let sealable = || {
-        CellStatus::ALL
-            .iter()
-            .copied()
-            .filter(|s| *s != CellStatus::Assigned)
-    };
-    let Some(status) = sealable().find(|s| s.as_str() == args.status) else {
-        let listed = sealable()
-            .map(CellStatus::as_str)
-            .collect::<Vec<_>>()
-            .join(", ");
+    let Some(status) = SEAL_STATUSES
+        .contains(&args.status.as_str())
+        .then(|| CellStatus::parse(&args.status))
+        .flatten()
+    else {
         return Err(invalid(format!(
-            "{verb}: --status {:?} is not one of {listed}",
-            args.status.as_str()
+            "{verb}: --status {:?} is not one of {}",
+            args.status.as_str(),
+            SEAL_STATUSES.join(", ")
         )));
     };
     let Some(note) = read_prose(
@@ -247,7 +245,17 @@ pub(crate) fn cover(target: &Target, args: ReviewCoverArgs) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::cut_to_cap;
+    use super::{CellStatus, SEAL_STATUSES, cut_to_cap};
+
+    #[test]
+    fn seal_statuses_are_every_cell_status_but_assigned() {
+        let expected: Vec<&str> = CellStatus::ALL
+            .iter()
+            .filter(|s| **s != CellStatus::Assigned)
+            .map(|s| s.as_str())
+            .collect();
+        assert_eq!(SEAL_STATUSES, expected.as_slice());
+    }
 
     #[test]
     fn a_cut_text_fits_its_cap_with_the_marker() {
