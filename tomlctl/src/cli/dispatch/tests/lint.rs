@@ -160,6 +160,35 @@ fn command_lint_workflow_scripts(claude_dir: &Path) -> Vec<PathBuf> {
     files
 }
 
+/// Runs the `node:test` harness over the saved Workflow scripts' logic. A
+/// machine without `node` on PATH fails here rather than skipping, so the
+/// scripts' scheduling and routing are never left unchecked.
+#[test]
+fn workflow_scripts_logic_passes_under_node() {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("repo root");
+    let harness = "claude/workflows/tests/";
+    if !repo_root.join("claude").exists() {
+        eprintln!("workflow_scripts_logic: claude/ dir not found, skipping");
+        return;
+    }
+    let output = std::process::Command::new("node")
+        .args(["--test", harness])
+        .current_dir(repo_root)
+        .output()
+        .unwrap_or_else(|e| {
+            panic!("`node --test {harness}` could not start ({e}); install node and put it on PATH")
+        });
+    assert!(
+        output.status.success(),
+        "`node --test {harness}` exited {}:\n{}\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
 /// First stand-in for a JS `${…}` interpolation. Integers parse as any value;
 /// each interpolation gets its own number so a clap rejection names which one
 /// it could not place.

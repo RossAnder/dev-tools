@@ -220,11 +220,13 @@ tomlctl review run finish <run> --slug <slug>
 | cell ceiling, all waves (`--propose` scales it to about 1 cell per 100 changed lines, floor 3) | 6 | 16 | 32 |
 | concerns per cell | ≤3 | ≤3 | ≤2 |
 | follow-up waves | 0 | 1 | 2 |
-| defect verification | one verifier per critical or major defect; one batch verifier per cell for minor | as quick | one verifier per non-critical defect; a critical goes to a 3-vote panel instead, and survives on ≥2 non-refuted votes |
+| defect verification | one verifier per critical or major defect (the plan family batches them, see below); one batch verifier per cell for minor | as quick | one verifier per non-critical defect; a critical goes to a 3-vote panel instead, and survives on ≥2 non-refuted votes |
 | cleanup check | pooled Haiku checker batches; code-touching and test-removal rows go to one Opus verifier batch per cell, unsettled checker rows to an Opus verifier each | as quick | as quick |
 | repeat passes | none | floor and hotspot cells once more, files in reverse order | every high-risk cell once more |
 | plan-executor cells | ≤4 tasks | ≤12 tasks, L and M first, checkpoint-marker tasks first | every task |
 | confirm the map before launch | no | no | yes |
+
+**Plan family batching.** Under the `plan-v2-review` Workflow the pipeline runs with `batch_defects`: a cell's verifier-routed defects that would each get a single verifier go to one batch when there are two or more, and a row carrying `same_as` stays single so `--strike-same-as` still works on its verdict. Reverify follows the same split: the ids the lead lists under `reverify_single`, those carrying a `same_as`, get a verifier each, and the rest of its `reverify` list go in one batch. The code and perf families keep the per-finding rule in the table.
 
 The ceiling counts every wave's cells, repeat cells included; plan-executor cells sit outside it. At `quick`, escalated sweeper candidates still get one Opus cell (see `references/compose.md`).
 

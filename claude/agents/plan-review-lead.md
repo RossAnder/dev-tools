@@ -104,17 +104,17 @@ Follow `compose.md` sections 1 to 6, with these differences.
    ```
 
    A refused pair refuses the whole call and writes nothing: drop or fix that pair and rerun once.
-4. **Rule-out hits.** Read every finding step 3's `ruled_out_hits` array names in one `tomlctl review show <ids> --slug <slug> --for audit` call. Put a finding's id under `reverify` when its latest verifier rationale does not address the rule-out — neither says why the ruling cell's reason does not hold nor refutes the finding on it. You cannot dispatch, so the Workflow re-verifies each `reverify` id with one `review-verifier`. An id already under `unverified` is verified at the orchestrator's mop-up instead, so leave it out of `reverify`.
+4. **Rule-out hits.** Read every finding step 3's `ruled_out_hits` array names in one `tomlctl review show <ids> --slug <slug> --for audit` call. Put a finding's id under `reverify` when its latest verifier rationale does not address the rule-out — neither says why the ruling cell's reason does not hold nor refutes the finding on it. You cannot dispatch, so the Workflow re-verifies the `reverify` ids in one `review-verifier` batch. An id already under `unverified` is verified at the orchestrator's mop-up instead, so leave it out of `reverify`. The same `--for audit` read prints each row's `same_as`: list under `reverify_single` every `reverify` id whose row carries one, because only a single verdict can strike the link, and the Workflow gives each of those a `review-verifier` of its own.
 5. **Escalations.** Give each `escalations:` line exactly one disposition by `compose.md` section 7, Escalations: a follow-up cell, a mechanical row asked of a cell in the follow-up wave you write, or a close-summary item. You cannot write the close summary or capture a backlog item, so write each close-summary item as `<cell>: <text> — <why no follow-up>` to `payloads/escalations-w<wave>.md` for the orchestrator's close; with none, write no file.
 6. **Follow-up.** Decide it by `compose.md` section 7, Follow-up, counting the escalations step 5 turned into follow-up cells. The allowance is `quick` 0, `standard` 1, `deep` 2 follow-up waves, and the waves this run has already had after its first count against it; the cell ceiling counts every wave. At `quick`, collect the run's escalated sweeper candidates into the one probe cell that section allows. In `recheck` mode that one `review-finder` escalation probe cell is the only follow-up allowed; write no other. When one is warranted, write it through `review plan --ndjson <run-dir>/payloads/cells-w<next wave>.ndjson`, each row with its trigger as its `reason`, and waive what the digest then lists.
 
 **Return** exactly this object:
 
 ```json
-{"next": {"wave": 2, "cells": [{"id": "C9", "agentType": "review-finder"}]}, "unverified": ["F12", "F15"], "reverify": ["F4"]}
+{"next": {"wave": 2, "cells": [{"id": "C9", "agentType": "review-finder"}]}, "unverified": ["F12", "F15"], "reverify": ["F4", "F6"], "reverify_single": ["F6"]}
 ```
 
-`next` is `null` when no follow-up wave was written. `unverified` is every unverified id the digest lists, or `[]`. `reverify` is every id step 4 named, or `[]`.
+`next` is `null` when no follow-up wave was written. `unverified` is every unverified id the digest lists, or `[]`. `reverify` is every id step 4 named, or `[]`. `reverify_single` is the ids among `reverify` whose row carries `same_as`, or `[]`.
 
 ## Phase `audit` — engine stage 6
 

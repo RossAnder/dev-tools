@@ -15,7 +15,7 @@ export const meta = {
 // returned `unverified` ids and falls back to the engine at the first stage the
 // store shows incomplete. Every prompt is built from `args` and earlier returns,
 // so a same-args relaunch replays the journal; a re-check is always a fresh launch.
-const SCRIPT_VERSION = '2'
+const SCRIPT_VERSION = '3'
 const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/
 const RUN = /^U[1-9][0-9]*$/
 const CELL = /^C[1-9][0-9]*$/
@@ -115,7 +115,7 @@ const LEAD_SCHEMAS = {
   compose: WAVE,
   settle: {
     type: 'object',
-    properties: { next: { anyOf: [{ type: 'null' }, WAVE] }, unverified: IDS, reverify: IDS },
+    properties: { next: { anyOf: [{ type: 'null' }, WAVE] }, unverified: IDS, reverify: IDS, reverify_single: IDS },
     required: ['next', 'unverified'],
     additionalProperties: false,
   },
@@ -196,21 +196,29 @@ const lead = (phaseName, wave, extra) => caught(() => {
   })
 })
 
-const reverifyPrompt = (id, wave) => [
+// A batch name doubles as the verifier's payload file name, and one reverify batch runs per wave.
+const reverifyPrompt = (ids, wave, batch) => [
   a.ledger_line,
   `run: ${a.run}`,
   `wave: ${wave}`,
   `store: ${storeFlag}`,
   `pack: ${runDir}/pack.md`,
   `run directory: ${runDir}`,
-  `findings: ${id}`,
+  `findings: ${ids.join(', ')}`,
+  ...(batch ? [`batch: ${batch}`] : []),
   '',
-  `Fetch the finding with \`tomlctl review show ${id} --for verifier ${storeFlag}\`, verify it refute-first, weighing each rule-out its row carries, and record the verdict with \`tomlctl review verdict\` using \`--by verifier\`. Return the verdict-return object.`,
+  `Fetch ${batch ? 'each finding' : 'the finding'} with \`tomlctl review show ${ids.join(',')} --for verifier ${storeFlag}\`, verify it refute-first, weighing each rule-out its row carries, and record ${batch ? 'each verdict' : 'the verdict'} with \`tomlctl review verdict\` using \`--by verifier\`. Return ${batch ? 'one verdict-return object per finding under `verdicts`' : 'the verdict-return object'}.`,
 ].join('\n')
 
 const reverify = (id, wave) => caught(() => {
   agents++
-  return agent(reverifyPrompt(id, wave), { agentType: 'review-verifier', schema: a.schemas.verdict_return, label: `reverify ${id}`, phase: 'Waves' })
+  return agent(reverifyPrompt([id], wave), { agentType: 'review-verifier', schema: a.schemas.verdict_return, label: `reverify ${id}`, phase: 'Waves' })
+})
+
+const reverifyBatch = (ids, wave) => caught(() => {
+  agents++
+  const schema = { type: 'object', properties: { verdicts: { type: 'array', items: a.schemas.verdict_return } }, required: ['verdicts'] }
+  return agent(reverifyPrompt(ids, wave, `reverify-${wave}`), { agentType: 'review-verifier', schema, label: `reverify x${ids.length}`, phase: 'Waves' })
 })
 
 const validWave = (w) => w && Number.isInteger(w.wave) && w.wave >= 1 && Array.isArray(w.cells) && w.cells.length > 0
@@ -332,6 +340,7 @@ while (current) {
     store: { slug: a.slug },
     schemas: { cell_return: a.schemas.cell_return, verdict_return: a.schemas.verdict_return },
     ledger_line: a.ledger_line,
+    batch_defects: true,
     ...(a.mechanical_lenses !== undefined ? { mechanical_lenses: a.mechanical_lenses } : {}),
   }))
   if (failed(ran)) {
@@ -374,16 +383,42 @@ while (current) {
     return !unverified.has(id)
   })
   if (again.length) {
+    // An id carrying `same_as` goes alone, since only a single verdict can strike the link.
+    const singleIds = new Set(Array.isArray(settled.reverify_single) ? settled.reverify_single : [])
+    singleIds.forEach((id) => {
+      if (!again.includes(id)) fail(`lead settle wave ${current.wave} returned reverify_single id ${JSON.stringify(id)} outside its reverify list`)
+    })
+    const singles = again.filter((id) => singleIds.has(id))
+    const batched = again.filter((id) => !singleIds.has(id))
     log(`wave ${current.wave}: re-verifying ${again.join(', ')}`)
-    const rets = await parallel(again.map((id) => () => reverify(id, current.wave)))
+    const wave = current.wave
+    const rets = await parallel([
+      ...singles.map((id) => () => reverify(id, wave)),
+      ...(batched.length ? [() => reverifyBatch(batched, wave)] : []),
+    ])
     // A reverify id is a finding of this wave that already holds a verdict, so the
     // pipeline's `verified` counts it; a second verdict adds no distinct id.
-    rets.forEach((r, i) => {
+    singles.forEach((id, i) => {
+      const r = rets[i]
       if (failed(r)) {
-        fail(`reverify ${again[i]}: review-verifier ${why(r)}; left for the orchestrator's mop-up`)
-        unverified.add(again[i])
+        fail(`reverify ${id}: review-verifier ${why(r)}; left for the orchestrator's mop-up`)
+        unverified.add(id)
       }
     })
+    if (batched.length) {
+      const r = rets[singles.length]
+      if (failed(r)) {
+        fail(`reverify batch ${batched.join(', ')}: review-verifier ${why(r)}; left for the orchestrator's mop-up`)
+        batched.forEach((id) => unverified.add(id))
+      } else {
+        const returned = new Set((Array.isArray(r.verdicts) ? r.verdicts : []).map((v) => v && v.finding))
+        const lost = batched.filter((id) => !returned.has(id))
+        if (lost.length) {
+          fail(`reverify batch: no verdict returned for ${lost.join(', ')}; left for the orchestrator's mop-up`)
+          lost.forEach((id) => unverified.add(id))
+        }
+      }
+    }
   }
 
   const next = settled.next

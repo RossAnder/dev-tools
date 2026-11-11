@@ -118,6 +118,7 @@ Route each cell-return's `findings` by its `route`, which `review add` computed;
 |---|---|
 | `verifier`, a `defect` of severity `minor`, depth `quick` or `standard` | one `review-verifier` minor batch per cell, holding all of that cell's minor defects |
 | `verifier`, a `cleanup`, at every depth | one `review-verifier` cleanup batch per cell, holding all of that cell's verifier-routed cleanup rows; a cell with a single such row sends it to one single-finding verifier |
+| `verifier`, a `defect` of severity `critical` or `major`, plan family under `batch_defects` | one `review-verifier` batch per cell holding all such defects when there are two or more, with the minor-batch prompt; a row carrying `same_as` stays single-finding so `--strike-same-as` still works |
 | `verifier`, anything else | one `review-verifier` per finding |
 | `panel` | three `review-verifier` dispatches, seats 1, 2 and 3 (only computed at `deep`) |
 | `checker` | into the checker pool |
@@ -125,6 +126,8 @@ Route each cell-return's `findings` by its `route`, which `review add` computed;
 | anything else | nothing; log it as an error and leave the id to the mop-up |
 
 **The checker pool.** Rows from every cell of the wave pool together. Launch a `review-checker` batch whenever the pool holds 20 rows, numbering batches `check-<wave>-1`, `check-<wave>-2`, …; flush the remainder as a final batch once every cell of the wave has returned or is sealed.
+
+**Plan reverify.** For a plan run the fallback batches reverify as the `plan-v2-review` Workflow does under `batch_defects`: ids the lead lists under `reverify_single`, those carrying a `same_as`, get a single-finding verifier each, and the rest go in one batch.
 
 **Unsettled rows.** A checker return marks each row it could not settle with `verdict = "unsettled"` and `reroute`. Dispatch one `review-verifier` per such row with the single-finding verifier prompt. `review verdict` has already re-routed it to `verifier` in the store.
 

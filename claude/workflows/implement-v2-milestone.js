@@ -1,21 +1,22 @@
 export const meta = {
   name: 'implement-v2-milestone',
-  description: 'Run the dispatchable tasks of one v2 milestone in waves: one plan-worker per task, each writing its own status and one run note',
+  description: 'Run the dispatchable tasks of one v2 milestone through a rolling pool: one plan-worker per task, each writing its own status and one run note',
   whenToUse: 'Launched by the implement-v2-engine skill with the slug, the milestone and its dispatchable tasks as args; not for direct use',
   phases: [
-    { title: 'Run', detail: 'waves of plan-worker-lite and plan-worker-deep; each writes docs/flows/<slug>/notes/run/task-<n>.md' },
+    { title: 'Run', detail: 'a rolling pool of plan-worker-lite and plan-worker-deep; each writes docs/flows/<slug>/notes/run/task-<n>.md' },
   ],
 }
 
 // A relaunch is always a fresh run, never a resume: workers write their own
 // task status, so a journal hit would replay a return the store has since
 // moved past. Workers write their own notes, so this returns only an index.
-// A wave is every task whose needs all returned `done` and whose files overlap
-// no other task in it, cut to `max_parallel`. A task behind a non-`done` return
-// is reported `blocked` and never dispatched. Nothing is retried; the engine's
-// drain decides what runs again. `error` is a thrown error or a bad return,
-// and null otherwise.
-const SCRIPT_VERSION = '1'
+// Up to `max_parallel` workers run at once. Whenever one returns, every free
+// slot is filled, in args order, with a task whose `needs` and `after` ids all
+// returned `done` and whose files no running task holds. A task behind a
+// non-`done` return is reported `blocked` and never dispatched. Nothing is
+// retried; the engine's drain decides what runs again. `error` is a thrown
+// error or a bad return, and null otherwise.
+const SCRIPT_VERSION = '2'
 const MAX_PARALLEL = 8
 const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/
 const MILESTONE_ID = /^[A-Za-z0-9][A-Za-z0-9-]*$/
@@ -27,6 +28,7 @@ const WORKERS = {
 }
 
 // `note` is an empty string when the worker wrote none; `handover` likewise.
+// `needs_files` is optional: the files a `failed` task would also need.
 const RETURN_SCHEMA = {
   type: 'object',
   properties: {
@@ -36,6 +38,7 @@ const RETURN_SCHEMA = {
     files_touched: { type: 'array', items: { type: 'string' } },
     deviations: { type: 'array', items: { type: 'string' } },
     handover: { type: 'string' },
+    needs_files: { type: 'array', items: { type: 'string' } },
   },
   required: ['task', 'status', 'note', 'files_touched', 'deviations', 'handover'],
   additionalProperties: false,
@@ -52,11 +55,14 @@ const matches = (re, value) => typeof value === 'string' && re.test(value)
 const isId = (n) => Number.isInteger(n) && n >= 1
 const hasWorker = (executor) => typeof executor === 'string' && Object.prototype.hasOwnProperty.call(WORKERS, executor)
 
-// Kahn's algorithm over `needs`; whatever never reaches in-degree zero is on or behind a cycle.
+// The ids a task waits on: its `needs`, then its optional `after`.
+const gates = (t) => [...t.needs, ...(t.after || [])]
+
+// Kahn's algorithm over `needs` and `after`; whatever never reaches in-degree zero is on or behind a cycle.
 const cycleMembers = (tasks) => {
-  const indegree = new Map(tasks.map((t) => [t.id, new Set(t.needs).size]))
+  const indegree = new Map(tasks.map((t) => [t.id, new Set(gates(t)).size]))
   const dependents = new Map(tasks.map((t) => [t.id, []]))
-  tasks.forEach((t) => new Set(t.needs).forEach((n) => dependents.get(n).push(t.id)))
+  tasks.forEach((t) => new Set(gates(t)).forEach((n) => dependents.get(n).push(t.id)))
   const queue = tasks.filter((t) => indegree.get(t.id) === 0).map((t) => t.id)
   while (queue.length) {
     const id = queue.shift()
@@ -103,13 +109,27 @@ const argProblems = () => {
         }
       })
     }
+    const after = t && t.after
+    if (after !== undefined) {
+      if (!Array.isArray(after)) {
+        problems.push(`${name}: after must be an array when present`)
+        shaped = false
+      } else {
+        after.forEach((n) => {
+          if (!ids.has(n)) {
+            problems.push(`${name}: after ${JSON.stringify(n)}, which is not in tasks`)
+            shaped = false
+          }
+        })
+      }
+    }
     const files = t && t.files
     if (!Array.isArray(files) || !files.length) problems.push(`${name}: files must be a non-empty array`)
     else files.forEach((f) => { if (!matches(ONE_LINE, f)) problems.push(`${name}: file ${JSON.stringify(f)} is not a one-line path`) })
   })
   if (shaped && ids.size === a.tasks.length) {
     const cycle = cycleMembers(a.tasks)
-    if (cycle.length) problems.push(`needs form a cycle through tasks ${cycle.join(', ')}`)
+    if (cycle.length) problems.push(`needs and after form a cycle through tasks ${cycle.join(', ')}`)
   }
   return problems
 }
@@ -132,12 +152,12 @@ task: ${t.id}
 root: ${a.root}
 note: ${notePath(t.id)}
 siblings: ${siblings.length ? siblings.join(', ') : 'none'}
-
+${t.after && t.after.length ? 'after-premises: check yours before editing\n' : ''}
 Fetch your task with the first command, run as given; run the second only when you need a field the view does not print:
 - \`tomlctl plan view --slug ${a.slug} --for worker --task ${t.id}\`
 - \`tomlctl tasks show ${t.id} --slug ${a.slug} --with spec\`
 
-Carry out this one task as your procedure says, write your note at that path, and return only \`{task, status, note, files_touched, deviations, handover}\`.`
+Carry out this one task as your procedure says, write your note at that path, and return only \`{task, status, note, files_touched, deviations, handover}\`, adding \`needs_files\` when you fail because the task needs files outside its own.`
 
 // `note` is compared by suffix because a worker may report the path it resolved.
 const namesNote = (returned, expected) => {
@@ -145,7 +165,7 @@ const namesNote = (returned, expected) => {
   return path === expected || path.endsWith(`/${expected}`)
 }
 
-const entry = (id, status, fields) => ({ id, status, note: null, error: null, deviations: [], handover: '', ...fields })
+const entry = (id, status, fields) => ({ id, status, note: null, error: null, deviations: [], handover: '', needs_files: [], ...fields })
 
 const toEntry = (t, ret) => {
   const expected = notePath(t.id)
@@ -162,7 +182,7 @@ const toEntry = (t, ret) => {
     fail(`task ${t.id}: worker ${error}`)
     return entry(t.id, 'mismatch', { error })
   }
-  const fields = { deviations: ret.deviations, handover: ret.handover }
+  const fields = { deviations: ret.deviations, handover: ret.handover, needs_files: ret.needs_files || [] }
   if (!ret.note) {
     const error = 'wrote no note'
     fail(`task ${t.id}: worker ${error}`)
@@ -195,7 +215,7 @@ const settleBlocked = () => {
   while (changed) {
     changed = false
     pending = pending.filter((t) => {
-      const behind = t.needs.filter((n) => results.has(n) && results.get(n).status !== 'done')
+      const behind = gates(t).filter((n) => results.has(n) && results.get(n).status !== 'done')
       if (!behind.length) return true
       const named = behind.map((n) => `${n} (${results.get(n).status})`).join(', ')
       log(`task ${t.id}: blocked behind task ${named}; not dispatched`)
@@ -206,46 +226,45 @@ const settleBlocked = () => {
   }
 }
 
-const nextWave = () => {
-  const ready = pending.filter((t) => t.needs.every((n) => results.has(n)))
-  const wave = []
-  const held = new Set()
-  for (const t of ready) {
-    if (wave.length === a.max_parallel) break
-    const keys = t.files.map(fileKey)
-    if (keys.some((k) => held.has(k))) continue
-    keys.forEach((k) => held.add(k))
-    wave.push(t)
-  }
-  return wave
+// id -> { t, run }, where `run` resolves to { t, ret } and never rejects.
+const inFlight = new Map()
+// File keys of the in-flight tasks; no two in-flight tasks share one.
+const held = new Set()
+
+const isDone = (id) => results.has(id) && results.get(id).status === 'done'
+const canStart = (t) => gates(t).every(isDone) && !t.files.some((f) => held.has(fileKey(f)))
+
+const start = (t) => {
+  t.files.forEach((f) => held.add(fileKey(f)))
+  pending = pending.filter((p) => p.id !== t.id)
+  const siblings = [...pending, ...[...inFlight.values()].map((r) => r.t)].flatMap((s) => s.files)
+  log(`pool: task ${t.id} started`)
+  const worker = WORKERS[t.executor]
+  const run = caught(() => agent(workerPrompt(t, siblings), {
+    agentType: worker.agentType,
+    schema: RETURN_SCHEMA,
+    label: `task ${t.id} (${t.executor})`,
+    phase: 'Run',
+  })).then((ret) => ({ t, ret }))
+  inFlight.set(t.id, { t, run })
 }
 
 phase('Run')
-let waveNo = 0
 settleBlocked()
-while (pending.length) {
-  const wave = nextWave()
-  if (!wave.length) {
+while (pending.length || inFlight.size) {
+  for (const t of pending.slice()) {
+    if (inFlight.size >= a.max_parallel) break
+    if (canStart(t)) start(t)
+  }
+  if (!inFlight.size) {
     fail(`no task of ${pending.map((t) => t.id).join(', ')} could start; none was dispatched`)
     pending.forEach((t) => results.set(t.id, entry(t.id, 'blocked', {})))
     break
   }
-  waveNo += 1
-  log(`wave ${waveNo}: tasks ${wave.map((t) => t.id).join(', ')}`)
-  const inWave = new Set(wave.map((t) => t.id))
-  pending = pending.filter((t) => !inWave.has(t.id))
-  // Each thunk catches its own throw so the entry can name it; an uncaught one would resolve to null.
-  const returns = await parallel(wave.map((t) => () => {
-    const worker = WORKERS[t.executor]
-    const siblings = wave.filter((s) => s.id !== t.id).flatMap((s) => s.files)
-    return caught(() => agent(workerPrompt(t, siblings), {
-      agentType: worker.agentType,
-      schema: RETURN_SCHEMA,
-      label: `wave ${waveNo} · task ${t.id} (${t.executor})`,
-      phase: 'Run',
-    }))
-  }))
-  wave.forEach((t, i) => results.set(t.id, toEntry(t, returns[i])))
+  const { t, ret } = await Promise.race([...inFlight.values()].map((r) => r.run))
+  inFlight.delete(t.id)
+  t.files.forEach((f) => held.delete(fileKey(f)))
+  results.set(t.id, toEntry(t, ret))
   settleBlocked()
 }
 

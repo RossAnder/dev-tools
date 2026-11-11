@@ -4,8 +4,8 @@ export const meta = {
   whenToUse: 'Launched by the review-v2-engine skill at stage 4 with the run, wave, cells and schemas as args, or before the gate of an apply milestone with mode reproduce and the flow, milestone, round and units as args; not for direct use',
   phases: [
     { title: 'Cells', detail: 'one review-finder, review-finder-cf, review-sweeper or plan-executor per cell; each writes and seals its cell' },
-    { title: 'Verify', detail: 'review-verifier per routed finding (panel: three seats), per-cell minor-defect and cleanup batches, pooled review-checker batches' },
-    { title: 'Reproduce', detail: 'reproduce mode only: one review-verifier per apply task, recording whether each finding it fixed still reproduces' },
+    { title: 'Verify', detail: 'review-verifier per routed finding (panel: three seats), per-cell minor-defect and cleanup batches (and defect batches under batch_defects), pooled review-checker batches' },
+    { title: 'Reproduce', detail: 'reproduce mode only: pooled review-checker batches for checker-routed apply tasks, and one review-verifier per other task or per task the checker leaves unsettled, recording whether each finding it fixed still reproduces' },
   ],
 }
 
@@ -17,7 +17,7 @@ export const meta = {
 // same-args relaunch can miss the journal from the first reshuffled batch. Store
 // writes are idempotent either way. The review-v2-engine skill's
 // references/agent-waves.md states what recovery costs.
-const SCRIPT_VERSION = '4'
+const SCRIPT_VERSION = '5'
 const CELL_AGENTS = ['review-finder', 'review-finder-cf', 'review-sweeper', 'plan-executor']
 // The context-free correctness cell runs without the pack, so its prompt omits the `pack:` line.
 const CONTEXT_FREE_AGENT = 'review-finder-cf'
@@ -41,13 +41,15 @@ if (a.mode === 'reproduce') {
   const MILESTONE = /^[A-Za-z0-9][A-Za-z0-9_-]*$/
   const FINDING = /^F[1-9][0-9]*$/
   const REPRODUCE_VERDICTS = ['gone', 'reproduces', 'unsettled']
+  const CHECKER_VERDICTS = ['gone', 'unsettled']
+  const UNIT_ROUTES = ['verifier', 'checker']
   // RegExp.test coerces its argument, which would pass ['some-slug'] or 123.
   const matches = (re, value) => typeof value === 'string' && re.test(value)
   const oneLine = (value) => typeof value === 'string' && value.trim() !== '' && !/[\r\n]/.test(value)
 
   const rStore = a.store || {}
   const units = Array.isArray(a.units) ? a.units : []
-  const reproduceIndex = (unitRows) => ({ mode: 'reproduce', units: unitRows, errors, script_version: SCRIPT_VERSION })
+  const reproduceIndex = (unitRows) => ({ mode: 'reproduce', units: unitRows, agents, errors, script_version: SCRIPT_VERSION })
 
   const problems = []
   if (!oneLine(a.run_dir)) problems.push('run_dir must be one non-empty line')
@@ -69,6 +71,7 @@ if (a.mode === 'reproduce') {
     if (!Array.isArray(u.findings) || !u.findings.length || !u.findings.every((f) => matches(FINDING, f))) {
       problems.push(`units[${i}].findings must be a non-empty array of ids matching ${FINDING.source}`)
     }
+    if (u.route != null && !UNIT_ROUTES.includes(u.route)) problems.push(`units[${i}].route ${JSON.stringify(u.route)} is not one of ${UNIT_ROUTES.join(', ')}`)
   })
   if (problems.length) {
     problems.forEach(fail)
@@ -112,7 +115,42 @@ run directory: ${rRunDir}
 The apply task \`${u.task}\` has landed a fix for each finding above. Read them with \`tomlctl review show ${u.findings.join(',')} ${rStoreFlag} --for implementer\`, then judge against the working tree, as it stands now, whether each still reproduces: \`gone\` when the cited failure or cleanup can no longer occur, \`reproduces\` when it still can, \`unsettled\` when the decisive check is out of reach. Write one JSON line per finding to \`${payload}\` with the keys finding, flow (\`${a.flow}\`), milestone (\`${a.milestone}\`), round (${a.round}), task (\`${u.task}\`), verdict, by (\`verifier\`) and citation (a file:line or a command and its decisive output), and record them with \`tomlctl review reproduce ${rStoreFlag} --ndjson ${payload}\`. Change no other file: no source edit, no other store write. Return \`{task, reproductions: [{finding, verdict}]}\` for this task.`
   }
 
+  const checkerSchema = {
+    type: 'object',
+    properties: {
+      reproductions: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { finding: { type: 'string' }, verdict: { type: 'string', enum: CHECKER_VERDICTS } },
+          required: ['finding', 'verdict'],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ['reproductions'],
+    additionalProperties: false,
+  }
+
+  const taskOf = new Map()
+  units.forEach((u) => u.findings.forEach((id) => taskOf.set(id, u.task)))
+
+  const checkerReproducePrompt = (ids, batch) => {
+    const payload = `${rRunDir}/payloads/reproduce-checker-${batch}.ndjson`
+    return `${hasSlug ? `ledger: .claude/flows/${rStore.slug}/review-v2.toml\n` : ''}mode: reproduce
+store: ${rStoreFlag}
+flow: ${a.flow}
+milestone: ${a.milestone}
+round: ${a.round}
+run directory: ${rRunDir}
+batch: ${batch}
+findings: ${ids.join(', ')}
+
+An apply task has landed a fix for each finding above; the task that fixed each is ${ids.map((id) => `${id} \`${taskOf.get(id)}\``).join(', ')}. Read them with \`tomlctl review show ${ids.join(',')} ${rStoreFlag} --for checker\`, then judge against the working tree, as it stands now, whether each still reproduces: \`gone\` only when the finding's \`old\` text is absent at its anchor, \`unsettled\` otherwise. Write one JSON line per \`gone\` finding and none for an \`unsettled\` one to \`${payload}\` with the keys finding, flow (\`${a.flow}\`), milestone (\`${a.milestone}\`), round (${a.round}), task (the task named above for it), verdict, by (\`checker\`) and citation (a file:line or a command and its decisive output), and record them with \`tomlctl review reproduce ${rStoreFlag} --ndjson ${payload}\`. Change no other file: no source edit, no other store write. Return \`{reproductions: [{finding, verdict}]}\`, one entry per finding above.`
+  }
+
   const runUnit = async (u) => {
+    agents++
     let ret
     try {
       ret = await agent(reproducePrompt(u), { agentType: 'review-verifier', schema: unitSchema, label: `reproduce ${u.task}`, phase: 'Reproduce' })
@@ -139,9 +177,51 @@ The apply task \`${u.task}\` has landed a fix for each finding above. Read them 
     return { task: u.task, status: 'ok', reproductions: list, error: null }
   }
 
+  // A checker batch can only settle a finding as gone; a unit with any finding it
+  // leaves unsettled, or does not return, goes whole to a verifier.
+  const runCheckerBatch = async (ids, batch) => {
+    agents++
+    let ret
+    try {
+      ret = await agent(checkerReproducePrompt(ids, batch), { agentType: 'review-checker', schema: checkerSchema, label: `reproduce check batch ${batch} x${ids.length}`, phase: 'Reproduce' })
+    } catch (e) {
+      log(`reproduce check batch ${batch}: ${String((e && e.message) || e)}; ${ids.join(', ')} → review-verifier`)
+      return []
+    }
+    if (!ret) {
+      log(`reproduce check batch ${batch}: agent returned nothing; ${ids.join(', ')} → review-verifier`)
+      return []
+    }
+    return Array.isArray(ret.reproductions) ? ret.reproductions.filter((r) => r && ids.includes(r.finding)) : []
+  }
+
+  const runCheckerUnits = async (checkerUnits) => {
+    const ids = [...new Set(checkerUnits.flatMap((u) => u.findings))]
+    const batches = []
+    for (let i = 0; i < ids.length; i += CHECKER_BATCH) batches.push(ids.slice(i, i + CHECKER_BATCH))
+    const results = await parallel(batches.map((b, i) => () => runCheckerBatch(b, i + 1)))
+    const gone = new Set()
+    for (const list of results) for (const r of list || []) if (r.verdict === 'gone') gone.add(r.finding)
+    return parallel(checkerUnits.map((u) => async () => {
+      const left = u.findings.filter((id) => !gone.has(id))
+      if (!left.length) return { task: u.task, status: 'ok', reproductions: u.findings.map((finding) => ({ finding, verdict: 'gone' })), error: null }
+      log(`reproduce ${u.task}: ${left.join(', ')} not settled gone by the checker → review-verifier`)
+      return runUnit(u)
+    }))
+  }
+
   phase('Reproduce')
-  const rows = await parallel(units.map((u) => () => runUnit(u)))
-  return reproduceIndex(rows.map((r, i) => r || { task: units[i].task, status: 'error', reproductions: [], error: 'unit did not settle' }))
+  const isChecker = (u) => u.route === 'checker'
+  const verifierUnits = units.filter((u) => !isChecker(u))
+  const checkerUnits = units.filter(isChecker)
+  const [verifierRows, checkerRows] = await Promise.all([
+    verifierUnits.length ? parallel(verifierUnits.map((u) => () => runUnit(u))) : Promise.resolve([]),
+    checkerUnits.length ? runCheckerUnits(checkerUnits) : Promise.resolve([]),
+  ])
+  const byTask = new Map()
+  verifierUnits.forEach((u, i) => byTask.set(u.task, verifierRows[i]))
+  checkerUnits.forEach((u, i) => byTask.set(u.task, checkerRows[i]))
+  return reproduceIndex(units.map((u) => byTask.get(u.task) || { task: u.task, status: 'error', reproductions: [], error: 'unit did not settle' }))
 }
 
 const index = (cells, verified) => ({ run: a.run || null, wave: a.wave ?? null, cells, verified, agents, errors, script_version: SCRIPT_VERSION, escalations })
@@ -149,7 +229,8 @@ const index = (cells, verified) => ({ run: a.run || null, wave: a.wave ?? null, 
 const store = a.store || {}
 const storeFlag = store.slug ? `--slug ${store.slug}` : store.scope ? `--scope ${store.scope}` : null
 const schemas = a.schemas || {}
-const mechanicalLenses = Array.isArray(a.mechanical_lenses) ? a.mechanical_lenses.filter((l) => typeof l === 'string' && l) : []
+const batchDefects = a.batch_defects === true
+const mechanicalLenses =Array.isArray(a.mechanical_lenses) ? a.mechanical_lenses.filter((l) => typeof l === 'string' && l) : []
 const missing = ['run', 'wave', 'depth', 'pack_path'].filter((k) => a[k] === undefined || a[k] === null || a[k] === '')
 if (!Array.isArray(a.cells)) missing.push('cells')
 if (!storeFlag) missing.push('store.slug|store.scope')
@@ -288,6 +369,7 @@ const routeCell = async (ret, cell) => {
   if (ret.status && ret.status !== 'covered') log(`cell ${cell.id} sealed ${ret.status}`)
 
   const singles = []
+  const defects = []
   const panels = []
   const minors = []
   const cleanups = []
@@ -299,15 +381,19 @@ const routeCell = async (ret, cell) => {
     else if (f.route === 'verifier') {
       if (f.kind === 'cleanup') cleanups.push(f.id)
       else if (f.kind === 'defect' && f.severity === 'minor' && a.depth !== 'deep') minors.push(f.id)
+      // A row carrying same_as stays single: only a single verdict can strike the link.
+      else if (batchDefects && f.kind === 'defect' && f.same_as !== true) defects.push(f.id)
       else singles.push(f.id)
     } else if (f.route && f.route !== 'none') fail(`cell ${cell.id}: ${f.id} has unknown route ${f.route}; left unverified`)
   }
   if (checks.length) poolChecker(checks, cell.agentType)
   if (cleanups.length === 1) singles.push(cleanups.pop())
+  if (defects.length === 1) singles.push(defects.pop())
 
   const work = [
     ...singles.map((id) => () => verifyOne(id)),
     ...panels.map((id) => () => verifyPanel(id)),
+    ...(defects.length ? [() => verifyBatch(cell.id, defects, 'defect')] : []),
     ...(minors.length ? [() => verifyBatch(cell.id, minors, 'minor')] : []),
     ...(cleanups.length ? [() => verifyBatch(cell.id, cleanups, 'cleanup')] : []),
   ]
