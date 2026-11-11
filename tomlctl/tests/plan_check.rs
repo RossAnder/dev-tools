@@ -918,7 +918,21 @@ fn milestone_width_names_a_row_whose_needs_sit_two_milestones_back() {
     assert_eq!(widths[0]["ids"], serde_json::json!([2]), "{report}");
     let detail = widths[0]["detail"].as_str().expect("a detail");
     assert!(detail.contains("milestone `C`"), "{detail}");
-    assert!(detail.contains("2 could join `A`"), "{detail}");
+    assert!(detail.contains("2 could join `B`"), "{detail}");
+}
+
+#[test]
+fn milestone_width_is_not_raised_for_a_deferred_milestone() {
+    let deferred = swap(
+        &swap(
+            LATER,
+            "elaboration = \"upfront\"",
+            "elaboration = \"deferred\"",
+        ),
+        "defer_reason = \"\"",
+        "defer_reason = \"depends on the guard\"",
+    );
+    assert_clean(&Flow::with_tasks(&format!("{TASKS}{deferred}")));
 }
 
 #[test]

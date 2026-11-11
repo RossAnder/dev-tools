@@ -723,9 +723,10 @@ fn file_chain_findings(tasks: &Store, plan: &PlanStore) -> Vec<Finding> {
 }
 
 /// Per milestone after the first, in `[[checkpoints]]` order, the rows that
-/// could join an earlier one: a launch orders its rows by `needs`, so a row can
-/// start with the latest milestone holding a direct need, or the first when it
-/// has none. A row with a need in no listed milestone is left out.
+/// could join an earlier one: the milestone after the latest one holding a
+/// direct need, whose gate the row may wait on, or the first when it has no
+/// needs. A deferred milestone is a boundary its plan chose, so it raises
+/// nothing, and a row with a need in no listed milestone is left out.
 fn milestone_width_findings(tasks: &Store) -> Vec<Finding> {
     let mut order: Vec<&str> = Vec::new();
     for checkpoint in &tasks.checkpoints {
@@ -742,8 +743,18 @@ fn milestone_width_findings(tasks: &Store) -> Vec<Finding> {
             .and_then(|row| index_of(&row.checkpoint))
     };
 
+    let deferred = |id: &str| {
+        tasks
+            .milestones
+            .iter()
+            .any(|milestone| milestone.id == id && milestone.is_deferred())
+    };
+
     let mut findings = Vec::new();
     for (index, milestone) in order.iter().enumerate().skip(1) {
+        if deferred(milestone) {
+            continue;
+        }
         let rows: Vec<&TaskRow> = tasks
             .items
             .iter()
@@ -759,9 +770,9 @@ fn milestone_width_findings(tasks: &Store) -> Vec<Finding> {
             else {
                 continue;
             };
-            let earliest = placed.iter().copied().max().unwrap_or(0);
-            if row.needs.is_empty() || earliest + 1 < index {
-                waiting.push((row.id, earliest));
+            let target = placed.iter().copied().max().map_or(0, |latest| latest + 1);
+            if target < index {
+                waiting.push((row.id, target));
             }
         }
         if waiting.is_empty() {
@@ -770,7 +781,7 @@ fn milestone_width_findings(tasks: &Store) -> Vec<Finding> {
         waiting.sort();
         let described: Vec<String> = waiting
             .iter()
-            .map(|(id, earliest)| format!("{id} could join `{}`", order[*earliest]))
+            .map(|(id, target)| format!("{id} could join `{}`", order[*target]))
             .collect();
         findings.push(Finding {
             class: "plan/milestone-width",
