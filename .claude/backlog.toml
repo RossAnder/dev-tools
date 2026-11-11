@@ -12637,3 +12637,19 @@ flow = "milestone-cadence"
 context = "Seen on milestone-cadence round 2 (run wf_e4e1c361-78b): the fix task minted at 15:23:04Z and the launch-args digest taken at 15:23:04Z gave clean=false with one trail row, actor orchestrator, digest matched. The trail window is inclusive of digest_at at one-second resolution, so a replan written just before the emit is counted as a write during the run."
 base_sha = "8686bc0840a6c230713697c34258b57dac8139f2"
 related = ["B-add009dc"]
+
+[[backlog]]
+id = "B-fc6e271c"
+kind = "flaky-test"
+summary = "every_case_honours_the_output_options::plan fails intermittently in the full nextest run and passes on a narrow rerun"
+area = "tomlctl/tests/output_options.rs"
+tags = []
+status = "open"
+created = 2026-11-11T15:35:52Z
+last_seen = 2026-11-11T15:35:52Z
+seen_count = 1
+dedup_id = "fc6e271c4e2c1c28"
+origin = "implement-v2"
+flow = "milestone-cadence"
+context = "Seen once on 2026-11-11 gating the plan/milestone-width fix: 1 of 3174 failed in the parallel run, then passed with -j 1 --exact. The two full runs earlier the same day passed."
+base_sha = "9a6c5117189fdf9811d2fca94332b2b1f629f8c8"
