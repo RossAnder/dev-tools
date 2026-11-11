@@ -1996,7 +1996,7 @@ check = "grep -Eq 'git status --porcelain -- <paths?>' claude/skills/implement-v
 at = "base"
 
 [specs.premises.probe]
-at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+at = "cfbe74e2936b00e95adb7201b156711e13df4214"
 neg_rc = 0
 verdict = "holds"
 
@@ -2310,7 +2310,7 @@ check = '''! grep -rl 'findings\.md' claude CLAUDE.md scripts tomlctl/src tomlct
 at = "base"
 
 [specs.premises.probe]
-at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+at = "cfbe74e2936b00e95adb7201b156711e13df4214"
 neg_rc = 0
 verdict = "holds"
 
@@ -3347,7 +3347,7 @@ id = 33
 ref = "run-milestonemd-builds-its-launch-from-plan-emit-and-probes-gates-at-pre-flight"
 title = "run-milestone.md builds its launch from plan emit and probes gates at pre-flight"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "E"
 phase = ""
 phase_depth = 0
@@ -3359,15 +3359,15 @@ deps_note = ""
 action = "Rewrite the launch steps of `run-milestone.md` around `tomlctl plan emit launch-args`, release `after:` tasks inside the launch, and add the gate probe to the pre-flight."
 detail = "(1) Section 2, after the milestone is picked, since the pre-flight runs before `<id>` is known: emit the milestone's gate probes with `tomlctl plan probes --slug <slug> --emit --gates --milestone <id>` to a file in scratch, read it, run it under `timeout 540 bash`, record it with `--record <capture> --gates`, and stop before any launch on a `fails` or `broken` verdict, naming the gate and its probe output. A milestone with no stored probe skips this. (2) Section 3: an `after:<m>` premise whose task `m` is in this milestone and pending no longer withholds its task; the task is released inside the launch and its worker checks the premise. Keep every other row of the skip table. (3) Section 4, Build the args: replace the closure and show reads and the six hand rules with one call, `tomlctl plan emit launch-args --slug <slug> --milestone <id>`; say what each `dropped` reason means and where the row goes (the drain replan, `needs_human`), keeping the present destinations. Read every `after_checks` command before launch, as the premise script is read. One that does anything but read, or that builds, is not launched around: stop, replan that premise as section 3 already does for a premise line that writes, and emit again; never edit `args` by hand. Write `args` to `<scratch>` for the record, pass it to the Workflow, and record the launch with `plan run start` using `args_sha256` as `--args-hash` and the dispatched ids as `--tasks`. (4) What comes back: the index entry's `needs_files`, and that the script runs a rolling pool, not waves. Shapes: `design/shapes.md#launch-args`, `#gate-probes`, `#worker-return`. Every fenced `tomlctl` command takes single-token placeholders. Check with `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "affff3d40052af6e2ef4e35e561e7f2d01f27df8"
 
 [[items]]
 id = 34
 ref = "drainmd-adopts-the-gate-list-the-audit-file-widening-and-unquoted-path-reads"
 title = "drain.md adopts the gate list, the audit, file widening and unquoted path reads"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "E"
 phase = ""
 phase_depth = 0
@@ -3379,15 +3379,15 @@ deps_note = ""
 action = "Update `drain.md` for the new surface: the gate's command list from `plan emit gate-list`, an audit of what the launch's agents ran, a `needs_files` return widening its row, the changed own-work rule of `plan drift`, and path reads that survive spaces and non-ASCII names."
 detail = "(1) After the notes are read, in the drift step: run `tomlctl agents audit --transcripts <dir>` with the transcript directory the launch reported, and list each row in the drain's report to the user; a narrow test a task's own accept names is allowed by the build discipline, anything else is named as a breach, and no row changes a task's status. (2) Out-of-lane edits: delete the sentence saying `plan drift` counts only rows past `pending` as own work and that a started row back at `pending` shows its own partial edits; a row with a set agent and no commit is now own work. (3) Step 6 replan: a `failed` entry with a non-empty `needs_files` is widened mechanically. When no other pending or started row holds a named path, add the paths to the row's `files` with an audited `tasks update` whose `reason` quotes the note, and reset the row for relaunch; when another row holds one, order the two with `needs` and widen; a path the note does not justify goes to the user. (4) Edits follow their files, step 10's staging read and the unstamped-milestone paragraph: replace each `git status --porcelain -- <paths>` read that is compared with rows' `files` by `tomlctl plan drift --slug <slug> --uncommitted --get uncommitted_files`, which prints one unquoted path per line, and keep the rule of staging only listed paths; the flow-store commit's own status read over `.claude/flows/<slug>/` stays. (5) Step 7: build the command list with `tomlctl plan emit gate-list --slug <slug> --milestone <id>`, replacing the milestones and accept reads and the by-hand filter and de-duplication; a `skipped` entry is not run, and its `covered_by` reason is reported in the gate summary; the held-command rule and the `timeout:`, `rerun:` and `transient:` options stay the orchestrator's. Say the run is a rolling pool where the text says waves. Shapes: `design/shapes.md#gate-list`, `#worker-audit`, `#worker-return`. Every fenced `tomlctl` command takes single-token placeholders. Check with `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "affff3d40052af6e2ef4e35e561e7f2d01f27df8"
 
 [[items]]
 id = 35
 ref = "findingsmd-builds-the-reproduce-check-from-plan-emit-reproduce-units"
 title = "findings.md builds the reproduce check from plan emit reproduce-units"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "E"
 phase = ""
 phase_depth = 0
@@ -3399,15 +3399,15 @@ deps_note = ""
 action = "Rewrite the Reproduce check section of `findings.md` around `tomlctl plan emit reproduce-units` and the milestone-wide reproduce-status check."
 detail = "(1) The units: replace the task and finding_links reads, the highest-id-owner rule, the per-store split, the round computation and the per-finding later-pass loop with one call, `tomlctl plan emit reproduce-units --slug <slug> --milestone <id>`, adding `--since-launch` on a later pass; launch `review-v2-pipeline` once per `launches` entry with that entry as args. (2) A relaunch of a round whose run was cut short passes `--relaunch <n>`, n counting from 1, so it gets its own run directory. (3) Say that a unit the verb routes to `checker` is settled by a pooled `review-checker`, and that a finding it leaves unsettled reaches a verifier in the same launch. (4) Read the store and act: read every finding's verdict with one `tomlctl review reproduce-status --flow <slug> --milestone <id>` call plus the store flag and `--expect gone`, in place of the per-finding calls. (5) The fix rows a reproduce round mints carry the milestone-wide gate-owned accept entry of `design/shapes.md#reproduce-status-by-milestone`, not a per-finding check; reword the guarantee that a milestone cannot commit with a finding outstanding to rest on that one check. Shapes: `design/shapes.md#reproduce-units`, `#reproduce-checker`. Every fenced `tomlctl` command takes single-token placeholders. Check with `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "affff3d40052af6e2ef4e35e561e7f2d01f27df8"
 
 [[items]]
 id = 36
 ref = "engine-skills-carriers-and-claudemd-name-the-new-surface"
 title = "Engine skills, carriers and CLAUDE.md name the new surface"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "E"
 phase = ""
 phase_depth = 0
@@ -3429,15 +3429,15 @@ deps_note = ""
 action = "Update the two engine skills, the two carriers' pre-flights and CLAUDE.md for the pool, the emit verbs, the owner field and the audit."
 detail = "(1) `claude/commands/implement-v2.md` pre-flight: add `plan_emit`, `accept_run_by`, `gate_probes` and `agents_audit` to the features the installed binary must advertise; `claude/commands/apply-v2.md`: add `plan_emit`, `accept_run_by`, `reproduce_status_milestone` and `review_fix_files`. (2) `implement-v2-engine/SKILL.md`: the step table rows for Premises, Launch, Reproduce check and Gate name the emit verbs and the gate probe; where it describes the Workflow, say it runs a rolling pool that starts a ready file-disjoint task as a slot frees and releases an `after:` task once its target is done; in the Vetting and harvest bullet, add the drain's `tomlctl agents audit` read, saying the verb reads the transcripts and prints only matching commands, so the rule that the orchestrator never reads a worker's transcript stands. (3) `apply-v2-engine/SKILL.md` has no instruction about a fix's other files today. In the preview, beside the read of the findings a dry run would schedule, add one bullet: a would-mint row's files include its finding's `fix_files`; for a finding with no `fix_files` whose fix text names a file outside the row, widen the row's `files` through an audited `tasks update` after scheduling and before launch. (4) `CLAUDE.md`, section Implement v2: the Workflow bullet says a rolling pool, not waves, and the Gate and commit bullet says the gate's commands come from `tomlctl plan emit gate-list`; the Deploy bullet's list of what the pre-flight refuses gains the four features. Every fenced `tomlctl` command takes single-token placeholders. Check with `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "affff3d40052af6e2ef4e35e561e7f2d01f27df8"
 
 [[items]]
 id = 37
 ref = "plan-authoring-writes-owners-covers-and-gate-probes"
 title = "Plan authoring writes owners, covers and gate probes"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "E"
 phase = ""
 phase_depth = 0
@@ -3449,15 +3449,15 @@ deps_note = ""
 action = "Update `write-and-prove.md` so Write sets an accept entry's owner and cover, Design stores a gate probe, and Prove runs the gate probes."
 detail = "(1) Section 1, Milestones: a gate that can fail for reasons of this environment, such as a link or install script, gets a probe with `--gate-probe '<gate> :: <probe>'`, the probe being a cheap command such as the gate's own dry run. (2) Section 3, the spec rules: beside the `writes_build` rule, say `run_by` is set only where the default is wrong: `gate` for a read-only check that only the gate can pass, and `covered` with `covered_by` naming the exact gate command for a narrow test the milestone's suite gate already runs, so it is not run twice; a worker's own narrow run of such a test is named in `detail`. Add both keys to the example row's comment-free TOML only if the example needs them; otherwise leave the example. (3) Section 4d: after the accept probes, emit, read, run and record the gate probes with `tomlctl plan probes --slug <slug> --emit --gates` and `--record <capture> --gates`, and treat a `fails` or `broken` verdict as a gate that cannot pass here: fix the environment, change the gate, or record a handover. Shapes: `design/shapes.md#accept-owner`, `#gate-probes`. Every fenced `tomlctl` command takes single-token placeholders. Check with `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "affff3d40052af6e2ef4e35e561e7f2d01f27df8"
 
 [[items]]
 id = 38
 ref = "honour-a-gate-stamp-in-the-pre-commit-hook"
 title = "Honour a gate stamp in the pre-commit hook"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "E"
 phase = ""
 phase_depth = 0
@@ -3473,15 +3473,15 @@ deps_note = ""
 action = "Add `scripts/gate-stamp.sh` with its `run` and `check` modes, make the hook skip its cargo steps while the stamp matches, and document it in CLAUDE.md, as `design/shapes.md#gate-stamp` states."
 detail = "`run` executes, in the hook's order and whatever is staged: `cargo fmt --manifest-path tomlctl/Cargo.toml -- --check`, `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`, `cargo test --manifest-path tomlctl/Cargo.toml --test tasks_corpus -- --ignored`, `cargo fmt --manifest-path glimpse/Cargo.toml -- --check`, `cargo clippy --manifest-path glimpse/Cargo.toml --locked`; it stops at the first failure, removes any stamp, and exits non-zero. On a full pass it writes the digest to `$(git rev-parse --git-dir)/gate-stamp`. The digest: list files with `git ls-files -z --cached --others --exclude-standard` over the five roots, sort, and hash each path with its content hash into one SHA-256; a deleted tracked file contributes its path with a fixed marker. `check` recomputes and compares, exiting 1 when the stamp is absent or differs. In `.githooks/pre-commit`, compute once whether `check` passes, before the first cargo `gate` call, and when it does print one line, `pre-commit: cargo steps skipped, the gate stamp matches this working tree`, and skip the five cargo steps; the two verifiers, the documentation gate and the sidecar comparison run regardless. Both scripts are Bash under `set -euo pipefail`, use no tool the hook does not already use beyond `sha256sum`, `sort` and `git`, and work under Git Bash. In CLAUDE.md, Developer setup: one paragraph on the stamp after the description of the hook's steps, saying what `run` executes, that the stamp is void once any file under the five roots changes, that a commit train over a gated tree runs `bash scripts/gate-stamp.sh run` once, and that `--no-verify` is still never the answer; and add the script to the Supply chain gotcha's scrutiny. Check the scripts with `bash -n scripts/gate-stamp.sh` and `bash -n .githooks/pre-commit`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "affff3d40052af6e2ef4e35e561e7f2d01f27df8"
 
 [[items]]
 id = 39
 ref = "rename-the-engines-findings-reference-to-apply-rowsmd"
 title = "Rename the engine's findings reference to apply-rows.md"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "E"
 phase = ""
 phase_depth = 0
@@ -3504,8 +3504,8 @@ deps_note = ""
 action = "Move `references/findings.md` to `references/apply-rows.md` with `git mv`-equivalent content, and repoint every link and mention in the engine's `SKILL.md`, `drain.md` and `run-milestone.md`."
 detail = "The harness refuses a subagent Write to a file named `findings.md`, which is why the reference could only be created by touch and Edit. Create `apply-rows.md` with the file's full content, delete `findings.md` with `rm`, and replace every `findings.md` in the three referring files, link text and link target both, with `apply-rows.md`; section names after the link stay as they are. The file's own heading stays. Check with `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "affff3d40052af6e2ef4e35e561e7f2d01f27df8"
 
 [[items]]
 id = 40
