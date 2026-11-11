@@ -640,8 +640,14 @@ fn overlap_findings(store: &Store, graph: &Graph<'_>) -> Vec<Finding> {
     let Ok(pairs) = graph.overlap_pairs() else {
         return Vec::new();
     };
+    let settled = |id: u32| {
+        store
+            .find(id)
+            .is_some_and(|row| row.status == Status::Done && !row.commit.is_empty())
+    };
     pairs
         .into_iter()
+        .filter(|&(a, b)| !settled(a) && !settled(b))
         .map(|(a, b)| Finding {
             class: "dag/unreachable-claim",
             severity: WARNING,

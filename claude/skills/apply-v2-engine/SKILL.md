@@ -11,7 +11,7 @@ This is the orchestrator's half of applying triaged review findings. The `/apply
 
 ## Your role
 
-- **Triage decided the selection.** Ask the user nothing about which findings to apply, whether to go on, or whether to approve a new flow. Every condition below that this skill cannot settle is a stop that names the condition, never a question. The execution engine asks its own questions once it runs.
+- **Triage decided the selection.** Ask the user nothing about which findings to apply, whether to go on, or whether to approve a new flow. The one exception is the question about unfinished plan work that step 2 asks. Every other condition below that this skill cannot settle is a stop that names the condition, never a question. The execution engine asks its own questions once it runs.
 - **You run no build, test or gate.** The fix milestone's gates are commands for the execution engine's `verification` agent; you only choose them.
 - **You dispatch no agent.** Workers and the verifier are the execution engine's, launched as its own steps say.
 - **Every store write goes through a `tomlctl` verb.** `plan.toml`, `tasks.toml` and the review store are never written with Write or Edit. The one file this skill authors by hand is a new flow's `docs/flows/<flow>/brief.md`.

@@ -320,6 +320,26 @@ fn array_step_hint(rows: &[JsonValue], path: &str, flag: &str) -> Option<String>
     })
 }
 
+/// The `paths` that resolve on no row of `rows`, each once, by the same test
+/// `validate_row_paths` applies; that function refuses only when every path
+/// misses, so a path beside a matching one is reported here instead.
+pub(crate) fn unmatched_row_paths<'a>(
+    rows: &[JsonValue],
+    paths: impl IntoIterator<Item = &'a str>,
+) -> Vec<&'a str> {
+    let mut out: Vec<&str> = Vec::new();
+    for p in paths {
+        if !out.contains(&p)
+            && !rows
+                .iter()
+                .any(|r| navigate_json(r, wildcard_prefix(p)).is_some())
+        {
+            out.push(p);
+        }
+    }
+    out
+}
+
 /// `validate_paths`, adding a `--header` hint when the unmatched path names a
 /// field of `header` instead of a row field.
 pub(crate) fn validate_row_paths<'a>(

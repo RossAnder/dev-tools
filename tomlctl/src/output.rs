@@ -313,11 +313,22 @@ pub(crate) enum Style {
 }
 
 /// What an emitter writes: the stdout bytes, plus the truncation notice that
-/// belongs on stderr when `--limit` cut rows from header-less text output.
+/// belongs on stderr when `--limit` cut rows from header-less text output,
+/// and one stderr warning per `--template` path that matched nothing.
 #[derive(Debug, Default)]
 pub(crate) struct Emitted {
     pub(crate) stdout: Vec<u8>,
     pub(crate) notice: Option<String>,
+    pub(crate) warnings: Vec<String>,
+}
+
+fn template_warnings(template: Option<&Template>, rows: &[JsonValue]) -> Vec<String> {
+    template.map_or_else(Vec::new, |t| {
+        t.unmatched_paths(rows)
+            .into_iter()
+            .map(|p| format!("tomlctl: --template path {p} matched nothing"))
+            .collect()
+    })
 }
 
 /// Where `emit` takes a report's rows from: its declared `Rows`, or the
@@ -562,6 +573,7 @@ fn emit_one(report: &JsonValue, style: Style, opts: &OutputOpts) -> Result<Emitt
     }
     let template = opts.template.as_deref().map(Template::parse).transpose()?;
     validate_shaping_paths(std::slice::from_ref(report), None, opts, template.as_ref())?;
+    let warnings = template_warnings(template.as_ref(), std::slice::from_ref(report));
     if let Some(paths) = &opts.omit {
         validate_omit_paths(std::slice::from_ref(report), None, paths)?;
     }
@@ -607,6 +619,7 @@ fn emit_one(report: &JsonValue, style: Style, opts: &OutputOpts) -> Result<Emitt
     Ok(Emitted {
         stdout: out,
         notice: None,
+        warnings,
     })
 }
 
@@ -681,6 +694,7 @@ fn emit_rows(
         _ => None,
     };
     validate_shaping_paths(&rows, header, opts, template.as_ref())?;
+    let warnings = template_warnings(template.as_ref(), &rows);
     if let Some(paths) = &opts.omit {
         let header = matches!(at, RowsAt::Field(_)).then_some(&report);
         validate_omit_paths(&rows, header, paths)?;
@@ -732,6 +746,7 @@ fn emit_rows(
         return Ok(Emitted {
             stdout: out,
             notice,
+            warnings,
         });
     }
     // The header is trimmed while its row slot is still empty, so no row is
@@ -751,6 +766,7 @@ fn emit_rows(
         return Ok(Emitted {
             stdout: text.into_bytes(),
             notice,
+            ..Emitted::default()
         });
     }
     if let Some(slot) = row_slot(&mut report, at) {
@@ -785,7 +801,7 @@ fn emit_rows(
     }
     Ok(Emitted {
         stdout: out,
-        notice: None,
+        ..Emitted::default()
     })
 }
 
@@ -882,13 +898,17 @@ fn write_stdout_parts(parts: &[&[u8]]) -> Result<()> {
     })
 }
 
-/// Write `emitted`; the notice goes straight to stderr rather than through
-/// `io::advise!`, which stays silent when stderr is not a terminal.
+/// Write `emitted`; the warnings and notice go straight to stderr rather than
+/// through `io::advise!`, which stays silent when stderr is not a terminal.
 fn write_emitted(emitted: Emitted, opts: &OutputOpts) -> Result<()> {
     write_stdout(&emitted.stdout)?;
-    if let Some(notice) = emitted.notice
-        && !opts.json_errors
-    {
+    if opts.json_errors {
+        return Ok(());
+    }
+    for warning in &emitted.warnings {
+        eprintln!("{warning}");
+    }
+    if let Some(notice) = emitted.notice {
         eprintln!("{notice}");
     }
     Ok(())
@@ -949,7 +969,7 @@ fn compact_lenient(
             Ok((
                 Emitted {
                     stdout,
-                    notice: None,
+                    ..Emitted::default()
                 },
                 Some(warning),
             ))
@@ -976,8 +996,8 @@ fn report_cut(cut: Option<Cut>, opts: &OutputOpts) -> Result<()> {
         return Ok(());
     }
     let emitted = Emitted {
-        stdout: Vec::new(),
         notice: cut.map(Cut::notice),
+        ..Emitted::default()
     };
     write_emitted(emitted, opts)
 }

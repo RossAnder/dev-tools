@@ -224,6 +224,62 @@ fn tasks_render_check_omits_finding_detail() {
 }
 
 #[test]
+fn template_unknown_path_warns() {
+    let (_dir, root) = sandbox();
+    seed_tasks(&root, TASKS);
+    let warning = "tomlctl: --template path message matched nothing\n";
+
+    let list = [
+        "tasks",
+        "list",
+        "--slug",
+        TASKS_SLUG,
+        "--template",
+        "{id} [{message}] {message}",
+    ];
+    let r = run(&root, &list);
+    assert_eq!(r.code, Some(0), "{}", r.stderr);
+    assert_eq!(r.stdout, "1 [] \n2 [] \n");
+    assert_eq!(
+        r.stderr, warning,
+        "one line per path, however often it appears"
+    );
+
+    let show = [
+        "tasks",
+        "show",
+        "1",
+        "--slug",
+        TASKS_SLUG,
+        "--template",
+        "{id} {message}",
+    ];
+    let r = run(&root, &show);
+    assert_eq!(r.code, Some(0), "{}", r.stderr);
+    assert_eq!(r.stdout, "1 \n");
+    assert_eq!(r.stderr, warning);
+
+    let json = [&["--error-format", "json"][..], &list[..]].concat();
+    let r = run(&root, &json);
+    assert_eq!(r.code, Some(0), "{}", r.stderr);
+    assert!(r.stderr.is_empty(), "{}", r.stderr);
+}
+
+#[test]
+fn template_optional_path_is_quiet() {
+    let (_dir, root) = sandbox();
+    let ledger = seed_ledger_in(&root, "ledger.toml", LEDGER);
+    let ledger = ledger.to_str().unwrap();
+    let r = run(
+        &root,
+        &["items", "list", ledger, "--template", "{id} {context}"],
+    );
+    assert_eq!(r.code, Some(0), "{}", r.stderr);
+    assert_eq!(r.stdout, "R1 \nR2 \n");
+    assert!(r.stderr.is_empty(), "{}", r.stderr);
+}
+
+#[test]
 fn omit_with_an_unknown_path_is_refused() {
     let (_dir, root) = sandbox();
     seed_tasks(&root, TASKS);

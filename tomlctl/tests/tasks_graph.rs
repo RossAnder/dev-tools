@@ -482,6 +482,33 @@ fn check_reports_the_stall_the_overlap_pair_and_the_orphan_row_as_warnings_at_ex
     assert_eq!(findings[2]["ids"], json!([5]));
 }
 
+#[test]
+fn unreachable_claim_skips_done_committed_rows() {
+    let (_tmp, root) = sandbox();
+    let settled = GRAPH_FIXTURE.replacen(
+        "status = \"pending\"\ncheckpoint = \"A\"\nfiles = [\"tomlctl/src/tasks/graph.rs\", \"tomlctl/src/tasks/import_plan.rs\"]\nneeds = [1]\ncoupling = []\ndeps_note = \"\"\naction = \"\"\ndetail = \"\"\nacceptance = \"\"\nagent = \"\"\ncommit = \"\"",
+        "status = \"done\"\ncheckpoint = \"A\"\nfiles = [\"tomlctl/src/tasks/graph.rs\", \"tomlctl/src/tasks/import_plan.rs\"]\nneeds = [1]\ncoupling = []\ndeps_note = \"\"\naction = \"\"\ndetail = \"\"\nacceptance = \"\"\nagent = \"\"\ncommit = \"abc1234\"",
+        1,
+    );
+    assert_ne!(settled, GRAPH_FIXTURE);
+    seed_tasks(&root, &settled);
+    let envelope = check_run(&root, 0, &[]);
+    assert_eq!(
+        classes(&envelope["findings"]),
+        vec!["dag/stalled-dependency", "plan/orphan-row"],
+        "{envelope}"
+    );
+
+    // Two rows neither done-and-committed still warn.
+    let (_tmp2, root2) = sandbox();
+    seed_tasks(&root2, GRAPH_FIXTURE);
+    let envelope = check_run(&root2, 0, &[]);
+    assert!(
+        classes(&envelope["findings"]).contains(&"dag/unreachable-claim"),
+        "{envelope}"
+    );
+}
+
 /// The stall above is the ordinary mid-run shape of a healthy dispatch, so the
 /// caller that knows which rows it sent out declares them and reads the rest of
 /// the envelope unchanged. `ready` takes the same set under the same spelling.

@@ -440,13 +440,13 @@ fn resubmitted_cell_supersedes_unverified_rows() {
 
     let second = repo.added("U1", "C5", &[defect("contrarian", "lib::limit", "major")]);
     assert_eq!(ids(&second), ["F5"]);
-    assert_eq!(second["superseded"], json!(["F3"]));
+    assert_eq!(second["superseded"], json!(["F3", "F4"]));
     assert_eq!(repo.finding("F3")["status"].as_str(), Some("superseded"));
     assert_eq!(repo.finding("F5")["status"].as_str(), Some("unverified"));
     assert_eq!(
         repo.finding("F4")["status"].as_str(),
-        Some("open"),
-        "only unverified rows are withdrawn"
+        Some("superseded"),
+        "the cell's open advisory row is withdrawn too"
     );
     assert_eq!(
         repo.finding("F5").get("related"),
@@ -455,6 +455,19 @@ fn resubmitted_cell_supersedes_unverified_rows() {
     );
     assert_eq!(repo.finding("F2")["status"].as_str(), Some("open"));
     assert_eq!(repo.finding_count(), 5);
+}
+
+#[test]
+fn replayed_add_supersedes_open_advisory() {
+    let repo = Repo::new();
+    let first = repo.added("U1", "C5", &[advisory(None)]);
+    let old = ids(&first)[0].clone();
+    let second = repo.added("U1", "C5", &[advisory(None)]);
+    assert_eq!(second["superseded"], json!([old.clone()]));
+    assert_eq!(repo.finding(&old)["status"].as_str(), Some("superseded"));
+    let new = ids(&second)[0].clone();
+    assert_ne!(new, old);
+    assert_eq!(repo.finding(&new)["status"].as_str(), Some("open"));
 }
 
 #[test]

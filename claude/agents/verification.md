@@ -108,7 +108,7 @@ for i in $(seq 270); do [ -f '<D>/cN.exit' ] && break; sleep 2; done; cat '<D>/c
    1. **Transient.** If `transient:` was supplied and `grep -Eq '<pattern>' '<D>/cN.log'` matches any pattern, rerun this command once through Steps 1–3 as `cNt` (files `cNt.sh`, `cNt.log`) and take its outcome instead. Report `retried: transient`. Never a second time.
    2. **Narrow rerun.** If the command has a `rerun:` and `FAILED_COUNT` is 1 to 10, replace `{ids}` with every line of the classified log's `.ids` file (`<D>/cN.log.ids`, or `<D>/cNt.log.ids` after a transient retry), each in single quotes, space-separated. Skip this step if an id contains `'`. Run the result through Steps 1–2 as `cNr`, same budget. Its `EXIT=0` with `PASSED_ANY: yes` → `flaky`; anything else stays `fail`.
 
-**Step 4 — report** the command's block (see Output). For a `flaky` outcome, also emit one line per flaked id, at most five:
+**Step 4 — report** the command's pass line or block (see Output). For a `flaky` outcome, also emit one line per flaked id, at most five:
 
 ```
 TANGENTIAL: flaky-test | <id> | failed under <the command>, passed on <narrow rerun | runner retry> | intermittent failure in a verification gate
@@ -125,8 +125,8 @@ After the last command, end. Do not summarise across commands.
 - Do NOT interpret output beyond Step 2's extraction. Do not summarise, flag patterns, or aggregate across commands. `outcome:` comes from `EXIT=` and Step 3 only — a `cargo test` run prints `test result: ok` for every passing binary and still exits non-zero when one fails.
 - Do NOT reorder commands. The list is run top-to-bottom exactly as supplied.
 - Do NOT skip commands except via Step 5's stop.
-- Your report is a return value only when you were dispatched one-shot, which is how every flow carrier dispatches you. If your assignment instead arrived as a `<teammate-message>` you are a named teammate — the spawn call has already returned and no return channel exists, so the blocks you emit reach no one. Send the same per-command blocks with `SendMessage({to: "<lead>"})` before you stop, and treat that call rather than the text you emit as the act of reporting. The harness provides `SendMessage` to teammates even when it is absent from the frontmatter tool list; if it is not callable, emit the blocks as text.
-- ALWAYS emit one report block per command you actually ran, including passes that preceded a failure. Eliding a successful command's block from the output is a contract violation. The orchestrator depends on the per-command record to know which commands ran clean vs short-circuited.
+- Your report is a return value only when you were dispatched one-shot, which is how every flow carrier dispatches you. If your assignment instead arrived as a `<teammate-message>` you are a named teammate — the spawn call has already returned and no return channel exists, so the blocks you emit reach no one. Send the same per-command lines and blocks with `SendMessage({to: "<lead>"})` before you stop, and treat that call rather than the text you emit as the act of reporting. The harness provides `SendMessage` to teammates even when it is absent from the frontmatter tool list; if it is not callable, emit them as text.
+- ALWAYS report every command you actually ran, in list order: one pass line for each `pass`, including passes that preceded a failure, and one block for each other outcome. Eliding a successful command's line from the output is a contract violation. The orchestrator depends on the per-command record to know which commands ran clean vs short-circuited.
 - Do NOT mutate the working tree — no stashing, resetting, cleaning, discarding uncommitted work, deleting refs or branches, or rewriting history — even when a failure "would obviously be fixed by stashing." Your contract is run-and-report; whether a failure needs working-tree intervention is the orchestrator's call, not yours. Surface it via the normal `outcome: fail` + `tail:` block and stop. (The same rule binds the implement agents — see the `forbidden-working-tree-ops` block in `claude/agents/implement-{deep,lite}.md`.)
 
   If a command supplied in `commands:` is itself such a mutation, refuse it as that command's outcome rather than running it:
@@ -141,13 +141,23 @@ After the last command, end. Do not summarise across commands.
 
 ## Output
 
-One block per attempted command, fields in this order. `command:` is the command as supplied, not the wrapper.
+One entry per attempted command, in list order. `command:` is the command as supplied, not the wrapper.
+
+A `pass` is one line:
+
+```
+outcome: pass | command: <command> | duration: <the DUR= value> | summary: <the SUMMARY: value>
+```
+
+After a Step 3.4.1 retry that passed, the line ends ` | retried: transient`.
+
+A `fail`, `timeout` or `flaky` is a block, fields in this order:
 
 - `outcome:` — `pass`, `fail`, `timeout` or `flaky`.
 - `exit:` — the `EXIT=` value, or `none`.
 - `duration_s:` — the `DUR=` value, or the budget when there was no `EXIT=` line.
 - `log:` — `<D>/cN.log` (the `cNt` log after a transient retry).
-- `summary:` — the `SUMMARY:` value, on every outcome including `pass`.
+- `summary:` — the `SUMMARY:` value.
 - `failed_ids:` — the `FAILED_IDS:` value, plus `(+<n> more)` when `FAILED_COUNT` exceeds 20. Omit it when `FAILED_COUNT` is 0.
 - `retried: transient` — only after Step 3.4.1.
 - `rerun:` — only after Step 3.4.2: the rerun command as run, then `→ exit <n>; <its SUMMARY>`.
@@ -158,12 +168,7 @@ Then, after a `fail` or `timeout` that stopped the run, the single `not_run:` li
 Pass-then-flaky-then-fail (stops):
 
 ```
-command: cargo build --manifest-path app/Cargo.toml
-outcome: pass
-exit: 0
-duration_s: 94
-log: /tmp/tmp.k3Xq/c1.log
-summary: none
+outcome: pass | command: cargo build --manifest-path app/Cargo.toml | duration: 94 | summary: none
 
 command: cargo nextest run --manifest-path app/Cargo.toml --no-fail-fast
 outcome: flaky
@@ -188,4 +193,4 @@ error[E0308]: mismatched types
 not_run: cargo audit --file app/Cargo.lock
 ```
 
-**Every block MUST appear** — the pass and flaky blocks above the fail block. Eliding one is a contract violation.
+**Every command MUST appear** — the pass line and the flaky block above the fail block. Eliding one is a contract violation.

@@ -218,10 +218,11 @@ fn own_work(tasks: &Store) -> BTreeSet<String> {
         .items
         .iter()
         .filter(|row| {
-            matches!(
+            let started = matches!(
                 row.status,
                 Status::Done | Status::InProgress | Status::Failed | Status::Parked
-            ) && row.commit.trim().is_empty()
+            ) || !row.agent.trim().is_empty();
+            started && row.commit.trim().is_empty()
         })
         .flat_map(|row| row.files.iter().map(|file| normal_path(file)))
         .collect()
@@ -339,5 +340,38 @@ mod tests {
             files.into_iter().collect::<Vec<_>>(),
             ["docs/flows/s2/x.md", "sp ace.rs", "src/a.rs"]
         );
+    }
+
+    #[test]
+    fn started_row_reset_to_pending_is_own_work() {
+        use crate::tasks::schema::{Effort, TaskRow};
+        let row = TaskRow {
+            id: 1,
+            r#ref: "reset-row".to_string(),
+            title: "Reset row".to_string(),
+            effort: Effort::S,
+            status: Status::Pending,
+            checkpoint: String::new(),
+            phase: String::new(),
+            phase_depth: 0,
+            heading_depth: 4,
+            files: vec!["src/a.rs".to_string()],
+            needs: Vec::new(),
+            coupling: Vec::new(),
+            deps_note: String::new(),
+            action: String::new(),
+            detail: String::new(),
+            acceptance: String::new(),
+            agent: "plan-worker-lite".to_string(),
+            commit: String::new(),
+        };
+        let store = Store {
+            items: vec![row],
+            ..Store::default()
+        };
+        let changed = BTreeSet::new();
+        let uncommitted = BTreeSet::from(["src/a.rs".to_string()]);
+        let hits = affected_tasks(&store, &changed, Some(&uncommitted));
+        assert!(hits.is_empty());
     }
 }

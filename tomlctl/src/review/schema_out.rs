@@ -292,25 +292,15 @@ fn sealed_statuses() -> Vec<&'static str> {
         .collect()
 }
 
-/// The verdict-return object; `unblocks` and `fix_sketch` carry the
-/// catalogue's verdict rule that each needs the other.
+/// The verdict-return object. It carries no top-level combinator, which the
+/// agent API refuses in an input schema; `review verdict` enforces that
+/// `unblocks` and `fix_sketch` each need the other.
 fn verdict_return() -> JsonValue {
     let verdict_field = |name: &str| {
         let spec = fields::spec(Record::Verdict, name, None)
             .unwrap_or_else(|| panic!("the catalogue lists a verdict's {name}"));
         property(spec)
     };
-    let unblocking = json!({"properties": {"unblocks": {"const": true}}, "required": ["unblocks"]});
-    let rules: Vec<JsonValue> = FIELDS
-        .iter()
-        .filter(|s| s.record == Record::Verdict && s.need == Need::WhenUnblocks)
-        .flat_map(|s| {
-            [
-                json!({"if": unblocking, "then": {"required": [s.name]}}),
-                json!({"if": {"required": [s.name]}, "then": unblocking}),
-            ]
-        })
-        .collect();
     json!({
         "title": "review verdict-return",
         "type": "object",
@@ -323,7 +313,6 @@ fn verdict_return() -> JsonValue {
             "fix_sketch": verdict_field("fix_sketch"),
         },
         "required": ["finding", "verdict"],
-        "allOf": rules,
     })
 }
 
@@ -509,6 +498,15 @@ mod tests {
     }
 
     #[test]
+    fn verdict_return_has_no_top_level_combinator() {
+        let schema = verdict_return();
+        let object = schema.as_object().expect("an object");
+        for key in ["allOf", "anyOf", "oneOf"] {
+            assert!(!object.contains_key(key), "{key} at the top level");
+        }
+    }
+
+    #[test]
     fn verdict_return_and_validator_agree_on_unblocking() {
         let refused = |extra: JsonValue| -> BTreeSet<String> {
             let mut row = json!({
@@ -533,25 +531,11 @@ mod tests {
                 .collect()
         };
         let schema = verdict_return();
-        let rules = &schema["allOf"];
-        let unblocking = rules
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|r| r["if"]["properties"]["unblocks"]["const"] == json!(true))
-            .expect("a rule on unblocks");
         assert_eq!(
-            names(&unblocking["then"]["required"]),
             refused(json!({"unblocks": true})),
-            "unblocks needs what the validator demands"
+            BTreeSet::from(["fix_sketch".to_string()]),
+            "unblocks needs a fix_sketch"
         );
-        let sketched = rules
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|r| r["if"]["required"] == json!(["fix_sketch"]))
-            .expect("a rule on fix_sketch");
-        assert_eq!(sketched["then"]["properties"]["unblocks"]["const"], true);
         assert_eq!(
             refused(json!({"fix_sketch": "s", "unblocks": false})),
             BTreeSet::from(["fix_sketch".to_string()])

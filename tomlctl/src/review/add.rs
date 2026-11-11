@@ -143,7 +143,10 @@ pub(crate) fn run(target: &Target, args: ReviewAddArgs) -> Result<()> {
                 .findings
                 .iter()
                 .filter(|f| {
-                    f.cell == cell_id && f.run == run_id && f.status() == FindingStatus::Unverified
+                    f.cell == cell_id
+                        && f.run == run_id
+                        && (f.status() == FindingStatus::Unverified
+                            || (f.kind == Kind::Advisory && f.status() == FindingStatus::Open))
                 })
                 .map(|f| f.id.clone())
                 .collect();

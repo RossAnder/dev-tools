@@ -11,8 +11,13 @@ use std::borrow::Cow;
 use anyhow::Result;
 use serde_json::Value as JsonValue;
 
-use crate::convert::{is_wildcard_path, navigate_json, navigate_json_all};
+use crate::convert::{is_wildcard_path, navigate_json, navigate_json_all, unmatched_row_paths};
 use crate::errors::{ErrorKind, tagged_err};
+
+/// First path segments of fields a documented template names that their verb
+/// can leave off a row or object, so a template naming one on rows that all
+/// lack it is not warned of.
+const OPTIONAL_FIELDS: &[&str] = &["advisories", "area", "context", "promoted_to", "resolution"];
 
 #[derive(Debug, PartialEq)]
 enum Segment {
@@ -110,6 +115,20 @@ impl Template {
             Segment::Placeholder { path, .. } => Some(path.as_str()),
             Segment::Literal(_) => None,
         })
+    }
+
+    /// The placeholder paths no row of `rows` resolves, each once, leaving out
+    /// a path whose first segment is in `OPTIONAL_FIELDS`; none for no rows.
+    pub(crate) fn unmatched_paths(&self, rows: &[JsonValue]) -> Vec<&str> {
+        if rows.is_empty() {
+            return Vec::new();
+        }
+        let mut paths = unmatched_row_paths(rows, self.paths());
+        paths.retain(|p| {
+            let first = p.split('.').next().unwrap_or(p);
+            !OPTIONAL_FIELDS.contains(&first)
+        });
+        paths
     }
 
     pub(crate) fn render(&self, row: &JsonValue) -> String {
@@ -348,6 +367,14 @@ mod tests {
     #[test]
     fn escape_does_not_apply_to_values_or_placeholders() {
         assert_eq!(render("{s}", json!({ "s": r"a\nb" })), r"a\nb");
+    }
+
+    #[test]
+    fn template_unmatched_paths_skip_optional_fields_and_repeats() {
+        let t = Template::parse("{id} {mesage} {mesage} {context} {deps.*.ref}").unwrap();
+        let rows = [json!({ "id": 1, "deps": [] }), json!({ "id": 2 })];
+        assert_eq!(t.unmatched_paths(&rows), ["mesage"]);
+        assert!(t.unmatched_paths(&[]).is_empty());
     }
 
     #[test]
