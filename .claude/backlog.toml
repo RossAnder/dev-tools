@@ -9623,7 +9623,7 @@ tags = [
     "drift",
     "v2-harness-tuning",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-10T04:16:34Z
 last_seen = 2026-11-10T04:16:34Z
 seen_count = 1
@@ -9633,6 +9633,8 @@ flow = "jiggly-exploring-robin"
 context = "drain.md step 3 explains the case in prose. Matching the pre-flight's started-row rule (no commit, agent set) in the tool would remove the special case."
 base_sha = "d3ce04e2998c9b9454dbd56d06d09ec641de7c4a"
 related = ["B-aca96d19"]
+promoted = 2026-11-11
+promoted_to = "v2-harness-tuning"
 
 [[backlog]]
 id = "B-eebed4e1"
@@ -9689,7 +9691,7 @@ tags = [
     "git-status",
     "v2-harness-tuning",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-10T04:42:57Z
 last_seen = 2026-11-10T04:42:57Z
 seen_count = 1
@@ -9700,6 +9702,8 @@ context = "The pre-flight was moved to `tomlctl plan drift --uncommitted --get u
 base_sha = "d3ce04e2998c9b9454dbd56d06d09ec641de7c4a"
 evidence = ["claude/skills/implement-v2-engine/references/drain.md:285"]
 related = ["B-6d577c72"]
+promoted = 2026-11-11
+promoted_to = "v2-harness-tuning"
 
 [[backlog]]
 id = "B-ef0d9fd7"
@@ -9821,7 +9825,7 @@ tags = [
     "gate",
     "v2-harness-tuning",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-10T05:14:21Z
 last_seen = 2026-11-10T05:14:21Z
 seen_count = 1
@@ -9831,6 +9835,8 @@ flow = "human-only-handovers"
 context = "Seen 2026-11-10: milestone A's gates open with the full nextest suite, and drain.md step 7 then appends every writes_build accept check, leaving out only byte-identical commands. Six narrow cargo test and nextest subsets ran after the suite that contains them. Cheap here at a few seconds, costly on a slow crate. A subset cannot be detected mechanically in general. Decided by the user 2026-11-10: fix it at plan time with a marker, an accept-entry field naming the gate that covers the check, written at Write and honoured mechanically at the drain; a drain-time judgement rule was declined. That needs tomlctl schema, plan check and worker-view work, so it goes through a plan, not a direct fix."
 base_sha = "70a012ac9741618025934b4208ae2a17355163b5"
 related = ["B-6d577c72"]
+promoted = 2026-11-11
+promoted_to = "v2-harness-tuning"
 
 [[backlog]]
 id = "B-3ae4a2be"
@@ -10826,7 +10832,7 @@ tags = [
     "hooks",
     "commit-train",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-10T13:50:41Z
 last_seen = 2026-11-10T13:50:41Z
 seen_count = 1
@@ -10835,6 +10841,8 @@ origin = "implement"
 flow = "review-v2-first-run-repairs"
 context = "Each such commit reruns the cli::dispatch::tests subset (one test alone takes over a minute) and glimpse clippy. An 11-commit train took about 40 minutes of hook time on an already gated tree. Workaround used: gate once with the hook's own checks added (the two parity verifiers, fmt, the full suite, glimpse clippy --locked), then commit the train with --no-verify."
 base_sha = "18d17dcff260703f5f701855d50f09d81a2252f0"
+promoted = 2026-11-11
+promoted_to = "v2-harness-tuning"
 
 [[backlog]]
 id = "B-fd05ff34"
@@ -10864,7 +10872,7 @@ tags = [
     "review-v2",
     "tests",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-10T16:59:57Z
 last_seen = 2026-11-10T16:59:57Z
 seen_count = 1
@@ -10878,6 +10886,8 @@ evidence = [
     "claude/workflows/plan-v2-review.js:383",
 ]
 related = ["B-bc4a0080"]
+promoted = 2026-11-11
+promoted_to = "v2-harness-tuning"
 
 [[backlog]]
 id = "B-654e5874"
@@ -11117,7 +11127,7 @@ tags = [
     "triage",
     "v2-harness-tuning",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
 seen_count = 1
@@ -11127,6 +11137,8 @@ flow = "v2-apply"
 context = "Seen in the v2-apply planning session: 37 advisory-tier and re-check findings were hand-fixed then dismissed, against plan-flow.md sections 7 and 10. The re-check's targets held only review apply rows, and review stats --plan-outcomes shows them as dismissed. An 'addressed by author edit' disposition in review triage would record the edited targets, count separately and feed the re-check."
 base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-acba1411"]
+promoted = 2026-11-11
+promoted_to = "v2-harness-tuning"
 
 [[backlog]]
 id = "B-efcdf91b"
@@ -11137,7 +11149,7 @@ tags = [
     "output-options",
     "v2-harness-tuning",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
 seen_count = 1
@@ -11147,6 +11159,8 @@ flow = "v2-apply"
 context = "Reproduce with tasks list --template '{id} [{message}]'. A plan check call used {message} for the detail field and printed blank lines, needing a second call. Looked at 2026-11-11: validate_row_paths in convert.rs passes when any one path matches, by design, because rows are sparse and documented idioms name optional fields (backlog add --template '{action} {id} {advisories}'). A warning for every path absent from all rows would fire on those. A right fix needs each verb's field vocabulary, so a path outside it is refused and an optional one stays quiet."
 base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-9b7257ec"]
+promoted = 2026-11-11
+promoted_to = "v2-harness-tuning"
 
 [[backlog]]
 id = "B-4e2fc7d8"
@@ -11217,7 +11231,7 @@ tags = [
     "plan-review",
     "v2-harness-tuning",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
 seen_count = 1
@@ -11227,6 +11241,8 @@ flow = "v2-apply"
 context = "22 of 39 open findings in the first v2-apply plan review and 21 of 23 in the re-check. Options: have finders and plan-executor supply the edit fields, or have the lead convert at settle."
 base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-1e1be4cf"]
+promoted = 2026-11-11
+promoted_to = "v2-harness-tuning"
 
 [[backlog]]
 id = "B-548dfa4f"
@@ -11238,7 +11254,7 @@ tags = [
     "cost",
     "v2-harness-tuning",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
 seen_count = 1
@@ -11248,6 +11264,8 @@ flow = "v2-apply"
 context = "Two v2-apply plan review runs used 83 agents and about 6.5M tokens, 60 percent of planning wall time; 56 were verifier dispatches at about 60k context each. Batch verifiers per cell, and in flow mode skip the ripple cell or point it at the untracked files."
 base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-05cfc36b"]
+promoted = 2026-11-11
+promoted_to = "v2-harness-tuning"
 
 [[backlog]]
 id = "B-33070446"
@@ -11259,7 +11277,7 @@ tags = [
     "context",
     "v2-harness-tuning",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
 seen_count = 1
@@ -11269,6 +11287,8 @@ flow = "v2-apply"
 context = "One plan-review digest was 16k characters, mostly those two arrays. Collapsing them to counts by default would cut it."
 base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-6dfe5236"]
+promoted = 2026-11-11
+promoted_to = "v2-harness-tuning"
 
 [[backlog]]
 id = "B-06d5e2d9"
@@ -11466,7 +11486,7 @@ tags = [
     "gate",
     "v2-harness-tuning",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
 seen_count = 1
@@ -11476,6 +11496,8 @@ flow = "v2-apply"
 context = "scripts/link-v2-review.sh exits 1 where the config dir holds copies, which caused both user questions and all three handovers of v2-apply. Probe each gate command at Prove or at the implement-v2 pre-flight, with --dry-run where the command has one."
 base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-5680c91a"]
+promoted = 2026-11-11
+promoted_to = "v2-harness-tuning"
 
 [[backlog]]
 id = "B-8f42ffc6"
@@ -11487,7 +11509,7 @@ tags = [
     "speed",
     "v2-harness-tuning",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
 seen_count = 1
@@ -11497,6 +11519,8 @@ flow = "v2-apply"
 context = "Milestones A and C of v2-apply each needed three launches before the gate, an estimated 8 minutes. Evaluating after: premises between waves inside the Workflow would remove the relaunch."
 base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-cab4905f"]
+promoted = 2026-11-11
+promoted_to = "v2-harness-tuning"
 
 [[backlog]]
 id = "B-f8331d1a"
@@ -11508,7 +11532,7 @@ tags = [
     "lanes",
     "v2-harness-tuning",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
 seen_count = 1
@@ -11518,6 +11542,8 @@ flow = "v2-apply"
 context = "In v2-apply review/dispatch.rs and cli/types/review/* chained the graph to 1.26 effective parallelism; one task failed for lacking dispatch.rs, and three passed loose fields instead of an args struct because the re-export sat in a file they did not hold. Done 2026-11-11: write-and-prove.md tells the planner to claim a registration file on every task that registers there. Still open: letting a failed worker return the files it needs so the drain widens the row mechanically, and any restructuring that removes the shared file from the lane, such as per-verb registration."
 base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-acba1411"]
+promoted = 2026-11-11
+promoted_to = "v2-harness-tuning"
 
 [[backlog]]
 id = "B-02070fca"
@@ -11548,7 +11574,7 @@ tags = [
     "context",
     "v2-harness-tuning",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
 seen_count = 1
@@ -11558,6 +11584,8 @@ flow = "v2-apply"
 context = "It read spec.accept for twelve tasks (12k characters) and wrote the launch args twice per launch. tasks ready has no flag that emits the args object or the gate command list."
 base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-27f5ba35"]
+promoted = 2026-11-11
+promoted_to = "v2-harness-tuning"
 
 [[backlog]]
 id = "B-804db301"
@@ -11569,7 +11597,7 @@ tags = [
     "discipline",
     "v2-harness-tuning",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
 seen_count = 1
@@ -11579,6 +11607,8 @@ flow = "v2-apply"
 context = "5 of 42 v2-apply workers ran test binaries the gate owns and one ran a recursive grep from the root; the orchestrator saw only the one that reported itself."
 base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-c866bda9"]
+promoted = 2026-11-11
+promoted_to = "v2-harness-tuning"
 
 [[backlog]]
 id = "B-93fd1ef6"
@@ -11586,7 +11616,7 @@ kind = "annoyance"
 summary = "a subagent Write to a file named findings.md is refused by the harness's report-file guard"
 area = "claude/skills/implement-v2-engine/references/findings.md"
 tags = ["implement-v2"]
-status = "open"
+status = "promoted"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
 seen_count = 1
@@ -11596,6 +11626,8 @@ flow = "v2-apply"
 context = "The worker creating the reference worked around it with touch plus Edit. Rename the reference or note the collision."
 base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-c71f122d"]
+promoted = 2026-11-11
+promoted_to = "v2-harness-tuning"
 
 [[backlog]]
 id = "B-b868ae37"
@@ -11629,7 +11661,7 @@ tags = [
     "context",
     "v2-harness-tuning",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
 seen_count = 1
@@ -11639,6 +11671,8 @@ flow = "v2-apply"
 context = "A 31-command gate returned 13.5k characters, mostly pass blocks. One line per passing command would do."
 base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-1e1be4cf"]
+promoted = 2026-11-11
+promoted_to = "v2-harness-tuning"
 
 [[backlog]]
 id = "B-f476684c"
@@ -11683,7 +11717,7 @@ tags = [
     "implement-v2",
     "reproduce",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
 seen_count = 1
@@ -11693,6 +11727,8 @@ flow = "v2-apply"
 context = "Dropped during the v2-apply run as harmless today. Check whether a later round can read a stale payload from the earlier one."
 base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-4e19bbd3"]
+promoted = 2026-11-11
+promoted_to = "v2-harness-tuning"
 
 [[backlog]]
 id = "B-36d26adc"
@@ -11721,7 +11757,7 @@ tags = [
     "workflow",
     "schema",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-11T08:17:02Z
 last_seen = 2026-11-11T08:17:02Z
 seen_count = 1
@@ -11735,6 +11771,8 @@ evidence = [
     "tomlctl/src/review/schema_out.rs:326",
 ]
 related = ["B-c866bda9"]
+promoted = 2026-11-11
+promoted_to = "v2-harness-tuning"
 
 [[backlog]]
 id = "B-4b11a10c"
@@ -11745,7 +11783,7 @@ tags = [
     "apply-v2",
     "doc-drift",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-11T08:17:02Z
 last_seen = 2026-11-11T08:17:02Z
 seen_count = 1
@@ -11759,6 +11797,8 @@ evidence = [
     "claude/skills/apply-v2-engine/SKILL.md:102",
 ]
 related = ["B-3f45d7d9"]
+promoted = 2026-11-11
+promoted_to = "v2-harness-tuning"
 
 [[backlog]]
 id = "B-8aadb175"
@@ -11775,3 +11815,197 @@ origin = "implement-v2"
 flow = "v2-apply"
 context = "Finding::text now exists in review/store.rs; converting the remaining reads (tier, severity, converted_to, target) finishes the consolidation. Mechanical; reported by the worker that added the accessor."
 base_sha = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+
+[[backlog]]
+id = "B-7b9d8057"
+kind = "debt"
+summary = "review schedule takes a fix task's files from the finding's anchors only, so a fix that names another file or a test file leaves the worker unable to make it"
+area = "tomlctl/src/review/schedule.rs"
+tags = []
+status = "promoted"
+created = 2026-11-11T08:47:28Z
+last_seen = 2026-11-11T08:47:28Z
+seen_count = 1
+dedup_id = "7b9d80575ad0f8dd"
+origin = "apply-v2"
+flow = "v2-apply"
+context = "Seen twice in the v2-apply apply-1 run. F131's fix also named implement-v2-engine/SKILL.md, outside its task's files, which cost an extra minted task and launch. F87, F92 and F97 named integration test files under tomlctl/tests, so the worker wrote unit tests inside the modules instead. Until fixed, read each would-mint row's files against its finding's fix text at the apply preview and widen files through an audited update before launch."
+base_sha = "38a70892a3912cd050e5ee29c0b9cdfbcfc81a91"
+promoted = 2026-11-11
+promoted_to = "v2-harness-tuning"
+
+[[backlog]]
+id = "B-e2b98a71"
+kind = "annoyance"
+summary = "review schedule mints apply rows with no needs on the done rows holding the same files, so plan check and tasks check print a dag/unreachable-claim warning per pair"
+area = "tomlctl/src/review/schedule.rs"
+tags = []
+status = "promoted"
+created = 2026-11-11T08:47:28Z
+last_seen = 2026-11-11T08:47:28Z
+seen_count = 1
+dedup_id = "e2b98a7112482ef9"
+origin = "apply-v2"
+flow = "v2-apply"
+context = "Scheduling 15 rows into v2-apply made plan check and tasks check each print about 50 warnings, which buries any real one. drain.md's rule for minted rows, needs follows the files, is not applied by the verb. Either schedule adds the latest holder of each file to needs, or the check skips a pair whose earlier row is done with a commit. The warnings are harmless meanwhile: exit status stays 0."
+base_sha = "38a70892a3912cd050e5ee29c0b9cdfbcfc81a91"
+promoted = 2026-11-11
+promoted_to = "v2-harness-tuning"
+
+[[backlog]]
+id = "B-590ba0b1"
+kind = "debt"
+summary = "the reproduce check's units and the gate's accept-check list are assembled by hand from tasks and finding_links output, with no verb that emits them"
+area = "claude/skills/implement-v2-engine"
+tags = []
+status = "promoted"
+created = 2026-11-11T08:47:28Z
+last_seen = 2026-11-11T08:47:28Z
+seen_count = 1
+dedup_id = "590ba0b1cdd3a39e"
+origin = "apply-v2"
+flow = "v2-apply"
+context = "In the v2-apply apply-1 run the orchestrator piped tomlctl output through a script to build both, which the tomlctl guidance canon forbids. The by-hand rules are findings.md's highest-id row owns a finding several rows fix, and drain.md step 7's writes_build filter with de-duplication. A verb emitting the reproduce args object for a flow and milestone, and one emitting the gate's command list, would remove both."
+base_sha = "38a70892a3912cd050e5ee29c0b9cdfbcfc81a91"
+promoted = 2026-11-11
+promoted_to = "v2-harness-tuning"
+
+[[backlog]]
+id = "B-3a80ce63"
+kind = "annoyance"
+summary = "each fixed finding adds one reproduce-status accept check to the gate, so a 32-finding milestone sends 32 commands the engine already read from the store"
+area = "claude/skills/implement-v2-engine"
+tags = []
+status = "promoted"
+created = 2026-11-11T08:47:28Z
+last_seen = 2026-11-11T08:47:28Z
+seen_count = 1
+dedup_id = "3a80ce6384897750"
+origin = "apply-v2"
+flow = "v2-apply"
+context = "The v2-apply apply-1 gate ran 32 reproduce-status commands through the verification agent right after the reproduce check read the same verdicts. One aggregate check per milestone, expecting every fixed finding gone, would keep the guarantee that a milestone cannot commit with a finding outstanding."
+base_sha = "38a70892a3912cd050e5ee29c0b9cdfbcfc81a91"
+related = ["B-56a8a9ff"]
+promoted = 2026-11-11
+promoted_to = "v2-harness-tuning"
+
+[[backlog]]
+id = "B-4be1dc74"
+kind = "bug"
+summary = "a replayed review add supersedes only the cell's unverified rows, so an advisory row is written twice"
+area = "tomlctl/src/review/add.rs"
+tags = [
+    "review-v2",
+    "v2-harness-tuning",
+]
+status = "promoted"
+created = 2026-11-11T08:59:28Z
+last_seen = 2026-11-11T08:59:28Z
+seen_count = 1
+dedup_id = "4be1dc742efea0eb"
+origin = "session-trace"
+flow = "v2-apply"
+context = "Run U3 of v2-apply, cell C27: the first add landed F109 to F116 and refused one row on a 162-character summary; the method skill says to fix and resubmit the full set once, and the replay superseded F109 to F115 but left advisory F116 beside its copy F125. The supersede filter in add.rs keeps only rows whose status is Unverified, and an advisory row is born open. The orchestrator then links the pair by hand and review resolve keeps reporting it pending with verdicts incomplete, since advisory rows get no verdict. Until fixed, after any replayed add check the cell for a doubled advisory and park one."
+base_sha = "38a70892a3912cd050e5ee29c0b9cdfbcfc81a91"
+evidence = ["tomlctl/src/review/add.rs:142"]
+related = ["B-607f983f"]
+promoted = 2026-11-11
+promoted_to = "v2-harness-tuning"
+
+[[backlog]]
+id = "B-0bb55cd5"
+kind = "annoyance"
+summary = "implement-v2-milestone waits for a whole wave before starting the next, so file-disjoint tasks idle behind one long task"
+area = "claude/workflows/implement-v2-milestone.js"
+tags = [
+    "implement-v2",
+    "speed",
+    "v2-harness-tuning",
+]
+status = "promoted"
+created = 2026-11-11T08:59:28Z
+last_seen = 2026-11-11T08:59:28Z
+seen_count = 1
+dedup_id = "0bb55cd58fd34207"
+origin = "session-trace"
+flow = "v2-apply"
+context = "v2-apply apply-1, run wf_62701b38-ed4, max_parallel 4: wave 1 held deep task 41 (12 findings, about 7 minutes) beside three lite tasks that finished in about 20 seconds, and the other 11 file-disjoint tasks waited for it. The run took about 9.5 minutes where a rolling pool, starting the next ready task as a slot frees, would have taken about 7. The script awaits parallel() over the wave. Same family as B-8f42ffc6. Until fixed, nothing to do at the call site; a milestone with one large task and many small ones pays the wait."
+base_sha = "38a70892a3912cd050e5ee29c0b9cdfbcfc81a91"
+evidence = ["claude/workflows/implement-v2-milestone.js:238"]
+related = ["B-8f42ffc6"]
+promoted = 2026-11-11
+promoted_to = "v2-harness-tuning"
+
+[[backlog]]
+id = "B-9728b95d"
+kind = "debt"
+summary = "an apply fix task's only accept check is reproduce-status, which cannot pass until the orchestrator's reproduce check has run"
+area = "tomlctl/src/review/schedule.rs"
+tags = [
+    "apply-v2",
+    "accept",
+    "v2-harness-tuning",
+]
+status = "promoted"
+created = 2026-11-11T08:59:28Z
+last_seen = 2026-11-11T08:59:28Z
+seen_count = 1
+dedup_id = "9728b95d8260a0db"
+origin = "session-trace"
+flow = "v2-apply"
+context = "v2-apply apply-1: the worker view printed tomlctl review reproduce-status <id> --expect gone as each fix task's Accept, with Writes build yes. The verdict it reads is recorded only by the reproduce check that runs after every worker has returned, so the worker has no acceptance it can run. Task 52's worker ran it, got exit 1 with a null verdict, and marked the task done anyway; the other 14 skipped it. A stricter worker would return failed. Options: have the worker view mark the check as run by the gate, or have review schedule add a worker-runnable check beside it. Related to B-3a80ce63, which covers the same checks' cost at the gate."
+base_sha = "38a70892a3912cd050e5ee29c0b9cdfbcfc81a91"
+evidence = ["tomlctl/src/review/schedule.rs:709"]
+related = [
+    "B-3a80ce63",
+    "B-9e645146",
+]
+promoted = 2026-11-11
+promoted_to = "v2-harness-tuning"
+
+[[backlog]]
+id = "B-1bb57b0e"
+kind = "annoyance"
+summary = "the reproduce check launches one Opus verifier per task even when every finding in the unit is a grep-decidable cleanup or doc row"
+area = "claude/workflows/review-v2.js"
+tags = [
+    "apply-v2",
+    "reproduce",
+    "cost",
+    "v2-harness-tuning",
+]
+status = "promoted"
+created = 2026-11-11T08:59:28Z
+last_seen = 2026-11-11T08:59:28Z
+seen_count = 1
+dedup_id = "1bb57b0e7a18e990"
+origin = "session-trace"
+flow = "v2-apply"
+context = "v2-apply apply-1, run wf_d54910b8-e81: 15 review-verifier launches, each starting at about 45 thousand tokens of context before any work, and 12 of them finished in 11 to 27 seconds on doc or cleanup rows whose removed text a grep settles. The review wave already routes such rows to the pooled Haiku review-checker; reproduce mode has no such route. Options: route units whose findings are all cleanup or doc rows to the checker, or pool several small units into one verifier. Same shape as B-548dfa4f on the plan side."
+base_sha = "38a70892a3912cd050e5ee29c0b9cdfbcfc81a91"
+related = ["B-548dfa4f"]
+promoted = 2026-11-11
+promoted_to = "v2-harness-tuning"
+
+[[backlog]]
+id = "B-72f3bbac"
+kind = "annoyance"
+summary = "the 450-character target did not stop sweeper cover notes being refused at the 600 cap, and finder field caps are still met only at review add"
+area = "tomlctl/src/review"
+tags = [
+    "review-v2",
+    "caps",
+    "v2-harness-tuning",
+]
+status = "promoted"
+created = 2026-11-11T08:59:28Z
+last_seen = 2026-11-11T08:59:28Z
+seen_count = 1
+dedup_id = "72f3bbacaba62b80"
+origin = "session-trace"
+flow = "v2-apply"
+context = "Run U3 of v2-apply, after B-00ae0571's fix: verifier rationales were no longer refused, but all three Haiku sweepers were (cover notes of 680, 737 and 897 characters, the last refused again at 628), and two finders were refused at review add (failure_scenario at 617 against 600, summary at 162 against 160). The summary refusal forced the full-set replay that doubled an advisory row. B-00ae0571's other options were never taken: a truncate flag that cuts at the cap and says so, or a larger cap. A dry-run length check before the write would also do."
+base_sha = "38a70892a3912cd050e5ee29c0b9cdfbcfc81a91"
+related = ["B-00ae0571"]
+promoted = 2026-11-11
+promoted_to = "v2-harness-tuning"

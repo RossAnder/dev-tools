@@ -1,0 +1,18 @@
+slug = "v2-harness-tuning"
+plan_path = "docs/flows/v2-harness-tuning/brief.md"
+status = "draft"
+created = 2026-11-11
+updated = 2026-11-11
+scope = []
+
+[tasks]
+total = 0
+completed = 0
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/v2-harness-tuning/review-ledger.toml"
+optimise_findings = ".claude/flows/v2-harness-tuning/optimise-findings.toml"
+execution_record = ".claude/flows/v2-harness-tuning/execution-record.toml"
+plan_review_findings = ".claude/flows/v2-harness-tuning/plan-review-findings.toml"
+tasks = ".claude/flows/v2-harness-tuning/tasks.toml"
