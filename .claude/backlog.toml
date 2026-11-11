@@ -10877,7 +10877,7 @@ tags = [
     "review-v2",
     "tests",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-11-10T16:59:57Z
 last_seen = 2026-11-10T16:59:57Z
 seen_count = 1
@@ -10893,6 +10893,11 @@ evidence = [
 related = ["B-bc4a0080"]
 promoted = 2026-11-11
 promoted_to = "v2-harness-tuning"
+resolved = 2026-11-11
+resolution = "resolved by flow `v2-harness-tuning` (tasks test-the-workflow-scripts-logic-under-stubbed-globals)"
+resolved_flow = "v2-harness-tuning"
+resolved_tasks = ["test-the-workflow-scripts-logic-under-stubbed-globals"]
+resolved_commits = ["37de55c73103fef9a07ba5c16906d8397313fe07"]
 
 [[backlog]]
 id = "B-654e5874"
@@ -11274,7 +11279,7 @@ tags = [
     "cost",
     "v2-harness-tuning",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
 seen_count = 1
@@ -11286,6 +11291,11 @@ base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-05cfc36b"]
 promoted = 2026-11-11
 promoted_to = "v2-harness-tuning"
+resolved = 2026-11-11
+resolution = "resolved by flow `v2-harness-tuning` (tasks pass-batch_defects-from-the-plan-review-wrapper-and-batch-its-reverify)"
+resolved_flow = "v2-harness-tuning"
+resolved_tasks = ["pass-batch_defects-from-the-plan-review-wrapper-and-batch-its-reverify"]
+resolved_commits = ["37de55c73103fef9a07ba5c16906d8397313fe07"]
 
 [[backlog]]
 id = "B-33070446"
@@ -11982,7 +11992,7 @@ tags = [
     "speed",
     "v2-harness-tuning",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-11-11T08:59:28Z
 last_seen = 2026-11-11T08:59:28Z
 seen_count = 1
@@ -11995,6 +12005,11 @@ evidence = ["claude/workflows/implement-v2-milestone.js:238"]
 related = ["B-8f42ffc6"]
 promoted = 2026-11-11
 promoted_to = "v2-harness-tuning"
+resolved = 2026-11-11
+resolution = "resolved by flow `v2-harness-tuning` (tasks run-a-milestones-tasks-through-a-rolling-pool)"
+resolved_flow = "v2-harness-tuning"
+resolved_tasks = ["run-a-milestones-tasks-through-a-rolling-pool"]
+resolved_commits = ["37de55c73103fef9a07ba5c16906d8397313fe07"]
 
 [[backlog]]
 id = "B-9728b95d"
@@ -12039,7 +12054,7 @@ tags = [
     "cost",
     "v2-harness-tuning",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-11-11T08:59:28Z
 last_seen = 2026-11-11T08:59:28Z
 seen_count = 1
@@ -12051,6 +12066,11 @@ base_sha = "38a70892a3912cd050e5ee29c0b9cdfbcfc81a91"
 related = ["B-548dfa4f"]
 promoted = 2026-11-11
 promoted_to = "v2-harness-tuning"
+resolved = 2026-11-11
+resolution = "resolved by flow `v2-harness-tuning` (tasks route-reproduce-units-to-the-checker-and-batch-plan-defects-in-review-v2js)"
+resolved_flow = "v2-harness-tuning"
+resolved_tasks = ["route-reproduce-units-to-the-checker-and-batch-plan-defects-in-review-v2js"]
+resolved_commits = ["37de55c73103fef9a07ba5c16906d8397313fe07"]
 
 [[backlog]]
 id = "B-72f3bbac"

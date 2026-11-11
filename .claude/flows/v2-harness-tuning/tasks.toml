@@ -1596,7 +1596,7 @@ check = "grep -q 'nextWave' claude/workflows/implement-v2-milestone.js && grep -
 at = "base"
 
 [specs.premises.probe]
-at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+at = "58b7975e9649dace8658d637a1334b2036de56b6"
 neg_rc = 0
 verdict = "holds"
 
@@ -1693,7 +1693,7 @@ check = "grep -q 'runUnit' claude/workflows/review-v2.js && grep -q 'CHECKER_BAT
 at = "base"
 
 [specs.premises.probe]
-at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+at = "58b7975e9649dace8658d637a1334b2036de56b6"
 neg_rc = 0
 verdict = "holds"
 
@@ -1729,7 +1729,7 @@ check = "grep -q 'workflow(' claude/workflows/plan-v2-review.js && grep -q 'reve
 at = "base"
 
 [specs.premises.probe]
-at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+at = "58b7975e9649dace8658d637a1334b2036de56b6"
 neg_rc = 0
 verdict = "holds"
 
@@ -1844,7 +1844,7 @@ check = "node --version"
 at = "base"
 
 [specs.premises.probe]
-at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+at = "58b7975e9649dace8658d637a1334b2036de56b6"
 neg_rc = 0
 verdict = "holds"
 
@@ -1854,7 +1854,7 @@ check = "grep -q 'fn command_lint_workflow_scripts' tomlctl/src/cli/dispatch/tes
 at = "base"
 
 [specs.premises.probe]
-at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+at = "58b7975e9649dace8658d637a1334b2036de56b6"
 neg_rc = 0
 verdict = "holds"
 
@@ -2362,6 +2362,31 @@ text = "Change the three `print_json_compact(...)` calls in `launch_args`, `gate
 binding = "required"
 detail = "`plan stage` already prints through `print_json_line`. Confirm with `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(every_case_honours_the_output_options::plan)'`, whose three emit cases are already in tomlctl/tests/output_options.rs"
 
+[[specs]]
+ref = "align-the-checkers-reproduce-prompt-with-its-agent-body"
+outcome = "The prompt review-v2.js gives a reproduce-mode checker says what the Reproduce check section of claude/agents/review-checker.md says: rows are read with `--for checker`, and only `gone` findings get a line in the payload"
+constraints = [
+    "Edit only the prose of the template string `checkerReproducePrompt` returns; keep its assignment lines (mode, store, flow, milestone, round, run directory, batch, findings), the task named for each finding, the payload path and the returned shape",
+    "Leave SCRIPT_VERSION and every other function as they are",
+    "Change no test: claude/workflows/tests/harness.test.mjs must pass unchanged",
+]
+premises = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the checker prompt reads its rows as a checker"
+check = "grep -q -- '--for checker' claude/workflows/review-v2.js"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[[specs.means]]
+text = "In the prompt, replace `--for implementer` with `--for checker`, and replace `Write one JSON line per finding` with wording that writes one JSON line per `gone` finding and none for an `unsettled` one; the return still lists every finding"
+binding = "required"
+detail = "The verifier's reproducePrompt also uses `--for implementer`; leave that one alone. Confirm with `node --test claude/workflows/tests/harness.test.mjs` and `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`"
+
 [[milestones]]
 id = "A"
 gates = [
@@ -2483,6 +2508,15 @@ old = """["Touch no file outside this task's files.","Every fenced `tomlctl` com
 new = """["Touch no file outside this task's files.","Every fenced `tomlctl` command in a reference takes single-token placeholders.","`plan_view_writes_build` stays in the feature list.","An earlier pass of this task left its edits in every file; read docs/flows/v2-harness-tuning/notes/run/task-25.md and your own diff first, redo nothing that is already there, and confirm with `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(every_case_honours_the_output_options::plan)'`."]"""
 actor = "orchestrator"
 reason = "task 25 failed only on the plan emit output-options cases, whose cause is the printer in emit.rs; task 41 fixes that file, so this task now runs after it and confirms its own work, which the first pass left in place"
+
+[[changes]]
+at = 2026-11-11T11:36:00Z
+ref = "align-the-checkers-reproduce-prompt-with-its-agent-body"
+field = "*"
+old = ""
+new = "Align the checker's reproduce prompt with its agent body"
+actor = "orchestrator"
+reason = "drain D round 1: tasks 28 and 30 landed two accounts of one procedure; checkerReproducePrompt in review-v2.js tells the checker to read rows --for implementer and write a line per finding, while the Reproduce check section of review-checker.md reads --for checker and writes only gone rows"
 
 [[items]]
 id = 1
@@ -3149,7 +3183,7 @@ id = 26
 ref = "run-a-milestones-tasks-through-a-rolling-pool"
 title = "Run a milestone's tasks through a rolling pool"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "D"
 phase = ""
 phase_depth = 0
@@ -3161,15 +3195,15 @@ deps_note = ""
 action = "Replace the barrier waves of `implement-v2-milestone.js` with a rolling pool, gate a task on its `after` list, and carry `needs_files` through the return and the index, as `design/shapes.md#worker-return` states."
 detail = "Today `nextWave` picks a wave and the main loop awaits `parallel()` over it, so every wave lasts as long as its slowest worker. Keep `results`, `pending`, `settleBlocked` and `toEntry`. Hold in-flight tasks in a Map from id to a promise of `{t, ret}` and the file keys they own in a Set; fill free slots, in args order and up to `max_parallel`, with tasks whose `needs` and `after` ids all have a `done` result and whose file keys are free; await `Promise.race` over the in-flight promises; record the entry, release its keys, run `settleBlocked`, repeat. The nothing-could-start failure fires only when nothing is in flight and nothing can start. A task behind an `after` id that did not return `done` settles as `blocked`, like one behind a failed need. Validate `after` with `needs`: ids must be in `tasks`, and the two together must not cycle. `siblings:` becomes the files of every other task that has not yet returned. A task with a non-empty `after` gets one more prompt line: `after-premises: check yours before editing`. Drop `wave N` from the labels and say pool, not waves, in the meta description, phase detail and header comment. Add optional `needs_files` to `RETURN_SCHEMA` and copy it to the index entry. Bump `SCRIPT_VERSION`. `agent()` promises started outside `parallel()` have a precedent in the checker pool of `claude/workflows/review-v2.js`. Check with `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "37de55c73103fef9a07ba5c16906d8397313fe07"
 
 [[items]]
 id = 27
 ref = "plan-workers-check-after-premises-and-name-the-files-they-lack"
 title = "Plan workers check after: premises and name the files they lack"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "D"
 phase = ""
 phase_depth = 0
@@ -3184,15 +3218,15 @@ deps_note = ""
 action = "Add two steps to the shared plan-worker procedure in both worker agents: check your own `after:` premises first when the assignment says so, and return `needs_files` when the task cannot be done inside its files; and replace the `Writes build` rule with the `Run by:` rule."
 detail = "The procedure is the `plan-worker-procedure` shared block, byte-identical in both files, so make the same edit in each. (1) When the assignment carries `after-premises: check yours before editing`, the check comes before the step that sets the row `in-progress`, because the emit covers pending rows only: make a file with `mktemp`, run `tomlctl plan probes --slug <slug> --emit --premises --task <id>` with stdout to it, read the script, run it with `timeout 300 bash <file>`, and record nothing. When a premise line exits non-zero, edit nothing, set your row `failed`, and name the premise and its output in your note. A worker that finds its row already `in-progress` on entry is a restart: it skips this check, which its first attempt ran. (2) When the task cannot be completed inside its `files`, do not edit the other file: set `failed` and return `needs_files` listing each repo-relative path the task would also need, with one line per path in the note saying why. (3) Where the procedure tells the worker which accept checks to run by `Writes build`, say instead: run the checks the view marks `Run by: worker`, and never one marked `Run by: gate`; where a view has no `Run by:` line, a `Writes build: no` check is the worker's. Add `needs_files` to the return object the agent describes. The shape is `design/shapes.md#worker-return`. Check with `bash scripts/verify-shared-blocks.sh` and `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "37de55c73103fef9a07ba5c16906d8397313fe07"
 
 [[items]]
 id = 28
 ref = "route-reproduce-units-to-the-checker-and-batch-plan-defects-in-review-v2js"
 title = "Route reproduce units to the checker and batch plan defects in review-v2.js"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "D"
 phase = ""
 phase_depth = 0
@@ -3204,15 +3238,15 @@ deps_note = ""
 action = """In `review-v2.js`, pool `route: "checker"` reproduce units into `review-checker` batches with a verifier fallback, and batch a cell's single-verifier defects under the `batch_defects` arg, as `design/shapes.md#reproduce-checker` and `design/shapes.md#plan-batching` state."""
 detail = "Reproduce mode is the early-return block that validates `units` and runs `runUnit` per unit under `parallel`. Accept an optional `route` on a unit, `verifier` when absent. Pool the findings of checker units into batches of `CHECKER_BATCH` and dispatch `review-checker` for each with the prompt lines, payload name and return schema of `design/shapes.md#reproduce-checker`: the prompt carries the run directory and a batch number, and the agent's schema is `{reproductions: [{finding, verdict}]}` with `verdict` one of `gone` and `unsettled`. Run `runUnit` for each unit holding a finding the checker returned `unsettled` or did not return, beside every verifier unit. The mode's index keeps one entry per unit and gains `agents`, the number of agents launched. In the wave mode, `routeCell` sends each verifier-routed non-minor defect to `verifyOne`: when `args.batch_defects` is true, a cell's such singles whose cell-return entry has no true `same_as` go through `verifyBatch` as one batch of kind `defect` when there are two or more, and an entry with `same_as` true stays on `verifyOne`. The cell return carries that key once the tomlctl task that adds it lands; an entry without it counts as not carrying one. Panels are unchanged. Bump `SCRIPT_VERSION`. Check with `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "37de55c73103fef9a07ba5c16906d8397313fe07"
 
 [[items]]
 id = 29
 ref = "pass-batch_defects-from-the-plan-review-wrapper-and-batch-its-reverify"
 title = "Pass batch_defects from the plan review wrapper and batch its reverify"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "D"
 phase = ""
 phase_depth = 0
@@ -3227,15 +3261,15 @@ deps_note = ""
 action = "In `plan-v2-review.js`, pass `batch_defects: true` in the args of each `review-v2-pipeline` launch, and send the reverify ids as one batch instead of one agent per id."
 detail = "The pipeline launch is the `workflow(...)` call that passes the wave's cells and schemas. `reverify` today is one agent per id run under `parallel`, each returning the bare verdict-return schema. Add an optional `reverify_single` list of finding ids to the settle return schema; send each id in it to a `review-verifier` of its own, as today, and every other reverify id in one `review-verifier` dispatch returning `{verdicts: [...]}` with the verdict-return schema as the items schema. An id the batch does not return counts as unverified, as a failed single does today. In `claude/agents/plan-review-lead.md`, settle phase: tell the lead to read each reverify id's `same_as` through the audit projection it already uses for rule-out hits, and to list under `reverify_single` the ids that carry one, so a verdict can still strike the link; add the key to the return object the agent describes. The shape is `design/shapes.md#plan-batching`. Bump `SCRIPT_VERSION`. Check with `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "37de55c73103fef9a07ba5c16906d8397313fe07"
 
 [[items]]
 id = 30
 ref = "teach-the-checker-to-record-a-reproduction"
 title = "Teach the checker to record a reproduction"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "D"
 phase = ""
 phase_depth = 0
@@ -3255,15 +3289,15 @@ deps_note = ""
 action = "Add a reproduce section to `review-checker.md`, and reword the `review-v2-store-writer` shared block in all seven agents where it says `reproduce` is a verifier's verb."
 detail = """The checker's reproduce section follows `design/shapes.md#reproduce-checker`: the assignment names `mode: reproduce`, the store, flow, milestone, round, run directory, a batch number and the finding ids. For each finding, read it with `tomlctl review show` for the checker role; when it is a `change` or `remove` row with `old` text, its verdict is `gone` only when that text is absent at the anchor, with the grep as its citation; in every other case, an `add` row among them, write no row and return the finding as `unsettled`. It never records `reproduces`. Write the `gone` rows with the Write tool to `payloads/reproduce-checker-<batch>.ndjson` in the run directory, each carrying `"by": "checker"` beside the keys `claude/skills/tomlctl/references/review-apply.md` lists for a reproduction, and load the file with `tomlctl review reproduce` and its `--ndjson` flag; the verb has no `--by` flag. Return `{"reproductions": [{"finding", "verdict"}]}` with one entry per finding given. The shared block `review-v2-store-writer` is byte-identical across the seven files; change the one sentence that names who writes `reproduce` so it reads a verifier or, in reproduce mode, a checker, and make the identical edit in each. `review-finder.md` and `review-finder-cf.md` stay byte-identical below the frontmatter. Check with `bash scripts/verify-shared-blocks.sh` and `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "37de55c73103fef9a07ba5c16906d8397313fe07"
 
 [[items]]
 id = 31
 ref = "state-the-plan-familys-batched-verification-in-the-review-engine"
 title = "State the plan family's batched verification in the review engine"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "D"
 phase = ""
 phase_depth = 0
@@ -3278,15 +3312,15 @@ deps_note = ""
 action = "Revise the depth envelope in `review-v2-engine/SKILL.md` and the verifier rules in `agent-waves.md` so the plan family verifies a cell's critical and major defects in one batch, a row with `same_as` excepted."
 detail = "The envelope today gives one verifier per critical or major defect. State the plan family's rule beside it: under the `plan-v2-review` Workflow the pipeline runs with `batch_defects`, so a cell's single-verifier defects go to one batch when there are two or more, a row carrying `same_as` stays single so `--strike-same-as` still works, and reverify is one batch. Code and perf families keep the present rule. In `agent-waves.md`, the Agent-wave fallback for a plan run follows the same batching. Check with `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "37de55c73103fef9a07ba5c16906d8397313fe07"
 
 [[items]]
 id = 32
 ref = "test-the-workflow-scripts-logic-under-stubbed-globals"
 title = "Test the Workflow scripts' logic under stubbed globals"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "D"
 phase = ""
 phase_depth = 0
@@ -3305,8 +3339,8 @@ deps_note = ""
 action = "Write one `node:test` file that runs `review-v2.js`, `plan-v2-review.js` and `implement-v2-milestone.js` under stubbed runtime globals, and a Rust test in `cli::dispatch::tests` that runs it with `node --test` and fails when node is absent."
 detail = "Loading: read a script's source, rewrite `export const meta` to `const meta`, and build an AsyncFunction whose parameters are the stubbed globals `args`, `agent`, `parallel`, `pipeline`, `phase`, `log`, `workflow`; the script's top-level `return` becomes the resolved value. Stub semantics, which the tests state in comments: `agent(prompt, opts)` returns a canned object chosen by `opts.agentType` or `opts.label`, or null for a dead agent; `parallel(thunks)` resolves each thunk and turns one that throws into null, never rejecting; `pipeline(items, ...stages)` passes `(previous, item, index)` to each stage and turns an item whose stage throws into null; `workflow(name, args)` runs the loaded child script with the same stubs and throws on an unknown name; `phase` and `log` record. Cases for `review-v2.js`: the agent count of a wave with a cell, a panel, a minor batch and a checker pool with one reroute; the 300-character escalation cap; `batch_defects` sending two singles of one cell to one batch and keeping a `same_as` row single; reproduce mode sending a checker unit to the checker and its unsettled finding to a verifier; a null agent filling the error row. For `plan-v2-review.js`: baseline key matching, with an unknown key an error and a `none` line passed through; reverify skipping an id already unverified; the agent total adding the child's `agents`. For `implement-v2-milestone.js`: a short task starting while a long file-disjoint task is in flight; an `after` task starting only once its target is done, and blocked when the target fails; two tasks sharing a file never in flight together; `needs_files` reaching the index. The Rust test, named `workflow_scripts_logic_passes_under_node`, goes beside `command_lint_workflow_scripts` in `lint.rs`, runs `node --test claude/workflows/tests/` from the repo root, and fails with a message naming node when the binary is missing or the run exits non-zero. Run the suite yourself with `node --test claude/workflows/tests/`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "37de55c73103fef9a07ba5c16906d8397313fe07"
 
 [[items]]
 id = 33
@@ -3518,3 +3552,23 @@ detail = ""
 acceptance = ""
 agent = "plan-worker-lite"
 commit = "8112280301ab49605128ab370e0a88a5932f14f6"
+
+[[items]]
+id = 42
+ref = "align-the-checkers-reproduce-prompt-with-its-agent-body"
+title = "Align the checker's reproduce prompt with its agent body"
+effort = "S"
+status = "done"
+checkpoint = "D"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/workflows/review-v2.js"]
+needs = [32]
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "37de55c73103fef9a07ba5c16906d8397313fe07"
