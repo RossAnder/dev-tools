@@ -63,7 +63,7 @@ Read it two ways:
 
 ### What the run's agents ran
 
-The build discipline lets a worker compile-check and run narrow checks, never a full build or test suite; the gate owns those. Audit the run against it. The transcript directory is the path on the `Transcript dir:` line of the Workflow tool's launch result, which the launch step kept in `<scratch>`. A run with no kept directory, such as an abandoned run settled at re-entry, is not audited, and the report says so.
+The build discipline lets a worker compile-check and run narrow checks, never a full build or test suite; the gate owns those. Audit the run against it. The transcript directory is the path on the `Transcript dir:` line of the Workflow tool's launch result, which the launch step kept in `<scratch>/implement-<id>-<round>-transcripts.txt`. A run with no kept directory, such as an abandoned run settled at re-entry, is not audited, and the report says so.
 
 ```bash
 tomlctl agents audit --transcripts <dir>

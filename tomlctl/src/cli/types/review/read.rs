@@ -23,7 +23,7 @@ pub(crate) struct ReviewListArgs {
     #[arg(
         long = "status",
         value_name = "STATUS",
-        help = "unverified|superseded|open|refuted|merged|parked|dismissed|deferred|backlogged|converted|resolved|exported (default: every status except superseded)"
+        help = "unverified|superseded|open|refuted|merged|parked|dismissed|deferred|backlogged|converted|resolved|exported|scheduled (default: every status except superseded)"
     )]
     pub(crate) status: Option<String>,
     #[arg(

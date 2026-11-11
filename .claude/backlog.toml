@@ -12251,3 +12251,211 @@ flow = "v2-harness-tuning"
 context = "plan_review_state in plan/store.rs and `plan emit reproduce-units` in plan/emit.rs read a linked review store through crate::io::read_doc and pick fields by name, because review::store::load is private to the review module. A renamed review field would read as absent there rather than fail to compile. Exposing a typed loader (or a narrow typed accessor) from review/mod.rs would let both readers use it."
 base_sha = "a28f93dcdf1f95e21e6e3e361d65fca1707c472f"
 related = ["B-1ec5ebb6"]
+
+[[backlog]]
+id = "B-1fa8d53f"
+kind = "direction"
+summary = "implement-v2 runs one milestone at a time, so ready, file-disjoint rows of later milestones sit idle while an earlier milestone works through a serial chain"
+area = "claude/skills/implement-v2-engine"
+tags = [
+    "parallelism",
+    "implement-v2",
+]
+status = "open"
+created = 2026-11-11T12:05:58Z
+last_seen = 2026-11-11T12:05:58Z
+seen_count = 1
+dedup_id = "1fa8d53f573e7bbf"
+origin = "implement-v2"
+flow = "v2-harness-tuning"
+context = "Seen on the v2-harness-tuning run of 2026-11-11 (42 tasks, 5 milestones, 85 minutes from first launch to last gate). `tomlctl tasks batches` put 17 rows in the first dependency layer, but the first launch could dispatch only milestone A's 7; rows 8, 9, 10, 16, 18, 24, 26, 27, 33 and 35 had no unmet need and waited for their milestone. Milestone C took 40 minutes with one worker busy for most of it, because rows 18, 20, 21, 22, 23 and 25 chain on shared files; through that time about ten rows of D and E were dispatchable and file-disjoint from every unfinished C row. The rolling pool fills slots only inside the launched milestone, so it does not reach this. A lookahead would dispatch, into free slots, rows of later milestones whose needs are done and whose files no unfinished row of the current milestone holds. The cost to settle first: the current milestone's gate would then test a tree that also holds later-milestone edits, so its path-staged commit is no longer exactly the tree the gate passed, and a later row's compile error could fail an earlier gate. Options are to gate from a clean checkout of the staged paths, to restrict lookahead to rows that build nothing (docs, agent and skill files), or to accept it and re-gate the last milestone on the final tree."
+base_sha = "a1f20889ff34c5b5384b2547727d0489e4d76f9e"
+related = ["B-56a8a9ff"]
+
+[[backlog]]
+id = "B-df3ffc6a"
+kind = "debt"
+summary = "run-milestone tells the orchestrator to lower max_parallel for a mostly-deep or one-crate milestone, which also holds back rows that compile nothing"
+area = "claude/skills/implement-v2-engine/references/run-milestone.md"
+tags = [
+    "parallelism",
+    "implement-v2",
+]
+status = "open"
+created = 2026-11-11T12:05:58Z
+last_seen = 2026-11-11T12:05:58Z
+seen_count = 1
+dedup_id = "df3ffc6aca6acf41"
+origin = "implement-v2"
+flow = "v2-harness-tuning"
+context = "On the v2-harness-tuning run of 2026-11-11 the orchestrator followed that sentence and launched milestones B and C with max_parallel 3. In B, row 16 edits only skill and agent markdown and had no need, yet it started 7 minutes after the launch, in the third wave, behind seven Rust rows that came earlier in args order. The cap exists for build-lock contention between compile checks, so it should bound the rows that compile, not every row: either the guidance says to keep the default and let file locks and needs do the limiting, or the Workflow takes a second, lower cap for rows whose files include a crate source file. The rolling pool removes the wave wait but still fills slots in args order under the one cap."
+base_sha = "a1f20889ff34c5b5384b2547727d0489e4d76f9e"
+related = ["B-3a80ce63"]
+
+[[backlog]]
+id = "B-dd357190"
+kind = "direction"
+summary = "nothing in plan authoring reports a needs chain that exists only because consecutive tasks share one file"
+area = "claude/skills/plan-v2-engine"
+tags = [
+    "parallelism",
+    "plan-v2",
+]
+status = "open"
+created = 2026-11-11T12:05:58Z
+last_seen = 2026-11-11T12:05:58Z
+seen_count = 1
+dedup_id = "dd35719020a26194"
+origin = "implement-v2"
+flow = "v2-harness-tuning"
+context = "In v2-harness-tuning milestone C, three deep tasks each added one `plan emit` leaf to the same new file, tomlctl/src/plan/emit.rs, so they ran strictly one after another (about 2, 2 and 7 minutes) with nothing else of the milestone able to start; the leaves are independent and would have run together as three files under plan/emit/. Rows 18 and 20 chain the same way through tasks/schema.rs. The plan's Prove step and `plan check` see the chain only as valid needs edges. A report of each milestone's longest chain against its row count, and of chain links whose two rows share a file but no contract or premise, would let the author or the challenger split the file before approval. `tomlctl tasks batches` and the rows' `files` hold everything such a check needs."
+base_sha = "a1f20889ff34c5b5384b2547727d0489e4d76f9e"
+related = ["B-d5f07c82"]
+
+[[backlog]]
+id = "B-b0505dce"
+kind = "bug"
+summary = "agent records of long-running plan workers carry no task ids"
+area = "tomlctl/src/agents/correlate.rs"
+tags = [
+    "glimpse",
+    "agents",
+]
+status = "open"
+created = 2026-11-11T12:05:58Z
+last_seen = 2026-11-11T12:05:58Z
+seen_count = 1
+dedup_id = "b0505dce81fcb38d"
+origin = "implement-v2"
+flow = "v2-harness-tuning"
+context = "In .claude/flows/v2-harness-tuning/agents.toml after the run of 2026-11-11, 6 of 44 plan-worker records have one segment with an empty `task_ids`: the first-pass workers of tasks 11, 18, 20, 21, 23 and 25. They are exactly the six longest workers of the run, each between 5.4 and 7.8 minutes; every shorter worker is attributed. The prompt carries `tomlctl plan view --slug <slug> --for worker --task <n>` for all of them alike, so the launch line is not the difference. `latest_dispatch` walks the transcript from its end and returns at the first line that yields a slug, so a later line that names the slug without a task id (a ledger line, or a prompt rewritten by context compaction on a long transcript) would produce exactly this. glimpse then shows the task with no agent on it while its worker is busy. Reproduce by running the correlation over one of those six transcripts."
+base_sha = "a1f20889ff34c5b5384b2547727d0489e4d76f9e"
+related = ["B-a162a412"]
+
+[[backlog]]
+id = "B-5a74b11d"
+kind = "bug"
+summary = "some plan-worker agent records have identical started_at and ended_at"
+area = "tomlctl/src/agents/record.rs"
+tags = [
+    "glimpse",
+    "agents",
+]
+status = "open"
+created = 2026-11-11T12:05:58Z
+last_seen = 2026-11-11T12:05:58Z
+seen_count = 1
+dedup_id = "5a74b11d517c4c0c"
+origin = "implement-v2"
+flow = "v2-harness-tuning"
+context = "In .claude/flows/v2-harness-tuning/agents.toml after the run of 2026-11-11, the lite workers of tasks 1, 2, 3 and 4 have `started_at`, `updated_at` and `ended_at` equal to the nanosecond, about 52 seconds after their launch was recorded, as do the three plan-cold-reader records from the plan's Prove step. The other three workers of the same launch have real durations. It reads as a record first created by the stop event, the start event having been missed or lost when several agents start within the same second. A zero-length record never shows as running in glimpse and gives no duration to anything that reads the store for timings."
+base_sha = "a1f20889ff34c5b5384b2547727d0489e4d76f9e"
+related = ["B-6a0aff17"]
+
+[[backlog]]
+id = "B-429f5d5f"
+kind = "annoyance"
+summary = "glimpse shows a row as ready when the implement-v2 engine holds it behind an earlier milestone"
+area = "glimpse/src/model.rs"
+tags = [
+    "glimpse",
+    "implement-v2",
+]
+status = "open"
+created = 2026-11-11T12:05:58Z
+last_seen = 2026-11-11T12:05:58Z
+seen_count = 1
+dedup_id = "429f5d5fed795253"
+origin = "implement-v2"
+flow = "v2-harness-tuning"
+context = "glimpse's frontier is the whole graph's ready, held and blocked sets, so during a v2 run every row with no unmet need shows as ready, including rows of milestones the engine has not reached. On v2-harness-tuning that was ten rows shown ready through milestone A and most of D and E through milestone C, which reads as the engine ignoring ready work. `tomlctl tasks ready --checkpoint <id>` already restricts the sets to one milestone; a v2 flow could mark a ready row outside the running milestone as waiting on that milestone, taking the running milestone from the open `implement:<id>` run in plan.toml."
+base_sha = "a1f20889ff34c5b5384b2547727d0489e4d76f9e"
+related = ["B-be2797ef"]
+
+[[backlog]]
+id = "B-2a722442"
+kind = "debt"
+summary = "the implement-v2 drain's lane check and store-change check are done by hand each round from three snapshots and a path loop"
+area = "claude/skills/implement-v2-engine/references/drain.md"
+tags = [
+    "implement-v2",
+    "orchestrator-cost",
+]
+status = "open"
+created = 2026-11-11T12:05:58Z
+last_seen = 2026-11-11T12:05:58Z
+seen_count = 1
+dedup_id = "2a7224420078e4f7"
+origin = "implement-v2"
+flow = "v2-harness-tuning"
+context = "Each of the nine launches of the v2-harness-tuning run took three pre-launch snapshots, three after-snapshots and three `diff -U30` reads to confirm workers wrote only `status` and `agent` on their own rows, plus a shell loop comparing `plan drift --uncommitted` paths with the milestone's `files` to find out-of-lane edits. Both answers are mechanical and both came back clean every time. A read verb that takes the launch's recorded task ids and prints the out-of-lane paths and any field a worker changed beyond its own `status` and `agent` (from the `[[changes]]` trail and a stored pre-launch digest) would replace about eight commands and the snapshot files per round, and would work for an abandoned run, where the snapshots are gone."
+base_sha = "a1f20889ff34c5b5384b2547727d0489e4d76f9e"
+related = ["B-85f895ef"]
+
+[[backlog]]
+id = "B-9bdace33"
+kind = "annoyance"
+summary = "tasks check and plan check print one backlog/closed info finding per resolved backlog link on every run"
+area = "tomlctl/src/tasks/check.rs"
+tags = []
+status = "open"
+created = 2026-11-11T12:05:58Z
+last_seen = 2026-11-11T12:05:58Z
+seen_count = 1
+dedup_id = "9bdace335662c0fc"
+origin = "implement-v2"
+flow = "v2-harness-tuning"
+context = "After v2-harness-tuning resolved the backlog rows its tasks closed, `tomlctl tasks check --slug v2-harness-tuning` prints 28 `backlog/closed` info findings and `plan check` repeats them, on every pre-flight and re-entry. A link to a row its own task resolved is the expected end state, not news. Report the class only when the row was closed by something other than the linking task reaching `done` with a commit, or fold the class into one count in the header; until then read the checks with `--where-not severity=info`."
+base_sha = "a1f20889ff34c5b5384b2547727d0489e4d76f9e"
+related = ["B-1ad94a3b"]
+
+[[backlog]]
+id = "B-3d4f9876"
+kind = "annoyance"
+summary = "a fix task the drain mints draws a plan/probe-absent warning because nothing probes its accept check"
+area = "tomlctl/src/plan/check.rs"
+tags = []
+status = "open"
+created = 2026-11-11T12:05:58Z
+last_seen = 2026-11-11T12:05:58Z
+seen_count = 1
+dedup_id = "3d4f9876d19ac5d3"
+origin = "implement-v2"
+flow = "v2-harness-tuning"
+context = "The implement-v2 drain mints fix tasks with `tasks add-many`, each carrying a `writes_build = false` accept check as the engine requires. `plan check` then warns `plan/probe-absent` for each, since accept probes are run only at the plan's Prove step, before approval. Three such rows were minted on the v2-harness-tuning run. Either the drain's mint step emits and records the probe for the new row (`plan probes --emit` scoped with `--task`), or the class stays quiet for a row added after approval."
+base_sha = "a1f20889ff34c5b5384b2547727d0489e4d76f9e"
+related = ["B-e2b98a71"]
+
+[[backlog]]
+id = "B-d77f3060"
+kind = "debt"
+summary = "a review store the typed loader refuses reports the bad row but not which store file it is in"
+area = "tomlctl/src/review/store.rs"
+tags = []
+status = "open"
+created = 2026-11-11T12:10:16Z
+last_seen = 2026-11-11T12:10:16Z
+seen_count = 1
+dedup_id = "d77f30607650c3d0"
+origin = "implement-v2"
+flow = "v2-harness-tuning"
+context = "`review::store::from_toml` errors name the row and field (for example a finding whose `kind` is not a known value) but carry no path and no error kind, so a refusal from `load` in any review verb, and now in `plan emit reproduce-units`, does not say which store is bad. A repo with a flow store and one or more `.claude/review-v2/<scope>.toml` stores leaves the user to guess. Tag the failure `kind=parse` with the path where `load` calls the parser, as `plan::store::parse_store` does for plan.toml; check first that no test matches the current message whole."
+base_sha = "a1f20889ff34c5b5384b2547727d0489e4d76f9e"
+related = ["B-c94abace"]
+
+[[backlog]]
+id = "B-d00caae4"
+kind = "debt"
+summary = "the plan gate's review-store test fixtures omit depth, so plan gate, approve and stage keep a lenient field reader beside the typed loader"
+area = "tomlctl/tests/plan_stage.rs"
+tags = []
+status = "open"
+created = 2026-11-11T12:10:16Z
+last_seen = 2026-11-11T12:10:16Z
+seen_count = 1
+dedup_id = "d00caae4c9ba22ff"
+origin = "implement-v2"
+flow = "v2-harness-tuning"
+context = "`review::store::plan_family`, which `plan gate`, `plan approve` and `plan stage` read through, parses review-v2.toml field by field inside the review module instead of calling the typed `load`, because every review-store fixture in tests/plan_stage.rs and tests/plan_approve.rs, and the one in plan::store's unit tests, has runs with no `depth`, which the typed loader refuses and which every store tomlctl writes carries. The lenient reader spells its keys apart from the typed parser; a test that writes through `to_toml` and reads back through `plan_family` pins them together. Making the fixtures typed-valid would let `plan_family` use `load` and drop the second reader. Decide first whether a hand-written or damaged review store should block `plan stage` with a parse error, which that change would make it do."
+base_sha = "a1f20889ff34c5b5384b2547727d0489e4d76f9e"
+related = ["B-81c1c53b"]

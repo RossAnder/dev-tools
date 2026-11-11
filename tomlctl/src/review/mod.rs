@@ -35,7 +35,9 @@ mod triage;
 mod verdict;
 
 pub(crate) use fields::SETTLE_TIERS;
-pub(crate) use store::implementer_findings;
+// The entry points for readers outside the review group, so that no field
+// name of the store is spelled outside it.
+pub(crate) use store::{implementer_findings, plan_family, reproduce_state};
 pub(crate) use tier::Tier;
 
 /// A `validation`-kind error, for input a review verb refuses.

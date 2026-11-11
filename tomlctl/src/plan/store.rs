@@ -21,17 +21,15 @@ use super::schema::{self, PlanStore, Run, RunState};
 use crate::cli::{
     ReadIntegrityArgs, WriteIntegrityArgs, read_integrity_opts, write_integrity_opts,
 };
-use crate::convert::decode_json_text;
 use crate::errors::{ErrorKind, tagged_err};
 use crate::integrity::sha256_hex_crlf_folded;
-use crate::io::{OnMissing, mutate_doc, read_doc, read_toml, repo_or_cwd_root, strict_read_check};
-use crate::review::Tier;
+use crate::io::{OnMissing, mutate_doc, read_doc, repo_or_cwd_root, strict_read_check};
+use crate::review::{Tier, plan_family};
 use crate::tasks::schema::{Accept, Store};
 
 const STORE_FILE: &str = "plan.toml";
 pub(crate) const BRIEF_FILE: &str = "brief.md";
 pub(super) const REVIEW_STORE_FILE: &str = "review-v2.toml";
-const PLAN_FAMILY: &str = "plan";
 const REVIEW_STEP: &str = "review";
 
 /// `<root>/.claude/flows/<slug>/plan.toml`. The flow-init slug rule admits
@@ -296,86 +294,48 @@ impl OpenReviewRow {
 }
 
 const KIND_DEFECT: &str = "defect";
-const STATUS_OPEN: &str = "open";
 
-/// Reads `review-v2.toml` as a plain document, since the review group owns its shape;
-/// a flow without one has an empty state. Only plan-family runs and findings count.
+/// A flow without `review-v2.toml` has an empty state. Only plan-family runs
+/// and findings count.
 pub(super) fn plan_review_state(flow_dir: &Path) -> Result<PlanReviewState> {
     let path = flow_dir.join(REVIEW_STORE_FILE);
     if !path.exists() {
         return Ok(PlanReviewState::default());
     }
-    let doc = read_toml(&path)?;
-    let rows = |key: &str| {
-        doc.get(key)
-            .and_then(TomlValue::as_array)
-            .map(Vec::as_slice)
-            .unwrap_or_default()
-    };
+    let family = plan_family(&path)?;
     let mut state = PlanReviewState::default();
-    let mut rechecking = Vec::new();
-    for run in rows("runs") {
-        if text(run, "family") != PLAN_FAMILY {
-            continue;
-        }
-        let id = text(run, "id").to_string();
-        if !text(run, "rechecks").is_empty() {
-            rechecking.push(id.clone());
-        }
-        if text(run, "finished").is_empty() {
-            state.unfinished_runs.push(id);
+    for run in family.runs {
+        if run.finished {
+            state.finished_runs.push(run.id);
         } else {
-            state.finished_runs.push(id);
+            state.unfinished_runs.push(run.id);
         }
     }
-    for finding in rows("findings") {
-        if text(finding, "family") != PLAN_FAMILY {
-            continue;
-        }
-        if let Some(applied) = finding.get("applied").filter(|v| v.is_table()) {
+    for finding in family.findings {
+        if let Some(applied) = finding.applied {
             state.applied.push(AppliedEdit {
-                id: text(finding, "id").to_string(),
-                target: text(applied, "target").to_string(),
-                tier: Some(text(applied, "tier"))
-                    .filter(|tier| !tier.is_empty())
-                    .unwrap_or_else(|| text(finding, "tier"))
-                    .to_string(),
-                by: text(applied, "by").to_string(),
-                summary: text(finding, "summary").to_string(),
-                old: decode_json_text(applied.get("old")),
-                new: decode_json_text(applied.get("new")),
+                id: finding.id.clone(),
+                target: applied.target,
+                tier: applied.tier,
+                by: applied.by,
+                summary: finding.summary.clone(),
+                old: applied.old,
+                new: applied.new,
             });
         }
-        if text(finding, "status") == STATUS_OPEN {
+        if finding.open {
             state.open.push(OpenReviewRow {
-                id: text(finding, "id").to_string(),
-                kind: text(finding, "kind").to_string(),
-                severity: severity(rows("verdicts"), finding).to_string(),
-                tier: text(finding, "tier").to_string(),
-                target: text(finding, "target").to_string(),
-                summary: text(finding, "summary").to_string(),
-                recheck: rechecking.iter().any(|run| run == text(finding, "run")),
+                id: finding.id,
+                kind: finding.kind,
+                severity: finding.severity,
+                tier: finding.tier,
+                target: finding.target,
+                summary: finding.summary,
+                recheck: finding.recheck,
             });
         }
     }
     Ok(state)
-}
-
-/// The latest severity a verdict reassessed for `finding`, else its own, by the
-/// rule `review::store::Store::severity` applies for the digest and export.
-fn severity<'a>(verdicts: &'a [TomlValue], finding: &'a TomlValue) -> &'a str {
-    let id = text(finding, "id");
-    verdicts
-        .iter()
-        .rev()
-        .filter(|v| text(v, "finding") == id)
-        .map(|v| text(v, "severity"))
-        .find(|severity| !severity.is_empty())
-        .unwrap_or_else(|| text(finding, "severity"))
-}
-
-fn text<'a>(row: &'a TomlValue, key: &str) -> &'a str {
-    row.get(key).and_then(TomlValue::as_str).unwrap_or("")
 }
 
 /// The review step's runs recorded as skipped, in store order.

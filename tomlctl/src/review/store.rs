@@ -19,7 +19,7 @@
 //! `items add` omits one. Nested tables (`signals`, `waivers`, `bound`, `ruled_out`) are
 //! fully typed and drop keys they do not know.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -30,17 +30,17 @@ use toml::map::Map;
 use toml::value::Datetime;
 
 use super::fields::{
-    self, CellStatus, Depth, FIELDS, Family, FindingStatus, Kind, ProjectCtx, Record, ReproduceBy,
-    ReproduceVerdict, Role, Route, Ty,
+    self, CellStatus, Depth, Direction, FIELDS, Family, FindingStatus, Kind, ProjectCtx, Record,
+    ReproduceBy, ReproduceVerdict, Role, Route, Ty,
 };
 use crate::cli::{
     ReadIntegrityArgs, WriteIntegrityArgs, read_integrity_opts, write_integrity_opts,
 };
-use crate::convert::toml_to_json;
+use crate::convert::{decode_json_text, toml_to_json};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{
-    OnMissing, guard_write_path, mutate_doc, read_doc, relativise_under, repo_or_cwd_root,
-    schema_seed, warn_if_created,
+    OnMissing, guard_write_path, mutate_doc, read_doc, read_toml, relativise_under,
+    repo_or_cwd_root, schema_seed, warn_if_created,
 };
 
 /// The newest version this binary reads; written only by a store that
@@ -281,21 +281,27 @@ impl Store {
     /// The latest severity a verdict reassessed, else the finding's own
     /// `severity`, else `""`.
     pub(crate) fn severity<'s>(&'s self, finding: &'s Finding) -> &'s str {
-        self.verdicts
-            .iter()
-            .rev()
-            .find(|v| v.finding == finding.id && !v.severity.is_empty())
-            .map_or_else(
-                || {
-                    finding
-                        .rest
-                        .get("severity")
-                        .and_then(TomlValue::as_str)
-                        .unwrap_or_default()
-                },
-                |v| v.severity.as_str(),
-            )
+        reassessed_severity(
+            self.verdicts
+                .iter()
+                .map(|v| (v.finding.as_str(), v.severity.as_str())),
+            &finding.id,
+            finding.text("severity").unwrap_or_default(),
+        )
     }
+}
+
+/// The last non-empty severity among `verdicts`, given as `(finding, severity)`
+/// in store order, that names `finding`; else `own`.
+fn reassessed_severity<'a>(
+    verdicts: impl DoubleEndedIterator<Item = (&'a str, &'a str)>,
+    finding: &str,
+    own: &'a str,
+) -> &'a str {
+    verdicts
+        .rev()
+        .find(|&(id, severity)| id == finding && !severity.is_empty())
+        .map_or(own, |(_, severity)| severity)
 }
 
 /// The `retired_links` entry naming v1 row `v1_id` in `ledger`.
@@ -416,6 +422,26 @@ impl Finding {
             Some(self.text("target_file").unwrap_or_default()),
             instances,
         )
+    }
+
+    /// Whether the checker alone can settle a reproduce check of this finding:
+    /// it is routed to the checker, adds nothing, and edits only its own `file`.
+    pub(crate) fn checker_settles(&self) -> bool {
+        let listed = |key: &str| {
+            self.rest
+                .get(key)
+                .and_then(TomlValue::as_array)
+                .is_some_and(|entries| !entries.is_empty())
+        };
+        self.route == Some(Route::Checker)
+            && self.text("direction").and_then(Direction::parse) != Some(Direction::Add)
+            && !listed("instances")
+            && !listed("fix_files")
+            && self
+                .text("target_file")
+                .unwrap_or_default()
+                .trim()
+                .is_empty()
     }
 }
 
@@ -1314,7 +1340,6 @@ pub(crate) fn load(path: &Path, integrity: &ReadIntegrityArgs) -> Result<Store> 
 
 /// Each of `ids` from the store at `path` in the implementer projection, in
 /// the order given, paired with `None` when the store holds no such finding.
-/// The one entry point for readers outside the review group.
 pub(crate) fn implementer_findings(
     path: &Path,
     ids: &[String],
@@ -1333,6 +1358,154 @@ pub(crate) fn implementer_findings(
             (id.clone(), projected)
         })
         .collect())
+}
+
+/// What a reproduce launch reads from a review store for one flow's milestone.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub(crate) struct ReproduceState {
+    /// Finding id to [`Finding::checker_settles`].
+    pub(crate) checkable: BTreeMap<String, bool>,
+    /// Findings whose latest reproduction for the milestone is `gone`.
+    pub(crate) gone: BTreeSet<String>,
+    /// The highest round recorded for the milestone, `0` when none is.
+    pub(crate) max_round: u32,
+}
+
+/// The reproduce state of `flow`'s `milestone` in the store at `path`, read
+/// as [`load`] reads it.
+pub(crate) fn reproduce_state(
+    path: &Path,
+    flow: &str,
+    milestone: &str,
+    integrity: &ReadIntegrityArgs,
+) -> Result<ReproduceState> {
+    let stored = load(path, integrity)?;
+    let mut state = ReproduceState {
+        checkable: stored
+            .findings
+            .iter()
+            .map(|f| (f.id.clone(), f.checker_settles()))
+            .collect(),
+        ..ReproduceState::default()
+    };
+    let mut latest: BTreeMap<&str, ReproduceVerdict> = BTreeMap::new();
+    for row in stored
+        .reproductions
+        .iter()
+        .filter(|r| r.flow == flow && r.milestone == milestone)
+    {
+        state.max_round = state.max_round.max(row.round);
+        latest.insert(&row.finding, row.verdict);
+    }
+    state.gone = latest
+        .into_iter()
+        .filter(|&(_, verdict)| verdict == ReproduceVerdict::Gone)
+        .map(|(finding, _)| finding.to_string())
+        .collect();
+    Ok(state)
+}
+
+/// The plan-family part of a review store, in store order.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub(crate) struct PlanFamily {
+    pub(crate) runs: Vec<PlanRun>,
+    pub(crate) findings: Vec<PlanFinding>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct PlanRun {
+    pub(crate) id: String,
+    pub(crate) finished: bool,
+}
+
+/// Empty strings stand for absent fields.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct PlanFinding {
+    pub(crate) id: String,
+    pub(crate) kind: String,
+    pub(crate) open: bool,
+    /// By the rule [`Store::severity`] applies.
+    pub(crate) severity: String,
+    pub(crate) tier: String,
+    pub(crate) target: String,
+    pub(crate) summary: String,
+    /// Minted by a plan-family run that re-checks another.
+    pub(crate) recheck: bool,
+    pub(crate) applied: Option<PlanApplied>,
+}
+
+/// The edit `review apply` wrote, its `tier` falling back to the finding's
+/// own, with `old` and `new` decoded from their JSON text.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct PlanApplied {
+    pub(crate) target: String,
+    pub(crate) tier: String,
+    pub(crate) by: String,
+    pub(crate) old: JsonValue,
+    pub(crate) new: JsonValue,
+}
+
+/// The plan-family runs and findings of the store at `path`. Rows are read
+/// field by field rather than through [`from_toml`], so a field plan gating
+/// never reads, such as a run's `depth`, cannot make the gate refuse the store.
+pub(crate) fn plan_family(path: &Path) -> Result<PlanFamily> {
+    let doc = read_toml(path)?;
+    let rows = |key: &str| {
+        doc.get(key)
+            .and_then(TomlValue::as_array)
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+            .iter()
+            .filter_map(TomlValue::as_table)
+    };
+    let is_plan = |row: &Table| Family::parse(raw_str(row, "family")) == Some(Family::Plan);
+    let mut family = PlanFamily::default();
+    let mut rechecking: Vec<&str> = Vec::new();
+    for run in rows("runs").filter(|row| is_plan(row)) {
+        let id = raw_str(run, "id");
+        if !raw_str(run, "rechecks").is_empty() {
+            rechecking.push(id);
+        }
+        family.runs.push(PlanRun {
+            id: id.to_string(),
+            finished: !raw_str(run, "finished").is_empty(),
+        });
+    }
+    for finding in rows("findings").filter(|row| is_plan(row)) {
+        let id = raw_str(finding, "id");
+        let tier = raw_str(finding, "tier");
+        let applied = finding
+            .get("applied")
+            .and_then(TomlValue::as_table)
+            .map(|applied| PlanApplied {
+                target: raw_str(applied, "target").to_string(),
+                tier: Some(raw_str(applied, "tier"))
+                    .filter(|tier| !tier.is_empty())
+                    .unwrap_or(tier)
+                    .to_string(),
+                by: raw_str(applied, "by").to_string(),
+                old: decode_json_text(applied.get("old")),
+                new: decode_json_text(applied.get("new")),
+            });
+        let verdicts = rows("verdicts").map(|v| (raw_str(v, "finding"), raw_str(v, "severity")));
+        family.findings.push(PlanFinding {
+            id: id.to_string(),
+            kind: raw_str(finding, "kind").to_string(),
+            open: FindingStatus::parse(raw_str(finding, "status")) == Some(FindingStatus::Open),
+            severity: reassessed_severity(verdicts, id, raw_str(finding, "severity")).to_string(),
+            tier: tier.to_string(),
+            target: raw_str(finding, "target").to_string(),
+            summary: raw_str(finding, "summary").to_string(),
+            recheck: rechecking.contains(&raw_str(finding, "run")),
+            applied,
+        });
+    }
+    Ok(family)
+}
+
+/// The string at `key`, `""` when it is absent or not a string.
+fn raw_str<'a>(row: &'a Table, key: &str) -> &'a str {
+    row.get(key).and_then(TomlValue::as_str).unwrap_or_default()
 }
 
 /// Run `f` over the parsed store under the write lock and write it back with
@@ -1809,5 +1982,190 @@ rationale = "reproduced"
                 assert!(resolve(None, Some(bad)).is_err(), "scope `{bad}`");
             }
         });
+    }
+
+    const PLAN_FAMILY_STORE: &str = r#"
+[[runs]]
+id = "U1"
+family = "plan"
+depth = "standard"
+finished = "2026-11-09T10:00:00Z"
+
+[[runs]]
+id = "U2"
+family = "plan"
+depth = "quick"
+rechecks = "U1"
+
+[[runs]]
+id = "U3"
+family = "code"
+depth = "standard"
+rechecks = "U1"
+finished = "2026-11-09T11:00:00Z"
+
+[[findings]]
+id = "F1"
+run = "U1"
+family = "plan"
+kind = "defect"
+severity = "major"
+status = "open"
+tier = "user"
+target = "decision:D1.why"
+summary = "Why is thin."
+applied = { target = "decision:D1.why", by = "user", old = '"thin"', new = '{"why":"stated"}' }
+
+[[findings]]
+id = "F2"
+run = "U2"
+family = "plan"
+kind = "cleanup"
+status = "open"
+summary = "Raised by the re-check."
+
+[[findings]]
+id = "F3"
+run = "U3"
+family = "code"
+kind = "defect"
+status = "open"
+summary = "Not a plan finding."
+
+[[verdicts]]
+finding = "F1"
+by = "verifier"
+verdict = "confirmed"
+severity = "minor"
+
+[[verdicts]]
+finding = "F1"
+by = "verifier"
+seat = 2
+verdict = "confirmed"
+"#;
+
+    /// Written through [`to_toml`], so the field reader is held to the key
+    /// names the typed writer emits.
+    #[test]
+    fn plan_family_reads_what_the_typed_writer_wrote() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(STORE_FILE);
+        let typed = from_toml(&parse(PLAN_FAMILY_STORE)).expect("the fixture reads");
+        fs::write(&path, toml::to_string(&to_toml(&typed)).unwrap()).unwrap();
+
+        let family = plan_family(&path).expect("the store reads");
+        assert_eq!(
+            family.runs,
+            [
+                PlanRun {
+                    id: "U1".to_string(),
+                    finished: true
+                },
+                PlanRun {
+                    id: "U2".to_string(),
+                    finished: false
+                },
+            ]
+        );
+        let f1 = &family.findings[0];
+        assert_eq!((f1.id.as_str(), f1.open, f1.recheck), ("F1", true, false));
+        assert_eq!(f1.severity, "minor", "a verdict's reassessment wins");
+        assert_eq!(f1.severity, typed.severity(&typed.findings[0]));
+        assert_eq!(
+            f1.applied,
+            Some(PlanApplied {
+                target: "decision:D1.why".to_string(),
+                tier: "user".to_string(),
+                by: "user".to_string(),
+                old: json!("thin"),
+                new: json!({"why": "stated"}),
+            }),
+            "an applied edit without a tier takes the finding's"
+        );
+        let f2 = &family.findings[1];
+        assert_eq!((f2.id.as_str(), f2.recheck), ("F2", true));
+        assert_eq!(family.findings.len(), 2, "a code finding is not read");
+    }
+
+    #[test]
+    fn plan_family_reads_a_store_the_typed_loader_refuses() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(STORE_FILE);
+        fs::write(
+            &path,
+            "[[runs]]\nid = \"U1\"\nfamily = \"plan\"\nfinished = \"2026-11-09T10:00:00Z\"\n",
+        )
+        .unwrap();
+        assert!(from_toml(&read_toml(&path).unwrap()).is_err(), "no depth");
+        let family = plan_family(&path).expect("plan gating reads it");
+        assert_eq!(family.runs.len(), 1);
+        assert!(family.runs[0].finished);
+    }
+
+    #[test]
+    fn reproduce_state_takes_each_finding_latest_verdict_in_the_milestone() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(STORE_FILE);
+        let routed = |id: &str, route: &str, extra: &str| {
+            format!(
+                "[[findings]]\nid = \"{id}\"\nfamily = \"code\"\nkind = \"cleanup\"\n\
+                 status = \"scheduled\"\nroute = \"{route}\"\n{extra}\n"
+            )
+        };
+        let finding = |id: &str, extra: &str| routed(id, "checker", extra);
+        let reproduction = |id: &str, milestone: &str, round: u32, verdict: &str| {
+            format!(
+                "[[reproductions]]\nfinding = \"{id}\"\nflow = \"f\"\nmilestone = \"{milestone}\"\n\
+                 round = {round}\nverdict = \"{verdict}\"\nby = \"checker\"\n"
+            )
+        };
+        let store = [
+            "schema_version = 2\n".to_string(),
+            finding("F1", ""),
+            finding("F2", "direction = \"add\""),
+            finding("F3", "instances = [\"b.rs\"]"),
+            finding("F4", "fix_files = [\"b.rs\"]"),
+            finding("F5", "target_file = \"b.rs\""),
+            routed("F6", "verifier", ""),
+            reproduction("F1", "A", 1, "reproduces"),
+            reproduction("F1", "A", 2, "gone"),
+            reproduction("F2", "A", 1, "gone"),
+            reproduction("F2", "A", 2, "unsettled"),
+            reproduction("F3", "B", 5, "gone"),
+        ]
+        .concat();
+        fs::write(&path, store).unwrap();
+        let read = ReadIntegrityArgs {
+            verify_integrity: false,
+            strict_read: false,
+        };
+
+        let state = reproduce_state(&path, "f", "A", &read).expect("the store reads");
+        assert_eq!(
+            state.max_round, 2,
+            "another milestone's round is not counted"
+        );
+        assert_eq!(state.gone, BTreeSet::from(["F1".to_string()]));
+        let checkable: Vec<(&str, bool)> = state
+            .checkable
+            .iter()
+            .map(|(id, settles)| (id.as_str(), *settles))
+            .collect();
+        assert_eq!(
+            checkable,
+            [
+                ("F1", true),
+                ("F2", false),
+                ("F3", false),
+                ("F4", false),
+                ("F5", false),
+                ("F6", false),
+            ]
+        );
+        assert_eq!(
+            reproduce_state(&path, "f", "C", &read).unwrap().max_round,
+            0
+        );
     }
 }

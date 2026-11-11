@@ -24,25 +24,15 @@
 mod dispatch;
 mod types;
 
-/// Only clap-derived TYPES cross this boundary outward, plus `run` (the
-/// entrypoint) and the two integrity-args translators that exist solely to
-/// read those types. Every other function in [`dispatch`] is private to the
-/// CLI layer: a verb group that needs one needs the helper moved down into
-/// infrastructure (`crate::io`) or onto the clap type it converts — never a
-/// new re-export here.
+/// Only clap-derived TYPES and the two metadata consts beside them cross
+/// this boundary outward, plus `run` (the entrypoint) and the two
+/// integrity-args translators that exist solely to read those types. Every
+/// other function in [`dispatch`] is private to the CLI layer: a verb group
+/// that needs one needs the helper moved down into infrastructure
+/// (`crate::io`) or onto the clap type it converts — never a new re-export
+/// here.
+///
+/// The types come through as a glob so that a verb module can name a new
+/// subcommand enum or args struct without an edit to this file.
 pub(crate) use dispatch::{read_integrity_opts, run, write_integrity_opts};
-pub(crate) use types::{
-    ActiveOp, ArtifactKind, BacklogOp, Cli, ClusterBy, EdgeKind, EnvelopeOp, ErrorFormat,
-    EvidenceOp, FlowOp, JsonOp, LegacyShortcuts, OnDuplicate, PlanApproveArgs, PlanCheckArgs,
-    PlanContractArgs, PlanDecideArgs, PlanDriftArgs, PlanEmitGateListArgs, PlanEmitLaunchArgs,
-    PlanEmitOp, PlanEmitReproduceUnitsArgs, PlanGateArgs, PlanHandoverDoneArgs, PlanHandoverOp,
-    PlanHandoverSetArgs, PlanMilestoneAddArgs, PlanMilestoneOp, PlanMilestoneUpdateArgs, PlanOp,
-    PlanOpenArgs, PlanProbesArgs, PlanRunAbandonArgs, PlanRunFinishArgs, PlanRunOp,
-    PlanRunSkipArgs, PlanRunStartArgs, PlanStageArgs, PlanViewArgs, QueryArgs, ReadIntegrityArgs,
-    RelationKind, ReviewAddArgs, ReviewApplyArgs, ReviewCatalogueArgs, ReviewCoverArgs,
-    ReviewDigestArgs, ReviewExportArgs, ReviewListArgs, ReviewOp, ReviewPlanArgs, ReviewReportArgs,
-    ReviewResolveArgs, ReviewRunFinishArgs, ReviewRunListArgs, ReviewRunOp, ReviewRunShowArgs,
-    ReviewRunStartArgs, ReviewRunUpdateArgs, ReviewSchemaArgs, ReviewShowArgs, ReviewStatsArgs,
-    ReviewStore, ReviewSurveyArgs, ReviewSyncArgs, ReviewTriageArgs, ReviewVerdictArgs, ShowPart,
-    TasksOp, TasksTarget, TriageMode, WriteIntegrityArgs,
-};
+pub(crate) use types::*;

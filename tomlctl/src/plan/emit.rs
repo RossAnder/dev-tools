@@ -11,18 +11,17 @@ use anyhow::Result;
 use serde_json::{Value as JsonValue, json};
 use sha2::{Digest, Sha256};
 
-use toml::Value as TomlValue;
-
 use super::schema::RunState;
 use super::store;
 use crate::cli::{
     PlanEmitGateListArgs, PlanEmitLaunchArgs, PlanEmitOp, PlanEmitReproduceUnitsArgs,
-    ReadIntegrityArgs, read_integrity_opts,
+    ReadIntegrityArgs,
 };
 use crate::errors::{ErrorKind, tagged_err};
 use crate::integrity::hex_lower;
-use crate::io::{read_doc, repo_or_cwd_root};
+use crate::io::repo_or_cwd_root;
 use crate::output::print_json_line;
+use crate::review::reproduce_state;
 use crate::tasks::schema::{
     Premise, RUN_BY_COVERED, RUN_BY_GATE, Status, Store, TaskRow, TaskSpec, premise_target,
 };
@@ -200,7 +199,6 @@ const SCOPE_REVIEW_PREFIX: &str = ".claude/review-v2/";
 const SCOPE_REVIEW_SUFFIX: &str = ".toml";
 const ROUTE_CHECKER: &str = "checker";
 const ROUTE_VERIFIER: &str = "verifier";
-const VERDICT_GONE: &str = "gone";
 
 /// A `[[finding_links]]` store path read back as the object the review
 /// pipeline takes: `("slug", s)` or `("scope", s)`.
@@ -275,62 +273,6 @@ fn milestone_units<'a>(tasks: &'a Store, milestone: &str) -> BTreeMap<&'a str, V
         !units.is_empty()
     });
     by_store
-}
-
-/// What the reproduce units read from one review store, read as a plain
-/// document as `plan_review_state` reads it.
-#[derive(Default)]
-struct ReviewRead {
-    /// Finding id to whether the checker alone can settle it.
-    checkable: BTreeMap<String, bool>,
-    /// Finding id to its latest verdict for this flow and milestone.
-    latest: BTreeMap<String, String>,
-    max_round: u32,
-}
-
-impl ReviewRead {
-    fn from_doc(doc: &TomlValue, flow: &str, milestone: &str) -> Self {
-        let rows = |key: &str| {
-            doc.get(key)
-                .and_then(TomlValue::as_array)
-                .map(Vec::as_slice)
-                .unwrap_or_default()
-        };
-        let text = |row: &TomlValue, key: &str| -> String {
-            row.get(key)
-                .and_then(TomlValue::as_str)
-                .unwrap_or_default()
-                .to_string()
-        };
-        let listed = |row: &TomlValue, key: &str| {
-            row.get(key)
-                .and_then(TomlValue::as_array)
-                .is_some_and(|entries| !entries.is_empty())
-        };
-        let mut read = Self::default();
-        for finding in rows("findings") {
-            let checker_only = text(finding, "route") == ROUTE_CHECKER
-                && text(finding, "direction") != "add"
-                && !listed(finding, "instances")
-                && !listed(finding, "fix_files")
-                && text(finding, "target_file").trim().is_empty();
-            read.checkable.insert(text(finding, "id"), checker_only);
-        }
-        for row in rows("reproductions") {
-            if text(row, "flow") != flow || text(row, "milestone") != milestone {
-                continue;
-            }
-            let round = row
-                .get("round")
-                .and_then(TomlValue::as_integer)
-                .and_then(|n| u32::try_from(n).ok())
-                .unwrap_or(0);
-            read.max_round = read.max_round.max(round);
-            read.latest
-                .insert(text(row, "finding"), text(row, "verdict"));
-        }
-        read
-    }
 }
 
 /// The files of the rows the latest `implement:<milestone>` run dispatched;
@@ -423,9 +365,7 @@ fn reproduce_units(args: PlanEmitReproduceUnitsArgs) -> Result<()> {
                 format!("review store `{rel}` named by the milestone's finding links is missing"),
             ));
         }
-        let review = read_doc(&path, read_integrity_opts(&read_args), |doc| {
-            Ok(ReviewRead::from_doc(doc, &target.slug, &milestone))
-        })?;
+        let review = reproduce_state(&path, &target.slug, &milestone, &read_args)?;
         let round = relaunch_round.unwrap_or(review.max_round + 1);
 
         let mut kept: Vec<JsonValue> = Vec::new();
@@ -447,10 +387,7 @@ fn reproduce_units(args: PlanEmitReproduceUnitsArgs) -> Result<()> {
                 checker &= checkable;
             }
             if since_launch {
-                let open = unit
-                    .findings
-                    .iter()
-                    .any(|f| review.latest.get(f).map(String::as_str) != Some(VERDICT_GONE));
+                let open = unit.findings.iter().any(|f| !review.gone.contains(f));
                 let edited = touched
                     .as_ref()
                     .is_none_or(|files| unit.row.files.iter().any(|file| files.contains(file)));
