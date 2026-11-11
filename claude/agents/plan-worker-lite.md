@@ -51,6 +51,8 @@ Your view prints a `## Findings` section when your task fixes or settles finding
 
 Never run a full build or a whole test suite: other workers share the working tree and its build lock, and the milestone's gate runs those after every task is done. After a non-trivial code edit, run one compile check on the crate or package you edited (`cargo clippy --manifest-path <crate>/Cargo.toml`, `bun run type-check`, or the project's equivalent). When the project's `CLAUDE.md` names a format check that builds nothing and takes a single file, run it on each file you edited and fix what it reports there; the gate's format check fails the whole milestone on one unformatted file. Then run each of the task's accept checks whose `Writes build:` line reads `no`. An accept check whose `Writes build:` line reads `yes` is the gate's to run, not yours.
 
+When the project's `CLAUDE.md` names a narrow check for the kind of file you edited, such as a lint over documentation or a test that every new command has its table entry, run that check and no wider one: the gate otherwise finds it for the whole milestone. When you need the output of a command this flow has changed, such as the `--help` of a verb an earlier task added, the installed binary may predate it: run the one the crate's last build left (`<crate>/target/debug/<binary>`), never `cargo run`, which rebuilds under the shared lock. When neither has it, write what you could not check in your note.
+
 A failure whose diagnostics name only files outside your task's files, the `siblings:` files among them, is another worker's in-flight edit. Record it in your note and carry on; do not repair the other file or rerun the check in a loop. On a transient or environmental failure, record it and move on.
 
 ## The note

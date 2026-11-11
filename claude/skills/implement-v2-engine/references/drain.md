@@ -179,7 +179,14 @@ executor = "lite"
 behaviour = "The digest test passes"
 check = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- plan::view::tests::digest_counts_parked"
 kind = "forward"
+
+[[record.spec.means]]
+text = "Count from the status tally the digest already builds"
+binding = "suggested"
+detail = "A second pass over the rows would repeat the tally"
 ```
+
+A `means` entry is a table with `text`, a `binding` of `required` or `suggested`, and `detail`; a bare string is refused.
 
 ```bash
 tomlctl tasks add-many --slug <slug> --ndjson <scratch>/implement-<id>-<round>-add.toml
@@ -252,6 +259,7 @@ keep_going: true
 
 - Each gate and each accept check is one `- ` item, byte for byte as stored.
 - `keep_going: true` is always passed, so one gate run reports every failing command and one fix round can answer all of them.
+- A command that changes something outside the build, such as `cargo install` or a script that links or deploys, is held out of this dispatch: under `keep_going` it would install from a tree another command just failed. When every block comes back `pass` or `flaky`, dispatch the held commands in a second `verification` call, in store order; when one fails, they wait for the gate after the fix round.
 - `timeout:` (seconds, default 540) goes under a gate the project documents as slow. `rerun:` goes under a test command whose runner accepts a list of test ids, with `{ids}` where they go.
 - `transient:` carries the project's known environmental failure patterns, from its `CLAUDE.md`; omit it when there are none.
 
@@ -264,7 +272,7 @@ Never run a gate in this conversation, to corroborate a result or for any other 
 | `fail` | Failed; the agent went on to the commands after it |
 | `timeout` | Ran past its budget; says nothing about the code |
 
-Every block `pass` or `flaky` passes the gate: go to the commit. A `timeout` costs no fix round: dispatch once more with a larger `timeout:` on that command, after the fix round when another block is a `fail`. A second `timeout` mints nothing: go on from step 8 without the commit, leave the milestone uncommitted, and report it in `needs_human` with the command and its budget.
+Every block `pass` or `flaky`, the held commands' included, passes the gate: go to the commit. A `timeout` costs no fix round: dispatch once more with a larger `timeout:` on that command, after the fix round when another block is a `fail`. A second `timeout` mints nothing: go on from step 8 without the commit, leave the milestone uncommitted, and report it in `needs_human` with the command and its budget.
 
 ### Fix rounds
 
@@ -274,6 +282,8 @@ A `fail` is a drain input. Read every failing block's `failed_ids` and `tail`, t
 - `accept` holds the narrowest command that reproduces the failure, usually the failed test by id.
 - `executor` is `lite` when the failure names its fix, and `deep` when finding the cause is part of the work.
 - `reason` opens `gate <id> round <n>: `, then the failing command and test ids. That prefix is how a later invocation counts the rounds already spent.
+
+**Carry the cause forward.** A gate failure is often a rule the plan did not state, such as a new verb needing its case in a table-driven test, or a doc lint over a file kind. A pending row that does the same kind of work, in this milestone or a later one, will fail its own gate the same way. For each cause, list the pending rows that hold the failing file or add the same kind of thing, and give each a `constraints` entry naming the rule and the check that enforces it, through the audited update of step 6 with a `reason` opening `carried from gate <id> round <n>: `, which the round count below does not match.
 
 Then relaunch through run-milestone step 3, and gate again when every row is `done`.
 
