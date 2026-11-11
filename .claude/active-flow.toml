@@ -1010,3 +1010,7 @@ last_used = "2026-11-10T19:52:41.156749977Z"
 
 [active.binding]
 branch = "main"
+
+[[active]]
+slug = "v2-harness-tuning"
+last_used = "2026-11-11T10:17:57.001538521Z"

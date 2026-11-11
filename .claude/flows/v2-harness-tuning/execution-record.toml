@@ -1,2 +1,11 @@
 schema_version = 1
 last_updated = 2026-11-11
+
+[[items]]
+id = "E1"
+agent = "plan-v2"
+from_status = "draft"
+to_status = "in-progress"
+summary = "plan approved at 761e2638"
+type = "status-transition"
+date = 2026-11-11
