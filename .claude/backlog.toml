@@ -9621,6 +9621,7 @@ area = "tomlctl/src/plan/drift.rs"
 tags = [
     "implement-v2",
     "drift",
+    "v2-harness-tuning",
 ]
 status = "open"
 created = 2026-11-10T04:16:34Z
@@ -9686,6 +9687,7 @@ area = "claude/skills/implement-v2-engine"
 tags = [
     "implement-v2",
     "git-status",
+    "v2-harness-tuning",
 ]
 status = "open"
 created = 2026-11-10T04:42:57Z
@@ -9817,6 +9819,7 @@ area = "claude/skills/implement-v2-engine"
 tags = [
     "implement-v2",
     "gate",
+    "v2-harness-tuning",
 ]
 status = "open"
 created = 2026-11-10T05:14:21Z
@@ -11034,7 +11037,7 @@ kind = "question"
 summary = "/apply-v2 on a reviewed flow with an unfinished earlier milestone runs that plan work before the fix milestone"
 area = "claude/skills/apply-v2-engine/SKILL.md"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-10T21:13:07Z
 last_seen = 2026-11-10T21:13:07Z
 seen_count = 1
@@ -11044,6 +11047,8 @@ flow = "v2-apply"
 context = "The skill hands over to implement-v2-engine with the flow slug, which picks the first milestone with a row not done, and --milestone is refused while an earlier one is unfinished. The skill only announces this, so /apply-v2 can run plan work the user did not ask for. Decide whether it should stop and ask instead."
 base_sha = "e42667b7f81f921261d8017ccbe4c95d800c18af"
 related = ["B-ce9ebb4d"]
+resolved = 2026-11-11
+resolution = "8b0ce79f: the apply-v2 preview lists the plan rows not done and asks whether to run them first or stop, before anything is written."
 
 [[backlog]]
 id = "B-1745ce8c"
@@ -11070,7 +11075,7 @@ kind = "question"
 summary = "review settle --refute is refused on a panel-routed finding, so one blocked on evidence cannot be refuted at settle"
 area = "tomlctl/src/review/settle.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-10T22:24:21Z
 last_seen = 2026-11-10T22:24:21Z
 seen_count = 1
@@ -11080,6 +11085,8 @@ flow = "v2-apply"
 context = "settle --refute records an orchestrator refuted verdict, and review verdict takes only panel and audit verdicts on the panel route. A panel-routed finding blocked on evidence therefore has no refute path at settle; it needs an audit verdict or a rule for this case. Accept and defer still work."
 base_sha = "634757327c47d3bbdffdecf6c1a53b8b312ef6f8"
 related = ["B-b4451a42"]
+resolved = 2026-11-11
+resolution = "ac0095a3: a settle refute, an orchestrator refuted verdict on a finding blocked on evidence, is accepted on the panel route and decides at once, as an audit verdict does."
 
 [[backlog]]
 id = "B-97172963"
@@ -11108,6 +11115,7 @@ area = "claude/skills/review-v2-engine/references/plan-flow.md"
 tags = [
     "plan-review",
     "triage",
+    "v2-harness-tuning",
 ]
 status = "open"
 created = 2026-11-11T07:21:28Z
@@ -11125,7 +11133,10 @@ id = "B-efcdf91b"
 kind = "annoyance"
 summary = "an unknown field in --template renders blank with exit 0, where --get warns"
 area = "tomlctl/src/output"
-tags = ["output-options"]
+tags = [
+    "output-options",
+    "v2-harness-tuning",
+]
 status = "open"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
@@ -11202,7 +11213,10 @@ id = "B-cd288c8e"
 kind = "question"
 summary = "most plan-review findings arrive advisory-tier with no target, expect and new, so valid findings become manual orchestrator work"
 area = "claude/agents/review-finder.md"
-tags = ["plan-review"]
+tags = [
+    "plan-review",
+    "v2-harness-tuning",
+]
 status = "open"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
@@ -11222,6 +11236,7 @@ area = "claude/workflows/review-v2.js"
 tags = [
     "plan-review",
     "cost",
+    "v2-harness-tuning",
 ]
 status = "open"
 created = 2026-11-11T07:21:28Z
@@ -11242,6 +11257,7 @@ area = "tomlctl/src/review/digest.rs"
 tags = [
     "review-v2",
     "context",
+    "v2-harness-tuning",
 ]
 status = "open"
 created = 2026-11-11T07:21:28Z
@@ -11448,6 +11464,7 @@ area = "claude/skills/plan-v2-engine"
 tags = [
     "plan-v2",
     "gate",
+    "v2-harness-tuning",
 ]
 status = "open"
 created = 2026-11-11T07:21:28Z
@@ -11468,6 +11485,7 @@ area = "claude/workflows/implement-v2-milestone.js"
 tags = [
     "implement-v2",
     "speed",
+    "v2-harness-tuning",
 ]
 status = "open"
 created = 2026-11-11T07:21:28Z
@@ -11488,6 +11506,7 @@ area = "claude/skills/plan-v2-engine"
 tags = [
     "plan-v2",
     "lanes",
+    "v2-harness-tuning",
 ]
 status = "open"
 created = 2026-11-11T07:21:28Z
@@ -11527,6 +11546,7 @@ area = "tomlctl/src/tasks"
 tags = [
     "implement-v2",
     "context",
+    "v2-harness-tuning",
 ]
 status = "open"
 created = 2026-11-11T07:21:28Z
@@ -11547,6 +11567,7 @@ area = "claude/workflows/implement-v2-milestone.js"
 tags = [
     "implement-v2",
     "discipline",
+    "v2-harness-tuning",
 ]
 status = "open"
 created = 2026-11-11T07:21:28Z
@@ -11606,6 +11627,7 @@ area = "claude/agents/verification.md"
 tags = [
     "implement-v2",
     "context",
+    "v2-harness-tuning",
 ]
 status = "open"
 created = 2026-11-11T07:21:28Z
