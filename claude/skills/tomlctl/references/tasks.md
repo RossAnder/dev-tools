@@ -423,7 +423,7 @@ it.
 | `backlog/unknown-id` | error | `check` and `import-plan` — a linked id in neither the `backlog` nor the `compacted` array of `.claude/backlog.toml`, through a `closes` or a `refs` link; `ids` names every linking task. A missing backlog reads as empty |
 | `backlog/unpromoted` | warning | `check` and `import-plan` — a `closes` id whose item is still `open`; `ids` names the closing tasks, and a `refs` link raises nothing |
 | `backlog/claimed-elsewhere` | warning | `check --slug` and `import-plan --slug` — a `closes` id whose item is `promoted` to neither the slug nor the store's `plan_path`, `\` and `/` compared alike; `ids` names the closing tasks. Never raised under `--file` or in plan mode |
-| `backlog/closed` | info | `check` and `import-plan` — a linked id whose item is `resolved`, `dismissed` or compacted; `ids` names every linking task |
+| `backlog/closed` | info | `check` and `import-plan` — a linked id whose item is `resolved`, `dismissed` or compacted; `ids` names every linking task. Silent for the expected end state: an item `resolved` with `resolved_flow` naming this flow (the slug, or the store's `plan_path` without `--slug`) and a `closes` task in `resolved_tasks` that is `done` with a `commit`. A compacted item keeps no `resolved_tasks`, so any `closes` task `done` with a `commit` counts |
 
 The four `backlog/*` classes are joined from the store's `[[backlog_links]]` and
 `.claude/backlog.toml`, read only when the store holds a link — a backlog that does not parse
@@ -457,6 +457,6 @@ bare path- or identifier-token scan is what measured unusable.
 | Key | Value | Meaning |
 |---|---|---|
 | `class` | class name | A row of the table above. |
-| `severity` | `error` \| `warning` \| `info` | Only `error` moves the exit code; `info` is reserved for a list a reader judges, and `files/closure` and `backlog/closed` are its members. |
+| `severity` | `error` \| `warning` \| `info` | Only `error` moves the exit code; `info` is reserved for a list a reader judges, and `files/closure` and `backlog/closed` are its members here; `plan check` adds `plan/file-only-chain`. |
 | `ids` | ids | The tasks concerned. Empty for the whole-store classes — `dag/unbuildable`, the four `policy/*`, `plan/policy-absent`, `plan/no-tasks` and `render/drift`. |
 | `detail` | text | The diagnostic, naming what `ids` cannot, such as a `ref`. |

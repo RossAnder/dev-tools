@@ -121,7 +121,7 @@ otherwise; `writes_build` keeps its one meaning, whether running the check build
 | Owner | Who runs the check |
 |---|---|
 | `worker` | The task's worker. Only this owner is probed, and only with `writes_build = false`: `run_by = "worker"` on a building check is refused at write. |
-| `gate` | The milestone's gate, through [`plan emit gate-list`](plan.md#plan-emit). |
+| `gate` | The milestone's gate, through [`plan emit gate-list`](plan-engine.md#plan-emit-gate-list). |
 | `covered` | Nobody separately: the gate `covered_by` names already runs it. `gate-list` skips it. |
 
 `tasks add`, `add-many` and `update` refuse an unknown `run_by`, `worker` on a building check,

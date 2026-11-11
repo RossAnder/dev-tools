@@ -2,7 +2,8 @@
 
 The `tomlctl plan` verbs over a v2 flow's `.claude/flows/<slug>/plan.toml`,
 `docs/flows/<slug>/brief.md` and task store: each verb's flags and output, and the check classes.
-`plan probes`, with its scripts and verdicts, is [plan-probes.md](plan-probes.md). The shape of
+`plan probes`, with its scripts and verdicts, is [plan-probes.md](plan-probes.md), and `plan stage`
+and `plan emit` are [plan-engine.md](plan-engine.md). The shape of
 `plan.toml` and what its fields mean are [plan-store.md](plan-store.md). The side tables a plan adds to `tasks.toml` (`[[specs]]`,
 `[[milestones]]`, `[[changes]]`, `audit`) are [tasks-store.md](tasks-store.md), and the `spec`,
 `reason` and `file_notes` row keys that fill them are
@@ -371,65 +372,8 @@ Emits and records the acceptance and premise probes; its flags, scripts and verd
 
 ## `plan stage`
 
-Where the plan stands, computed from what exists on disk and never stored. No verb gates on it.
-
-```bash
-tomlctl plan stage --slug <slug>
-```
-
-Prints `{"stage":"prove","next":"tasks update --ndjson","blockers":["<class> (<count>): <first finding's detail>"],"open_runs":["<step>"]}`.
-`blockers` holds one line per class, plus one naming any unanswered surfaced decisions, and `open_runs` is always present. The first row that applies
-wins. `next` is a hint, not a command line: it names a verb that clears the blocker, or `tasks check`
-to diagnose a DAG or policy error.
-
-| Stage | Applies when | `next` |
-|---|---|---|
-| `done` | Approved, with at least one row and every row `done` | `none`, or the brief hint below when `brief.md` has changed or is gone |
-| `approved` | Approved, with every row still `pending` | `none`, or the brief hint below when `brief.md` has changed or is gone |
-| `running` | Approved, otherwise | `plan drift`, or the brief hint below when `brief.md` has changed or is gone |
-| `open` | `plan/brief-missing` or `plan/brief-section-empty` | `plan open` when missing, else `edit docs/flows/<slug>/brief.md` |
-| `design` | No milestones or no tasks | `plan milestone add` when no milestones, else `tasks add-many` |
-| `write` | `plan/task-no-spec` | `tasks update --ndjson` |
-| `prove` | Any error-class finding, `plan/probe-absent`, or a surfaced decision still `agent-assumed` | By class, below |
-| `review` | Review is unsettled: no `[[run]]` for step `review` with a skip reason, and none of the `plan approve --review ran` conditions below holds. The blockers include `N open user-tier or question-tier findings to accept, veto or answer` | the `/plan-v2` Review step, or `plan run skip --step review --reason <why>` |
-| `ready` | Otherwise | `plan approve` |
-
-At `prove`, `next` is the first row below that has a blocker. Probes come last, because any spec edit
-unprobes the entry it changes.
-
-| Classes | `next` |
-|---|---|
-| `dag/cycle`, `dag/dangling-ref`, `dag/duplicate-number`, `dag/unbuildable`, `checkpoint/invalid-cut`, `plan/orphan-row`, `policy/*` | `tasks check` |
-| `plan/spec-orphan` | `tasks add-many` (the new row replaces the orphan spec and then needs its own) |
-| `plan/spec-no-outcome`, `plan/spec-no-accept`, `plan/accept-no-check`, `plan/accept-owner-invalid`, `plan/accept-cover-unknown`, `plan/means-required-no-reason`, `plan/design-anchor-dead`, `plan/premise-task-unknown`, `backlog/unknown-id` | `tasks update --ndjson` |
-| `plan/contract-no-check`, `plan/contract-task-unknown` | `plan contract` |
-| `plan/decision-bind-unknown`, or a surfaced decision still `agent-assumed`, which no class reports but `plan approve` refuses | `plan decide` |
-| `plan/handover-task-unknown`, `plan/handover-incomplete` | `plan handover set --ndjson <rows with the handover id and the missing or corrected keys>` |
-| `plan/deferred-no-reason` | `plan milestone update --defer --reason <why>` |
-| Any other error class | `plan check` |
-| `plan/probe-unhealthy` | `tasks update --ndjson, then plan probes --emit` |
-| `plan/probe-absent` | `plan probes --emit` |
-
-An open run is one with no `finished`, no `skip_reason` and no `outcome`. At every stage, including
-`approved`, `running` and `done`, an open run makes `next` read
-`relaunch step <s> or plan run abandon --step <s> --reason <why>`, where `<s>` is the oldest open
-row's step, and `stage` does not change. After the abandon, `next` returns to the stage's own hint.
-Each open row adds `open run: step <s>, started <at>` to `blockers`, ahead of the class lines, so
-stages past approval can show blockers. `open_runs` lists the step of each open row in store order,
-with duplicates kept.
-
-On `approved`, `running` and `done`, when `brief.md` differs from the newest approval's digest, `stage`
-keeps its name, adds the blocker ``plan/brief-changed (1): `brief.md` differs from the brief approved at `<commit>` ``
-and sets `next` to `plan approve --amend --review <outcome>`. When an unanswered decision or another
-`plan check` error would refuse that amend, those join the blockers and `next` names the verb that
-clears them first. With an open run, `next` stays the relaunch-or-abandon hint above, and the
-`open run: ...` blocker comes before the brief blocker. A matching brief leaves `next` at `none` or
-`plan drift` with empty blockers.
-
-A deleted brief on those stages keeps the stage name, adds the `plan/brief-missing` blocker and sets
-`next` to `git restore --source <commit> -- docs/flows/<slug>/brief.md`, `<commit>` being the newest
-approval's. `plan open` writes nothing on an approved plan and `plan approve --amend` refuses a
-missing brief, so restoring the approved bytes is what clears it. An open run outranks this hint too.
+Where the plan stands, computed from the stores and never stored: its stages, `next` hints, blockers
+and open-run rule are [plan-engine.md](plan-engine.md#plan-stage).
 
 ## `plan gate`
 
@@ -545,22 +489,9 @@ reported as written.
 
 ## `plan emit`
 
-Three read-only leaves that build what the execution engine passes on from the stores. Each takes
-`--milestone <id>`, refuses an id the task store does not declare, prints one JSON object, writes
-nothing and runs no stored command.
-
-```bash
-tomlctl plan emit launch-args --slug <slug> --milestone <id> [--max-parallel <n>]
-tomlctl plan emit gate-list --slug <slug> --milestone <id>
-tomlctl plan emit reproduce-units --slug <slug> --milestone <id> [--since-launch] [--relaunch <n> --round <r> --task <refs>]
-```
-
-- **`plan emit launch-args`** takes `--max-parallel`, the workers running at once, from 1 to 8
-  (default 4), and prints `{args, args_sha256, after_checks, dropped}`. `args` is the `implement-v2-milestone` Workflow's input (`slug`, `milestone`, `root`, `max_parallel`, `tasks[]` of `id`, `executor`, `needs`, `after`, `files`), and `args_sha256` the SHA-256 of its compact JSON, for `plan run start --args-hash`. `dropped[].reason` is `not-pending`, `withheld:<task>:<premise>:<verdict>`, `needs-withheld:<task>`, `executor:<value>`, `no-files` or `need-not-done:<task>:<status>`. A `base` premise, or an `after:<m>` one whose task `m` is `done`, needs a probe at `HEAD`, or the call fails naming `plan probes --emit --premises --milestone <id>`. An `after:<m>` premise whose task `m` is dispatched keeps its task, with `m` in its `after` and the premise's command in `after_checks` (`task`, `premise`, `after`, `check`).
-- **`plan emit gate-list`** prints `{commands, skipped}`: the milestone's `gates` in stored order (`source = "gate"`), then each accept check whose effective owner is `gate`, in row then entry order (`source = "accept:<task>:<index>"`). A command already listed is skipped with reason `duplicate`, and a `covered` entry with reason `covered_by <command>`; `skipped` rows carry `task`, `accept` and `reason`. Holds and `timeout:`, `rerun:` or `transient:` options stay the orchestrator's to add.
-- **`plan emit reproduce-units`** prints `{launches}`, one per review store the milestone's `[[finding_links]]` name: `mode = "reproduce"`, `store` (`{"slug"}` or `{"scope"}`), `flow`, `milestone`, `round` (the store's highest for this flow and milestone plus one, or `--round`), `run_dir` and `units` (`task` ref, `files`, `findings`, `route`). A finding several rows fix goes to the highest-id row. `run_dir` is `.review-v2-runs/apply-<slug>-<milestone>-<round>`, then `-<s>` or `-<scope>` when more than one store has units, then `-r<n>` under `--relaunch <n>`. `route` is `checker` only when every finding is stored `route = "checker"` with no `direction = "add"`, `instances`, `fix_files` or `target_file`; otherwise `verifier`.
-  - `--since-launch` keeps a unit only when one of its findings' latest reproduction for this flow and milestone is not `gone` (none counts as not `gone`), or its `files` share a path with a row named in the `tasks` of the latest `implement:<id>` run.
-  - `--relaunch <n>` (from 1) needs `--round <r>`, the round relaunched, and `--task <refs>`, the units kept, by row `ref`; `--round` and `--task` are refused without it, and a ref naming no unit is refused.
+The `launch-args`, `gate-list` and `reproduce-units` leaves the execution engine builds its Workflow
+input, gate command list and reproduce launches from; their flags and output are
+[plan-engine.md](plan-engine.md#plan-emit).
 
 ## Check classes
 
@@ -589,5 +520,6 @@ tomlctl plan emit reproduce-units --slug <slug> --milestone <id> [--since-launch
 | `plan/design-anchor-dead` | error | A spec's `design` citation resolves to no section. |
 | `plan/deferred-no-reason` | error | A deferred milestone has a blank `defer_reason`. |
 | `plan/probe-unhealthy` | error | An `accept` entry's recorded verdict is anything but `healthy`. |
-| `plan/probe-absent` | warning | An `accept` entry of a `pending` row, with a non-empty `check`, `writes_build = false` and an effective owner of `worker`, has no probe. |
+| `plan/probe-absent` | warning | An `accept` entry of a `pending` row, with a non-empty `check`, `writes_build = false` and an effective owner of `worker`, has no probe. A row added after approval, which an audited store marks with a `[[changes]]` row of `field = "*"` and an empty `old`, is not reported, since probes run only before approval. |
 | `plan/milestone-no-gate` | warning | A milestone, or a checkpoint with no `[[milestones]]` row, has no non-blank gate. |
+| `plan/file-only-chain` | info | Before the first approval only: one finding per milestone holding a `needs` link whose two rows share a file but no contract names both and no premise of the later row is at `after:<earlier>`. `ids` names the linked rows; `detail` lists each link with its shared files, and the milestone's longest `needs` chain against its row count. Splitting the file lets the rows run together. |

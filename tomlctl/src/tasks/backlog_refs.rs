@@ -8,10 +8,10 @@ use anyhow::Result;
 use toml::Value as TomlValue;
 
 use super::finding::{ERROR, Finding, INFO, WARNING, quoted_list};
-use super::schema::Store;
+use super::schema::{Status, Store};
 use crate::backlog::schema::{
-    ARRAY_BACKLOG, ARRAY_COMPACTED, FIELD_PROMOTED_TO, FIELD_STATUS, STATUS_DISMISSED, STATUS_OPEN,
-    STATUS_PROMOTED, STATUS_RESOLVED, read_store,
+    ARRAY_BACKLOG, ARRAY_COMPACTED, FIELD_PROMOTED_TO, FIELD_RESOLVED_FLOW, FIELD_RESOLVED_TASKS,
+    FIELD_STATUS, STATUS_DISMISSED, STATUS_OPEN, STATUS_PROMOTED, STATUS_RESOLVED, read_store,
 };
 use crate::cli::ReadIntegrityArgs;
 use crate::io::{item_id, items_array};
@@ -96,6 +96,9 @@ fn item_finding(
     };
     let status = str_field(row, FIELD_STATUS);
     if compacted || status == STATUS_RESOLVED || status == STATUS_DISMISSED {
+        if closed_by_own_task(store, flow, row, compacted, &linkers.closes) {
+            return None;
+        }
         let state = match compacted {
             true => format!("compacted as `{status}`"),
             false => format!("already `{status}`"),
@@ -143,6 +146,45 @@ fn item_finding(
         });
     }
     None
+}
+
+/// The expected end of a `closes` link: the item is `resolved` by this flow,
+/// naming a closing task that is `done` with a commit. A compacted row keeps
+/// `resolved_flow` but not `resolved_tasks`, so any done, committed closer
+/// stands in for the named one.
+fn closed_by_own_task(
+    store: &Store,
+    flow: Option<&str>,
+    row: &TomlValue,
+    compacted: bool,
+    closers: &BTreeSet<&str>,
+) -> bool {
+    if str_field(row, FIELD_STATUS) != STATUS_RESOLVED {
+        return false;
+    }
+    let resolved_flow = str_field(row, FIELD_RESOLVED_FLOW);
+    let ours = match flow {
+        Some(flow) => claims(store, flow, resolved_flow),
+        None => {
+            !store.plan_path.is_empty()
+                && resolved_flow.replace('\\', "/") == store.plan_path.replace('\\', "/")
+        }
+    };
+    if !ours {
+        return false;
+    }
+    let named: BTreeSet<&str> = row
+        .get(FIELD_RESOLVED_TASKS)
+        .and_then(TomlValue::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(TomlValue::as_str)
+        .collect();
+    closers
+        .iter()
+        .filter(|r#ref| compacted || named.contains(*r#ref))
+        .filter_map(|r#ref| store.find_ref(r#ref))
+        .any(|task| task.status == Status::Done && !task.commit.trim().is_empty())
 }
 
 /// Whether a `promoted_to` names this flow, by slug or by plan path — a
@@ -347,6 +389,80 @@ promoted_to = "other-flow"
         );
         assert!(findings[2].detail.contains("compacted"), "{findings:?}");
         assert_eq!(exit_code(&findings), 0);
+    }
+
+    const RESOLVED_HERE: &str = r#"
+[[backlog]]
+id = "B-0wn00001"
+summary = "resolved by this flow's task-1"
+status = "resolved"
+resolved = 2026-09-01
+resolution = "fixed"
+resolved_flow = "unified-singing-gem"
+resolved_tasks = ["task-1"]
+resolved_commits = ["abc1234"]
+
+[[backlog]]
+id = "B-0th3r001"
+summary = "resolved by another flow's task-1"
+status = "resolved"
+resolved = 2026-09-01
+resolution = "fixed"
+resolved_flow = "other-flow"
+resolved_tasks = ["task-1"]
+resolved_commits = ["abc1234"]
+
+[[compacted]]
+id = "B-c0mp0002"
+summary = "folded after this flow resolved it"
+status = "resolved"
+resolved_flow = "unified-singing-gem"
+"#;
+
+    fn done(store: &mut Store, id: u32, commit: &str) {
+        let row = store
+            .items
+            .iter_mut()
+            .find(|row| row.id == id)
+            .expect("the row exists");
+        row.status = Status::Done;
+        row.commit = commit.to_string();
+    }
+
+    #[test]
+    fn an_item_its_own_done_committed_task_resolved_is_silent() {
+        let mut store = store(&[(1, &["B-0wn00001"], &[]), (2, &["B-c0mp0002"], &[])]);
+        done(&mut store, 1, "abc1234");
+        done(&mut store, 2, "def5678");
+        assert_eq!(
+            backlog_findings(&store, &backlog(RESOLVED_HERE), Some(FLOW)),
+            Vec::<Finding>::new()
+        );
+    }
+
+    #[test]
+    fn a_resolution_the_linking_task_does_not_account_for_is_still_closed() {
+        let mut uncommitted = store(&[(1, &["B-0wn00001"], &[])]);
+        done(&mut uncommitted, 1, "");
+        let mut foreign = store(&[(1, &["B-0th3r001"], &[])]);
+        done(&mut foreign, 1, "abc1234");
+        let refs_only = store(&[(1, &[], &["B-0wn00001"])]);
+
+        for (label, store) in [
+            ("a done row with no commit", uncommitted),
+            ("a resolution by another flow", foreign),
+            ("a refs link", refs_only),
+        ] {
+            assert_eq!(
+                classes(&backlog_findings(
+                    &store,
+                    &backlog(RESOLVED_HERE),
+                    Some(FLOW)
+                )),
+                vec![("backlog/closed", INFO, vec![1])],
+                "{label}"
+            );
+        }
     }
 
     #[test]

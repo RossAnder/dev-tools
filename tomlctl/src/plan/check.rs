@@ -2,8 +2,8 @@
 //! can raise, which read `plan.toml`, the task store's side tables, `brief.md`
 //! and the `design/` documents.
 //!
-//! Warnings are `plan/milestone-no-gate` and `plan/probe-absent`; every other
-//! class raised here is an error.
+//! Warnings are `plan/milestone-no-gate` and `plan/probe-absent`, and
+//! `plan/file-only-chain` is info; every other class raised here is an error.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -20,7 +20,7 @@ use crate::output::{Rows, print_report};
 use crate::tasks::backlog_refs::linked_backlog_findings;
 use crate::tasks::check::{check, exit_code};
 use crate::tasks::finding::{
-    ERROR, Finding, NO_TASK, WARNING, finding_json, quoted_list, task_list,
+    ERROR, Finding, INFO, NO_TASK, WARNING, finding_json, quoted_list, task_list,
 };
 use crate::tasks::markdown::FenceState;
 use crate::tasks::schema::{
@@ -91,6 +91,9 @@ pub(crate) fn findings(slug: &str, integrity: &ReadIntegrityArgs) -> Result<Vec<
     );
     found.extend(spec_findings(&tasks, &authored));
     found.extend(milestone_findings(&tasks));
+    if plan.approvals.is_empty() {
+        found.extend(file_chain_findings(&tasks, &plan));
+    }
     found.sort_by(|a, b| (a.class, &a.ids).cmp(&(b.class, &b.ids)));
     Ok(found)
 }
@@ -451,7 +454,14 @@ fn spec_findings(tasks: &Store, authored: &Path) -> Vec<Finding> {
                     .filter(|milestone| milestone.id == row.checkpoint)
                     .flat_map(|milestone| milestone.gates.iter().map(String::as_str))
                     .collect();
-                findings.extend(row_spec_findings(spec, row, elaborated, &gates, authored));
+                findings.extend(row_spec_findings(
+                    spec,
+                    row,
+                    elaborated,
+                    &gates,
+                    authored,
+                    added_after_approval(tasks, &row.r#ref),
+                ));
             }
             None => findings.push(error(
                 "plan/spec-orphan",
@@ -463,10 +473,22 @@ fn spec_findings(tasks: &Store, authored: &Path) -> Vec<Finding> {
     findings
 }
 
+/// Approval turns `audit` on, and from then on every added row leaves a `*`
+/// change with an empty `old`, so that trail entry marks a row the plan's Prove
+/// step never saw.
+fn added_after_approval(tasks: &Store, r#ref: &str) -> bool {
+    tasks.audit
+        && tasks
+            .changes
+            .iter()
+            .any(|change| change.r#ref == r#ref && change.field == "*" && change.old.is_empty())
+}
+
 /// `elaborated` is false for a task in a deferred milestone, whose `check`
 /// arrives when that milestone is elaborated. An unrecognised `elaboration`
 /// counts as elaborated, which is the stricter reading. `plan/probe-absent` needs
-/// a pending row because `plan probes` covers no other, so no verb could clear it.
+/// a pending row because `plan probes` covers no other, so no verb could clear it,
+/// and one written before approval, since probes run only at the plan's Prove step.
 /// `gates` are the gates of the row's own milestone, which a `covered_by` must name.
 fn row_spec_findings(
     spec: &TaskSpec,
@@ -474,6 +496,7 @@ fn row_spec_findings(
     elaborated: bool,
     gates: &[&str],
     authored: &Path,
+    added_after_approval: bool,
 ) -> Vec<Finding> {
     let id = row.id;
     let mut findings = Vec::new();
@@ -518,8 +541,9 @@ fn row_spec_findings(
                 ),
             ));
         }
-        let probeable =
-            super::probes::skip_reason(accept).is_none() && row.status == Status::Pending;
+        let probeable = super::probes::skip_reason(accept).is_none()
+            && row.status == Status::Pending
+            && !added_after_approval;
         match &accept.probe {
             Some(probe) if probe.verdict != VERDICT_HEALTHY => findings.push(error(
                 "plan/probe-unhealthy",
@@ -626,6 +650,126 @@ fn milestone_findings(tasks: &Store) -> Vec<Finding> {
         }
     }
     findings
+}
+
+/// Per milestone, the `needs` links inside it whose two rows share a file and
+/// nothing else: no contract naming both, and no premise of the later row at
+/// `after:<earlier>`. Such a link serialises the milestone only because one
+/// file holds both edits, which splitting the file before approval would undo.
+fn file_chain_findings(tasks: &Store, plan: &PlanStore) -> Vec<Finding> {
+    let declared: BTreeSet<&str> = tasks
+        .checkpoints
+        .iter()
+        .map(|checkpoint| checkpoint.id.as_str())
+        .chain(
+            tasks
+                .milestones
+                .iter()
+                .map(|milestone| milestone.id.as_str()),
+        )
+        .collect();
+    let mut findings = Vec::new();
+    for milestone in declared {
+        let rows: Vec<&TaskRow> = tasks
+            .items
+            .iter()
+            .filter(|row| row.checkpoint == milestone)
+            .collect();
+        let member = |id: u32| rows.iter().find(|row| row.id == id).copied();
+        let mut links: Vec<(u32, u32, Vec<&str>)> = Vec::new();
+        for row in &rows {
+            for &need in &row.needs {
+                let Some(earlier) = member(need) else {
+                    continue;
+                };
+                let theirs: BTreeSet<String> =
+                    earlier.files.iter().map(|file| normal_path(file)).collect();
+                let shared: Vec<&str> = row
+                    .files
+                    .iter()
+                    .filter(|file| theirs.contains(&normal_path(file)))
+                    .map(String::as_str)
+                    .collect();
+                if !shared.is_empty() && !link_has_reason(tasks, plan, earlier, row) {
+                    links.push((earlier.id, row.id, shared));
+                }
+            }
+        }
+        if links.is_empty() {
+            continue;
+        }
+        links.sort();
+        let ids: BTreeSet<u32> = links.iter().flat_map(|(a, b, _)| [*a, *b]).collect();
+        let described: Vec<String> = links
+            .iter()
+            .map(|(a, b, shared)| format!("{a} -> {b} over {}", quoted_list(shared, "no file")))
+            .collect();
+        findings.push(Finding {
+            class: "plan/file-only-chain",
+            severity: INFO,
+            ids: ids.into_iter().collect(),
+            detail: format!(
+                "milestone `{milestone}`: {} share a file and no contract or premise; its \
+                 longest needs chain is {} of {} rows",
+                described.join(", "),
+                longest_chain(&rows),
+                rows.len()
+            ),
+        });
+    }
+    findings
+}
+
+/// A contract naming both rows, or a premise of `later` waiting on `earlier`,
+/// is a reason for the edge beyond the file the two rows share.
+fn link_has_reason(tasks: &Store, plan: &PlanStore, earlier: &TaskRow, later: &TaskRow) -> bool {
+    let contracted = plan
+        .contracts
+        .iter()
+        .any(|contract| contract.tasks.contains(&earlier.id) && contract.tasks.contains(&later.id));
+    let waited = format!("after:{}", earlier.id);
+    let premised = tasks
+        .spec_for(&later.r#ref)
+        .is_some_and(|spec| spec.premises.iter().any(|premise| premise.at == waited));
+    contracted || premised
+}
+
+/// The most rows on one `needs` path inside `rows`. A cycle, which `dag/cycle`
+/// reports, is cut where the walk re-enters it.
+fn longest_chain(rows: &[&TaskRow]) -> usize {
+    fn depth(
+        id: u32,
+        rows: &[&TaskRow],
+        memo: &mut std::collections::BTreeMap<u32, usize>,
+        walking: &mut BTreeSet<u32>,
+    ) -> usize {
+        if let Some(known) = memo.get(&id) {
+            return *known;
+        }
+        if !walking.insert(id) {
+            return 0;
+        }
+        let needs = rows
+            .iter()
+            .find(|row| row.id == id)
+            .map(|row| row.needs.clone())
+            .unwrap_or_default();
+        let deepest = needs
+            .into_iter()
+            .filter(|need| rows.iter().any(|row| row.id == *need))
+            .map(|need| depth(need, rows, memo, walking))
+            .max()
+            .unwrap_or(0);
+        walking.remove(&id);
+        memo.insert(id, deepest + 1);
+        deepest + 1
+    }
+    let mut memo = std::collections::BTreeMap::new();
+    let mut walking = BTreeSet::new();
+    rows.iter()
+        .map(|row| depth(row.id, rows, &mut memo, &mut walking))
+        .max()
+        .unwrap_or(0)
 }
 
 fn error(class: &'static str, ids: Vec<u32>, detail: String) -> Finding {

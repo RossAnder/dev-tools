@@ -201,7 +201,7 @@ Prove runs in this order: the store check, the premises, the cold read and its f
 tomlctl plan check --slug <slug>
 ```
 
-It exits 1 on any error-class finding. `plan stage` names the verb that clears each class; fix every error and re-run until none is left. A `plan/probe-absent` warning is expected here and is cleared in 4d.
+It exits 1 on any error-class finding. `plan stage` names the verb that clears each class; fix every error and re-run until none is left. A `plan/probe-absent` warning is expected here and is cleared in 4d. A `plan/file-only-chain` info finding names `needs` links that exist only because two rows edit one file; where its longest chain is most of the milestone, split that file so the rows can run together, or keep the chain and move on.
 
 **Renamed and removed names.** Design can rename or remove a name Surface never swept, and `plan check` cannot see that. For each symbol, key, verb or flag a task's `outcome` renames, removes or reshapes, run the Scope sweep of [open-and-challenge.md, section 5](open-and-challenge.md#5-surface) on the old name now, against the rows as written. Every file with a hit must be in the `files` of a task whose outcome covers that site, tests and documentation included; a hit the plan means to leave is named in that task's `constraints`. A hit in a file no row holds is a missing file or a missing task: fix it with `tasks update --ndjson` or `tasks add-many` before the cold read, because a cold reader looks only at the files its milestone lists and a worker may not leave its own.
 

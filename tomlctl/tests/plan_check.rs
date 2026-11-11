@@ -760,6 +760,93 @@ fn a_probe_is_absent_only_on_a_pending_row() {
     }
 }
 
+/// The `[[changes]]` row an audited `tasks add-many` leaves for the fixture's row.
+const ADDED: &str = "\n[[changes]]\nref = \"add-guard\"\nfield = \"*\"\nold = \"\"\n\
+                     new = \"Add guard\"\nactor = \"agent\"\nreason = \"a drain fix\"\n";
+
+#[test]
+fn a_row_added_after_approval_is_not_absent_a_probe() {
+    let unprobed = swap(TASKS, PROBE, "");
+    let audited = swap(
+        &unprobed,
+        "last_import_refs = []",
+        "last_import_refs = []\naudit = true",
+    );
+    assert_clean(&Flow::with_tasks(&format!("{audited}{ADDED}")));
+
+    assert_reports_warning(&Flow::with_tasks(&audited), "plan/probe-absent");
+    let removed = swap(ADDED, "old = \"\"", "old = \"Add guard\"");
+    assert_reports_warning(
+        &Flow::with_tasks(&format!("{audited}{removed}")),
+        "plan/probe-absent",
+    );
+}
+
+/// A second row in milestone A, needing the first and editing its file.
+const CHAINED: &str = r#"
+[[specs]]
+ref = "use-guard"
+outcome = "the guard is used"
+accept = [{ behaviour = "a retry is guarded", check = "cargo test guarded", kind = "forward", positive = "", writes_build = false, probe = { at = "abc", neg_rc = 1, pos_rc = 0, verdict = "healthy" } }]
+
+[[items]]
+id = 2
+ref = "use-guard"
+title = "Use guard"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+files = ["./src/a.rs", "src/b.rs"]
+needs = [1]
+"#;
+
+#[test]
+fn a_needs_link_over_one_shared_file_is_reported_at_info() {
+    let flow = Flow::with_tasks(&format!("{TASKS}{CHAINED}"));
+    assert_eq!(flow.classes(), only("plan/file-only-chain", "info"));
+    let (code, report) = flow.run();
+    assert_eq!(code, Some(0), "{report}");
+    let finding = &report["findings"][0];
+    assert_eq!(finding["ids"], serde_json::json!([1, 2]), "{report}");
+    let detail = finding["detail"].as_str().expect("a detail");
+    assert!(detail.contains("1 -> 2 over `./src/a.rs`"), "{detail}");
+    assert!(
+        detail.contains("longest needs chain is 2 of 2 rows"),
+        "{detail}"
+    );
+}
+
+#[test]
+fn a_contract_a_premise_or_an_approval_quiets_a_shared_file_link() {
+    let chained = format!("{TASKS}{CHAINED}");
+    let contracted = Flow::seeded(
+        &chained,
+        &swap(PLAN, "tasks = [1]", "tasks = [1, 2]"),
+        BRIEF.as_bytes(),
+    );
+    assert_clean(&contracted);
+
+    let premised = swap(
+        &chained,
+        "outcome = \"the guard is used\"",
+        "outcome = \"the guard is used\"\npremises = [{ claim = \"the guard exists\", check = \"true\", at = \"after:1\" }]",
+    );
+    assert_clean(&Flow::with_tasks(&premised));
+
+    let approved = format!(
+        "{PLAN}{}",
+        approval(&hex_digest(BRIEF.as_bytes()), "abc1234")
+    );
+    assert_clean(&Flow::seeded(&chained, &approved, BRIEF.as_bytes()));
+
+    let disjoint = swap(
+        &chained,
+        "files = [\"./src/a.rs\", \"src/b.rs\"]",
+        "files = [\"src/b.rs\"]",
+    );
+    assert_clean(&Flow::with_tasks(&disjoint));
+}
+
 #[test]
 fn every_defect_is_reported_in_one_run_sorted_by_class() {
     let tasks = swap(
