@@ -349,8 +349,9 @@ Launch the `verification` agent **once** (`subagent_type: "verification"`) with 
 command list in a `commands:` field — build first, then tests, then any category-specific commands
 that fit its run-and-report contract — carrying each command's `timeout:` / `rerun:` options and
 any `transient:` patterns the plan's keys supply. It stops at the first `fail` or `timeout` and
-returns one block per attempted command (`outcome`, `exit`, `summary`, `failed_ids`, `log`), then a
-`not_run:` line. Do not restate the agent's contract in the prompt; one fan-in spawn is the
+returns one entry per attempted command — a pass as one line (`outcome: pass | command: … |
+duration: … | summary: …`), anything else as a block (`outcome`, `exit`, `summary`, `failed_ids`,
+`log`) — then a `not_run:` line. Do not restate the agent's contract in the prompt; one fan-in spawn is the
 supported pattern. **Never run a build or test command in the main conversation** — not to
 corroborate a pass, not to diagnose, not for fear of a slow suite: its output floods the
 orchestrator's context, and time budgets are the agent's to enforce. Judge each block per

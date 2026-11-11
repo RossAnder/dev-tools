@@ -16,7 +16,8 @@ locking rules.
 
 The `verification` agent reports; the orchestrator judges. Per block:
 
-- **`pass`** — trust it on `exit: 0`. A test command's `summary:` must also show at least one test
+- **`pass`** — one line, `outcome: pass | command: … | duration: … | summary: …`, written only on
+  exit 0. A test command's `summary:` must also show at least one test
   executed and none failed: `summary: none` or a zero count (`0 passed`, `No test files found`,
   `no tests to run`) is a `fail`, because a filter matching nothing exits 0 in most runners. Where
   `summary:` is `none` only because the agent does not parse that runner, Grep the block's `log:`
