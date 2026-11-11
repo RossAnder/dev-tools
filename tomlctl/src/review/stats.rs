@@ -8,7 +8,7 @@
 //! groups under `untagged`. Calibration exemplars come only from user
 //! dismissals, v1 wontfix reasons and audit overturns, so a verifier's own
 //! refutation never teaches a finder anything. `--plan-outcomes` derives a
-//! plan finding's disposition from `tier`, status and `applied`, so it needs
+//! plan finding's disposition from `tier`, status, `applied` and `addressed`, so it needs
 //! no status of its own. `--apply` is the native counterpart of `--outcomes`:
 //! it reads a finding's apply link, its `reopen_reason`, its block and settle
 //! fields and the store's reproductions, and opens no v1 ledger.
@@ -1051,7 +1051,8 @@ fn escapes(view: &View) -> JsonValue {
 /// applied it. A dismissed `user` row, or a dismissed tiered non-advisory row
 /// of a run started once the plan was approved, was put to the user and
 /// refused; on a draft the author dismisses those freely, so they read as
-/// `dismissed`. A `question` row resolved without an edit was answered.
+/// `dismissed`. A row resolved with `addressed` and no tool edit was fixed by
+/// the author's hand; a `question` row resolved without an edit was answered.
 fn disposition(tier: &str, finding: &Finding, after_approval: bool) -> &'static str {
     let status = finding.status();
     let applied_by = finding
@@ -1076,6 +1077,15 @@ fn disposition(tier: &str, finding: &Finding, after_approval: bool) -> &'static 
             && (parsed == Some(Tier::User) || after_approval) =>
         {
             "user-vetoed"
+        }
+        None if status == FindingStatus::Resolved
+            && finding
+                .rest
+                .get("addressed")
+                .and_then(toml::Value::as_array)
+                .is_some_and(|targets| !targets.is_empty()) =>
+        {
+            "author-addressed"
         }
         None if status == FindingStatus::Resolved && parsed == Some(Tier::Question) => {
             "user-answered"

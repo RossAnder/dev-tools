@@ -143,7 +143,7 @@ impl FindingStatus {
             Self::Deferred => &["defer_reason", "defer_trigger"],
             Self::Backlogged => &["backlog_ref"],
             Self::Converted => &["converted_to"],
-            Self::Resolved => &["resolution", "resolved"],
+            Self::Resolved => &["resolution", "resolved", "addressed"],
             Self::Open => &["reopen_reason"],
             Self::Unverified
             | Self::Superseded
@@ -251,6 +251,7 @@ str_enum!(
 
 str_enum!(ReproduceBy {
     Verifier => "verifier",
+    Checker => "checker",
     Orchestrator => "orchestrator",
 });
 pub(crate) const OUTCOMES: &[&str] = &[
@@ -546,6 +547,7 @@ const CELL_ASSIGNMENT: [Vis; 8] = [R, N, N, N, R, N, N, R];
 const RECORD_STATE: [Vis; 8] = [N, N, N, N, R, N, N, R];
 const TARGET: [Vis; 8] = [R, R, N, R, R, R, N, R];
 const TIER: [Vis; 8] = [N, N, N, R, R, R, N, R];
+const FIX_FILES: [Vis; 8] = [R, R, N, R, R, R, N, R];
 
 use Record::{Cell, Finding, Run, Verdict};
 
@@ -682,6 +684,12 @@ pub(crate) const FIELDS: &[FieldSpec] = &[
         .kinds(KindSet::CLEANUP)
         .items(50)
         .path(PathForm::Path),
+    // The files a fix edits or creates beyond its anchor; `review schedule`
+    // widens the minted row by them, and `edited_paths` never reads them.
+    field(Finding, "fix_files", Ty::StrList, FIX_FILES)
+        .kinds(DEFECT_OR_CLEANUP)
+        .items(8)
+        .path(PathForm::Path),
     // findings: blocked defect or cleanup
     field(Finding, "blocked_on", Ty::Str, BLOCKED)
         .kinds(DEFECT_OR_CLEANUP)
@@ -812,6 +820,11 @@ pub(crate) const FIELDS: &[FieldSpec] = &[
     field(Finding, "converted_to", Ty::Str, STATUS).computed(),
     field(Finding, "resolution", Ty::Str, STATUS).computed(),
     field(Finding, "resolved", Ty::Date, STATUS).computed(),
+    // The plan targets a hand edit by the author changed; set by
+    // `review triage --addressed` and read by `review recheck-targets`.
+    field(Finding, "addressed", Ty::StrList, STATUS)
+        .plan_only()
+        .computed(),
     field(Finding, "exported_as", Ty::Str, STATUS).computed(),
     field(Finding, "export_ledger", Ty::Str, STATUS).computed(),
     // The apply flow's slug and task ref of a scheduled finding. Not
@@ -1189,7 +1202,7 @@ pub(super) fn path_problem(path: &str, noun: &str) -> Option<String> {
 /// Keys a cell's `ruled_out` entry may carry.
 const RULED_OUT_KEYS: &[&str] = &["file", "symbol", "line", "reason"];
 /// The longest `reason` a `ruled_out` entry may carry, in characters.
-const RULED_OUT_REASON_CAP: usize = 200;
+pub(crate) const RULED_OUT_REASON_CAP: usize = 200;
 
 /// Why `entry` cannot be stored as one of a cell's `ruled_out` sites; empty
 /// when it can. `Ty::TableList` admits any table, so the entry's shape is
@@ -1733,6 +1746,7 @@ mod tests {
         (Finding, "converted_to", None, "R - - - R - - R"),
         (Finding, "resolution", None, "R - - - R - - R"),
         (Finding, "resolved", None, "R - - - R - - R"),
+        (Finding, "addressed", None, "R - - - R - - R"),
         (Finding, "exported_as", None, "R - - - R - - R"),
         (Finding, "export_ledger", None, "R - - - R - - R"),
         (Finding, "apply_flow", None, "R - - - R - - R"),
@@ -1778,6 +1792,7 @@ mod tests {
         (Finding, "target_file", None, "- rt R R C R - -"),
         (Finding, "effort", Some(Kind::Cleanup), "- rt R R C R - -"),
         (Finding, "instances", None, "- rt R R C R - -"),
+        (Finding, "fix_files", None, "R R - R R R - R"),
         (Finding, "angle", None, "- - - - ut - R R"),
         (Finding, "rationale", None, "- - - - ut - R R"),
         (Finding, "alternative", None, "- - - - ut - R R"),
@@ -1939,6 +1954,7 @@ mod tests {
                 "converted_to",
                 "resolution",
                 "resolved",
+                "addressed",
                 "reopen_reason",
             ])
         );

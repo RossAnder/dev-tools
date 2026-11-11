@@ -54,6 +54,14 @@ pub(crate) struct ReviewTriageArgs {
     )]
     pub(crate) run: Option<String>,
     #[arg(
+        long = "targets",
+        value_name = "TARGET,...",
+        value_delimiter = ',',
+        conflicts_with_all = NOT_ADDRESSED,
+        help = "Companion to --addressed: the plan targets the hand edit changed; defaults to each finding's own target"
+    )]
+    pub(crate) targets: Vec<String>,
+    #[arg(
         long = "expect-status",
         value_name = "STATUS",
         help = "Move only the ids still at this status; the rest land under `skipped_stale`"
@@ -167,6 +175,8 @@ const NOT_DEFER: &[&str] = &[
     "backlog_ref",
     "convert",
     "answer_file",
+    "addressed",
+    "addressed_file",
 ];
 const NOT_CONVERT: &[&str] = &[
     "dismiss",
@@ -180,6 +190,23 @@ const NOT_CONVERT: &[&str] = &[
     "resolve",
     "resolve_file",
     "backlog_ref",
+    "answer_file",
+    "addressed",
+    "addressed_file",
+];
+const NOT_ADDRESSED: &[&str] = &[
+    "dismiss",
+    "dismiss_file",
+    "defer",
+    "defer_file",
+    "reopen",
+    "reopen_file",
+    "park",
+    "park_file",
+    "resolve",
+    "resolve_file",
+    "backlog_ref",
+    "convert",
     "answer_file",
 ];
 
@@ -258,4 +285,16 @@ pub(crate) struct ReviewTriageMode {
         help = "Answer an open finding blocked on a decision with the text of a file; clears the block, keeping its options"
     )]
     pub(crate) answer_file: Option<PathBuf>,
+    #[arg(
+        long = "addressed",
+        value_name = "TEXT",
+        help = "Status → resolved: the author fixed the plan finding by hand; records --targets as `addressed`"
+    )]
+    pub(crate) addressed: Option<String>,
+    #[arg(
+        long = "addressed-file",
+        value_name = "PATH",
+        help = "--addressed with the text read from a file"
+    )]
+    pub(crate) addressed_file: Option<PathBuf>,
 }

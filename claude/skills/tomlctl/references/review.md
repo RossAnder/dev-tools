@@ -13,7 +13,7 @@ The flag surface of the `tomlctl review` group and the shape of the v2 review st
 - [Coverage](#coverage) — `survey`, `plan`, `cover`
 - [Findings and verdicts](#findings-and-verdicts) — `add`, `verdict`, `resolve`
 - [Plan records](#plan-records) — flow mode, `target`, `tier`, `proof`, `apply`
-- [Reads](#reads) — `list`, `show`, `digest`, `report`, `stats`
+- [Reads](#reads) — `list`, `show`, `digest`, `recheck-targets`, `report`, `stats`
 - [Dispositions and export](#dispositions-and-export) — `triage`, `export-v1`
 - [Apply through a v2 flow](#apply-through-a-v2-flow) — `schedule`, `settle`, `reconcile`, `anchor`, `reproduce`, `reproduce-status` are [review-apply.md](review-apply.md)
 - [Catalogue and schema](#catalogue-and-schema) — `catalogue`, `schema`
@@ -23,7 +23,7 @@ The flag surface of the `tomlctl review` group and the shape of the v2 review st
 - **Store target.** Every verb except `catalogue` and `schema` takes exactly one of `--slug` (the flow store) or `--scope` (the flow-less store); `stats` also accepts `--all`. Both names are validated like a flow slug. The store stamps its own `last_updated`, so no verb takes `--no-stamp`.
 - **Run directory.** `.review-v2-runs/<store-key>/U<n>/` at the repo root, where `<store-key>` is the slug or `scope-<scope>`. `run start` creates it with a `payloads/` subdirectory, where agents stage their NDJSON payloads, and writes a `.gitignore` holding `*` at `.review-v2-runs/` when none is there. It and every `--out` must resolve, symlinks followed, under `.review-v2-runs/` or `.claude/`; `run start`, `plan --propose` and `report` take `--allow-outside` to override that.
 - **Catalogue drift.** A verb that reads a run's catalogue — `survey`, `plan`, `add`, `run finish` and the others that bind or route against it — reloads it from the roots the run recorded and fails `kind=validation` naming `tree_sha` or `config_sha` when either no longer matches the value `run start` recorded; start a new run. A run recorded without `tree_sha` is not checked.
-- **Integrity flags.** The writing verbs (`sync-v1`, `run *`, `survey`, `plan`, `cover`, `add`, `verdict`, `resolve`, `reproduce`, `apply`, `triage`, `settle`, `export-v1`, `schedule`, `reconcile`) carry the write bundle — `--allow-outside`, `--no-write-integrity`, `--verify-integrity`, `--strict-integrity`, `--no-create`. The reading verbs (`run list`, `run show`, `list`, `show`, `anchor`, `reproduce-status`, `digest`, `report`, `stats`, `catalogue`, `schema`) carry `--verify-integrity` and `--strict-read`; `report` also takes `--allow-outside`, for its `--out`. The flag tables below leave both bundles out.
+- **Integrity flags.** The writing verbs (`sync-v1`, `run *`, `survey`, `plan`, `cover`, `add`, `verdict`, `resolve`, `reproduce`, `apply`, `triage`, `settle`, `export-v1`, `schedule`, `reconcile`) carry the write bundle — `--allow-outside`, `--no-write-integrity`, `--verify-integrity`, `--strict-integrity`, `--no-create`. The reading verbs (`run list`, `run show`, `list`, `show`, `anchor`, `reproduce-status`, `digest`, `recheck-targets`, `report`, `stats`, `catalogue`, `schema`) carry `--verify-integrity` and `--strict-read`; `report` also takes `--allow-outside`, for its `--out`. The flag tables below leave both bundles out.
 - **Missing store.** `sync-v1`, `stats` and `reconcile` read an absent store as empty and create nothing; `run start` seeds one; every other verb fails `kind=not_found`.
 - **Payload sources.** Each `--ndjson` takes `-` for stdin, otherwise a file path; a leading `@` is accepted. Prose flags (`--note`, `--rationale`, `--incomplete`, the triage reasons, `--trigger`) read stdin when given `-`, and each has a `-file` twin that reads a file the Write tool staged. Text is read with `\r\n` as `\n` and trimmed; an empty value is refused.
 - **Replays are harmless.** `cover`, `verdict`, `resolve`, `reproduce`, `sync-v1`, `triage`, `settle` and `reconcile` compute their result against the stored rows first and write nothing when it changes nothing, and `plan --ndjson` recognises the wave it already minted, so replaying a call that succeeded reports itself `unchanged` rather than writing a duplicate.
@@ -75,6 +75,7 @@ lens = "correctness"
 route = "verifier"                 # verifier | panel | checker | none
 file = "tomlctl/src/review/verdict.rs"
 line = 88
+fix_files = ["tomlctl/src/review/store.rs", "tomlctl/tests/review_verdict.rs"]  # optional; files the fix edits or creates beyond the anchor
 status = "open"
 
 [[verdicts]]
@@ -90,7 +91,7 @@ milestone = "B"
 round = 1                          # positive integer
 task = "fix-the-retry-bound"       # the apply task's ref; optional
 verdict = "gone"                   # gone | reproduces | unsettled
-by = "verifier"                    # verifier | orchestrator
+by = "verifier"                    # verifier | checker | orchestrator
 citation = "src/retry.rs:40"
 at = 2026-11-12                    # stamped by `reproduce`
 ```
@@ -99,7 +100,7 @@ Ids are minted inside the write lock with the prefixes `U` (runs), `C` (cells) a
 
 **Schema version.** Every write stamps `schema_version = 2` while the store holds a `[[reproductions]]` row or a `scheduled` finding, and `1` otherwise, so a store that needs neither stays readable by a binary that predates them. A store stamped above `2` is refused.
 
-**Finding statuses:** `unverified`, `superseded`, `open`, `refuted`, `merged`, `parked`, `dismissed`, `deferred`, `backlogged`, `converted`, `resolved`, `exported`, `scheduled`. A status owns its companions: `merged` → `merged_into`, `parked` → `park_reason`, `dismissed` → `dismiss_reason`, `deferred` → `defer_reason` + `defer_trigger`, `backlogged` → `backlog_ref`, `converted` → `converted_to`, `resolved` → `resolution` + `resolved`, `open` → `reopen_reason`; the rest own none. Every status write that changes the status, or supplies companions, clears every other status's companions first. `outcome` (`repeat`, `contested`, `reopened`, `regression`, `suppressed`) is set by `resolve`.
+**Finding statuses:** `unverified`, `superseded`, `open`, `refuted`, `merged`, `parked`, `dismissed`, `deferred`, `backlogged`, `converted`, `resolved`, `exported`, `scheduled`. A status owns its companions: `merged` → `merged_into`, `parked` → `park_reason`, `dismissed` → `dismiss_reason`, `deferred` → `defer_reason` + `defer_trigger`, `backlogged` → `backlog_ref`, `converted` → `converted_to`, `resolved` → `resolution` + `resolved` (+ `addressed`, the targets a hand edit changed, set by `triage --addressed`), `open` → `reopen_reason`; the rest own none. Every status write that changes the status, or supplies companions, clears every other status's companions first. `outcome` (`repeat`, `contested`, `reopened`, `regression`, `suppressed`) is set by `resolve`.
 
 **Link fields.** `exported_as` and `export_ledger` name the v1 row a finding was exported to. They are not companions: they survive the moves `sync-v1` makes from `exported` to `resolved`, `dismissed` or `deferred`. A `triage --reopen` of a finding carrying `exported_as` retires the link: it appends `<export_ledger>#<exported_as>` to the computed list `retired_links` and drops both link fields. `sync-v1` and `stats --outcomes` skip a retired link, and `export-v1` follows it only as described under [Matching](#tomlctl-review-export-v1). On the v1 side, a row's `v2_ref` is a string, or an array once two findings share the row.
 
@@ -118,14 +119,15 @@ The finding fields an agent supplies, with their caps in characters. Every other
 | every kind | `kind`, `lens` (one of the cell's concerns; see the cleanup exception below), `file`, `summary` (≤160) | `symbol`, `same_as`, `depends_on` |
 | `defect` | `line` (outside a v2 flow), `severity` (`critical` \| `major` \| `minor`), `failure_scenario` (≤600; aim for 450), `fix` (≤800), `effort`, `counter` (≤300), `grade` (`high` \| `medium` \| `low`), `evidence` (≤5 × 300) | — |
 | `cleanup` | `line` (outside a v2 flow), `edit` (≤800), `direction` (`add` \| `remove` \| `change`), `effort`; `old` (≤400) for `change` and `remove`, and for `add` unless `target_file` names a new file; never required on a plan review, for any direction | `target_file`, `instances` (≤50 paths), `counter` |
+| `defect` or `cleanup` | — | `fix_files` (≤8 paths): every file the fix edits or creates beyond the finding's own anchor, test files included; `review schedule` widens the fix task's files by it ([review-apply.md](review-apply.md#tomlctl-review-schedule)) |
 | `defect` or `cleanup`, blocked | `blocked_missing` (≤400) with any block; `blocked_options` (2–6 × 300, each option naming its consequence) for `decision` and `alternatives`; `blocked_metric` (≤200) and `blocked_command` (≤300) for `measurement`; `blocked_contract` (≤600) for `design` | `blocked_on` |
 | `advisory` | `angle` (`risk` \| `challenge` \| `probe` \| `alternative` \| `direction`), `rationale` (≤800), `adoption_cost`; `challenges` when `angle = challenge` | `alternative`, `line` |
 | plan family, markdown mode | `plan_section` (≤200) on defect and cleanup | `anchor_old` (≤400), `anchor_new` (≤800) |
 | plan family, flow mode | `target` (≤300) on defect and cleanup | `expect`, `new`, `proof` on defect and cleanup; `target` on advisory; `line` |
 
-`review add`, not the catalogue, holds the `line` and `plan_section` requirements, since they depend on the mode, so `review schema` lists neither as required. It also holds the **mechanical-cleanup exception**: a `cleanup` row carrying `old` may name any lens the run's catalogue marks `mode = "mechanical"` for the run's family, from any cell, whether or not the cell covers it; it is routed like any other cleanup. In flow mode `plan_section`, `anchor_old` and `anchor_new` are refused; see [Plan records](#plan-records). `tier`, `applied` and `applying` are computed.
+`review add`, not the catalogue, holds the `line` and `plan_section` requirements, since they depend on the mode, so `review schema` lists neither as required. It also holds the **mechanical-cleanup exception**: a `cleanup` row carrying `old` may name any lens the run's catalogue marks `mode = "mechanical"` for the run's family, from any cell, whether or not the cell covers it; it is routed like any other cleanup. In flow mode `plan_section`, `anchor_old` and `anchor_new` are refused; see [Plan records](#plan-records). `tier`, `applied`, `applying` and `addressed` are computed.
 
-`effort` is `trivial`, `small`, `medium` or `large`. A row still supplying the retired shape field (`edits` or `needs-plan`) is refused, naming `blocked_on` as its replacement. Paths (`file`, `target_file`, `instances`) are repo-relative and `/`-separated, with no `..` and no absolute part.
+`effort` is `trivial`, `small`, `medium` or `large`. A row still supplying the retired shape field (`edits` or `needs-plan`) is refused, naming `blocked_on` as its replacement. Paths (`file`, `target_file`, `instances`, `fix_files`) are repo-relative and `/`-separated, with no `..` and no absolute part.
 
 A cell row takes `slice`, `concerns` (1–3), `agent` and `reason`, plus `question` for a `probe:` concern, `pass` (1 or 2) and `facets` edits (`+id` / `-id`). A verdict row takes `finding`, `by`, `verdict`, `citation` and `rationale` (≤600; aim for 450), plus `seat` (1–3, panel only), `severity` (defects only) and `unblocks` (bool) with `fix_sketch` (≤800), each refused without the other; `unsettled` is the checker's alone. `tomlctl review schema` emits the same rules as JSON Schema.
 
@@ -226,7 +228,7 @@ A cell row is refused when a `slice` entry is not repo-relative, its `concerns` 
 
 ### `tomlctl review cover`
 
-Records a cell's coverage status and note, and its rule-outs when `--ruled-out` is passed, and seals the cell. A cell already sealed with the same status and note succeeds unchanged, unless `--ruled-out` brings a different set, which replaces the stored `ruled_out`; a different status or note is refused, and so is any write to a finished run's cell. Without `--ruled-out` the stored rule-outs are kept. Prints `{ok, cell, status, sealed, unchanged}`, plus `ruled_out` (the entry count) only when the flag is passed.
+Records a cell's coverage status and note, and its rule-outs when `--ruled-out` is passed, and seals the cell. A cell already sealed with the same status and note succeeds unchanged, unless `--ruled-out` brings a different set, which replaces the stored `ruled_out`; a different status or note is refused, and so is any write to a finished run's cell. Without `--ruled-out` the stored rule-outs are kept. Prints `{ok, cell, status, sealed, unchanged}`, plus `ruled_out` (the entry count) only when the flag is passed. A note over its 600-character cap is not refused: it is cut on a character boundary to fit the cap, ending `…(+K)` where K is the number of characters cut, stored, and reported as `note_truncated: K`. A `--ruled-out` reason over its 200-character cap is cut the same way, and `reasons_truncated` counts the reasons cut. Each key is present only when something was cut. A replay of the same over-cap note matches the stored cut note and reports `unchanged: true`.
 
 **Rule-outs.** Each `--ruled-out` entry is one site the cell judged deliberate: `file` (required, repo-relative), a `symbol` or a `line` (a positive integer) or both, and `reason` (required, at most 200 characters); any other key is refused. One refused entry refuses the whole call, and nothing is sealed. An entry whose `file` lies outside the cell's slice is refused unless one of the cell's concerns is a mechanical lens, whose sweep reaches past the slice. In flow mode the flow's `tasks.toml` and `plan.toml` are in reach of every plan cell, whatever its slice. An entry matches a finding by the digest's place rule, which needs a symbol or a line, so an entry with neither is refused.
 
@@ -240,21 +242,21 @@ tomlctl review cover C4 --slug <slug> --status covered --note-file <run-dir>/pay
 | *(positional)* | cell id | The cell sealed. | required |
 | `--slug` / `--scope` | name | The store. | required, one of |
 | `--status` | `covered` \| `thin` \| `uncovered` | The coverage reached. | required |
-| `--note` / `--note-file` | text \| path | The coverage line, at most 600 characters; aim for 450. | required, one of |
+| `--note` / `--note-file` | text \| path | The coverage line, at most 600 characters, cut to fit beyond that; aim for 450. | required, one of |
 | `--ruled-out` | `-` \| path | The cell's rule-outs, one JSON object per line, or a `.toml` record file; replaces the stored set. | none |
 
 ## Findings and verdicts
 
 ### `tomlctl review add`
 
-Writes one cell's full finding set. Each row is checked against the field catalogue, `lens` against the cell's concerns (except a `cleanup` row with `old` on a mechanical lens, [Field catalogue](#field-catalogue)), `old` against its file (within 20 lines of `line`, `\r\n` read as `\n`; in `target_file` when given and existing), a markdown-mode plan row's `anchor_old` against its `plan_section` (exactly once), and a flow-mode plan row's `target`, `expect` and `proof` against the flow's records ([Plan records](#plan-records)). Outside flow mode a defect or cleanup row without `line`, or a markdown plan row without `plan_section`, is refused. `route`, `anchor` and the anchor candidates are computed; a `same_as` must name a candidate, and a row with candidates but no `same_as` gets them as `related`. The cell's earlier `unverified` rows become `superseded`. Defect and cleanup rows are minted `unverified`; an advisory row `open`, with its `tier` in flow mode, or `merged` with `outcome = "suppressed"` when its `same_as` names a dismissed, deferred, parked, backlogged or converted finding. Prints `{ok, run, cell, findings: [{id, kind, severity, route}], superseded, refused}`.
+Writes one cell's full finding set. Each row is checked against the field catalogue, `lens` against the cell's concerns (except a `cleanup` row with `old` on a mechanical lens, [Field catalogue](#field-catalogue)), `old` against its file (within 20 lines of `line`, `\r\n` read as `\n`; in `target_file` when given and existing), a markdown-mode plan row's `anchor_old` against its `plan_section` (exactly once), and a flow-mode plan row's `target`, `expect` and `proof` against the flow's records ([Plan records](#plan-records)). Outside flow mode a defect or cleanup row without `line`, or a markdown plan row without `plan_section`, is refused. `route`, `anchor` and the anchor candidates are computed; a `same_as` must name a candidate, and a row with candidates but no `same_as` gets them as `related`. The cell's earlier `unverified` rows, and its `open` advisory rows, become `superseded`. Defect and cleanup rows are minted `unverified`; an advisory row `open`, with its `tier` in flow mode, or `merged` with `outcome = "suppressed"` when its `same_as` names a dismissed, deferred, parked, backlogged or converted finding. Prints `{ok, run, cell, findings: [{id, kind, severity, route}], superseded, refused}`; a `findings` entry also carries `same_as: true` when its row names a `same_as`, as the `cell-return` schema allows. `--dry-run` runs every check the write runs against the store as loaded, takes no lock, mints no id and writes nothing. It prints `{ok, dry_run: true, run, cell, findings, superseded, refused}`, where `findings` entries carry no `id` and `superseded` lists the rows the write would withdraw. It exits 0 even when every row would be refused, so the refusals reach stdout.
 
 On a sealed cell `add` prints `{ok: false, sealed: true, cell, status, findings}` with the cell's standing findings and exits 1. A finished run is refused.
 
 **Anchor candidates.** Within the row's family, the findings on the same `(file, symbol)` when `symbol` is set, otherwise in the same file within 10 lines. `lens` and `kind` are not part of the key.
 
 ```bash
-tomlctl review add --slug <slug> --run U1 --cell C3 --ndjson <run-dir>/payloads/C3.ndjson
+tomlctl review add --slug <slug> --run U1 --cell C3 --ndjson <run-dir>/payloads/C3.ndjson --dry-run
 ```
 
 | Flag | Value | Meaning | Default |
@@ -263,6 +265,7 @@ tomlctl review add --slug <slug> --run U1 --cell C3 --ndjson <run-dir>/payloads/
 | `--run` | run id | The run the cell belongs to. | required |
 | `--cell` | cell id | The cell written. | required |
 | `--ndjson` | `-` \| path | The cell's full finding set, one JSON object per line. | required |
+| `--dry-run` | bool | Run every check and print the outcome with no ids minted; writes nothing. | off |
 
 ### `tomlctl review verdict`
 
@@ -329,7 +332,7 @@ A plan-family run is in **flow mode** when its store is a flow's (`--slug`) and 
 1. `question` or `user`: the target is any `decision:*`, any `task:*.spec.outcome`, or `brief#Intent`, `brief#Non-goals`, `brief#Scope budget` or `brief#Success criteria`. Kind `advisory` or no `new` is `question`, which `apply` and `triage --park` refuse and the user closes with `triage --resolve`; a defect or cleanup with `new` is `user`.
 2. `advisory`: kind `advisory`, a `handover:*` target, or no `new`.
 3. `mechanical`: a `proof` that tomlctl verifies from the store and the tree.
-4. `cited`: the latest deciding `verifier` or `panel` verdict is `confirmed` or `plausible`, and its citation is a `path:line` in the target's own file, or in a path the target's value names, with the line inside that file. A `checker` verdict never cites a row into `cited`.
+4. `cited`: the latest deciding `verifier` or `panel` verdict is `confirmed` or `plausible`, and its citation holds. A citation is one `path:line` or several joined by `;`, and holds when any part holds: its path is the target's own file, a path the target's current value names, a path the finding's `new` names, or any file under `docs/flows/<slug>/` of the finding's own flow, and the file has the cited line. A `checker` verdict never cites a row into `cited`.
 
 Anything else is `advisory`. Agreement alone never lifts a row past `advisory`. A frozen tier is never migrated: a row stamped `user` before `question` existed stays `user`.
 
@@ -344,7 +347,7 @@ Anything else is `advisory`. Agreement alone never lifts a row past `advisory`. 
 
 ### `tomlctl review apply`
 
-Writes the record edits of open flow-mode defect and cleanup findings. Before any write it refuses, as one `kind=validation` error listing each refused id with its reasons: a finding of another family, kind or status than an open plan defect or cleanup; no `tier`, or `advisory`; `question` tier, naming `triage --resolve` as its exit; `user` tier without `--user-accepted`; any finding without `--user-accepted` once `plan.toml` holds an `[[approval]]`; no `target` or no `new`; a `handover:*` target; a `new` the target store's validator rejects; and a mechanical proof that no longer holds. `--scope`, and a flow without `plan.toml`, are refused outright.
+Writes the record edits of open flow-mode defect and cleanup findings. Before any write it refuses, as one `kind=validation` error listing each refused id with its reasons: a finding of another family, kind or status than an open plan defect or cleanup; no `tier`; `advisory` tier, except a defect or cleanup carrying `new` under `--user-accepted`, which is written like any other edit and stamped `applied.tier = "advisory"` (without the flag the refusal names it; an advisory-kind row is never applied); `question` tier, naming `triage --resolve` as its exit; `user` tier without `--user-accepted`; any finding without `--user-accepted` once `plan.toml` holds an `[[approval]]`; no `target` or no `new`; a `handover:*` target; a `new` the target store's validator rejects; and a mechanical proof that no longer holds. `--scope`, and a flow without `plan.toml`, are refused outright.
 
 - **Writes.** Each target is written through its own store's path with `expect` re-checked inside that store's lock: task rows and specs through the task update path (actor `review`, reason `review <run> <id>`; a `[[changes]]` row only when the store's `audit` is on), decisions and contracts through the plan records path, milestones through the milestone path. A brief or design edit replaces `expect`'s one occurrence in the section, under an exclusive lock and an atomic write, keeping the file's line endings; a non-UTF-8 file is refused.
 - **Order.** Each finding is stamped straight after its own write, so a failure leaves at most one edit unstamped. The error reads "applying <id> failed; stamped before it: [ids]. <id>'s edit may or may not have landed: re-run `review apply` with only the ids not listed as stamped, and an edit that landed reads as already applied".
@@ -364,7 +367,7 @@ tomlctl review apply F9 --slug <slug> --user-accepted
 |---|---|---|---|
 | *(positional)* | ids | Finding ids, comma- or space-separated. | required |
 | `--slug` / `--scope` | name | The flow store; `--scope` is refused. | required |
-| `--user-accepted` | bool | The user accepted these edits: admits `user` tier and an approved plan, and records `by = "user"`. | off |
+| `--user-accepted` | bool | The user accepted these edits: admits `user` tier, an advisory-tier defect or cleanup carrying `new`, and an approved plan, and records `by = "user"`. | off |
 | `--dry-run` | bool | Report the outcome without writing. | off |
 
 ## Reads
@@ -406,17 +409,18 @@ tomlctl review show F3,F7 --slug <slug> --for audit
 
 ### `tomlctl review digest`
 
-The orchestrator's view of one run, as a single object: `run` (and `since_wave`); `counts` by `kind`, `lens` and `status`; `cells` (`status` counts, `unsealed` ids, the `notes` of `thin` and `uncovered` cells); `unverified` (`[{id, kind, route, cell}]`); the coverage accounting `unselected`, `unsliced` and `disabled`, the first two needing a waiver before `run finish`; `contested` rows with their `target`; `refuted_criticals`; `duplicate_candidates`; `ruled_out_hits`; `audit_sample`; the open `advisory` rows; and `proposals`, `[{id, kind, summary, proposal, proposal_at, age, overdue}]`, every deferred proposal of the run's family in the store, whichever run found it ([Deferred proposals](#store-shape)). Rows are projected `--for orchestrator`, so the digest never carries `evidence`.
+The orchestrator's view of one run, as a single object: `run` (and `since_wave`); `counts` by `kind`, `lens` and `status`; `cells` (`status` counts, `unsealed` ids, the `notes` of `thin` and `uncovered` cells); `unverified` (`[{id, kind, route, cell}]`); the coverage accounting `unselected`, `unsliced` and `disabled`, the first two needing a waiver before `run finish`; `contested` rows with their `target`; `refuted_criticals`; `duplicate_candidates` and `ruled_out_hits`, each a count unless `--with` names it; `audit_sample`; the open `advisory` rows; and `proposals`, `[{id, kind, summary, proposal, proposal_at, age, overdue}]`, every deferred proposal of the run's family in the store, whichever run found it ([Deferred proposals](#store-shape)). Rows are projected `--for orchestrator`, so the digest never carries `evidence`.
 
 - **Place rule.** Two places match when they share a `file` and either both carry a `symbol` and the symbols are equal, or otherwise both carry a `line` within 10 lines of each other. `lens` and `kind` play no part.
-- **`duplicate_candidates`**, `[{a, b, file, symbol, cells}]`: pairs of the run's non-superseded findings from different cells whose places match, `a` the lower id, `symbol` the first non-empty of the two, `cells` the two cells in pair order. A pair is omitted when the `same_as` / `merged_into` chains of its members meet. A candidate is a question for `resolve --same-as`, never a fold.
-- **`ruled_out_hits`**, `[{finding, cell, ruled_out_by, reason}]`: each finding whose place matches a rule-out another cell of the run recorded with `cover --ruled-out`, once per matching entry. A cell's own rule-outs never count against its findings.
+- **`duplicate_candidates`**, the number of pairs by default, and under `--with duplicates` the pairs in full, `[{a, b, file, symbol, cells}]`: pairs of the run's non-superseded findings from different cells whose places match, `a` the lower id, `symbol` the first non-empty of the two, `cells` the two cells in pair order. A pair is omitted when the `same_as` / `merged_into` chains of its members meet. A candidate is a question for `resolve --same-as`, never a fold.
+- **`ruled_out_hits`**, the number of hits by default, and under `--with ruled-out` the hits in full, `[{finding, cell, ruled_out_by, reason}]`: each finding whose place matches a rule-out another cell of the run recorded with `cover --ruled-out`, once per matching entry. A cell's own rule-outs never count against its findings.
 - **`audit_sample`**: `confirmed_defects` (standing defects, whose latest non-audit verdict is `confirmed` or `plausible`), `refuted_defects` (refuted non-critical defects) and `checked_cleanup` (checker-decided cleanup, including a sweeper row when there is one), two each, picked by position in store order. Each `refuted_defects` slot left empty takes one more standing defect, so `confirmed_defects` holds up to four.
 
 Under `--since-wave`, a duplicate pair shows when either member is in the window, and rule-outs from every wave count against the windowed findings.
 
 ```bash
 tomlctl review digest --slug <slug> --run U1 --since-wave 2
+tomlctl review digest --slug <slug> --run U1 --with duplicates,ruled-out
 ```
 
 | Flag | Value | Meaning | Default |
@@ -424,6 +428,20 @@ tomlctl review digest --slug <slug> --run U1 --since-wave 2
 | `--slug` / `--scope` | name | The store. | required, one of |
 | `--run` | run id | The run summarised; an unknown run is `kind=not_found`. | required |
 | `--since-wave` | N | Only cells and findings from this wave onward. | every wave |
+| `--with` | `duplicates` \| `ruled-out`, comma-separated | Print `duplicate_candidates` (`duplicates`) and `ruled_out_hits` (`ruled-out`) in full under the same keys. | both as counts |
+
+### `tomlctl review recheck-targets`
+
+The distinct plan targets a re-check of a run covers: the `applied.target` of every finding the run minted that `review apply` wrote, and every entry of those findings' `addressed` lists, sorted. Writes nothing. Prints `{run, targets}`; an unknown run is `kind=not_found`.
+
+```bash
+tomlctl review recheck-targets --slug <slug> --run U1
+```
+
+| Flag | Value | Meaning | Default |
+|---|---|---|---|
+| `--slug` / `--scope` | name | The store. | required, one of |
+| `--run` | run id | The plan run re-checked. | required |
 
 ### `tomlctl review report`
 
@@ -447,7 +465,7 @@ Rates per lens, probe, run or model over one store or all of them. Writes nothin
 - **Rows** (`--by`, or no section flag): `key`, `families`, `runs`, `cells`, `findings` by kind, `yield_per_cell`, `verified`, `refuted`, `refute_rate`, `audited`, `overturned`, `audit_overturn_rate`, `dismissed`, `dismissal_rate`, `thin`, `uncovered`, `uncovered_rate`; per lens also `hashes`, `waived` and `waiver_rate`, per probe tag `probes`. A rate over zero is `null`. A probe groups under the tag its `reason` opens with (`nearest <tag>:`), else `untagged`.
 - **`--by run`** rows also carry `store`, `command`, `depth`, `started`, `finished`, `waves` (derived from the run's cells, as `run list` does), `agents` and `waivers` (`concerns`, `files`).
 - **`--by model`** rows are keyed by the model of the verifying role that decided each finding — `models.verifier` for `verifier` and `panel`, `models.checker` for `checker`, read from the run that verdict names — and carry `roles`, `runs`, `verified`, `refuted`, `refute_rate`, `audited`, `overturned` and `audit_overturn_rate`. A run without `models`, or without the role, keys as `unknown`.
-- **`plan_outcomes`** (`--plan-outcomes`; `--slug` or `--all`, flow stores only, plan family only): per run and in `total`, `tiers` (tier → disposition → count; dispositions `applied`, `applied-disclosed` for cited, `user-accepted`, `user-vetoed` for a dismissed `user` row or a dismissed non-advisory tiered row of a run started at or after the plan's first `[[approval]]`, `user-answered` for a `question` row resolved without an edit, else the status), `veto_rate` (vetoed over accepted plus vetoed; `user-answered` counts on neither side), `growth` (`edits`, net `chars_added`, `entries_added`, `entries_removed`), `recheck_yield` (findings minted by a run with `rechecks`), and `cost` (`agents`, `minutes`); each run also names `rechecks`. A rate or yield with nothing to count is `null`.
+- **`plan_outcomes`** (`--plan-outcomes`; `--slug` or `--all`, flow stores only, plan family only): per run and in `total`, `tiers` (tier → disposition → count; dispositions `applied`, `applied-disclosed` for cited, `user-accepted`, `user-vetoed` for a dismissed `user` row or a dismissed non-advisory tiered row of a run started at or after the plan's first `[[approval]]`, `user-answered` for a `question` row resolved without an edit, `author-addressed` for a resolved row carrying `addressed` and no `applied`, else the status), `veto_rate` (vetoed over accepted plus vetoed; `user-answered` counts on neither side), `growth` (`edits`, net `chars_added`, `entries_added`, `entries_removed`), `recheck_yield` (findings minted by a run with `rechecks`), and `cost` (`agents`, `minutes`); each run also names `rechecks`. A rate or yield with nothing to count is `null`.
 - **`outcomes`**: per lens and kind, `exported`, `linked`, the v1 statuses, the mapped v2 statuses and `wontfix_reasons`, through `v2_ref` with `sync-v1`'s mapping; a retired link is not counted.
 - **`apply`** (`--apply`): the native counterpart of `outcomes`, read from the store alone with no v1 ledger opened. `outcomes` holds one row per lens and kind with any natively applied finding — `{lens, kind, scheduled, resolved, reopened, reproductions}` — where `scheduled` counts findings at that status, `resolved` resolved findings that keep an `apply_flow`, `reopened` open findings whose `reopen_reason` starts `apply: `, and `reproductions` maps each verdict (`gone`, `reproduces`, `unsettled`) to the findings whose current reproduction has it. `reproductions` is `{rows, findings}`, each a verdict → count map: `rows` over every reproduction row, `findings` over each finding's current one. A reproduction of a finding `--family` drops is not counted. `blocked` is `{lens, agent}`, one row per lens and per agent of the finding's cell (`unknown` when the cell names none): `key`, `findings` (every kind), `blocked`, `blocked_rate`, `blocked_on` (each block; an answered block is read from `unblocked_from`, else from `unblocked_by`, and a verifier unblock stored without `unblocked_from` counts under `unrecorded`), `verifier_unblocked`, `verifier_unblock_rate` and the row's `settle` counts. `settle` counts settle outcomes over the view: `mechanical`, `cited` and `user` accepts by tier, `refuted` and `deferred`.
 - **`escapes`**: `count`, `by_concern` and `findings` minted in a file and concern an earlier run's cell had sealed `covered`.
@@ -482,6 +500,7 @@ Applies one disposition to each id. A row already in the requested end state is 
 tomlctl review triage F3,F9 --slug <slug> --dismiss-file <run-dir>/payloads/dismiss.txt --expect-status open
 tomlctl review triage F4 --slug <slug> --defer-file <run-dir>/payloads/defer.txt --trigger-file <run-dir>/payloads/trigger.txt
 tomlctl review triage F8 --slug <slug> --convert cleanup --ndjson <run-dir>/payloads/F8-convert.json
+tomlctl review triage F5,F6 --slug <slug> --addressed-file <run-dir>/payloads/addressed.txt --targets task:add-guard.spec.accept
 ```
 
 | Flag | Value | Meaning | Default |
@@ -497,6 +516,8 @@ tomlctl review triage F8 --slug <slug> --convert cleanup --ndjson <run-dir>/payl
 | `--backlog-ref` | `B-<hex>` | Status → `backlogged`, recording the backlog item id. | one disposition required |
 | `--convert` | `cleanup` \| `defect` | Mint the advisory's replacement from `--ndjson`; status → `converted`. Exactly one advisory id. | one disposition required |
 | `--answer-file` | path | The user's answer to an open finding blocked on `decision`, at most 800 characters; the status stays `open`. | one disposition required |
+| `--addressed` / `--addressed-file` | text \| path | Status → `resolved`: the author fixed the plan finding by hand. The text is stored as `resolution`, and the changed targets as `addressed`. | one disposition required |
+| `--targets` | target, comma-separated, repeatable | The plan targets the hand edit changed; with `--addressed` only. | each finding's own `target` |
 | `--ndjson` | `-` \| path | The replacement as one JSON object; with `--convert` only. | none |
 | `--run` | run id | The open run the replacement is minted in when the advisory's run is finished; with `--convert` only. | the advisory's run |
 | `--expect-status` | status | Move only the ids still at this status. | no check |
@@ -508,6 +529,8 @@ tomlctl review triage F8 --slug <slug> --convert cleanup --ndjson <run-dir>/payl
 The replacement is minted in an open run, which cannot finish until it is verified. While the advisory's run is open it is that run, and a `--run` naming any other is refused. Once the advisory's run is finished, the call is refused unless `--run` names an open run of the advisory's family; an unknown, finished or other-family run is refused too. The replacement then takes the named run as `run` and `seen_in`, keeps the advisory's `cell` as provenance, is routed by the named run's catalogue and depth, and its `orchestrator` verdict is filed under that run.
 
 `--answer-file` (mode `answer`) records the file's text as `decision_answer` with `unblocked_by = "user"` and clears the block, keeping `blocked_options` as what the answer chose among; `schedule` binds the answer to the finding's fix task as a constraint. A finding not `open`, or blocked on anything but `decision`, is refused, and a replay of the same answer is `unchanged`.
+
+`--addressed` (mode `addressed`) records a plan finding the author fixed by hand: `resolution` takes the text, `resolved` today's date, and `addressed` the targets, from `--targets` or else the finding's own `target`. A finding of another family, or one with no `target` when `--targets` is absent, is refused, and one refused id refuses the whole set, so nothing is written; a replay with the same text and targets is `unchanged`. A later reopen clears `addressed`. `review recheck-targets` reads the list, and `review stats --plan-outcomes` counts such a row as `author-addressed`.
 
 ### `tomlctl review export-v1`
 

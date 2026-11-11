@@ -592,21 +592,69 @@ fn mechanical_and_cited_edits_are_written_and_stamped() {
     assert!(again.contains("is resolved"), "{again}");
 }
 
+/// An open defect whose verdict cites a file the cited test does not accept,
+/// so it settles advisory tier while carrying `expect` and `new`.
+fn advisory_edit(flow: &Flow, expect: &str, new: &str) -> String {
+    let id = flow.opened(
+        task_edit("wire-the-guard", "action", Some(json!(expect)), json!(new)),
+        "src/a.rs:1",
+    );
+    assert_eq!(flow.tier(&id), "advisory");
+    id
+}
+
+#[test]
+fn user_accepted_applies_advisory_tier_edit() {
+    let flow = Flow::new();
+    let advisory = advisory_edit(&flow, "Wire-action.", "Wire-action-revised.");
+    // Same record and `expect`: the first write leaves this one's `expect`
+    // stale, which the write pass finds under the store lock.
+    let stale = advisory_edit(&flow, "Wire-action.", "Wire-action-other.");
+
+    let out = flow.apply(&[&advisory, &stale], &["--user-accepted"]);
+    assert_eq!(
+        out["applied"],
+        json!([{"id": advisory, "target": "task:wire-the-guard.action", "tier": "advisory"}]),
+        "{out}"
+    );
+    assert_eq!(out["skipped_stale"][0]["id"], json!(stale), "{out}");
+    assert_eq!(flow.row("wire-the-guard")["action"], "Wire-action-revised.");
+    let stamped = flow.finding(&advisory);
+    assert_eq!(stamped["status"].as_str(), Some("resolved"));
+    assert_eq!(stamped["applied"]["by"].as_str(), Some("user"));
+    assert_eq!(stamped["applied"]["tier"].as_str(), Some("advisory"));
+    assert_eq!(flow.status(&stale), "open");
+}
+
+#[test]
+fn advisory_tier_edit_refused_without_user_accepted() {
+    let flow = Flow::new();
+    let advisory = advisory_edit(&flow, "Wire-action.", "Wire-action-revised.");
+    let message = flow.apply_refused(&[&advisory], &[]);
+    assert!(message.contains("advisory tier"), "{message}");
+    assert!(message.contains("--user-accepted"), "{message}");
+    assert_eq!(flow.status(&advisory), "open");
+}
+
 #[test]
 fn advisory_and_user_tier_findings_are_refused_until_accepted() {
     let flow = Flow::new();
-    let advisory = flow.opened(
-        task_edit(
-            "wire-the-guard",
-            "action",
-            Some(json!("Wire-action.")),
-            json!("Wire-action-revised."),
-        ),
-        "src/a.rs:1",
-    );
-    assert_eq!(flow.tier(&advisory), "advisory");
+    let advisory = flow.minted(json!({
+        "kind": "advisory",
+        "lens": "plan-structure",
+        "summary": "the wiring could be split",
+        "grade": "high",
+        "evidence": ["the record shows it"],
+        "angle": "alternative",
+        "file": TASKS_FILE,
+        "rationale": "two steps read more easily",
+        "adoption_cost": "one more task",
+    }));
     let message = flow.apply_refused(&[&advisory], &["--user-accepted"]);
-    assert!(message.contains("advisory tier"), "{message}");
+    assert!(
+        message.contains("only defect and cleanup findings are applied"),
+        "{message}"
+    );
 
     let decision = flow.opened(
         edit(

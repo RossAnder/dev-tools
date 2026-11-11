@@ -91,14 +91,20 @@ Follow `compose.md` sections 1 to 6, with these differences.
    ```
 
 2. **Mop-up is the orchestrator's.** You cannot dispatch, so collect every id under the digest's `unverified` into your return and do not re-route them. Leave any unsealed cell to the orchestrator too: re-writing its row through `review plan` would mint a second cell and strand the first.
-3. **Duplicates.** Decide each of the digest's `duplicate_candidates` by `compose.md` section 7, Duplicates, writing its one line of reasoning per pair to `payloads/duplicates-w<wave>.md`. Link every pair you judge one defect in one call, and leave a pair you judge distinct alone:
+3. **Duplicates.** The digest prints `duplicate_candidates` and `ruled_out_hits` as counts. When either is above zero, read both arrays in one call, which steps 3 and 4 share:
+
+   ```bash
+   tomlctl review digest --run <run> --slug <slug> --since-wave <wave> --with duplicates,ruled-out
+   ```
+
+   Decide each of its `duplicate_candidates` by `compose.md` section 7, Duplicates, writing its one line of reasoning per pair to `payloads/duplicates-w<wave>.md`. Link every pair you judge one defect in one call, and leave a pair you judge distinct alone:
 
    ```bash
    tomlctl review resolve --run <run> --slug <slug> --same-as F12=F7 --same-as F15=F9
    ```
 
    A refused pair refuses the whole call and writes nothing: drop or fix that pair and rerun once.
-4. **Rule-out hits.** Read every finding the digest's `ruled_out_hits` names in one `tomlctl review show <ids> --slug <slug> --for audit` call. Put a finding's id under `reverify` when its latest verifier rationale does not address the rule-out — neither says why the ruling cell's reason does not hold nor refutes the finding on it. You cannot dispatch, so the Workflow re-verifies each `reverify` id with one `review-verifier`. An id already under `unverified` is verified at the orchestrator's mop-up instead, so leave it out of `reverify`.
+4. **Rule-out hits.** Read every finding step 3's `ruled_out_hits` array names in one `tomlctl review show <ids> --slug <slug> --for audit` call. Put a finding's id under `reverify` when its latest verifier rationale does not address the rule-out — neither says why the ruling cell's reason does not hold nor refutes the finding on it. You cannot dispatch, so the Workflow re-verifies each `reverify` id with one `review-verifier`. An id already under `unverified` is verified at the orchestrator's mop-up instead, so leave it out of `reverify`.
 5. **Escalations.** Give each `escalations:` line exactly one disposition by `compose.md` section 7, Escalations: a follow-up cell, a mechanical row asked of a cell in the follow-up wave you write, or a close-summary item. You cannot write the close summary or capture a backlog item, so write each close-summary item as `<cell>: <text> — <why no follow-up>` to `payloads/escalations-w<wave>.md` for the orchestrator's close; with none, write no file.
 6. **Follow-up.** Decide it by `compose.md` section 7, Follow-up, counting the escalations step 5 turned into follow-up cells. The allowance is `quick` 0, `standard` 1, `deep` 2 follow-up waves, and the waves this run has already had after its first count against it; the cell ceiling counts every wave. At `quick`, collect the run's escalated sweeper candidates into the one probe cell that section allows. In `recheck` mode that one `review-finder` escalation probe cell is the only follow-up allowed; write no other. When one is warranted, write it through `review plan --ndjson <run-dir>/payloads/cells-w<next wave>.ndjson`, each row with its trigger as its `reason`, and waive what the digest then lists.
 

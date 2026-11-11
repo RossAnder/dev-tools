@@ -196,6 +196,13 @@ pub(crate) const FEATURES: &[&str] = &[
     "review_blocked_on",
     "review_settle",
     "review_triage_answer",
+    // Fix files on findings, author-addressed plan findings, digest arrays
+    // on request, the add dry run and checker reproductions.
+    "review_fix_files",
+    "review_addressed",
+    "review_digest_with",
+    "review_add_dry_run",
+    "review_reproduce_checker",
 ];
 
 /// User-facing top-level subcommand names, as they appear in

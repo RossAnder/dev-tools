@@ -383,7 +383,9 @@ downstream flow-command templates can feature-gate at boot without parsing
                "review_schedule", "review_reconcile", "review_anchor",
                "review_reproduce", "review_stats_apply",
                "review_blocked_on", "review_settle",
-               "review_triage_answer"],
+               "review_triage_answer", "review_fix_files",
+               "review_addressed", "review_digest_with",
+               "review_add_dry_run", "review_reproduce_checker"],
   "subcommands": ["parse", "get", "set", "set-json", "validate",
                   "items", "blocks", "array-append", "capabilities",
                   "integrity", "flow", "json", "backlog", "tasks",
@@ -580,3 +582,8 @@ Feature meanings:
 | `review_blocked_on` | a defect or cleanup that cannot be fixed as written names what it lacks in `blocked_on` (`decision`, `evidence`, `measurement`, `alternatives` or `design`) with its `blocked_*` detail fields, replacing the retired `edits` / `needs-plan` shape field (a stored `needs-plan` row reads as `design`); `review list --blocked-on <BLOCK>\|any\|none` filters on it, `review report` groups blocked findings by it, `schedule` and `export-v1` refuse a blocked finding, and `review verdict --unblocks --fix-sketch <TEXT>` lets a verifier clear a block with a fix sketch |
 | `review_settle` | `review schedule --settle-checkpoint <ID>` mints one settle task per evidence-blocked finding with no proposal; `review settle <F> --accept --tier <TIER> --fix-file <PATH>` / `--refute --citation <TEXT>` / `--defer --proposal <PATH>` records its outcome; a deferred proposal ages by the family's later runs, `review digest` lists it under `proposals`, and `review run finish` refuses while one is three runs old |
 | `review_triage_answer` | `review triage <F> --answer-file <PATH>` records the user's answer to an open finding blocked on `decision` as `decision_answer`, clearing the block and keeping its options; `review schedule` binds the answer to the fix task as a constraint |
+| `review_fix_files` | a defect or cleanup finding may carry `fix_files`, at most 8 repo-relative paths the fix edits or creates beyond its anchor, test files included; `review schedule` adds them to the minted row's `files`, groups findings by the widened set, counts it for the lite rule, and writes each path absent from the working tree to the row's `file_notes` as `(new)` |
+| `review_addressed` | `review triage <F>... --addressed <TEXT>` (or `--addressed-file <PATH>`) resolves plan findings the author fixed by hand, storing the text as `resolution` and the changed targets as `addressed` (`--targets <T>,...`, defaulting to each finding's own `target`; a finding with neither is refused, and the whole set lands or none does); a reopen clears it, `review stats --plan-outcomes` counts such rows as `author-addressed`, and `review recheck-targets --run <RUN>` prints `{run, targets}`, the sorted distinct `applied.target` and `addressed` entries of the run's findings |
+| `review_digest_with` | `review digest` prints `duplicate_candidates` and `ruled_out_hits` as counts; `--with duplicates,ruled-out` prints the named arrays in full under the same keys |
+| `review_add_dry_run` | `review add --dry-run` runs every check the write runs against the store as loaded and prints `{ok, dry_run, run, cell, findings, superseded, refused}` with no ids minted, writing nothing; cell-return `findings` entries carry `same_as: true` when the row names one; `review cover` cuts a note or `--ruled-out` reason over its cap, ending `…(+K)`, and reports `note_truncated` / `reasons_truncated` |
+| `review_reproduce_checker` | a reproduction may be recorded `by = "checker"`, beside `verifier` and `orchestrator` |

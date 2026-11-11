@@ -35,7 +35,7 @@ The engine's role rules hold throughout: read digests and projections, never row
    tomlctl capabilities --get features
    ```
 
-   Stop when `review_apply`, `review_run_head`, `review_run_show`, `review_ruled_out`, `review_same_as_link`, `review_blocked_on`, `review_settle` or `review_triage_answer` is absent, naming `cargo install --path tomlctl` in the dev-tools checkout and a restart.
+   Stop when `review_apply`, `review_run_head`, `review_run_show`, `review_ruled_out`, `review_same_as_link`, `review_blocked_on`, `review_settle`, `review_triage_answer`, `review_addressed` or `review_digest_with` is absent, naming `cargo install --path tomlctl` in the dev-tools checkout and a restart.
 2. Bind `<slug>`. `/plan-v2` has it already. `/review-plan-v2` takes it from the envelope its engine stage 0 built.
 3. Skip the engine's stage 0 steps 4 and 6. Step 4's `review sync-v1` reads v1 ledgers, and the plan family never exports to one. Step 6's task import is refused on a v2 flow. Step 5's listing of parked advisory and open blocked findings still runs.
 4. Read where the plan stands:
@@ -179,7 +179,7 @@ tomlctl review apply <ids> --slug <slug>
 - **Already.** `already` ids were made before, by a session that died before stamping them; the verb stamps them now.
 - **Mid-batch failure.** `applying <id> failed; stamped before it: […]` leaves at most that one edit unstamped. Re-run the call with only the ids not listed as stamped: the stamped ids are no longer `open`, so the verb would refuse a call naming them, and the unstamped edit that did land is recognised as `already`.
 
-Keep the `target` of every `applied` and `already` row. Section 8 re-probes from them, and section 10 re-checks them.
+Keep the `target` of every `applied` and `already` row. Section 8 re-probes from them, and section 10 re-checks them through `review recheck-targets`, which reads them back from the store.
 
 Cited edits are applied without asking but are disclosed: the approval gate lists every applied edit under `review_edits`, decisions first, then user, cited and mechanical.
 
@@ -212,13 +212,17 @@ Ask in `AskUserQuestion` batches of up to four, one question per finding. Each q
 
 A question-tier row is an advisory, or a defect or cleanup with no `new`, on a user-owned target. It carries no edit, so `review apply` refuses it, and `review triage --park` refuses it too: only the user answers it. Ask it in the same `AskUserQuestion` batches, naming the target, its current value and the finding's summary, and offer **Revise** and **Keep**, never Accept or Veto.
 
-- **Revise.** The user's revision goes through the `plan` verbs that own the record, as an attended edit. Then resolve the row with `revised by user` staged:
+- **Revise.** The user's revision goes through the `plan` verbs that own the record, as an attended edit. Then record the row as addressed with `revised by user` staged, so the re-check covers the revised record. The targets default to each row's own `target`; add `--targets <targets>` when the revision changed other records too:
 
   ```bash
-  tomlctl review triage <ids> --slug <slug> --resolve-file <run-dir>/payloads/revised.md --expect-status open
+  tomlctl review triage <ids> --slug <slug> --addressed-file <run-dir>/payloads/revised.md --expect-status open
   ```
 
-- **Keep.** Resolve the row the same way with `kept by user` staged. `review stats --plan-outcomes` counts a resolved question row as `user-answered`, outside the veto rate.
+- **Keep.** Nothing changed, so resolve the row with `kept by user` staged. `review stats --plan-outcomes` counts a resolved question row as `user-answered` and an addressed one as `author-addressed`, both outside the veto rate.
+
+  ```bash
+  tomlctl review triage <ids> --slug <slug> --resolve-file <run-dir>/payloads/kept.md --expect-status open
+  ```
 - **No answer.** As for the user tier: the row stays `open` and blocks `plan approve --review ran` and `plan stage`.
 
 A question-tier advisory can also become a proposed edit. When the user wants a change but leaves its wording to the review, or the review can propose one worth asking, convert the advisory with `review triage <id> --slug <slug> --convert defect|cleanup --ndjson <path>`, staging a replacement that carries the `new`. `--convert` accepts a question-tier row, unlike `--park`. The replacement keeps the user-owned target, so once verified it is tiered `user` and asked with **Accept** and **Veto** as above; a replacement without a `new` is a question again. It still applies only with `review apply --user-accepted`, so conversion does not let anyone but the user approve the edit.
@@ -230,14 +234,31 @@ A row stamped `user` before the question tier existed keeps `user`: tiers are fr
 Present, in one message, with a recommendation and a one-line reason for each item as the engine's stage 7 says:
 
 - the advisory rows, recommending park, backlog, convert or dismiss;
-- defect and cleanup rows whose tier is `advisory`: no `new`, a proof that did not hold, or no citation in the target's file. They are never applied. The user may dismiss or defer them; one left `open` shows at the gate under `risks` when it is critical or major;
+- defect and cleanup rows whose tier is `advisory`: no `new`, a proof that did not hold, or a citation the cited test did not accept. One that carries a `new` is offered as an edit for the user to accept: name its target, current value and proposed value, as for the user tier. The user may also dismiss or defer any of them; one left `open` shows at the gate under `risks` when it is critical or major;
 - the ids the applies above refused.
 
-Dispositions are the user's, as at the engine's stage 7. The grammar is the engine's, without `apply`, which the plan family never does. A `convert` in flow mode writes the replacement with `target`, `expect` and `new` per `plan-records.md`; it is minted `unverified` and verified in this run before section 9. Backlog picks go through the `backlog-capture` skill, as the engine's stage 8 says.
+Dispositions are the user's, as at the engine's stage 7. The grammar is the engine's, without its `apply` hand-off to `/apply-v2`, which the plan family never makes. In its place:
+
+- **Accept an advisory-tier edit.** A defect or cleanup row carrying `new` that the user accepts is applied with the user's acceptance, previewed first. The verb keeps the compare-and-set on `expect` and records `by = "user"`; without `--user-accepted` it refuses such a row, and it never applies an advisory-kind row. Its refusals, stale rows and failures read as under Mechanical and cited, and an applied `spec.accept` target is re-probed by section 8:
+
+  ```bash
+  tomlctl review apply <ids> --slug <slug> --user-accepted --dry-run
+  tomlctl review apply <ids> --slug <slug> --user-accepted
+  ```
+
+- **Fixed by hand.** A finding the author already fixed by editing the plan is recorded as addressed, never dismissed: a dismissal would count the fix as a rejection and keep its records out of the re-check. Stage what the author changed, and name `--targets <targets>` when the hand edit changed records other than the finding's own `target`; a row with no `target` is refused without it:
+
+  ```bash
+  tomlctl review triage <ids> --slug <slug> --addressed-file <run-dir>/payloads/addressed.md --expect-status open
+  ```
+
+  The row becomes `resolved` with its `addressed` targets, which section 10 re-checks.
+
+A `convert` in flow mode writes the replacement with `target`, `expect` and `new` per `plan-records.md`; it is minted `unverified` and verified in this run before section 9. Backlog picks go through the `backlog-capture` skill, as the engine's stage 8 says.
 
 ## 8. Re-probe
 
-An applied edit to a `spec.accept` entry drops that entry's probe, so the plan's stage returns to `prove`. `plan approve --review ran` also refuses while an entry an applied finding changed has no probe. Re-probe whenever any `applied` or `already` target from section 7 is a `task:<ref>.spec.accept` target, with or without an index:
+An applied edit to a `spec.accept` entry drops that entry's probe, so the plan's stage returns to `prove`. `plan approve --review ran` also refuses while an entry an applied finding changed has no probe. Re-probe whenever any `applied` or `already` target from section 7, or any target a row was recorded as addressed with, is a `task:<ref>.spec.accept` target, with or without an index:
 
 ```bash
 tomlctl plan probes --slug <slug> --emit > <run-dir>/payloads/probes.sh
@@ -284,7 +305,13 @@ The first run finishes before the re-check starts. A finished run is a fixed `PR
 
 ## 10. Re-check
 
-Run a re-check when section 7 recorded at least one `applied` or `already` row. With none, skip to section 11.
+Run a re-check when section 7 recorded at least one `applied` or `already` row, or recorded a row as addressed. Read the targets it covers from the store:
+
+```bash
+tomlctl review recheck-targets --run <run> --slug <slug>
+```
+
+It prints `{run, targets}`: the distinct `applied.target` of every finding `review apply` wrote in `<run>` and every `addressed` entry, sorted. With `targets` empty, skip to section 11.
 
 **Run start.** A fresh run at `quick`, recording the run it re-checks; `--propose` scales to the run's recorded depth:
 
@@ -324,7 +351,7 @@ Workflow({
 })
 ```
 
-`targets` lists each distinct `target` of section 7's `applied` and `already` rows, one per entry, as stored. A recheck takes depth `quick` and a non-empty `targets`; the wrapper refuses anything else and launches nothing. `/plan-v2`'s step row stays the one section 4 opened.
+`targets` is the `targets` array `review recheck-targets` printed, copied as it stands; never assemble it from the triage by hand. A recheck takes depth `quick` and a non-empty `targets`; the wrapper refuses anything else and launches nothing. `/plan-v2`'s step row stays the one section 4 opened.
 
 **On the return.** Read it by section 5, with the same fallback table, then mop up by section 6 against `<recheck-run>`. The re-check runs no follow-up wave except the one `review-finder` probe cell that collects its sweepers' escalations, as `compose.md` allows at `quick`.
 
@@ -354,7 +381,8 @@ Then `/plan-v2` goes on to its gate, which shows `review_edits` and `risks`, and
 **Close summary.** Print:
 
 - each run id with its report path and counts line;
-- the edits by tier: mechanical and cited applied, user accepted and vetoed, questions revised and kept;
+- the edits by tier: mechanical and cited applied, user accepted and vetoed, advisory-tier edits accepted, questions revised and kept;
+- the `author-addressed` count: findings recorded as fixed by hand, revised questions among them;
 - the refused, stale and unprobed ids;
 - `user tier pending` when questions went unanswered;
 - the re-check's yield, its open findings and any user-tier findings it asked;

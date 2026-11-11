@@ -482,15 +482,15 @@ fn digest_lists_duplicate_candidates_across_cells() {
         {"a": "F1", "b": "F2", "file": "src/a.rs", "symbol": "a::run", "cells": ["C1", "C2"]},
         {"a": "F9", "b": "F10", "file": "src/a.rs", "symbol": "b::step", "cells": ["C2", "C1"]},
     ]);
-    let digest = repo.digest(&[]);
+    let digest = repo.digest(&["--with", "duplicates"]);
     assert_eq!(digest["duplicate_candidates"], want, "{digest}");
 
-    let since = repo.digest(&["--since-wave", "2"]);
+    let since = repo.digest(&["--since-wave", "2", "--with", "duplicates"]);
     assert_eq!(
         since["duplicate_candidates"], want,
         "a late cell restating an early one is still listed: {since}"
     );
-    let past = repo.digest(&["--since-wave", "3"]);
+    let past = repo.digest(&["--since-wave", "3", "--with", "duplicates"]);
     assert_eq!(past["duplicate_candidates"], json!([]), "{past}");
 }
 
@@ -516,7 +516,7 @@ fn digest_omits_linked_pairs_from_duplicate_candidates() {
     ]
     .concat();
     repo.seed(ALL_WAIVED, &rows);
-    let digest = repo.digest(&[]);
+    let digest = repo.digest(&["--with", "duplicates"]);
     assert_eq!(
         digest["duplicate_candidates"],
         json!([]),
@@ -549,7 +549,7 @@ fn digest_omits_pairs_joined_through_a_conversion() {
     ]
     .concat();
     repo.seed(ALL_WAIVED, &rows);
-    let digest = repo.digest(&[]);
+    let digest = repo.digest(&["--with", "duplicates"]);
     assert_eq!(digest["duplicate_candidates"], json!([]), "{digest}");
 }
 
@@ -584,15 +584,64 @@ fn digest_lists_findings_that_hit_another_cells_rule_out() {
     let want = json!([
         {"finding": "F2", "cell": "C2", "ruled_out_by": "C1", "reason": "the pad is deliberate"},
     ]);
-    let digest = repo.digest(&[]);
+    let digest = repo.digest(&["--with", "ruled-out"]);
     assert_eq!(digest["ruled_out_hits"], want, "{digest}");
-    let since = repo.digest(&["--since-wave", "2"]);
+    let since = repo.digest(&["--since-wave", "2", "--with", "ruled-out"]);
     assert_eq!(
         since["ruled_out_hits"], want,
         "an earlier wave's rule-out still applies: {since}"
     );
-    let past = repo.digest(&["--since-wave", "3"]);
+    let past = repo.digest(&["--since-wave", "3", "--with", "ruled-out"]);
     assert_eq!(past["ruled_out_hits"], json!([]), "{past}");
+}
+
+fn seed_candidates(repo: &Repo) {
+    let rows = [
+        cell("C1", 1, "review-finder", "covered"),
+        cell("C2", 2, "review-finder", "covered"),
+        defect("F1", "C1", "open", &symbol("a::run")),
+        defect("F2", "C2", "open", &symbol("a::run")),
+    ]
+    .concat();
+    repo.seed(ALL_WAIVED, &rows);
+    let source = repo.root.join(".claude/ruled-out.ndjson");
+    fs::write(
+        &source,
+        "{\"file\":\"src/a.rs\",\"symbol\":\"a::run\",\"reason\":\"deliberate\"}\n",
+    )
+    .unwrap();
+    repo.tomlctl()
+        .args(["review", "cover", "C1", "--status", "covered"])
+        .args(["--note", "note of C1", "--ruled-out"])
+        .arg(&source)
+        .args(STORE)
+        .assert()
+        .success();
+}
+
+#[test]
+fn digest_candidates_are_counts_by_default() {
+    let Some(repo) = Repo::new(&["src/a.rs"]) else {
+        return;
+    };
+    seed_candidates(&repo);
+    let digest = repo.digest(&[]);
+    assert_eq!(digest["duplicate_candidates"], json!(1), "{digest}");
+    assert_eq!(digest["ruled_out_hits"], json!(1), "{digest}");
+}
+
+#[test]
+fn digest_with_prints_named_arrays() {
+    let Some(repo) = Repo::new(&["src/a.rs"]) else {
+        return;
+    };
+    seed_candidates(&repo);
+    let dup = repo.digest(&["--with", "duplicates"]);
+    assert!(dup["duplicate_candidates"].is_array(), "{dup}");
+    assert_eq!(dup["ruled_out_hits"], json!(1), "{dup}");
+    let both = repo.digest(&["--with", "duplicates,ruled-out"]);
+    assert!(both["duplicate_candidates"].is_array(), "{both}");
+    assert_eq!(both["ruled_out_hits"][0]["finding"], "F2", "{both}");
 }
 
 #[test]

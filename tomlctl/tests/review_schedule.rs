@@ -451,6 +451,55 @@ fn a_finding_bridging_two_groups_merges_them_in_chosen_order() {
     );
 }
 
+fn file_notes_of<'a>(doc: &'a Value, r#ref: &str) -> Vec<(&'a str, &'a str)> {
+    doc.get("file_notes")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|n| n["ref"].as_str() == Some(r#ref))
+        .map(|n| (n["file"].as_str().unwrap(), n["note"].as_str().unwrap()))
+        .collect()
+}
+
+#[test]
+fn fix_files_widen_the_minted_row() {
+    let widened = format!(
+        "{}fix_files = [\"src/b.rs\"]\n",
+        bug("F1", "src/a.rs", "alpha")
+    );
+    let repo = Repo::new(&[widened, bug("F2", "src/b.rs", "beta")]);
+    let out = repo.schedule(&["F1", "F2"]);
+    let r#ref = scheduled_ref(&out, "F1");
+    assert_eq!(scheduled_ref(&out, "F2"), r#ref);
+
+    let doc = repo.tasks_doc();
+    assert_eq!(items(&doc).len(), 2);
+    assert_eq!(
+        strings(&row(&doc, &r#ref)["files"]),
+        ["src/a.rs", "src/b.rs"]
+    );
+    assert!(file_notes_of(&doc, &r#ref).is_empty());
+}
+
+#[test]
+fn fix_files_new_path_is_noted_new() {
+    let widened = format!(
+        "{}fix_files = [\"src/b.rs\", \"tests/alpha.rs\"]\n",
+        bug("F1", "src/a.rs", "alpha")
+    );
+    let repo = Repo::new(&[widened]);
+    let out = repo.schedule(&["F1"]);
+    let r#ref = scheduled_ref(&out, "F1");
+
+    let doc = repo.tasks_doc();
+    assert_eq!(
+        strings(&row(&doc, &r#ref)["files"]),
+        ["src/a.rs", "src/b.rs", "tests/alpha.rs"]
+    );
+    assert_eq!(file_notes_of(&doc, &r#ref), [("tests/alpha.rs", "(new)")]);
+    assert_eq!(spec(&doc, &r#ref)["executor"].as_str(), Some("deep"));
+}
+
 #[test]
 fn a_medium_defect_or_a_third_file_runs_deep() {
     let repo = Repo::new(&[defect(Defect {

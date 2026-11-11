@@ -156,8 +156,23 @@ pub(crate) fn digest(target: &Target, args: ReviewDigestArgs) -> Result<()> {
     out.insert("disabled".into(), json!(accounting.disabled));
     out.insert("contested".into(), json!(contested));
     out.insert("refuted_criticals".into(), json!(refuted_criticals));
-    out.insert("duplicate_candidates".into(), json!(duplicates));
-    out.insert("ruled_out_hits".into(), json!(hits));
+    let with = |name: &str| args.with.iter().any(|w| w == name);
+    out.insert(
+        "duplicate_candidates".into(),
+        if with("duplicates") {
+            json!(duplicates)
+        } else {
+            json!(duplicates.len())
+        },
+    );
+    out.insert(
+        "ruled_out_hits".into(),
+        if with("ruled-out") {
+            json!(hits)
+        } else {
+            json!(hits.len())
+        },
+    );
     out.insert("audit_sample".into(), audit_sample(&stored, &findings));
     out.insert("advisory".into(), json!(advisory));
     out.insert("proposals".into(), proposals(&stored, run));

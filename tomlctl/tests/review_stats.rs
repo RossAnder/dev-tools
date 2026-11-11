@@ -1330,6 +1330,54 @@ fn a_dismissal_is_a_veto_only_on_a_user_row_or_after_approval() {
 }
 
 #[test]
+fn plan_outcomes_count_author_addressed() {
+    let repo = Repo::new();
+    let addressed = |id: &str, tier: &str| {
+        format!(
+            "\n[[findings]]\nid = \"{id}\"\nrun = \"U1\"\nfamily = \"plan\"\nkind = \"defect\"\n\
+             lens = \"handfix\"\nroute = \"verifier\"\ntier = \"{tier}\"\nstatus = \"resolved\"\n\
+             resolution = \"fixed by hand\"\naddressed = [\"task:fix-limit.spec.outcome\"]\n"
+        )
+    };
+    let store = format!(
+        "{PLAN_STORE}{}{}\n[[findings]]\nid = \"F9\"\nrun = \"U1\"\nfamily = \"plan\"\n\
+         kind = \"defect\"\nlens = \"handfix\"\nroute = \"verifier\"\ntier = \"mechanical\"\n\
+         status = \"dismissed\"\ndismiss_reason = \"no\"\n",
+        addressed("F7", "mechanical"),
+        addressed("F8", "question"),
+    );
+    repo.write(FLOW_STORE_PATH, &store);
+
+    let out = repo.stats(&["--slug", "f1", "--plan-outcomes"]);
+    let first = &out["plan_outcomes"]["runs"][0];
+    assert_eq!(
+        first["tiers"]["mechanical"],
+        json!({"applied": 1, "author-addressed": 1, "dismissed": 1}),
+        "{first}"
+    );
+    assert_eq!(
+        first["tiers"]["question"],
+        json!({"author-addressed": 1}),
+        "{first}"
+    );
+    assert_eq!(
+        first["veto_rate"], 0.5,
+        "an addressed row is no veto: {first}"
+    );
+    assert_eq!(
+        first["growth"]["edits"], 3,
+        "a hand edit is not a tool edit: {first}"
+    );
+
+    let lenses = repo.stats(&["--slug", "f1", "--by", "lens"]);
+    let handfix = row(&lenses["rows"], "handfix");
+    assert_eq!(
+        handfix["dismissed"], 1,
+        "only the dismissed row counts as a dismissal: {handfix}"
+    );
+}
+
+#[test]
 fn overturns_group_by_model() {
     let repo = Repo::new();
     repo.write(FLOW_STORE_PATH, PLAN_STORE);

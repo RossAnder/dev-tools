@@ -120,6 +120,7 @@ pub(crate) fn run(
     }
     let groups = fold(&stored, &chosen);
     let compose = Compose {
+        root: &root,
         stored: &stored,
         projected: &projected,
         store_rel: &store_rel,
@@ -377,16 +378,26 @@ fn settle_refusal(f: &Finding, block: BlockedOn, settle_checkpoint: bool) -> Opt
     }
 }
 
-/// The paths a finding's fix edits: its edit target and its `instances`.
+/// The paths a finding's fix edits: its edit target, its `instances` and its
+/// `fix_files`.
 fn edited(f: &Finding) -> Vec<String> {
     let mut paths: Vec<String> = Vec::new();
-    for path in f.edited_paths() {
+    for path in f.edited_paths().chain(fix_files(f)) {
         let path = path.trim();
         if !path.is_empty() && !paths.iter().any(|p| p == path) {
             paths.push(path.to_string());
         }
     }
     paths
+}
+
+fn fix_files(f: &Finding) -> impl Iterator<Item = &str> {
+    f.rest
+        .get("fix_files")
+        .and_then(TomlValue::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(TomlValue::as_str)
 }
 
 /// Chosen findings joined into groups wherever their edited paths overlap,
@@ -435,6 +446,7 @@ fn fold(stored: &Store, chosen: &[usize]) -> Vec<Group> {
 }
 
 struct Compose<'a> {
+    root: &'a Path,
     stored: &'a Store,
     projected: &'a [Row],
     store_rel: &'a str,
@@ -616,6 +628,14 @@ impl Compose<'_> {
                 }
             }
         }
+        let mut file_notes = Map::new();
+        for f in &found {
+            for path in fix_files(f).map(str::trim) {
+                if !path.is_empty() && !self.root.join(path).exists() {
+                    file_notes.insert(path.to_string(), json!("(new)"));
+                }
+            }
+        }
         let title = match found.len() {
             1 => found[0].summary.trim().to_string(),
             n => format!("{} (and {} more)", found[0].summary.trim(), n - 1),
@@ -676,6 +696,9 @@ impl Compose<'_> {
         row.insert("title".into(), json!(title));
         row.insert("effort".into(), json!(effort));
         row.insert("files".into(), json!(files));
+        if !file_notes.is_empty() {
+            row.insert("file_notes".into(), JsonValue::Object(file_notes));
+        }
         row.insert("needs".into(), json!(needs));
         row.insert("checkpoint".into(), json!(self.checkpoint));
         row.insert("action".into(), json!(action.join("\n")));

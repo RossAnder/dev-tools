@@ -138,7 +138,13 @@ A cell still `assigned` after its agent notified gets one re-dispatch with the i
 
 ### Duplicates
 
-The digest's `duplicate_candidates` are pairs from different cells whose places match. A candidate is a question, never a fold: decide each pair, and write one line of reasoning per pair, `<a>/<b>: linked <dup>=<target> — <why>` or `<a>/<b>: distinct — <why>`, with the Write tool to `<run-dir>/payloads/duplicates-w<wave>.md`.
+The digest's `duplicate_candidates` are pairs from different cells whose places match. The plain digest prints only their count; when it is above zero, read the pairs themselves:
+
+```bash
+tomlctl review digest --run <run> --slug <slug> --since-wave <wave> --with duplicates,ruled-out
+```
+
+A candidate is a question, never a fold: decide each pair, and write one line of reasoning per pair, `<a>/<b>: linked <dup>=<target> — <why>` or `<a>/<b>: distinct — <why>`, with the Write tool to `<run-dir>/payloads/duplicates-w<wave>.md`.
 
 - **The same defect** — one failure, one fix, whatever lens or wording each cell gave it. Link it, the later-verified or weaker-evidenced row as the duplicate:
 
@@ -153,7 +159,7 @@ A linked pair leaves the digest once the two rows' `same_as` / `merged_into` cha
 
 ### Rule-out hits
 
-Each `ruled_out_hits` row is a finding whose place another cell recorded as deliberate, with that cell's reason. The verifier saw the rule-out in its projection, so check that its verdict answers it:
+Each `ruled_out_hits` row is a finding whose place another cell recorded as deliberate, with that cell's reason. The plain digest prints only their count; the rows come from the same `--with duplicates,ruled-out` read as the duplicates, or `--with ruled-out` alone when there are no duplicate candidates. The verifier saw the rule-out in its projection, so check that its verdict answers it:
 
 ```bash
 tomlctl review show <finding> --slug <slug> --for audit

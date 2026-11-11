@@ -116,6 +116,16 @@ impl Repo {
     }
 
     fn add(&self, run: &str, cell: &str, rows: &[JsonValue]) -> assert_cmd::assert::Assert {
+        self.add_with(run, cell, rows, &[])
+    }
+
+    fn add_with(
+        &self,
+        run: &str,
+        cell: &str,
+        rows: &[JsonValue],
+        extra: &[&str],
+    ) -> assert_cmd::assert::Assert {
         let payload = self.root.join(".claude/payload.ndjson");
         let text: String = rows.iter().map(|r| format!("{r}\n")).collect();
         fs::write(&payload, text).unwrap();
@@ -126,6 +136,7 @@ impl Repo {
             ])
             .arg("--ndjson")
             .arg(payload)
+            .args(extra)
             .assert()
     }
 
@@ -468,6 +479,46 @@ fn replayed_add_supersedes_open_advisory() {
     let new = ids(&second)[0].clone();
     assert_ne!(new, old);
     assert_eq!(repo.finding(&new)["status"].as_str(), Some("open"));
+}
+
+#[test]
+fn add_dry_run_writes_nothing() {
+    let repo = Repo::new();
+    repo.added("U1", "C1", &[defect("correctness", "lib::limit", "major")]);
+    let path = repo.root.join(".claude/review-v2/t.toml");
+    let before = fs::read(&path).unwrap();
+    let mut bare = defect("correctness", "lib::limit", "major");
+    bare.as_object_mut().unwrap().remove("failure_scenario");
+    let ok = cleanup("docs/guide.md", 3, "change", Some("`--fast`"));
+    let assert = repo
+        .add_with("U1", "C1", &[bare, ok], &["--dry-run"])
+        .success();
+    let out: JsonValue = serde_json::from_slice(&assert.get_output().stdout).unwrap();
+
+    assert_eq!(out["dry_run"], true, "{out}");
+    let findings = out["findings"].as_array().unwrap();
+    assert_eq!(findings.len(), 1, "{out}");
+    assert!(findings[0].get("id").is_none(), "{out}");
+    assert_eq!(findings[0]["kind"], "cleanup");
+    assert_eq!(out["superseded"], json!(["F3"]), "{out}");
+    assert_eq!(out["refused"][0]["line"], 1, "{out}");
+    assert!(reasons(&out, 0).contains("failure_scenario"), "{out}");
+    assert_eq!(fs::read(&path).unwrap(), before, "a dry run writes nothing");
+    assert_eq!(repo.finding("F3")["status"].as_str(), Some("unverified"));
+}
+
+#[test]
+fn cell_return_marks_same_as() {
+    let repo = Repo::new();
+    let out = repo.added("U1", "C5", &[advisory(Some("F1")), advisory(None)]);
+    assert_eq!(out["findings"][0]["same_as"], true, "{out}");
+    assert!(out["findings"][1].get("same_as").is_none(), "{out}");
+
+    let dry = repo
+        .add_with("U1", "C5", &[advisory(Some("F1"))], &["--dry-run"])
+        .success();
+    let dry: JsonValue = serde_json::from_slice(&dry.get_output().stdout).unwrap();
+    assert_eq!(dry["findings"][0]["same_as"], true, "{dry}");
 }
 
 #[test]

@@ -2,7 +2,7 @@
 
 After the last wave has resolved and its digest shows no unverified id, the orchestrator audits a sample of verdicts, presents the run to the user, applies the user's dispositions, and closes the run. Pass `--scope <scope>` in place of `--slug <slug>` for a flow-less store in every command below.
 
-Stage the user's prose and your own rationales with the Write tool, in the run directory's `payloads/` subdirectory, and pass them through the `--<flag>-file` twins (`--dismiss-file`, `--defer-file`, `--trigger-file`, `--reopen-file`, `--park-file`, `--resolve-file`, `--answer-file`, `--fix-file`, `--rationale-file`, `--incomplete-file`). Never quote user text into a shell argument.
+Stage the user's prose and your own rationales with the Write tool, in the run directory's `payloads/` subdirectory, and pass them through the `--<flag>-file` twins (`--dismiss-file`, `--defer-file`, `--trigger-file`, `--reopen-file`, `--park-file`, `--resolve-file`, `--addressed-file`, `--answer-file`, `--fix-file`, `--rationale-file`, `--incomplete-file`). Never quote user text into a shell argument.
 
 ## Stage 6 — Audit
 
@@ -122,6 +122,7 @@ Each user instruction maps to `review triage` calls, or `review settle` for a de
 | `park F7 — <reason>` | stage `<reason>`; `review triage F7 --park-file <path> --expect-status open` |
 | `backlog F7,F9` | stage 8's backlog hand-off, then one `review triage <id> --backlog-ref <B-id> --expect-status open` per id |
 | `convert F8` | write the replacement row (below); `review triage F8 --convert cleanup\|defect --ndjson <path> --expect-status open` |
+| `addressed F4 — <what changed>` | plan family only, for a finding the author fixed by hand: stage `<what changed>`; `review triage F4 --addressed-file <path> --expect-status open`, adding `--targets <targets>` when the hand edit changed records other than the finding's own `target`. The row becomes `resolved` with its `addressed` targets, which the re-check covers; `--addressed <text>` is the inline twin, never used for user prose |
 | `answer F2 — <answer>` | stage `<answer>`; `review triage F2 --answer-file <path> --expect-status open`, for a finding blocked on `decision` |
 | `accept F6 — <fix>` | stage `<fix>`; `review settle F6 --accept --tier user --fix-file <path>`, for a deferred proposal |
 | `refute F6 — <citation>` | `review settle F6 --refute --citation '<file:line>'`, for a deferred proposal |

@@ -43,10 +43,10 @@ Across all three: run each command that settles a claim rather than predicting i
 
 ## Write and seal
 
-1. Write the cell's full finding set as NDJSON with the Write tool to `payloads/<cell id>.ndjson` in the run directory, one row per line.
-2. Submit it with `tomlctl review add --run <run> --cell <cell> --ndjson <that path>` against the store. Read every refused row's reason, fix the row, and resubmit the full set once.
+1. Write the cell's full finding set as NDJSON with the Write tool to `payloads/<cell id>.ndjson` in the run directory, one row per line. On a defect or cleanup whose `fix` or `edit` also edits or creates a file beyond the anchor, `target_file` and `instances`, list every such file in `fix_files`, tests included: the fix task gets no file the row does not name.
+2. Run `tomlctl review add --run <run> --cell <cell> --ndjson <that path> --dry-run` against the store, fix every refused row it reports, then submit with the same call without `--dry-run`. If the write still refuses a row, read its reason, fix the row, and resubmit the full set once.
 3. Stage each candidate you dropped as a deliberate site with the Write tool in `payloads/<cell id>.ruled-out.ndjson`, one object per line: `file` (repo-relative, inside your slice; on a v2 flow's plan cell also the flow's `tasks.toml` or `plan.toml`), `symbol` or `line`, and a `reason` of at most 200 characters. Give every entry a `symbol` or a `line`: `review cover` refuses an entry with neither. Other cells' findings at those sites are shown to their verifiers beside your reason.
-4. Stage the coverage note with the Write tool as `payloads/<cell id>.note.md` and seal the cell with `tomlctl review cover <cell> --status covered|thin|uncovered --note-file <that path>`, adding `--ruled-out <the rule-out path>` when you staged one. Aim the note at 450 characters; 600 is the limit `review cover` enforces, under the cap rule in `review-v2-method`. Keep it to this shape:
+4. Stage the coverage note with the Write tool as `payloads/<cell id>.note.md` and seal the cell with `tomlctl review cover <cell> --status covered|thin|uncovered --note-file <that path>`, adding `--ruled-out <the rule-out path>` when you staged one. Aim the note at 450 characters; 600 is the cap, and `review cover` cuts a longer note to it and reports the cut, under the cap rule in `review-v2-method`. Keep it to this shape:
    - counts: files read in full, checks or probes run, and sites ruled out;
    - for `thin` or `uncovered`, the part you did not examine and why.
 

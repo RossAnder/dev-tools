@@ -74,6 +74,11 @@ pub(crate) enum ReviewOp {
     /// A run's counts, coverage gaps, unverified ids and items awaiting a decision.
     Digest(ReviewDigestArgs),
 
+    /// The sorted distinct plan targets a re-check of a run covers: every
+    /// `applied.target` and `addressed` entry of its findings. Writes nothing.
+    #[command(name = "recheck-targets")]
+    RecheckTargets(ReviewRecheckTargetsArgs),
+
     /// Write a run's markdown report and print its path and a counts line.
     Report(ReviewReportArgs),
 

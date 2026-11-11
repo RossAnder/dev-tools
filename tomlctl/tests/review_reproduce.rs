@@ -192,6 +192,19 @@ fn a_reproduction_is_keyed_and_leaves_status_and_verdicts_alone() {
 }
 
 #[test]
+fn reproduce_accepts_by_checker() {
+    let repo = Repo::new();
+    let out = repo.reproduce(&[row("F1", 1, "checker", "gone")]).success();
+    let json = stdout_json(&out);
+    assert_eq!(json["ok"], true, "{json}");
+
+    let stored = repo.array("reproductions");
+    assert_eq!(stored.len(), 1);
+    assert_eq!(stored[0]["by"].as_str(), Some("checker"));
+    assert_eq!(stored[0]["verdict"].as_str(), Some("gone"));
+}
+
+#[test]
 fn the_same_key_replaces_and_moves_to_the_end_and_a_replay_writes_nothing() {
     let repo = Repo::new();
     repo.reproduce(&[

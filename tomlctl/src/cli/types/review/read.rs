@@ -1,5 +1,5 @@
-//! Arguments of the read verbs: `list`, `show`, `anchor`, `digest`, `report`
-//! and `stats`.
+//! Arguments of the read verbs: `list`, `show`, `anchor`, `digest`,
+//! `recheck-targets`, `report` and `stats`.
 
 use std::path::PathBuf;
 
@@ -103,6 +103,24 @@ pub(crate) struct ReviewDigestArgs {
         help = "Only rows from this wave onward"
     )]
     pub(crate) since_wave: Option<u32>,
+    #[arg(
+        long = "with",
+        value_name = "NAME,...",
+        value_delimiter = ',',
+        value_parser = ["duplicates", "ruled-out"],
+        help = "Print duplicate_candidates (duplicates) and ruled_out_hits (ruled-out) in full, not as counts"
+    )]
+    pub(crate) with: Vec<String>,
+    #[command(flatten)]
+    pub(crate) integrity: ReadIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct ReviewRecheckTargetsArgs {
+    #[command(flatten)]
+    pub(crate) store: ReviewStore,
+    #[arg(long = "run", value_name = "RUN", help = "The plan run re-checked")]
+    pub(crate) run: String,
     #[command(flatten)]
     pub(crate) integrity: ReadIntegrityArgs,
 }

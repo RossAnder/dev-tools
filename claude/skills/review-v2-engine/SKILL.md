@@ -75,7 +75,7 @@ Anything else in the arguments is scope: paths, globs, or a feature name.
    tomlctl capabilities
    ```
 
-   Halt unless `.features` lists `review_add`, `review_survey`, `review_catalogue`, `review_run_head`, `review_run_show`, `review_ruled_out`, `review_same_as_link`, `review_blocked_on`, `review_settle`, `review_triage_answer`, `review_schedule`, `review_reconcile`, `review_anchor`, `review_reproduce` and `review_stats_apply`, telling the user to run `cargo install --path tomlctl` in the dev-tools checkout and restart.
+   Halt unless `.features` lists `review_add`, `review_survey`, `review_catalogue`, `review_run_head`, `review_run_show`, `review_ruled_out`, `review_same_as_link`, `review_blocked_on`, `review_settle`, `review_triage_answer`, `review_schedule`, `review_reconcile`, `review_anchor`, `review_reproduce`, `review_stats_apply` and `review_digest_with`, telling the user to run `cargo install --path tomlctl` in the dev-tools checkout and restart.
 3. Invoke the `flow-contract-flow-context` skill and build the envelope as it says, with the **v1 command name**: `--command review` for `/review-v2`, `--command optimise` for `/optimise-v2`, `--command review-plan` for `/review-plan-v2`. The envelope builder knows only the v1 names. Gate on `envelope.ok`, emit the bootstrap-summary line, and bind the store flag from `envelope.resolved.slug`, or derive `<scope>` when no flow resolved. A v2 run skips the user-inputs sweep.
 4. Read back the v1 outcomes of findings an earlier run exported to a v1 ledger, for stores that still hold `exported` findings, so a re-found fixed issue resolves as a regression rather than a repeat. It is a legacy read-back for v1 rows whose `v2_ref` names this store, since triage hands findings to `/apply-v2` rather than to a v1 ledger:
 
@@ -175,9 +175,13 @@ tomlctl review resolve --run <run> --slug <slug> --wave <wave>
 tomlctl review digest --run <run> --slug <slug> --since-wave <wave>
 ```
 
-`resolve` settles every finding whose `same_as` has complete verdicts (repeat, contested, reopened, regression, suppressed). The digest then gives counts by kind and lens, cells by status with notes for `thin` and `uncovered`, unverified ids with their routes, unselected concerns and unsliced files still needing a waiver, contested findings, refuted criticals, `duplicate_candidates`, `ruled_out_hits` and the advisory list.
+`resolve` settles every finding whose `same_as` has complete verdicts (repeat, contested, reopened, regression, suppressed). The digest then gives counts by kind and lens, cells by status with notes for `thin` and `uncovered`, unverified ids with their routes, unselected concerns and unsliced files still needing a waiver, contested findings, refuted criticals, the counts of `duplicate_candidates` and `ruled_out_hits`, and the advisory list.
 
-Read three more lists before deciding:
+Read three more lists before deciding. When either digest count is above zero, read both arrays in full with one more digest call:
+
+```bash
+tomlctl review digest --run <run> --slug <slug> --since-wave <wave> --with duplicates,ruled-out
+```
 
 - **`escalations`**, from the wave index: each is a follow-up cell candidate. One you do not turn into a cell — out of budget, or anchored outside the scope and not a ripple row — is named in the close summary and offered as a backlog capture.
 - **`duplicate_candidates`**, from the digest: a pair of places that match across cells is a question, never a fold. Link each pair you judge one defect, every pair in one call, and leave a pair you judge distinct alone:

@@ -55,6 +55,7 @@ Never supply `id`, `status`, `route`, `anchor`, `related`, `outcome`, `cell`, `r
 | `severity` | `critical` \| `major` \| `minor` (rubric below) |
 | `failure_scenario` | ≤600; the claim the verifier will try to refute (forms below) |
 | `fix` | ≤800; what to change, as far as it can be written when the row is blocked |
+| `fix_files` | optional, ≤8 repo-relative paths; every file the `fix` edits or creates beyond the finding's own anchor, test files included |
 | `effort` | `trivial` \| `small` \| `medium` \| `large` |
 | `counter` | ≤300; the `research-methods` Counter line — the one observation that would invalidate the finding |
 | `grade` | `high` \| `medium` \| `low`; the `research-methods` evidence grade |
@@ -74,7 +75,10 @@ Never supply `id`, `status`, `route`, `anchor`, `related`, `outcome`, `cell`, `r
 | `old` | ≤400; the exact text at the anchor, copied byte for byte. Required for `change` and `remove`; for `add`, the adjacent anchor text, unless `target_file` names a file that does not exist yet. Never required on a plan review, for any direction |
 | `target_file` | optional; where the edit lands when that is not `file` |
 | `instances` | optional, ≤50 paths; every other site of the same pattern |
+| `fix_files` | optional, ≤8 repo-relative paths; every file the `edit` edits or creates beyond the anchor, `target_file` and `instances`, test files included |
 | `counter` | optional, ≤300 |
+
+`fix_files` is how the fix task scheduled from a finding gets every file it needs: a task holds only the finding's own files and the ones this field names, so a fix that also touches a test, a caller or a new file names each of them here.
 
 `review add` checks that `old` occurs within 20 lines of `line` — in `target_file` when given and existing, else in `file` — after normalising `\r\n` to `\n`. Re-read the anchor immediately before writing the row.
 
@@ -182,7 +186,7 @@ Every cell is sealed with a status and a note:
 
 ### Length
 
-Aim for 450 characters in a note and in a verdict `rationale`; 600 is the limit the tool enforces, and a note or rationale over it is refused after the work is done. Write to the target, not the limit.
+Aim for 450 characters in a note and in a verdict `rationale`; 600 is the cap. `review cover` cuts a note over 600 to the cap, ending it `…(+K)` with K the characters cut, seals the cell and reports `note_truncated` in its envelope, so what you wrote past the cap is lost. A verdict `rationale` over 600 is still refused after the work is done. Write to the target, not the limit.
 
 The note holds counts only: the files read in full and the checks, probes and searches run, and, for `thin` or `uncovered`, what went unexamined and why. A clean check or probe is a count, never a line of its own.
 
@@ -233,6 +237,12 @@ You write only through `tomlctl review`, against the store your assignment names
 
 ```bash
 tomlctl review add --run <run> --cell <cell> --ndjson <run-dir>/payloads/<cell>.ndjson --slug <slug>
+```
+
+Run the same call with `--dry-run` first. It runs every check the write runs and prints the same `findings` and `refused` lists, but mints no id and writes nothing. Fix every refused row, then make the real write:
+
+```bash
+tomlctl review add --run <run> --cell <cell> --ndjson <run-dir>/payloads/<cell>.ndjson --slug <slug> --dry-run
 ```
 
 - Each call supersedes the cell's earlier unverified rows, so a resubmission carries the full set again, never only the fixed rows.

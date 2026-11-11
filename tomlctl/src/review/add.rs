@@ -6,6 +6,8 @@
 //! while the rest land. Row-local checks (the field catalogue, the cell's
 //! concerns, `old` and `anchor_old` against the files, routing) run before
 //! the lock; the seal, candidates, `same_as` and minting run under it.
+//! `--dry-run` runs the under-lock checks against the store as read, takes
+//! no lock and mints nothing.
 //! Per-cell count caps are the method's ceilings and are not enforced here.
 
 use std::ffi::OsStr;
@@ -131,6 +133,48 @@ pub(crate) fn run(target: &Target, args: ReviewAddArgs) -> Result<()> {
     let family = run.family;
     let (run_id, cell_id) = (run.id.clone(), cell.id.clone());
     let today = crate::time::today_utc_iso()?;
+    let finish = |findings: Vec<Finding>, refused: &mut Vec<JsonValue>| {
+        let superseded: Vec<String> = findings
+            .iter()
+            .filter(|f| {
+                f.cell == cell_id
+                    && f.run == run_id
+                    && (f.status() == FindingStatus::Unverified
+                        || (f.kind == Kind::Advisory && f.status() == FindingStatus::Open))
+            })
+            .map(|f| f.id.clone())
+            .collect();
+        let pool: Vec<Finding> = findings
+            .into_iter()
+            .filter(|f| !superseded.contains(&f.id))
+            .collect();
+        let mut rows = Vec::new();
+        for prepared in &ready {
+            match finish_row(prepared, family, flow, &pool, &run_id, &cell_id, &today) {
+                Ok(row) => rows.push(row),
+                Err(reasons) => {
+                    refused.push(json!({"line": prepared.line, "reasons": reasons}));
+                }
+            }
+        }
+        (rows, superseded)
+    };
+    if args.dry_run {
+        let (rows, superseded) = finish(stored.findings.clone(), &mut refused);
+        let findings: Vec<JsonValue> = rows
+            .iter()
+            .map(|row| cell_return_entry(None, row))
+            .collect();
+        return print_json_compact(&json!({
+            "ok": true,
+            "dry_run": true,
+            "run": args.run,
+            "cell": args.cell,
+            "findings": findings,
+            "superseded": superseded,
+            "refused": refused,
+        }));
+    }
     let result = store::mutate_minting(
         &target.path,
         &args.integrity,
@@ -139,31 +183,7 @@ pub(crate) fn run(target: &Target, args: ReviewAddArgs) -> Result<()> {
             if find_cell(&current, &cell_id, &run_id)?.sealed {
                 return Err(anyhow::Error::new(SealedMeanwhile));
             }
-            let superseded: Vec<String> = current
-                .findings
-                .iter()
-                .filter(|f| {
-                    f.cell == cell_id
-                        && f.run == run_id
-                        && (f.status() == FindingStatus::Unverified
-                            || (f.kind == Kind::Advisory && f.status() == FindingStatus::Open))
-                })
-                .map(|f| f.id.clone())
-                .collect();
-            let pool: Vec<Finding> = current
-                .findings
-                .into_iter()
-                .filter(|f| !superseded.contains(&f.id))
-                .collect();
-            let mut rows = Vec::new();
-            for prepared in &ready {
-                match finish_row(prepared, family, flow, &pool, &run_id, &cell_id, &today) {
-                    Ok(row) => rows.push(row),
-                    Err(reasons) => {
-                        refused.push(json!({"line": prepared.line, "reasons": reasons}));
-                    }
-                }
-            }
+            let (rows, superseded) = finish(current.findings, &mut refused);
             if rows.is_empty() && !refused.is_empty() {
                 return Err(every_row_refused(&refused));
             }
@@ -171,7 +191,7 @@ pub(crate) fn run(target: &Target, args: ReviewAddArgs) -> Result<()> {
             let minted = ids
                 .iter()
                 .zip(&rows)
-                .map(|(id, row)| cell_return_entry(id, row))
+                .map(|(id, row)| cell_return_entry(Some(id), row))
                 .collect();
             Ok(Written {
                 minted,
@@ -870,14 +890,27 @@ fn finish_row(
     Ok(JsonValue::Object(row))
 }
 
-/// The `{id, kind, severity, route}` entry of the cell-return object.
-fn cell_return_entry(id: &str, row: &JsonValue) -> JsonValue {
-    json!({
-        "id": id,
-        "kind": row["kind"],
-        "severity": row.get("severity").cloned().unwrap_or(JsonValue::Null),
-        "route": row["route"],
-    })
+/// The `{id, kind, severity, route}` entry of the cell-return object, with
+/// `same_as: true` when the row names one; a dry run has no `id` to give.
+fn cell_return_entry(id: Option<&str>, row: &JsonValue) -> JsonValue {
+    let mut entry = Map::new();
+    if let Some(id) = id {
+        entry.insert("id".into(), json!(id));
+    }
+    entry.insert("kind".into(), row["kind"].clone());
+    entry.insert(
+        "severity".into(),
+        row.get("severity").cloned().unwrap_or(JsonValue::Null),
+    );
+    entry.insert("route".into(), row["route"].clone());
+    if row
+        .get("same_as")
+        .and_then(JsonValue::as_str)
+        .is_some_and(|s| !s.is_empty())
+    {
+        entry.insert("same_as".into(), json!(true));
+    }
+    JsonValue::Object(entry)
 }
 
 #[cfg(test)]

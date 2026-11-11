@@ -11,7 +11,9 @@
 //! An advisory whose run is finished converts only into the open run `--run`
 //! names, which then cannot finish until the replacement is verified.
 //! `--answer-file` records the user's answer on an open finding blocked on a
-//! decision and clears the block, leaving its status alone.
+//! decision and clears the block, leaving its status alone. `--addressed`
+//! resolves plan findings the author fixed by hand, recording the targets
+//! edited as `addressed`, and refuses the whole id set when any id fails.
 
 use std::path::{Path, PathBuf};
 
@@ -22,10 +24,11 @@ use toml::value::Datetime;
 
 use super::add::{self, str_of};
 use super::catalogue::run_catalogue;
-use super::fields::{self, BlockedOn, FindingStatus, Kind, Record, Route};
+use super::fields::{self, BlockedOn, Family, FindingStatus, Kind, Record, Route};
 use super::invalid;
 use super::matching::{self, Site};
 use super::store::{self, Finding, Minted, Run, Store, Target, Verdict};
+use super::target;
 use super::tier::Tier;
 use crate::cli::{ReadIntegrityArgs, ReviewTriageArgs};
 use crate::io::{read_ndjson_source, read_prose, repo_or_cwd_root};
@@ -57,6 +60,13 @@ enum Mode {
     /// The user's answer to a finding blocked on a decision. The finding
     /// stays `open`; the answer is not a status companion.
     Answer(String),
+    /// A plan finding the author fixed by hand: resolved, with the targets
+    /// the edit changed as `addressed`. Empty `targets` means each finding's
+    /// own `target`.
+    Addressed {
+        resolution: String,
+        targets: Vec<String>,
+    },
 }
 
 impl Mode {
@@ -70,6 +80,7 @@ impl Mode {
             Self::Backlog(_) => "backlog-ref",
             Self::Convert(_) => "convert",
             Self::Answer(_) => "answer",
+            Self::Addressed { .. } => "addressed",
         }
     }
 
@@ -79,7 +90,7 @@ impl Mode {
             Self::Defer { .. } => FindingStatus::Deferred,
             Self::Reopen(_) | Self::Answer(_) => FindingStatus::Open,
             Self::Park(_) => FindingStatus::Parked,
-            Self::Resolve(_) => FindingStatus::Resolved,
+            Self::Resolve(_) | Self::Addressed { .. } => FindingStatus::Resolved,
             Self::Backlog(_) => FindingStatus::Backlogged,
             Self::Convert(_) => FindingStatus::Converted,
         }
@@ -95,10 +106,25 @@ impl Mode {
             }
             Self::Reopen(r) => vec![("reopen_reason", r)],
             Self::Park(r) => vec![("park_reason", r)],
-            Self::Resolve(r) => vec![("resolution", r)],
+            Self::Resolve(r) | Self::Addressed { resolution: r, .. } => vec![("resolution", r)],
             Self::Backlog(id) => vec![("backlog_ref", id)],
             Self::Convert(_) | Self::Answer(_) => Vec::new(),
         }
+    }
+
+    /// The `addressed` list this mode records on `finding`: the `--targets`
+    /// given, else the finding's own non-empty `target`.
+    fn addressed(&self, finding: &Finding) -> Option<Vec<String>> {
+        let Self::Addressed { targets, .. } = self else {
+            return None;
+        };
+        if !targets.is_empty() {
+            return Some(targets.clone());
+        }
+        finding
+            .text("target")
+            .filter(|t| !t.is_empty())
+            .map(|t| vec![t.to_string()])
     }
 
     /// Whether `finding` already carries what this mode records.
@@ -108,6 +134,18 @@ impl Mode {
                 finding.text("decision_answer") == Some(answer.as_str())
                     && finding.text("unblocked_by") == Some("user")
                     && fields::blocked_on(finding).is_none()
+            }
+            Self::Addressed { resolution, .. } => {
+                let stored: Option<Vec<&str>> = finding
+                    .rest
+                    .get("addressed")
+                    .and_then(TomlValue::as_array)
+                    .map(|list| list.iter().filter_map(TomlValue::as_str).collect());
+                let wanted = self.addressed(finding);
+                finding.text("resolution") == Some(resolution.as_str())
+                    && wanted.is_some_and(|w| {
+                        stored.is_some_and(|s| s.iter().copied().eq(w.iter().map(String::as_str)))
+                    })
             }
             _ => self
                 .companions()
@@ -209,12 +247,14 @@ pub(crate) fn run(target: &Target, args: ReviewTriageArgs) -> Result<()> {
     let mut trial = current.clone();
     let preview = dispose_all(&mut trial, &ids, &mode, expect, today, slug.as_deref());
     refuse_if_nothing_landed(&preview)?;
+    refuse_addressed_set(&preview, &mode)?;
     let outcome = if trial == current {
         preview
     } else {
         store::mutate(&target.path, &args.integrity, |store| {
             let outcome = dispose_all(store, &ids, &mode, expect, today, slug.as_deref());
             refuse_if_nothing_landed(&outcome)?;
+            refuse_addressed_set(&outcome, &mode)?;
             Ok(outcome)
         })?
     };
@@ -240,6 +280,27 @@ fn read_mode(args: &ReviewTriageArgs) -> Result<Mode> {
     }
     if let Some(resolution) = prose("resolve", &m.resolve, &m.resolve_file)? {
         return Ok(Mode::Resolve(resolution));
+    }
+    if let Some(resolution) = prose("addressed", &m.addressed, &m.addressed_file)? {
+        let mut targets: Vec<String> = Vec::new();
+        for raw in args
+            .targets
+            .iter()
+            .map(|t| t.trim())
+            .filter(|t| !t.is_empty())
+        {
+            target::parse(raw).map_err(|err| invalid(format!("{VERB}: --targets: {err:#}")))?;
+            if !targets.iter().any(|seen| seen == raw) {
+                targets.push(raw.to_string());
+            }
+        }
+        if targets.is_empty() && !args.targets.is_empty() {
+            return Err(invalid(format!("{VERB}: --targets names no target")));
+        }
+        return Ok(Mode::Addressed {
+            resolution,
+            targets,
+        });
     }
     if let Some(reference) = &m.backlog_ref {
         let reference = reference.trim();
@@ -287,6 +348,19 @@ fn refuse_if_nothing_landed(outcome: &Outcome) -> Result<()> {
     let lines: Vec<String> = outcome.refused.iter().map(JsonValue::to_string).collect();
     Err(invalid(format!(
         "{VERB}: every id was refused; nothing was written:\n{}",
+        lines.join("\n")
+    )))
+}
+
+/// `--addressed` lands on every id or none: a partial write would leave a
+/// hand edit recorded on some findings and missing from the re-check on others.
+fn refuse_addressed_set(outcome: &Outcome, mode: &Mode) -> Result<()> {
+    if !matches!(mode, Mode::Addressed { .. }) || outcome.refused.is_empty() {
+        return Ok(());
+    }
+    let lines: Vec<String> = outcome.refused.iter().map(JsonValue::to_string).collect();
+    Err(invalid(format!(
+        "{VERB}: --addressed refuses the whole id set; nothing was written:\n{}",
         lines.join("\n")
     )))
 }
@@ -339,6 +413,25 @@ fn judge(store: &Store, id: &str, mode: &Mode, expect: Option<&str>) -> Step {
             "{id} is {status}; --reopen moves a finding that is {}",
             reopenable.join(", ")
         ));
+    }
+    if let Mode::Addressed { targets, .. } = mode {
+        if finding.family != Family::Plan {
+            reasons.push(format!(
+                "--addressed applies to plan findings; {id} is a {} finding",
+                finding.family.as_str()
+            ));
+        } else if targets.is_empty() {
+            match finding.text("target").filter(|t| !t.is_empty()) {
+                None => reasons.push(format!(
+                    "{id} has no target; name the targets the hand edit changed with --targets"
+                )),
+                Some(own) => {
+                    if let Err(err) = target::parse(own) {
+                        reasons.push(format!("{id}: {err:#}; name its targets with --targets"));
+                    }
+                }
+            }
+        }
     }
     if matches!(mode, Mode::Answer(_)) {
         if !current.is_settled() && current != FindingStatus::Open {
@@ -409,13 +502,21 @@ fn dispose_all(
                         .push(json!({"id": id, "from": from, "status": from}));
                     continue;
                 }
-                let resolved = matches!(mode, Mode::Resolve(_)).then_some(today);
+                let resolved =
+                    matches!(mode, Mode::Resolve(_) | Mode::Addressed { .. }).then_some(today);
+                let addressed = mode.addressed(finding);
                 // A reopened finding no longer follows its v1 row: sync would
                 // undo the reopen, and a re-export mints a regression instead.
                 if matches!(mode, Mode::Reopen(_)) {
                     finding.retire_link();
                 }
                 dispose(finding, mode.status(), &mode.companions(), resolved);
+                if let Some(addressed) = addressed {
+                    let list = addressed.into_iter().map(TomlValue::String).collect();
+                    finding
+                        .rest
+                        .insert("addressed".into(), TomlValue::Array(list));
+                }
                 if matches!(mode, Mode::Reopen(_))
                     && let Some(slug) = slug
                 {

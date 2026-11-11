@@ -995,6 +995,11 @@ fn cases() -> Vec<Case> {
         ),
         read(&["review", "digest", "--slug", S, "--run", "U1"], One, "run"),
         read(
+            &["review", "recheck-targets", "--slug", S, "--run", "U1"],
+            One,
+            "run",
+        ),
+        read(
             &[
                 "review",
                 "report",

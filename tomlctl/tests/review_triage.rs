@@ -743,3 +743,190 @@ fn answer_is_refused_on_a_decision_blocked_finding_that_is_not_open() {
         assert_eq!(text(&f3, "status"), Some(status));
     }
 }
+
+const OWN_TARGET: &str = "task:fix-limit.spec.outcome";
+
+/// Adds plan run `P1` with open plan defects `F5` (targeted), `F6` (no
+/// target) and `F7` (targeted), and `F8`, resolved by a `review apply`.
+fn plan_findings(repo: &Repo) {
+    repo.rewrite(|doc| {
+        let mut p1 = doc["runs"][0].as_table().unwrap().clone();
+        p1.insert("id".into(), "P1".into());
+        p1.insert("command".into(), "review-plan-v2".into());
+        p1.insert("family".into(), "plan".into());
+        doc["runs"]
+            .as_array_mut()
+            .unwrap()
+            .push(toml::Value::Table(p1));
+        let plan = |id: &str, target: Option<&str>| {
+            let mut row = toml::map::Map::new();
+            for (key, value) in [
+                ("id", id),
+                ("run", "P1"),
+                ("cell", "C1"),
+                ("family", "plan"),
+                ("kind", "defect"),
+                ("lens", "feasibility"),
+                ("route", "verifier"),
+                ("file", ".claude/flows/f/tasks.toml"),
+                ("summary", "the outcome is unreachable"),
+                ("severity", "major"),
+                ("status", "open"),
+            ] {
+                row.insert(key.into(), value.into());
+            }
+            if let Some(target) = target {
+                row.insert("target".into(), target.into());
+            }
+            row
+        };
+        let mut f8 = plan("F8", Some("decision:D1.why"));
+        f8.insert("status".into(), "resolved".into());
+        let mut applied = toml::map::Map::new();
+        applied.insert("target".into(), "decision:D1.why".into());
+        applied.insert("by".into(), "tool".into());
+        f8.insert("applied".into(), toml::Value::Table(applied));
+        let findings = doc["findings"].as_array_mut().unwrap();
+        for row in [
+            plan("F5", Some(OWN_TARGET)),
+            plan("F6", None),
+            plan("F7", Some("decision:D2.decision")),
+            f8,
+        ] {
+            findings.push(toml::Value::Table(row));
+        }
+    });
+}
+
+fn list<'a>(row: &'a toml::Value, key: &str) -> Option<Vec<&'a str>> {
+    row.get(key)?
+        .as_array()
+        .map(|items| items.iter().filter_map(toml::Value::as_str).collect())
+}
+
+fn store_text(repo: &Repo) -> String {
+    fs::read_to_string(repo.root.join(".claude/review-v2/t.toml")).unwrap()
+}
+
+#[test]
+fn triage_addressed_records_targets() {
+    let repo = Repo::new();
+    plan_findings(&repo);
+
+    let out = repo.triaged("F5", &["--addressed", "rewrote the outcome by hand"]);
+    assert_eq!(out["mode"], "addressed", "{out}");
+    assert_eq!(
+        out["applied"],
+        json!([{"id": "F5", "from": "open", "status": "resolved"}])
+    );
+    let f5 = repo.finding("F5");
+    assert_eq!(text(&f5, "status"), Some("resolved"));
+    assert_eq!(text(&f5, "resolution"), Some("rewrote the outcome by hand"));
+    assert!(f5.get("resolved").is_some(), "the resolve date is stamped");
+    assert_eq!(list(&f5, "addressed"), Some(vec![OWN_TARGET]));
+
+    let before = store_text(&repo);
+    let replay = repo.triaged("F5", &["--addressed", "rewrote the outcome by hand"]);
+    assert_eq!(replay["unchanged"], json!(["F5"]), "{replay}");
+    assert_eq!(before, store_text(&repo), "a replay writes nothing");
+
+    let reason = repo.staged("addressed.md", "split the decision by hand\r\n");
+    repo.triaged(
+        "F6",
+        &[
+            "--addressed-file",
+            &reason,
+            "--targets",
+            "decision:D2.why,task:fix-limit.spec.constraints",
+        ],
+    );
+    let f6 = repo.finding("F6");
+    assert_eq!(text(&f6, "resolution"), Some("split the decision by hand"));
+    assert_eq!(
+        list(&f6, "addressed"),
+        Some(vec!["decision:D2.why", "task:fix-limit.spec.constraints"])
+    );
+}
+
+#[test]
+fn triage_addressed_refuses_the_whole_set() {
+    let repo = Repo::new();
+    plan_findings(&repo);
+    let before = store_text(&repo);
+    let refused = |ids: &str, args: &[&str], needle: &str| {
+        let out = repo.triage(ids, args).failure();
+        let stderr = String::from_utf8_lossy(&out.get_output().stderr);
+        assert!(stderr.contains(needle), "{ids} {args:?}: {stderr}");
+        assert_eq!(before, store_text(&repo), "{ids} {args:?}: nothing written");
+    };
+
+    refused("F7,F6", &["--addressed", "by hand"], "F6 has no target");
+    refused(
+        "F7,F3",
+        &["--addressed", "by hand", "--targets", OWN_TARGET],
+        "--addressed applies to plan findings; F3 is a code finding",
+    );
+    refused(
+        "F7",
+        &[
+            "--addressed",
+            "by hand",
+            "--targets",
+            "task:fix-limit.title",
+        ],
+        "--targets",
+    );
+    repo.triage("F7", &["--dismiss", "noise", "--targets", OWN_TARGET])
+        .failure();
+    assert_eq!(repo.status("F7"), "open");
+}
+
+#[test]
+fn reopen_clears_addressed() {
+    let repo = Repo::new();
+    plan_findings(&repo);
+    repo.triaged("F5", &["--addressed", "fixed by hand"]);
+    assert!(repo.finding("F5").get("addressed").is_some());
+
+    repo.triaged("F5", &["--reopen", "the hand edit missed a case"]);
+    let f5 = repo.finding("F5");
+    assert_eq!(text(&f5, "status"), Some("open"));
+    assert_eq!(f5.get("addressed"), None, "{f5:?}");
+    assert_eq!(text(&f5, "resolution"), None);
+}
+
+#[test]
+fn recheck_targets_union_applied_and_addressed() {
+    let repo = Repo::new();
+    plan_findings(&repo);
+    repo.triaged("F5", &["--addressed", "fixed by hand"]);
+    repo.triaged(
+        "F7",
+        &[
+            "--addressed",
+            "fixed by hand",
+            "--targets",
+            &format!("decision:D1.why,{OWN_TARGET}"),
+        ],
+    );
+    let recheck = |run: &str| {
+        cli(&repo.root)
+            .current_dir(&repo.root)
+            .args(["review", "recheck-targets", "--run", run, "--scope", SCOPE])
+            .assert()
+    };
+    let out = recheck("P1").success();
+    let out: JsonValue = serde_json::from_slice(&out.get_output().stdout).unwrap();
+    assert_eq!(
+        out,
+        json!({
+            "run": "P1",
+            "targets": ["decision:D1.why", OWN_TARGET],
+        })
+    );
+
+    let out = recheck("U1").success();
+    let out: JsonValue = serde_json::from_slice(&out.get_output().stdout).unwrap();
+    assert_eq!(out, json!({"run": "U1", "targets": []}));
+    recheck("P9").failure();
+}

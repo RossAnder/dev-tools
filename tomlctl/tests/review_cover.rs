@@ -100,9 +100,13 @@ impl Repo {
     }
 
     fn cover(&self, ruled_out: Option<&Path>) -> assert_cmd::assert::Assert {
+        self.cover_noting("swept", ruled_out)
+    }
+
+    fn cover_noting(&self, note: &str, ruled_out: Option<&Path>) -> assert_cmd::assert::Assert {
         let mut cmd = cli(&self.root);
         cmd.current_dir(&self.root).args([
-            "review", "cover", "C1", "--scope", SCOPE, "--status", "covered", "--note", "swept",
+            "review", "cover", "C1", "--scope", SCOPE, "--status", "covered", "--note", note,
         ]);
         if let Some(path) = ruled_out {
             cmd.arg("--ruled-out").arg(path);
@@ -157,6 +161,70 @@ fn cover_stores_ruled_out_entries() {
     let entries = ruled_out(&repo.cell());
     assert_eq!(entries.len(), 1, "re-covering replaces the rule-outs");
     assert_eq!(entries[0]["reason"].as_str(), Some("kept on purpose"));
+}
+
+/// The cell note's cap in the field catalogue.
+const NOTE_CAP: usize = 600;
+/// The `reason` cap of a rule-out entry.
+const REASON_CAP: usize = 200;
+
+#[test]
+fn cover_cuts_an_over_cap_note() {
+    let repo = Repo::new();
+    repo.seed("correctness", "review-finder", "status = \"assigned\"\n");
+    let long = "é".repeat(NOTE_CAP + 100);
+    let out = stdout_json(&repo.cover_noting(&long, None).success());
+    let cut = out["note_truncated"]
+        .as_u64()
+        .expect("the envelope reports the cut") as usize;
+
+    let cell = repo.cell();
+    assert_eq!(cell["sealed"].as_bool(), Some(true));
+    let note = cell["note"].as_str().unwrap();
+    let marker = format!("…(+{cut})");
+    assert!(note.ends_with(&marker), "{note}");
+    assert!(note.chars().count() <= NOTE_CAP, "{}", note.chars().count());
+    let kept = note.chars().count() - marker.chars().count();
+    assert_eq!(kept + cut, NOTE_CAP + 100);
+    assert!(long.starts_with(&note[..note.len() - marker.len()]));
+
+    let replay = stdout_json(&repo.cover_noting(&long, None).success());
+    assert_eq!(
+        replay["unchanged"],
+        json!(true),
+        "a replayed seal finds its own cut note"
+    );
+
+    let repo = Repo::new();
+    repo.seed("correctness", "review-finder", "status = \"assigned\"\n");
+    let exact = "n".repeat(NOTE_CAP);
+    let out = stdout_json(&repo.cover_noting(&exact, None).success());
+    assert!(out.get("note_truncated").is_none(), "{out}");
+    assert_eq!(repo.cell()["note"].as_str(), Some(exact.as_str()));
+}
+
+#[test]
+fn cover_cuts_an_over_cap_ruled_out_reason() {
+    let repo = Repo::new();
+    repo.seed("correctness", "review-finder", "status = \"assigned\"\n");
+    let at_cap = "k".repeat(REASON_CAP);
+    let payload = repo.payload(&[
+        json!({"file": "src/a.rs", "line": 3, "reason": "r".repeat(REASON_CAP + 50)}),
+        json!({"file": "src/a.rs", "line": 4, "reason": at_cap.clone()}),
+        json!({"file": "src/a.rs", "line": 5, "reason": "x".repeat(REASON_CAP * 2)}),
+    ]);
+    let out = stdout_json(&repo.cover(Some(&payload)).success());
+    assert_eq!(out["reasons_truncated"], json!(2), "{out}");
+    assert!(out.get("note_truncated").is_none(), "{out}");
+
+    let entries = ruled_out(&repo.cell());
+    assert_eq!(entries.len(), 3);
+    let first = entries[0]["reason"].as_str().unwrap();
+    assert!(first.chars().count() <= REASON_CAP, "{first}");
+    assert!(first.starts_with('r') && first.contains("…(+"), "{first}");
+    assert_eq!(entries[1]["reason"].as_str(), Some(at_cap.as_str()));
+    let third = entries[2]["reason"].as_str().unwrap();
+    assert!(third.chars().count() <= REASON_CAP, "{third}");
 }
 
 #[test]

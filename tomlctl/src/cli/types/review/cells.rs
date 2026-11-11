@@ -114,6 +114,11 @@ pub(crate) struct ReviewAddArgs {
         help = "The cell's full finding set, one JSON object per line: `-` for stdin, otherwise a file path (a leading `@` is accepted; a `.toml` path is a record file)"
     )]
     pub(crate) ndjson: String,
+    #[arg(
+        long = "dry-run",
+        help = "Run every check against the current store and print the findings and refusals the write would make, with no ids; writes nothing"
+    )]
+    pub(crate) dry_run: bool,
     #[command(flatten)]
     pub(crate) integrity: WriteIntegrityArgs,
 }

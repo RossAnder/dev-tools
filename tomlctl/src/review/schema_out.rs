@@ -264,6 +264,7 @@ fn cell_return() -> JsonValue {
                         "kind": {"type": "string", "enum": Kind::VALUES},
                         "severity": {"type": ["string", "null"], "enum": severity_or_null()},
                         "route": {"type": "string", "enum": Route::VALUES},
+                        "same_as": {"type": "boolean"},
                     },
                     "required": ["id", "kind", "route"],
                 },

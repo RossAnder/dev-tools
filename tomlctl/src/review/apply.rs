@@ -313,6 +313,10 @@ fn judge(
             status.as_str()
         ));
     }
+    let new = decoded(finding, "new");
+    // An advisory-tier defect or cleanup that carries an edit is the user's to
+    // accept; the kind check above still refuses every other kind.
+    let acceptable_edit = new.is_some() && matches!(finding.kind, Kind::Defect | Kind::Cleanup);
     let tier = match finding.text("tier") {
         None => {
             reasons.push(format!(
@@ -321,6 +325,14 @@ fn judge(
             None
         }
         Some(raw) => match Tier::parse(raw) {
+            Some(Tier::Advisory) if acceptable_edit && args.user_accepted => Some(Tier::Advisory),
+            Some(Tier::Advisory) if acceptable_edit => {
+                reasons.push(format!(
+                    "{id} is advisory tier; apply its edit with --user-accepted once the user \
+                     accepts it"
+                ));
+                None
+            }
             Some(Tier::Advisory) => {
                 reasons.push(format!("{id} is advisory tier, which is never applied"));
                 None
@@ -367,7 +379,6 @@ fn judge(
             }
         },
     };
-    let new = decoded(finding, "new");
     if new.is_none() {
         reasons.push(format!("{id} carries no `new`, so it proposes no edit"));
     }

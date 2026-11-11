@@ -8,8 +8,9 @@
 //! 2. `advisory`: an advisory row, a `handover:*` target, or no `new`.
 //! 3. `mechanical`: a `proof` this module verifies from the stores and the
 //!    tree, without running a command, over a `new` no wider than the proof.
-//! 4. `cited`: the settled verifying call stands, and its citation names a
-//!    line range inside the target's own file or a path the target names.
+//! 4. `cited`: the settled verifying call stands, and one `;`-separated part
+//!    of its citation names a line range inside the target's own file, a path
+//!    the target or the finding's `new` names, or a document of the flow.
 //!
 //! A row matching none of them is `advisory`.
 
@@ -109,7 +110,7 @@ pub(super) fn compute(row: &Row, slug: &str, verdicts: &[&Verdict]) -> Result<Op
     if proven {
         return Ok(Some(Tier::Mechanical));
     }
-    if cited(row, &target, slug, verdicts) {
+    if cited(row, &target, &new, slug, verdicts) {
         return Ok(Some(Tier::Cited));
     }
     Ok(Some(Tier::Advisory))
@@ -543,8 +544,14 @@ fn same_type(a: &JsonValue, b: &JsonValue) -> bool {
 }
 
 /// The settled verifying call stands, and the citation of its latest deciding
-/// verdict holds for the target.
-fn cited(row: &Row, target: &RecordTarget, slug: &str, verdicts: &[&Verdict]) -> bool {
+/// verdict holds for the target and the finding's decoded `new`.
+fn cited(
+    row: &Row,
+    target: &RecordTarget,
+    new: &JsonValue,
+    slug: &str,
+    verdicts: &[&Verdict],
+) -> bool {
     let route = text(row, "route").and_then(Route::parse);
     let Some(settled) = settle(route, verdicts, |v| CITING.contains(&v.by.as_str())) else {
         return false;
@@ -556,35 +563,39 @@ fn cited(row: &Row, target: &RecordTarget, slug: &str, verdicts: &[&Verdict]) ->
         .deciding
         .iter()
         .max()
-        .is_some_and(|&at| citation_holds(&verdicts[at].citation, target, slug))
+        .is_some_and(|&at| citation_holds(&verdicts[at].citation, target, new, slug))
 }
 
-/// The citation is a `path:line` range inside the file it names, and that
-/// file is the target's own or one the target's current value names.
-fn citation_holds(citation: &str, target: &RecordTarget, slug: &str) -> bool {
-    let Some((path, _, to)) = parse_citation(citation) else {
-        return false;
-    };
-    let path = normal_path(path);
-    if !named_paths(target, slug).contains(&path) {
-        return false;
-    }
+/// Some `;`-separated part of the citation is a `path:line` range inside the
+/// file it names, and that file is one [`named_paths`] returns or lies under
+/// the flow's `docs/flows/<slug>/`.
+fn citation_holds(citation: &str, target: &RecordTarget, new: &JsonValue, slug: &str) -> bool {
     let Ok(root) = repo_or_cwd_root() else {
         return false;
     };
-    let Ok(bytes) = std::fs::read(root.join(&path)) else {
-        return false;
-    };
-    String::from_utf8_lossy(&bytes).lines().count() >= to
+    let named = named_paths(target, new, slug);
+    let flow_docs = format!("docs/flows/{slug}/");
+    citation.split(';').any(|part| {
+        let Some((path, _, to)) = parse_citation(part.trim()) else {
+            return false;
+        };
+        let path = normal_path(path);
+        if !named.contains(&path) && !path.starts_with(&flow_docs) {
+            return false;
+        }
+        std::fs::read(root.join(&path))
+            .is_ok_and(|bytes| String::from_utf8_lossy(&bytes).lines().count() >= to)
+    })
 }
 
-/// The target's file, plus every string in its current value that is a path or
-/// a `design/<file>.md#<anchor>` citation, in repo-relative form.
-fn named_paths(target: &RecordTarget, slug: &str) -> BTreeSet<String> {
+/// The target's file, plus every string in its current value or in `new` that
+/// is a path or a `design/<file>.md#<anchor>` citation, in repo-relative form.
+fn named_paths(target: &RecordTarget, new: &JsonValue, slug: &str) -> BTreeSet<String> {
     let mut paths = BTreeSet::from([normal_path(&target.file(slug))]);
     let mut pending = target::resolve(slug, target)
         .ok()
         .into_iter()
+        .chain([new.clone()])
         .collect::<Vec<_>>();
     while let Some(value) = pending.pop() {
         match value {
@@ -945,6 +956,73 @@ done = false
             );
             let named = verdict("confirmed", "src/a.rs:1");
             assert_eq!(tier(&row, &[&named]), Some(Tier::Cited));
+        });
+    }
+
+    #[test]
+    fn compound_citation_holds() {
+        with_root(|root| {
+            seed(root);
+            let row = row(
+                "task:parse-it.action",
+                Some(json!("parse")),
+                json!("parse targets"),
+                JsonValue::Null,
+            );
+            let compound = verdict(
+                "confirmed",
+                "src/elsewhere.rs:1; .claude/flows/tiers/tasks.toml:2-4",
+            );
+            assert_eq!(tier(&row, &[&compound]), Some(Tier::Cited));
+            let neither = verdict("confirmed", "src/elsewhere.rs:1; src/a.rs:1");
+            assert_eq!(tier(&row, &[&neither]), Some(Tier::Advisory));
+        });
+    }
+
+    #[test]
+    fn citation_of_a_path_in_new_holds() {
+        with_root(|root| {
+            seed(root);
+            std::fs::write(root.join("src").join("b.rs"), "fn b() {}\n").unwrap();
+            let cite = verdict("confirmed", "src/b.rs:1");
+            let named = row(
+                "task:parse-it.files",
+                Some(json!(["src/a.rs", "src/gone.rs"])),
+                json!(["src/a.rs", "src/gone.rs", "src/b.rs"]),
+                JsonValue::Null,
+            );
+            assert_eq!(tier(&named, &[&cite]), Some(Tier::Cited));
+            let unnamed = row(
+                "task:parse-it.files",
+                Some(json!(["src/a.rs", "src/gone.rs"])),
+                json!(["src/a.rs"]),
+                JsonValue::Null,
+            );
+            assert_eq!(tier(&unnamed, &[&cite]), Some(Tier::Advisory));
+        });
+    }
+
+    #[test]
+    fn citation_of_a_flow_document_holds() {
+        with_root(|root| {
+            seed(root);
+            for flow in [SLUG, "other"] {
+                let dir = root.join("docs").join("flows").join(flow);
+                std::fs::create_dir_all(&dir).unwrap();
+                std::fs::write(dir.join("brief.md"), "# Brief\n\nIntent.\n").unwrap();
+            }
+            let row = row(
+                "task:parse-it.action",
+                Some(json!("parse")),
+                json!("parse targets"),
+                JsonValue::Null,
+            );
+            let own = verdict("confirmed", "docs/flows/tiers/brief.md:3");
+            assert_eq!(tier(&row, &[&own]), Some(Tier::Cited));
+            let past_end = verdict("confirmed", "docs/flows/tiers/brief.md:9");
+            assert_eq!(tier(&row, &[&past_end]), Some(Tier::Advisory));
+            let other = verdict("confirmed", "docs/flows/other/brief.md:3");
+            assert_eq!(tier(&row, &[&other]), Some(Tier::Advisory));
         });
     }
 

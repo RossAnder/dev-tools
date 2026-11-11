@@ -16,6 +16,7 @@ mod cover;
 mod digest;
 mod export;
 mod query;
+mod recheck;
 mod reconcile;
 mod reproduce;
 mod resolve;

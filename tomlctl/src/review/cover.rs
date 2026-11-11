@@ -16,13 +16,41 @@ use crate::output::print_json_compact;
 
 const VERB: &str = "review cover";
 
-/// The `--ruled-out` entries, each validated on its own; any refusal refuses
-/// the whole set.
-fn read_ruled_out(src: &str) -> Result<Vec<RuledOut>> {
+/// `text` cut to at most `cap` characters, ending `…(+K)` with K the
+/// characters cut, and K; `text` itself and 0 when it is within the cap.
+fn cut_to_cap(text: &str, cap: usize) -> (String, usize) {
+    let len = text.chars().count();
+    if len <= cap {
+        return (text.to_string(), 0);
+    }
+    let mut kept = cap;
+    loop {
+        let marker = format!("…(+{})", len - kept);
+        let room = marker.chars().count();
+        if kept + room <= cap || kept == 0 {
+            let head: String = text.chars().take(kept).collect();
+            return (format!("{head}{marker}"), len - kept);
+        }
+        kept = cap.saturating_sub(room).min(kept - 1);
+    }
+}
+
+/// The `--ruled-out` entries, each validated on its own after an over-cap
+/// `reason` is cut, and how many reasons were cut; any refusal refuses the
+/// whole set.
+fn read_ruled_out(src: &str) -> Result<(Vec<RuledOut>, usize)> {
     let rows = crate::items::parse_ndjson_objects(&read_ndjson_source(src)?)?;
     let mut refusals = Vec::new();
     let mut entries = Vec::with_capacity(rows.len());
-    for (line, row) in rows {
+    let mut cut = 0;
+    for (line, mut row) in rows {
+        if let Some(JsonValue::String(reason)) = row.get_mut("reason") {
+            let (text, over) = cut_to_cap(reason, fields::RULED_OUT_REASON_CAP);
+            if over > 0 {
+                *reason = text;
+                cut += 1;
+            }
+        }
         let reasons = fields::ruled_out_refusals(&row);
         if !reasons.is_empty() {
             refusals.extend(reasons.into_iter().map(|r| format!("line {line}: {r}")));
@@ -45,7 +73,7 @@ fn read_ruled_out(src: &str) -> Result<Vec<RuledOut>> {
         });
     }
     if refusals.is_empty() {
-        Ok(entries)
+        Ok((entries, cut))
     } else {
         Err(invalid(format!(
             "{VERB}: --ruled-out refused, nothing sealed: {}",
@@ -126,8 +154,14 @@ pub(crate) fn cover(target: &Target, args: ReviewCoverArgs) -> Result<()> {
     else {
         return Err(invalid(format!("{verb}: pass --note or --note-file")));
     };
-    fields::check_cap(verb, "the note", Record::Cell, "note", &note)?;
-    let ruled_out = args.ruled_out.as_deref().map(read_ruled_out).transpose()?;
+    let (note, note_cut) = cut_to_cap(&note, fields::cap(Record::Cell, "note"));
+    let (ruled_out, reasons_cut) = match args.ruled_out.as_deref().map(read_ruled_out) {
+        Some(read) => {
+            let (entries, cut) = read?;
+            (Some(entries), cut)
+        }
+        None => (None, 0),
+    };
     // A sealed cell's status and note are final; covering it again with the
     // same seal still replaces its rule-outs.
     let sealed_as = |cell: &store::Cell| -> Result<bool> {
@@ -202,5 +236,31 @@ pub(crate) fn cover(target: &Target, args: ReviewCoverArgs) -> Result<()> {
     if let Some(entries) = &ruled_out {
         out["ruled_out"] = json!(entries.len());
     }
+    if note_cut > 0 {
+        out["note_truncated"] = json!(note_cut);
+    }
+    if reasons_cut > 0 {
+        out["reasons_truncated"] = json!(reasons_cut);
+    }
     print_json_compact(&out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cut_to_cap;
+
+    #[test]
+    fn a_cut_text_fits_its_cap_with_the_marker() {
+        assert_eq!(cut_to_cap("abcdef", 6), ("abcdef".to_string(), 0));
+        for len in 21..200 {
+            let text = "é".repeat(len);
+            let (cut, over) = cut_to_cap(&text, 20);
+            assert!(cut.chars().count() <= 20, "{len}: {cut}");
+            assert!(cut.ends_with(&format!("…(+{over})")), "{len}: {cut}");
+            assert_eq!(
+                cut.chars().count() - format!("…(+{over})").chars().count() + over,
+                len
+            );
+        }
+    }
 }

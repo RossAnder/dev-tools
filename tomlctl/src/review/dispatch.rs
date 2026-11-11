@@ -8,8 +8,9 @@ use anyhow::Result;
 
 use super::store::{self, Target};
 use super::{
-    add, anchor, apply, catalogue_cmd, cells, cover, digest, export, query, reconcile, reproduce,
-    resolve, run_show, runs, schedule, schema_out, settle, stats, survey, sync, triage, verdict,
+    add, anchor, apply, catalogue_cmd, cells, cover, digest, export, query, recheck, reconcile,
+    reproduce, resolve, run_show, runs, schedule, schema_out, settle, stats, survey, sync, triage,
+    verdict,
 };
 use crate::cli::{ReviewOp, ReviewRunOp, ReviewStore};
 
@@ -44,6 +45,9 @@ pub(crate) fn dispatch(op: ReviewOp) -> Result<()> {
             anchor::run(&target(&args.store)?, &args.id, args.gone, &args.integrity)
         }
         ReviewOp::Digest(args) => digest::digest(&target(&args.store)?, args),
+        ReviewOp::RecheckTargets(args) => {
+            recheck::run(&target(&args.store)?, &args.run, &args.integrity)
+        }
         ReviewOp::Report(args) => digest::report(&target(&args.store)?, args),
         ReviewOp::Triage(args) => triage::run(&target(&args.store)?, args),
         ReviewOp::Settle(args) => settle::run(
