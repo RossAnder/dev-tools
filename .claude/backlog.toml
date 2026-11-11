@@ -9623,7 +9623,7 @@ tags = [
     "drift",
     "v2-harness-tuning",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-11-10T04:16:34Z
 last_seen = 2026-11-10T04:16:34Z
 seen_count = 1
@@ -9635,6 +9635,11 @@ base_sha = "d3ce04e2998c9b9454dbd56d06d09ec641de7c4a"
 related = ["B-aca96d19"]
 promoted = 2026-11-11
 promoted_to = "v2-harness-tuning"
+resolved = 2026-11-11
+resolution = "resolved by flow `v2-harness-tuning` (tasks read-plan-drifts-own-work-from-a-set-agent)"
+resolved_flow = "v2-harness-tuning"
+resolved_tasks = ["read-plan-drifts-own-work-from-a-set-agent"]
+resolved_commits = ["0b87a8a30332bcabee9e9ca58376f418bfbf8ab6"]
 
 [[backlog]]
 id = "B-eebed4e1"
@@ -11149,7 +11154,7 @@ tags = [
     "output-options",
     "v2-harness-tuning",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
 seen_count = 1
@@ -11161,6 +11166,11 @@ base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-9b7257ec"]
 promoted = 2026-11-11
 promoted_to = "v2-harness-tuning"
+resolved = 2026-11-11
+resolution = "resolved by flow `v2-harness-tuning` (tasks warn-when-a-template-path-matches-nothing)"
+resolved_flow = "v2-harness-tuning"
+resolved_tasks = ["warn-when-a-template-path-matches-nothing"]
+resolved_commits = ["0b87a8a30332bcabee9e9ca58376f418bfbf8ab6"]
 
 [[backlog]]
 id = "B-4e2fc7d8"
@@ -11661,7 +11671,7 @@ tags = [
     "context",
     "v2-harness-tuning",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
 seen_count = 1
@@ -11673,6 +11683,11 @@ base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-1e1be4cf"]
 promoted = 2026-11-11
 promoted_to = "v2-harness-tuning"
+resolved = 2026-11-11
+resolution = "resolved by flow `v2-harness-tuning` (tasks report-a-passing-verification-command-on-one-line)"
+resolved_flow = "v2-harness-tuning"
+resolved_tasks = ["report-a-passing-verification-command-on-one-line"]
+resolved_commits = ["0b87a8a30332bcabee9e9ca58376f418bfbf8ab6"]
 
 [[backlog]]
 id = "B-f476684c"
@@ -11757,7 +11772,7 @@ tags = [
     "workflow",
     "schema",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-11-11T08:17:02Z
 last_seen = 2026-11-11T08:17:02Z
 seen_count = 1
@@ -11773,6 +11788,11 @@ evidence = [
 related = ["B-c866bda9"]
 promoted = 2026-11-11
 promoted_to = "v2-harness-tuning"
+resolved = 2026-11-11
+resolution = "resolved by flow `v2-harness-tuning` (tasks drop-the-top-level-allof-from-the-verdict-return-schema)"
+resolved_flow = "v2-harness-tuning"
+resolved_tasks = ["drop-the-top-level-allof-from-the-verdict-return-schema"]
+resolved_commits = ["0b87a8a30332bcabee9e9ca58376f418bfbf8ab6"]
 
 [[backlog]]
 id = "B-4b11a10c"
@@ -11783,7 +11803,7 @@ tags = [
     "apply-v2",
     "doc-drift",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-11-11T08:17:02Z
 last_seen = 2026-11-11T08:17:02Z
 seen_count = 1
@@ -11799,6 +11819,11 @@ evidence = [
 related = ["B-3f45d7d9"]
 promoted = 2026-11-11
 promoted_to = "v2-harness-tuning"
+resolved = 2026-11-11
+resolution = "resolved by flow `v2-harness-tuning` (tasks name-the-one-question-in-the-apply-v2-role-rule)"
+resolved_flow = "v2-harness-tuning"
+resolved_tasks = ["name-the-one-question-in-the-apply-v2-role-rule"]
+resolved_commits = ["0b87a8a30332bcabee9e9ca58376f418bfbf8ab6"]
 
 [[backlog]]
 id = "B-8aadb175"
@@ -11840,7 +11865,7 @@ kind = "annoyance"
 summary = "review schedule mints apply rows with no needs on the done rows holding the same files, so plan check and tasks check print a dag/unreachable-claim warning per pair"
 area = "tomlctl/src/review/schedule.rs"
 tags = []
-status = "promoted"
+status = "resolved"
 created = 2026-11-11T08:47:28Z
 last_seen = 2026-11-11T08:47:28Z
 seen_count = 1
@@ -11851,6 +11876,11 @@ context = "Scheduling 15 rows into v2-apply made plan check and tasks check each
 base_sha = "38a70892a3912cd050e5ee29c0b9cdfbcfc81a91"
 promoted = 2026-11-11
 promoted_to = "v2-harness-tuning"
+resolved = 2026-11-11
+resolution = "resolved by flow `v2-harness-tuning` (tasks skip-unreachable-claim-pairs-that-hold-a-done-committed-row)"
+resolved_flow = "v2-harness-tuning"
+resolved_tasks = ["skip-unreachable-claim-pairs-that-hold-a-done-committed-row"]
+resolved_commits = ["0b87a8a30332bcabee9e9ca58376f418bfbf8ab6"]
 
 [[backlog]]
 id = "B-590ba0b1"
@@ -11898,7 +11928,7 @@ tags = [
     "review-v2",
     "v2-harness-tuning",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-11-11T08:59:28Z
 last_seen = 2026-11-11T08:59:28Z
 seen_count = 1
@@ -11911,6 +11941,11 @@ evidence = ["tomlctl/src/review/add.rs:142"]
 related = ["B-607f983f"]
 promoted = 2026-11-11
 promoted_to = "v2-harness-tuning"
+resolved = 2026-11-11
+resolution = "resolved by flow `v2-harness-tuning` (tasks supersede-a-cells-open-advisory-rows-on-a-replayed-review-add)"
+resolved_flow = "v2-harness-tuning"
+resolved_tasks = ["supersede-a-cells-open-advisory-rows-on-a-replayed-review-add"]
+resolved_commits = ["0b87a8a30332bcabee9e9ca58376f418bfbf8ab6"]
 
 [[backlog]]
 id = "B-0bb55cd5"
@@ -12009,3 +12044,20 @@ base_sha = "38a70892a3912cd050e5ee29c0b9cdfbcfc81a91"
 related = ["B-00ae0571"]
 promoted = 2026-11-11
 promoted_to = "v2-harness-tuning"
+
+[[backlog]]
+id = "B-e3af5d2d"
+kind = "question"
+summary = "v1 /implement reads duration_s from a verification block, but a passing command is now a one-line pass entry carrying duration instead"
+area = "claude/commands/implement.md"
+tags = []
+status = "open"
+created = 2026-11-11T10:25:02Z
+last_seen = 2026-11-11T10:25:02Z
+seen_count = 1
+dedup_id = "e3af5d2d0e518d82"
+origin = "implement-v2"
+flow = "v2-harness-tuning"
+context = """The verification agent now reports a pass as `outcome: pass | command: … | duration: … | summary: …` and keeps blocks only for fail, timeout and flaky. /implement Phase 2 step 5 and Phase 3 record `duration_s` "when the block carries them", so a v1 run may drop the duration of every passing command unless the orchestrator maps the pass line's `duration:` to `duration_s`. Decide whether the v1 carriers (/implement, /optimise-apply, /review-apply) should name the pass line; until then, map it by hand when recording."""
+base_sha = "7e5a26f60eefbcd1eb9a9dc7d096cd7ed05b5211"
+related = ["B-38b34e4d"]

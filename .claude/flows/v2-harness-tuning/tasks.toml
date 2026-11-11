@@ -230,7 +230,7 @@ check = """grep -q '"allOf"' tomlctl/src/review/schema_out.rs"""
 at = "base"
 
 [specs.premises.probe]
-at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+at = "7e5a26f60eefbcd1eb9a9dc7d096cd7ed05b5211"
 neg_rc = 0
 verdict = "holds"
 
@@ -264,7 +264,7 @@ check = "grep -q 'f.status() == FindingStatus::Unverified' tomlctl/src/review/ad
 at = "base"
 
 [specs.premises.probe]
-at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+at = "7e5a26f60eefbcd1eb9a9dc7d096cd7ed05b5211"
 neg_rc = 0
 verdict = "holds"
 
@@ -300,7 +300,7 @@ check = "grep -q 'fn own_work' tomlctl/src/plan/drift.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+at = "7e5a26f60eefbcd1eb9a9dc7d096cd7ed05b5211"
 neg_rc = 0
 verdict = "holds"
 
@@ -334,7 +334,7 @@ check = "grep -q 'fn overlap_findings' tomlctl/src/tasks/check.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+at = "7e5a26f60eefbcd1eb9a9dc7d096cd7ed05b5211"
 neg_rc = 0
 verdict = "holds"
 
@@ -382,7 +382,7 @@ check = """grep -q 'validate_row_paths(rows, header, t.paths(), "--template")' t
 at = "base"
 
 [specs.premises.probe]
-at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+at = "7e5a26f60eefbcd1eb9a9dc7d096cd7ed05b5211"
 neg_rc = 0
 verdict = "holds"
 
@@ -2377,7 +2377,7 @@ id = 1
 ref = "drop-the-top-level-allof-from-the-verdict-return-schema"
 title = "Drop the top-level allOf from the verdict-return schema"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -2389,15 +2389,15 @@ deps_note = ""
 action = 'In `verdict_return()`, stop emitting the top-level `allOf` that pairs `unblocks` with `fix_sketch`, and rewrite the tests in the same file that read `schema["allOf"]`.'
 detail = "The pairing stays enforced by `review verdict` at write; keep the tests that assert that refusal. Add a test named `verdict_return_has_no_top_level_combinator` asserting the emitted schema object has none of the keys `allOf`, `anyOf`, `oneOf`. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(verdict_return)'`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "0b87a8a30332bcabee9e9ca58376f418bfbf8ab6"
 
 [[items]]
 id = 2
 ref = "supersede-a-cells-open-advisory-rows-on-a-replayed-review-add"
 title = "Supersede a cell's open advisory rows on a replayed review add"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -2412,15 +2412,15 @@ deps_note = ""
 action = "Widen the `superseded` filter in `review add` so a replay also supersedes the same cell and run's advisory-kind rows whose status is `open`."
 detail = "The filter today keeps only rows whose status is `Unverified`; an advisory row is born `open`, survives the replay and is minted again. Add an integration test named `replayed_add_supersedes_open_advisory` in `tomlctl/tests/review_add.rs`: add a cell's set holding one advisory row, add the same set again, and assert the first advisory id is in `superseded` and one non-superseded copy remains. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(replayed_add_supersedes_open_advisory)'`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "0b87a8a30332bcabee9e9ca58376f418bfbf8ab6"
 
 [[items]]
 id = 3
 ref = "read-plan-drifts-own-work-from-a-set-agent"
 title = "Read plan drift's own work from a set agent"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -2432,15 +2432,15 @@ deps_note = ""
 action = "Make `own_work` also count the files of any row with a non-empty `agent` and an empty `commit`, whatever its status."
 detail = "Keep the present status rule beside it, so a row past `pending` with no agent still counts. Add a unit test named `started_row_reset_to_pending_is_own_work` in the file's test module: a `pending` row with `agent` set and an uncommitted edit to one of its files yields no `uncommitted` hit for that row. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(started_row_reset_to_pending_is_own_work)'`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "0b87a8a30332bcabee9e9ca58376f418bfbf8ab6"
 
 [[items]]
 id = 4
 ref = "skip-unreachable-claim-pairs-that-hold-a-done-committed-row"
 title = "Skip unreachable-claim pairs that hold a done, committed row"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -2455,15 +2455,15 @@ deps_note = ""
 action = "In `overlap_findings`, drop a pair from the `dag/unreachable-claim` warnings when either row is `done` with a non-empty `commit`."
 detail = "Filter in `overlap_findings`, not in `Graph::overlap_pairs`, which other callers use. Add a test named `unreachable_claim_skips_done_committed_rows` in `tomlctl/tests/tasks_graph.rs`: a done row with a commit and a pending row sharing a file with no path between them produce no warning, and two pending rows in the same position still do. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(unreachable_claim)'`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "0b87a8a30332bcabee9e9ca58376f418bfbf8ab6"
 
 [[items]]
 id = 5
 ref = "warn-when-a-template-path-matches-nothing"
 title = "Warn when a template path matches nothing"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -2481,15 +2481,15 @@ deps_note = ""
 action = "Print a stderr warning for each `--template` path that resolves on no row, unless its first segment is in a new table of optional fields, as `design/shapes.md#template-paths` states."
 detail = "`validate_row_paths` returns Ok as soon as one path matches any row, which is why `tasks list --template '{id} [{message}]'` prints blanks with exit 0. Keep that function's refusals as they are and add the warning for `--template` only. Seed the optional-field table from every `--template` placeholder in a fenced or backticked `tomlctl` command under `claude/skills/` and `claude/commands/` that names a field its verb can omit, `advisories` and `promoted_to` among them. Add tests named `template_unknown_path_warns` and `template_optional_path_is_quiet` in `tomlctl/tests/output_trim.rs`. Add one sentence to the Unknown paths paragraph of `claude/skills/tomlctl/SKILL.md`. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(template_)'`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "0b87a8a30332bcabee9e9ca58376f418bfbf8ab6"
 
 [[items]]
 id = 6
 ref = "name-the-one-question-in-the-apply-v2-role-rule"
 title = "Name the one question in the apply-v2 role rule"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -2501,15 +2501,15 @@ deps_note = ""
 action = "Reword the role rule that opens `**Triage decided the selection.**` so it names its one exception: the question about unfinished plan work that step 2 asks."
 detail = "The rule says to ask the user nothing about whether to go on and that every condition the skill cannot settle is a stop, never a question; the `**Unfinished plan work.**` bullet of step 2 asks with AskUserQuestion. Keep the rule on one bullet, and keep step 2 as it is. Check the edit with `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "0b87a8a30332bcabee9e9ca58376f418bfbf8ab6"
 
 [[items]]
 id = 7
 ref = "report-a-passing-verification-command-on-one-line"
 title = "Report a passing verification command on one line"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -2521,8 +2521,8 @@ deps_note = ""
 action = "Change the verification agent's Output section and its hard rules so a `pass` command is reported on one line, while `fail`, `timeout` and `flaky` keep their full blocks."
 detail = "The one line is `outcome: pass | command: <command> | duration: <duration> | summary: <the SUMMARY value>`. It still appears for every passing command, in list order, so the rule that no command is elided holds; reword the two places that demand a block per pass. Rewrite the worked example to show the line form above a full fail block. Check the edit with `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "0b87a8a30332bcabee9e9ca58376f418bfbf8ab6"
 
 [[items]]
 id = 8
