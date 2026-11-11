@@ -1057,7 +1057,7 @@ check = "grep -q 'writes_build is not false' tomlctl/src/plan/probes.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+at = "a28f93dcdf1f95e21e6e3e361d65fca1707c472f"
 neg_rc = 0
 verdict = "holds"
 
@@ -1067,7 +1067,7 @@ check = "grep -q 'ACCEPT_FIELDS' tomlctl/src/tasks/add.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+at = "a28f93dcdf1f95e21e6e3e361d65fca1707c472f"
 neg_rc = 0
 verdict = "holds"
 
@@ -1119,7 +1119,7 @@ check = "grep -q 'tomlctl review reproduce-status {} {} --expect gone' tomlctl/s
 at = "base"
 
 [specs.premises.probe]
-at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+at = "a28f93dcdf1f95e21e6e3e361d65fca1707c472f"
 neg_rc = 0
 verdict = "holds"
 
@@ -1129,7 +1129,7 @@ check = "grep -q 'struct ReviewReproduceStatusArgs' tomlctl/src/cli/types/review
 at = "base"
 
 [specs.premises.probe]
-at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+at = "a28f93dcdf1f95e21e6e3e361d65fca1707c472f"
 neg_rc = 0
 verdict = "holds"
 
@@ -1193,7 +1193,7 @@ check = "grep -q 'gate' tomlctl/src/cli/types/plan.rs && grep -q 'struct Milesto
 at = "base"
 
 [specs.premises.probe]
-at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+at = "a28f93dcdf1f95e21e6e3e361d65fca1707c472f"
 neg_rc = 0
 verdict = "holds"
 
@@ -1396,7 +1396,7 @@ check = "grep -q 'struct Run' tomlctl/src/plan/schema.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+at = "a28f93dcdf1f95e21e6e3e361d65fca1707c472f"
 neg_rc = 0
 verdict = "holds"
 
@@ -1468,7 +1468,7 @@ check = "grep -q 'enum AgentsOp' tomlctl/src/cli/types/cmd.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+at = "a28f93dcdf1f95e21e6e3e361d65fca1707c472f"
 neg_rc = 0
 verdict = "holds"
 
@@ -1484,6 +1484,7 @@ constraints = [
     "Touch no file outside this task's files.",
     "Every fenced `tomlctl` command in a reference takes single-token placeholders.",
     "`plan_view_writes_build` stays in the feature list.",
+    "An earlier pass of this task left its edits in every file; read docs/flows/v2-harness-tuning/notes/run/task-25.md and your own diff first, redo nothing that is already there, and confirm with `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(every_case_honours_the_output_options::plan)'`.",
 ]
 premises = []
 means = []
@@ -2337,6 +2338,30 @@ text = "Make `RULED_OUT_REASON_CAP` in fields.rs `pub(crate)`, delete `const REA
 binding = "required"
 detail = "cover.rs already calls into `fields`, so no new import path is needed beyond the constant"
 
+[[specs]]
+ref = "print-the-plan-emit-leaves-through-the-read-printer"
+outcome = "A `plan emit` leaf given an output option it cannot honour fails as a validation error, like every other read verb"
+constraints = [
+    "Change nothing else in emit.rs",
+    "Change no test and no reference file",
+]
+premises = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "emit.rs no longer uses the write-envelope printer"
+check = "grep -q 'print_json_line' tomlctl/src/plan/emit.rs && ! grep -q 'print_json_compact' tomlctl/src/plan/emit.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[[specs.means]]
+text = "Change the three `print_json_compact(...)` calls in `launch_args`, `gate_list` and `reproduce_units` to `print_json_line(...)` and update the `use crate::output::` import"
+binding = "required"
+detail = "`plan stage` already prints through `print_json_line`. Confirm with `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(every_case_honours_the_output_options::plan)'`, whose three emit cases are already in tomlctl/tests/output_options.rs"
+
 [[milestones]]
 id = "A"
 gates = [
@@ -2404,6 +2429,60 @@ old = ""
 new = "Share the ruled-out reason cap between fields and cover"
 actor = "orchestrator"
 reason = "drain B round 1: task 13 copied the private RULED_OUT_REASON_CAP into cover.rs as REASON_CAP because fields.rs was a sibling's file; two copies of one cap can drift"
+
+[[changes]]
+at = 2026-11-11T11:05:29Z
+ref = "emit-a-milestones-launch-args"
+field = "files"
+old = '["tomlctl/src/plan/emit.rs","tomlctl/src/plan/mod.rs","tomlctl/src/plan/dispatch.rs","tomlctl/src/cli/types/plan.rs","tomlctl/tests/plan_emit.rs"]'
+new = '["tomlctl/src/plan/emit.rs","tomlctl/src/plan/mod.rs","tomlctl/src/plan/dispatch.rs","tomlctl/src/cli/types/plan.rs","tomlctl/src/cli/mod.rs","tomlctl/tests/plan_emit.rs"]'
+actor = "orchestrator"
+reason = "task 21 failed on its file lane: emit.rs must name crate::cli::PlanEmitOp, and clap types reach code outside cli only through the explicit re-export list in tomlctl/src/cli/mod.rs, which the task did not hold; the file joins its lane"
+
+[[changes]]
+at = 2026-11-11T11:05:29Z
+ref = "emit-a-milestones-gate-command-list"
+field = "files"
+old = '["tomlctl/src/plan/emit.rs","tomlctl/src/cli/types/plan.rs","tomlctl/tests/plan_emit.rs"]'
+new = '["tomlctl/src/plan/emit.rs","tomlctl/src/cli/types/plan.rs","tomlctl/src/cli/mod.rs","tomlctl/tests/plan_emit.rs"]'
+actor = "orchestrator"
+reason = "carried from task 21's failure: a clap type an emit leaf names from emit.rs needs its line in the re-export list of tomlctl/src/cli/mod.rs, so the file joins this lane too"
+
+[[changes]]
+at = 2026-11-11T11:05:29Z
+ref = "emit-a-milestones-reproduce-units-and-store-a-runs-dispatched-tasks"
+field = "files"
+old = '["tomlctl/src/plan/emit.rs","tomlctl/src/plan/dispatch.rs","tomlctl/src/plan/schema.rs","tomlctl/src/plan/records.rs","tomlctl/src/cli/types/plan.rs","tomlctl/tests/plan_emit.rs","tomlctl/tests/plan_records.rs"]'
+new = '["tomlctl/src/plan/emit.rs","tomlctl/src/plan/dispatch.rs","tomlctl/src/plan/schema.rs","tomlctl/src/plan/records.rs","tomlctl/src/cli/types/plan.rs","tomlctl/src/cli/mod.rs","tomlctl/tests/plan_emit.rs","tomlctl/tests/plan_records.rs"]'
+actor = "orchestrator"
+reason = "carried from task 21's failure: a clap type an emit leaf names from emit.rs needs its line in the re-export list of tomlctl/src/cli/mod.rs, so the file joins this lane too"
+
+[[changes]]
+at = 2026-11-11T11:23:56Z
+ref = "print-the-plan-emit-leaves-through-the-read-printer"
+field = "*"
+old = ""
+new = "Print the plan emit leaves through the read printer"
+actor = "orchestrator"
+reason = "drain C round 2: task 25's output-options cases for plan emit fail because emit.rs prints its three read leaves through print_json_compact, the write-envelope printer, so a shaping error exits 0 with the unshaped object"
+
+[[changes]]
+at = 2026-11-11T11:24:12Z
+ref = "register-and-document-milestone-cs-plan-review-and-agents-surface"
+field = "needs"
+old = "[17,19,23,24]"
+new = "[17,19,23,24,41]"
+actor = "orchestrator"
+reason = "task 25 failed only on the plan emit output-options cases, whose cause is the printer in emit.rs; task 41 fixes that file, so this task now runs after it and confirms its own work, which the first pass left in place"
+
+[[changes]]
+at = 2026-11-11T11:24:12Z
+ref = "register-and-document-milestone-cs-plan-review-and-agents-surface"
+field = "spec.constraints"
+old = """["Touch no file outside this task's files.","Every fenced `tomlctl` command in a reference takes single-token placeholders.","`plan_view_writes_build` stays in the feature list."]"""
+new = """["Touch no file outside this task's files.","Every fenced `tomlctl` command in a reference takes single-token placeholders.","`plan_view_writes_build` stays in the feature list.","An earlier pass of this task left its edits in every file; read docs/flows/v2-harness-tuning/notes/run/task-25.md and your own diff first, redo nothing that is already there, and confirm with `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(every_case_honours_the_output_options::plan)'`."]"""
+actor = "orchestrator"
+reason = "task 25 failed only on the plan emit output-options cases, whose cause is the printer in emit.rs; task 41 fixes that file, so this task now runs after it and confirms its own work, which the first pass left in place"
 
 [[items]]
 id = 1
@@ -2829,7 +2908,7 @@ id = 18
 ref = "give-each-accept-entry-an-owner"
 title = "Give each accept entry an owner"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = ""
 phase_depth = 0
@@ -2856,15 +2935,15 @@ deps_note = ""
 action = "Add `run_by` and `covered_by` to an accept entry and make every reader of `writes_build` follow the owner rules of `design/shapes.md#accept-owner`."
 detail = "`Accept` and its TOML codec are in `tasks/schema.rs`; destructure the struct in full there so the compiler lists every site that must carry the new keys. Known sites: `ACCEPT_FIELDS` and `accept_entry` in `tasks/add.rs`, `accept_json` in `tasks/show.rs`, `keep_probes` and the review-spec projection in `tasks/update.rs`, `spec_block` in `plan/view.rs`, `skip_reason` in `plan/probes.rs`, the accept loop in `plan/check.rs`, and `entry_matches` in `plan/store.rs`. Add one function for the effective owner and call it from the view, the probes skip rule and the `plan/probe-absent` check. New check classes: `plan/accept-owner-invalid` and `plan/accept-cover-unknown`, both errors. `review/tier.rs` holds an allowlist of keys a probe fix may change; it is not in this task's files and stays as it is, so a probe fix cannot move an owner. Tests: `accept_run_by_round_trips` and `accept_worker_owner_refuses_a_building_check` in `tomlctl/tests/tasks_spec_add.rs`; `worker_view_prints_run_by` in `tomlctl/tests/plan_view.rs`; `gate_owned_check_is_not_probed` in `tomlctl/tests/plan_probes.rs`; `check_reports_unknown_cover` in `tomlctl/tests/plan_check.rs`. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(run_by) | test(owner) | test(cover)'`. The feature token and reference pages are another task's."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "8112280301ab49605128ab370e0a88a5932f14f6"
 
 [[items]]
 id = 19
 ref = "select-reproduce-status-by-milestone-and-mint-one-gate-owned-check"
 title = "Select reproduce-status by milestone and mint one gate-owned check"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = ""
 phase_depth = 0
@@ -2887,15 +2966,15 @@ deps_note = ""
 action = "Add the `--flow` and `--milestone` selector to `review reproduce-status`, and have `review schedule` mint the one milestone-wide, gate-owned accept entry, as `design/shapes.md#reproduce-status-by-milestone` states."
 detail = "`status` in `reproduce.rs` takes an id list today and reads each finding's latest reproduction; the selector resolves the ids from the flow's task store. In `schedule.rs`, `Compose::accept` builds the per-finding entry: replace the non-`remove` arm with the design's entry, using the checkpoint the call schedules into and `self.store_flag`, and collapse a row's identical entries to one. Tests: `reproduce_status_selects_by_milestone` and `reproduce_status_milestone_excludes_positional_ids` in `tomlctl/tests/review_reproduce.rs`; `scheduled_fix_row_carries_one_gate_owned_check` in `tomlctl/tests/review_schedule.rs`, and update the existing tests there that assert the per-finding string. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(reproduce_status) | test(scheduled_fix_row)'`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "8112280301ab49605128ab370e0a88a5932f14f6"
 
 [[items]]
 id = 20
 ref = "store-and-probe-a-gates-probe-command"
 title = "Store and probe a gate's probe command"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = ""
 phase_depth = 0
@@ -2915,15 +2994,15 @@ deps_note = ""
 action = "Add `gate_probes` to a milestone, the `--gate-probe` flag on `plan milestone add` and `update`, the `--gates` mode of `plan probes`, and the `plan/gate-probe-unknown` check, as `design/shapes.md#gate-probes` states."
 detail = "`MilestoneSpec` is in `tasks/schema.rs` and its `gates` is a list of strings; add `gate_probes` beside it with its TOML codec. `plan probes --emit --gates` reuses the `p` helper and the capture row shape with a control column of `gate` and a row key of `<milestone>:<index>`; `--record --gates` reuses the premise verdict rules. tomlctl still never runs a stored command. Tests: `milestone_gate_probe_round_trips` and `gate_probe_must_name_a_gate` in `tomlctl/tests/plan_milestone.rs`; `gate_probes_emit_and_record` in `tomlctl/tests/plan_probes.rs`. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(gate_probe)'`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "8112280301ab49605128ab370e0a88a5932f14f6"
 
 [[items]]
 id = 21
 ref = "emit-a-milestones-launch-args"
 title = "Emit a milestone's launch args"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = ""
 phase_depth = 0
@@ -2933,6 +3012,7 @@ files = [
     "tomlctl/src/plan/mod.rs",
     "tomlctl/src/plan/dispatch.rs",
     "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/src/cli/mod.rs",
     "tomlctl/tests/plan_emit.rs",
 ]
 needs = [20]
@@ -2941,15 +3021,15 @@ deps_note = ""
 action = "Add the `plan emit` group and its `launch-args` verb, as `design/shapes.md#launch-args` states."
 detail = "Create `tomlctl/src/plan/emit.rs` and register a `PlanOp::Emit` with a nested subcommand enum in `cli/types/plan.rs` and `plan/dispatch.rs`. The six dispatch rules are in `claude/skills/implement-v2-engine/references/run-milestone.md`, section 4, and the premise table in its section 3; the started-row exception is in `references/findings.md`, section Anchor premises on a started row. Reuse the downward closure the `tasks closure --down` verb computes for transitive drops. `root` is the repository top level. Read the current HEAD as `plan/approve.rs` does, with `git rev-parse --verify HEAD^{commit}`. Tests in the new `tomlctl/tests/plan_emit.rs`: `launch_args_apply_the_dispatch_rules`, `launch_args_keep_an_after_task_whose_target_is_dispatched`, `launch_args_refuse_a_stale_premise_verdict`, `launch_args_hash_matches_the_args`. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(launch_args)'`. The feature token, the output-options case and the reference pages are another task's."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "8112280301ab49605128ab370e0a88a5932f14f6"
 
 [[items]]
 id = 22
 ref = "emit-a-milestones-gate-command-list"
 title = "Emit a milestone's gate command list"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = ""
 phase_depth = 0
@@ -2957,6 +3037,7 @@ heading_depth = 3
 files = [
     "tomlctl/src/plan/emit.rs",
     "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/src/cli/mod.rs",
     "tomlctl/tests/plan_emit.rs",
 ]
 needs = [21]
@@ -2965,15 +3046,15 @@ deps_note = ""
 action = "Add `plan emit gate-list`, as `design/shapes.md#gate-list` states."
 detail = "Use the effective-owner function the accept-owner task added. Tests in `tomlctl/tests/plan_emit.rs`: `gate_list_orders_gates_then_gate_owned_checks`, `gate_list_skips_a_covered_check`, `gate_list_skips_a_duplicate_command`. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(gate_list)'`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "8112280301ab49605128ab370e0a88a5932f14f6"
 
 [[items]]
 id = 23
 ref = "emit-a-milestones-reproduce-units-and-store-a-runs-dispatched-tasks"
 title = "Emit a milestone's reproduce units and store a run's dispatched tasks"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = ""
 phase_depth = 0
@@ -2984,6 +3065,7 @@ files = [
     "tomlctl/src/plan/schema.rs",
     "tomlctl/src/plan/records.rs",
     "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/src/cli/mod.rs",
     "tomlctl/tests/plan_emit.rs",
     "tomlctl/tests/plan_records.rs",
 ]
@@ -2993,15 +3075,15 @@ deps_note = ""
 action = "Add `plan emit reproduce-units` and the `--tasks` flag of `plan run start`, as `design/shapes.md#reproduce-units` states."
 detail = "`Run` is in `plan/schema.rs` and holds `step`, `workflow`, `args_hash`, `run_id`, `session`, timestamps and `outcome`; add an optional `tasks` list with its codec, written by `plan run start --tasks`. The unit rules today are prose in `claude/skills/implement-v2-engine/references/findings.md`, section Reproduce check, The units. Load each linked review store read-only through the review module's loader; a finding's stored `route` and `direction` decide the unit's `route`. Tests in `tomlctl/tests/plan_emit.rs`: `reproduce_units_give_a_shared_finding_to_the_highest_row`, `reproduce_units_one_launch_per_store`, `reproduce_units_round_follows_the_store`, `reproduce_units_route_checker_only_for_grep_decidable_units`, `reproduce_units_relaunch_gets_its_own_run_dir`, `reproduce_units_since_launch_filters`; in `tomlctl/tests/plan_records.rs`: `run_start_stores_tasks`. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(reproduce_units) | test(run_start_stores_tasks)'`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "8112280301ab49605128ab370e0a88a5932f14f6"
 
 [[items]]
 id = 24
 ref = "audit-the-bash-commands-of-a-launchs-agents"
 title = "Audit the Bash commands of a launch's agents"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = ""
 phase_depth = 0
@@ -3020,15 +3102,15 @@ deps_note = ""
 action = "Add the read-only verb `tomlctl agents audit`, as `design/shapes.md#worker-audit` states."
 detail = "A transcript is JSON lines; a Bash call is a `tool_use` content entry whose `name` is `Bash`, with the command at `input.command`, nested inside the line's `message.content` array. Skip a line that does not parse. `agent` is the file stem. `AgentsOp` is in `cli/types/cmd.rs`. Build the test's transcripts as fixture strings inside `tomlctl/tests/agents_audit.rs`. Tests: `audit_reports_gate_owned_commands`, `audit_reports_recursive_grep`, `audit_is_quiet_on_narrow_checks` (a `cargo clippy` and an `rg` call yield no row), `audit_takes_custom_patterns`. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(audit_)'`. The feature token, the output-options case and the reference page are another task's."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "8112280301ab49605128ab370e0a88a5932f14f6"
 
 [[items]]
 id = 25
 ref = "register-and-document-milestone-cs-plan-review-and-agents-surface"
 title = "Register and document milestone C's plan, review and agents surface"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = ""
 phase_depth = 0
@@ -3052,14 +3134,15 @@ needs = [
     19,
     23,
     24,
+    41,
 ]
 coupling = []
 deps_note = ""
 action = "Add the feature tokens `accept_run_by`, `reproduce_status_milestone`, `gate_probes`, `plan_emit` and `agents_audit`, output-options cases for the four new leaf verbs, and the reference text for everything milestone C added."
 detail = "Feature tokens go in `tomlctl/src/cli/types/mod.rs`, the expected list in `tomlctl/tests/capabilities.rs`, `tomlctl/README.md` and the feature table of `claude/skills/tomlctl/SKILL.md`, which also gains the `plan emit` and `agents audit` rows of its Quick Reference. `tomlctl/tests/output_options.rs` needs a case each for `plan emit launch-args`, `plan emit gate-list`, `plan emit reproduce-units` and `agents audit`. References: `plan.md` gets the `plan emit` verbs with their flags and output, `--gate-probe`, `plan run start --tasks`, and the check classes `plan/accept-owner-invalid`, `plan/accept-cover-unknown` and `plan/gate-probe-unknown`, and its worker-view section the `Run by:` line; `plan-probes.md` the `--gates` mode and the owner rule for which accept entries are probed; `plan-store.md` the run row's `tasks`; `tasks-store.md` the accept keys `run_by` and `covered_by` and the milestone's `gate_probes`; `tasks-write.md` the two accept keys under `tasks add-many`; `review-apply.md` the `--flow` and `--milestone` selector of `reproduce-status` and the entry `schedule` now mints; `agents.md` the `audit` verb. Read flags from the code the earlier tasks landed; shapes are `design/shapes.md#accept-owner`, `#reproduce-status-by-milestone`, `#emit-verbs`, `#gate-probes` and `#worker-audit`. Check with `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "8112280301ab49605128ab370e0a88a5932f14f6"
 
 [[items]]
 id = 26
@@ -3415,3 +3498,23 @@ detail = ""
 acceptance = ""
 agent = "plan-worker-lite"
 commit = "d82269124762c6dcd864a32633d856aa04264a88"
+
+[[items]]
+id = 41
+ref = "print-the-plan-emit-leaves-through-the-read-printer"
+title = "Print the plan emit leaves through the read printer"
+effort = "S"
+status = "done"
+checkpoint = "C"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/src/plan/emit.rs"]
+needs = [23]
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "8112280301ab49605128ab370e0a88a5932f14f6"

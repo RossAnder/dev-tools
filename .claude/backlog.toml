@@ -11926,7 +11926,7 @@ kind = "annoyance"
 summary = "each fixed finding adds one reproduce-status accept check to the gate, so a 32-finding milestone sends 32 commands the engine already read from the store"
 area = "claude/skills/implement-v2-engine"
 tags = []
-status = "promoted"
+status = "resolved"
 created = 2026-11-11T08:47:28Z
 last_seen = 2026-11-11T08:47:28Z
 seen_count = 1
@@ -11938,6 +11938,11 @@ base_sha = "38a70892a3912cd050e5ee29c0b9cdfbcfc81a91"
 related = ["B-56a8a9ff"]
 promoted = 2026-11-11
 promoted_to = "v2-harness-tuning"
+resolved = 2026-11-11
+resolution = "resolved by flow `v2-harness-tuning` (tasks select-reproduce-status-by-milestone-and-mint-one-gate-owned-check)"
+resolved_flow = "v2-harness-tuning"
+resolved_tasks = ["select-reproduce-status-by-milestone-and-mint-one-gate-owned-check"]
+resolved_commits = ["8112280301ab49605128ab370e0a88a5932f14f6"]
 
 [[backlog]]
 id = "B-4be1dc74"
@@ -12001,7 +12006,7 @@ tags = [
     "accept",
     "v2-harness-tuning",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-11-11T08:59:28Z
 last_seen = 2026-11-11T08:59:28Z
 seen_count = 1
@@ -12017,6 +12022,11 @@ related = [
 ]
 promoted = 2026-11-11
 promoted_to = "v2-harness-tuning"
+resolved = 2026-11-11
+resolution = "resolved by flow `v2-harness-tuning` (tasks select-reproduce-status-by-milestone-and-mint-one-gate-owned-check)"
+resolved_flow = "v2-harness-tuning"
+resolved_tasks = ["select-reproduce-status-by-milestone-and-mint-one-gate-owned-check"]
+resolved_commits = ["8112280301ab49605128ab370e0a88a5932f14f6"]
 
 [[backlog]]
 id = "B-1bb57b0e"
@@ -12120,3 +12130,54 @@ flow = "v2-harness-tuning"
 context = "The --status help string in ReviewListArgs enumerates the statuses by hand and lacks `scheduled`, which FINDING_STATUSES carries and the flag accepts. Add it to the help string; the value itself already works."
 base_sha = "e8ef330597f7cf4fc2dd675ada8a7191dff88518"
 related = ["B-6a0b8f4f"]
+
+[[backlog]]
+id = "B-86e8b87f"
+kind = "debt"
+summary = "a plan task that adds a clap type under cli/types omits tomlctl/src/cli/mod.rs, whose explicit re-export list the verb module needs"
+area = "tomlctl/src/cli/mod.rs"
+tags = []
+status = "open"
+created = 2026-11-11T11:05:40Z
+last_seen = 2026-11-11T11:05:40Z
+seen_count = 1
+dedup_id = "86e8b87fec85c93a"
+origin = "implement-v2"
+flow = "v2-harness-tuning"
+context = "`cli::types` is private, so a verb module names a clap type only through the non-glob `pub(crate) use types::{...}` list in cli/mod.rs. Two tasks of the v2-harness-tuning run hit it: one worked around it by passing fields instead of the args struct, the other failed on its file lane and was replanned with the file added. When planning a task that adds a subcommand enum or an args struct a module outside cli must name, list tomlctl/src/cli/mod.rs in its files. A glob re-export, or a plan check that flags the omission, would remove the trap."
+base_sha = "a28f93dcdf1f95e21e6e3e361d65fca1707c472f"
+related = ["B-a162a412"]
+
+[[backlog]]
+id = "B-14c96cf2"
+kind = "debt"
+summary = "tomlctl plan reference sits at 593 lines against the 600-line skill reference ceiling"
+area = "claude/skills/tomlctl/references/plan.md"
+tags = []
+status = "open"
+created = 2026-11-11T11:24:12Z
+last_seen = 2026-11-11T11:24:12Z
+seen_count = 1
+dedup_id = "14c96cf204448349"
+origin = "implement-v2"
+flow = "v2-harness-tuning"
+context = "The next plan verb or check-class row will push plan.md past skill_references_under_line_ceiling, which the pre-commit hook and every milestone gate run. The `plan emit` leaves are documented as prose bullets under one heading for this reason; moving `plan emit` or `plan stage` into its own reference would give them flag tables and the file its headroom. Same shape as the review.md row."
+base_sha = "a28f93dcdf1f95e21e6e3e361d65fca1707c472f"
+related = ["B-fca0c14f"]
+
+[[backlog]]
+id = "B-68a8161f"
+kind = "debt"
+summary = "the review store loader is private, so plan-side readers parse review-v2.toml as untyped TOML"
+area = "tomlctl/src/review/mod.rs"
+tags = []
+status = "open"
+created = 2026-11-11T11:24:12Z
+last_seen = 2026-11-11T11:24:12Z
+seen_count = 1
+dedup_id = "68a8161fe4a66d5c"
+origin = "implement-v2"
+flow = "v2-harness-tuning"
+context = "plan_review_state in plan/store.rs and `plan emit reproduce-units` in plan/emit.rs read a linked review store through crate::io::read_doc and pick fields by name, because review::store::load is private to the review module. A renamed review field would read as absent there rather than fail to compile. Exposing a typed loader (or a narrow typed accessor) from review/mod.rs would let both readers use it."
+base_sha = "a28f93dcdf1f95e21e6e3e361d65fca1707c472f"
+related = ["B-1ec5ebb6"]
