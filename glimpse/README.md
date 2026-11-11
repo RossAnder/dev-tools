@@ -399,7 +399,9 @@ win over the saved theme and never replace it. Delete the file to go back to the
 config's defaults. `--once` neither reads nor writes it.
 
 **Follow** keeps the selection on the frontier: the first in-progress task by
-(layer, id), else the first ready one. While follow is off the header counts the
+(layer, id), else the first ready one. While an `implement:<id>` run is open in the
+flow's `plan.toml`, a ready row of any other milestone waits on its milestone and
+is passed over. While follow is off the header counts the
 changes that arrived since. A task whose status changes is highlighted briefly
 either way, in the colour of the status it changed to.
 

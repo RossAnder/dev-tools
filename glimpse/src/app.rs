@@ -1915,7 +1915,8 @@ impl App {
         }
     }
 
-    /// The first in-progress task by (layer, id), else the first ready one.
+    /// The first in-progress task by (layer, id), else the first ready one not
+    /// waiting on its milestone.
     fn frontier(&self) -> Option<u32> {
         let key = |id: &u32| (self.index.layer_of(*id).unwrap_or(usize::MAX), *id);
         self.snapshot
@@ -1924,7 +1925,12 @@ impl App {
             .filter(|task| task.status == TaskStatus::InProgress)
             .map(|task| task.id)
             .min_by_key(key)
-            .or_else(|| self.snapshot.frontier.ready.iter().copied().min_by_key(key))
+            .or_else(|| {
+                self.index
+                    .dispatchable(&self.snapshot)
+                    .into_iter()
+                    .min_by_key(key)
+            })
     }
 
     fn first_task(&self) -> Option<u32> {
@@ -2077,6 +2083,24 @@ mod tests {
         next.tasks[6].status = TaskStatus::InProgress;
         app.apply_snapshot(next, Instant::now());
         assert_eq!(app.selected, Some(5), "the lower layer wins over task 7");
+    }
+
+    #[test]
+    fn follow_skips_a_ready_row_waiting_on_its_milestone() {
+        let mut app = app();
+        let mut next = fixture();
+        next.tasks[3].status = TaskStatus::Done;
+        next.running_milestone = "A".to_string();
+        app.apply_snapshot(next.clone(), Instant::now());
+        assert_eq!(
+            app.selected,
+            Some(4),
+            "task 6 is ready but in B, so the selection stays"
+        );
+
+        next.running_milestone = "B".to_string();
+        app.apply_snapshot(next, Instant::now());
+        assert_eq!(app.selected, Some(6), "B is running, so 6 is dispatchable");
     }
 
     #[test]

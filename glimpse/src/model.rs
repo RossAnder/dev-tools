@@ -21,6 +21,9 @@ pub(crate) struct Snapshot {
     /// The flow's `context.toml` status, `""` when it has none.
     pub(crate) flow_status: String,
     pub(crate) policy: Policy,
+    /// The milestone an open `implement:<id>` run in the flow's `plan.toml` is
+    /// executing; `""` with no open run or no plan store.
+    pub(crate) running_milestone: String,
     pub(crate) tasks: Vec<Task>,
     /// Kahn rounds over `needs` and `coupling`, each ascending.
     pub(crate) layers: Vec<Vec<u32>>,
@@ -480,6 +483,32 @@ impl Index {
             .and_then(|pos| snapshot.checkpoints.get(*pos))
     }
 
+    /// Whether the graph would dispatch `id`, ready or held on a file, while an
+    /// open implement run is executing a milestone other than `id`'s.
+    pub(crate) fn waits_on_milestone(&self, snapshot: &Snapshot, id: u32) -> bool {
+        let running = snapshot.running_milestone.as_str();
+        if running.is_empty() {
+            return false;
+        }
+        let frontier = &snapshot.frontier;
+        let by_graph = frontier.ready.contains(&id) || frontier.held.iter().any(|h| h.id == id);
+        by_graph
+            && self
+                .task(snapshot, id)
+                .is_some_and(|task| task.checkpoint != running)
+    }
+
+    /// `frontier.ready` less the rows [`Index::waits_on_milestone`] holds back.
+    pub(crate) fn dispatchable(&self, snapshot: &Snapshot) -> Vec<u32> {
+        snapshot
+            .frontier
+            .ready
+            .iter()
+            .copied()
+            .filter(|id| !self.waits_on_milestone(snapshot, *id))
+            .collect()
+    }
+
     /// Changes exactly when the id set or an edge does; status and every
     /// other field leave it alone, so a layout keyed on it survives them.
     pub(crate) fn topology_hash(&self) -> u64 {
@@ -704,6 +733,48 @@ mod tests {
             .map(|a| a.id.as_str())
             .collect();
         assert_eq!(on_three, ["A1"]);
+    }
+
+    #[test]
+    fn no_running_milestone_leaves_the_frontier_dispatchable() {
+        let snap = fixture();
+        let index = snap.index();
+        assert_eq!(snap.running_milestone, "");
+        assert_eq!(index.dispatchable(&snap), [6]);
+        assert!(!index.waits_on_milestone(&snap, 5));
+        assert!(!index.waits_on_milestone(&snap, 6));
+    }
+
+    #[test]
+    fn rows_outside_the_running_milestone_wait_on_it() {
+        let mut snap = fixture();
+        snap.running_milestone = "A".to_string();
+        let index = snap.index();
+        assert!(index.waits_on_milestone(&snap, 6), "ready, but in B");
+        assert!(
+            index.waits_on_milestone(&snap, 5),
+            "held on a file, but in B"
+        );
+        assert!(
+            !index.waits_on_milestone(&snap, 7),
+            "next is not dispatchable"
+        );
+        assert!(!index.waits_on_milestone(&snap, 4), "in progress");
+        assert!(index.dispatchable(&snap).is_empty());
+
+        snap.running_milestone = "B".to_string();
+        let index = snap.index();
+        assert!(!index.waits_on_milestone(&snap, 6));
+        assert!(!index.waits_on_milestone(&snap, 5));
+        assert_eq!(index.dispatchable(&snap), [6]);
+    }
+
+    #[test]
+    fn running_milestone_reads_from_the_snapshot_document() {
+        let mut raw = raw_fixture();
+        raw["running_milestone"] = serde_json::json!("A");
+        let snap: Snapshot = serde_json::from_value(raw).expect("parses");
+        assert_eq!(snap.running_milestone, "A");
     }
 
     #[test]
