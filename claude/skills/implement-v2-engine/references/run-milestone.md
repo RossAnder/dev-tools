@@ -39,7 +39,8 @@ The list prints every row not yet in a milestone commit. Of those, a row is **st
 The tree must be clean except for:
 
 - `.claude/backlog.toml` and `.claude/backlog.toml.sha256`;
-- the `files` of every started row.
+- the `files` of every started row;
+- when the flow has `[[finding_links]]`, the review stores they name, by [findings.md](findings.md), section "Linked review stores in the clean-tree and lane checks".
 
 Paths under `.claude/flows/<slug>/` and `docs/flows/<slug>/`, the flow's own directories, are never listed. Any other path is someone else's edit, and a worker would build on it or a milestone commit, which stages its rows' `files`, would sweep it in. Stop and name each path; the user commits, moves or discards it, never the engine.
 
@@ -119,6 +120,8 @@ It prints `{"ok":true,"recorded":[{"task","premise","verdict"}]}`, where `premis
 | `holds` | The check exited 0 | Nothing |
 | `fails` | The check exited non-zero | Withhold the task |
 | `broken` | A breakage marker in stderr (`command not found`, `fatal`, `syntax error`, `unexpected EOF`), whatever the exit | Withhold the task |
+
+One `fails` verdict reads differently: an anchor premise, whose `check` opens `tomlctl review anchor `, on an apply row a worker already started. Read it by [findings.md](findings.md), section "Anchor premises on a started row", before withholding.
 
 **Withholding.** A withheld task is not launched, and neither is any member of the milestone that transitively needs it. List those dependents with:
 
