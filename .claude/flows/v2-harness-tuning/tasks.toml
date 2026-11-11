@@ -480,7 +480,7 @@ check = "grep -q 'fn edited' tomlctl/src/review/schedule.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+at = "e8ef330597f7cf4fc2dd675ada8a7191dff88518"
 neg_rc = 0
 verdict = "holds"
 
@@ -539,7 +539,7 @@ check = "grep -q 'fn citation_holds' tomlctl/src/review/tier.rs && grep -q 'fn n
 at = "base"
 
 [specs.premises.probe]
-at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+at = "e8ef330597f7cf4fc2dd675ada8a7191dff88518"
 neg_rc = 0
 verdict = "holds"
 
@@ -587,7 +587,7 @@ check = "grep -q 'is advisory tier, which is never applied' tomlctl/src/review/a
 at = "base"
 
 [specs.premises.probe]
-at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+at = "e8ef330597f7cf4fc2dd675ada8a7191dff88518"
 neg_rc = 0
 verdict = "holds"
 
@@ -657,7 +657,7 @@ check = "grep -q 'ALL_COMPANIONS' tomlctl/src/review/fields.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+at = "e8ef330597f7cf4fc2dd675ada8a7191dff88518"
 neg_rc = 0
 verdict = "holds"
 
@@ -708,7 +708,7 @@ check = "grep -q 'ReviewDigestArgs' tomlctl/src/cli/types/review/read.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+at = "e8ef330597f7cf4fc2dd675ada8a7191dff88518"
 neg_rc = 0
 verdict = "holds"
 
@@ -766,7 +766,7 @@ check = "grep -q 'struct ReviewAddArgs' tomlctl/src/cli/types/review/cells.rs &&
 at = "base"
 
 [specs.premises.probe]
-at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+at = "e8ef330597f7cf4fc2dd675ada8a7191dff88518"
 neg_rc = 0
 verdict = "holds"
 
@@ -809,7 +809,7 @@ check = "grep -q 'str_enum!(ReproduceBy' tomlctl/src/review/fields.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+at = "e8ef330597f7cf4fc2dd675ada8a7191dff88518"
 neg_rc = 0
 verdict = "holds"
 
@@ -2313,6 +2313,30 @@ at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
 neg_rc = 0
 verdict = "holds"
 
+[[specs]]
+ref = "share-the-ruled-out-reason-cap-between-fields-and-cover"
+outcome = "`review cover` cuts a rule-out reason to the one cap `fields.rs` declares, with no second copy of the value"
+constraints = [
+    "Change no behaviour: the cap stays 200 and every existing test passes unchanged",
+    "Touch nothing else in fields.rs",
+]
+premises = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "cover.rs reads the cap from fields.rs and declares none of its own"
+check = "grep -q 'RULED_OUT_REASON_CAP' tomlctl/src/review/cover.rs && ! grep -q 'const REASON_CAP' tomlctl/src/review/cover.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[[specs.means]]
+text = "Make `RULED_OUT_REASON_CAP` in fields.rs `pub(crate)`, delete `const REASON_CAP` from cover.rs and use `fields::RULED_OUT_REASON_CAP` at its call site"
+binding = "required"
+detail = "cover.rs already calls into `fields`, so no new import path is needed beyond the constant"
+
 [[milestones]]
 id = "A"
 gates = [
@@ -2371,6 +2395,15 @@ gates = [
 ]
 elaboration = "upfront"
 defer_reason = ""
+
+[[changes]]
+at = 2026-11-11T10:41:33Z
+ref = "share-the-ruled-out-reason-cap-between-fields-and-cover"
+field = "*"
+old = ""
+new = "Share the ruled-out reason cap between fields and cover"
+actor = "orchestrator"
+reason = "drain B round 1: task 13 copied the private RULED_OUT_REASON_CAP into cover.rs as REASON_CAP because fields.rs was a sibling's file; two copies of one cap can drift"
 
 [[items]]
 id = 1
@@ -2529,7 +2562,7 @@ id = 8
 ref = "add-fix_files-to-findings-and-widen-scheduled-rows-by-it"
 title = "Add fix_files to findings and widen scheduled rows by it"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -2545,15 +2578,15 @@ deps_note = ""
 action = "Add the `fix_files` finding field and have `review schedule` add it to the files of the row it mints, as `design/shapes.md#fix-files` states."
 detail = "Catalogue the field beside `instances` and `target_file` in `fields.rs`, as a path list allowed on defect and cleanup rows, capped at 8, with a row in the role-projection matrix for finder, verifier and implementer. In `schedule.rs`, union it in `edited()` so `fold` groups by the widened set and `Compose::row` writes it to `files`; write `(new)` to the row's `file_notes` for a `fix_files` path that does not exist. Do not read it in `Finding::edited_paths`. Add tests named `fix_files_widen_the_minted_row` and `fix_files_new_path_is_noted_new` in `tomlctl/tests/review_schedule.rs`. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(fix_files)'`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "d82269124762c6dcd864a32633d856aa04264a88"
 
 [[items]]
 id = 9
 ref = "widen-the-cited-test-for-plan-findings"
 title = "Widen the cited test for plan findings"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -2565,15 +2598,15 @@ deps_note = ""
 action = "Make `citation_holds` accept a compound citation, a path named in the finding's `new`, and any file under the flow's `docs/flows/<slug>/`, as the first paragraph of `design/shapes.md#cited-and-apply` states."
 detail = "Split the citation on `;`, trim each part, and hold when any part parses and holds; do the split in `tier.rs` and leave `parse_citation` alone. `named_paths` today returns the target's file plus the paths its current value names; add the paths the finding's `new` value names and accept any path under `docs/flows/<slug>/`. `cited` will need the row's `new` passed down. Add unit tests named `compound_citation_holds`, `citation_of_a_path_in_new_holds` and `citation_of_a_flow_document_holds` in the file's test module. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(citation)'`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "d82269124762c6dcd864a32633d856aa04264a88"
 
 [[items]]
 id = 10
 ref = "apply-an-advisory-tier-edit-under-user-accepted"
 title = "Apply an advisory-tier edit under --user-accepted"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -2588,15 +2621,15 @@ deps_note = ""
 action = "Let `review apply --user-accepted` write an advisory-tier defect or cleanup finding that carries `new`, as the second paragraph of `design/shapes.md#cited-and-apply` states."
 detail = """Today the tier match refuses `Tier::Advisory` with `is advisory tier, which is never applied`. Under `--user-accepted`, a defect or cleanup row with a non-empty `new` goes through the same compare-and-set on `expect` and is stamped `applied.by = "user"`; keep the refusal otherwise, and reword its message to name `--user-accepted` when the row carries `new`. Add tests named `user_accepted_applies_advisory_tier_edit` and `advisory_tier_edit_refused_without_user_accepted` in `tomlctl/tests/review_apply.rs`. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(advisory_tier)'`."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "d82269124762c6dcd864a32633d856aa04264a88"
 
 [[items]]
 id = 11
 ref = "record-an-addressed-finding-and-emit-re-check-targets"
 title = "Record an addressed finding and emit re-check targets"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -2620,15 +2653,15 @@ deps_note = ""
 action = "Add the `addressed` companion field, the `review triage --addressed` mode, the `author-addressed` outcome in `review stats --plan-outcomes`, and the read verb `review recheck-targets`, as `design/shapes.md#addressed` states."
 detail = "`addressed` is a list of target strings, each checked by the plan target parser, plan-only, added to the companions of the `Resolved` status so `set_status` clears it on reopen; the hard-coded companion list in the `fields.rs` tests gains it. The mode follows the verb's twin convention: the ids stay the positional argument, `--addressed <TEXT>` carries the reason with `--addressed-file <PATH>` as its twin, and the reason is stored as the finding's `resolution`. `--targets` is optional and defaults to each finding's own `target`. There is no `--reason-file` flag. `review recheck-targets --run <id>` prints `{run, targets}` where `targets` is the sorted distinct union of `applied.target` and `addressed` over the run's findings; put it in the new `recheck.rs`. Add tests named `triage_addressed_records_targets` and `reopen_clears_addressed` in `tomlctl/tests/review_triage.rs`, `recheck_targets_union_applied_and_addressed` there too, and `plan_outcomes_count_author_addressed` in `tomlctl/tests/review_stats.rs`. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(addressed)'`. The feature token, the output-options case and the reference pages are another task's."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "d82269124762c6dcd864a32633d856aa04264a88"
 
 [[items]]
 id = 12
 ref = "print-the-digests-candidate-arrays-as-counts-by-default"
 title = "Print the digest's candidate arrays as counts by default"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -2644,15 +2677,15 @@ deps_note = ""
 action = "Make `review digest` print `duplicate_candidates` and `ruled_out_hits` as counts, and add `--with duplicates,ruled-out` to print the named arrays in full, as `design/shapes.md#digest` states."
 detail = "Update the existing tests in `tomlctl/tests/review_digest.rs` that read the arrays to pass `--with`, and add tests named `digest_candidates_are_counts_by_default` and `digest_with_prints_named_arrays`. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(digest)'`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "d82269124762c6dcd864a32633d856aa04264a88"
 
 [[items]]
 id = 13
 ref = "cut-an-over-cap-cover-note-and-add-a-dry-run-to-review-add"
 title = "Cut an over-cap cover note and add a dry run to review add"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -2674,15 +2707,15 @@ deps_note = ""
 action = "Make `review cover` cut a note over its cap and say so, and add `--dry-run` to `review add`, as `design/shapes.md#caps` states."
 detail = "`cover` today refuses a note over the cap after the cell's work is done. Cut at the cap on a character boundary, end with `…(+K)` so the stored note is within the cap including that marker, and add `note_truncated: K` to the envelope only when it cut. `add --dry-run` runs `prepare` and `finish_row` for every row against the current store, prints `findings` with no `id` and the `refused` list, and takes no write lock. Add tests named `cover_cuts_an_over_cap_note` in `tomlctl/tests/review_cover.rs` and `add_dry_run_writes_nothing` in `tomlctl/tests/review_add.rs`. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(cover_cuts_an_over_cap_note) | test(add_dry_run_writes_nothing)'`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "d82269124762c6dcd864a32633d856aa04264a88"
 
 [[items]]
 id = 14
 ref = "let-a-checker-record-a-reproduction"
 title = "Let a checker record a reproduction"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -2699,15 +2732,15 @@ deps_note = ""
 action = "Add `checker` to the `ReproduceBy` values beside `verifier` and `orchestrator`, and accept it wherever a reproduction's `by` is parsed or validated."
 detail = "The enum is in `fields.rs`; the store loader in `store.rs` and `review reproduce` in `reproduce.rs` parse it. A checker's row upserts on the same key as any other, `(finding, flow, milestone, round, by)`. Add a test named `reproduce_accepts_by_checker` in `tomlctl/tests/review_reproduce.rs`. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(reproduce_accepts_by_checker)'`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "d82269124762c6dcd864a32633d856aa04264a88"
 
 [[items]]
 id = 15
 ref = "tell-review-agents-about-fix_files-the-add-dry-run-the-cut-note-and-plan-review-names"
 title = "Tell review agents about fix_files, the add dry run, the cut note and plan-review names"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -2725,15 +2758,15 @@ deps_note = ""
 action = "Update the review method skill and four agents for milestone B's review surface: fill `fix_files`, dry-run a set before `review add`, a cover note is cut not refused, and the sweeper's names on a plan review."
 detail = "(1) `review-v2-method/SKILL.md`: add `fix_files` to the field table with the meaning in `design/shapes.md#fix-files`; in the write idiom tell a finder to run `tomlctl review add` with `--dry-run` first and fix every refused row before the real write; in Length, say `review cover` cuts a note over 600 to the cap and reports it, while a verdict `rationale` is still refused. (2) `review-finder.md` and `review-finder-cf.md`, whose bodies below the frontmatter are held byte-identical: one sentence telling the finder to list in `fix_files` every file its `fix` edits or creates beyond the anchor, tests included. (3) `review-verifier.md`: when a verdict's fix sketch names a file the finding lacks, say so in the rationale. (4) `review-sweeper.md` step 6: on a plan review whose slice diff is empty because the flow's files are untracked, take `NAMES` from the plan's records, read with `tomlctl plan view --slug <slug> --for human`, and from the slice files read whole; and in step 12 replace the hard-limit wording with the cut. Every fenced `tomlctl` command takes single-token placeholders. Check with `bash scripts/verify-shared-blocks.sh` and `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`; the second fails on `--dry-run` until the task adding that flag lands, which names no file of this task."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "d82269124762c6dcd864a32633d856aa04264a88"
 
 [[items]]
 id = 16
 ref = "plan-flow-prose-for-advisory-apply-the-addressed-disposition-and-digest-arrays"
 title = "Plan-flow prose for advisory apply, the addressed disposition and digest arrays"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -2751,15 +2784,15 @@ deps_note = ""
 action = "Update the review engine's prose for milestone B: an advisory-tier edit is applied with the user's acceptance, a hand-fixed finding is recorded as addressed, the re-check takes its targets from `review recheck-targets`, and the digest's two arrays are asked for with `--with`."
 detail = "(1) `plan-flow.md`: add `review_addressed` to the capability pre-flight list; in section 7, the Advisory bullet offers `tomlctl review apply` with `--user-accepted` for a defect or cleanup row carrying `new`, and a finding the author fixed by hand is recorded with `tomlctl review triage --addressed`, never dismissed; a Revise answer on a question-tier row records the revised target the same way; in section 10 the re-check runs when a row was applied or addressed and takes `targets` from `tomlctl review recheck-targets --run <run>`; section 11's close summary counts `author-addressed`. (2) `triage-and-close.md`: a grammar row for `--addressed`. (3) `compose.md` sections on duplicates and rule-out hits, `review-v2-engine/SKILL.md` where it reads `duplicate_candidates` and `ruled_out_hits`, and `plan-review-lead.md` settle steps 3 and 4: read the arrays with `tomlctl review digest` plus `--with duplicates,ruled-out`. Shapes are in `design/shapes.md#addressed`, `design/shapes.md#cited-and-apply` and `design/shapes.md#digest`. Every fenced `tomlctl` command takes single-token placeholders. `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` fails on the new flags until the tasks adding them land, which names no file of this task."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "d82269124762c6dcd864a32633d856aa04264a88"
 
 [[items]]
 id = 17
 ref = "register-and-document-milestone-bs-review-surface"
 title = "Register and document milestone B's review surface"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -2788,8 +2821,8 @@ deps_note = ""
 action = "Add the feature tokens `review_fix_files`, `review_addressed`, `review_digest_with`, `review_add_dry_run` and `review_reproduce_checker`, an output-options case for the new leaf verb `review recheck-targets`, and the reference text for everything milestone B added to the `review` group."
 detail = "Feature tokens go in the list in `tomlctl/src/cli/types/mod.rs`, in the expected list in `tomlctl/tests/capabilities.rs`, and in `tomlctl/README.md`'s feature list and table; add a row for them to the feature table of `claude/skills/tomlctl/SKILL.md`. `tomlctl/tests/output_options.rs` needs a case for `review recheck-targets`, or `every_leaf_command_has_a_case` fails. In `references/review.md`: `fix_files` in the store shape and field summary, `review add --dry-run`, the cut `cover` note with `note_truncated`, `review digest --with`, `review triage --addressed`, `review recheck-targets`, the widened cited rule, and `review apply --user-accepted` on an advisory-tier edit. In `references/review-apply.md`: `fix_files` in what `schedule` reads, and `by = checker` on a reproduction. Read each verb's flags from the code the earlier tasks landed; the shapes are `design/shapes.md#fix-files`, `#cited-and-apply`, `#addressed`, `#digest` and `#caps`. Check with `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "d82269124762c6dcd864a32633d856aa04264a88"
 
 [[items]]
 id = 18
@@ -3356,3 +3389,29 @@ detail = "The harness refuses a subagent Write to a file named `findings.md`, wh
 acceptance = ""
 agent = ""
 commit = ""
+
+[[items]]
+id = 40
+ref = "share-the-ruled-out-reason-cap-between-fields-and-cover"
+title = "Share the ruled-out reason cap between fields and cover"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/fields.rs",
+    "tomlctl/src/review/cover.rs",
+]
+needs = [
+    13,
+    14,
+]
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "d82269124762c6dcd864a32633d856aa04264a88"
