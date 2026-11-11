@@ -11710,3 +11710,68 @@ flow = "v2-apply"
 context = "Seen 2026-11-11: 16 failures, all quota errors from tempdir and git in sandboxes. Running with TMPDIR set to a directory outside the repository and off tmpfs passes; a TMPDIR inside the repo breaks the four outside-a-repo tests."
 base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-cccb98e0"]
+
+[[backlog]]
+id = "B-4bd349ed"
+kind = "bug"
+summary = "review-v2-pipeline single-finding verifier launches fail with API 400 because the verdict-return schema has a top-level allOf"
+area = "claude/workflows/review-v2.js"
+tags = [
+    "review-v2",
+    "workflow",
+    "schema",
+]
+status = "open"
+created = 2026-11-11T08:17:02Z
+last_seen = 2026-11-11T08:17:02Z
+seen_count = 1
+dedup_id = "4bd349ed12422f16"
+origin = "review-v2"
+flow = "v2-apply"
+context = "Run U3 of v2-apply: all five single-finding verifier launches were rejected with a 400 saying input_schema does not support oneOf, allOf or anyOf at the top level, leaving their findings unverified. review-v2.js passes schemas.verdict_return straight to agent() for single and panel verifiers; batches wrap it under verdicts and work. tomlctl review schema verdict-return emits a top-level allOf for the unblocks/fix_sketch pairing. Workaround: pass the schema to the Workflow with allOf removed, or mop up the unverified ids by direct Agent dispatch. Fix either in schema_out.rs or by wrapping the single return in the script."
+base_sha = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+evidence = [
+    "claude/workflows/review-v2.js:220",
+    "tomlctl/src/review/schema_out.rs:326",
+]
+related = ["B-c866bda9"]
+
+[[backlog]]
+id = "B-4b11a10c"
+kind = "debt"
+summary = "apply-v2-engine role rule says to ask nothing about whether to go on, but step 2 asks whether to run the plan's unfinished work first"
+area = "claude/skills/apply-v2-engine"
+tags = [
+    "apply-v2",
+    "doc-drift",
+]
+status = "open"
+created = 2026-11-11T08:17:02Z
+last_seen = 2026-11-11T08:17:02Z
+seen_count = 1
+dedup_id = "4b11a10c77f9cc93"
+origin = "review-v2"
+flow = "v2-apply"
+context = "The Triage decided the selection rule says every condition the skill cannot settle is a stop, never a question; the unfinished-milestone check added afterwards asks with AskUserQuestion. Reword the rule to name that one exception, or the two lines contradict. Escalated by review run U3 but outside its bounds, since the question was added after the run's head."
+base_sha = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+evidence = [
+    "claude/skills/apply-v2-engine/SKILL.md:14",
+    "claude/skills/apply-v2-engine/SKILL.md:102",
+]
+related = ["B-3f45d7d9"]
+
+[[backlog]]
+id = "B-8aadb175"
+kind = "debt"
+summary = "Remaining rest.get(k).and_then(as_str) reads in review triage, stats, apply and resolve bypass the Finding::text accessor"
+area = "tomlctl/src/review"
+tags = []
+status = "open"
+created = 2026-11-11T08:31:28Z
+last_seen = 2026-11-11T08:31:28Z
+seen_count = 1
+dedup_id = "8aadb175dcccb797"
+origin = "implement-v2"
+flow = "v2-apply"
+context = "Finding::text now exists in review/store.rs; converting the remaining reads (tier, severity, converted_to, target) finishes the consolidation. Mechanical; reported by the worker that added the accessor."
+base_sha = "71cad0ccdf63c24835e30262f5afb0b81072329f"

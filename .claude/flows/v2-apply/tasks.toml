@@ -1,5 +1,5 @@
 schema_version = 2
-last_updated = 2026-11-10
+last_updated = 2026-11-11
 plan_path = ""
 last_import_refs = []
 audit = true
@@ -22,6 +22,10 @@ rationale = "Reproduce check: after a fix milestone drains, each fixed finding g
 [[checkpoints]]
 id = "C"
 rationale = "Blocked findings: blocked_on with its burden of proof replaces fix_shape, verifiers can unblock, decisions are answered at triage, evidence is settled then fixed, and blocked use is measured"
+
+[[checkpoints]]
+id = "apply-1"
+rationale = "Fix F87,F88,F89,F90,F91,F92,F94,F95,F96,F97,F98,F99,F103,F104,F105,F106,F107,F108,F117,F118,F119,F120,F121,F122,F123,F124,F126,F127,F130,F131,F132,F133 from .claude/flows/v2-apply/review-v2.toml"
 
 [[file_notes]]
 ref = "link-task-rows-to-review-findings-in-the-task-store"
@@ -102,6 +106,129 @@ note = "(new)"
 ref = "add-the-review-reproduce-and-reproduce-status-verbs"
 file = "tomlctl/tests/review_reproduce.rs"
 note = "(new)"
+
+[[finding_links]]
+ref = "export-v1-builds-the-v1-description-without-fix_sketch-or-decision_answer-so-an-unblocked-finding-exports-with-its-unblocking-answer-dropped-and-11-more"
+store = ".claude/flows/v2-apply/review-v2.toml"
+fixes = [
+    "F87",
+    "F92",
+    "F96",
+    "F97",
+    "F117",
+    "F118",
+    "F119",
+    "F120",
+    "F121",
+    "F122",
+    "F123",
+    "F130",
+]
+settles = []
+
+[[finding_links]]
+ref = "the-v2-review-verb-list-in-the-quick-reference-table-omits-apply-though-it-follows-the-reviewop-enum-order-and-every-other-store-verb-is-listed"
+store = ".claude/flows/v2-apply/review-v2.toml"
+fixes = ["F88"]
+settles = []
+
+[[finding_links]]
+ref = "status-says-review-v2-and-review-plan-v2-have-no-run-recorded-in-this-repo-but-both-stores-committed-on-2026-11-10-hold-runs-of-each"
+store = ".claude/flows/v2-apply/review-v2.toml"
+fixes = ["F89"]
+settles = []
+
+[[finding_links]]
+ref = "both-link-scripts-header-says-they-link-the-review-plan-and-implement-entries-they-now-also-link-apply-v2s-command-and-skill"
+store = ".claude/flows/v2-apply/review-v2.toml"
+fixes = ["F90"]
+settles = []
+
+[[finding_links]]
+ref = "readme-cheat-sheet-line-for-review-schedule-omits-dry-run-which-the-verb-now-takes-and-its-siblings-apply-and-export-v1-show"
+store = ".claude/flows/v2-apply/review-v2.toml"
+fixes = ["F91"]
+settles = []
+
+[[finding_links]]
+ref = "no-test-pins-that-an-orchestrator-verdict-on-a-panel-routed-finding-is-refused-unless-it-is-a-refute-of-an-evidence-blocked-finding"
+store = ".claude/flows/v2-apply/review-v2.toml"
+fixes = ["F94"]
+settles = []
+
+[[finding_links]]
+ref = "no-test-pins-that-answer-file-is-refused-on-a-decision-blocked-finding-that-is-not-open"
+store = ".claude/flows/v2-apply/review-v2.toml"
+fixes = ["F95"]
+settles = []
+
+[[finding_links]]
+ref = "no-test-drives-folds-group-merge-where-one-findings-files-bridge-two-existing-groups-and-1-more"
+store = ".claude/flows/v2-apply/review-v2.toml"
+fixes = [
+    "F98",
+    "F99",
+]
+settles = []
+
+[[finding_links]]
+ref = "apply-v2-engine-steps-7-8-hand-copy-approvemds-commitapproverecord-procedure-and-drop-its-mandatory-v1-carrier-warning-and-3-more"
+store = ".claude/flows/v2-apply/review-v2.toml"
+fixes = [
+    "F103",
+    "F107",
+    "F132",
+    "F133",
+]
+settles = []
+
+[[finding_links]]
+ref = "the-schedule-selection-rule-review-applymd-owns-is-hand-copied-into-triage-step-3-and-both-carriers-review-v2mds-copy-already-disagrees-and-1-more"
+store = ".claude/flows/v2-apply/review-v2.toml"
+fixes = [
+    "F104",
+    "F126",
+]
+settles = []
+
+[[finding_links]]
+ref = "findingsmd-reconcile-restates-reconciles-task-state-table-and-output-shape-that-review-applymd-owns-and-1-more"
+store = ".claude/flows/v2-apply/review-v2.toml"
+fixes = [
+    "F105",
+    "F108",
+]
+settles = []
+
+[[finding_links]]
+ref = "measurementmds-native-apply-row-restates-the-stats-apply-output-shape-reviewmd-owns-and-reviewmd-restates-measurements-misclassification-reading"
+store = ".claude/flows/v2-apply/review-v2.toml"
+fixes = ["F106"]
+settles = []
+
+[[finding_links]]
+ref = "to_toml-re-derives-storeholds_v2_keys-inline-and-the-change-had-to-add-finding_links-to-both-copies"
+store = ".claude/flows/v2-apply/review-v2.toml"
+fixes = ["F124"]
+settles = []
+
+[[finding_links]]
+ref = "the-agent-wave-fallback-verifier-prompt-stated-as-the-workflows-lacks-the-blocked-claim-and-unblock-instruction-review-v2js-now-sends"
+store = ".claude/flows/v2-apply/review-v2.toml"
+fixes = ["F127"]
+settles = []
+
+[[finding_links]]
+ref = "re-entry-on-an-unstamped-apply-milestone-reruns-the-gate-from-step-7-skipping-the-reproduce-check-the-settle-drain-and-the-findings-reconcile"
+store = ".claude/flows/v2-apply/review-v2.toml"
+fixes = ["F131"]
+settles = []
+
+[[finding_links]]
+ref = "align-the-engine-skillmds-unstamped-milestones-sentence-with-drainmds-apply-milestone-re-entry-routing"
+store = ".claude/flows/v2-apply/review-v2.toml"
+fixes = ["F131"]
+settles = []
 
 [[specs]]
 ref = "link-task-rows-to-review-findings-in-the-task-store"
@@ -2151,6 +2278,780 @@ kind = "forward"
 positive = ""
 writes_build = true
 
+[[specs]]
+ref = "export-v1-builds-the-v1-description-without-fix_sketch-or-decision_answer-so-an-unblocked-finding-exports-with-its-unblocking-answer-dropped-and-11-more"
+outcome = """
+F87: the failure no longer happens: A finding blocked on decision is answered with `review triage --answer-file` (decision_answer set, block cleared), or a verifier unblocks one with a fix_sketch, then `review export-v1 <id> --to .claude/reviews/x.toml` runs: refusal() passes it as unblocked, and candidate() writes description from description() alone (fix/edit/old/target_file/instances/failure_scenario). The v1 row carries the partial fix and no decision or sketch, so /review-apply implements without the answer the user gave.
+F92: the failure no longer happens: A regression row (resolve set it open with outcome = regression and kept same_as = F0) is blocked on evidence, scheduled, and settled with `review settle F1 --refute --citation src/a.rs:1`. settle sets it open and calls orchestrator_verdict; apply_one skips the status step because same_as is non-empty, so the row stays open and still blocked on evidence while settle prints outcome refuted. A replay re-runs the same no-op, and any later verifier or audit verdict on the row is likewise ignored.
+F96: the failure no longer happens: A finder submits a defect with blocked_on = decision, blocked_missing set and blocked_options = ["drop the cache, and two callers change", ""] (or ["", ""]). check_value's StrList arm counts list.len() = 2 against min_items, check_text accepts the empty entry, and is_absent only tests the array for emptiness, so the row lands as a decision block offering one real option or none, though the contract (review-v2-method Blocked table: blocked_options 2-6, each naming its consequence) needs two. A blank blocked_missing is refused; a blank option is not.
+F97: the failure no longer happens: F1 scheduled to task 1 `fix-alpha` (apply_task_id = 1). Task 1 is retitled to `fix-alpha-bound` (tasks update --ref moves links and audit trail, freeing `fix-alpha`). Before reconcile runs, review schedule mints task 2 for F2 whose summary slugs to `fix-alpha`. Task 2 commits; reconcile finds row `fix-alpha` by ref, never checks its id or link, and marks F1 resolved with F2's commit while F1's own task is unfinished.
+F117: the change is made: The Finding.rest string read is re-written as a private helper or closure in about ten places the change added, beside two older copies
+F118: the change is made: The apply-link field set (apply_flow, apply_task, apply_task_id) is spelled out at five sites; adding apply_task_id took a separate edit at each
+F119: the change is made: The review-store path keying [[finding_links]].store is computed separately in schedule, reconcile and export; the link match needs all three to agree
+F120: the change is made: schedule::edited copies select's TestGlobs::is_test_removal extraction of a finding's instances and edit target verbatim
+F121: the change is made: A reproduction's field list is written twice, as reproduce.rs KEYS and store.rs REPRODUCTION_CORE, and a new field needs both edited
+F122: the change is made: What makes a verdict a settle refute (orchestrator, refuted, evidence block) is restated in stats and settle beside verdict::settle_refute
+F123: the change is made: settle and triage each re-derive a field's cap through fields::spec and rebuild cover.rs's 'N characters; the cap is M' refusal, though fields::cap exists
+F130: the failure no longer happens: A reproduce batch row with "task": "" (a finding fixed with no task ref to name) hits the closure's third arm, since the !needed arm matches only None/Null; the row is refused with the reason "`task` is required" although task is optional, and the reproduction is not recorded."""
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "F87 no longer reproduces"
+check = "tomlctl review reproduce-status F87 --slug v2-apply --expect gone"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.accept]]
+behaviour = "F92 no longer reproduces"
+check = "tomlctl review reproduce-status F92 --slug v2-apply --expect gone"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.accept]]
+behaviour = "F96 no longer reproduces"
+check = "tomlctl review reproduce-status F96 --slug v2-apply --expect gone"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.accept]]
+behaviour = "F97 no longer reproduces"
+check = "tomlctl review reproduce-status F97 --slug v2-apply --expect gone"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.accept]]
+behaviour = "F117 no longer reproduces"
+check = "tomlctl review reproduce-status F117 --slug v2-apply --expect gone"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.accept]]
+behaviour = "F118 no longer reproduces"
+check = "tomlctl review reproduce-status F118 --slug v2-apply --expect gone"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.accept]]
+behaviour = "F119 no longer reproduces"
+check = "tomlctl review reproduce-status F119 --slug v2-apply --expect gone"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.accept]]
+behaviour = "F120 no longer reproduces"
+check = "tomlctl review reproduce-status F120 --slug v2-apply --expect gone"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.accept]]
+behaviour = "F121 no longer reproduces"
+check = "tomlctl review reproduce-status F121 --slug v2-apply --expect gone"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.accept]]
+behaviour = "F122 no longer reproduces"
+check = "tomlctl review reproduce-status F122 --slug v2-apply --expect gone"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.accept]]
+behaviour = "F123 no longer reproduces"
+check = "tomlctl review reproduce-status F123 --slug v2-apply --expect gone"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.accept]]
+behaviour = "F130 no longer reproduces"
+check = "tomlctl review reproduce-status F130 --slug v2-apply --expect gone"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.premises]]
+claim = "F87's anchor holds"
+check = "tomlctl review anchor F87 --slug v2-apply"
+at = "base"
+
+[specs.premises.probe]
+at = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "F92's anchor holds"
+check = "tomlctl review anchor F92 --slug v2-apply"
+at = "base"
+
+[specs.premises.probe]
+at = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "F96's anchor holds"
+check = "tomlctl review anchor F96 --slug v2-apply"
+at = "base"
+
+[specs.premises.probe]
+at = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "F97's anchor holds"
+check = "tomlctl review anchor F97 --slug v2-apply"
+at = "base"
+
+[specs.premises.probe]
+at = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "F117's anchor holds"
+check = "tomlctl review anchor F117 --slug v2-apply"
+at = "base"
+
+[specs.premises.probe]
+at = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "F118's anchor holds"
+check = "tomlctl review anchor F118 --slug v2-apply"
+at = "base"
+
+[specs.premises.probe]
+at = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "F119's anchor holds"
+check = "tomlctl review anchor F119 --slug v2-apply"
+at = "base"
+
+[specs.premises.probe]
+at = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "F120's anchor holds"
+check = "tomlctl review anchor F120 --slug v2-apply"
+at = "base"
+
+[specs.premises.probe]
+at = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "F121's anchor holds"
+check = "tomlctl review anchor F121 --slug v2-apply"
+at = "base"
+
+[specs.premises.probe]
+at = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "F122's anchor holds"
+check = "tomlctl review anchor F122 --slug v2-apply"
+at = "base"
+
+[specs.premises.probe]
+at = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "F123's anchor holds"
+check = "tomlctl review anchor F123 --slug v2-apply"
+at = "base"
+
+[specs.premises.probe]
+at = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "F130's anchor holds"
+check = "tomlctl review anchor F130 --slug v2-apply"
+at = "base"
+
+[specs.premises.probe]
+at = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "the-v2-review-verb-list-in-the-quick-reference-table-omits-apply-though-it-follows-the-reviewop-enum-order-and-every-other-store-verb-is-listed"
+outcome = "F88: the change is made: The v2 review verb list in the quick-reference table omits `apply`, though it follows the ReviewOp enum order and every other store verb is listed"
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "F88 no longer reproduces"
+check = "tomlctl review reproduce-status F88 --slug v2-apply --expect gone"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.premises]]
+claim = "F88's anchor holds"
+check = "tomlctl review anchor F88 --slug v2-apply"
+at = "base"
+
+[specs.premises.probe]
+at = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "status-says-review-v2-and-review-plan-v2-have-no-run-recorded-in-this-repo-but-both-stores-committed-on-2026-11-10-hold-runs-of-each"
+outcome = "F89: the change is made: Status says /review-v2 and /review-plan-v2 have no run recorded in this repo, but both stores committed on 2026-11-10 hold runs of each"
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "F89 no longer reproduces"
+check = "tomlctl review reproduce-status F89 --slug v2-apply --expect gone"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.premises]]
+claim = "F89's anchor holds"
+check = "tomlctl review anchor F89 --slug v2-apply"
+at = "base"
+
+[specs.premises.probe]
+at = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "both-link-scripts-header-says-they-link-the-review-plan-and-implement-entries-they-now-also-link-apply-v2s-command-and-skill"
+outcome = "F90: the change is made: Both link scripts' header says they link the review, plan and implement entries; they now also link apply-v2's command and skill"
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "F90 no longer reproduces"
+check = "tomlctl review reproduce-status F90 --slug v2-apply --expect gone"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.premises]]
+claim = "F90's anchor holds"
+check = "tomlctl review anchor F90 --slug v2-apply"
+at = "base"
+
+[specs.premises.probe]
+at = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "readme-cheat-sheet-line-for-review-schedule-omits-dry-run-which-the-verb-now-takes-and-its-siblings-apply-and-export-v1-show"
+outcome = "F91: the change is made: README cheat-sheet line for review schedule omits --dry-run, which the verb now takes and its siblings apply and export-v1 show"
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "F91 no longer reproduces"
+check = "tomlctl review reproduce-status F91 --slug v2-apply --expect gone"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.premises]]
+claim = "F91's anchor holds"
+check = "tomlctl review anchor F91 --slug v2-apply"
+at = "base"
+
+[specs.premises.probe]
+at = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "no-test-pins-that-an-orchestrator-verdict-on-a-panel-routed-finding-is-refused-unless-it-is-a-refute-of-an-evidence-blocked-finding"
+outcome = "F94: the change is made: No test pins that an orchestrator verdict on a panel-routed finding is refused unless it is a refute of an evidence-blocked finding"
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "F94 no longer reproduces"
+check = "tomlctl review reproduce-status F94 --slug v2-apply --expect gone"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.premises]]
+claim = "F94's anchor holds"
+check = "tomlctl review anchor F94 --slug v2-apply"
+at = "base"
+
+[specs.premises.probe]
+at = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "no-test-pins-that-answer-file-is-refused-on-a-decision-blocked-finding-that-is-not-open"
+outcome = "F95: the change is made: No test pins that --answer-file is refused on a decision-blocked finding that is not open"
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "F95 no longer reproduces"
+check = "tomlctl review reproduce-status F95 --slug v2-apply --expect gone"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.premises]]
+claim = "F95's anchor holds"
+check = "tomlctl review anchor F95 --slug v2-apply"
+at = "base"
+
+[specs.premises.probe]
+at = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "no-test-drives-folds-group-merge-where-one-findings-files-bridge-two-existing-groups-and-1-more"
+outcome = """
+F98: the change is made: No test drives fold's group merge, where one finding's files bridge two existing groups
+F99: the change is made: depends_on resolution outside the batch is untested: a dep on an earlier call's live task, and a dropped dep reported in dropped_deps"""
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "F98 no longer reproduces"
+check = "tomlctl review reproduce-status F98 --slug v2-apply --expect gone"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.accept]]
+behaviour = "F99 no longer reproduces"
+check = "tomlctl review reproduce-status F99 --slug v2-apply --expect gone"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.premises]]
+claim = "F98's anchor holds"
+check = "tomlctl review anchor F98 --slug v2-apply"
+at = "base"
+
+[specs.premises.probe]
+at = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "F99's anchor holds"
+check = "tomlctl review anchor F99 --slug v2-apply"
+at = "base"
+
+[specs.premises.probe]
+at = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "apply-v2-engine-steps-7-8-hand-copy-approvemds-commitapproverecord-procedure-and-drop-its-mandatory-v1-carrier-warning-and-3-more"
+outcome = """
+F103: the failure no longer happens: /apply-v2 --scope auth opens and approves auth-apply; plan approve writes the registry entry, so bare v1 carriers now pick auth-apply. approve.md requires printing its verbatim warning (v1 carriers cannot run the flow, /review-plan falls back to plan mode and can overwrite brief.md, clear it with flow active remove). The apply skill's copy of the procedure omits it, so a later bare /review-plan or /implement hits the apply flow with no warning given.
+F107: the failure no longer happens: Run 1 adds apply-1 alone (no evidence-blocked pick) and schedules nothing, e.g. every pick lands under skipped_stale; step 6 says a rerun with another selection reuses it. Rerun picks F9 blocked on evidence: Re-entry reuses empty apply-1 and skips step 5, no settle-1 exists, so step 6 runs without --settle-checkpoint and review schedule refuses F9 naming the flag; no settle milestone can be added before apply-1.
+F132: the failure no longer happens: /apply-v2 --scope S --all opens S-apply and schedules every finding, then step 7 stops on a dirty .claude/active-flow.toml and tells the user to rerun. The rerun with the same arguments previews with review schedule --all, which skips non-open findings without a refused row. No row reads 'status is scheduled, not open', so step 2's 'Nothing to schedule' stops: steps 7 to 9 never run and S-apply stays an unapproved draft holding the scheduled findings. On a reviewed flow interrupted at step 9, the same rerun stops instead of resuming the engine.
+F133: the change is made: Step 7 says the engine's clean-tree check refuses the review store, but linked review stores are exempt from that check"""
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "F103 no longer reproduces"
+check = "tomlctl review reproduce-status F103 --slug v2-apply --expect gone"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.accept]]
+behaviour = "F107 no longer reproduces"
+check = "tomlctl review reproduce-status F107 --slug v2-apply --expect gone"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.accept]]
+behaviour = "F132 no longer reproduces"
+check = "tomlctl review reproduce-status F132 --slug v2-apply --expect gone"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.accept]]
+behaviour = "F133 no longer reproduces"
+check = "tomlctl review reproduce-status F133 --slug v2-apply --expect gone"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.premises]]
+claim = "F103's anchor holds"
+check = "tomlctl review anchor F103 --slug v2-apply"
+at = "base"
+
+[specs.premises.probe]
+at = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "F107's anchor holds"
+check = "tomlctl review anchor F107 --slug v2-apply"
+at = "base"
+
+[specs.premises.probe]
+at = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "F132's anchor holds"
+check = "tomlctl review anchor F132 --slug v2-apply"
+at = "base"
+
+[specs.premises.probe]
+at = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "F133's anchor holds"
+check = "tomlctl review anchor F133 --slug v2-apply"
+at = "base"
+
+[specs.premises.probe]
+at = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "the-schedule-selection-rule-review-applymd-owns-is-hand-copied-into-triage-step-3-and-both-carriers-review-v2mds-copy-already-disagrees-and-1-more"
+outcome = """
+F104: the change is made: The schedule selection rule review-apply.md owns is hand-copied into triage step 3 and both carriers; review-v2.md's copy already disagrees
+F126: the failure no longer happens: Flow X's shared store .claude/flows/X/review-v2.toml holds open code defects a /review-v2 triage left unpicked. /optimise-v2 on X: user says `apply all`; the carrier lists only open perf rows and names `/apply-v2 X --all`. review schedule --all selects every open code or perf defect and cleanup, so the untriaged code defects are minted as fix tasks and run, with no confirmation step in apply-v2."""
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "F104 no longer reproduces"
+check = "tomlctl review reproduce-status F104 --slug v2-apply --expect gone"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.accept]]
+behaviour = "F126 no longer reproduces"
+check = "tomlctl review reproduce-status F126 --slug v2-apply --expect gone"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.premises]]
+claim = "F104's anchor holds"
+check = "tomlctl review anchor F104 --slug v2-apply"
+at = "base"
+
+[specs.premises.probe]
+at = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "F126's anchor holds"
+check = "tomlctl review anchor F126 --slug v2-apply"
+at = "base"
+
+[specs.premises.probe]
+at = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "findingsmd-reconcile-restates-reconciles-task-state-table-and-output-shape-that-review-applymd-owns-and-1-more"
+outcome = """
+F105: the change is made: findings.md Reconcile restates reconcile's task-state table and output shape that review-apply.md owns
+F108: the change is made: The <n> in a reproduce fix task's reason is undefined, and reading it as the check's round makes the two-round cap count re-checks, not fix rounds"""
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "F105 no longer reproduces"
+check = "tomlctl review reproduce-status F105 --slug v2-apply --expect gone"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.accept]]
+behaviour = "F108 no longer reproduces"
+check = "tomlctl review reproduce-status F108 --slug v2-apply --expect gone"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.premises]]
+claim = "F105's anchor holds"
+check = "tomlctl review anchor F105 --slug v2-apply"
+at = "base"
+
+[specs.premises.probe]
+at = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "F108's anchor holds"
+check = "tomlctl review anchor F108 --slug v2-apply"
+at = "base"
+
+[specs.premises.probe]
+at = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "measurementmds-native-apply-row-restates-the-stats-apply-output-shape-reviewmd-owns-and-reviewmd-restates-measurements-misclassification-reading"
+outcome = "F106: the change is made: measurement.md's Native apply row restates the stats --apply output shape review.md owns, and review.md restates measurement's misclassification reading"
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "F106 no longer reproduces"
+check = "tomlctl review reproduce-status F106 --slug v2-apply --expect gone"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.premises]]
+claim = "F106's anchor holds"
+check = "tomlctl review anchor F106 --slug v2-apply"
+at = "base"
+
+[specs.premises.probe]
+at = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "to_toml-re-derives-storeholds_v2_keys-inline-and-the-change-had-to-add-finding_links-to-both-copies"
+outcome = "F124: the change is made: to_toml re-derives Store::holds_v2_keys inline, and the change had to add finding_links to both copies"
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "F124 no longer reproduces"
+check = "tomlctl review reproduce-status F124 --slug v2-apply --expect gone"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.premises]]
+claim = "F124's anchor holds"
+check = "tomlctl review anchor F124 --slug v2-apply"
+at = "base"
+
+[specs.premises.probe]
+at = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "the-agent-wave-fallback-verifier-prompt-stated-as-the-workflows-lacks-the-blocked-claim-and-unblock-instruction-review-v2js-now-sends"
+outcome = "F127: the change is made: The Agent-wave fallback verifier prompt, stated as the Workflow's, lacks the blocked-claim and unblock instruction review-v2.js now sends"
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "F127 no longer reproduces"
+check = "tomlctl review reproduce-status F127 --slug v2-apply --expect gone"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.premises]]
+claim = "F127's anchor holds"
+check = "tomlctl review anchor F127 --slug v2-apply"
+at = "base"
+
+[specs.premises.probe]
+at = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "re-entry-on-an-unstamped-apply-milestone-reruns-the-gate-from-step-7-skipping-the-reproduce-check-the-settle-drain-and-the-findings-reconcile"
+outcome = "F131: the failure no longer happens: A settle milestone's rows are all done and the session ends at the settle drain's AskUserQuestion, before any review settle call. The next invocation finds the milestone unstamped and, by SKILL.md Re-entry and this paragraph, reruns the gate from step 7: no gate, so it commits, and Reconcile reopens each settles finding with no recorded proposal. Accepted proposals never reach apply-<n> and the user is never asked. A fix milestone ended before its reproduce launch fails the gate on reproduce-status with no reproduction, spending a fix round."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "F131 no longer reproduces"
+check = "tomlctl review reproduce-status F131 --slug v2-apply --expect gone"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.premises]]
+claim = "F131's anchor holds"
+check = "tomlctl review anchor F131 --slug v2-apply"
+at = "base"
+
+[specs.premises.probe]
+at = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "align-the-engine-skillmds-unstamped-milestones-sentence-with-drainmds-apply-milestone-re-entry-routing"
+outcome = "The Re-entry section's Unstamped milestones paragraph in claude/skills/implement-v2-engine/SKILL.md no longer says an unstamped milestone is settled by stamping from HEAD or running its gate again; it says what drain.md's subsection 'Stamping on re-entry' now says: the stamp-from-HEAD branch also runs the findings reconcile for a milestone holding an apply row, and otherwise an apply milestone goes through the reproduce check and the settle drain before the gate, while a milestone with no apply row reruns the gate."
+constraints = [
+    "Edit only the Unstamped milestones paragraph",
+    "Summarise and defer to drain.md's subsection; do not restate its procedure",
+    "Keep the sentence about counting fix rounds already spent",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "The old wording is gone"
+check = "! rg -q 'stamp it from `HEAD` or run its gate again, by' claude/skills/implement-v2-engine/SKILL.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[[specs.accept]]
+behaviour = "The paragraph names the reproduce check"
+check = "rg -q 'Unstamped milestones.*reproduce check' claude/skills/implement-v2-engine/SKILL.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
 [[milestones]]
 id = "A"
 gates = [
@@ -2175,6 +3076,20 @@ defer_reason = ""
 
 [[milestones]]
 id = "C"
+gates = [
+    "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check",
+    "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets -- -D warnings",
+    "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast",
+    "cargo clippy --manifest-path glimpse/Cargo.toml --locked",
+    "bash scripts/verify-shared-blocks.sh",
+    "cargo install --path tomlctl",
+    "cargo install --path glimpse",
+]
+elaboration = "upfront"
+defer_reason = ""
+
+[[milestones]]
+id = "apply-1"
 gates = [
     "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check",
     "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets -- -D warnings",
@@ -2447,6 +3362,159 @@ old = ""
 new = "Advertise review settle's tier vocabulary in capabilities"
 actor = "orchestrator"
 reason = "milestone C's own work left capabilities wrong: `tomlctl capabilities --get 'commands.review.subcommands.settle.flags.--tier'` prints values A, B, C, where `review settle --tier` (task 20) accepts mechanical, cited, user; task 23 could not fix it without tomlctl/src/review/mod.rs"
+
+[[changes]]
+at = 2026-11-11T08:17:57Z
+ref = "milestone:apply-1"
+field = "*"
+old = ""
+new = "Fix F87,F88,F89,F90,F91,F92,F94,F95,F96,F97,F98,F99,F103,F104,F105,F106,F107,F108,F117,F118,F119,F120,F121,F122,F123,F124,F126,F127,F130,F131,F132,F133 from .claude/flows/v2-apply/review-v2.toml"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-apply/review-v2.toml: F87,F88,F89,F90,F91,F92,F94,F95,F96,F97,F98,F99,F103,F104,F105,F106,F107,F108,F117,F118,F119,F120,F121,F122,F123,F124,F126,F127,F130,F131,F132,F133"
+
+[[changes]]
+at = 2026-11-11T08:17:57Z
+ref = "export-v1-builds-the-v1-description-without-fix_sketch-or-decision_answer-so-an-unblocked-finding-exports-with-its-unblocking-answer-dropped-and-11-more"
+field = "*"
+old = ""
+new = "export-v1 builds the v1 description without fix_sketch or decision_answer, so an unblocked finding exports with its unblocking answer dropped (and 11 more)"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-apply/review-v2.toml: F87, F92, F96, F97, F117, F118, F119, F120, F121, F122, F123, F130"
+
+[[changes]]
+at = 2026-11-11T08:17:57Z
+ref = "the-v2-review-verb-list-in-the-quick-reference-table-omits-apply-though-it-follows-the-reviewop-enum-order-and-every-other-store-verb-is-listed"
+field = "*"
+old = ""
+new = "The v2 review verb list in the quick-reference table omits `apply`, though it follows the ReviewOp enum order and every other store verb is listed"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-apply/review-v2.toml: F88"
+
+[[changes]]
+at = 2026-11-11T08:17:57Z
+ref = "status-says-review-v2-and-review-plan-v2-have-no-run-recorded-in-this-repo-but-both-stores-committed-on-2026-11-10-hold-runs-of-each"
+field = "*"
+old = ""
+new = "Status says /review-v2 and /review-plan-v2 have no run recorded in this repo, but both stores committed on 2026-11-10 hold runs of each"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-apply/review-v2.toml: F89"
+
+[[changes]]
+at = 2026-11-11T08:17:57Z
+ref = "both-link-scripts-header-says-they-link-the-review-plan-and-implement-entries-they-now-also-link-apply-v2s-command-and-skill"
+field = "*"
+old = ""
+new = "Both link scripts' header says they link the review, plan and implement entries; they now also link apply-v2's command and skill"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-apply/review-v2.toml: F90"
+
+[[changes]]
+at = 2026-11-11T08:17:57Z
+ref = "readme-cheat-sheet-line-for-review-schedule-omits-dry-run-which-the-verb-now-takes-and-its-siblings-apply-and-export-v1-show"
+field = "*"
+old = ""
+new = "README cheat-sheet line for review schedule omits --dry-run, which the verb now takes and its siblings apply and export-v1 show"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-apply/review-v2.toml: F91"
+
+[[changes]]
+at = 2026-11-11T08:17:57Z
+ref = "no-test-pins-that-an-orchestrator-verdict-on-a-panel-routed-finding-is-refused-unless-it-is-a-refute-of-an-evidence-blocked-finding"
+field = "*"
+old = ""
+new = "No test pins that an orchestrator verdict on a panel-routed finding is refused unless it is a refute of an evidence-blocked finding"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-apply/review-v2.toml: F94"
+
+[[changes]]
+at = 2026-11-11T08:17:57Z
+ref = "no-test-pins-that-answer-file-is-refused-on-a-decision-blocked-finding-that-is-not-open"
+field = "*"
+old = ""
+new = "No test pins that --answer-file is refused on a decision-blocked finding that is not open"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-apply/review-v2.toml: F95"
+
+[[changes]]
+at = 2026-11-11T08:17:57Z
+ref = "no-test-drives-folds-group-merge-where-one-findings-files-bridge-two-existing-groups-and-1-more"
+field = "*"
+old = ""
+new = "No test drives fold's group merge, where one finding's files bridge two existing groups (and 1 more)"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-apply/review-v2.toml: F98, F99"
+
+[[changes]]
+at = 2026-11-11T08:17:57Z
+ref = "apply-v2-engine-steps-7-8-hand-copy-approvemds-commitapproverecord-procedure-and-drop-its-mandatory-v1-carrier-warning-and-3-more"
+field = "*"
+old = ""
+new = "apply-v2-engine steps 7-8 hand-copy approve.md's commit/approve/record procedure and drop its mandatory v1-carrier warning (and 3 more)"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-apply/review-v2.toml: F103, F107, F132, F133"
+
+[[changes]]
+at = 2026-11-11T08:17:57Z
+ref = "the-schedule-selection-rule-review-applymd-owns-is-hand-copied-into-triage-step-3-and-both-carriers-review-v2mds-copy-already-disagrees-and-1-more"
+field = "*"
+old = ""
+new = "The schedule selection rule review-apply.md owns is hand-copied into triage step 3 and both carriers; review-v2.md's copy already disagrees (and 1 more)"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-apply/review-v2.toml: F104, F126"
+
+[[changes]]
+at = 2026-11-11T08:17:57Z
+ref = "findingsmd-reconcile-restates-reconciles-task-state-table-and-output-shape-that-review-applymd-owns-and-1-more"
+field = "*"
+old = ""
+new = "findings.md Reconcile restates reconcile's task-state table and output shape that review-apply.md owns (and 1 more)"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-apply/review-v2.toml: F105, F108"
+
+[[changes]]
+at = 2026-11-11T08:17:57Z
+ref = "measurementmds-native-apply-row-restates-the-stats-apply-output-shape-reviewmd-owns-and-reviewmd-restates-measurements-misclassification-reading"
+field = "*"
+old = ""
+new = "measurement.md's Native apply row restates the stats --apply output shape review.md owns, and review.md restates measurement's misclassification reading"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-apply/review-v2.toml: F106"
+
+[[changes]]
+at = 2026-11-11T08:17:57Z
+ref = "to_toml-re-derives-storeholds_v2_keys-inline-and-the-change-had-to-add-finding_links-to-both-copies"
+field = "*"
+old = ""
+new = "to_toml re-derives Store::holds_v2_keys inline, and the change had to add finding_links to both copies"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-apply/review-v2.toml: F124"
+
+[[changes]]
+at = 2026-11-11T08:17:57Z
+ref = "the-agent-wave-fallback-verifier-prompt-stated-as-the-workflows-lacks-the-blocked-claim-and-unblock-instruction-review-v2js-now-sends"
+field = "*"
+old = ""
+new = "The Agent-wave fallback verifier prompt, stated as the Workflow's, lacks the blocked-claim and unblock instruction review-v2.js now sends"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-apply/review-v2.toml: F127"
+
+[[changes]]
+at = 2026-11-11T08:17:57Z
+ref = "re-entry-on-an-unstamped-apply-milestone-reruns-the-gate-from-step-7-skipping-the-reproduce-check-the-settle-drain-and-the-findings-reconcile"
+field = "*"
+old = ""
+new = "Re-entry on an unstamped apply milestone reruns the gate from step 7, skipping the reproduce check, the settle drain and the findings reconcile"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-apply/review-v2.toml: F131"
+
+[[changes]]
+at = 2026-11-11T08:28:35Z
+ref = "align-the-engine-skillmds-unstamped-milestones-sentence-with-drainmds-apply-milestone-re-entry-routing"
+field = "*"
+old = ""
+new = "Align the engine SKILL.md's Unstamped milestones sentence with drain.md's apply-milestone re-entry routing"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-apply/review-v2.toml: F131 — task 55's note says the finding's fix also names the Re-entry sentence in SKILL.md, which was outside its files"
 
 [[items]]
 id = 1
@@ -3529,3 +4597,521 @@ detail = ""
 acceptance = ""
 agent = "plan-worker-deep"
 commit = "be21122c9cba89adabcce5737f815733ccd877d1"
+
+[[items]]
+id = 41
+ref = "export-v1-builds-the-v1-description-without-fix_sketch-or-decision_answer-so-an-unblocked-finding-exports-with-its-unblocking-answer-dropped-and-11-more"
+title = "export-v1 builds the v1 description without fix_sketch or decision_answer, so an unblocked finding exports with its unblocking answer dropped (and 11 more)"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/export.rs",
+    "tomlctl/src/review/verdict.rs",
+    "tomlctl/src/review/fields.rs",
+    "tomlctl/src/review/reconcile.rs",
+    "tomlctl/src/review/settle.rs",
+    "tomlctl/src/review/anchor.rs",
+    "tomlctl/src/review/select.rs",
+    "tomlctl/src/review/stats.rs",
+    "tomlctl/src/review/triage.rs",
+    "tomlctl/src/review/apply.rs",
+    "tomlctl/src/review/digest.rs",
+    "tomlctl/src/review/store.rs",
+    "tomlctl/src/review/schedule.rs",
+    "tomlctl/src/review/reproduce.rs",
+    "tomlctl/src/review/cover.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = """
+F87: export-v1 builds the v1 description without fix_sketch or decision_answer, so an unblocked finding exports with its unblocking answer dropped
+F92: A verdict never decides the status of a regression row, so a settle refute on one reports refuted but leaves it open and blocked
+F96: blocked_options min_items(2) counts blank entries, so a decision block with one real option, or none, passes review add
+F97: reconcile follows apply_task by ref alone, so a freed ref reused by another finding's task resolves the wrong finding
+F117: The Finding.rest string read is re-written as a private helper or closure in about ten places the change added, beside two older copies
+F118: The apply-link field set (apply_flow, apply_task, apply_task_id) is spelled out at five sites; adding apply_task_id took a separate edit at each
+F119: The review-store path keying [[finding_links]].store is computed separately in schedule, reconcile and export; the link match needs all three to agree
+F120: schedule::edited copies select's TestGlobs::is_test_removal extraction of a finding's instances and edit target verbatim
+F121: A reproduction's field list is written twice, as reproduce.rs KEYS and store.rs REPRODUCTION_CORE, and a new field needs both edited
+F122: What makes a verdict a settle refute (orchestrator, refuted, evidence block) is restated in stats and settle beside verdict::settle_refute
+F123: settle and triage each re-derive a field's cap through fields::spec and rebuild cover.rs's 'N characters; the cap is M' refusal, though fields::cap exists
+F130: An optional reproduction `task` given as an empty string is refused as "`task` is required""""
+detail = '''
+F87:
+Fix: In export.rs candidate(), after description(projected), append `Fix sketch: <fix_sketch>` and `Decision: <decision_answer>` lines read from the finding (trimmed, when non-empty), matching what schedule.rs's task builder adds beside description(); keep description() itself unchanged so schedule does not print the sketch twice. Add a review_export.rs test: an open defect with unblocked_by = "user" and decision_answer, and one with unblocked_by = "verifier" and fix_sketch, exported by id; assert the v1 description contains each.
+Failure scenario: A finding blocked on decision is answered with `review triage --answer-file` (decision_answer set, block cleared), or a verifier unblocks one with a fix_sketch, then `review export-v1 <id> --to .claude/reviews/x.toml` runs: refusal() passes it as unblocked, and candidate() writes description from description() alone (fix/edit/old/target_file/instances/failure_scenario). The v1 row carries the partial fix and no decision or sketch, so /review-apply implements without the answer the user gave.
+
+F92:
+Fix: Gate the status step on whether the row still awaits resolution, not on same_as alone: replace `finding.same_as.is_empty() && finding.status().decided_by_verdict()` with `!super::resolve::awaits_resolution(finding) && finding.status().decided_by_verdict()` (awaits_resolution already excludes rows with an outcome). Add a review_settle test that seeds a scheduled, evidence-blocked row with same_as and outcome = regression, settles it with --refute, and asserts status refuted.
+Failure scenario: A regression row (resolve set it open with outcome = regression and kept same_as = F0) is blocked on evidence, scheduled, and settled with `review settle F1 --refute --citation src/a.rs:1`. settle sets it open and calls orchestrator_verdict; apply_one skips the status step because same_as is non-empty, so the row stays open and still blocked on evidence while settle prints outcome refuted. A replay re-runs the same no-op, and any later verifier or audit verdict on the row is likewise ignored.
+
+F96:
+Fix: In check_value's Ty::StrList arm, refuse an element whose trim() is empty ("entry {i} is blank") before the min_items comparison, so blank entries can neither pad the count nor land. The same arm serves evidence (Required, 1-5), which today also accepts [""]; the one edit closes both. Add a unit case beside a_single_option_and_a_fix_shape_are_refused: blocked_options ["a real option", "  "] is refused naming blocked_options.
+Failure scenario: A finder submits a defect with blocked_on = decision, blocked_missing set and blocked_options = ["drop the cache, and two callers change", ""] (or ["", ""]). check_value's StrList arm counts list.len() = 2 against min_items, check_text accepts the empty entry, and is_absent only tests the array for emptiness, so the row lands as a decision block offering one real option or none, though the contract (review-v2-method Blocked table: blocked_options 2-6, each naming its consequence) needs two. A blank blocked_missing is refused; a blank option is not.
+
+F97:
+Fix: In reconcile, when the finding carries apply_task_id, accept the ref-named row only if row.id equals that id (or a finding_links entry of this store ties that row to the finding); otherwise fall through to retitled(). Add a review_reconcile test: F1 apply_task = fix-alpha, apply_task_id = 1; task 1 fix-alpha-bound in-progress linked F1; task 2 fix-alpha done with a commit linked F2; assert F1 stays in_flight and apply_task becomes fix-alpha-bound.
+Failure scenario: F1 scheduled to task 1 `fix-alpha` (apply_task_id = 1). Task 1 is retitled to `fix-alpha-bound` (tasks update --ref moves links and audit trail, freeing `fix-alpha`). Before reconcile runs, review schedule mints task 2 for F2 whose summary slugs to `fix-alpha`. Task 2 commits; reconcile finds row `fix-alpha` by ref, never checks its id or link, and marks F1 resolved with F2's commit while F1's own task is unfinished.
+
+F117:
+Edit (change): Add one accessor on Finding in store.rs, beside identity_links: `pub(crate) fn text(&self, key: &str) -> Option<&str> { self.rest.get(key).and_then(TomlValue::as_str) }`. Delete settle.rs `text`, anchor.rs `rest_str`, reconcile.rs `link_text` and the copies in apply.rs (`text`) and digest.rs (`rest_str`). Replace the inline `|key| finding.rest.get(key).and_then(..as_str)` closures in stats.rs (apply_state, block_of, settle_outcome, BlockTally::add), triage.rs (Mode::recorded), fields.rs (blocked_on, clear_block) and select.rs `text` with calls to it. Callers that want `&str` add `.unwrap_or_default()`, and ones that want trimmed or non-empty text add `.map(str::trim)` or `.filter(|s| !s.is_empty())`.
+Old text: fn text<'f>(finding: &'f Finding, key: &str) -> Option<&'f str> {
+    finding.rest.get(key).and_then(TomlValue::as_str)
+}
+Instances: tomlctl/src/review/anchor.rs, tomlctl/src/review/reconcile.rs, tomlctl/src/review/select.rs, tomlctl/src/review/stats.rs, tomlctl/src/review/triage.rs, tomlctl/src/review/fields.rs, tomlctl/src/review/apply.rs, tomlctl/src/review/digest.rs, tomlctl/src/review/store.rs
+
+F118:
+Edit (change): In fields.rs, beside LINK_FIELDS, add `pub(crate) const APPLY_LINK_FIELDS: &[&str] = &["apply_flow", "apply_task", "apply_task_id"];`. In store.rs add `Finding::clear_apply_link(&mut self)`, which removes each key in APPLY_LINK_FIELDS from `rest`. Replace the three `rest.remove` lines in settle.rs `settle` and in reconcile.rs `reopen` with that call. Have the fields.rs companion-disjointness test iterate APPLY_LINK_FIELDS instead of its inline list. In settle.rs `recorded`, test for an unlinked finding with `APPLY_LINK_FIELDS.iter().all(|k| text(finding, k).is_none())`.
+Old text: finding.rest.remove("apply_flow");
+    finding.rest.remove("apply_task");
+    finding.rest.remove("apply_task_id");
+Instances: tomlctl/src/review/reconcile.rs, tomlctl/src/review/fields.rs, tomlctl/src/review/schedule.rs
+
+F119:
+Edit (change): Add a method to Target in store.rs, which already holds the root: `pub(crate) fn rel(&self) -> String { relativise_under(&self.root, &self.path).unwrap_or_else(|| self.path.to_string_lossy().replace('\\', "/")) }`. Replace the `store_rel` computations in schedule.rs run, reconcile.rs run and export.rs run with `target.rel()`. Drop the then-unused `relativise_under` imports and export.rs's `slashed` call for the store.
+Old text: let store_rel = relativise_under(&root, &target.path)
+        .unwrap_or_else(|| target.path.to_string_lossy().replace('\\', "/"));
+Instances: tomlctl/src/review/reconcile.rs, tomlctl/src/review/export.rs, tomlctl/src/review/store.rs
+
+F120:
+Edit (change): Add `pub(crate) fn edited_paths(&self) -> impl Iterator<Item = &str>` on Finding in store.rs (or `pub(super) fn edited_paths(f: &Finding)` in select.rs). It reads `instances` from `rest` as an array of strings and returns `fields::edited_paths(&self.file, Some(target_file), instances)`. In schedule.rs `edited`, replace the extraction with a call to it, keeping the trim and de-duplication there. In select.rs `is_test_removal`, end with `Ok(f.edited_paths().any(|path| globs.is_match(path)))`.
+Old text: let instances = f
+        .rest
+        .get("instances")
+        .and_then(TomlValue::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(TomlValue::as_str);
+Instances: tomlctl/src/review/select.rs, tomlctl/src/review/store.rs
+
+F121:
+Edit (change): Make store.rs REPRODUCTION_CORE `pub(super)`. Remove reproduce.rs KEYS. In parse_row, refuse a key when `!REPRODUCTION_CORE.contains(k) || k == "at"`, since `at` is stamped by the verb. List the accepted keys in the refusal as `REPRODUCTION_CORE` without `at`.
+Old text: const KEYS: &[&str] = &[
+    "finding",
+Instances: tomlctl/src/review/store.rs
+
+F122:
+Edit (change): Change verdict.rs `settle_refute` to `pub(super) fn settle_refute(finding: &Finding, by: &str, verdict: &str) -> bool`, testing `by == "orchestrator"` itself, and update its two callers in apply_one and decide. In stats.rs `settle_outcome`, replace the Refuted arm's guard with `sv.verdicts_of(&finding.id).iter().any(|v| verdict::settle_refute(finding, &v.by, &v.verdict))`. In settle.rs `recorded`, use the same predicate for the `v.by == "orchestrator" && v.verdict == "refuted"` part.
+Old text: .any(|v| v.by == "orchestrator" && v.verdict == "refuted") =>
+Instances: tomlctl/src/review/verdict.rs, tomlctl/src/review/settle.rs
+
+F123:
+Edit (change): Add a helper to fields.rs: `pub(crate) fn check_cap(verb: &str, what: &str, record: Record, name: &str, text: &str) -> Result<()>`. It reads `cap(record, name)` and refuses with `{verb}: {what} is {len} characters; the cap is {cap}`. Replace the cap blocks in settle.rs read_outcome (fix_sketch), triage.rs read_mode (decision_answer) and cover.rs (note) with calls to it.
+Old text: let cap = fields::spec(Record::Finding, "fix_sketch", None).and_then(|s| s.cap);
+Instances: tomlctl/src/review/triage.rs, tomlctl/src/review/cover.rs, tomlctl/src/review/fields.rs
+
+F130:
+Fix: In parse_row's text closure, let the optional case also accept a blank string: match `None | Some(JsonValue::Null)` and `Some(JsonValue::String(s)) if s.trim().is_empty()` to String::new() when !needed, keeping the `is required` reason for needed keys only.
+Failure scenario: A reproduce batch row with "task": "" (a finding fixed with no task ref to name) hits the closure's third arm, since the !needed arm matches only None/Null; the row is refused with the reason "`task` is required" although task is optional, and the reproduction is not recorded.'''
+acceptance = ""
+agent = "plan-worker-deep"
+commit = "ae684d1dfa08e02e97decc5ba9816ba60d8c68b1"
+
+[[items]]
+id = 42
+ref = "the-v2-review-verb-list-in-the-quick-reference-table-omits-apply-though-it-follows-the-reviewop-enum-order-and-every-other-store-verb-is-listed"
+title = "The v2 review verb list in the quick-reference table omits `apply`, though it follows the ReviewOp enum order and every other store verb is listed"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/tomlctl/SKILL.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = "F88: The v2 review verb list in the quick-reference table omits `apply`, though it follows the ReviewOp enum order and every other store verb is listed"
+detail = '''
+F88:
+Edit (change): Insert `apply` between `settle` and `stats`: replace `triage\|settle\|stats` with `triage\|settle\|apply\|stats`. Checked against ReviewOp in tomlctl/src/cli/types/review/mod.rs (Triage, Settle, Apply, Stats, ExportV1, Schedule, Reconcile), where `apply` takes --slug/--scope like its neighbours.
+Old text: triage\|settle\|stats'''
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "ae684d1dfa08e02e97decc5ba9816ba60d8c68b1"
+
+[[items]]
+id = 43
+ref = "status-says-review-v2-and-review-plan-v2-have-no-run-recorded-in-this-repo-but-both-stores-committed-on-2026-11-10-hold-runs-of-each"
+title = "Status says /review-v2 and /review-plan-v2 have no run recorded in this repo, but both stores committed on 2026-11-10 hold runs of each"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["docs/ideas/v2-pipeline.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = "F89: Status says /review-v2 and /review-plan-v2 have no run recorded in this repo, but both stores committed on 2026-11-10 hold runs of each"
+detail = """
+F89:
+Edit (change): Replace the opening `Built and linked, with no run recorded in this repo: ` with `Built and linked: ` and append after the list of entries: `/review-v2 has run on jiggly-exploring-robin and v2-apply, and /review-plan-v2 on v2-apply (see each flow's review-v2.toml); /optimise-v2 has no run recorded.` Checked with `tomlctl review run list --slug jiggly-exploring-robin` (U1, review-v2) and `--slug v2-apply` (U1, U2 review-plan-v2; U3 review-v2).
+Old text: - Built and linked, with no run recorded in this repo: `/review-v2`, `/optimise-v2`, `/review-plan-v2`, the `tomlctl review` group, the lens catalogue and `claude/workflows/review-v2.js`."""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "ae684d1dfa08e02e97decc5ba9816ba60d8c68b1"
+
+[[items]]
+id = 44
+ref = "both-link-scripts-header-says-they-link-the-review-plan-and-implement-entries-they-now-also-link-apply-v2s-command-and-skill"
+title = "Both link scripts' header says they link the review, plan and implement entries; they now also link apply-v2's command and skill"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "scripts/link-v2-review.sh",
+    "scripts/link-v2-review.ps1",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "F90: Both link scripts' header says they link the review, plan and implement entries; they now also link apply-v2's command and skill"
+detail = """
+F90:
+Edit (change): In both script headers change `(review, plan and implement)` to `(review, plan, implement and apply)`, matching the entries list that now carries commands/apply-v2.md and skills/apply-v2-engine.
+Old text: # Links every v2 command, agent, skill and Workflow (review, plan and implement) into the
+Instances: scripts/link-v2-review.ps1"""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "ae684d1dfa08e02e97decc5ba9816ba60d8c68b1"
+
+[[items]]
+id = 45
+ref = "readme-cheat-sheet-line-for-review-schedule-omits-dry-run-which-the-verb-now-takes-and-its-siblings-apply-and-export-v1-show"
+title = "README cheat-sheet line for review schedule omits --dry-run, which the verb now takes and its siblings apply and export-v1 show"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/README.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = "F91: README cheat-sheet line for review schedule omits --dry-run, which the verb now takes and its siblings apply and export-v1 show"
+detail = """
+F91:
+Edit (change): Change the line to `tomlctl review schedule <ids> --slug <s> --flow <apply-slug> --checkpoint <id> [--settle-checkpoint <id>] [--dry-run]   # or --all: mint fix and settle tasks in a v2 flow's tasks.toml and mark each finding scheduled; --dry-run writes nothing and may omit --flow and --checkpoint`. Checked against ReviewScheduleArgs in tomlctl/src/cli/types/review/export.rs (dry_run; flow and checkpoint required_unless_present = dry_run).
+Old text: tomlctl review schedule <ids> --slug <s> --flow <apply-slug> --checkpoint <id> [--settle-checkpoint <id>]   # or --all: mint fix and settle tasks in a v2 flow's tasks.toml and mark each finding scheduled"""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "ae684d1dfa08e02e97decc5ba9816ba60d8c68b1"
+
+[[items]]
+id = 46
+ref = "no-test-pins-that-an-orchestrator-verdict-on-a-panel-routed-finding-is-refused-unless-it-is-a-refute-of-an-evidence-blocked-finding"
+title = "No test pins that an orchestrator verdict on a panel-routed finding is refused unless it is a refute of an evidence-blocked finding"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/tests/review_verdict.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = "F94: No test pins that an orchestrator verdict on a panel-routed finding is refused unless it is a refute of an evidence-blocked finding"
+detail = """
+F94:
+Edit (add): Add a test that seeds a panel-routed finding blocked on evidence and another panel-routed finding with no block, then submits by = orchestrator rows: confirmed on the blocked one and refuted on the unblocked one. Assert both fail with "is routed to the panel" and that no verdict is written. Dropping the settle_refute guard from the route match in apply_one would then fail it.
+Old text: assert!(stderr.contains("both read stdin"), "{stderr}");"""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "ae684d1dfa08e02e97decc5ba9816ba60d8c68b1"
+
+[[items]]
+id = 47
+ref = "no-test-pins-that-answer-file-is-refused-on-a-decision-blocked-finding-that-is-not-open"
+title = "No test pins that --answer-file is refused on a decision-blocked finding that is not open"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/tests/review_triage.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = "F95: No test pins that --answer-file is refused on a decision-blocked finding that is not open"
+detail = """
+F95:
+Edit (add): Add a test that blocks F3 on decision with block_f3, sets its status to refuted (or unverified) with repo.rewrite, runs `--answer-file`, and asserts failure with "--answer-file answers an open finding", the block still in place and the store bytes unchanged.
+Old text: repo.triage("F3", &["--answer-file", &empty]).failure();"""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "ae684d1dfa08e02e97decc5ba9816ba60d8c68b1"
+
+[[items]]
+id = 48
+ref = "no-test-drives-folds-group-merge-where-one-findings-files-bridge-two-existing-groups-and-1-more"
+title = "No test drives fold's group merge, where one finding's files bridge two existing groups (and 1 more)"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/tests/review_schedule.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = """
+F98: No test drives fold's group merge, where one finding's files bridge two existing groups
+F99: depends_on resolution outside the batch is untested: a dep on an earlier call's live task, and a dropped dep reported in dropped_deps"""
+detail = """
+F98:
+Edit (add): Add a test after findings_sharing_a_file_fold_into_one_task: F1 on src/a.rs, F2 on src/b.rs, then a cleanup F3 with file src/a.rs and instances ["src/b.rs"]; schedule F1,F2,F3 and assert one minted task whose fixes link is ["F1","F2","F3"] (in chosen order) and whose files are ["src/a.rs","src/b.rs"]. Fails if the merge drops a group, removes the wrong index, or loses chosen order.
+Old text: fn findings_sharing_a_file_fold_into_one_task() {
+Target file: tomlctl/tests/review_schedule.rs
+
+F99:
+Edit (add): Add a test after depends_on_becomes_needs: schedule F1 alone; then schedule F2 (depends_on ["F1"]) and F3 (depends_on ["F9"], F9 never scheduled) in a second call. Assert F2's row needs = [F1's task id] (the live_task fallback in Compose::plan) and out["dropped_deps"] == [{"finding":"F3","depends_on":"F9"}].
+Old text: fn depends_on_becomes_needs() {"""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "ae684d1dfa08e02e97decc5ba9816ba60d8c68b1"
+
+[[items]]
+id = 49
+ref = "apply-v2-engine-steps-7-8-hand-copy-approvemds-commitapproverecord-procedure-and-drop-its-mandatory-v1-carrier-warning-and-3-more"
+title = "apply-v2-engine steps 7-8 hand-copy approve.md's commit/approve/record procedure and drop its mandatory v1-carrier warning (and 3 more)"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/apply-v2-engine/SKILL.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = """
+F103: apply-v2-engine steps 7-8 hand-copy approve.md's commit/approve/record procedure and drop its mandatory v1-carrier warning
+F107: Re-entry reuses an empty apply-<n> with no settle-<n>, so an evidence-blocked pick in the rerun is refused for lack of --settle-checkpoint
+F132: An /apply-v2 --all rerun after step 6 stops at 'Nothing to schedule': --all skips scheduled findings silently, so Re-entry never sees them
+F133: Step 7 says the engine's clean-tree check refuses the review store, but linked review stores are exempt from that check"""
+detail = """
+F103:
+Fix: Replace the bodies of steps 7 and 8 with a pointer to plan-v2-engine references/approve.md sections 4 to 7 and this skill's deltas only: a dirty registry stops rather than offering options; <store> and <store>.sha256 join the first commit's listing; no gate screen, plan check then plan approve --review skipped-flag --reason 'triage of <store> selected these findings'; the record carries agent=apply-v2. Then print approve.md's v1-carrier warning block verbatim with <flow> filled in, in step 10's close summary, as approve.md section 8 does.
+Failure scenario: /apply-v2 --scope auth opens and approves auth-apply; plan approve writes the registry entry, so bare v1 carriers now pick auth-apply. approve.md requires printing its verbatim warning (v1 carriers cannot run the flow, /review-plan falls back to plan mode and can overwrite brief.md, clear it with flow active remove). The apply skill's copy of the procedure omits it, so a later bare /review-plan or /implement hits the apply flow with no warning given.
+
+F107:
+Fix: In Re-entry's 'A fix milestone already added', add: when a selected finding is blocked on evidence with no proposal and the empty apply-<n> has no settle-<n> beside it, do not reuse it; step 5 adds settle-<m> and apply-<m> with a fresh n, so the settle milestone precedes its fix milestone.
+Failure scenario: Run 1 adds apply-1 alone (no evidence-blocked pick) and schedules nothing, e.g. every pick lands under skipped_stale; step 6 says a rerun with another selection reuses it. Rerun picks F9 blocked on evidence: Re-entry reuses empty apply-1 and skips step 5, no settle-1 exists, so step 6 runs without --settle-checkpoint and review schedule refuses F9 naming the flag; no settle milestone can be added before apply-1.
+
+F132:
+Fix: In step 2, when the arguments are --all, also find the findings already scheduled into the home from the home's links (tomlctl items list .claude/flows/<flow>/tasks.toml --array finding_links --select ref,store,fixes,settles --lines, kept to rows whose store is <store>; for --scope, the home is the flow Re-entry's 'A new flow already opened' finds by its brief). Treat those as the 'Already scheduled' set, so 'Nothing to schedule' stops only when that set is empty too, and Re-entry's 'Findings already scheduled' sends the run on to step 7 or step 9. Say in 'Already scheduled' that --all reports no refused row for them.
+Failure scenario: /apply-v2 --scope S --all opens S-apply and schedules every finding, then step 7 stops on a dirty .claude/active-flow.toml and tells the user to rerun. The rerun with the same arguments previews with review schedule --all, which skips non-open findings without a refused row. No row reads 'status is scheduled, not open', so step 2's 'Nothing to schedule' stops: steps 7 to 9 never run and S-apply stays an unapproved draft holding the scheduled findings. On a reviewed flow interrupted at step 9, the same rerun stops instead of resuming the engine.
+
+F133:
+Edit (change): Replace the clause with a reason that holds: 'and the review store, which sits outside the flow, holds the `scheduled` marks those rows answer, so the two land in one commit. Commit both first.' The engine's pre-flight exempts every store the flow's [[finding_links]] name (run-milestone.md step 1, findings.md 'Linked review stores in the clean-tree and lane checks'), so the stated reason is false once step 6 has linked the store.
+Old text: and the execution engine's clean-tree check refuses the review store, which sits outside the flow. Commit both first."""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "ae684d1dfa08e02e97decc5ba9816ba60d8c68b1"
+
+[[items]]
+id = 50
+ref = "the-schedule-selection-rule-review-applymd-owns-is-hand-copied-into-triage-step-3-and-both-carriers-review-v2mds-copy-already-disagrees-and-1-more"
+title = "The schedule selection rule review-apply.md owns is hand-copied into triage step 3 and both carriers; review-v2.md's copy already disagrees (and 1 more)"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/review-v2-engine/references/triage-and-close.md",
+    "claude/commands/review-v2.md",
+    "claude/commands/optimise-v2.md",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = """
+F104: The schedule selection rule review-apply.md owns is hand-copied into triage step 3 and both carriers; review-v2.md's copy already disagrees
+F126: optimise-v2 says apply-v2 --all takes open perf findings, but schedule --all takes open code findings too, so unseen code fixes get scheduled"""
+detail = """
+F104:
+Edit (change): triage-and-close.md step 3: replace the hand-listed refusal reasons and the apply-all hold-back sentence with a read-only preview the verb computes: run `tomlctl review schedule <picked ids | --all> <store-flag> --dry-run` (no --flow or --checkpoint) and report its `refused` and `held` rows with reasons and its `settle` rows as settle tasks, citing review-apply.md `tomlctl review schedule` as the rule's home. review-v2.md stage 8 Hand-off: delete the sentence 'Advisory, findings still blocked on anything but `evidence`, ... say which picks those are when you name it.' (it calls every evidence pick a settle task; schedule refuses one already carrying a proposal). optimise-v2.md stage 8: delete from '`--all` takes every open perf defect' to the paragraph's end.
+Old text: Before naming them, say which of them the schedule rule will refuse — advisory, a finding still blocked on `decision`, `design`, `measurement` or `alternatives`, an `evidence` block that already carries a `proposal`, `effort = "large"`, a status other than `open`, the plan family — and which `evidence` picks become settle tasks rather than fixes, so the user is not surprised at the preview;
+Target file: claude/skills/review-v2-engine/references/triage-and-close.md
+Instances: claude/commands/review-v2.md, claude/commands/optimise-v2.md
+
+F126:
+Fix: Reword the sentence: `--all` takes every open code and perf defect and cleanup in the store that is not blocked, earlier runs' and other families' included (a /review-v2 run on the same store too), so list them with `review list --status open --kind defect` and `--kind cleanup`, show the user that whole list before naming it, and offer the perf ids explicitly when the user meant only this run's perf findings.
+Failure scenario: Flow X's shared store .claude/flows/X/review-v2.toml holds open code defects a /review-v2 triage left unpicked. /optimise-v2 on X: user says `apply all`; the carrier lists only open perf rows and names `/apply-v2 X --all`. review schedule --all selects every open code or perf defect and cleanup, so the untriaged code defects are minted as fix tasks and run, with no confirmation step in apply-v2."""
+acceptance = ""
+agent = "plan-worker-deep"
+commit = "ae684d1dfa08e02e97decc5ba9816ba60d8c68b1"
+
+[[items]]
+id = 51
+ref = "findingsmd-reconcile-restates-reconciles-task-state-table-and-output-shape-that-review-applymd-owns-and-1-more"
+title = "findings.md Reconcile restates reconcile's task-state table and output shape that review-apply.md owns (and 1 more)"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/implement-v2-engine/references/findings.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = """
+F105: findings.md Reconcile restates reconcile's task-state table and output shape that review-apply.md owns
+F108: The <n> in a reproduce fix task's reason is undefined, and reading it as the check's round makes the two-round cap count re-checks, not fix rounds"""
+detail = """
+F105:
+Edit (change): Replace this sentence and the following 'It prints `{ok, flow, review_store, resolved, reopened, in_flight, retitled}` and writes the store only when something moved.' with one line: 'It moves each finding scheduled into `<slug>` by its task's state, by the table in the `tomlctl` skill's references/review-apply.md, section `tomlctl review reconcile`.' Keep the next sentence about `in_flight` after the stamp, which is the engine's own reading.
+Old text: It moves each finding scheduled into `<slug>` by the state of its task: a `fixes` finding whose task is `done` with a commit is `resolved`; a `settles` finding whose task is committed goes back to `open`; a finding whose task is deferred or gone goes back to `open` with its apply link cleared; anything else stays `scheduled`.
+
+F108:
+Edit (change): Replace the bullet with: "- `reason` opens `reproduce <id> round <n>: `, then the finding and the verifier's citation, where `<n>` is one more than the highest `<n>` the count under **Two rounds at most** prints, or 1 when it prints none: the fix rounds spent, never the check's `round`, which also rises on a relaunch and after a gate fix round. That prefix is how a later invocation counts the rounds already spent."
+Old text: - `reason` opens `reproduce <id> round <n>: `, then the finding and the verifier's citation. That prefix is how a later invocation counts the rounds already spent."""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "ae684d1dfa08e02e97decc5ba9816ba60d8c68b1"
+
+[[items]]
+id = 52
+ref = "measurementmds-native-apply-row-restates-the-stats-apply-output-shape-reviewmd-owns-and-reviewmd-restates-measurements-misclassification-reading"
+title = "measurement.md's Native apply row restates the stats --apply output shape review.md owns, and review.md restates measurement's misclassification reading"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/review-v2-engine/references/measurement.md",
+    "claude/skills/tomlctl/references/review.md",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "F106: measurement.md's Native apply row restates the stats --apply output shape review.md owns, and review.md restates measurement's misclassification reading"
+detail = """
+F106:
+Edit (change): measurement.md: cut the Native apply outcomes row's third cell to one line like its neighbours, 'Natively applied findings, reproductions, blocked rates and settle outcomes per lens and kind; fields in the tomlctl skill's references/review.md, `stats` `apply`', dropping the per-field gloss and the `blocked`/`settle` object descriptions. review.md, stats `apply` bullet: delete the closing sentence 'A high `mechanical` count or `verifier_unblock_rate` reads as findings blocked that could have been fixed as written.', which measurement.md's misclassification paragraph owns.
+Old text: Findings applied through an apply flow, per lens and kind: `scheduled` (held by a live task), `resolved` (resolved with its apply link kept), `reopened` (`open` with a `reopen_reason` opening `apply: `); and reproductions by verdict (`gone`, `reproduces`, `unsettled`), every row and each finding's last row.
+Target file: claude/skills/review-v2-engine/references/measurement.md
+Instances: claude/skills/tomlctl/references/review.md"""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "ae684d1dfa08e02e97decc5ba9816ba60d8c68b1"
+
+[[items]]
+id = 53
+ref = "to_toml-re-derives-storeholds_v2_keys-inline-and-the-change-had-to-add-finding_links-to-both-copies"
+title = "to_toml re-derives Store::holds_v2_keys inline, and the change had to add finding_links to both copies"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/tasks/remove.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "F124: to_toml re-derives Store::holds_v2_keys inline, and the change had to add finding_links to both copies"
+detail = """
+F124:
+Edit (change): Make Store::holds_v2_keys count only the entries to_toml writes: specs and changes with a non-empty ref, milestones with a non-empty id, and non-empty finding_links. Then replace to_toml's local `holds_v2_keys` expression with `store.holds_v2_keys()`, as review/store.rs to_toml already calls `store.holds_v2_rows()`.
+Old text: let holds_v2_keys = *audit
+        || *id_high_water > 0
+        || !specs.is_empty()
+        || !milestones.is_empty()
+        || !changes.is_empty()
+        || !finding_links.is_empty();
+Instances: tomlctl/src/tasks/remove.rs"""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "ae684d1dfa08e02e97decc5ba9816ba60d8c68b1"
+
+[[items]]
+id = 54
+ref = "the-agent-wave-fallback-verifier-prompt-stated-as-the-workflows-lacks-the-blocked-claim-and-unblock-instruction-review-v2js-now-sends"
+title = "The Agent-wave fallback verifier prompt, stated as the Workflow's, lacks the blocked-claim and unblock instruction review-v2.js now sends"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/review-v2-engine/references/agent-waves.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = "F127: The Agent-wave fallback verifier prompt, stated as the Workflow's, lacks the blocked-claim and unblock instruction review-v2.js now sends"
+detail = """
+F127:
+Edit (change): Append to the instruction line, after `using `--by verifier`.`: `A finding with `blocked_on` claims its fix cannot be written; refute that claim too by trying to write the fix. When you can, record a confirmed or plausible verdict that unblocks it: `--unblocks --fix-sketch-file <run dir>/payloads/<finding>.sketch.md` on a single verdict, or `"unblocks": true` with a `"fix_sketch"` on its batch line. Edit no code to do it.` In the Panel seat bullet, add: replace that unblock sentence with `A panel seat cannot unblock: when you could write the fix, say so in the rationale.`
+Old text: Fetch each finding with `tomlctl review show <ids, comma-separated> --for verifier <store flag>`, verify it refute-first, and record each verdict with `tomlctl review verdict` using `--by verifier`. Return the verdict-return object."""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "ae684d1dfa08e02e97decc5ba9816ba60d8c68b1"
+
+[[items]]
+id = 55
+ref = "re-entry-on-an-unstamped-apply-milestone-reruns-the-gate-from-step-7-skipping-the-reproduce-check-the-settle-drain-and-the-findings-reconcile"
+title = "Re-entry on an unstamped apply milestone reruns the gate from step 7, skipping the reproduce check, the settle drain and the findings reconcile"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/implement-v2-engine/references/drain.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = "F131: Re-entry on an unstamped apply milestone reruns the gate from step 7, skipping the reproduce check, the settle drain and the findings reconcile"
+detail = """
+F131:
+Fix: In drain.md 'Stamping on re-entry', and the matching 'Unstamped milestones' sentence in SKILL.md Re-entry, send a milestone holding an apply row back through step 6's tail instead of straight to step 7: findings.md 'Reproduce check' when a row fixes a finding, then 'Settle drain' when a row settles one, then the gate. On the stamp-from-HEAD branch, run findings.md 'Reconcile' between the stamp and the flow-store commit. Re-running the settle drain is safe: it already skips a finding an earlier pass recorded (findings.md, the paragraph after its listing).
+Failure scenario: A settle milestone's rows are all done and the session ends at the settle drain's AskUserQuestion, before any review settle call. The next invocation finds the milestone unstamped and, by SKILL.md Re-entry and this paragraph, reruns the gate from step 7: no gate, so it commits, and Reconcile reopens each settles finding with no recorded proposal. Accepted proposals never reach apply-<n> and the user is never asked. A fix milestone ended before its reproduce launch fails the gate on reproduce-status with no reproduction, spending a fix round."""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "ae684d1dfa08e02e97decc5ba9816ba60d8c68b1"
+
+[[items]]
+id = 56
+ref = "align-the-engine-skillmds-unstamped-milestones-sentence-with-drainmds-apply-milestone-re-entry-routing"
+title = "Align the engine SKILL.md's Unstamped milestones sentence with drain.md's apply-milestone re-entry routing"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/implement-v2-engine/SKILL.md"]
+needs = [
+    27,
+    55,
+]
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "ae684d1dfa08e02e97decc5ba9816ba60d8c68b1"
