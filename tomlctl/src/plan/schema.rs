@@ -269,6 +269,9 @@ pub(crate) struct Run {
     /// The task store's digest by section when an `implement:` run started,
     /// which `plan emit lane-check` compares. Omitted from the TOML while empty.
     pub(crate) store_digest: BTreeMap<String, String>,
+    /// When `store_digest` was taken, if before `started`; the lane check's
+    /// window opens here instead. Omitted from the TOML while `None`.
+    pub(crate) digest_at: Option<Datetime>,
 }
 
 /// Where a `[[run]]` row stands, derived from its fields and never stored.
@@ -723,6 +726,13 @@ fn run_from_toml(table: &Table, context: &str) -> Result<Run> {
                 .collect::<Result<_>>()?,
             Some(_) => return Err(anyhow!("{context}: `store_digest` is not a table")),
         },
+        digest_at: match table.get("digest_at") {
+            None => None,
+            Some(raw) => Some(
+                as_datetime(raw)
+                    .ok_or_else(|| anyhow!("{context}: `digest_at` is not a datetime: `{raw}`"))?,
+            ),
+        },
     })
 }
 
@@ -740,6 +750,7 @@ fn run_to_toml(run: &Run) -> TomlValue {
         reason,
         tasks,
         store_digest,
+        digest_at,
     } = run;
     let mut table = Table::new();
     table.insert("step".to_string(), TomlValue::String(step.clone()));
@@ -798,6 +809,9 @@ fn run_to_toml(run: &Run) -> TomlValue {
                     .collect(),
             ),
         );
+    }
+    if let Some(at) = digest_at {
+        table.insert("digest_at".to_string(), TomlValue::Datetime(*at));
     }
     TomlValue::Table(table)
 }
@@ -975,6 +989,7 @@ pub(crate) mod tests {
                         ("rows".to_string(), "0123456789abcdef".to_string()),
                         ("specs".to_string(), "fedcba9876543210".to_string()),
                     ]),
+                    digest_at: Some(at("2026-11-05T11:59:58Z")),
                 },
                 Run {
                     step: "review".to_string(),
@@ -989,6 +1004,7 @@ pub(crate) mod tests {
                     reason: String::new(),
                     tasks: Vec::new(),
                     store_digest: BTreeMap::new(),
+                    digest_at: None,
                 },
             ],
             handovers: vec![Handover {
@@ -1249,7 +1265,14 @@ pub(crate) mod tests {
     #[test]
     fn a_run_omits_its_optional_keys_while_empty() {
         let doc = to_toml(&fixture());
-        for key in ["workflow", "args_hash", "session", "tasks", "store_digest"] {
+        for key in [
+            "workflow",
+            "args_hash",
+            "session",
+            "tasks",
+            "store_digest",
+            "digest_at",
+        ] {
             assert!(doc["run"][0].get(key).is_some(), "{key}: {doc}");
             assert!(doc["run"][1].get(key).is_none(), "{key}: {doc}");
         }

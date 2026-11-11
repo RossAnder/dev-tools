@@ -623,8 +623,37 @@ pub(super) fn run_start(args: PlanRunStartArgs) -> Result<()> {
         }
     }
     let started = crate::time::now_toml_datetime()?;
-    let store_digest =
-        super::lane::run_store_digest(&args.target.slug, &args.step, &tasks, &started);
+    let (store_digest, digest_at) = match (&args.store_digest, &args.digest_at) {
+        (Some(token), Some(at)) => {
+            if !args.step.starts_with("implement:") {
+                return Err(refusal(format!(
+                    "`--store-digest` is taken only on an `implement:<id>` step, not `{}`",
+                    args.step
+                )));
+            }
+            let digest = super::lane::decode_digest(token)?;
+            let not_a_stamp = || {
+                refusal(format!(
+                    "`--digest-at {at}` is not an RFC 3339 timestamp; pass the `digest_at` \
+                     `plan emit launch-args` printed"
+                ))
+            };
+            let instant: jiff::Timestamp = at.parse().map_err(|_| not_a_stamp())?;
+            let now: jiff::Timestamp = started.to_string().parse().map_err(|_| not_a_stamp())?;
+            if instant > now {
+                return Err(refusal(format!(
+                    "`--digest-at {at}` is later than now ({started}): the digest is taken \
+                     before the launch"
+                )));
+            }
+            let at: toml::value::Datetime = at.parse().map_err(|_| not_a_stamp())?;
+            (digest, Some(at))
+        }
+        _ => (
+            super::lane::run_store_digest(&args.target.slug, &args.step, &tasks, &started),
+            None,
+        ),
+    };
     mutate_plan(&args.target.slug, &args.integrity, |plan| {
         plan.runs.push(Run {
             step: args.step.clone(),
@@ -639,6 +668,7 @@ pub(super) fn run_start(args: PlanRunStartArgs) -> Result<()> {
             reason: String::new(),
             tasks: tasks.clone(),
             store_digest: store_digest.clone(),
+            digest_at,
         });
         Ok(())
     })?;
@@ -733,6 +763,7 @@ pub(super) fn run_skip(args: PlanRunSkipArgs) -> Result<()> {
             reason: String::new(),
             tasks: Vec::new(),
             store_digest: Default::default(),
+            digest_at: None,
         });
         Ok(())
     })?;

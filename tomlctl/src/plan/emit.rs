@@ -98,11 +98,17 @@ fn launch_args(args: PlanEmitLaunchArgs) -> Result<()> {
             "`--max-compile-parallel {cap}` must be from 1 to {MAX_PARALLEL}"
         )));
     }
+    // Stamped before the read, so a trail row written after the read always
+    // falls inside the lane check's window.
+    let digest_at = crate::time::now_toml_datetime()?;
     let tasks = load_milestone_store(&target.slug, &milestone, integrity.verify_integrity)?;
     let process_root = repo_or_cwd_root()?;
     let root = git(&process_root, &["rev-parse", "--show-toplevel"])?;
     let head = git(&process_root, &["rev-parse", "--verify", "HEAD^{commit}"])?;
     let launch = Launch::build(&tasks, &milestone, &head)?;
+    let ids: Vec<u32> = launch.tasks.iter().map(|task| task.id).collect();
+    let store_digest =
+        super::lane::encode_digest(&super::lane::store_digest(&tasks, &ids, &digest_at));
 
     let dispatched: Vec<JsonValue> = launch
         .tasks
@@ -148,6 +154,8 @@ fn launch_args(args: PlanEmitLaunchArgs) -> Result<()> {
     print_json_line(&json!({
         "args": args,
         "args_sha256": args_sha256,
+        "store_digest": store_digest,
+        "digest_at": digest_at.to_string(),
         "after_checks": after_checks,
         "dropped": dropped,
     }))

@@ -102,12 +102,14 @@ The `implement-v2-milestone` Workflow's input for one milestone, with the rows i
 | `--max-parallel` | 1 to 8 | The workers running at once. | `4` |
 | `--max-compile-parallel` | 1 to 8 | Of those, the running tasks whose `files` hold a `.rs` path or a `Cargo.toml`. | absent: `--max-parallel` alone caps them |
 
-Prints `{args, args_sha256, after_checks, dropped}`.
+Prints `{args, args_sha256, store_digest, digest_at, after_checks, dropped}`.
 
 | Key | Holds |
 |---|---|
 | `args` | The Workflow's input: `slug`, `milestone`, `root`, `max_parallel`, `max_compile_parallel` when given, and `tasks[]` of `id`, `executor`, `needs`, `after`, `files`. |
 | `args_sha256` | The SHA-256 of `args` as compact JSON, `max_compile_parallel` included, for `plan run start --args-hash`. |
+| `store_digest` | The task store's digest for the tasks in `args`, as one token, `<section>:<hex>` per section joined by commas, for `plan run start --store-digest`. |
+| `digest_at` | When the digest was taken, an RFC 3339 timestamp to the second, for `plan run start --digest-at`. |
 | `after_checks` | One row per `after:<m>` premise whose task `m` is dispatched in this launch: `task`, `premise`, `after`, `check`. The task stays in `args` with `m` in its `after`. |
 | `dropped` | Each row left out, with `reason`: `not-pending`, `withheld:<task>:<premise>:<verdict>`, `needs-withheld:<task>`, `executor:<value>`, `no-files` or `need-not-done:<task>:<status>`. |
 
@@ -176,12 +178,18 @@ Prints `{clean, run_id, out_of_lane, store_writes, digest}`. A clean run prints
 | `clean` | `true` only when `out_of_lane` and `store_writes` are empty and `digest` is `matched`. |
 | `run_id` | The run's id, for the report. |
 | `out_of_lane` | `{path, rows}` per uncommitted path, as `plan drift --uncommitted` lists them, that is in no lane: not in the `files` of a row the run dispatched or of a row a worker started (`agent` `plan-worker-lite` or `plan-worker-deep`, empty `commit`), not `.claude/backlog.toml` or a review store a `[[finding_links]]` entry names, nor either's `.sha256`. `rows` are the ids of the rows whose `files` hold it, empty when none does. Paths under `.claude/flows/<slug>/` and `docs/flows/<slug>/` are never listed. |
-| `store_writes` | `{source: "trail", ref, task, field, old, new, actor, at}` per `[[changes]]` row written from the run's `started` to its `finished`, or to now while it is open, where `task` is the id of the row carrying `ref`, `null` for a milestone or a removed row. Then `{source: "digest", section}` per section of the store whose digest moved since the run started: `rows`, `specs`, `milestones` (with the checkpoints), `changes` (the rows written before the run) or `rest`. |
+| `store_writes` | `{source: "trail", ref, task, field, old, new, actor, at}` per `[[changes]]` row written in the run's window, where `task` is the id of the row carrying `ref`, `null` for a milestone or a removed row. Then `{source: "digest", section}` per section of the store whose digest moved since it was taken: `rows`, `specs`, `milestones` (with the checkpoints), `changes` (the rows written before the window) or `rest`. |
 | `digest` | `matched`, `changed`, or `unrecorded` for a run whose `plan run start` took no digest, which leaves only the trail to answer. |
 
-`plan run start` on an `implement:<id>` step stores the digest on the run as `store_digest`, one
-16-hex SHA-256 prefix per section, taken over the task store with `last_updated` and every
-dispatched row's `status` and `agent` left out. A trail row names its field, its old value and its
+The window opens at the run's `digest_at`, or at its `started` when it has none, and closes at its
+`finished`, or now while it is open.
+
+The run's `store_digest` is one 16-hex SHA-256 prefix per section, taken over the task store with
+`last_updated` and every dispatched row's `status` and `agent` left out. `launch-args` takes it
+before the launch and `plan run start --store-digest` stores it with its `digest_at`, so a write
+landing after the Workflow starts and before `plan run start` is still reported; a run started
+without the flag carries the digest `plan run start` took, from its `started`. A trail row names
+its field, its old value and its
 new one; a `digest` entry alone means a write no audited verb made, found by comparing the
 section with the store's last commit. Any store write of the drain other than resetting a
 dispatched row's `status` moves the digest, so the check runs before the replan.

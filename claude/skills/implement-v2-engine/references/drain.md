@@ -103,7 +103,7 @@ The reset keeps each row's `agent`, so the next pre-flight still counts it as st
 
 ## 5. Store changes during the run
 
-A worker may write only `status` and `agent`, only on its own row. The lane check of step 3 has already compared the store with the digest `plan run start` took at launch, with the dispatched rows' `status` and `agent` left out of it. Read its `store_writes`:
+A worker may write only `status` and `agent`, only on its own row. The lane check of step 3 has already compared the store with the digest `plan emit launch-args` took before the launch, which `plan run start` stored, with the dispatched rows' `status` and `agent` left out of it. Read its `store_writes`:
 
 - `{source: "trail", ref, task, field, old, new, actor, at}` is a `[[changes]]` row written while the run was open. You write none then, and `status` and `agent` leave no trail row, so a worker wrote it. `ref` is `milestone:<id>` for a milestone edit, such as one to the `gates` step 7 runs.
 - `{source: "digest", section}` is a part of the store that moved since the launch: `rows`, `specs`, `milestones`, `changes` (a trail row from before the run, rewritten) or `rest`. A trail entry for the same part names the change; one with no trail entry beside it is a write no audited verb made, so the trail cannot name it. Find it by diffing the store against its last commit, `git diff -- .claude/flows/<slug>/tasks.toml`, and tell it from your own replans of earlier rounds by the rows the run dispatched.

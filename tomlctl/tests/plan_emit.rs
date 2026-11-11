@@ -369,42 +369,55 @@ fn tasks_update(root: &Path, args: &[&str]) {
         .success();
 }
 
-#[test]
-fn lane_check_reports_paths_and_store_writes_outside_the_run() {
-    let (_dir, root) = sandbox();
+/// A committed tree holding a two-row milestone, row 2 in another lane, and an
+/// empty plan store; `None` when there is no git.
+fn lane_fixture(root: &Path) -> Option<std::path::PathBuf> {
     let ignore = root.join(".gitignore");
     let mut ignored = fs::read_to_string(&ignore).unwrap();
     ignored.push_str("\n.claude/.locks/\n");
     fs::write(&ignore, ignored).unwrap();
     if git_available() {
-        git_command(&root)
+        git_command(root)
             .args(["add", ".gitignore"])
             .output()
             .unwrap();
     }
-    if committed(&root).is_none() {
-        return;
-    }
+    committed(root)?;
     let items = vec![
         row(1, "pending", MILESTONE, &[], &["src/one.rs"]),
-        row(2, "pending", MILESTONE, &[], &["src/two.rs"]),
+        row(2, "pending", OTHER, &[], &["src/two.rs"]),
     ];
     let specs = vec![spec(1, "lite", json!([])), spec(2, "lite", json!([]))];
-    seed_tasks(&root, &store(items, specs, json!({})));
+    seed_tasks(root, &store(items, specs, json!({})));
     let flow = root.join(".claude").join("flows").join(TASKS_SLUG);
     fs::write(flow.join("plan.toml"), "schema_version = 2\n").unwrap();
+    Some(flow)
+}
+
+fn run_start(root: &Path, flags: &[&str]) -> assert_cmd::assert::Assert {
+    cli(root)
+        .args(["--error-format", "json"])
+        .args(["plan", "run", "start", "--slug", TASKS_SLUG])
+        .args(["--tasks", "1", "--run-id", "wf_9"])
+        .args(flags)
+        .assert()
+}
+
+#[test]
+fn lane_check_reports_paths_and_store_writes_outside_the_run() {
+    let (_dir, root) = sandbox();
+    let Some(flow) = lane_fixture(&root) else {
+        return;
+    };
 
     let assert = lane_check(&root).failure();
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
     assert_eq!(parse_json_error_envelope(&stderr)["kind"], "not_found");
 
-    cli(&root)
-        .args(["plan", "run", "start", "--slug", TASKS_SLUG])
-        .args(["--step", "implement:M", "--tasks", "1", "--run-id", "wf_9"])
-        .assert()
-        .success();
+    run_start(&root, &["--step", "implement:M"]).success();
     let plan = fs::read_to_string(flow.join("plan.toml")).unwrap();
     assert!(plan.contains("store_digest"), "{plan}");
+    assert!(!plan.contains("digest_at"), "{plan}");
 
     assert_eq!(
         stdout_json(&lane_check(&root).success()),
@@ -444,6 +457,164 @@ fn lane_check_reports_paths_and_store_writes_outside_the_run() {
         json!([{ "source": "digest", "section": "rows" }])
     );
     assert_eq!(out["digest"], "changed");
+}
+
+#[test]
+fn launch_args_print_a_digest_run_start_takes() {
+    let (_dir, root) = sandbox();
+    let Some(flow) = lane_fixture(&root) else {
+        return;
+    };
+    let out = stdout_json(&launch_args(&root, &[]).success());
+    let token = out["store_digest"].as_str().expect("a digest token");
+    let sections: Vec<&str> = token
+        .split(',')
+        .map(|pair| pair.split_once(':').expect("section:hex").0)
+        .collect();
+    assert_eq!(
+        sections,
+        ["changes", "milestones", "rest", "rows", "specs"],
+        "{out}"
+    );
+    let at = out["digest_at"].as_str().expect("a timestamp");
+    assert!(at.ends_with('Z'), "{out}");
+    assert!(
+        out["args"].get("store_digest").is_none(),
+        "outside the args"
+    );
+
+    run_start(
+        &root,
+        &[
+            "--step",
+            "implement:M",
+            "--store-digest",
+            token,
+            "--digest-at",
+            at,
+        ],
+    )
+    .success();
+    let plan = fs::read_to_string(flow.join("plan.toml")).unwrap();
+    assert!(plan.contains(&format!("digest_at = {at}")), "{plan}");
+    assert_eq!(
+        stdout_json(&lane_check(&root).success())["digest"],
+        "matched"
+    );
+}
+
+#[test]
+fn a_store_write_before_run_start_is_reported_against_the_launch_digest() {
+    let (_dir, root) = sandbox();
+    if lane_fixture(&root).is_none() {
+        return;
+    }
+    let out = stdout_json(&launch_args(&root, &[]).success());
+    let token = out["store_digest"].as_str().unwrap().to_string();
+    let at = out["digest_at"].as_str().unwrap().to_string();
+
+    tasks_update(&root, &["2", "--status", "done"]);
+    run_start(
+        &root,
+        &[
+            "--step",
+            "implement:M",
+            "--store-digest",
+            &token,
+            "--digest-at",
+            &at,
+        ],
+    )
+    .success();
+
+    let out = stdout_json(&lane_check(&root).success());
+    assert_eq!(out["clean"], false, "{out}");
+    assert_eq!(out["digest"], "changed");
+    assert_eq!(
+        out["store_writes"],
+        json!([{ "source": "digest", "section": "rows" }])
+    );
+}
+
+#[test]
+fn a_store_write_before_a_digest_run_start_takes_itself_is_absorbed() {
+    let (_dir, root) = sandbox();
+    if lane_fixture(&root).is_none() {
+        return;
+    }
+    tasks_update(&root, &["2", "--status", "done"]);
+    run_start(&root, &["--step", "implement:M"]).success();
+    assert_eq!(
+        stdout_json(&lane_check(&root).success())["digest"],
+        "matched"
+    );
+}
+
+#[test]
+fn run_start_refuses_a_malformed_launch_digest() {
+    let (_dir, root) = sandbox();
+    if lane_fixture(&root).is_none() {
+        return;
+    }
+    let out = stdout_json(&launch_args(&root, &[]).success());
+    let token = out["store_digest"].as_str().unwrap().to_string();
+    let at = out["digest_at"].as_str().unwrap().to_string();
+    let short = token.replacen(',', ";", 1);
+    let cases: [(&[&str], &str); 5] = [
+        (
+            &[
+                "--step",
+                "implement:M",
+                "--store-digest",
+                &short,
+                "--digest-at",
+                &at,
+            ],
+            "--store-digest",
+        ),
+        (
+            &[
+                "--step",
+                "implement:M",
+                "--store-digest",
+                &token,
+                "--digest-at",
+                "yesterday",
+            ],
+            "--digest-at",
+        ),
+        (
+            &[
+                "--step",
+                "implement:M",
+                "--store-digest",
+                &token,
+                "--digest-at",
+                "2999-01-01T00:00:00Z",
+            ],
+            "later than now",
+        ),
+        (
+            &[
+                "--step",
+                "review",
+                "--store-digest",
+                &token,
+                "--digest-at",
+                &at,
+            ],
+            "implement:",
+        ),
+        (
+            &["--step", "implement:M", "--store-digest", &token],
+            "--digest-at",
+        ),
+    ];
+    for (flags, expected) in cases {
+        let assert = run_start(&root, flags).failure();
+        let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+        assert!(stderr.contains(expected), "{flags:?}: {stderr}");
+    }
 }
 
 const SUITE: &str = "cargo nextest run --manifest-path x/Cargo.toml";

@@ -253,6 +253,20 @@ pub(crate) struct PlanRunStartArgs {
         help = "The task ids the launch dispatched, stored on the run row"
     )]
     pub(crate) tasks: Vec<u32>,
+    #[arg(
+        long = "store-digest",
+        value_name = "DIGEST",
+        requires = "digest_at",
+        help = "The `store_digest` plan emit launch-args printed, stored on an implement: run in place of one taken now"
+    )]
+    pub(crate) store_digest: Option<String>,
+    #[arg(
+        long = "digest-at",
+        value_name = "TIMESTAMP",
+        requires = "store_digest",
+        help = "The `digest_at` plan emit launch-args printed beside `--store-digest`; the lane check's window opens there"
+    )]
+    pub(crate) digest_at: Option<String>,
     #[command(flatten)]
     pub(crate) integrity: WriteIntegrityArgs,
 }

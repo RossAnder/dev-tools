@@ -155,7 +155,7 @@ tomlctl plan emit launch-args --slug <slug> --milestone <id> --max-parallel <n> 
 
 `<round>` counts the launches of this milestone in the session, starting at 1, so a relaunch never overwrites the launch output or args a drain still needs. `--max-parallel` is an integer from 1 to 8 and defaults to 4, which suits a typical milestone; keep it. When the milestone's tasks are mostly `deep` or share one crate, where parallel compile checks contend on the build lock, bound those with `--max-compile-parallel` instead, an integer from 1 to 8: it caps only the running tasks whose `files` hold a `.rs` path or a `Cargo.toml`, within `--max-parallel` overall, so a row that compiles nothing still starts beside them. Without it, `--max-parallel` alone caps them.
 
-It prints `{args, args_sha256, after_checks, dropped}` and writes nothing. `args` is the object the Workflow takes, built from the milestone's membership rather than the frontier: every `pending` member that survives the drops below, with `executor` from its spec, `needs` narrowed to ids inside the set, `after` naming the tasks its released `after:` premises wait on, and `files` from its row. `args_sha256` is the SHA-256 of `args` as compact JSON, `max_compile_parallel` included, the digest `plan run start` records. Never edit `args` by hand: anything wrong in `args` is fixed in the store, or in the flags, and emitted again.
+It prints `{args, args_sha256, store_digest, digest_at, after_checks, dropped}` and writes nothing. `args` is the object the Workflow takes, built from the milestone's membership rather than the frontier: every `pending` member that survives the drops below, with `executor` from its spec, `needs` narrowed to ids inside the set, `after` naming the tasks its released `after:` premises wait on, and `files` from its row. `args_sha256` is the SHA-256 of `args` as compact JSON, `max_compile_parallel` included, the digest `plan run start` records. `store_digest` is the task store's digest for the tasks in `args`, taken before the launch, and `digest_at` when it was taken; both go to `plan run start` unchanged. Never edit `args` by hand: anything wrong in `args` is fixed in the store, or in the flags, and emitted again.
 
 The call fails, naming `plan probes --emit --premises --milestone <id>`, when a premise step 3 should have checked carries no verdict recorded at the current `HEAD`: a skipped or stale premise run. Run step 3 and emit again.
 
@@ -214,13 +214,13 @@ Workflow({name: "implement-v2-milestone", args: <the args object written above>}
 A launch result carrying `error` stops the engine: report it, and do not fall back to the Agent tool, which this engine never uses for workers. Otherwise, in the same turn:
 
 1. Keep the path on the `Transcript dir:` line of the launch result: write it with the Write tool to `<scratch>/implement-<id>-<round>-transcripts.txt`, beside the args. The drain's audit of what the workers ran reads that directory, and nothing else reports it: the Workflow's index does not carry it.
-2. Record the launch with the emitted `args_sha256`, the result's run id and the ids of `args.tasks`, comma-separated:
+2. Record the launch with the emitted `args_sha256`, `store_digest` and `digest_at`, read from `<scratch>/implement-<id>-<round>-launch.json`, the result's run id and the ids of `args.tasks`, comma-separated:
 
 ```bash
-tomlctl plan run start --slug <slug> --step implement:<id> --workflow implement-v2-milestone --args-hash <args_sha256> --tasks <ids> --run-id <runId> --session "$CLAUDE_CODE_SESSION_ID"
+tomlctl plan run start --slug <slug> --step implement:<id> --workflow implement-v2-milestone --args-hash <args_sha256> --tasks <ids> --store-digest <store_digest> --digest-at <digest_at> --run-id <runId> --session "$CLAUDE_CODE_SESSION_ID"
 ```
 
-The same call stores the task store's digest on the run, which the drain's lane check ([drain.md](drain.md), steps 3 and 5) compares to find a store write no worker may make. `--tasks` is what tells that check which rows the run dispatched, so it is never left off. Then end the turn.
+The same call stores the emitted digest on the run, which the drain's lane check ([drain.md](drain.md), steps 3 and 5) compares to find a store write no worker may make; its window opens at `digest_at`, so a write landing between the emit and this call is caught too. `--tasks` is what tells that check which rows the run dispatched, so it is never left off, and it names the same ids as `args.tasks`, the set the digest was taken for. Then end the turn.
 
 Never launch with `resumeFromRunId`. Workers write their own task status, so a journal hit would replay a return the store has since moved past; every launch, relaunches included, is a fresh run built from fresh args.
 

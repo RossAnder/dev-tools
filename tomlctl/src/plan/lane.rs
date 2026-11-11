@@ -5,9 +5,12 @@
 //! was licensed to touch.
 //!
 //! The store side reads two sources. The `[[changes]]` trail names each field
-//! an audited verb wrote after the run started. The run's `store_digest`, taken
-//! by `plan run start`, catches a write the trail cannot show, section by
-//! section, with every dispatched row's `status` and `agent` left out of it.
+//! an audited verb wrote inside the run's window. The run's `store_digest`
+//! catches a write the trail cannot show, section by section, with every
+//! dispatched row's `status` and `agent` left out of it. `plan emit
+//! launch-args` takes the digest before the Workflow starts and prints when,
+//! as `digest_at`, which opens the window; a run whose digest `plan run start`
+//! took itself has no `digest_at`, and its window opens at `started`.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -123,6 +126,73 @@ pub(crate) fn store_digest(
         .collect()
 }
 
+/// `store_digest` as one shell token, `<section>:<hex>` pairs joined by commas
+/// in section order, the form `plan run start --store-digest` reads back.
+pub(super) fn encode_digest(digest: &BTreeMap<String, String>) -> String {
+    digest
+        .iter()
+        .map(|(section, hex)| format!("{section}:{hex}"))
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+/// Reads an [`encode_digest`] token, refusing any that does not name every
+/// section exactly once with a lowercase hex digest of the stored length.
+pub(super) fn decode_digest(token: &str) -> Result<BTreeMap<String, String>> {
+    let expected: BTreeSet<&str> = SECTIONS
+        .iter()
+        .map(|(name, _)| *name)
+        .chain([REST])
+        .collect();
+    let refuse = |why: String| {
+        tagged_err(
+            ErrorKind::Validation,
+            None,
+            format!(
+                "`--store-digest {token}`: {why}; pass the `store_digest` `plan emit launch-args` printed"
+            ),
+        )
+    };
+    let mut digest = BTreeMap::new();
+    for pair in token.split(',') {
+        let Some((section, hex)) = pair.split_once(':') else {
+            return Err(refuse(format!("`{pair}` is not `<section>:<hex>`")));
+        };
+        if !expected.contains(section) {
+            return Err(refuse(format!("`{section}` is not a digest section")));
+        }
+        let is_hex = hex.len() == DIGEST_HEX_LEN
+            && hex
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+        if !is_hex {
+            return Err(refuse(format!(
+                "`{section}` is not {DIGEST_HEX_LEN} lowercase hex digits"
+            )));
+        }
+        if digest
+            .insert(section.to_string(), hex.to_string())
+            .is_some()
+        {
+            return Err(refuse(format!("`{section}` is named twice")));
+        }
+    }
+    if digest.len() != expected.len() {
+        let missing: Vec<&str> = expected
+            .iter()
+            .filter(|section| !digest.contains_key(**section))
+            .copied()
+            .collect();
+        return Err(refuse(format!("missing {}", missing.join(", "))));
+    }
+    Ok(digest)
+}
+
+/// Where the run's window opens: when its digest was taken.
+fn window_start(run: &Run) -> &Datetime {
+    run.digest_at.as_ref().unwrap_or(&run.started)
+}
+
 fn instant(at: &Datetime) -> Option<Timestamp> {
     at.to_string().parse().ok()
 }
@@ -137,7 +207,7 @@ fn written_since(at: Option<&Datetime>, since: Option<Timestamp>) -> bool {
 }
 
 fn written_within(at: Option<&Datetime>, run: &Run) -> bool {
-    let since = instant(&run.started);
+    let since = instant(window_start(run));
     if !written_since(at, since) {
         return false;
     }
@@ -193,7 +263,7 @@ pub(super) fn lane_check(args: PlanEmitLaneCheckArgs) -> Result<()> {
     let digest = if run.store_digest.is_empty() {
         "unrecorded"
     } else {
-        let now = store_digest(&tasks, &run.tasks, &run.started);
+        let now = store_digest(&tasks, &run.tasks, window_start(run));
         let changed: Vec<&String> = run
             .store_digest
             .iter()
@@ -448,6 +518,7 @@ mod tests {
             reason: String::new(),
             tasks: vec![1],
             store_digest: BTreeMap::new(),
+            digest_at: None,
         };
         let fields = |run: &Run| -> Vec<String> {
             trail_writes(&tasks, run)
@@ -458,8 +529,41 @@ mod tests {
         assert_eq!(fields(&run), ["at-start", "during"]);
         assert_eq!(trail_writes(&tasks, &run)[0]["task"], json!(1));
 
+        run.digest_at = Some(at("2026-11-11T11:59:00Z"));
+        assert_eq!(fields(&run), ["before", "at-start", "during"]);
+
+        run.digest_at = None;
         run.finished = None;
         assert_eq!(fields(&run), ["at-start", "during", "after"]);
+    }
+
+    #[test]
+    fn a_digest_token_round_trips() {
+        let digest = store_digest(&store(), &[1], &at(STARTED));
+        let token = encode_digest(&digest);
+        assert!(!token.contains(char::is_whitespace), "{token}");
+        assert_eq!(decode_digest(&token).expect("decodes"), digest);
+    }
+
+    #[test]
+    fn a_malformed_digest_token_is_refused() {
+        let token = encode_digest(&store_digest(&store(), &[1], &at(STARTED)));
+        let dropped = token.split(',').skip(1).collect::<Vec<_>>().join(",");
+        let cases = [
+            ("", "is not `<section>:<hex>`"),
+            (&dropped as &str, "missing changes"),
+            (&format!("{token},rows:0123456789abcdef"), "named twice"),
+            (
+                &format!("{dropped},plans:0123456789abcdef"),
+                "not a digest section",
+            ),
+            (&token.replacen(':', ":X", 1), "lowercase hex"),
+            (&token.to_uppercase(), "not a digest section"),
+        ];
+        for (input, expected) in cases {
+            let message = decode_digest(input).expect_err(input).to_string();
+            assert!(message.contains(expected), "{input}: {message}");
+        }
     }
 
     #[test]
