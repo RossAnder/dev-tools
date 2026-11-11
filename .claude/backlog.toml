@@ -12295,7 +12295,7 @@ context = "Seen on the v2-harness-tuning run of 2026-11-11 (42 tasks, 5 mileston
 base_sha = "a1f20889ff34c5b5384b2547727d0489e4d76f9e"
 related = ["B-56a8a9ff"]
 promoted = 2026-11-11
-promoted_to = "implement-v2-lookahead"
+promoted_to = "milestone-cadence"
 
 [[backlog]]
 id = "B-df3ffc6a"

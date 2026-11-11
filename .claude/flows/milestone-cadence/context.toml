@@ -1,9 +1,10 @@
 slug = "milestone-cadence"
 plan_path = "docs/flows/milestone-cadence/brief.md"
-status = "draft"
+status = "in-progress"
 created = 2026-11-11
 updated = 2026-11-11
 scope = []
+branch = "main"
 
 [tasks]
 total = 0

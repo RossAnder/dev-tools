@@ -86,6 +86,14 @@ vetoed = false
 option = "A stored policy field"
 because = "nothing reads it after Design, and a new store key needs schema, view and render changes for no reader"
 
+[[approval]]
+commit = "682bf84848bf25859e3f95753f4f91f959cd01d0"
+at = 2026-11-11T15:19:13Z
+brief_sha256 = "23f8d1f8d482ab5773a9a5d4a761113cfa4763b83e879ebde152790bbeedb615"
+by = "user"
+review = "skipped-flag"
+reason = "the user passed --no-review"
+
 [[run]]
 step = "investigate"
 run_id = ""
