@@ -1,15 +1,57 @@
 //! `review catalogue` — the merged lens catalogue's index, vocabulary,
 //! ownership map and validation.
 
+use std::path::PathBuf;
+
 use anyhow::Result;
+use clap::Args;
 use serde_json::{Value as JsonValue, json};
 
 use super::catalogue::{Catalogue, IndexFilter, default_builtin_root, project_layer};
 use super::fields::Family;
-use crate::cli::ReviewCatalogueArgs;
+use crate::cli::ReadIntegrityArgs;
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::repo_or_cwd_root;
 use crate::output::print_json;
+
+#[derive(Args)]
+pub(crate) struct ReviewCatalogueArgs {
+    #[arg(
+        long = "builtin",
+        value_name = "DIR",
+        help = "Built-in catalogue root; defaults to <claude dir>/skills/review-v2-lenses"
+    )]
+    pub(crate) builtin: Option<PathBuf>,
+    #[arg(
+        long = "project",
+        value_name = "DIR",
+        help = "Project catalogue layer; defaults to .claude/review-lenses when present"
+    )]
+    pub(crate) project: Option<PathBuf>,
+    #[arg(long = "family", value_name = "FAMILY", help = "code|perf|plan")]
+    pub(crate) family: Option<String>,
+    #[arg(
+        long = "signals",
+        value_name = "A,B,...",
+        value_delimiter = ',',
+        help = "Mark the entries these signals match"
+    )]
+    pub(crate) signals: Vec<String>,
+    #[arg(long = "vocabulary", help = "Print the signals with their detectors")]
+    pub(crate) vocabulary: bool,
+    #[arg(long = "owners", help = "Print the concern-ownership map")]
+    pub(crate) owners: bool,
+    #[arg(long = "check", help = "Exit 1 on any validation error")]
+    pub(crate) check: bool,
+    #[command(flatten)]
+    pub(crate) integrity: ReadIntegrityArgs,
+}
+
+impl super::Verb for ReviewCatalogueArgs {
+    fn run(self) -> Result<()> {
+        run(self)
+    }
+}
 
 /// Prints the merged index by default, `--vocabulary` the signals with their
 /// detectors, `--owners` the generated ownership map; `--check` prints

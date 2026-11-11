@@ -16,6 +16,7 @@ use std::path::Path;
 use std::process::Command;
 
 use anyhow::Result;
+use clap::Args;
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use jiff::SignedDuration;
 use regex::bytes::Regex;
@@ -26,10 +27,26 @@ use toml::Value as TomlValue;
 use super::catalogue::{SignalKind, run_catalogue};
 use super::invalid;
 use super::store::{self, Run, Signal, Target};
-use crate::cli::{ReadIntegrityArgs, ReviewSurveyArgs};
+use crate::cli::{ReadIntegrityArgs, ReviewStore, WriteIntegrityArgs};
 use crate::io::repo_or_cwd_root;
 use crate::output::print_json_compact;
 use crate::query::compile_user_bytes_regex;
+
+#[derive(Args)]
+pub(crate) struct ReviewSurveyArgs {
+    #[command(flatten)]
+    pub(crate) store: ReviewStore,
+    #[arg(long = "run", value_name = "RUN")]
+    pub(crate) run: String,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+impl super::Verb for ReviewSurveyArgs {
+    fn run(self) -> Result<()> {
+        run(&super::store_target(&self.store)?, self)
+    }
+}
 
 const DETECTOR: &str = "detector";
 const UNKNOWN: &str = "unknown";

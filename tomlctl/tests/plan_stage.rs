@@ -65,6 +65,7 @@ files = ["src/a.rs"]
 
 const REVIEW_STORE_FINISHED: &str = "schema_version = 1\n\n[[runs]]\nid = \"R1\"\n\
                                      command = \"review-plan-v2\"\nfamily = \"plan\"\n\
+                                     depth = \"standard\"\n\
                                      started = \"2026-11-05T12:00:00Z\"\n\
                                      finished = \"2026-11-05T12:30:00Z\"\n";
 
@@ -979,7 +980,7 @@ fn a_recorded_review_skip_is_ready() {
 fn a_finished_review_after_a_skip_is_held_to_its_own_findings() {
     let plan = format!("{PLAN}{SKIPPED_REVIEW}");
     let store = format!(
-        "{REVIEW_STORE_FINISHED}\n[[runs]]\nid = \"R2\"\nfamily = \"plan\"\nrechecks = \"R1\"\n\
+        "{REVIEW_STORE_FINISHED}\n[[runs]]\nid = \"R2\"\nfamily = \"plan\"\ndepth = \"quick\"\nrechecks = \"R1\"\n\
          \n[[findings]]\nid = \"F1\"\nfamily = \"plan\"\nrun = \"R1\"\n\
          status = \"open\"\ntier = \"user\"\nkind = \"defect\"\nseverity = \"minor\"\n\
          target = \"decision:D1.why\"\nsummary = \"s\"\n"

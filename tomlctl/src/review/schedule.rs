@@ -15,6 +15,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 
 use anyhow::Result;
+use clap::Args;
 use serde_json::{Map, Value as JsonValue, json};
 use toml::Value as TomlValue;
 
@@ -27,6 +28,71 @@ use crate::cli::{ReadIntegrityArgs, ReviewStore, WriteIntegrityArgs};
 use crate::io::repo_or_cwd_root;
 use crate::output::print_json_compact;
 use crate::tasks::schema::{Status, TaskRow};
+
+#[derive(Args)]
+pub(crate) struct ReviewScheduleArgs {
+    #[arg(
+        value_name = "ID,...",
+        num_args = 1..,
+        value_delimiter = ',',
+        required_unless_present = "all",
+        conflicts_with = "all",
+        help = "Finding ids, comma- or space-separated"
+    )]
+    pub(crate) ids: Vec<String>,
+    #[command(flatten)]
+    pub(crate) store: ReviewStore,
+    #[arg(
+        long = "all",
+        help = "Every open code or perf defect and cleanup, less blocked findings, test removals and plausible cleanup"
+    )]
+    pub(crate) all: bool,
+    #[arg(
+        long = "flow",
+        value_name = "SLUG",
+        required_unless_present = "dry_run",
+        help = "The v2 flow whose tasks.toml receives the fix tasks"
+    )]
+    pub(crate) flow: Option<String>,
+    #[arg(
+        long = "checkpoint",
+        value_name = "ID",
+        required_unless_present = "dry_run",
+        help = "The checkpoint group every minted task joins"
+    )]
+    pub(crate) checkpoint: Option<String>,
+    #[arg(
+        long = "settle-checkpoint",
+        value_name = "ID",
+        help = "The checkpoint group a settle task joins; without it an evidence-blocked finding is refused"
+    )]
+    pub(crate) settle_checkpoint: Option<String>,
+    #[arg(
+        long = "dry-run",
+        help = "Report what would be scheduled, held and refused, and write nothing. --flow and --checkpoint may be left out before the flow exists; an evidence-blocked finding is then listed under `settle` without --settle-checkpoint"
+    )]
+    pub(crate) dry_run: bool,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+impl super::Verb for ReviewScheduleArgs {
+    fn run(self) -> Result<()> {
+        run(
+            &super::store_target(&self.store)?,
+            &self.store,
+            Request {
+                ids: &self.ids,
+                all: self.all,
+                flow: self.flow.as_deref().unwrap_or_default(),
+                checkpoint: self.checkpoint.as_deref().unwrap_or_default(),
+                settle_checkpoint: self.settle_checkpoint.as_deref(),
+                dry_run: self.dry_run,
+            },
+            &self.integrity,
+        )
+    }
+}
 
 const VERB: &str = "review schedule";
 

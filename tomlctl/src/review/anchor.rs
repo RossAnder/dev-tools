@@ -11,16 +11,43 @@
 use std::path::Path;
 
 use anyhow::Result;
+use clap::Args;
 use serde_json::json;
 
 use super::add::{check_old, edit_target, occurrences, read_normalised};
 use super::fields::{Direction, Kind};
 use super::invalid;
 use super::store::{self, Finding, Target};
-use crate::cli::ReadIntegrityArgs;
+use crate::cli::{ReadIntegrityArgs, ReviewStore};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::repo_or_cwd_root;
 use crate::output::print_json_line;
+
+#[derive(Args)]
+pub(crate) struct ReviewAnchorArgs {
+    #[arg(value_name = "ID", help = "Finding id (F<n>)")]
+    pub(crate) id: String,
+    #[command(flatten)]
+    pub(crate) store: ReviewStore,
+    #[arg(
+        long = "gone",
+        help = "For a `remove` cleanup: exit 0 when `old` occurs nowhere in its edit target file"
+    )]
+    pub(crate) gone: bool,
+    #[command(flatten)]
+    pub(crate) integrity: ReadIntegrityArgs,
+}
+
+impl super::Verb for ReviewAnchorArgs {
+    fn run(self) -> Result<()> {
+        run(
+            &super::store_target(&self.store)?,
+            &self.id,
+            self.gone,
+            &self.integrity,
+        )
+    }
+}
 
 const VERB: &str = "review anchor";
 

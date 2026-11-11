@@ -17,6 +17,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
+use clap::Args;
 use serde_json::{Value as JsonValue, json};
 
 use super::cells::PathSet;
@@ -29,9 +30,81 @@ use super::store::{self, Cell, Finding, Store, Verdict};
 use super::sync::{SYNC_REASON_PREFIX, V1Outcome, ledger_paths, linked_rows};
 use super::tier::Tier;
 use super::verdict::{settle, settle_refute};
-use crate::cli::ReviewStatsArgs;
+use crate::cli::ReadIntegrityArgs;
 use crate::convert::decode_json_text;
 use crate::io::{relativise_under, repo_or_cwd_root};
+
+#[derive(Args)]
+pub(crate) struct ReviewStatsArgs {
+    #[command(flatten)]
+    pub(crate) store: ReviewStatsStore,
+    #[arg(long = "family", value_name = "FAMILY", help = "code|perf|plan")]
+    pub(crate) family: Option<String>,
+    #[arg(
+        long = "by",
+        value_name = "AXIS",
+        help = "lens|probe|run|model; `model` groups audit overturns by the verifying role's model in the run's `models`"
+    )]
+    pub(crate) by: Option<String>,
+    #[arg(
+        long = "plan-outcomes",
+        help = "Per plan run of a flow: tier by disposition, user-veto rate, edit growth, re-check yield and cost"
+    )]
+    pub(crate) plan_outcomes: bool,
+    #[arg(
+        long = "outcomes",
+        help = "Join exported findings to their v1 status through `v2_ref`"
+    )]
+    pub(crate) outcomes: bool,
+    #[arg(
+        long = "apply",
+        help = "Natively applied findings per lens and kind (scheduled, resolved, reopened) and reproductions by verdict, from the store alone"
+    )]
+    pub(crate) apply: bool,
+    #[arg(
+        long = "escapes",
+        help = "Count findings minted where an earlier run's cell sealed `covered`"
+    )]
+    pub(crate) escapes: bool,
+    #[arg(
+        long = "calibration",
+        help = "Exemplars from user dismissals, v1 wontfix reasons and audit overturns"
+    )]
+    pub(crate) calibration: bool,
+    #[arg(
+        long = "exemplars",
+        value_name = "N",
+        requires = "calibration",
+        help = "Exemplars per area"
+    )]
+    pub(crate) exemplars: Option<usize>,
+    #[command(flatten)]
+    pub(crate) integrity: ReadIntegrityArgs,
+}
+
+/// `review stats`'s store choice, which adds `--all`.
+#[derive(Args, Clone)]
+#[command(next_help_heading = "Store")]
+#[group(required = true, multiple = false)]
+pub(crate) struct ReviewStatsStore {
+    #[arg(long = "slug", value_name = "SLUG", help = "Flow whose store is read")]
+    pub(crate) slug: Option<String>,
+    #[arg(
+        long = "scope",
+        value_name = "SCOPE",
+        help = "Flow-less store `.claude/review-v2/<SCOPE>.toml`"
+    )]
+    pub(crate) scope: Option<String>,
+    #[arg(long = "all", help = "Every flow store and every flow-less store")]
+    pub(crate) all: bool,
+}
+
+/// Resolves its own stores, since `--all` spans every one.
+impl super::Verb for ReviewStatsArgs {
+    fn run(self) -> Result<()> {
+        run(self)
+    }
+}
 
 const PROBE_PREFIX: &str = "probe:";
 const UNTAGGED: &str = "untagged";

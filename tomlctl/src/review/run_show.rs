@@ -2,14 +2,31 @@
 //! and audit, read back from the store.
 
 use anyhow::Result;
+use clap::Args;
 use serde_json::{Value as JsonValue, json};
 
 use super::catalogue::meets;
 use super::store::{self, Run, Signal, Target};
-use crate::cli::ReviewRunShowArgs;
+use crate::cli::{ReadIntegrityArgs, ReviewStore};
 use crate::convert::toml_to_json;
 use crate::errors::{ErrorKind, tagged_err};
 use crate::output::{Rows, print_report};
+
+#[derive(Args)]
+pub(crate) struct ReviewRunShowArgs {
+    #[arg(value_name = "RUN")]
+    pub(crate) run: String,
+    #[command(flatten)]
+    pub(crate) store: ReviewStore,
+    #[command(flatten)]
+    pub(crate) integrity: ReadIntegrityArgs,
+}
+
+impl super::Verb for ReviewRunShowArgs {
+    fn run(self) -> Result<()> {
+        show(&super::store_target(&self.store)?, self)
+    }
+}
 
 pub(crate) fn show(target: &Target, args: ReviewRunShowArgs) -> Result<()> {
     let stored = store::load(&target.path, &args.integrity)?;

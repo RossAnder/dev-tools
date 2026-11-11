@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::Result;
+use clap::Args;
 use globset::{GlobBuilder, GlobMatcher};
 use serde_json::{Map, Value as JsonValue, json};
 use toml::Value as TomlValue;
@@ -28,9 +29,60 @@ use super::fields::{
 };
 use super::invalid;
 use super::store::{self, Minted, Run, Store, Target};
-use crate::cli::{ReadIntegrityArgs, ReviewPlanArgs};
+use crate::cli::{ReadIntegrityArgs, ReviewStore, WriteIntegrityArgs};
 use crate::io::{atomic_write, read_ndjson_source, relativise, repo_or_cwd_root};
 use crate::output::{print_json_compact, print_text};
+
+// The proposal-only flags conflict with `--ndjson` instead of requiring
+// `--propose`: clap leaves a `requires` on a member of the required
+// `plan_mode` group unenforced.
+#[derive(Args)]
+#[command(group(clap::ArgGroup::new("plan_mode").required(true).multiple(false).args(["propose", "ndjson"])))]
+pub(crate) struct ReviewPlanArgs {
+    #[command(flatten)]
+    pub(crate) store: ReviewStore,
+    #[arg(long = "run", value_name = "RUN")]
+    pub(crate) run: String,
+    #[arg(long = "propose", help = "Print the default coverage map as NDJSON")]
+    pub(crate) propose: bool,
+    #[arg(
+        long = "ndjson",
+        value_name = "SRC",
+        help = "Cells to append, one JSON object per line: `-` for stdin, otherwise a file path (a leading `@` is accepted; a `.toml` path is a record file)"
+    )]
+    pub(crate) ndjson: Option<String>,
+    #[arg(
+        long = "accept-signals",
+        value_name = "A,B,...",
+        value_delimiter = ',',
+        conflicts_with = "ndjson",
+        help = "Judged signals accepted for the proposal"
+    )]
+    pub(crate) accept_signals: Vec<String>,
+    #[arg(
+        long = "lens",
+        value_name = "+ID|-ID",
+        allow_hyphen_values = true,
+        conflicts_with = "ndjson",
+        help = "Force a lens into (+id) or out of (-id) the proposal (repeatable)"
+    )]
+    pub(crate) lens: Vec<String>,
+    #[arg(
+        long = "out",
+        value_name = "PATH",
+        conflicts_with = "ndjson",
+        help = "Write the proposal to PATH instead of stdout"
+    )]
+    pub(crate) out: Option<PathBuf>,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+impl super::Verb for ReviewPlanArgs {
+    fn run(self) -> Result<()> {
+        plan(&super::store_target(&self.store)?, self)
+    }
+}
 
 const PROPOSED: &str = "proposed";
 /// The summary line's only key; `plan --ndjson` skips a row holding just it.
@@ -39,7 +91,7 @@ const SUMMARY_KEY: &str = "proposal";
 const HOTSPOT_SIGNAL: &str = "churn-hotspot";
 const TASKS_PER_EXECUTOR_CELL: usize = 4;
 
-pub(super) fn read_args(integrity: &crate::cli::WriteIntegrityArgs) -> ReadIntegrityArgs {
+pub(super) fn read_args(integrity: &WriteIntegrityArgs) -> ReadIntegrityArgs {
     ReadIntegrityArgs {
         verify_integrity: integrity.verify_integrity,
         strict_read: true,

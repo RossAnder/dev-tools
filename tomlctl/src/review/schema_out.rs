@@ -9,14 +9,31 @@
 use std::collections::BTreeSet;
 
 use anyhow::Result;
+use clap::Args;
 use serde_json::{Map, Value as JsonValue, json};
 
 use super::fields::{
     self, BlockedOn, FIELDS, FieldSpec, Kind, Need, Origin, PathForm, Record, Route, Severity, Ty,
 };
 use super::invalid;
-use crate::cli::ReviewSchemaArgs;
+use crate::cli::ReadIntegrityArgs;
 use crate::output::print_json;
+
+#[derive(Args)]
+pub(crate) struct ReviewSchemaArgs {
+    #[arg(value_name = "TARGET", help = "finding|cell-return|verdict-return")]
+    pub(crate) target: String,
+    #[arg(long = "kind", value_name = "KIND", help = "defect|cleanup|advisory")]
+    pub(crate) kind: Option<String>,
+    #[command(flatten)]
+    pub(crate) integrity: ReadIntegrityArgs,
+}
+
+impl super::Verb for ReviewSchemaArgs {
+    fn run(self) -> Result<()> {
+        run(self)
+    }
+}
 
 const DIALECT: &str = "https://json-schema.org/draft/2020-12/schema";
 pub(crate) const TARGETS: &[&str] = &["finding", "cell-return", "verdict-return"];

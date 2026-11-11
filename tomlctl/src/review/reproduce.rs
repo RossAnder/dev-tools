@@ -10,15 +10,94 @@
 //! land.
 
 use anyhow::Result;
+use clap::Args;
 use serde_json::{Map, Value as JsonValue, json};
 
 use super::fields::{ReproduceBy, ReproduceVerdict};
 use super::invalid;
 use super::store::{self, REPRODUCTION_CORE, Reproduction, Store, Target};
-use crate::cli::{ReadIntegrityArgs, WriteIntegrityArgs};
+use crate::cli::{ReadIntegrityArgs, ReviewStore, WriteIntegrityArgs};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::read_ndjson_source;
 use crate::output::{print_json_compact, print_json_line};
+
+#[derive(Args)]
+pub(crate) struct ReviewReproduceArgs {
+    #[command(flatten)]
+    pub(crate) store: ReviewStore,
+    #[arg(
+        long = "ndjson",
+        value_name = "SRC",
+        required = true,
+        help = "Reproductions, one JSON object per line (finding, flow, milestone, round, task, verdict, by, citation): `-` for stdin, otherwise a file path (a leading `@` is accepted)"
+    )]
+    pub(crate) ndjson: String,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct ReviewReproduceStatusArgs {
+    #[arg(
+        value_name = "ID,...",
+        required_unless_present = "flow",
+        num_args = 1..,
+        value_delimiter = ',',
+        help = "Finding ids, comma- or space-separated"
+    )]
+    pub(crate) ids: Vec<String>,
+    #[command(flatten)]
+    pub(crate) store: ReviewStore,
+    #[arg(
+        long = "flow",
+        value_name = "SLUG",
+        conflicts_with = "ids",
+        requires = "milestone",
+        help = "Select the findings the flow's rows of --milestone fix, from its [[finding_links]] for this store, in place of ids"
+    )]
+    pub(crate) flow: Option<String>,
+    #[arg(
+        long = "milestone",
+        value_name = "ID",
+        requires = "flow",
+        help = "The checkpoint whose rows' fixed findings --flow selects"
+    )]
+    pub(crate) milestone: Option<String>,
+    #[arg(
+        long = "expect",
+        value_name = "VERDICT",
+        required = true,
+        help = "gone|reproduces|unsettled"
+    )]
+    pub(crate) expect: String,
+    #[command(flatten)]
+    pub(crate) integrity: ReadIntegrityArgs,
+}
+
+impl super::Verb for ReviewReproduceArgs {
+    fn run(self) -> Result<()> {
+        record(
+            &super::store_target(&self.store)?,
+            &self.ndjson,
+            &self.integrity,
+        )
+    }
+}
+
+impl super::Verb for ReviewReproduceStatusArgs {
+    fn run(self) -> Result<()> {
+        let select = match (&self.flow, &self.milestone) {
+            (Some(flow), Some(milestone)) => Select::Milestone { flow, milestone },
+            _ => Select::Ids(&self.ids),
+        };
+        status(
+            &super::store_target(&self.store)?,
+            select,
+            &self.expect,
+            &self.integrity,
+        )
+    }
+}
 
 const RECORD: &str = "review reproduce";
 const STATUS: &str = "review reproduce-status";

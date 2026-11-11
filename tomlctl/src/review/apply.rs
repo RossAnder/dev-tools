@@ -18,6 +18,7 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
+use clap::Args;
 use serde_json::{Value as JsonValue, json};
 use toml::Value as TomlValue;
 
@@ -26,12 +27,44 @@ use super::invalid;
 use super::store::{self, Finding, Store, Target};
 use super::target::{self, RecordTarget};
 use super::tier::{self, Tier};
-use crate::cli::{ReadIntegrityArgs, ReviewApplyArgs, WriteIntegrityArgs};
+use crate::cli::{ReadIntegrityArgs, ReviewStore, WriteIntegrityArgs};
 use crate::convert::{decode_json_text, encode_json_text, toml_to_json};
 use crate::output::print_json_compact;
 use crate::plan::schema::RecordKind;
 use crate::plan::{MilestoneEdit, RecordEdit};
 use crate::tasks::{ReviewEdit, ReviewEditOutcome, Slot};
+
+#[derive(Args)]
+pub(crate) struct ReviewApplyArgs {
+    #[arg(
+        value_name = "ID,...",
+        required = true,
+        num_args = 1..,
+        value_delimiter = ',',
+        help = "Finding ids, comma- or space-separated"
+    )]
+    pub(crate) ids: Vec<String>,
+    #[command(flatten)]
+    pub(crate) store: ReviewStore,
+    #[arg(
+        long = "user-accepted",
+        help = "The user accepted these edits: admits user-tier rows and an approved plan, and records `by = user`"
+    )]
+    pub(crate) user_accepted: bool,
+    #[arg(
+        long = "dry-run",
+        help = "Preview the operation without writing. Emits the envelope with dry_run: true; no file or sidecar touch."
+    )]
+    pub(crate) dry_run: bool,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+impl super::Verb for ReviewApplyArgs {
+    fn run(self) -> Result<()> {
+        run(&super::store_target(&self.store)?, self)
+    }
+}
 
 const VERB: &str = "review apply";
 /// The actor the task and milestone audit rows name.

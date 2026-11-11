@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::Result;
+use clap::Args;
 use globset::{GlobBuilder, GlobMatcher};
 use serde_json::{Map, Value as JsonValue, json};
 
@@ -21,11 +22,91 @@ use super::fields::{
 use super::invalid;
 use super::matching::rule_outs_at;
 use super::store::{self, Cell, Finding, Row, Run, Store, Target, View};
-use crate::cli::{ReviewListArgs, ReviewShowArgs};
+use crate::cli::{ReadIntegrityArgs, ReviewStore};
 use crate::convert::toml_to_json;
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{relativise, repo_or_cwd_root};
 use crate::output::{Rows, print_report};
+
+#[derive(Args)]
+pub(crate) struct ReviewListArgs {
+    #[command(flatten)]
+    pub(crate) store: ReviewStore,
+    #[arg(long = "kind", value_name = "KIND", help = "defect|cleanup|advisory")]
+    pub(crate) kind: Option<String>,
+    #[arg(long = "lens", value_name = "LENS", help = "Lens id or `probe:<slug>`")]
+    pub(crate) lens: Option<String>,
+    #[arg(long = "run", value_name = "RUN")]
+    pub(crate) run: Option<String>,
+    #[arg(long = "cell", value_name = "CELL")]
+    pub(crate) cell: Option<String>,
+    #[arg(
+        long = "status",
+        value_name = "STATUS",
+        help = "unverified|superseded|open|refuted|merged|parked|dismissed|deferred|backlogged|converted|resolved|exported|scheduled (default: every status except superseded)"
+    )]
+    pub(crate) status: Option<String>,
+    #[arg(
+        long = "route",
+        value_name = "ROUTE",
+        help = "verifier|panel|checker|none"
+    )]
+    pub(crate) route: Option<String>,
+    #[arg(
+        long = "blocked-on",
+        value_name = "BLOCK",
+        help = "decision|evidence|measurement|alternatives|design, `any` for every blocked finding, `none` for fixable and advisory ones"
+    )]
+    pub(crate) blocked_on: Option<String>,
+    #[arg(
+        long = "in",
+        value_name = "GLOB",
+        help = "Keep findings whose file matches GLOB"
+    )]
+    pub(crate) in_glob: Option<String>,
+    #[arg(
+        long = "for",
+        value_name = "ROLE",
+        help = "finder|verifier|checker|implementer|orchestrator|audit|backlog|report (default: orchestrator)"
+    )]
+    pub(crate) for_role: Option<String>,
+    #[command(flatten)]
+    pub(crate) integrity: ReadIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct ReviewShowArgs {
+    #[arg(
+        value_name = "ID,...",
+        required = true,
+        num_args = 1..,
+        value_delimiter = ',',
+        help = "Finding (F<n>) or cell (C<n>) ids, comma- or space-separated"
+    )]
+    pub(crate) ids: Vec<String>,
+    #[command(flatten)]
+    pub(crate) store: ReviewStore,
+    #[arg(
+        long = "for",
+        value_name = "ROLE",
+        help = "finder|verifier|checker|implementer|orchestrator|audit|backlog|report"
+    )]
+    pub(crate) for_role: String,
+    #[command(flatten)]
+    pub(crate) integrity: ReadIntegrityArgs,
+}
+
+impl super::Verb for ReviewListArgs {
+    fn run(self) -> Result<()> {
+        list(&super::store_target(&self.store)?, self)
+    }
+}
+
+impl super::Verb for ReviewShowArgs {
+    fn run(self) -> Result<()> {
+        show(&super::store_target(&self.store)?, self)
+    }
+}
 
 /// What `review list --blocked-on` accepts: each block, `any` and `none`.
 pub(crate) const BLOCKED_ON_FILTERS: &[&str] = &[

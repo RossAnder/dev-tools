@@ -555,7 +555,10 @@ fn review_ran_needs_a_finished_plan_family_run() {
     assert!(message.contains("review-v2.toml"), "{message}");
 
     let run = |family: &str, finished: &str| {
-        format!("[[runs]]\nid = \"U1\"\nfamily = \"{family}\"\nfinished = \"{finished}\"\n")
+        format!(
+            "[[runs]]\nid = \"U1\"\nfamily = \"{family}\"\ndepth = \"standard\"\n\
+             finished = \"{finished}\"\n"
+        )
     };
     flow.write("review-v2.toml", run("plan", "").as_bytes());
     flow.refused(&["--review", "ran"]);
@@ -576,8 +579,8 @@ fn review_ran_needs_a_finished_plan_family_run() {
     assert_eq!(plan["approval"][0]["review"].as_str(), Some("ran"));
 }
 
-const FINISHED_RUN: &str =
-    "[[runs]]\nid = \"U1\"\nfamily = \"plan\"\nfinished = \"2026-11-05T12:00:00Z\"\n";
+const FINISHED_RUN: &str = "[[runs]]\nid = \"U1\"\nfamily = \"plan\"\ndepth = \"standard\"\n\
+                            finished = \"2026-11-05T12:00:00Z\"\n";
 
 fn accept_edit_finding(check: &str) -> String {
     format!(
@@ -627,8 +630,10 @@ fn review_ran_is_refused_for_an_open_user_tier_finding() {
 #[test]
 fn review_ran_is_refused_while_another_plan_run_is_unfinished() {
     let flow = Flow::clean();
-    let store =
-        format!("{FINISHED_RUN}\n[[runs]]\nid = \"U2\"\nfamily = \"plan\"\nrechecks = \"U1\"\n");
+    let store = format!(
+        "{FINISHED_RUN}\n[[runs]]\nid = \"U2\"\nfamily = \"plan\"\ndepth = \"quick\"\n\
+         rechecks = \"U1\"\n"
+    );
     flow.write("review-v2.toml", store.as_bytes());
     let (message, kind) = flow.refused(&["--review", "ran"]);
     assert_eq!(kind, "validation");
@@ -1103,11 +1108,13 @@ const GATE_REVIEW: &str = r#"
 [[runs]]
 id = "U1"
 family = "plan"
+depth = "standard"
 finished = "2026-11-09T10:00:00Z"
 
 [[runs]]
 id = "U2"
 family = "plan"
+depth = "quick"
 rechecks = "U1"
 finished = "2026-11-09T11:00:00Z"
 

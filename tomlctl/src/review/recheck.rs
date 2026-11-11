@@ -5,13 +5,34 @@
 use std::collections::BTreeSet;
 
 use anyhow::Result;
+use clap::Args;
 use serde_json::json;
 use toml::Value as TomlValue;
 
 use super::store::{self, Target};
-use crate::cli::ReadIntegrityArgs;
+use crate::cli::{ReadIntegrityArgs, ReviewStore};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::output::print_json_line;
+
+#[derive(Args)]
+pub(crate) struct ReviewRecheckTargetsArgs {
+    #[command(flatten)]
+    pub(crate) store: ReviewStore,
+    #[arg(long = "run", value_name = "RUN", help = "The plan run re-checked")]
+    pub(crate) run: String,
+    #[command(flatten)]
+    pub(crate) integrity: ReadIntegrityArgs,
+}
+
+impl super::Verb for ReviewRecheckTargetsArgs {
+    fn run(self) -> Result<()> {
+        run(
+            &super::store_target(&self.store)?,
+            &self.run,
+            &self.integrity,
+        )
+    }
+}
 
 const VERB: &str = "review recheck-targets";
 

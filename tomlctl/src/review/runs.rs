@@ -1,5 +1,6 @@
-//! `review run start`, `run update` and `run finish` — a run's lifecycle —
-//! and `run list`, its read.
+//! The `review run` group: `run start`, `run update` and `run finish` — a
+//! run's lifecycle — and `run list`, its read. `run show` lives in
+//! `run_show`.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -7,22 +8,177 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::Result;
+use clap::{Args, Subcommand};
 use serde_json::{Map, Value as JsonValue, json};
 
+use super::Verb;
 use super::catalogue::{self, Catalogue};
 use super::cells::{self, Accounting};
 use super::digest::Counts;
 use super::fields::{self, Family, FindingStatus, Origin, Record, RowContext};
 use super::invalid;
 use super::resolve;
+use super::run_show::ReviewRunShowArgs;
 use super::settle;
 use super::store::{self, Minted, Run, Signal, Store, Target, Waiver};
 use super::survey::{run_range, scope_pathspecs};
-use crate::cli::{ReviewRunFinishArgs, ReviewRunListArgs, ReviewRunStartArgs, ReviewRunUpdateArgs};
+use crate::cli::{ReadIntegrityArgs, ReviewStore, WriteIntegrityArgs};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::fields::FieldArgs;
 use crate::io::{read_prose, relativise, relativise_under, repo_or_cwd_root};
 use crate::output::{Rows, print_json_compact, print_report};
+
+/// `review run` leaves.
+#[derive(Subcommand)]
+pub(crate) enum ReviewRunOp {
+    /// Mint a run, validate the merged catalogue and create the run directory.
+    Start(ReviewRunStartArgs),
+    /// Patch a whitelist of run fields.
+    Update(ReviewRunUpdateArgs),
+    /// Stamp `finished` and compute `counts`, refusing an incomplete run.
+    Finish(ReviewRunFinishArgs),
+    /// List the store's runs, ordered by id. Writes nothing.
+    List(ReviewRunListArgs),
+    /// Print one run's bounds, signals (roots limited to its scope),
+    /// baselines, waves, agents and audit. Writes nothing.
+    Show(ReviewRunShowArgs),
+}
+
+impl Verb for ReviewRunOp {
+    fn run(self) -> Result<()> {
+        match self {
+            Self::Start(args) => args.run(),
+            Self::Update(args) => args.run(),
+            Self::Finish(args) => args.run(),
+            Self::List(args) => args.run(),
+            Self::Show(args) => args.run(),
+        }
+    }
+}
+
+#[derive(Args)]
+pub(crate) struct ReviewRunStartArgs {
+    #[command(flatten)]
+    pub(crate) store: ReviewStore,
+    #[arg(
+        long = "command",
+        value_name = "COMMAND",
+        help = "review-v2|optimise-v2|review-plan-v2"
+    )]
+    pub(crate) command: String,
+    #[arg(long = "family", value_name = "FAMILY", help = "code|perf|plan")]
+    pub(crate) family: String,
+    #[arg(long = "depth", value_name = "DEPTH", help = "quick|standard|deep")]
+    pub(crate) depth: String,
+    #[arg(
+        long = "base",
+        value_name = "REV",
+        help = "Commit the change is measured from; stored as its sha"
+    )]
+    pub(crate) base: String,
+    #[arg(
+        long = "head",
+        value_name = "REV",
+        help = "Commit the change is measured to, a descendant of --base; stored as its sha. Default: HEAD"
+    )]
+    pub(crate) head: Option<String>,
+    #[arg(
+        long = "builtin",
+        value_name = "DIR",
+        help = "Built-in catalogue root; defaults to <claude dir>/skills/review-v2-lenses"
+    )]
+    pub(crate) builtin: Option<PathBuf>,
+    #[arg(
+        long = "project",
+        value_name = "DIR",
+        help = "Project catalogue layer; defaults to .claude/review-lenses when present"
+    )]
+    pub(crate) project: Option<PathBuf>,
+    #[command(flatten)]
+    pub(crate) fields: FieldArgs,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct ReviewRunUpdateArgs {
+    #[arg(value_name = "RUN")]
+    pub(crate) run: String,
+    #[command(flatten)]
+    pub(crate) store: ReviewStore,
+    #[command(flatten)]
+    pub(crate) fields: FieldArgs,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct ReviewRunFinishArgs {
+    #[arg(value_name = "RUN")]
+    pub(crate) run: String,
+    #[command(flatten)]
+    pub(crate) store: ReviewStore,
+    #[arg(
+        long = "incomplete",
+        value_name = "REASON",
+        conflicts_with = "incomplete_file",
+        help = "Finish despite open gaps, recording why"
+    )]
+    pub(crate) incomplete: Option<String>,
+    #[arg(
+        long = "incomplete-file",
+        value_name = "PATH",
+        conflicts_with = "incomplete",
+        help = "Read the --incomplete reason from a file"
+    )]
+    pub(crate) incomplete_file: Option<PathBuf>,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct ReviewRunListArgs {
+    #[command(flatten)]
+    pub(crate) store: ReviewStore,
+    #[arg(
+        long = "open",
+        conflicts_with = "finished",
+        help = "Only runs without `finished`"
+    )]
+    pub(crate) open: bool,
+    #[arg(
+        long = "finished",
+        conflicts_with = "open",
+        help = "Only runs with `finished`"
+    )]
+    pub(crate) finished: bool,
+    #[command(flatten)]
+    pub(crate) integrity: ReadIntegrityArgs,
+}
+
+impl Verb for ReviewRunStartArgs {
+    fn run(self) -> Result<()> {
+        start(&super::store_target(&self.store)?, self)
+    }
+}
+
+impl Verb for ReviewRunUpdateArgs {
+    fn run(self) -> Result<()> {
+        update(&super::store_target(&self.store)?, self)
+    }
+}
+
+impl Verb for ReviewRunFinishArgs {
+    fn run(self) -> Result<()> {
+        finish(&super::store_target(&self.store)?, self)
+    }
+}
+
+impl Verb for ReviewRunListArgs {
+    fn run(self) -> Result<()> {
+        list(&super::store_target(&self.store)?, self)
+    }
+}
 
 /// The run fields `run start` takes through `--set` / `--set-json`.
 const START_FIELDS: &[&str] = &["scope", "models", "substrate", "rechecks"];

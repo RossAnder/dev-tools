@@ -10,9 +10,10 @@
 //! between the two writes converges on a re-export through `v2_ref`.
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
+use clap::Args;
 use serde_json::{Map, Value as JsonValue, json};
 use toml::Value as TomlValue;
 use toml::value::Datetime;
@@ -22,13 +23,48 @@ use super::invalid;
 use super::select;
 use super::store::{self, Finding, Row, Store, Target};
 use super::sync::{map_status, v2_refs};
-use crate::cli::{ReadIntegrityArgs, ReviewExportArgs, write_integrity_opts};
+use crate::cli::{ReadIntegrityArgs, ReviewStore, WriteIntegrityArgs, write_integrity_opts};
 use crate::io::{
     OnMissing, dry_run_read_opts, mutate_doc, read_doc_owned, relativise_under, repo_or_cwd_root,
     warn_if_created,
 };
 use crate::ledgers::{EFFORTS, LedgerKind, SEVERITIES};
 use crate::output::print_json_compact;
+
+#[derive(Args)]
+pub(crate) struct ReviewExportArgs {
+    #[arg(
+        value_name = "ID,...",
+        num_args = 1..,
+        value_delimiter = ',',
+        required_unless_present = "all",
+        conflicts_with = "all",
+        help = "Finding ids, comma- or space-separated"
+    )]
+    pub(crate) ids: Vec<String>,
+    #[command(flatten)]
+    pub(crate) store: ReviewStore,
+    #[arg(
+        long = "all",
+        help = "Every open defect and cleanup finding, less blocked findings, test removals and plausible cleanup"
+    )]
+    pub(crate) all: bool,
+    #[arg(long = "to", value_name = "LEDGER", help = "The v1 ledger written")]
+    pub(crate) to: PathBuf,
+    #[arg(
+        long = "dry-run",
+        help = "Preview the operation without writing. Emits a would_change summary; no file or sidecar touch."
+    )]
+    pub(crate) dry_run: bool,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+impl super::Verb for ReviewExportArgs {
+    fn run(self) -> Result<()> {
+        run(&super::store_target(&self.store)?, self)
+    }
+}
 
 const VERB: &str = "review export-v1";
 

@@ -15,6 +15,7 @@
 //! pair resolves by the same table.
 
 use anyhow::Result;
+use clap::Args;
 use serde_json::json;
 use toml::Value as TomlValue;
 
@@ -22,8 +23,36 @@ use super::fields::FindingStatus;
 use super::invalid;
 use super::store::{self, Finding, Store, Target, Verdict};
 use super::verdict::settle;
-use crate::cli::{ReadIntegrityArgs, ReviewResolveArgs};
+use crate::cli::{ReadIntegrityArgs, ReviewStore, WriteIntegrityArgs};
 use crate::output::print_json_compact;
+
+#[derive(Args)]
+pub(crate) struct ReviewResolveArgs {
+    #[command(flatten)]
+    pub(crate) store: ReviewStore,
+    #[arg(long = "run", value_name = "RUN")]
+    pub(crate) run: String,
+    #[arg(
+        long = "wave",
+        value_name = "N",
+        help = "Only findings from cells of this wave; a `--same-as` duplicate resolves whatever its wave"
+    )]
+    pub(crate) wave: Option<u32>,
+    #[arg(
+        long = "same-as",
+        value_name = "DUP=TARGET",
+        help = "Set the duplicate's `same_as` to the target and resolve the pair; repeatable"
+    )]
+    pub(crate) same_as: Vec<String>,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+impl super::Verb for ReviewResolveArgs {
+    fn run(self) -> Result<()> {
+        run(&super::store_target(&self.store)?, self)
+    }
+}
 
 const VERB: &str = "review resolve";
 

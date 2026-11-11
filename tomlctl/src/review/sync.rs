@@ -13,6 +13,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
+use clap::Args;
 use serde_json::{Value as JsonValue, json};
 use toml::Value as TomlValue;
 use toml::map::Map;
@@ -20,10 +21,24 @@ use toml::value::Datetime;
 
 use super::fields::{self, Family, FindingStatus, Record};
 use super::store::{self, Finding, Store, Target, Verdict};
-use crate::cli::{ReadIntegrityArgs, ReviewSyncArgs};
+use crate::cli::{ReadIntegrityArgs, ReviewStore, WriteIntegrityArgs};
 use crate::io::{read_toml, relativise_under, repo_or_cwd_root};
 use crate::items::status_companions;
 use crate::ledgers::{LedgerKind, LedgerRef};
+
+#[derive(Args)]
+pub(crate) struct ReviewSyncArgs {
+    #[command(flatten)]
+    pub(crate) store: ReviewStore,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+impl super::Verb for ReviewSyncArgs {
+    fn run(self) -> Result<()> {
+        run(&super::store_target(&self.store)?, self)
+    }
+}
 
 /// The prefix on every reason a sync writes, which marks a dismissal as
 /// v1's rather than the user's.

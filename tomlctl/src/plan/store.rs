@@ -649,16 +649,19 @@ mod tests {
 [[runs]]
 id = "U1"
 family = "plan"
+depth = "standard"
 finished = "2026-11-09T10:00:00Z"
 
 [[runs]]
 id = "U2"
 family = "plan"
+depth = "quick"
 rechecks = "U1"
 
 [[runs]]
 id = "U3"
 family = "code"
+depth = "standard"
 
 [[findings]]
 id = "F1"

@@ -16,6 +16,7 @@
 //! Only the review store is written, and only when something moved.
 
 use anyhow::Result;
+use clap::Args;
 use serde_json::{Value as JsonValue, json};
 use toml::Value as TomlValue;
 use toml::value::Datetime;
@@ -23,10 +24,34 @@ use toml::value::Datetime;
 use super::fields::FindingStatus;
 use super::invalid;
 use super::store::{self, Finding, Store, Target};
-use crate::cli::{ReadIntegrityArgs, WriteIntegrityArgs};
+use crate::cli::{ReadIntegrityArgs, ReviewStore, WriteIntegrityArgs};
 use crate::output::print_json_compact;
 use crate::tasks::schema::TaskRow;
 use crate::tasks::{Status, Store as TaskStore};
+
+#[derive(Args)]
+pub(crate) struct ReviewReconcileArgs {
+    #[command(flatten)]
+    pub(crate) store: ReviewStore,
+    #[arg(
+        long = "flow",
+        value_name = "SLUG",
+        help = "The v2 flow whose tasks.toml holds the scheduled findings' tasks"
+    )]
+    pub(crate) flow: String,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+impl super::Verb for ReviewReconcileArgs {
+    fn run(self) -> Result<()> {
+        run(
+            &super::store_target(&self.store)?,
+            &self.flow,
+            &self.integrity,
+        )
+    }
+}
 
 const VERB: &str = "review reconcile";
 

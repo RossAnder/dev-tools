@@ -8,9 +8,10 @@
 //! its `proposal_at`; at [`OVERDUE_AGE`] it is overdue, and [`deferred`] is
 //! what `review digest` lists and `review run finish` refuses on.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
+use clap::Args;
 use jiff::Timestamp;
 use serde_json::{Value as JsonValue, json};
 use toml::Value as TomlValue;
@@ -20,9 +21,92 @@ use super::fields::{self, BlockedOn, Family, FindingStatus, Record};
 use super::invalid;
 use super::store::{self, Finding, Store, Target};
 use super::verdict;
-use crate::cli::{ReadIntegrityArgs, WriteIntegrityArgs};
+use crate::cli::{ReadIntegrityArgs, ReviewStore, WriteIntegrityArgs};
 use crate::io::{read_prose, relativise_under, repo_or_cwd_root};
 use crate::output::print_json_compact;
+
+#[derive(Args)]
+pub(crate) struct ReviewSettleArgs {
+    #[arg(value_name = "ID", help = "The finding blocked on evidence")]
+    pub(crate) id: String,
+    #[command(flatten)]
+    pub(crate) store: ReviewStore,
+    #[command(flatten)]
+    pub(crate) outcome: ReviewSettleOutcome,
+    #[arg(
+        long = "tier",
+        value_name = "TIER",
+        conflicts_with_all = ["refute", "defer"],
+        help = "Companion to --accept: mechanical|cited|user"
+    )]
+    pub(crate) tier: Option<String>,
+    #[arg(
+        long = "fix-file",
+        value_name = "PATH",
+        conflicts_with_all = ["refute", "defer"],
+        help = "Companion to --accept: the fix the proposal settled on, recorded as `fix_sketch`"
+    )]
+    pub(crate) fix_file: Option<PathBuf>,
+    #[arg(
+        long = "citation",
+        value_name = "TEXT",
+        conflicts_with_all = ["accept", "defer"],
+        help = "Companion to --refute: what shows the finding false"
+    )]
+    pub(crate) citation: Option<String>,
+    #[arg(
+        long = "proposal",
+        value_name = "PATH",
+        conflicts_with_all = ["accept", "refute"],
+        help = "Companion to --defer: the proposal note, a file in the repository"
+    )]
+    pub(crate) proposal: Option<PathBuf>,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+/// The `review settle` outcomes, exactly one per call.
+#[derive(Args, Clone)]
+#[group(required = true, multiple = false)]
+pub(crate) struct ReviewSettleOutcome {
+    #[arg(
+        long = "accept",
+        requires_all = ["tier", "fix_file"],
+        help = "Unblock the finding with the proposal's fix; status → open"
+    )]
+    pub(crate) accept: bool,
+    #[arg(
+        long = "refute",
+        requires = "citation",
+        help = "Refute the finding through an orchestrator verdict; status → refuted"
+    )]
+    pub(crate) refute: bool,
+    #[arg(
+        long = "defer",
+        requires = "proposal",
+        help = "Record the proposal note and leave the finding blocked; status → open"
+    )]
+    pub(crate) defer: bool,
+}
+
+impl super::Verb for ReviewSettleArgs {
+    fn run(self) -> Result<()> {
+        run(
+            &super::store_target(&self.store)?,
+            Request {
+                id: &self.id,
+                accept: self.outcome.accept,
+                refute: self.outcome.refute,
+                defer: self.outcome.defer,
+                tier: self.tier.as_deref(),
+                fix_file: self.fix_file.as_deref(),
+                citation: self.citation.as_deref(),
+                proposal: self.proposal.as_deref(),
+            },
+            &self.integrity,
+        )
+    }
+}
 
 const VERB: &str = "review settle";
 

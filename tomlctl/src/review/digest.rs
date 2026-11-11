@@ -7,8 +7,10 @@
 //! markdown from the store alone, so one store always writes the same bytes.
 
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 use anyhow::Result;
+use clap::Args;
 use serde_json::{Map, Value as JsonValue, json};
 use toml::Value as TomlValue;
 
@@ -19,10 +21,70 @@ use super::fields::{
 use super::matching::{Place, rule_outs_at, same_place};
 use super::settle;
 use super::store::{self, Cell, Finding, Row, Run, Store, Target, Verdict, View, run_waves};
-use crate::cli::{ReviewDigestArgs, ReviewReportArgs};
+use crate::cli::{ReadIntegrityArgs, ReviewStore};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{atomic_write, relativise, repo_or_cwd_root};
 use crate::output::print_json_line;
+
+#[derive(Args)]
+pub(crate) struct ReviewDigestArgs {
+    #[command(flatten)]
+    pub(crate) store: ReviewStore,
+    #[arg(long = "run", value_name = "RUN")]
+    pub(crate) run: String,
+    #[arg(
+        long = "since-wave",
+        value_name = "N",
+        help = "Only rows from this wave onward"
+    )]
+    pub(crate) since_wave: Option<u32>,
+    #[arg(
+        long = "with",
+        value_name = "NAME,...",
+        value_delimiter = ',',
+        value_parser = ["duplicates", "ruled-out"],
+        help = "Print duplicate_candidates (duplicates) and ruled_out_hits (ruled-out) in full, not as counts"
+    )]
+    pub(crate) with: Vec<String>,
+    #[command(flatten)]
+    pub(crate) integrity: ReadIntegrityArgs,
+}
+
+// The read bundle, like `tasks render`: the report is derived markdown with
+// no sidecar. `--allow-outside` is the one write-side flag it takes, for
+// `--out`'s containment.
+#[derive(Args)]
+pub(crate) struct ReviewReportArgs {
+    #[command(flatten)]
+    pub(crate) store: ReviewStore,
+    #[arg(long = "run", value_name = "RUN")]
+    pub(crate) run: String,
+    #[arg(
+        long = "out",
+        value_name = "PATH",
+        help = "Where the report is written"
+    )]
+    pub(crate) out: PathBuf,
+    #[arg(
+        long = "allow-outside",
+        help = "Write --out outside .claude/ and .review-v2-runs/"
+    )]
+    pub(crate) allow_outside: bool,
+    #[command(flatten)]
+    pub(crate) integrity: ReadIntegrityArgs,
+}
+
+impl super::Verb for ReviewDigestArgs {
+    fn run(self) -> Result<()> {
+        digest(&super::store_target(&self.store)?, self)
+    }
+}
+
+impl super::Verb for ReviewReportArgs {
+    fn run(self) -> Result<()> {
+        report(&super::store_target(&self.store)?, self)
+    }
+}
 
 /// Rows of each audit-sample group.
 const SAMPLE_SIZE: usize = 2;

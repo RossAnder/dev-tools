@@ -15,6 +15,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
+use clap::Args;
 use serde_json::{Map, Value as JsonValue, json};
 
 use super::catalogue::run_catalogue;
@@ -26,11 +27,40 @@ use super::matching::{self, Site};
 use super::store::{self, Cell, Finding, Minted, Run, Store, Target};
 use super::target::{self as records, RecordTarget};
 use super::tier;
-use crate::cli::{ReadIntegrityArgs, ReviewAddArgs};
+use crate::cli::{ReadIntegrityArgs, ReviewStore, WriteIntegrityArgs};
 use crate::convert::encode_json_text;
 use crate::io::{read_ndjson_source, repo_or_cwd_root};
 use crate::output::print_json_compact;
 use crate::tasks::{ReviewEditOutcome, Slot};
+
+#[derive(Args)]
+pub(crate) struct ReviewAddArgs {
+    #[command(flatten)]
+    pub(crate) store: ReviewStore,
+    #[arg(long = "run", value_name = "RUN")]
+    pub(crate) run: String,
+    #[arg(long = "cell", value_name = "CELL")]
+    pub(crate) cell: String,
+    #[arg(
+        long = "ndjson",
+        value_name = "SRC",
+        help = "The cell's full finding set, one JSON object per line: `-` for stdin, otherwise a file path (a leading `@` is accepted; a `.toml` path is a record file)"
+    )]
+    pub(crate) ndjson: String,
+    #[arg(
+        long = "dry-run",
+        help = "Run every check against the current store and print the findings and refusals the write would make, with no ids; writes nothing"
+    )]
+    pub(crate) dry_run: bool,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+impl super::Verb for ReviewAddArgs {
+    fn run(self) -> Result<()> {
+        run(&super::store_target(&self.store)?, self)
+    }
+}
 
 const VERB: &str = "review add";
 /// How far from `line` a cleanup's `old` text may start.

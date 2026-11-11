@@ -39,8 +39,8 @@ use crate::cli::{
 use crate::convert::{decode_json_text, toml_to_json};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{
-    OnMissing, guard_write_path, mutate_doc, read_doc, read_toml, relativise_under,
-    repo_or_cwd_root, schema_seed, warn_if_created,
+    OnMissing, guard_write_path, mutate_doc, read_doc, relativise_under, repo_or_cwd_root,
+    schema_seed, warn_if_created,
 };
 
 /// The newest version this binary reads; written only by a store that
@@ -1450,62 +1450,64 @@ pub(crate) struct PlanApplied {
     pub(crate) new: JsonValue,
 }
 
-/// The plan-family runs and findings of the store at `path`. Rows are read
-/// field by field rather than through [`from_toml`], so a field plan gating
-/// never reads, such as a run's `depth`, cannot make the gate refuse the store.
+/// The plan-family runs and findings of the store at `path`, read as [`load`]
+/// reads it, so a store the typed reader refuses blocks plan gating with a
+/// `kind=parse` error naming the path.
 pub(crate) fn plan_family(path: &Path) -> Result<PlanFamily> {
-    let doc = read_toml(path)?;
-    let rows = |key: &str| {
-        doc.get(key)
-            .and_then(TomlValue::as_array)
-            .map(Vec::as_slice)
-            .unwrap_or_default()
-            .iter()
-            .filter_map(TomlValue::as_table)
+    let integrity = ReadIntegrityArgs {
+        verify_integrity: false,
+        strict_read: false,
     };
-    let is_plan = |row: &Table| Family::parse(raw_str(row, "family")) == Some(Family::Plan);
-    let mut family = PlanFamily::default();
-    let mut rechecking: Vec<&str> = Vec::new();
-    for run in rows("runs").filter(|row| is_plan(row)) {
-        let id = raw_str(run, "id");
-        if !raw_str(run, "rechecks").is_empty() {
-            rechecking.push(id);
-        }
-        family.runs.push(PlanRun {
-            id: id.to_string(),
-            finished: !raw_str(run, "finished").is_empty(),
-        });
-    }
-    for finding in rows("findings").filter(|row| is_plan(row)) {
-        let id = raw_str(finding, "id");
-        let tier = raw_str(finding, "tier");
-        let applied = finding
-            .get("applied")
-            .and_then(TomlValue::as_table)
-            .map(|applied| PlanApplied {
-                target: raw_str(applied, "target").to_string(),
-                tier: Some(raw_str(applied, "tier"))
-                    .filter(|tier| !tier.is_empty())
-                    .unwrap_or(tier)
-                    .to_string(),
-                by: raw_str(applied, "by").to_string(),
-                old: decode_json_text(applied.get("old")),
-                new: decode_json_text(applied.get("new")),
-            });
-        let verdicts = rows("verdicts").map(|v| (raw_str(v, "finding"), raw_str(v, "severity")));
-        family.findings.push(PlanFinding {
-            id: id.to_string(),
-            kind: raw_str(finding, "kind").to_string(),
-            open: FindingStatus::parse(raw_str(finding, "status")) == Some(FindingStatus::Open),
-            severity: reassessed_severity(verdicts, id, raw_str(finding, "severity")).to_string(),
-            tier: tier.to_string(),
-            target: raw_str(finding, "target").to_string(),
-            summary: raw_str(finding, "summary").to_string(),
-            recheck: rechecking.contains(&raw_str(finding, "run")),
-            applied,
-        });
-    }
-    Ok(family)
+    let stored = load(path, &integrity)?;
+    let rechecking: Vec<&str> = stored
+        .runs
+        .iter()
+        .filter(|run| run.family == Family::Plan && !raw_str(&run.rest, "rechecks").is_empty())
+        .map(|run| run.id.as_str())
+        .collect();
+    let runs = stored
+        .runs
+        .iter()
+        .filter(|run| run.family == Family::Plan)
+        .map(|run| PlanRun {
+            id: run.id.clone(),
+            finished: !run.finished.is_empty(),
+        })
+        .collect();
+    let findings = stored
+        .findings
+        .iter()
+        .filter(|finding| finding.family == Family::Plan)
+        .map(|finding| {
+            let tier = finding.text("tier").unwrap_or_default();
+            let applied = finding
+                .rest
+                .get("applied")
+                .and_then(TomlValue::as_table)
+                .map(|applied| PlanApplied {
+                    target: raw_str(applied, "target").to_string(),
+                    tier: Some(raw_str(applied, "tier"))
+                        .filter(|tier| !tier.is_empty())
+                        .unwrap_or(tier)
+                        .to_string(),
+                    by: raw_str(applied, "by").to_string(),
+                    old: decode_json_text(applied.get("old")),
+                    new: decode_json_text(applied.get("new")),
+                });
+            PlanFinding {
+                id: finding.id.clone(),
+                kind: finding.kind.as_str().to_string(),
+                open: finding.status() == FindingStatus::Open,
+                severity: stored.severity(finding).to_string(),
+                tier: tier.to_string(),
+                target: finding.text("target").unwrap_or_default().to_string(),
+                summary: finding.summary.clone(),
+                recheck: rechecking.contains(&finding.run.as_str()),
+                applied,
+            }
+        })
+        .collect();
+    Ok(PlanFamily { runs, findings })
 }
 
 /// The string at `key`, `""` when it is absent or not a string.
@@ -2047,14 +2049,12 @@ seat = 2
 verdict = "confirmed"
 "#;
 
-    /// Written through [`to_toml`], so the field reader is held to the key
-    /// names the typed writer emits.
     #[test]
-    fn plan_family_reads_what_the_typed_writer_wrote() {
+    fn plan_family_reads_the_plan_runs_and_findings() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(STORE_FILE);
+        fs::write(&path, PLAN_FAMILY_STORE).unwrap();
         let typed = from_toml(&parse(PLAN_FAMILY_STORE)).expect("the fixture reads");
-        fs::write(&path, toml::to_string(&to_toml(&typed)).unwrap()).unwrap();
 
         let family = plan_family(&path).expect("the store reads");
         assert_eq!(
@@ -2091,7 +2091,7 @@ verdict = "confirmed"
     }
 
     #[test]
-    fn plan_family_reads_a_store_the_typed_loader_refuses() {
+    fn plan_family_refuses_a_store_the_typed_loader_refuses() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(STORE_FILE);
         fs::write(
@@ -2099,10 +2099,13 @@ verdict = "confirmed"
             "[[runs]]\nid = \"U1\"\nfamily = \"plan\"\nfinished = \"2026-11-09T10:00:00Z\"\n",
         )
         .unwrap();
-        assert!(from_toml(&read_toml(&path).unwrap()).is_err(), "no depth");
-        let family = plan_family(&path).expect("plan gating reads it");
-        assert_eq!(family.runs.len(), 1);
-        assert!(family.runs[0].finished);
+
+        let err = plan_family(&path).expect_err("a run without depth is refused");
+        let tagged = err
+            .downcast_ref::<crate::errors::TaggedError>()
+            .unwrap_or_else(|| panic!("a tagged error, got: {err:#}"));
+        assert!(matches!(tagged.kind, ErrorKind::Parse), "{tagged:?}");
+        assert_eq!(tagged.file.as_deref(), Some(path.as_path()));
     }
 
     #[test]

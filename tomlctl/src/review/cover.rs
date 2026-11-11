@@ -1,7 +1,10 @@
 //! `review cover` — sealing a cell with its coverage status, note and
 //! rule-outs.
 
+use std::path::PathBuf;
+
 use anyhow::Result;
+use clap::Args;
 use serde_json::{Value as JsonValue, json};
 
 use super::add::{flow_slug, store_slug};
@@ -10,9 +13,52 @@ use super::cells::{PathSet, find_run, read_args};
 use super::fields::{self, CellStatus, Record};
 use super::invalid;
 use super::store::{self, RuledOut, Store, Target};
-use crate::cli::ReviewCoverArgs;
+use crate::cli::{ReviewStore, WriteIntegrityArgs};
 use crate::io::{read_ndjson_source, read_prose, repo_or_cwd_root};
 use crate::output::print_json_compact;
+
+#[derive(Args)]
+pub(crate) struct ReviewCoverArgs {
+    #[arg(value_name = "CELL")]
+    pub(crate) cell: String,
+    #[command(flatten)]
+    pub(crate) store: ReviewStore,
+    #[arg(
+        long = "status",
+        value_name = "STATUS",
+        help = "covered|thin|uncovered"
+    )]
+    pub(crate) status: String,
+    #[arg(
+        long = "note",
+        value_name = "TEXT",
+        required_unless_present = "note_file",
+        conflicts_with = "note_file",
+        help = "The coverage line; `-` reads stdin"
+    )]
+    pub(crate) note: Option<String>,
+    #[arg(
+        long = "note-file",
+        value_name = "PATH",
+        conflicts_with = "note",
+        help = "Read the coverage line from a file"
+    )]
+    pub(crate) note_file: Option<PathBuf>,
+    #[arg(
+        long = "ruled-out",
+        value_name = "SRC",
+        help = "Sites the cell judged deliberate, one JSON object per line (`file`, optional `symbol` or `line`, `reason`), replacing the cell's earlier ones: `-` for stdin, otherwise a file path (a leading `@` is accepted; a `.toml` path is a record file)"
+    )]
+    pub(crate) ruled_out: Option<String>,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+impl super::Verb for ReviewCoverArgs {
+    fn run(self) -> Result<()> {
+        cover(&super::store_target(&self.store)?, self)
+    }
+}
 
 const VERB: &str = "review cover";
 

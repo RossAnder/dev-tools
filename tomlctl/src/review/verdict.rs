@@ -9,17 +9,125 @@
 //! leaves its `fix_sketch` on the finding.
 
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 use anyhow::Result;
+use clap::Args;
 use serde_json::{Map, Value as JsonValue, json};
 
 use super::catalogue::run_catalogue;
 use super::fields::{self, FindingStatus, Kind, Record, Route, RowContext, SWEEPER};
 use super::invalid;
 use super::store::{self, Finding, Store, Target, Verdict};
-use crate::cli::{ReadIntegrityArgs, ReviewVerdictArgs};
+use crate::cli::{ReadIntegrityArgs, ReviewStore, WriteIntegrityArgs};
 use crate::io::{read_flag_file, read_ndjson_source, read_text_arg, repo_or_cwd_root};
 use crate::output::print_json_compact;
+
+// The single-verdict flags conflict with `--ndjson`, whose rows carry their
+// own. Citation and rationale are left to the verb, so a missing one is a
+// `kind=validation` refusal rather than usage prose.
+#[derive(Args)]
+pub(crate) struct ReviewVerdictArgs {
+    #[arg(
+        value_name = "FINDING",
+        required_unless_present = "ndjson",
+        conflicts_with = "ndjson"
+    )]
+    pub(crate) finding: Option<String>,
+    #[command(flatten)]
+    pub(crate) store: ReviewStore,
+    #[arg(
+        long = "verdict",
+        value_name = "VERDICT",
+        required_unless_present = "ndjson",
+        conflicts_with = "ndjson",
+        help = "confirmed|plausible|refuted|unsettled"
+    )]
+    pub(crate) verdict: Option<String>,
+    #[arg(
+        long = "by",
+        value_name = "BY",
+        required_unless_present = "ndjson",
+        conflicts_with = "ndjson",
+        help = "verifier|panel|checker|audit|orchestrator|sync"
+    )]
+    pub(crate) by: Option<String>,
+    #[arg(
+        long = "seat",
+        value_name = "N",
+        conflicts_with = "ndjson",
+        help = "Panel vote 1-3"
+    )]
+    pub(crate) seat: Option<u32>,
+    #[arg(
+        long = "severity",
+        value_name = "SEVERITY",
+        conflicts_with = "ndjson",
+        help = "Reassessed severity: critical|major|minor"
+    )]
+    pub(crate) severity: Option<String>,
+    #[arg(
+        long = "citation",
+        value_name = "CITE",
+        conflicts_with = "ndjson",
+        help = "`file:line` or command output backing the verdict"
+    )]
+    pub(crate) citation: Option<String>,
+    #[arg(
+        long = "rationale",
+        value_name = "TEXT",
+        conflicts_with_all = ["rationale_file", "ndjson"],
+        help = "Why; `-` reads stdin"
+    )]
+    pub(crate) rationale: Option<String>,
+    #[arg(
+        long = "rationale-file",
+        value_name = "PATH",
+        conflicts_with_all = ["rationale", "ndjson"],
+        help = "Read the rationale from a file"
+    )]
+    pub(crate) rationale_file: Option<PathBuf>,
+    #[arg(
+        long = "strike-same-as",
+        conflicts_with = "ndjson",
+        help = "Clear the finding's `same_as`, so it resolves on its own verdict"
+    )]
+    pub(crate) strike_same_as: bool,
+    #[arg(
+        long = "unblocks",
+        conflicts_with = "ndjson",
+        help = "A verifier's answer to a blocked finding: clear its block and give it the fix sketch"
+    )]
+    pub(crate) unblocks: bool,
+    #[arg(
+        long = "fix-sketch",
+        value_name = "TEXT",
+        conflicts_with_all = ["fix_sketch_file", "ndjson"],
+        help = "How to fix the unblocked finding; `-` reads stdin"
+    )]
+    pub(crate) fix_sketch: Option<String>,
+    #[arg(
+        long = "fix-sketch-file",
+        value_name = "PATH",
+        conflicts_with_all = ["fix_sketch", "ndjson"],
+        help = "Read the fix sketch from a file"
+    )]
+    pub(crate) fix_sketch_file: Option<PathBuf>,
+    #[arg(
+        long = "ndjson",
+        value_name = "SRC",
+        help = "A batch of verdicts, one JSON object per line: `-` for stdin, otherwise a file path (a leading `@` is accepted; a `.toml` path is a record file)"
+    )]
+    pub(crate) ndjson: Option<String>,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+impl super::Verb for ReviewVerdictArgs {
+    fn run(self) -> Result<()> {
+        run(&super::store_target(&self.store)?, self)
+    }
+}
 
 const VERB: &str = "review verdict";
 
