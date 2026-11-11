@@ -12,6 +12,8 @@ tomlctl plan view --slug <slug> --for worker --task <id>
 tomlctl tasks show <id> --slug <slug> --with summary,body,spec
 ```
 
+`tasks show` takes numeric ids only. A target written `task:<ref>` gives its id with `tomlctl tasks list --slug <slug> --where ref=<ref> --get id`.
+
 Read `docs/flows/<slug>/brief.md` and every `docs/flows/<slug>/design/*.md` in full. `plan view` leaves out stored accept fields, so copy an `expect` from `tasks show`, never from `plan view`.
 
 Never read `docs/flows/<slug>/notes/`. They are the planner's investigation, and a finding has to stand on the plan as written.

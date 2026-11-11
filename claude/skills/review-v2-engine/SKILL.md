@@ -68,7 +68,7 @@ Anything else in the arguments is scope: paths, globs, or a feature name.
 
 ### Stage 0 — Pre-flight
 
-1. Invoke the `tomlctl` skill before the first `tomlctl` call. Its guidance canon holds here: tomlctl output is never piped into a text tool, never redirected with `2>/dev/null`, and payloads are staged as files rather than fed through heredocs.
+1. Invoke the `tomlctl` skill before the first `tomlctl` call. Its guidance canon holds here: tomlctl output is never piped into a text tool (`--select`, `--get`, `--limit` and `--max-chars` trim it at the source), never redirected with `2>/dev/null`, and payloads are staged as files rather than fed through heredocs.
 2. Check the installed binary carries the review group:
 
    ```bash

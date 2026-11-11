@@ -18,7 +18,7 @@ This is the orchestrator's half of applying triaged review findings. The `/apply
 
 ## Rules
 
-1. **Invoke the `tomlctl` skill before the first `tomlctl` call.** Its guidance canon holds throughout: payloads are files staged with the Write tool in the session's scratchpad directory, never heredocs, never piped, and `tomlctl` output is never piped into a text tool or redirected with `2>/dev/null`.
+1. **Invoke the `tomlctl` skill before the first `tomlctl` call.** Its guidance canon holds throughout: payloads are files staged with the Write tool in the session's scratchpad directory, never heredocs, never piped, and `tomlctl` output is never piped into a text tool or redirected with `2>/dev/null`: `--select`, `--get`, `--limit` and `--max-chars` trim it at the source, where `head` or `cut` would also hide the notice that says rows were dropped.
 2. **Nothing is opened, added or scheduled before the preview passes.** A milestone once added cannot be removed, and a new flow once opened keeps its directories.
 3. **A home whose plan is approved takes every plan write with a `--reason`**, since its task store is audited. The reason is `apply <store>: <finding ids>`, the form `review schedule` writes on each row it mints.
 4. **Writes under `docs/flows/**` prompt in attended `default` mode and are denied under `dontAsk`.** The allow rule that pre-approves them is in the `plan-v2-engine` skill's [open-and-challenge.md](../plan-v2-engine/references/open-and-challenge.md), section "Writing under `docs/flows/`". Name it when a prompt or a denial interrupts the brief; add it to no settings file yourself.

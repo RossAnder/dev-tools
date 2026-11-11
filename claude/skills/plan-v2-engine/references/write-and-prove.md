@@ -158,7 +158,21 @@ The batch is all-or-nothing: an unknown key, a dangling edge or a cycle lands no
 - `writes_build = false` is what gets probed. Mark it on every check that only reads, such as `grep`, `test -f`, `git diff` or a `tomlctl` read verb. Leave it out on a check that builds, tests or writes anything, which then runs only at the milestone's gate; absent counts as true.
 - `means` is empty by default. Name a means only when a worker left free would go wrong, and give every `required` entry its reason in `detail`, since wrong or over-specified instructions do more harm than missing ones. A `tool` or `clerk` task gets its targets enumerated, because it will not generalise an instruction from one item to the next; a `deep` task gets a scope clause in `constraints`, because it can expand scope.
 - `premises` are the code facts the task stands on, each with a `check` that exits 0 while the fact holds. `at` is `base` for a fact true now, or `after:<id>` for one an earlier task makes true.
-- `executor` is `tool`, `clerk`, `lite` or `deep`.
+- `executor` is `tool`, `clerk`, `lite` or `deep`. Choose `lite` when the spec states the edit itself and it stays inside one or two files: a doc section, a table row, a flag threaded through, a test for behaviour already written. Choose `deep` when the worker must decide something the spec leaves open, reason across files, or touch security-sensitive code. `deep` is not the safe default: it costs several times the time and context of `lite` on the same task, and a spec too loose for `lite` is usually a spec to tighten.
+- A file where every new verb, type or test case is registered, such as a dispatch table or a `mod.rs` of re-exports, is claimed by every task that adds one. Say so in `files` rather than leaving it out to keep tasks disjoint: a task that cannot reach its registration point fails or bends its design to avoid it. Order those tasks with `needs` and keep the per-task work in files only that task holds.
+
+**Retitling a row.** A row's `ref` derives from its title, so `tasks update` refuses a new `title` alone. Give the new ref as a row key beside `id`, never inside `set`, and update every design anchor and finding target that names the old ref:
+
+```toml
+[[record]]
+id = 7
+ref = "call-the-retry-guard-from-fetch"
+reason = "the task now covers fetch only"
+[record.set]
+title = "Call the retry guard from fetch"
+```
+
+`file_notes`, `closes`, `refs` and `reason` are row keys in the same way.
 
 **Then bind.** Add the new task ids to each decision's `binds` and each contract's `tasks`, with rows naming the printed ids:
 
