@@ -10,13 +10,16 @@ export const meta = {
 // A relaunch is always a fresh run, never a resume: workers write their own
 // task status, so a journal hit would replay a return the store has since
 // moved past. Workers write their own notes, so this returns only an index.
-// Up to `max_parallel` workers run at once. Whenever one returns, every free
-// slot is filled, in args order, with a task whose `needs` and `after` ids all
-// returned `done` and whose files no running task holds. A task behind a
+// Up to `max_parallel` workers run at once, and of those at most the optional
+// `max_compile_parallel` hold a crate source file (`.rs` or `Cargo.toml`), since
+// their compile checks contend on one build lock. Whenever one returns, every
+// free slot is filled, in args order, with a task whose `needs` and `after` ids
+// all returned `done`, whose files no running task holds, and which a full
+// compile cap does not hold back. A task behind a
 // non-`done` return is reported `blocked` and never dispatched. Nothing is
 // retried; the engine's drain decides what runs again. `error` is a thrown
 // error or a bad return, and null otherwise.
-const SCRIPT_VERSION = '2'
+const SCRIPT_VERSION = '3'
 const MAX_PARALLEL = 8
 const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/
 const MILESTONE_ID = /^[A-Za-z0-9][A-Za-z0-9-]*$/
@@ -81,6 +84,10 @@ const argProblems = () => {
   if (!matches(ONE_LINE, a.root)) problems.push(`root ${JSON.stringify(a.root)} must be a one-line path`)
   if (!Number.isInteger(a.max_parallel) || a.max_parallel < 1 || a.max_parallel > MAX_PARALLEL) {
     problems.push(`max_parallel ${JSON.stringify(a.max_parallel)} must be an integer from 1 to ${MAX_PARALLEL}`)
+  }
+  const compileCap = a.max_compile_parallel
+  if (compileCap !== undefined && (!Number.isInteger(compileCap) || compileCap < 1 || compileCap > MAX_PARALLEL)) {
+    problems.push(`max_compile_parallel ${JSON.stringify(compileCap)} must be an integer from 1 to ${MAX_PARALLEL} when present`)
   }
   if (!Array.isArray(a.tasks) || !a.tasks.length) {
     problems.push('tasks must be a non-empty array')
@@ -231,8 +238,14 @@ const inFlight = new Map()
 // File keys of the in-flight tasks; no two in-flight tasks share one.
 const held = new Set()
 
+const COMPILE_CAP = a.max_compile_parallel === undefined ? a.max_parallel : a.max_compile_parallel
+const compiles = (t) => t.files.some((f) => /(\.rs|(^|\/)cargo\.toml)$/.test(fileKey(f)))
+const compilingInFlight = () => [...inFlight.values()].filter((r) => compiles(r.t)).length
+
 const isDone = (id) => results.has(id) && results.get(id).status === 'done'
-const canStart = (t) => gates(t).every(isDone) && !t.files.some((f) => held.has(fileKey(f)))
+const canStart = (t) => gates(t).every(isDone)
+  && !t.files.some((f) => held.has(fileKey(f)))
+  && (!compiles(t) || compilingInFlight() < COMPILE_CAP)
 
 const start = (t) => {
   t.files.forEach((f) => held.add(fileKey(f)))

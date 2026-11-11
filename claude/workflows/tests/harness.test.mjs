@@ -462,6 +462,55 @@ test('implement-v2-milestone: needs_files reaches the index', async () => {
   assert.deepEqual(rt.phases, ['Run'])
 })
 
+test('implement-v2-milestone: max_compile_parallel holds back crate tasks but not the rest', async () => {
+  const rt = runtime(null, { deferred: true })
+  const done = rt.run('implement-v2-milestone', milestoneArgs([
+    task(1, ['src/a.rs']),
+    task(2, ['crate/Cargo.toml']),
+    task(3, ['claude/skills/x.md']),
+    task(4, ['src/b.rs', 'docs/b.md']),
+  ], { max_compile_parallel: 1 }))
+  await tick()
+  assert.deepEqual(started(rt), [1, 3])
+  await finish(rt, 3)
+  assert.deepEqual(inFlight(rt), [1])
+  await finish(rt, 1)
+  assert.deepEqual(inFlight(rt), [2])
+  await finish(rt, 2)
+  assert.deepEqual(inFlight(rt), [4])
+  await finish(rt, 4)
+  const out = await done
+  assert.deepEqual(out.tasks.map((t) => t.status), ['done', 'done', 'done', 'done'])
+  assert.deepEqual(out.errors, [])
+})
+
+test('implement-v2-milestone: without max_compile_parallel, max_parallel alone caps crate tasks', async () => {
+  const rt = runtime(null, { deferred: true })
+  const done = rt.run('implement-v2-milestone', milestoneArgs([
+    task(1, ['a.rs']), task(2, ['b.rs']), task(3, ['c.rs']), task(4, ['d.md']),
+  ], { max_parallel: 3 }))
+  await tick()
+  assert.deepEqual(started(rt), [1, 2, 3])
+  await finish(rt, 1)
+  assert.deepEqual(inFlight(rt).sort(), [2, 3, 4])
+  await finish(rt, 2)
+  await finish(rt, 3)
+  await finish(rt, 4)
+  const out = await done
+  assert.deepEqual(out.tasks.map((t) => t.status), ['done', 'done', 'done', 'done'])
+})
+
+test('implement-v2-milestone: a malformed max_compile_parallel refuses the launch', async () => {
+  for (const bad of [0, 9, 1.5, '2', null]) {
+    const rt = runtime(() => { throw new Error('no agent should start') })
+    const out = await rt.run('implement-v2-milestone', milestoneArgs([task(1, ['a.rs'])], { max_compile_parallel: bad }))
+    assert.deepEqual(rt.calls, [], `max_compile_parallel ${JSON.stringify(bad)}`)
+    assert.deepEqual(out.tasks, [])
+    assert.ok(out.errors.some((e) => e.startsWith('max_compile_parallel ')), `max_compile_parallel ${JSON.stringify(bad)}`)
+    assert.equal(out.errors.at(-1), 'no agent launched')
+  }
+})
+
 test('workflow stub throws on an unknown name', async () => {
   const rt = runtime(() => null)
   await assert.rejects(async () => rt.run('no-such-workflow', {}), /unknown workflow/)
