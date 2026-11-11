@@ -16,7 +16,7 @@ use crate::errors::{ErrorKind, tagged_err};
 use crate::output::print_json_compact;
 use crate::tasks::schema::{
     Change, Checkpoint, DEFAULT_ACTOR, ELABORATION_DEFERRED, ELABORATION_ELABORATED,
-    ELABORATION_UPFRONT, MILESTONE_REF_PREFIX, MilestoneSpec, Store,
+    ELABORATION_UPFRONT, GateProbe, MILESTONE_REF_PREFIX, MilestoneSpec, Store,
 };
 use crate::tasks::{
     ReviewEditOutcome, load_store, mutate_store, resolve_store_path, unwritten_outcome,
@@ -50,11 +50,79 @@ fn change(
     })
 }
 
+const GATE_PROBE_SEPARATOR: &str = " :: ";
+
+/// Splits each `--gate-probe` value at its first ` :: ` into `(gate, probe)`.
+/// A gate's own command is refused as its probe, since running it is no cheaper
+/// than the gate.
+fn parse_gate_probes(raw: &[String]) -> Result<Vec<(String, String)>> {
+    raw.iter()
+        .map(|value| {
+            let Some((gate, probe)) = value.split_once(GATE_PROBE_SEPARATOR) else {
+                return Err(refuse(format!(
+                    "`--gate-probe {value}` has no ` :: `: pass `<gate> :: <probe>`"
+                )));
+            };
+            if gate.trim().is_empty() || probe.trim().is_empty() {
+                return Err(refuse(format!(
+                    "`--gate-probe {value}` needs both a gate and a probe around ` :: `"
+                )));
+            }
+            if gate == probe {
+                return Err(refuse(format!(
+                    "`--gate-probe {value}` names the gate as its own probe: a probe is a cheap \
+                     command, such as the gate's dry run"
+                )));
+            }
+            Ok((gate.to_string(), probe.to_string()))
+        })
+        .collect()
+}
+
+/// The stored probes for `pairs`, each of which must name one of `gates`. A
+/// pair already in `old` keeps its recorded verdict.
+fn gate_probes_for(
+    id: &str,
+    pairs: &[(String, String)],
+    gates: &[String],
+    old: &[GateProbe],
+) -> Result<Vec<GateProbe>> {
+    pairs
+        .iter()
+        .map(|(gate, probe)| {
+            if !gates.contains(gate) {
+                return Err(refuse(format!(
+                    "`--gate-probe` names `{gate}`, which is no gate of milestone `{id}`"
+                )));
+            }
+            Ok(old
+                .iter()
+                .find(|entry| &entry.gate == gate && &entry.probe == probe)
+                .cloned()
+                .unwrap_or_else(|| GateProbe {
+                    gate: gate.clone(),
+                    probe: probe.clone(),
+                    verdict: String::new(),
+                    at: String::new(),
+                }))
+        })
+        .collect()
+}
+
+fn gate_probes_json(probes: &[GateProbe]) -> String {
+    let pairs: Vec<JsonValue> = probes
+        .iter()
+        .map(|entry| json!({ "gate": entry.gate, "probe": entry.probe }))
+        .collect();
+    JsonValue::Array(pairs).to_string()
+}
+
 pub(super) fn add(args: PlanMilestoneAddArgs) -> Result<()> {
     let id = args.id.trim().to_string();
     if id.is_empty() {
         return Err(refuse("`--id` must not be empty".to_string()));
     }
+    let gate_probes = gate_probes_for(&id, &parse_gate_probes(&args.gate_probe)?, &args.gate, &[])?;
     let reason = trimmed(args.reason.as_deref()).to_string();
     if args.defer && reason.is_empty() {
         return Err(refuse("`--defer` needs `--reason <text>`".to_string()));
@@ -87,6 +155,7 @@ pub(super) fn add(args: PlanMilestoneAddArgs) -> Result<()> {
                 true => reason.clone(),
                 false => String::new(),
             },
+            gate_probes: gate_probes.clone(),
         });
         if store.audit {
             store.changes.push(change(
@@ -108,14 +177,17 @@ pub(super) fn update(args: PlanMilestoneUpdateArgs) -> Result<()> {
     if args.goal.is_none()
         && args.gate.is_empty()
         && !args.clear_gate
+        && args.gate_probe.is_empty()
         && !args.defer
         && !args.elaborated
     {
         return Err(refuse(
-            "nothing to update: pass `--goal`, `--gate`, `--clear-gate`, `--defer` or `--elaborated`"
+            "nothing to update: pass `--goal`, `--gate`, `--clear-gate`, `--gate-probe`, \
+             `--defer` or `--elaborated`"
                 .to_string(),
         ));
     }
+    let gate_probes = parse_gate_probes(&args.gate_probe)?;
     if args.clear_gate && !args.gate.is_empty() {
         return Err(refuse(
             "`--clear-gate` and `--gate` set the gate list two different ways".to_string(),
@@ -138,6 +210,7 @@ pub(super) fn update(args: PlanMilestoneUpdateArgs) -> Result<()> {
     let patch = MilestonePatch {
         goal: args.goal.clone(),
         gates: (!args.gate.is_empty() || args.clear_gate).then(|| args.gate.clone()),
+        gate_probes: (!gate_probes.is_empty()).then_some(gate_probes),
         elaboration: match (args.defer, args.elaborated) {
             (true, _) => Some(ELABORATION_DEFERRED.to_string()),
             (_, true) => Some(ELABORATION_ELABORATED.to_string()),
@@ -156,6 +229,9 @@ pub(super) fn update(args: PlanMilestoneUpdateArgs) -> Result<()> {
 struct MilestonePatch {
     goal: Option<String>,
     gates: Option<Vec<String>>,
+    /// `(gate, probe)` pairs replacing the whole probe list, each checked
+    /// against the gates the patch leaves.
+    gate_probes: Option<Vec<(String, String)>>,
     elaboration: Option<String>,
     defer_reason: Option<String>,
 }
@@ -196,6 +272,7 @@ fn patch_milestone(
                 gates: Vec::new(),
                 elaboration: ELABORATION_UPFRONT.to_string(),
                 defer_reason: String::new(),
+                gate_probes: Vec::new(),
             });
             store.milestones.len() - 1
         }
@@ -204,6 +281,15 @@ fn patch_milestone(
     if let Some(gates) = &patch.gates {
         let old = std::mem::replace(&mut spec.gates, gates.clone());
         changes.push(("gates", json!(old).to_string(), json!(gates).to_string()));
+    }
+    if let Some(pairs) = &patch.gate_probes {
+        let probes = gate_probes_for(id, pairs, &spec.gates, &spec.gate_probes)?;
+        let old = std::mem::replace(&mut spec.gate_probes, probes);
+        changes.push((
+            "gate_probes",
+            gate_probes_json(&old),
+            gate_probes_json(&spec.gate_probes),
+        ));
     }
     if let Some(elaboration) = &patch.elaboration {
         if !ELABORATIONS.contains(&elaboration.as_str()) {

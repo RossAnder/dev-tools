@@ -802,6 +802,45 @@ fn an_accept_check_shows_whether_it_writes_the_build() {
 }
 
 #[test]
+fn worker_view_prints_run_by() {
+    let worker = Flow::standard().view(&["--for", "worker", "--task", "1"]);
+    assert!(
+        worker.contains("  - Writes build: no\n  - Run by: worker\n"),
+        "an unlabelled non-building check is the worker's:\n{worker}"
+    );
+
+    let tasks = TASKS.replace("writes_build = false, ", "");
+    let worker = Flow::seeded(Some(&tasks), PLAN, Some(BRIEF.as_bytes()))
+        .view(&["--for", "worker", "--task", "1"]);
+    assert!(
+        worker.contains("  - Writes build: yes\n  - Run by: gate\n"),
+        "a building check is the gate's:\n{worker}"
+    );
+
+    let tasks = TASKS.replace(
+        "writes_build = false, ",
+        "writes_build = false, run_by = \"gate\", ",
+    );
+    let worker = Flow::seeded(Some(&tasks), PLAN, Some(BRIEF.as_bytes()))
+        .view(&["--for", "worker", "--task", "1"]);
+    assert!(
+        worker.contains("  - Writes build: no\n  - Run by: gate\n"),
+        "a gate-owned store read keeps its Writes build line:\n{worker}"
+    );
+
+    let tasks = TASKS.replace(
+        "writes_build = false, ",
+        "writes_build = true, run_by = \"covered\", covered_by = \"cargo test gate-marker\", ",
+    );
+    let worker = Flow::seeded(Some(&tasks), PLAN, Some(BRIEF.as_bytes()))
+        .view(&["--for", "worker", "--task", "1"]);
+    assert!(
+        worker.contains("  - Run by: gate (covered by `cargo test gate-marker`)\n"),
+        "a covered check names its gate:\n{worker}"
+    );
+}
+
+#[test]
 fn an_answered_surfaced_decision_is_not_open() {
     let plan = PLAN.replacen(
         "provenance = \"agent-assumed\"",

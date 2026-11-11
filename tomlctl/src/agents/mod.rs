@@ -6,6 +6,7 @@
 //! `tomlctl items add|update|apply`, whose dedup stamping would add a
 //! `dedup_id` to every record.
 
+pub(crate) mod audit;
 pub(crate) mod correlate;
 pub(crate) mod dispatch;
 pub(crate) mod list;

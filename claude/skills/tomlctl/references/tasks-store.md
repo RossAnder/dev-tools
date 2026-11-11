@@ -104,16 +104,38 @@ and on write, and the table is omitted while empty.
 
 `[[specs]]`: one entry per v2 row, keyed on `ref` — `outcome`, `constraints`, `accept`, `premises`,
 `means`, `design`, `precedent` and `executor`. `accept` entries carry `behaviour`, `check`, `kind`,
-`positive`, `writes_build` (absent reads `true`) and a `probe` only `plan probes --record` writes;
-`kind` is absent while `check` is empty. A `premises` entry carries `claim`, `check`, `at` and the same
+`positive`, `writes_build` (absent reads `true`), the optional `run_by` and `covered_by` below, and a
+`probe` only `plan probes --record` writes; `kind` is absent while `check` is empty. A `premises` entry carries `claim`, `check`, `at` and the same
 optional `probe`, written only by `plan probes --record --premises`; a supplied `probe` is refused,
 and a re-issued premise matching in its other fields keeps its stored probe. A row's `status` is
 `pending`, `in-progress`, `done`, `failed`, `deferred` or `parked`. An entry with no `ref` is dropped on read and on write.
 `tasks remove` drops the spec keyed on the row, and `tasks add` and `tasks update --ref` drop any
 already keyed on the `ref` they claim, which is never a `ref` holding a `[[changes]]` trail.
 
-`[[milestones]]`: `id` (a `[[checkpoints]]` id), `gates`, `elaboration` (`upfront` when absent,
-`deferred`, or `elaborated` once a deferred milestone's tasks exist) and `defer_reason`.
+<a id="accept-owner"></a>**Accept owner.** `run_by` says who runs an `accept` check: `worker`, `gate`
+or `covered`. `covered_by` is the exact command of one gate of the row's checkpoint milestone, set
+only with `run_by = "covered"`. Each key is written only when set, so an entry with neither keeps its
+bytes. The effective owner is `run_by`, else `worker` for `writes_build = false` and `gate`
+otherwise; `writes_build` keeps its one meaning, whether running the check builds, tests or writes.
+
+| Owner | Who runs the check |
+|---|---|
+| `worker` | The task's worker. Only this owner is probed, and only with `writes_build = false`: `run_by = "worker"` on a building check is refused at write. |
+| `gate` | The milestone's gate, through [`plan emit gate-list`](plan.md#plan-emit). |
+| `covered` | Nobody separately: the gate `covered_by` names already runs it. `gate-list` skips it. |
+
+`tasks add`, `add-many` and `update` refuse an unknown `run_by`, `worker` on a building check,
+`covered` without `covered_by` and `covered_by` without `covered`; `plan check` reports the same as
+`plan/accept-owner-invalid`, and a `covered_by` matching no gate of the milestone as
+`plan/accept-cover-unknown`. `plan view` prints the owner as a `Run by:` line under each check.
+
+`[[milestones]]`: `id` (a `[[checkpoints]]` id), `gates`, `gate_probes`, `elaboration` (`upfront`
+when absent, `deferred`, or `elaborated` once a deferred milestone's tasks exist) and
+`defer_reason`. `gate_probes` is a list of `{gate, probe, verdict, at}` tables written as
+`[[milestones.gate_probes]]` and omitted while empty: `gate` is one of the milestone's `gates`,
+`probe` a cheap command that fails where that gate cannot pass here, and `verdict` (`holds`, `fails`
+or `broken`) and `at` (the capture's head) are written only by `plan probes --record --gates`
+([plan-probes.md](plan-probes.md#gate-probes)).
 
 `[[changes]]`: the audit trail an audited store appends — `at`, `ref` (or `milestone:<id>`), `field`,
 `old`, `new`, `actor` and `reason`. `field` is a row field, `*` for an added or removed row,

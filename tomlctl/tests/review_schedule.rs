@@ -316,6 +316,13 @@ fn strings(value: &Value) -> Vec<&str> {
         .collect()
 }
 
+/// The one reproduce check every non-`remove` fix row of checkpoint `A` carries.
+fn milestone_check() -> String {
+    format!(
+        "tomlctl review reproduce-status --flow {TASKS_SLUG} --milestone A --scope t --expect gone"
+    )
+}
+
 fn scheduled_ref(out: &JsonValue, id: &str) -> String {
     out["scheduled"]
         .as_array()
@@ -371,9 +378,10 @@ fn a_cleanup_and_a_defect_become_designed_rows() {
     assert_eq!(ds["executor"].as_str(), Some("lite"));
     assert_eq!(
         ds["accept"][0]["check"].as_str(),
-        Some("tomlctl review reproduce-status F2 --scope t --expect gone")
+        Some(milestone_check().as_str())
     );
-    assert_eq!(ds["accept"][0]["writes_build"].as_bool(), Some(true));
+    assert_eq!(ds["accept"][0]["run_by"].as_str(), Some("gate"));
+    assert_eq!(ds["accept"][0]["writes_build"].as_bool(), Some(false));
     assert!(
         ds["outcome"]
             .as_str()
@@ -417,7 +425,7 @@ fn findings_sharing_a_file_fold_into_one_task() {
     assert_eq!(strings(&link(&doc, &folded)["fixes"]), ["F1", "F2"]);
     let s = spec(&doc, &folded);
     assert_eq!(s["premises"].as_array().unwrap().len(), 2);
-    assert_eq!(s["accept"].as_array().unwrap().len(), 2);
+    assert_eq!(s["accept"].as_array().unwrap().len(), 1);
     assert!(
         row(&doc, &folded)["title"]
             .as_str()
@@ -943,4 +951,50 @@ fn a_dry_run_needs_no_flow() {
         .args(["review", "schedule", "--all", "--scope", SCOPE])
         .assert()
         .failure();
+}
+
+#[test]
+fn scheduled_fix_row_carries_one_gate_owned_check() {
+    let repo = Repo::new(&[
+        cleanup("F1", "src/a.rs", "remove", "let fast = \"--fast\";"),
+        bug("F2", "src/a.rs", "alpha"),
+        bug("F3", "src/a.rs", "alpha_two"),
+        bug("F4", "src/c.rs", "gamma"),
+    ]);
+    let out = repo.schedule(&["F1,F2,F3,F4"]);
+    let folded = scheduled_ref(&out, "F1");
+    assert_eq!(scheduled_ref(&out, "F3"), folded);
+    let single = scheduled_ref(&out, "F4");
+    assert_ne!(single, folded);
+
+    let doc = repo.tasks_doc();
+    let checks = |r#ref: &str| -> Vec<String> {
+        spec(&doc, r#ref)["accept"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|a| a["check"].as_str().unwrap().to_string())
+            .collect()
+    };
+    let gate = milestone_check();
+    assert_eq!(
+        checks(&folded),
+        [
+            "tomlctl review anchor F1 --scope t --gone".to_string(),
+            gate.clone()
+        ]
+    );
+    assert_eq!(checks(&single), [gate]);
+
+    let folded_accept = &spec(&doc, &folded)["accept"];
+    assert!(folded_accept[0].get("run_by").is_none(), "{folded_accept}");
+    assert_eq!(folded_accept[1], spec(&doc, &single)["accept"][0]);
+    let entry = &folded_accept[1];
+    assert_eq!(entry["run_by"].as_str(), Some("gate"));
+    assert_eq!(entry["writes_build"].as_bool(), Some(false));
+    assert_eq!(entry["kind"].as_str(), Some("forward"));
+    assert_eq!(
+        entry["behaviour"].as_str(),
+        Some("every finding this milestone fixes no longer reproduces")
+    );
 }

@@ -2408,6 +2408,8 @@ mod tests {
             kind: "forward".to_string(),
             positive: String::new(),
             writes_build: true,
+            run_by: String::new(),
+            covered_by: String::new(),
             probe: None,
         }
     }

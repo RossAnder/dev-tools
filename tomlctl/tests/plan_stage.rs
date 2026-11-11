@@ -370,6 +370,24 @@ fn a_spec_shape_error_names_tasks_update_and_tasks_update_clears_it() {
         "plan/accept-no-check",
         json!({ "accept": [accept()] }),
     );
+    spec_shape_clears(
+        &swap(
+            TASKS,
+            "writes_build = true }]",
+            "writes_build = true, run_by = \"worker\" }]",
+        ),
+        "plan/accept-owner-invalid",
+        json!({ "accept": [accept()] }),
+    );
+    spec_shape_clears(
+        &swap(
+            TASKS,
+            "writes_build = true }]",
+            "writes_build = true, run_by = \"covered\", covered_by = \"cargo test nope\" }]",
+        ),
+        "plan/accept-cover-unknown",
+        json!({ "accept": [accept()] }),
+    );
     let with = |line: &str| {
         swap(
             TASKS,

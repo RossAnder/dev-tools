@@ -345,6 +345,16 @@ const APPLY_SLUG: &str = "apply-fixture";
 const PROBE_CAPTURE: &str = "probe-capture.tsv";
 const PLAN_FILE: &str = "src/plan.rs";
 
+/// A launch's transcript directory: one agent ran a whole-crate test and a
+/// recursive grep, both of which `agents audit` reports by default.
+const TRANSCRIPTS: &str = "transcripts";
+const TRANSCRIPT: &str = concat!(
+    r#"{"message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"cargo test --all"}}]}}"#,
+    "\n",
+    r#"{"message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"grep -rn guard src"}}]}}"#,
+    "\n",
+);
+
 const PLAN_BRIEF: &str = "## Intent\nStop the retry storm.\n\n## Non-goals\nNo new helper.\n\n\
                           ## Scope budget\nOne file.\n\n## Success criteria\nA retry waits.\n";
 
@@ -803,6 +813,11 @@ fn cases() -> Vec<Case> {
         )
         .stdin(r#"{"hook_event_name":"Notification","session_id":"s","agent_id":"a"}"#),
         read(&["agents", "list", "--slug", S], Top, "agent_id"),
+        read(
+            &["agents", "audit", "--transcripts", TRANSCRIPTS],
+            Top,
+            "agent",
+        ),
         read(&["inputs", "list"], Field("inputs"), "id"),
         write(&["inputs", "add", "--json", "-"], "id")
             .stdin(r#"{"kind": "note", "text": "later"}"#),
@@ -1196,13 +1211,54 @@ fn cases() -> Vec<Case> {
         )
         .git(),
         read(&["plan", "drift", "--slug", APPROVED_SLUG], One, "affected").git(),
+        read(
+            &[
+                "plan",
+                "emit",
+                "launch-args",
+                "--slug",
+                PLAN_SLUG,
+                "--milestone",
+                "A",
+            ],
+            One,
+            "args",
+        )
+        .git(),
+        read(
+            &[
+                "plan",
+                "emit",
+                "gate-list",
+                "--slug",
+                PLAN_SLUG,
+                "--milestone",
+                "A",
+            ],
+            One,
+            "commands",
+        ),
+        read(
+            &[
+                "plan",
+                "emit",
+                "reproduce-units",
+                "--slug",
+                PLAN_SLUG,
+                "--milestone",
+                "A",
+            ],
+            One,
+            "launches",
+        ),
     ]
 }
 
 /// The fixture every case runs against: a ledger, a JSON document, a flow
 /// whose plan carries the rendered task sections, two inputs (`I1` a capture,
-/// `I2` a question), two backlog items, one recorded agent, an evidence
-/// directory no item owns, and a review store over a lens catalogue.
+/// `I2` a question), two backlog items, one recorded agent, one agent
+/// transcript, an evidence directory no item owns, and a review store over a
+/// lens catalogue.
 struct Fixture {
     _dir: tempfile::TempDir,
     _projects: tempfile::TempDir,
@@ -1437,6 +1493,7 @@ fn fixture() -> Fixture {
     put(&root, JSON_DOC, r#"{"a":{"b":1},"list":[1,2]}"#);
     put(&root, &format!("docs/plans/{S}.md"), "# Fixture plan\n");
     put(&root, ".claude/backlog-evidence/B-deadbeef/note.txt", "x\n");
+    put(&root, &format!("{TRANSCRIPTS}/agent-a1.jsonl"), TRANSCRIPT);
     put(
         &root,
         &format!("{BUILTIN}/vocabulary.toml"),

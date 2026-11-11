@@ -26,6 +26,7 @@ that.
 
 - [`agents record`](#agents-record)
 - [`agents list`](#agents-list)
+- [`agents audit`](#agents-audit)
 - [Store shape](#store-shape)
 - [Events](#events)
 - [Flow selection](#flow-selection)
@@ -85,6 +86,30 @@ A missing store prints `[]` — no hook has fired for the flow yet — unless `-
 asks for `kind=not_found`. Rows pass through the store schema on the way out, so every
 [record field](#record-fields) is present on every row, keys a hand edit added are dropped,
 and a malformed store or one written by a newer `tomlctl` errors instead of being echoed.
+
+## `agents audit`
+
+Reports what a Workflow launch's agents ran, from their transcripts rather than the store: one
+`{agent, command}` row per Bash command matching a pattern, printed as a JSON array. It reads only
+regular files named `agent-*.jsonl` directly in the directory, in file-name order, never enters a
+subdirectory, and writes nothing. It takes no store flag and no `--slug`.
+
+```bash
+tomlctl agents audit --transcripts <dir>
+tomlctl agents audit --transcripts <dir> --pattern '<regex>' --pattern '<regex>'
+```
+
+| Flag | Value | Meaning | Default |
+|---|---|---|---|
+| `--transcripts` | directory | The transcript directory the launch reports. | required |
+| `--pattern` | regex, repeatable | A command matching any pattern is reported. Given patterns replace the defaults; an invalid one errors naming it. | a `cargo build`, `cargo test` or `cargo nextest` run, and a recursive `grep` (`-r`, `-R`, `--recursive` or `--dereference-recursive`, including `egrep` and `fgrep`) |
+
+`agent` is the file name without `.jsonl`, and `command` is the tool call's `input.command`, cut to
+200 characters. Each transcript line is read as JSON, and only `tool_use` entries named `Bash` in
+its `message.content` array count; a line that is not JSON, or has no such array, is skipped. A
+directory with no matching command prints `[]`. The default patterns name the commands a milestone
+gate owns and a sub-agent must not run, so a row is a lead to read, not a verdict: a quoted ` -r `
+in a grep's search text also matches.
 
 ## Store shape
 

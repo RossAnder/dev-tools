@@ -501,6 +501,43 @@ fn an_empty_session_is_not_stored() {
 }
 
 #[test]
+fn run_start_stores_tasks() {
+    let (_dir, root) = opened();
+    plan(
+        &root,
+        &[
+            "run",
+            "start",
+            "--step",
+            "implement:M",
+            "--tasks",
+            "3,1,3,7",
+        ],
+    )
+    .success();
+    start_run(&root, "implement:N");
+
+    let ids: Vec<i64> = run_row(&root, 0)["tasks"]
+        .as_array()
+        .expect("tasks is stored")
+        .iter()
+        .map(|id| id.as_integer().expect("an id"))
+        .collect();
+    assert_eq!(ids, [3, 1, 7], "stored in the order given, once each");
+    assert!(
+        run_row(&root, 1).get("tasks").is_none(),
+        "a run started without --tasks writes no key: {}",
+        store_text(&root)
+    );
+    plan(&root, &["run", "finish", "--step", "implement:M"]).success();
+    assert_eq!(
+        run_row(&root, 0)["tasks"].as_array().map(Vec::len),
+        Some(3),
+        "a later write keeps the ids"
+    );
+}
+
+#[test]
 fn finish_records_its_outcome_defaulting_to_ok() {
     let (_dir, root) = opened();
     start_run(&root, "a");

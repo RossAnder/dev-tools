@@ -232,6 +232,10 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             AgentsOp::List { slug, integrity } => {
                 crate::agents::dispatch::dispatch_list(&slug, &integrity)?
             }
+            AgentsOp::Audit {
+                transcripts,
+                pattern,
+            } => crate::agents::dispatch::dispatch_audit(&transcripts, &pattern)?,
         },
         Cmd::Inputs { op } => inputs_dispatch(op)?,
         Cmd::Review { op } => crate::review::dispatch::dispatch(op)?,

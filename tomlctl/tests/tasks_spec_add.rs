@@ -191,6 +191,75 @@ fn an_unlabelled_accept_counts_as_writing_the_build() {
     );
 }
 
+#[test]
+fn accept_run_by_round_trips() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, FIXTURE);
+    let entries = json!([
+        {"check": "true", "kind": "guard", "writes_build": false, "run_by": "gate"},
+        {"check": "cargo test", "kind": "guard", "run_by": "covered", "covered_by": "cargo test"},
+        {"check": "true", "kind": "guard", "writes_build": false},
+    ]);
+    let envelope = add_many(&root, &row_with_spec(&json!({"accept": entries})));
+    let id = envelope["rows"][0]["id"].to_string();
+
+    let doc = read_store(&store);
+    let stored = &side_table(&doc, "specs")[0]["accept"];
+    assert_eq!(text(&stored[0], "run_by"), "gate");
+    assert_eq!(text(&stored[1], "covered_by"), "cargo test");
+    assert!(
+        stored[2].get("run_by").is_none() && stored[2].get("covered_by").is_none(),
+        "an entry with neither key is stored without them: {}",
+        stored[2]
+    );
+
+    let out = cli(&root)
+        .args(["tasks", "show", &id, "--slug", TASKS_SLUG, "--with", "spec"])
+        .assert()
+        .success();
+    let shown: Value = serde_json::from_slice(&out.get_output().stdout).expect("stdout is JSON");
+    let accept = &shown["spec"]["accept"];
+    assert_eq!(accept[0]["run_by"], json!("gate"));
+    assert_eq!(accept[1]["run_by"], json!("covered"));
+    assert_eq!(accept[1]["covered_by"], json!("cargo test"));
+    assert_eq!(accept[2].get("run_by"), None, "{accept}");
+    assert_eq!(accept[2].get("covered_by"), None, "{accept}");
+}
+
+#[test]
+fn accept_worker_owner_refuses_a_building_check() {
+    assert_refused(
+        &row_with_spec(&json!({"accept": [
+            {"check": "cargo test", "kind": "guard", "writes_build": true, "run_by": "worker"}
+        ]})),
+        "a worker never runs a check that builds",
+    );
+    assert_refused(
+        &row_with_spec(&json!({"accept": [
+            {"check": "cargo test", "kind": "guard", "run_by": "worker"}
+        ]})),
+        "a worker never runs a check that builds",
+    );
+    assert_refused(
+        &row_with_spec(&json!({"accept": [
+            {"check": "true", "kind": "guard", "writes_build": false, "run_by": "covered"}
+        ]})),
+        "covered_by",
+    );
+    assert_refused(
+        &row_with_spec(&json!({"accept": [
+            {"check": "true", "kind": "guard", "writes_build": false, "covered_by": "cargo test"}
+        ]})),
+        "covered_by",
+    );
+    assert_refused(
+        &row_with_spec(&json!({"accept": [
+            {"check": "true", "kind": "guard", "run_by": "someone"}
+        ]})),
+        "someone",
+    );
+}
+
 /// A deferred milestone's task states behaviour before any check exists.
 #[test]
 fn a_behaviour_with_no_check_needs_no_kind() {

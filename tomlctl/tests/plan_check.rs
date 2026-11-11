@@ -704,6 +704,50 @@ fn a_probe_is_absent_only_on_a_checked_row_marked_as_not_writing_the_build() {
 }
 
 #[test]
+fn a_gate_owned_check_is_never_absent_a_probe() {
+    let unprobed = swap(TASKS, PROBE, "");
+    let gate = swap(
+        &unprobed,
+        "writes_build = false",
+        "writes_build = false, run_by = \"gate\"",
+    );
+    assert_clean(&Flow::with_tasks(&gate));
+}
+
+#[test]
+fn check_reports_unknown_cover() {
+    let covered = |gate: &str| {
+        swap(
+            TASKS,
+            "writes_build = false",
+            &format!("writes_build = false, run_by = \"covered\", covered_by = \"{gate}\""),
+        )
+    };
+    assert_reports_error(
+        &Flow::with_tasks(&covered("cargo test other")),
+        "plan/accept-cover-unknown",
+    );
+    assert_clean(&Flow::with_tasks(&covered("cargo test")));
+}
+
+#[test]
+fn check_reports_a_worker_owner_on_a_building_check() {
+    let tasks = swap(
+        TASKS,
+        "writes_build = false",
+        "writes_build = true, run_by = \"worker\"",
+    );
+    assert_reports_error(&Flow::with_tasks(&tasks), "plan/accept-owner-invalid");
+
+    let stray = swap(
+        TASKS,
+        "writes_build = false",
+        "writes_build = false, covered_by = \"cargo test\"",
+    );
+    assert_reports_error(&Flow::with_tasks(&stray), "plan/accept-owner-invalid");
+}
+
+#[test]
 fn a_probe_is_absent_only_on_a_pending_row() {
     let unprobed = swap(TASKS, PROBE, "");
     for status in ["in-progress", "done", "failed", "deferred", "parked"] {

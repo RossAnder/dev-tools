@@ -129,6 +129,8 @@ fn remedy(class: &str) -> &'static str {
         "plan/spec-no-outcome"
         | "plan/spec-no-accept"
         | "plan/accept-no-check"
+        | "plan/accept-owner-invalid"
+        | "plan/accept-cover-unknown"
         | "plan/means-required-no-reason"
         | "plan/design-anchor-dead"
         | "plan/premise-task-unknown"
@@ -333,6 +335,8 @@ mod tests {
             ("plan/spec-no-outcome", TASKS_UPDATE),
             ("plan/spec-no-accept", TASKS_UPDATE),
             ("plan/accept-no-check", TASKS_UPDATE),
+            ("plan/accept-owner-invalid", TASKS_UPDATE),
+            ("plan/accept-cover-unknown", TASKS_UPDATE),
             ("plan/means-required-no-reason", TASKS_UPDATE),
             ("plan/design-anchor-dead", TASKS_UPDATE),
             ("plan/premise-task-unknown", TASKS_UPDATE),

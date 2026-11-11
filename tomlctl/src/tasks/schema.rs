@@ -43,6 +43,11 @@ pub(crate) const KIND_FALSIFIER: &str = "falsifier";
 pub(crate) const KIND_GUARD: &str = "guard";
 pub(crate) const ACCEPT_KINDS: [&str; 3] = [KIND_FORWARD, KIND_FALSIFIER, KIND_GUARD];
 
+pub(crate) const RUN_BY_WORKER: &str = "worker";
+pub(crate) const RUN_BY_GATE: &str = "gate";
+pub(crate) const RUN_BY_COVERED: &str = "covered";
+pub(crate) const RUN_BY_OWNERS: [&str; 3] = [RUN_BY_WORKER, RUN_BY_GATE, RUN_BY_COVERED];
+
 pub(crate) const BINDING_REQUIRED: &str = "required";
 pub(crate) const BINDING_SUGGESTED: &str = "suggested";
 pub(crate) const MEANS_BINDINGS: [&str; 2] = [BINDING_REQUIRED, BINDING_SUGGESTED];
@@ -278,7 +283,51 @@ pub(crate) struct Accept {
     /// An absent key reads as `true`, so only an explicit `false` is probed and
     /// an unlabelled command never runs.
     pub(crate) writes_build: bool,
+    /// `""` when absent, which `owner` derives from `writes_build`.
+    pub(crate) run_by: String,
+    /// The gate command a `covered` check is covered by; `""` when absent.
+    pub(crate) covered_by: String,
     pub(crate) probe: Option<Probe>,
+}
+
+impl Accept {
+    /// Who runs the check: the stored `run_by`, else `worker` for a check marked
+    /// as not writing the build and `gate` for any other.
+    pub(crate) fn owner(&self) -> &str {
+        if !self.run_by.is_empty() {
+            &self.run_by
+        } else if self.writes_build {
+            RUN_BY_GATE
+        } else {
+            RUN_BY_WORKER
+        }
+    }
+
+    /// Why `run_by` and `covered_by` cannot stand together with `writes_build`,
+    /// `None` when they can. A worker never runs a check that builds.
+    pub(crate) fn owner_problem(&self) -> Option<String> {
+        if !self.run_by.is_empty() && !RUN_BY_OWNERS.contains(&self.run_by.as_str()) {
+            return Some(format!(
+                "`run_by` is `{}` — expected one of {}",
+                self.run_by,
+                RUN_BY_OWNERS.join(", ")
+            ));
+        }
+        if self.run_by == RUN_BY_WORKER && self.writes_build {
+            return Some(
+                "`run_by = \"worker\"` needs `writes_build = false`: a worker never runs a \
+                 check that builds"
+                    .to_string(),
+            );
+        }
+        match (self.run_by == RUN_BY_COVERED, self.covered_by.is_empty()) {
+            (true, true) => Some("`run_by = \"covered\"` needs a `covered_by` gate".to_string()),
+            (false, false) => {
+                Some("`covered_by` is allowed only with `run_by = \"covered\"`".to_string())
+            }
+            _ => None,
+        }
+    }
 }
 
 /// One probe run against an `Accept`. An rc is `None` for a control that did
@@ -322,6 +371,18 @@ pub(crate) struct MilestoneSpec {
     pub(crate) gates: Vec<String>,
     pub(crate) elaboration: String,
     pub(crate) defer_reason: String,
+    pub(crate) gate_probes: Vec<GateProbe>,
+}
+
+/// A cheap command that fails where `gate`, one of its milestone's gates, cannot
+/// pass in this environment. `verdict` is `holds`, `fails` or `broken` once
+/// recorded, `""` before; `at` is the head it was recorded at.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct GateProbe {
+    pub(crate) gate: String,
+    pub(crate) probe: String,
+    pub(crate) verdict: String,
+    pub(crate) at: String,
 }
 
 impl MilestoneSpec {
@@ -1127,10 +1188,14 @@ fn accept_from_toml(table: &Table, context: &str) -> Result<Accept> {
             .get("writes_build")
             .and_then(TomlValue::as_bool)
             .unwrap_or(true),
+        run_by: str_or(table, "run_by", ""),
+        covered_by: lf(&str_or(table, "covered_by", "")),
         probe,
     })
 }
 
+/// `run_by` and `covered_by` are written only when set, so an entry carrying
+/// neither keeps the bytes it was stored with.
 fn accept_to_toml(entry: &Accept) -> TomlValue {
     let Accept {
         behaviour,
@@ -1138,6 +1203,8 @@ fn accept_to_toml(entry: &Accept) -> TomlValue {
         kind,
         positive,
         writes_build,
+        run_by,
+        covered_by,
         probe,
     } = entry;
     let mut table = Table::new();
@@ -1149,6 +1216,12 @@ fn accept_to_toml(entry: &Accept) -> TomlValue {
         "writes_build".to_string(),
         TomlValue::Boolean(*writes_build),
     );
+    if !run_by.is_empty() {
+        table.insert("run_by".to_string(), TomlValue::String(run_by.clone()));
+    }
+    if !covered_by.is_empty() {
+        table.insert("covered_by".to_string(), TomlValue::String(lf(covered_by)));
+    }
     if let Some(probe) = probe {
         table.insert("probe".to_string(), probe_to_toml(probe));
     }
@@ -1240,20 +1313,44 @@ fn milestone_from_toml(value: &TomlValue, index: usize) -> Result<MilestoneSpec>
     let table = value
         .as_table()
         .ok_or_else(|| anyhow!("milestones[{index}] is not a table"))?;
+    let gate_probes = match table.get("gate_probes") {
+        Some(raw) => raw
+            .as_array()
+            .ok_or_else(|| anyhow!("milestones[{index}].gate_probes is not an array"))?
+            .iter()
+            .enumerate()
+            .map(|(at, entry)| {
+                let entry = entry.as_table().ok_or_else(|| {
+                    anyhow!("milestones[{index}].gate_probes[{at}] is not a table")
+                })?;
+                Ok(GateProbe {
+                    gate: lf(&str_or(entry, "gate", "")),
+                    probe: lf(&str_or(entry, "probe", "")),
+                    verdict: str_or(entry, "verdict", ""),
+                    at: str_or(entry, "at", ""),
+                })
+            })
+            .collect::<Result<Vec<_>>>()?,
+        None => Vec::new(),
+    };
     Ok(MilestoneSpec {
         id: str_or(table, "id", ""),
         gates: lf_array(table, "gates"),
         elaboration: str_or(table, "elaboration", ELABORATION_UPFRONT),
         defer_reason: lf(&str_or(table, "defer_reason", "")),
+        gate_probes,
     })
 }
 
+/// `gate_probes` is written only when it holds an entry, so a milestone with
+/// none keeps the bytes it was stored with.
 fn milestone_to_toml(entry: &MilestoneSpec) -> TomlValue {
     let MilestoneSpec {
         id,
         gates,
         elaboration,
         defer_reason,
+        gate_probes,
     } = entry;
     let mut table = Table::new();
     table.insert("id".to_string(), TomlValue::String(id.clone()));
@@ -1266,6 +1363,26 @@ fn milestone_to_toml(entry: &MilestoneSpec) -> TomlValue {
         "defer_reason".to_string(),
         TomlValue::String(lf(defer_reason)),
     );
+    if !gate_probes.is_empty() {
+        let entries = gate_probes
+            .iter()
+            .map(|entry| {
+                let GateProbe {
+                    gate,
+                    probe,
+                    verdict,
+                    at,
+                } = entry;
+                let mut probe_table = Table::new();
+                probe_table.insert("gate".to_string(), TomlValue::String(lf(gate)));
+                probe_table.insert("probe".to_string(), TomlValue::String(lf(probe)));
+                probe_table.insert("verdict".to_string(), TomlValue::String(verdict.clone()));
+                probe_table.insert("at".to_string(), TomlValue::String(at.clone()));
+                TomlValue::Table(probe_table)
+            })
+            .collect();
+        table.insert("gate_probes".to_string(), TomlValue::Array(entries));
+    }
     TomlValue::Table(table)
 }
 
@@ -1906,6 +2023,8 @@ mod tests {
                         kind: "forward".to_string(),
                         positive: "printf ok".to_string(),
                         writes_build: false,
+                        run_by: String::new(),
+                        covered_by: String::new(),
                         probe: Some(Probe {
                             at: "0d1bf49".to_string(),
                             neg_rc: Some(1),
@@ -1919,6 +2038,8 @@ mod tests {
                         kind: "guard".to_string(),
                         positive: String::new(),
                         writes_build: false,
+                        run_by: "gate".to_string(),
+                        covered_by: String::new(),
                         probe: Some(Probe {
                             at: "0d1bf49".to_string(),
                             neg_rc: Some(0),
@@ -1932,6 +2053,8 @@ mod tests {
                         kind: "guard".to_string(),
                         positive: String::new(),
                         writes_build: true,
+                        run_by: "covered".to_string(),
+                        covered_by: "cargo nextest run --manifest-path x/Cargo.toml".to_string(),
                         probe: None,
                     },
                 ],
@@ -1960,6 +2083,12 @@ mod tests {
                 gates: vec!["cargo nextest run --manifest-path x/Cargo.toml".to_string()],
                 elaboration: "deferred".to_string(),
                 defer_reason: "depends on what A produces".to_string(),
+                gate_probes: vec![GateProbe {
+                    gate: "cargo nextest run --manifest-path x/Cargo.toml".to_string(),
+                    probe: "cargo nextest list --manifest-path x/Cargo.toml".to_string(),
+                    verdict: "holds".to_string(),
+                    at: "0d1bf49".to_string(),
+                }],
             }],
             changes: vec![Change {
                 at: Some("2026-11-05".parse().expect("bare date parses")),
@@ -2203,6 +2332,42 @@ commit = ""
         assert!(accept("writes_build = true\n").writes_build);
         assert!(!accept("writes_build = false\n").writes_build);
         assert_eq!(accept("").probe, None);
+    }
+
+    #[test]
+    fn an_absent_run_by_takes_its_owner_from_writes_build_and_writes_no_key() {
+        let entry = |writes_build: bool| Accept {
+            behaviour: "b".to_string(),
+            check: "c".to_string(),
+            kind: KIND_GUARD.to_string(),
+            positive: String::new(),
+            writes_build,
+            run_by: String::new(),
+            covered_by: String::new(),
+            probe: None,
+        };
+        assert_eq!(entry(false).owner(), RUN_BY_WORKER);
+        assert_eq!(entry(true).owner(), RUN_BY_GATE);
+        let doc = accept_to_toml(&entry(false));
+        let table = doc.as_table().expect("a table");
+        assert!(!table.contains_key("run_by") && !table.contains_key("covered_by"));
+
+        let gate = Accept {
+            run_by: RUN_BY_GATE.to_string(),
+            ..entry(false)
+        };
+        assert_eq!(gate.owner(), RUN_BY_GATE);
+        assert_eq!(gate.owner_problem(), None);
+        let building_worker = Accept {
+            run_by: RUN_BY_WORKER.to_string(),
+            ..entry(true)
+        };
+        assert!(building_worker.owner_problem().is_some());
+        let stray_cover = Accept {
+            covered_by: "cargo test".to_string(),
+            ..entry(true)
+        };
+        assert!(stray_cover.owner_problem().is_some());
     }
 
     /// A spec holding a bare string where a table belongs is a damaged store,

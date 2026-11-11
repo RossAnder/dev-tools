@@ -41,3 +41,9 @@ pub(crate) fn dispatch_list(slug: &str, read_args: &ReadIntegrityArgs) -> Result
     let path = schema::agents_path(slug)?;
     print_report(super::list::rows(&path, read_args)?, Rows::Top)
 }
+
+/// Print the matching Bash commands of the transcripts in `transcripts` as a
+/// JSON array of `{agent, command}` rows.
+pub(crate) fn dispatch_audit(transcripts: &std::path::Path, patterns: &[String]) -> Result<()> {
+    print_report(super::audit::rows(transcripts, patterns)?, Rows::Top)
+}

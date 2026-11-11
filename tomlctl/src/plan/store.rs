@@ -266,6 +266,8 @@ fn entry_matches(entry: &JsonValue, stored: &Accept) -> bool {
         ("check", &stored.check),
         ("kind", &stored.kind),
         ("positive", &stored.positive),
+        ("run_by", &stored.run_by),
+        ("covered_by", &stored.covered_by),
     ];
     let mut compared = false;
     for (key, value) in strings {
@@ -752,6 +754,8 @@ summary = "Not a plan finding."
             kind: String::new(),
             positive: String::new(),
             writes_build: false,
+            run_by: String::new(),
+            covered_by: String::new(),
             probe: probed.then(schema_probe),
         }
     }

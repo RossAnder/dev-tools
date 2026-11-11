@@ -643,3 +643,161 @@ fn clear_gate_beside_gate_is_refused_and_writes_nothing() {
     assert_eq!(err["kind"], json!("validation"), "{err}");
     assert_eq!(fs::read(&store).unwrap(), before);
 }
+
+fn gate_probes(doc: &toml::Value) -> Vec<(String, String)> {
+    table(doc, "milestones")[0]
+        .get("gate_probes")
+        .and_then(toml::Value::as_array)
+        .map(|entries| {
+            entries
+                .iter()
+                .map(|entry| {
+                    (
+                        text(entry, "gate").to_string(),
+                        text(entry, "probe").to_string(),
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[test]
+fn milestone_gate_probe_round_trips() {
+    let (_tmp, root) = sandbox();
+    let store = seed_v2(&root, FIXTURE);
+    milestone(
+        &root,
+        "add",
+        &[
+            "--id",
+            "A",
+            "--goal",
+            "g",
+            "--gate",
+            "bash scripts/link.sh",
+            "--gate",
+            "cargo test",
+            "--gate-probe",
+            "bash scripts/link.sh :: bash scripts/link.sh --dry-run :: twice",
+        ],
+    )
+    .success();
+
+    let doc = read_store(&store);
+    assert_eq!(
+        gate_probes(&doc),
+        vec![(
+            "bash scripts/link.sh".to_string(),
+            "bash scripts/link.sh --dry-run :: twice".to_string()
+        )],
+        "the value splits at its first ` :: `"
+    );
+    let entry = &table(&doc, "milestones")[0]["gate_probes"][0];
+    assert_eq!((text(entry, "verdict"), text(entry, "at")), ("", ""));
+
+    // An update that leaves the probe list alone keeps it byte for byte.
+    milestone(&root, "update", &["--id", "A", "--goal", "g2"]).success();
+    assert_eq!(gate_probes(&read_store(&store)), gate_probes(&doc));
+
+    milestone(
+        &root,
+        "update",
+        &[
+            "--id",
+            "A",
+            "--gate-probe",
+            "cargo test :: cargo test --no-run",
+        ],
+    )
+    .success();
+    assert_eq!(
+        gate_probes(&read_store(&store)),
+        vec![("cargo test".to_string(), "cargo test --no-run".to_string())],
+        "update replaces the whole probe list"
+    );
+
+    // A milestone with no probe writes no `gate_probes` key.
+    milestone(&root, "add", &["--id", "B", "--goal", "g", "--gate", "x"]).success();
+    let doc = read_store(&store);
+    assert!(
+        table(&doc, "milestones")[1].get("gate_probes").is_none(),
+        "{doc}"
+    );
+}
+
+#[test]
+fn gate_probe_must_name_a_gate() {
+    let (_tmp, root) = sandbox();
+    let store = seed_v2(&root, FIXTURE);
+    for bad in [
+        "cargo build :: cargo build --dry-run",
+        "cargo test",
+        "cargo test :: ",
+        "cargo test :: cargo test",
+    ] {
+        let err = refused(
+            &root,
+            "add",
+            &[
+                "--id",
+                "A",
+                "--goal",
+                "g",
+                "--gate",
+                "cargo test",
+                "--gate-probe",
+                bad,
+            ],
+        );
+        assert_eq!(err["kind"], json!("validation"), "{bad}: {err}");
+    }
+    assert!(table(&read_store(&store), "milestones").is_empty());
+
+    milestone(
+        &root,
+        "add",
+        &[
+            "--id",
+            "A",
+            "--goal",
+            "g",
+            "--gate",
+            "cargo test",
+            "--gate-probe",
+            "cargo test :: cargo test --no-run",
+        ],
+    )
+    .success();
+    let before = fs::read(&store).unwrap();
+    let err = refused(
+        &root,
+        "update",
+        &[
+            "--id",
+            "A",
+            "--gate-probe",
+            "cargo nextest run :: cargo nextest list",
+        ],
+    );
+    assert_eq!(err["kind"], json!("validation"), "{err}");
+    assert_eq!(fs::read(&store).unwrap(), before);
+
+    let reports_unknown = |root: &Path| {
+        let out = cli(root)
+            .args(["plan", "check", "--slug", TASKS_SLUG])
+            .assert();
+        String::from_utf8_lossy(&out.get_output().stdout).contains("plan/gate-probe-unknown")
+    };
+    assert!(!reports_unknown(&root));
+    milestone(
+        &root,
+        "update",
+        &["--id", "A", "--gate", "cargo nextest run"],
+    )
+    .success();
+    assert!(
+        reports_unknown(&root),
+        "a probe whose gate was replaced is reported"
+    );
+}

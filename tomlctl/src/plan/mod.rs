@@ -5,6 +5,7 @@
 mod approve;
 pub(crate) mod check;
 mod drift;
+mod emit;
 mod milestone;
 mod open;
 mod probes;

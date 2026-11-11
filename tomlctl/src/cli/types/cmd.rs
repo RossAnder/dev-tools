@@ -420,6 +420,19 @@ pub(crate) enum AgentsOp {
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
+
+    /// Print the Bash commands a launch's agents ran that match a pattern, as
+    /// `{agent, command}` rows, from the `agent-*.jsonl` transcripts directly
+    /// in one directory. Writes nothing.
+    Audit {
+        /// The launch's transcript directory.
+        #[arg(long = "transcripts", value_name = "DIR")]
+        transcripts: std::path::PathBuf,
+        /// Regex a command must match; repeatable. Without one, a cargo
+        /// build, test or nextest run and a recursive grep are reported.
+        #[arg(long = "pattern", value_name = "REGEX")]
+        pattern: Vec<String>,
+    },
 }
 
 /// Legacy shortcut flags that predate the `--where-*` family on `items list`.

@@ -306,6 +306,140 @@ fn reproduce_status_answers_from_the_current_reproduction() {
     assert_eq!(stdout_json(&out)["ok"], true);
 }
 
+fn task_row(id: u32, r#ref: &str, checkpoint: &str) -> String {
+    format!(
+        r#"
+[[items]]
+id = {id}
+ref = "{ref}"
+title = "{ref}"
+effort = "S"
+status = "pending"
+checkpoint = "{checkpoint}"
+files = ["src/lib.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = ""
+commit = ""
+"#
+    )
+}
+
+fn finding_link(r#ref: &str, store: &str, fixes: &[&str]) -> String {
+    let fixes: Vec<String> = fixes.iter().map(|f| format!("{f:?}")).collect();
+    format!(
+        "\n[[finding_links]]\nref = \"{ref}\"\nstore = \"{store}\"\nfixes = [{}]\nsettles = []\n",
+        fixes.join(", ")
+    )
+}
+
+/// A flow whose milestone `B` rows fix F2 then F1 in this store (and F9 in
+/// another), whose milestone `A` row fixes F2, and whose milestone `C` has a
+/// row fixing nothing.
+fn seed_flow(repo: &Repo) {
+    let mut toml = String::from(
+        "schema_version = 1\nlast_updated = 2026-09-07\n\n[policy]\ncheckpoints = \"milestones\"\n\
+         max_parallel = 6\ncommit_granularity = \"per-task\"\nnote = \"\"\n",
+    );
+    for id in ["A", "B", "C"] {
+        toml.push_str(&format!(
+            "\n[[checkpoints]]\nid = \"{id}\"\nrationale = \"fixes\"\n"
+        ));
+    }
+    toml.push_str(&task_row(1, "fix-the-retry", "B"));
+    toml.push_str(&task_row(2, "fix-the-limit", "B"));
+    toml.push_str(&task_row(3, "fix-the-retry-again", "A"));
+    toml.push_str(&task_row(4, "tidy-the-docs", "C"));
+    let store = ".claude/review-v2/t.toml";
+    toml.push_str(&finding_link("fix-the-retry", store, &["F2"]));
+    toml.push_str(&finding_link("fix-the-limit", store, &["F1", "F2"]));
+    toml.push_str(&finding_link(
+        "fix-the-limit",
+        ".claude/review-v2/other.toml",
+        &["F9"],
+    ));
+    toml.push_str(&finding_link("fix-the-retry-again", store, &["F2"]));
+    common::seed_tasks(&repo.root, &toml);
+}
+
+impl Repo {
+    fn milestone_status(&self, milestone: &str, expect: &str) -> assert_cmd::assert::Assert {
+        cli(&self.root)
+            .current_dir(&self.root)
+            .args(["--error-format", "json", "review", "reproduce-status"])
+            .args(["--flow", common::TASKS_SLUG, "--milestone", milestone])
+            .args(["--expect", expect, "--scope", SCOPE])
+            .assert()
+    }
+}
+
+fn ids(json: &JsonValue) -> Vec<&str> {
+    json["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["id"].as_str().unwrap())
+        .collect()
+}
+
+#[test]
+fn reproduce_status_selects_by_milestone() {
+    let repo = Repo::new();
+    seed_flow(&repo);
+
+    let out = repo.milestone_status("B", "gone").code(1);
+    let json = stdout_json(&out);
+    assert_eq!(json["ok"], false, "{json}");
+    assert_eq!(ids(&json), ["F2", "F1"], "{json}");
+
+    repo.reproduce(&[row("F2", 1, "verifier", "gone")])
+        .success();
+    let out = repo.milestone_status("A", "gone").success();
+    assert_eq!(ids(&stdout_json(&out)), ["F2"]);
+    repo.milestone_status("B", "gone").code(1);
+
+    repo.reproduce(&[row("F1", 1, "checker", "gone")]).success();
+    let out = repo.milestone_status("B", "gone").success();
+    let json = stdout_json(&out);
+    assert_eq!(json["ok"], true, "{json}");
+    assert_eq!(ids(&json), ["F2", "F1"]);
+}
+
+#[test]
+fn reproduce_status_milestone_excludes_positional_ids() {
+    let repo = Repo::new();
+    seed_flow(&repo);
+    let run = |args: &[&str]| {
+        cli(&repo.root)
+            .current_dir(&repo.root)
+            .args(["review", "reproduce-status"])
+            .args(args)
+            .args(["--expect", "gone", "--scope", SCOPE])
+            .assert()
+            .code(2)
+    };
+    run(&["F1", "--flow", common::TASKS_SLUG, "--milestone", "B"]);
+    run(&["--flow", common::TASKS_SLUG]);
+    run(&["--milestone", "B"]);
+    run(&[]);
+}
+
+#[test]
+fn reproduce_status_milestone_expect_fails_on_no_findings() {
+    let repo = Repo::new();
+    seed_flow(&repo);
+    for milestone in ["C", "Z"] {
+        let out = repo.milestone_status(milestone, "gone").code(1);
+        let json = stdout_json(&out);
+        assert_eq!(json["ok"], false, "{json}");
+        assert_eq!(json["findings"], json!([]), "{json}");
+    }
+}
+
 #[test]
 fn reproduce_status_refuses_an_unknown_finding_or_verdict() {
     let repo = Repo::new();

@@ -264,6 +264,8 @@ pub(crate) struct Run {
     pub(crate) outcome: Option<RunOutcome>,
     /// Why the run was abandoned. Omitted from the TOML while empty.
     pub(crate) reason: String,
+    /// The task ids the launch dispatched. Omitted from the TOML while empty.
+    pub(crate) tasks: Vec<u32>,
 }
 
 /// Where a `[[run]]` row stands, derived from its fields and never stored.
@@ -704,6 +706,7 @@ fn run_from_toml(table: &Table, context: &str) -> Result<Run> {
             Some(_) => Some(vocab(table, "outcome", context)?),
         },
         reason: lf(&str_or(table, "reason")),
+        tasks: id_array(table, "tasks", context)?,
     })
 }
 
@@ -719,6 +722,7 @@ fn run_to_toml(run: &Run) -> TomlValue {
         skip_reason,
         outcome,
         reason,
+        tasks,
     } = run;
     let mut table = Table::new();
     table.insert("step".to_string(), TomlValue::String(step.clone()));
@@ -755,6 +759,17 @@ fn run_to_toml(run: &Run) -> TomlValue {
     }
     if !reason.is_empty() {
         table.insert("reason".to_string(), TomlValue::String(lf(reason)));
+    }
+    if !tasks.is_empty() {
+        table.insert(
+            "tasks".to_string(),
+            TomlValue::Array(
+                tasks
+                    .iter()
+                    .map(|id| TomlValue::Integer(i64::from(*id)))
+                    .collect(),
+            ),
+        );
     }
     TomlValue::Table(table)
 }
@@ -927,6 +942,7 @@ pub(crate) mod tests {
                     skip_reason: String::new(),
                     outcome: None,
                     reason: String::new(),
+                    tasks: vec![2, 4],
                 },
                 Run {
                     step: "review".to_string(),
@@ -939,6 +955,7 @@ pub(crate) mod tests {
                     skip_reason: "Low risk.".to_string(),
                     outcome: None,
                     reason: String::new(),
+                    tasks: Vec::new(),
                 },
             ],
             handovers: vec![Handover {
@@ -1197,9 +1214,9 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn a_run_omits_workflow_args_hash_and_session_while_empty() {
+    fn a_run_omits_workflow_args_hash_session_and_tasks_while_empty() {
         let doc = to_toml(&fixture());
-        for key in ["workflow", "args_hash", "session"] {
+        for key in ["workflow", "args_hash", "session", "tasks"] {
             assert!(doc["run"][0].get(key).is_some(), "{key}: {doc}");
             assert!(doc["run"][1].get(key).is_none(), "{key}: {doc}");
         }

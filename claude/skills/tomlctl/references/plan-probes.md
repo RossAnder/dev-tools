@@ -12,20 +12,24 @@ shared write bundle it carries and the check classes that read its verdicts are
 - [Premise scripts](#premise-scripts)
 - [Recording accept verdicts](#recording-accept-verdicts)
 - [Recording premise verdicts](#recording-premise-verdicts)
+- [Gate probes](#gate-probes)
 
 ## `plan probes`
 
 `--emit` prints a Bash script that runs controls; `--record` turns that script's captured stdout into
-stored verdicts. Without `--premises` both work on the `accept` rows, with it on the spec's
-`premises`. Exactly one of `--emit` and `--record` is required; neither or both, a bare `--premises`
-included, is a clap usage error, exit `2` outside the `--error-format json` envelope. Both cover only
-rows with status `pending`.
+stored verdicts. Without `--premises` or `--gates` both work on the `accept` rows, with `--premises`
+on the spec's `premises`, and with `--gates` on the milestones' [gate probes](#gate-probes). Exactly
+one of `--emit` and `--record` is required; neither or both, a bare `--premises` included, is a clap
+usage error, exit `2` outside the `--error-format json` envelope. The row modes cover only rows with
+status `pending`.
 
 ```bash
 tomlctl plan probes --slug <slug> --emit > <script>
 tomlctl plan probes --slug <slug> --record <capture>
 tomlctl plan probes --slug <slug> --emit --premises --task <N1,N2> > <script>
 tomlctl plan probes --slug <slug> --record <capture> --premises --task <N1,N2>
+tomlctl plan probes --slug <slug> --emit --gates --milestone <id> > <script>
+tomlctl plan probes --slug <slug> --record <capture> --gates --milestone <id>
 ```
 
 | Flag | Value | Meaning | Default |
@@ -33,10 +37,11 @@ tomlctl plan probes --slug <slug> --record <capture> --premises --task <N1,N2>
 | `--emit` | — | Print the probe script. | — |
 | `--record` | path | Store the verdicts from the script's captured stdout. | — |
 | `--premises` | — | Work on the premises instead of the `accept` rows, with either `--emit` or `--record`. | off |
+| `--gates` | — | Work on each milestone's stored gate probes instead of task rows. Refused with `--premises` or `--task`. | off |
 | `--milestone` | id | Restrict either mode to this checkpoint's pending rows. An id in neither `[[checkpoints]]` nor `[[milestones]]` is refused with `kind=validation`. | all |
 | `--task` | ids, comma-separated | Restrict either mode to these tasks' pending rows. An id no row carries is refused with `kind=validation`. With `--milestone`, a row must satisfy both. | all |
 
-Record with the same `--premises`, `--milestone` and `--task` the script was emitted with: the scope
+Record with the same `--premises`, `--gates`, `--milestone` and `--task` the script was emitted with: the scope
 decides which controls the capture must cover.
 
 tomlctl never runs a stored command: `Bash(tomlctl *)` is pre-approved, so a verb executing stored
@@ -53,8 +58,10 @@ with every column folded onto one line and `<hex>` the SHA-256 of the stored com
 
 ## Accept scripts
 
-Only a row explicitly marked `writes_build = false` with a non-empty `check` runs; any other row gets
-a `# skipped` comment and none of its strings reach the script. A row's `check` runs as the negative
+Only a row whose [effective owner](tasks-store.md#accept-owner) is `worker`, explicitly marked
+`writes_build = false` and with a non-empty `check`, runs. Any other row gets a `# skipped` comment
+(`empty check`, `writes_build is not false` or `run_by is not worker`) and none of its strings reach
+the script: a check the gate runs, or a `covered` one, is never probed. A row's `check` runs as the negative
 control (`neg`) and its `positive`, when set, as the positive control (`pos`). `<index>` counts the
 spec's `accept` rows.
 
@@ -119,3 +126,27 @@ writes each premise's `probe` as `at` (the capture's `head`), `neg_rc` (the chec
 
 `plan view --for worker` shows a recorded premise verdict beside the premise, and
 `plan drift` lists a task's premises under `affected` for re-checking.
+
+## Gate probes
+
+A gate probe is a cheap command that fails where a milestone gate cannot pass in this environment,
+such as the gate's own `--dry-run`; the gate itself is never its probe.
+`plan milestone add|update --gate-probe '<gate> :: <probe>'` stores it in the milestone's
+`gate_probes` (see [plan.md](plan.md#plan-milestone-add)), and `plan check` reports
+`plan/gate-probe-unknown` once its gate is gone.
+
+`--emit --gates` covers every milestone, or the one `--milestone` names, whatever its tasks' status.
+Each stored probe gets one line keyed `<milestone>:<index>`, `<index>` counting the milestone's
+`gate_probes`, with control `gate`; a blank probe gets `# skipped <milestone>:<index>: empty probe`.
+The milestone id reaches the script bare, so a milestone holding probes whose id is not ASCII
+letters, digits, `.`, `_` or `-` is refused.
+
+`--record --gates` needs a capture covering exactly the probes that script runs, each with the digest
+of the probe the store holds now; a short or extra capture, an edited probe or any row whose control
+is not `gate` is refused and writes nothing. It stores each probe's `verdict` by the
+[premise rules](#recording-premise-verdicts) (`holds`, `fails`, `broken`) and `at` (the capture's
+`head`), and prints:
+
+```json
+{"ok":true,"recorded":[{"milestone":"A","gate_probe":0,"verdict":"holds"}]}
+```

@@ -67,6 +67,27 @@ pub(crate) enum PlanOp {
     /// Files changed since approval, minus this plan's commits, per affected
     /// task. Warns and exits 0.
     Drift(PlanDriftArgs),
+
+    /// Print what the execution engine passes on, built from the stores; each
+    /// leaf prints one JSON object and writes nothing.
+    Emit {
+        #[command(subcommand)]
+        op: PlanEmitOp,
+    },
+}
+
+/// `plan emit` leaves.
+#[derive(Subcommand)]
+pub(crate) enum PlanEmitOp {
+    /// The milestone Workflow's launch args, with the rows left out and why and
+    /// the `after:` checks to read before launch.
+    LaunchArgs(PlanEmitLaunchArgs),
+    /// The milestone gate's command list: its gates, then the accept checks a
+    /// gate runs, with each check left out and why.
+    GateList(PlanEmitGateListArgs),
+    /// The reproduce check's launch args, one per review store the
+    /// milestone's finding links name.
+    ReproduceUnits(PlanEmitReproduceUnitsArgs),
 }
 
 /// `plan handover` leaves.
@@ -221,6 +242,13 @@ pub(crate) struct PlanRunStartArgs {
         help = "The session launching the step, from CLAUDE_CODE_SESSION_ID"
     )]
     pub(crate) session: Option<String>,
+    #[arg(
+        long = "tasks",
+        value_name = "N1,N2",
+        value_delimiter = ',',
+        help = "The task ids the launch dispatched, stored on the run row"
+    )]
+    pub(crate) tasks: Vec<u32>,
     #[command(flatten)]
     pub(crate) integrity: WriteIntegrityArgs,
 }
@@ -299,6 +327,13 @@ pub(crate) struct PlanMilestoneAddArgs {
     )]
     pub(crate) gate: Vec<String>,
     #[arg(
+        long = "gate-probe",
+        value_name = "GATE :: PROBE",
+        help = "A cheap command that fails where <GATE>, one of the milestone's gates, cannot pass \
+                here; split at the first ` :: ` (repeatable)"
+    )]
+    pub(crate) gate_probe: Vec<String>,
+    #[arg(
         long = "defer",
         help = "Elaborate the milestone's tasks just before it runs; takes --reason"
     )]
@@ -333,6 +368,14 @@ pub(crate) struct PlanMilestoneUpdateArgs {
     pub(crate) gate: Vec<String>,
     #[arg(long = "clear-gate", help = "Empty the gate list; refused with --gate")]
     pub(crate) clear_gate: bool,
+    #[arg(
+        long = "gate-probe",
+        value_name = "GATE :: PROBE",
+        help = "A cheap command that fails where <GATE>, one of the milestone's gates, cannot pass \
+                here; split at the first ` :: ` (repeatable; the flags given replace the whole \
+                probe list, keeping the verdict of a probe given unchanged)"
+    )]
+    pub(crate) gate_probe: Vec<String>,
     #[arg(
         long = "defer",
         help = "Elaborate the milestone's tasks just before it runs; takes --reason"
@@ -398,6 +441,13 @@ pub(crate) struct PlanProbesArgs {
     )]
     pub(crate) premises: bool,
     #[arg(
+        long = "gates",
+        conflicts_with_all = ["premises", "task"],
+        help = "Work on each milestone's stored gate probes instead of task rows. With --record, \
+                store each probe's verdict: holds, fails or broken"
+    )]
+    pub(crate) gates: bool,
+    #[arg(
         long = "milestone",
         value_name = "ID",
         help = "Cover only this checkpoint's pending rows, in either mode"
@@ -453,6 +503,81 @@ pub(crate) struct PlanApproveArgs {
     pub(crate) amend: bool,
     #[command(flatten)]
     pub(crate) integrity: WriteIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct PlanEmitLaunchArgs {
+    #[command(flatten)]
+    pub(crate) target: PlanTarget,
+    #[arg(
+        long = "milestone",
+        value_name = "ID",
+        help = "The checkpoint whose rows are launched"
+    )]
+    pub(crate) milestone: String,
+    #[arg(
+        long = "max-parallel",
+        value_name = "N",
+        default_value_t = 4,
+        help = "Workers running at once, from 1 to 8"
+    )]
+    pub(crate) max_parallel: u32,
+    #[command(flatten)]
+    pub(crate) integrity: ReadIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct PlanEmitGateListArgs {
+    #[command(flatten)]
+    pub(crate) target: PlanTarget,
+    #[arg(
+        long = "milestone",
+        value_name = "ID",
+        help = "The checkpoint whose gate commands are listed"
+    )]
+    pub(crate) milestone: String,
+    #[command(flatten)]
+    pub(crate) integrity: ReadIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct PlanEmitReproduceUnitsArgs {
+    #[command(flatten)]
+    pub(crate) target: PlanTarget,
+    #[arg(
+        long = "milestone",
+        value_name = "ID",
+        help = "The checkpoint whose fixed findings are checked"
+    )]
+    pub(crate) milestone: String,
+    #[arg(
+        long = "since-launch",
+        help = "Keep a unit only when one of its findings is not yet `gone` in this milestone, \
+                or its files share a path with a row the latest `implement:<id>` run dispatched"
+    )]
+    pub(crate) since_launch: bool,
+    #[arg(
+        long = "relaunch",
+        value_name = "N",
+        help = "The Nth relaunch of a round cut short; takes --round and --task, and gives the \
+                run directory its own `-r<N>` suffix"
+    )]
+    pub(crate) relaunch: Option<u32>,
+    #[arg(
+        long = "round",
+        value_name = "R",
+        help = "The round being relaunched; only with --relaunch"
+    )]
+    pub(crate) round: Option<u32>,
+    #[arg(
+        long = "task",
+        value_name = "REF1,REF2",
+        value_delimiter = ',',
+        help = "The refs of the units relaunched; only with --relaunch"
+    )]
+    pub(crate) task: Vec<String>,
+    #[command(flatten)]
+    pub(crate) integrity: ReadIntegrityArgs,
 }
 
 #[derive(Args)]

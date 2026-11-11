@@ -21,7 +21,9 @@ use crate::output::{print_json_line, print_text};
 use crate::review::implementer_findings;
 use crate::tasks::finding::{ERROR, WARNING};
 use crate::tasks::markdown::FenceState;
-use crate::tasks::schema::{FileKind, Status, Store, TaskRow, TaskSpec, normal_path};
+use crate::tasks::schema::{
+    Accept, FileKind, RUN_BY_COVERED, Status, Store, TaskRow, TaskSpec, normal_path,
+};
 use crate::tasks::slug::derive_ref;
 use crate::tasks::{load_store, resolve_store_path};
 
@@ -726,6 +728,14 @@ fn file_lines(tasks: &Store, row: &TaskRow) -> Vec<String> {
         .collect()
 }
 
+/// A covered check is the gate's, named by the gate command that covers it.
+fn run_by(accept: &Accept) -> String {
+    match accept.owner() {
+        RUN_BY_COVERED => format!("gate (covered by {})", code(&accept.covered_by)),
+        owner => owner.to_string(),
+    }
+}
+
 fn spec_block(out: &mut String, spec: &TaskSpec) {
     field(out, "Outcome", &spec.outcome);
     bullets(out, "Constraints", &spec.constraints);
@@ -739,6 +749,7 @@ fn spec_block(out: &mut String, spec: &TaskSpec) {
                 out.push_str(&format!("  - Check: {}\n", code(&accept.check)));
                 let writes = if accept.writes_build { "yes" } else { "no" };
                 out.push_str(&format!("  - Writes build: {writes}\n"));
+                out.push_str(&format!("  - Run by: {}\n", run_by(accept)));
             }
             if !accept.positive.is_empty() {
                 out.push_str(&format!("  - Positive: {}\n", code(&accept.positive)));

@@ -30,12 +30,13 @@ of planning is owned by the [`plan-v2-engine` skill](../../plan-v2-engine/SKILL.
 - [`plan gate`](#plan-gate)
 - [`plan approve`](#plan-approve)
 - [`plan drift`](#plan-drift)
+- [`plan emit`](#plan-emit)
 - [Check classes](#check-classes)
 
 Every verb takes a required `--slug`, the flow whose plan is used, held to the `flow init` slug
 rule so that it cannot reach outside `.claude/flows/` or `docs/flows/`. The writers carry the shared write bundle
 (`--allow-outside`, `--no-create`, `--no-write-integrity`, `--strict-integrity`,
-`--verify-integrity`), and `plan check`, `view`, `stage`, `gate` and `drift` the read bundle
+`--verify-integrity`), and `plan check`, `view`, `stage`, `gate`, `drift` and `emit` the read bundle
 (`--verify-integrity`, `--strict-read`). Neither is repeated in the tables below. Only `plan open`
 creates a `plan.toml`, because its presence is what makes a flow v2. `plan decide`, `contract`,
 `handover set|done`, `run start|finish|abandon|skip`, `milestone add|update` and `approve` refuse a flow without
@@ -195,7 +196,7 @@ at launch, and an open row names what a resume needs to find the Workflow's resu
 has no run id, and passes none of `--workflow`, `--args-hash` or `--run-id`.
 
 ```bash
-tomlctl plan run start --slug <slug> --step <step> [--workflow <workflow>] [--args-hash <hash>] [--run-id <id>] [--session <id>]
+tomlctl plan run start --slug <slug> --step <step> [--workflow <workflow>] [--args-hash <hash>] [--run-id <id>] [--session <id>] [--tasks <ids>]
 ```
 
 | Flag | Value | Meaning | Default |
@@ -205,6 +206,7 @@ tomlctl plan run start --slug <slug> --step <step> [--workflow <workflow>] [--ar
 | `--args-hash` | hash | Digest of the Workflow's arguments. | absent |
 | `--run-id` | id | The run id from the Workflow's result. | `""` |
 | `--session` | id | The session launching the step; a carrier passes `CLAUDE_CODE_SESSION_ID`. | absent |
+| `--tasks` | ids, comma-separated | The task ids the launch dispatched, stored as the run's `tasks` in the order given with repeats dropped; `plan emit reproduce-units --since-launch` reads them. | none |
 
 Prints `{"ok":true}`.
 
@@ -268,7 +270,7 @@ table is refused. On an audited store `--reason` is required, blank is refused, 
 `[[changes]]` row with `field = "*"` carrying that reason.
 
 ```bash
-tomlctl plan milestone add --slug <slug> --id <id> --goal '<text>' [--gate '<command>']... [--defer --reason '<text>']
+tomlctl plan milestone add --slug <slug> --id <id> --goal '<text>' [--gate '<command>']... [--gate-probe '<gate> :: <probe>']... [--defer --reason '<text>']
 ```
 
 | Flag | Value | Meaning | Default |
@@ -276,6 +278,7 @@ tomlctl plan milestone add --slug <slug> --id <id> --goal '<text>' [--gate '<com
 | `--id` | id | The milestone's id; blank is refused. | required |
 | `--goal` | text | What the milestone delivers. | required |
 | `--gate` | command, repeatable | Command that must pass at the milestone's drain. | none |
+| `--gate-probe` | `<gate> :: <probe>`, repeatable | Stores a [gate probe](plan-probes.md#gate-probes), split at the first ` :: `. `<gate>` must equal one of the milestone's gates; no separator, an empty side, or a probe equal to its gate is refused. | none |
 | `--defer` | — | Sets `elaboration = "deferred"`, so the milestone's tasks are elaborated just before it runs. Needs `--reason`. | `upfront` |
 | `--reason` | text | Why it is deferred, and why it was added on an audited store, which requires it. | `""` |
 
@@ -284,13 +287,13 @@ Prints `{"ok":true,"id":"A"}`.
 ## `plan milestone update`
 
 Changes a milestone named in `[[checkpoints]]`, creating its `[[milestones]]` row if it has none. An
-unknown id is `kind=not_found`, and a call changing none of goal, gates, deferral or elaboration is
-refused. On an audited store it needs `--reason`, and appends one `[[changes]]` row per changed field
-with `ref = "milestone:<id>"`: `goal`, `gates`, `elaboration`, `defer_reason`. A `gates` row's `old`
-and `new` are compact JSON, such as `["a","b"]`.
+unknown id is `kind=not_found`, and a call changing none of goal, gates, gate probes, deferral or
+elaboration is refused. On an audited store it needs `--reason`, and appends one `[[changes]]` row per changed field
+with `ref = "milestone:<id>"`: `goal`, `gates`, `gate_probes`, `elaboration`, `defer_reason`. A `gates`
+or `gate_probes` row's `old` and `new` are compact JSON, such as `["a","b"]`.
 
 ```bash
-tomlctl plan milestone update --slug <slug> --id <id> [--goal '<text>'] [--gate '<command>']... [--clear-gate] [--defer] [--elaborated] [--reason '<text>']
+tomlctl plan milestone update --slug <slug> --id <id> [--goal '<text>'] [--gate '<command>']... [--clear-gate] [--gate-probe '<gate> :: <probe>']... [--defer] [--elaborated] [--reason '<text>']
 ```
 
 | Flag | Value | Meaning | Default |
@@ -299,6 +302,7 @@ tomlctl plan milestone update --slug <slug> --id <id> [--goal '<text>'] [--gate 
 | `--goal` | text | Replaces the goal. | keeps it |
 | `--gate` | command, repeatable | Replaces the whole gate list. | keeps it |
 | `--clear-gate` | — | Empties the gate list, which `plan check` then reports as `plan/milestone-no-gate`. Refused with `kind=validation` alongside `--gate`. | keeps it |
+| `--gate-probe` | `<gate> :: <probe>`, repeatable | Replaces the whole probe list, checked against the gates this call leaves; a pair already stored keeps its verdict. | keeps it |
 | `--defer` | — | Sets `elaboration = "deferred"` and `defer_reason`. Needs `--reason`. No flag moves a milestone back to `upfront`. | keeps it |
 | `--elaborated` | — | Sets `elaboration = "elaborated"` on a milestone currently `deferred`, keeping `defer_reason`. Needs `--reason`. Refused on an `upfront` or already `elaborated` milestone, and alongside `--defer`. | keeps it |
 | `--reason` | text | Why it is deferred or elaborated, and why it changed on an audited store. | `""` |
@@ -339,8 +343,10 @@ tomlctl plan view --slug <slug> --for worker --task <id>
   decisions whose `binds` reach the task, the contracts whose `tasks` name it, the row and its spec,
   and the sections its spec cites. A premise with a recorded probe ends ``(Probe: <verdict> at `<sha>`)``.
   An `accept` entry with a check follows its `Check:` line with `Writes build: yes` or
-  `Writes build: no`: `no` only when the entry sets `writes_build = false`, the one case a worker
-  may run the check itself. `human` prints the same accept lines.
+  `Writes build: no`: `no` only when the entry sets `writes_build = false`. A `Run by:` line follows
+  with the entry's [effective owner](tasks-store.md#accept-owner): `worker`, `gate`, or
+  ``gate (covered by `<command>`)``. A worker runs the `worker` checks and no other. `human` prints
+  the same accept lines.
 - **`digest`**: one JSON object for an orchestrator re-entering a plan. Works with no `tasks.toml`,
   which reads as empty.
 
@@ -395,7 +401,7 @@ unprobes the entry it changes.
 |---|---|
 | `dag/cycle`, `dag/dangling-ref`, `dag/duplicate-number`, `dag/unbuildable`, `checkpoint/invalid-cut`, `plan/orphan-row`, `policy/*` | `tasks check` |
 | `plan/spec-orphan` | `tasks add-many` (the new row replaces the orphan spec and then needs its own) |
-| `plan/spec-no-outcome`, `plan/spec-no-accept`, `plan/accept-no-check`, `plan/means-required-no-reason`, `plan/design-anchor-dead`, `plan/premise-task-unknown`, `backlog/unknown-id` | `tasks update --ndjson` |
+| `plan/spec-no-outcome`, `plan/spec-no-accept`, `plan/accept-no-check`, `plan/accept-owner-invalid`, `plan/accept-cover-unknown`, `plan/means-required-no-reason`, `plan/design-anchor-dead`, `plan/premise-task-unknown`, `backlog/unknown-id` | `tasks update --ndjson` |
 | `plan/contract-no-check`, `plan/contract-task-unknown` | `plan contract` |
 | `plan/decision-bind-unknown`, or a surfaced decision still `agent-assumed`, which no class reports but `plan approve` refuses | `plan decide` |
 | `plan/handover-task-unknown`, `plan/handover-incomplete` | `plan handover set --ndjson <rows with the handover id and the missing or corrected keys>` |
@@ -537,6 +543,25 @@ as a delete plus an add. `changed_files` holds git's paths verbatim, read with `
 C-quoted. Paths are matched after folding backslashes and dropping a leading `./`, with `files`
 reported as written.
 
+## `plan emit`
+
+Three read-only leaves that build what the execution engine passes on from the stores. Each takes
+`--milestone <id>`, refuses an id the task store does not declare, prints one JSON object, writes
+nothing and runs no stored command.
+
+```bash
+tomlctl plan emit launch-args --slug <slug> --milestone <id> [--max-parallel <n>]
+tomlctl plan emit gate-list --slug <slug> --milestone <id>
+tomlctl plan emit reproduce-units --slug <slug> --milestone <id> [--since-launch] [--relaunch <n> --round <r> --task <refs>]
+```
+
+- **`plan emit launch-args`** takes `--max-parallel`, the workers running at once, from 1 to 8
+  (default 4), and prints `{args, args_sha256, after_checks, dropped}`. `args` is the `implement-v2-milestone` Workflow's input (`slug`, `milestone`, `root`, `max_parallel`, `tasks[]` of `id`, `executor`, `needs`, `after`, `files`), and `args_sha256` the SHA-256 of its compact JSON, for `plan run start --args-hash`. `dropped[].reason` is `not-pending`, `withheld:<task>:<premise>:<verdict>`, `needs-withheld:<task>`, `executor:<value>`, `no-files` or `need-not-done:<task>:<status>`. A `base` premise, or an `after:<m>` one whose task `m` is `done`, needs a probe at `HEAD`, or the call fails naming `plan probes --emit --premises --milestone <id>`. An `after:<m>` premise whose task `m` is dispatched keeps its task, with `m` in its `after` and the premise's command in `after_checks` (`task`, `premise`, `after`, `check`).
+- **`plan emit gate-list`** prints `{commands, skipped}`: the milestone's `gates` in stored order (`source = "gate"`), then each accept check whose effective owner is `gate`, in row then entry order (`source = "accept:<task>:<index>"`). A command already listed is skipped with reason `duplicate`, and a `covered` entry with reason `covered_by <command>`; `skipped` rows carry `task`, `accept` and `reason`. Holds and `timeout:`, `rerun:` or `transient:` options stay the orchestrator's to add.
+- **`plan emit reproduce-units`** prints `{launches}`, one per review store the milestone's `[[finding_links]]` name: `mode = "reproduce"`, `store` (`{"slug"}` or `{"scope"}`), `flow`, `milestone`, `round` (the store's highest for this flow and milestone plus one, or `--round`), `run_dir` and `units` (`task` ref, `files`, `findings`, `route`). A finding several rows fix goes to the highest-id row. `run_dir` is `.review-v2-runs/apply-<slug>-<milestone>-<round>`, then `-<s>` or `-<scope>` when more than one store has units, then `-r<n>` under `--relaunch <n>`. `route` is `checker` only when every finding is stored `route = "checker"` with no `direction = "add"`, `instances`, `fix_files` or `target_file`; otherwise `verifier`.
+  - `--since-launch` keeps a unit only when one of its findings' latest reproduction for this flow and milestone is not `gone` (none counts as not `gone`), or its `files` share a path with a row named in the `tasks` of the latest `implement:<id>` run.
+  - `--relaunch <n>` (from 1) needs `--round <r>`, the round relaunched, and `--task <refs>`, the units kept, by row `ref`; `--round` and `--task` are refused without it, and a ref naming no unit is refused.
+
 ## Check classes
 
 `plan check` reports these beside the [`tasks check` classes](tasks.md#the-check-finding-classes).
@@ -557,9 +582,12 @@ reported as written.
 | `plan/spec-no-outcome` | error | A spec has a blank `outcome`. |
 | `plan/spec-no-accept` | error | A spec has no `accept` entry. |
 | `plan/accept-no-check` | error | An `accept` entry has a blank `check`, unless its task's milestone is deferred. |
+| `plan/accept-owner-invalid` | error | An `accept` entry's `run_by` is not `worker`, `gate` or `covered`; is `worker` on a check whose `writes_build` is not `false`; is `covered` with no `covered_by`; or a `covered_by` is set without `covered`. |
+| `plan/accept-cover-unknown` | error | An `accept` entry's `covered_by` equals no gate of its row's checkpoint milestone. |
+| `plan/gate-probe-unknown` | error | A milestone's stored gate probe names a gate that is no longer one of the milestone's gates. |
 | `plan/means-required-no-reason` | error | A `means` entry with `binding = "required"` has a blank `detail`. |
 | `plan/design-anchor-dead` | error | A spec's `design` citation resolves to no section. |
 | `plan/deferred-no-reason` | error | A deferred milestone has a blank `defer_reason`. |
 | `plan/probe-unhealthy` | error | An `accept` entry's recorded verdict is anything but `healthy`. |
-| `plan/probe-absent` | warning | An `accept` entry of a `pending` row, with a non-empty `check` and `writes_build = false`, has no probe. |
+| `plan/probe-absent` | warning | An `accept` entry of a `pending` row, with a non-empty `check`, `writes_build = false` and an effective owner of `worker`, has no probe. |
 | `plan/milestone-no-gate` | warning | A milestone, or a checkpoint with no `[[milestones]]` row, has no non-blank gate. |

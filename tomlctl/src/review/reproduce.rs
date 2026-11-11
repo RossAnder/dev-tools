@@ -227,9 +227,16 @@ fn upsert(store: &mut Store, record: Reproduction) {
     }
 }
 
+/// The findings `reproduce-status` reads: ids given, or every finding a
+/// flow's rows of one milestone fix in this store.
+pub(crate) enum Select<'a> {
+    Ids(&'a [String]),
+    Milestone { flow: &'a str, milestone: &'a str },
+}
+
 pub(crate) fn status(
     target: &Target,
-    ids: &[String],
+    select: Select<'_>,
     expect: &str,
     integrity: &ReadIntegrityArgs,
 ) -> Result<()> {
@@ -239,20 +246,33 @@ pub(crate) fn status(
             ReproduceVerdict::VALUES.join("|")
         )));
     };
-    let mut wanted: Vec<&str> = Vec::new();
-    for id in ids.iter().map(|i| i.trim()).filter(|i| !i.is_empty()) {
-        if !wanted.contains(&id) {
-            wanted.push(id);
+    let mut wanted: Vec<String> = Vec::new();
+    let mut push = |id: &str| {
+        let id = id.trim();
+        if !id.is_empty() && !wanted.iter().any(|w| w == id) {
+            wanted.push(id.to_string());
         }
-    }
-    if wanted.is_empty() {
-        return Err(invalid(format!("{STATUS}: no finding ids given")));
+    };
+    match select {
+        Select::Ids(ids) => {
+            ids.iter().for_each(|id| push(id));
+            if wanted.is_empty() {
+                return Err(invalid(format!("{STATUS}: no finding ids given")));
+            }
+        }
+        Select::Milestone { flow, milestone } => {
+            milestone_fixes(target, flow, milestone, integrity)?
+                .iter()
+                .for_each(|id| push(id));
+        }
     }
 
     let stored = store::load(&target.path, integrity)?;
     let mut findings = Vec::new();
-    let mut ok = true;
-    for id in wanted {
+    // An empty milestone selection fails: a fix row carries this check only
+    // when its milestone has findings to prove, so none means lost links.
+    let mut ok = !wanted.is_empty();
+    for id in wanted.iter().map(String::as_str) {
         if !stored.findings.iter().any(|f| f.id == id) {
             return Err(tagged_err(
                 ErrorKind::NotFound,
@@ -286,6 +306,42 @@ pub(crate) fn status(
         std::process::exit(1);
     }
     Ok(())
+}
+
+/// The `fixes` of every `[[finding_links]]` entry for this review store on a
+/// row of `flow` whose checkpoint is `milestone`, in row order.
+fn milestone_fixes(
+    target: &Target,
+    flow: &str,
+    milestone: &str,
+    integrity: &ReadIntegrityArgs,
+) -> Result<Vec<String>> {
+    let tasks_path = crate::tasks::resolve_store_path(Some(flow), None)?;
+    if !tasks_path.is_file() {
+        return Err(tagged_err(
+            ErrorKind::NotFound,
+            Some(tasks_path),
+            format!("{STATUS}: flow {flow} has no task store"),
+        ));
+    }
+    let read = ReadIntegrityArgs {
+        verify_integrity: integrity.verify_integrity,
+        strict_read: false,
+    };
+    let tasks = crate::tasks::load_store(&tasks_path, &read)?;
+    let store_rel = target.rel();
+    let milestone = milestone.trim();
+    let mut fixes = Vec::new();
+    for row in tasks.items.iter().filter(|r| r.checkpoint == milestone) {
+        for link in tasks
+            .finding_links
+            .iter()
+            .filter(|l| l.r#ref == row.r#ref && l.store == store_rel)
+        {
+            fixes.extend(link.fixes.iter().cloned());
+        }
+    }
+    Ok(fixes)
 }
 
 #[cfg(test)]

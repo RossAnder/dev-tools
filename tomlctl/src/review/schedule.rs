@@ -687,7 +687,12 @@ impl Compose<'_> {
                 })
             })
             .collect();
-        let accept: Vec<JsonValue> = found.iter().map(|f| self.accept(f)).collect();
+        let mut accept: Vec<JsonValue> = Vec::new();
+        for entry in found.iter().map(|f| self.accept(f)) {
+            if !accept.contains(&entry) {
+                accept.push(entry);
+            }
+        }
         let lite = files.len() <= 2
             && found.iter().all(|f| {
                 f.kind == Kind::Cleanup || matches!(f.text("effort"), Some("trivial" | "small"))
@@ -727,8 +732,8 @@ impl Compose<'_> {
     }
 
     /// A `remove` cleanup with `old` is checked by its anchor being gone,
-    /// which builds nothing; every other finding by its recorded reproduce
-    /// verdict, which the gate reads.
+    /// which the worker runs; every other finding by the one milestone-wide
+    /// reproduce check, the same string on every row, which the gate runs.
     fn accept(&self, f: &Finding) -> JsonValue {
         let removes = f.kind == Kind::Cleanup
             && f.text("direction") == Some("remove")
@@ -742,12 +747,14 @@ impl Compose<'_> {
             })
         } else {
             json!({
-                "behaviour": format!("{} no longer reproduces", f.id),
+                "behaviour": "every finding this milestone fixes no longer reproduces",
                 "check": format!(
-                    "tomlctl review reproduce-status {} {} --expect gone",
-                    f.id, self.store_flag
+                    "tomlctl review reproduce-status --flow {} --milestone {} {} --expect gone",
+                    self.flow, self.checkpoint, self.store_flag
                 ),
                 "kind": "forward",
+                "run_by": "gate",
+                "writes_build": false,
             })
         }
     }

@@ -203,6 +203,13 @@ pub(crate) const FEATURES: &[&str] = &[
     "review_digest_with",
     "review_add_dry_run",
     "review_reproduce_checker",
+    // Accept-check owners, the milestone reproduce check, gate probes, the
+    // engine's emit verbs and the worker command audit.
+    "accept_run_by",
+    "reproduce_status_milestone",
+    "gate_probes",
+    "plan_emit",
+    "agents_audit",
 ];
 
 /// User-facing top-level subcommand names, as they appear in

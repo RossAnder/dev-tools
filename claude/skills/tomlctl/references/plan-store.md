@@ -65,6 +65,7 @@ session = "<session id>"
 started = 2026-11-05T12:00:00Z
 finished = ""
 skip_reason = ""
+tasks = [3, 5]
 
 [[handover]]
 id = "H1"
@@ -133,6 +134,7 @@ id is then never minted again.
 | `skip_reason` | Set when the step was not run. |
 | `outcome` | `ok`, `errors`, `stopped` or `abandoned`. Absent on an open or skipped row and on rows written before the key existed; an unknown value is refused on read. |
 | `reason` | Why the run was abandoned; absent while empty. Distinct from `skip_reason`, which means the step never ran and settles the review stage. |
+| `tasks` | The task ids the launch dispatched, from `plan run start --tasks`, in the order given with repeats dropped. Absent while empty, so a skip and a row written without the flag carry none. `plan emit reproduce-units --since-launch` reads the latest `implement:<id>` run's list, and treats a run with none as touching every unit. |
 
 | `[[handover]]` key | Meaning |
 |---|---|

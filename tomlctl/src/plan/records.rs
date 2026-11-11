@@ -616,6 +616,12 @@ pub(super) fn handover_done(args: PlanHandoverDoneArgs) -> Result<()> {
 }
 
 pub(super) fn run_start(args: PlanRunStartArgs) -> Result<()> {
+    let mut tasks: Vec<u32> = Vec::new();
+    for id in &args.tasks {
+        if !tasks.contains(id) {
+            tasks.push(*id);
+        }
+    }
     let started = crate::time::now_toml_datetime()?;
     mutate_plan(&args.target.slug, &args.integrity, |plan| {
         plan.runs.push(Run {
@@ -629,6 +635,7 @@ pub(super) fn run_start(args: PlanRunStartArgs) -> Result<()> {
             skip_reason: String::new(),
             outcome: None,
             reason: String::new(),
+            tasks: tasks.clone(),
         });
         Ok(())
     })?;
@@ -721,6 +728,7 @@ pub(super) fn run_skip(args: PlanRunSkipArgs) -> Result<()> {
             skip_reason: args.reason.clone(),
             outcome: None,
             reason: String::new(),
+            tasks: Vec::new(),
         });
         Ok(())
     })?;

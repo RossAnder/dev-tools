@@ -445,7 +445,13 @@ fn spec_findings(tasks: &Store, authored: &Path) -> Vec<Finding> {
         match tasks.find_ref(&spec.r#ref) {
             Some(row) => {
                 let elaborated = !deferred.contains(row.checkpoint.as_str());
-                findings.extend(row_spec_findings(spec, row, elaborated, authored));
+                let gates: Vec<&str> = tasks
+                    .milestones
+                    .iter()
+                    .filter(|milestone| milestone.id == row.checkpoint)
+                    .flat_map(|milestone| milestone.gates.iter().map(String::as_str))
+                    .collect();
+                findings.extend(row_spec_findings(spec, row, elaborated, &gates, authored));
             }
             None => findings.push(error(
                 "plan/spec-orphan",
@@ -461,10 +467,12 @@ fn spec_findings(tasks: &Store, authored: &Path) -> Vec<Finding> {
 /// arrives when that milestone is elaborated. An unrecognised `elaboration`
 /// counts as elaborated, which is the stricter reading. `plan/probe-absent` needs
 /// a pending row because `plan probes` covers no other, so no verb could clear it.
+/// `gates` are the gates of the row's own milestone, which a `covered_by` must name.
 fn row_spec_findings(
     spec: &TaskSpec,
     row: &TaskRow,
     elaborated: bool,
+    gates: &[&str],
     authored: &Path,
 ) -> Vec<Finding> {
     let id = row.id;
@@ -492,7 +500,26 @@ fn row_spec_findings(
                 format!("task {id}'s `accept[{index}]` has no `check`"),
             ));
         }
-        let probeable = has_check && !accept.writes_build && row.status == Status::Pending;
+        if let Some(problem) = accept.owner_problem() {
+            findings.push(error(
+                "plan/accept-owner-invalid",
+                vec![id],
+                format!("task {id}'s `accept[{index}]`: {problem}"),
+            ));
+        }
+        if !accept.covered_by.is_empty() && !gates.contains(&accept.covered_by.as_str()) {
+            findings.push(error(
+                "plan/accept-cover-unknown",
+                vec![id],
+                format!(
+                    "task {id}'s `accept[{index}]` is covered by `{}`, which is no gate of \
+                     milestone `{}`",
+                    accept.covered_by, row.checkpoint
+                ),
+            ));
+        }
+        let probeable =
+            super::probes::skip_reason(accept).is_none() && row.status == Status::Pending;
         match &accept.probe {
             Some(probe) if probe.verdict != VERDICT_HEALTHY => findings.push(error(
                 "plan/probe-unhealthy",
@@ -507,8 +534,8 @@ fn row_spec_findings(
                 severity: WARNING,
                 ids: vec![id],
                 detail: format!(
-                    "task {id}'s `accept[{index}]` is marked `writes_build = false` and has no \
-                     probe"
+                    "task {id}'s `accept[{index}]` is the worker's, marked `writes_build = \
+                     false`, and has no probe"
                 ),
             }),
             _ => {}
@@ -583,6 +610,19 @@ fn milestone_findings(tasks: &Store) -> Vec<Finding> {
                 members(&milestone.id),
                 format!("milestone `{}` is deferred with no reason", milestone.id),
             ));
+        }
+        for (index, probe) in milestone.gate_probes.iter().enumerate() {
+            if !milestone.gates.contains(&probe.gate) {
+                findings.push(error(
+                    "plan/gate-probe-unknown",
+                    members(&milestone.id),
+                    format!(
+                        "milestone `{}`'s `gate_probes[{index}]` probes `{}`, which is no gate of \
+                         the milestone",
+                        milestone.id, probe.gate
+                    ),
+                ));
+            }
         }
     }
     findings

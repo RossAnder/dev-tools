@@ -33,12 +33,13 @@ pub(crate) fn dispatch(op: ReviewOp) -> Result<()> {
         ReviewOp::Reproduce(args) => {
             reproduce::record(&target(&args.store)?, &args.ndjson, &args.integrity)
         }
-        ReviewOp::ReproduceStatus(args) => reproduce::status(
-            &target(&args.store)?,
-            &args.ids,
-            &args.expect,
-            &args.integrity,
-        ),
+        ReviewOp::ReproduceStatus(args) => {
+            let select = match (&args.flow, &args.milestone) {
+                (Some(flow), Some(milestone)) => reproduce::Select::Milestone { flow, milestone },
+                _ => reproduce::Select::Ids(&args.ids),
+            };
+            reproduce::status(&target(&args.store)?, select, &args.expect, &args.integrity)
+        }
         ReviewOp::List(args) => query::list(&target(&args.store)?, args),
         ReviewOp::Show(args) => query::show(&target(&args.store)?, args),
         ReviewOp::Anchor(args) => {

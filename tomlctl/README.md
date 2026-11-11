@@ -82,6 +82,7 @@ tomlctl tasks train --slug <s> [--checkpoint <id>]... [--ids N1,N2] [--granulari
 tomlctl tasks show <N> --slug <s> --with absent        # the row's files that do not exist yet
 tomlctl agents record --harness claude-code|codex|manual [-]   # one hook payload from stdin into the dispatching flow's agents.toml; the manual form of what the harness hooks do by running `glimpse hook`, which writes the same file in-process
 tomlctl agents list --slug <s>                         # a flow's agent lifecycle records as a JSON array
+tomlctl agents audit --transcripts <dir> [--pattern <re>]...   # {agent, command} rows for the Bash commands in a launch's agent-*.jsonl transcripts that match, by default cargo build/test/nextest and recursive grep
 tomlctl inputs list [--pending] [--kind K]... [--ledger L] [--flow <s>] [--scope <s>] [--item <id>]   # .claude/inputs.toml as {path, revision, inputs}
 tomlctl inputs add --json '{"kind":"note",...}'        # append one record as `new`; prints its {id}
 tomlctl inputs ack <id>... --by <command>              # new → acknowledged
@@ -89,6 +90,7 @@ tomlctl inputs handle <id>... --by <command> --note <text>   # new or acknowledg
 tomlctl inputs withdraw <id>...                        # withdraw new records, all or none
 tomlctl inputs answer <question-id> [--pick <option>]... [--text <text>]   # answer a new question and mark it handled
 tomlctl plan open|decide|contract|handover|run|milestone|check|view|probes|stage|gate|approve|drift --slug <s>   # a v2 flow's plan.toml, brief and task-store side tables; `plan open` creates the plan.toml that makes a flow v2
+tomlctl plan emit launch-args|gate-list|reproduce-units --slug <s> --milestone <id>   # a milestone's Workflow args, gate command list or reproduce launches, built from the stores; read-only
 tomlctl review sync-v1 --slug <s>                      # read v1 apply outcomes back onto the v2 store through v2_ref
 tomlctl review run start --slug <s> --command review-v2 --family code --depth standard --base <rev> [--head <rev>] [--set-json scope=<json>]   # mint U<n>, validate the lens catalogue, create the run directory
 tomlctl review run update <U> --slug <s> --set-json waivers=<json>   # patch signals, waivers, audit, agents or baselines (--set / --set-file also)
@@ -112,6 +114,7 @@ tomlctl review reconcile --slug <s> --flow <apply-slug>   # move scheduled findi
 tomlctl review anchor <F> --slug <s> [--gone]          # exit 0 when the finding's anchor holds (or, --gone, a remove cleanup's old text is gone); read-only
 tomlctl review reproduce --slug <s> --ndjson <path>    # upsert reproduce verdicts on (finding, flow, milestone, round, by); never moves a status
 tomlctl review reproduce-status <ids> --slug <s> --expect gone   # exit 0 when each finding's current reproduction has that verdict; read-only
+tomlctl review reproduce-status --flow <f> --milestone <id> --slug <s> --expect gone   # the same over every finding the milestone's fix rows link
 tomlctl review run finish <U> --slug <s> [--incomplete-file <path>]   # stamp finished + counts; refuses open gaps without --incomplete
 tomlctl review run list --slug <s> [--open|--finished]   # the store's runs ordered by id; read-only
 tomlctl review run show <U> --slug <s>                 # one run's bounds, signals, baselines, waves, agents and audit; read-only
@@ -385,7 +388,9 @@ downstream flow-command templates can feature-gate at boot without parsing
                "review_blocked_on", "review_settle",
                "review_triage_answer", "review_fix_files",
                "review_addressed", "review_digest_with",
-               "review_add_dry_run", "review_reproduce_checker"],
+               "review_add_dry_run", "review_reproduce_checker",
+               "accept_run_by", "reproduce_status_milestone",
+               "gate_probes", "plan_emit", "agents_audit"],
   "subcommands": ["parse", "get", "set", "set-json", "validate",
                   "items", "blocks", "array-append", "capabilities",
                   "integrity", "flow", "json", "backlog", "tasks",
@@ -587,3 +592,8 @@ Feature meanings:
 | `review_digest_with` | `review digest` prints `duplicate_candidates` and `ruled_out_hits` as counts; `--with duplicates,ruled-out` prints the named arrays in full under the same keys |
 | `review_add_dry_run` | `review add --dry-run` runs every check the write runs against the store as loaded and prints `{ok, dry_run, run, cell, findings, superseded, refused}` with no ids minted, writing nothing; cell-return `findings` entries carry `same_as: true` when the row names one; `review cover` cuts a note or `--ruled-out` reason over its cap, ending `…(+K)`, and reports `note_truncated` / `reasons_truncated` |
 | `review_reproduce_checker` | a reproduction may be recorded `by = "checker"`, beside `verifier` and `orchestrator` |
+| `accept_run_by` | an `accept` entry may carry `run_by` (`worker`, `gate` or `covered`) and, with `covered`, `covered_by`, the exact command of one gate of the row's milestone; the effective owner is `run_by`, else `worker` for `writes_build = false` and `gate` otherwise; only a `worker` check is probed, `plan check` reports `plan/accept-owner-invalid` and `plan/accept-cover-unknown`, and the worker view prints a `Run by:` line under each check |
+| `reproduce_status_milestone` | `review reproduce-status --flow <SLUG> --milestone <ID> --expect <VERDICT>` selects the findings that the milestone's fix rows link, in place of positional ids; `review schedule` gives each fix row that is not a `remove` cleanup one gate-owned milestone check of that form |
+| `gate_probes` | a milestone may carry `gate_probes`, set with `plan milestone add\|update --gate-probe '<GATE> :: <PROBE>'`; `plan probes --emit --gates` prints one line per probe and `plan probes --record <CAPTURE> --gates` stores `holds`, `fails` or `broken`; `plan check` reports `plan/gate-probe-unknown` for a probe whose gate is gone |
+| `plan_emit` | `plan emit launch-args\|gate-list\|reproduce-units --slug <SLUG> --milestone <ID>` print the milestone Workflow's args with their hash, the gate's command list, and the reproduce check's launches, built from the stores and writing nothing; `plan run start --tasks <N1,N2>` stores the ids a launch dispatched |
+| `agents_audit` | `agents audit --transcripts <DIR> [--pattern <REGEX>]...` prints `{agent, command}` rows for the Bash commands in a launch's `agent-*.jsonl` transcripts that match a pattern, by default a cargo build, test or nextest run and a recursive grep; writes nothing |

@@ -4,8 +4,9 @@
 //! verdicts of work already started or finished as they were recorded.
 //! `--premises` works on each pending task's premises instead: `base` ones, and
 //! `after:<id>` ones once task `<id>` is done. Recording one stores `holds`,
-//! `fails` or `broken` as the premise's `probe`. `--milestone` and `--task`
-//! narrow either mode to the rows they name.
+//! `fails` or `broken` as the premise's `probe`. `--gates` works on each
+//! milestone's stored gate probes by the same verdict rules. `--milestone` and
+//! `--task` narrow any mode to the rows they name; `--gates` takes no `--task`.
 //!
 //! tomlctl never runs a stored command: `Bash(tomlctl *)` is pre-approved, so a
 //! verb executing stored strings would widen that approval to arbitrary
@@ -27,8 +28,8 @@ use crate::errors::{ErrorKind, tagged_err};
 use crate::integrity::hex_lower;
 use crate::output::{print_json_compact, print_text};
 use crate::tasks::schema::{
-    Accept, KIND_FALSIFIER, KIND_FORWARD, KIND_GUARD, Premise, Probe, Status, Store, TaskRow,
-    TaskSpec, VERDICT_HEALTHY, normal_path, premise_target,
+    Accept, KIND_FALSIFIER, KIND_FORWARD, KIND_GUARD, MilestoneSpec, Premise, Probe, RUN_BY_WORKER,
+    Status, Store, TaskRow, TaskSpec, VERDICT_HEALTHY, normal_path, premise_target,
 };
 use crate::tasks::{load_store, mutate_store, resolve_store_path};
 
@@ -43,10 +44,12 @@ const VERDICT_FAILS: &str = "fails";
 const CONTROL_NEG: &str = "neg";
 const CONTROL_POS: &str = "pos";
 const CONTROL_PREMISE: &str = "premise";
+const CONTROL_GATE: &str = "gate";
 const DIGEST_PREFIX: &str = "sha256=";
 const PREMISE_AT_BASE: &str = "base";
 const ROW_ACCEPT: &str = "accept";
 const ROW_PREMISE: &str = "premises";
+const ROW_GATE: &str = "gate_probes";
 
 /// The stderr markers of a control that never tested its behaviour, whatever it
 /// exited with. A syntax error exits non-zero, which would read as a healthy
@@ -62,6 +65,8 @@ const MISSING_PATH_MARKER: &str = "No such file";
 /// What a capture row holds, for the refusal of one that holds anything else.
 const ROW_SHAPE: &str = "<task>:<index><TAB>neg|pos|premise<TAB>sha256=<digest><TAB>rc=<code>\
                          <TAB><stdout><TAB><stderr>";
+const GATE_ROW_SHAPE: &str = "<milestone>:<index><TAB>gate<TAB>sha256=<digest><TAB>rc=<code>\
+                              <TAB><stdout><TAB><stderr>";
 const QUOTED_CHARS: usize = 80;
 
 /// Every column is folded onto one line with its tabs gone, so a command's
@@ -96,18 +101,21 @@ pub(super) fn run(mut args: PlanProbesArgs) -> Result<()> {
                 strict_read: true,
             },
         )?;
+        let scope = Scope {
+            milestone: args.milestone.as_deref(),
+            tasks: &args.task,
+        };
+        if args.gates {
+            return print_text(&gate_script(&store, scope)?);
+        }
         let lines = if args.premises {
             premise_lines
         } else {
             accept_lines
         };
-        let scope = Scope {
-            milestone: args.milestone.as_deref(),
-            tasks: &args.task,
-        };
         return print_text(&script(&store, scope, lines)?);
     };
-    let capture = read_capture(&capture)?;
+    let text = read_capture(&capture)?;
     // A capture can only describe rows of a store that already exists, so a
     // mistyped slug must not leave an empty one behind.
     args.integrity.no_create = true;
@@ -115,6 +123,20 @@ pub(super) fn run(mut args: PlanProbesArgs) -> Result<()> {
         milestone: args.milestone.as_deref(),
         tasks: &args.task,
     };
+    if args.gates {
+        let capture = parse_capture_keyed(&text, GATE_ROW_SHAPE, gate_key)?;
+        let recorded = mutate_store(&path, &args.integrity, |store| {
+            record_gates(store, capture, scope)
+        })?;
+        let recorded: Vec<_> = recorded
+            .into_iter()
+            .map(|(milestone, index, verdict)| {
+                json!({ "milestone": milestone, "gate_probe": index, "verdict": verdict })
+            })
+            .collect();
+        return print_json_compact(&json!({ "ok": true, "recorded": recorded }));
+    }
+    let capture = parse_capture(&text)?;
     if args.premises {
         let mut recorded = mutate_store(&path, &args.integrity, |store| {
             record_premises(store, capture, scope)
@@ -146,13 +168,16 @@ pub(super) fn run(mut args: PlanProbesArgs) -> Result<()> {
     print_json_compact(&json!({ "ok": true, "recorded": recorded }))
 }
 
-/// Why a row gets no probe line. Only an explicit `writes_build = false` runs,
-/// so an unlabelled command, which reads as `true`, never does.
+/// Why a row gets no probe line. Only a worker-owned check with an explicit
+/// `writes_build = false` runs, so an unlabelled command, which reads as `true`,
+/// never does, and neither does one a gate owns.
 pub(super) fn skip_reason(accept: &Accept) -> Option<&'static str> {
     if accept.check.trim().is_empty() {
         Some("empty check")
     } else if accept.writes_build {
         Some("writes_build is not false")
+    } else if accept.owner() != RUN_BY_WORKER {
+        Some("run_by is not worker")
     } else {
         None
     }
@@ -231,11 +256,7 @@ fn script(
     lines: fn(&mut String, &Store, u32, &TaskSpec) -> Result<()>,
 ) -> Result<String> {
     refuse_out_of_store(store, scope)?;
-    let mut out = String::from("#!/usr/bin/env bash\n");
-    out.push_str("printf 'head\\t%s\\n' \"$(git rev-parse HEAD)\"\n");
-    out.push_str("cd \"$(git rev-parse --show-toplevel)\" || exit 1\n");
-    out.push_str(HELPER);
-    out.push('\n');
+    let mut out = script_header();
     for row in &store.items {
         let Some(spec) = store.specs.iter().find(|spec| spec.r#ref == row.r#ref) else {
             continue;
@@ -247,6 +268,150 @@ fn script(
         lines(&mut out, store, row.id, spec)?;
     }
     Ok(out)
+}
+
+fn script_header() -> String {
+    let mut out = String::from("#!/usr/bin/env bash\n");
+    out.push_str("printf 'head\\t%s\\n' \"$(git rev-parse HEAD)\"\n");
+    out.push_str("cd \"$(git rev-parse --show-toplevel)\" || exit 1\n");
+    out.push_str(HELPER);
+    out.push('\n');
+    out
+}
+
+/// The milestones a `--gates` run covers: every one, or the one `--milestone`
+/// names.
+fn gate_milestones<'a>(
+    store: &'a Store,
+    scope: Scope<'a>,
+) -> impl Iterator<Item = &'a MilestoneSpec> + 'a {
+    store
+        .milestones
+        .iter()
+        .filter(move |milestone| scope.milestone.is_none_or(|id| milestone.id == id))
+}
+
+/// A milestone id reaches the script bare, as the start of its row key, so one
+/// holding anything a shell word or a capture column could misread is refused.
+fn gate_row_key(milestone: &str, index: usize) -> Result<String> {
+    let plain = !milestone.is_empty()
+        && milestone
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || "._-".contains(ch));
+    if !plain {
+        return Err(refuse(format!(
+            "milestone {} holds gate probes, and its id must be ASCII letters, digits, `.`, `_` \
+             or `-` to key a probe row",
+            quoted(milestone)
+        )));
+    }
+    Ok(format!("{milestone}:{index}"))
+}
+
+/// One line per stored gate probe, whose exit code is the probe's own: 0 when
+/// the gate can run here.
+fn gate_script(store: &Store, scope: Scope) -> Result<String> {
+    refuse_out_of_store(store, scope)?;
+    let mut out = script_header();
+    for milestone in gate_milestones(store, scope) {
+        for (index, gate_probe) in milestone.gate_probes.iter().enumerate() {
+            let key = gate_row_key(&milestone.id, index)?;
+            if gate_probe.probe.trim().is_empty() {
+                writeln!(out, "# skipped {key}: empty probe")?;
+                continue;
+            }
+            writeln!(
+                out,
+                "p {key} {CONTROL_GATE} {} {}",
+                command_digest(&gate_probe.probe),
+                quote(ROW_GATE, &key, &gate_probe.probe)?
+            )?;
+        }
+    }
+    Ok(out)
+}
+
+/// A gate row's `<milestone>:<index>` key. The index follows the last `:`.
+fn gate_key(raw: &str) -> Option<(String, usize)> {
+    let (milestone, index) = raw.rsplit_once(':')?;
+    let index = index.parse::<usize>().ok()?;
+    (!milestone.is_empty()).then(|| (milestone.to_string(), index))
+}
+
+/// Stores each in-scope gate probe's verdict by the premise rules, returning
+/// `(milestone, index, verdict)` for each. As with `record_premises`, the
+/// capture must cover exactly the probes the emitted script runs, each with the
+/// digest of the stored probe, or nothing is written.
+fn record_gates(
+    store: &mut Store,
+    mut capture: Capture<(String, usize)>,
+    scope: Scope,
+) -> Result<Vec<(String, usize, &'static str)>> {
+    refuse_out_of_store(store, scope)?;
+    if let Some((milestone, index)) = capture
+        .controls
+        .iter()
+        .find(|(_, controls)| {
+            controls.gate.is_none() || controls.has_accept() || controls.premise.is_some()
+        })
+        .map(|(key, _)| key)
+    {
+        return Err(refuse(format!(
+            "the capture's {milestone}:{index} is not a gate probe row: record it without \
+             `--gates`"
+        )));
+    }
+    let checked: Vec<(String, usize)> = gate_milestones(store, scope)
+        .flat_map(|milestone| {
+            milestone
+                .gate_probes
+                .iter()
+                .enumerate()
+                .filter(|(_, gate_probe)| !gate_probe.probe.trim().is_empty())
+                .map(|(index, _)| (milestone.id.clone(), index))
+        })
+        .collect();
+    if capture.controls.len() < checked.len() {
+        return Err(refuse(format!(
+            "the capture covers {} of the {} gate probes in scope, as a script cut short by a \
+             timeout leaves it: re-run the emitted script under a longer limit, or `plan probes \
+             --emit --gates` again if the store has changed",
+            capture.controls.len(),
+            checked.len()
+        )));
+    }
+    let mut recorded = Vec::new();
+    for (milestone, index) in checked {
+        let key = format!("{milestone}:{index}");
+        let control = capture
+            .controls
+            .remove(&(milestone.clone(), index))
+            .and_then(|controls| controls.gate)
+            .ok_or_else(|| stale(&key, CONTROL_GATE))?;
+        let gate_probe = store
+            .milestones
+            .iter_mut()
+            .find(|entry| entry.id == milestone)
+            .and_then(|entry| entry.gate_probes.get_mut(index))
+            .expect("a gate probe collected from this store");
+        if control.digest != command_digest(&gate_probe.probe) {
+            return Err(refuse(format!(
+                "the capture's gate control for milestone `{milestone}`'s `gate_probes[{index}]` \
+                 ran a different command than the store holds: re-run `plan probes --emit --gates`"
+            )));
+        }
+        let verdict = premise_verdict(&control);
+        gate_probe.verdict = verdict.to_string();
+        gate_probe.at = capture.head.clone();
+        recorded.push((milestone, index, verdict));
+    }
+    if let Some((milestone, index)) = capture.controls.keys().next() {
+        return Err(refuse(format!(
+            "the capture names {milestone}:{index}, which is no stored gate probe in scope: \
+             re-run `plan probes --emit --gates`"
+        )));
+    }
+    Ok(recorded)
 }
 
 fn accept_lines(out: &mut String, _store: &Store, task: u32, spec: &TaskSpec) -> Result<()> {
@@ -312,12 +477,14 @@ struct Control {
 
 /// The controls a capture holds under one `<task>:<index>` key. An `accept`
 /// row's are `neg` and `pos`; a premise's is `premise`, its index counting
-/// premises rather than `accept` rows.
+/// premises rather than `accept` rows. A gate probe's is `gate`, under a
+/// `<milestone>:<index>` key.
 #[derive(Default)]
 struct Controls {
     neg: Option<Control>,
     pos: Option<Control>,
     premise: Option<Control>,
+    gate: Option<Control>,
 }
 
 impl Controls {
@@ -326,14 +493,14 @@ impl Controls {
     }
 }
 
-struct Capture {
+struct Capture<K = (u32, usize)> {
     head: String,
-    controls: BTreeMap<(u32, usize), Controls>,
+    controls: BTreeMap<K, Controls>,
 }
 
 /// Non-UTF-8 is read lossily: a tool's stderr may be in any encoding, and only
 /// the ASCII markers are read out of it.
-fn read_capture(path: &Path) -> Result<Capture> {
+fn read_capture(path: &Path) -> Result<String> {
     let bytes = fs::read(path).map_err(|err| {
         let kind = match err.kind() {
             std::io::ErrorKind::NotFound => ErrorKind::NotFound,
@@ -345,7 +512,7 @@ fn read_capture(path: &Path) -> Result<Capture> {
             format!("reading capture {}: {err}", path.display()),
         )
     })?;
-    parse_capture(&String::from_utf8_lossy(&bytes))
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
 /// A line as a refusal quotes it: cut short, with its tabs and control characters
@@ -357,6 +524,19 @@ fn quoted(line: &str) -> String {
 }
 
 fn parse_capture(text: &str) -> Result<Capture> {
+    parse_capture_keyed(text, ROW_SHAPE, |raw| {
+        let (task, index) = raw.split_once(':')?;
+        Some((task.parse::<u32>().ok()?, index.parse::<usize>().ok()?))
+    })
+}
+
+/// A capture whose row keys `key` parses, `shape` naming the row a refusal
+/// expects.
+fn parse_capture_keyed<K: Ord>(
+    text: &str,
+    shape: &str,
+    key: fn(&str) -> Option<K>,
+) -> Result<Capture<K>> {
     let mut lines = text
         .lines()
         .enumerate()
@@ -373,11 +553,11 @@ fn parse_capture(text: &str) -> Result<Capture> {
             ))
         })?
         .to_string();
-    let mut controls: BTreeMap<(u32, usize), Controls> = BTreeMap::new();
+    let mut controls: BTreeMap<K, Controls> = BTreeMap::new();
     for (number, line) in lines {
         let malformed = || {
             refuse(format!(
-                "capture line {} is not a probe row: expected `{ROW_SHAPE}`, got {}",
+                "capture line {} is not a probe row: expected `{shape}`, got {}",
                 number + 1,
                 quoted(line)
             ))
@@ -398,11 +578,7 @@ fn parse_capture(text: &str) -> Result<Capture> {
         let &[raw_key, control, digest, rc, _stdout, stderr] = columns.as_slice() else {
             return Err(malformed());
         };
-        let (task, index) = raw_key.split_once(':').ok_or_else(malformed)?;
-        let key = (
-            task.parse::<u32>().map_err(|_| malformed())?,
-            index.parse::<usize>().map_err(|_| malformed())?,
-        );
+        let row_key = key(raw_key).ok_or_else(malformed)?;
         let parsed = Control {
             digest: digest
                 .strip_prefix(DIGEST_PREFIX)
@@ -415,11 +591,12 @@ fn parse_capture(text: &str) -> Result<Capture> {
                 .ok_or_else(malformed)?,
             stderr: stderr.to_string(),
         };
-        let entry = controls.entry(key).or_default();
+        let entry = controls.entry(row_key).or_default();
         let slot = match control {
             CONTROL_NEG => &mut entry.neg,
             CONTROL_POS => &mut entry.pos,
             CONTROL_PREMISE => &mut entry.premise,
+            CONTROL_GATE => &mut entry.gate,
             _ => return Err(malformed()),
         };
         if slot.replace(parsed).is_some() {
@@ -462,6 +639,7 @@ fn record(
     scope: Scope,
 ) -> Result<Vec<(u32, usize, Verdict)>> {
     refuse_out_of_store(store, scope)?;
+    refuse_gate_rows(&capture)?;
     if let Some((task, index)) = capture
         .controls
         .iter()
@@ -563,6 +741,7 @@ fn record_premises(
     scope: Scope,
 ) -> Result<Vec<(u32, usize, &'static str)>> {
     refuse_out_of_store(store, scope)?;
+    refuse_gate_rows(&capture)?;
     if let Some((task, index)) = capture
         .controls
         .iter()
@@ -635,6 +814,21 @@ fn record_premises(
         )));
     }
     Ok(recorded)
+}
+
+/// A gate row whose milestone id is a number parses under a task key too.
+fn refuse_gate_rows(capture: &Capture) -> Result<()> {
+    match capture
+        .controls
+        .iter()
+        .find(|(_, controls)| controls.gate.is_some())
+    {
+        Some(((milestone, index), _)) => Err(refuse(format!(
+            "the capture's {milestone}:{index} is a gate probe row: record a gate capture with \
+             `plan probes --record <capture> --gates`"
+        ))),
+        None => Ok(()),
+    }
 }
 
 /// A premise's check exits 0 when its claim holds. A breakage marker means the

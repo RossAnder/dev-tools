@@ -149,7 +149,7 @@ pub(crate) struct ReviewReproduceArgs {
 pub(crate) struct ReviewReproduceStatusArgs {
     #[arg(
         value_name = "ID,...",
-        required = true,
+        required_unless_present = "flow",
         num_args = 1..,
         value_delimiter = ',',
         help = "Finding ids, comma- or space-separated"
@@ -157,6 +157,21 @@ pub(crate) struct ReviewReproduceStatusArgs {
     pub(crate) ids: Vec<String>,
     #[command(flatten)]
     pub(crate) store: ReviewStore,
+    #[arg(
+        long = "flow",
+        value_name = "SLUG",
+        conflicts_with = "ids",
+        requires = "milestone",
+        help = "Select the findings the flow's rows of --milestone fix, from its [[finding_links]] for this store, in place of ids"
+    )]
+    pub(crate) flow: Option<String>,
+    #[arg(
+        long = "milestone",
+        value_name = "ID",
+        requires = "flow",
+        help = "The checkpoint whose rows' fixed findings --flow selects"
+    )]
+    pub(crate) milestone: Option<String>,
     #[arg(
         long = "expect",
         value_name = "VERDICT",

@@ -934,6 +934,38 @@ fn emit_runs_only_rows_explicitly_marked_and_names_the_rest_by_key() {
 }
 
 #[test]
+fn gate_owned_check_is_not_probed() {
+    let (_dir, root) = sandbox();
+    let mut gate = accept("forward", "echo gate-owned", "echo gate-positive");
+    gate["run_by"] = json!("gate");
+    let mut covered = accept("forward", "echo covered-owned", "");
+    covered["run_by"] = json!("covered");
+    covered["covered_by"] = json!("true");
+    seed_tasks(
+        &root,
+        &store(json!([
+            gate,
+            covered,
+            accept("forward", "echo worker-owned", ""),
+        ])),
+    );
+    let script = emit(&root);
+    for index in [0, 1] {
+        assert!(
+            script.contains(&format!("\n# skipped 1:{index}: run_by is not worker\n")),
+            "{script}"
+        );
+    }
+    assert!(script.contains("'echo worker-owned'"), "{script}");
+    for absent in ["gate-owned", "gate-positive", "covered-owned"] {
+        assert!(
+            !script.contains(absent),
+            "`{absent}` must not reach:\n{script}"
+        );
+    }
+}
+
+#[test]
 fn emit_refuses_a_command_a_script_cannot_carry() {
     let (_dir, root) = sandbox();
     seed_tasks(
@@ -1597,4 +1629,162 @@ fn the_script_runs_from_the_repo_root_wherever_it_starts() {
     let capture = run_script(&bash, &root, &nested);
     record(&root, &capture).success();
     assert_eq!(verdict(&probes(&path)[0]), "healthy", "{capture}");
+}
+
+const GATE_HOLDS: &str = "bash scripts/link.sh --dry-run";
+const GATE_FAILS: &str = "cargo nextest --version";
+const GATE_OTHER: &str = "echo 'other milestone'";
+
+/// Milestone A holds two gate probes and B one; the task row holds an accept
+/// check, which `--gates` must leave out.
+fn gate_store() -> String {
+    let milestone = |id: &str, probes: Value| {
+        json!({
+            "id": id,
+            "gates": ["bash scripts/link.sh", "cargo nextest run"],
+            "elaboration": "upfront",
+            "defer_reason": "",
+            "gate_probes": probes,
+        })
+    };
+    let probe =
+        |gate: &str, probe: &str| json!({ "gate": gate, "probe": probe, "verdict": "", "at": "" });
+    let mut doc: toml::Value =
+        toml::from_str(&store(json!([accept("forward", "echo accept-check", "")]))).unwrap();
+    let extra = json!({
+        "checkpoints": [{ "id": "A", "rationale": "" }, { "id": "B", "rationale": "" }],
+        "milestones": [
+            milestone("A", json!([
+                probe("bash scripts/link.sh", GATE_HOLDS),
+                probe("cargo nextest run", GATE_FAILS),
+            ])),
+            milestone("B", json!([probe("bash scripts/link.sh", GATE_OTHER)])),
+        ],
+    });
+    let extra: toml::Value = toml::Value::try_from(extra).unwrap();
+    for (key, value) in extra.as_table().unwrap() {
+        doc.as_table_mut()
+            .unwrap()
+            .insert(key.clone(), value.clone());
+    }
+    toml::to_string(&doc).unwrap()
+}
+
+fn gate_row(key: &str, probe: &str, rc: i64, stderr: &str) -> String {
+    format!(
+        "{key}\tgate\tsha256={}\trc={rc}\t\t{stderr}\n",
+        digest(probe)
+    )
+}
+
+fn gate_probe_rows(store_path: &Path) -> Vec<(String, String, String)> {
+    let doc: toml::Value = toml::from_str(&fs::read_to_string(store_path).unwrap()).unwrap();
+    doc["milestones"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|milestone| {
+            let id = milestone["id"].as_str().unwrap().to_string();
+            milestone["gate_probes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(move |entry| {
+                    (
+                        id.clone(),
+                        entry["verdict"].as_str().unwrap().to_string(),
+                        entry["at"].as_str().unwrap().to_string(),
+                    )
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+#[test]
+fn gate_probes_emit_and_record() {
+    let (_dir, root) = sandbox();
+    let path = seed_tasks(&root, &gate_store());
+    let emit_gates = |flags: &[&str]| {
+        let out = cli(&root)
+            .args(["plan", "probes", "--slug", TASKS_SLUG, "--emit", "--gates"])
+            .args(flags)
+            .assert()
+            .success();
+        String::from_utf8_lossy(&out.get_output().stdout).to_string()
+    };
+
+    let script = emit_gates(&[]);
+    for (key, probe) in [
+        ("A:0", GATE_HOLDS),
+        ("A:1", GATE_FAILS),
+        ("B:0", GATE_OTHER),
+    ] {
+        let quoted = format!("'{}'", probe.replace('\'', r"'\''"));
+        assert!(
+            script.contains(&format!("\np {key} gate {} {quoted}\n", digest(probe))),
+            "{script}"
+        );
+    }
+    assert!(!script.contains("accept-check"), "{script}");
+    let narrowed = emit_gates(&["--milestone", "A"]);
+    assert!(
+        narrowed.contains("p A:1 gate") && !narrowed.contains("B:0"),
+        "{narrowed}"
+    );
+
+    // Without `--gates` the script is the accept script it always was.
+    let accepts = emit(&root);
+    assert!(
+        accepts.contains("echo accept-check") && !accepts.contains(" gate "),
+        "{accepts}"
+    );
+
+    let capture = format!(
+        "head\t{SHA}\n{}{}",
+        gate_row("A:0", GATE_HOLDS, 0, ""),
+        gate_row("A:1", GATE_FAILS, 101, "error: no such command: `nextest`"),
+    );
+    let out = record_with(&root, &capture, &["--gates", "--milestone", "A"]).success();
+    let reply: Value = serde_json::from_slice(&out.get_output().stdout).unwrap();
+    assert_eq!(
+        reply["recorded"],
+        json!([
+            { "milestone": "A", "gate_probe": 0, "verdict": "holds" },
+            { "milestone": "A", "gate_probe": 1, "verdict": "fails" },
+        ])
+    );
+    assert_eq!(
+        gate_probe_rows(&path),
+        vec![
+            ("A".to_string(), "holds".to_string(), SHA.to_string()),
+            ("A".to_string(), "fails".to_string(), SHA.to_string()),
+            ("B".to_string(), String::new(), String::new()),
+        ]
+    );
+    assert_eq!(probes(&path), vec![None], "an accept row is never touched");
+
+    let broken = format!(
+        "head\t{SHA}\n{}",
+        gate_row("B:0", GATE_OTHER, 0, "bash: echo: command not found")
+    );
+    record_with(&root, &broken, &["--gates", "--milestone", "B"]).success();
+    assert_eq!(gate_probe_rows(&path)[2].1, "broken");
+
+    // A capture for a different command, or a gate capture recorded as an
+    // accept one, writes nothing.
+    let before = fs::read_to_string(&path).unwrap();
+    let edited = format!("head\t{SHA}\n{}", gate_row("B:0", "echo edited", 0, ""));
+    record_with(&root, &edited, &["--gates", "--milestone", "B"]).failure();
+    record_with(&root, &capture, &[]).failure();
+    assert_eq!(fs::read_to_string(&path).unwrap(), before);
+
+    // `--gates` takes no `--task` and no `--premises`.
+    for flag in [&["--task", "1"][..], &["--premises"][..]] {
+        cli(&root)
+            .args(["plan", "probes", "--slug", TASKS_SLUG, "--emit", "--gates"])
+            .args(flag)
+            .assert()
+            .failure();
+    }
 }
