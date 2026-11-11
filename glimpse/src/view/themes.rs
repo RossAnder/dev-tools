@@ -7,6 +7,7 @@ use ratatui::widgets::{Clear, Paragraph};
 
 use super::panel;
 use crate::app::App;
+use crate::model::FrontierState;
 use crate::theme::sets;
 
 const TITLE: &str = " themes ";
@@ -45,6 +46,21 @@ fn sample(app: &App) -> Line<'static> {
     Line::from(spans)
 }
 
+/// Each frontier mark and its name, drawn in the previewed theme.
+fn frontier_sample(app: &App) -> Line<'static> {
+    let mut spans = Vec::with_capacity(FrontierState::ALL.len() * 2);
+    for (i, state) in FrontierState::ALL.into_iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::raw(" "));
+        }
+        spans.push(Span::styled(
+            format!("{} {}", state.glyph(), state.as_str()),
+            app.theme.frontier(state),
+        ));
+    }
+    Line::from(spans)
+}
+
 pub(crate) fn render(frame: &mut Frame, area: Rect, app: &App) {
     let mut lines: Vec<Line> = sets::SETS
         .iter()
@@ -53,6 +69,7 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, app: &App) {
         .collect();
     lines.push(Line::raw(""));
     lines.push(sample(app));
+    lines.push(frontier_sample(app));
     let widest = lines.iter().map(Line::width).max().unwrap_or(0);
     let width = (widest.max(TITLE.chars().count()) + 4) as u16;
     let height = lines.len() as u16 + 2;
@@ -106,5 +123,9 @@ mod tests {
         assert!(text.contains("▸ ") && text.contains("ansi"), "{text}");
         assert!(text.contains("● kanso-zen"), "current set marked: {text}");
         assert!(text.contains("in-progress"), "sample chips: {text}");
+        assert!(
+            text.contains("▷ ready □ held ○ blocked ◷ waiting"),
+            "frontier sample: {text}"
+        );
     }
 }

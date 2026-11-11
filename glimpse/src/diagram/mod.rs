@@ -66,20 +66,21 @@ impl Zoom {
     }
 
     /// What a node shows: `[id title]` with the title as `shown_title` cuts it, `[id]`,
-    /// or the status glyph alone. Paint draws exactly this and the layout reserves
-    /// `label_cells` of it.
-    pub(crate) fn label(self, id: u32, title: &str, status: TaskStatus) -> String {
+    /// or `glyph`, the row's status mark, alone. Paint draws exactly this and the layout
+    /// reserves `label_cells` of it.
+    pub(crate) fn label(self, id: u32, title: &str, glyph: &str) -> String {
         match self {
             Zoom::Titles => format!("[{id} {}]", shown_title(title)),
             Zoom::Ids => format!("[{id}]"),
-            Zoom::Tight => status.glyph().to_string(),
+            Zoom::Tight => glyph.to_string(),
         }
     }
 
-    /// The cells a node's label takes. Status sits outside the layout key, so this
-    /// measures the default status's glyph, which every glyph matches in width.
+    /// The cells a node's label takes. Status and frontier sit outside the layout key, so
+    /// this measures the pending glyph, which every status and frontier glyph matches in
+    /// width.
     fn label_width(self, id: u32, title: &str) -> u16 {
-        label_cells(&self.label(id, title, TaskStatus::default()))
+        label_cells(&self.label(id, title, TaskStatus::Pending.glyph()))
     }
 
     fn task_gap(self) -> u16 {
@@ -869,7 +870,7 @@ mod tests {
     use std::collections::VecDeque;
 
     use super::*;
-    use crate::model::{Task, TaskStatus, fixture};
+    use crate::model::{FrontierState, Task, TaskStatus, fixture};
 
     const BOTH: [Orientation; 2] = [Orientation::Vertical, Orientation::Horizontal];
 
@@ -1242,7 +1243,7 @@ mod tests {
         assert_eq!(Zoom::Titles.label_width(12, &"x".repeat(40)), 2 + 3 + 24);
         assert_eq!(Zoom::Ids.label_width(12, "anything"), 4);
         assert_eq!(Zoom::Tight.label_width(12, "anything"), 1);
-        for status in [
+        let statuses = [
             TaskStatus::Pending,
             TaskStatus::InProgress,
             TaskStatus::Done,
@@ -1250,9 +1251,12 @@ mod tests {
             TaskStatus::Deferred,
             TaskStatus::Parked,
             TaskStatus::Unknown,
-        ] {
-            let drawn = label_cells(&Zoom::Tight.label(12, "", status));
-            assert_eq!(drawn, Zoom::Tight.label_width(12, ""), "{status:?}");
+        ]
+        .map(TaskStatus::glyph);
+        let frontier = FrontierState::ALL.map(FrontierState::glyph);
+        for glyph in statuses.into_iter().chain(frontier) {
+            let drawn = label_cells(&Zoom::Tight.label(12, "", glyph));
+            assert_eq!(drawn, Zoom::Tight.label_width(12, ""), "{glyph:?}");
         }
     }
 

@@ -106,6 +106,44 @@ impl TaskStatus {
     }
 }
 
+/// Where a pending row stands against the frontier, as [`Index::frontier_state`] reads it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum FrontierState {
+    /// Dispatchable now.
+    Ready,
+    /// Ready but for a file an in-flight row holds.
+    Held,
+    /// A need is not yet done.
+    Blocked,
+    /// Ready or held, in a milestone other than the running one.
+    Waiting,
+}
+
+impl FrontierState {
+    pub(crate) const ALL: [FrontierState; 4] =
+        [Self::Ready, Self::Held, Self::Blocked, Self::Waiting];
+
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Ready => "ready",
+            Self::Held => "held",
+            Self::Blocked => "blocked",
+            Self::Waiting => "waiting",
+        }
+    }
+
+    /// Drawn in place of the pending glyph; blocked keeps it. Each is one cell and
+    /// differs from every status glyph in shape, so the states read without colour.
+    pub(crate) fn glyph(self) -> &'static str {
+        match self {
+            Self::Ready => "▷",
+            Self::Held => "□",
+            Self::Blocked => TaskStatus::Pending.glyph(),
+            Self::Waiting => "◷",
+        }
+    }
+}
+
 /// The dispatchable frontier with every in-progress row counted in flight.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -498,6 +536,26 @@ impl Index {
                 .is_some_and(|task| task.checkpoint != running)
     }
 
+    /// `id`'s frontier state while it is pending, `None` for any other status. A pending
+    /// row neither ready nor held has a need not yet done, so it reads as blocked.
+    pub(crate) fn frontier_state(&self, snapshot: &Snapshot, id: u32) -> Option<FrontierState> {
+        let task = self.task(snapshot, id)?;
+        if task.status != TaskStatus::Pending {
+            return None;
+        }
+        let frontier = &snapshot.frontier;
+        let state = if self.waits_on_milestone(snapshot, id) {
+            FrontierState::Waiting
+        } else if frontier.ready.contains(&id) {
+            FrontierState::Ready
+        } else if frontier.held.iter().any(|h| h.id == id) {
+            FrontierState::Held
+        } else {
+            FrontierState::Blocked
+        };
+        Some(state)
+    }
+
     /// `frontier.ready` less the rows [`Index::waits_on_milestone`] holds back.
     pub(crate) fn dispatchable(&self, snapshot: &Snapshot) -> Vec<u32> {
         snapshot
@@ -767,6 +825,50 @@ mod tests {
         assert!(!index.waits_on_milestone(&snap, 6));
         assert!(!index.waits_on_milestone(&snap, 5));
         assert_eq!(index.dispatchable(&snap), [6]);
+    }
+
+    #[test]
+    fn each_pending_row_has_one_frontier_state_and_no_other_row_has_any() {
+        let mut snap = fixture();
+        let index = snap.index();
+        let state = |snap: &Snapshot, id| index.frontier_state(snap, id);
+        assert_eq!(state(&snap, 6), Some(FrontierState::Ready));
+        assert_eq!(state(&snap, 5), Some(FrontierState::Held));
+        assert_eq!(state(&snap, 7), Some(FrontierState::Blocked), "next");
+        assert_eq!(state(&snap, 8), Some(FrontierState::Blocked));
+        assert_eq!(state(&snap, 4), None, "in progress");
+        assert_eq!(state(&snap, 1), None, "done");
+        assert_eq!(state(&snap, 99), None, "no such row");
+
+        snap.running_milestone = "A".to_string();
+        assert_eq!(state(&snap, 6), Some(FrontierState::Waiting));
+        assert_eq!(state(&snap, 5), Some(FrontierState::Waiting));
+        assert_eq!(state(&snap, 7), Some(FrontierState::Blocked));
+
+        snap.running_milestone = "B".to_string();
+        assert_eq!(state(&snap, 6), Some(FrontierState::Ready));
+        assert_eq!(state(&snap, 5), Some(FrontierState::Held));
+    }
+
+    #[test]
+    fn frontier_glyphs_are_one_cell_and_clash_with_no_status_glyph() {
+        let statuses = [
+            TaskStatus::InProgress,
+            TaskStatus::Done,
+            TaskStatus::Failed,
+            TaskStatus::Deferred,
+            TaskStatus::Parked,
+            TaskStatus::Unknown,
+        ];
+        for state in FrontierState::ALL {
+            assert_eq!(ratatui::text::Span::raw(state.glyph()).width(), 1);
+            for other in FrontierState::ALL.into_iter().filter(|o| *o != state) {
+                assert_ne!(state.glyph(), other.glyph(), "{state:?} {other:?}");
+            }
+            for status in statuses {
+                assert_ne!(state.glyph(), status.glyph(), "{state:?} {status:?}");
+            }
+        }
     }
 
     #[test]

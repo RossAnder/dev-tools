@@ -1,6 +1,7 @@
 //! Paints a routed diagram into a ratatui buffer.
 //!
-//! Only styles read the statuses and the selection, so a frame after a status-only
+//! Only styles and the one-cell status marks read the statuses, the frontier and the
+//! selection, so a frame after a status-only
 //! snapshot reuses the cached layout and repaints over it.
 
 use std::time::Instant;
@@ -90,10 +91,11 @@ fn render_at(
         if let Some(rect) = on_screen(area, scroll, node) {
             targets.push((rect, node.id));
         }
+        let (glyph, mark) = crate::view::status_mark(app, task);
         let mut style = if app.is_flashing(node.id, now) {
             theme.flash(task.status)
         } else {
-            theme.status(task.status.as_str())
+            mark
         };
         if selected == Some(node.id) {
             style = style.patch(theme.selection);
@@ -104,7 +106,7 @@ fn render_at(
                 style = style.underline_color(colour);
             }
         }
-        let label = app.diagram_zoom.label(task.id, &task.title, task.status);
+        let label = app.diagram_zoom.label(task.id, &task.title, glyph);
         let mut x = node.x;
         for ch in label.chars() {
             let cells = char_cells(ch);
@@ -230,7 +232,7 @@ mod tests {
     use crate::config::Config;
     use crate::diagram::Zoom;
     use crate::diagram::order::EdgeKind;
-    use crate::model::{TaskStatus, fixture};
+    use crate::model::{FrontierState, TaskStatus, fixture};
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
 
@@ -405,7 +407,44 @@ mod tests {
         for task in &app.snapshot.tasks {
             let node = layout.node(task.id).expect("every task is drawn");
             assert_eq!(node.width, 1, "[{}]", task.id);
-            assert_eq!(buf[(node.x, node.y)].symbol(), task.status.glyph());
+            assert_eq!(
+                buf[(node.x, node.y)].symbol(),
+                crate::view::status_mark(&app, task).0
+            );
+        }
+    }
+
+    #[test]
+    fn a_tight_pending_node_shows_its_frontier_state_in_its_colour() {
+        let mut snap = fixture();
+        snap.running_milestone = "B".to_string();
+        let mut app = App::new(snap, &Config::default());
+        app.selected = None;
+        app.diagram_zoom = Zoom::Tight;
+        let mut cache = DiagramCache::default();
+        let buf = draw(&app, &mut cache, Orientation::Vertical, 60, 40);
+        let layout = cache.layout.clone().expect("drawn");
+        let theme = &app.theme;
+        let cell = |id| {
+            let node = layout.node(id).expect("drawn");
+            buf[(node.x, node.y)].clone()
+        };
+        for (id, glyph, style) in [
+            (6, "▷", theme.frontier(FrontierState::Ready)),
+            (5, "□", theme.frontier(FrontierState::Held)),
+            (7, "○", theme.frontier(FrontierState::Blocked)),
+            (4, "◐", theme.in_progress),
+            (1, "✓", theme.done),
+        ] {
+            assert_eq!(cell(id).symbol(), glyph, "[{id}]");
+            assert_eq!(Some(cell(id).fg), style.fg, "[{id}]");
+        }
+
+        app.snapshot.running_milestone = "A".to_string();
+        let buf = draw(&app, &mut cache, Orientation::Vertical, 60, 40);
+        for id in [5, 6] {
+            let node = layout.node(id).expect("drawn");
+            assert_eq!(buf[(node.x, node.y)].symbol(), "◷", "[{id}]");
         }
     }
 
@@ -427,7 +466,7 @@ mod tests {
     #[test]
     fn a_titled_label_draws_control_chars_as_spaces() {
         let title = "a\u{1b}]52;c;x\u{7}b\tc\u{1b}[2J";
-        let label = Zoom::Titles.label(4, title, TaskStatus::Pending);
+        let label = Zoom::Titles.label(4, title, TaskStatus::Pending.glyph());
         assert!(!label.chars().any(char::is_control), "{label:?}");
         let raw = format!("[4 {title}]");
         assert_eq!(label.chars().count(), raw.chars().count());

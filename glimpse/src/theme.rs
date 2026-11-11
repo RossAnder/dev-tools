@@ -15,7 +15,7 @@ use std::str::FromStr;
 
 use ratatui::style::{Color, Modifier, Style};
 
-use crate::model::TaskStatus;
+use crate::model::{FrontierState, TaskStatus};
 use sets::{Faint, Fill, ThemeSet};
 
 /// Every token and its default, palette first. Defaults are the Kanso Zen palette the
@@ -41,6 +41,10 @@ pub(crate) const TOKENS: &[(&str, &str)] = &[
     ("status_done", "success"),
     ("status_failed", "danger"),
     ("status_deferred", "muted"),
+    ("frontier_ready", "info"),
+    ("frontier_held", "warning"),
+    ("frontier_blocked", "status_pending"),
+    ("frontier_waiting", "violet"),
     ("flash_fg", "on_color"),
     ("selection_bg", "highlight"),
     ("selection_mark", "accent"),
@@ -180,6 +184,8 @@ pub(crate) struct Theme {
     pub(crate) done: Style,
     pub(crate) failed: Style,
     pub(crate) deferred: Style,
+    /// A pending row's mark, keyed by [`FrontierState`]; read through [`Theme::frontier`].
+    frontier: [Style; 4],
     /// A status change, keyed by the status it changed to.
     flash: [Style; 5],
     pub(crate) selection: Style,
@@ -328,6 +334,12 @@ impl Theme {
             done: fg("status_done"),
             failed: fg("status_failed"),
             deferred: fg("status_deferred"),
+            frontier: [
+                fg("frontier_ready"),
+                fg("frontier_held"),
+                fg("frontier_blocked"),
+                fg("frontier_waiting"),
+            ],
             flash: [
                 flash("status_pending"),
                 flash("status_in_progress"),
@@ -430,6 +442,16 @@ impl Theme {
         }
     }
 
+    pub(crate) fn frontier(&self, state: FrontierState) -> Style {
+        let at = match state {
+            FrontierState::Ready => 0,
+            FrontierState::Held => 1,
+            FrontierState::Blocked => 2,
+            FrontierState::Waiting => 3,
+        };
+        self.frontier[at]
+    }
+
     /// The highlight a task takes after its status changes: the colour of the status it
     /// changed to, as a background.
     pub(crate) fn flash(&self, status: TaskStatus) -> Style {
@@ -492,6 +514,26 @@ mod tests {
         assert_eq!(t.item_status("declined").fg, Some(rgb("#8A8F98")));
         assert_eq!(t.item_status("live").fg, Some(Color::Reset));
         assert_eq!(t.question.fg, Some(rgb("#938AA9")));
+    }
+
+    #[test]
+    fn frontier_tokens_default_to_palette_colours_and_blocked_follows_pending() {
+        let t = Theme::default();
+        assert_eq!(t.frontier(FrontierState::Ready).fg, Some(rgb("#7FB4CA")));
+        assert_eq!(t.frontier(FrontierState::Held).fg, Some(rgb("#E6C384")));
+        assert_eq!(t.frontier(FrontierState::Waiting).fg, Some(rgb("#938AA9")));
+        assert_eq!(t.frontier(FrontierState::Blocked), t.pending);
+        let over = HashMap::from([("status_pending".to_string(), "#010203".to_string())]);
+        assert_eq!(
+            Theme::build(&over, false)
+                .frontier(FrontierState::Blocked)
+                .fg,
+            Some(rgb("#010203"))
+        );
+        let mono = Theme::build(&HashMap::new(), true);
+        for state in FrontierState::ALL {
+            assert_eq!(mono.frontier(state), Style::new(), "{state:?}");
+        }
     }
 
     #[test]

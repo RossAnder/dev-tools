@@ -294,6 +294,18 @@ top or a third of the view from the bottom. A task's effort mark (`S`/`M`/`L`)
 turns `warning` when its record holds a deviation, deferral, retry, escalation or
 timed-out check, and `danger` when it failed.
 
+A pending task's status glyph says where it stands against the frontier, in the
+layers view and in the diagram's one-glyph zoom; every other status keeps its own
+glyph. In the diagram's `[id]` and `[id title]` zooms the frontier shows as the
+label's colour only.
+
+| Mark | State | Meaning |
+|---|---|---|
+| `▷` | ready | dispatchable now |
+| `□` | held | ready, but a running task holds one of its files |
+| `○` | blocked | a need is not done yet |
+| `◷` | waiting | ready or held, while an open `implement:<id>` run is executing another milestone; with no open run nothing waits |
+
 **Paging.** `PgUp`, `PgDn`, `Home` and `End` act on whatever has focus, the first
 of these that applies: the theme picker's cursor; the open legend; the flow
 selector's cursor, a drawn page at a time; details that cover the body
@@ -528,6 +540,7 @@ A token's value comes from the current set's `[theme.<set>]` table, then the pla
 |---|---|
 | Palette | `fg` `accent` `accent_bg` `success` `danger` `warning` `info` `violet` `teal` `idle` `muted` `faint` `subtle` `highlight` `on_color` |
 | Status | `status_pending` `status_in_progress` `status_done` `status_failed` `status_deferred`, and `flash_fg` for text on a status-change flash |
+| Frontier | `frontier_ready` `frontier_held` `frontier_blocked` `frontier_waiting` for a pending task's mark; `frontier_blocked` defaults to `status_pending` |
 | Selection | `selection_bg` `selection_mark` `unrelated`, and `selection_text` for muted and faint text on the cursor row |
 | Edges | `edge` `edge_faded` `edge_needs` `edge_out` `edge_coupling` `edge_overlap` |
 | Chrome | `border` `border_title` `layer_rule` `layer_label` `section` `secondary` `slug`, `strong` for emphasis (markdown bold, badges, the diagram's `+n hidden`), and `backdrop` for the frame dimmed behind an overlay |

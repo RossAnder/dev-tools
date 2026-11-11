@@ -322,6 +322,15 @@ pub(crate) fn chip(text: &str, style: ratatui::style::Style) -> Span<'static> {
     Span::styled(format!(" {text} "), style)
 }
 
+/// The glyph and style a row's status mark draws: a pending row's frontier state, any
+/// other row's status.
+pub(crate) fn status_mark(app: &App, task: &Task) -> (&'static str, ratatui::style::Style) {
+    match app.index.frontier_state(&app.snapshot, task.id) {
+        Some(state) => (state.glyph(), app.theme.frontier(state)),
+        None => (task.status.glyph(), app.theme.status(task.status.as_str())),
+    }
+}
+
 /// How loud a task's effort mark is: the worst notice its status or record holds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum Notice {

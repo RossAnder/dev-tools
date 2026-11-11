@@ -9,7 +9,7 @@ use ratatui::widgets::{Clear, Paragraph, Scrollbar, ScrollbarOrientation, Scroll
 use super::{items, panel};
 use crate::app::App;
 use crate::ledger::{SEVERITIES, StatusClass};
-use crate::model::TaskStatus;
+use crate::model::{FrontierState, TaskStatus};
 use crate::theme::Theme;
 
 /// Width of the left column, where each sample sits.
@@ -145,6 +145,25 @@ fn lines(theme: &Theme) -> Vec<Line<'static>> {
         Span::styled(" done ", theme.flash(TaskStatus::Done)),
         "a status just changed, in the new status's colour",
     ));
+
+    heading(&mut out, "Pending, against the frontier");
+    for (state, text) in [
+        (FrontierState::Ready, "ready: dispatchable now"),
+        (
+            FrontierState::Held,
+            "held: ready, but a running task holds one of its files",
+        ),
+        (FrontierState::Blocked, "blocked: a need is not done yet"),
+        (
+            FrontierState::Waiting,
+            "waiting: ready or held, outside the running milestone",
+        ),
+    ] {
+        out.push(row(
+            Span::styled(state.glyph(), theme.frontier(state)),
+            text,
+        ));
+    }
 
     heading(&mut out, "Around the selection");
     for (mark, style, text) in [
@@ -413,6 +432,24 @@ mod tests {
                 theme.severity_suggestion
             ]
         );
+    }
+
+    #[test]
+    fn the_legend_draws_each_frontier_state_in_its_colour() {
+        let theme = Theme::default();
+        let lines = lines(&theme);
+        for state in FrontierState::ALL {
+            let line = lines
+                .iter()
+                .find(|l| {
+                    l.spans
+                        .last()
+                        .is_some_and(|s| s.content.starts_with(state.as_str()))
+                })
+                .unwrap_or_else(|| panic!("no {state:?} row"));
+            assert_eq!(line.spans[0].content, state.glyph());
+            assert_eq!(line.spans[0].style, theme.frontier(state));
+        }
     }
 
     #[test]

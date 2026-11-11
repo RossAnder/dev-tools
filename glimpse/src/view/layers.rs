@@ -540,18 +540,18 @@ fn task_parts(
     id_width: Option<usize>,
 ) -> (Vec<Span<'static>>, Vec<Span<'static>>) {
     let theme = &ctx.app.theme;
-    let status = theme.status(task.status.as_str());
+    let (glyph, status) = super::status_mark(ctx.app, task);
     let text = ctx.text_style(task.id);
     let (mark, mark_style) = ctx.mark(task.id).unwrap_or((" ", Style::new()));
     let mut left = vec![Span::styled(mark, mark_style)];
     match id_width {
         Some(w) => {
             left.push(Span::raw(" "));
-            left.push(Span::styled(task.status.glyph(), status));
+            left.push(Span::styled(glyph, status));
             left.push(Span::styled(format!(" {:>w$} ", task.id), text));
         }
         None => {
-            left.push(Span::styled(task.status.glyph(), status));
+            left.push(Span::styled(glyph, status));
             left.push(Span::styled(format!("{} ", task.id), text));
         }
     }
@@ -636,7 +636,8 @@ fn format_elapsed(age: Duration) -> String {
 mod tests {
     use super::*;
     use crate::config::Config;
-    use crate::model::{RecordEntry, fixture};
+    use crate::model::{FrontierState, RecordEntry, fixture};
+    use crate::view::status_mark;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
     use ratatui::style::Modifier;
@@ -695,7 +696,7 @@ mod tests {
         for task in &app.snapshot.tasks {
             row_of(
                 &lines,
-                &format!("{} {} {}", task.status.glyph(), task.id, task.title),
+                &format!("{} {} {}", status_mark(&app, task).0, task.id, task.title),
             );
         }
         let (a, row) = row_of(&lines, "◆ A");
@@ -716,7 +717,7 @@ mod tests {
         for task in &app.snapshot.tasks {
             row_of(
                 &lines,
-                &format!("{}{} {}", task.status.glyph(), task.id, task.title),
+                &format!("{}{} {}", status_mark(&app, task).0, task.id, task.title),
             );
         }
         let (_, row) = row_of(&lines, "◆ A");
@@ -841,6 +842,61 @@ mod tests {
             Some(effort("Wire the entry point").fg),
             theme.effort_danger.fg
         );
+    }
+
+    #[test]
+    fn a_pending_row_marks_its_frontier_state_and_other_rows_keep_their_status() {
+        let mut snap = fixture();
+        snap.running_milestone = "B".to_string();
+        let mut app = App::new(snap, &Config::default());
+        app.selected = None;
+        let theme = app.theme.clone();
+        for orientation in [Orientation::Vertical, Orientation::Horizontal] {
+            let buf = draw(&app, orientation, 160, 30);
+            let lines = lines(&buf);
+            // Left of the title: a space, the id, in a full row another space, the mark.
+            let mark = |title: &str| {
+                let (y, row) = row_of(&lines, title);
+                let y = u16::try_from(y).unwrap();
+                let at = row
+                    .char_indices()
+                    .position(|(i, _)| row[i..].starts_with(title));
+                let mut x = u16::try_from(at.expect("title")).unwrap() - 1;
+                let is = |x: u16, f: fn(char) -> bool| buf[(x - 1, y)].symbol().chars().all(f);
+                while is(x, |c| c.is_ascii_digit()) {
+                    x -= 1;
+                }
+                while is(x, |c| c == ' ') {
+                    x -= 1;
+                }
+                buf[(x - 1, y)].clone()
+            };
+            for (title, glyph, style) in [
+                ("Bind the keys", "▷", theme.frontier(FrontierState::Ready)),
+                ("Style the rows", "□", theme.frontier(FrontierState::Held)),
+                (
+                    "Assemble the app",
+                    "○",
+                    theme.frontier(FrontierState::Blocked),
+                ),
+                ("Render the rows", "◐", theme.in_progress),
+                ("Define the schema", "✓", theme.done),
+            ] {
+                let cell = mark(title);
+                assert_eq!(cell.symbol(), glyph, "{orientation:?} {title}");
+                assert_eq!(Some(cell.fg), style.fg, "{orientation:?} {title}");
+            }
+        }
+
+        let mut snap = fixture();
+        snap.running_milestone = "A".to_string();
+        let mut app = App::new(snap, &Config::default());
+        app.selected = None;
+        let lines = lines(&draw(&app, Orientation::Vertical, 100, 30));
+        for title in ["Bind the keys", "Style the rows"] {
+            assert!(row_of(&lines, title).1.contains("◷"), "{title}");
+        }
+        assert!(row_of(&lines, "Assemble the app").1.contains("○"));
     }
 
     #[test]

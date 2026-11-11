@@ -145,7 +145,8 @@ pub(crate) const ANSI: ThemeSet = ThemeSet {
 /// [`EGGSHELL_LIGHT`] as its light twin. Mostly neutral: text in high-contrast greys
 /// (rows unrelated to the selection are not faded), a mid grey for routine marks and
 /// edges, the blue text-selection fill for the cursor row, and colour kept to touches. Glyphs take the light colour tiers (status marks, the selection and item
-/// marks, needed-by edges); text that carries colour takes the strong tiers.
+/// marks, needed-by edges); text that carries colour takes the strong tiers. A row
+/// waiting on its milestone takes the routine grey, since `violet` here is ready's blue.
 pub(crate) const EGGSHELL: ThemeSet = ThemeSet {
     name: "eggshell",
     palette: &[
@@ -165,6 +166,7 @@ pub(crate) const EGGSHELL: ThemeSet = ThemeSet {
         ("highlight", "#12276e"),
         ("on_color", "#0a0a0a"),
         ("status_in_progress", "#c4d5ff"),
+        ("frontier_waiting", "muted"),
         ("unrelated", "default"),
         ("selection_mark", "#e5715a"),
         ("item_mark", "#e5715a"),
@@ -211,6 +213,7 @@ pub(crate) const EGGSHELL_LIGHT: ThemeSet = ThemeSet {
         ("on_color", "#f1efed"),
         ("status_in_progress", "#7e92be"),
         ("status_pending", "#a19e9a"),
+        ("frontier_waiting", "muted"),
         ("unrelated", "default"),
         ("status_deferred", "#b28966"),
         ("flash_fg", "#171717"),
