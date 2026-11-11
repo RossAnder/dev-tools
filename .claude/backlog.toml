@@ -10920,7 +10920,7 @@ kind = "bug"
 summary = "review reconcile resolves a rescheduled finding through its old committed task's link when the new task row is removed"
 area = "tomlctl/src/review/reconcile.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-10T21:13:07Z
 last_seen = 2026-11-10T21:13:07Z
 seen_count = 1
@@ -10930,6 +10930,8 @@ flow = "v2-apply"
 context = "When a finding's apply_task ref names no row, reconcile follows the last finding link whose ref names a row, treating it as a retitle. A finding fixed, committed, reopened and rescheduled, whose new task row is then removed, still has the old committed task's link, so it is resolved instead of reopened. Links carry no round or schedule marker; a marker on [[finding_links]], or dropping the finding from a committed link when schedule mints anew, would settle it."
 base_sha = "e42667b7f81f921261d8017ccbe4c95d800c18af"
 related = ["B-a58448f6"]
+resolved = 2026-11-11
+resolution = "a550bf49: review schedule records apply_task_id and reconcile follows a retitle by it, so an earlier committed task's link is never taken for the current one."
 
 [[backlog]]
 id = "B-b4451a42"
@@ -10937,7 +10939,7 @@ kind = "question"
 summary = "tasks update --ndjson cannot edit a row's fixes or settles finding links"
 area = "tomlctl/src/tasks/update.rs"
 tags = []
-status = "open"
+status = "dismissed"
 created = 2026-11-10T21:13:07Z
 last_seen = 2026-11-10T21:13:07Z
 seen_count = 1
@@ -10947,6 +10949,8 @@ flow = "v2-apply"
 context = "Only tasks add-many writes [[finding_links]]; update re-keys them on a --ref rename but cannot amend them. Amending a link after minting needs remove-and-re-add. Decide whether review schedule or reconcile ever needs the amend before adding it."
 base_sha = "e42667b7f81f921261d8017ccbe4c95d800c18af"
 related = ["B-9e7c7e4c"]
+dismissed = 2026-11-11
+dismiss_reason = "Nothing needs to amend a finding link: schedule mints them and a rename re-keys them. Reopen when a caller needs it."
 
 [[backlog]]
 id = "B-6a885338"
@@ -11129,7 +11133,7 @@ seen_count = 1
 dedup_id = "efcdf91b1a52c3d9"
 origin = "session-trace"
 flow = "v2-apply"
-context = "Reproduce with tasks list --template '{id} [{message}]'. A plan check call used {message} for the detail field and printed blank lines, needing a second call."
+context = "Reproduce with tasks list --template '{id} [{message}]'. A plan check call used {message} for the detail field and printed blank lines, needing a second call. Looked at 2026-11-11: validate_row_paths in convert.rs passes when any one path matches, by design, because rows are sparse and documented idioms name optional fields (backlog add --template '{action} {id} {advisories}'). A warning for every path absent from all rows would fire on those. A right fix needs each verb's field vocabulary, so a path outside it is refused and an optional one stays quiet."
 base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-9b7257ec"]
 
@@ -11142,7 +11146,7 @@ tags = [
     "tasks",
     "review-v2",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
 seen_count = 1
@@ -11152,6 +11156,8 @@ flow = "v2-apply"
 context = "5 of 56 plan-review verifiers hit it. tasks list --where ref=<ref> works today; either accept a ref in tasks show or put that idiom in review-v2-method/references/plan-records.md."
 base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-9b7257ec"]
+resolved = 2026-11-11
+resolution = "3e39eba0: plan-records.md gives the tasks list --where ref=<ref> --get id read; tasks show still takes ids only."
 
 [[backlog]]
 id = "B-68c31099"
@@ -11159,7 +11165,7 @@ kind = "annoyance"
 summary = "the tasks update refusal for an unknown set field has no hint for the row keys file_notes, closes, refs and reason"
 area = "tomlctl/src/tasks/update.rs"
 tags = ["tasks"]
-status = "open"
+status = "resolved"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
 seen_count = 1
@@ -11169,6 +11175,8 @@ flow = "v2-apply"
 context = "settable() tailors a hint for ref and spec only. A row key given inside set should be answered with 'row key, give it beside id'."
 base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-b4451a42"]
+resolved = 2026-11-11
+resolution = "437c1cfa: settable() answers file_notes, closes, refs and reason as row keys, and the retitle refusal names the --ndjson form."
 
 [[backlog]]
 id = "B-a95b5cbd"
@@ -11176,7 +11184,7 @@ kind = "debt"
 summary = "the plan engine never says a title change needs ref beside id"
 area = "claude/skills/plan-v2-engine/references/write-and-prove.md"
 tags = ["plan-v2"]
-status = "open"
+status = "resolved"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
 seen_count = 1
@@ -11186,6 +11194,8 @@ flow = "v2-apply"
 context = "A retitle is refused with 'this title derives ref ... pass --ref', and ref inside set is refused too; it cost two retries. plan-flow.md is silent as well. Design anchors naming the old ref must be updated with it."
 base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-2170b989"]
+resolved = 2026-11-11
+resolution = "3e39eba0: write-and-prove.md shows the retitle record with ref beside id."
 
 [[backlog]]
 id = "B-cd288c8e"
@@ -11250,7 +11260,7 @@ kind = "debt"
 summary = "rule 1 forbids piping tomlctl output into text tools, and the orchestrator broke it about 20 times in one session with no ill effect"
 area = "claude/skills/plan-v2-engine/SKILL.md"
 tags = ["plan-v2"]
-status = "open"
+status = "resolved"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
 seen_count = 1
@@ -11260,6 +11270,8 @@ flow = "v2-apply"
 context = "Examples: review digest piped to head, review triage piped to cut. Either name --max-chars, --limit and --select as the replacements beside the rule, or relax it."
 base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-6d908b8f"]
+resolved = 2026-11-11
+resolution = "3e39eba0: the four v2 engines name --select, --get, --limit and --max-chars as the replacement for piping."
 
 [[backlog]]
 id = "B-58e7c656"
@@ -11267,7 +11279,7 @@ kind = "annoyance"
 summary = "the Surface step re-asks a structure question the user settled before the challenge"
 area = "claude/skills/plan-v2-engine/references/open-and-challenge.md"
 tags = ["plan-v2"]
-status = "open"
+status = "resolved"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
 seen_count = 1
@@ -11277,6 +11289,8 @@ flow = "v2-apply"
 context = "The challenger is blind to prior decisions by design. When the brief records a user decision the challenge contradicts, the surfaced question should say so."
 base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-c5783e08"]
+resolved = 2026-11-11
+resolution = "e53870a0: Surface test 3 counts the brief and the session's earlier decisions, and a blind note against one does not reopen it."
 
 [[backlog]]
 id = "B-662af7a7"
@@ -11284,7 +11298,7 @@ kind = "annoyance"
 summary = "plan-flow.md mentions plan milestone update without saying --gate replaces the whole gate list"
 area = "claude/skills/review-v2-engine/references/plan-flow.md"
 tags = ["plan-v2"]
-status = "open"
+status = "dismissed"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
 seen_count = 1
@@ -11294,6 +11308,8 @@ flow = "v2-apply"
 context = "An orchestrator wiped a milestone's four gates by passing three new ones and had to reissue all seven. The help and plan.md say it; the place the verb is used does not."
 base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-3f45d7d9"]
+dismissed = 2026-11-11
+dismiss_reason = "plan-flow.md never mentions plan milestone update; plan.md and the verb's help both say --gate replaces the list, and the session lost it by filtering help to flag names."
 
 [[backlog]]
 id = "B-734077ea"
@@ -11304,7 +11320,7 @@ tags = [
     "implement-v2",
     "gate",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
 seen_count = 1
@@ -11314,6 +11330,8 @@ flow = "v2-apply"
 context = "Both failing v2-apply gates installed tomlctl and glimpse from a red tree, about 7.5 minutes in all. Run side-effecting gate commands only when every checking command passed."
 base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-56a8a9ff"]
+resolved = 2026-11-11
+resolution = "ade2e5ea: drain.md holds installing and linking gate commands for a second verification dispatch, sent only when every check passed."
 
 [[backlog]]
 id = "B-0e1d7686"
@@ -11324,7 +11342,7 @@ tags = [
     "implement-v2",
     "gate",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
 seen_count = 1
@@ -11334,6 +11352,8 @@ flow = "v2-apply"
 context = "Every v2-apply milestone failed its first gate on command_lint (multi-word placeholders in fenced tomlctl commands) or every_leaf_command_has_a_case (a new verb with no output_options case). Tell workers the placeholder rule, and let a task touching claude/**/*.md run cargo test --lib -- cli::dispatch::tests, or add a cheap pre-gate dispatch."
 base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-196e9471"]
+resolved = 2026-11-11
+resolution = "ade2e5ea: CLAUDE.md names the dispatch-tests subset and the placeholder and output_options rules for sub-agents; the worker procedure runs the narrow check a project names."
 
 [[backlog]]
 id = "B-efb3a126"
@@ -11344,7 +11364,7 @@ tags = [
     "implement-v2",
     "gate",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
 seen_count = 1
@@ -11354,6 +11374,8 @@ flow = "v2-apply"
 context = "The same two gate failures recurred in milestones A, B and C of v2-apply. When a fix task is minted, pending rows holding the same file or adding the same kind of thing should gain a matching constraint; plan-v2 could also carry a checklist for a task that adds a leaf verb."
 base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-72b3ad42"]
+resolved = 2026-11-11
+resolution = "ade2e5ea: drain.md Fix rounds carries each gate-failure cause to pending rows as a constraint. The plan-time checklist for a task adding a leaf verb is not written."
 
 [[backlog]]
 id = "B-587acef3"
@@ -11364,7 +11386,7 @@ tags = [
     "implement-v2",
     "tools",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
 seen_count = 1
@@ -11374,6 +11396,8 @@ flow = "v2-apply"
 context = "Both attempts in the v2-apply run failed, and all searching went through Bash. Cause not determined. Either fix availability or change the Searching rule in CLAUDE.md and the worker files to scoped grep via Bash."
 base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-be44a578"]
+resolved = 2026-11-11
+resolution = "ade2e5ea: not Workflow-specific. This harness build ships no Grep tool to any session; the Searching rule now allows rg through Bash."
 
 [[backlog]]
 id = "B-4f755682"
@@ -11381,7 +11405,7 @@ kind = "annoyance"
 summary = "a plan worker documenting verbs added earlier in the milestone meets the stale installed tomlctl and falls back to cargo run"
 area = "claude/agents"
 tags = ["implement-v2"]
-status = "open"
+status = "resolved"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
 seen_count = 1
@@ -11391,6 +11415,8 @@ flow = "v2-apply"
 context = "One v2-apply worker ran cargo run seven times for --help output. Name tomlctl/target/debug/tomlctl in the worker procedure, or place doc tasks after an install checkpoint."
 base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-678773a3"]
+resolved = 2026-11-11
+resolution = "ade2e5ea: the worker procedure names the crate's last built binary and forbids cargo run."
 
 [[backlog]]
 id = "B-4434fac1"
@@ -11401,7 +11427,7 @@ tags = [
     "implement-v2",
     "hooks",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
 seen_count = 1
@@ -11411,6 +11437,8 @@ flow = "v2-apply"
 context = "Found 2026-11-11: the six v2-apply commits ran no pre-commit hook. The checks passed when run by hand afterwards."
 base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-b7da5466"]
+resolved = 2026-11-11
+resolution = "ade2e5ea: implement-v2 pre-flight step 5 stops when CLAUDE.md asks for core.hooksPath and it is unset."
 
 [[backlog]]
 id = "B-14586282"
@@ -11468,7 +11496,7 @@ seen_count = 1
 dedup_id = "f8331d1a50397ac5"
 origin = "session-trace"
 flow = "v2-apply"
-context = "In v2-apply review/dispatch.rs and cli/types/review/* chained the graph to 1.26 effective parallelism; one task failed for lacking dispatch.rs, and three passed loose fields instead of an args struct because the re-export sat in a file they did not hold. Flag registration files as shared lanes at plan time, and let a failed worker return the files it needs for the drain to widen."
+context = "In v2-apply review/dispatch.rs and cli/types/review/* chained the graph to 1.26 effective parallelism; one task failed for lacking dispatch.rs, and three passed loose fields instead of an args struct because the re-export sat in a file they did not hold. Done 2026-11-11: write-and-prove.md tells the planner to claim a registration file on every task that registers there. Still open: letting a failed worker return the files it needs so the drain widens the row mechanically, and any restructuring that removes the shared file from the lane, such as per-verb registration."
 base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-acba1411"]
 
@@ -11478,7 +11506,7 @@ kind = "annoyance"
 summary = "drain.md's fix-task row shape shows no spec.means entry"
 area = "claude/skills/implement-v2-engine/references/drain.md"
 tags = ["implement-v2"]
-status = "open"
+status = "resolved"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
 seen_count = 1
@@ -11488,6 +11516,8 @@ flow = "v2-apply"
 context = "A fix task minted with means as a string was refused ('must be an array of tables'), and the orchestrator folded the means into a constraint instead. tasks-write.md documents the shape."
 base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-ddd7141e"]
+resolved = 2026-11-11
+resolution = "ade2e5ea: the fix-task example carries a spec.means entry and states its shape."
 
 [[backlog]]
 id = "B-fddac023"
@@ -11555,7 +11585,7 @@ tags = [
     "plan-v2",
     "cost",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
 seen_count = 1
@@ -11565,6 +11595,8 @@ flow = "v2-apply"
 context = "v2-apply tasks 3, 15 and 25 and several fix tasks finished in 48 to 82 seconds. Deep median was 181s and 100k peak context against lite's 26s and 41k."
 base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-9a39ad73"]
+resolved = 2026-11-11
+resolution = "3e39eba0: write-and-prove.md says when to choose lite and that deep is not the safe default."
 
 [[backlog]]
 id = "B-3b1f4f14"
