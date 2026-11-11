@@ -1055,6 +1055,10 @@ fn settable(key: &str, unlock: bool) -> Result<&'static str> {
             "a spec changes only through `tasks update --ndjson`, as a `spec` table beside `id`"
                 .to_string()
         }
+        "file_notes" | "closes" | "refs" | "reason" => format!(
+            "`{key}` is a row key of `tasks update --ndjson`, not a `set` field — give it \
+             beside `id`"
+        ),
         key if IMPORTED.contains(&key) => format!(
             "`{key}` is owned by `tasks import-plan` — pass `--unlock-import-fields` to patch \
              it by hand and stamp the row against the plan value it replaces"
@@ -1196,7 +1200,7 @@ fn retitle_err(id: u32, derived: &str) -> anyhow::Error {
         )
     } else {
         format!(
-            "task {id}: this title derives ref `{derived}` — pass `--ref {derived}` alongside it to move the row's key deliberately"
+            "task {id}: this title derives ref `{derived}` — pass `--ref {derived}` alongside it, or `ref` beside `id` in an `--ndjson` row, to move the row's key deliberately"
         )
     };
     tagged_err(ErrorKind::Validation, None, hint)
@@ -1701,6 +1705,16 @@ fn spec_value(spec: &TaskSpec, field: &str) -> JsonValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_row_key_given_as_a_set_field_is_named_as_one() {
+        for key in ["file_notes", "closes", "refs", "reason"] {
+            let err = format!("{:#}", settable(key, false).unwrap_err());
+            assert!(err.contains("row key"), "{key}: {err}");
+        }
+        let err = format!("{:#}", settable("nonsense", false).unwrap_err());
+        assert!(err.contains("unknown field"), "{err}");
+    }
     use crate::cli::ReadIntegrityArgs;
     use crate::tasks::add::{self, NewTask};
     use crate::test_support::with_root;
