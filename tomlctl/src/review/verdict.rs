@@ -222,13 +222,15 @@ fn apply_one(
         _ => {}
     }
     // A finding settles under its route's rule alone, so a verdict that rule
-    // would never read is refused rather than recorded to no effect.
+    // would never read is refused rather than recorded to no effect. A settle
+    // refute is the exception `decide` reads on any route.
     let panel_routed = finding.route == Some(Route::Panel);
     match by {
         "panel" if !panel_routed => reasons.push(format!(
             "{id} is not routed to the panel; a panel verdict needs a panel-routed finding"
         )),
         "panel" | "audit" | "" => {}
+        "orchestrator" if settle_refute(finding, verdict) => {}
         _ if panel_routed => reasons.push(format!(
             "{id} is routed to the panel; only panel seats and the audit give its verdict, not {by:?}"
         )),
@@ -447,13 +449,20 @@ fn checker_may_refute(
     }
 }
 
-/// The status the verdict just written gives its finding. An audit verdict
-/// decides at once on any route; a checker's `unsettled` leaves the finding
+/// Whether an `orchestrator` verdict is a settle task's refutation: the only
+/// call the orchestrator makes on a finding blocked on evidence.
+fn settle_refute(finding: &Finding, verdict: &str) -> bool {
+    verdict == "refuted" && fields::blocked_on(finding) == Some(fields::BlockedOn::Evidence)
+}
+
+/// The status the verdict just written gives its finding. An audit verdict,
+/// and a settle refute, decides at once on any route; a checker's `unsettled` leaves the finding
 /// for the verifier; every other verdict decides through [`settle`].
 fn decide(store: &Store, index: usize, by: &str, verdict: &str) -> FindingStatus {
     let finding = &store.findings[index];
     let settled = match (by, verdict) {
         ("audit", _) => Some(verdict),
+        ("orchestrator", _) if settle_refute(finding, verdict) => Some(verdict),
         (_, "unsettled") => None,
         _ => {
             let mine: Vec<&Verdict> = store

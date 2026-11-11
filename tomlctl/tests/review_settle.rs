@@ -222,6 +222,23 @@ fn settle_refutes_through_an_orchestrator_verdict() {
 }
 
 #[test]
+fn settle_refutes_a_panel_routed_finding() {
+    let Some(repo) = Repo::new() else {
+        return;
+    };
+    let panel = finding("F1", "scheduled", &format!("{EVIDENCE}{LINK}"))
+        .replace("route = \"verifier\"", "route = \"panel\"");
+    repo.seed(&panel);
+    let out = stdout_json(
+        &repo
+            .settle("F1", &["--refute", "--citation", "src/a.rs:1"])
+            .success(),
+    );
+    assert_eq!(out["status"], "refuted", "{out}");
+    assert_eq!(text(&repo.finding("F1"), "status"), Some("refuted"));
+}
+
+#[test]
 fn settle_defers_once_and_refuses_a_second_deferral() {
     let Some(repo) = Repo::new() else {
         return;

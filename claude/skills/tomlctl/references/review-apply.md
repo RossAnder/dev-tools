@@ -51,7 +51,7 @@ tomlctl review schedule --all --scope <scope> --dry-run
 Records what became of a settle task's proposal for one finding blocked on `evidence`, at `open` or `scheduled`; exactly one outcome per call. Every outcome sets the finding `open` or `refuted` and clears `apply_flow` and `apply_task`.
 
 - **`--accept`** with `--tier` and `--fix-file`: clears the block and records `fix_sketch` (the file's text, at most 800 characters), `settle_tier` and `unblocked_by = "settle"`, and drops any `proposal`; status → `open`, fixable as written.
-- **`--refute`** with `--citation`: records an `orchestrator` `refuted` verdict through `verdict`'s checks; status → `refuted`, the block kept.
+- **`--refute`** with `--citation`: records an `orchestrator` `refuted` verdict through `verdict`'s checks; status → `refuted`, the block kept. It decides at once on any route, a panel-routed finding included, as an audit verdict does.
 - **`--defer`** with `--proposal`: records the note's repo-relative path as `proposal` and the time as `proposal_at`, leaving the finding `open` and blocked, where it ages ([Deferred proposals](review.md#store-shape)). A note that is missing or outside the repository is refused, and a deferral is never renewed: a finding already carrying a `proposal` is refused until it is accepted or refuted.
 
 A finding at another status, or not blocked on `evidence`, is refused with its reasons and nothing is written; an outcome already recorded writes nothing. Prints `{ok, id, from, status, outcome, unchanged}`, where `outcome` is `accepted`, `refuted` or `deferred`.
