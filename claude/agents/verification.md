@@ -149,7 +149,7 @@ A `pass` is one line:
 outcome: pass | command: <command> | duration: <the DUR= value> | summary: <the SUMMARY: value>
 ```
 
-After a Step 3.4.1 retry that passed, the line ends ` | retried: transient`.
+When the `SUMMARY:` value is `none`, ` | log: <D>/cN.log` follows it, so the reader can find the runner's own count line. After a Step 3.4.1 retry that passed, the line ends ` | retried: transient`.
 
 A `fail`, `timeout` or `flaky` is a block, fields in this order:
 
@@ -168,7 +168,7 @@ Then, after a `fail` or `timeout` that stopped the run, the single `not_run:` li
 Pass-then-flaky-then-fail (stops):
 
 ```
-outcome: pass | command: cargo build --manifest-path app/Cargo.toml | duration: 94 | summary: none
+outcome: pass | command: cargo build --manifest-path app/Cargo.toml | duration: 94 | summary: none | log: /tmp/tmp.k3Xq/c1.log
 
 command: cargo nextest run --manifest-path app/Cargo.toml --no-fail-fast
 outcome: flaky

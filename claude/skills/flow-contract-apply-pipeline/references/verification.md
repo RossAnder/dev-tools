@@ -20,7 +20,7 @@ The `verification` agent reports; the orchestrator judges. Per block:
   exit 0. A test command's `summary:` must also show at least one test
   executed and none failed: `summary: none` or a zero count (`0 passed`, `No test files found`,
   `no tests to run`) is a `fail`, because a filter matching nothing exits 0 in most runners. Where
-  `summary:` is `none` only because the agent does not parse that runner, Grep the block's `log:`
+  `summary:` is `none` only because the agent does not parse that runner, Grep the pass line's `log:`
   for the runner's count line before deciding.
 - **`flaky`** — a pass: the failed tests passed on the agent's narrow rerun or on the runner's own
   retry. It consumes no fix-and-reverify cycle, reruns nothing, and is never a rollback trigger.
