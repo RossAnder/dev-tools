@@ -210,6 +210,7 @@ pub(crate) const FEATURES: &[&str] = &[
     "gate_probes",
     "plan_emit",
     "agents_audit",
+    "plan_emit_lane_check",
 ];
 
 /// User-facing top-level subcommand names, as they appear in

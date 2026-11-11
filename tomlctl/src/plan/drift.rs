@@ -171,7 +171,7 @@ fn parse_log(log: &str, owned: &[String], flow_dir: &str) -> BTreeSet<String> {
 /// `-z` hands over every path verbatim, and `--no-renames` reports a rename as
 /// its deleted source and its new path. Paths under either of the flow's
 /// directories are its stores and its run notes, which are never drift.
-fn uncommitted_files(root: &Path, slug: &str) -> Result<BTreeSet<String>> {
+pub(super) fn uncommitted_files(root: &Path, slug: &str) -> Result<BTreeSet<String>> {
     let out = Command::new("git")
         .arg("-C")
         .arg(root)

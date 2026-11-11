@@ -623,6 +623,8 @@ pub(super) fn run_start(args: PlanRunStartArgs) -> Result<()> {
         }
     }
     let started = crate::time::now_toml_datetime()?;
+    let store_digest =
+        super::lane::run_store_digest(&args.target.slug, &args.step, &tasks, &started);
     mutate_plan(&args.target.slug, &args.integrity, |plan| {
         plan.runs.push(Run {
             step: args.step.clone(),
@@ -636,6 +638,7 @@ pub(super) fn run_start(args: PlanRunStartArgs) -> Result<()> {
             outcome: None,
             reason: String::new(),
             tasks: tasks.clone(),
+            store_digest: store_digest.clone(),
         });
         Ok(())
     })?;
@@ -729,6 +732,7 @@ pub(super) fn run_skip(args: PlanRunSkipArgs) -> Result<()> {
             outcome: None,
             reason: String::new(),
             tasks: Vec::new(),
+            store_digest: Default::default(),
         });
         Ok(())
     })?;

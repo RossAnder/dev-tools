@@ -248,6 +248,7 @@ fn top_level_keys_follow_the_contract_order() {
             "plan_path",
             "flow_status",
             "policy",
+            "running_milestone",
             "tasks",
             "layers",
             "frontier",

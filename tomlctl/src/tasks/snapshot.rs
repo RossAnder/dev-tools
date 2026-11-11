@@ -29,6 +29,7 @@ const SCHEMA: u32 = 1;
 const RECORD_FILE: &str = crate::SNAPSHOT_INPUTS[1];
 const AGENTS_FILE: &str = crate::SNAPSHOT_INPUTS[2];
 const CONTEXT_FILE: &str = crate::SNAPSHOT_INPUTS[3];
+const PLAN_FILE: &str = crate::SNAPSHOT_INPUTS[4];
 const REVISION_HEX_LEN: usize = 16;
 
 /// The snapshot of the flow whose store is `store_path`; its siblings are
@@ -44,41 +45,69 @@ pub(crate) fn snapshot(
     let record_path = sibling(store_path, RECORD_FILE);
     let agents_path = sibling(store_path, AGENTS_FILE);
     let context_path = sibling(store_path, CONTEXT_FILE);
+    let plan_path = sibling(store_path, PLAN_FILE);
 
-    let paths = [store_path, &record_path, &agents_path, &context_path];
-    let [store_raw, record_raw, agents_raw, context_raw] = paths.map(read_raw);
-    let (store_raw, record_raw, agents_raw, context_raw) =
-        (store_raw?, record_raw?, agents_raw?, context_raw?);
-    let revision = revision(&[&store_raw, &record_raw, &agents_raw, &context_raw]);
+    let paths = [
+        store_path,
+        &record_path,
+        &agents_path,
+        &context_path,
+        &plan_path,
+    ];
+    let [store_raw, record_raw, agents_raw, context_raw, plan_raw] = paths.map(read_raw);
+    let (store_raw, record_raw, agents_raw, context_raw, plan_raw) = (
+        store_raw?,
+        record_raw?,
+        agents_raw?,
+        context_raw?,
+        plan_raw?,
+    );
+    let revision = revision(&[
+        &store_raw,
+        &record_raw,
+        &agents_raw,
+        &context_raw,
+        &plan_raw,
+    ]);
     if known == Some(revision.as_str()) {
         return Ok(None);
     }
 
-    let (store, record, agents, context) = if read_opts.verify_integrity || read_opts.strict_read {
-        // The sidecar check and the strict-read gate need the file and its
-        // lock, so these re-read. Hashed first: a write landing in between
-        // leaves a stale revision over fresh content, which the next poll
-        // corrects, never a fresh revision over stale content, which it
-        // would skip.
-        (
-            store::load(store_path, read_opts)?,
-            read_optional(&record_path, read_opts)?,
-            read_optional(&agents_path, read_opts)?,
-            read_optional(&context_path, read_opts)?,
-        )
-    } else {
-        // Parsed from the hashed bytes, so revision and content agree.
-        let store = match store_raw {
-            Some(bytes) => schema::from_toml(&parse_toml_bytes(store_path, bytes)?)?,
-            // Absent: `load` raises the missing-store error.
-            None => store::load(store_path, read_opts)?,
+    let (store, record, agents, context, plan) =
+        if read_opts.verify_integrity || read_opts.strict_read {
+            // The sidecar check and the strict-read gate need the file and its
+            // lock, so these re-read. Hashed first: a write landing in between
+            // leaves a stale revision over fresh content, which the next poll
+            // corrects, never a fresh revision over stale content, which it
+            // would skip.
+            (
+                store::load(store_path, read_opts)?,
+                read_optional(&record_path, read_opts)?,
+                read_optional(&agents_path, read_opts)?,
+                read_optional(&context_path, read_opts)?,
+                read_optional(&plan_path, read_opts)?,
+            )
+        } else {
+            // Parsed from the hashed bytes, so revision and content agree.
+            let store = match store_raw {
+                Some(bytes) => schema::from_toml(&parse_toml_bytes(store_path, bytes)?)?,
+                // Absent: `load` raises the missing-store error.
+                None => store::load(store_path, read_opts)?,
+            };
+            (
+                store,
+                parse_optional(&record_path, record_raw)?,
+                parse_optional(&agents_path, agents_raw)?,
+                parse_optional(&context_path, context_raw)?,
+                parse_optional(&plan_path, plan_raw)?,
+            )
         };
-        (
-            store,
-            parse_optional(&record_path, record_raw)?,
-            parse_optional(&agents_path, agents_raw)?,
-            parse_optional(&context_path, context_raw)?,
-        )
+    let running_milestone = match &plan {
+        Some(doc) => crate::plan::running_milestone(
+            &crate::plan::schema::from_toml(doc)
+                .with_context(|| format!("parsing {}", plan_path.display()))?,
+        ),
+        None => String::new(),
     };
 
     let nodes = nodes_of(&store.items);
@@ -148,6 +177,7 @@ pub(crate) fn snapshot(
             "commit_granularity": store.policy.commit_granularity,
         }),
     );
+    out.insert("running_milestone".into(), json!(running_milestone));
     out.insert(
         "tasks".into(),
         JsonValue::Array(store.items.iter().map(task_json).collect()),
@@ -302,6 +332,7 @@ needs = [1]
                 "plan_path",
                 "flow_status",
                 "policy",
+                "running_milestone",
                 "tasks",
                 "layers",
                 "frontier",
@@ -410,6 +441,66 @@ needs = [1]
             let name = store.file_name().unwrap().to_str().unwrap();
             assert_eq!(name, crate::SNAPSHOT_INPUTS[0]);
         });
+    }
+
+    const PLAN_RUNS: &str = r#"
+[[run]]
+step = "implement:A"
+run_id = "wf_1"
+started = 2026-11-11T10:00:00Z
+finished = 2026-11-11T10:30:00Z
+outcome = "ok"
+
+[[run]]
+step = "review"
+run_id = ""
+started = 2026-11-11T11:00:00Z
+finished = ""
+
+[[run]]
+step = "implement:B"
+run_id = "wf_2"
+started = 2026-11-11T12:00:00Z
+finished = ""
+
+[[run]]
+step = "implement:C"
+run_id = "wf_3"
+started = 2026-11-11T13:00:00Z
+finished = ""
+"#;
+
+    #[test]
+    fn running_milestone_is_empty_without_a_plan_store_or_an_open_implement_run() {
+        let (tmp, store) = flow_dir();
+        assert_eq!(build(&store)["running_milestone"], json!(""));
+
+        let closed = PLAN_RUNS
+            .split("[[run]]\nstep = \"implement:B\"")
+            .next()
+            .unwrap();
+        fs::write(tmp.path().join(PLAN_FILE), closed).unwrap();
+        assert_eq!(build(&store)["running_milestone"], json!(""));
+    }
+
+    #[test]
+    fn running_milestone_names_the_oldest_open_implement_run() {
+        let (tmp, store) = flow_dir();
+        let before = build(&store)["revision"].clone();
+        fs::write(tmp.path().join(PLAN_FILE), PLAN_RUNS).unwrap();
+        let snap = build(&store);
+        assert_eq!(snap["running_milestone"], json!("B"));
+        assert_ne!(
+            snap["revision"], before,
+            "a run opening in plan.toml moves the revision"
+        );
+
+        let strict = ReadIntegrityArgs {
+            verify_integrity: false,
+            strict_read: true,
+        };
+        let reread = snapshot("demo", &store, &strict, None).unwrap().unwrap();
+        assert_eq!(reread["running_milestone"], json!("B"));
     }
 
     #[test]

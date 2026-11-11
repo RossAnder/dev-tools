@@ -6,6 +6,7 @@ mod approve;
 pub(crate) mod check;
 mod drift;
 mod emit;
+mod lane;
 mod milestone;
 mod open;
 mod probes;
@@ -30,3 +31,13 @@ pub(crate) use records::{
     RecordEdit, apply_review_edit as apply_record_edit,
     validate_review_edit as validate_record_edit,
 };
+
+/// The milestone the oldest open `implement:<id>` run is executing, `""` with
+/// no such run.
+pub(crate) fn running_milestone(plan: &schema::PlanStore) -> String {
+    store::open_runs(plan)
+        .into_iter()
+        .find_map(|run| run.step.strip_prefix("implement:"))
+        .unwrap_or_default()
+        .to_string()
+}

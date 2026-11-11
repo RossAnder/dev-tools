@@ -65,11 +65,12 @@ pub const CLI_STACK_BYTES: usize = 8 * 1024 * 1024;
 /// The files of a flow directory that [`snapshot`] reads, store first. Its
 /// `revision` hashes them in this order, so a poller fingerprinting exactly
 /// these files sees every change the snapshot can.
-pub const SNAPSHOT_INPUTS: [&str; 4] = [
+pub const SNAPSHOT_INPUTS: [&str; 5] = [
     "tasks.toml",
     "execution-record.toml",
     "agents.toml",
     "context.toml",
+    "plan.toml",
 ];
 
 /// Refuses a flow slug the CLI's `--slug` would refuse, so a consumer can

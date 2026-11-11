@@ -2,7 +2,7 @@
 
 The four steps from an invocation to a running milestone: pre-flight, picking the milestone, checking its premises, and launching its dispatchable tasks through the `implement-v2-milestone` Workflow. What happens when the run's notification arrives, from `plan run finish` to the milestone commit, is the engine's `references/drain.md`.
 
-`<slug>` is the flow, `<id>` the milestone being run and `<scratch>` the session scratchpad. Every scratch file below — the premise script and its capture, the pre-launch snapshots, the args file and any record file — goes in `<scratch>`, never under `.claude/`, where a Write is a protected-path write, and never under `docs/flows/<slug>/`, which is committed. Payloads for `tomlctl` are `.toml` record files staged there with the Write tool; no heredocs, no pipes out of `tomlctl`.
+`<slug>` is the flow, `<id>` the milestone being run and `<scratch>` the session scratchpad. Every scratch file below — the premise script and its capture, the launch output, the args file and any record file — goes in `<scratch>`, never under `.claude/`, where a Write is a protected-path write, and never under `docs/flows/<slug>/`, which is committed. Payloads for `tomlctl` are `.toml` record files staged there with the Write tool; no heredocs, no pipes out of `tomlctl`.
 
 ## 1. Pre-flight
 
@@ -150,12 +150,12 @@ One `fails` verdict reads differently: an anchor premise, whose `check` opens `t
 The args come from one call, made after step 3 has recorded the premises:
 
 ```bash
-tomlctl plan emit launch-args --slug <slug> --milestone <id> --max-parallel <n> > <scratch>/implement-<id>-<round>-launch.json
+tomlctl plan emit launch-args --slug <slug> --milestone <id> --max-parallel <n> [--max-compile-parallel <c>] > <scratch>/implement-<id>-<round>-launch.json
 ```
 
-`<round>` counts the launches of this milestone in the session, starting at 1, so a relaunch never overwrites the launch output, snapshots or args a drain still needs. `--max-parallel` is an integer from 1 to 8 and defaults to 4, which suits a typical milestone; keep it. When the milestone's tasks are mostly `deep` or share one crate, where parallel compile checks contend on the build lock, bound those with `max_compile_parallel` instead (see [Write the args file](#write-the-args-file)): it caps only the running tasks whose `files` hold a `.rs` path or a `Cargo.toml`, so a row that compiles nothing still starts beside them.
+`<round>` counts the launches of this milestone in the session, starting at 1, so a relaunch never overwrites the launch output or args a drain still needs. `--max-parallel` is an integer from 1 to 8 and defaults to 4, which suits a typical milestone; keep it. When the milestone's tasks are mostly `deep` or share one crate, where parallel compile checks contend on the build lock, bound those with `--max-compile-parallel` instead, an integer from 1 to 8: it caps only the running tasks whose `files` hold a `.rs` path or a `Cargo.toml`, within `--max-parallel` overall, so a row that compiles nothing still starts beside them. Without it, `--max-parallel` alone caps them.
 
-It prints `{args, args_sha256, after_checks, dropped}` and writes nothing. `args` is the object the Workflow takes, built from the milestone's membership rather than the frontier: every `pending` member that survives the drops below, with `executor` from its spec, `needs` narrowed to ids inside the set, `after` naming the tasks its released `after:` premises wait on, and `files` from its row. `args_sha256` is the SHA-256 of `args` as compact JSON, the digest `plan run start` records. Never edit `args` by hand, with one exception: the emit has no flag for `max_compile_parallel`, so add that one field yourself when you want it. Anything else wrong in `args` is fixed in the store and emitted again.
+It prints `{args, args_sha256, after_checks, dropped}` and writes nothing. `args` is the object the Workflow takes, built from the milestone's membership rather than the frontier: every `pending` member that survives the drops below, with `executor` from its spec, `needs` narrowed to ids inside the set, `after` naming the tasks its released `after:` premises wait on, and `files` from its row. `args_sha256` is the SHA-256 of `args` as compact JSON, `max_compile_parallel` included, the digest `plan run start` records. Never edit `args` by hand: anything wrong in `args` is fixed in the store, or in the flags, and emitted again.
 
 The call fails, naming `plan probes --emit --premises --milestone <id>`, when a premise step 3 should have checked carries no verdict recorded at the current `HEAD`: a skipped or stale premise run. Run step 3 and emit again.
 
@@ -182,15 +182,7 @@ It prints `{ready, held, next, blocked}`, each restricted to the milestone's row
 
 ### Write the args file
 
-Snapshot the store first: its rows, their specs and the milestones with their gates. A worker may write only `status` and `agent` on its own row and nothing enforces it, so the drain compares the store with these snapshots by the rule in [drain.md](drain.md), step 5:
-
-```bash
-tomlctl tasks list --slug <slug> > <scratch>/implement-<id>-<round>-snapshot.json
-tomlctl items list .claude/flows/<slug>/tasks.toml --array specs > <scratch>/implement-<id>-<round>-specs.json
-tomlctl items list .claude/flows/<slug>/tasks.toml --array milestones > <scratch>/implement-<id>-<round>-milestones.json
-```
-
-Then write the emitted `args` object, unchanged but for an added `max_compile_parallel`, with the Write tool to `<scratch>/implement-<id>-<round>-args.json`, for the record. Its shape:
+Write the emitted `args` object, unchanged, with the Write tool to `<scratch>/implement-<id>-<round>-args.json`, for the record. Its shape:
 
 ```json
 {
@@ -207,11 +199,11 @@ Then write the emitted `args` object, unchanged but for an added `max_compile_pa
 ```
 
 - `root` is the repository root, one line; each worker checks it is working there and returns `error` when it is not.
-- `max_compile_parallel` is optional and added by hand, an integer from 1 to 8: at most that many running tasks may hold a `.rs` path or a `Cargo.toml` in `files`, within `max_parallel` overall. Absent, `max_parallel` alone caps them. The emitted `args_sha256` does not cover the added field; record it unchanged.
+- `max_compile_parallel` is present only when `--max-compile-parallel` was given.
 - `tasks` holds only the dispatch set; `needs` and `after` name only ids inside it, and `files` is never empty.
 - A task with a non-empty `after` is dispatched once every task it names has returned `done`, and its prompt tells the worker to check its `after:` premises before editing.
 
-The Workflow refuses the whole launch, starting no agent, when `slug`, `milestone` or `root` is malformed, `max_parallel` or a present `max_compile_parallel` is out of range, `tasks` is empty, an id is not a positive integer or repeats, an `executor` is neither `lite` nor `deep`, `needs` or `after` names an id outside `tasks`, `files` is empty or holds a multi-line path, or the `needs` and `after` together form a cycle. The emit builds none of these, so a refusal means the args were not the emitted ones, or the added `max_compile_parallel` was malformed.
+The Workflow refuses the whole launch, starting no agent, when `slug`, `milestone` or `root` is malformed, `max_parallel` or a present `max_compile_parallel` is out of range, `tasks` is empty, an id is not a positive integer or repeats, an `executor` is neither `lite` nor `deep`, `needs` or `after` names an id outside `tasks`, `files` is empty or holds a multi-line path, or the `needs` and `after` together form a cycle. The emit builds none of these, so a refusal means the args were not the emitted ones.
 
 ### Launch and record
 
@@ -228,7 +220,7 @@ A launch result carrying `error` stops the engine: report it, and do not fall ba
 tomlctl plan run start --slug <slug> --step implement:<id> --workflow implement-v2-milestone --args-hash <args_sha256> --tasks <ids> --run-id <runId> --session "$CLAUDE_CODE_SESSION_ID"
 ```
 
-Then end the turn.
+The same call stores the task store's digest on the run, which the drain's lane check ([drain.md](drain.md), steps 3 and 5) compares to find a store write no worker may make. `--tasks` is what tells that check which rows the run dispatched, so it is never left off. Then end the turn.
 
 Never launch with `resumeFromRunId`. Workers write their own task status, so a journal hit would replay a return the store has since moved past; every launch, relaunches included, is a fresh run built from fresh args.
 
@@ -238,7 +230,7 @@ While the run is live, its workers own the rows they hold: write no `tasks` fiel
 
 The Workflow runs a rolling pool, not waves: up to `max_parallel` workers at once, of which at most `max_compile_parallel`, when given, hold a crate source file, and whenever one returns, each free slot is filled, in args order, with a task whose `needs` and `after` ids have all returned `done`, whose files no running task holds, and which a full compile cap does not hold back. A long task holds back only the tasks that wait on it or share its files.
 
-The notification's result is an index, `{slug, milestone, tasks: [{id, status, note, error, deviations, handover, needs_files}], errors, script_version}`. `needs_files` is empty unless the worker returned `failed` because its task cannot be done inside its `files`; it names the repo-relative paths the task would also need, none of which the worker edited, and its note gives one line per path saying why. The drain replan reads it to widen the task's `files`. An index whose `tasks` is empty and whose `errors` ends `no agent launched` is the Workflow refusing its args: a completed run, not a launch `error`. Close it as `errors`, report `errors`, and never relaunch the same args. Each entry's `status` is the worker's own (`done`, `failed`, `parked`) or one the Workflow sets:
+The notification's result is an index, `{slug, milestone, tasks: [{id, status, note, error, deviations, handover, needs_files}], errors, script_version}`. A `needs_files` the Workflow refuses is emptied and its reason put in that entry's `error`. `needs_files` is empty unless the worker returned `failed` because its task cannot be done inside its `files`; it names the repo-relative paths the task would also need, none of which the worker edited, and its note gives one line per path saying why. The drain replan reads it to widen the task's `files`. An index whose `tasks` is empty and whose `errors` ends `no agent launched` is the Workflow refusing its args: a completed run, not a launch `error`. Close it as `errors`, report `errors`, and never relaunch the same args. Each entry's `status` is the worker's own (`done`, `failed`, `parked`) or one the Workflow sets:
 
 | `status` | Set by | Means |
 |---|---|---|

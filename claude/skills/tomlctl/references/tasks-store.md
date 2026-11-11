@@ -225,8 +225,8 @@ graph products, the execution record joined to the rows, and the hook-written ag
 tomlctl tasks snapshot --slug <slug>
 ```
 
-It reads four files from one directory. `tasks.toml` is the target and must exist; its three
-companions — `execution-record.toml`, `agents.toml` and `context.toml` — are resolved as
+It reads five files from one directory. `tasks.toml` is the target and must exist; its four
+companions — `execution-record.toml`, `agents.toml`, `context.toml` and `plan.toml` — are resolved as
 siblings of the store path, under `--file` as under `--slug`, and each reads as empty when
 absent. Under `--file` the envelope's `slug` is the store's parent directory name, the value a
 `--slug` read of the same store would carry.
@@ -241,6 +241,7 @@ The envelope's keys, in emission order:
 | `plan_path` | the store's recorded `plan_path` |
 | `flow_status` | `context.toml`'s `status`, `""` when the context is absent |
 | `policy` | `checkpoints`, `max_parallel`, `commit_granularity` — the notes and `origin` are not carried |
+| `running_milestone` | the `<id>` of the oldest open run in `plan.toml` whose `step` is `implement:<id>`, `""` with no such run or no `plan.toml` |
 | `tasks` | one object per row in store order: `id`, `ref`, `title`, `effort`, `status`, `checkpoint`, `phase`, `files`, `needs`, `coupling`, `deps_note`, `action`, `detail`, `acceptance`, `agent`, `commit` |
 | `layers` | the Kahn layers `tasks batches` reports |
 | `frontier` | the `tasks ready` shape, with every `in-progress` row passed as in flight |
@@ -256,8 +257,8 @@ carry no ref, so their `commits` are mapped to groups by commit prefix against e
 `verification` is the last `verification` entry whose `task_id` is a member, as
 `{outcome, summary}`, or `null`.
 
-**`revision`** is the first 16 hex characters of a SHA-256 over the four files in the order
-`tasks.toml`, `execution-record.toml`, `agents.toml`, `context.toml`, each contributing its byte
+**`revision`** is the first 16 hex characters of a SHA-256 over the five files in the order
+`tasks.toml`, `execution-record.toml`, `agents.toml`, `context.toml`, `plan.toml`, each contributing its byte
 length as a little-endian `u64` and then its bytes; an absent file contributes a zero length. It
 is computed from the raw bytes **before** any file is parsed, so a write landing mid-read leaves
 a stale revision over fresh content — which the next poll corrects — and never a fresh revision

@@ -1858,6 +1858,7 @@ fn capabilities_features_contains_every_plan_feature() {
         "gate_probes",
         "plan_emit",
         "agents_audit",
+        "plan_emit_lane_check",
     ];
     for name in expected {
         assert!(

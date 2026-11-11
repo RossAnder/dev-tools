@@ -207,9 +207,13 @@ tomlctl plan run start --slug <slug> --step <step> [--workflow <workflow>] [--ar
 | `--args-hash` | hash | Digest of the Workflow's arguments. | absent |
 | `--run-id` | id | The run id from the Workflow's result. | `""` |
 | `--session` | id | The session launching the step; a carrier passes `CLAUDE_CODE_SESSION_ID`. | absent |
-| `--tasks` | ids, comma-separated | The task ids the launch dispatched, stored as the run's `tasks` in the order given with repeats dropped; `plan emit reproduce-units --since-launch` reads them. | none |
+| `--tasks` | ids, comma-separated | The task ids the launch dispatched, stored as the run's `tasks` in the order given with repeats dropped; `plan emit reproduce-units --since-launch` and `plan emit lane-check` read them. | none |
 
 Prints `{"ok":true}`.
+
+On an `implement:<id>` step it also stores the task store's digest as the run's `store_digest`, for
+[`plan emit lane-check`](plan-engine.md#plan-emit-lane-check). A task store that does not read stores
+none, and the run is recorded all the same.
 
 ## `plan run finish`
 

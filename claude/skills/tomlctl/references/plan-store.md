@@ -135,6 +135,7 @@ id is then never minted again.
 | `outcome` | `ok`, `errors`, `stopped` or `abandoned`. Absent on an open or skipped row and on rows written before the key existed; an unknown value is refused on read. |
 | `reason` | Why the run was abandoned; absent while empty. Distinct from `skip_reason`, which means the step never ran and settles the review stage. |
 | `tasks` | The task ids the launch dispatched, from `plan run start --tasks`, in the order given with repeats dropped. Absent while empty, so a skip and a row written without the flag carry none. `plan emit reproduce-units --since-launch` reads the latest `implement:<id>` run's list, and treats a run with none as touching every unit. |
+| `store_digest` | A table of the task store's digest by section (`rows`, `specs`, `milestones`, `changes`, `rest`), each a 16-hex SHA-256 prefix, taken by `plan run start` on an `implement:<id>` step. Absent on any other step and on a run written before the key existed. `plan emit lane-check` compares it. |
 
 | `[[handover]]` key | Meaning |
 |---|---|

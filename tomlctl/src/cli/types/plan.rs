@@ -88,6 +88,10 @@ pub(crate) enum PlanEmitOp {
     /// The reproduce check's launch args, one per review store the
     /// milestone's finding links name.
     ReproduceUnits(PlanEmitReproduceUnitsArgs),
+    /// Whether the latest run of a milestone stayed in its lane: uncommitted
+    /// paths no started row holds, and task-store writes beyond a worker's
+    /// own `status` and `agent`.
+    LaneCheck(PlanEmitLaneCheckArgs),
 }
 
 /// `plan handover` leaves.
@@ -522,6 +526,27 @@ pub(crate) struct PlanEmitLaunchArgs {
         help = "Workers running at once, from 1 to 8"
     )]
     pub(crate) max_parallel: u32,
+    #[arg(
+        long = "max-compile-parallel",
+        value_name = "N",
+        help = "Running tasks whose files hold a `.rs` path or a Cargo.toml, from 1 to 8; \
+                absent, --max-parallel alone caps them"
+    )]
+    pub(crate) max_compile_parallel: Option<u32>,
+    #[command(flatten)]
+    pub(crate) integrity: ReadIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct PlanEmitLaneCheckArgs {
+    #[command(flatten)]
+    pub(crate) target: PlanTarget,
+    #[arg(
+        long = "milestone",
+        value_name = "ID",
+        help = "The checkpoint whose latest `implement:<id>` run is checked"
+    )]
+    pub(crate) milestone: String,
     #[command(flatten)]
     pub(crate) integrity: ReadIntegrityArgs,
 }

@@ -56,10 +56,19 @@ tomlctl plan drift --slug <slug> --uncommitted
 
 `plan drift` counts as the run's own work the files of every row with a set `agent` and no `commit`, whatever its status, so a started row reset to `pending` still owns its partial edits. It prints `{ok, approved_commit, changed_files, affected, uncommitted_files}`; each `affected` entry is `{id, ref, files, premises}`, plus an `uncommitted` array when an uncommitted path hits that row.
 
-Read it two ways:
+**Committed drift.** `changed_files` and the `affected` entries without `uncommitted` are commits since approval that no row owns. They need no action here: every launch re-runs the premises of the rows they touch, which is what answers them.
 
-- **Out-of-lane edits.** Every path in `uncommitted_files` should be in the `files` of a started row, as the pre-flight in [run-milestone.md](run-milestone.md), step 1, defines it, or be `.claude/backlog.toml` or its sidecar, or be a review store the flow's `[[finding_links]]` name or its sidecar, by [apply-rows.md](apply-rows.md), section "Linked review stores in the clean-tree and lane checks". Paths under `.claude/flows/<slug>/` and `docs/flows/<slug>/` are never listed. Any other path is an edit outside every worker's lane, and an `affected` entry with an `uncommitted` array is one landing on the file of a row no worker has started. Look for the worker that made it in the notes you read and in the `files_touched` they name. When a note accounts for the path and the task needed it, widen that task's `files` through the replan (step 6) so the edit is in its lane. Otherwise list the path in `needs_human` and do not gate: the engine never commits, moves or discards an edit nobody owns.
-- **Committed drift.** `changed_files` and the `affected` entries without `uncommitted` are commits since approval that no row owns. They need no action here: every launch re-runs the premises of the rows they touch, which is what answers them.
+### The lane check
+
+One read answers both what the run edited outside its lanes and what it wrote to the store beyond a worker's licence (step 5). Run it before any store write of the drain but step 4's resets, since every other write moves the store digest it compares:
+
+```bash
+tomlctl plan emit lane-check --slug <slug> --milestone <id>
+```
+
+It reads the latest `implement:<id>` run and the task ids `plan run start --tasks` recorded on it, so it answers for an abandoned run settled at re-entry as for one this session launched. It prints `{clean, run_id, out_of_lane, store_writes, digest}`. On `"clean": true` there is nothing out of lane and no store change: go on to the audit below. Otherwise read `out_of_lane` here and `store_writes` and `digest` in step 5.
+
+**Out-of-lane edits.** Each `out_of_lane` entry is `{path, rows}`: an uncommitted path in no row the run dispatched, in no started row as the pre-flight in [run-milestone.md](run-milestone.md), step 1, defines it, and not the backlog store or a linked review store, by [apply-rows.md](apply-rows.md), section "Linked review stores in the clean-tree and lane checks", nor their sidecars. Paths under `.claude/flows/<slug>/` and `docs/flows/<slug>/` are never listed. A non-empty `rows` names the rows holding the path, none of which a worker has started. Look for the worker that made the edit in the notes you read and in the `files_touched` they name. When a note accounts for the path and the task needed it, widen that task's `files` through the replan (step 6) so the edit is in its lane. Otherwise list the path in `needs_human` and do not gate: the engine never commits, moves or discards an edit nobody owns.
 
 ### What the run's agents ran
 
@@ -94,29 +103,14 @@ The reset keeps each row's `agent`, so the next pre-flight still counts it as st
 
 ## 5. Store changes during the run
 
-A worker may write only `status` and `agent`, only on its own row. Compare the store with the three snapshots taken before the launch:
+A worker may write only `status` and `agent`, only on its own row. The lane check of step 3 has already compared the store with the digest `plan run start` took at launch, with the dispatched rows' `status` and `agent` left out of it. Read its `store_writes`:
 
-```bash
-tomlctl tasks list --slug <slug> > <scratch>/implement-<id>-<round>-after.json
-tomlctl items list .claude/flows/<slug>/tasks.toml --array specs > <scratch>/implement-<id>-<round>-specs-after.json
-tomlctl items list .claude/flows/<slug>/tasks.toml --array milestones > <scratch>/implement-<id>-<round>-milestones-after.json
-diff -U30 <scratch>/implement-<id>-<round>-snapshot.json <scratch>/implement-<id>-<round>-after.json
-diff -U30 <scratch>/implement-<id>-<round>-specs.json <scratch>/implement-<id>-<round>-specs-after.json
-diff -U30 <scratch>/implement-<id>-<round>-milestones.json <scratch>/implement-<id>-<round>-milestones-after.json
-```
+- `{source: "trail", ref, task, field, old, new, actor, at}` is a `[[changes]]` row written while the run was open. You write none then, and `status` and `agent` leave no trail row, so a worker wrote it. `ref` is `milestone:<id>` for a milestone edit, such as one to the `gates` step 7 runs.
+- `{source: "digest", section}` is a part of the store that moved since the launch: `rows`, `specs`, `milestones`, `changes` (a trail row from before the run, rewritten) or `rest`. A trail entry for the same part names the change; one with no trail entry beside it is a write no audited verb made, so the trail cannot name it. Find it by diffing the store against its last commit, `git diff -- .claude/flows/<slug>/tasks.toml`, and tell it from your own replans of earlier rounds by the rows the run dispatched.
 
-In the rows diff, each hunk sits inside a row and its `"id":` line names the row. A changed line other than `"status":` or `"agent":` on any row, or either of those on a row the run did not dispatch, is a change no worker may make. In the specs diff every changed line is one: a spec is keyed by its row's `ref`, the nearest `"ref":` line above the hunk in the snapshot, and a worker may write no spec at all. In the milestones diff every changed line is one too, keyed by the nearest `"id":` line above the hunk: a milestone's `gates` decide what step 7 runs, so a worker that emptied them would ungate its own milestone.
+`digest` reads `unrecorded` for a run whose `plan run start` stored no digest, so only the trail answered: say so in the report.
 
-An abandoned run settled at re-entry has no snapshot in this session. Read the audit trail of the run's rows and its milestone instead, which catches only changes made through an audited verb. List the refs of the run's rows and `milestone:<id>`, the ref a milestone edit is audited under, so a change to its `gates` shows too:
-
-```bash
-tomlctl items list .claude/flows/<slug>/tasks.toml --array changes --where-in ref=<ref1,ref2>,milestone:<id> --select at,ref,field,actor,reason --lines
-tomlctl items list .claude/flows/<slug>/plan.toml --array run --where step=implement:<id> --select started,finished --lines
-```
-
-You write no `[[changes]]` row while a run is live, so any row whose `at` falls between the run's `started` and `finished` was written by a worker.
-
-Report every such change in `needs_human`, with the row, the field and the old and new values. Leave it in the store, and dispatch the row again only once you have judged it: a change you keep stands as written, and a change you undo goes back through an audited `tasks update --ndjson` row whose `reason` says a worker wrote the value outside its contract.
+Report every such change in `needs_human`, with the row, the field and the old and new values where the trail or the diff gives them. Leave it in the store, and dispatch the row again only once you have judged it: a change you keep stands as written, and a change you undo goes back through an audited `tasks update --ndjson` row whose `reason` says a worker wrote the value outside its contract.
 
 ## 6. Replan
 
@@ -175,7 +169,7 @@ Each field a `spec` supplies replaces the stored one and the others stay, so a l
 
 ### Widening a row from `needs_files`
 
-A `failed` row whose index entry carries a non-empty `needs_files` is widened mechanically, with no re-spec. Its note gives one line per path saying why the task needs it. A path the note does not justify, with no such line or a reason that does not show the task needs it, is not widened: park the row yourself (above), naming the path, and the user decides.
+A `failed` row whose index entry carries a non-empty `needs_files` is widened mechanically, with no re-spec. Its note gives one line per path saying why the task needs it. A path the note does not justify, with no such line or a reason that does not show the task needs it, is not widened: park the row yourself (above), naming the path, and the user decides. So is a path the plan forbids: one under `.claude/` or `docs/flows/<slug>/`, or one the brief's Non-goals or the row's `constraints` rule out. An entry whose `error` says its `needs_files` was dropped is any other `failed` task.
 
 For each justified path, list the rows already holding it:
 

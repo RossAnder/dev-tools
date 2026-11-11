@@ -266,6 +266,9 @@ pub(crate) struct Run {
     pub(crate) reason: String,
     /// The task ids the launch dispatched. Omitted from the TOML while empty.
     pub(crate) tasks: Vec<u32>,
+    /// The task store's digest by section when an `implement:` run started,
+    /// which `plan emit lane-check` compares. Omitted from the TOML while empty.
+    pub(crate) store_digest: BTreeMap<String, String>,
 }
 
 /// Where a `[[run]]` row stands, derived from its fields and never stored.
@@ -707,6 +710,19 @@ fn run_from_toml(table: &Table, context: &str) -> Result<Run> {
         },
         reason: lf(&str_or(table, "reason")),
         tasks: id_array(table, "tasks", context)?,
+        store_digest: match table.get("store_digest") {
+            None => BTreeMap::new(),
+            Some(TomlValue::Table(digest)) => digest
+                .iter()
+                .map(|(section, hex)| match hex {
+                    TomlValue::String(hex) => Ok((section.clone(), hex.clone())),
+                    _ => Err(anyhow!(
+                        "{context}: `store_digest.{section}` is not a string"
+                    )),
+                })
+                .collect::<Result<_>>()?,
+            Some(_) => return Err(anyhow!("{context}: `store_digest` is not a table")),
+        },
     })
 }
 
@@ -723,6 +739,7 @@ fn run_to_toml(run: &Run) -> TomlValue {
         outcome,
         reason,
         tasks,
+        store_digest,
     } = run;
     let mut table = Table::new();
     table.insert("step".to_string(), TomlValue::String(step.clone()));
@@ -767,6 +784,17 @@ fn run_to_toml(run: &Run) -> TomlValue {
                 tasks
                     .iter()
                     .map(|id| TomlValue::Integer(i64::from(*id)))
+                    .collect(),
+            ),
+        );
+    }
+    if !store_digest.is_empty() {
+        table.insert(
+            "store_digest".to_string(),
+            TomlValue::Table(
+                store_digest
+                    .iter()
+                    .map(|(section, hex)| (section.clone(), TomlValue::String(hex.clone())))
                     .collect(),
             ),
         );
@@ -943,6 +971,10 @@ pub(crate) mod tests {
                     outcome: None,
                     reason: String::new(),
                     tasks: vec![2, 4],
+                    store_digest: BTreeMap::from([
+                        ("rows".to_string(), "0123456789abcdef".to_string()),
+                        ("specs".to_string(), "fedcba9876543210".to_string()),
+                    ]),
                 },
                 Run {
                     step: "review".to_string(),
@@ -956,6 +988,7 @@ pub(crate) mod tests {
                     outcome: None,
                     reason: String::new(),
                     tasks: Vec::new(),
+                    store_digest: BTreeMap::new(),
                 },
             ],
             handovers: vec![Handover {
@@ -1214,9 +1247,9 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn a_run_omits_workflow_args_hash_session_and_tasks_while_empty() {
+    fn a_run_omits_its_optional_keys_while_empty() {
         let doc = to_toml(&fixture());
-        for key in ["workflow", "args_hash", "session", "tasks"] {
+        for key in ["workflow", "args_hash", "session", "tasks", "store_digest"] {
             assert!(doc["run"][0].get(key).is_some(), "{key}: {doc}");
             assert!(doc["run"][1].get(key).is_none(), "{key}: {doc}");
         }

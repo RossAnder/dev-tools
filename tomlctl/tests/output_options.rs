@@ -359,8 +359,8 @@ const PLAN_BRIEF: &str = "## Intent\nStop the retry storm.\n\n## Non-goals\nNo n
                           ## Scope budget\nOne file.\n\n## Success criteria\nA retry waits.\n";
 
 /// `D1` gives `plan gate` a row, the open `investigate` run is what `plan run
-/// finish` and `plan run abandon` close, and `H1` is what `plan handover done`
-/// marks.
+/// finish` and `plan run abandon` close, the closed `implement:A` run is what
+/// `plan emit lane-check` reads, and `H1` is what `plan handover done` marks.
 const PLAN_STORE: &str = r#"schema_version = 1
 
 [binding]
@@ -381,6 +381,14 @@ args_hash = "beef"
 run_id = "wf_1"
 started = 2026-11-05T12:00:00Z
 finished = ""
+
+[[run]]
+step = "implement:A"
+run_id = "wf_0"
+started = 2026-11-05T11:00:00Z
+finished = 2026-11-05T11:30:00Z
+outcome = "ok"
+tasks = [1]
 
 [[handover]]
 id = "H1"
@@ -1251,6 +1259,20 @@ fn cases() -> Vec<Case> {
             One,
             "launches",
         ),
+        read(
+            &[
+                "plan",
+                "emit",
+                "lane-check",
+                "--slug",
+                PLAN_SLUG,
+                "--milestone",
+                "A",
+            ],
+            One,
+            "clean",
+        )
+        .git(),
     ]
 }
 

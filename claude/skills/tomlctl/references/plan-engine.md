@@ -2,7 +2,7 @@
 
 The two read-only `plan` verbs the engines steer by: `plan stage`, where a plan stands, and the
 `plan emit` leaves, what the execution engine passes on to its Workflow, its gate and its reproduce
-check. Both take the required `--slug` and the read bundle (`--verify-integrity`, `--strict-read`)
+check, and whether a run stayed in its lane. Both take the required `--slug` and the read bundle (`--verify-integrity`, `--strict-read`)
 described in [plan.md](plan.md), which also holds every other `plan` verb and the
 [check classes](plan.md#check-classes) `plan stage` reads. Which step of planning or execution reaches
 for them is owned by the [`plan-v2-engine`](../../plan-v2-engine/SKILL.md) and
@@ -15,6 +15,7 @@ for them is owned by the [`plan-v2-engine`](../../plan-v2-engine/SKILL.md) and
 - [`plan emit launch-args`](#plan-emit-launch-args)
 - [`plan emit gate-list`](#plan-emit-gate-list)
 - [`plan emit reproduce-units`](#plan-emit-reproduce-units)
+- [`plan emit lane-check`](#plan-emit-lane-check)
 
 ## `plan stage`
 
@@ -80,14 +81,15 @@ missing brief, so restoring the approved bytes is what clears it. An open run ou
 
 ## `plan emit`
 
-Three read-only leaves that build what the execution engine passes on from the stores. Each takes
-`--milestone <id>`, refuses an id the task store does not declare, prints one JSON object, writes
-nothing and runs no stored command.
+Four read-only leaves that build what the execution engine passes on from the stores, or check a
+run against them. Each takes `--milestone <id>`, refuses an id the task store does not declare,
+prints one JSON object, writes nothing and runs no stored command.
 
 ```bash
-tomlctl plan emit launch-args --slug <slug> --milestone <id> [--max-parallel <n>]
+tomlctl plan emit launch-args --slug <slug> --milestone <id> [--max-parallel <n>] [--max-compile-parallel <n>]
 tomlctl plan emit gate-list --slug <slug> --milestone <id>
 tomlctl plan emit reproduce-units --slug <slug> --milestone <id> [--since-launch] [--relaunch <n> --round <r> --task <refs>]
+tomlctl plan emit lane-check --slug <slug> --milestone <id>
 ```
 
 ## `plan emit launch-args`
@@ -98,13 +100,14 @@ The `implement-v2-milestone` Workflow's input for one milestone, with the rows i
 |---|---|---|---|
 | `--milestone` | id | The milestone to launch. | required |
 | `--max-parallel` | 1 to 8 | The workers running at once. | `4` |
+| `--max-compile-parallel` | 1 to 8 | Of those, the running tasks whose `files` hold a `.rs` path or a `Cargo.toml`. | absent: `--max-parallel` alone caps them |
 
 Prints `{args, args_sha256, after_checks, dropped}`.
 
 | Key | Holds |
 |---|---|
-| `args` | The Workflow's input: `slug`, `milestone`, `root`, `max_parallel`, and `tasks[]` of `id`, `executor`, `needs`, `after`, `files`. |
-| `args_sha256` | The SHA-256 of `args` as compact JSON, for `plan run start --args-hash`. |
+| `args` | The Workflow's input: `slug`, `milestone`, `root`, `max_parallel`, `max_compile_parallel` when given, and `tasks[]` of `id`, `executor`, `needs`, `after`, `files`. |
+| `args_sha256` | The SHA-256 of `args` as compact JSON, `max_compile_parallel` included, for `plan run start --args-hash`. |
 | `after_checks` | One row per `after:<m>` premise whose task `m` is dispatched in this launch: `task`, `premise`, `after`, `check`. The task stays in `args` with `m` in its `after`. |
 | `dropped` | Each row left out, with `reason`: `not-pending`, `withheld:<task>:<premise>:<verdict>`, `needs-withheld:<task>`, `executor:<value>`, `no-files` or `need-not-done:<task>:<status>`. |
 
@@ -150,3 +153,35 @@ Prints `{launches}`, each with:
 | `flow`, `milestone`, `round` | The flow, the milestone and the round. |
 | `run_dir` | `.review-v2-runs/apply-<slug>-<milestone>-<round>`, then `-<s>` or `-<scope>` when more than one store has units, then `-r<n>` under `--relaunch <n>`. |
 | `units` | `task` ref, `files`, `findings` and `route`. A finding several rows fix goes to the highest-id row. `route` is `checker` only when every finding is stored `route = "checker"` with no `direction = "add"`, `instances`, `fix_files` or `target_file`; otherwise `verifier`. |
+
+## `plan emit lane-check`
+
+Whether the latest `implement:<id>` run, skipped rows aside, stayed in its lane: the working tree's
+edits against the files the run could touch, and the task store against the `status` and `agent`
+a worker may write on its own row. It reads the task ids the run recorded through `plan run start
+--tasks`, so it answers for an abandoned run as well as a finished one.
+
+| Flag | Value | Meaning | Default |
+|---|---|---|---|
+| `--milestone` | id | The milestone whose latest run is checked. | required |
+
+Refused `not_found` when the plan store records no such run, and `validation` when the run
+recorded no task ids.
+
+Prints `{clean, run_id, out_of_lane, store_writes, digest}`. A clean run prints
+`{"clean":true,"run_id":"<id>","out_of_lane":[],"store_writes":[],"digest":"matched"}`.
+
+| Key | Holds |
+|---|---|
+| `clean` | `true` only when `out_of_lane` and `store_writes` are empty and `digest` is `matched`. |
+| `run_id` | The run's id, for the report. |
+| `out_of_lane` | `{path, rows}` per uncommitted path, as `plan drift --uncommitted` lists them, that is in no lane: not in the `files` of a row the run dispatched or of a row a worker started (`agent` `plan-worker-lite` or `plan-worker-deep`, empty `commit`), not `.claude/backlog.toml` or a review store a `[[finding_links]]` entry names, nor either's `.sha256`. `rows` are the ids of the rows whose `files` hold it, empty when none does. Paths under `.claude/flows/<slug>/` and `docs/flows/<slug>/` are never listed. |
+| `store_writes` | `{source: "trail", ref, task, field, old, new, actor, at}` per `[[changes]]` row written from the run's `started` to its `finished`, or to now while it is open, where `task` is the id of the row carrying `ref`, `null` for a milestone or a removed row. Then `{source: "digest", section}` per section of the store whose digest moved since the run started: `rows`, `specs`, `milestones` (with the checkpoints), `changes` (the rows written before the run) or `rest`. |
+| `digest` | `matched`, `changed`, or `unrecorded` for a run whose `plan run start` took no digest, which leaves only the trail to answer. |
+
+`plan run start` on an `implement:<id>` step stores the digest on the run as `store_digest`, one
+16-hex SHA-256 prefix per section, taken over the task store with `last_updated` and every
+dispatched row's `status` and `agent` left out. A trail row names its field, its old value and its
+new one; a `digest` entry alone means a write no audited verb made, found by comparing the
+section with the store's last commit. Any store write of the drain other than resetting a
+dispatched row's `status` moves the digest, so the check runs before the replan.

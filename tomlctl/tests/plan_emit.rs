@@ -304,6 +304,148 @@ fn launch_args_hash_matches_the_args() {
     );
 }
 
+#[test]
+fn launch_args_carry_a_compile_cap_inside_the_hash() {
+    let (_dir, root) = sandbox();
+    if committed(&root).is_none() {
+        return;
+    }
+    let items = vec![row(1, "pending", MILESTONE, &[], &["src/one.rs"])];
+    let specs = vec![spec(1, "lite", json!([]))];
+    seed_tasks(&root, &store(items, specs, json!({})));
+
+    let out = stdout_json(&launch_args(&root, &["--max-compile-parallel", "2"]).success());
+    let args = &out["args"];
+    let keys: Vec<&str> = args
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        keys,
+        [
+            "slug",
+            "milestone",
+            "root",
+            "max_parallel",
+            "max_compile_parallel",
+            "tasks"
+        ]
+    );
+    assert_eq!(args["max_compile_parallel"], 2);
+    let compact = serde_json::to_string(args).unwrap();
+    assert_eq!(out["args_sha256"], hex_digest(compact.as_bytes()));
+
+    for bad in ["0", "9"] {
+        let assert = launch_args(&root, &["--max-compile-parallel", bad]).failure();
+        let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+        let error = parse_json_error_envelope(&stderr);
+        assert_eq!(error["kind"], "validation", "{stderr}");
+        assert!(
+            error["message"]
+                .as_str()
+                .unwrap()
+                .contains("--max-compile-parallel"),
+            "{stderr}"
+        );
+    }
+}
+
+fn lane_check(root: &Path) -> assert_cmd::assert::Assert {
+    cli(root)
+        .args(["--error-format", "json"])
+        .args(["plan", "emit", "lane-check", "--slug", TASKS_SLUG])
+        .args(["--milestone", MILESTONE])
+        .assert()
+}
+
+fn tasks_update(root: &Path, args: &[&str]) {
+    cli(root)
+        .args(["tasks", "update"])
+        .args(args)
+        .args(["--slug", TASKS_SLUG])
+        .assert()
+        .success();
+}
+
+#[test]
+fn lane_check_reports_paths_and_store_writes_outside_the_run() {
+    let (_dir, root) = sandbox();
+    let ignore = root.join(".gitignore");
+    let mut ignored = fs::read_to_string(&ignore).unwrap();
+    ignored.push_str("\n.claude/.locks/\n");
+    fs::write(&ignore, ignored).unwrap();
+    if git_available() {
+        git_command(&root)
+            .args(["add", ".gitignore"])
+            .output()
+            .unwrap();
+    }
+    if committed(&root).is_none() {
+        return;
+    }
+    let items = vec![
+        row(1, "pending", MILESTONE, &[], &["src/one.rs"]),
+        row(2, "pending", MILESTONE, &[], &["src/two.rs"]),
+    ];
+    let specs = vec![spec(1, "lite", json!([])), spec(2, "lite", json!([]))];
+    seed_tasks(&root, &store(items, specs, json!({})));
+    let flow = root.join(".claude").join("flows").join(TASKS_SLUG);
+    fs::write(flow.join("plan.toml"), "schema_version = 2\n").unwrap();
+
+    let assert = lane_check(&root).failure();
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    assert_eq!(parse_json_error_envelope(&stderr)["kind"], "not_found");
+
+    cli(&root)
+        .args(["plan", "run", "start", "--slug", TASKS_SLUG])
+        .args(["--step", "implement:M", "--tasks", "1", "--run-id", "wf_9"])
+        .assert()
+        .success();
+    let plan = fs::read_to_string(flow.join("plan.toml")).unwrap();
+    assert!(plan.contains("store_digest"), "{plan}");
+
+    assert_eq!(
+        stdout_json(&lane_check(&root).success()),
+        json!({
+            "clean": true,
+            "run_id": "wf_9",
+            "out_of_lane": [],
+            "store_writes": [],
+            "digest": "matched",
+        })
+    );
+
+    tasks_update(
+        &root,
+        &["1", "--status", "done", "--agent", "plan-worker-lite"],
+    );
+    fs::create_dir_all(root.join("src")).unwrap();
+    fs::write(root.join("src/one.rs"), "fn main() {}\n").unwrap();
+    fs::write(root.join(".claude/backlog.toml"), "").unwrap();
+    let out = stdout_json(&lane_check(&root).success());
+    assert_eq!(out["clean"], true, "the worker's own row and file: {out}");
+
+    fs::write(root.join("src/two.rs"), "fn two() {}\n").unwrap();
+    fs::write(root.join("stray.txt"), "x\n").unwrap();
+    tasks_update(&root, &["2", "--status", "done"]);
+    let out = stdout_json(&lane_check(&root).success());
+    assert_eq!(out["clean"], false);
+    assert_eq!(
+        out["out_of_lane"],
+        json!([
+            { "path": "src/two.rs", "rows": [2] },
+            { "path": "stray.txt", "rows": [] },
+        ])
+    );
+    assert_eq!(
+        out["store_writes"],
+        json!([{ "source": "digest", "section": "rows" }])
+    );
+    assert_eq!(out["digest"], "changed");
+}
+
 const SUITE: &str = "cargo nextest run --manifest-path x/Cargo.toml";
 const LINT: &str = "cargo clippy --manifest-path x/Cargo.toml";
 

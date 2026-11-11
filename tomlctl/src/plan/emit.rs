@@ -29,7 +29,7 @@ use crate::tasks::{load_store, resolve_store_path};
 
 const EXECUTORS: [&str; 2] = ["lite", "deep"];
 /// A row whose `agent` is one of these has had a worker start on it.
-const WORKER_AGENTS: [&str; 2] = ["plan-worker-lite", "plan-worker-deep"];
+pub(super) const WORKER_AGENTS: [&str; 2] = ["plan-worker-lite", "plan-worker-deep"];
 const ANCHOR_CHECK: &str = "tomlctl review anchor ";
 const PREMISE_AT_BASE: &str = "base";
 const VERDICT_HOLDS: &str = "holds";
@@ -46,12 +46,17 @@ pub(super) fn dispatch(op: PlanEmitOp) -> Result<()> {
         PlanEmitOp::LaunchArgs(args) => launch_args(args),
         PlanEmitOp::GateList(args) => gate_list(args),
         PlanEmitOp::ReproduceUnits(args) => reproduce_units(args),
+        PlanEmitOp::LaneCheck(args) => super::lane::lane_check(args),
     }
 }
 
 /// The flow's task store, refused when `milestone` is declared in neither its
 /// checkpoints nor its milestones.
-fn load_milestone_store(slug: &str, milestone: &str, verify_integrity: bool) -> Result<Store> {
+pub(super) fn load_milestone_store(
+    slug: &str,
+    milestone: &str,
+    verify_integrity: bool,
+) -> Result<Store> {
     let path = resolve_store_path(Some(slug), None)?;
     if !path.exists() {
         store::require_open(&store::resolve(slug)?)?;
@@ -78,11 +83,19 @@ fn launch_args(args: PlanEmitLaunchArgs) -> Result<()> {
         target,
         milestone,
         max_parallel,
+        max_compile_parallel,
         integrity,
     } = args;
     if !(1..=MAX_PARALLEL).contains(&max_parallel) {
         return Err(refuse(format!(
             "`--max-parallel {max_parallel}` must be from 1 to {MAX_PARALLEL}"
+        )));
+    }
+    if let Some(cap) = max_compile_parallel
+        && !(1..=MAX_PARALLEL).contains(&cap)
+    {
+        return Err(refuse(format!(
+            "`--max-compile-parallel {cap}` must be from 1 to {MAX_PARALLEL}"
         )));
     }
     let tasks = load_milestone_store(&target.slug, &milestone, integrity.verify_integrity)?;
@@ -104,13 +117,16 @@ fn launch_args(args: PlanEmitLaunchArgs) -> Result<()> {
             })
         })
         .collect();
-    let args = json!({
+    let mut args = json!({
         "slug": target.slug,
         "milestone": milestone,
         "root": root,
         "max_parallel": max_parallel,
-        "tasks": dispatched,
     });
+    if let Some(cap) = max_compile_parallel {
+        args["max_compile_parallel"] = json!(cap);
+    }
+    args["tasks"] = json!(dispatched);
     let args_sha256 = hex_lower(&Sha256::digest(serde_json::to_string(&args)?.as_bytes()));
     let after_checks: Vec<JsonValue> = launch
         .after_checks
