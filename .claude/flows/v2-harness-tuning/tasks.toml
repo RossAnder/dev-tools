@@ -1,2 +1,3357 @@
-schema_version = 1
+schema_version = 2
 last_updated = 2026-11-11
+plan_path = ""
+last_import_refs = []
+
+[policy]
+checkpoints = "milestones"
+max_parallel = 6
+commit_granularity = "per-task"
+origin = "plan"
+note = ""
+
+[[checkpoints]]
+id = "A"
+rationale = "Standalone tomlctl and prose fixes: the verdict-return schema, replayed review add, plan drift own work, unreachable-claim noise, template path warnings, the apply-v2 role rule and the verification hand-back."
+
+[[checkpoints]]
+id = "B"
+rationale = "Review store and plan-review outcomes: fix files, citations and advisory apply, the addressed disposition, digest counts, cap handling and the reproduce checker record."
+
+[[checkpoints]]
+id = "C"
+rationale = "Accept owners, the milestone reproduce check, gate probes, the three plan emit verbs and the worker audit verb."
+
+[[checkpoints]]
+id = "D"
+rationale = "Workflow scripts and agents: the rolling pool with in-launch after: release, reproduce checker routing, plan review batching, and a test of the review scripts logic."
+
+[[checkpoints]]
+id = "E"
+rationale = "The engines adopt the new verbs, the pre-commit hook honours a gate stamp, and the findings reference is renamed."
+
+[[file_notes]]
+ref = "record-an-addressed-finding-and-emit-re-check-targets"
+file = "tomlctl/src/review/recheck.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "emit-a-milestones-launch-args"
+file = "tomlctl/src/plan/emit.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "emit-a-milestones-launch-args"
+file = "tomlctl/tests/plan_emit.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "audit-the-bash-commands-of-a-launchs-agents"
+file = "tomlctl/src/agents/audit.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "audit-the-bash-commands-of-a-launchs-agents"
+file = "tomlctl/tests/agents_audit.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "test-the-workflow-scripts-logic-under-stubbed-globals"
+file = "claude/workflows/tests/harness.test.mjs"
+note = "(new)"
+
+[[file_notes]]
+ref = "honour-a-gate-stamp-in-the-pre-commit-hook"
+file = "scripts/gate-stamp.sh"
+note = "(new)"
+
+[[file_notes]]
+ref = "rename-the-engines-findings-reference-to-apply-rowsmd"
+file = "claude/skills/implement-v2-engine/references/findings.md"
+note = "(delete)"
+
+[[file_notes]]
+ref = "rename-the-engines-findings-reference-to-apply-rowsmd"
+file = "claude/skills/implement-v2-engine/references/apply-rows.md"
+note = "(new)"
+
+[[backlog_links]]
+ref = "drop-the-top-level-allof-from-the-verdict-return-schema"
+closes = ["B-4bd349ed"]
+refs = []
+
+[[backlog_links]]
+ref = "supersede-a-cells-open-advisory-rows-on-a-replayed-review-add"
+closes = ["B-4be1dc74"]
+refs = []
+
+[[backlog_links]]
+ref = "read-plan-drifts-own-work-from-a-set-agent"
+closes = ["B-6a0aff17"]
+refs = []
+
+[[backlog_links]]
+ref = "skip-unreachable-claim-pairs-that-hold-a-done-committed-row"
+closes = ["B-e2b98a71"]
+refs = []
+
+[[backlog_links]]
+ref = "warn-when-a-template-path-matches-nothing"
+closes = ["B-efcdf91b"]
+refs = []
+
+[[backlog_links]]
+ref = "name-the-one-question-in-the-apply-v2-role-rule"
+closes = ["B-4b11a10c"]
+refs = []
+
+[[backlog_links]]
+ref = "report-a-passing-verification-command-on-one-line"
+closes = ["B-3b1f4f14"]
+refs = []
+
+[[backlog_links]]
+ref = "add-fix_files-to-findings-and-widen-scheduled-rows-by-it"
+closes = ["B-7b9d8057"]
+refs = []
+
+[[backlog_links]]
+ref = "apply-an-advisory-tier-edit-under-user-accepted"
+closes = ["B-cd288c8e"]
+refs = []
+
+[[backlog_links]]
+ref = "print-the-digests-candidate-arrays-as-counts-by-default"
+closes = ["B-33070446"]
+refs = []
+
+[[backlog_links]]
+ref = "cut-an-over-cap-cover-note-and-add-a-dry-run-to-review-add"
+closes = ["B-72f3bbac"]
+refs = []
+
+[[backlog_links]]
+ref = "plan-flow-prose-for-advisory-apply-the-addressed-disposition-and-digest-arrays"
+closes = ["B-690fbabb"]
+refs = []
+
+[[backlog_links]]
+ref = "select-reproduce-status-by-milestone-and-mint-one-gate-owned-check"
+closes = [
+    "B-3a80ce63",
+    "B-9728b95d",
+]
+refs = []
+
+[[backlog_links]]
+ref = "run-a-milestones-tasks-through-a-rolling-pool"
+closes = ["B-0bb55cd5"]
+refs = []
+
+[[backlog_links]]
+ref = "route-reproduce-units-to-the-checker-and-batch-plan-defects-in-review-v2js"
+closes = ["B-1bb57b0e"]
+refs = []
+
+[[backlog_links]]
+ref = "pass-batch_defects-from-the-plan-review-wrapper-and-batch-its-reverify"
+closes = ["B-548dfa4f"]
+refs = []
+
+[[backlog_links]]
+ref = "test-the-workflow-scripts-logic-under-stubbed-globals"
+closes = ["B-c866bda9"]
+refs = []
+
+[[backlog_links]]
+ref = "run-milestonemd-builds-its-launch-from-plan-emit-and-probes-gates-at-pre-flight"
+closes = [
+    "B-fddac023",
+    "B-8f42ffc6",
+    "B-14586282",
+]
+refs = []
+
+[[backlog_links]]
+ref = "drainmd-adopts-the-gate-list-the-audit-file-widening-and-unquoted-path-reads"
+closes = [
+    "B-56a8a9ff",
+    "B-804db301",
+    "B-ef8adde8",
+]
+refs = ["B-f8331d1a"]
+
+[[backlog_links]]
+ref = "findingsmd-builds-the-reproduce-check-from-plan-emit-reproduce-units"
+closes = [
+    "B-590ba0b1",
+    "B-72a04d82",
+]
+refs = []
+
+[[backlog_links]]
+ref = "honour-a-gate-stamp-in-the-pre-commit-hook"
+closes = ["B-e57e08ff"]
+refs = []
+
+[[backlog_links]]
+ref = "rename-the-engines-findings-reference-to-apply-rowsmd"
+closes = ["B-93fd1ef6"]
+refs = []
+
+[[specs]]
+ref = "drop-the-top-level-allof-from-the-verdict-return-schema"
+outcome = "`tomlctl review schema verdict-return` prints a schema the agent API accepts as a whole input schema: no `allOf`, `anyOf` or `oneOf` at its top level."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Leave the batch schema and every other schema the file emits as they are.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "a test pins that the verdict-return schema has no top-level combinator"
+check = "grep -q 'fn verdict_return_has_no_top_level_combinator' tomlctl/src/review/schema_out.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "verdict_return emits a top-level allOf today"
+check = """grep -q '"allOf"' tomlctl/src/review/schema_out.rs"""
+at = "base"
+
+[specs.premises.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "supersede-a-cells-open-advisory-rows-on-a-replayed-review-add"
+outcome = "Replaying a full `review add` for a cell leaves one live copy of every row, advisory rows included."
+constraints = [
+    "Touch no file outside this task's files.",
+    "A row of another cell or another run is never superseded.",
+    "A defect or cleanup row that is no longer `unverified` is never superseded.",
+]
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "a test pins that a replayed add supersedes the cell's open advisory row"
+check = "grep -q 'fn replayed_add_supersedes_open_advisory' tomlctl/tests/review_add.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the supersede filter keys on the Unverified status alone"
+check = "grep -q 'f.status() == FindingStatus::Unverified' tomlctl/src/review/add.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.means]]
+text = "Update the existing test `resubmitted_cell_supersedes_unverified_rows` in `tomlctl/tests/review_add.rs` to expect the cell's open advisory row superseded too."
+binding = "required"
+detail = "It asserts today that only the unverified row is withdrawn and the advisory stays open, which is the behaviour this task reverses; left alone it fails at the gate."
+
+[[specs]]
+ref = "read-plan-drifts-own-work-from-a-set-agent"
+outcome = "`plan drift --uncommitted` treats a row with a set agent and no commit as the run's own work whatever its status, so a started row reset to `pending` no longer shows its own partial edits as uncommitted hits."
+constraints = ["Touch no file outside this task's files."]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "a test pins that a started row back at pending is own work"
+check = "grep -q 'fn started_row_reset_to_pending_is_own_work' tomlctl/src/plan/drift.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "own_work decides by status and commit only"
+check = "grep -q 'fn own_work' tomlctl/src/plan/drift.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "skip-unreachable-claim-pairs-that-hold-a-done-committed-row"
+outcome = "`tasks check` and `plan check` print no `dag/unreachable-claim` warning for a file last held by a done, committed row."
+constraints = [
+    "Touch no file outside this task's files.",
+    "A pair of rows neither of which is done with a commit warns as before.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "a test pins that a done, committed row raises no unreachable-claim warning"
+check = "grep -q 'fn unreachable_claim_skips_done_committed_rows' tomlctl/tests/tasks_graph.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "overlap_findings builds the unreachable-claim warnings"
+check = "grep -q 'fn overlap_findings' tomlctl/src/tasks/check.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "warn-when-a-template-path-matches-nothing"
+outcome = "A `--template` path outside the fields its rows carry is warned of on stderr with exit status unchanged, and an optional field a documented template names stays quiet."
+constraints = [
+    "Touch no file outside this task's files.",
+    "The exit status of a call that succeeds today does not change.",
+    "`--error-format json` suppresses the warning line.",
+    "`--select` and `--get` behave as they do today.",
+]
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "a test pins the warning for a template path no row carries"
+check = "grep -q 'fn template_unknown_path_warns' tomlctl/tests/output_trim.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a test pins that an optional field's template path prints no warning"
+check = "grep -q 'fn template_optional_path_is_quiet' tomlctl/tests/output_trim.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the template paths are validated through validate_row_paths in output.rs"
+check = """grep -q 'validate_row_paths(rows, header, t.paths(), "--template")' tomlctl/src/output.rs"""
+at = "base"
+
+[specs.premises.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "name-the-one-question-in-the-apply-v2-role-rule"
+outcome = "The apply-v2-engine role rule and its step 2 no longer contradict: the rule says the unfinished-plan-work question is the one thing the skill asks."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Step 2's question and its options are unchanged.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the role rule names the unfinished plan work question as its exception"
+check = "grep -E 'Triage decided the selection' claude/skills/apply-v2-engine/SKILL.md | grep -qi 'unfinished'"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs]]
+ref = "report-a-passing-verification-command-on-one-line"
+outcome = "The verification hand-back gives one line per passing command and a full block for every other outcome."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Every command that ran is still reported, in list order.",
+    "The `not_run:` line, the `TANGENTIAL:` line and the fail, timeout and flaky blocks keep their fields.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the Output section defines the one-line pass form"
+check = "grep -q 'outcome: pass | command:' claude/agents/verification.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs]]
+ref = "add-fix_files-to-findings-and-widen-scheduled-rows-by-it"
+outcome = "A scheduled fix task holds every file its finding's fix names, test files included."
+constraints = [
+    "Touch no file outside this task's files.",
+    "`Finding::edited_paths` and its two other callers, the test-removal hold-back and the cleanup route, are unchanged.",
+    "A store written before the field loads and schedules as before.",
+]
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "a test pins that a finding's fix_files are in its minted row's files"
+check = "grep -q 'fn fix_files_widen_the_minted_row' tomlctl/tests/review_schedule.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a test pins that a fix_files path absent from the tree is noted new"
+check = "grep -q 'fn fix_files_new_path_is_noted_new' tomlctl/tests/review_schedule.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "schedule takes a row's files from edited()"
+check = "grep -q 'fn edited' tomlctl/src/review/schedule.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "widen-the-cited-test-for-plan-findings"
+outcome = "A confirmed plan finding whose verifier cited the target's file in a compound citation, a path its `new` names, or another document of the flow is stamped cited tier, not advisory."
+constraints = [
+    "Touch no file outside this task's files.",
+    "A citation naming code outside the target, its value, its `new` and the flow's documents still does not hold.",
+    "A tier already stamped on a stored finding is not recomputed.",
+]
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "a test pins that a compound citation holds when one part holds"
+check = "grep -q 'fn compound_citation_holds' tomlctl/src/review/tier.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a test pins that a citation of a path named in new holds"
+check = "grep -q 'fn citation_of_a_path_in_new_holds' tomlctl/src/review/tier.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a test pins that a citation of another document of the flow holds"
+check = "grep -q 'fn citation_of_a_flow_document_holds' tomlctl/src/review/tier.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "citation_holds checks the path against named_paths"
+check = "grep -q 'fn citation_holds' tomlctl/src/review/tier.rs && grep -q 'fn named_paths' tomlctl/src/review/tier.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "apply-an-advisory-tier-edit-under-user-accepted"
+outcome = "A confirmed plan-review finding that carries an edit can be written by `review apply`, with the user's acceptance when its tier is advisory."
+constraints = [
+    "Touch no file outside this task's files.",
+    "An advisory-kind finding is never applied.",
+    "A stale `expect` is still refused inside the store lock.",
+    "Question tier is refused as before.",
+]
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "a test pins that --user-accepted applies an advisory-tier edit"
+check = "grep -q 'fn user_accepted_applies_advisory_tier_edit' tomlctl/tests/review_apply.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a test pins that an advisory-tier edit is refused without --user-accepted"
+check = "grep -q 'fn advisory_tier_edit_refused_without_user_accepted' tomlctl/tests/review_apply.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "apply refuses advisory tier outright"
+check = "grep -q 'is advisory tier, which is never applied' tomlctl/src/review/apply.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "record-an-addressed-finding-and-emit-re-check-targets"
+outcome = "A plan-review finding the author fixed by hand has its own disposition: it is counted apart from dismissals and its edited targets reach the re-check."
+constraints = [
+    "Touch no file outside this task's files.",
+    "No new finding status is added.",
+    "A row resolved this way stays out of the dismissal rate and the calibration exemplars, as any `resolved` row does.",
+]
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "a test pins that triage --addressed resolves the finding and records its targets"
+check = "grep -q 'fn triage_addressed_records_targets' tomlctl/tests/review_triage.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a test pins that reopening clears addressed"
+check = "grep -q 'fn reopen_clears_addressed' tomlctl/tests/review_triage.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a test pins that recheck-targets is the union of applied and addressed targets"
+check = "grep -q 'fn recheck_targets_union_applied_and_addressed' tomlctl/tests/review_triage.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a test pins that plan outcomes count author-addressed apart from dismissed"
+check = "grep -q 'fn plan_outcomes_count_author_addressed' tomlctl/tests/review_stats.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "status companions are listed in ALL_COMPANIONS"
+check = "grep -q 'ALL_COMPANIONS' tomlctl/src/review/fields.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.means]]
+text = "Refuse `--addressed` for a finding that has no `target` when `--targets` is not given, and for any non-plan finding, naming the id; refuse the whole id set before writing."
+binding = "required"
+detail = "`addressed` is plan-only, and an empty list would record a hand edit that never reaches the re-check."
+
+[[specs]]
+ref = "print-the-digests-candidate-arrays-as-counts-by-default"
+outcome = "`review digest` gives counts for `duplicate_candidates` and `ruled_out_hits` by default, and the full arrays on request."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Every other key of the digest is unchanged.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "a test pins that the two keys are counts by default"
+check = "grep -q 'fn digest_candidates_are_counts_by_default' tomlctl/tests/review_digest.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a test pins that --with prints the named arrays"
+check = "grep -q 'fn digest_with_prints_named_arrays' tomlctl/tests/review_digest.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the digest args live in cli/types/review/read.rs"
+check = "grep -q 'ReviewDigestArgs' tomlctl/src/cli/types/review/read.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "cut-an-over-cap-cover-note-and-add-a-dry-run-to-review-add"
+outcome = "A sweeper's over-long cover note no longer refuses the seal, and a finder can learn which rows `review add` would refuse before the write."
+constraints = [
+    "Touch no file outside this task's files.",
+    "A note within the cap is stored byte for byte.",
+    "`review add` without `--dry-run` behaves as before.",
+]
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "a test pins that cover cuts an over-cap note and reports the cut"
+check = "grep -q 'fn cover_cuts_an_over_cap_note' tomlctl/tests/review_cover.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a test pins that add --dry-run reports refusals and writes nothing"
+check = "grep -q 'fn add_dry_run_writes_nothing' tomlctl/tests/review_add.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a test pins that the cell return marks a row that names a same_as"
+check = "grep -q 'fn cell_return_marks_same_as' tomlctl/tests/review_add.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the review add and cover args live in cli/types/review/cells.rs"
+check = "grep -q 'struct ReviewAddArgs' tomlctl/src/cli/types/review/cells.rs && grep -q 'struct ReviewCoverArgs' tomlctl/src/cli/types/review/cells.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.means]]
+text = "Also add the optional boolean `same_as` to each entry `review add` returns in `findings` and to the cell-return schema in `schema_out.rs`, present and true when the row names a `same_as`, as `design/shapes.md#plan-batching` states."
+binding = "required"
+detail = "A Workflow script sees a finding only through the cell return, whose schema forbids extra keys, and it must keep a `same_as` row out of a batch. Pin it with a test named `cell_return_marks_same_as` in `tomlctl/tests/review_add.rs`."
+
+[[specs.means]]
+text = "Cut an over-cap `--ruled-out` reason the way the note is cut, and report `reasons_truncated` in the envelope, as `design/shapes.md#caps` states; pin it with a test named `cover_cuts_an_over_cap_ruled_out_reason` in `tomlctl/tests/review_cover.rs`."
+binding = "required"
+detail = "A single over-cap reason refuses the whole `review cover` today, after the cell's work is done, exactly as the note did."
+
+[[specs]]
+ref = "let-a-checker-record-a-reproduction"
+outcome = "`review reproduce` records a row whose `by` is `checker`, and a store holding one loads."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Rows recorded by `verifier` and `orchestrator` are unchanged.",
+]
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "a test pins that a reproduction by checker is recorded and read back"
+check = "grep -q 'fn reproduce_accepts_by_checker' tomlctl/tests/review_reproduce.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "ReproduceBy is declared in review/fields.rs"
+check = "grep -q 'str_enum!(ReproduceBy' tomlctl/src/review/fields.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.means]]
+text = "`by` is a key of each NDJSON row; add no `--by` flag to `review reproduce`."
+binding = "required"
+detail = "The verb takes its rows only through `--ndjson`, and no other task documents a flag."
+
+[[specs]]
+ref = "tell-review-agents-about-fix_files-the-add-dry-run-the-cut-note-and-plan-review-names"
+outcome = "Finders name a fix's other files and learn of an over-cap field before the write, and a plan review's mechanical cell sweeps the names its untracked plan files introduce."
+constraints = [
+    "Touch no file outside this task's files.",
+    "The bodies of `review-finder.md` and `review-finder-cf.md` stay byte-identical below the frontmatter.",
+    "The `review-v2-store-writer` and `research-delivering` shared blocks are not edited.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the method skill's field table carries fix_files"
+check = "grep -q 'fix_files' claude/skills/review-v2-method/SKILL.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "both finder agents tell the finder to fill fix_files"
+check = "grep -q 'fix_files' claude/agents/review-finder.md && grep -q 'fix_files' claude/agents/review-finder-cf.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the sweeper takes a plan review's names from the plan's records"
+check = "grep -q 'plan view --slug' claude/agents/review-sweeper.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs]]
+ref = "plan-flow-prose-for-advisory-apply-the-addressed-disposition-and-digest-arrays"
+outcome = "A plan review can land a confirmed advisory-tier edit through `review apply`, records a hand fix as addressed with its targets re-checked, and reads the digest's candidate arrays only where it decides them."
+constraints = [
+    "Touch no file outside this task's files.",
+    "The depth envelope and verifier dispatch rules in `review-v2-engine/SKILL.md` are another task's and stay as they are.",
+]
+premises = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "plan-flow names the addressed disposition and the recheck-targets read"
+check = "grep -q -- '--addressed' claude/skills/review-v2-engine/references/plan-flow.md && grep -q 'recheck-targets' claude/skills/review-v2-engine/references/plan-flow.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the lead reads the digest's arrays with --with"
+check = "grep -q -- '--with duplicates' claude/agents/plan-review-lead.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the triage grammar carries the addressed mode"
+check = "grep -q -- '--addressed' claude/skills/review-v2-engine/references/triage-and-close.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.means]]
+text = "Write the addressed mode as `tomlctl review triage <ids> --addressed-file <path>`, with `--targets` where the hand edit changed other records."
+binding = "required"
+detail = "The mode has no `--reason-file`; `--addressed` carries the reason text and `--addressed-file` is its twin, as `design/shapes.md#addressed` states, and the engine passes prose only through the file twins."
+
+[[specs.means]]
+text = "Add `review_digest_with` beside `review_addressed` in the capability pre-flight list of `plan-flow.md`, and to the stage 0 halt list in `review-v2-engine/SKILL.md`."
+binding = "required"
+detail = "The `--with` reads this task writes fail on a binary without the flag."
+
+[[specs]]
+ref = "register-and-document-milestone-bs-review-surface"
+outcome = "The installed binary advertises milestone B's review features, every new leaf verb has an output-options case, and the tomlctl skill's references describe the new flags, verbs and fields."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Every fenced `tomlctl` command in a reference takes single-token placeholders.",
+]
+premises = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the feature list carries the five milestone B tokens"
+check = "grep -q 'review_fix_files' tomlctl/src/cli/types/mod.rs && grep -q 'review_addressed' tomlctl/src/cli/types/mod.rs && grep -q 'review_digest_with' tomlctl/src/cli/types/mod.rs && grep -q 'review_add_dry_run' tomlctl/src/cli/types/mod.rs && grep -q 'review_reproduce_checker' tomlctl/src/cli/types/mod.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the review reference documents recheck-targets and the addressed mode"
+check = "grep -q 'recheck-targets' claude/skills/tomlctl/references/review.md && grep -q -- '--addressed' claude/skills/tomlctl/references/review.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the output-options suite has a case for review recheck-targets"
+check = "grep -q 'recheck-targets' tomlctl/tests/output_options.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.means]]
+text = "Besides the dispatch subset, run `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(capabilities) | test(every_leaf_command_has_a_case)'`."
+binding = "suggested"
+detail = "The dispatch subset covers neither the capabilities feature list nor the leaf-case test this task's edits must satisfy."
+
+[[specs]]
+ref = "give-each-accept-entry-an-owner"
+outcome = "Every accept check a worker is shown says who runs it, a check only the gate can pass is marked as the gate's without claiming it builds, and a check the plan marks as covered names its gate."
+constraints = [
+    "Touch no file outside this task's files.",
+    "A stored entry with neither key reads exactly as it does today, and a store is not rewritten on read.",
+    "The worker view keeps its `Writes build:` line.",
+]
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "a test pins that run_by and covered_by round-trip through add and show"
+check = "grep -q 'fn accept_run_by_round_trips' tomlctl/tests/tasks_spec_add.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a test pins that a worker-owned check that builds is refused"
+check = "grep -q 'fn accept_worker_owner_refuses_a_building_check' tomlctl/tests/tasks_spec_add.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a test pins the Run by line of the worker view"
+check = "grep -q 'fn worker_view_prints_run_by' tomlctl/tests/plan_view.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a test pins that a gate-owned check with writes_build false is not probed"
+check = "grep -q 'fn gate_owned_check_is_not_probed' tomlctl/tests/plan_probes.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a test pins the error for a covered_by that names no gate of the milestone"
+check = "grep -q 'fn check_reports_unknown_cover' tomlctl/tests/plan_check.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the probes skip rule reads writes_build alone"
+check = "grep -q 'writes_build is not false' tomlctl/src/plan/probes.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "accept keys are allow-listed in tasks/add.rs"
+check = "grep -q 'ACCEPT_FIELDS' tomlctl/src/tasks/add.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.means]]
+text = "Give each of the two new error classes its remedy arm in `plan/stage.rs`, and extend its test in `tomlctl/tests/plan_stage.rs` if that test enumerates the classes."
+binding = "required"
+detail = "`plan stage` names the verb that clears every error class, and its own test holds it to that."
+
+[[specs]]
+ref = "select-reproduce-status-by-milestone-and-mint-one-gate-owned-check"
+outcome = "A milestone's gate proves every fixed finding gone with one check, and a fix task's worker is shown that check as the gate's."
+constraints = [
+    "Touch no file outside this task's files.",
+    "The positional form of `reproduce-status` is unchanged.",
+    "A `remove` cleanup keeps its worker-run `review anchor` entry.",
+    "Rows already in a task store are not rewritten.",
+]
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "a test pins that reproduce-status resolves a milestone's fixed findings from finding_links"
+check = "grep -q 'fn reproduce_status_selects_by_milestone' tomlctl/tests/review_reproduce.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a test pins that a scheduled fix row carries one gate-owned milestone check"
+check = "grep -q 'fn scheduled_fix_row_carries_one_gate_owned_check' tomlctl/tests/review_schedule.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "schedule mints a per-finding reproduce-status check"
+check = "grep -q 'tomlctl review reproduce-status {} {} --expect gone' tomlctl/src/review/schedule.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "the reproduce-status args live in cli/types/review/verdicts.rs"
+check = "grep -q 'struct ReviewReproduceStatusArgs' tomlctl/src/cli/types/review/verdicts.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.means]]
+text = "Under `--expect`, the milestone form exits 1 when it selects no finding; pin it with a test named `reproduce_status_milestone_expect_fails_on_no_findings` in `tomlctl/tests/review_reproduce.rs`."
+binding = "required"
+detail = "A fix row carries the check only when its milestone has findings to prove, so an empty selection means the links were lost, and the gate's one proof must not pass on it."
+
+[[specs]]
+ref = "store-and-probe-a-gates-probe-command"
+outcome = "A plan can store, beside a gate, a cheap command that fails where the gate cannot pass in this environment, and `plan probes` emits and records it."
+constraints = [
+    "Touch no file outside this task's files.",
+    "A milestone with no `gate_probes` reads and writes as before.",
+    "`plan probes` without `--gates` behaves as before.",
+]
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "a test pins that a gate probe is stored and read back"
+check = "grep -q 'fn milestone_gate_probe_round_trips' tomlctl/tests/plan_milestone.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a test pins that a gate probe naming no gate is refused"
+check = "grep -q 'fn gate_probe_must_name_a_gate' tomlctl/tests/plan_milestone.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a test pins that probes --gates emits a line per stored probe and records its verdict"
+check = "grep -q 'fn gate_probes_emit_and_record' tomlctl/tests/plan_probes.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the milestone verbs' flags live in cli/types/plan.rs"
+check = "grep -q 'gate' tomlctl/src/cli/types/plan.rs && grep -q 'struct MilestoneSpec' tomlctl/src/tasks/schema.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "emit-a-milestones-launch-args"
+outcome = "The milestone launch args come from one `tomlctl` call, with the reason each withheld or dropped row is out and the after: checks the orchestrator must read."
+constraints = [
+    "Touch no file outside this task's files.",
+    "The verb writes nothing and runs no stored command.",
+    "`args` is exactly the object the `implement-v2-milestone` Workflow accepts today plus the optional `after` list per task.",
+]
+premises = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "a test pins the six dispatch rules and their dropped reasons"
+check = "grep -q 'fn launch_args_apply_the_dispatch_rules' tomlctl/tests/plan_emit.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a test pins that an after: task whose target is dispatched stays in with its after list and its check listed"
+check = "grep -q 'fn launch_args_keep_an_after_task_whose_target_is_dispatched' tomlctl/tests/plan_emit.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a test pins the refusal of a premise verdict recorded at another HEAD"
+check = "grep -q 'fn launch_args_refuse_a_stale_premise_verdict' tomlctl/tests/plan_emit.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a test pins that args_sha256 is the digest of the printed args"
+check = "grep -q 'fn launch_args_hash_matches_the_args' tomlctl/tests/plan_emit.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.means]]
+text = "In `plan/dispatch.rs`, forward the whole nested emit enum to one function in `emit.rs`, such as `PlanOp::Emit { op } => emit::dispatch(op)`, and match the emit subcommands there."
+binding = "required"
+detail = "The two later emit tasks add a variant each and hold `emit.rs` and `cli/types/plan.rs` but not `plan/dispatch.rs`."
+
+[[specs.means]]
+text = "Read the current HEAD as `plan/approve.rs` does, with `git rev-parse --verify HEAD^{commit}`."
+binding = "suggested"
+detail = "`plan drift` never reads the HEAD commit id; the premise capture's `at` comes from `git rev-parse HEAD`."
+
+[[specs]]
+ref = "emit-a-milestones-gate-command-list"
+outcome = "The gate's command list comes from one `tomlctl` call, and a check the plan marks as covered by a gate is not in it."
+constraints = [
+    "Touch no file outside this task's files.",
+    "The verb writes nothing and runs no stored command.",
+    "It adds no `timeout:`, `rerun:` or `transient:` option and marks no command as held.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "a test pins the order: the milestone's gates, then gate-owned accept checks by row and entry"
+check = "grep -q 'fn gate_list_orders_gates_then_gate_owned_checks' tomlctl/tests/plan_emit.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a test pins that a covered check is skipped with its gate named"
+check = "grep -q 'fn gate_list_skips_a_covered_check' tomlctl/tests/plan_emit.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a test pins that a byte-identical command is listed once"
+check = "grep -q 'fn gate_list_skips_a_duplicate_command' tomlctl/tests/plan_emit.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs]]
+ref = "emit-a-milestones-reproduce-units-and-store-a-runs-dispatched-tasks"
+outcome = "The reproduce units come from one `tomlctl` call, a unit of only grep-decidable findings is marked for the checker, and a relaunch of a round never shares a run directory with the launch before it."
+constraints = [
+    "Touch no file outside this task's files.",
+    "The verb writes nothing to any store.",
+    "A run row without `tasks` reads and writes as before.",
+]
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "a test pins that a finding several rows fix belongs to the highest-id row's unit"
+check = "grep -q 'fn reproduce_units_give_a_shared_finding_to_the_highest_row' tomlctl/tests/plan_emit.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a test pins the checker route for a unit of only grep-decidable findings"
+check = "grep -q 'fn reproduce_units_route_checker_only_for_grep_decidable_units' tomlctl/tests/plan_emit.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a test pins that --relaunch gives the run directory its own suffix"
+check = "grep -q 'fn reproduce_units_relaunch_gets_its_own_run_dir' tomlctl/tests/plan_emit.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a test pins the --since-launch filter"
+check = "grep -q 'fn reproduce_units_since_launch_filters' tomlctl/tests/plan_emit.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a test pins that plan run start --tasks stores the dispatched ids"
+check = "grep -q 'fn run_start_stores_tasks' tomlctl/tests/plan_records.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the Run record is declared in plan/schema.rs"
+check = "grep -q 'struct Run' tomlctl/src/plan/schema.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.means]]
+text = """Emit `store` as the object `{"slug": ...}` or `{"scope": ...}` and each unit's `task` as the row's `ref`, so a `launches` entry passes the reproduce-mode validation of `claude/workflows/review-v2.js` unchanged; pin it with a test named `reproduce_units_entry_matches_the_pipeline_args`."""
+binding = "required"
+detail = "The pipeline refuses a string store and a numeric task, and a reproduction's `task` is the apply task's ref."
+
+[[specs.means]]
+text = "Route a unit to `checker` only when none of its findings carries `instances`, `fix_files` or `target_file`, beside the rules on stored route and direction."
+binding = "required"
+detail = "The checker reads `old` at the anchor only, so it would pass a fix left undone in another file."
+
+[[specs.means]]
+text = "`--relaunch <n>` takes `--round <r>` and `--task <ref>[,<ref>...]`: the emitted round is r and only the named units are kept; both flags are refused without `--relaunch`. Pin it with a test named `reproduce_units_relaunch_keeps_its_round_and_named_units`."
+binding = "required"
+detail = "A relaunch repeats the units of a round that was cut short; a new round holding every unit would rerun settled findings and spend a round."
+
+[[specs]]
+ref = "audit-the-bash-commands-of-a-launchs-agents"
+outcome = "Gate-owned build and test runs and root-recursive greps by a launch's agents are visible from one call over the launch's transcript directory, without any agent reporting them."
+constraints = [
+    "Touch no file outside this task's files.",
+    "The verb writes nothing and reads only `agent-*.jsonl` files directly in the directory it is given.",
+]
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "a test pins that a cargo test or nextest invocation in a transcript is reported"
+check = "grep -q 'fn audit_reports_gate_owned_commands' tomlctl/tests/agents_audit.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a test pins that a recursive grep is reported"
+check = "grep -q 'fn audit_reports_recursive_grep' tomlctl/tests/agents_audit.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a test pins that clippy and rg calls are not reported"
+check = "grep -q 'fn audit_is_quiet_on_narrow_checks' tomlctl/tests/agents_audit.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the agents subcommands are declared in cli/types/cmd.rs"
+check = "grep -q 'enum AgentsOp' tomlctl/src/cli/types/cmd.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.means]]
+text = "Add the `AgentsOp::Audit` arm to the match in `tomlctl/src/cli/dispatch.rs`, forwarding to a `dispatch_audit` entry point in `agents/dispatch.rs`."
+binding = "required"
+detail = "That match is exhaustive with no wildcard arm, so the crate does not compile without it."
+
+[[specs]]
+ref = "register-and-document-milestone-cs-plan-review-and-agents-surface"
+outcome = "The installed binary advertises milestone C's features, every new leaf verb has an output-options case, and the tomlctl skill's references describe the new verbs, flags, keys and check classes."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Every fenced `tomlctl` command in a reference takes single-token placeholders.",
+    "`plan_view_writes_build` stays in the feature list.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the feature list carries the five milestone C tokens"
+check = "grep -q 'accept_run_by' tomlctl/src/cli/types/mod.rs && grep -q 'reproduce_status_milestone' tomlctl/src/cli/types/mod.rs && grep -q 'gate_probes' tomlctl/src/cli/types/mod.rs && grep -q 'plan_emit' tomlctl/src/cli/types/mod.rs && grep -q 'agents_audit' tomlctl/src/cli/types/mod.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the plan reference documents the three emit verbs"
+check = "grep -q 'plan emit launch-args' claude/skills/tomlctl/references/plan.md && grep -q 'plan emit gate-list' claude/skills/tomlctl/references/plan.md && grep -q 'plan emit reproduce-units' claude/skills/tomlctl/references/plan.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the task store reference documents run_by and covered_by"
+check = "grep -q 'run_by' claude/skills/tomlctl/references/tasks-store.md && grep -q 'covered_by' claude/skills/tomlctl/references/tasks-store.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the output-options suite has cases for the emit verbs and agents audit"
+check = """grep -q 'launch-args' tomlctl/tests/output_options.rs && grep -q 'gate-list' tomlctl/tests/output_options.rs && grep -q 'reproduce-units' tomlctl/tests/output_options.rs && grep -q '"agents", "audit"' tomlctl/tests/output_options.rs"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs]]
+ref = "run-a-milestones-tasks-through-a-rolling-pool"
+outcome = "In a milestone launch a ready file-disjoint task starts as soon as a slot frees, and a task held by an `after:<n>` premise starts in the same launch once task n is done."
+constraints = [
+    "Touch no file outside this task's files.",
+    "An args object with no `after` on any task, and a worker return with no `needs_files`, are both still accepted.",
+    "No two in-flight tasks ever hold a common file.",
+    "The index keeps its present keys and statuses; `needs_files` is the one addition.",
+]
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the script awaits a race over in-flight workers instead of a whole wave"
+check = "grep -q 'Promise.race' claude/workflows/implement-v2-milestone.js"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the return schema and the index carry needs_files"
+check = "grep -q 'needs_files' claude/workflows/implement-v2-milestone.js"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "no wave barrier is left"
+check = "! grep -q 'nextWave' claude/workflows/implement-v2-milestone.js"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the script forms waves with nextWave and awaits parallel over each"
+check = "grep -q 'nextWave' claude/workflows/implement-v2-milestone.js && grep -q 'await parallel' claude/workflows/implement-v2-milestone.js"
+at = "base"
+
+[specs.premises.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "plan-workers-check-after-premises-and-name-the-files-they-lack"
+outcome = "A worker released by an `after:` premise checks it before editing, a worker that fails for lack of a file names the files it needs, and no worker runs a check the gate owns."
+constraints = [
+    "Touch no file outside this task's files.",
+    "The `plan-worker-procedure` block stays byte-identical across the two files.",
+    "A worker still writes only `status` and `agent` on its own row and one run note.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "both workers return needs_files"
+check = "grep -q 'needs_files' claude/agents/plan-worker-lite.md && grep -q 'needs_files' claude/agents/plan-worker-deep.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "both workers check their after: premises when told to"
+check = "grep -q 'after-premises' claude/agents/plan-worker-lite.md && grep -q 'after-premises' claude/agents/plan-worker-deep.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "both workers pick their checks by the Run by line"
+check = "grep -q 'Run by: worker' claude/agents/plan-worker-lite.md && grep -q 'Run by: worker' claude/agents/plan-worker-deep.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs]]
+ref = "route-reproduce-units-to-the-checker-and-batch-plan-defects-in-review-v2js"
+outcome = "The reproduce check settles units made only of grep-decidable findings without one Opus verifier each, and a plan review can verify a cell's defects in one batch."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Reproduce args whose units carry no `route`, and wave args with no `batch_defects`, behave exactly as today.",
+    "A finding the checker does not settle as gone always reaches a verifier.",
+]
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the wave mode reads the batch_defects arg"
+check = "grep -q 'batch_defects' claude/workflows/review-v2.js"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "reproduce mode pools checker units into review-checker batches writing their own payload"
+check = "grep -q 'reproduce-checker-' claude/workflows/review-v2.js"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "reproduce mode launches one verifier per unit through runUnit"
+check = "grep -q 'runUnit' claude/workflows/review-v2.js && grep -q 'CHECKER_BATCH' claude/workflows/review-v2.js"
+at = "base"
+
+[specs.premises.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "pass-batch_defects-from-the-plan-review-wrapper-and-batch-its-reverify"
+outcome = "A plan review verifies a cell's findings in batches, and its reverify step launches one verifier for its ids."
+constraints = [
+    "Touch no file outside this task's files.",
+    "The index the script returns keeps its keys.",
+    "The compose and audit phases are unchanged, and the settle return changes only by the optional `reverify_single`.",
+    "A settle return without `reverify_single` batches every reverify id.",
+]
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the wrapper passes batch_defects to the pipeline"
+check = "grep -q 'batch_defects: true' claude/workflows/plan-v2-review.js"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the wrapper launches the pipeline through workflow() and reverifies under parallel"
+check = "grep -q 'workflow(' claude/workflows/plan-v2-review.js && grep -q 'reverify' claude/workflows/plan-v2-review.js"
+at = "base"
+
+[specs.premises.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "teach-the-checker-to-record-a-reproduction"
+outcome = "A review-checker dispatched in reproduce mode records `gone` for a finding whose removed text grep shows absent, and hands every other finding back for a verifier."
+constraints = [
+    "Touch no file outside this task's files.",
+    "The `review-v2-store-writer` block stays byte-identical across its seven files.",
+    "Every fenced `tomlctl` command takes single-token placeholders.",
+    "The checker's wave-mode procedure is unchanged.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the checker has a reproduce procedure that stages its rows as a checker's"
+check = "grep -q 'reproduce-checker-' claude/agents/review-checker.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs]]
+ref = "state-the-plan-familys-batched-verification-in-the-review-engine"
+outcome = "The review engine's documented envelope matches what the plan review Workflow dispatches: batched verification per cell for the plan family."
+constraints = [
+    "Touch no file outside this task's files.",
+    "The code and perf families' envelope is unchanged.",
+]
+premises = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the engine names the batch_defects rule for the plan family"
+check = "grep -q 'batch_defects' claude/skills/review-v2-engine/SKILL.md && grep -q 'batch_defects' claude/skills/review-v2-engine/references/agent-waves.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.means]]
+text = "State reverify as: ids the lead lists under `reverify_single`, those carrying a `same_as`, get a verifier each, and the rest go in one batch."
+binding = "required"
+detail = "The action's 'reverify is one batch' predates that exception, which `design/shapes.md#plan-batching` now carries."
+
+[[specs]]
+ref = "test-the-workflow-scripts-logic-under-stubbed-globals"
+outcome = "The logic of `review-v2.js`, `plan-v2-review.js` and `implement-v2-milestone.js` is exercised by a test that both the pre-commit hook and the full suite run."
+constraints = [
+    "Touch no file outside this task's files.",
+    "The test file lives in `claude/workflows/tests/`, never directly in `claude/workflows/`, where the Workflow-script lint would read it as a saved script.",
+    "The three scripts are not edited to make them testable.",
+    "A machine without node fails the Rust test; it does not skip.",
+]
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the harness loads all three scripts"
+check = "grep -q 'review-v2.js' claude/workflows/tests/harness.test.mjs && grep -q 'plan-v2-review.js' claude/workflows/tests/harness.test.mjs && grep -q 'implement-v2-milestone.js' claude/workflows/tests/harness.test.mjs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a Rust test in the dispatch gate runs the harness under node"
+check = "grep -q 'fn workflow_scripts_logic_passes_under_node' tomlctl/src/cli/dispatch/tests/lint.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the harness carries the pool, after-release, file-exclusion, reproduce-checker and batch_defects cases"
+check = """f=claude/workflows/tests/harness.test.mjs; grep -qF 'a short task starts while a long file-disjoint task is in flight' "$f" && grep -qF 'an after task starts once its target is done' "$f" && grep -qF 'an after task is blocked when its target fails' "$f" && grep -qF 'two tasks sharing a file are never in flight together' "$f" && grep -qF 'an unsettled checker finding goes to a verifier' "$f" && grep -qF 'batch_defects batches two singles and keeps a same_as row single' "$f""""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "node is on PATH"
+check = "node --version"
+at = "base"
+
+[specs.premises.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "the Workflow-script lint reads only the top level of claude/workflows"
+check = "grep -q 'fn command_lint_workflow_scripts' tomlctl/src/cli/dispatch/tests/lint.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.means]]
+text = "Give the `agent` stub a deferred mode: it returns a promise the test resolves by hand, and records each call as started when made, so a case can assert which tasks are in flight before it lets one finish."
+binding = "required"
+detail = "A stub that returns its canned object at once cannot show a short task starting while a long one is in flight, or that two tasks sharing a file never overlap."
+
+[[specs.means]]
+text = "Add two cases for `plan-v2-review.js` reverify: an id under `reverify_single` gets a dispatch of its own while the rest share one batch, and an id the batch omits counts as unverified."
+binding = "required"
+detail = "The re-check found no harness case over the batched reverify."
+
+[[specs]]
+ref = "run-milestonemd-builds-its-launch-from-plan-emit-and-probes-gates-at-pre-flight"
+outcome = "The milestone launch args come from one `tomlctl` call, a gate command that cannot pass in this environment is found before the first worker is launched, and an `after:<n>` task runs in the launch that finishes task n."
+constraints = [
+    "Touch no file outside this task's files.",
+    "The premise emit, read, run and record sequence for `base` premises is unchanged.",
+    "Links to `findings.md` stay as they are; the rename is another task's.",
+]
+premises = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the launch is built from plan emit launch-args"
+check = "grep -q 'plan emit launch-args' claude/skills/implement-v2-engine/references/run-milestone.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the milestone's gates are probed before the launch"
+check = "grep -q -- '--emit --gates' claude/skills/implement-v2-engine/references/run-milestone.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the launch records its dispatched tasks"
+check = "grep -q -- '--args-hash <args_sha256> --tasks' claude/skills/implement-v2-engine/references/run-milestone.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.means]]
+text = "Write the run-start command with the flags in this order: `--args-hash <args_sha256> --tasks <ids>`."
+binding = "required"
+detail = "The accept check greps for that adjacent pair, so that some other `--tasks` in the file cannot satisfy it."
+
+[[specs.means]]
+text = "At the launch, tell the orchestrator to keep the path on the `Transcript dir:` line of the Workflow tool's launch result, written to a file in `<scratch>` beside the args, for the drain's audit."
+binding = "required"
+detail = "The drain runs `tomlctl agents audit` over that directory, and nothing else reports it: the Workflow's index does not carry it."
+
+[[specs]]
+ref = "drainmd-adopts-the-gate-list-the-audit-file-widening-and-unquoted-path-reads"
+outcome = "The gate's command list comes from one `tomlctl` call and leaves out covered checks, gate-owned test runs by workers are visible at the drain, a failed worker's named files widen its row, and the drain's path comparisons hold for paths with spaces or non-ASCII characters."
+constraints = [
+    "Touch no file outside this task's files.",
+    "The engine still never commits, moves or discards an edit nobody owns.",
+    "A milestone is still exactly two commits.",
+    "Links to `findings.md` stay as they are; the rename is another task's.",
+    "The audit allows, besides a narrow test the task's own accept names, the `cli::dispatch::tests` subset a worker runs after editing a `claude/**/*.md` file or adding a `tomlctl` verb, and any check the task's own detail names; only other matches are named as breaches.",
+    "Step 2's index shape lists `needs_files`, and step 3's opening sentence no longer says drift must run before status moves so that past-`pending` rows count as own work; a row with a set agent and no commit is own work whatever its status.",
+]
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "step 7 builds the gate's commands from plan emit gate-list"
+check = "grep -q 'plan emit gate-list' claude/skills/implement-v2-engine/references/drain.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the drain audits the launch's agents"
+check = "grep -q 'agents audit --transcripts' claude/skills/implement-v2-engine/references/drain.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the replan widens a row from needs_files"
+check = "grep -q 'needs_files' claude/skills/implement-v2-engine/references/drain.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "no read compared with rows' files uses a quoted porcelain status over row paths"
+check = "! grep -Eq 'git status --porcelain -- <paths?>' claude/skills/implement-v2-engine/references/drain.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the drain compares porcelain status output with rows' files today"
+check = "grep -Eq 'git status --porcelain -- <paths?>' claude/skills/implement-v2-engine/references/drain.md"
+at = "base"
+
+[specs.premises.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.means]]
+text = "The transcript directory is the path on the `Transcript dir:` line of the Workflow tool's launch result, which the launch step keeps in `<scratch>`; pass it as `--transcripts`."
+binding = "required"
+detail = "The Workflow's index reports no such directory. The orchestrator still never reads a worker's transcript itself: the verb reads them and prints only matching commands."
+
+[[specs.means]]
+text = "The file never says waves, so there is no wave wording to change in it."
+binding = "suggested"
+detail = "The action's pool wording applies only if the worker meets such a sentence."
+
+[[specs.means]]
+text = "An audit row is allowed when its command equals, or is a narrower form of, an accept check or a check a row's detail names, for any row of the milestone, or is the `cli::dispatch::tests` subset; name every other row as a breach with its agent id."
+binding = "required"
+detail = "Audit rows name a transcript agent, not a task, so the drain cannot match a run to one task's own checks."
+
+[[specs.means]]
+text = "When widening from `needs_files` puts a path on two rows: keep an existing dependency path between them; otherwise the widened row needs the holder."
+binding = "required"
+detail = "The other direction can close a cycle, and the needs-follows-the-files rule of step 6 already points this way."
+
+[[specs]]
+ref = "findingsmd-builds-the-reproduce-check-from-plan-emit-reproduce-units"
+outcome = "The reproduce units come from one `tomlctl` call with no piping or hand assembly, and a reproduce-check relaunch cannot read a payload an earlier launch wrote."
+constraints = [
+    "Touch no file outside this task's files.",
+    "The two-fix-round cap, the settle drain, the failure rule for apply rows and Reconcile are unchanged.",
+    "The file keeps its name; the rename is another task's.",
+]
+premises = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the units come from plan emit reproduce-units"
+check = "grep -q 'plan emit reproduce-units' claude/skills/implement-v2-engine/references/findings.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a relaunch takes its own run directory"
+check = "grep -q -- '--relaunch' claude/skills/implement-v2-engine/references/findings.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the verdict read is the milestone-wide reproduce-status call"
+check = "grep -q 'reproduce-status --flow' claude/skills/implement-v2-engine/references/findings.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.means]]
+text = "A relaunch passes `--relaunch <n>` with `--round <r>`, the round of the launch it repeats, and `--task` naming the refs of the units that did not settle."
+binding = "required"
+detail = "Without them the verb emits a new round holding every unit, as `design/shapes.md#reproduce-units` states."
+
+[[specs]]
+ref = "engine-skills-carriers-and-claudemd-name-the-new-surface"
+outcome = "The carriers refuse a binary without the new verbs, and the engine skills and CLAUDE.md describe the launch, the gate and the fix rows as they now work."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Links to `findings.md` stay as they are; the rename is another task's.",
+    "CLAUDE.md's Developer setup section is another task's.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the implement-v2 pre-flight requires the emit and owner features"
+check = "grep -q 'plan_emit' claude/commands/implement-v2.md && grep -q 'accept_run_by' claude/commands/implement-v2.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the apply-v2 pre-flight requires the milestone reproduce-status and fix_files features"
+check = "grep -q 'reproduce_status_milestone' claude/commands/apply-v2.md && grep -q 'review_fix_files' claude/commands/apply-v2.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the apply engine reads a fix's other files from fix_files"
+check = "grep -q 'fix_files' claude/skills/apply-v2-engine/SKILL.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "CLAUDE.md describes the milestone Workflow as a rolling pool"
+check = "grep -q 'rolling pool' CLAUDE.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs]]
+ref = "plan-authoring-writes-owners-covers-and-gate-probes"
+outcome = "A plan written from now on marks a covered check at Write and learns at Prove of a gate that cannot pass in this environment."
+constraints = ["Touch no file outside this task's files."]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "Write names run_by and covered_by"
+check = "grep -q 'covered_by' claude/skills/plan-v2-engine/references/write-and-prove.md && grep -q 'run_by' claude/skills/plan-v2-engine/references/write-and-prove.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "Prove runs the gate probes"
+check = "grep -q -- '--emit --gates' claude/skills/plan-v2-engine/references/write-and-prove.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs]]
+ref = "honour-a-gate-stamp-in-the-pre-commit-hook"
+outcome = "A commit train over an already gated tree does not pay the hook's test and clippy cost per commit, and no step tells the committer to pass `--no-verify`."
+constraints = [
+    "Touch no file outside this task's files.",
+    "With no stamp, or a stamp that does not match, the hook behaves exactly as it does today.",
+    "The stamp is written only by a `run` in which every cargo step passed.",
+    "The shared-block verifiers, the documentation gate and the sidecar comparison are never skipped.",
+    "In CLAUDE.md edit only the Developer setup section.",
+]
+premises = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the stamp script exists and parses"
+check = "test -f scripts/gate-stamp.sh && bash -n scripts/gate-stamp.sh"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the hook consults the stamp before its cargo steps"
+check = "grep -q 'gate-stamp.sh' .githooks/pre-commit"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "with no stamp the check mode fails"
+check = 'test -f scripts/gate-stamp.sh && test ! -f "$(git rev-parse --git-dir)/gate-stamp" && ! bash scripts/gate-stamp.sh check'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "CLAUDE.md documents the stamp"
+check = "grep -q 'gate-stamp.sh' CLAUDE.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the hook still parses"
+check = "bash -n .githooks/pre-commit"
+kind = "guard"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 0
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a stamp is voided by an edit or a new untracked file under its roots"
+check = '''( t=$(mktemp -d) && git -C "$t" init -q && mkdir -p "$t/scripts" "$t/claude" "$t/bin" && printf '#!/bin/sh\nexit 0\n' > "$t/bin/cargo" && chmod +x "$t/bin/cargo" && cp scripts/gate-stamp.sh "$t/scripts/" && echo a > "$t/claude/x" && cd "$t" && PATH="$t/bin:$PATH" bash scripts/gate-stamp.sh run && bash scripts/gate-stamp.sh check && echo b > claude/x && ! bash scripts/gate-stamp.sh check && echo a > claude/x && echo c > claude/y && ! bash scripts/gate-stamp.sh check )'''
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.means]]
+text = '''Widen the hook's dispatch-test path pattern from `claude/workflows/.*\.js` to also match `.mjs`, and name the change in the CLAUDE.md paragraph that lists that step's paths.'''
+binding = "required"
+detail = "The Workflow-script logic test lives at `claude/workflows/tests/harness.test.mjs`, and a commit touching only it would otherwise skip the dispatch subset that runs it."
+
+[[specs.means]]
+text = "The digest has six roots, not five: `scripts/` joins the list, as `design/shapes.md#gate-stamp` states."
+binding = "required"
+detail = "The dispatch tests read `scripts/shared-blocks.toml` and run `scripts/verify-shared-blocks.sh`, so an edit there after a stamp would leave it matching untested bytes."
+
+[[specs]]
+ref = "rename-the-engines-findings-reference-to-apply-rowsmd"
+outcome = "An agent can write the engine's apply-rows reference without the harness refusing it, and no link in the engine points at a file that is gone."
+constraints = [
+    "Touch no file outside this task's files.",
+    "The reference's content is unchanged by the move.",
+    "Never stage or commit; the deletion and the new file are left in the working tree.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the reference lives at apply-rows.md and findings.md is gone"
+check = "test -f claude/skills/implement-v2-engine/references/apply-rows.md && test ! -e claude/skills/implement-v2-engine/references/findings.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "no engine file mentions findings.md"
+check = '''! grep -rq 'findings\.md' claude/skills/implement-v2-engine'''
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "nothing outside the engine's own directory refers to findings.md"
+check = '''! grep -rl 'findings\.md' claude CLAUDE.md scripts tomlctl/src tomlctl/README.md | grep -qv '^claude/skills/implement-v2-engine/''''
+at = "base"
+
+[specs.premises.probe]
+at = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+neg_rc = 0
+verdict = "holds"
+
+[[milestones]]
+id = "A"
+gates = [
+    "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check",
+    "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets",
+    "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast",
+    "cargo clippy --manifest-path glimpse/Cargo.toml --locked",
+    "cargo install --path tomlctl",
+]
+elaboration = "upfront"
+defer_reason = ""
+
+[[milestones]]
+id = "B"
+gates = [
+    "bash scripts/verify-shared-blocks.sh",
+    "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check",
+    "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets",
+    "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast",
+    "cargo clippy --manifest-path glimpse/Cargo.toml --locked",
+    "cargo install --path tomlctl",
+]
+elaboration = "upfront"
+defer_reason = ""
+
+[[milestones]]
+id = "C"
+gates = [
+    "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check",
+    "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets",
+    "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast",
+    "cargo clippy --manifest-path glimpse/Cargo.toml --locked",
+    "cargo install --path tomlctl",
+]
+elaboration = "upfront"
+defer_reason = ""
+
+[[milestones]]
+id = "D"
+gates = [
+    "bash scripts/verify-shared-blocks.sh",
+    "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check",
+    "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets",
+    "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast",
+]
+elaboration = "upfront"
+defer_reason = ""
+
+[[milestones]]
+id = "E"
+gates = [
+    "bash scripts/verify-shared-blocks.sh",
+    "bash scripts/verify-plan-story-blocks.sh",
+    "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast",
+    "cargo install --path glimpse",
+]
+elaboration = "upfront"
+defer_reason = ""
+
+[[items]]
+id = 1
+ref = "drop-the-top-level-allof-from-the-verdict-return-schema"
+title = "Drop the top-level allOf from the verdict-return schema"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/src/review/schema_out.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = 'In `verdict_return()`, stop emitting the top-level `allOf` that pairs `unblocks` with `fix_sketch`, and rewrite the tests in the same file that read `schema["allOf"]`.'
+detail = "The pairing stays enforced by `review verdict` at write; keep the tests that assert that refusal. Add a test named `verdict_return_has_no_top_level_combinator` asserting the emitted schema object has none of the keys `allOf`, `anyOf`, `oneOf`. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(verdict_return)'`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 2
+ref = "supersede-a-cells-open-advisory-rows-on-a-replayed-review-add"
+title = "Supersede a cell's open advisory rows on a replayed review add"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/add.rs",
+    "tomlctl/tests/review_add.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Widen the `superseded` filter in `review add` so a replay also supersedes the same cell and run's advisory-kind rows whose status is `open`."
+detail = "The filter today keeps only rows whose status is `Unverified`; an advisory row is born `open`, survives the replay and is minted again. Add an integration test named `replayed_add_supersedes_open_advisory` in `tomlctl/tests/review_add.rs`: add a cell's set holding one advisory row, add the same set again, and assert the first advisory id is in `superseded` and one non-superseded copy remains. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(replayed_add_supersedes_open_advisory)'`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 3
+ref = "read-plan-drifts-own-work-from-a-set-agent"
+title = "Read plan drift's own work from a set agent"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/src/plan/drift.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Make `own_work` also count the files of any row with a non-empty `agent` and an empty `commit`, whatever its status."
+detail = "Keep the present status rule beside it, so a row past `pending` with no agent still counts. Add a unit test named `started_row_reset_to_pending_is_own_work` in the file's test module: a `pending` row with `agent` set and an uncommitted edit to one of its files yields no `uncommitted` hit for that row. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(started_row_reset_to_pending_is_own_work)'`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 4
+ref = "skip-unreachable-claim-pairs-that-hold-a-done-committed-row"
+title = "Skip unreachable-claim pairs that hold a done, committed row"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/tasks/check.rs",
+    "tomlctl/tests/tasks_graph.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "In `overlap_findings`, drop a pair from the `dag/unreachable-claim` warnings when either row is `done` with a non-empty `commit`."
+detail = "Filter in `overlap_findings`, not in `Graph::overlap_pairs`, which other callers use. Add a test named `unreachable_claim_skips_done_committed_rows` in `tomlctl/tests/tasks_graph.rs`: a done row with a commit and a pending row sharing a file with no path between them produce no warning, and two pending rows in the same position still do. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(unreachable_claim)'`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 5
+ref = "warn-when-a-template-path-matches-nothing"
+title = "Warn when a template path matches nothing"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/convert.rs",
+    "tomlctl/src/output.rs",
+    "tomlctl/src/output/template.rs",
+    "tomlctl/tests/output_trim.rs",
+    "claude/skills/tomlctl/SKILL.md",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Print a stderr warning for each `--template` path that resolves on no row, unless its first segment is in a new table of optional fields, as `design/shapes.md#template-paths` states."
+detail = "`validate_row_paths` returns Ok as soon as one path matches any row, which is why `tasks list --template '{id} [{message}]'` prints blanks with exit 0. Keep that function's refusals as they are and add the warning for `--template` only. Seed the optional-field table from every `--template` placeholder in a fenced or backticked `tomlctl` command under `claude/skills/` and `claude/commands/` that names a field its verb can omit, `advisories` and `promoted_to` among them. Add tests named `template_unknown_path_warns` and `template_optional_path_is_quiet` in `tomlctl/tests/output_trim.rs`. Add one sentence to the Unknown paths paragraph of `claude/skills/tomlctl/SKILL.md`. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(template_)'`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 6
+ref = "name-the-one-question-in-the-apply-v2-role-rule"
+title = "Name the one question in the apply-v2 role rule"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/apply-v2-engine/SKILL.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Reword the role rule that opens `**Triage decided the selection.**` so it names its one exception: the question about unfinished plan work that step 2 asks."
+detail = "The rule says to ask the user nothing about whether to go on and that every condition the skill cannot settle is a stop, never a question; the `**Unfinished plan work.**` bullet of step 2 asks with AskUserQuestion. Keep the rule on one bullet, and keep step 2 as it is. Check the edit with `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 7
+ref = "report-a-passing-verification-command-on-one-line"
+title = "Report a passing verification command on one line"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/agents/verification.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Change the verification agent's Output section and its hard rules so a `pass` command is reported on one line, while `fail`, `timeout` and `flaky` keep their full blocks."
+detail = "The one line is `outcome: pass | command: <command> | duration: <duration> | summary: <the SUMMARY value>`. It still appears for every passing command, in list order, so the rule that no command is elided holds; reword the two places that demand a block per pass. Rewrite the worked example to show the line form above a full fail block. Check the edit with `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 8
+ref = "add-fix_files-to-findings-and-widen-scheduled-rows-by-it"
+title = "Add fix_files to findings and widen scheduled rows by it"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/fields.rs",
+    "tomlctl/src/review/schedule.rs",
+    "tomlctl/tests/review_schedule.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add the `fix_files` finding field and have `review schedule` add it to the files of the row it mints, as `design/shapes.md#fix-files` states."
+detail = "Catalogue the field beside `instances` and `target_file` in `fields.rs`, as a path list allowed on defect and cleanup rows, capped at 8, with a row in the role-projection matrix for finder, verifier and implementer. In `schedule.rs`, union it in `edited()` so `fold` groups by the widened set and `Compose::row` writes it to `files`; write `(new)` to the row's `file_notes` for a `fix_files` path that does not exist. Do not read it in `Finding::edited_paths`. Add tests named `fix_files_widen_the_minted_row` and `fix_files_new_path_is_noted_new` in `tomlctl/tests/review_schedule.rs`. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(fix_files)'`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 9
+ref = "widen-the-cited-test-for-plan-findings"
+title = "Widen the cited test for plan findings"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/src/review/tier.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Make `citation_holds` accept a compound citation, a path named in the finding's `new`, and any file under the flow's `docs/flows/<slug>/`, as the first paragraph of `design/shapes.md#cited-and-apply` states."
+detail = "Split the citation on `;`, trim each part, and hold when any part parses and holds; do the split in `tier.rs` and leave `parse_citation` alone. `named_paths` today returns the target's file plus the paths its current value names; add the paths the finding's `new` value names and accept any path under `docs/flows/<slug>/`. `cited` will need the row's `new` passed down. Add unit tests named `compound_citation_holds`, `citation_of_a_path_in_new_holds` and `citation_of_a_flow_document_holds` in the file's test module. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(citation)'`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 10
+ref = "apply-an-advisory-tier-edit-under-user-accepted"
+title = "Apply an advisory-tier edit under --user-accepted"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/apply.rs",
+    "tomlctl/tests/review_apply.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Let `review apply --user-accepted` write an advisory-tier defect or cleanup finding that carries `new`, as the second paragraph of `design/shapes.md#cited-and-apply` states."
+detail = """Today the tier match refuses `Tier::Advisory` with `is advisory tier, which is never applied`. Under `--user-accepted`, a defect or cleanup row with a non-empty `new` goes through the same compare-and-set on `expect` and is stamped `applied.by = "user"`; keep the refusal otherwise, and reword its message to name `--user-accepted` when the row carries `new`. Add tests named `user_accepted_applies_advisory_tier_edit` and `advisory_tier_edit_refused_without_user_accepted` in `tomlctl/tests/review_apply.rs`. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(advisory_tier)'`."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 11
+ref = "record-an-addressed-finding-and-emit-re-check-targets"
+title = "Record an addressed finding and emit re-check targets"
+effort = "L"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/fields.rs",
+    "tomlctl/src/review/triage.rs",
+    "tomlctl/src/review/stats.rs",
+    "tomlctl/src/review/recheck.rs",
+    "tomlctl/src/review/mod.rs",
+    "tomlctl/src/review/dispatch.rs",
+    "tomlctl/src/cli/types/review/triage.rs",
+    "tomlctl/src/cli/types/review/read.rs",
+    "tomlctl/src/cli/types/review/mod.rs",
+    "tomlctl/tests/review_triage.rs",
+    "tomlctl/tests/review_stats.rs",
+]
+needs = [8]
+coupling = []
+deps_note = ""
+action = "Add the `addressed` companion field, the `review triage --addressed` mode, the `author-addressed` outcome in `review stats --plan-outcomes`, and the read verb `review recheck-targets`, as `design/shapes.md#addressed` states."
+detail = "`addressed` is a list of target strings, each checked by the plan target parser, plan-only, added to the companions of the `Resolved` status so `set_status` clears it on reopen; the hard-coded companion list in the `fields.rs` tests gains it. The mode follows the verb's twin convention: the ids stay the positional argument, `--addressed <TEXT>` carries the reason with `--addressed-file <PATH>` as its twin, and the reason is stored as the finding's `resolution`. `--targets` is optional and defaults to each finding's own `target`. There is no `--reason-file` flag. `review recheck-targets --run <id>` prints `{run, targets}` where `targets` is the sorted distinct union of `applied.target` and `addressed` over the run's findings; put it in the new `recheck.rs`. Add tests named `triage_addressed_records_targets` and `reopen_clears_addressed` in `tomlctl/tests/review_triage.rs`, `recheck_targets_union_applied_and_addressed` there too, and `plan_outcomes_count_author_addressed` in `tomlctl/tests/review_stats.rs`. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(addressed)'`. The feature token, the output-options case and the reference pages are another task's."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 12
+ref = "print-the-digests-candidate-arrays-as-counts-by-default"
+title = "Print the digest's candidate arrays as counts by default"
+effort = "S"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/digest.rs",
+    "tomlctl/src/cli/types/review/read.rs",
+    "tomlctl/tests/review_digest.rs",
+]
+needs = [11]
+coupling = []
+deps_note = ""
+action = "Make `review digest` print `duplicate_candidates` and `ruled_out_hits` as counts, and add `--with duplicates,ruled-out` to print the named arrays in full, as `design/shapes.md#digest` states."
+detail = "Update the existing tests in `tomlctl/tests/review_digest.rs` that read the arrays to pass `--with`, and add tests named `digest_candidates_are_counts_by_default` and `digest_with_prints_named_arrays`. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(digest)'`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 13
+ref = "cut-an-over-cap-cover-note-and-add-a-dry-run-to-review-add"
+title = "Cut an over-cap cover note and add a dry run to review add"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/cover.rs",
+    "tomlctl/src/review/add.rs",
+    "tomlctl/src/review/schema_out.rs",
+    "tomlctl/src/cli/types/review/cells.rs",
+    "tomlctl/tests/review_cover.rs",
+    "tomlctl/tests/review_add.rs",
+]
+needs = [
+    1,
+    2,
+]
+coupling = []
+deps_note = ""
+action = "Make `review cover` cut a note over its cap and say so, and add `--dry-run` to `review add`, as `design/shapes.md#caps` states."
+detail = "`cover` today refuses a note over the cap after the cell's work is done. Cut at the cap on a character boundary, end with `…(+K)` so the stored note is within the cap including that marker, and add `note_truncated: K` to the envelope only when it cut. `add --dry-run` runs `prepare` and `finish_row` for every row against the current store, prints `findings` with no `id` and the `refused` list, and takes no write lock. Add tests named `cover_cuts_an_over_cap_note` in `tomlctl/tests/review_cover.rs` and `add_dry_run_writes_nothing` in `tomlctl/tests/review_add.rs`. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(cover_cuts_an_over_cap_note) | test(add_dry_run_writes_nothing)'`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 14
+ref = "let-a-checker-record-a-reproduction"
+title = "Let a checker record a reproduction"
+effort = "S"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/fields.rs",
+    "tomlctl/src/review/store.rs",
+    "tomlctl/src/review/reproduce.rs",
+    "tomlctl/tests/review_reproduce.rs",
+]
+needs = [11]
+coupling = []
+deps_note = ""
+action = "Add `checker` to the `ReproduceBy` values beside `verifier` and `orchestrator`, and accept it wherever a reproduction's `by` is parsed or validated."
+detail = "The enum is in `fields.rs`; the store loader in `store.rs` and `review reproduce` in `reproduce.rs` parse it. A checker's row upserts on the same key as any other, `(finding, flow, milestone, round, by)`. Add a test named `reproduce_accepts_by_checker` in `tomlctl/tests/review_reproduce.rs`. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(reproduce_accepts_by_checker)'`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 15
+ref = "tell-review-agents-about-fix_files-the-add-dry-run-the-cut-note-and-plan-review-names"
+title = "Tell review agents about fix_files, the add dry run, the cut note and plan-review names"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/review-v2-method/SKILL.md",
+    "claude/agents/review-finder.md",
+    "claude/agents/review-finder-cf.md",
+    "claude/agents/review-verifier.md",
+    "claude/agents/review-sweeper.md",
+]
+needs = [8]
+coupling = []
+deps_note = ""
+action = "Update the review method skill and four agents for milestone B's review surface: fill `fix_files`, dry-run a set before `review add`, a cover note is cut not refused, and the sweeper's names on a plan review."
+detail = "(1) `review-v2-method/SKILL.md`: add `fix_files` to the field table with the meaning in `design/shapes.md#fix-files`; in the write idiom tell a finder to run `tomlctl review add` with `--dry-run` first and fix every refused row before the real write; in Length, say `review cover` cuts a note over 600 to the cap and reports it, while a verdict `rationale` is still refused. (2) `review-finder.md` and `review-finder-cf.md`, whose bodies below the frontmatter are held byte-identical: one sentence telling the finder to list in `fix_files` every file its `fix` edits or creates beyond the anchor, tests included. (3) `review-verifier.md`: when a verdict's fix sketch names a file the finding lacks, say so in the rationale. (4) `review-sweeper.md` step 6: on a plan review whose slice diff is empty because the flow's files are untracked, take `NAMES` from the plan's records, read with `tomlctl plan view --slug <slug> --for human`, and from the slice files read whole; and in step 12 replace the hard-limit wording with the cut. Every fenced `tomlctl` command takes single-token placeholders. Check with `bash scripts/verify-shared-blocks.sh` and `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`; the second fails on `--dry-run` until the task adding that flag lands, which names no file of this task."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 16
+ref = "plan-flow-prose-for-advisory-apply-the-addressed-disposition-and-digest-arrays"
+title = "Plan-flow prose for advisory apply, the addressed disposition and digest arrays"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/review-v2-engine/references/plan-flow.md",
+    "claude/skills/review-v2-engine/references/triage-and-close.md",
+    "claude/skills/review-v2-engine/references/compose.md",
+    "claude/skills/review-v2-engine/SKILL.md",
+    "claude/agents/plan-review-lead.md",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Update the review engine's prose for milestone B: an advisory-tier edit is applied with the user's acceptance, a hand-fixed finding is recorded as addressed, the re-check takes its targets from `review recheck-targets`, and the digest's two arrays are asked for with `--with`."
+detail = "(1) `plan-flow.md`: add `review_addressed` to the capability pre-flight list; in section 7, the Advisory bullet offers `tomlctl review apply` with `--user-accepted` for a defect or cleanup row carrying `new`, and a finding the author fixed by hand is recorded with `tomlctl review triage --addressed`, never dismissed; a Revise answer on a question-tier row records the revised target the same way; in section 10 the re-check runs when a row was applied or addressed and takes `targets` from `tomlctl review recheck-targets --run <run>`; section 11's close summary counts `author-addressed`. (2) `triage-and-close.md`: a grammar row for `--addressed`. (3) `compose.md` sections on duplicates and rule-out hits, `review-v2-engine/SKILL.md` where it reads `duplicate_candidates` and `ruled_out_hits`, and `plan-review-lead.md` settle steps 3 and 4: read the arrays with `tomlctl review digest` plus `--with duplicates,ruled-out`. Shapes are in `design/shapes.md#addressed`, `design/shapes.md#cited-and-apply` and `design/shapes.md#digest`. Every fenced `tomlctl` command takes single-token placeholders. `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` fails on the new flags until the tasks adding them land, which names no file of this task."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 17
+ref = "register-and-document-milestone-bs-review-surface"
+title = "Register and document milestone B's review surface"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/tests/output_options.rs",
+    "tomlctl/README.md",
+    "claude/skills/tomlctl/SKILL.md",
+    "claude/skills/tomlctl/references/review.md",
+    "claude/skills/tomlctl/references/review-apply.md",
+]
+needs = [
+    5,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+]
+coupling = []
+deps_note = ""
+action = "Add the feature tokens `review_fix_files`, `review_addressed`, `review_digest_with`, `review_add_dry_run` and `review_reproduce_checker`, an output-options case for the new leaf verb `review recheck-targets`, and the reference text for everything milestone B added to the `review` group."
+detail = "Feature tokens go in the list in `tomlctl/src/cli/types/mod.rs`, in the expected list in `tomlctl/tests/capabilities.rs`, and in `tomlctl/README.md`'s feature list and table; add a row for them to the feature table of `claude/skills/tomlctl/SKILL.md`. `tomlctl/tests/output_options.rs` needs a case for `review recheck-targets`, or `every_leaf_command_has_a_case` fails. In `references/review.md`: `fix_files` in the store shape and field summary, `review add --dry-run`, the cut `cover` note with `note_truncated`, `review digest --with`, `review triage --addressed`, `review recheck-targets`, the widened cited rule, and `review apply --user-accepted` on an advisory-tier edit. In `references/review-apply.md`: `fix_files` in what `schedule` reads, and `by = checker` on a reproduction. Read each verb's flags from the code the earlier tasks landed; the shapes are `design/shapes.md#fix-files`, `#cited-and-apply`, `#addressed`, `#digest` and `#caps`. Check with `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 18
+ref = "give-each-accept-entry-an-owner"
+title = "Give each accept entry an owner"
+effort = "L"
+status = "pending"
+checkpoint = "C"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/tasks/add.rs",
+    "tomlctl/src/tasks/show.rs",
+    "tomlctl/src/tasks/update.rs",
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/src/plan/probes.rs",
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/src/plan/store.rs",
+    "tomlctl/src/plan/stage.rs",
+    "tomlctl/tests/tasks_spec_add.rs",
+    "tomlctl/tests/plan_view.rs",
+    "tomlctl/tests/plan_probes.rs",
+    "tomlctl/tests/plan_check.rs",
+    "tomlctl/tests/plan_stage.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add `run_by` and `covered_by` to an accept entry and make every reader of `writes_build` follow the owner rules of `design/shapes.md#accept-owner`."
+detail = "`Accept` and its TOML codec are in `tasks/schema.rs`; destructure the struct in full there so the compiler lists every site that must carry the new keys. Known sites: `ACCEPT_FIELDS` and `accept_entry` in `tasks/add.rs`, `accept_json` in `tasks/show.rs`, `keep_probes` and the review-spec projection in `tasks/update.rs`, `spec_block` in `plan/view.rs`, `skip_reason` in `plan/probes.rs`, the accept loop in `plan/check.rs`, and `entry_matches` in `plan/store.rs`. Add one function for the effective owner and call it from the view, the probes skip rule and the `plan/probe-absent` check. New check classes: `plan/accept-owner-invalid` and `plan/accept-cover-unknown`, both errors. `review/tier.rs` holds an allowlist of keys a probe fix may change; it is not in this task's files and stays as it is, so a probe fix cannot move an owner. Tests: `accept_run_by_round_trips` and `accept_worker_owner_refuses_a_building_check` in `tomlctl/tests/tasks_spec_add.rs`; `worker_view_prints_run_by` in `tomlctl/tests/plan_view.rs`; `gate_owned_check_is_not_probed` in `tomlctl/tests/plan_probes.rs`; `check_reports_unknown_cover` in `tomlctl/tests/plan_check.rs`. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(run_by) | test(owner) | test(cover)'`. The feature token and reference pages are another task's."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 19
+ref = "select-reproduce-status-by-milestone-and-mint-one-gate-owned-check"
+title = "Select reproduce-status by milestone and mint one gate-owned check"
+effort = "M"
+status = "pending"
+checkpoint = "C"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/reproduce.rs",
+    "tomlctl/src/review/dispatch.rs",
+    "tomlctl/src/cli/types/review/verdicts.rs",
+    "tomlctl/src/review/schedule.rs",
+    "tomlctl/tests/review_reproduce.rs",
+    "tomlctl/tests/review_schedule.rs",
+]
+needs = [
+    8,
+    14,
+    18,
+]
+coupling = []
+deps_note = ""
+action = "Add the `--flow` and `--milestone` selector to `review reproduce-status`, and have `review schedule` mint the one milestone-wide, gate-owned accept entry, as `design/shapes.md#reproduce-status-by-milestone` states."
+detail = "`status` in `reproduce.rs` takes an id list today and reads each finding's latest reproduction; the selector resolves the ids from the flow's task store. In `schedule.rs`, `Compose::accept` builds the per-finding entry: replace the non-`remove` arm with the design's entry, using the checkpoint the call schedules into and `self.store_flag`, and collapse a row's identical entries to one. Tests: `reproduce_status_selects_by_milestone` and `reproduce_status_milestone_excludes_positional_ids` in `tomlctl/tests/review_reproduce.rs`; `scheduled_fix_row_carries_one_gate_owned_check` in `tomlctl/tests/review_schedule.rs`, and update the existing tests there that assert the per-finding string. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(reproduce_status) | test(scheduled_fix_row)'`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 20
+ref = "store-and-probe-a-gates-probe-command"
+title = "Store and probe a gate's probe command"
+effort = "M"
+status = "pending"
+checkpoint = "C"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/plan/milestone.rs",
+    "tomlctl/src/plan/probes.rs",
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/tests/plan_milestone.rs",
+    "tomlctl/tests/plan_probes.rs",
+]
+needs = [18]
+coupling = []
+deps_note = ""
+action = "Add `gate_probes` to a milestone, the `--gate-probe` flag on `plan milestone add` and `update`, the `--gates` mode of `plan probes`, and the `plan/gate-probe-unknown` check, as `design/shapes.md#gate-probes` states."
+detail = "`MilestoneSpec` is in `tasks/schema.rs` and its `gates` is a list of strings; add `gate_probes` beside it with its TOML codec. `plan probes --emit --gates` reuses the `p` helper and the capture row shape with a control column of `gate` and a row key of `<milestone>:<index>`; `--record --gates` reuses the premise verdict rules. tomlctl still never runs a stored command. Tests: `milestone_gate_probe_round_trips` and `gate_probe_must_name_a_gate` in `tomlctl/tests/plan_milestone.rs`; `gate_probes_emit_and_record` in `tomlctl/tests/plan_probes.rs`. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(gate_probe)'`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 21
+ref = "emit-a-milestones-launch-args"
+title = "Emit a milestone's launch args"
+effort = "L"
+status = "pending"
+checkpoint = "C"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/emit.rs",
+    "tomlctl/src/plan/mod.rs",
+    "tomlctl/src/plan/dispatch.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/tests/plan_emit.rs",
+]
+needs = [20]
+coupling = []
+deps_note = ""
+action = "Add the `plan emit` group and its `launch-args` verb, as `design/shapes.md#launch-args` states."
+detail = "Create `tomlctl/src/plan/emit.rs` and register a `PlanOp::Emit` with a nested subcommand enum in `cli/types/plan.rs` and `plan/dispatch.rs`. The six dispatch rules are in `claude/skills/implement-v2-engine/references/run-milestone.md`, section 4, and the premise table in its section 3; the started-row exception is in `references/findings.md`, section Anchor premises on a started row. Reuse the downward closure the `tasks closure --down` verb computes for transitive drops. `root` is the repository top level. Read the current HEAD as `plan/approve.rs` does, with `git rev-parse --verify HEAD^{commit}`. Tests in the new `tomlctl/tests/plan_emit.rs`: `launch_args_apply_the_dispatch_rules`, `launch_args_keep_an_after_task_whose_target_is_dispatched`, `launch_args_refuse_a_stale_premise_verdict`, `launch_args_hash_matches_the_args`. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(launch_args)'`. The feature token, the output-options case and the reference pages are another task's."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 22
+ref = "emit-a-milestones-gate-command-list"
+title = "Emit a milestone's gate command list"
+effort = "M"
+status = "pending"
+checkpoint = "C"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/emit.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/tests/plan_emit.rs",
+]
+needs = [21]
+coupling = []
+deps_note = ""
+action = "Add `plan emit gate-list`, as `design/shapes.md#gate-list` states."
+detail = "Use the effective-owner function the accept-owner task added. Tests in `tomlctl/tests/plan_emit.rs`: `gate_list_orders_gates_then_gate_owned_checks`, `gate_list_skips_a_covered_check`, `gate_list_skips_a_duplicate_command`. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(gate_list)'`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 23
+ref = "emit-a-milestones-reproduce-units-and-store-a-runs-dispatched-tasks"
+title = "Emit a milestone's reproduce units and store a run's dispatched tasks"
+effort = "L"
+status = "pending"
+checkpoint = "C"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/emit.rs",
+    "tomlctl/src/plan/dispatch.rs",
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/plan/records.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/tests/plan_emit.rs",
+    "tomlctl/tests/plan_records.rs",
+]
+needs = [22]
+coupling = []
+deps_note = ""
+action = "Add `plan emit reproduce-units` and the `--tasks` flag of `plan run start`, as `design/shapes.md#reproduce-units` states."
+detail = "`Run` is in `plan/schema.rs` and holds `step`, `workflow`, `args_hash`, `run_id`, `session`, timestamps and `outcome`; add an optional `tasks` list with its codec, written by `plan run start --tasks`. The unit rules today are prose in `claude/skills/implement-v2-engine/references/findings.md`, section Reproduce check, The units. Load each linked review store read-only through the review module's loader; a finding's stored `route` and `direction` decide the unit's `route`. Tests in `tomlctl/tests/plan_emit.rs`: `reproduce_units_give_a_shared_finding_to_the_highest_row`, `reproduce_units_one_launch_per_store`, `reproduce_units_round_follows_the_store`, `reproduce_units_route_checker_only_for_grep_decidable_units`, `reproduce_units_relaunch_gets_its_own_run_dir`, `reproduce_units_since_launch_filters`; in `tomlctl/tests/plan_records.rs`: `run_start_stores_tasks`. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(reproduce_units) | test(run_start_stores_tasks)'`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 24
+ref = "audit-the-bash-commands-of-a-launchs-agents"
+title = "Audit the Bash commands of a launch's agents"
+effort = "M"
+status = "pending"
+checkpoint = "C"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/agents/audit.rs",
+    "tomlctl/src/agents/mod.rs",
+    "tomlctl/src/agents/dispatch.rs",
+    "tomlctl/src/cli/types/cmd.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/tests/agents_audit.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add the read-only verb `tomlctl agents audit`, as `design/shapes.md#worker-audit` states."
+detail = "A transcript is JSON lines; a Bash call is a `tool_use` content entry whose `name` is `Bash`, with the command at `input.command`, nested inside the line's `message.content` array. Skip a line that does not parse. `agent` is the file stem. `AgentsOp` is in `cli/types/cmd.rs`. Build the test's transcripts as fixture strings inside `tomlctl/tests/agents_audit.rs`. Tests: `audit_reports_gate_owned_commands`, `audit_reports_recursive_grep`, `audit_is_quiet_on_narrow_checks` (a `cargo clippy` and an `rg` call yield no row), `audit_takes_custom_patterns`. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(audit_)'`. The feature token, the output-options case and the reference page are another task's."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 25
+ref = "register-and-document-milestone-cs-plan-review-and-agents-surface"
+title = "Register and document milestone C's plan, review and agents surface"
+effort = "M"
+status = "pending"
+checkpoint = "C"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/tests/output_options.rs",
+    "tomlctl/README.md",
+    "claude/skills/tomlctl/SKILL.md",
+    "claude/skills/tomlctl/references/plan.md",
+    "claude/skills/tomlctl/references/plan-probes.md",
+    "claude/skills/tomlctl/references/plan-store.md",
+    "claude/skills/tomlctl/references/tasks-store.md",
+    "claude/skills/tomlctl/references/tasks-write.md",
+    "claude/skills/tomlctl/references/review-apply.md",
+    "claude/skills/tomlctl/references/agents.md",
+]
+needs = [
+    17,
+    19,
+    23,
+    24,
+]
+coupling = []
+deps_note = ""
+action = "Add the feature tokens `accept_run_by`, `reproduce_status_milestone`, `gate_probes`, `plan_emit` and `agents_audit`, output-options cases for the four new leaf verbs, and the reference text for everything milestone C added."
+detail = "Feature tokens go in `tomlctl/src/cli/types/mod.rs`, the expected list in `tomlctl/tests/capabilities.rs`, `tomlctl/README.md` and the feature table of `claude/skills/tomlctl/SKILL.md`, which also gains the `plan emit` and `agents audit` rows of its Quick Reference. `tomlctl/tests/output_options.rs` needs a case each for `plan emit launch-args`, `plan emit gate-list`, `plan emit reproduce-units` and `agents audit`. References: `plan.md` gets the `plan emit` verbs with their flags and output, `--gate-probe`, `plan run start --tasks`, and the check classes `plan/accept-owner-invalid`, `plan/accept-cover-unknown` and `plan/gate-probe-unknown`, and its worker-view section the `Run by:` line; `plan-probes.md` the `--gates` mode and the owner rule for which accept entries are probed; `plan-store.md` the run row's `tasks`; `tasks-store.md` the accept keys `run_by` and `covered_by` and the milestone's `gate_probes`; `tasks-write.md` the two accept keys under `tasks add-many`; `review-apply.md` the `--flow` and `--milestone` selector of `reproduce-status` and the entry `schedule` now mints; `agents.md` the `audit` verb. Read flags from the code the earlier tasks landed; shapes are `design/shapes.md#accept-owner`, `#reproduce-status-by-milestone`, `#emit-verbs`, `#gate-probes` and `#worker-audit`. Check with `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 26
+ref = "run-a-milestones-tasks-through-a-rolling-pool"
+title = "Run a milestone's tasks through a rolling pool"
+effort = "L"
+status = "pending"
+checkpoint = "D"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/workflows/implement-v2-milestone.js"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Replace the barrier waves of `implement-v2-milestone.js` with a rolling pool, gate a task on its `after` list, and carry `needs_files` through the return and the index, as `design/shapes.md#worker-return` states."
+detail = "Today `nextWave` picks a wave and the main loop awaits `parallel()` over it, so every wave lasts as long as its slowest worker. Keep `results`, `pending`, `settleBlocked` and `toEntry`. Hold in-flight tasks in a Map from id to a promise of `{t, ret}` and the file keys they own in a Set; fill free slots, in args order and up to `max_parallel`, with tasks whose `needs` and `after` ids all have a `done` result and whose file keys are free; await `Promise.race` over the in-flight promises; record the entry, release its keys, run `settleBlocked`, repeat. The nothing-could-start failure fires only when nothing is in flight and nothing can start. A task behind an `after` id that did not return `done` settles as `blocked`, like one behind a failed need. Validate `after` with `needs`: ids must be in `tasks`, and the two together must not cycle. `siblings:` becomes the files of every other task that has not yet returned. A task with a non-empty `after` gets one more prompt line: `after-premises: check yours before editing`. Drop `wave N` from the labels and say pool, not waves, in the meta description, phase detail and header comment. Add optional `needs_files` to `RETURN_SCHEMA` and copy it to the index entry. Bump `SCRIPT_VERSION`. `agent()` promises started outside `parallel()` have a precedent in the checker pool of `claude/workflows/review-v2.js`. Check with `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 27
+ref = "plan-workers-check-after-premises-and-name-the-files-they-lack"
+title = "Plan workers check after: premises and name the files they lack"
+effort = "S"
+status = "pending"
+checkpoint = "D"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/agents/plan-worker-lite.md",
+    "claude/agents/plan-worker-deep.md",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add two steps to the shared plan-worker procedure in both worker agents: check your own `after:` premises first when the assignment says so, and return `needs_files` when the task cannot be done inside its files; and replace the `Writes build` rule with the `Run by:` rule."
+detail = "The procedure is the `plan-worker-procedure` shared block, byte-identical in both files, so make the same edit in each. (1) When the assignment carries `after-premises: check yours before editing`, the check comes before the step that sets the row `in-progress`, because the emit covers pending rows only: make a file with `mktemp`, run `tomlctl plan probes --slug <slug> --emit --premises --task <id>` with stdout to it, read the script, run it with `timeout 300 bash <file>`, and record nothing. When a premise line exits non-zero, edit nothing, set your row `failed`, and name the premise and its output in your note. A worker that finds its row already `in-progress` on entry is a restart: it skips this check, which its first attempt ran. (2) When the task cannot be completed inside its `files`, do not edit the other file: set `failed` and return `needs_files` listing each repo-relative path the task would also need, with one line per path in the note saying why. (3) Where the procedure tells the worker which accept checks to run by `Writes build`, say instead: run the checks the view marks `Run by: worker`, and never one marked `Run by: gate`; where a view has no `Run by:` line, a `Writes build: no` check is the worker's. Add `needs_files` to the return object the agent describes. The shape is `design/shapes.md#worker-return`. Check with `bash scripts/verify-shared-blocks.sh` and `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 28
+ref = "route-reproduce-units-to-the-checker-and-batch-plan-defects-in-review-v2js"
+title = "Route reproduce units to the checker and batch plan defects in review-v2.js"
+effort = "L"
+status = "pending"
+checkpoint = "D"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/workflows/review-v2.js"]
+needs = [13]
+coupling = []
+deps_note = ""
+action = """In `review-v2.js`, pool `route: "checker"` reproduce units into `review-checker` batches with a verifier fallback, and batch a cell's single-verifier defects under the `batch_defects` arg, as `design/shapes.md#reproduce-checker` and `design/shapes.md#plan-batching` state."""
+detail = "Reproduce mode is the early-return block that validates `units` and runs `runUnit` per unit under `parallel`. Accept an optional `route` on a unit, `verifier` when absent. Pool the findings of checker units into batches of `CHECKER_BATCH` and dispatch `review-checker` for each with the prompt lines, payload name and return schema of `design/shapes.md#reproduce-checker`: the prompt carries the run directory and a batch number, and the agent's schema is `{reproductions: [{finding, verdict}]}` with `verdict` one of `gone` and `unsettled`. Run `runUnit` for each unit holding a finding the checker returned `unsettled` or did not return, beside every verifier unit. The mode's index keeps one entry per unit and gains `agents`, the number of agents launched. In the wave mode, `routeCell` sends each verifier-routed non-minor defect to `verifyOne`: when `args.batch_defects` is true, a cell's such singles whose cell-return entry has no true `same_as` go through `verifyBatch` as one batch of kind `defect` when there are two or more, and an entry with `same_as` true stays on `verifyOne`. The cell return carries that key once the tomlctl task that adds it lands; an entry without it counts as not carrying one. Panels are unchanged. Bump `SCRIPT_VERSION`. Check with `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 29
+ref = "pass-batch_defects-from-the-plan-review-wrapper-and-batch-its-reverify"
+title = "Pass batch_defects from the plan review wrapper and batch its reverify"
+effort = "S"
+status = "pending"
+checkpoint = "D"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/workflows/plan-v2-review.js",
+    "claude/agents/plan-review-lead.md",
+]
+needs = [16]
+coupling = []
+deps_note = ""
+action = "In `plan-v2-review.js`, pass `batch_defects: true` in the args of each `review-v2-pipeline` launch, and send the reverify ids as one batch instead of one agent per id."
+detail = "The pipeline launch is the `workflow(...)` call that passes the wave's cells and schemas. `reverify` today is one agent per id run under `parallel`, each returning the bare verdict-return schema. Add an optional `reverify_single` list of finding ids to the settle return schema; send each id in it to a `review-verifier` of its own, as today, and every other reverify id in one `review-verifier` dispatch returning `{verdicts: [...]}` with the verdict-return schema as the items schema. An id the batch does not return counts as unverified, as a failed single does today. In `claude/agents/plan-review-lead.md`, settle phase: tell the lead to read each reverify id's `same_as` through the audit projection it already uses for rule-out hits, and to list under `reverify_single` the ids that carry one, so a verdict can still strike the link; add the key to the return object the agent describes. The shape is `design/shapes.md#plan-batching`. Bump `SCRIPT_VERSION`. Check with `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 30
+ref = "teach-the-checker-to-record-a-reproduction"
+title = "Teach the checker to record a reproduction"
+effort = "M"
+status = "pending"
+checkpoint = "D"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/agents/review-checker.md",
+    "claude/agents/review-finder.md",
+    "claude/agents/review-finder-cf.md",
+    "claude/agents/review-verifier.md",
+    "claude/agents/plan-executor.md",
+    "claude/agents/review-surveyor.md",
+    "claude/agents/review-sweeper.md",
+]
+needs = [15]
+coupling = []
+deps_note = ""
+action = "Add a reproduce section to `review-checker.md`, and reword the `review-v2-store-writer` shared block in all seven agents where it says `reproduce` is a verifier's verb."
+detail = """The checker's reproduce section follows `design/shapes.md#reproduce-checker`: the assignment names `mode: reproduce`, the store, flow, milestone, round, run directory, a batch number and the finding ids. For each finding, read it with `tomlctl review show` for the checker role; when it is a `change` or `remove` row with `old` text, its verdict is `gone` only when that text is absent at the anchor, with the grep as its citation; in every other case, an `add` row among them, write no row and return the finding as `unsettled`. It never records `reproduces`. Write the `gone` rows with the Write tool to `payloads/reproduce-checker-<batch>.ndjson` in the run directory, each carrying `"by": "checker"` beside the keys `claude/skills/tomlctl/references/review-apply.md` lists for a reproduction, and load the file with `tomlctl review reproduce` and its `--ndjson` flag; the verb has no `--by` flag. Return `{"reproductions": [{"finding", "verdict"}]}` with one entry per finding given. The shared block `review-v2-store-writer` is byte-identical across the seven files; change the one sentence that names who writes `reproduce` so it reads a verifier or, in reproduce mode, a checker, and make the identical edit in each. `review-finder.md` and `review-finder-cf.md` stay byte-identical below the frontmatter. Check with `bash scripts/verify-shared-blocks.sh` and `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 31
+ref = "state-the-plan-familys-batched-verification-in-the-review-engine"
+title = "State the plan family's batched verification in the review engine"
+effort = "S"
+status = "pending"
+checkpoint = "D"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/review-v2-engine/SKILL.md",
+    "claude/skills/review-v2-engine/references/agent-waves.md",
+]
+needs = [16]
+coupling = []
+deps_note = ""
+action = "Revise the depth envelope in `review-v2-engine/SKILL.md` and the verifier rules in `agent-waves.md` so the plan family verifies a cell's critical and major defects in one batch, a row with `same_as` excepted."
+detail = "The envelope today gives one verifier per critical or major defect. State the plan family's rule beside it: under the `plan-v2-review` Workflow the pipeline runs with `batch_defects`, so a cell's single-verifier defects go to one batch when there are two or more, a row carrying `same_as` stays single so `--strike-same-as` still works, and reverify is one batch. Code and perf families keep the present rule. In `agent-waves.md`, the Agent-wave fallback for a plan run follows the same batching. Check with `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 32
+ref = "test-the-workflow-scripts-logic-under-stubbed-globals"
+title = "Test the Workflow scripts' logic under stubbed globals"
+effort = "L"
+status = "pending"
+checkpoint = "D"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/workflows/tests/harness.test.mjs",
+    "tomlctl/src/cli/dispatch/tests/lint.rs",
+]
+needs = [
+    26,
+    28,
+    29,
+]
+coupling = []
+deps_note = ""
+action = "Write one `node:test` file that runs `review-v2.js`, `plan-v2-review.js` and `implement-v2-milestone.js` under stubbed runtime globals, and a Rust test in `cli::dispatch::tests` that runs it with `node --test` and fails when node is absent."
+detail = "Loading: read a script's source, rewrite `export const meta` to `const meta`, and build an AsyncFunction whose parameters are the stubbed globals `args`, `agent`, `parallel`, `pipeline`, `phase`, `log`, `workflow`; the script's top-level `return` becomes the resolved value. Stub semantics, which the tests state in comments: `agent(prompt, opts)` returns a canned object chosen by `opts.agentType` or `opts.label`, or null for a dead agent; `parallel(thunks)` resolves each thunk and turns one that throws into null, never rejecting; `pipeline(items, ...stages)` passes `(previous, item, index)` to each stage and turns an item whose stage throws into null; `workflow(name, args)` runs the loaded child script with the same stubs and throws on an unknown name; `phase` and `log` record. Cases for `review-v2.js`: the agent count of a wave with a cell, a panel, a minor batch and a checker pool with one reroute; the 300-character escalation cap; `batch_defects` sending two singles of one cell to one batch and keeping a `same_as` row single; reproduce mode sending a checker unit to the checker and its unsettled finding to a verifier; a null agent filling the error row. For `plan-v2-review.js`: baseline key matching, with an unknown key an error and a `none` line passed through; reverify skipping an id already unverified; the agent total adding the child's `agents`. For `implement-v2-milestone.js`: a short task starting while a long file-disjoint task is in flight; an `after` task starting only once its target is done, and blocked when the target fails; two tasks sharing a file never in flight together; `needs_files` reaching the index. The Rust test, named `workflow_scripts_logic_passes_under_node`, goes beside `command_lint_workflow_scripts` in `lint.rs`, runs `node --test claude/workflows/tests/` from the repo root, and fails with a message naming node when the binary is missing or the run exits non-zero. Run the suite yourself with `node --test claude/workflows/tests/`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 33
+ref = "run-milestonemd-builds-its-launch-from-plan-emit-and-probes-gates-at-pre-flight"
+title = "run-milestone.md builds its launch from plan emit and probes gates at pre-flight"
+effort = "M"
+status = "pending"
+checkpoint = "E"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/implement-v2-engine/references/run-milestone.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Rewrite the launch steps of `run-milestone.md` around `tomlctl plan emit launch-args`, release `after:` tasks inside the launch, and add the gate probe to the pre-flight."
+detail = "(1) Section 2, after the milestone is picked, since the pre-flight runs before `<id>` is known: emit the milestone's gate probes with `tomlctl plan probes --slug <slug> --emit --gates --milestone <id>` to a file in scratch, read it, run it under `timeout 540 bash`, record it with `--record <capture> --gates`, and stop before any launch on a `fails` or `broken` verdict, naming the gate and its probe output. A milestone with no stored probe skips this. (2) Section 3: an `after:<m>` premise whose task `m` is in this milestone and pending no longer withholds its task; the task is released inside the launch and its worker checks the premise. Keep every other row of the skip table. (3) Section 4, Build the args: replace the closure and show reads and the six hand rules with one call, `tomlctl plan emit launch-args --slug <slug> --milestone <id>`; say what each `dropped` reason means and where the row goes (the drain replan, `needs_human`), keeping the present destinations. Read every `after_checks` command before launch, as the premise script is read. One that does anything but read, or that builds, is not launched around: stop, replan that premise as section 3 already does for a premise line that writes, and emit again; never edit `args` by hand. Write `args` to `<scratch>` for the record, pass it to the Workflow, and record the launch with `plan run start` using `args_sha256` as `--args-hash` and the dispatched ids as `--tasks`. (4) What comes back: the index entry's `needs_files`, and that the script runs a rolling pool, not waves. Shapes: `design/shapes.md#launch-args`, `#gate-probes`, `#worker-return`. Every fenced `tomlctl` command takes single-token placeholders. Check with `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 34
+ref = "drainmd-adopts-the-gate-list-the-audit-file-widening-and-unquoted-path-reads"
+title = "drain.md adopts the gate list, the audit, file widening and unquoted path reads"
+effort = "L"
+status = "pending"
+checkpoint = "E"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/implement-v2-engine/references/drain.md"]
+needs = [18]
+coupling = []
+deps_note = ""
+action = "Update `drain.md` for the new surface: the gate's command list from `plan emit gate-list`, an audit of what the launch's agents ran, a `needs_files` return widening its row, the changed own-work rule of `plan drift`, and path reads that survive spaces and non-ASCII names."
+detail = "(1) After the notes are read, in the drift step: run `tomlctl agents audit --transcripts <dir>` with the transcript directory the launch reported, and list each row in the drain's report to the user; a narrow test a task's own accept names is allowed by the build discipline, anything else is named as a breach, and no row changes a task's status. (2) Out-of-lane edits: delete the sentence saying `plan drift` counts only rows past `pending` as own work and that a started row back at `pending` shows its own partial edits; a row with a set agent and no commit is now own work. (3) Step 6 replan: a `failed` entry with a non-empty `needs_files` is widened mechanically. When no other pending or started row holds a named path, add the paths to the row's `files` with an audited `tasks update` whose `reason` quotes the note, and reset the row for relaunch; when another row holds one, order the two with `needs` and widen; a path the note does not justify goes to the user. (4) Edits follow their files, step 10's staging read and the unstamped-milestone paragraph: replace each `git status --porcelain -- <paths>` read that is compared with rows' `files` by `tomlctl plan drift --slug <slug> --uncommitted --get uncommitted_files`, which prints one unquoted path per line, and keep the rule of staging only listed paths; the flow-store commit's own status read over `.claude/flows/<slug>/` stays. (5) Step 7: build the command list with `tomlctl plan emit gate-list --slug <slug> --milestone <id>`, replacing the milestones and accept reads and the by-hand filter and de-duplication; a `skipped` entry is not run, and its `covered_by` reason is reported in the gate summary; the held-command rule and the `timeout:`, `rerun:` and `transient:` options stay the orchestrator's. Say the run is a rolling pool where the text says waves. Shapes: `design/shapes.md#gate-list`, `#worker-audit`, `#worker-return`. Every fenced `tomlctl` command takes single-token placeholders. Check with `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 35
+ref = "findingsmd-builds-the-reproduce-check-from-plan-emit-reproduce-units"
+title = "findings.md builds the reproduce check from plan emit reproduce-units"
+effort = "M"
+status = "pending"
+checkpoint = "E"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/implement-v2-engine/references/findings.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Rewrite the Reproduce check section of `findings.md` around `tomlctl plan emit reproduce-units` and the milestone-wide reproduce-status check."
+detail = "(1) The units: replace the task and finding_links reads, the highest-id-owner rule, the per-store split, the round computation and the per-finding later-pass loop with one call, `tomlctl plan emit reproduce-units --slug <slug> --milestone <id>`, adding `--since-launch` on a later pass; launch `review-v2-pipeline` once per `launches` entry with that entry as args. (2) A relaunch of a round whose run was cut short passes `--relaunch <n>`, n counting from 1, so it gets its own run directory. (3) Say that a unit the verb routes to `checker` is settled by a pooled `review-checker`, and that a finding it leaves unsettled reaches a verifier in the same launch. (4) Read the store and act: read every finding's verdict with one `tomlctl review reproduce-status --flow <slug> --milestone <id>` call plus the store flag and `--expect gone`, in place of the per-finding calls. (5) The fix rows a reproduce round mints carry the milestone-wide gate-owned accept entry of `design/shapes.md#reproduce-status-by-milestone`, not a per-finding check; reword the guarantee that a milestone cannot commit with a finding outstanding to rest on that one check. Shapes: `design/shapes.md#reproduce-units`, `#reproduce-checker`. Every fenced `tomlctl` command takes single-token placeholders. Check with `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 36
+ref = "engine-skills-carriers-and-claudemd-name-the-new-surface"
+title = "Engine skills, carriers and CLAUDE.md name the new surface"
+effort = "M"
+status = "pending"
+checkpoint = "E"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/implement-v2-engine/SKILL.md",
+    "claude/skills/apply-v2-engine/SKILL.md",
+    "claude/commands/implement-v2.md",
+    "claude/commands/apply-v2.md",
+    "CLAUDE.md",
+]
+needs = [
+    6,
+    8,
+    20,
+]
+coupling = []
+deps_note = ""
+action = "Update the two engine skills, the two carriers' pre-flights and CLAUDE.md for the pool, the emit verbs, the owner field and the audit."
+detail = "(1) `claude/commands/implement-v2.md` pre-flight: add `plan_emit`, `accept_run_by`, `gate_probes` and `agents_audit` to the features the installed binary must advertise; `claude/commands/apply-v2.md`: add `plan_emit`, `accept_run_by`, `reproduce_status_milestone` and `review_fix_files`. (2) `implement-v2-engine/SKILL.md`: the step table rows for Premises, Launch, Reproduce check and Gate name the emit verbs and the gate probe; where it describes the Workflow, say it runs a rolling pool that starts a ready file-disjoint task as a slot frees and releases an `after:` task once its target is done; in the Vetting and harvest bullet, add the drain's `tomlctl agents audit` read, saying the verb reads the transcripts and prints only matching commands, so the rule that the orchestrator never reads a worker's transcript stands. (3) `apply-v2-engine/SKILL.md` has no instruction about a fix's other files today. In the preview, beside the read of the findings a dry run would schedule, add one bullet: a would-mint row's files include its finding's `fix_files`; for a finding with no `fix_files` whose fix text names a file outside the row, widen the row's `files` through an audited `tasks update` after scheduling and before launch. (4) `CLAUDE.md`, section Implement v2: the Workflow bullet says a rolling pool, not waves, and the Gate and commit bullet says the gate's commands come from `tomlctl plan emit gate-list`; the Deploy bullet's list of what the pre-flight refuses gains the four features. Every fenced `tomlctl` command takes single-token placeholders. Check with `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 37
+ref = "plan-authoring-writes-owners-covers-and-gate-probes"
+title = "Plan authoring writes owners, covers and gate probes"
+effort = "S"
+status = "pending"
+checkpoint = "E"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/plan-v2-engine/references/write-and-prove.md"]
+needs = [18]
+coupling = []
+deps_note = ""
+action = "Update `write-and-prove.md` so Write sets an accept entry's owner and cover, Design stores a gate probe, and Prove runs the gate probes."
+detail = "(1) Section 1, Milestones: a gate that can fail for reasons of this environment, such as a link or install script, gets a probe with `--gate-probe '<gate> :: <probe>'`, the probe being a cheap command such as the gate's own dry run. (2) Section 3, the spec rules: beside the `writes_build` rule, say `run_by` is set only where the default is wrong: `gate` for a read-only check that only the gate can pass, and `covered` with `covered_by` naming the exact gate command for a narrow test the milestone's suite gate already runs, so it is not run twice; a worker's own narrow run of such a test is named in `detail`. Add both keys to the example row's comment-free TOML only if the example needs them; otherwise leave the example. (3) Section 4d: after the accept probes, emit, read, run and record the gate probes with `tomlctl plan probes --slug <slug> --emit --gates` and `--record <capture> --gates`, and treat a `fails` or `broken` verdict as a gate that cannot pass here: fix the environment, change the gate, or record a handover. Shapes: `design/shapes.md#accept-owner`, `#gate-probes`. Every fenced `tomlctl` command takes single-token placeholders. Check with `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 38
+ref = "honour-a-gate-stamp-in-the-pre-commit-hook"
+title = "Honour a gate stamp in the pre-commit hook"
+effort = "M"
+status = "pending"
+checkpoint = "E"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "scripts/gate-stamp.sh",
+    ".githooks/pre-commit",
+    "CLAUDE.md",
+]
+needs = [36]
+coupling = []
+deps_note = ""
+action = "Add `scripts/gate-stamp.sh` with its `run` and `check` modes, make the hook skip its cargo steps while the stamp matches, and document it in CLAUDE.md, as `design/shapes.md#gate-stamp` states."
+detail = "`run` executes, in the hook's order and whatever is staged: `cargo fmt --manifest-path tomlctl/Cargo.toml -- --check`, `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`, `cargo test --manifest-path tomlctl/Cargo.toml --test tasks_corpus -- --ignored`, `cargo fmt --manifest-path glimpse/Cargo.toml -- --check`, `cargo clippy --manifest-path glimpse/Cargo.toml --locked`; it stops at the first failure, removes any stamp, and exits non-zero. On a full pass it writes the digest to `$(git rev-parse --git-dir)/gate-stamp`. The digest: list files with `git ls-files -z --cached --others --exclude-standard` over the five roots, sort, and hash each path with its content hash into one SHA-256; a deleted tracked file contributes its path with a fixed marker. `check` recomputes and compares, exiting 1 when the stamp is absent or differs. In `.githooks/pre-commit`, compute once whether `check` passes, before the first cargo `gate` call, and when it does print one line, `pre-commit: cargo steps skipped, the gate stamp matches this working tree`, and skip the five cargo steps; the two verifiers, the documentation gate and the sidecar comparison run regardless. Both scripts are Bash under `set -euo pipefail`, use no tool the hook does not already use beyond `sha256sum`, `sort` and `git`, and work under Git Bash. In CLAUDE.md, Developer setup: one paragraph on the stamp after the description of the hook's steps, saying what `run` executes, that the stamp is void once any file under the five roots changes, that a commit train over a gated tree runs `bash scripts/gate-stamp.sh run` once, and that `--no-verify` is still never the answer; and add the script to the Supply chain gotcha's scrutiny. Check the scripts with `bash -n scripts/gate-stamp.sh` and `bash -n .githooks/pre-commit`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 39
+ref = "rename-the-engines-findings-reference-to-apply-rowsmd"
+title = "Rename the engine's findings reference to apply-rows.md"
+effort = "S"
+status = "pending"
+checkpoint = "E"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/implement-v2-engine/references/findings.md",
+    "claude/skills/implement-v2-engine/references/apply-rows.md",
+    "claude/skills/implement-v2-engine/SKILL.md",
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "claude/skills/implement-v2-engine/references/run-milestone.md",
+]
+needs = [
+    33,
+    34,
+    35,
+    36,
+]
+coupling = []
+deps_note = ""
+action = "Move `references/findings.md` to `references/apply-rows.md` with `git mv`-equivalent content, and repoint every link and mention in the engine's `SKILL.md`, `drain.md` and `run-milestone.md`."
+detail = "The harness refuses a subagent Write to a file named `findings.md`, which is why the reference could only be created by touch and Edit. Create `apply-rows.md` with the file's full content, delete `findings.md` with `rm`, and replace every `findings.md` in the three referring files, link text and link target both, with `apply-rows.md`; section names after the link stay as they are. The file's own heading stays. Check with `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
+acceptance = ""
+agent = ""
+commit = ""

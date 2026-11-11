@@ -1,0 +1,3084 @@
+schema_version = 1
+last_updated = 2026-11-11
+
+[id_high_water]
+U = 1
+
+[[runs]]
+id = "U1"
+command = "review-plan-v2"
+family = "plan"
+depth = "standard"
+started = "2026-11-11T09:35:51Z"
+finished = "2026-11-11T10:00:20Z"
+base = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+scope = [
+    "docs/flows/v2-harness-tuning/brief.md",
+    "docs/flows/v2-harness-tuning/design/*.md",
+]
+substrate = "workflow"
+agents = 37
+
+[runs.models]
+surveyor = "haiku"
+sweeper = "haiku"
+checker = "haiku"
+finder = "opus"
+finder-cf = "opus"
+verifier = "opus"
+executor = "opus"
+lead = "opus"
+
+[runs.catalogue]
+project = ".claude/review-lenses"
+tree_sha = "21ebe8ee87dbd10e663580aa488c38b2c76a04561cc3cf234758424eb48b880f"
+config_sha = "43eed0e78dc0dd0c218061c5c3815a24759d33c893287e7aeb2feb5b593f9463"
+
+[[runs.signals]]
+name = "lang:rust"
+source = "detector"
+roots = [
+    "glimpse",
+    "lumina",
+    "lumina/companion",
+    "lumina/core",
+    "lumina/protocol",
+    "lumina/server",
+    "statusline",
+    "tomlctl",
+]
+
+[[runs.signals]]
+name = "lang:ts"
+source = "detector"
+roots = ["lumina/web"]
+
+[[runs.signals]]
+name = "framework:vue"
+source = "detector"
+roots = ["lumina/web"]
+
+[[runs.signals]]
+name = "runtime:tokio"
+source = "detector"
+roots = [
+    "lumina/companion",
+    "lumina/core",
+    "lumina/server",
+]
+
+[[runs.signals]]
+name = "db:sqlx"
+source = "detector"
+roots = [
+    "lumina",
+    "lumina/core",
+    "lumina/server",
+]
+
+[[runs.signals]]
+name = "harness:claude"
+source = "detector"
+roots = [
+    ".claude/skills/adopt-flow-registry",
+    ".claude/skills/testing-discipline",
+    "claude/agents",
+    "claude/commands",
+    "claude/plugins/lumina-story-blocks/skills/acceptance-criteria",
+    "claude/plugins/lumina-story-blocks/skills/alternatives",
+    "claude/plugins/lumina-story-blocks/skills/approach",
+    "claude/plugins/lumina-story-blocks/skills/closure-gate",
+    "claude/plugins/lumina-story-blocks/skills/compose-sprint",
+    "claude/plugins/lumina-story-blocks/skills/create-project",
+    "claude/plugins/lumina-story-blocks/skills/decompose-tasks",
+    "claude/plugins/lumina-story-blocks/skills/edge-cases",
+    "claude/plugins/lumina-story-blocks/skills/epic-close-criteria",
+    "claude/plugins/lumina-story-blocks/skills/epic-outcome",
+    "claude/plugins/lumina-story-blocks/skills/focus-framing",
+    "claude/plugins/lumina-story-blocks/skills/focus-shape",
+    "claude/plugins/lumina-story-blocks/skills/lifecycle",
+    "claude/plugins/lumina-story-blocks/skills/mcp",
+    "claude/plugins/lumina-story-blocks/skills/next-block",
+    "claude/plugins/lumina-story-blocks/skills/not-doing",
+    "claude/plugins/lumina-story-blocks/skills/plan-story",
+    "claude/plugins/lumina-story-blocks/skills/problem-statement",
+    "claude/plugins/lumina-story-blocks/skills/relevance",
+    "claude/plugins/lumina-story-blocks/skills/research-directed",
+    "claude/plugins/lumina-story-blocks/skills/research-explore",
+    "claude/plugins/lumina-story-blocks/skills/research-notes",
+    "claude/plugins/lumina-story-blocks/skills/risks",
+    "claude/plugins/lumina-story-blocks/skills/run-sprint",
+    "claude/plugins/lumina-story-blocks/skills/set-task-spec",
+    "claude/plugins/lumina-story-blocks/skills/story-review",
+    "claude/plugins/lumina-story-blocks/skills/user-interrogation",
+    "claude/plugins/lumina-story-blocks/skills/verification-commands",
+    "claude/plugins/lumina-story-blocks/skills/vet-research",
+    "claude/plugins/lumina-story-blocks/skills/wire-task-deps",
+    "claude/skills/apply-v2-engine",
+    "claude/skills/backlog-capture",
+    "claude/skills/backlog-clear",
+    "claude/skills/commit-conventions",
+    "claude/skills/documentation-conventions",
+    "claude/skills/flow-contract-apply-constraints",
+    "claude/skills/flow-contract-apply-dependency-sort",
+    "claude/skills/flow-contract-apply-pipeline",
+    "claude/skills/flow-contract-apply-rollback-protocol",
+    "claude/skills/flow-contract-apply-vet-implement-lite",
+    "claude/skills/flow-contract-execution-record-schema",
+    "claude/skills/flow-contract-flow-context",
+    "claude/skills/flow-contract-ledger-disposition-sweep",
+    "claude/skills/flow-contract-ledger-schema",
+    "claude/skills/flow-contract-plan-output-format",
+    "claude/skills/flow-contract-plan-restructure",
+    "claude/skills/flow-contract-plansdirectory-prompt",
+    "claude/skills/flow-contract-reconciler",
+    "claude/skills/flow-contract-showcase-bundle",
+    "claude/skills/flow-contract-task-store",
+    "claude/skills/flow-contract-user-inputs",
+    "claude/skills/flow-contract-vet-research",
+    "claude/skills/implement-v2-engine",
+    "claude/skills/plan-v2-engine",
+    "claude/skills/research-methods",
+    "claude/skills/review-v2-engine",
+    "claude/skills/review-v2-lenses",
+    "claude/skills/review-v2-method",
+    "claude/skills/test-author",
+    "claude/skills/tomlctl",
+]
+
+[[runs.signals]]
+name = "doc-growth"
+source = "detector"
+roots = [
+    ".",
+    ".claude/flows/eventual-churning-sunrise",
+    ".claude/flows/federated-beaming-hollerith",
+    ".claude/flows/giggly-conjuring-brook",
+    ".claude/flows/glimpse-ux-backlog",
+    ".claude/flows/human-only-handovers",
+    ".claude/flows/jiggly-exploring-robin",
+    ".claude/flows/lively-twirling-babbage",
+    ".claude/flows/polymorphic-wondering-magpie",
+    ".claude/flows/proud-leaping-conway",
+    ".claude/flows/review-system-v2",
+    ".claude/flows/review-system-v2/archive",
+    ".claude/flows/review-v2-first-run-repairs",
+    ".claude/flows/shimmying-marinating-bumblebee",
+    ".claude/flows/temporal-snuggling-pnueli",
+    ".claude/flows/toasty-wobbling-stonebraker",
+    ".claude/flows/tomlctl-backlog-capture",
+    ".claude/flows/tomlctl-followups",
+    ".claude/flows/tomlctl-followups-round-2",
+    ".claude/flows/tomlctl-items-sweep-clusters",
+    ".claude/flows/twinkling-hopping-otter",
+    ".claude/flows/unified-singing-gem",
+    ".claude/flows/v2-apply",
+    ".claude/flows/v2-planning",
+    ".claude/flows/we-ve-just-implement-the-shimmying-kettle",
+    ".claude/flows/whimsical-hugging-puppy",
+    ".claude/flows/woolly-greeting-rainbow",
+    ".claude/rules",
+    ".github/agents",
+    ".github/skills/backlog-capture",
+    ".github/skills/flow-contract-apply-constraints",
+    ".github/skills/flow-contract-apply-dependency-sort",
+    ".github/skills/flow-contract-apply-pipeline",
+    ".github/skills/flow-contract-apply-pipeline/references",
+    ".github/skills/flow-contract-apply-rollback-protocol",
+    ".github/skills/flow-contract-apply-vet-implement-lite",
+    ".github/skills/flow-contract-execution-record-schema",
+    ".github/skills/flow-contract-flow-context",
+    ".github/skills/flow-contract-ledger-disposition-sweep",
+    ".github/skills/flow-contract-ledger-schema",
+    ".github/skills/flow-contract-plan-output-format",
+    ".github/skills/flow-contract-plan-restructure",
+    ".github/skills/flow-contract-plansdirectory-prompt",
+    ".github/skills/flow-contract-reconciler",
+    ".github/skills/flow-contract-task-store",
+    ".github/skills/flow-contract-vet-research",
+    ".github/skills/tomlctl",
+    ".github/skills/tomlctl/references",
+    "claude/agents",
+    "claude/commands",
+    "claude/plugins/lumina-story-blocks/skills/mcp",
+    "claude/plugins/lumina-story-blocks/skills/plan-story",
+    "claude/plugins/lumina-story-blocks/skills/run-sprint",
+    "claude/skills/apply-v2-engine",
+    "claude/skills/backlog-capture",
+    "claude/skills/backlog-clear",
+    "claude/skills/commit-conventions",
+    "claude/skills/documentation-conventions",
+    "claude/skills/documentation-conventions/references",
+    "claude/skills/flow-contract-apply-constraints",
+    "claude/skills/flow-contract-apply-dependency-sort",
+    "claude/skills/flow-contract-apply-pipeline",
+    "claude/skills/flow-contract-apply-pipeline/references",
+    "claude/skills/flow-contract-apply-rollback-protocol",
+    "claude/skills/flow-contract-apply-vet-implement-lite",
+    "claude/skills/flow-contract-execution-record-schema",
+    "claude/skills/flow-contract-flow-context",
+    "claude/skills/flow-contract-ledger-disposition-sweep",
+    "claude/skills/flow-contract-ledger-schema",
+    "claude/skills/flow-contract-plan-output-format",
+    "claude/skills/flow-contract-plan-output-format/references",
+    "claude/skills/flow-contract-plan-restructure",
+    "claude/skills/flow-contract-plansdirectory-prompt",
+    "claude/skills/flow-contract-reconciler",
+    "claude/skills/flow-contract-showcase-bundle",
+    "claude/skills/flow-contract-task-store",
+    "claude/skills/flow-contract-task-visibility",
+    "claude/skills/flow-contract-user-inputs",
+    "claude/skills/flow-contract-vet-research",
+    "claude/skills/implement-v2-engine",
+    "claude/skills/implement-v2-engine/references",
+    "claude/skills/plan-v2-engine",
+    "claude/skills/plan-v2-engine/references",
+    "claude/skills/research-methods",
+    "claude/skills/research-methods/references",
+    "claude/skills/review-v2-engine",
+    "claude/skills/review-v2-engine/references",
+    "claude/skills/review-v2-lenses",
+    "claude/skills/review-v2-lenses/checks",
+    "claude/skills/review-v2-lenses/facets",
+    "claude/skills/review-v2-lenses/lenses",
+    "claude/skills/review-v2-lenses/methods",
+    "claude/skills/review-v2-method",
+    "claude/skills/review-v2-method/references",
+    "claude/skills/test-author",
+    "claude/skills/tomlctl",
+    "claude/skills/tomlctl/references",
+    "config/nvim",
+    "docs/flows/human-only-handovers",
+    "docs/flows/human-only-handovers/design",
+    "docs/flows/human-only-handovers/notes",
+    "docs/flows/human-only-handovers/notes/run",
+    "docs/flows/v2-apply",
+    "docs/flows/v2-apply/design",
+    "docs/flows/v2-apply/notes",
+    "docs/flows/v2-apply/notes/run",
+    "docs/flows/v2-harness-tuning",
+    "docs/flows/v2-harness-tuning/notes",
+    "docs/ideas",
+    "docs/plans",
+    "glimpse",
+    "lumina",
+    "lumina/docs/runbooks",
+    "scripts/templates",
+    "statusline",
+    "themes",
+    "themes/firefox",
+    "themes/nvim",
+    "tomlctl",
+    "tomlctl/tests/fixtures/tasks",
+]
+
+[[runs.signals]]
+name = "backlog-cluster"
+source = "detector"
+roots = [".claude"]
+
+[runs.baselines]
+break-set-baseline = "none — v2 flow carries no predicted break sets"
+
+[runs.counts]
+cells = 12
+uncovered = 0
+defect = 12
+cleanup = 10
+advisory = 4
+refuted = 2
+suppressed = 0
+
+[runs.audit]
+sampled = 4
+overturned = 0
+
+[[runs]]
+id = "U2"
+command = "review-plan-v2"
+family = "plan"
+depth = "quick"
+started = "2026-11-11T10:00:29Z"
+finished = "2026-11-11T10:16:41Z"
+base = "c223ee76fec7e17f0e7e4cb46c8168adad77aade"
+scope = [
+    "docs/flows/v2-harness-tuning/brief.md",
+    "docs/flows/v2-harness-tuning/design/*.md",
+]
+substrate = "workflow"
+agents = 20
+rechecks = "U1"
+
+[runs.models]
+surveyor = "haiku"
+sweeper = "haiku"
+checker = "haiku"
+finder = "opus"
+finder-cf = "opus"
+verifier = "opus"
+executor = "opus"
+lead = "opus"
+
+[runs.catalogue]
+project = ".claude/review-lenses"
+tree_sha = "21ebe8ee87dbd10e663580aa488c38b2c76a04561cc3cf234758424eb48b880f"
+config_sha = "43eed0e78dc0dd0c218061c5c3815a24759d33c893287e7aeb2feb5b593f9463"
+
+[runs.counts]
+cells = 6
+uncovered = 0
+defect = 8
+cleanup = 0
+advisory = 2
+refuted = 0
+suppressed = 0
+
+[runs.audit]
+sampled = 4
+overturned = 0
+
+[[cells]]
+id = "C1"
+run = "U1"
+wave = 1
+slice = [
+    "docs/flows/v2-harness-tuning/brief.md",
+    "docs/flows/v2-harness-tuning/design/*.md",
+]
+concerns = [
+    "plan-dependencies",
+    "plan-grounding",
+    "plan-structure",
+]
+agent = "review-finder"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = "Read in full: brief.md, design/shapes.md, plan view (decisions, milestones, 39 tasks). Grounding: 31 citations and premises checked against tomlctl src, review-v2.js, implement-v2-milestone.js, run-milestone/findings/drain.md and the hook, 4 contradicted. Enumerations: 1 re-derived, 1 drift. Goal coverage: 29/29. Dependencies: same-file pairs and data flow walked by hand, STORE CHECK clean, 0 missing edges. 4 sites ruled out."
+
+[[cells.bound]]
+concern = "plan-dependencies"
+hash = "9089785602b0543b25d6250d57e92421e8481a00e172a0841a5128641d0a8fe5"
+path = "/home/ross/.claude-work/skills/review-v2-lenses/lenses/plan-dependencies.md"
+
+[[cells.bound]]
+concern = "plan-grounding"
+hash = "c1bb5e742f421490b368f9a34717fb9761016edf03a18ef10c84b254fdba434b"
+path = "/home/ross/.claude-work/skills/review-v2-lenses/lenses/plan-grounding.md"
+methods = [
+    "sweep",
+    "trace",
+]
+
+[[cells.bound]]
+concern = "plan-structure"
+hash = "560267297438cfbc751712728baa5905475de166a2a2bf66fc51e4d333384a65"
+path = "/home/ross/.claude-work/skills/review-v2-lenses/lenses/plan-structure.md"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "launch-args"
+reason = "args shape and the six dispatch rules match implement-v2-milestone.js validation and run-milestone.md section 4; after is new, accepted by task 26"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "worker-return"
+reason = "plan probes --emit --premises --task exists and covers after:<n> once n is done; worker sets its own row done before return"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "cited-and-apply"
+reason = "tier.rs citation_holds/named_paths read as the design assumes: one path, target file or value-named path only"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-harness-tuning/brief.md"
+symbol = "Success criteria"
+reason = "all 29 Intent items map to a criterion and to exactly one closing task"
+
+[[cells]]
+id = "C2"
+run = "U1"
+wave = 1
+slice = [
+    "docs/flows/v2-harness-tuning/brief.md",
+    "docs/flows/v2-harness-tuning/design/*.md",
+]
+concerns = ["ripple"]
+agent = "review-sweeper"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = "C2 ripple, slice brief.md and design/*.md. Diff: base..HEAD is empty (base c223ee76 = HEAD), so read the uncommitted brief.md diff (git diff) and untracked design/shapes.md. Working-tree brief.md diff has 0 removed lines and no renamed symbol, flag, file or key, so NAMES is empty. Ran 0 name searches: no removed or renamed name to grep; seam, consumer and same-pattern probes had no subject. PRIOR: none in slice. Rule-outs: none. No candidates, nothing escalated. Covered."
+
+[[cells.bound]]
+concern = "ripple"
+hash = "2ea56e25c8e6ec6fd719397e0b3ef7bab7a35dd20fe64aec4aa80baa05e6c02d"
+path = "/home/ross/.claude-work/skills/review-v2-lenses/lenses/ripple.md"
+methods = ["sweep"]
+
+[[cells]]
+id = "C3"
+run = "U1"
+wave = 1
+slice = [
+    "docs/flows/v2-harness-tuning/brief.md",
+    "docs/flows/v2-harness-tuning/design/*.md",
+]
+concerns = [
+    "check:acceptance-contradiction",
+    "check:falsifiability",
+    "check:two-control-probe",
+]
+agent = "review-finder"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = "Read brief.md, design/shapes.md, all 39 specs (97 accept entries, 26 premises), 5 milestone gates in full. plan check: no probe-unhealthy/absent; every entry healthy but all forward entries have empty positive (neg control only), so 8 format-sensitive greps were judged by reading the target files. 0 writes_build entries. 21 cross-task presume/remove pairs on the needs graph: none contradict. Break sets: none, judged statically. 5 rule-outs."
+
+[[cells.bound]]
+concern = "check:acceptance-contradiction"
+hash = "4985093da6fef6abeafcca320af7ec8da1bfc118fb984f13b4da2fcda0209b05"
+path = "/home/ross/.claude-work/skills/review-v2-lenses/checks/acceptance-contradiction.md"
+
+[[cells.bound]]
+concern = "check:falsifiability"
+hash = "7de096e64b9ea41b357986229d38a551976371cfc00fd0da97d22e8898aacf09"
+path = "/home/ross/.claude-work/skills/review-v2-lenses/checks/falsifiability.md"
+
+[[cells.bound]]
+concern = "check:two-control-probe"
+hash = "9bf3f291401cba73b8a53117119812c481ac9dc127b04783160450f6196787bc"
+path = "/home/ross/.claude-work/skills/review-v2-lenses/checks/two-control-probe.md"
+
+[[cells.ruled_out]]
+file = ".claude/flows/v2-harness-tuning/tasks.toml"
+symbol = "rename-the-engines-findings-reference-to-apply-rowsmd"
+reason = "accept[1] vs tasks 33-36 keeping findings.md links: all four are needs of 39 and checked at landing only; findings.md has no self-reference, so the content-unchanged move passes"
+
+[[cells.ruled_out]]
+file = ".claude/flows/v2-harness-tuning/tasks.toml"
+symbol = "drainmd-adopts-the-gate-list-the-audit-file-widening-and-unquoted-path-reads"
+reason = "accept[3] regex <paths?> matches all four row-path porcelain reads in drain.md today (207, 339, 342, 380) and spares the flow-store read the detail keeps"
+
+[[cells.ruled_out]]
+file = ".claude/flows/v2-harness-tuning/tasks.toml"
+symbol = "run-milestonemd-builds-its-launch-from-plan-emit-and-probes-gates-at-pre-flight"
+reason = """accept[2] literal '--args-hash <args_sha256> --tasks' differs from today's "$hash" form but a required means pins that exact flag order"""
+
+[[cells.ruled_out]]
+file = ".claude/flows/v2-harness-tuning/tasks.toml"
+symbol = "run-a-milestones-tasks-through-a-rolling-pool"
+reason = "accept[2] negative grep evadable by renaming, but accept[0] Promise.race and task 32's harness cases bind the pool behaviour"
+
+[[cells.ruled_out]]
+file = ".claude/flows/v2-harness-tuning/tasks.toml"
+symbol = "register-and-document-milestone-cs-plan-review-and-agents-surface"
+reason = """accept[3] '"agents", "audit"' matches output_options.rs's &["agents", "record"] argv shape; feature names agree with tasks 17 and 36"""
+
+[[cells]]
+id = "C4"
+run = "U1"
+wave = 1
+slice = [
+    "docs/flows/v2-harness-tuning/brief.md",
+    "docs/flows/v2-harness-tuning/design/*.md",
+]
+concerns = [
+    "feasibility",
+    "plan-risk",
+]
+agent = "review-finder"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = "Read in full: brief.md, design/shapes.md, plan view decisions D1-D16 and milestones, tasks 11, 16, 23, 27. Traced against code: schedule.rs accept, fields.rs route, anchor.rs gone, probes.rs emit (ran --emit --premises --task 11), dispatch tests' file reads, pre-commit cargo steps, review-v2.js routing, findings.md run_dir, digest consumers, serde_json features. 7 findings, 4 rule-outs. Summary/Status sections have no record on a v2 flow and do not apply."
+
+[[cells.bound]]
+concern = "feasibility"
+hash = "dc1a293342e78b61aa982b6092375bf977170d57a047abfea29891ea6ef61f9f"
+path = "/home/ross/.claude-work/skills/review-v2-lenses/lenses/feasibility.md"
+methods = ["trace"]
+
+[[cells.bound]]
+concern = "plan-risk"
+hash = "3ffdf49eb449c3182a94b5becc8f24be319d258d67ed89fd32389ead42a8f58f"
+path = "/home/ross/.claude-work/skills/review-v2-lenses/lenses/plan-risk.md"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "launch-args"
+reason = "args_sha256 key order holds: serde_json is built with preserve_order (tomlctl/Cargo.toml:28), so the printed args and the hashed compact JSON agree"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "digest"
+reason = "count-by-default breaks no outside reader: every array consumer (plan-review-lead.md, compose.md, review-v2-engine SKILL.md) is updated by task 16"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-harness-tuning/brief.md"
+symbol = "Scope budget"
+reason = "says 30 items where Intent lists 29; the count changes nothing an executor builds, and every Intent item has a closing task"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "addressed"
+reason = "recheck-targets' 'every addressed entry' is read as the run's findings; task 11 detail states the run scope, so an executor resolves it"
+
+[[cells]]
+id = "C5"
+run = "U1"
+wave = 1
+slice = ["docs/flows/v2-harness-tuning/brief.md"]
+concerns = ["test-gaps"]
+agent = "review-finder"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = "Read in full: brief.md, design/shapes.md, all 39 task specs and accepts, milestone gates and decisions. Mapped each of the 25 Success criteria to a task test or accept: 23 covered by a named test the nextest gates run. Two gaps raised (gate stamp invalidation, harness cases behind the pool and reproduce-checker criteria). Ran 6 greps over schema_out.rs, review_add.rs, review_verdict.rs, plan_drift.rs, drain.md. 4 sites ruled out."
+
+[[cells.bound]]
+concern = "test-gaps"
+hash = "e50a44ddcbcf1985988dd67c56f0ceb0274e7835d2c6b992056bb56e64cb901b"
+path = "/home/ross/.claude-work/skills/review-v2-lenses/lenses/test-gaps.md"
+
+[[cells.ruled_out]]
+file = ".claude/flows/v2-harness-tuning/tasks.toml"
+symbol = "drop-the-top-level-allof-from-the-verdict-return-schema"
+reason = "unblocks/fix_sketch pairing stays pinned at write by review_verdict.rs unblock_without_fix_sketch_is_refused; the schema test the task rewrites is not the only guard"
+
+[[cells.ruled_out]]
+file = ".claude/flows/v2-harness-tuning/tasks.toml"
+symbol = "supersede-a-cells-open-advisory-rows-on-a-replayed-review-add"
+reason = "a confirmed defect superseded by a replay needs verification before seal, which the pipeline never does; narrow trigger, constraint stated in the spec"
+
+[[cells.ruled_out]]
+file = ".claude/flows/v2-harness-tuning/tasks.toml"
+symbol = "drainmd-adopts-the-gate-list-the-audit-file-widening-and-unquoted-path-reads"
+reason = "the replacement read is plan drift --uncommitted, already pinned by plan_drift.rs a_non_ascii_path_is_matched_unquoted"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-harness-tuning/brief.md"
+symbol = "Success criteria"
+reason = "cell_return, the other schema passed bare to agent(), has no top-level combinator and task 13 adds only an optional boolean"
+
+[[cells]]
+id = "C6"
+run = "U1"
+wave = 1
+pass = 2
+slice = [
+    "docs/flows/v2-harness-tuning/design/*.md",
+    "docs/flows/v2-harness-tuning/brief.md",
+]
+concerns = [
+    "plan-dependencies",
+    "plan-grounding",
+    "plan-structure",
+]
+agent = "review-finder"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = "Read in full: brief.md, design/shapes.md, run-milestone.md s2-4, pre-commit hook, plan view (decisions, milestones). Grounding: 31 design/brief citations checked against tree (symbols, flags, fields, Workflow arg validation), 1 contract mismatch, 1 count drift; trace on edited_paths, probe at, finding_links store. Deps: design data flows across tasks 13/18-28/33-35 walked, STORE CHECK clean. Structure: 26 success criteria mapped to tasks, all covered. 3 rule-outs."
+
+[[cells.bound]]
+concern = "plan-dependencies"
+hash = "9089785602b0543b25d6250d57e92421e8481a00e172a0841a5128641d0a8fe5"
+path = "/home/ross/.claude-work/skills/review-v2-lenses/lenses/plan-dependencies.md"
+
+[[cells.bound]]
+concern = "plan-grounding"
+hash = "c1bb5e742f421490b368f9a34717fb9761016edf03a18ef10c84b254fdba434b"
+path = "/home/ross/.claude-work/skills/review-v2-lenses/lenses/plan-grounding.md"
+methods = [
+    "sweep",
+    "trace",
+]
+
+[[cells.bound]]
+concern = "plan-structure"
+hash = "560267297438cfbc751712728baa5905475de166a2a2bf66fc51e4d333384a65"
+path = "/home/ross/.claude-work/skills/review-v2-lenses/lenses/plan-structure.md"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "gate-stamp"
+reason = "digest omits scripts/, which cli::dispatch::tests reads (shared-blocks.toml, verify-shared-blocks.sh), but the hook runs that verifier unconditionally, so a skip loses no check"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "fix-files"
+reason = "Finding::edited_paths consumers are schedule fold, select test-removal hold-back and fields::route; design keeps them off fix_files and widens schedule's own set, as stated"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "launch-args"
+reason = "dropped reasons cover all six run-milestone.md section 4 rules; dependents of an executor or no-files drop fall to need-not-done via rule 5"
+
+[[cells]]
+id = "C7"
+run = "U1"
+wave = 1
+pass = 2
+slice = [
+    "docs/flows/v2-harness-tuning/design/*.md",
+    "docs/flows/v2-harness-tuning/brief.md",
+]
+concerns = ["ripple"]
+agent = "review-sweeper"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = "Slice: brief.md and design/shapes.md (new, untracked, 13.9 KB, read in full via outline and diff). Diff base..HEAD is empty; working-tree brief.md diff is 57 insertions and 0 removed lines, so NAMES is empty and no tree-wide search was needed. Ripple probes: 6 code-family and 4 plan-family, each with no name to sweep; 0 searches run, 0 hits. PRIOR: 0 rows in both slice entries. No findings, no rule-outs, no escalations. Covered."
+
+[[cells.bound]]
+concern = "ripple"
+hash = "2ea56e25c8e6ec6fd719397e0b3ef7bab7a35dd20fe64aec4aa80baa05e6c02d"
+path = "/home/ross/.claude-work/skills/review-v2-lenses/lenses/ripple.md"
+methods = ["sweep"]
+
+[[cells]]
+id = "C8"
+run = "U1"
+wave = 1
+slice = [
+    "test-the-workflow-scripts-logic-under-stubbed-globals",
+    "record-an-addressed-finding-and-emit-re-check-targets",
+    "give-each-accept-entry-an-owner",
+    "emit-a-milestones-launch-args",
+]
+concerns = ["plan-executor"]
+agent = "plan-executor"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = "Dry-ran 4 tasks (32, 11, 18, 21) from worker views plus brief and design/shapes.md. Read 3 workflow scripts, lint.rs, link scripts, hook, review fields/store/triage/stats, cli triage types, tasks Accept literals, plan stage/check/dispatch, run-milestone.md s3-4, findings.md. Probed node --test <dir> (passes), 17 grep accept checks by reading, 6 premises confirmed. Files parity checked against all 39 rows. 3 findings, 2 rule-outs."
+
+[[cells.bound]]
+concern = "plan-executor"
+hash = "8ed9686fe20cd07ec74dc00bab8517268a55f04b768ae3377cefbdcc8a9d8ebe"
+path = "/home/ross/.claude-work/skills/review-v2-lenses/lenses/plan-executor.md"
+methods = ["dry-run"]
+
+[[cells.ruled_out]]
+file = ".claude/flows/v2-harness-tuning/tasks.toml"
+symbol = "test-the-workflow-scripts-logic-under-stubbed-globals"
+reason = 'Hook regex claude/workflows/.*\.js misses the .mjs harness alone, but D3 settles hook coverage via cli::dispatch::tests with no hook change'
+
+[[cells.ruled_out]]
+file = ".claude/flows/v2-harness-tuning/tasks.toml"
+symbol = "test-the-workflow-scripts-logic-under-stubbed-globals"
+reason = "A node-less Windows host failing cli::dispatch::tests is D3's chosen behaviour (user-confirmed: fail, not skip)"
+
+[[cells]]
+id = "C9"
+run = "U1"
+wave = 1
+slice = [
+    "emit-a-milestones-reproduce-units-and-store-a-runs-dispatched-tasks",
+    "run-a-milestones-tasks-through-a-rolling-pool",
+    "route-reproduce-units-to-the-checker-and-batch-plan-defects-in-review-v2js",
+    "drainmd-adopts-the-gate-list-the-audit-file-widening-and-unquoted-path-reads",
+]
+concerns = ["plan-executor"]
+agent = "plan-executor"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = "Dry-ran 4 tasks (23, 26, 28, 34) from brief.md, design/shapes.md and tasks show. Read plan/schema.rs Run + codec, records.rs run_start, plan/dispatch.rs, review/store.rs + reproduce.rs, implement-v2-milestone.js, review-v2.js reproduce + wave routing, findings.md reproduce section, drain.md, drift.rs. Confirmed 4 base premises; judged 13 accept greps by reading (polarity holds). 26 ran clean. Transcript dir premise of task 34 unverifiable here."
+
+[[cells.bound]]
+concern = "plan-executor"
+hash = "8ed9686fe20cd07ec74dc00bab8517268a55f04b768ae3377cefbdcc8a9d8ebe"
+path = "/home/ross/.claude-work/skills/review-v2-lenses/lenses/plan-executor.md"
+methods = ["dry-run"]
+
+[[cells.ruled_out]]
+file = ".claude/flows/v2-harness-tuning/tasks.toml"
+symbol = "run-a-milestones-tasks-through-a-rolling-pool"
+reason = "'Keep settleBlocked' vs blocking on after ids: the detail itself says an after id not done settles blocked, so extending settleBlocked is implied."
+
+[[cells.ruled_out]]
+file = ".claude/flows/v2-harness-tuning/tasks.toml"
+symbol = "drainmd-adopts-the-gate-list-the-audit-file-widening-and-unquoted-path-reads"
+reason = "'order the two with needs' direction is settled by drain.md's existing rule that a row needs the latest holder of each of its files."
+
+[[cells]]
+id = "C10"
+run = "U1"
+wave = 1
+slice = [
+    "warn-when-a-template-path-matches-nothing",
+    "tell-review-agents-about-fix_files-the-add-dry-run-the-cut-note-and-plan-review-names",
+    "plan-flow-prose-for-advisory-apply-the-addressed-disposition-and-digest-arrays",
+    "register-and-document-milestone-bs-review-surface",
+]
+concerns = ["plan-executor"]
+agent = "plan-executor"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = "Dry-ran 4 tasks (5,15,16,17) from brief, shapes.md and worker views. Read convert.rs validate_row_paths, output.rs shaping paths, review-sweeper steps 6/12, finder/verifier agents, plan-flow.md s1/s7/s10, engine SKILL halt list, digest/plan view --help, feature-token sites. 1 premise confirmed; 11 grep accepts judged healthy; files-overlap scan: all overlaps on dependency paths. 2 cleanups (16 pre-flight token, 17 narrow check). Covered."
+
+[[cells.bound]]
+concern = "plan-executor"
+hash = "8ed9686fe20cd07ec74dc00bab8517268a55f04b768ae3377cefbdcc8a9d8ebe"
+path = "/home/ross/.claude-work/skills/review-v2-lenses/lenses/plan-executor.md"
+methods = ["dry-run"]
+
+[[cells.ruled_out]]
+file = ".claude/flows/v2-harness-tuning/tasks.toml"
+symbol = "tell-review-agents-about-fix_files-the-add-dry-run-the-cut-note-and-plan-review-names"
+reason = "dispatch-tests check failing on --dry-run before task 13 lands is acknowledged in the task's detail"
+
+[[cells.ruled_out]]
+file = ".claude/flows/v2-harness-tuning/tasks.toml"
+symbol = "warn-when-a-template-path-matches-nothing"
+reason = "warning text, json suppression and crate-wide optional table are settled by design/shapes.md#template-paths and D14"
+
+[[cells]]
+id = "C11"
+run = "U1"
+wave = 2
+slice = ["docs/flows/v2-harness-tuning/brief.md"]
+concerns = ["probe:scope-budget-paths"]
+question = "The brief's Scope budget lists the paths the plan may touch, but tasks edit files outside that list: claude/commands/implement-v2.md and claude/commands/apply-v2.md, a test harness under claude/workflows/tests/ that the claude/workflows/*.js glob does not match, and claude/agents/verification.md, a fixed utility agent outside the v2 agent set. Check every task's files against the Scope budget paths and the Non-goals; for each file outside them, decide whether the budget should name it or the task should not touch it, and say what an approver or executor reading the brief would get wrong."
+agent = "review-finder"
+reason = "nearest plan-structure: escalated by C1 (brief#Scope budget omits files tasks edit); a cross-check of task files against the budget that no wave-1 cell owned"
+status = "covered"
+sealed = true
+note = "Read brief.md in full; checked the files of all 39 tasks against the Scope budget paths and the Non-goals; read decision D3, task 7 and 32 specs, verification.md Output and the hook's path regex. 5 claimed paths fall outside the budget (one cleanup). 1 Non-goals tension raised as advisory. 2 sites ruled out. The 30-vs-29 item count is prior F23, not re-raised."
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-harness-tuning/brief.md"
+symbol = "Non-goals"
+reason = "Task 36 edits the existing implement-v2 and apply-v2 carriers; the 'no new user-facing commands' Non-goal forbids new commands, not edits to existing ones"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-harness-tuning/brief.md"
+symbol = "Non-goals"
+reason = "No task claims glimpse/Cargo.lock, and none touches tomlctl/Cargo.toml (no version or dependency change), so the lockfile refresh the Non-goal allows is not needed"
+
+[[cells]]
+id = "C12"
+run = "U1"
+wave = 2
+slice = ["docs/flows/v2-harness-tuning/design/shapes.md"]
+concerns = ["probe:plan-batching-same-as"]
+question = "design/shapes.md#plan-batching sends all reverify ids to one verifier batch, while decision D10 keeps a finding that carries same_as as a single verification, and review verdict --strike-same-as works only on a single-verdict call, not in an --ndjson batch. Check whether a reverify id with a same_as can reach a batch under the shape as written, what the batch verifier could then not do, and which of the shape, D10 or the task implementing plan batching must change so the two agree."
+agent = "review-finder"
+reason = "nearest feasibility: escalated by C1 (plan-batching batches reverify ids against D10's same_as-stays-single rule); no wave-1 cell recorded it"
+status = "covered"
+sealed = true
+note = "Read in full: design/shapes.md#plan-batching, D10, Tasks 28/29/31, plan-v2-review.js reverify, plan-review-lead.md settle, digest.rs window, verdict.rs/verdicts.rs strike gating, review-verifier.md batch rule, fields.rs same_as visibility. Probe answered: 1 defect (reverify batch can carry a same_as row). 2 sites ruled out (pipeline batch exclusion; Task 28 ordering after the marker task)."
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "plan-batching"
+reason = "Pipeline side is sound: batch_defects keeps a same_as row single via the cell-return same_as marker, so only the reverify sentence conflicts with D10"
+
+[[cells.ruled_out]]
+file = ".claude/flows/v2-harness-tuning/tasks.toml"
+symbol = "route-reproduce-units-to-the-checker-and-batch-plan-defects-in-review-v2js"
+reason = "Task 28 needs task 13, so the review-v2.js batch rule lands after the cell-return same_as marker it reads"
+
+[[cells]]
+id = "C13"
+run = "U2"
+wave = 1
+slice = [
+    "docs/flows/v2-harness-tuning/brief.md",
+    "docs/flows/v2-harness-tuning/design/shapes.md",
+]
+concerns = [
+    "plan-dependencies",
+    "plan-grounding",
+    "plan-structure",
+]
+agent = "review-finder"
+reason = "recheck: re-checks the applied edits at brief#Scope budget, brief#Success criteria, design/shapes.md#addressed and design/shapes.md#reproduce-units; sliced to the two edited files"
+status = "covered"
+sealed = true
+note = "Read brief.md and shapes.md in full, plus plan view (decisions, milestones, tasks 11, 13, 14, 18-24, 27, 33-39). Grounding: 22 shapes citations checked against the tree, 0 missing; 9 behavioural premises traced (review-v2.js reproduce validation, schedule accept, route, caps, triage twins, args_hash, dispatch-test paths), 2 gaps raised. Brief: 29 Intent items mapped to criteria, all covered; task-file union inside Scope budget. STORE CHECK clean; no edge issues in slice. 4 rule-outs."
+
+[[cells.bound]]
+concern = "plan-dependencies"
+hash = "9089785602b0543b25d6250d57e92421e8481a00e172a0841a5128641d0a8fe5"
+path = "/home/ross/.claude-work/skills/review-v2-lenses/lenses/plan-dependencies.md"
+
+[[cells.bound]]
+concern = "plan-grounding"
+hash = "c1bb5e742f421490b368f9a34717fb9761016edf03a18ef10c84b254fdba434b"
+path = "/home/ross/.claude-work/skills/review-v2-lenses/lenses/plan-grounding.md"
+methods = [
+    "sweep",
+    "trace",
+]
+
+[[cells.bound]]
+concern = "plan-structure"
+hash = "560267297438cfbc751712728baa5905475de166a2a2bf66fc51e4d333384a65"
+path = "/home/ross/.claude-work/skills/review-v2-lenses/lenses/plan-structure.md"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "reproduce-units"
+reason = "round = highest + 1 rising on a relaunch matches findings.md, which says the check's round also rises on a relaunch"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "reproduce-status-by-milestone"
+reason = "'every fix row that is not a remove cleanup' reads per row, but task 19 collapses a row's identical entries and keeps the per-finding anchor entry"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "gate-stamp"
+reason = "six roots cover every path cli::dispatch::tests reads (claude/, .claude/review-lenses/, scripts/); no test reads CLAUDE.md or other docs"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-harness-tuning/brief.md"
+symbol = "Scope budget"
+reason = "the union of every task's files lies inside the listed paths"
+
+[[cells]]
+id = "C14"
+run = "U2"
+wave = 1
+slice = [
+    "docs/flows/v2-harness-tuning/brief.md",
+    "docs/flows/v2-harness-tuning/design/shapes.md",
+]
+concerns = ["ripple"]
+agent = "review-sweeper"
+reason = "recheck: sweeps for stale references left by the edits at brief#Scope budget, brief#Success criteria, design/shapes.md#addressed and design/shapes.md#reproduce-units"
+status = "covered"
+sealed = true
+note = "Ripple sweep over brief.md and design/shapes.md. Diff base c223ee76..HEAD for the slice is empty: NAMES has 0 entries, so 0 names searched and 0 tree-wide sweeps needed. The brief's uncommitted working-tree edits add Non-goals, Scope budget and Success criteria text and remove no names. design/ is untracked and has no diff base. Read the brief's working-tree diff hunks: additions only, no removed or renamed symbol. Probes run: 0 name probes, 0 seam or consumer probes (no code in slice). Candidates: none. Escalations: none."
+
+[[cells.bound]]
+concern = "ripple"
+hash = "2ea56e25c8e6ec6fd719397e0b3ef7bab7a35dd20fe64aec4aa80baa05e6c02d"
+path = "/home/ross/.claude-work/skills/review-v2-lenses/lenses/ripple.md"
+methods = ["sweep"]
+
+[[cells]]
+id = "C15"
+run = "U2"
+wave = 1
+slice = [
+    "docs/flows/v2-harness-tuning/brief.md",
+    "docs/flows/v2-harness-tuning/design/*.md",
+]
+concerns = [
+    "check:acceptance-contradiction",
+    "check:falsifiability",
+    "check:two-control-probe",
+]
+agent = "review-finder"
+reason = "recheck: plan-checks cell as proposed; re-checks the added accept entries at task:honour-a-gate-stamp-in-the-pre-commit-hook.spec.accept[+], task:route-reproduce-units-to-the-checker-and-batch-plan-defects-in-review-v2js.spec.accept[+] and task:test-the-workflow-scripts-logic-under-stubbed-globals.spec.accept[+], and brief#Success criteria"
+status = "covered"
+sealed = true
+note = "Read brief.md and design/shapes.md in full, plus the accept entries of all 39 tasks and the plan view. Ran plan check (no findings). Mapped all 27 success criteria to covering accept entries (all mapped) and paired each criterion and design shape against removals (task 35/39 pair cleared). Probe verdicts are all healthy. Checked route rules in fields.rs, schedule.rs accept, and dispatch-test reads for gate-stamp. Ruled out 3 sites. Break sets: none."
+
+[[cells.bound]]
+concern = "check:acceptance-contradiction"
+hash = "4985093da6fef6abeafcca320af7ec8da1bfc118fb984f13b4da2fcda0209b05"
+path = "/home/ross/.claude-work/skills/review-v2-lenses/checks/acceptance-contradiction.md"
+
+[[cells.bound]]
+concern = "check:falsifiability"
+hash = "7de096e64b9ea41b357986229d38a551976371cfc00fd0da97d22e8898aacf09"
+path = "/home/ross/.claude-work/skills/review-v2-lenses/checks/falsifiability.md"
+
+[[cells.bound]]
+concern = "check:two-control-probe"
+hash = "9bf3f291401cba73b8a53117119812c481ac9dc127b04783160450f6196787bc"
+path = "/home/ross/.claude-work/skills/review-v2-lenses/checks/two-control-probe.md"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "gate-stamp"
+reason = "digest roots cover every path the hook's cargo steps read: dispatch tests read only claude/, .claude/review-lenses, scripts/ and the crate"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "reproduce-units"
+reason = "round rising on a relaunch matches findings.md's own note that the check's round also rises on a relaunch; -r<n> covers the case it does not"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-harness-tuning/brief.md"
+symbol = "Success criteria"
+reason = "findings.md rename: task 35's grep on findings.md is upstream of task 39's removal and is worker-owned, never re-checked at the end"
+
+[[cells]]
+id = "C16"
+run = "U2"
+wave = 1
+slice = [
+    "docs/flows/v2-harness-tuning/brief.md",
+    "docs/flows/v2-harness-tuning/design/shapes.md",
+]
+concerns = [
+    "feasibility",
+    "plan-risk",
+]
+agent = "review-finder"
+reason = "recheck: re-checks the applied edits at brief#Scope budget, brief#Success criteria, design/shapes.md#addressed and design/shapes.md#reproduce-units; sliced to the two edited files"
+status = "covered"
+sealed = true
+note = "Read in full: brief.md, design/shapes.md and the plan view (decisions D1-D16, milestones, tasks 1-15, 23, 26, 27, 34-36). Traced 9 shapes sections against code: reproduce.rs, fields.rs, verdict.rs, the dispatch tests' read roots, plan probes flags, run-milestone.md and findings.md. 4 sites ruled out. 2 findings. Back-compat for older binaries reading by=checker was judged a deployment fact and not raised."
+
+[[cells.bound]]
+concern = "feasibility"
+hash = "dc1a293342e78b61aa982b6092375bf977170d57a047abfea29891ea6ef61f9f"
+path = "/home/ross/.claude-work/skills/review-v2-lenses/lenses/feasibility.md"
+methods = ["trace"]
+
+[[cells.bound]]
+concern = "plan-risk"
+hash = "3ffdf49eb449c3182a94b5becc8f24be319d258d67ed89fd32389ead42a8f58f"
+path = "/home/ross/.claude-work/skills/review-v2-lenses/lenses/plan-risk.md"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "gate-stamp"
+reason = "Digest roots cover every path cli::dispatch::tests reads: claude/, scripts/shared-blocks.toml, the scripts verifier, .claude/review-lenses; shared-blocks lists nothing outside them"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "reproduce-checker"
+reason = "Reproduction task is optional in reproduce.rs parse_row and upsert keys on by, so checker rows without per-finding task refs land and a later verifier row wins via rfind"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "worker-audit"
+reason = "Transcript dir source is pinned by Task 34's required Means (the launch result's Transcript dir line); the role rule is kept by Task 36"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "accept-owner"
+reason = "Absent writes_build derives gate, matching drain.md:237 and the worker body's Writes build rule today; additive keys only"
+
+[[cells]]
+id = "C17"
+run = "U2"
+wave = 1
+slice = ["docs/flows/v2-harness-tuning/brief.md"]
+concerns = ["test-gaps"]
+agent = "review-finder"
+reason = "recheck: re-checks the applied edits at brief#Scope budget and brief#Success criteria"
+status = "covered"
+sealed = true
+note = "Read in full: brief.md, design/shapes.md, all 39 task accept lists, milestone gates. Mapped 26 success criteria to task tests; 25 have a pinning test or prose grep. Ran pre-change grep of 21 prose accept checks (none pass early), checked drift.rs -z read and test, verdict cap and batch refusal, schema combinators. 1 finding, 2 rule-outs."
+
+[[cells.bound]]
+concern = "test-gaps"
+hash = "e50a44ddcbcf1985988dd67c56f0ceb0274e7835d2c6b992056bb56e64cb901b"
+path = "/home/ross/.claude-work/skills/review-v2-lenses/lenses/test-gaps.md"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-harness-tuning/brief.md"
+symbol = "Success criteria"
+reason = "B-ef8adde8 non-ASCII: drift reads git status -z, which bypasses quotePath; parse_status is byte-agnostic and its unit test covers a space"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-harness-tuning/brief.md"
+symbol = "Success criteria"
+reason = "Accept checks grep for test fn names only; deliberate, every tomlctl milestone gate runs the full nextest suite"
+
+[[cells]]
+id = "C18"
+run = "U2"
+wave = 1
+slice = [
+    "emit-a-milestones-reproduce-units-and-store-a-runs-dispatched-tasks",
+    "route-reproduce-units-to-the-checker-and-batch-plan-defects-in-review-v2js",
+    "test-the-workflow-scripts-logic-under-stubbed-globals",
+    "drainmd-adopts-the-gate-list-the-audit-file-widening-and-unquoted-path-reads",
+]
+concerns = ["plan-executor"]
+agent = "plan-executor"
+reason = "recheck: re-runs the edited tasks at task:emit-a-milestones-reproduce-units-and-store-a-runs-dispatched-tasks.files, task:route-reproduce-units-to-the-checker-and-batch-plan-defects-in-review-v2js.spec.accept[+], task:test-the-workflow-scripts-logic-under-stubbed-globals.spec.accept[+] and task:drainmd-adopts-the-gate-list-the-audit-file-widening-and-unquoted-path-reads.spec.constraints[+]; the L tasks fill the 4-task quick envelope, so task:honour-a-gate-stamp-in-the-pre-commit-hook.spec.accept[+] (M) is re-checked by the plan-checks cell"
+status = "covered"
+sealed = true
+note = "Dry-ran 4 tasks (23, 28, 32, 34) from worker views, brief and shapes.md. Read review-v2.js, plan-v2-review.js, implement-v2-milestone.js head, drain.md, findings.md reproduce check, plan/schema.rs Run, records.rs run_start, drift.rs, lint.rs, reproduce.rs, pre-commit gate. Confirmed 4 premises; judged 14 accept checks by reading; ran node --test on a scratch dir. Checked Files parity and sibling overlap for all 4. 6 rows: 5 defects, 1 advisory."
+
+[[cells.bound]]
+concern = "plan-executor"
+hash = "8ed9686fe20cd07ec74dc00bab8517268a55f04b768ae3377cefbdcc8a9d8ebe"
+path = "/home/ross/.claude-work/skills/review-v2-lenses/lenses/plan-executor.md"
+methods = ["dry-run"]
+
+[[cells.ruled_out]]
+file = ".claude/flows/v2-harness-tuning/tasks.toml"
+symbol = "drainmd-adopts-the-gate-list-the-audit-file-widening-and-unquoted-path-reads"
+reason = "Detail asks to reword 'waves' but drain.md has none; the task's suggested Means already says so, so no edit is needed"
+
+[[cells.ruled_out]]
+file = ".claude/flows/v2-harness-tuning/tasks.toml"
+symbol = "route-reproduce-units-to-the-checker-and-batch-plan-defects-in-review-v2js"
+reason = "Checker reproduce prompt carries no per-finding task; design/shapes.md#reproduce-checker fixes the prompt lines and reproduce.rs treats task as optional"
+
+[[findings]]
+id = "F1"
+run = "U1"
+cell = "C10"
+seen_in = ["U1"]
+family = "plan"
+kind = "cleanup"
+lens = "plan-executor"
+route = "verifier"
+file = ".claude/flows/v2-harness-tuning/tasks.toml"
+symbol = "plan-flow-prose-for-advisory-apply-the-addressed-disposition-and-digest-arrays"
+summary = "Task 16 writes `review digest --with` reads but pre-flights only review_addressed and never names the review_digest_with token"
+effort = "trivial"
+counter = "If `review digest` already took --with, a stale binary would not refuse it; `tomlctl review digest --help` shows no --with flag today."
+evidence = [
+    "tomlctl review digest --help: no --with option on the installed binary",
+    "plan-flow.md:38 and review-v2-engine/SKILL.md:78 halt lists name no digest token; the token name appears only in task 17's action",
+]
+edit = "In the detail, add `review_digest_with` beside `review_addressed` in plan-flow.md's capability pre-flight list and to the stage 0 halt list of review-v2-engine/SKILL.md."
+direction = "change"
+target = "task:plan-flow-prose-for-advisory-apply-the-addressed-disposition-and-digest-arrays.detail"
+expect = """"(1) `plan-flow.md`: add `review_addressed` to the capability pre-flight list; in section 7, the Advisory bullet offers `tomlctl review apply` with `--user-accepted` for a defect or cleanup row carrying `new`, and a finding the author fixed by hand is recorded with `tomlctl review triage --addressed`, never dismissed; a Revise answer on a question-tier row records the revised target the same way; in section 10 the re-check runs when a row was applied or addressed and takes `targets` from `tomlctl review recheck-targets --run <run>`; section 11's close summary counts `author-addressed`. (2) `triage-and-close.md`: a grammar row for `--addressed`. (3) `compose.md` sections on duplicates and rule-out hits, `review-v2-engine/SKILL.md` where it reads `duplicate_candidates` and `ruled_out_hits`, and `plan-review-lead.md` settle steps 3 and 4: read the arrays with `tomlctl review digest` plus `--with duplicates,ruled-out`. Shapes are in `design/shapes.md#addressed`, `design/shapes.md#cited-and-apply` and `design/shapes.md#digest`. Every fenced `tomlctl` command takes single-token placeholders. `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` fails on the new flags until the tasks adding them land, which names no file of this task.""""
+new = """"(1) `plan-flow.md`: add `review_addressed` and `review_digest_with` to the capability pre-flight list, and `review_digest_with` to the stage 0 halt list in `review-v2-engine/SKILL.md`, since the `--with` reads below fail on a binary without it; in section 7, the Advisory bullet offers `tomlctl review apply` with `--user-accepted` for a defect or cleanup row carrying `new`, and a finding the author fixed by hand is recorded with `tomlctl review triage --addressed`, never dismissed; a Revise answer on a question-tier row records the revised target the same way; in section 10 the re-check runs when a row was applied or addressed and takes `targets` from `tomlctl review recheck-targets --run <run>`; section 11's close summary counts `author-addressed`. (2) `triage-and-close.md`: a grammar row for `--addressed`. (3) `compose.md` sections on duplicates and rule-out hits, `review-v2-engine/SKILL.md` where it reads `duplicate_candidates` and `ruled_out_hits`, and `plan-review-lead.md` settle steps 3 and 4: read the arrays with `tomlctl review digest` plus `--with duplicates,ruled-out`. Shapes are in `design/shapes.md#addressed`, `design/shapes.md#cited-and-apply` and `design/shapes.md#digest`. Every fenced `tomlctl` command takes single-token placeholders. `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` fails on the new flags until the tasks adding them land, which names no file of this task.""""
+tier = "advisory"
+anchor = "plan|.claude/flows/v2-harness-tuning/tasks.toml|plan-flow-prose-for-advisory-apply-the-addressed-disposition-and-digest-arrays"
+status = "resolved"
+first_seen = 2026-11-11
+resolution = "Addressed by an author edit to the plan's records and design/shapes.md at triage, on the user's instruction. F14 is covered by the accept entry F6 applied, which runs `run` then `check` on an unchanged tree."
+resolved = 2026-11-11
+
+[[findings]]
+id = "F2"
+run = "U1"
+cell = "C10"
+seen_in = ["U1"]
+family = "plan"
+kind = "cleanup"
+lens = "plan-executor"
+route = "verifier"
+file = ".claude/flows/v2-harness-tuning/tasks.toml"
+symbol = "register-and-document-milestone-bs-review-surface"
+summary = "Task 17's narrow check runs only cli::dispatch::tests, which covers neither the capabilities list nor every_leaf_command_has_a_case"
+effort = "trivial"
+counter = "If the dispatch subset compiled and ran the integration tests the check would suffice; they are separate test binaries under tomlctl/tests/."
+evidence = [
+    "tomlctl/tests/output_options.rs:2227 every_leaf_command_has_a_case is an integration test, outside --lib",
+    "tomlctl/tests/capabilities.rs:1846 holds the expected feature list task 17 edits",
+    "CLAUDE.md Build discipline: the leaf-verb case lives in output_options.rs, which that subset does not run",
+]
+edit = "Name `cargo test --manifest-path tomlctl/Cargo.toml --test capabilities --test output_options` beside the dispatch subset in the detail."
+direction = "change"
+target = "task:register-and-document-milestone-bs-review-surface.detail"
+expect = """"Feature tokens go in the list in `tomlctl/src/cli/types/mod.rs`, in the expected list in `tomlctl/tests/capabilities.rs`, and in `tomlctl/README.md`'s feature list and table; add a row for them to the feature table of `claude/skills/tomlctl/SKILL.md`. `tomlctl/tests/output_options.rs` needs a case for `review recheck-targets`, or `every_leaf_command_has_a_case` fails. In `references/review.md`: `fix_files` in the store shape and field summary, `review add --dry-run`, the cut `cover` note with `note_truncated`, `review digest --with`, `review triage --addressed`, `review recheck-targets`, the widened cited rule, and `review apply --user-accepted` on an advisory-tier edit. In `references/review-apply.md`: `fix_files` in what `schedule` reads, and `by = checker` on a reproduction. Read each verb's flags from the code the earlier tasks landed; the shapes are `design/shapes.md#fix-files`, `#cited-and-apply`, `#addressed`, `#digest` and `#caps`. Check with `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`.""""
+new = """"Feature tokens go in the list in `tomlctl/src/cli/types/mod.rs`, in the expected list in `tomlctl/tests/capabilities.rs`, and in `tomlctl/README.md`'s feature list and table; add a row for them to the feature table of `claude/skills/tomlctl/SKILL.md`. `tomlctl/tests/output_options.rs` needs a case for `review recheck-targets`, or `every_leaf_command_has_a_case` fails. In `references/review.md`: `fix_files` in the store shape and field summary, `review add --dry-run`, the cut `cover` note with `note_truncated`, `review digest --with`, `review triage --addressed`, `review recheck-targets`, the widened cited rule, and `review apply --user-accepted` on an advisory-tier edit. In `references/review-apply.md`: `fix_files` in what `schedule` reads, and `by = checker` on a reproduction. Read each verb's flags from the code the earlier tasks landed; the shapes are `design/shapes.md#fix-files`, `#cited-and-apply`, `#addressed`, `#digest` and `#caps`. Check with `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` and `cargo test --manifest-path tomlctl/Cargo.toml --test capabilities --test output_options`, since the dispatch subset runs neither the expected feature list nor `every_leaf_command_has_a_case`.""""
+tier = "advisory"
+anchor = "plan|.claude/flows/v2-harness-tuning/tasks.toml|register-and-document-milestone-bs-review-surface"
+status = "resolved"
+first_seen = 2026-11-11
+resolution = "Addressed by an author edit to the plan's records and design/shapes.md at triage, on the user's instruction. F14 is covered by the accept entry F6 applied, which runs `run` then `check` on an unchanged tree."
+resolved = 2026-11-11
+
+[[findings]]
+id = "F3"
+run = "U1"
+cell = "C8"
+seen_in = ["U1"]
+family = "plan"
+kind = "cleanup"
+lens = "plan-executor"
+route = "verifier"
+file = ".claude/flows/v2-harness-tuning/tasks.toml"
+symbol = "emit-a-milestones-launch-args"
+summary = "Detail says the HEAD read follows plan drift, but drift.rs reads no HEAD commit; the task's own Means names approve.rs"
+effort = "trivial"
+counter = "If drift.rs gained a HEAD read before this task runs, the sentence would hold; rg 'rev-parse' over tomlctl/src/plan finds it only in approve.rs and probes.rs's emitted script."
+edit = "Replace the Detail sentence 'The HEAD read follows what `plan drift` does.' with 'Read the current HEAD as `plan/approve.rs` does, with `git rev-parse --verify HEAD^{commit}`.' so Detail and the suggested Means agree."
+direction = "change"
+target = "task:emit-a-milestones-launch-args.detail"
+expect = """"Create `tomlctl/src/plan/emit.rs` and register a `PlanOp::Emit` with a nested subcommand enum in `cli/types/plan.rs` and `plan/dispatch.rs`. The six dispatch rules are in `claude/skills/implement-v2-engine/references/run-milestone.md`, section 4, and the premise table in its section 3; the started-row exception is in `references/findings.md`, section Anchor premises on a started row. Reuse the downward closure the `tasks closure --down` verb computes for transitive drops. `root` is the repository top level. The HEAD read follows what `plan drift` does. Tests in the new `tomlctl/tests/plan_emit.rs`: `launch_args_apply_the_dispatch_rules`, `launch_args_keep_an_after_task_whose_target_is_dispatched`, `launch_args_refuse_a_stale_premise_verdict`, `launch_args_hash_matches_the_args`. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(launch_args)'`. The feature token, the output-options case and the reference pages are another task's.""""
+new = """"Create `tomlctl/src/plan/emit.rs` and register a `PlanOp::Emit` with a nested subcommand enum in `cli/types/plan.rs` and `plan/dispatch.rs`. The six dispatch rules are in `claude/skills/implement-v2-engine/references/run-milestone.md`, section 4, and the premise table in its section 3; the started-row exception is in `references/findings.md`, section Anchor premises on a started row. Reuse the downward closure the `tasks closure --down` verb computes for transitive drops. `root` is the repository top level. Read the current HEAD as `plan/approve.rs` does, with `git rev-parse --verify HEAD^{commit}`. Tests in the new `tomlctl/tests/plan_emit.rs`: `launch_args_apply_the_dispatch_rules`, `launch_args_keep_an_after_task_whose_target_is_dispatched`, `launch_args_refuse_a_stale_premise_verdict`, `launch_args_hash_matches_the_args`. Narrow run: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(launch_args)'`. The feature token, the output-options case and the reference pages are another task's.""""
+tier = "advisory"
+anchor = "plan|.claude/flows/v2-harness-tuning/tasks.toml|emit-a-milestones-launch-args"
+status = "resolved"
+first_seen = 2026-11-11
+resolution = "Addressed by an author edit to the plan's records and design/shapes.md at triage, on the user's instruction. F14 is covered by the accept entry F6 applied, which runs `run` then `check` on an unchanged tree."
+resolved = 2026-11-11
+
+[[findings]]
+id = "F4"
+run = "U1"
+cell = "C8"
+seen_in = ["U1"]
+family = "plan"
+kind = "cleanup"
+lens = "plan-executor"
+route = "verifier"
+file = ".claude/flows/v2-harness-tuning/tasks.toml"
+symbol = "give-each-accept-entry-an-owner"
+summary = "Two new error classes need a remedy arm in plan/stage.rs, which its own test says every error class has; stage.rs is not on the Files line"
+effort = "trivial"
+counter = "If the plan intends new classes to fall back to PLAN_CHECK, the remedy-table test (stage.rs every_class_the_stores_raise_as_an_error_has_its_own_remedy) would not list them; but it lists every existing tasks-update class."
+edit = "Add tomlctl/src/plan/stage.rs to the task's files, and in Detail map plan/accept-owner-invalid and plan/accept-cover-unknown to TASKS_UPDATE in stage.rs remedy() and in every_class_the_stores_raise_as_an_error_has_its_own_remedy. Without it both fall back to `plan check` as the Prove step's next verb."
+direction = "change"
+target = "task:give-each-accept-entry-an-owner.files"
+expect = '["tomlctl/src/tasks/schema.rs","tomlctl/src/tasks/add.rs","tomlctl/src/tasks/show.rs","tomlctl/src/tasks/update.rs","tomlctl/src/plan/view.rs","tomlctl/src/plan/probes.rs","tomlctl/src/plan/check.rs","tomlctl/src/plan/store.rs","tomlctl/tests/tasks_spec_add.rs","tomlctl/tests/plan_view.rs","tomlctl/tests/plan_probes.rs","tomlctl/tests/plan_check.rs"]'
+new = '["tomlctl/src/tasks/schema.rs","tomlctl/src/tasks/add.rs","tomlctl/src/tasks/show.rs","tomlctl/src/tasks/update.rs","tomlctl/src/plan/view.rs","tomlctl/src/plan/probes.rs","tomlctl/src/plan/check.rs","tomlctl/src/plan/store.rs","tomlctl/src/plan/stage.rs","tomlctl/tests/tasks_spec_add.rs","tomlctl/tests/plan_view.rs","tomlctl/tests/plan_probes.rs","tomlctl/tests/plan_check.rs"]'
+tier = "advisory"
+anchor = "plan|.claude/flows/v2-harness-tuning/tasks.toml|give-each-accept-entry-an-owner"
+status = "resolved"
+first_seen = 2026-11-11
+resolution = "Addressed by an author edit to the plan's records and design/shapes.md at triage, on the user's instruction. F14 is covered by the accept entry F6 applied, which runs `run` then `check` on an unchanged tree."
+resolved = 2026-11-11
+
+[[findings]]
+id = "F5"
+run = "U1"
+cell = "C8"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "plan-executor"
+route = "verifier"
+file = ".claude/flows/v2-harness-tuning/tasks.toml"
+symbol = "record-an-addressed-finding-and-emit-re-check-targets"
+summary = "--targets defaults to the finding's own target, but neither task nor shapes says what --addressed does for a finding with no target"
+severity = "minor"
+failure_scenario = "The executor implements `review triage F --addressed <text>` without --targets on a markdown-mode plan finding (anchored by plan_section, no `target`) or a code finding. One executor refuses it, another resolves it with an empty `addressed`, which stats then counts as author-addressed while recheck-targets gets nothing; the tests the task names do not pin either."
+fix = "Add to the Detail: a finding with no `target` and no `--targets` is refused, naming the id, as is any non-plan finding, since `addressed` is plan-only; the call refuses the whole id set before writing."
+effort = "trivial"
+counter = "If design/shapes.md#addressed or the triage verb already refuses targetless rows generically, this is settled; neither the shapes section nor cli/types/review/triage.rs says so."
+grade = "medium"
+evidence = [
+    "design/shapes.md#addressed: '--targets ... defaults to each finding's own target' with no rule for an absent target",
+    "tomlctl/src/review/fields.rs:146 Resolved companions are resolution, resolved; addressed is new and plan-only per the task Detail",
+]
+target = "task:record-an-addressed-finding-and-emit-re-check-targets.detail"
+tier = "advisory"
+anchor = "plan|.claude/flows/v2-harness-tuning/tasks.toml|record-an-addressed-finding-and-emit-re-check-targets"
+status = "resolved"
+first_seen = 2026-11-11
+resolution = "Addressed by an author edit to the plan's records and design/shapes.md at triage, on the user's instruction. F14 is covered by the accept entry F6 applied, which runs `run` then `check` on an unchanged tree."
+resolved = 2026-11-11
+
+[[findings]]
+id = "F6"
+run = "U1"
+cell = "C5"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "test-gaps"
+route = "verifier"
+file = ".claude/flows/v2-harness-tuning/tasks.toml"
+symbol = "honour-a-gate-stamp-in-the-pre-commit-hook"
+summary = "No accept check pins that the gate stamp is voided by a change under its roots, the one property that keeps the hook from skipping cargo on an ungated tree"
+severity = "major"
+failure_scenario = "The worker writes gate-stamp.sh with a digest that misses untracked files (git ls-files without --others) or hashes paths only. All five accepts pass: the script exists, parses, check fails with no stamp, CLAUDE.md names it, the hook parses. Milestone E's gates never run the script. After one `run`, an edit to tomlctl/src or a new claude/ file leaves `check` at 0, so the hook skips fmt, the dispatch tests and glimpse clippy on an ungated tree."
+fix = "Append an accept entry to the task that runs the script in a throwaway repo with a stub cargo on PATH: `run` stamps, `check` passes, then an edit and an untracked file each make `check` fail. It writes only under mktemp and builds nothing, so the worker can run it."
+effort = "small"
+counter = "A later task or milestone gate that runs gate-stamp.sh run then check against an edited tree would cover it; no gate of milestone E and no other task names the script."
+grade = "high"
+evidence = [
+    "tasks show 38: accept entries are test -f/bash -n, grep gate-stamp.sh in the hook, no-stamp check fails, grep in CLAUDE.md, bash -n hook",
+    "milestone E gates: verify-shared-blocks, verify-plan-story-blocks, nextest, cargo install glimpse; none runs gate-stamp.sh",
+    "design/shapes.md Gate stamp: check exits 0 only when the stamp holds the digest of the tree as it now is, tracked or untracked",
+]
+target = "task:honour-a-gate-stamp-in-the-pre-commit-hook.spec.accept[+]"
+new = '''{"behaviour":"a stamp is voided by an edit or a new untracked file under its roots","check":"( t=$(mktemp -d) && git -C \"$t\" init -q && mkdir -p \"$t/scripts\" \"$t/claude\" \"$t/bin\" && printf '#!/bin/sh\\nexit 0\\n' > \"$t/bin/cargo\" && chmod +x \"$t/bin/cargo\" && cp scripts/gate-stamp.sh \"$t/scripts/\" && echo a > \"$t/claude/x\" && cd \"$t\" && PATH=\"$t/bin:$PATH\" bash scripts/gate-stamp.sh run && bash scripts/gate-stamp.sh check && echo b > claude/x && ! bash scripts/gate-stamp.sh check && echo a > claude/x && echo c > claude/y && ! bash scripts/gate-stamp.sh check )","kind":"forward","positive":"","writes_build":false}'''
+tier = "cited"
+anchor = "plan|.claude/flows/v2-harness-tuning/tasks.toml|honour-a-gate-stamp-in-the-pre-commit-hook"
+status = "resolved"
+first_seen = 2026-11-11
+resolution = "applied to task:honour-a-gate-stamp-in-the-pre-commit-hook.spec.accept[+]"
+resolved = 2026-11-11
+
+[findings.applied]
+at = "2026-11-11T09:55:06.269746362Z"
+tier = "cited"
+target = "task:honour-a-gate-stamp-in-the-pre-commit-hook.spec.accept[+]"
+old = "null"
+new = '''{"behaviour":"a stamp is voided by an edit or a new untracked file under its roots","check":"( t=$(mktemp -d) && git -C \"$t\" init -q && mkdir -p \"$t/scripts\" \"$t/claude\" \"$t/bin\" && printf '#!/bin/sh\\nexit 0\\n' > \"$t/bin/cargo\" && chmod +x \"$t/bin/cargo\" && cp scripts/gate-stamp.sh \"$t/scripts/\" && echo a > \"$t/claude/x\" && cd \"$t\" && PATH=\"$t/bin:$PATH\" bash scripts/gate-stamp.sh run && bash scripts/gate-stamp.sh check && echo b > claude/x && ! bash scripts/gate-stamp.sh check && echo a > claude/x && echo c > claude/y && ! bash scripts/gate-stamp.sh check )","kind":"forward","positive":"","writes_build":false}'''
+by = "tool"
+recovered = false
+
+[[findings]]
+id = "F7"
+run = "U1"
+cell = "C5"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "test-gaps"
+route = "verifier"
+file = ".claude/flows/v2-harness-tuning/tasks.toml"
+symbol = "test-the-workflow-scripts-logic-under-stubbed-globals"
+summary = "The rolling-pool, after-release, reproduce-checker and batch_defects criteria rest on harness cases no accept check names, and the brief lets the harness be cut"
+severity = "major"
+failure_scenario = "Tasks 26, 28 and 29 accept only identifier greps (Promise.race, needs_files, no nextWave, batch_defects). Task 32's accepts check only that the harness names the three scripts and a Rust test exists. A harness cut to its smallest step, as the brief's Scope budget allows, passes every accept and the nextest gate while a pool that puts two tasks sharing a file in flight, or never releases an after task, ships in milestone D."
+fix = "Append an accept entry to task 32 grepping claude/workflows/tests/harness.test.mjs for the titles of the five behavioural cases its detail lists: the short task starting beside a long one, the after task released on done and blocked on failure, two tasks sharing a file never in flight together, a checker unit's unsettled finding reaching a verifier, and batch_defects batching two singles while a same_as row stays single."
+effort = "trivial"
+counter = "Another task or a milestone D gate that pins those cases by name would cover it; none does, and the gate's nextest pass shows only that whatever cases exist pass."
+grade = "high"
+evidence = [
+    "tasks show 26: accepts grep Promise.race, needs_files, ! nextWave only",
+    "tasks show 28 and 29: one accept each, grep batch_defects",
+    "tasks show 32: accepts grep the three script names and fn workflow_scripts_logic_passes_under_node",
+    "brief.md Scope budget: the Workflow-script test harness may be cut to its smallest useful step",
+]
+target = "task:test-the-workflow-scripts-logic-under-stubbed-globals.spec.accept[+]"
+new = '''{"behaviour":"the harness carries the pool, after-release, file-exclusion, reproduce-checker and batch_defects cases","check":"f=claude/workflows/tests/harness.test.mjs; grep -qF 'a short task starts while a long file-disjoint task is in flight' \"$f\" && grep -qF 'an after task starts once its target is done' \"$f\" && grep -qF 'an after task is blocked when its target fails' \"$f\" && grep -qF 'two tasks sharing a file are never in flight together' \"$f\" && grep -qF 'an unsettled checker finding goes to a verifier' \"$f\" && grep -qF 'batch_defects batches two singles and keeps a same_as row single' \"$f\"","kind":"forward","positive":"","writes_build":false}'''
+tier = "cited"
+anchor = "plan|.claude/flows/v2-harness-tuning/tasks.toml|test-the-workflow-scripts-logic-under-stubbed-globals"
+status = "resolved"
+first_seen = 2026-11-11
+resolution = "applied to task:test-the-workflow-scripts-logic-under-stubbed-globals.spec.accept[+]"
+resolved = 2026-11-11
+
+[findings.applied]
+at = "2026-11-11T09:55:06.279396309Z"
+tier = "cited"
+target = "task:test-the-workflow-scripts-logic-under-stubbed-globals.spec.accept[+]"
+old = "null"
+new = '''{"behaviour":"the harness carries the pool, after-release, file-exclusion, reproduce-checker and batch_defects cases","check":"f=claude/workflows/tests/harness.test.mjs; grep -qF 'a short task starts while a long file-disjoint task is in flight' \"$f\" && grep -qF 'an after task starts once its target is done' \"$f\" && grep -qF 'an after task is blocked when its target fails' \"$f\" && grep -qF 'two tasks sharing a file are never in flight together' \"$f\" && grep -qF 'an unsettled checker finding goes to a verifier' \"$f\" && grep -qF 'batch_defects batches two singles and keeps a same_as row single' \"$f\"","kind":"forward","positive":"","writes_build":false}'''
+by = "tool"
+recovered = false
+
+[[findings]]
+id = "F8"
+run = "U1"
+cell = "C9"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "plan-executor"
+route = "verifier"
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "reproduce-units"
+summary = "reproduce-units emits task as an int id and store as a string; review-v2.js reproduce mode refuses both, so a launches entry cannot be passed as args"
+severity = "major"
+failure_scenario = """Task 23 implements the shape as written: units[].task = 4 and store = "". Task 35 then launches review-v2-pipeline with each launches entry as args. review-v2.js reproduce mode requires units[].task to be a string matching TASK_REF and store an object with exactly one of slug or scope, so it records 'store must hold exactly one of slug or scope' and 'units[0].task 4 does not match', then 'no agent launched'; every reproduce check is refused."""
+fix = """In the reproduce-units shape, emit store as {"slug": "<s>"} or {"scope": "<scope>"}, the object findings.md's args already use, and units[].task as the row's ref, not its numeric id (the reproduction's task field is the apply task's ref too). State in task 23's detail that a launches entry must pass review-v2.js's reproduce validation unchanged."""
+effort = "trivial"
+counter = "If task 28 or another task rewrote review-v2.js validation to accept an int task and a string store; task 28's detail changes only route, checker pooling and batch_defects."
+grade = "high"
+evidence = [
+    "claude/workflows/review-v2.js:54-56 store must hold exactly one of slug or scope (a.store.slug / a.store.scope)",
+    "claude/workflows/review-v2.js:40,45,65 TASK_REF = /^[a-z0-9_-]+$/; matches() requires typeof value === 'string'; units[i].task checked against it",
+    'claude/skills/implement-v2-engine/references/findings.md:93-96 args carry "store": {"slug": "<s>"} and units[].task "<task ref>"',
+    "task 35 detail: launch review-v2-pipeline once per launches entry with that entry as args",
+    "tomlctl/src/review/store.rs:1224-1226 a finding_links store is named by its repo-relative path, the string an emit would copy",
+]
+target = "design/shapes.md#reproduce-units"
+expect = '"{\"launches\": [{\"mode\": \"reproduce\", \"store\": \"\", \"flow\": \"\", \"milestone\": \"\", \"round\": 1, \"run_dir\": \"\",\n               \"units\": [{\"task\": 4, \"files\": [], \"findings\": [\"F1\"], \"route\": \"checker\"}]}]}"'
+new = '"{\"launches\": [{\"mode\": \"reproduce\", \"store\": {\"slug\": \"\"}, \"flow\": \"\", \"milestone\": \"\", \"round\": 1, \"run_dir\": \"\",\n               \"units\": [{\"task\": \"<task ref>\", \"files\": [], \"findings\": [\"F1\"], \"route\": \"checker\"}]}]}"'
+tier = "advisory"
+anchor = "plan|docs/flows/v2-harness-tuning/design/shapes.md|reproduce-units"
+status = "resolved"
+first_seen = 2026-11-11
+resolution = "Addressed by an author edit to the plan's records and design/shapes.md at triage, on the user's instruction. F14 is covered by the accept entry F6 applied, which runs `run` then `check` on an unchanged tree."
+resolved = 2026-11-11
+
+[[findings]]
+id = "F9"
+run = "U1"
+cell = "C9"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "plan-executor"
+route = "verifier"
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "reproduce-units"
+summary = "reproduce-units run_dir drops the per-store suffix, so two stores' launches in the same round share one run directory"
+severity = "minor"
+failure_scenario = "A milestone links two review stores, each with no prior reproductions, so both launches get round 1 and run_dir .review-v2-runs/apply-<slug>-<id>-1. The second launch's checker batch 1 writes payloads/reproduce-checker-1.ndjson over the first's, and a checker that fails its Write loads the other store's rows: the stale-payload case B-72a04d82 closes."
+fix = "Keep findings.md's rule: when the milestone links more than one store, each launch's run_dir ends -<s> or -<scope> before any -r<n>. Write it into the run_dir bullet and pin it with a test beside reproduce_units_one_launch_per_store."
+effort = "trivial"
+counter = "If rounds were global across stores rather than per store; the shape says round is per store's [[reproductions]]."
+grade = "high"
+evidence = [
+    "design/shapes.md#reproduce-units: one launches entry per store; run_dir is .review-v2-runs/apply-<slug>-<milestone>-<round>, with -r<n> only under --relaunch",
+    "claude/skills/implement-v2-engine/references/findings.md:96: when a second store is checked in the same round, its run_dir ends -<s> or -<scope> so the two runs keep apart",
+    "design/shapes.md#reproduce-checker: checker payloads are payloads/reproduce-checker-<batch>.ndjson, so batch 1 of each launch shares a name",
+]
+target = "design/shapes.md#reproduce-units"
+expect = '"`run_dir` is `.review-v2-runs/apply-<slug>-<milestone>-<round>`, with `-r<n>` appended under `--relaunch <n>`, so a relaunch of a round never shares a directory with the launch before it."'
+new = '"`run_dir` is `.review-v2-runs/apply-<slug>-<milestone>-<round>`, then `-<s>` or `-<scope>` naming the store when the milestone links more than one, then `-r<n>` under `--relaunch <n>`, so neither a second store nor a relaunch of a round shares a directory with another launch."'
+tier = "cited"
+anchor = "plan|docs/flows/v2-harness-tuning/design/shapes.md|reproduce-units"
+status = "resolved"
+first_seen = 2026-11-11
+resolution = "applied to design/shapes.md#reproduce-units"
+resolved = 2026-11-11
+
+[findings.applied]
+at = "2026-11-11T09:55:06.28995271Z"
+tier = "cited"
+target = "design/shapes.md#reproduce-units"
+old = '"`run_dir` is `.review-v2-runs/apply-<slug>-<milestone>-<round>`, with `-r<n>` appended under `--relaunch <n>`, so a relaunch of a round never shares a directory with the launch before it."'
+new = '"`run_dir` is `.review-v2-runs/apply-<slug>-<milestone>-<round>`, then `-<s>` or `-<scope>` naming the store when the milestone links more than one, then `-r<n>` under `--relaunch <n>`, so neither a second store nor a relaunch of a round shares a directory with another launch."'
+by = "tool"
+recovered = false
+
+[[findings]]
+id = "F10"
+run = "U1"
+cell = "C9"
+seen_in = ["U1"]
+family = "plan"
+kind = "cleanup"
+lens = "plan-executor"
+route = "verifier"
+file = ".claude/flows/v2-harness-tuning/tasks.toml"
+symbol = "emit-a-milestones-reproduce-units-and-store-a-runs-dispatched-tasks"
+summary = "Adding the reproduce-units subcommand needs a dispatch arm in plan/dispatch.rs, which the Files line omits"
+effort = "trivial"
+edit = "Add tomlctl/src/plan/dispatch.rs to the task's files. Task 21 registers PlanOp::Emit with a nested subcommand enum in cli/types/plan.rs and plan/dispatch.rs, and every nested group there (Run, Handover, Milestone) matches its inner enum in dispatch.rs, so a new emit variant needs an arm there. Task 22 has the same gap."
+direction = "change"
+target = "task:emit-a-milestones-reproduce-units-and-store-a-runs-dispatched-tasks.files"
+expect = '["tomlctl/src/plan/emit.rs","tomlctl/src/plan/schema.rs","tomlctl/src/plan/records.rs","tomlctl/src/cli/types/plan.rs","tomlctl/tests/plan_emit.rs","tomlctl/tests/plan_records.rs"]'
+new = '["tomlctl/src/plan/emit.rs","tomlctl/src/plan/dispatch.rs","tomlctl/src/plan/schema.rs","tomlctl/src/plan/records.rs","tomlctl/src/cli/types/plan.rs","tomlctl/tests/plan_emit.rs","tomlctl/tests/plan_records.rs"]'
+tier = "cited"
+anchor = "plan|.claude/flows/v2-harness-tuning/tasks.toml|emit-a-milestones-reproduce-units-and-store-a-runs-dispatched-tasks"
+status = "resolved"
+first_seen = 2026-11-11
+resolution = "applied to task:emit-a-milestones-reproduce-units-and-store-a-runs-dispatched-tasks.files"
+resolved = 2026-11-11
+
+[findings.applied]
+at = "2026-11-11T09:55:06.299567189Z"
+tier = "cited"
+target = "task:emit-a-milestones-reproduce-units-and-store-a-runs-dispatched-tasks.files"
+old = '["tomlctl/src/plan/emit.rs","tomlctl/src/plan/schema.rs","tomlctl/src/plan/records.rs","tomlctl/src/cli/types/plan.rs","tomlctl/tests/plan_emit.rs","tomlctl/tests/plan_records.rs"]'
+new = '["tomlctl/src/plan/emit.rs","tomlctl/src/plan/dispatch.rs","tomlctl/src/plan/schema.rs","tomlctl/src/plan/records.rs","tomlctl/src/cli/types/plan.rs","tomlctl/tests/plan_emit.rs","tomlctl/tests/plan_records.rs"]'
+by = "tool"
+recovered = false
+
+[[findings]]
+id = "F11"
+run = "U1"
+cell = "C9"
+seen_in = ["U1"]
+family = "plan"
+kind = "cleanup"
+lens = "plan-executor"
+route = "verifier"
+file = ".claude/flows/v2-harness-tuning/tasks.toml"
+symbol = "route-reproduce-units-to-the-checker-and-batch-plan-defects-in-review-v2js"
+summary = "No accept entry covers the reproduce checker route; an implementation of batch_defects alone passes the only check"
+effort = "trivial"
+edit = "Append an accept entry that fails today and binds the checker half: grep for the checker payload name the detail requires."
+direction = "add"
+target = "task:route-reproduce-units-to-the-checker-and-batch-plan-defects-in-review-v2js.spec.accept[+]"
+new = """{"behaviour":"reproduce mode pools checker units into review-checker batches writing their own payload","check":"grep -q 'reproduce-checker-' claude/workflows/review-v2.js","kind":"forward","positive":"","writes_build":false}"""
+tier = "cited"
+anchor = "plan|.claude/flows/v2-harness-tuning/tasks.toml|route-reproduce-units-to-the-checker-and-batch-plan-defects-in-review-v2js"
+status = "resolved"
+first_seen = 2026-11-11
+resolution = "applied to task:route-reproduce-units-to-the-checker-and-batch-plan-defects-in-review-v2js.spec.accept[+]"
+resolved = 2026-11-11
+
+[findings.applied]
+at = "2026-11-11T09:55:06.309135981Z"
+tier = "cited"
+target = "task:route-reproduce-units-to-the-checker-and-batch-plan-defects-in-review-v2js.spec.accept[+]"
+old = "null"
+new = """{"behaviour":"reproduce mode pools checker units into review-checker batches writing their own payload","check":"grep -q 'reproduce-checker-' claude/workflows/review-v2.js","kind":"forward","positive":"","writes_build":false}"""
+by = "tool"
+recovered = false
+
+[[findings]]
+id = "F12"
+run = "U1"
+cell = "C9"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "plan-executor"
+route = "verifier"
+file = ".claude/flows/v2-harness-tuning/tasks.toml"
+symbol = "drainmd-adopts-the-gate-list-the-audit-file-widening-and-unquoted-path-reads"
+summary = "The audit rule calls every run outside a task's own accept a breach, so the cli::dispatch::tests subset workers are told to run is reported as one"
+severity = "major"
+failure_scenario = "A worker on a task editing claude/**/*.md runs `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`, as CLAUDE.md's build discipline requires and as this plan's own details (tasks 26, 28, 34) say. agents audit matches it as a cargo test run; the accept names no such check, so drain.md as written reports it to the user as a breach every milestone, burying real gate-owned runs."
+fix = "In detail (1), allow besides a test the task's own accept names: the cli::dispatch::tests subset after a claude/**/*.md edit or a new tomlctl verb, and any check the task's own detail names; only other matches are breaches."
+effort = "trivial"
+counter = "If agents audit's default patterns excluded the --lib cli::dispatch::tests form; shapes.md#worker-audit matches any cargo test invocation."
+grade = "high"
+evidence = [
+    "CLAUDE.md Build discipline: after editing a claude/**/*.md file or adding a tomlctl verb, a sub-agent runs cargo test ... --lib -- cli::dispatch::tests",
+    "design/shapes.md#worker-audit: default patterns are a cargo build, cargo test or cargo nextest invocation",
+    "task 34 detail (1): a narrow test a task's own accept names is allowed, anything else is named as a breach",
+]
+target = "task:drainmd-adopts-the-gate-list-the-audit-file-widening-and-unquoted-path-reads.spec.constraints[+]"
+new = """"The audit allows, besides a narrow test the task's own accept names, the `cli::dispatch::tests` subset a worker runs after editing a `claude/**/*.md` file or adding a `tomlctl` verb, and any check the task's own detail names; only other matches are named as breaches.""""
+tier = "cited"
+anchor = "plan|.claude/flows/v2-harness-tuning/tasks.toml|drainmd-adopts-the-gate-list-the-audit-file-widening-and-unquoted-path-reads"
+status = "resolved"
+first_seen = 2026-11-11
+resolution = "applied to task:drainmd-adopts-the-gate-list-the-audit-file-widening-and-unquoted-path-reads.spec.constraints[+]"
+resolved = 2026-11-11
+
+[findings.applied]
+at = "2026-11-11T09:55:06.319064528Z"
+tier = "cited"
+target = "task:drainmd-adopts-the-gate-list-the-audit-file-widening-and-unquoted-path-reads.spec.constraints[+]"
+old = "null"
+new = """"The audit allows, besides a narrow test the task's own accept names, the `cli::dispatch::tests` subset a worker runs after editing a `claude/**/*.md` file or adding a `tomlctl` verb, and any check the task's own detail names; only other matches are named as breaches.""""
+by = "tool"
+recovered = false
+
+[[findings]]
+id = "F13"
+run = "U1"
+cell = "C9"
+seen_in = ["U1"]
+family = "plan"
+kind = "cleanup"
+lens = "plan-executor"
+route = "verifier"
+file = ".claude/flows/v2-harness-tuning/tasks.toml"
+symbol = "drainmd-adopts-the-gate-list-the-audit-file-widening-and-unquoted-path-reads"
+summary = "Detail leaves two drain.md lines stale: step 2's index shape lacks needs_files, and step 3's opening reason rests on the old own-work rule"
+effort = "trivial"
+edit = "Append a constraint naming both: step 2's index shape `{id, status, note, error, deviations, handover}` gains `needs_files`; step 3's opening sentence, which runs drift before status moves so past-pending rows count as own work, is restated for the set-agent rule."
+direction = "add"
+target = "task:drainmd-adopts-the-gate-list-the-audit-file-widening-and-unquoted-path-reads.spec.constraints[+]"
+new = """"Step 2's index shape lists `needs_files`, and step 3's opening sentence no longer says drift must run before status moves so that past-`pending` rows count as own work; a row with a set agent and no commit is own work whatever its status.""""
+tier = "cited"
+anchor = "plan|.claude/flows/v2-harness-tuning/tasks.toml|drainmd-adopts-the-gate-list-the-audit-file-widening-and-unquoted-path-reads"
+status = "resolved"
+first_seen = 2026-11-11
+resolution = "applied to task:drainmd-adopts-the-gate-list-the-audit-file-widening-and-unquoted-path-reads.spec.constraints[+]"
+resolved = 2026-11-11
+
+[findings.applied]
+at = "2026-11-11T09:55:06.329092964Z"
+tier = "cited"
+target = "task:drainmd-adopts-the-gate-list-the-audit-file-widening-and-unquoted-path-reads.spec.constraints[+]"
+old = "null"
+new = """"Step 2's index shape lists `needs_files`, and step 3's opening sentence no longer says drift must run before status moves so that past-`pending` rows count as own work; a row with a set agent and no commit is own work whatever its status.""""
+by = "tool"
+recovered = false
+
+[[findings]]
+id = "F14"
+run = "U1"
+cell = "C3"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "check:falsifiability"
+route = "verifier"
+file = ".claude/flows/v2-harness-tuning/tasks.toml"
+symbol = "honour-a-gate-stamp-in-the-pre-commit-hook"
+summary = "No accept entry of the gate-stamp task shows check passing on a matching stamp, so a check mode that always exits 1 lands green"
+severity = "major"
+failure_scenario = "A worker writes scripts/gate-stamp.sh whose check mode exits 1 unconditionally (or whose run writes a digest check never reproduces) and wires it into the hook. A0 (exists, parses), A1 (hook greps gate-stamp.sh), A2 (check fails with no stamp), A3 (CLAUDE.md mentions it) and A4 all pass, and milestone E's gates never run the script, so the task is done while the hook never skips a cargo step and B-e57e08ff stays open."
+fix = "Append a gate-owned entry that binds the positive half: behaviour 'a stamp written by run satisfies check on the unchanged tree', check `bash scripts/gate-stamp.sh run && bash scripts/gate-stamp.sh check`, kind forward, writes_build true (so the gate, not the worker, runs it; run executes the hook's cargo steps). A2 stays: it is a worker check run once at landing, before any stamp exists."
+effort = "trivial"
+counter = "A milestone E gate or another accept entry that runs gate-stamp.sh run then check would discriminate; the E gates are the two verifiers, nextest and cargo install --path glimpse, and task 38's five entries are listed in evidence."
+grade = "high"
+evidence = [
+    "tasks show 38 --with spec: accept[0..4] are test -f + bash -n, grep gate-stamp.sh in .githooks/pre-commit, test ! -f gate-stamp && ! check, grep gate-stamp.sh CLAUDE.md, bash -n pre-commit",
+    "plan view milestone E gates: verify-shared-blocks.sh, verify-plan-story-blocks.sh, cargo nextest run, cargo install --path glimpse; none runs gate-stamp.sh",
+    "brief.md:67 success criterion: a commit train over an already gated tree does not pay the full pre-commit cost per commit",
+]
+target = "task:honour-a-gate-stamp-in-the-pre-commit-hook.spec.accept[+]"
+new = '{"behaviour":"a stamp written by run satisfies check on the unchanged tree","check":"bash scripts/gate-stamp.sh run && bash scripts/gate-stamp.sh check","kind":"forward","positive":"","writes_build":true}'
+tier = "advisory"
+related = ["F6"]
+anchor = "plan|.claude/flows/v2-harness-tuning/tasks.toml|honour-a-gate-stamp-in-the-pre-commit-hook"
+status = "resolved"
+first_seen = 2026-11-11
+resolution = "Addressed by an author edit to the plan's records and design/shapes.md at triage, on the user's instruction. F14 is covered by the accept entry F6 applied, which runs `run` then `check` on an unchanged tree."
+resolved = 2026-11-11
+
+[[findings]]
+id = "F15"
+run = "U1"
+cell = "C3"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "check:falsifiability"
+route = "verifier"
+file = "docs/flows/v2-harness-tuning/brief.md"
+symbol = "Success criteria"
+summary = "The no-step-says---no-verify criterion already fails on commit-conventions examples.md and no task touches that file"
+severity = "minor"
+failure_scenario = "At the end-of-plan check of the B-e57e08ff criterion, a reader greps for steps telling the committer to pass --no-verify and finds claude/skills/commit-conventions/references/examples.md:103 ('use git stash or a feature branch with --no-verify'). No task's files include that file, so a correct execution of every task leaves the criterion false as written."
+fix = "Narrow the criterion to the surfaces this plan owns: 'and no step of the hook, CLAUDE.md or the v2 engines and agents tells the committer to pass `--no-verify`'. The alternative, editing examples.md, is outside the Scope budget's paths."
+effort = "trivial"
+counter = "If the criterion is read as scoped to commit trains only, examples.md:103 (WIP checkpoint advice) does not count; rg -- '--no-verify' over claude, CLAUDE.md, scripts and .githooks finds no other instructing line."
+grade = "medium"
+evidence = [
+    "brief.md:67: and no step tells the committer to pass `--no-verify` (B-e57e08ff)",
+    "claude/skills/commit-conventions/references/examples.md:103: use `git stash` or a feature branch with `--no-verify`",
+    "no task's files list claude/skills/commit-conventions/references/examples.md (tasks 1-39 Files read)",
+]
+target = "brief#Success criteria"
+expect = '"and no step tells the committer to pass `--no-verify` (B-e57e08ff)"'
+new = '"and no step of the hook, CLAUDE.md or the v2 engines and agents tells the committer to pass `--no-verify` (B-e57e08ff)"'
+anchor = "plan|docs/flows/v2-harness-tuning/brief.md|Success criteria"
+status = "refuted"
+first_seen = 2026-11-11
+
+[[findings]]
+id = "F16"
+run = "U1"
+cell = "C6"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "plan-grounding"
+route = "verifier"
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "reproduce-units"
+summary = "reproduce-units emits units[].task as a numeric id and store as a string; review-v2.js reproduce mode refuses both"
+severity = "major"
+failure_scenario = """After the plan lands, findings.md (task 35) launches review-v2-pipeline with each launches entry as args. review-v2.js reproduce mode requires units[].task to be a string matching ^[a-z0-9_-]+$ and store to be an object holding slug or scope; an entry shaped as the design shows (task: 4, store: "") fails both, so the Workflow refuses the whole launch with 'no agent launched' and no reproduce check runs in any apply milestone."""
+fix = """In design/shapes.md#reproduce-units make store the object the Workflow takes ({"slug": ""} or {"scope": ""}) and a unit's task the fixing row's ref string, as findings.md's current args and the reproductions' task field already use. Task 23 then emits that shape and its tests pin it; task 28's constraint that route-less args behave as today already keeps the Workflow's validation unchanged."""
+effort = "trivial"
+counter = "Refuted if task 28 or 35 converts the emitted entry (ref lookup, store object) before launch, or loosens the reproduce-mode validation; neither task's action or detail says so, and task 35 says to pass the entry as args."
+grade = "high"
+evidence = [
+    "claude/workflows/review-v2.js:40 TASK_REF = /^[a-z0-9_-]+$/; :45 matches() requires typeof string; :64 refuses units[i].task that does not match",
+    "claude/workflows/review-v2.js:48,56 rStore = a.store || {}; refuses unless exactly one of store.slug or store.scope",
+    'docs/flows/v2-harness-tuning/design/shapes.md:71-72 "store": "" and "units": [{"task": 4, ...}]',
+    'claude/skills/implement-v2-engine/references/findings.md:93 current args use "store": {"slug": "<s>"} and "task": "<task ref>"',
+    "tasks show 35: detail (1) 'launch review-v2-pipeline once per launches entry with that entry as args'",
+]
+target = "design/shapes.md#reproduce-units"
+expect = '"{\"launches\": [{\"mode\": \"reproduce\", \"store\": \"\", \"flow\": \"\", \"milestone\": \"\", \"round\": 1, \"run_dir\": \"\",\n               \"units\": [{\"task\": 4, \"files\": [], \"findings\": [\"F1\"], \"route\": \"checker\"}]}]}"'
+new = '"{\"launches\": [{\"mode\": \"reproduce\", \"store\": {\"slug\": \"\"}, \"flow\": \"\", \"milestone\": \"\", \"round\": 1, \"run_dir\": \"\",\n               \"units\": [{\"task\": \"<task ref>\", \"files\": [], \"findings\": [\"F1\"], \"route\": \"checker\"}]}]}"'
+tier = "advisory"
+same_as = "F8"
+related = [
+    "F8",
+    "F9",
+]
+anchor = "plan|docs/flows/v2-harness-tuning/design/shapes.md|reproduce-units"
+outcome = "repeat"
+status = "merged"
+first_seen = 2026-11-11
+merged_into = "F8"
+
+[[findings]]
+id = "F17"
+run = "U1"
+cell = "C6"
+seen_in = ["U1"]
+family = "plan"
+kind = "cleanup"
+lens = "plan-grounding"
+route = "verifier"
+file = "docs/flows/v2-harness-tuning/brief.md"
+symbol = "Scope budget"
+summary = "Scope budget says all 30 items under Intent, but Intent lists 29 backlog items"
+effort = "trivial"
+counter = "Refuted if an Intent bullet is missing that the plan meant to include; the Background and the tasks' closes both also name 29 distinct ids."
+edit = "Change 'All 30 items listed under Intent' to 'All 29 items listed under Intent'."
+direction = "change"
+target = "brief#Scope budget"
+expect = '"All 30 items listed under Intent"'
+new = '"All 29 items listed under Intent"'
+tier = "user"
+same_as = "F23"
+anchor = "plan|docs/flows/v2-harness-tuning/brief.md|Scope budget"
+outcome = "repeat"
+status = "merged"
+first_seen = 2026-11-11
+merged_into = "F23"
+
+[[findings]]
+id = "F18"
+run = "U1"
+cell = "C6"
+seen_in = ["U1"]
+family = "plan"
+kind = "advisory"
+lens = "plan-grounding"
+route = "none"
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "launch-args"
+summary = "launch-args' HEAD guard on premise probes cannot catch a skipped premise step on a relaunch, since HEAD does not move between launches"
+angle = "challenge"
+rationale = "A probe's at is git HEAD (plan/probes.rs writes capture.head), and a milestone commits only after its gate, so every relaunch inside a milestone runs at the HEAD the first launch recorded. A relaunch that skips step 3 passes the guard with round-1 verdicts, though round-1 worker edits may have falsified a base premise. The guard only catches a skip across a commit, e.g. the first launch after a milestone commit."
+alternative = "Require a premise probe newer than the milestone's latest implement:<id> run start, or have launch-args take the premises capture it just recorded."
+adoption_cost = "Small: compare each probe against the latest implement:<id> run row (or record a time on the probe, D8's own if-false), in task 21's emit plus one test."
+challenges = "plan.toml decision D8 (why: 'a HEAD guard catches a skipped step'), as design/shapes.md#launch-args states it"
+tier = "advisory"
+same_as = "F24"
+anchor = "plan|docs/flows/v2-harness-tuning/design/shapes.md|launch-args"
+status = "parked"
+first_seen = 2026-11-11
+park_reason = "untriaged at the close of U1"
+
+[[findings]]
+id = "F19"
+run = "U1"
+cell = "C1"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "plan-grounding"
+route = "verifier"
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "reproduce-units"
+summary = "reproduce-units emits store as a string and task as a numeric id; review-v2.js reproduce mode refuses both, so every emitted launch is refused"
+severity = "major"
+failure_scenario = """After milestone E, findings.md launches review-v2-pipeline with each `launches` entry as args. The entry carries `"store": "<string>"` and `"task": 4`; review-v2.js reproduce mode pushes 'store must hold exactly one of slug or scope' and 'units[0].task 4 does not match ^[a-z0-9_-]+$', starts no agent and returns an empty index. Every reproduce check of every apply milestone is refused, so no fix milestone can reach its gate."""
+fix = "In design/shapes.md#reproduce-units make the entry the Workflow's args as findings.md writes them today: `store` an object holding `slug` for `.claude/flows/<s>/review-v2.toml` or `scope` for `.claude/review-v2/<scope>.toml`, never both, and each unit's `task` the row's `ref`, not its id. Add a bullet saying so. Task 23 (emit-a-milestones-reproduce-units-...) should gain a test pinning both shapes, and task 28 keeps review-v2.js validation unchanged."
+effort = "small"
+counter = "A task not read here (23, 28 or 35) could reshape the emit output or relax review-v2.js validation to accept a string store and numeric task; their details as read keep the validation and pass the entry as args."
+grade = "high"
+evidence = [
+    "claude/workflows/review-v2.js:54-56 store must hold exactly one of slug or scope (a.store.slug / a.store.scope)",
+    "claude/workflows/review-v2.js:40,45,65 TASK_REF = /^[a-z0-9_-]+$/; matches() requires typeof value === 'string'; units[i].task checked against it",
+    'claude/skills/implement-v2-engine/references/findings.md:93-96 args carry "store": {"slug": "<s>"} and units[].task "<task ref>"',
+    "task 35 detail: launch review-v2-pipeline once per launches entry with that entry as args",
+    "tomlctl/src/review/store.rs:1224-1226 a finding_links store is named by its repo-relative path, the string an emit would copy",
+]
+target = "design/shapes.md#reproduce-units"
+expect = '"{\"launches\": [{\"mode\": \"reproduce\", \"store\": \"\", \"flow\": \"\", \"milestone\": \"\", \"round\": 1, \"run_dir\": \"\",\n               \"units\": [{\"task\": 4, \"files\": [], \"findings\": [\"F1\"], \"route\": \"checker\"}]}]}"'
+new = '"{\"launches\": [{\"mode\": \"reproduce\", \"store\": {\"slug\": \"\"}, \"flow\": \"\", \"milestone\": \"\", \"round\": 1, \"run_dir\": \"\",\n               \"units\": [{\"task\": \"<task ref>\", \"files\": [], \"findings\": [\"F1\"], \"route\": \"checker\"}]}]}"'
+tier = "advisory"
+same_as = "F8"
+related = [
+    "F8",
+    "F9",
+    "F16",
+]
+anchor = "plan|docs/flows/v2-harness-tuning/design/shapes.md|reproduce-units"
+outcome = "repeat"
+status = "merged"
+first_seen = 2026-11-11
+merged_into = "F8"
+
+[[findings]]
+id = "F20"
+run = "U1"
+cell = "C1"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "plan-grounding"
+route = "verifier"
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "reproduce-units"
+summary = "reproduce-units drops findings.md's per-store run_dir suffix, so two linked stores checked in one round share a run directory"
+severity = "minor"
+failure_scenario = "A milestone links two review stores, both with no reproductions yet. The emit gives both launches round 1 and run_dir .review-v2-runs/apply-<slug>-<m>-1; the second store's checker writes payloads/reproduce-checker-1.ndjson over the first's and a verifier unit can meet a payload the earlier launch wrote, the stale-payload case B-72a04d82 closes."
+fix = "In design/shapes.md#reproduce-units keep today's rule: every launch after the first in a round appends `-<s>` or `-<scope>` to run_dir, before any `-r<n>`. Task 23 gains a test that two stores in one round get distinct run_dir values."
+effort = "trivial"
+counter = "If no flow can link two review stores to one milestone, the case cannot arise; findings.md:82 and :96 treat it as live today."
+grade = "high"
+evidence = [
+    "claude/skills/implement-v2-engine/references/findings.md:96 'When a second store is checked in the same round, its run_dir ends -<s> or -<scope> so the two runs keep apart'",
+    "design/shapes.md reproduce-units: run_dir is .review-v2-runs/apply-<slug>-<milestone>-<round>, -r<n> only under --relaunch; round counted per store",
+    "task 35 detail (1) replaces 'the per-store split' with the one emit call",
+]
+target = "design/shapes.md#reproduce-units"
+expect = '"- `run_dir` is `.review-v2-runs/apply-<slug>-<milestone>-<round>`, with `-r<n>` appended under `--relaunch <n>`, so a relaunch of a round never shares a directory with the launch before it."'
+new = """"- `run_dir` is `.review-v2-runs/apply-<slug>-<milestone>-<round>`, then `-<s>` or `-<scope>` on every launch after the first in the same round, as findings.md names a second store's directory today, then `-r<n>` under `--relaunch <n>`, so neither a second store's launch nor a relaunch of a round shares a directory with another launch.""""
+tier = "advisory"
+same_as = "F9"
+related = [
+    "F8",
+    "F9",
+    "F16",
+]
+anchor = "plan|docs/flows/v2-harness-tuning/design/shapes.md|reproduce-units"
+outcome = "repeat"
+status = "merged"
+first_seen = 2026-11-11
+merged_into = "F9"
+
+[[findings]]
+id = "F21"
+run = "U1"
+cell = "C1"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "plan-grounding"
+route = "verifier"
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "gate-stamp"
+summary = "The gate-stamp digest omits scripts/, which cli::dispatch::tests reads, so a scripts/ edit after a stamp leaves the stamp matching untested bytes"
+severity = "minor"
+failure_scenario = "Run gate-stamp.sh run, then edit scripts/shared-blocks.toml (a block left with one carrier) or scripts/verify-shared-blocks.sh, and commit it with a claude/*.md path. check still exits 0, the hook skips cli::dispatch::tests, and blocks_verify_agrees_with_shell_gate, which would now fail, never runs; today the hook runs it on that commit."
+fix = "Add `scripts/` to the digest's roots in design/shapes.md#gate-stamp, and make task 38's detail ('the five roots') six. Any later hook step that reads another root should join the list too."
+effort = "trivial"
+counter = "If the always-run verify-shared-blocks.sh caught every failure the Rust test catches, the gap would be harmless; the Rust test also asserts manifest shape (thin blocks) and Rust-shell agreement, which the shell alone does not."
+grade = "high"
+evidence = [
+    "tomlctl/src/cli/dispatch/tests/skills.rs:110: shared_block_manifest reads scripts/shared-blocks.toml",
+    "tomlctl/src/cli/dispatch/tests/skills.rs:147: runs scripts/verify-shared-blocks.sh",
+    ".githooks/pre-commit:59: gate cargo test ... --lib -- cli::dispatch::tests is one of the cargo steps the stamp skips",
+    "design/shapes.md#gate-stamp: digest covers tomlctl/, glimpse/, claude/, .claude/review-lenses/ and docs/plans/ only",
+]
+target = "design/shapes.md#gate-stamp"
+expect = '"under `tomlctl/`, `glimpse/`, `claude/`, `.claude/review-lenses/` and `docs/plans/`."'
+new = '"under `tomlctl/`, `glimpse/`, `claude/`, `.claude/review-lenses/`, `docs/plans/` and `scripts/`, the last because `cli::dispatch::tests` reads `scripts/shared-blocks.toml` and runs `scripts/verify-shared-blocks.sh`."'
+tier = "advisory"
+anchor = "plan|docs/flows/v2-harness-tuning/design/shapes.md|gate-stamp"
+status = "resolved"
+first_seen = 2026-11-11
+resolution = "Addressed by an author edit to the plan's records and design/shapes.md at triage, on the user's instruction. F14 is covered by the accept entry F6 applied, which runs `run` then `check` on an unchanged tree."
+resolved = 2026-11-11
+
+[[findings]]
+id = "F22"
+run = "U1"
+cell = "C1"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "plan-grounding"
+route = "verifier"
+file = ".claude/flows/v2-harness-tuning/tasks.toml"
+symbol = "report-a-passing-verification-command-on-one-line"
+summary = "The one-line pass form drops exit: and log: and renames duration_s, fields v1 /implement's step 5(ii) reads from a pass block"
+severity = "minor"
+failure_scenario = "v1 /implement (a non-goal, untouched) judges a block: 'pass needs exit: 0', and on an ambiguous block reads its log:, then records duration_s 'when the block carries them'. After task 7 a pass line carries none of exit:, log: or duration_s:, so the v1 orchestrator cannot apply its own pass rule as written, loses the log fallback, and records no duration."
+fix = "Keep the fields v1 reads in the one line: `outcome: pass | command: <command> | exit: 0 | duration_s: <n> | log: <path> | summary: <the SUMMARY value>`. It still starts 'outcome: pass | command:', so the task's accept check holds."
+effort = "trivial"
+counter = "If no v1 carrier still dispatches the verification agent, the consumer is moot; claude/commands/implement.md:179 and :256 still do."
+grade = "high"
+evidence = [
+    "claude/commands/implement.md:179 '`pass` needs `exit: 0` ... On an ambiguous block, Read at most ~40 lines of its `log:`'",
+    "claude/commands/implement.md:184 records duration_s and failed_ids 'when the block carries them'",
+    "claude/agents/verification.md:142-150 the block fields exit:, duration_s:, log: on every outcome",
+    "brief#Non-goals: the v1 carriers stay untouched",
+]
+target = "task:report-a-passing-verification-command-on-one-line.detail"
+expect = '"The one line is `outcome: pass | command: <command> | duration: <duration> | summary: <the SUMMARY value>`. It still appears for every passing command, in list order, so the rule that no command is elided holds; reword the two places that demand a block per pass. Rewrite the worked example to show the line form above a full fail block. Check the edit with `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."'
+new = """"The one line is `outcome: pass | command: <command> | exit: 0 | duration_s: <duration_s> | log: <log path> | summary: <the SUMMARY value>`, keeping the fields v1 `/implement`'s step 5(ii) reads from a pass block. It still appears for every passing command, in list order, so the rule that no command is elided holds; reword the two places that demand a block per pass. Rewrite the worked example to show the line form above a full fail block. Check the edit with `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`.""""
+tier = "advisory"
+anchor = "plan|.claude/flows/v2-harness-tuning/tasks.toml|report-a-passing-verification-command-on-one-line"
+status = "dismissed"
+first_seen = 2026-11-11
+dismiss_reason = "The user answered Keep on F33: the one-line pass form stands as task 7 writes it, and v1 carriers read it as it is."
+
+[[findings]]
+id = "F23"
+run = "U1"
+cell = "C1"
+seen_in = ["U1"]
+family = "plan"
+kind = "cleanup"
+lens = "plan-grounding"
+route = "verifier"
+file = "docs/flows/v2-harness-tuning/brief.md"
+symbol = "Scope budget"
+summary = "Scope budget says 30 items are listed under Intent; Intent lists 29"
+effort = "trivial"
+counter = "grep -c '^- B-' over the Intent section (brief.md lines 5-33) prints 29."
+edit = "Change 'All 30 items listed under Intent' to 'All 29 items listed under Intent'."
+direction = "change"
+target = "brief#Scope budget"
+expect = '"All 30 items listed under Intent"'
+new = '"All 29 items listed under Intent"'
+tier = "user"
+related = ["F17"]
+anchor = "plan|docs/flows/v2-harness-tuning/brief.md|Scope budget"
+status = "resolved"
+first_seen = 2026-11-11
+resolution = "applied to brief#Scope budget"
+resolved = 2026-11-11
+
+[findings.applied]
+at = "2026-11-11T09:58:33.825205627Z"
+tier = "user"
+target = "brief#Scope budget"
+old = '"All 30 items listed under Intent"'
+new = '"All 29 items listed under Intent"'
+by = "user"
+recovered = false
+
+[[findings]]
+id = "F24"
+run = "U1"
+cell = "C1"
+seen_in = ["U1"]
+family = "plan"
+kind = "advisory"
+lens = "plan-grounding"
+route = "none"
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "launch-args"
+summary = "launch-args' HEAD guard cannot catch a skipped premise run on a relaunch, since HEAD does not move inside a milestone"
+angle = "challenge"
+rationale = "run-milestone.md section 3 runs premises before every relaunch because earlier tasks' uncommitted edits move the code. Within a milestone nothing commits until the gate, so verdicts from the first launch still carry at = HEAD on a relaunch: a skipped re-run passes the guard and a task launches on a stale holds. The guard D8 adds only catches a skip across commits."
+alternative = "Accept the gap and say in run-milestone.md that the guard covers only the first launch after a commit."
+adoption_cost = "Key the guard to the run instead of HEAD: require each probe recorded after the latest implement:<id> run's start (run rows carry timestamps), or record a working-tree digest with the probe; one check in task 21 plus a test."
+challenges = ".claude/flows/v2-harness-tuning/plan.toml D8 (why: 'a HEAD guard catches a skipped step'; if_false names a recorded datetime); design/shapes.md#launch-args third bullet"
+target = "design/shapes.md#launch-args"
+tier = "advisory"
+related = ["F18"]
+anchor = "plan|docs/flows/v2-harness-tuning/design/shapes.md|launch-args"
+status = "parked"
+first_seen = 2026-11-11
+park_reason = "untriaged at the close of U1"
+
+[[findings]]
+id = "F25"
+run = "U1"
+cell = "C4"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "feasibility"
+route = "verifier"
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "reproduce-units"
+summary = "reproduce-units gives every store's launch the same run_dir, dropping findings.md's second-store suffix, so two stores' payloads collide"
+severity = "minor"
+failure_scenario = "A milestone whose finding_links name two review stores: plan emit reproduce-units returns two launches with the same run_dir apply-<slug>-<id>-<round> when both stores sit at the same round. Both launches write payloads/reproduce-<task>.ndjson and reproduce-checker-<batch>.ndjson (batches numbered from 1 in each) in one directory, so one launch can load the other store's rows, recording a verdict against a same-numbered F-id of the wrong store."
+fix = "In design/shapes.md#reproduce-units, keep today's rule from findings.md: the launch of every store after the first ends -<s> or -<scope> before any -r<n>. Task 23 then implements and tests it (its test list gains a two-store run_dir case)."
+effort = "trivial"
+counter = "Would not hold if a milestone can never link two review stores; findings.md step 2 documents that case and its suffix, so the case is expected."
+grade = "high"
+evidence = [
+    "design/shapes.md#reproduce-units: one launches entry per store; run_dir is .review-v2-runs/apply-<slug>-<milestone>-<round>, with -r<n> only under --relaunch",
+    "claude/skills/implement-v2-engine/references/findings.md:96: when a second store is checked in the same round, its run_dir ends -<s> or -<scope> so the two runs keep apart",
+    "design/shapes.md#reproduce-checker: checker payloads are payloads/reproduce-checker-<batch>.ndjson, so batch 1 of each launch shares a name",
+]
+target = "design/shapes.md#reproduce-units"
+expect = '"so a relaunch of a round never shares a directory with the launch before it."'
+new = """"so a relaunch of a round never shares a directory with the launch before it. When the milestone links more than one store, the launch of every store after the first ends `-<s>` or `-<scope>` before any `-r<n>`, so two stores' launches never share a directory.""""
+tier = "advisory"
+same_as = "F9"
+related = [
+    "F8",
+    "F9",
+    "F16",
+    "F19",
+    "F20",
+]
+anchor = "plan|docs/flows/v2-harness-tuning/design/shapes.md|reproduce-units"
+outcome = "repeat"
+status = "merged"
+first_seen = 2026-11-11
+merged_into = "F9"
+
+[[findings]]
+id = "F26"
+run = "U1"
+cell = "C4"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "feasibility"
+route = "verifier"
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "reproduce-units"
+summary = "A checker unit's gone test reads old at the anchor only, so it passes a fix left undone in instances, fix_files or a target_file"
+severity = "minor"
+failure_scenario = "A doc cleanup with instances (five stale references) routes checker at review time. The fix row edits the anchor only; the checker finds old absent at the anchor and records gone, so the milestone gate passes with four stale sites. Likewise a change cleanup whose old lives in target_file: old never occurred in file, so the checker records gone before any edit."
+fix = "In design/shapes.md#reproduce-units, make route checker also require that no finding of the unit carries instances, fix_files or target_file; those units go to the verifier, which reads the fix. The checker's anchor test then always reads the file old was matched in."
+effort = "trivial"
+counter = "Would not hold if the checker prompt (task 30) told it to read every instance and target_file; the design states only the anchor test, and instance sites carry no old text to grep."
+grade = "medium"
+evidence = [
+    "tomlctl/src/review/fields.rs:1422-1437: a non-plan cleanup routes Checker when no edited path (file, target_file, instances) is executable, so doc cleanups with instances route checker",
+    "tomlctl/src/review/anchor.rs:107-112: review anchor --gone reads old in edit_target (target_file when given), not in file",
+    "design/shapes.md#fix-files: Finding::edited_paths does not read fix_files, so the stored route ignores them",
+]
+target = "design/shapes.md#reproduce-units"
+expect = '"and none has `direction = \"add\"`; otherwise `verifier`."'
+new = '"and none has `direction = \"add\"`, `instances`, `fix_files` or `target_file`; otherwise `verifier`."'
+tier = "advisory"
+related = [
+    "F8",
+    "F9",
+    "F16",
+    "F19",
+    "F20",
+]
+anchor = "plan|docs/flows/v2-harness-tuning/design/shapes.md|reproduce-units"
+status = "resolved"
+first_seen = 2026-11-11
+resolution = "Addressed by an author edit to the plan's records and design/shapes.md at triage, on the user's instruction. F14 is covered by the accept entry F6 applied, which runs `run` then `check` on an unchanged tree."
+resolved = 2026-11-11
+
+[[findings]]
+id = "F27"
+run = "U1"
+cell = "C4"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "feasibility"
+route = "verifier"
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "worker-return"
+summary = "The released worker's premise check runs the --premises --task emit, which also re-runs its base premises against the tree its predecessors edited"
+severity = "minor"
+failure_scenario = "Task t holds base premise grep -q old_name f.rs and after:m premise grep -q new_name f.rs, and m renames it. The engine checked the base premise before launch. When m returns done the Workflow releases t; its worker runs the --emit --premises --task t script, which emits both lines; the base line now exits 1, so the worker returns failed on a correct task and the drain replans and relaunches."
+fix = "In design/shapes.md#worker-return, say the worker runs only the p <task>:<n> lines whose premise n its worker view marks after:, since base premises are the engine's and were checked before launch; or have task 21 add an after-only filter to plan probes --emit --premises and name it here."
+effort = "small"
+counter = "Would not hold if --emit --premises --task printed only after: premises once their task is done; run against task 11 it printed the base premise line p 11:0, and probes.rs:5-6 says it emits base ones too."
+grade = "medium"
+evidence = [
+    "tomlctl plan probes --slug v2-harness-tuning --emit --premises --task 11 printed p 11:0 premise ... for a base premise",
+    "tomlctl/src/plan/probes.rs:5-6: --premises works on base ones, and after:<id> ones once task <id> is done",
+    "task 27 detail: when a premise line exits non-zero, edit nothing, set failed; it does not distinguish base from after",
+]
+target = "design/shapes.md#worker-return"
+expect = '"It records nothing, and returns `failed` with the premise named in its note, having edited nothing, when one exits non-zero."'
+new = '"It runs only the `p <task>:<n>` lines whose premise `<n>` its worker view marks `after:`, since its `base` premises were checked by the engine before launch. It records nothing, and returns `failed` with the premise named in its note, having edited nothing, when one of those exits non-zero."'
+anchor = "plan|docs/flows/v2-harness-tuning/design/shapes.md|worker-return"
+status = "refuted"
+first_seen = 2026-11-11
+
+[[findings]]
+id = "F28"
+run = "U1"
+cell = "C4"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "feasibility"
+route = "verifier"
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "gate-stamp"
+summary = "The gate-stamp digest omits scripts/, which cli::dispatch::tests reads, so a stamp stays valid after an edit the skipped tests would judge"
+severity = "minor"
+failure_scenario = "After gate-stamp.sh run, the committer edits scripts/shared-blocks.toml (a new block over claude files) and commits a staged claude/**/*.md. check still matches because scripts/ is outside the digest, so the hook skips cli::dispatch::tests, whose skills.rs test parses that manifest and compares its Rust mirror with the shell verifier; a mirror disagreement lands unseen."
+fix = "In design/shapes.md#gate-stamp, add scripts/ to the digest's directories, since the hook's cargo steps read scripts/shared-blocks.toml and run scripts/verify-shared-blocks.sh."
+effort = "trivial"
+counter = "Would not hold if no hook cargo step read any file under scripts/; skills.rs reads the manifest and runs the verifier inside cli::dispatch::tests."
+grade = "high"
+evidence = [
+    "tomlctl/src/cli/dispatch/tests/skills.rs:110: shared_block_manifest reads scripts/shared-blocks.toml",
+    "tomlctl/src/cli/dispatch/tests/skills.rs:147: runs scripts/verify-shared-blocks.sh",
+    ".githooks/pre-commit:59: gate cargo test ... --lib -- cli::dispatch::tests is one of the cargo steps the stamp skips",
+    "design/shapes.md#gate-stamp: digest covers tomlctl/, glimpse/, claude/, .claude/review-lenses/ and docs/plans/ only",
+]
+target = "design/shapes.md#gate-stamp"
+expect = '"`.claude/review-lenses/` and `docs/plans/`."'
+new = '"`.claude/review-lenses/`, `docs/plans/` and `scripts/`, since `cli::dispatch::tests` reads `scripts/shared-blocks.toml` and runs `scripts/verify-shared-blocks.sh`."'
+tier = "advisory"
+same_as = "F21"
+related = ["F21"]
+anchor = "plan|docs/flows/v2-harness-tuning/design/shapes.md|gate-stamp"
+outcome = "repeat"
+status = "merged"
+first_seen = 2026-11-11
+merged_into = "F21"
+
+[[findings]]
+id = "F29"
+run = "U1"
+cell = "C4"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "feasibility"
+route = "verifier"
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "addressed"
+summary = "triage --addressed on a finding with no target and no --targets records an empty addressed list, so its hand edit never reaches the re-check"
+severity = "minor"
+failure_scenario = "The lead records an advisory plan finding with no target (the common case B-cd288c8e measures) as addressed without --targets. --targets defaults to the finding's own target, which is empty, so addressed = [] and review recheck-targets prints nothing for it; the re-check skips the edited record, against the criterion that addressed targets reach the re-check."
+fix = "In design/shapes.md#addressed, refuse --addressed for a finding that has no target when --targets is not given, naming the finding, so every addressed row carries at least one target. Task 11 gains a test for the refusal."
+effort = "small"
+counter = "Would not hold if every plan finding carried a target; the brief's B-cd288c8e background says most plan-review findings arrive with no target, expect or new."
+grade = "medium"
+evidence = [
+    "design/shapes.md#addressed: --targets names the targets and defaults to each finding's own target",
+    "brief.md:75: an addressed finding's edited targets reach the re-check (B-690fbabb)",
+    "brief.md:165: 22 of 39 open findings arrived advisory-tier, most without target (B-cd288c8e)",
+]
+target = "design/shapes.md#addressed"
+expect = """"`--targets <t>[,<t>...]` names the targets and defaults to each finding's own `target`.""""
+new = """"`--targets <t>[,<t>...]` names the targets and defaults to each finding's own `target`; a finding with no `target` is refused unless `--targets` is given, so no addressed row reaches the re-check empty.""""
+tier = "cited"
+anchor = "plan|docs/flows/v2-harness-tuning/design/shapes.md|addressed"
+status = "resolved"
+first_seen = 2026-11-11
+resolution = "applied to design/shapes.md#addressed"
+resolved = 2026-11-11
+
+[findings.applied]
+at = "2026-11-11T09:55:06.339965416Z"
+tier = "cited"
+target = "design/shapes.md#addressed"
+old = """"`--targets <t>[,<t>...]` names the targets and defaults to each finding's own `target`.""""
+new = """"`--targets <t>[,<t>...]` names the targets and defaults to each finding's own `target`; a finding with no `target` is refused unless `--targets` is given, so no addressed row reaches the re-check empty.""""
+by = "tool"
+recovered = false
+
+[[findings]]
+id = "F30"
+run = "U1"
+cell = "C4"
+seen_in = ["U1"]
+family = "plan"
+kind = "cleanup"
+lens = "feasibility"
+route = "verifier"
+file = "docs/flows/v2-harness-tuning/brief.md"
+symbol = "Success criteria"
+summary = "The B-efcdf91b criterion asks for per-verb field checking, which D14 declines in favour of one crate-wide optional-field table"
+effort = "trivial"
+counter = "Would not hold if D14 were revised to build per-verb field sets; D14's rejected path is exactly that."
+edit = "Restate the B-efcdf91b success criterion to match D14: a template path that matches no row is warned of, unless its first segment is a documented optional field. As written, {severity} on tasks list stays quiet under D14 though it is outside that verb's fields, so the criterion cannot be met."
+direction = "change"
+target = "brief#Success criteria"
+expect = """"A `--template` path outside the verb's fields is refused or warned of, and an optional field of that verb stays quiet (B-efcdf91b).""""
+new = '"A `--template` path that matches no row is warned of on stderr, unless its first segment is an optional field a documented template names, which stays quiet (B-efcdf91b)."'
+tier = "user"
+related = ["F15"]
+anchor = "plan|docs/flows/v2-harness-tuning/brief.md|Success criteria"
+status = "resolved"
+first_seen = 2026-11-11
+resolution = "applied to brief#Success criteria"
+resolved = 2026-11-11
+
+[findings.applied]
+at = "2026-11-11T09:58:33.836068402Z"
+tier = "user"
+target = "brief#Success criteria"
+old = """"A `--template` path outside the verb's fields is refused or warned of, and an optional field of that verb stays quiet (B-efcdf91b).""""
+new = '"A `--template` path that matches no row is warned of on stderr, unless its first segment is an optional field a documented template names, which stays quiet (B-efcdf91b)."'
+by = "user"
+recovered = false
+
+[[findings]]
+id = "F31"
+run = "U1"
+cell = "C4"
+seen_in = ["U1"]
+family = "plan"
+kind = "advisory"
+lens = "feasibility"
+route = "none"
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "reproduce-units"
+summary = "A unit of remove cleanups with old in code files still gets an Opus verifier, though review anchor --gone already decides each one"
+angle = "alternative"
+rationale = "The route rule keys on the review-time route, which sends every cleanup touching an executable path to the verifier so its safety is judged. Reproduce asks only whether the finding is gone, and for a remove cleanup with old that is exactly what review anchor --gone answers (anchor.rs gone), and the worker already ran it as the row's accept. So .rs remove cleanups, a large share of the grep-decidable rows B-1bb57b0e measured, still cost one verifier per unit."
+alternative = "Route a unit to checker when each finding is either stored-route checker or a remove cleanup carrying old."
+adoption_cost = "One clause in the route rule (checker, or no agent, when every finding is a remove cleanup with old, whatever its paths) and a test in task 23."
+target = "design/shapes.md#reproduce-units"
+tier = "advisory"
+related = [
+    "F8",
+    "F9",
+    "F16",
+    "F19",
+    "F20",
+]
+anchor = "plan|docs/flows/v2-harness-tuning/design/shapes.md|reproduce-units"
+status = "parked"
+first_seen = 2026-11-11
+park_reason = "untriaged at the close of U1"
+
+[[findings]]
+id = "F32"
+run = "U1"
+cell = "C11"
+seen_in = ["U1"]
+family = "plan"
+kind = "cleanup"
+lens = "probe:scope-budget-paths"
+route = "verifier"
+file = "docs/flows/v2-harness-tuning/brief.md"
+symbol = "Scope budget"
+summary = "Scope budget Paths omits five paths tasks claim: verification.md, two v2 carriers, claude/workflows/tests/, tomlctl/README.md"
+effort = "trivial"
+counter = "If 'the v2 agents' was meant to include verification and 'tomlctl skills' the README, only the carriers and tests/ dir are missing; tasks list confirms all five paths are claimed."
+edit = "Widen the Paths line to name what the tasks touch: claude/workflows/tests/ (task 32, per decision D3), claude/agents/verification.md (task 7, a fixed utility agent outside the v2 set per CLAUDE.md), claude/commands/implement-v2.md and apply-v2.md (task 36), and tomlctl/README.md (tasks 17 and 25). Each is needed by an Intent item, so the budget names it rather than the task dropping it."
+direction = "change"
+target = "brief#Scope budget"
+expect = '"`claude/workflows/*.js`, the v2 engine, method and tomlctl skills under `claude/skills/`, the v2 agents under `claude/agents/`, `tomlctl/src/**`, `tomlctl/tests/**`,"'
+new = '"`claude/workflows/*.js` and the script test under `claude/workflows/tests/`, the v2 engine, method and tomlctl skills under `claude/skills/`, the v2 agents under `claude/agents/` and the shared `claude/agents/verification.md`, the v2 carriers `claude/commands/implement-v2.md` and `claude/commands/apply-v2.md`, `tomlctl/src/**`, `tomlctl/tests/**`, `tomlctl/README.md`,"'
+tier = "user"
+related = ["F23"]
+anchor = "plan|docs/flows/v2-harness-tuning/brief.md|Scope budget"
+status = "resolved"
+first_seen = 2026-11-11
+resolution = "applied to brief#Scope budget"
+resolved = 2026-11-11
+
+[findings.applied]
+at = "2026-11-11T09:58:33.846919534Z"
+tier = "user"
+target = "brief#Scope budget"
+old = '"`claude/workflows/*.js`, the v2 engine, method and tomlctl skills under `claude/skills/`, the v2 agents under `claude/agents/`, `tomlctl/src/**`, `tomlctl/tests/**`,"'
+new = '"`claude/workflows/*.js` and the script test under `claude/workflows/tests/`, the v2 engine, method and tomlctl skills under `claude/skills/`, the v2 agents under `claude/agents/` and the shared `claude/agents/verification.md`, the v2 carriers `claude/commands/implement-v2.md` and `claude/commands/apply-v2.md`, `tomlctl/src/**`, `tomlctl/tests/**`, `tomlctl/README.md`,"'
+by = "user"
+recovered = false
+
+[[findings]]
+id = "F33"
+run = "U1"
+cell = "C11"
+seen_in = ["U1"]
+family = "plan"
+kind = "advisory"
+lens = "probe:scope-budget-paths"
+route = "none"
+file = "docs/flows/v2-harness-tuning/brief.md"
+symbol = "Non-goals"
+summary = "Task 7 changes verification.md's pass report, which v1 /implement, /optimise-apply, /review-apply and /tdd also read; Non-goals implies v1 is untouched"
+angle = "probe"
+rationale = "verification.md's description names /implement, /optimise-apply and /review-apply as its users, and tdd.md dispatches it too. Task 7's one-line pass form drops exit: and log: and renames duration_s: to duration:, while implement.md step 184 records duration_s from each pass block. The Non-goal 'v1 carriers and their skills stay untouched' holds file-wise but not behaviour-wise; an approver reading the brief would not see that every v1 gate's hand-back changes shape."
+alternative = "Keep the field name duration_s: in the one-line form so v1 /implement's execution-record write needs no reinterpretation."
+adoption_cost = "Either add a Non-goals line accepting that the shared verification agent's pass report changes for v1 carriers too (and keep duration_s: in the line form), or have task 7 gate the one-line form on a prompt flag only the v2 engine sets."
+target = "brief#Non-goals"
+tier = "question"
+anchor = "plan|docs/flows/v2-harness-tuning/brief.md|Non-goals"
+status = "resolved"
+first_seen = 2026-11-11
+resolution = "kept by user"
+resolved = 2026-11-11
+
+[[findings]]
+id = "F34"
+run = "U1"
+cell = "C12"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "probe:plan-batching-same-as"
+route = "verifier"
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "plan-batching"
+summary = "Reverify batches every id, but the lead links same_as pairs in the same settle and its rule-out ids can carry one, so a wrong identity can no longer be struck"
+severity = "minor"
+failure_scenario = "Settle step 3 runs `review resolve --same-as F15=F9`; step 4 puts F15 under reverify as a ruled_out_hits row (the digest drops only superseded rows). The wrapper sends F15 in one batch; the batch verifier finds F15 a different fault from F9 but records through `--ndjson`, where `--strike-same-as` is refused, so F15 stays merged into F9 and its fault never reaches triage, against D10's keep-same_as-single rule."
+fix = "Make reverify keep a same_as row single, as D10 states, or change D10. Whichever option is picked, edit together: this section's reverify sentence, Task 29's action and detail (its 'reverify keeps no single-dispatch exception' sentence and its 'settle phase unchanged' constraint), Task 31's 'reverify is one batch' clause, and D10's decision text if it moves. The lead reads same_as through `review show --for audit` (fields.rs MATRIX same_as row shows audit R), so it can mark which ids carry one."
+effort = "small"
+counter = "If the lead never names a same_as row under reverify (e.g. resolve marks it so ruled_out_hits skips it) the batch never meets one; digest.rs filters only Superseded, and plan-review-lead.md step 4 has no such exclusion."
+grade = "high"
+evidence = [
+    "claude/agents/plan-review-lead.md:93-101: step 3 links duplicate pairs with `review resolve --same-as`, then step 4 names reverify ids from ruled_out_hits with no same_as exclusion",
+    "tomlctl/src/review/digest.rs:61-65: the window drops only FindingStatus::Superseded, so merged same_as rows reach ruled_out_hits",
+    "tomlctl/src/cli/types/review/verdicts.rs:75-80: --strike-same-as conflicts_with ndjson; verdict.rs:44-49 sets strike_same_as false on every batch row",
+    "claude/agents/review-verifier.md:47: a batch verifier records its verdicts with one --ndjson call",
+    "Task 29 detail: 'reverify keeps no single-dispatch exception'; D10 decision: 'Batch ... its reverify ids, keeping a row with same_as single'",
+]
+fix_sketch = """Take option 2; it is not blocked, since Task 15 already owns claude/agents/review-verifier.md. Add to Task 15's detail item (3): a batch verifier that strikes a row's same_as records that row alone with `tomlctl review verdict <finding> ... --strike-same-as` and every other row through its one --ndjson call, returning all rows under `verdicts`. In design/shapes.md#plan-batching replace the reverify sentence with: "The plan wrapper's reverify sends all its ids as one batch, since the lead's return carries bare ids; the batch verifier records a row whose same_as it strikes with a single verdict call." Mirror that clause in Task 29's detail and Task 31's engine text. Optionally have plan-review-lead step 4 leave a merged row out of reverify, since a strike does not unmerge it."""
+unblocked_by = "verifier"
+unblocked_from = "alternatives"
+target = "design/shapes.md#plan-batching"
+expect = """"The plan wrapper's reverify sends all its ids as one batch, since the lead's return carries bare ids.""""
+tier = "advisory"
+anchor = "plan|docs/flows/v2-harness-tuning/design/shapes.md|plan-batching"
+status = "resolved"
+first_seen = 2026-11-11
+resolution = "Addressed by an author edit to the plan's records and design/shapes.md at triage, on the user's instruction. F14 is covered by the accept entry F6 applied, which runs `run` then `check` on an unchanged tree."
+resolved = 2026-11-11
+
+[[findings]]
+id = "F35"
+run = "U2"
+cell = "C17"
+seen_in = ["U2"]
+family = "plan"
+kind = "defect"
+lens = "test-gaps"
+route = "verifier"
+file = "docs/flows/v2-harness-tuning/brief.md"
+symbol = "Success criteria"
+summary = "The B-72f3bbac criterion promises the verifier learns of an over-cap field before the write; no task delivers or tests that, and task 15 keeps it refused"
+severity = "minor"
+failure_scenario = "At close, the B-72f3bbac criterion is checked against the delivered surface: a verifier staging a 610-character rationale still has `review verdict` refuse it at the write (fields.rs caps Verdict rationale at 600, required), with no dry run or cut on the verdict path. Tasks 13 and 15 and design/shapes.md#caps cover only `review cover` and `review add`, and task 15 states the verdict rationale is still refused, so the verifier clause fails with no test that could have shown it."
+fix = "Narrow the criterion to what D15 and shapes.md#caps deliver: the sweeper's cover note is cut, and the finder learns of refusals from `review add --dry-run`. The verifier clause is the one D15 left out, and a verdict batch lands its other rows. The other fix is a task adding a cut or `--dry-run` to `review verdict`, with its test, which is more than D15 chose."
+effort = "trivial"
+counter = "A task elsewhere in the plan adding a cut, dry run or raised cap to `review verdict` with a test, which a search of the 39 tasks' actions and accept checks did not find."
+grade = "high"
+evidence = [
+    "docs/flows/v2-harness-tuning/brief.md:74: 'A sweeper, finder or verifier learns that a field is over its cap before the write ... or the write does not refuse'",
+    "tomlctl/src/review/fields.rs:837-839: Verdict rationale .cap(600).required(); verdict.rs:133-143 errors on a refused single verdict",
+    "task cut-an-over-cap-cover-note-and-add-a-dry-run-to-review-add: outcome names only the sweeper's cover note and the finder's add",
+    "task tell-review-agents-about-fix_files-...: detail says 'while a verdict `rationale` is still refused'",
+    "design/shapes.md#caps lists only `review cover` cutting and `review add --dry-run`",
+]
+target = "brief#Success criteria"
+expect = '"A sweeper, finder or verifier learns that a field is over its cap before the write that would refuse the whole set, or the write does not refuse"'
+new = """"A sweeper's cover note over its cap is cut and reported rather than refused, and a finder learns which rows `review add` would refuse before the write that would refuse them""""
+tier = "user"
+related = [
+    "F15",
+    "F30",
+]
+anchor = "plan|docs/flows/v2-harness-tuning/brief.md|Success criteria"
+status = "resolved"
+first_seen = 2026-11-11
+resolution = "applied to brief#Success criteria"
+resolved = 2026-11-11
+
+[findings.applied]
+at = "2026-11-11T10:16:06.431248657Z"
+tier = "user"
+target = "brief#Success criteria"
+old = '"A sweeper, finder or verifier learns that a field is over its cap before the write that would refuse the whole set, or the write does not refuse"'
+new = """"A sweeper's cover note over its cap is cut and reported rather than refused, and a finder learns which rows `review add` would refuse before the write that would refuse them""""
+by = "user"
+recovered = false
+
+[[findings]]
+id = "F36"
+run = "U2"
+cell = "C15"
+seen_in = ["U2"]
+family = "plan"
+kind = "defect"
+lens = "check:falsifiability"
+route = "verifier"
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "reproduce-units"
+summary = "reproduce-units has no unit filter, so findings.md's relaunch of one failed unit alone still needs its args cut by hand"
+severity = "minor"
+failure_scenario = "A reproduce launch returns one unit with status no-return. findings.md step 5, which task 35 leaves in place, relaunches that unit alone in new args. The verb emits every unit: --since-launch keeps them all, since each unit's files are a row the latest implement run dispatched. The orchestrator must hand-cut units, against the brief's no-hand-assembly criterion, and task 35's grep for --relaunch still passes."
+fix = "Give reproduce-units a `--task <ref>[,<ref>...]` filter that keeps only the named rows' units, so a single-unit relaunch is one call, and have task 35's findings.md rewrite name it in step 5's relaunch."
+effort = "small"
+counter = "If findings.md step 5's single-unit relaunch were dropped by task 35, or --since-launch excluded units whose files match the latest implement run, the verb alone would serve the relaunch."
+grade = "high"
+evidence = [
+    "design/shapes.md:68 usage has only --since-launch and --relaunch; :80 --since-launch keeps a unit whose files share a path with the latest implement run's dispatched rows",
+    "claude/skills/implement-v2-engine/references/findings.md:113 relaunches a not-ok unit alone: new args holding only that unit",
+    "task 35 detail replaces units, round and later-pass reads; its (2) covers a run cut short, not step 5's per-unit relaunch",
+    "brief.md:71 the reproduce units come from one tomlctl call, with no piping or hand assembly",
+]
+target = "design/shapes.md#reproduce-units"
+expect = '"`tomlctl plan emit reproduce-units --slug <slug> --milestone <id> [--since-launch] [--relaunch <n>]`"'
+new = '"`tomlctl plan emit reproduce-units --slug <slug> --milestone <id> [--since-launch] [--relaunch <n>] [--task <ref>[,<ref>...]]`\n\n`--task` keeps only the units of the named rows, so a relaunch of one unit alone is one call."'
+tier = "cited"
+same_as = "F45"
+related = [
+    "F8",
+    "F9",
+    "F26",
+    "F31",
+]
+anchor = "plan|docs/flows/v2-harness-tuning/design/shapes.md|reproduce-units"
+outcome = "repeat"
+status = "merged"
+first_seen = 2026-11-11
+merged_into = "F45"
+
+[[findings]]
+id = "F37"
+run = "U2"
+cell = "C15"
+seen_in = ["U2"]
+family = "plan"
+kind = "defect"
+lens = "check:falsifiability"
+route = "verifier"
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "reproduce-status-by-milestone"
+summary = "The milestone reproduce-status check exits 0 on an empty selection, so the gate's one proof passes when the milestone's links are lost"
+severity = "minor"
+failure_scenario = "A fix row carries the milestone check, but a replan changes its checkpoint or its finding_links entry is lost. The gate runs `reproduce-status --flow <slug> --milestone <id> --expect gone`, which selects no finding, exits 0, and the milestone commits with no finding proven gone: an empty match set passing the one check the brief rests the guarantee on."
+fix = "Under `--expect`, make the milestone form exit 1 when it selects no finding. The check sits only on fix rows that hold findings, so an empty selection always means something was lost."
+effort = "trivial"
+counter = "If some legitimate milestone carries the check while linking no finding in the named store, exit 1 there would block a correct gate; no task or design section mints the check without a finding."
+grade = "medium"
+evidence = [
+    "design/shapes.md:30 With no such finding the call exits 0 and prints an empty findings",
+    "design/shapes.md:32 review schedule gives the check only to fix rows it mints from findings",
+    "brief.md:65 A milestone's gate proves every fixed finding gone with one check",
+]
+target = "design/shapes.md#reproduce-status-by-milestone"
+expect = '"With no such finding the call exits 0 and prints an empty `findings`."'
+new = '"With no such finding the call prints an empty `findings` and exits 0, or 1 under `--expect`, since a fix row carries the check only when its milestone has findings to prove."'
+tier = "cited"
+anchor = "plan|docs/flows/v2-harness-tuning/design/shapes.md|reproduce-status-by-milestone"
+status = "resolved"
+first_seen = 2026-11-11
+resolution = "Addressed by an author edit to the plan's records and design/shapes.md at triage, on the user's instruction. F41 was already covered by task 38's required means widening the hook's path pattern to `.mjs`."
+resolved = 2026-11-11
+
+[[findings]]
+id = "F38"
+run = "U2"
+cell = "C15"
+seen_in = ["U2"]
+family = "plan"
+kind = "advisory"
+lens = "check:two-control-probe"
+route = "none"
+file = "docs/flows/v2-harness-tuning/brief.md"
+symbol = "Success criteria"
+summary = "The gate-probe criterion is unconditional, but the design finds an unpassable gate only when the planner stored a probe for it"
+angle = "risk"
+rationale = "brief.md:79 says a gate that cannot pass here is found before the first worker launches. design/shapes.md#gate-probes probes only stored gate_probes, and task 33 skips a milestone with none, so every approved plan, this one included, and any gate the planner did not foresee stays unfound until the gate. Either restate the criterion as a gate with a stored probe, or have plan check warn on a gate with no probe."
+adoption_cost = "Restating is a one-line brief edit at the user tier; a plan check warning class needs a small task in milestone C plus a doc line."
+target = "brief#Success criteria"
+tier = "question"
+related = [
+    "F15",
+    "F30",
+    "F35",
+]
+anchor = "plan|docs/flows/v2-harness-tuning/brief.md|Success criteria"
+status = "resolved"
+first_seen = 2026-11-11
+resolution = "revised by user"
+resolved = 2026-11-11
+
+[[findings]]
+id = "F39"
+run = "U2"
+cell = "C18"
+seen_in = ["U2"]
+family = "plan"
+kind = "defect"
+lens = "plan-executor"
+route = "verifier"
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "reproduce-units"
+summary = "--relaunch <n> names only a run_dir suffix: which units it emits and which round it prints are left to task 23's executor"
+severity = "major"
+failure_scenario = "findings.md step 5 relaunches one failed unit alone in the same round. Task 23 implements --relaunch from shapes, which says only that run_dir gains -r<n> and that round is the highest recorded round plus one. After a launch whose ok units recorded rows at round k, the relaunch emits every unit at round k+1: either the orchestrator hand-filters units (the hand assembly B-590ba0b1 removes) or every ok unit is re-verified, and the relaunch's rows land in a round the first launch never used."
+fix = "State in design/shapes.md#reproduce-units what --relaunch <n> selects and which round it prints, and pin both in reproduce_units_relaunch_gets_its_own_run_dir. One reading: under --relaunch the round is the highest recorded round for the store, flow and milestone (1 when none), and units keep only those with a finding that has no reproduction at that round."
+effort = "small"
+counter = "If shapes or task 23's detail elsewhere fixes the relaunch's round and unit set, this is settled; neither section of shapes nor the task detail mentions either."
+grade = "high"
+evidence = [
+    "design/shapes.md:76 round = highest round plus one, stated with no --relaunch exception",
+    "design/shapes.md:77 --relaunch only adds -r<n> to run_dir",
+    "claude/skills/implement-v2-engine/references/findings.md:115 relaunch holds only the failed unit, in the same round",
+]
+fix_sketch = """In shapes.md#reproduce-units: make --relaunch <n> require --round <k>, the round of the launch being relaunched (the orchestrator has it from that launch's args). Under --relaunch, round is k, not highest+1, so the relaunch stays in the same round as findings.md step 5 and D9 say; an explicit k also covers the case where no unit of the first launch recorded a row, which "highest recorded round" would get wrong. Under --relaunch, emit only the units holding a finding with no reproduction for this flow, milestone and round k; drop a launches entry left with no unit. Add both rules to task 23's detail and a test, e.g. reproduce_units_relaunch_keeps_the_round_and_only_unrecorded_units. In the findings.md prose task, step 5 passes --relaunch <n> --round <k> and launches the entry unchanged."""
+unblocked_by = "verifier"
+unblocked_from = "decision"
+target = "design/shapes.md#reproduce-units"
+tier = "advisory"
+same_as = "F45"
+related = [
+    "F8",
+    "F9",
+    "F26",
+    "F31",
+    "F36",
+]
+anchor = "plan|docs/flows/v2-harness-tuning/design/shapes.md|reproduce-units"
+outcome = "repeat"
+status = "merged"
+first_seen = 2026-11-11
+merged_into = "F45"
+
+[[findings]]
+id = "F40"
+run = "U2"
+cell = "C18"
+seen_in = ["U2"]
+family = "plan"
+kind = "defect"
+lens = "plan-executor"
+route = "verifier"
+file = ".claude/flows/v2-harness-tuning/tasks.toml"
+symbol = "test-the-workflow-scripts-logic-under-stubbed-globals"
+summary = "The prescribed agent stub returns a canned object at once, so the rolling-pool and file-exclusion cases cannot observe a task in flight"
+severity = "major"
+failure_scenario = "The executor writes the stubs as Detail states them: agent() returns a canned object chosen by agentType or label, and parallel() resolves each thunk. Every agent call settles immediately, so no task is ever in flight beside another; 'a short task starts while a long file-disjoint task is in flight' and 'two tasks sharing a file are never in flight together' pass on a whole-wave scheduler too. The accept checks only grep the case names, so a regression of task 26's pool back to waves lands green."
+fix = "Add to the Detail's stub semantics: agent() may return a deferred the test settles by label, and the harness logs each call's start and settle in order; the pool case asserts the second short task starts before the long task settles, and the exclusion case asserts two tasks sharing a file never have overlapping start-settle spans."
+effort = "trivial"
+counter = "If task 26's pool exposes its schedule some other way the harness can read without latency, instant stubs would discriminate; the Detail names no such hook and the scripts are not to be edited."
+grade = "medium"
+evidence = [
+    "task 32 detail: agent(prompt, opts) returns a canned object chosen by opts.agentType or opts.label, or null",
+    "task 32 constraint: the three scripts are not edited to make them testable",
+    "task 32 accept[2] greps only case names",
+]
+target = "task:test-the-workflow-scripts-logic-under-stubbed-globals.detail"
+tier = "advisory"
+related = ["F7"]
+anchor = "plan|.claude/flows/v2-harness-tuning/tasks.toml|test-the-workflow-scripts-logic-under-stubbed-globals"
+status = "resolved"
+first_seen = 2026-11-11
+resolution = "Addressed by an author edit to the plan's records and design/shapes.md at triage, on the user's instruction. F41 was already covered by task 38's required means widening the hook's path pattern to `.mjs`."
+resolved = 2026-11-11
+
+[[findings]]
+id = "F41"
+run = "U2"
+cell = "C18"
+seen_in = ["U2"]
+family = "plan"
+kind = "advisory"
+lens = "plan-executor"
+route = "none"
+file = ".claude/flows/v2-harness-tuning/tasks.toml"
+symbol = "test-the-workflow-scripts-logic-under-stubbed-globals"
+summary = '''The hook's path gate matches claude/workflows/.*\.js, not harness.test.mjs, so a commit changing only the harness never runs it at commit time'''
+angle = "risk"
+rationale = '''D3 picks cli::dispatch::tests so the hook runs the harness with no hook change, but .githooks/pre-commit:58 gates that subset on claude/workflows/.*\.js$, which harness.test.mjs does not match. A commit editing only the harness (or a broken harness) is caught only at the next milestone gate's full suite.'''
+adoption_cost = "Name the test file harness.test.js, or let task 38, which already edits .githooks/pre-commit, widen the pattern to .m?js."
+target = "task:test-the-workflow-scripts-logic-under-stubbed-globals.files"
+tier = "advisory"
+related = ["F7"]
+anchor = "plan|.claude/flows/v2-harness-tuning/tasks.toml|test-the-workflow-scripts-logic-under-stubbed-globals"
+status = "resolved"
+first_seen = 2026-11-11
+resolution = "Addressed by an author edit to the plan's records and design/shapes.md at triage, on the user's instruction. F41 was already covered by task 38's required means widening the hook's path pattern to `.mjs`."
+resolved = 2026-11-11
+
+[[findings]]
+id = "F42"
+run = "U2"
+cell = "C18"
+seen_in = ["U2"]
+family = "plan"
+kind = "defect"
+lens = "plan-executor"
+route = "verifier"
+file = ".claude/flows/v2-harness-tuning/tasks.toml"
+symbol = "drainmd-adopts-the-gate-list-the-audit-file-widening-and-unquoted-path-reads"
+summary = "The audit needs the launch's Transcript dir at drain time, but the launch step that must keep it is run-milestone.md, which no task edits for it"
+severity = "major"
+failure_scenario = "run-milestone.md step 4 has the orchestrator record plan run start and end the turn; the drain runs on the later task notification, or in a new session on re-entry. Task 34 can only write in drain.md, which is read at drain time, so the instruction to keep the Transcript dir from the launch result arrives after the result has scrolled past or the session ended. Task 33, which owns run-milestone.md, says nothing about it, so on re-entry the drain has no --transcripts argument and the audit cannot run."
+fix = "Have run-milestone.md step 4 (task 33's file) write the launch result's Transcript dir to <scratch>/implement-<id>-<round>-transcripts.txt beside the args, and have task 34's drain read it from there; when the file is absent, report the audit as not run rather than guess a directory."
+effort = "small"
+counter = "If the task notification itself carries the transcript dir, the drain could read it there; neither task names that, and the Means points at the launch result."
+grade = "medium"
+evidence = [
+    "claude/skills/implement-v2-engine/references/run-milestone.md:205 records plan run start; SKILL.md:26 says end the turn after the launch",
+    "task 34 means[0]: the dir is the Transcript dir: line of the launch result; tell the orchestrator to keep it",
+    "task 33 body and spec carry no mention of a transcript or the audit (tasks show 33)",
+]
+target = "task:drainmd-adopts-the-gate-list-the-audit-file-widening-and-unquoted-path-reads.detail"
+tier = "advisory"
+related = [
+    "F12",
+    "F13",
+]
+anchor = "plan|.claude/flows/v2-harness-tuning/tasks.toml|drainmd-adopts-the-gate-list-the-audit-file-widening-and-unquoted-path-reads"
+status = "resolved"
+first_seen = 2026-11-11
+resolution = "Addressed by an author edit to the plan's records and design/shapes.md at triage, on the user's instruction. F41 was already covered by task 38's required means widening the hook's path pattern to `.mjs`."
+resolved = 2026-11-11
+
+[[findings]]
+id = "F43"
+run = "U2"
+cell = "C18"
+seen_in = ["U2"]
+family = "plan"
+kind = "defect"
+lens = "plan-executor"
+route = "verifier"
+file = ".claude/flows/v2-harness-tuning/tasks.toml"
+symbol = "drainmd-adopts-the-gate-list-the-audit-file-widening-and-unquoted-path-reads"
+summary = "Audit rows name a transcript agent, not a task, so the drain cannot tell whether a test run is that task's own accept check"
+severity = "minor"
+failure_scenario = "agents audit prints {agent, command}, agent being the transcript's agent-<id>; a row's agent field holds plan-worker-deep or -lite. The drain rule allows a narrow test the task's own accept or detail names and calls anything else a breach, but no read maps an audit row to its task, so one executor matches against every row of the milestone and another reports every test run as a breach."
+fix = "In step (1), allow a command that equals or is a narrower form of an accept check or detail-named check of any row of the milestone, or the cli::dispatch::tests subset; name every other row as a breach with its agent id."
+effort = "trivial"
+counter = "If the audit verb prints the task id from the worker's prompt, the mapping exists; design/shapes.md#worker-audit prints only agent and command."
+grade = "high"
+evidence = [
+    "design/shapes.md:152 audit prints {agent, command} per agent-*.jsonl",
+    "claude/agents/plan-worker-deep.md:28 the row's agent is the frontmatter name, not a transcript id",
+]
+target = "task:drainmd-adopts-the-gate-list-the-audit-file-widening-and-unquoted-path-reads.detail"
+tier = "advisory"
+related = [
+    "F12",
+    "F13",
+]
+anchor = "plan|.claude/flows/v2-harness-tuning/tasks.toml|drainmd-adopts-the-gate-list-the-audit-file-widening-and-unquoted-path-reads"
+status = "resolved"
+first_seen = 2026-11-11
+resolution = "Addressed by an author edit to the plan's records and design/shapes.md at triage, on the user's instruction. F41 was already covered by task 38's required means widening the hook's path pattern to `.mjs`."
+resolved = 2026-11-11
+
+[[findings]]
+id = "F44"
+run = "U2"
+cell = "C18"
+seen_in = ["U2"]
+family = "plan"
+kind = "defect"
+lens = "plan-executor"
+route = "verifier"
+file = ".claude/flows/v2-harness-tuning/tasks.toml"
+symbol = "drainmd-adopts-the-gate-list-the-audit-file-widening-and-unquoted-path-reads"
+summary = "needs_files widening says to order two rows holding a path with needs but not which way, and one direction can close a cycle"
+severity = "minor"
+failure_scenario = "A failed task's needs_files names a registration file that a pending dependent of it also holds. Detail (3) says 'order the two with needs and widen'. Writing the step as 'the widened row needs the holder', the drain's existing needs-follows-files idiom, adds failed -> dependent while dependent -> failed exists, so tasks update is refused as a cycle or tasks check fails; another executor writes the reverse and the two drains diverge."
+fix = "State it: when a path already runs from one row to the other through needs, keep it; otherwise the widened row needs the holder, by the needs-follows-the-files rule of step 6."
+effort = "trivial"
+counter = "If tasks update refuses only with a clear message and the drain then parks the row, the cost is one parked row; the step still leaves the direction to the executor."
+grade = "medium"
+evidence = [
+    "task 34 detail (3): when another row holds one, order the two with needs and widen",
+    "claude/skills/implement-v2-engine/references/drain.md:197 a minted row needs the latest row already holding each of its files",
+]
+target = "task:drainmd-adopts-the-gate-list-the-audit-file-widening-and-unquoted-path-reads.detail"
+tier = "advisory"
+related = [
+    "F12",
+    "F13",
+]
+anchor = "plan|.claude/flows/v2-harness-tuning/tasks.toml|drainmd-adopts-the-gate-list-the-audit-file-widening-and-unquoted-path-reads"
+status = "resolved"
+first_seen = 2026-11-11
+resolution = "Addressed by an author edit to the plan's records and design/shapes.md at triage, on the user's instruction. F41 was already covered by task 38's required means widening the hook's path pattern to `.mjs`."
+resolved = 2026-11-11
+
+[[findings]]
+id = "F45"
+run = "U2"
+cell = "C16"
+seen_in = ["U2"]
+family = "plan"
+kind = "defect"
+lens = "feasibility"
+route = "verifier"
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "reproduce-units"
+summary = "reproduce-units sets round to highest recorded plus one and emits every unit, so a relaunch cannot rerun one failed unit alone in its own round"
+severity = "major"
+failure_scenario = "A milestone's first reproduce launch (round 1) records 11 units ok and one unit returns no-return. findings.md step 5 relaunches that unit alone in the same round; Task 35 has it call `plan emit reproduce-units --relaunch 1`. The verb computes round 2 (highest recorded plus one) and lists all 12 units, and --since-launch keeps them all because the latest implement run dispatched every row. The orchestrator then either relaunches 12 verifiers at round 2 or filters the units by hand, which breaks the one-call criterion."
+fix = "In design/shapes.md#reproduce-units, have --relaunch <n> take --round <r>, the round of the launch it repeats, and --task <ref>[,<ref>...], which keeps only the named units. Under --relaunch the emitted round is r, not the highest plus one. Task 23 adds both flags, plus a test that a relaunch keeps round r and only the named units. Task 35 step (2) passes the failed units' task refs and the round from the first launch's entry."
+effort = "small"
+counter = "If the plan means a relaunch to re-check every unit at a new round, and Task 35 rewrites findings.md step 5 to say so, this is a cost choice rather than a fault. Neither Task 35's Detail nor D9 says that."
+grade = "high"
+evidence = [
+    "claude/skills/implement-v2-engine/references/findings.md:113: relaunch is 'new args holding only that unit'",
+    "design/shapes.md reproduce-units: --relaunch only appends -r<n> to run_dir; --since-launch keeps a unit whose files share a path with a row the latest implement run dispatched",
+    "task 35 Detail (2): a relaunch passes --relaunch <n> and nothing else",
+]
+target = "design/shapes.md#reproduce-units"
+expect = """"`round` is the highest `round` among the store's `[[reproductions]]` for this flow and milestone, plus one.""""
+new = """"`round` is the highest `round` among the store's `[[reproductions]]` for this flow and milestone, plus one; under `--relaunch <n>` it is the `--round <r>` the call names, the round being relaunched, and `--task <ref>[,<ref>...]` keeps only the named units, so a relaunch holds the failed units alone, in their own round.""""
+tier = "cited"
+related = [
+    "F8",
+    "F9",
+    "F26",
+    "F31",
+    "F36",
+    "F39",
+]
+anchor = "plan|docs/flows/v2-harness-tuning/design/shapes.md|reproduce-units"
+status = "resolved"
+first_seen = 2026-11-11
+resolution = "Addressed by an author edit to the plan's records and design/shapes.md at triage, on the user's instruction. F41 was already covered by task 38's required means widening the hook's path pattern to `.mjs`."
+resolved = 2026-11-11
+
+[[findings]]
+id = "F46"
+run = "U2"
+cell = "C16"
+seen_in = ["U2"]
+family = "plan"
+kind = "cleanup"
+lens = "feasibility"
+route = "verifier"
+file = "docs/flows/v2-harness-tuning/brief.md"
+symbol = "Success criteria"
+summary = "The B-72f3bbac criterion promises a verifier the cap behaviour, but D15 and Task 15 keep a verdict rationale refused at write"
+effort = "trivial"
+counter = "If a verifier's single refused verdict counts as the write refusing only that verdict rather than a whole set, the criterion already holds and the edit is only clarifying."
+edit = "Narrow the B-72f3bbac criterion to the roles the design serves: a sweeper (review cover cuts the note) and a finder (review add --dry-run). Task 15 states that a verdict rationale is still refused, and the Background records that verifier rationales were no longer refused after B-00ae0571."
+direction = "change"
+target = "brief#Success criteria"
+expect = '"A sweeper, finder or verifier learns"'
+new = '"A sweeper or finder learns"'
+tier = "user"
+same_as = "F35"
+related = [
+    "F15",
+    "F30",
+    "F35",
+    "F38",
+]
+anchor = "plan|docs/flows/v2-harness-tuning/brief.md|Success criteria"
+outcome = "repeat"
+status = "merged"
+first_seen = 2026-11-11
+merged_into = "F35"
+
+[[findings]]
+id = "F47"
+run = "U2"
+cell = "C13"
+seen_in = ["U2"]
+family = "plan"
+kind = "defect"
+lens = "plan-grounding"
+route = "verifier"
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "reproduce-units"
+summary = "reproduce-units' --relaunch only renames run_dir; it cannot narrow to the failed unit, so a relaunch re-checks every unit or is hand-edited"
+severity = "minor"
+failure_scenario = "Round 1 of a reproduce check returns unit A ok and unit B error. findings.md's relaunch step wants new args holding only B. Task 35 has the orchestrator call `plan emit reproduce-units --relaunch 1` (with or without --since-launch); the emit keeps every unit, since --since-launch keeps A too (its files share a path with the dispatched rows). Either A's Opus verifier runs again for nothing, or the orchestrator edits the entry by hand, against the no-hand-assembly criterion."
+fix = "In design/shapes.md#reproduce-units give `--relaunch <n>` a required companion `--unit <task ref>[,<task ref>...]` that keeps only the named units (those whose index status was not ok), and in task 35's Detail (2) pass the non-ok units' task refs with it. Task 23 builds what shapes states, so it needs only a test such as reproduce_units_relaunch_keeps_named_units."
+effort = "small"
+counter = "If the round computation made every ok unit's findings drop out under --since-launch on a relaunch, no narrowing would be needed; it does not, since the file-overlap clause keeps every unit of the first check."
+grade = "high"
+evidence = [
+    "claude/skills/implement-v2-engine/references/findings.md:113: relaunch is 'new args holding only that unit'",
+    "design/shapes.md reproduce-units: --relaunch only appends -r<n> to run_dir; --since-launch keeps a unit whose files share a path with a row the latest implement run dispatched",
+    "task 35 Detail (2): a relaunch passes --relaunch <n> and nothing else",
+]
+target = "design/shapes.md#reproduce-units"
+expect = '"then `-r<n>` under `--relaunch <n>`, so neither a second store nor a relaunch of a round shares a directory with another launch."'
+new = '"then `-r<n>` under `--relaunch <n>`, so neither a second store nor a relaunch of a round shares a directory with another launch. `--relaunch` requires `--unit <task ref>[,<task ref>...]` and keeps only the named units, the ones whose index `status` was not `ok`, so a relaunch re-checks those alone."'
+tier = "advisory"
+same_as = "F45"
+related = [
+    "F8",
+    "F9",
+    "F26",
+    "F31",
+    "F36",
+    "F39",
+    "F45",
+]
+anchor = "plan|docs/flows/v2-harness-tuning/design/shapes.md|reproduce-units"
+outcome = "repeat"
+status = "merged"
+first_seen = 2026-11-11
+merged_into = "F45"
+
+[[findings]]
+id = "F48"
+run = "U2"
+cell = "C13"
+seen_in = ["U2"]
+family = "plan"
+kind = "defect"
+lens = "plan-grounding"
+route = "verifier"
+file = "docs/flows/v2-harness-tuning/design/shapes.md"
+symbol = "caps"
+summary = "Caps covers the cover note and review add only; an over-cap ruled-out reason still refuses the whole review cover, which the B-72f3bbac criterion names"
+severity = "minor"
+failure_scenario = "A finder or sweeper seals its cell with a --ruled-out file holding one 210-character reason. review cover refuses the whole call ('--ruled-out refused, nothing sealed') after the cell's work is done, the same late whole-set refusal the brief's B-72f3bbac criterion says a sweeper or finder must learn of before the write, or not suffer. Neither the cut note nor add --dry-run reaches it."
+fix = "Extend design/shapes.md#caps and task 13: review cover cuts an over-cap ruled-out reason at 200 the way it cuts the note, ending ...(+K), and reports reasons_truncated in its envelope; or give review cover a --dry-run. Task 13's files already hold cover.rs and review_cover.rs. A single review verdict refused on a 600+ rationale is the same shape for the verifier the criterion also names; cutting it would add verdict.rs to task 13."
+effort = "small"
+counter = "If the brief's criterion were read as naming only cover notes and review add rows, the ruled-out reason would be out of scope; the criterion says any field over its cap, for sweeper, finder or verifier."
+grade = "high"
+evidence = [
+    "tomlctl/src/review/fields.rs:1239: a reason over RULED_OUT_REASON_CAP (200) is refused",
+    "tomlctl/src/review/cover.rs:47-52: any ruled-out refusal fails the call, 'nothing sealed'",
+    "tomlctl/src/review/verdict.rs:135-143: a refused single verdict is an error; fields.rs:837 rationale cap 600",
+    "task 13 Files: cover.rs, add.rs, schema_out.rs, cells.rs only; Outcome names the cover note and add rows",
+]
+target = "design/shapes.md#caps"
+tier = "advisory"
+anchor = "plan|docs/flows/v2-harness-tuning/design/shapes.md|caps"
+status = "resolved"
+first_seen = 2026-11-11
+resolution = "Addressed by an author edit to the plan's records and design/shapes.md at triage, on the user's instruction. F41 was already covered by task 38's required means widening the hook's path pattern to `.mjs`."
+resolved = 2026-11-11
+
+[[verdicts]]
+finding = "F1"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "claude/skills/review-v2-engine/SKILL.md:78"
+rationale = "expect equals task 16's detail byte for byte. Counter tested: `tomlctl review digest --help` lists no --with today, so the `digest --with duplicates,ruled-out` reads task 16 writes into SKILL.md, compose.md and plan-review-lead.md fail on a stale binary. Task 17 mints `review_digest_with`, yet neither the SKILL.md:78 halt list nor plan-flow.md:38's pre-flight would name it. The new text adds only that token, in files task 16 already owns."
+
+[[verdicts]]
+finding = "F2"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/tests/output_options.rs:2227"
+rationale = "expect equals task 17's detail byte for byte. every_leaf_command_has_a_case (output_options.rs:2227) and the expected feature list with its count assert (capabilities.rs:1846-1860) are integration-test binaries under tomlctl/tests/, which `--lib -- cli::dispatch::tests` never compiles or runs; CLAUDE.md's Build discipline says the same of output_options.rs. The new text only adds the two narrow --test runs, which the sub-agent rules permit."
+
+[[verdicts]]
+finding = "F5"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/v2-harness-tuning/design/shapes.md:120; tomlctl/src/review/add.rs:458; tomlctl/src/review/fields.rs:775"
+rationale = "Counter fails: shapes.md:120 and the task Detail say only that --targets defaults to the finding's own target; D11 and notes/plan-review-outcomes.md:43 add nothing for an absent one. A target is guaranteed only on a flow-mode defect or cleanup (add.rs:458 requires it only when edits); a flow-mode advisory, a markdown-mode plan row and any code row (target is plan_only, fields.rs:775) have none, so the default yields an empty list and refuse-vs-empty is left to the executor. Narrow trigger; minor stands."
+
+[[verdicts]]
+finding = "F3"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/approve.rs:392-400"
+rationale = "expect matches task 21's Detail as it stands. drift.rs never resolves HEAD to a commit id: its only HEAD use is the git log range `{since}..HEAD` in changed_files (drift.rs:106), and rg finds rev-parse only in approve.rs head_commit and probes.rs's emitted script. The task's own [suggested] Means already says plan drift never reads the HEAD id and points at approve.rs. new swaps only that one sentence, so Detail and Means agree. Nothing else changes."
+
+[[verdicts]]
+finding = "F4"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/stage.rs:116-143"
+rationale = "remedy() maps every error class plan check raises (brief and task-no-spec are handled before it in assess), and an unlisted class falls to `_ => PLAN_CHECK`. That is pinned by every_class_the_stores_raise_as_an_error_has_its_own_remedy (stage.rs:320). Task 18 adds two error classes and no task in the plan lists stage.rs. new adds stage.rs to the files list and changes nothing else. The Detail note in edit, mapping both classes to TASKS_UPDATE, is not in new, so the implementer needs that line too."
+
+[[verdicts]]
+finding = "F9"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/v2-harness-tuning/design/shapes.md:75-77"
+rationale = "Counter fails: shapes.md:76 makes round per store, :75 emits one launch per store, and :77 builds run_dir from slug, milestone, round and -r<n> only. Two linked stores with no prior reproductions both get round 1 and the same run_dir, so checker payloads at :112 (reproduce-checker-<batch>.ndjson) collide. The current contract, findings.md:96, appends -<s> or -<scope> for a second store; the shape drops it. The new text restores it and keeps the relaunch suffix. Minor stands: needs a two-store milestone."
+
+[[verdicts]]
+finding = "F7"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+severity = "minor"
+citation = ".claude/flows/v2-harness-tuning/tasks.toml:1761"
+rationale = "Counter tested: no D gate or other task pins the cases. Task 32's accepts (tasks.toml:1761) check only script names and the Rust fn; 26/28/29 grep identifiers; D gates run nextest, which passes whatever cases exist. Task 24 pins its named tests by grep (tasks.toml:1390), so the plan's own pattern is unmet here. Severity minor: detail (tasks.toml:3067) names every case and the brief's cut is named at approval, so a skip needs a worker ignoring detail. C8 rule-outs concern hook regex and node absence, not this gap."
+
+[[verdicts]]
+finding = "F6"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = ".claude/flows/v2-harness-tuning/tasks.toml:2087-2145"
+rationale = "Counter tested: no other task names gate-stamp.sh and milestone E's four gates never run it. The five accepts (tasks.toml:2087-2145) check existence, parse, greps and no-stamp check only; nothing pins invalidation, the property design/shapes.md:145 requires. Ran the proposed check in scratch: rc 0 against a reference script, rc 1 against one whose ls-files drops --others. So `new` discriminates and fixes only the gap; it does leak its mktemp dir."
+
+[[verdicts]]
+finding = "F8"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/v2-harness-tuning/design/shapes.md:71-72; claude/workflows/review-v2.js:56"
+rationale = "Holds. shapes.md:71-72 types store as a string and units[].task as an int (the doc's placeholders type values: launch-args uses int ids for the milestone Workflow). review-v2.js:51-56 reads a.store||{} and needs exactly one of slug/scope, and :45/:65 need task a string matching TASK_REF, so a launches entry passed as args per task 35 is refused, 'no agent launched'. Counter fails: task 28's constraint keeps route-less reproduce args unchanged and touches no store/task check. new matches findings.md:93."
+
+[[verdicts]]
+finding = "F12"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = ".claude/flows/v2-harness-tuning/tasks.toml:3107"
+rationale = """Counter fails: shapes.md:151 makes any cargo test/nextest a default audit pattern, with no carve-out. Task 34 detail (tasks.toml:3107) allows only a test the task's own accept names; all else is a breach. Yet plan-worker-{deep,lite}.md:54 tell workers to run the CLAUDE.md narrow check (cli::dispatch::tests), and many task details say "Check with" it outside accept (task 24's detail names a narrow nextest run too). So compliant runs are reported as breaches each milestone. The new constraint fixes that and nothing else. Rule-out C5 concerns the path reads, not this."""
+
+[[verdicts]]
+finding = "F15"
+run = "U1"
+by = "verifier"
+verdict = "refuted"
+citation = "docs/flows/v2-harness-tuning/brief.md:67"
+rationale = "The counter holds. brief.md:67 scopes the clause by its own subject: 'A commit train over an already gated tree ... and no step tells the committer to pass --no-verify'. D12 (plan view line 460-468) rejects documenting --no-verify for a gated train, and the task Outcome repeats the train scope. B-e57e08ff's context names --no-verify as the train workaround being replaced. examples.md:103 is WIP-checkpoint advice, not a commit-train step, so correct execution leaves the criterion true. The C5 rule-out concerns cell_return and has no bearing here."
+
+[[verdicts]]
+finding = "F14"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl tasks show 38 --slug v2-harness-tuning --with spec: accept[0..4] never run gate-stamp.sh run; plan view Milestone E Gates: verify-shared-blocks, verify-plan-story-blocks, nextest, cargo install --path glimpse"
+rationale = "Counter tested first: Milestone E gates are the two verifiers, nextest and cargo install --path glimpse; none runs gate-stamp.sh. Task 38's five accept entries only check existence, a grep, check failing with no stamp, a CLAUDE.md grep and bash -n. Nothing shows check passing on a stamp run just wrote, so an always-exit-1 check lands green. The proposed new entry discriminates it. One caveat: run leaves a stamp, so a later rerun of accept[2] fails until the stamp is removed."
+
+[[verdicts]]
+finding = "F10"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/cli/types/plan.rs:37-47"
+rationale = "Counter is task 21 forwarding Emit whole to emit.rs; its detail says only 'register PlanOp::Emit with a nested enum in cli/types/plan.rs and plan/dispatch.rs', and dispatch.rs:15-33 matches every nested enum (Handover, Run, Milestone) inline with no wildcard. A reproduce-units variant then needs an arm in dispatch.rs, absent from task 23's files (expect matches). cold-read-C U3 names the same gap. Adding the file is safe even if 21 forwards; task 22 has the same gap."
+
+[[verdicts]]
+finding = "F11"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = ".claude/flows/v2-harness-tuning/tasks.toml:1622-1631"
+rationale = "Task 28's only accept is grep batch_defects, so a worker doing the wave half alone passes it. The new check fails today (grep -c 'reproduce-checker-' review-v2.js gives 0, rc 1) and binds the checker half: design/shapes.md:112 names payloads/reproduce-checker-<batch>.ndjson, the detail tells the script to pass that payload name, and the script already builds the verifier's payload path as a literal (review-v2.js:101). The entry matches the existing accept shape."
+
+[[verdicts]]
+finding = "F13"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = ".claude/flows/v2-harness-tuning/tasks.toml:3106-3107"
+rationale = "drain.md:27 gives the index as {id, status, note, error, deviations, handover}, though shapes.md:104 adds needs_files to the index entry; drain.md:57 says drift runs before status moves so rows past pending count as own work, the rule task 3 replaces with a set agent. Task 34's detail edits only the line-61 sentence and step 6, and its needs_files grep passes without line 27. The C5 rule-out concerns the unquoted path read, not these lines, so it does not apply."
+
+[[verdicts]]
+finding = "F16"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/v2-harness-tuning/design/shapes.md:71-72; claude/workflows/review-v2.js:45-65"
+rationale = """Counter fails. Task 23 builds the verb "as design/shapes.md#reproduce-units states", and that shape gives store as a string and task as the number 4. Task 35 passes each launches entry straight in as args. Task 28 changes nothing for units without route. In review-v2.js reproduce mode, `matches` requires typeof string, so units[].task 4 is refused. store "" or a slug string gives rStore without a slug or scope key, so it is refused with 'no agent launched'. findings.md:93 shows the shape that works today. `new` fixes both fields and matches `expect`."""
+
+[[verdicts]]
+finding = "F17"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/v2-harness-tuning/brief.md:46"
+rationale = """brief.md:46 reads "All 30 items listed under Intent" (expect matches). Intent, lines 5-33, has 29 bullets with 29 distinct B- ids; Background has 29 distinct headed ids; the backlog holds exactly 29 items tagged or promoted to v2-harness-tuning, all in Intent. The only other id in the plan view, B-00ae0571, is a prior fixed item cited inside B-72f3bbac's background, not an Intent item. No missing bullet, so the counter fails; new "29" fixes the count and nothing else."""
+
+[[verdicts]]
+finding = "F23"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/v2-harness-tuning/brief.md:5-46"
+rationale = 'brief.md:46 reads "All 30 items listed under Intent" (expect matches). Intent (lines 5-33) holds 29 `- B-` rows; Background holds 29 `**B-` entries; .claude/backlog.toml has exactly 29 rows with promoted_to = "v2-harness-tuning", all 29 matching the Intent ids. No 30th item exists anywhere to restore, so the count, not the list, is wrong. The edit changes only the number. Prose fix, no code or behaviour change.'
+
+[[verdicts]]
+finding = "F19"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "claude/workflows/review-v2.js:54-56,65; docs/flows/v2-harness-tuning/design/shapes.md:71-72"
+rationale = """Holds. shapes.md:71-72 types store as a string and units[].task as a number. review-v2.js:54-56 reads a.store.slug/.scope, so a string store pushes 'exactly one of slug or scope'; :45,65 matches() needs typeof string, so task 4 fails TASK_REF; any problem launches no agent (:71-74). Task 23 emits per this shape; task 35 passes the entry as args unchanged; task 28 keeps validation. Counter fails. The new value should also allow {"scope": ...} for a flow-less store, as findings.md:96 does."""
+
+[[verdicts]]
+finding = "F30"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/v2-harness-tuning/brief.md:87"
+rationale = "brief.md:87 asks that a path outside the verb's fields be refused or warned of and that the verb's optional fields stay quiet. D14 (plan view) and design/shapes.md:141 instead warn on a path matching no row unless its first segment is in one crate-wide optional table; task 5 seeds it with advisories (backlog-capture SKILL.md:327), so tasks list {advisories} stays quiet. Task 5's Outcome already uses D14's wording. expect matches line 87; new restates shapes.md. Rule-outs concern other sites."
+
+[[verdicts]]
+finding = "F20"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/v2-harness-tuning/design/shapes.md:75-77; claude/skills/implement-v2-engine/references/findings.md:96"
+rationale = "shapes.md:75 emits one launch per linked store and :76 counts round per store, so two stores with no reproductions both get round 1; :77 builds run_dir from slug, milestone and round only, with -r<n> solely under --relaunch. findings.md:96 is the only place adding -<s>/-<scope>, and task 35 detail (1) replaces the per-store split with the emit, so the suffix rule is lost. Two launches then share payloads/reproduce-checker-1.ndjson (shapes.md:112). Real but needs two linked stores: minor holds."
+
+[[verdicts]]
+finding = "F21"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/cli/dispatch/tests/skills.rs:279-290; scripts/verify-shared-blocks.sh:135-182; docs/flows/v2-harness-tuning/design/shapes.md:145"
+rationale = "The digest roots at shapes.md:145 omit scripts/. C6's rule-out (the hook always runs verify-shared-blocks.sh) does not defeat it: the shell loop at verify-shared-blocks.sh:135-182 only compares hashes among a block's carriers, so a block left with one carrier passes, while blocks_verify_agrees_with_shell_gate asserts no thin block (skills.rs:279-290) and mirror==shell. A scripts/ edit after a stamp, committed with a claude/*.md path, skips that test though the hook runs it today (.githooks/pre-commit:58-59). Narrow trigger: minor."
+
+[[verdicts]]
+finding = "F22"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "claude/commands/implement.md:179; claude/skills/flow-contract-apply-pipeline/references/verification.md:19-22; tasks.toml task 7 detail"
+rationale = "Task 7's line is `outcome: pass | command: | duration: | summary:`, with no exit:, no log:, and duration_s renamed. v1 /implement step 5(ii) says pass needs exit: 0, falls back to the block's log:, and records duration_s when the block carries it (implement.md:179,184); the v1 apply pipeline likewise trusts pass on exit: 0 and greps log: (verification.md:19-22). Brief non-goals keep v1 carriers untouched, so they will read the new line against rules it cannot satisfy. Model readers may cope, so minor holds."
+
+[[verdicts]]
+finding = "F25"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/v2-harness-tuning/design/shapes.md:77; claude/skills/implement-v2-engine/references/findings.md:96"
+rationale = "shapes.md:76-77 sets round per store (its own max + 1) and run_dir to apply-<slug>-<milestone>-<round>, with only -r<n> under --relaunch. findings.md:96 today suffixes a second store's run_dir with -<s>/-<scope>; task 35 replaces that prose with the emit verb, so the suffix is lost. On a first check both stores are at round 1, so two launches share one directory and its reproduce-<task> and reproduce-checker-<batch> payload names. Narrow trigger (two linked stores); minor holds."
+
+[[verdicts]]
+finding = "F26"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/v2-harness-tuning/design/shapes.md:110; tomlctl/src/review/fields.rs:1425"
+rationale = "fields.rs:1425-1435 routes a non-plan cleanup to the checker when no edited path (target_file or file, plus instances) is executable, so a doc cleanup with five instances routes checker. shapes.md:110 and task 30's detail make gone rest on old being absent at the anchor alone; instance sites carry no old and the checker is told nothing about them, so an anchor-only fix records gone. fix_files are ignored by the route (shapes.md:26). The target_file subcase is weaker (review anchor --gone reads the edit target), but the instances case stands."
+
+[[verdicts]]
+finding = "F27"
+run = "U1"
+by = "verifier"
+verdict = "refuted"
+citation = "claude/skills/implement-v2-engine/references/run-milestone.md:87"
+rationale = "The emit does print base premises (tomlctl plan probes --emit --premises --task 11 printed p 11:0 for a base premise), but re-running base premises of a pending row against a tree its same-milestone predecessors edited is the existing contract: run-milestone.md:87 re-emits every base premise at each launch, so today the scenario's task is withheld at its second launch for the same false base line. The released worker reaches the same outcome, no regression and no wrong result. If base premises should stop being re-checked mid-milestone, that is an advisory challenge to run-milestone.md:87."
+
+[[verdicts]]
+finding = "F28"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/cli/dispatch/tests/skills.rs:279; .githooks/pre-commit:59"
+rationale = "C6's rule-out does not survive: blocks_verify_agrees_with_shell_gate (skills.rs:261-306) also asserts no manifest block has fewer than two carriers (skills.rs:279-288) and that the Rust mirror agrees with the shell, and the pinned-hash test reads the same manifest; verify-shared-blocks.sh has no thin-block check. A stamp taken before a scripts/shared-blocks.toml edit stays valid (shapes.md:145 omits scripts/), so a commit staging claude/*.md skips cli::dispatch::tests (pre-commit:59) that would have caught it."
+
+[[verdicts]]
+finding = "F29"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/v2-harness-tuning/design/shapes.md:120"
+rationale = "shapes.md:120 and task 11's detail default --targets to the finding's own target and say nothing for a finding without one; plan-records.md:70 lets an advisory carry no target, and brief B-cd288c8e records most plan findings arriving without one. Triage --addressed on such a row records addressed = [], recheck-targets (shapes.md:122) unions only applied.target and addressed, so the hand-edited record misses the re-check the brief's criterion (brief.md:75) requires. Task 16's prose never tells the lead to pass --targets."
+
+[[verdicts]]
+finding = "F32"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/v2-harness-tuning/brief.md:47"
+rationale = "Expect matches brief.md:47 verbatim, once. Every task Files path from plan view, checked against the Paths line: claude/commands/implement-v2.md and apply-v2.md, claude/workflows/tests/harness.test.mjs (the *.js glob misses it) and tomlctl/README.md all fall outside. verification.md sits under claude/agents/ but CLAUDE.md:29 calls it a fixed utility agent, not a v2 agent. The counter fails: at least four omissions stand. new edits only the Paths list. The C4 rule-out is about the 30-vs-29 count, a separate issue."
+
+[[verdicts]]
+finding = "F34"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/review/digest.rs:61-65; tomlctl/src/cli/types/review/verdicts.rs:75-80; plan Task 29 detail ('reverify keeps no single-dispatch exception') vs D10 title"
+rationale = "Traced: digest drops only Superseded, so a row the lead linked in step 3 can reach ruled_out_hits and reverify; Task 29 makes reverify one --ndjson batch, where --strike-same-as conflicts, contradicting D10. Bites when the dup is verified and its target unsettled (awaits_resolution keeps it open). Where the target was settled, resolve merges it at once and even a single strike leaves it Merged (verdict.rs sets status only if decided_by_verdict), so batching is not the cause there. Minor holds. Block answered: Task 15 already edits review-verifier.md."
+unblocks = true
+fix_sketch = """Take option 2; it is not blocked, since Task 15 already owns claude/agents/review-verifier.md. Add to Task 15's detail item (3): a batch verifier that strikes a row's same_as records that row alone with `tomlctl review verdict <finding> ... --strike-same-as` and every other row through its one --ndjson call, returning all rows under `verdicts`. In design/shapes.md#plan-batching replace the reverify sentence with: "The plan wrapper's reverify sends all its ids as one batch, since the lead's return carries bare ids; the batch verifier records a row whose same_as it strikes with a single verdict call." Mirror that clause in Task 29's detail and Task 31's engine text. Optionally have plan-review-lead step 4 leave a merged row out of reverify, since a strike does not unmerge it."""
+
+[[verdicts]]
+finding = "F8"
+run = "U1"
+by = "audit"
+verdict = "confirmed"
+citation = "docs/flows/v2-harness-tuning/design/shapes.md:71-72; claude/workflows/review-v2.js:56,65"
+rationale = "Upheld: shapes.md:71-72 gives store as a string and units[].task as an int, and review-v2.js:56 and :65 refuse both, so a launches entry passed as args launches no agent."
+
+[[verdicts]]
+finding = "F26"
+run = "U1"
+by = "audit"
+verdict = "confirmed"
+citation = "docs/flows/v2-harness-tuning/design/shapes.md:110; tomlctl/src/review/fields.rs:1426-1436"
+rationale = "Upheld: fields.rs:1426-1436 routes a doc cleanup with instances to the checker, and shapes.md:110 has the checker record gone on the anchor alone, so an anchor-only fix passes."
+
+[[verdicts]]
+finding = "F15"
+run = "U1"
+by = "audit"
+verdict = "refuted"
+citation = "docs/flows/v2-harness-tuning/brief.md:67"
+rationale = "Upheld refutation: brief.md:67 scopes the --no-verify clause to a commit train over a gated tree, so the WIP-checkpoint advice in examples.md does not falsify it."
+
+[[verdicts]]
+finding = "F27"
+run = "U1"
+by = "audit"
+verdict = "refuted"
+citation = "claude/skills/implement-v2-engine/references/run-milestone.md:87"
+rationale = "Upheld refutation: run-milestone.md:87 already re-emits every base premise of a pending row at each launch, so the false base line stops the task under the current contract too; the design adds no new failure."
+
+[[verdicts]]
+finding = "F40"
+run = "U2"
+by = "verifier"
+verdict = "confirmed"
+citation = "claude/workflows/implement-v2-milestone.js:226-249"
+rationale = "Counter tested: task 26 exposes no schedule hook the harness can read, and task 32 forbids editing the scripts. In the Detail, agent() just returns a canned object, with no way to keep a task pending. With instant stubs, nextWave plus await parallel calls agent in the same order as a pool would: L and S1, then S2 only after S1 returns. Promise.race over promises that have already settled picks L first, so siblings: and start order come out the same. Fix: let a case hold agent() on a deferred promise."
+
+[[verdicts]]
+finding = "F36"
+run = "U2"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/v2-harness-tuning/design/shapes.md:68-80"
+rationale = "Counter fails: task 35's detail replaces the units, round and later-pass reads but says nothing to drop step 5's alone-relaunch (findings.md:113), and D9's Why names exactly that same-round relaunch. shapes.md:68 gives only --since-launch and --relaunch; :80 keeps every unit whose files share a path with the latest implement run's dispatched rows, i.e. all fix units. Selecting one unit needs a hand cut, against brief.md:71. The new --task filter fixes only that. Minor stands."
+
+[[verdicts]]
+finding = "F43"
+run = "U2"
+by = "verifier"
+verdict = "confirmed"
+citation = "tasks show 24: detail says `agent` is the file stem; claude/workflows/implement-v2-milestone.js:48 index entries carry no agent id"
+rationale = "Counter checked: task 24's detail fixes `agent` as the transcript file stem (agent-<id>), and shapes.md:152 prints only {agent, command}. The Workflow index (implement-v2-milestone.js:48,252) returns per-task entries with no agent or transcript id, and the means forbids the orchestrator reading transcripts. So task 34 (1)'s 'a task's own accept' rule has no join from a row to its task. Minor: report-only, no status moves."
+
+[[verdicts]]
+finding = "F44"
+run = "U2"
+by = "verifier"
+verdict = "confirmed"
+citation = "task 34 detail (3) 'order the two with `needs` and widen'; drain.md:197; tomlctl/src/tasks/update.rs:1168 refuses an edge closing a cycle"
+rationale = "Task 34 (3) names no direction for the needs edge. drain.md:197's idiom (new row needs the latest holder), applied to a holder that is already a dependent of the failed row, closes a cycle; update.rs:1168 refuses it. The counter partly holds (refusal is clean), but the step still leaves direction to the executor, so two drains can diverge or stall. Fix is writable: skip the edge when a path already orders them, else the holder needs the widened row."
+
+[[verdicts]]
+finding = "F39"
+run = "U2"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/v2-harness-tuning/design/shapes.md:76"
+rationale = """Holds. shapes.md:76 sets round = highest recorded + 1 with no --relaunch case, and :68-80 never narrows units, yet findings.md:113 relaunches the failed unit alone in the same round and D9 calls it a same-round relaunch. Task 23 detail adds neither. C15's rule-out cites findings.md:155, but that "relaunch" is the worker relaunch of :162 before a new check, not step 5. Block answered: options 2-3 contradict D9 and step 5; option 1 plus an explicit round is dominant."""
+unblocks = true
+fix_sketch = """In shapes.md#reproduce-units: make --relaunch <n> require --round <k>, the round of the launch being relaunched (the orchestrator has it from that launch's args). Under --relaunch, round is k, not highest+1, so the relaunch stays in the same round as findings.md step 5 and D9 say; an explicit k also covers the case where no unit of the first launch recorded a row, which "highest recorded round" would get wrong. Under --relaunch, emit only the units holding a finding with no reproduction for this flow, milestone and round k; drop a launches entry left with no unit. Add both rules to task 23's detail and a test, e.g. reproduce_units_relaunch_keeps_the_round_and_only_unrecorded_units. In the findings.md prose task, step 5 passes --relaunch <n> --round <k> and launches the entry unchanged."""
+
+[[verdicts]]
+finding = "F42"
+run = "U2"
+by = "verifier"
+verdict = "confirmed"
+severity = "minor"
+citation = "claude/skills/implement-v2-engine/SKILL.md:107"
+rationale = "Holds. Task 34 means[0] puts 'keep the Transcript dir from the launch' in drain.md only; task 33 (run-milestone.md launch) and 36 (SKILL.md) never say it, and plan run start records no dir, against SKILL.md:28 (every step on disk). SKILL.md:107 runs drain step 3, where the audit goes, for a run abandoned at re-entry, with no dir to hand. The dir is derivable as projects/<proj>/<session>/subagents/workflows/<run_id>, but no task says so. Minor: in the same session the launch result stays in context."
+
+[[verdicts]]
+finding = "F45"
+run = "U2"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/v2-harness-tuning/design/shapes.md:76"
+rationale = """Holds. shapes.md:76 sets round to highest recorded plus one with no --relaunch exception, so after 11 units record at round 1 a relaunch is round 2, not the same round findings.md:113 and D9's Why require. shapes.md:68,80 offer no unit filter and --since-launch keeps every unit on a first pass, so the relaunch "alone" needs hand filtering, against Task 35's one-call Outcome. C15's rule-out cites findings.md:155, a fix-round note that contradicts step 5, and does not address the missing unit filter."""
+
+[[verdicts]]
+finding = "F46"
+run = "U2"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/v2-harness-tuning/brief.md:74"
+rationale = "brief.md:74 holds the expect text verbatim. Counter tested: verdict.rs:133-143 makes a refused single verdict an error that writes nothing, so for a verifier the write still refuses and nothing warns first; neither disjunct holds. No task adds a verdict dry run or cut: Task 13 touches only cover and add, Task 15 says a verdict rationale is still refused, and brief.md:149 records verifiers no longer refused. Narrowing to sweeper and finder fixes only that. Rule-outs concern other sites."
+
+[[verdicts]]
+finding = "F47"
+run = "U2"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/v2-harness-tuning/design/shapes.md:68-80; claude/skills/implement-v2-engine/references/findings.md:113"
+rationale = "Counter fails: shapes.md:68 gives reproduce-units no unit filter, :77 has --relaunch only suffix run_dir, and :80 --since-launch keeps any unit whose files overlap a row the latest implement run dispatched, which an ok unit's fix row was. findings.md:113 requires the relaunch to hold only the failed unit, and task 35 Detail (2) adds just --relaunch <n>. So the ok unit's verifier reruns, or the entry is hand-cut against task 35's no-hand-assembly outcome. C15's rule-out covers round rising, not narrowing. Minor stands."
+
+[[verdicts]]
+finding = "F48"
+run = "U2"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/v2-harness-tuning/design/shapes.md:135-138; tomlctl/src/review/cover.rs:47-52; tomlctl/src/review/fields.rs:1192"
+rationale = "Caps (shapes.md:135-138) covers only the cover note cut and add --dry-run. fields.rs:1192 caps a rule-out reason at 200 and cover.rs:47-52 refuses the whole call, nothing sealed, on any over-cap entry. The brief's criterion (brief.md:74) says a sweeper, finder or verifier learns of any over-cap field before the write that refuses the whole set, or the write does not refuse; the reason is such a field and neither shape reaches it. Recovery is a cheap reseal, so minor stands."
+
+[[verdicts]]
+finding = "F35"
+run = "U2"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/v2-harness-tuning/brief.md:74"
+rationale = "brief.md:74 promises the verifier learns of an over-cap field before the write or is not refused. At base fields.rs:837-839 caps Verdict rationale at 600 and verdict.rs:133-143 errors on a refused single verdict; no task in plan view touches verdict.rs or the rationale cap, D15 binds only cover.rs and add.rs, and task 15's detail says the rationale is still refused. The clause cannot hold at close. The C15 rule-out concerns the findings.md rename, not this site. The new text matches tasks 13 and 15."
+
+[[verdicts]]
+finding = "F37"
+run = "U2"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/v2-harness-tuning/design/shapes.md:30-36"
+rationale = "Holds. shapes.md:30 makes an empty selection exit 0, and the positional form refuses an empty id list (reproduce.rs status, 'no finding ids given'). tasks update can rewrite checkpoint (update.rs:1235) without touching the minted --milestone string, so a moved row's check can select nothing and pass vacuously. Counter tested: findings.md:63 runs the --expect read only when a row fixes something, so no legitimate caller needs exit 0. The C13 rule-out concerns entry collapse and does not touch this. Note --expect is required (verdicts.rs:163), so 'new' can just say exit 1."
+
+[[verdicts]]
+finding = "F37"
+run = "U2"
+by = "audit"
+verdict = "confirmed"
+citation = "docs/flows/v2-harness-tuning/design/shapes.md:30-36"
+rationale = "Upheld: shapes.md:30 makes an empty milestone selection exit 0 and shapes.md:32-36 mint the --expect gone check with a fixed milestone id, so a row moved off that checkpoint leaves the gate's one proof passing vacuously."
+
+[[verdicts]]
+finding = "F40"
+run = "U2"
+by = "audit"
+verdict = "confirmed"
+citation = "claude/workflows/implement-v2-milestone.js:226-249"
+rationale = "Upheld: with agent() returning a canned object at once, the wave loop at :226-249 issues the same call order a rolling pool would, so instant stubs cannot tell the pool from waves and the in-flight cases pass on either."
+
+[[verdicts]]
+finding = "F44"
+run = "U2"
+by = "audit"
+verdict = "confirmed"
+citation = "claude/skills/implement-v2-engine/references/drain.md:197"
+rationale = "Upheld: drain.md:197's idiom makes the new row need the latest holder; applied to a holder that already depends on the failed row it closes a cycle that update.rs reject_broken_graph refuses, and task 34 (3) names no direction."
+
+[[verdicts]]
+finding = "F45"
+run = "U2"
+by = "audit"
+verdict = "confirmed"
+citation = "docs/flows/v2-harness-tuning/design/shapes.md:76-80"
+rationale = "Upheld: shapes.md:76 always sets round to highest plus one and :80 offers no unit filter, while findings.md:113 relaunches one unit alone in the same round and shapes.md:77's -r<n> presumes a same-round relaunch; the rule-outs cite only findings.md:155's round note and leave the missing filter unanswered."

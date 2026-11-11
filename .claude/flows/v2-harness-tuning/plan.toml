@@ -1,2 +1,430 @@
-schema_version = 1
+schema_version = 2
 last_updated = 2026-11-11
+
+[id_high_water]
+D = 16
+
+[[decision]]
+id = "D1"
+decision = "Widen the cited test so a citation holds when it is compound, names a path that appears in the finding's `new`, or names another document of the same flow; and let `review apply --user-accepted` write an advisory-tier defect or cleanup finding that carries `new`. Restate the B-cd288c8e success criterion as: a confirmed plan-review finding that carries an edit can be written by `review apply`."
+why = "Finders already supply target and new; the edits are lost at tier stamping, where the verifier's citation fails the cited test, and apply refuses advisory tier outright."
+provenance = "user-stated"
+door = "two-way"
+binds = [
+    "tomlctl/src/review/apply.rs",
+    "tomlctl/src/review/tier.rs",
+    "9",
+    "10",
+    "16",
+]
+rejected = []
+evidence = "Read tier.rs cited/citation_holds (the citation must name the target's own file or a path in its current value) and apply.rs (advisory tier is 'never applied'); notes/plan-review-outcomes.md measured 24 confirmed v2-apply rows with a full edit stamped advisory, all on their citation."
+if_false = "The plan instead widens citation_holds (compound citations, paths named in `new`, other documents of the flow), which reaches 15 of the 24 measured rows, or changes the verifier's citation contract; the brief's criterion about finders supplying edit fields would stay and have no task that moves it."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = true
+
+[[decision]]
+id = "D2"
+decision = "Release an `after:<n>` task inside the launch by having its worker run its own after: premise checks first and return `failed` without editing when one is false; the worker records nothing, and the engine reviews those check commands at launch through a new emit mode."
+why = "A Workflow script has no shell, so some agent must run the check; the worker is already there, and a worker that records nothing needs no exemption from the drain's spec-diff rule."
+provenance = "user-confirmed"
+door = "two-way"
+binds = [
+    "claude/workflows/implement-v2-milestone.js",
+    "claude/skills/implement-v2-engine/references/run-milestone.md",
+    "tomlctl/src/plan/probes.rs",
+    "claude/agents/plan-worker-lite.md",
+    "claude/agents/plan-worker-deep.md",
+    "21",
+    "26",
+    "27",
+    "33",
+]
+rejected = []
+evidence = "Read probes.rs (an after: premise's command reaches the script only once its task is done; tomlctl never runs a stored command) and run-milestone.md step 3 (the orchestrator reads the premise script before running it, and withholds the task); notes/wave-scheduling.md."
+if_false = "Either a new Haiku checker agent runs and records each released premise mid-run, which adds an agent file, a `withheld` index status and a drain exemption for premise probe lines; or the plan ships the rolling pool alone and returns B-8f42ffc6 to the backlog."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D3"
+decision = "Test the Workflow scripts' logic with one `node:test` file under `claude/workflows/tests/`, run by a Rust test in `cli::dispatch::tests` that spawns `node --test` and fails when node is absent."
+why = "Inside `cli::dispatch::tests` both the pre-commit hook and the full suite run it with no hook change; a quiet skip would let a node-less machine pass unchecked."
+provenance = "user-confirmed"
+door = "two-way"
+binds = [
+    "claude/workflows/review-v2.js",
+    "claude/workflows/plan-v2-review.js",
+    "tomlctl/src/cli/dispatch/tests/lint.rs",
+    ".githooks/pre-commit",
+    "32",
+]
+rejected = []
+evidence = "Read .githooks/pre-commit (a staged claude/workflows/*.js already runs cli::dispatch::tests); notes/script-harness.md ran a prototype under node v26.13.0 and bun 1.4.4 on this host. The Windows machine's runtimes could not be observed."
+if_false = "The test skips with a printed notice where node is absent, or it runs from a hook line only (`node --test` gated on claude/workflows/*.js), which the verification agent's full-suite pass never sees."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D4"
+decision = "Adopt the structure challenge's draft: give each accept entry an owner, `run_by` with `covered_by`, apart from `writes_build`, and put the launch-args, reproduce-units and gate-list projections in one module under `tomlctl/src/plan/`."
+why = "`writes_build` decides probing, who runs a check and whether the gate lists it, so a gate-only store read has to claim it builds, and a boolean has no third state for a covered check."
+provenance = "agent-assumed"
+door = "one-way"
+binds = [
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/plan/probes.rs",
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/src/review/schedule.rs",
+    "docs/flows/v2-harness-tuning/design/shapes.md",
+    "18",
+    "21",
+    "22",
+    "23",
+]
+evidence = "Read probes.rs skip_reason (only writes_build = false is probed), schedule.rs Compose::accept (reproduce-status minted with writes_build absent) and notes/structure-challenge.md claims 1 to 3. The user decided on 2026-11-10 that a covered check is marked by an accept-entry field naming its gate, which `covered_by` is."
+if_false = "The plan keeps `writes_build` as the owner, relabels the worker view line and adds `covered_by` alone; the accept-owner task shrinks and the schedule task sets no owner."
+revisit_if = "a fourth owner appears, such as a check the reproduce step itself runs"
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Keep `writes_build` as the owner and add a `covered_by` string alone"
+because = "the reproduce-status check would still print `Writes build: yes` for a store read, and every `writes_build` site would test two flags"
+
+[[decision.rejected]]
+option = "Scatter the three projections across tasks/, review/ and plan/"
+because = "the gate list's reproduce check and the reproduce units read the same finding_links rule, which would then live twice"
+
+[[decision]]
+id = "D5"
+decision = "Remove the top-level `allOf` from the verdict-return schema in `schema_out.rs`, not in the Workflow scripts."
+why = "Three call sites pass the schema bare, and `review verdict` already refuses an unpaired unblocks or fix_sketch at write."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/review/schema_out.rs",
+    "1",
+]
+evidence = "notes/verifier-cost.md and notes/structure-challenge.md both place the allOf at schema_out.rs verdict_return and the bare uses at review-v2.js verifyOne and verifyPanel and plan-v2-review.js reverify."
+if_false = "Each script destructures the combinators off before passing the schema to agent()."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Strip the combinators in review-v2.js and plan-v2-review.js"
+because = "it repairs three call sites and leaves the next caller of the schema to hit the same 400"
+
+[[decision]]
+id = "D6"
+decision = "Stop `tasks check` and `plan check` reporting `dag/unreachable-claim` for a pair in which either row is done with a commit; `review schedule` adds no needs edge for file holders."
+why = "A done, committed row cannot run beside anything, so the pair is not a claim conflict, and the filter also quiets rows a replan mints."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/tasks/check.rs",
+    "tomlctl/src/review/schedule.rs",
+    "4",
+]
+evidence = "notes/schedule-rows.md: overlap_findings passes every row to Graph::overlap_pairs with no status filter."
+if_false = "schedule.rs Compose::plan pushes the highest done holder id per file into needs."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Have `review schedule` add the latest done holder of each file to `needs`"
+because = "it removes only the pairs of rows that verb mints and leaves every other minted row warning"
+
+[[decision]]
+id = "D7"
+decision = "Prove a milestone's fixed findings gone with one `review reproduce-status --flow <slug> --milestone <id>` check that every fix row carries as the same string, and name a fix's other files in a new finding field, `fix_files`."
+why = "The gate already drops a byte-identical command, so one string on every row is one gate command, and it covers findings a settle drain schedules later; no stored field names a defect's other files today."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/review/reproduce.rs",
+    "tomlctl/src/review/schedule.rs",
+    "tomlctl/src/review/fields.rs",
+    "8",
+    "19",
+]
+evidence = "Read schedule.rs Compose::accept; notes/schedule-rows.md on reproduce.rs status, edited_paths and its two other consumers."
+if_false = "apply-v2-engine adds an id-list gate at step 5, and files are widened by hand at the apply preview as today."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "A `--gate` on the fix milestone listing the finding ids"
+because = "it misses findings the settle drain schedules into the milestone afterwards"
+
+[[decision.rejected]]
+option = "Parse backticked paths out of a finding's fix prose"
+because = "it is a heuristic that would claim files a fix only mentions"
+
+[[decision]]
+id = "D8"
+decision = "The launch-args verb trusts a stored premise verdict only when its `at` is the current HEAD, and the gate-list verb leaves held commands and per-command timeout, rerun and transient options to the orchestrator."
+why = "The engine records premises immediately before building the args, so a HEAD guard catches a skipped step, and which command is a landing step is read from CLAUDE.md, not from any store."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/plan/probes.rs",
+    "claude/skills/implement-v2-engine/references/run-milestone.md",
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "21",
+    "22",
+]
+rejected = []
+evidence = "notes/gate-assembly.md findings F1 and the gate-list finding; read run-milestone.md section 3."
+if_false = "Probe gains a recorded datetime, and milestones gain stored landing and timeout tables."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D9"
+decision = "Treat B-72a04d82 as answered and give a reproduce relaunch its own run directory suffix through the reproduce-units verb."
+why = "The round is in the run directory's name and every round records a row per finding, so no later round reads an earlier payload; only a same-round relaunch shares the directory."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "claude/skills/implement-v2-engine/references/findings.md",
+    "claude/workflows/review-v2.js",
+    "23",
+    "35",
+]
+rejected = []
+evidence = "notes/verifier-cost.md, answer 5."
+if_false = "Nothing changes for rounds; the relaunch keeps sharing its round's directory."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D10"
+decision = "Batch a plan review cell's single-verifier defects and its reverify ids, keeping a row with `same_as` single, and have the sweeper take a plan review's names from the plan's records when its slice is untracked."
+why = "The brief asks for batches; `--strike-same-as` works only on a single verdict; ripple is a floor lens that compose.md forbids dropping."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "claude/workflows/review-v2.js",
+    "claude/workflows/plan-v2-review.js",
+    "claude/agents/review-sweeper.md",
+    "claude/skills/review-v2-engine/SKILL.md",
+    "15",
+    "28",
+    "29",
+    "31",
+]
+evidence = "notes/verifier-cost.md answers 3 and 4."
+if_false = "Plan review keeps one verifier per critical or major defect, and the ripple cell is waived by a compose exception."
+revisit_if = "a batched plan verifier's verdicts prove less reliable than single ones"
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Waive the ripple cell in flow mode"
+because = "compose.md forbids dropping a floor lens, and the names are reachable from the plan's records"
+
+[[decision]]
+id = "D11"
+decision = "Record a hand-fixed plan finding as `resolved` with an `addressed` list of targets, through a `review triage` mode, and emit re-check targets from one read verb."
+why = "`resolved` keeps regression detection and stays out of the dismissal rate and the calibration fence, and a companion field avoids touching every status matrix."
+provenance = "agent-assumed"
+door = "one-way"
+binds = [
+    "tomlctl/src/review/triage.rs",
+    "tomlctl/src/review/fields.rs",
+    "tomlctl/src/review/stats.rs",
+    "claude/skills/review-v2-engine/references/plan-flow.md",
+    "11",
+    "16",
+]
+evidence = "notes/plan-review-outcomes.md, findings 3 and 4."
+if_false = "A new status `addressed` is added across the status matrices."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "A new finding status"
+because = "export, sync, digest and approve each hold a status matrix that would need a new arm"
+
+[[decision]]
+id = "D12"
+decision = "Cut the pre-commit cost of a commit train with a gate stamp: `scripts/gate-stamp.sh run` runs the hook's cargo steps and stamps the working tree's digest, and the hook skips those steps while the digest still matches."
+why = "The hook's cargo steps test the working tree, which a commit train leaves unchanged between commits, so a digest of that tree says the steps already passed on exactly these bytes."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    ".githooks/pre-commit",
+    "scripts/verify-shared-blocks.sh",
+    "CLAUDE.md",
+    "38",
+]
+evidence = "Read .githooks/pre-commit: the five cargo steps are path-gated on the staged set and run against the working tree."
+if_false = "The hook stays as it is and a train keeps paying two to four minutes per commit."
+revisit_if = "a hook step starts testing the staged snapshot instead of the working tree"
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Document `--no-verify` for a gated train"
+because = "it also skips the shared-block and sidecar checks, and CLAUDE.md forbids it past a parity failure"
+
+[[decision]]
+id = "D13"
+decision = "Audit plan workers from the Workflow launch's transcript directory with a read-only `tomlctl agents audit` verb, and leave glimpse alone."
+why = "Each agent's transcript already lists every Bash command it ran, and the brief puts glimpse's behaviour out of scope."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/agents/mod.rs",
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "24",
+    "34",
+]
+rejected = []
+evidence = "Read this session's transcript dir for run wf_4b25de8f-a00: one agent-<id>.jsonl per agent, each Bash call a tool_use entry with its command."
+if_false = "The audit becomes a glimpse hook recording, or a worker self-report field."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D14"
+decision = "Warn on stderr for a `--template` path that matches nothing unless its first segment is in a crate table of optional fields; do not build a per-verb field vocabulary."
+why = "A per-verb vocabulary spans every row report, while a table of the optional fields the documented templates name keeps those idioms quiet at a fraction of the work."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/convert.rs",
+    "tomlctl/src/output/template.rs",
+    "5",
+]
+rejected = []
+evidence = "Read convert.rs validate_row_paths: it returns Ok as soon as one path matches any row."
+if_false = "Each row-report verb declares its field vocabulary and a path outside it is refused."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D15"
+decision = "Smaller calls, each the cheapest fix that meets its criterion: the drain reads uncommitted paths from `plan drift --uncommitted --get uncommitted_files`; the engine reference `findings.md` is renamed `apply-rows.md`; `review cover` cuts an over-cap note and `review add` gains `--dry-run`; `review digest` prints its two candidate arrays as counts unless `--with` names them; a failed worker returns `needs_files`, and per-verb registration is returned to the backlog."
+why = "Each is local to one module or one reference, and none changes a contract another item depends on."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "claude/skills/implement-v2-engine/references/findings.md",
+    "tomlctl/src/review/cover.rs",
+    "tomlctl/src/review/add.rs",
+    "tomlctl/src/review/digest.rs",
+    "claude/workflows/implement-v2-milestone.js",
+    "12",
+    "13",
+    "26",
+    "34",
+    "39",
+]
+rejected = []
+evidence = "Read drift.rs uncommitted_files (reads `-z`), add.rs, the digest's consumers in plan-review-lead.md and compose.md, and implement-v2-milestone.js RETURN_SCHEMA per notes/wave-scheduling.md."
+if_false = "Each falls back to the alternative its backlog item names."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D16"
+decision = "Order the milestones so that a verb is installed before any engine reference calls it: every milestone that changes tomlctl ends with `cargo install --path tomlctl` as a gate, and the engine references adopt the new verbs only in the last milestone."
+why = "The skills are linked into the Claude config dir, so an edited reference is live at once, while the installed binary changes only at an install; this plan is run by the engine it edits."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "claude/skills/implement-v2-engine/references/run-milestone.md",
+    "scripts/link-v2-review.sh",
+    "33",
+    "34",
+    "35",
+    "36",
+]
+rejected = []
+evidence = "CLAUDE.md, Review v2 Deploy: skills are junctions or symlinks; drain.md step 7 holds an install command for a second dispatch."
+if_false = "Engine prose can change beside its verb, and a milestone's own drain may call a verb the installed binary lacks."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[run]]
+step = "investigate"
+workflow = "plan-v2-investigate"
+args_hash = "8cc9f7b161208767a36c42d81e7f4d8dd0a7fbae810e96b37ce1b2b0f5601318"
+run_id = "wf_4b25de8f-a00"
+session = "560fcd31-6d90-4b94-bae9-fee29f8a9012"
+started = 2026-11-11T09:04:02Z
+finished = 2026-11-11T09:08:55Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "challenge"
+run_id = ""
+session = "560fcd31-6d90-4b94-bae9-fee29f8a9012"
+started = 2026-11-11T09:09:05Z
+finished = 2026-11-11T09:14:02Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "surface"
+run_id = ""
+session = "560fcd31-6d90-4b94-bae9-fee29f8a9012"
+started = 2026-11-11T09:16:25Z
+finished = 2026-11-11T09:16:25Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "cold-read"
+workflow = "plan-v2-prove"
+args_hash = "07de35c24599aa99e4144f94584c20acd46119748054e07156f3e96fb93f4039"
+run_id = "wf_fb741403-4d5"
+session = "560fcd31-6d90-4b94-bae9-fee29f8a9012"
+started = 2026-11-11T09:30:21Z
+finished = 2026-11-11T09:33:41Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "review"
+workflow = "plan-v2-review"
+run_id = "wf_919a6b6e-e33"
+session = "560fcd31-6d90-4b94-bae9-fee29f8a9012"
+started = 2026-11-11T09:36:09Z
+finished = 2026-11-11T10:16:41Z
+skip_reason = ""
+outcome = "ok"

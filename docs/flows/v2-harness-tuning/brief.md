@@ -34,9 +34,59 @@
 
 ## Non-goals
 
+- The v1 carriers (`/review`, `/optimise`, `/plan-new`, `/implement`, the v1 apply commands) and their skills stay untouched.
+- No change to which model or effort any agent runs at; routing a row to an agent that already exists is in scope, retuning a frontmatter is not.
+- No new review lenses, plan steps or user-facing commands beyond the verbs and flags these items need.
+- `lumina/`, `statusline/` and glimpse's behaviour are out; glimpse takes only the lockfile refresh a tomlctl change forces.
+- No replacement of the Workflow runtime or of the store formats; additive fields only.
+- Backlog items not listed under Intent, even where the same files are open.
+
 ## Scope budget
 
+- All 29 items listed under Intent, in one plan of several milestones.
+- Paths: `claude/workflows/*.js` and the script test under `claude/workflows/tests/`, the v2 engine, method and tomlctl skills under `claude/skills/`, the v2 agents under `claude/agents/` and the shared `claude/agents/verification.md`, the v2 carriers `claude/commands/implement-v2.md` and `claude/commands/apply-v2.md`, `tomlctl/src/**`, `tomlctl/tests/**`, `tomlctl/README.md`, `.githooks/`, `scripts/`, and `CLAUDE.md` where a documented contract changes.
+- An item whose fix turns out to need a design larger than its siblings (the Workflow-script test harness, the worker audit, per-verb registration) may be cut to its smallest useful step, with the remainder returned to the backlog and named at approval.
+
 ## Success criteria
+
+Failures that stop a run:
+
+- A single-finding or panel verifier launched by `review-v2-pipeline` is accepted by the API and records its verdict (B-4bd349ed).
+- Replaying a full `review add` for a cell leaves one copy of every row, advisory rows included (B-4be1dc74).
+- A scheduled fix task holds every file its finding's fix names, test files included (B-7b9d8057).
+- Every accept check a worker is shown is one the worker can run and pass; a check only the gate can pass is marked as the gate's (B-9728b95d).
+- An agent can write a file named for the findings reference without the harness refusing it (B-93fd1ef6).
+
+Wall time and agent cost:
+
+- In a milestone launch, a ready file-disjoint task starts as soon as a slot frees, and a task held by an `after:<n>` premise starts in the same launch once task n is done (B-0bb55cd5, B-8f42ffc6).
+- The reproduce check settles units made only of grep-decidable cleanup or doc findings without one Opus verifier each (B-1bb57b0e).
+- A plan review verifies a cell's findings in batches, and its mechanical cell either reads the plan's untracked files or is not run (B-548dfa4f).
+- A milestone's gate proves every fixed finding gone with one check, not one per finding (B-3a80ce63).
+- An accept check the plan marks as covered by a milestone gate is not run again at that gate (B-56a8a9ff).
+- A commit train over an already gated tree does not pay the full pre-commit test and clippy cost per commit, and no step tells the committer to pass `--no-verify` (B-e57e08ff).
+
+Orchestrator hand work and context:
+
+- The milestone launch args, the reproduce units and the gate's command list each come from one `tomlctl` call, with no piping or hand assembly (B-590ba0b1, B-fddac023).
+- Scheduling fix rows into a flow adds no `dag/unreachable-claim` warning for a file last held by a done, committed row (B-e2b98a71).
+- A reproduce-check relaunch cannot read a payload an earlier round wrote (B-72a04d82).
+- A sweeper's cover note over its cap is cut and reported rather than refused, and a finder learns which rows `review add` would refuse before the write that would refuse them (B-72f3bbac).
+- A plan-review finding the author fixed by hand has its own disposition: it is counted apart from dismissals and its edited targets reach the re-check (B-690fbabb).
+- A confirmed plan-review finding that carries an edit can be written by `review apply` (B-cd288c8e).
+- `review digest` gives counts for `duplicate_candidates` and `ruled_out_hits` by default (B-33070446).
+- The verification hand-back gives one line per passing command (B-3b1f4f14).
+- A gate command the plan stored a probe for, and that cannot pass in this environment, is found before the first worker is launched (B-14586282).
+- A worker that fails for lack of a file names the files it needs, and the drain can widen the row from that return (B-f8331d1a).
+- Gate-owned test runs and root-recursive greps by plan workers are visible to the orchestrator without the worker reporting them (B-804db301).
+
+Correctness of tools and prose:
+
+- `plan drift` treats a row with a set agent and no commit as own work whatever its status (B-6a0aff17).
+- The drain's path comparisons hold for paths with spaces or non-ASCII characters (B-ef8adde8).
+- A `--template` path that matches no row is warned of on stderr, unless its first segment is an optional field a documented template names, which stays quiet (B-efcdf91b).
+- The `apply-v2-engine` role rule and its step 2 no longer contradict (B-4b11a10c).
+- The logic of `review-v2.js` and `plan-v2-review.js` is exercised by a test the hook or the suite runs (B-c866bda9).
 
 ## Background
 
@@ -157,3 +207,10 @@ Evidence: `notes/backlog-B-c866bda9.md`
 Evidence: `notes/backlog-B-e57e08ff.md`
 
 ## Unknowns
+
+- wave-scheduling: How does claude/workflows/implement-v2-milestone.js form and await its waves and withhold after:<n> tasks, and what would a rolling pool that starts each ready file-disjoint task as a slot frees and releases an after:<n> task once task n is done need from the Workflow script API and from the engine's launch and drain steps (B-0bb55cd5, B-8f42ffc6)?
+- verifier-cost: In claude/workflows/review-v2.js and plan-v2-review.js, how are reproduce units, plan-review verifier dispatches and the ripple cell built, why does the single verdict-return schema reach agent() with a top-level allOf, can a later reproduce round read an earlier round's run_dir payload, and what is the smallest change that routes grep-decidable units to review-checker and batches plan-review verifiers per cell (B-4bd349ed, B-1bb57b0e, B-548dfa4f, B-72a04d82)?
+- schedule-rows: In tomlctl review schedule, where do a minted fix row's files, needs and accept checks come from, what in a finding's stored fields names the other files and test files its fix touches, and what would it take to add those files, a needs edge on the latest done holder of each file, and one aggregate reproduce check per milestone that the worker view marks as the gate's (B-7b9d8057, B-9728b95d, B-3a80ce63, B-e2b98a71)?
+- gate-assembly: Which values does the implement-v2 orchestrator assemble by hand for the milestone launch args, the reproduce units and the gate command list per implement-v2-engine's run-milestone.md and drain.md and apply-v2-engine, which store fields hold each, and what verb or flag shapes on tomlctl tasks, plan and review would emit them whole, including an accept-entry field naming the covering gate and a pre-launch probe of each gate command (B-590ba0b1, B-fddac023, B-56a8a9ff, B-14586282)?
+- plan-review-outcomes: In a flow-mode plan review, where do findings lose target, expect and new between finder, plan-executor, lead settle and review apply, what dispositions does review triage record and how does the re-check choose its targets, and what would an addressed-by-author disposition and edit fields supplied at the source each need in the store, the verbs and the agents' instructions (B-690fbabb, B-cd288c8e)?
+- script-harness: What do review-v2.js and plan-v2-review.js need stubbed (agent, parallel, pipeline, phase, args) for their logic to run outside the Workflow runtime, which of node --test and bun test is installed here and on the Windows machine the hook also runs on, and how would the pre-commit hook or the tomlctl suite invoke such a test (B-c866bda9)?
