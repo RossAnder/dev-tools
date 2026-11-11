@@ -776,10 +776,9 @@ fn a_rerun_over_a_committed_task_mints_a_new_one() {
     assert_ne!(new, old);
     assert_eq!(again["scheduled"][0]["action"], "minted");
     assert_eq!(items(&repo.tasks_doc()).len(), 3);
-    assert_eq!(
-        finding(&repo.review_doc(), "F1")["apply_task"].as_str(),
-        Some(new.as_str())
-    );
+    let f = finding(&repo.review_doc(), "F1").clone();
+    assert_eq!(f["apply_task"].as_str(), Some(new.as_str()));
+    assert_eq!(f["apply_task_id"].as_integer(), Some(3));
 }
 
 #[test]

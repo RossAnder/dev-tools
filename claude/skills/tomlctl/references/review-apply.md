@@ -75,7 +75,7 @@ tomlctl review settle F6 --slug <slug> --defer --proposal docs/flows/<flow>/note
 
 ### `tomlctl review reconcile`
 
-Moves each finding `scheduled` into `--flow` by its task, found by `apply_task`; when no row carries that ref, the last `[[finding_links]]` entry of this store still naming the finding is followed to its renamed row, and `apply_task` is rewritten (listed under `retitled`). By the task's state:
+Moves each finding `scheduled` into `--flow` by its task, found by `apply_task`; when no row carries that ref, the row with the finding's `apply_task_id` that a `[[finding_links]]` entry of this store still ties to the finding is the same task renamed, and `apply_task` is rewritten (listed under `retitled`). An earlier, committed task of a finding scheduled twice has another id and is never followed. A finding stored without `apply_task_id` follows the last such link. By the task's state:
 
 | Task | Finding |
 |---|---|

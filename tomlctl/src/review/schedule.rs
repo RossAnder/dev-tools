@@ -797,6 +797,8 @@ fn mark_scheduled(store: &mut Store, placed: &[Placed], flow: &str) -> Vec<JsonV
             .insert("apply_flow".into(), TomlValue::String(flow.to_string()));
         f.rest
             .insert("apply_task".into(), TomlValue::String(p.r#ref.clone()));
+        f.rest
+            .insert("apply_task_id".into(), TomlValue::Integer(p.task.into()));
     }
     stale
 }

@@ -330,3 +330,50 @@ fn findings_scheduled_into_another_flow_are_left_alone() {
     }
     assert_eq!(repo.review_bytes(), before);
 }
+
+#[test]
+fn a_rescheduled_finding_whose_new_task_is_gone_reopens() {
+    let finding = format!(
+        "{}apply_task_id = 2\n",
+        scheduled("F1", TASKS_SLUG, "fix-alpha-again")
+    );
+    let repo = Repo::new(
+        &[finding],
+        &[task("fix-alpha", "done", "abc1234")],
+        &[fixes("fix-alpha", &["F1"])],
+    );
+    let out = repo.reconcile();
+    assert_eq!(ids(&out, "reopened"), ["F1"], "{out}");
+    assert!(ids(&out, "resolved").is_empty(), "{out}");
+    let f = repo.finding("F1");
+    assert_eq!(text(&f, "status"), Some("open"));
+    assert!(f.get("apply_task_id").is_none(), "{f:?}");
+}
+
+#[test]
+fn a_retitled_task_is_followed_by_its_recorded_id() {
+    let finding = format!(
+        "{}apply_task_id = 2\n",
+        scheduled("F1", TASKS_SLUG, "fix-alpha-again")
+    );
+    let repo = Repo::new(
+        &[finding],
+        &[
+            task("fix-alpha", "done", "abc1234"),
+            task("fix-alpha-bound", "done", "def5678"),
+        ],
+        &[
+            fixes("fix-alpha", &["F1"]),
+            fixes("fix-alpha-bound", &["F1"]),
+        ],
+    );
+    let out = repo.reconcile();
+    assert_eq!(ids(&out, "retitled"), ["F1"], "{out}");
+    assert_eq!(ids(&out, "resolved"), ["F1"], "{out}");
+    let f = repo.finding("F1");
+    assert_eq!(text(&f, "apply_task"), Some("fix-alpha-bound"));
+    assert_eq!(
+        text(&f, "resolution").map(|r| r.ends_with("def5678")),
+        Some(true)
+    );
+}

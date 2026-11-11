@@ -4,8 +4,9 @@
 //! It starts from the review store's own findings, not from the flow's
 //! `[[finding_links]]`: removing a task row drops its links, and its finding
 //! must still return to `open`. A finding is looked up by its `apply_task`
-//! ref; when no row carries that ref, a link that still names the finding is
-//! a retitled task, followed and written back to `apply_task`.
+//! ref; when no row carries that ref, the row with its `apply_task_id` that a
+//! link still ties to the finding is the same task retitled, followed and
+//! written back to `apply_task`.
 //!
 //!   done with a commit, fixing:   resolved, the apply link kept
 //!   done with a commit, settling: open
@@ -123,7 +124,7 @@ fn reconcile(
         let named = link_text(finding, "apply_task").to_string();
         let mut row = tasks.items.iter().find(|row| row.r#ref == named);
         if row.is_none() {
-            row = retitled(tasks, store_rel, &id);
+            row = retitled(tasks, store_rel, finding);
             if let Some(row) = row {
                 finding
                     .rest
@@ -183,19 +184,33 @@ fn reconcile(
     report
 }
 
-/// The row a `[[finding_links]]` entry of this store still ties `finding`
-/// to. Links of a removed row are dropped with it, so a surviving one names
-/// a row whose ref changed. The last link wins: a finding reopened and
-/// scheduled again is linked after its earlier task.
-fn retitled<'t>(tasks: &'t TaskStore, store_rel: &str, finding: &str) -> Option<&'t TaskRow> {
-    tasks
+/// The row `finding`'s task became when its ref changed: the one with the
+/// id schedule recorded, still tied to the finding by a `[[finding_links]]`
+/// entry of this store. An earlier task of a finding scheduled twice keeps
+/// its link too, and has another id. A finding stored without the id falls
+/// back to the last such link.
+fn retitled<'t>(tasks: &'t TaskStore, store_rel: &str, finding: &Finding) -> Option<&'t TaskRow> {
+    let mut linked = tasks
         .finding_links
         .iter()
         .rev()
         .filter(|link| {
-            link.store == store_rel && link.fixes.iter().chain(&link.settles).any(|f| f == finding)
+            link.store == store_rel
+                && link
+                    .fixes
+                    .iter()
+                    .chain(&link.settles)
+                    .any(|f| *f == finding.id)
         })
-        .find_map(|link| tasks.items.iter().find(|row| row.r#ref == link.r#ref))
+        .filter_map(|link| tasks.items.iter().find(|row| row.r#ref == link.r#ref));
+    match finding
+        .rest
+        .get("apply_task_id")
+        .and_then(TomlValue::as_integer)
+    {
+        Some(id) => linked.find(|row| i64::from(row.id) == id),
+        None => linked.next(),
+    }
 }
 
 fn settles(tasks: &TaskStore, store_rel: &str, r#ref: &str, finding: &str) -> bool {
@@ -214,4 +229,5 @@ fn reopen(finding: &mut Finding, reason: &str) {
     );
     finding.rest.remove("apply_flow");
     finding.rest.remove("apply_task");
+    finding.rest.remove("apply_task_id");
 }

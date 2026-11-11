@@ -249,6 +249,7 @@ fn settle(
     finding.set_status(FindingStatus::Open, &[]);
     finding.rest.remove("apply_flow");
     finding.rest.remove("apply_task");
+    finding.rest.remove("apply_task_id");
     match outcome {
         Outcome::Accept { tier, fix } => {
             fields::clear_block(finding, &[]);

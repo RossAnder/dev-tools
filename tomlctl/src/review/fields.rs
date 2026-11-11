@@ -816,6 +816,7 @@ pub(crate) const FIELDS: &[FieldSpec] = &[
     // companions: a move to resolved keeps them.
     field(Finding, "apply_flow", Ty::Str, STATUS).computed(),
     field(Finding, "apply_task", Ty::Str, STATUS).computed(),
+    field(Finding, "apply_task_id", Ty::Int, STATUS).computed(),
     field(Finding, "retired_links", Ty::StrList, STATUS).computed(),
     // verdicts
     field(Verdict, "finding", Ty::Str, AUDIT_ONLY).required(),
@@ -1693,6 +1694,7 @@ mod tests {
         (Finding, "export_ledger", None, "R - - - R - - R"),
         (Finding, "apply_flow", None, "R - - - R - - R"),
         (Finding, "apply_task", None, "R - - - R - - R"),
+        (Finding, "apply_task_id", None, "R - - - R - - R"),
         (Finding, "retired_links", None, "R - - - R - - R"),
         (Finding, "lens", None, "- R R - R R R R"),
         (Finding, "cell", None, "- R - - R R R R"),
@@ -1901,7 +1903,7 @@ mod tests {
         assert!(
             ALL_COMPANIONS
                 .iter()
-                .all(|c| !["apply_flow", "apply_task"].contains(c))
+                .all(|c| !["apply_flow", "apply_task", "apply_task_id"].contains(c))
         );
     }
 
