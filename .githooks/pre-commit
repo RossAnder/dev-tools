@@ -39,7 +39,20 @@ if [ "$SIDECAR_MISMATCH" -ne 0 ]; then
 fi
 
 # Runs the command given; on failure blocks the commit and names it for a rerun.
+# Every gate is a cargo step. The first call asks scripts/gate-stamp.sh whether
+# those steps already passed on this working tree, and if so every gate is skipped.
+STAMP_STATE=unchecked
 gate() {
+  if [ "$STAMP_STATE" = unchecked ]; then
+    STAMP_STATE=stale
+    if [ -f "$ROOT/scripts/gate-stamp.sh" ] && bash "$ROOT/scripts/gate-stamp.sh" check; then
+      STAMP_STATE=matched
+      printf 'pre-commit: cargo steps skipped, the gate stamp matches this working tree\n'
+    fi
+  fi
+  if [ "$STAMP_STATE" = matched ]; then
+    return 0
+  fi
   if ! "$@"; then
     printf 'pre-commit: blocked. Rerun after fixing:\n  %s\n' "$*" >&2
     exit 1
@@ -55,7 +68,7 @@ fi
 
 # Carrier, flag-table, finding-class, skill, Workflow script and review-lens
 # catalogue gates over claude/, the repo's lens config and the CLI.
-if grep -Eq '^(claude/.*\.(md|toml)|claude/workflows/.*\.js|\.claude/review-lenses/.*|tomlctl/src/.*)$' <<<"$STAGED"; then
+if grep -Eq '^(claude/.*\.(md|toml)|claude/workflows/.*\.m?js|\.claude/review-lenses/.*|tomlctl/src/.*)$' <<<"$STAGED"; then
   gate cargo test --manifest-path "$ROOT/tomlctl/Cargo.toml" --lib -- cli::dispatch::tests
 fi
 

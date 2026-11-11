@@ -24,7 +24,7 @@ tomlctl items list .claude/flows/<slug>/tasks.toml --array finding_links --where
 
 When the second command prints nothing, the milestone holds no apply row and nothing below applies to it.
 
-A store path maps to the store flag every `tomlctl review` verb takes: `.claude/flows/<s>/review-v2.toml` is `--slug <s>`, and `.claude/review-v2/<scope>.toml` is `--scope <scope>`. `<store flag>` below is that flag.
+A store path maps to the store flag every `tomlctl review` verb takes: `.claude/flows/<s>/review-v2.toml` is `--slug <s>`, and `.claude/review-v2/<scope>.toml` is `--scope <scope>`. `<store-flag>` below is that flag.
 
 ## What the worker sees
 
@@ -32,7 +32,7 @@ The worker's view, `tomlctl plan view --slug <slug> --for worker --task <n>`, pr
 
 ## Anchor premises on a started row
 
-`review schedule` gives each apply row one `base` premise per finding, whose check is `tomlctl review anchor <finding> <store flag>` (with `--gone` for a `remove` cleanup): it holds while the code the finding cites still reads as the finding says. Premises rerun before every launch ([run-milestone.md](run-milestone.md), step 3), and a row whose first worker already made the edit no longer matches its anchor.
+`review schedule` gives each apply row one `base` premise per finding, whose check is `tomlctl review anchor <finding> <store-flag>` (with `--gone` for a `remove` cleanup): it holds while the code the finding cites still reads as the finding says. Premises rerun before every launch ([run-milestone.md](run-milestone.md), step 3), and a row whose first worker already made the edit no longer matches its anchor.
 
 So when acting on the recorded verdicts, read a `fails` verdict on an anchor premise, one whose `check` opens `tomlctl review anchor `, by whether its row is started, as the pre-flight's listing defines it (an `agent` of `plan-worker-lite` or `plan-worker-deep`):
 
@@ -66,36 +66,31 @@ You never run a build, a test or a gate in this conversation to settle a verdict
 
 ### The units
 
-List the milestone's rows and their links, as under **Apply rows**:
+One call prints the launches, units and rounds; nothing is read from the task or finding-link listings and nothing is assembled by hand:
 
 ```bash
-tomlctl tasks list --slug <slug> --where checkpoint=<id> --select id,ref,files --lines
-tomlctl items list .claude/flows/<slug>/tasks.toml --array finding_links --where-in ref=<ref1,ref2> --select ref,store,fixes --lines
+tomlctl plan emit reproduce-units --slug <slug> --milestone <id>
 ```
 
-Each row with a non-empty `fixes` is one unit: `task` its `ref`, `files` its `files`, `findings` its `fixes`. A finding that more than one row fixes, as a reproduce fix task's finding does (below), goes only in the unit of the highest-id row among them. A `settles` link is never checked here: its row brings back a proposal, not a fix.
+It prints `{"launches": [...]}`, one entry per review store the milestone's `[[finding_links]]` name. Each entry is the whole `review-v2-pipeline` args object: `mode`, `store`, `flow`, `milestone`, `round`, `run_dir` and `units`, each unit holding `task` (the row's `ref`), `files`, `findings` (the row's `fixes`) and `route`. The verb settles what the check needs and you do not recompute it: a finding that more than one row fixes, as a reproduce fix task's finding does (below), belongs only to the highest-id row's unit; a `settles` link is never a unit, since its row brings back a proposal, not a fix; `round` is one more than the highest `round` among that store's reproductions for the flow and milestone; and `run_dir` names the round and, when the milestone links more than one store, the store.
 
-On the first check of the milestone in this invocation every unit is checked. On a later pass, after a reproduce or gate fix round, a finding is checked again only when its current reproduction is not `gone` (`review reproduce-status <F> <store flag> --expect gone` exits 1), or when its unit's `files` share a path with a row the latest `implement:<id>` launch dispatched. A unit left with no finding drops out; when no unit is left, go to the gate.
+On the first check of the milestone in this invocation, call it as above, so every unit is checked. On a later pass, after a reproduce or gate fix round, add `--since-launch`: a unit is then kept only when one of its findings' latest reproduction is not `gone`, or its `files` share a path with a row the latest `implement:<id>` run dispatched.
+
+```bash
+tomlctl plan emit reproduce-units --slug <slug> --milestone <id> --since-launch
+```
+
+An empty `launches` means no unit is left: go to the gate.
+
+**Routes.** A unit whose `route` is `checker` holds only grep-decidable findings, and the pipeline settles it with pooled `review-checker` agents rather than one `review-verifier` per unit; a checker records `gone` only when the finding's cited text is absent at its anchor, with `by = "checker"`. A finding a checker leaves `unsettled` goes on to a `review-verifier` in the same launch, so a `checker` unit needs no second launch of yours. A unit whose `route` is `verifier` goes to a `review-verifier` directly.
 
 ### Round and launch
 
-The units of one launch share one review store. When the milestone links more than one, run the check below once per store, one after another, each with its own `reproduce:<id>` run started and finished before the next launch.
+Launch `review-v2-pipeline` once per `launches` entry, with that entry as its args, one after another, each with its own `reproduce:<id>` run started and finished before the next launch.
 
-1. **The round** is one more than the highest `round` among this store's reproductions for the flow and milestone, or 1 when there are none:
+1. **The args.** Write the entry, exactly as the verb printed it, with the Write tool to `<scratch>/<run>-args.json`, where `<run>` is the last path segment of the entry's `run_dir`, which no other launch shares; this file is what the run's hash is taken over. The mode carries no pack and no schemas: the Workflow holds the return schemas itself. It refuses the whole launch, starting no agent, when `run_dir` is not one line, `store` holds neither or both keys, `flow`, `milestone` or a `task` is malformed, `round` is not a positive integer, `units` is empty, a `task` repeats, or a unit's `findings` is empty or holds an id not shaped `F<n>`; an entry the verb printed passes that validation unchanged.
 
-   ```bash
-   tomlctl items list <store path> --array reproductions --where flow=<slug> --where milestone=<id> --pluck round --raw --lines
-   ```
-
-2. **The args.** Write them with the Write tool to `<scratch>/reproduce-<id>-<round>-args.json`:
-
-   ```json
-   {"mode": "reproduce", "run_dir": ".review-v2-runs/apply-<slug>-<id>-<round>", "store": {"slug": "<s>"}, "flow": "<slug>", "milestone": "<id>", "round": 1, "units": [{"task": "<task ref>", "files": ["<path>"], "findings": ["F3"]}]}
-   ```
-
-   `store` holds `slug` for `.claude/flows/<s>/review-v2.toml` or `scope` for `.claude/review-v2/<scope>.toml`, never both. When a second store is checked in the same round, its `run_dir` ends `-<s>` or `-<scope>` so the two runs keep apart. The mode carries no pack and no schemas: the Workflow holds the unit's return schema itself. It refuses the whole launch, starting no agent, when `run_dir` is not one line, `store` holds neither or both keys, `flow`, `milestone` or a `task` is malformed, `round` is not a positive integer, `units` is empty, a `task` repeats, or a unit's `findings` is empty or holds an id not shaped `F<n>`.
-
-3. **Launch and record.** The reproduce check is the engine's second Workflow launch, under the same rules as the worker launch ([run-milestone.md](run-milestone.md), step 4): never `resumeFromRunId`, and no Agent-tool fallback.
+2. **Launch and record.** The reproduce check is the engine's second Workflow launch, under the same rules as the worker launch ([run-milestone.md](run-milestone.md), step 4): never `resumeFromRunId`, and no Agent-tool fallback.
 
    ```
    Workflow({name: "review-v2-pipeline", args: <the args file's object>})
@@ -104,33 +99,35 @@ The units of one launch share one review store. When the milestone links more th
    A launch result carrying `error` stops the engine: report it in `needs_human` and record nothing. Otherwise, in the same turn, record the run and end the turn:
 
    ```bash
-   hash=$(sha256sum <scratch>/reproduce-<id>-<round>-args.json | cut -d' ' -f1)
+   hash=$(sha256sum <scratch>/<run>-args.json | cut -d' ' -f1)
    tomlctl plan run start --slug <slug> --step reproduce:<id> --workflow review-v2-pipeline --args-hash "$hash" --run-id <runId> --session "$CLAUDE_CODE_SESSION_ID"
    ```
 
-4. **What comes back.** Each unit's `review-verifier` reads its findings through the implementer projection, judges against the working tree whether each still reproduces, records its rows with `review reproduce --ndjson`, and changes no other file. The notification's result is `{mode, units: [{task, status, reproductions, error}], errors, script_version}`, where a unit's `status` is `ok`, `no-return` or `error`. An index whose `units` is empty and whose `errors` ends `no agent launched` is a refusal: close the run as `errors`, fix the args and launch again; never relaunch the same args. A notification with no index, the run stopped or failed before returning, closes the run with `plan run abandon --slug <slug> --step reproduce:<id> --reason '<why>'` and stops the engine, as a failed worker launch does.
+3. **What comes back.** Each checker and verifier reads its findings through the implementer projection, judges against the working tree whether each still reproduces, records its rows with `review reproduce --ndjson`, and changes no other file. The notification's result is `{mode, units: [{task, status, reproductions, error}], agents, errors, script_version}`, where a unit's `status` is `ok`, `no-return` or `error`, and `agents` counts the agents the launch started. An index whose `units` is empty and whose `errors` ends `no agent launched` is a refusal: close the run as `errors`, fix the args and launch again; never relaunch the same args. A notification with no index, the run stopped or failed before returning, closes the run with `plan run abandon --slug <slug> --step reproduce:<id> --reason '<why>'` and stops the engine, as a failed worker launch does. Otherwise close the run before the next launch:
 
-5. **Relaunch once.** A unit whose `status` is not `ok` is relaunched once, alone, in the same round: new args holding only that unit, a new `reproduce:<id>` run, after the first run is finished. A unit that fails twice is not relaunched again; its findings are read in step 6 like any other, and with no reproduction recorded they fall to the `unsettled, or none` row.
+   ```bash
+   tomlctl plan run finish --slug <slug> --step reproduce:<id> --outcome ok
+   ```
+
+   with `--outcome errors` when the index's `errors` is not empty.
+
+4. **Relaunch once.** The units whose `status` is not `ok` are relaunched once, together and in the same round, after the first run is finished, under a new `reproduce:<id>` run. Their args come from the verb, never from editing the earlier entry: `--relaunch 1`, `--round` the earlier entry's `round`, and `--task` the refs of the units that did not settle.
+
+   ```bash
+   tomlctl plan emit reproduce-units --slug <slug> --milestone <id> --relaunch <n> --round <r> --task <ref1,ref2>
+   ```
+
+   `<n>` counts the relaunches of that round from 1, and is 1 here, since a round is relaunched once. Without all three flags the verb would print a new round holding every unit. The printed entry keeps the round being relaunched and holds only the named units, and its `run_dir` ends `-r<n>`, so the relaunch writes and reads its payloads in a directory no earlier launch used. Take that entry through steps 1 to 3 as before. A unit that fails twice is not relaunched again; its findings are read below like any other, and with no reproduction recorded they fall to the `unsettled, or none` row.
 
 ### Read the store and act
 
-Read the store, never the return: the return says what the verifier meant to record, the store what it did. For each finding of the launch, one call:
+Read the store, never the return: the return says what the checker or verifier meant to record, the store what it did. Once the launches of every store are done, read every verdict of the milestone with one call per store:
 
 ```bash
-tomlctl review reproduce-status <F> --slug <slug> --expect gone -q
+tomlctl review reproduce-status --flow <slug> --milestone <id> <store-flag> --expect gone
 ```
 
-A scope store takes `--scope <scope>` in place of `--slug <slug>` in this and the commands below.
-
-and, for a finding where it exits 1, a second with `--expect reproduces`. A finding that fails both is `unsettled` or has no reproduction.
-
-Once every finding of the launch is read, close the run:
-
-```bash
-tomlctl plan run finish --slug <slug> --step reproduce:<id> --outcome ok
-```
-
-with `--outcome errors` when the index's `errors` is not empty.
+It prints `{ok, expect, findings: [{id, matches, verdict, flow, milestone, round, by}]}`, one entry per finding the milestone's rows fix in that store, with `verdict` the current reproduction: `gone`, `reproduces`, `unsettled`, or `null` with none. It exits 1 whenever any finding is not `gone`; that is an answer, not a failure, and every finding is still listed. A scope store takes `--scope <scope>` in place of `--slug <slug>` in the commands below. Act on each finding by its `verdict`:
 
 | Current reproduction | The engine does |
 |---|---|
@@ -157,7 +154,17 @@ A finding that still reproduces gets one fix task in this milestone, minted with
 - `review_store` is the store's repo-relative path and `fixes` names the finding, so the row is an apply row and its finding is checked again under its unit.
 - It carries no `review anchor` premise: the code no longer reads as the finding first said, and the anchor would withhold the row.
 - `spec.outcome` states the finding gone; `spec.executor` is `lite` when the citation names the fix and `deep` when finding why the fix fell short is part of the work.
-- `spec.accept` holds one entry: `check = "tomlctl review reproduce-status <F> <store flag> --expect gone"`, `kind = "forward"`, with no `writes_build = false`, so the gate runs it rather than the worker.
+- `spec.accept` holds one entry, the milestone-wide one `review schedule` gives every fix row of the milestone, byte for byte, so the gate list keeps it once:
+
+  ```toml
+  behaviour = "every finding this milestone fixes no longer reproduces"
+  check = "tomlctl review reproduce-status --flow <slug> --milestone <id> <store-flag> --expect gone"
+  kind = "forward"
+  run_by = "gate"
+  writes_build = false
+  ```
+
+  The gate runs it, never the worker, and it names no finding of its own.
 
 Then relaunch through [run-milestone.md](run-milestone.md), step 3, and come back here when every row is `done`.
 
@@ -169,7 +176,7 @@ tomlctl items list .claude/flows/<slug>/tasks.toml --array changes --where-prefi
 
 The highest `<n>` printed is the rounds spent. A check that still finds a finding reproducing after round 2 mints nothing: go on from [drain.md](drain.md), step 8, without the gate or the commit, leave the milestone uncommitted, and report it in `needs_human` with each finding, its store, its latest citation and the round count. The fix rows stay `done` and their edits stay in place for the user.
 
-A milestone cannot reach its commit with a finding outstanding: the gate runs only once this check leaves no finding `reproduces` or unsettled, and each fixing row's accept check, `review reproduce-status <F> --expect gone`, fails the gate if one is.
+A milestone cannot reach its commit with a finding outstanding: the gate runs only once this check leaves no finding `reproduces` or unsettled, and the one milestone-wide accept check every fix row carries, `review reproduce-status --flow <slug> --milestone <id> <store-flag> --expect gone`, covers every finding the milestone's rows fix in that store and fails the gate if any is not `gone`. One such check runs per store the milestone links.
 
 ## Settle drain
 

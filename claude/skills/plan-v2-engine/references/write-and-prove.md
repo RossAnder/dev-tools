@@ -50,6 +50,8 @@ tomlctl plan contract --slug <slug> --ndjson <scratch>/contract.toml
 tomlctl plan milestone add --slug <slug> --id A --goal '<what the milestone delivers>' --gate '<command>'
 ```
 
+A gate that can fail for reasons of this environment, such as a link or install script, gets a probe: add `--gate-probe '<gate> :: <probe>'`, the probe being a cheap command such as the gate's own dry run. Prove runs it (`design/shapes.md#gate-probes`).
+
 Upfront elaboration is the norm. Defer a later milestone only when its detail depends on what earlier ones will produce, and say why with `--defer --reason '<why>'`; its tasks then carry outcome, behaviour, constraints and estimated files, and gain `check`, premises and precedent when it is elaborated.
 
 **Design files.** Write `docs/flows/<slug>/design/<name>.md` only where a task needs prose no record holds: a data shape, a lock order, a migration sequence. A task cites a section as `design/<name>.md#<anchor>`, the anchor being the heading slugged by the task store's ref rule, so `## Lock order` is `#lock-order`. `plan check` reports a citation that resolves to no section as `plan/design-anchor-dead`.
@@ -156,6 +158,7 @@ The batch is all-or-nothing: an unknown key, a dangling edge or a cycle lands no
 - `behaviour` is yours. It states what must be observably true, and nobody else may change what it asserts: a cold reader may turn it into a `check`, never rewrite it, because a model left to write an oracle captures the code's actual behaviour rather than the intended one.
 - `check` must exit non-zero when the behaviour does not hold, the contract a `success:` key has. `kind` is `forward` (fails now, passes after the work), `falsifier` (passes now, naming a check that binds what the task changes) or `guard` (passes now and after, beside a row that discriminates). `positive` is an optional positive-control command, left out when there is none.
 - `writes_build = false` is what gets probed. Mark it on every check that only reads, such as `grep`, `test -f`, `git diff` or a `tomlctl` read verb. Leave it out on a check that builds, tests or writes anything, which then runs only at the milestone's gate; absent counts as true.
+- `run_by` is set only where the default is wrong (`design/shapes.md#accept-owner`). `gate` marks a read-only check that only the gate can pass. `covered`, with `covered_by` naming the exact gate command, marks a narrow test the milestone's suite gate already runs, so it is not run twice; a worker's own narrow run of such a test is named in `detail`.
 - `means` is empty by default. Name a means only when a worker left free would go wrong, and give every `required` entry its reason in `detail`, since wrong or over-specified instructions do more harm than missing ones. A `tool` or `clerk` task gets its targets enumerated, because it will not generalise an instruction from one item to the next; a `deep` task gets a scope clause in `constraints`, because it can expand scope.
 - `premises` are the code facts the task stands on, each with a `check` that exits 0 while the fact holds. `at` is `base` for a fact true now, or `after:<id>` for one an earlier task makes true.
 - `executor` is `tool`, `clerk`, `lite` or `deep`. Choose `lite` when the spec states the edit itself and it stays inside one or two files: a doc section, a table row, a flag threaded through, a test for behaviour already written. Choose `deep` when the worker must decide something the spec leaves open, reason across files, or touch security-sensitive code. `deep` is not the safe default: it costs several times the time and context of `lite` on the same task, and a spec too loose for `lite` is usually a spec to tighten.
@@ -375,6 +378,21 @@ tomlctl plan probes --slug <slug> --record <scratch>/probes.out
 | `broken` | A breakage marker in stderr, a guard that fails, or an unknown `kind` | Fix the path, the tool or the working directory. A `No such file` for a file the task creates means the path belongs on the row's `files` |
 
 Every fix is a `tasks update --ndjson` re-issuing the task's `accept` list, as in 4c, followed by `--emit`, run and `--record` again. `plan check` reports any recorded verdict but `healthy` as `plan/probe-unhealthy`, an error that blocks approval.
+
+After the accept probes, run the gate probes stored at Design. They cover each milestone's `--gate-probe` entries, and the same rule holds: tomlctl never runs a stored command, you do.
+
+```bash
+tomlctl plan probes --slug <slug> --emit --gates > <scratch>/gates.sh
+```
+
+Read the script, run it under a limit, then record the capture:
+
+```bash
+timeout 300 bash <scratch>/gates.sh > <scratch>/gates.out
+tomlctl plan probes --slug <slug> --record <scratch>/gates.out --gates
+```
+
+A `fails` or `broken` verdict names a gate that cannot pass in this environment. Fix the environment, change the gate, or record a handover; do not leave it to the milestone's drain to find.
 
 ### 4e. Where the plan stands
 

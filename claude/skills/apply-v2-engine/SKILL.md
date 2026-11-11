@@ -81,6 +81,7 @@ Then read the findings that pass, for the report and the gates:
 tomlctl review show <passing ids> --slug <slug> --for implementer
 ```
 
+- **A fix's other files.** A `would-mint` row's `files` already include each of its findings' `fix_files`, the files a fix edits or creates beyond its anchor, test files among them. A finding with no `fix_files` whose fix text names a file outside its row leaves the worker unable to make the fix: note the row and the path, and after step 6 schedules it and before step 9 runs it, widen that row's `files` with the path through the audited update of the `implement-v2-engine` skill's [drain.md](../implement-v2-engine/references/drain.md), step 6, its `reason` opening `apply <store>: ` and quoting the fix text. The widened path joins the dirty-files check below.
 - **Blocked on evidence.** Note each finding under `settle`: those make step 5 add a settle milestone. Such a finding edits nothing yet, so it takes no part in the dirty-files check below or in step 3's gates.
 
 - **Already scheduled.** A finding refused with `status is scheduled, not open` already has `apply_flow` naming a flow and is past this skill: Re-entry, below, says what follows. With `--all` the verb skips non-open findings without a refused row, so find them from the home's links instead: for `<slug>` the home is `<slug>`, and for `--scope` it is the flow Re-entry's "A new flow already opened" finds by its brief (none when no such flow exists).
