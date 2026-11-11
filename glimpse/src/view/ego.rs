@@ -327,7 +327,7 @@ impl Draw<'_, '_, '_> {
         let task = app.index.task(&app.snapshot, id);
         match task {
             Some(task) if app.is_flashing(id, self.now) => app.theme.flash(task.status),
-            Some(task) => app.theme.status(task.status.as_str()),
+            Some(task) => super::status_mark(app, task).1,
             None => app.theme.pending,
         }
     }
@@ -339,7 +339,10 @@ impl Draw<'_, '_, '_> {
 
 fn label(app: &App, id: u32) -> String {
     match app.index.task(&app.snapshot, id) {
-        Some(task) => format!("{} {} {}", task.status.glyph(), task.id, task.title),
+        Some(task) => {
+            let glyph = super::status_mark(app, task).0;
+            format!("{glyph} {} {}", task.id, task.title)
+        }
         None => format!("? {id}"),
     }
 }
@@ -347,7 +350,7 @@ fn label(app: &App, id: u32) -> String {
 /// A task's glyph and id alone, for the second-hop row.
 fn chip(app: &App, id: u32) -> String {
     match app.index.task(&app.snapshot, id) {
-        Some(task) => format!("{} {}", task.status.glyph(), task.id),
+        Some(task) => format!("{} {}", super::status_mark(app, task).0, task.id),
         None => format!("? {id}"),
     }
 }
@@ -467,9 +470,10 @@ fn card_lines(app: &App, id: u32, width: usize, summary: u16) -> Vec<Line<'stati
         return Vec::new();
     };
     let theme = &app.theme;
+    let (glyph, mark) = super::status_mark(app, task);
     let mut status = vec![Span::styled(
-        format!("{} {}", task.status.glyph(), task.status.as_str()),
-        theme.status(task.status.as_str()),
+        format!("{glyph} {}", task.status.as_str()),
+        mark,
     )];
     if !task.effort.is_empty() {
         let effort = super::notice_style(app, task).unwrap_or(theme.effort);
@@ -927,7 +931,7 @@ mod tests {
     use super::*;
     use crate::app::Action;
     use crate::config::Config;
-    use crate::model::fixture;
+    use crate::model::{FrontierState, fixture};
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
 
@@ -1021,8 +1025,58 @@ mod tests {
         assert!(row_of(&rows, "6 Bind the keys").contains("┄▶"));
 
         let rows = draw(&app_on(8), 60, 30, Orientation::Vertical);
-        assert!(row_of(&rows, "5 Style").contains("┆ ○ 5 Style"));
+        assert!(row_of(&rows, "5 Style").contains("┆ □ 5 Style"));
         assert!(row_of(&rows, "6 Bind").contains("│ "));
+    }
+
+    #[test]
+    fn labels_chips_and_the_card_mark_a_pending_row_s_frontier_state() {
+        let cell_at = |app: &App, needle: &str, orientation: Orientation| {
+            let mut terminal = Terminal::new(TestBackend::new(120, 30)).expect("terminal");
+            terminal
+                .draw(|frame| {
+                    render(frame, frame.area(), app, orientation);
+                })
+                .expect("draw");
+            let buffer = terminal.backend().buffer().clone();
+            let rows: Vec<String> = (0..30)
+                .map(|y| (0..120).map(|x| buffer[(x, y)].symbol()).collect())
+                .collect();
+            let (y, x) = find(&rows, needle);
+            buffer[(u16::try_from(x).unwrap(), u16::try_from(y).unwrap())].clone()
+        };
+
+        let app = app_on(8);
+        let theme = app.theme.clone();
+        let rows = draw(&app, 120, 30, Orientation::Horizontal);
+        for needle in ["▷ 6 Bind the keys", "□ 5 Style the rows", "○ pending"] {
+            find(&rows, needle);
+        }
+        for (needle, style) in [
+            ("▷ 6", theme.frontier(FrontierState::Ready)),
+            ("□ 5", theme.frontier(FrontierState::Held)),
+            ("○ pending", theme.frontier(FrontierState::Blocked)),
+        ] {
+            let cell = cell_at(&app, needle, Orientation::Horizontal);
+            assert_eq!(Some(cell.fg), style.fg, "{needle}");
+        }
+
+        let app = app_on(4);
+        let rows = draw(&app, 120, 30, Orientation::Horizontal);
+        find(&rows, "◐ in-progress");
+        find(&rows, "○ 7 Assemble the app");
+        assert_eq!(chip(&app, 6), "▷ 6");
+        assert_eq!(chip(&app, 5), "□ 5");
+        assert_eq!(chip(&app, 4), "◐ 4");
+
+        let mut snap = fixture();
+        snap.running_milestone = "A".to_string();
+        let mut app = App::new(snap, &Config::default());
+        app.selected = Some(6);
+        let rows = draw(&app, 120, 30, Orientation::Horizontal);
+        find(&rows, "◷ pending");
+        let cell = cell_at(&app, "◷ pending", Orientation::Horizontal);
+        assert_eq!(Some(cell.fg), theme.frontier(FrontierState::Waiting).fg);
     }
 
     #[test]

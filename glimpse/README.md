@@ -294,10 +294,15 @@ top or a third of the view from the bottom. A task's effort mark (`S`/`M`/`L`)
 turns `warning` when its record holds a deviation, deferral, retry, escalation or
 timed-out check, and `danger` when it failed.
 
-A pending task's status glyph says where it stands against the frontier, in the
-layers view and in the diagram's one-glyph zoom; every other status keeps its own
+A pending task's status glyph says where it stands against the frontier wherever
+the task is drawn: the layers view, the ego view's labels, chips and card, the
+details panel and the diagram's one-glyph zoom; every other status keeps its own
 glyph. In the diagram's `[id]` and `[id title]` zooms the frontier shows as the
-label's colour only.
+label's colour only. The details panel also names the state in words
+(`▷ pending · ready`) and, under that line, says what keeps the task back: the file
+and the task holding it for held, the blocking tasks for blocked (the stalled task
+upstream when the frontier names one, else the needs not yet done), and the
+running milestone for waiting.
 
 | Mark | State | Meaning |
 |---|---|---|

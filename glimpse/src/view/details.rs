@@ -19,7 +19,7 @@ use serde_json::Value;
 use crate::app::App;
 use crate::hook::parse_utc;
 use crate::ledger::{Anchor, InputRow, ItemRow, StatusClass};
-use crate::model::{Agent, AgentKind, AgentStatus, RecordEntry};
+use crate::model::{Agent, AgentKind, AgentStatus, FrontierState, RecordEntry, Task, TaskStatus};
 use crate::surface::{ItemsState, Surface};
 use crate::theme::Theme;
 use crate::view::{self, markdown};
@@ -127,9 +127,14 @@ pub(crate) fn content(app: &App, now: SystemTime) -> Text<'static> {
         theme.slug,
     ));
 
+    let (glyph, mark) = super::status_mark(app, task);
+    let state = index
+        .frontier_state(snapshot, task.id)
+        .map(|state| format!(" · {}", state.as_str()))
+        .unwrap_or_default();
     let mut facts = vec![Span::styled(
-        format!("{} {}", task.status.glyph(), task.status.as_str()),
-        theme.status(task.status.as_str()),
+        format!("{glyph} {}{state}", task.status.as_str()),
+        mark,
     )];
     let mut fact = |label: &str, value: String, style: Style| {
         if !value.is_empty() {
@@ -149,6 +154,7 @@ pub(crate) fn content(app: &App, now: SystemTime) -> Text<'static> {
     fact("checkpoint", checkpoint, theme.checkpoint);
     fact("phase", task.phase.clone(), theme.badge);
     out.push(Line::from(facts));
+    out.extend(frontier_lines(app, task));
 
     if !task.files.is_empty() {
         section(&mut out, "Files", theme);
@@ -182,10 +188,7 @@ pub(crate) fn content(app: &App, now: SystemTime) -> Text<'static> {
                 Some(peer) => {
                     let mut spans = vec![
                         Span::raw(INDENT),
-                        Span::styled(
-                            format!("{} {}", peer.status.glyph(), peer.id),
-                            theme.status(peer.status.as_str()),
-                        ),
+                        peer_mark(app, peer),
                         Span::raw(format!(" {}", peer.title)),
                     ];
                     if needs && app.implied.contains(&(peer.id, task.id)) {
@@ -228,6 +231,89 @@ pub(crate) fn content(app: &App, now: SystemTime) -> Text<'static> {
     }
 
     Text::from(out)
+}
+
+/// A peer task's mark and id, as every other view draws that row.
+fn peer_mark(app: &App, peer: &Task) -> Span<'static> {
+    let (glyph, style) = super::status_mark(app, peer);
+    Span::styled(format!("{glyph} {}", peer.id), style)
+}
+
+/// A peer by id: its mark, id and title, or a `?` when the store lacks it.
+fn peer_spans(app: &App, id: u32) -> Vec<Span<'static>> {
+    match app.index.task(&app.snapshot, id) {
+        Some(peer) => vec![peer_mark(app, peer), Span::raw(format!(" {}", peer.title))],
+        None => vec![Span::styled(format!("? {id}"), app.theme.warning)],
+    }
+}
+
+/// What keeps a pending row from dispatch: the file and its holder, the blocking
+/// rows, or the running milestone. A row the snapshot's `blocked` set leaves out
+/// (any later wave) names its needs not yet done instead. Ready and non-pending
+/// rows get nothing.
+fn frontier_lines(app: &App, task: &Task) -> Vec<Line<'static>> {
+    let theme = &app.theme;
+    let snapshot = &app.snapshot;
+    let frontier = &snapshot.frontier;
+    let label = |text: &str| Span::styled(text.to_string(), theme.secondary);
+    match app.index.frontier_state(snapshot, task.id) {
+        Some(FrontierState::Held) => frontier
+            .held
+            .iter()
+            .filter(|held| held.id == task.id)
+            .map(|held| {
+                let mut spans = vec![
+                    label("held on "),
+                    Span::raw(held.blocked_on_file.clone()),
+                    label(" by "),
+                ];
+                spans.extend(peer_spans(app, held.holder));
+                Line::from(spans)
+            })
+            .collect(),
+        Some(FrontierState::Blocked) => {
+            let mut blockers: Vec<u32> = frontier
+                .blocked
+                .iter()
+                .filter(|blocked| blocked.id == task.id)
+                .map(|blocked| blocked.blocker)
+                .collect();
+            if blockers.is_empty() {
+                blockers = task
+                    .needs
+                    .iter()
+                    .copied()
+                    .filter(|id| {
+                        app.index
+                            .task(snapshot, *id)
+                            .is_none_or(|need| need.status != TaskStatus::Done)
+                    })
+                    .collect();
+            }
+            blockers.sort_unstable();
+            blockers.dedup();
+            const LEAD: &str = "blocked by ";
+            blockers
+                .into_iter()
+                .enumerate()
+                .map(|(at, id)| {
+                    let lead = if at == 0 {
+                        label(LEAD)
+                    } else {
+                        Span::raw(" ".repeat(LEAD.len()))
+                    };
+                    let mut spans = vec![lead];
+                    spans.extend(peer_spans(app, id));
+                    Line::from(spans)
+                })
+                .collect()
+        }
+        Some(FrontierState::Waiting) => vec![Line::from(vec![
+            label("waiting on running milestone "),
+            Span::styled(snapshot.running_milestone.clone(), theme.checkpoint),
+        ])],
+        Some(FrontierState::Ready) | None => Vec::new(),
+    }
 }
 
 /// The panel's lines for one ledger row, unwrapped. `agents` are those working
@@ -735,8 +821,9 @@ mod tests {
         assert_eq!(lines[0], "#5 Style the rows");
         assert_eq!(
             lines[1],
-            "○ pending  effort S  checkpoint B  phase Phase B — views"
+            "□ pending · held  effort S  checkpoint B  phase Phase B — views"
         );
+        assert_eq!(lines[2], "held on src/render.rs by ◐ 4 Render the rows");
         let after = |label: &str| {
             let at = lines.iter().position(|l| l == label).expect(label);
             lines[at + 1..]
@@ -768,7 +855,7 @@ mod tests {
             .iter()
             .position(|l| l == "Coupling")
             .expect("Coupling");
-        assert_eq!(lines[coupling + 1], "  ○ 6 Bind the keys");
+        assert_eq!(lines[coupling + 1], "  ▷ 6 Bind the keys");
         assert!(lines.contains(&"    intended: parse(&str) -> Config".to_string()));
         assert!(
             lines
@@ -798,6 +885,55 @@ mod tests {
                 .iter()
                 .any(|l| l.contains("Applied the schema and config tasks"))
         );
+    }
+
+    #[test]
+    fn a_pending_row_names_its_frontier_state_and_what_holds_it() {
+        let now = at("2026-09-28T12:00:00Z");
+        let head = |app: &App| plain(&content(app, now))[1..3].to_vec();
+        let style = |app: &App| content(app, now).lines[1].spans[0].style;
+
+        let app = app_on(6);
+        let lines = head(&app);
+        assert!(
+            lines[0].starts_with("▷ pending · ready  effort"),
+            "{lines:?}"
+        );
+        assert_eq!(lines[1], "", "a ready row adds no line");
+        assert_eq!(style(&app), app.theme.frontier(FrontierState::Ready));
+
+        let app = app_on(7);
+        let lines = head(&app);
+        assert!(lines[0].starts_with("○ pending · blocked"), "{lines:?}");
+        let text = plain(&content(&app, now));
+        assert_eq!(text[2], "blocked by ◐ 4 Render the rows", "unmet needs");
+        assert_eq!(text[3], "           □ 5 Style the rows");
+        assert_eq!(text[4], "");
+
+        let mut snap = fixture();
+        snap.frontier.blocked = vec![crate::model::Blocked {
+            id: 8,
+            blocker: 4,
+            blocker_status: "in-progress".to_string(),
+        }];
+        let mut app = App::new(snap, &Config::default());
+        app.selected = Some(8);
+        assert_eq!(head(&app)[1], "blocked by ◐ 4 Render the rows");
+
+        let mut snap = fixture();
+        snap.running_milestone = "A".to_string();
+        let mut app = App::new(snap, &Config::default());
+        app.selected = Some(5);
+        let lines = head(&app);
+        assert!(lines[0].starts_with("◷ pending · waiting"), "{lines:?}");
+        assert_eq!(lines[1], "waiting on running milestone A");
+        assert_eq!(style(&app), app.theme.frontier(FrontierState::Waiting));
+
+        let app = app_on(4);
+        let lines = head(&app);
+        assert!(lines[0].starts_with("◐ in-progress  effort"), "{lines:?}");
+        assert_eq!(lines[1], "", "a non-pending row adds no line");
+        assert_eq!(style(&app), app.theme.in_progress);
     }
 
     #[test]
