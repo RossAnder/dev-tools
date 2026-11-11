@@ -11592,7 +11592,7 @@ tags = [
     "lanes",
     "v2-harness-tuning",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
 seen_count = 1
@@ -11604,6 +11604,8 @@ base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-acba1411"]
 promoted = 2026-11-11
 promoted_to = "v2-harness-tuning"
+resolved = 2026-11-11
+resolution = "fixed in commits 601af8cb and 24b7c581: review verbs register in review/mod.rs alone, one line each, and a failed worker's needs_files is validated before the drain widens the row"
 
 [[backlog]]
 id = "B-02070fca"
@@ -11760,7 +11762,7 @@ kind = "debt"
 summary = "tasks keeps add private, so review schedule reaches it through a second entry point, Store::add_many_locked"
 area = "tomlctl/src/tasks/mod.rs"
 tags = ["tasks"]
-status = "open"
+status = "dismissed"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
 seen_count = 1
@@ -11770,6 +11772,8 @@ flow = "v2-apply"
 context = "Reported by the v2-apply worker that wrote review schedule, whose lane excluded tasks/mod.rs."
 base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-5bb39cf9"]
+dismissed = 2026-11-11
+dismiss_reason = "the second entry point is justified: review schedule plans its rows from the task store as read under the lock it already holds, and add_many takes that lock itself; both share parse_rows and append, so add_many_locked duplicates no logic"
 
 [[backlog]]
 id = "B-f8563949"
@@ -11777,7 +11781,7 @@ kind = "debt"
 summary = "review vocabularies are absent from SCOPED_ENUM_VALUES apart from review settle's tier"
 area = "tomlctl/src/cli"
 tags = ["review-v2"]
-status = "open"
+status = "resolved"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
 seen_count = 1
@@ -11787,6 +11791,8 @@ flow = "v2-apply"
 context = "Reported by a v2-apply worker; the table drives the documented-values gate for scoped enums."
 base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-079a7625"]
+resolved = 2026-11-11
+resolution = "fixed in commit d0f89e4e"
 
 [[backlog]]
 id = "B-72a04d82"
@@ -11821,7 +11827,7 @@ kind = "annoyance"
 summary = "the tomlctl suite fails with Disk quota exceeded once old session scratch fills the tmpfs temp directory"
 area = "tomlctl/tests"
 tags = ["test-env"]
-status = "open"
+status = "resolved"
 created = 2026-11-11T07:21:28Z
 last_seen = 2026-11-11T07:21:28Z
 seen_count = 1
@@ -11831,6 +11837,8 @@ flow = "v2-apply"
 context = "Seen 2026-11-11: 16 failures, all quota errors from tempdir and git in sandboxes. Running with TMPDIR set to a directory outside the repository and off tmpfs passes; a TMPDIR inside the repo breaks the four outside-a-repo tests."
 base_sha = "93e907d5000b1601563503642e1171604203c183"
 related = ["B-cccb98e0"]
+resolved = 2026-11-11
+resolution = "clear /tmp and restart sccache"
 
 [[backlog]]
 id = "B-4bd349ed"
@@ -11901,7 +11909,7 @@ kind = "debt"
 summary = "Remaining rest.get(k).and_then(as_str) reads in review triage, stats, apply and resolve bypass the Finding::text accessor"
 area = "tomlctl/src/review"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-11T08:31:28Z
 last_seen = 2026-11-11T08:31:28Z
 seen_count = 1
@@ -11910,6 +11918,8 @@ origin = "implement-v2"
 flow = "v2-apply"
 context = "Finding::text now exists in review/store.rs; converting the remaining reads (tier, severity, converted_to, target) finishes the consolidation. Mechanical; reported by the worker that added the accessor."
 base_sha = "71cad0ccdf63c24835e30262f5afb0b81072329f"
+resolved = 2026-11-11
+resolution = "fixed in commit d0f89e4e"
 
 [[backlog]]
 id = "B-7b9d8057"
@@ -12156,7 +12166,7 @@ kind = "question"
 summary = "v1 /implement reads duration_s from a verification block, but a passing command is now a one-line pass entry carrying duration instead"
 area = "claude/commands/implement.md"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-11T10:25:02Z
 last_seen = 2026-11-11T10:25:02Z
 seen_count = 1
@@ -12166,6 +12176,8 @@ flow = "v2-harness-tuning"
 context = """The verification agent now reports a pass as `outcome: pass | command: … | duration: … | summary: …` and keeps blocks only for fail, timeout and flaky. /implement Phase 2 step 5 and Phase 3 record `duration_s` "when the block carries them", so a v1 run may drop the duration of every passing command unless the orchestrator maps the pass line's `duration:` to `duration_s`. Decide whether the v1 carriers (/implement, /optimise-apply, /review-apply) should name the pass line; until then, map it by hand when recording."""
 base_sha = "7e5a26f60eefbcd1eb9a9dc7d096cd7ed05b5211"
 related = ["B-38b34e4d"]
+resolved = 2026-11-11
+resolution = "fixed in commit 7f34761f: the v1 carriers name the pass line and record its duration as duration_s"
 
 [[backlog]]
 id = "B-fca0c14f"
@@ -12173,7 +12185,7 @@ kind = "debt"
 summary = "tomlctl review reference sits at 599 lines against the 600-line skill reference ceiling"
 area = "claude/skills/tomlctl/references/review.md"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-11T10:41:42Z
 last_seen = 2026-11-11T10:41:42Z
 seen_count = 1
@@ -12183,6 +12195,8 @@ flow = "v2-harness-tuning"
 context = "One more line fails skill_references_under_line_ceiling, which the pre-commit hook and every milestone gate run. Before adding to review.md, move a self-contained section (Plan records or Dispositions, for example) into its own reference, as review-runs.md and review-apply.md were split out."
 base_sha = "e8ef330597f7cf4fc2dd675ada8a7191dff88518"
 related = ["B-ada06976"]
+resolved = 2026-11-11
+resolution = "fixed in commit d0f89e4e"
 
 [[backlog]]
 id = "B-cf60f40f"
@@ -12190,7 +12204,7 @@ kind = "annoyance"
 summary = "review list --status help omits scheduled from its status list"
 area = "tomlctl/src/cli/types/review/read.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-11T10:41:42Z
 last_seen = 2026-11-11T10:41:42Z
 seen_count = 1
@@ -12200,6 +12214,8 @@ flow = "v2-harness-tuning"
 context = "The --status help string in ReviewListArgs enumerates the statuses by hand and lacks `scheduled`, which FINDING_STATUSES carries and the flag accepts. Add it to the help string; the value itself already works."
 base_sha = "e8ef330597f7cf4fc2dd675ada8a7191dff88518"
 related = ["B-6a0b8f4f"]
+resolved = 2026-11-11
+resolution = "fixed in commit 416a3510: review list --status help names scheduled; cli/mod.rs re-exports cli::types as a glob; plan-side readers go through review::plan_family and review::reproduce_state"
 
 [[backlog]]
 id = "B-86e8b87f"
@@ -12207,7 +12223,7 @@ kind = "debt"
 summary = "a plan task that adds a clap type under cli/types omits tomlctl/src/cli/mod.rs, whose explicit re-export list the verb module needs"
 area = "tomlctl/src/cli/mod.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-11T11:05:40Z
 last_seen = 2026-11-11T11:05:40Z
 seen_count = 1
@@ -12217,6 +12233,8 @@ flow = "v2-harness-tuning"
 context = "`cli::types` is private, so a verb module names a clap type only through the non-glob `pub(crate) use types::{...}` list in cli/mod.rs. Two tasks of the v2-harness-tuning run hit it: one worked around it by passing fields instead of the args struct, the other failed on its file lane and was replanned with the file added. When planning a task that adds a subcommand enum or an args struct a module outside cli must name, list tomlctl/src/cli/mod.rs in its files. A glob re-export, or a plan check that flags the omission, would remove the trap."
 base_sha = "a28f93dcdf1f95e21e6e3e361d65fca1707c472f"
 related = ["B-a162a412"]
+resolved = 2026-11-11
+resolution = "fixed in commit 416a3510: review list --status help names scheduled; cli/mod.rs re-exports cli::types as a glob; plan-side readers go through review::plan_family and review::reproduce_state"
 
 [[backlog]]
 id = "B-14c96cf2"
@@ -12224,7 +12242,7 @@ kind = "debt"
 summary = "tomlctl plan reference sits at 593 lines against the 600-line skill reference ceiling"
 area = "claude/skills/tomlctl/references/plan.md"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-11T11:24:12Z
 last_seen = 2026-11-11T11:24:12Z
 seen_count = 1
@@ -12234,6 +12252,8 @@ flow = "v2-harness-tuning"
 context = "The next plan verb or check-class row will push plan.md past skill_references_under_line_ceiling, which the pre-commit hook and every milestone gate run. The `plan emit` leaves are documented as prose bullets under one heading for this reason; moving `plan emit` or `plan stage` into its own reference would give them flag tables and the file its headroom. Same shape as the review.md row."
 base_sha = "a28f93dcdf1f95e21e6e3e361d65fca1707c472f"
 related = ["B-fca0c14f"]
+resolved = 2026-11-11
+resolution = "fixed in commit cfac4ed1"
 
 [[backlog]]
 id = "B-68a8161f"
@@ -12241,7 +12261,7 @@ kind = "debt"
 summary = "the review store loader is private, so plan-side readers parse review-v2.toml as untyped TOML"
 area = "tomlctl/src/review/mod.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-11T11:24:12Z
 last_seen = 2026-11-11T11:24:12Z
 seen_count = 1
@@ -12251,6 +12271,8 @@ flow = "v2-harness-tuning"
 context = "plan_review_state in plan/store.rs and `plan emit reproduce-units` in plan/emit.rs read a linked review store through crate::io::read_doc and pick fields by name, because review::store::load is private to the review module. A renamed review field would read as absent there rather than fail to compile. Exposing a typed loader (or a narrow typed accessor) from review/mod.rs would let both readers use it."
 base_sha = "a28f93dcdf1f95e21e6e3e361d65fca1707c472f"
 related = ["B-1ec5ebb6"]
+resolved = 2026-11-11
+resolution = "fixed in commit 416a3510: review list --status help names scheduled; cli/mod.rs re-exports cli::types as a glob; plan-side readers go through review::plan_family and review::reproduce_state"
 
 [[backlog]]
 id = "B-1fa8d53f"
@@ -12260,8 +12282,9 @@ area = "claude/skills/implement-v2-engine"
 tags = [
     "parallelism",
     "implement-v2",
+    "needs-discussion",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-11T12:05:58Z
 last_seen = 2026-11-11T12:05:58Z
 seen_count = 1
@@ -12271,6 +12294,8 @@ flow = "v2-harness-tuning"
 context = "Seen on the v2-harness-tuning run of 2026-11-11 (42 tasks, 5 milestones, 85 minutes from first launch to last gate). `tomlctl tasks batches` put 17 rows in the first dependency layer, but the first launch could dispatch only milestone A's 7; rows 8, 9, 10, 16, 18, 24, 26, 27, 33 and 35 had no unmet need and waited for their milestone. Milestone C took 40 minutes with one worker busy for most of it, because rows 18, 20, 21, 22, 23 and 25 chain on shared files; through that time about ten rows of D and E were dispatchable and file-disjoint from every unfinished C row. The rolling pool fills slots only inside the launched milestone, so it does not reach this. A lookahead would dispatch, into free slots, rows of later milestones whose needs are done and whose files no unfinished row of the current milestone holds. The cost to settle first: the current milestone's gate would then test a tree that also holds later-milestone edits, so its path-staged commit is no longer exactly the tree the gate passed, and a later row's compile error could fail an earlier gate. Options are to gate from a clean checkout of the staged paths, to restrict lookahead to rows that build nothing (docs, agent and skill files), or to accept it and re-gate the last milestone on the final tree."
 base_sha = "a1f20889ff34c5b5384b2547727d0489e4d76f9e"
 related = ["B-56a8a9ff"]
+promoted = 2026-11-11
+promoted_to = "implement-v2-lookahead"
 
 [[backlog]]
 id = "B-df3ffc6a"
@@ -12281,7 +12306,7 @@ tags = [
     "parallelism",
     "implement-v2",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-11T12:05:58Z
 last_seen = 2026-11-11T12:05:58Z
 seen_count = 1
@@ -12291,6 +12316,8 @@ flow = "v2-harness-tuning"
 context = "On the v2-harness-tuning run of 2026-11-11 the orchestrator followed that sentence and launched milestones B and C with max_parallel 3. In B, row 16 edits only skill and agent markdown and had no need, yet it started 7 minutes after the launch, in the third wave, behind seven Rust rows that came earlier in args order. The cap exists for build-lock contention between compile checks, so it should bound the rows that compile, not every row: either the guidance says to keep the default and let file locks and needs do the limiting, or the Workflow takes a second, lower cap for rows whose files include a crate source file. The rolling pool removes the wave wait but still fills slots in args order under the one cap."
 base_sha = "a1f20889ff34c5b5384b2547727d0489e4d76f9e"
 related = ["B-3a80ce63"]
+resolved = 2026-11-11
+resolution = "fixed in commits d9c511b4 and 373da972: max_compile_parallel caps compiling workers, emitted by plan emit launch-args --max-compile-parallel"
 
 [[backlog]]
 id = "B-dd357190"
@@ -12301,7 +12328,7 @@ tags = [
     "parallelism",
     "plan-v2",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-11T12:05:58Z
 last_seen = 2026-11-11T12:05:58Z
 seen_count = 1
@@ -12311,6 +12338,8 @@ flow = "v2-harness-tuning"
 context = "In v2-harness-tuning milestone C, three deep tasks each added one `plan emit` leaf to the same new file, tomlctl/src/plan/emit.rs, so they ran strictly one after another (about 2, 2 and 7 minutes) with nothing else of the milestone able to start; the leaves are independent and would have run together as three files under plan/emit/. Rows 18 and 20 chain the same way through tasks/schema.rs. The plan's Prove step and `plan check` see the chain only as valid needs edges. A report of each milestone's longest chain against its row count, and of chain links whose two rows share a file but no contract or premise, would let the author or the challenger split the file before approval. `tomlctl tasks batches` and the rows' `files` hold everything such a check needs."
 base_sha = "a1f20889ff34c5b5384b2547727d0489e4d76f9e"
 related = ["B-d5f07c82"]
+resolved = 2026-11-11
+resolution = "fixed in commit cfac4ed1"
 
 [[backlog]]
 id = "B-b0505dce"
@@ -12321,7 +12350,7 @@ tags = [
     "glimpse",
     "agents",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-11T12:05:58Z
 last_seen = 2026-11-11T12:05:58Z
 seen_count = 1
@@ -12331,6 +12360,8 @@ flow = "v2-harness-tuning"
 context = "In .claude/flows/v2-harness-tuning/agents.toml after the run of 2026-11-11, 6 of 44 plan-worker records have one segment with an empty `task_ids`: the first-pass workers of tasks 11, 18, 20, 21, 23 and 25. They are exactly the six longest workers of the run, each between 5.4 and 7.8 minutes; every shorter worker is attributed. The prompt carries `tomlctl plan view --slug <slug> --for worker --task <n>` for all of them alike, so the launch line is not the difference. `latest_dispatch` walks the transcript from its end and returns at the first line that yields a slug, so a later line that names the slug without a task id (a ledger line, or a prompt rewritten by context compaction on a long transcript) would produce exactly this. glimpse then shows the task with no agent on it while its worker is busy. Reproduce by running the correlation over one of those six transcripts."
 base_sha = "a1f20889ff34c5b5384b2547727d0489e4d76f9e"
 related = ["B-a162a412"]
+resolved = 2026-11-11
+resolution = "fixed in commit 56026d8d: a Workflow agent's start now finds its transcript under subagents/workflows/<run>/, a stop reads the spawn dispatch from the head of a long transcript, and a stop-created row starts at the transcript's first timestamp"
 
 [[backlog]]
 id = "B-5a74b11d"
@@ -12341,7 +12372,7 @@ tags = [
     "glimpse",
     "agents",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-11T12:05:58Z
 last_seen = 2026-11-11T12:05:58Z
 seen_count = 1
@@ -12351,6 +12382,8 @@ flow = "v2-harness-tuning"
 context = "In .claude/flows/v2-harness-tuning/agents.toml after the run of 2026-11-11, the lite workers of tasks 1, 2, 3 and 4 have `started_at`, `updated_at` and `ended_at` equal to the nanosecond, about 52 seconds after their launch was recorded, as do the three plan-cold-reader records from the plan's Prove step. The other three workers of the same launch have real durations. It reads as a record first created by the stop event, the start event having been missed or lost when several agents start within the same second. A zero-length record never shows as running in glimpse and gives no duration to anything that reads the store for timings."
 base_sha = "a1f20889ff34c5b5384b2547727d0489e4d76f9e"
 related = ["B-6a0aff17"]
+resolved = 2026-11-11
+resolution = "fixed in commit 56026d8d: a Workflow agent's start now finds its transcript under subagents/workflows/<run>/, a stop reads the spawn dispatch from the head of a long transcript, and a stop-created row starts at the transcript's first timestamp"
 
 [[backlog]]
 id = "B-429f5d5f"
@@ -12361,7 +12394,7 @@ tags = [
     "glimpse",
     "implement-v2",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-11T12:05:58Z
 last_seen = 2026-11-11T12:05:58Z
 seen_count = 1
@@ -12371,6 +12404,8 @@ flow = "v2-harness-tuning"
 context = "glimpse's frontier is the whole graph's ready, held and blocked sets, so during a v2 run every row with no unmet need shows as ready, including rows of milestones the engine has not reached. On v2-harness-tuning that was ten rows shown ready through milestone A and most of D and E through milestone C, which reads as the engine ignoring ready work. `tomlctl tasks ready --checkpoint <id>` already restricts the sets to one milestone; a v2 flow could mark a ready row outside the running milestone as waiting on that milestone, taking the running milestone from the open `implement:<id>` run in plan.toml."
 base_sha = "a1f20889ff34c5b5384b2547727d0489e4d76f9e"
 related = ["B-be2797ef"]
+resolved = 2026-11-11
+resolution = "fixed in commits ff32e41f, 373da972 and 4bb009a7: the snapshot carries running_milestone, Follow skips rows waiting on their milestone, and a pending row shows a waiting mark"
 
 [[backlog]]
 id = "B-2a722442"
@@ -12381,7 +12416,7 @@ tags = [
     "implement-v2",
     "orchestrator-cost",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-11T12:05:58Z
 last_seen = 2026-11-11T12:05:58Z
 seen_count = 1
@@ -12391,6 +12426,8 @@ flow = "v2-harness-tuning"
 context = "Each of the nine launches of the v2-harness-tuning run took three pre-launch snapshots, three after-snapshots and three `diff -U30` reads to confirm workers wrote only `status` and `agent` on their own rows, plus a shell loop comparing `plan drift --uncommitted` paths with the milestone's `files` to find out-of-lane edits. Both answers are mechanical and both came back clean every time. A read verb that takes the launch's recorded task ids and prints the out-of-lane paths and any field a worker changed beyond its own `status` and `agent` (from the `[[changes]]` trail and a stored pre-launch digest) would replace about eight commands and the snapshot files per round, and would work for an abandoned run, where the snapshots are gone."
 base_sha = "a1f20889ff34c5b5384b2547727d0489e4d76f9e"
 related = ["B-85f895ef"]
+resolved = 2026-11-11
+resolution = "fixed in commit 373da972: plan emit lane-check"
 
 [[backlog]]
 id = "B-9bdace33"
@@ -12398,7 +12435,7 @@ kind = "annoyance"
 summary = "tasks check and plan check print one backlog/closed info finding per resolved backlog link on every run"
 area = "tomlctl/src/tasks/check.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-11T12:05:58Z
 last_seen = 2026-11-11T12:05:58Z
 seen_count = 1
@@ -12408,6 +12445,8 @@ flow = "v2-harness-tuning"
 context = "After v2-harness-tuning resolved the backlog rows its tasks closed, `tomlctl tasks check --slug v2-harness-tuning` prints 28 `backlog/closed` info findings and `plan check` repeats them, on every pre-flight and re-entry. A link to a row its own task resolved is the expected end state, not news. Report the class only when the row was closed by something other than the linking task reaching `done` with a commit, or fold the class into one count in the header; until then read the checks with `--where-not severity=info`."
 base_sha = "a1f20889ff34c5b5384b2547727d0489e4d76f9e"
 related = ["B-1ad94a3b"]
+resolved = 2026-11-11
+resolution = "fixed in commit cfac4ed1"
 
 [[backlog]]
 id = "B-3d4f9876"
@@ -12415,7 +12454,7 @@ kind = "annoyance"
 summary = "a fix task the drain mints draws a plan/probe-absent warning because nothing probes its accept check"
 area = "tomlctl/src/plan/check.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-11T12:05:58Z
 last_seen = 2026-11-11T12:05:58Z
 seen_count = 1
@@ -12425,6 +12464,8 @@ flow = "v2-harness-tuning"
 context = "The implement-v2 drain mints fix tasks with `tasks add-many`, each carrying a `writes_build = false` accept check as the engine requires. `plan check` then warns `plan/probe-absent` for each, since accept probes are run only at the plan's Prove step, before approval. Three such rows were minted on the v2-harness-tuning run. Either the drain's mint step emits and records the probe for the new row (`plan probes --emit` scoped with `--task`), or the class stays quiet for a row added after approval."
 base_sha = "a1f20889ff34c5b5384b2547727d0489e4d76f9e"
 related = ["B-e2b98a71"]
+resolved = 2026-11-11
+resolution = "fixed in commit cfac4ed1"
 
 [[backlog]]
 id = "B-d77f3060"
@@ -12432,7 +12473,7 @@ kind = "debt"
 summary = "a review store the typed loader refuses reports the bad row but not which store file it is in"
 area = "tomlctl/src/review/store.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-11T12:10:16Z
 last_seen = 2026-11-11T12:10:16Z
 seen_count = 1
@@ -12442,6 +12483,8 @@ flow = "v2-harness-tuning"
 context = "`review::store::from_toml` errors name the row and field (for example a finding whose `kind` is not a known value) but carry no path and no error kind, so a refusal from `load` in any review verb, and now in `plan emit reproduce-units`, does not say which store is bad. A repo with a flow store and one or more `.claude/review-v2/<scope>.toml` stores leaves the user to guess. Tag the failure `kind=parse` with the path where `load` calls the parser, as `plan::store::parse_store` does for plan.toml; check first that no test matches the current message whole."
 base_sha = "a1f20889ff34c5b5384b2547727d0489e4d76f9e"
 related = ["B-c94abace"]
+resolved = 2026-11-11
+resolution = "fixed in commit d0f89e4e"
 
 [[backlog]]
 id = "B-d00caae4"
@@ -12449,7 +12492,7 @@ kind = "debt"
 summary = "the plan gate's review-store test fixtures omit depth, so plan gate, approve and stage keep a lenient field reader beside the typed loader"
 area = "tomlctl/tests/plan_stage.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-11T12:10:16Z
 last_seen = 2026-11-11T12:10:16Z
 seen_count = 1
@@ -12459,3 +12502,116 @@ flow = "v2-harness-tuning"
 context = "`review::store::plan_family`, which `plan gate`, `plan approve` and `plan stage` read through, parses review-v2.toml field by field inside the review module instead of calling the typed `load`, because every review-store fixture in tests/plan_stage.rs and tests/plan_approve.rs, and the one in plan::store's unit tests, has runs with no `depth`, which the typed loader refuses and which every store tomlctl writes carries. The lenient reader spells its keys apart from the typed parser; a test that writes through `to_toml` and reads back through `plan_family` pins them together. Making the fixtures typed-valid would let `plan_family` use `load` and drop the second reader. Decide first whether a hand-written or damaged review store should block `plan stage` with a parse error, which that change would make it do."
 base_sha = "a1f20889ff34c5b5384b2547727d0489e4d76f9e"
 related = ["B-81c1c53b"]
+resolved = 2026-11-11
+resolution = "fixed in commit 601af8cb: plan gate, approve and stage read the review store through the typed loader"
+
+[[backlog]]
+id = "B-a1c49476"
+kind = "debt"
+summary = "v1 /implement and the apply pipeline tell the orchestrator to read a passing command's log, but the verification agent's one-line pass entry carries no log field"
+area = "claude/commands/implement.md"
+tags = []
+status = "resolved"
+created = 2026-11-11T14:10:03Z
+last_seen = 2026-11-11T14:10:03Z
+seen_count = 1
+dedup_id = "a1c49476fc3cd503"
+origin = "implement-deep"
+context = "/implement Phase 2 step 5(ii) says to read the log of an ambiguous block, and flow-contract-apply-pipeline/references/verification.md says to Grep the block's log when a pass's summary is none; a pass is now one line with no log path. Either the verification agent's pass line carries log, or both instructions name what to do instead. Until then re-dispatch the one command with keep_going and ask for its log path."
+base_sha = "416a351001ae270214e3b61b126c8bc2c32049c0"
+related = ["B-e3af5d2d"]
+resolved = 2026-11-11
+resolution = "fixed in commit d2dcd316"
+
+[[backlog]]
+id = "B-6dfe12d1"
+kind = "direction"
+summary = "glimpse draws no per-row frontier state, so a pending row looks the same whether it is ready, held on a file, blocked or waiting on its milestone"
+area = "glimpse/src/view"
+tags = ["glimpse"]
+status = "resolved"
+created = 2026-11-11T14:10:03Z
+last_seen = 2026-11-11T14:10:03Z
+seen_count = 1
+dedup_id = "6dfe12d107537f38"
+origin = "implement-deep"
+context = "The frontier's only consumer is Follow (App::frontier). Index::waits_on_milestone and Index::dispatchable exist in glimpse/src/model.rs; an on-row mark needs a theme token, a legend entry and a README row."
+base_sha = "416a351001ae270214e3b61b126c8bc2c32049c0"
+related = ["B-429f5d5f"]
+resolved = 2026-11-11
+resolution = "fixed in commit 4bb009a7"
+
+[[backlog]]
+id = "B-7a9a7f13"
+kind = "annoyance"
+summary = "glimpse ego view and details panel draw every not-started row as pending, without the frontier mark the task list and Tight diagram show"
+area = "glimpse/src/view/ego.rs"
+tags = ["glimpse"]
+status = "resolved"
+created = 2026-11-11T14:28:20Z
+last_seen = 2026-11-11T14:28:20Z
+seen_count = 1
+dedup_id = "7a9a7f13774ca6a0"
+origin = "implement-deep"
+context = "view::status_mark in glimpse/src/view/mod.rs is the shared helper the list and diagram use; feeding the ego labels, cards and the details status line through it makes one row read the same everywhere."
+base_sha = "d9c511b45fc0fde1fdd3200103ef518b00e61088"
+related = ["B-6dfe12d1"]
+resolved = 2026-11-11
+resolution = "fixed in commit 76e98ca0"
+
+[[backlog]]
+id = "B-da89f85d"
+kind = "direction"
+summary = "glimpse details panel does not name the file and holder of a held row or the blocker of a blocked row, though the snapshot carries both"
+area = "glimpse/src/view/details.rs"
+tags = ["glimpse"]
+status = "resolved"
+created = 2026-11-11T14:28:20Z
+last_seen = 2026-11-11T14:28:20Z
+seen_count = 1
+dedup_id = "da89f85d4860ebca"
+origin = "implement-deep"
+context = "Held.blocked_on_file, Held.holder and Blocked.blocker are in the snapshot; the frontier marks say a row is held or blocked but not by what."
+base_sha = "d9c511b45fc0fde1fdd3200103ef518b00e61088"
+related = ["B-6dfe12d1"]
+resolved = 2026-11-11
+resolution = "fixed in commit 76e98ca0"
+
+[[backlog]]
+id = "B-add009dc"
+kind = "debt"
+summary = "plan run start records the lane check's store digest after the Workflow launch, so a store write in a run's first seconds is absorbed into the digest"
+area = "tomlctl/src/plan/lane.rs"
+tags = ["implement-v2"]
+status = "resolved"
+created = 2026-11-11T14:28:20Z
+last_seen = 2026-11-11T14:28:20Z
+seen_count = 1
+dedup_id = "add009dc15fbaa2f"
+origin = "implement-deep"
+context = "Same blind spot in the [[changes]] trail window, which starts at the run's started stamp. Taking the digest before the launch (at plan emit launch-args, passed to plan run start) would close it; until then a write in that window shows only in git diff of tasks.toml."
+base_sha = "d9c511b45fc0fde1fdd3200103ef518b00e61088"
+related = ["B-2a722442"]
+resolved = 2026-11-11
+resolution = "fixed in commit 86818405"
+
+[[backlog]]
+id = "B-9d63bb0c"
+kind = "debt"
+summary = "a plan task that adds a capability feature omits tomlctl/README.md, whose sample block and feature table a test pins to FEATURES"
+area = "claude/skills/plan-v2-engine/references/write-and-prove.md"
+tags = [
+    "plan-v2",
+    "lanes",
+]
+status = "resolved"
+created = 2026-11-11T14:28:20Z
+last_seen = 2026-11-11T14:28:20Z
+seen_count = 1
+dedup_id = "9d63bb0cc218c44e"
+origin = "implement-deep"
+context = "readme_feature_transcriptions_match_capabilities_features fails when FEATURES gains a name the README lacks. The registration paragraph in write-and-prove.md should name tomlctl/README.md, tests/capabilities.rs and the implement-v2 pre-flight list for a task that adds a feature."
+base_sha = "d9c511b45fc0fde1fdd3200103ef518b00e61088"
+related = ["B-f8331d1a"]
+resolved = 2026-11-11
+resolution = "fixed in commit 3cf64fa3"
