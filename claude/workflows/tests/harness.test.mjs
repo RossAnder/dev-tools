@@ -459,7 +459,41 @@ test('implement-v2-milestone: needs_files reaches the index', async () => {
   assert.equal(out.tasks[0].status, 'failed')
   assert.deepEqual(out.tasks[0].needs_files, ['other.rs'])
   assert.deepEqual(out.tasks[1].needs_files, [])
+  assert.equal(out.tasks[0].error, null)
+  assert.deepEqual(out.errors, [])
   assert.deepEqual(rt.phases, ['Run'])
+})
+
+test('implement-v2-milestone: a malformed needs_files is dropped and reported, the status kept', async () => {
+  const cases = [
+    [['../outside.rs'], 'failed'],
+    [['src/../../etc/passwd'], 'failed'],
+    [['/abs/path.rs'], 'failed'],
+    [['C:\\abs\\path.rs'], 'failed'],
+    [['two\nlines.rs'], 'failed'],
+    [[''], 'failed'],
+    [['src//a.rs'], 'failed'],
+    [Array.from({ length: 17 }, (_, i) => `f${i}.rs`), 'failed'],
+    [['other.rs'], 'done'],
+  ]
+  for (const [needs, status] of cases) {
+    const rt = runtime(() => workerReturn(1, status, { needs_files: needs }))
+    const out = await rt.run('implement-v2-milestone', milestoneArgs([task(1, ['a.rs'])]))
+    const what = `${status} ${JSON.stringify(needs).slice(0, 40)}`
+    assert.equal(out.tasks[0].status, status, what)
+    assert.deepEqual(out.tasks[0].needs_files, [], what)
+    assert.match(out.tasks[0].error, /needs_files/, what)
+    assert.equal(out.tasks[0].note, 'docs/flows/demo/notes/run/task-1.md', what)
+    assert.ok(out.errors.some((e) => e.startsWith('task 1: worker ') && e.endsWith('needs_files dropped')), what)
+  }
+})
+
+test('implement-v2-milestone: sixteen nested needs_files pass', async () => {
+  const needs = Array.from({ length: 16 }, (_, i) => `src/m${i}/mod.rs`)
+  const rt = runtime(() => workerReturn(1, 'failed', { needs_files: needs }))
+  const out = await rt.run('implement-v2-milestone', milestoneArgs([task(1, ['a.rs'])]))
+  assert.deepEqual(out.tasks[0].needs_files, needs)
+  assert.equal(out.tasks[0].error, null)
 })
 
 test('implement-v2-milestone: max_compile_parallel holds back crate tasks but not the rest', async () => {

@@ -19,8 +19,9 @@ export const meta = {
 // non-`done` return is reported `blocked` and never dispatched. Nothing is
 // retried; the engine's drain decides what runs again. `error` is a thrown
 // error or a bad return, and null otherwise.
-const SCRIPT_VERSION = '3'
+const SCRIPT_VERSION = '4'
 const MAX_PARALLEL = 8
+const MAX_NEEDS_FILES = 16
 const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/
 const MILESTONE_ID = /^[A-Za-z0-9][A-Za-z0-9-]*$/
 const ONE_LINE = /^[^\r\n]+$/
@@ -31,7 +32,8 @@ const WORKERS = {
 }
 
 // `note` is an empty string when the worker wrote none; `handover` likewise.
-// `needs_files` is optional: the files a `failed` task would also need.
+// `needs_files` is optional: the files a `failed` task would also edit. An
+// entry that breaks `needsFilesProblem` empties it and sets the entry's `error`.
 const RETURN_SCHEMA = {
   type: 'object',
   properties: {
@@ -172,6 +174,19 @@ const namesNote = (returned, expected) => {
   return path === expected || path.endsWith(`/${expected}`)
 }
 
+// The drain widens a row's `files` with these paths unedited, so each must be
+// one repo-relative path that cannot climb out of the repository.
+const repoRelative = (f) => matches(ONE_LINE, f) && f.trim() === f
+  && !/^([\\/]|[A-Za-z]:)/.test(f) && !f.split(/[\\/]/).some((s) => s === '..' || s === '')
+const needsFilesProblem = (ret) => {
+  const needs = ret.needs_files
+  if (needs === undefined || !needs.length) return null
+  if (ret.status !== 'failed') return `returned needs_files with status ${ret.status}; only failed carries it`
+  if (needs.length > MAX_NEEDS_FILES) return `returned ${needs.length} needs_files; at most ${MAX_NEEDS_FILES}`
+  const bad = needs.find((f) => !repoRelative(f))
+  return bad === undefined ? null : `returned needs_files entry ${JSON.stringify(bad)}, not a one-line repo-relative path`
+}
+
 const entry = (id, status, fields) => ({ id, status, note: null, error: null, deviations: [], handover: '', needs_files: [], ...fields })
 
 const toEntry = (t, ret) => {
@@ -189,7 +204,14 @@ const toEntry = (t, ret) => {
     fail(`task ${t.id}: worker ${error}`)
     return entry(t.id, 'mismatch', { error })
   }
-  const fields = { deviations: ret.deviations, handover: ret.handover, needs_files: ret.needs_files || [] }
+  const needsProblem = needsFilesProblem(ret)
+  if (needsProblem) fail(`task ${t.id}: worker ${needsProblem}; needs_files dropped`)
+  const fields = {
+    deviations: ret.deviations,
+    handover: ret.handover,
+    needs_files: needsProblem ? [] : ret.needs_files || [],
+    error: needsProblem,
+  }
   if (!ret.note) {
     const error = 'wrote no note'
     fail(`task ${t.id}: worker ${error}`)
