@@ -145,7 +145,7 @@ Before Design elaborates anything, find the assumptions the user should see. A c
 
 1. What would change if the answer were no? It must be a different plan.
 2. Can I settle it by reading or running something? Then settle it.
-3. Does a recorded user stance already answer it? CLAUDE.md, memory and ADRs count.
+3. Does a recorded user stance already answer it? CLAUDE.md, memory, ADRs, the brief and what the user decided earlier in this session count. The challenger and the investigators never saw that stance, so a note of theirs arguing the other way does not reopen it: record the stance as the decision and the note as its counter-evidence.
 
 Zero survivors is the normal case. At most three go to the user; when more pass, ask about the three whose `if_false` changes the plan most and record the rest as below. When nothing survives, record that, so a new session can see Surface ran:
 
