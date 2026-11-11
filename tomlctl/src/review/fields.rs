@@ -719,6 +719,10 @@ pub(crate) const FIELDS: &[FieldSpec] = &[
         .kinds(DEFECT_OR_CLEANUP)
         .values(UNBLOCKED_BY)
         .computed(),
+    field(Finding, "unblocked_from", Ty::Str, STATUS)
+        .kinds(DEFECT_OR_CLEANUP)
+        .values(BlockedOn::VALUES)
+        .computed(),
     field(Finding, "decision_answer", Ty::Str, BLOCKED)
         .kinds(DEFECT_OR_CLEANUP)
         .cap(800)
@@ -1706,6 +1710,7 @@ mod tests {
         (Finding, "blocked_command", None, "- R - R R R - R"),
         (Finding, "fix_sketch", None, "- - - R - - - R"),
         (Finding, "unblocked_by", None, "R - - - R - - R"),
+        (Finding, "unblocked_from", None, "R - - - R - - R"),
         (Finding, "decision_answer", None, "- R - R R R - R"),
         (Finding, "settle_tier", None, "- - - R R R - R"),
         (Finding, "proposal", None, "- - - - R - - R"),

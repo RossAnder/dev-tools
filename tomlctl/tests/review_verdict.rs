@@ -743,6 +743,7 @@ fn unblocking_verdict_clears_the_block_and_keeps_the_sketch() {
     assert!(finding.get("blocked_missing").is_none(), "{finding:?}");
     assert_eq!(finding["fix_sketch"].as_str(), Some(SKETCH));
     assert_eq!(finding["unblocked_by"].as_str(), Some("verifier"));
+    assert_eq!(finding["unblocked_from"].as_str(), Some("evidence"));
     assert_eq!(finding["status"].as_str(), Some("open"));
     let verdicts = repo.verdicts();
     assert_eq!(verdicts.len(), 1);
@@ -763,6 +764,7 @@ fn unblocking_clears_a_legacy_needs_plan_block() {
     assert!(finding.get("fix_shape").is_none(), "{finding:?}");
     assert_eq!(finding["fix_sketch"].as_str(), Some(SKETCH));
     assert_eq!(finding["unblocked_by"].as_str(), Some("verifier"));
+    assert_eq!(finding["unblocked_from"].as_str(), Some("design"));
 }
 
 #[test]
@@ -816,4 +818,30 @@ fn verdict_without_unblocks_leaves_the_block() {
     assert!(finding.get("fix_sketch").is_none(), "{finding:?}");
     assert!(finding.get("unblocked_by").is_none(), "{finding:?}");
     assert_eq!(finding["status"].as_str(), Some("open"));
+}
+
+#[test]
+fn rationale_and_sketch_both_from_stdin_are_refused() {
+    let repo = blocked_repo();
+    let out = repo
+        .verdict(
+            "F7",
+            &[
+                "--verdict",
+                "confirmed",
+                "--by",
+                "verifier",
+                "--citation",
+                "src/a.rs:1",
+                "--rationale",
+                "-",
+                "--unblocks",
+                "--fix-sketch",
+                "-",
+            ],
+        )
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(stderr.contains("both read stdin"), "{stderr}");
+    assert!(repo.verdicts().is_empty());
 }

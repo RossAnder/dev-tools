@@ -1389,3 +1389,18 @@ fn stats_all_aggregates_across_stores() {
     let perf = repo.stats(&["--all", "--family", "perf"]);
     assert_eq!(perf["rows"], json!([]), "no perf runs: {perf}");
 }
+
+#[test]
+fn stats_apply_reads_a_verifier_unblock_from_its_recorded_block() {
+    let repo = Repo::new();
+    let store = BLOCKED_STORE.replace(
+        "unblocked_by = \"verifier\"",
+        "unblocked_by = \"verifier\"\nunblocked_from = \"design\"",
+    );
+    repo.write(BLOCKED_STORE_PATH, &store);
+    let out = repo.stats(&["--scope", "blocked", "--apply"]);
+    let correctness = row(&out["apply"]["blocked"]["lens"], "correctness");
+    assert_eq!(correctness["blocked_on"]["design"], 1, "{correctness}");
+    assert_eq!(correctness["blocked_on"]["unrecorded"], 0, "{correctness}");
+    assert_eq!(correctness["verifier_unblocked"], 1, "{correctness}");
+}

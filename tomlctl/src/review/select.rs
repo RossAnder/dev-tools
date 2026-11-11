@@ -101,10 +101,12 @@ impl Selection {
 /// Why `f` may not be handed to a destination of `family`, if it may not.
 pub(super) fn refusal(f: &Finding, family: Family) -> Option<String> {
     if f.family == Family::Plan {
-        return Some("plan-family findings merge into the plan, not a v1 ledger".into());
+        return Some(
+            "plan-family findings merge into the plan and are never handed to apply".into(),
+        );
     }
     if f.kind == Kind::Advisory {
-        return Some("advisory is parked or picked for the backlog, never exported".into());
+        return Some("advisory is parked or picked for the backlog, never handed to apply".into());
     }
     if f.status() != FindingStatus::Open {
         return Some(format!("status is {}, not open", f.status().as_str()));

@@ -86,6 +86,12 @@ pub(crate) fn run(target: &Target, args: ReviewVerdictArgs) -> Result<()> {
 
 /// The single-verdict form's flags as the row a batch line would carry.
 fn single(args: &ReviewVerdictArgs) -> Result<Input> {
+    if args.rationale.as_deref() == Some("-") && args.fix_sketch.as_deref() == Some("-") {
+        return Err(invalid(format!(
+            "{VERB}: --rationale - and --fix-sketch - both read stdin, which holds one value; \
+             pass one of them inline or through --rationale-file / --fix-sketch-file"
+        )));
+    }
     let mut row = Map::new();
     let mut put = |key: &str, value: Option<JsonValue>| {
         if let Some(value) = value {
@@ -310,6 +316,12 @@ fn apply_one(
         finding.route = Some(Route::Verifier);
     }
     if unblocks {
+        if let Some(block) = fields::blocked_on(finding) {
+            finding.rest.insert(
+                "unblocked_from".into(),
+                toml::Value::String(block.as_str().into()),
+            );
+        }
         fields::clear_block(finding, &[]);
         let sketch = toml::Value::String(text("fix_sketch").to_string());
         finding.rest.insert("fix_sketch".into(), sketch);

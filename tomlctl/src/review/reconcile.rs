@@ -32,7 +32,7 @@ const VERB: &str = "review reconcile";
 
 /// The prefix on every `reopen_reason` reconcile writes, by which a reader
 /// counts the findings apply returned to `open`.
-const REOPEN_PREFIX: &str = "apply: ";
+pub(super) const REOPEN_PREFIX: &str = "apply: ";
 
 #[derive(Default)]
 struct Report {

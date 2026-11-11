@@ -24,6 +24,7 @@ use super::fields::{
     self, BlockedOn, CellStatus, Family, FindingStatus, Kind, ReproduceVerdict, Route,
 };
 use super::invalid;
+use super::reconcile::REOPEN_PREFIX;
 use super::store::{self, Cell, Finding, Store, Verdict};
 use super::sync::{SYNC_REASON_PREFIX, V1Outcome, ledger_paths, linked_rows};
 use super::tier::Tier;
@@ -741,10 +742,6 @@ fn outcomes(view: &View, links: &[Link]) -> JsonValue {
     JsonValue::Array(rows)
 }
 
-/// The prefix `review reconcile` writes on the `reopen_reason` of a finding
-/// an apply flow returned to `open`.
-const APPLY_REOPEN_PREFIX: &str = "apply: ";
-
 /// Where a finding stands in an apply flow, read from its own row: held by a
 /// live task, resolved with its apply link kept, or returned to `open` by
 /// reconcile. A finding scheduled again after a reopen counts as scheduled.
@@ -759,9 +756,7 @@ fn apply_state(finding: &Finding) -> Option<&'static str> {
     match finding.status() {
         FindingStatus::Scheduled => Some("scheduled"),
         FindingStatus::Resolved if !text("apply_flow").is_empty() => Some("resolved"),
-        FindingStatus::Open if text("reopen_reason").starts_with(APPLY_REOPEN_PREFIX) => {
-            Some("reopened")
-        }
+        FindingStatus::Open if text("reopen_reason").starts_with(REOPEN_PREFIX) => Some("reopened"),
         _ => None,
     }
 }
@@ -852,17 +847,18 @@ const UNRECORDED_BLOCK: &str = "unrecorded";
 const UNKNOWN_AGENT: &str = "unknown";
 
 /// What `finding` is or was blocked on. An answered block is gone from the
-/// row, so it is read from who answered it: the user answers only decision
-/// blocks and settle only evidence blocks.
+/// row, so it is read from `unblocked_from` when the answer recorded it, and
+/// otherwise from who answered: the user answers only decision blocks and
+/// settle only evidence blocks.
 fn block_of(finding: &Finding) -> Option<&'static str> {
     if let Some(block) = fields::blocked_on(finding) {
         return Some(block.as_str());
     }
-    match finding
-        .rest
-        .get("unblocked_by")
-        .and_then(toml::Value::as_str)
-    {
+    let text = |key: &str| finding.rest.get(key).and_then(toml::Value::as_str);
+    if let Some(block) = text("unblocked_from").and_then(BlockedOn::parse) {
+        return Some(block.as_str());
+    }
+    match text("unblocked_by") {
         Some("user") => Some(BlockedOn::Decision.as_str()),
         Some("settle") => Some(BlockedOn::Evidence.as_str()),
         Some("verifier") => Some(UNRECORDED_BLOCK),
