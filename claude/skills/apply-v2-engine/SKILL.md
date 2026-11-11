@@ -93,6 +93,14 @@ git status --porcelain -- <every edited path>
 
   Any path it prints holds edits a fix worker would build on and the milestone commit would sweep in. Stop and name each; the user commits, moves or discards them, never this skill.
 
+- **Unfinished plan work.** On the reviewed flow, list the rows the plan has not finished:
+
+```bash
+tomlctl tasks list --slug <slug> --where-not status=done --select id,status,checkpoint --lines
+```
+
+  When it prints any row, the execution engine would run those milestones before the fix milestone, since it takes the first with a row that is not `done` and refuses `--milestone` past it. That is plan work nobody asked this command for. Ask with `AskUserQuestion`, naming the milestones and their row counts: run the plan's unfinished work first and then the fixes, or stop. On stop, nothing has been written; say that `/implement-v2 <slug>` finishes the plan and that this command can be rerun after it. A new flow has no earlier rows and skips this.
+
 Report what will be scheduled, held and refused, each with its reason, and go on.
 
 ### 3. Resolve the gates
@@ -218,11 +226,7 @@ Take `from_status` and `to_status` from `transition`. Commit what the approval w
 
 ### 9. Run
 
-Invoke the `implement-v2-engine` skill and follow it from its Arguments section with `<flow>` as the slug, and no `--milestone`. It picks the first milestone with a row that is not `done`: on the reviewed flow, a milestone of the plan still unfinished runs before the fix milestone, and the engine continues to the fix milestone while nothing is parked. Before invoking it, say so whenever an earlier checkpoint of the home, in the step 5 listing, still holds a row that is not `done`:
-
-```bash
-tomlctl tasks list --slug <flow> --where checkpoint=<earlier-id> --where-not status=done --select id,status --lines
-```
+Invoke the `implement-v2-engine` skill and follow it from its Arguments section with `<flow>` as the slug, and no `--milestone`. It picks the first milestone with a row that is not `done`: on the reviewed flow, a milestone of the plan still unfinished runs before the fix milestone, and the engine continues to the fix milestone while nothing is parked. The user agreed to that order at step 2 when the plan had unfinished rows.
 
 The engine's report is the run's outcome; this skill adds nothing to it but the close.
 
