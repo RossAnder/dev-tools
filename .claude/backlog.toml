@@ -1,5 +1,5 @@
 schema_version = 1
-last_updated = 2026-11-10
+last_updated = 2026-11-11
 
 [[backlog]]
 id = "B-de0a0d87"
@@ -10954,7 +10954,7 @@ kind = "debt"
 summary = "review schedule has no --dry-run, so the apply-v2 preview approximates the selection rule in prose"
 area = "tomlctl/src/cli/types/review/export.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-10T21:13:07Z
 last_seen = 2026-11-10T21:13:07Z
 seen_count = 1
@@ -10964,6 +10964,8 @@ flow = "v2-apply"
 context = "The apply-v2-engine skill previews with review show and review list and restates schedule's rule, which can drift from the verb. When schedule then refuses everything the preview passed, the fix milestone is left empty and re-entry reuses it. A --dry-run on review schedule would let the skill preview with the verb itself."
 base_sha = "e42667b7f81f921261d8017ccbe4c95d800c18af"
 related = ["B-9e96ce7c"]
+resolved = 2026-11-11
+resolution = "review schedule takes --dry-run, with --flow and --checkpoint optional before the flow exists; apply-v2-engine step 2 previews with it instead of restating the rule."
 
 [[backlog]]
 id = "B-7f672c06"
@@ -10971,7 +10973,7 @@ kind = "debt"
 summary = "the apply reopen prefix is declared twice, in review reconcile and in review stats"
 area = "tomlctl/src/review/reconcile.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-10T21:13:07Z
 last_seen = 2026-11-10T21:13:07Z
 seen_count = 1
@@ -10981,6 +10983,8 @@ flow = "v2-apply"
 context = "reconcile.rs keeps REOPEN_PREFIX private and stats.rs carries its own APPLY_REOPEN_PREFIX copy. If the two drift, review stats --apply stops counting reopens. Make the reconcile constant pub(super) and import it in stats.rs."
 base_sha = "e42667b7f81f921261d8017ccbe4c95d800c18af"
 related = ["B-10cbeccd"]
+resolved = 2026-11-11
+resolution = "review stats imports reconcile's REOPEN_PREFIX; the second declaration is gone."
 
 [[backlog]]
 id = "B-c65b80e6"
@@ -10988,7 +10992,7 @@ kind = "debt"
 summary = "select.rs refusal text for plan-family and advisory findings names a v1 ledger and export when review schedule is the caller"
 area = "tomlctl/src/review/select.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-10T21:13:07Z
 last_seen = 2026-11-10T21:13:07Z
 seen_count = 1
@@ -10998,6 +11002,8 @@ flow = "v2-apply"
 context = "review schedule reuses the selection module export-v1 uses, so a refused plan-family or advisory id is reported in export-v1's wording. A verb-neutral phrasing, or a caller-supplied noun, would serve both."
 base_sha = "e42667b7f81f921261d8017ccbe4c95d800c18af"
 related = ["B-7f4ae72f"]
+resolved = 2026-11-11
+resolution = "select.rs refusals for plan-family and advisory findings now read 'never handed to apply', naming neither a v1 ledger nor export."
 
 [[backlog]]
 id = "B-520f051d"
@@ -11005,7 +11011,7 @@ kind = "question"
 summary = "run-milestone.md's clean-tree check and premise verdict table do not point to findings.md's linked-store exemption and anchor rule"
 area = "claude/skills/implement-v2-engine/references/run-milestone.md"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-10T21:13:07Z
 last_seen = 2026-11-10T21:13:07Z
 seen_count = 1
@@ -11015,6 +11021,8 @@ flow = "v2-apply"
 context = "The implement-v2 engine's findings.md adds an exemption for a dirty linked review store and a rule for anchor premises on apply rows. An orchestrator reading only run-milestone.md steps 1 and 3 would stop on the dirty store or withhold a started apply row. Check whether the later engine tasks of the v2-apply flow add the pointers before editing."
 base_sha = "e42667b7f81f921261d8017ccbe4c95d800c18af"
 related = ["B-6d577c72"]
+resolved = 2026-11-11
+resolution = "run-milestone.md step 1 lists linked review stores and step 3 points anchor premises on a started row at findings.md."
 
 [[backlog]]
 id = "B-3f45d7d9"
@@ -11039,7 +11047,7 @@ kind = "debt"
 summary = "a verifier unblocks verdict clears blocked_on without keeping the block it answered, so stats count it as unrecorded"
 area = "tomlctl/src/review/verdict.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-10T22:24:21Z
 last_seen = 2026-11-10T22:24:21Z
 seen_count = 1
@@ -11049,6 +11057,8 @@ flow = "v2-apply"
 context = "review stats --apply reads an answered block from unblocked_by: user means decision, settle means evidence, and a verifier unblock has nothing to read, so it lands under unrecorded and the per-block verifier-unblock rate cannot be computed. Keeping the cleared block on the verdict or on the finding would fix it."
 base_sha = "634757327c47d3bbdffdecf6c1a53b8b312ef6f8"
 related = ["B-fc4d7f8b"]
+resolved = 2026-11-11
+resolution = "a verifier unblock records the cleared block as unblocked_from, and review stats --apply reads it; rows stored without it still count as unrecorded."
 
 [[backlog]]
 id = "B-517686fb"
@@ -11073,7 +11083,7 @@ kind = "annoyance"
 summary = "review verdict --rationale - and --fix-sketch - both read stdin, so passing both leaves the second empty"
 area = "tomlctl/src/review/verdict.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-10T22:24:21Z
 last_seen = 2026-11-10T22:24:21Z
 seen_count = 1
@@ -11083,3 +11093,566 @@ flow = "v2-apply"
 context = "Work around it by passing the sketch with --fix-sketch-file, or the rationale inline. A refusal naming the clash when both flags are given as - would make it plain."
 base_sha = "634757327c47d3bbdffdecf6c1a53b8b312ef6f8"
 related = ["B-00ae0571"]
+resolved = 2026-11-11
+resolution = "review verdict refuses --rationale - with --fix-sketch -, naming the file flags; covered by rationale_and_sketch_both_from_stdin_are_refused."
+
+[[backlog]]
+id = "B-690fbabb"
+kind = "debt"
+summary = "plan review has no disposition for a finding the author fixed by hand, so those fixes are dismissed, skipped by the re-check and counted as rejections"
+area = "claude/skills/review-v2-engine/references/plan-flow.md"
+tags = [
+    "plan-review",
+    "triage",
+]
+status = "open"
+created = 2026-11-11T07:21:28Z
+last_seen = 2026-11-11T07:21:28Z
+seen_count = 1
+dedup_id = "690fbabbc0d4a3d3"
+origin = "session-trace"
+flow = "v2-apply"
+context = "Seen in the v2-apply planning session: 37 advisory-tier and re-check findings were hand-fixed then dismissed, against plan-flow.md sections 7 and 10. The re-check's targets held only review apply rows, and review stats --plan-outcomes shows them as dismissed. An 'addressed by author edit' disposition in review triage would record the edited targets, count separately and feed the re-check."
+base_sha = "93e907d5000b1601563503642e1171604203c183"
+related = ["B-acba1411"]
+
+[[backlog]]
+id = "B-efcdf91b"
+kind = "annoyance"
+summary = "an unknown field in --template renders blank with exit 0, where --get warns"
+area = "tomlctl/src/output"
+tags = ["output-options"]
+status = "open"
+created = 2026-11-11T07:21:28Z
+last_seen = 2026-11-11T07:21:28Z
+seen_count = 1
+dedup_id = "efcdf91b1a52c3d9"
+origin = "session-trace"
+flow = "v2-apply"
+context = "Reproduce with tasks list --template '{id} [{message}]'. A plan check call used {message} for the detail field and printed blank lines, needing a second call."
+base_sha = "93e907d5000b1601563503642e1171604203c183"
+related = ["B-9b7257ec"]
+
+[[backlog]]
+id = "B-4e2fc7d8"
+kind = "annoyance"
+summary = "tasks show rejects a task ref with 'invalid digit found in string', while plan-records.md addresses tasks as task:<ref>"
+area = "tomlctl/src/tasks"
+tags = [
+    "tasks",
+    "review-v2",
+]
+status = "open"
+created = 2026-11-11T07:21:28Z
+last_seen = 2026-11-11T07:21:28Z
+seen_count = 1
+dedup_id = "4e2fc7d841ce4af4"
+origin = "session-trace"
+flow = "v2-apply"
+context = "5 of 56 plan-review verifiers hit it. tasks list --where ref=<ref> works today; either accept a ref in tasks show or put that idiom in review-v2-method/references/plan-records.md."
+base_sha = "93e907d5000b1601563503642e1171604203c183"
+related = ["B-9b7257ec"]
+
+[[backlog]]
+id = "B-68c31099"
+kind = "annoyance"
+summary = "the tasks update refusal for an unknown set field has no hint for the row keys file_notes, closes, refs and reason"
+area = "tomlctl/src/tasks/update.rs"
+tags = ["tasks"]
+status = "open"
+created = 2026-11-11T07:21:28Z
+last_seen = 2026-11-11T07:21:28Z
+seen_count = 1
+dedup_id = "68c31099bd49c586"
+origin = "session-trace"
+flow = "v2-apply"
+context = "settable() tailors a hint for ref and spec only. A row key given inside set should be answered with 'row key, give it beside id'."
+base_sha = "93e907d5000b1601563503642e1171604203c183"
+related = ["B-b4451a42"]
+
+[[backlog]]
+id = "B-a95b5cbd"
+kind = "debt"
+summary = "the plan engine never says a title change needs ref beside id"
+area = "claude/skills/plan-v2-engine/references/write-and-prove.md"
+tags = ["plan-v2"]
+status = "open"
+created = 2026-11-11T07:21:28Z
+last_seen = 2026-11-11T07:21:28Z
+seen_count = 1
+dedup_id = "a95b5cbdfd29131a"
+origin = "session-trace"
+flow = "v2-apply"
+context = "A retitle is refused with 'this title derives ref ... pass --ref', and ref inside set is refused too; it cost two retries. plan-flow.md is silent as well. Design anchors naming the old ref must be updated with it."
+base_sha = "93e907d5000b1601563503642e1171604203c183"
+related = ["B-2170b989"]
+
+[[backlog]]
+id = "B-cd288c8e"
+kind = "question"
+summary = "most plan-review findings arrive advisory-tier with no target, expect and new, so valid findings become manual orchestrator work"
+area = "claude/agents/review-finder.md"
+tags = ["plan-review"]
+status = "open"
+created = 2026-11-11T07:21:28Z
+last_seen = 2026-11-11T07:21:28Z
+seen_count = 1
+dedup_id = "cd288c8e4e00a7f1"
+origin = "session-trace"
+flow = "v2-apply"
+context = "22 of 39 open findings in the first v2-apply plan review and 21 of 23 in the re-check. Options: have finders and plan-executor supply the edit fields, or have the lead convert at settle."
+base_sha = "93e907d5000b1601563503642e1171604203c183"
+related = ["B-1e1be4cf"]
+
+[[backlog]]
+id = "B-548dfa4f"
+kind = "annoyance"
+summary = "plan review dispatches one verifier per finding, and its mechanical ripple cell returns thin on an unapproved plan's untracked files"
+area = "claude/workflows/review-v2.js"
+tags = [
+    "plan-review",
+    "cost",
+]
+status = "open"
+created = 2026-11-11T07:21:28Z
+last_seen = 2026-11-11T07:21:28Z
+seen_count = 1
+dedup_id = "548dfa4f674b4cc1"
+origin = "session-trace"
+flow = "v2-apply"
+context = "Two v2-apply plan review runs used 83 agents and about 6.5M tokens, 60 percent of planning wall time; 56 were verifier dispatches at about 60k context each. Batch verifiers per cell, and in flow mode skip the ripple cell or point it at the untracked files."
+base_sha = "93e907d5000b1601563503642e1171604203c183"
+related = ["B-05cfc36b"]
+
+[[backlog]]
+id = "B-33070446"
+kind = "annoyance"
+summary = "review digest prints duplicate_candidates and ruled_out_hits in full"
+area = "tomlctl/src/review/digest.rs"
+tags = [
+    "review-v2",
+    "context",
+]
+status = "open"
+created = 2026-11-11T07:21:28Z
+last_seen = 2026-11-11T07:21:28Z
+seen_count = 1
+dedup_id = "33070446f0a31cc7"
+origin = "session-trace"
+flow = "v2-apply"
+context = "One plan-review digest was 16k characters, mostly those two arrays. Collapsing them to counts by default would cut it."
+base_sha = "93e907d5000b1601563503642e1171604203c183"
+related = ["B-6dfe5236"]
+
+[[backlog]]
+id = "B-06d5e2d9"
+kind = "debt"
+summary = "rule 1 forbids piping tomlctl output into text tools, and the orchestrator broke it about 20 times in one session with no ill effect"
+area = "claude/skills/plan-v2-engine/SKILL.md"
+tags = ["plan-v2"]
+status = "open"
+created = 2026-11-11T07:21:28Z
+last_seen = 2026-11-11T07:21:28Z
+seen_count = 1
+dedup_id = "06d5e2d9fa8845e6"
+origin = "session-trace"
+flow = "v2-apply"
+context = "Examples: review digest piped to head, review triage piped to cut. Either name --max-chars, --limit and --select as the replacements beside the rule, or relax it."
+base_sha = "93e907d5000b1601563503642e1171604203c183"
+related = ["B-6d908b8f"]
+
+[[backlog]]
+id = "B-58e7c656"
+kind = "annoyance"
+summary = "the Surface step re-asks a structure question the user settled before the challenge"
+area = "claude/skills/plan-v2-engine/references/open-and-challenge.md"
+tags = ["plan-v2"]
+status = "open"
+created = 2026-11-11T07:21:28Z
+last_seen = 2026-11-11T07:21:28Z
+seen_count = 1
+dedup_id = "58e7c656c7293522"
+origin = "session-trace"
+flow = "v2-apply"
+context = "The challenger is blind to prior decisions by design. When the brief records a user decision the challenge contradicts, the surfaced question should say so."
+base_sha = "93e907d5000b1601563503642e1171604203c183"
+related = ["B-c5783e08"]
+
+[[backlog]]
+id = "B-662af7a7"
+kind = "annoyance"
+summary = "plan-flow.md mentions plan milestone update without saying --gate replaces the whole gate list"
+area = "claude/skills/review-v2-engine/references/plan-flow.md"
+tags = ["plan-v2"]
+status = "open"
+created = 2026-11-11T07:21:28Z
+last_seen = 2026-11-11T07:21:28Z
+seen_count = 1
+dedup_id = "662af7a72188b2f0"
+origin = "session-trace"
+flow = "v2-apply"
+context = "An orchestrator wiped a milestone's four gates by passing three new ones and had to reissue all seven. The help and plan.md say it; the place the verb is used does not."
+base_sha = "93e907d5000b1601563503642e1171604203c183"
+related = ["B-3f45d7d9"]
+
+[[backlog]]
+id = "B-734077ea"
+kind = "debt"
+summary = "the milestone gate runs cargo install and link scripts under keep_going after a check has already failed"
+area = "claude/skills/implement-v2-engine/references/drain.md"
+tags = [
+    "implement-v2",
+    "gate",
+]
+status = "open"
+created = 2026-11-11T07:21:28Z
+last_seen = 2026-11-11T07:21:28Z
+seen_count = 1
+dedup_id = "734077ea6f20ba42"
+origin = "session-trace"
+flow = "v2-apply"
+context = "Both failing v2-apply gates installed tomlctl and glimpse from a red tree, about 7.5 minutes in all. Run side-effecting gate commands only when every checking command passed."
+base_sha = "93e907d5000b1601563503642e1171604203c183"
+related = ["B-56a8a9ff"]
+
+[[backlog]]
+id = "B-0e1d7686"
+kind = "debt"
+summary = "doc and catalogue lints reach a plan worker only at the milestone gate"
+area = "claude/agents"
+tags = [
+    "implement-v2",
+    "gate",
+]
+status = "open"
+created = 2026-11-11T07:21:28Z
+last_seen = 2026-11-11T07:21:28Z
+seen_count = 1
+dedup_id = "0e1d76869926fbf6"
+origin = "session-trace"
+flow = "v2-apply"
+context = "Every v2-apply milestone failed its first gate on command_lint (multi-word placeholders in fenced tomlctl commands) or every_leaf_command_has_a_case (a new verb with no output_options case). Tell workers the placeholder rule, and let a task touching claude/**/*.md run cargo test --lib -- cli::dispatch::tests, or add a cheap pre-gate dispatch."
+base_sha = "93e907d5000b1601563503642e1171604203c183"
+related = ["B-196e9471"]
+
+[[backlog]]
+id = "B-efb3a126"
+kind = "debt"
+summary = "a fix round's lesson is not carried to pending rows that will repeat it"
+area = "claude/skills/implement-v2-engine/references/drain.md"
+tags = [
+    "implement-v2",
+    "gate",
+]
+status = "open"
+created = 2026-11-11T07:21:28Z
+last_seen = 2026-11-11T07:21:28Z
+seen_count = 1
+dedup_id = "efb3a12690d292de"
+origin = "session-trace"
+flow = "v2-apply"
+context = "The same two gate failures recurred in milestones A, B and C of v2-apply. When a fix task is minted, pending rows holding the same file or adding the same kind of thing should gain a matching constraint; plan-v2 could also carry a checklist for a task that adds a leaf verb."
+base_sha = "93e907d5000b1601563503642e1171604203c183"
+related = ["B-72b3ad42"]
+
+[[backlog]]
+id = "B-587acef3"
+kind = "bug"
+summary = "Workflow-dispatched plan workers get 'No such tool available: Grep' though their frontmatter lists it"
+area = "claude/workflows/implement-v2-milestone.js"
+tags = [
+    "implement-v2",
+    "tools",
+]
+status = "open"
+created = 2026-11-11T07:21:28Z
+last_seen = 2026-11-11T07:21:28Z
+seen_count = 1
+dedup_id = "587acef30271d9da"
+origin = "session-trace"
+flow = "v2-apply"
+context = "Both attempts in the v2-apply run failed, and all searching went through Bash. Cause not determined. Either fix availability or change the Searching rule in CLAUDE.md and the worker files to scoped grep via Bash."
+base_sha = "93e907d5000b1601563503642e1171604203c183"
+related = ["B-be44a578"]
+
+[[backlog]]
+id = "B-4f755682"
+kind = "annoyance"
+summary = "a plan worker documenting verbs added earlier in the milestone meets the stale installed tomlctl and falls back to cargo run"
+area = "claude/agents"
+tags = ["implement-v2"]
+status = "open"
+created = 2026-11-11T07:21:28Z
+last_seen = 2026-11-11T07:21:28Z
+seen_count = 1
+dedup_id = "4f755682344cbc88"
+origin = "session-trace"
+flow = "v2-apply"
+context = "One v2-apply worker ran cargo run seven times for --help output. Name tomlctl/target/debug/tomlctl in the worker procedure, or place doc tasks after an install checkpoint."
+base_sha = "93e907d5000b1601563503642e1171604203c183"
+related = ["B-678773a3"]
+
+[[backlog]]
+id = "B-4434fac1"
+kind = "debt"
+summary = "the implement-v2 pre-flight does not check core.hooksPath, so a clone without it commits a whole flow unhooked"
+area = "claude/commands/implement-v2.md"
+tags = [
+    "implement-v2",
+    "hooks",
+]
+status = "open"
+created = 2026-11-11T07:21:28Z
+last_seen = 2026-11-11T07:21:28Z
+seen_count = 1
+dedup_id = "4434fac1524f6797"
+origin = "session-trace"
+flow = "v2-apply"
+context = "Found 2026-11-11: the six v2-apply commits ran no pre-commit hook. The checks passed when run by hand afterwards."
+base_sha = "93e907d5000b1601563503642e1171604203c183"
+related = ["B-b7da5466"]
+
+[[backlog]]
+id = "B-14586282"
+kind = "debt"
+summary = "a gate that cannot pass in this environment is found only at the first milestone gate"
+area = "claude/skills/plan-v2-engine"
+tags = [
+    "plan-v2",
+    "gate",
+]
+status = "open"
+created = 2026-11-11T07:21:28Z
+last_seen = 2026-11-11T07:21:28Z
+seen_count = 1
+dedup_id = "1458628266a7b8ab"
+origin = "session-trace"
+flow = "v2-apply"
+context = "scripts/link-v2-review.sh exits 1 where the config dir holds copies, which caused both user questions and all three handovers of v2-apply. Probe each gate command at Prove or at the implement-v2 pre-flight, with --dry-run where the command has one."
+base_sha = "93e907d5000b1601563503642e1171604203c183"
+related = ["B-5680c91a"]
+
+[[backlog]]
+id = "B-8f42ffc6"
+kind = "annoyance"
+summary = "an after:<n> premise withholds its task for the whole launch, not until task n is done"
+area = "claude/workflows/implement-v2-milestone.js"
+tags = [
+    "implement-v2",
+    "speed",
+]
+status = "open"
+created = 2026-11-11T07:21:28Z
+last_seen = 2026-11-11T07:21:28Z
+seen_count = 1
+dedup_id = "8f42ffc69acc0643"
+origin = "session-trace"
+flow = "v2-apply"
+context = "Milestones A and C of v2-apply each needed three launches before the gate, an estimated 8 minutes. Evaluating after: premises between waves inside the Workflow would remove the relaunch."
+base_sha = "93e907d5000b1601563503642e1171604203c183"
+related = ["B-cab4905f"]
+
+[[backlog]]
+id = "B-f8331d1a"
+kind = "debt"
+summary = "shared registration files serialise a plan's task graph and push workers to bend designs to stay in lane"
+area = "claude/skills/plan-v2-engine"
+tags = [
+    "plan-v2",
+    "lanes",
+]
+status = "open"
+created = 2026-11-11T07:21:28Z
+last_seen = 2026-11-11T07:21:28Z
+seen_count = 1
+dedup_id = "f8331d1a50397ac5"
+origin = "session-trace"
+flow = "v2-apply"
+context = "In v2-apply review/dispatch.rs and cli/types/review/* chained the graph to 1.26 effective parallelism; one task failed for lacking dispatch.rs, and three passed loose fields instead of an args struct because the re-export sat in a file they did not hold. Flag registration files as shared lanes at plan time, and let a failed worker return the files it needs for the drain to widen."
+base_sha = "93e907d5000b1601563503642e1171604203c183"
+related = ["B-acba1411"]
+
+[[backlog]]
+id = "B-02070fca"
+kind = "annoyance"
+summary = "drain.md's fix-task row shape shows no spec.means entry"
+area = "claude/skills/implement-v2-engine/references/drain.md"
+tags = ["implement-v2"]
+status = "open"
+created = 2026-11-11T07:21:28Z
+last_seen = 2026-11-11T07:21:28Z
+seen_count = 1
+dedup_id = "02070fcaba6ee758"
+origin = "session-trace"
+flow = "v2-apply"
+context = "A fix task minted with means as a string was refused ('must be an array of tables'), and the orchestrator folded the means into a constraint instead. tasks-write.md documents the shape."
+base_sha = "93e907d5000b1601563503642e1171604203c183"
+related = ["B-ddd7141e"]
+
+[[backlog]]
+id = "B-fddac023"
+kind = "annoyance"
+summary = "the implement-v2 orchestrator hand-assembles the Workflow args and the gate prompt from row reads"
+area = "tomlctl/src/tasks"
+tags = [
+    "implement-v2",
+    "context",
+]
+status = "open"
+created = 2026-11-11T07:21:28Z
+last_seen = 2026-11-11T07:21:28Z
+seen_count = 1
+dedup_id = "fddac02385cb926c"
+origin = "session-trace"
+flow = "v2-apply"
+context = "It read spec.accept for twelve tasks (12k characters) and wrote the launch args twice per launch. tasks ready has no flag that emits the args object or the gate command list."
+base_sha = "93e907d5000b1601563503642e1171604203c183"
+related = ["B-27f5ba35"]
+
+[[backlog]]
+id = "B-804db301"
+kind = "debt"
+summary = "nothing audits what plan workers run, so gate-owned test runs go unseen unless self-reported"
+area = "claude/workflows/implement-v2-milestone.js"
+tags = [
+    "implement-v2",
+    "discipline",
+]
+status = "open"
+created = 2026-11-11T07:21:28Z
+last_seen = 2026-11-11T07:21:28Z
+seen_count = 1
+dedup_id = "804db301f189c7f3"
+origin = "session-trace"
+flow = "v2-apply"
+context = "5 of 42 v2-apply workers ran test binaries the gate owns and one ran a recursive grep from the root; the orchestrator saw only the one that reported itself."
+base_sha = "93e907d5000b1601563503642e1171604203c183"
+related = ["B-c866bda9"]
+
+[[backlog]]
+id = "B-93fd1ef6"
+kind = "annoyance"
+summary = "a subagent Write to a file named findings.md is refused by the harness's report-file guard"
+area = "claude/skills/implement-v2-engine/references/findings.md"
+tags = ["implement-v2"]
+status = "open"
+created = 2026-11-11T07:21:28Z
+last_seen = 2026-11-11T07:21:28Z
+seen_count = 1
+dedup_id = "93fd1ef66e19c121"
+origin = "session-trace"
+flow = "v2-apply"
+context = "The worker creating the reference worked around it with touch plus Edit. Rename the reference or note the collision."
+base_sha = "93e907d5000b1601563503642e1171604203c183"
+related = ["B-c71f122d"]
+
+[[backlog]]
+id = "B-b868ae37"
+kind = "annoyance"
+summary = "plan-v2 assigned deep to 27 of 28 tasks though about six were lite-sized"
+area = "claude/skills/plan-v2-engine"
+tags = [
+    "plan-v2",
+    "cost",
+]
+status = "open"
+created = 2026-11-11T07:21:28Z
+last_seen = 2026-11-11T07:21:28Z
+seen_count = 1
+dedup_id = "b868ae37388753ab"
+origin = "session-trace"
+flow = "v2-apply"
+context = "v2-apply tasks 3, 15 and 25 and several fix tasks finished in 48 to 82 seconds. Deep median was 181s and 100k peak context against lite's 26s and 41k."
+base_sha = "93e907d5000b1601563503642e1171604203c183"
+related = ["B-9a39ad73"]
+
+[[backlog]]
+id = "B-3b1f4f14"
+kind = "annoyance"
+summary = "the verification hand-back prints every passing command in full"
+area = "claude/agents/verification.md"
+tags = [
+    "implement-v2",
+    "context",
+]
+status = "open"
+created = 2026-11-11T07:21:28Z
+last_seen = 2026-11-11T07:21:28Z
+seen_count = 1
+dedup_id = "3b1f4f14b05e6933"
+origin = "session-trace"
+flow = "v2-apply"
+context = "A 31-command gate returned 13.5k characters, mostly pass blocks. One line per passing command would do."
+base_sha = "93e907d5000b1601563503642e1171604203c183"
+related = ["B-1e1be4cf"]
+
+[[backlog]]
+id = "B-f476684c"
+kind = "debt"
+summary = "tasks keeps add private, so review schedule reaches it through a second entry point, Store::add_many_locked"
+area = "tomlctl/src/tasks/mod.rs"
+tags = ["tasks"]
+status = "open"
+created = 2026-11-11T07:21:28Z
+last_seen = 2026-11-11T07:21:28Z
+seen_count = 1
+dedup_id = "f476684c7296b1b7"
+origin = "session-trace"
+flow = "v2-apply"
+context = "Reported by the v2-apply worker that wrote review schedule, whose lane excluded tasks/mod.rs."
+base_sha = "93e907d5000b1601563503642e1171604203c183"
+related = ["B-5bb39cf9"]
+
+[[backlog]]
+id = "B-f8563949"
+kind = "debt"
+summary = "review vocabularies are absent from SCOPED_ENUM_VALUES apart from review settle's tier"
+area = "tomlctl/src/cli"
+tags = ["review-v2"]
+status = "open"
+created = 2026-11-11T07:21:28Z
+last_seen = 2026-11-11T07:21:28Z
+seen_count = 1
+dedup_id = "f8563949b1326fe6"
+origin = "session-trace"
+flow = "v2-apply"
+context = "Reported by a v2-apply worker; the table drives the documented-values gate for scoped enums."
+base_sha = "93e907d5000b1601563503642e1171604203c183"
+related = ["B-079a7625"]
+
+[[backlog]]
+id = "B-72a04d82"
+kind = "question"
+summary = "a reproduce-check relaunch reuses the earlier round's run_dir"
+area = "claude/skills/implement-v2-engine/references/findings.md"
+tags = [
+    "implement-v2",
+    "reproduce",
+]
+status = "open"
+created = 2026-11-11T07:21:28Z
+last_seen = 2026-11-11T07:21:28Z
+seen_count = 1
+dedup_id = "72a04d8298782b02"
+origin = "session-trace"
+flow = "v2-apply"
+context = "Dropped during the v2-apply run as harmless today. Check whether a later round can read a stale payload from the earlier one."
+base_sha = "93e907d5000b1601563503642e1171604203c183"
+related = ["B-4e19bbd3"]
+
+[[backlog]]
+id = "B-36d26adc"
+kind = "annoyance"
+summary = "the tomlctl suite fails with Disk quota exceeded once old session scratch fills the tmpfs temp directory"
+area = "tomlctl/tests"
+tags = ["test-env"]
+status = "open"
+created = 2026-11-11T07:21:28Z
+last_seen = 2026-11-11T07:21:28Z
+seen_count = 1
+dedup_id = "36d26adc0913c886"
+origin = "session-trace"
+flow = "v2-apply"
+context = "Seen 2026-11-11: 16 failures, all quota errors from tempdir and git in sandboxes. Running with TMPDIR set to a directory outside the repository and off tmpfs passes; a TMPDIR inside the repo breaks the four outside-a-repo tests."
+base_sha = "93e907d5000b1601563503642e1171604203c183"
+related = ["B-cccb98e0"]
