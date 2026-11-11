@@ -511,7 +511,11 @@ fn a_plan_runs_from_open_to_drift() {
     assert_eq!(check["ok"], true, "{check}");
     assert_eq!(
         finding_classes(&check),
-        ["backlog/unpromoted", "plan/milestone-no-gate"],
+        [
+            "backlog/unpromoted",
+            "plan/milestone-no-gate",
+            "plan/milestone-width"
+        ],
         "{check}"
     );
 

@@ -3,7 +3,8 @@
 //! and the `design/` documents.
 //!
 //! Warnings are `plan/milestone-no-gate` and `plan/probe-absent`, and
-//! `plan/file-only-chain` is info; every other class raised here is an error.
+//! `plan/file-only-chain` and `plan/milestone-width` are info; every other
+//! class raised here is an error.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -93,6 +94,7 @@ pub(crate) fn findings(slug: &str, integrity: &ReadIntegrityArgs) -> Result<Vec<
     found.extend(milestone_findings(&tasks));
     if plan.approvals.is_empty() {
         found.extend(file_chain_findings(&tasks, &plan));
+        found.extend(milestone_width_findings(&tasks));
     }
     found.sort_by(|a, b| (a.class, &a.ids).cmp(&(b.class, &b.ids)));
     Ok(found)
@@ -713,6 +715,72 @@ fn file_chain_findings(tasks: &Store, plan: &PlanStore) -> Vec<Finding> {
                  longest needs chain is {} of {} rows",
                 described.join(", "),
                 longest_chain(&rows),
+                rows.len()
+            ),
+        });
+    }
+    findings
+}
+
+/// Per milestone after the first, in `[[checkpoints]]` order, the rows that
+/// could join an earlier one: a launch orders its rows by `needs`, so a row can
+/// start with the latest milestone holding a direct need, or the first when it
+/// has none. A row with a need in no listed milestone is left out.
+fn milestone_width_findings(tasks: &Store) -> Vec<Finding> {
+    let mut order: Vec<&str> = Vec::new();
+    for checkpoint in &tasks.checkpoints {
+        if !order.contains(&checkpoint.id.as_str()) {
+            order.push(checkpoint.id.as_str());
+        }
+    }
+    let index_of = |checkpoint: &str| order.iter().position(|id| *id == checkpoint);
+    let row_index = |id: u32| {
+        tasks
+            .items
+            .iter()
+            .find(|row| row.id == id)
+            .and_then(|row| index_of(&row.checkpoint))
+    };
+
+    let mut findings = Vec::new();
+    for (index, milestone) in order.iter().enumerate().skip(1) {
+        let rows: Vec<&TaskRow> = tasks
+            .items
+            .iter()
+            .filter(|row| row.checkpoint == *milestone)
+            .collect();
+        let mut waiting: Vec<(u32, usize)> = Vec::new();
+        for row in &rows {
+            let Some(placed) = row
+                .needs
+                .iter()
+                .map(|&need| row_index(need))
+                .collect::<Option<Vec<usize>>>()
+            else {
+                continue;
+            };
+            let earliest = placed.iter().copied().max().unwrap_or(0);
+            if row.needs.is_empty() || earliest + 1 < index {
+                waiting.push((row.id, earliest));
+            }
+        }
+        if waiting.is_empty() {
+            continue;
+        }
+        waiting.sort();
+        let described: Vec<String> = waiting
+            .iter()
+            .map(|(id, earliest)| format!("{id} could join `{}`", order[*earliest]))
+            .collect();
+        findings.push(Finding {
+            class: "plan/milestone-width",
+            severity: INFO,
+            ids: waiting.iter().map(|(id, _)| *id).collect(),
+            detail: format!(
+                "milestone `{milestone}`: {}; {} of {} rows could start with an earlier \
+                 milestone",
+                described.join(", "),
+                waiting.len(),
                 rows.len()
             ),
         });

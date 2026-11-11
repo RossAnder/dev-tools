@@ -1,6 +1,6 @@
 ---
 description: Author a v2 plan in an attended session — a brief, investigator notes, a structure challenge, decisions, contracts and task rows written through `tomlctl plan`, proved by store checks, probes and cold readers, then approved and committed
-argument-hint: '[<slug>] [--from <id>[,<id>...]] [--depth quick|standard|deep] [--no-review] [--review] [the work to plan]'
+argument-hint: '[<slug>] [--from <id>[,<id>...]] [--depth quick|standard|deep] [--milestones few|default] [--no-review] [--review] [the work to plan]'
 ---
 
 # /plan-v2 — author a v2 plan
@@ -18,6 +18,7 @@ A v2 plan has no plan document: it lives in `docs/flows/<slug>/` and in `.claude
 | `<slug>` | Resumes that plan; which plan to work on is the engine's Re-entry section |
 | `--from <id>[,<id>...]` | Backlog ids seeding a new plan's brief |
 | `--depth quick\|standard\|deep` | Default `standard`; what each value runs is the engine's Depth section |
+| `--milestones few\|default` | Default `default`; how each value cuts the plan is the engine's Arguments section |
 | `--no-review` | A bare flag recording the fixed review skip reason `the user passed --no-review`; text after it is part of the discussion, not a reason |
 | `--review` | A bare flag forcing the Review step to run, overriding a low-risk judgement, as the engine's Arguments section says |
 | Anything else | The discussion being planned |

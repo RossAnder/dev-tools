@@ -457,6 +457,6 @@ bare path- or identifier-token scan is what measured unusable.
 | Key | Value | Meaning |
 |---|---|---|
 | `class` | class name | A row of the table above. |
-| `severity` | `error` \| `warning` \| `info` | Only `error` moves the exit code; `info` is reserved for a list a reader judges, and `files/closure` and `backlog/closed` are its members here; `plan check` adds `plan/file-only-chain`. |
+| `severity` | `error` \| `warning` \| `info` | Only `error` moves the exit code; `info` is reserved for a list a reader judges, and `files/closure` and `backlog/closed` are its members here; `plan check` adds `plan/file-only-chain` and `plan/milestone-width`. |
 | `ids` | ids | The tasks concerned. Empty for the whole-store classes — `dag/unbuildable`, the four `policy/*`, `plan/policy-absent`, `plan/no-tasks` and `render/drift`. |
 | `detail` | text | The diagnostic, naming what `ids` cannot, such as a `ref`. |

@@ -35,6 +35,7 @@ Read the arguments before anything else:
 - `<slug>`: a first word naming a flow that `tomlctl flow list` lists with a `plan_path` under `docs/flows/` resumes that plan (Re-entry, below).
 - `--from <id>[,<id>...]`: backlog ids seeding a new plan's brief; passed to `plan open`.
 - `--depth quick|standard|deep`: the depth below; default `standard`.
+- `--milestones few|default`: how the Design step cuts the plan. `default` follows the `How many` rule of `references/write-and-prove.md`; `few` asks for one milestone, with another only where one must be deferred. Default `default`.
 - `--no-review`: a bare flag that records the fixed review skip reason `the user passed --no-review`. Text after it is not a reason; it is part of the discussion.
 - `--review`: a bare flag forcing the Review step to run, whatever you would judge of the plan's risk. Given with `--no-review`, ask through `AskUserQuestion` which one the user meant before Open or re-entry.
 
@@ -87,7 +88,7 @@ Before Review, `quick` launches no Workflow and dispatches no agent. A new third
 tomlctl plan view --slug <slug> --for digest --select stage_inputs.runs
 ```
 
-Resume at the earliest step in the step table whose run step has neither a `finished` nor a `skipped` row: `investigate`, `challenge` and `surface` before Design, `cold-read` before Review. Only when none is missing, follow `next`. `--depth`, `--no-review` and `--review` are not stored; a resumed session takes them from its own arguments. With no slug and arguments that name no new work, list the drafts:
+Resume at the earliest step in the step table whose run step has neither a `finished` nor a `skipped` row: `investigate`, `challenge` and `surface` before Design, `cold-read` before Review. Only when none is missing, follow `next`. `--depth`, `--milestones`, `--no-review` and `--review` are not stored; a resumed session takes them from its own arguments. With no slug and arguments that name no new work, list the drafts:
 
 ```bash
 tomlctl flow list --status draft

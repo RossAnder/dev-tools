@@ -847,6 +847,103 @@ fn a_contract_a_premise_or_an_approval_quiets_a_shared_file_link() {
     assert_clean(&Flow::with_tasks(&disjoint));
 }
 
+/// A second milestone `B` holding row 2, with no needs and its own file.
+const LATER: &str = r#"
+[[checkpoints]]
+id = "B"
+rationale = "the caller"
+
+[[milestones]]
+id = "B"
+gates = ["cargo test"]
+elaboration = "upfront"
+defer_reason = ""
+
+[[specs]]
+ref = "call-guard"
+outcome = "the guard is called"
+accept = [{ behaviour = "a call is guarded", check = "cargo test called", kind = "forward", positive = "", writes_build = false, probe = { at = "abc", neg_rc = 1, pos_rc = 0, verdict = "healthy" } }]
+
+[[items]]
+id = 2
+ref = "call-guard"
+title = "Call guard"
+effort = "S"
+status = "pending"
+checkpoint = "B"
+files = ["src/c.rs"]
+"#;
+
+#[test]
+fn milestone_width_reports_a_later_row_with_no_needs_at_info() {
+    let flow = Flow::with_tasks(&format!("{TASKS}{LATER}"));
+    assert_eq!(flow.classes(), only("plan/milestone-width", "info"));
+    let (code, report) = flow.run();
+    assert_eq!(code, Some(0), "{report}");
+    assert_eq!(report["ok"], true, "{report}");
+    let finding = &report["findings"][0];
+    assert_eq!(finding["ids"], serde_json::json!([2]), "{report}");
+    let detail = finding["detail"].as_str().expect("a detail");
+    assert!(detail.contains("milestone `B`"), "{detail}");
+    assert!(detail.contains("2 could join `A`"), "{detail}");
+    assert!(detail.contains("1 of 1 rows"), "{detail}");
+}
+
+#[test]
+fn milestone_width_skips_a_row_needing_the_milestone_before_its_own() {
+    let needing = format!("{TASKS}{LATER}needs = [1]\n");
+    assert_clean(&Flow::with_tasks(&needing));
+}
+
+#[test]
+fn milestone_width_names_a_row_whose_needs_sit_two_milestones_back() {
+    let third = swap(
+        &swap(LATER, "id = \"B\"", "id = \"C\""),
+        "checkpoint = \"B\"",
+        "checkpoint = \"C\"",
+    );
+    let middle = "\n[[checkpoints]]\nid = \"B\"\nrationale = \"between\"\n\n[[milestones]]\n\
+                  id = \"B\"\ngates = [\"cargo test\"]\nelaboration = \"upfront\"\n\
+                  defer_reason = \"\"\n";
+    let flow = Flow::with_tasks(&format!("{TASKS}{middle}{third}needs = [1]\n"));
+    let (code, report) = flow.run();
+    assert_eq!(code, Some(0), "{report}");
+    let widths: Vec<&Value> = report["findings"]
+        .as_array()
+        .expect("a findings array")
+        .iter()
+        .filter(|finding| finding["class"] == "plan/milestone-width")
+        .collect();
+    assert_eq!(widths.len(), 1, "{report}");
+    assert_eq!(widths[0]["ids"], serde_json::json!([2]), "{report}");
+    let detail = widths[0]["detail"].as_str().expect("a detail");
+    assert!(detail.contains("milestone `C`"), "{detail}");
+    assert!(detail.contains("2 could join `A`"), "{detail}");
+}
+
+#[test]
+fn milestone_width_is_not_raised_once_the_plan_is_approved() {
+    let approved = format!(
+        "{PLAN}{}",
+        approval(&hex_digest(BRIEF.as_bytes()), "abc1234")
+    );
+    assert_clean(&Flow::seeded(
+        &format!("{TASKS}{LATER}"),
+        &approved,
+        BRIEF.as_bytes(),
+    ));
+}
+
+#[test]
+fn milestone_width_is_not_raised_on_a_one_milestone_plan() {
+    let one = swap(
+        &format!("{TASKS}{CHAINED}"),
+        "files = [\"./src/a.rs\", \"src/b.rs\"]\nneeds = [1]",
+        "files = [\"src/b.rs\"]",
+    );
+    assert_clean(&Flow::with_tasks(&one));
+}
+
 #[test]
 fn every_defect_is_reported_in_one_run_sorted_by_class() {
     let tasks = swap(
