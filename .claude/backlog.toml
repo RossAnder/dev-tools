@@ -1,5 +1,5 @@
 schema_version = 1
-last_updated = 2026-11-11
+last_updated = 2026-11-12
 
 [[backlog]]
 id = "B-de0a0d87"
@@ -12651,5 +12651,47 @@ seen_count = 1
 dedup_id = "fc6e271c4e2c1c28"
 origin = "implement-v2"
 flow = "milestone-cadence"
-context = "Seen once on 2026-11-11 gating the plan/milestone-width fix: 1 of 3174 failed in the parallel run, then passed with -j 1 --exact. The two full runs earlier the same day passed."
+context = "Seen once on 2026-11-11 gating the plan/milestone-width fix: 1 of 3174 failed in the parallel run, then passed with -j 1 --exact. The two full runs earlier the same day passed. Seen again on 2026-11-12 gating glimpse-v2-visibility milestone A: 1 of 3233 failed in the parallel run after about 320 s and passed with -j 1 --exact. That failure was a scoped thread panicking in the harness's copy_tree, where fs::copy unwrapped a file-not-found: the directory listing named a file that was gone by the time it was copied, so the fixture tree is being changed while a case copies it. Under a gate it comes back as flaky, which is a pass; the narrow rerun is the workaround. A separate one-second digest_at mismatch in the same case was fixed on 2026-11-12 by normalising the call-time stamp."
 base_sha = "9a6c5117189fdf9811d2fca94332b2b1f629f8c8"
+
+[[backlog]]
+id = "B-68943ec6"
+kind = "debt"
+summary = "the full tomlctl nextest suite takes 9 to 12 minutes on this machine, against the about 10 seconds CLAUDE.md documents"
+area = "tomlctl/tests"
+tags = []
+status = "open"
+created = 2026-11-12T12:41:11Z
+last_seen = 2026-11-12T12:41:11Z
+seen_count = 1
+dedup_id = "68943ec6390c6c44"
+origin = "implement-v2"
+flow = "glimpse-v2-visibility"
+context = "Measured 2026-11-12 at the glimpse-v2-visibility milestone A gate with `cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast`: 3233 tests in 524 s and then 696 s, with eight or nine tests over 60 s, all of them every_case_honours_the_output_options cases, the plan case reaching about 320 s in the parallel run and about 60 s alone. A gate needs a timeout of 1500 s on this command; the default 540 s would cut it. The Build & test line in the root CLAUDE.md still says about 10s."
+base_sha = "b80589b3f3180ca0fa32d2a26ab42d15506229cb"
+related = ["B-edb20f98"]
+
+[[backlog]]
+id = "B-2cd62ff7"
+kind = "debt"
+summary = "Cut build and gate cost: one integration-test binary, a tomlctl/glimpse workspace, layered tomlctl crates, a per-gate stamp ledger"
+area = "tomlctl"
+tags = [
+    "build-time",
+    "workspace",
+    "gates",
+    "dx",
+]
+status = "open"
+created = 2026-11-12T12:43:53Z
+last_seen = 2026-11-12T12:43:53Z
+seen_count = 1
+dedup_id = "2cd62ff754ca603a"
+origin = "session"
+context = "Four steps, ordered by expected payoff; nothing was measured, so take a `cargo build --timings` baseline before and after each. (1) tomlctl/tests holds 98 top-level .rs files, each its own executable, so a src edit relinks the lib 98 times and each new exe is scanned by the AV. Move them under tests/it/main.rs as mod children: one link, nextest still runs a process per test, coverage unchanged. Keep tasks_corpus separate, since it is #[ignore]d and run by name. (2) Make tomlctl, glimpse and probably statusline one workspace. glimpse rebuilds all of tomlctl in its own target dir under different rustflags (tomlctl/.cargo/config.toml sets target-cpu=x86-64-v3, glimpse's does not), so nothing is shared. One target dir and one Cargo.lock also retires the hook's `--locked` glimpse lock refresh. Profiles and rustflags move to the workspace root; lumina stays separate. (3) Split tomlctl (about 127k lines) into layered crates only once the timings confirm the layering: core (io, query, items, integrity), then flow, tasks, plan, review, backlog, cli. An edit in review/ stops recompiling tasks/, parallel agents can run `cargo clippy -p <crate>` without tripping on a sibling's half-edit, and `cargo nextest run -E 'rdeps(<crate>)'` becomes a sound selection unit. (4) scripts/gate-stamp.sh hashes six roots into one digest, so a docs/plans edit voids the glimpse clippy result. Replace it with a per-gate ledger (a `tomlctl gate run <name>` verb) keyed on each gate's declared inputs plus lockfile and toolchain, letting the verification agent skip a gate whose inputs are unchanged, and holding a machine-wide lock so sessions in different repos do not run heavy gates at once. Guard rails for any selection: full suite stays unconditional at checkpoint and final gates, unknown file classes fail open to the full set, and caching keys on content hashes, never mtimes. Steps 2 to 4 need a plan; step 1 is mechanical."
+base_sha = "b80589b3f3180ca0fa32d2a26ab42d15506229cb"
+evidence = [
+    "scripts/gate-stamp.sh:18",
+    "tomlctl/.cargo/config.toml:7",
+    "glimpse/Cargo.toml:27",
+]

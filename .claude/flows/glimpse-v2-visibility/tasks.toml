@@ -166,7 +166,7 @@ check = 'grep -q "^mod probes;" tomlctl/src/plan/mod.rs'
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "b80589b3f3180ca0fa32d2a26ab42d15506229cb"
 neg_rc = 0
 verdict = "holds"
 
@@ -235,7 +235,7 @@ check = 'grep -q "fn task_json(row: &TaskRow)" tomlctl/src/tasks/snapshot.rs'
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "b80589b3f3180ca0fa32d2a26ab42d15506229cb"
 neg_rc = 0
 verdict = "holds"
 
@@ -245,7 +245,7 @@ check = 'grep -q "fn skip_reason(accept: &Accept)" tomlctl/src/plan/probes.rs'
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "b80589b3f3180ca0fa32d2a26ab42d15506229cb"
 neg_rc = 0
 verdict = "holds"
 
@@ -324,7 +324,7 @@ check = 'grep -q "running_milestone" tomlctl/src/tasks/snapshot.rs'
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "b80589b3f3180ca0fa32d2a26ab42d15506229cb"
 neg_rc = 0
 verdict = "holds"
 
@@ -392,7 +392,7 @@ check = 'grep -q "schema_version > SCHEMA_VERSION" tomlctl/src/plan/schema.rs'
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "b80589b3f3180ca0fa32d2a26ab42d15506229cb"
 neg_rc = 0
 verdict = "holds"
 
@@ -402,7 +402,7 @@ check = 'grep -q "pub(crate) runs: Vec<Run>" tomlctl/src/plan/schema.rs'
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "b80589b3f3180ca0fa32d2a26ab42d15506229cb"
 neg_rc = 0
 verdict = "holds"
 
@@ -573,7 +573,7 @@ check = 'grep -q "pub fn snapshot_if_changed" tomlctl/src/lib.rs'
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "b80589b3f3180ca0fa32d2a26ab42d15506229cb"
 neg_rc = 0
 verdict = "holds"
 
@@ -583,7 +583,7 @@ check = 'grep -q "fn locate_brief" tomlctl/src/plan/store.rs'
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "b80589b3f3180ca0fa32d2a26ab42d15506229cb"
 neg_rc = 0
 verdict = "holds"
 
@@ -665,7 +665,7 @@ check = 'grep -q "pub(crate) enum PlanRunOp" tomlctl/src/cli/types/plan.rs && gr
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "b80589b3f3180ca0fa32d2a26ab42d15506229cb"
 neg_rc = 0
 verdict = "holds"
 
@@ -675,7 +675,7 @@ check = 'grep -q "pub(crate) tasks: Vec<u32>" tomlctl/src/plan/schema.rs'
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "b80589b3f3180ca0fa32d2a26ab42d15506229cb"
 neg_rc = 0
 verdict = "holds"
 
@@ -829,6 +829,11 @@ claim = "the gate leaf is registered"
 check = 'grep -q "PlanRunOp::Gate" tomlctl/src/plan/dispatch.rs'
 at = "after:9"
 
+[specs.premises.probe]
+at = "b80589b3f3180ca0fa32d2a26ab42d15506229cb"
+neg_rc = 0
+verdict = "holds"
+
 [[specs.means]]
 text = "A row also takes `needs_person`, a bool that defaults to true, making its accepted keys `kind`, `task`, `text`, `path` and `needs_person`."
 binding = "required"
@@ -899,7 +904,7 @@ check = 'grep -q "fn tokens_in(text: &str) -> u64" tomlctl/src/agents/correlate.
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "b80589b3f3180ca0fa32d2a26ab42d15506229cb"
 neg_rc = 0
 verdict = "holds"
 
@@ -956,7 +961,7 @@ check = 'grep -q "^mod query;" tomlctl/src/review/mod.rs'
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "b80589b3f3180ca0fa32d2a26ab42d15506229cb"
 neg_rc = 0
 verdict = "holds"
 
@@ -1024,7 +1029,7 @@ check = 'grep -q "pub(crate) const FEATURES: &\[&str\]" tomlctl/src/cli/types/mo
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "b80589b3f3180ca0fa32d2a26ab42d15506229cb"
 neg_rc = 0
 verdict = "holds"
 
@@ -1071,7 +1076,7 @@ check = 'grep -q "^pub(crate) mod details;" glimpse/src/view/mod.rs'
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "b80589b3f3180ca0fa32d2a26ab42d15506229cb"
 neg_rc = 0
 verdict = "holds"
 
@@ -1081,7 +1086,7 @@ check = 'grep -q "^mod mode;" glimpse/src/source.rs && grep -q "^mod scan;" glim
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "b80589b3f3180ca0fa32d2a26ab42d15506229cb"
 neg_rc = 0
 verdict = "holds"
 
@@ -2644,6 +2649,32 @@ at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
 neg_rc = 0
 verdict = "holds"
 
+[[specs]]
+ref = "make-the-output-options-plan-case-independent-of-the-launch-args-digest-time"
+outcome = "every_case_honours_the_output_options::plan passes whenever its invocations of one case fall in different wall-clock seconds"
+constraints = [
+    "Find why the case fails before changing it: `plan emit launch-args` stamps `digest_at` with the call time, and the test compares the output of separate invocations of the same case",
+    "Keep every other assertion of the case as strict as it is; only a value that is the call time may be exempted or normalised",
+    "Change no behaviour of `plan emit launch-args`. When the fix cannot be made inside tomlctl/tests/output_options.rs, return failed with needs_files naming the file and why",
+    "Do not run the whole output_options binary or the suite; the gate runs the accept check",
+]
+premises = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "The plan case of the output-options test passes"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast -j 1 -- --exact every_case_honours_the_output_options::plan"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.means]]
+text = "Normalise the time-valued field in the harness's comparison for the cases that carry one, the way the harness treats any other volatile field if it already has such a mechanism"
+binding = "suggested"
+detail = "The three plan run leaves this milestone added lengthen the plan case, so its invocations now straddle second boundaries; the comparison, not the verb, is what assumes one clock reading"
+
 [[milestones]]
 id = "A"
 gates = [
@@ -2674,12 +2705,30 @@ gates = [
 elaboration = "upfront"
 defer_reason = ""
 
+[[changes]]
+at = 2026-11-12T12:00:50Z
+ref = "add-plan-run-report-to-store-the-needs-human-report"
+field = "files"
+old = '["tomlctl/src/plan/run_report.rs","tomlctl/src/cli/types/plan.rs","tomlctl/src/plan/dispatch.rs","tomlctl/tests/output_options.rs","tomlctl/tests/plan_run_records.rs","claude/skills/tomlctl/references/plan.md"]'
+new = '["tomlctl/src/plan/run_report.rs","tomlctl/src/cli/types/plan.rs","tomlctl/src/plan/dispatch.rs","tomlctl/tests/output_options.rs","tomlctl/tests/plan_run_records.rs","claude/skills/tomlctl/references/plan.md","claude/skills/tomlctl/references/plan-run.md","claude/skills/tomlctl/SKILL.md"]'
+actor = "orchestrator"
+reason = 'needs_files from task-10.md: "claude/skills/tomlctl/references/plan-run.md: new reference file that takes the three run-record sections out of plan.md." and "claude/skills/tomlctl/SKILL.md: the skill body has to link the new reference file. The ceiling test asks for that, and so does the routing list at the line that names plan-engine.md." plan.md stands at 617 lines against the 600-line reference ceiling; the code is finished.'
+
+[[changes]]
+at = 2026-11-12T12:21:03Z
+ref = "make-the-output-options-plan-case-independent-of-the-launch-args-digest-time"
+field = "*"
+old = ""
+new = "Make the output-options plan case independent of the launch-args digest time"
+actor = "orchestrator"
+reason = "gate A round 1: cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast fails every_case_honours_the_output_options::plan; the `plan emit launch-args --slug plan-fixture --milestone A` variants (--lines, --get '*', --header) differ from the expected output only in digest_at, 12:18:54Z and 12:18:55Z against 12:18:53Z, and the narrow rerun fails the same way"
+
 [[items]]
 id = 1
 ref = "declare-the-new-tomlctl-plan-modules"
 title = "Declare the new tomlctl plan modules"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -2699,15 +2748,15 @@ deps_note = ""
 action = "Create the six new module files, each holding only a `//!` module doc line saying what it will hold, and declare each in tomlctl/src/plan/mod.rs beside the existing private modules: `pub(crate) mod authored;`, which lib.rs calls into, and a private `mod <name>;` for the other five. Change `mod probes;` to `pub(crate) mod probes;`."
 detail = "The six modules: run_note (parses the block opening a worker's run note), note_sources (parses a research note's sources), authored (lists and reads docs/flows/<slug>/), run_notes, run_gate and run_report (the three `plan run` leaves). Later tasks fill each file and add no `mod` line. Run `rustfmt --edition 2024 --check` on each new file."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "7bae12e1ff4364748df30fb2c5f217e110ee3157"
 
 [[items]]
 id = 2
 ref = "emit-each-tasks-spec-notes-and-links-and-the-milestones-and-changes-in-the-snapshot"
 title = "Emit each task's spec, notes and links, and the milestones and changes, in the snapshot"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -2725,15 +2774,15 @@ deps_note = ""
 action = "Extend `tasks snapshot` so each task object carries `spec`, `file_notes`, `closes`, `refs` and `finding`, and the document carries top-level `milestones` and `changes`, in the shape of design/records.md, Snapshot keys."
 detail = "`task_json` in snapshot.rs takes only the row today; it needs the store to look up the row's spec, file notes and links by `ref`. `premises_json` in show.rs emits no probe: add `probe` when one is recorded, as `accept_json` does. `probeable` comes from `probes::skip_reason` (accept) and `premise_skip_reason` (premise), which you make reachable from the tasks module. The new top-level keys go after `agents`; the `plan` key is another task's. Update the key-order assertions in snapshot.rs's own tests and in tests/tasks_snapshot.rs, and add cases for a v2 store (spec with a probed accept and a probed premise, a file note, a finding link, a milestone with a gate probe, a change row) and for a v1 store, which gains only empty keys."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "7bae12e1ff4364748df30fb2c5f217e110ee3157"
 
 [[items]]
 id = 3
 ref = "emit-the-plan-store-in-the-snapshot-and-document-the-new-keys"
 title = "Emit the plan store in the snapshot and document the new keys"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -2749,15 +2798,15 @@ deps_note = ""
 action = "Add a top-level `plan` key to the snapshot, after `changes`: the parsed plan store as JSON through `convert::toml_to_json` over `plan::schema::to_toml`, or `null` when the flow has no plan.toml. Then add every key this plan added to the envelope table in tasks-store.md."
 detail = "snapshot.rs already parses the plan store to compute `running_milestone`; keep that one parse and reuse its result. Add a test with a plan.toml holding a decision and a run, and one with none. The envelope table is the one headed by the sentence 'The envelope's keys, in emission order' in tasks-store.md: add the per-task keys (`spec`, `file_notes`, `closes`, `refs`, `finding`) and the top-level `milestones`, `changes` and `plan`, each with one line saying what it holds."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "7bae12e1ff4364748df30fb2c5f217e110ee3157"
 
 [[items]]
 id = 4
 ref = "hold-attempts-gate-rounds-and-reports-in-the-plan-store"
 title = "Hold attempts, gate rounds and reports in the plan store"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -2772,15 +2821,15 @@ deps_note = ""
 action = "Add three arrays to `PlanStore`, `attempt`, `gate_round` and `report`, in the shape of design/records.md, Run records, with their `from_toml` and `to_toml` arms, and document them in plan-store.md."
 detail = "Each array is omitted from the TOML while empty, like the store's other root keys. The stamp: `to_toml` writes a schema version above the present one when, and only when, one of the three arrays is non-empty, so a binary that predates them refuses the store instead of rewriting it without them; a store holding none is stamped exactly as today. Free text is LF-normalised as the module doc says for the other records. Add round-trip unit tests beside the existing ones in schema.rs: each array alone, all three together, an emptied store returning to the old stamp, and a store stamped above what this build knows being refused. In plan-store.md add the three arrays to the sample, the key order and a key table each, and say which verb writes each."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "7bae12e1ff4364748df30fb2c5f217e110ee3157"
 
 [[items]]
 id = 5
 ref = "parse-the-block-opening-a-workers-run-note"
 title = "Parse the block opening a worker's run note"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -2792,15 +2841,15 @@ deps_note = ""
 action = "In run_note.rs, write the parser that turns a run note's text into its Status word, its one-line summary, whether its block is present, absent or malformed, and the block's files touched, deviations, tangential entries, checks and handover, by design/records.md, Run-note block."
 detail = "Expose one `pub(crate)` function taking the note text and returning a plain struct; no file or store access here. The block is the first fenced block whose info string is exactly `toml run-note`, and it must follow the Status line with only blank lines between. A note with no such block is `absent`: take its Status line and every prose line of the form `TANGENTIAL: <kind> | <area> | <summary> | <why>`, skipping `TANGENTIAL: none`. A block that fails to parse as TOML or holds a key outside the documented set is `malformed`, with a reason. A note whose first line is not a Status line returns an error value naming that. Cover each case with unit tests in the file, including CRLF line endings and a fence with trailing spaces."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "7bae12e1ff4364748df30fb2c5f217e110ee3157"
 
 [[items]]
 id = 6
 ref = "parse-a-research-notes-sources"
 title = "Parse a research note's sources"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -2812,15 +2861,15 @@ deps_note = ""
 action = "In note_sources.rs, write the parser that turns a research note's text into its list of sources, from the `toml sources` block when it has one and from `path:line` references in its prose when it has none, by design/records.md, Sources block."
 detail = '''Expose one `pub(crate)` function taking the note text and a predicate that says whether a repo-relative path exists, and returning the sources as `{path, line, claim, url, read_at, dirty, origin}`; the function itself touches no file. From a block, `read_at` is the block's and `dirty` is whether the block's `dirty` list holds the path. With no block, match `path:line` and `path:line-line` where the path has at least one `/` and an extension, normalise `\` to `/`, keep the first line of a range, drop a path the predicate rejects, and list each (path, line) once in first-seen order. A malformed block yields the inline sources and a reason. Unit-test a block with path and url sources, a note with inline references inside backticks and tables, duplicates, a Windows-style path, and a path the predicate rejects.'''
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "7bae12e1ff4364748df30fb2c5f217e110ee3157"
 
 [[items]]
 id = 7
 ref = "list-and-read-a-flows-authored-files-through-the-library"
 title = "List and read a flow's authored files through the library"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -2839,15 +2888,15 @@ deps_note = ""
 action = "Write `authored_list(root, slug)` and `authored_read(root, slug, path)` in authored.rs and expose both as `pub fn` in lib.rs, by design/records.md, Authored files."
 detail = "Both build `<root>/docs/flows/<slug>` from their `root` argument, never from the process root: `plan::store::authored_dir` joins onto the process root and cannot be used. Refuse a slug `flow::validate_slug` refuses. Canonicalise each file and leave out, or refuse on read, any whose canonical path leaves the flow's directory, as `store::locate_brief` does for the brief. Walk `brief.md`, `design/*.md`, `notes/*.md` and `notes/run/*.md` only. `headline` and `state` come from the first line by kind; a run note's come from the run-note parser and a research note's sources from the sources parser, with a predicate that checks the path exists under `root`. `sources` is `[]` for `brief`, `design`, `backlog` and `run-note` files; only `note`, `challenge` and `cold-read` files carry sources. A missing directory lists no files. `authored_read` LF-normalises the text. Like the other facade reads, call `io::silence_advisories()`. Add library_facade.rs cases over a temp root: every kind listed and sorted, a run note's `task` and `state`, sources from a block and inline, a symlink or `..` path refused where the platform allows the test, a bad slug refused, and a read of an unlisted path refused."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "7bae12e1ff4364748df30fb2c5f217e110ee3157"
 
 [[items]]
 id = 8
 ref = "add-plan-run-notes-to-record-a-runs-attempts"
 title = "Add `plan run notes` to record a run's attempts"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -2869,15 +2918,15 @@ deps_note = ""
 action = "Add the leaf verb `tomlctl plan run notes --slug <slug> --milestone <id>`: it reads the run note of every task the milestone's latest `implement:<id>` run dispatched, upserts one `[[attempt]]` per task keyed on (task, run id), and prints one row per task."
 detail = '''Register it as a `PlanRunOp` variant in cli/types/plan.rs, whose doc comment is its help, with a one-line arm in plan/dispatch.rs; the work lives in run_notes.rs. The run is the last `[[run]]` row whose step is `implement:<id>`; its `tasks` are the dispatched ids and its `run_id` keys the attempts. No such run is an error naming the milestone. Each note is `docs/flows/<slug>/notes/run/task-<n>.md`, read through the plan store's own path helpers and parsed by `run_note`. Output is a row report, one row per task: `task`, `status`, `block`, `deviations` and `tangential` (counts), `handover` (bool) and `problem`, which is empty or one line: the note is missing, the block is malformed and why, or the Status word differs from the task row's status. A missing note still records an attempt with `block = "absent"` and the row's status. Running it twice writes the same store. Honour the write verbs' shared flags as `plan run start` does. Add its case to tests/output_options.rs, tests in the new tests/plan_run_records.rs (a run with a block note, an old-style note with TANGENTIAL lines, a missing note, a status disagreement, and idempotence), and a `## \`plan run notes\`` section with its flag table and output keys in plan.md, after `plan run skip`. Fenced commands in the doc take single-token placeholders.'''
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "7bae12e1ff4364748df30fb2c5f217e110ee3157"
 
 [[items]]
 id = 9
 ref = "add-plan-run-gate-to-record-a-gate-round"
 title = "Add `plan run gate` to record a gate round"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -2896,15 +2945,15 @@ deps_note = ""
 action = "Add the leaf verb `tomlctl plan run gate --slug <slug> --milestone <id> --round <n> --ndjson <path>`: it upserts the `[[gate_round]]` for (milestone, round) from one row per command, and keeps the tail of each non-pass command's log under the flow directory."
 detail = """Register it as `plan run notes` was. A row's keys are exactly `command`, `outcome` (`pass`, `flaky`, `fail` or `timeout`), `exit`, `duration_s`, `summary`, `failed_ids` and `log`; an unknown key or outcome refuses the batch before any write, naming the line. `--ndjson` takes the forms the other batch verbs take, a `.toml` record file included. For a row whose outcome is not `pass` and whose `log` names a readable file, write its last 200 lines, cut to the last 64 KiB, to `.claude/flows/<slug>/gates/<milestone>-r<round>-s<seq>-c<n>.log`, `n` being the command's position in the run, and store that repo-relative path as `log`; an unreadable log stores `""` and is named in the output's `unread` list. A `pass` row stores `log = ""`. Without `--rerun` a call records a new run of the round; with `--rerun` it merges into the latest run, replacing the commands it names by `command` and keeping the others. The round's `outcome` is computed as design/records.md says, and `at` is the time of the call. Output: `{ok, milestone, round, outcome, commands, unread}`. Add the output_options case, tests in tests/plan_run_records.rs (a failing round with a log tail kept and cut, a pass round, a re-record that replaces one command, a refused row), and the plan.md section after `plan run notes`."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "7bae12e1ff4364748df30fb2c5f217e110ee3157"
 
 [[items]]
 id = 10
 ref = "add-plan-run-report-to-store-the-needs-human-report"
 title = "Add `plan run report` to store the needs-human report"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -2916,6 +2965,8 @@ files = [
     "tomlctl/tests/output_options.rs",
     "tomlctl/tests/plan_run_records.rs",
     "claude/skills/tomlctl/references/plan.md",
+    "claude/skills/tomlctl/references/plan-run.md",
+    "claude/skills/tomlctl/SKILL.md",
 ]
 needs = [9]
 coupling = []
@@ -2923,15 +2974,15 @@ deps_note = ""
 action = "Add the leaf verb `tomlctl plan run report --slug <slug> --milestone <id> --why <text> [--ndjson <path>]`: it appends one `[[report]]` with the entries the rows give."
 detail = "Register it as the two leaves before it. A row's keys are exactly `kind`, `task`, `text` and `path`; `kind` is one of the ten values in design/records.md, `task` defaults to 0 and `path` to empty, and `path` must be repo-relative with no `..`. An unknown key or kind refuses the batch before any write. With no `--ndjson` the report has no entries. `at` is the time of the call. Output: `{ok, milestone, entries}`, `entries` being the count. Add the output_options case, tests in tests/plan_run_records.rs (a report with entries, an empty report, two reports kept in order, a refused kind), and the plan.md section after `plan run gate`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "7bae12e1ff4364748df30fb2c5f217e110ee3157"
 
 [[items]]
 id = 11
 ref = "record-each-agents-cumulative-token-usage"
 title = "Record each agent's cumulative token usage"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -2949,15 +3000,15 @@ deps_note = ""
 action = "Add a `usage` table to the agent record, `{input, cache_write, cache_read, output, turns}`, summed over the transcript's distinct assistant messages and written when the agent stops, by design/records.md, Agent usage."
 detail = "`tokens_in` in correlate.rs reads the transcript's tail for the last assistant turn; cumulative usage needs every assistant line, so read the whole transcript on the stop path only. A message can span several transcript lines that repeat its `usage`: key on the message's id (`message.id`) and count each id once, taking the last line seen for it; a line with no id counts on its own. Map `input_tokens` to `input`, `cache_creation_input_tokens` to `cache_write`, `cache_read_input_tokens` to `cache_read` and `output_tokens` to `output`. Confirm that shape against a real transcript under the Claude config dir's projects directory before relying on it, and say in your note what you saw. Omit the table from the TOML while every field is zero; a Codex agent records none. `context_tokens` keeps its meaning and code path. The snapshot's agent objects come from `toml_to_json` over the store, so the key reaches the snapshot with no change there. Add agents_record.rs cases: a transcript with repeated lines for one message id, several messages, no usage at all, and a second stop that does not double the totals. Document the table in agents.md beside `context_tokens`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "7bae12e1ff4364748df30fb2c5f217e110ee3157"
 
 [[items]]
 id = 12
 ref = "read-one-review-finding-through-the-library"
 title = "Read one review finding through the library"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -2974,15 +3025,15 @@ deps_note = ""
 action = "Add `pub fn review_finding(root, store, id)` to lib.rs, implemented in a new tomlctl/src/review/facade.rs declared as `pub(crate) mod facade;` in review/mod.rs: it returns one finding of a v2 review store as the object `review show --for report` prints for it."
 detail = "`store` is a repo-relative path such as `.claude/flows/<slug>/review-v2.toml`; resolve it against `root`, refuse one that is absolute, contains `..` or resolves outside `<root>/.claude`, and read it without integrity checks and with advisories silenced, as the other facade reads do. Reuse the projection `review show` builds for the `report` role rather than writing a second one; add the one `pub(crate) mod facade;` line to review/mod.rs and change nothing else there. An unknown store or id is an error naming it. Add library_facade.rs cases: a finding read back with its summary and status, an unknown id, and a store path outside `.claude` refused."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "7bae12e1ff4364748df30fb2c5f217e110ee3157"
 
 [[items]]
 id = 13
 ref = "advertise-the-new-tomlctl-capabilities"
 title = "Advertise the new tomlctl capabilities"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -3003,15 +3054,15 @@ deps_note = ""
 action = "Add five names to the `FEATURES` list in cli/types/mod.rs: `snapshot_plan_records`, `plan_run_records`, `authored_files`, `agent_usage` and `review_finding_read`, and update the places pinned to that list."
 detail = "tests/capabilities.rs asserts the list; add the five names there in the same order. tomlctl/README.md holds a sample capabilities block and a feature table; add the names to both, each table row saying in one line what it enables: the snapshot's spec, milestone, change and plan keys; the `plan run notes`, `gate` and `report` leaves; `authored_list` and `authored_read`; the agent record's `usage` table; `review_finding`. Do not edit claude/commands/implement-v2.md: its pre-flight list changes in a later milestone."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "7bae12e1ff4364748df30fb2c5f217e110ee3157"
 
 [[items]]
 id = 14
 ref = "declare-the-new-glimpse-modules"
 title = "Declare the new glimpse modules"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -3040,8 +3091,8 @@ deps_note = ""
 action = "Create the twelve new module files of design/glimpse.md, Modules, each holding only a `//!` doc line saying what it will hold, and declare each where its parent declares modules."
 detail = "main.rs declares `nav`, `authored`, `plan_state` and `rollup` in its alphabetical `mod` list. view/mod.rs declares `doc`, `doc_view`, `links`, `plan`, `plan_details` and `task_spec` as `pub(crate) mod`, as it does `details`. source.rs declares `doc` beside `mod mode;` and `mod scan;`. model.rs declares `pub(crate) mod plan;`, whose file is glimpse/src/model/plan.rs. Later tasks fill each file and add no `mod` line. Run `rustfmt --edition 2024 --check` on each new file."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "7bae12e1ff4364748df30fb2c5f217e110ee3157"
 
 [[items]]
 id = 15
@@ -3623,3 +3674,23 @@ detail = "The status line near the top stops listing topic 6 as agreed and says 
 acceptance = ""
 agent = ""
 commit = ""
+
+[[items]]
+id = 38
+ref = "make-the-output-options-plan-case-independent-of-the-launch-args-digest-time"
+title = "Make the output-options plan case independent of the launch-args digest time"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/tests/output_options.rs"]
+needs = [10]
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-deep"
+commit = "7bae12e1ff4364748df30fb2c5f217e110ee3157"

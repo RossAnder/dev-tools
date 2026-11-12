@@ -571,6 +571,84 @@ finished = 2026-11-12T10:52:31Z
 skip_reason = ""
 outcome = "ok"
 
+[[run]]
+step = "implement:A"
+workflow = "implement-v2-milestone"
+args_hash = "63b00089d8d1a6f6203f88cc80e04c3261f1b0b3f50c633840fa71f6374d9358"
+run_id = "wf_9c6ab9c3-861"
+session = "4b607872-c27e-49b8-843b-44937b58e9cc"
+started = 2026-11-12T11:28:58Z
+finished = 2026-11-12T12:00:24Z
+skip_reason = ""
+outcome = "ok"
+tasks = [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+]
+digest_at = 2026-11-12T11:28:26Z
+
+[run.store_digest]
+changes = "4f53cda18c2baa0c"
+milestones = "914061d36ae0853b"
+rest = "723e79bdf8f2f111"
+rows = "cf73e29b5a16113f"
+specs = "fb7930a60a2dfc13"
+
+[[run]]
+step = "implement:A"
+workflow = "implement-v2-milestone"
+args_hash = "c354deba34d9eed7b81973ee16c38c700f0d7257b0738daf330826985add5b04"
+run_id = "wf_79075b3e-8ce"
+session = "4b607872-c27e-49b8-843b-44937b58e9cc"
+started = 2026-11-12T12:01:17Z
+finished = 2026-11-12T12:05:26Z
+skip_reason = ""
+outcome = "ok"
+tasks = [
+    10,
+    13,
+]
+digest_at = 2026-11-12T12:01:02Z
+
+[run.store_digest]
+changes = "17b1f99e41af0c6d"
+milestones = "914061d36ae0853b"
+rest = "723e79bdf8f2f111"
+rows = "4a4114edf6104aac"
+specs = "31b8e489cf1d895c"
+
+[[run]]
+step = "implement:A"
+workflow = "implement-v2-milestone"
+args_hash = "f5dae5d66ad259c1294ca3d05714dbbff73048417606f3654c1c6c59aa1daec6"
+run_id = "wf_b2c68189-276"
+session = "4b607872-c27e-49b8-843b-44937b58e9cc"
+started = 2026-11-12T12:21:26Z
+finished = 2026-11-12T12:23:31Z
+skip_reason = ""
+outcome = "ok"
+tasks = [38]
+digest_at = 2026-11-12T12:21:04Z
+
+[run.store_digest]
+changes = "365469fc7a5cc0c5"
+milestones = "914061d36ae0853b"
+rest = "723e79bdf8f2f111"
+rows = "f122a072319a7cf8"
+specs = "1adb3a6aaa655957"
+
 [[handover]]
 id = "H1"
 reason = "restart"
