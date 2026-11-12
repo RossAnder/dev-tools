@@ -1153,12 +1153,12 @@ neg_rc = 2
 verdict = "healthy"
 
 [[specs.premises]]
-claim = "the task model holds only the row fields today"
-check = 'grep -q "pub(crate) acceptance: String," glimpse/src/model.rs && ! grep -q "pub(crate) spec:" glimpse/src/model.rs'
+claim = "the task model holds the row fields"
+check = 'grep -q "pub(crate) acceptance: String," glimpse/src/model.rs'
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "ac4740d9664be2f939684f0711e4415de59c8c21"
 neg_rc = 0
 verdict = "holds"
 
@@ -1166,6 +1166,11 @@ verdict = "holds"
 claim = "the snapshot emits the plan key"
 check = 'grep -q "\"plan\"" tomlctl/src/tasks/snapshot.rs'
 at = "after:3"
+
+[specs.premises.probe]
+at = "ac4740d9664be2f939684f0711e4415de59c8c21"
+neg_rc = 0
+verdict = "holds"
 
 [[specs.means]]
 text = "The fixture's v2 example also holds a task whose status is `parked`, one open and one done handover, two reports of which the later has entries of kind `gate` with a `path` and of kind `parked` naming the parked task, an accept entry whose probe verdict is not `healthy`, and a gate probe with no verdict."
@@ -1213,7 +1218,7 @@ check = 'grep -q "Action::Page(scroll) if self.surface == Surface::Inbox" glimps
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "ac4740d9664be2f939684f0711e4415de59c8c21"
 neg_rc = 0
 verdict = "holds"
 
@@ -1282,7 +1287,7 @@ check = '! grep -q "KeyCode::Backspace" glimpse/src/keys.rs'
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "ac4740d9664be2f939684f0711e4415de59c8c21"
 neg_rc = 0
 verdict = "holds"
 
@@ -1342,6 +1347,11 @@ claim = "authored.rs is a declared, empty module"
 check = 'grep -q "^mod authored;" glimpse/src/main.rs'
 at = "after:14"
 
+[specs.premises.probe]
+at = "ac4740d9664be2f939684f0711e4415de59c8c21"
+neg_rc = 0
+verdict = "holds"
+
 [[specs]]
 ref = "feed-the-authored-files-listing-from-the-poller"
 outcome = "While glimpse shows a flow, its listing of that flow's brief, design files, notes and run notes stays current as files are written, with or without a working watch."
@@ -1395,7 +1405,7 @@ check = 'grep -q "pub(crate) enum Feed" glimpse/src/source.rs && grep -q "fn wok
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "ac4740d9664be2f939684f0711e4415de59c8c21"
 neg_rc = 0
 verdict = "holds"
 
@@ -1405,7 +1415,7 @@ check = 'grep -q "pub(super) enum WatchScope" glimpse/src/source/mode.rs'
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "ac4740d9664be2f939684f0711e4415de59c8c21"
 neg_rc = 0
 verdict = "holds"
 
@@ -1413,6 +1423,11 @@ verdict = "holds"
 claim = "the library lists authored files"
 check = 'grep -q "pub fn authored_list" tomlctl/src/lib.rs'
 at = "after:7"
+
+[specs.premises.probe]
+at = "ac4740d9664be2f939684f0711e4415de59c8c21"
+neg_rc = 0
+verdict = "holds"
 
 [[specs.means]]
 text = "`Wake::NewScope` carries a `LedgerKind` today; give the late-appearing `docs/flows` directory its own wake variant rather than widening that payload."
@@ -1528,7 +1543,7 @@ check = 'grep -q "pub(crate) struct Tracking<R>" glimpse/src/surface.rs && grep 
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "ac4740d9664be2f939684f0711e4415de59c8c21"
 neg_rc = 0
 verdict = "holds"
 
@@ -1536,6 +1551,11 @@ verdict = "holds"
 claim = "the cursor-list trait exists"
 check = 'grep -q "trait CursorList" glimpse/src/surface.rs'
 at = "after:16"
+
+[specs.premises.probe]
+at = "ac4740d9664be2f939684f0711e4415de59c8c21"
+neg_rc = 0
+verdict = "holds"
 
 [[specs.means]]
 text = "A milestone's goal is its checkpoint's `rationale`, which the model already holds; the snapshot's `milestones` entries carry no goal."
@@ -1609,7 +1629,7 @@ check = """grep -q "'1'..='6'" glimpse/src/keys.rs"""
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "ac4740d9664be2f939684f0711e4415de59c8c21"
 neg_rc = 0
 verdict = "holds"
 
@@ -1619,7 +1639,7 @@ check = 'grep -q "pub(crate) const ALL: \[Surface; 6\]" glimpse/src/surface.rs'
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "ac4740d9664be2f939684f0711e4415de59c8c21"
 neg_rc = 0
 verdict = "holds"
 
@@ -1708,7 +1728,7 @@ check = 'grep -q "fn compact_tabs" glimpse/src/view/header.rs'
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "ac4740d9664be2f939684f0711e4415de59c8c21"
 neg_rc = 0
 verdict = "holds"
 
@@ -1718,7 +1738,7 @@ check = 'grep -q "1-6" glimpse/src/view/footer.rs'
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "ac4740d9664be2f939684f0711e4415de59c8c21"
 neg_rc = 0
 verdict = "holds"
 
@@ -1779,7 +1799,7 @@ check = 'grep -q "pub(crate) fn render(frame: &mut Frame, area: Rect, app: &App,
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "ac4740d9664be2f939684f0711e4415de59c8c21"
 neg_rc = 0
 verdict = "holds"
 
@@ -1843,6 +1863,11 @@ claim = "details builders return a Doc"
 check = 'grep -q "Doc" glimpse/src/view/details.rs'
 at = "after:24"
 
+[specs.premises.probe]
+at = "ac4740d9664be2f939684f0711e4415de59c8c21"
+neg_rc = 0
+verdict = "holds"
+
 [[specs]]
 ref = "show-a-plan-rows-whole-record-in-the-details-panel"
 outcome = "Selecting any row of the Plan surface shows that record in full in the details panel, with links to everything it relates to."
@@ -1898,7 +1923,7 @@ check = 'grep -q "let (id, text) = match app.surface" glimpse/src/view/details.r
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "ac4740d9664be2f939684f0711e4415de59c8c21"
 neg_rc = 0
 verdict = "holds"
 
@@ -1906,6 +1931,11 @@ verdict = "holds"
 claim = "the task spec call is in place, so this task edits details.rs after it"
 check = 'grep -q "task_spec::" glimpse/src/view/details.rs'
 at = "after:25"
+
+[specs.premises.probe]
+at = "ac4740d9664be2f939684f0711e4415de59c8c21"
+neg_rc = 0
+verdict = "holds"
 
 [[specs.means]]
 text = "A milestone's goal is its checkpoint's `rationale`, which the model already holds."
@@ -1975,7 +2005,7 @@ check = """grep -q "assert_eq!(map(press(KeyCode::Char('b'))), None);" glimpse/s
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "ac4740d9664be2f939684f0711e4415de59c8c21"
 neg_rc = 0
 verdict = "holds"
 
@@ -2037,7 +2067,7 @@ check = 'grep -q "Tail(Option<String>)," glimpse/src/source.rs && grep -q "fn se
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "ac4740d9664be2f939684f0711e4415de59c8c21"
 neg_rc = 0
 verdict = "holds"
 
@@ -2045,6 +2075,11 @@ verdict = "holds"
 claim = "the library reads a finding"
 check = 'grep -q "pub fn review_finding" tomlctl/src/lib.rs'
 at = "after:12"
+
+[specs.premises.probe]
+at = "ac4740d9664be2f939684f0711e4415de59c8c21"
+neg_rc = 0
+verdict = "holds"
 
 [[specs.means]]
 text = "source/doc.rs defines `pub(crate) struct Fetched { title: String, text: String, notices: Vec<&'static str>, line: Option<u32>, markdown: bool }`, and the event carries the request with `Result<Fetched, String>`, the error being the one-line reason. The notices are `read uncommitted`, `commit not recorded` and `changed since`, kept out of `text`."
@@ -2069,6 +2104,7 @@ constraints = [
     "The UI thread reads no file and spawns no process.",
     "The details of every row with no document are unchanged.",
     "glimpse opens no browser.",
+    "A markdown document this task renders goes through markdown::to_text_within with the panel's inner width, so a table wraps inside the panel instead of being clipped.",
 ]
 design = [
     "design/glimpse.md#document-lane",
@@ -2115,6 +2151,11 @@ verdict = "healthy"
 claim = "the poller serves document requests"
 check = 'grep -q "DocRequest" glimpse/src/source.rs'
 at = "after:28"
+
+[specs.premises.probe]
+at = "ac4740d9664be2f939684f0711e4415de59c8c21"
+neg_rc = 0
+verdict = "holds"
 
 [[specs.means]]
 text = "Test that an answer arriving for a document that is no longer wanted is not shown."
@@ -2178,7 +2219,7 @@ check = 'grep -q "Parser::new(" glimpse/src/view/markdown.rs && ! grep -q "ENABL
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "ac4740d9664be2f939684f0711e4415de59c8c21"
 neg_rc = 0
 verdict = "holds"
 
@@ -2190,6 +2231,8 @@ constraints = [
     "No write is offered or made for these rows, and none reaches the input store.",
     "The Inbox of a flow with no plan store, and every input record's behaviour, is unchanged.",
     "A row is followed only through `App::open`.",
+    "The needs-you rows add to the Inbox tab's one count, as design/glimpse.md, Needs you, states; the tab gains no second number or new mark.",
+    "In glimpse/src/view/header.rs and glimpse/src/view/mod.rs change only the tests whose expectations the section moves and the tab-count comment.",
 ]
 design = ["design/glimpse.md#needs-you"]
 precedent = []
@@ -2234,7 +2277,7 @@ check = 'grep -q "pub(crate) struct InboxState" glimpse/src/surface.rs && grep -
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "ac4740d9664be2f939684f0711e4415de59c8c21"
 neg_rc = 0
 verdict = "holds"
 
@@ -2242,6 +2285,11 @@ verdict = "holds"
 claim = "the app holds an open document, so this task edits app.rs after it"
 check = 'grep -q "doc_view::" glimpse/src/view/details.rs'
 at = "after:29"
+
+[specs.premises.probe]
+at = "ac4740d9664be2f939684f0711e4415de59c8c21"
+neg_rc = 0
+verdict = "holds"
 
 [[specs.means]]
 text = "Hold the needs-you rows in a list of their own on `InboxState`, beside `tracking`, and join the two only in the visible order and the cursor: the cursor is one row id, and an id starting `need:` names a needs-you row."
@@ -2298,7 +2346,7 @@ check = 'grep -q "CARGO_BIN_EXE_glimpse" glimpse/tests/cli.rs'
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "ac4740d9664be2f939684f0711e4415de59c8c21"
 neg_rc = 0
 verdict = "holds"
 
@@ -2309,6 +2357,8 @@ constraints = [
     "Touch no file outside this task's files.",
     "Describe only behaviour the code has; add no history and no plan references.",
     "Keep both files' existing structure.",
+    "The README keys table lists every key the keymap in glimpse/src/keys.rs binds, Backspace (back) and `b` (the links list) among them.",
+    "The README says what following a link does: a task, note, source, commit or finding shows in the details panel, and a URL link copies the address.",
 ]
 means = []
 design = []
@@ -2345,9 +2395,9 @@ check = 'grep -q "Six surfaces" glimpse/README.md'
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
-neg_rc = 0
-verdict = "holds"
+at = "ac4740d9664be2f939684f0711e4415de59c8c21"
+neg_rc = 1
+verdict = "fails"
 
 [[specs]]
 ref = "have-workers-open-their-run-note-with-the-structured-block"
@@ -2675,6 +2725,55 @@ text = "Normalise the time-valued field in the harness's comparison for the case
 binding = "suggested"
 detail = "The three plan run leaves this milestone added lengthen the plan case, so its invocations now straddle second boundaries; the comparison, not the verb, is what assumes one clock reading"
 
+[[specs]]
+ref = "make-the-plan-indexs-attempt-lookup-and-its-fixture-test-agree"
+outcome = "model::plan::tests::records_are_found_by_task_milestone_and_ref passes, with attempts_for returning exactly the attempts the fixture records for a task"
+constraints = [
+    "Decide first which is wrong: the lookup, the test's expectation, or the fixture. The test was written without being run.",
+    "Prefer correcting the test's expectation or the lookup. Change glimpse/tests/fixtures/snapshot.json only when the fixture itself is wrong, and then change no task's status, id or title, no handover, no report entry and no count, since view, header, inbox and cli tests assert on them.",
+    "Touch no file outside this task's files.",
+]
+premises = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "The plan index test passes"
+check = "cargo test --manifest-path glimpse/Cargo.toml --bin glimpse -- model::plan::tests::records_are_found_by_task_milestone_and_ref"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.means]]
+text = "Read which task the fixture's attempts name and compare with what attempts_for matches on"
+binding = "suggested"
+detail = "The fixture carries two attempts; the assertion expects none for task 8, which the fixture parks"
+
+[[specs]]
+ref = "format-the-needs-you-assertion-in-the-view-tests"
+outcome = "cargo fmt --manifest-path glimpse/Cargo.toml -- --check reports no diff"
+constraints = [
+    'Apply only the formatting rustfmt reports: the assert_eq! on app.regions.items.len() with the message "the needs-you rows are hit targets" is broken over one argument per line.',
+    "Change no other line and no file outside this task's files. If the check reports a diff in another file, return failed with needs_files naming it.",
+]
+premises = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "The glimpse crate is formatted"
+check = "cargo fmt --manifest-path glimpse/Cargo.toml -- --check"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[[specs.means]]
+text = "Edit the one assertion by hand to the form the diff shows"
+binding = "suggested"
+detail = "Running cargo fmt without --check would rewrite any other unformatted file in the crate"
+
 [[milestones]]
 id = "A"
 gates = [
@@ -2722,6 +2821,105 @@ old = ""
 new = "Make the output-options plan case independent of the launch-args digest time"
 actor = "orchestrator"
 reason = "gate A round 1: cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast fails every_case_honours_the_output_options::plan; the `plan emit launch-args --slug plan-fixture --milestone A` variants (--lines, --get '*', --header) differ from the expected output only in digest_at, 12:18:54Z and 12:18:55Z against 12:18:53Z, and the narrow rerun fails the same way"
+
+[[changes]]
+at = 2026-11-12T13:12:27Z
+ref = "model-the-snapshots-v2-records-in-glimpse"
+field = "files"
+old = '["glimpse/src/model.rs","glimpse/src/model/plan.rs","glimpse/tests/fixtures/snapshot.json"]'
+new = '["glimpse/src/model.rs","glimpse/src/model/plan.rs","glimpse/tests/fixtures/snapshot.json","glimpse/src/view/details.rs","glimpse/src/view/ego.rs"]'
+actor = "orchestrator"
+reason = """needs_files from task-15.md: the fixture's required parked task (task 8) breaks assertions in files the task does not hold. "glimpse/src/view/details.rs, coupling_* test near line 840: it expects '○ 8 Wire the entry point'. The fix is '⊘ 8 Wire the entry point'", and a_pending_row_names_its_frontier_state_and_what_holds_it must aim at task 7; "glimpse/src/view/ego.rs, labels_chips_and_the_card_mark_a_pending_row_s_frontier_state: app_on(8) looks for '○ pending' in the Blocked style". Task 24 holds details.rs uncommitted with no path to this row, so this row now needs it."""
+
+[[changes]]
+at = 2026-11-12T13:12:27Z
+ref = "model-the-snapshots-v2-records-in-glimpse"
+field = "needs"
+old = "[3,4,11,14]"
+new = "[3,4,11,14,24]"
+actor = "orchestrator"
+reason = """needs_files from task-15.md: the fixture's required parked task (task 8) breaks assertions in files the task does not hold. "glimpse/src/view/details.rs, coupling_* test near line 840: it expects '○ 8 Wire the entry point'. The fix is '⊘ 8 Wire the entry point'", and a_pending_row_names_its_frontier_state_and_what_holds_it must aim at task 7; "glimpse/src/view/ego.rs, labels_chips_and_the_card_mark_a_pending_row_s_frontier_state: app_on(8) looks for '○ pending' in the Blocked style". Task 24 holds details.rs uncommitted with no path to this row, so this row now needs it."""
+
+[[changes]]
+at = 2026-11-12T13:12:27Z
+ref = "document-the-v2-views-in-glimpses-readme-and-claudemd"
+field = "spec.constraints"
+old = """["Touch no file outside this task's files.","Describe only behaviour the code has; add no history and no plan references.","Keep both files' existing structure."]"""
+new = """["Touch no file outside this task's files.","Describe only behaviour the code has; add no history and no plan references.","Keep both files' existing structure.","The README keys table lists every key the keymap in glimpse/src/keys.rs binds, Backspace (back) among them."]"""
+actor = "orchestrator"
+reason = "task-17.md reports the README keys table does not list Backspace (back), which task 17 added and could not document; this row holds README.md and has not been dispatched"
+
+[[changes]]
+at = 2026-11-12T13:12:27Z
+ref = "show-a-fetched-document-in-the-details-panel"
+field = "spec.constraints"
+old = """["Touch no file outside this task's files.","The UI thread reads no file and spawns no process.","The details of every row with no document are unchanged.","glimpse opens no browser."]"""
+new = """["Touch no file outside this task's files.","The UI thread reads no file and spawns no process.","The details of every row with no document are unchanged.","glimpse opens no browser.","A markdown document this task renders goes through markdown::to_text_within with the panel's inner width, so a table wraps inside the panel instead of being clipped."]"""
+actor = "orchestrator"
+reason = "task-30.md reports markdown tables are wrapped to a width only through markdown::to_text_within, which no caller uses yet; this row renders the documents where tables appear and holds the calling files"
+
+[[changes]]
+at = 2026-11-12T13:12:44Z
+ref = "model-the-snapshots-v2-records-in-glimpse"
+field = "spec.premises"
+old = '[{"claim":"the task model holds only the row fields today","check":"grep -q \"pub(crate) acceptance: String,\" glimpse/src/model.rs && ! grep -q \"pub(crate) spec:\" glimpse/src/model.rs","at":"base","probe":{"at":"ac4740d9664be2f939684f0711e4415de59c8c21","neg_rc":0,"verdict":"holds"}},{"claim":"the snapshot emits the plan key","check":"grep -q \"\\\"plan\\\"\" tomlctl/src/tasks/snapshot.rs","at":"after:3","probe":{"at":"ac4740d9664be2f939684f0711e4415de59c8c21","neg_rc":0,"verdict":"holds"}}]'
+new = '[{"claim":"the task model holds the row fields","check":"grep -q \"pub(crate) acceptance: String,\" glimpse/src/model.rs","at":"base"},{"claim":"the snapshot emits the plan key","check":"grep -q \"\\\"plan\\\"\" tomlctl/src/tasks/snapshot.rs","at":"after:3","probe":{"at":"ac4740d9664be2f939684f0711e4415de59c8c21","neg_rc":0,"verdict":"holds"}}]'
+actor = "orchestrator"
+reason = "premise 0 claimed the model holds no spec field yet; the row's own first attempt added it and its work is kept, so that half of the check can no longer hold and the task does not rest on it"
+
+[[changes]]
+at = 2026-11-12T13:19:13Z
+ref = "build-the-plan-surfaces-rows"
+field = "files"
+old = '["glimpse/src/plan_state.rs"]'
+new = '["glimpse/src/plan_state.rs","glimpse/src/surface.rs"]'
+actor = "orchestrator"
+reason = 'needs_files from task-21.md: "glimpse/src/surface.rs: the Tracking loader and cursor helpers that PlanState must call are private to the surface module." The change there is visibility only. Tasks 16, 22 and 31 hold surface.rs; each already has a dependency path to this row, so no need is added.'
+
+[[changes]]
+at = 2026-11-12T13:55:23Z
+ref = "add-the-needs-you-section-to-the-inbox"
+field = "files"
+old = '["glimpse/src/surface.rs","glimpse/src/view/inbox.rs","glimpse/src/app.rs"]'
+new = '["glimpse/src/surface.rs","glimpse/src/view/inbox.rs","glimpse/src/app.rs","glimpse/src/view/header.rs","glimpse/src/view/mod.rs"]'
+actor = "orchestrator"
+reason = """needs_files from task-31.md: "glimpse/src/view/header.rs: apply_inputs_updates_the_inbox_badge asserts Inbox 0 ... Once the tab count includes the needs-you rows (the outcome requires that), these read 3 more", and its tab_count comment needs rewording; "glimpse/src/view/mod.rs: an_item_surface_replaces_the_view_and_records_its_rows switches to the Inbox on fixture()" and asserts the empty-list message and one hit target, both of which the section changes. Tasks 22, 23 and 27 hold those files and this row already depends on each through 29. The note's open question is answered by design/glimpse.md, Needs you: "The Inbox tab's count includes them.""""
+
+[[changes]]
+at = 2026-11-12T13:55:23Z
+ref = "add-the-needs-you-section-to-the-inbox"
+field = "spec.constraints"
+old = """["Touch no file outside this task's files.","No write is offered or made for these rows, and none reaches the input store.","The Inbox of a flow with no plan store, and every input record's behaviour, is unchanged.","A row is followed only through `App::open`."]"""
+new = """["Touch no file outside this task's files.","No write is offered or made for these rows, and none reaches the input store.","The Inbox of a flow with no plan store, and every input record's behaviour, is unchanged.","A row is followed only through `App::open`.","The needs-you rows add to the Inbox tab's one count, as design/glimpse.md, Needs you, states; the tab gains no second number or new mark.","In glimpse/src/view/header.rs and glimpse/src/view/mod.rs change only the tests whose expectations the section moves and the tab-count comment."]"""
+actor = "orchestrator"
+reason = """needs_files from task-31.md: "glimpse/src/view/header.rs: apply_inputs_updates_the_inbox_badge asserts Inbox 0 ... Once the tab count includes the needs-you rows (the outcome requires that), these read 3 more", and its tab_count comment needs rewording; "glimpse/src/view/mod.rs: an_item_surface_replaces_the_view_and_records_its_rows switches to the Inbox on fixture()" and asserts the empty-list message and one hit target, both of which the section changes. Tasks 22, 23 and 27 hold those files and this row already depends on each through 29. The note's open question is answered by design/glimpse.md, Needs you: "The Inbox tab's count includes them.""""
+
+[[changes]]
+at = 2026-11-12T13:55:23Z
+ref = "document-the-v2-views-in-glimpses-readme-and-claudemd"
+field = "spec.constraints"
+old = """["Touch no file outside this task's files.","Describe only behaviour the code has; add no history and no plan references.","Keep both files' existing structure.","The README keys table lists every key the keymap in glimpse/src/keys.rs binds, Backspace (back) among them."]"""
+new = """["Touch no file outside this task's files.","Describe only behaviour the code has; add no history and no plan references.","Keep both files' existing structure.","The README keys table lists every key the keymap in glimpse/src/keys.rs binds, Backspace (back) and `b` (the links list) among them.","The README says what following a link does: a task, note, source, commit or finding shows in the details panel, and a URL link copies the address."]"""
+actor = "orchestrator"
+reason = "task-27.md and task-29.md report the README lacks the `b` links list and what Enter on a link does (a source, commit or finding shows in the details panel; a URL is copied); neither task held README.md and this row has not been dispatched"
+
+[[changes]]
+at = 2026-11-12T14:05:46Z
+ref = "make-the-plan-indexs-attempt-lookup-and-its-fixture-test-agree"
+field = "*"
+old = ""
+new = "Make the plan index's attempt lookup and its fixture test agree"
+actor = "orchestrator"
+reason = "gate B round 1: cargo test --manifest-path glimpse/Cargo.toml fails model::plan::tests::records_are_found_by_task_milestone_and_ref at src/model/plan.rs:640, assertion failed: plan.attempts_for(&snap, 8).is_empty()"
+
+[[changes]]
+at = 2026-11-12T14:05:46Z
+ref = "format-the-needs-you-assertion-in-the-view-tests"
+field = "*"
+old = ""
+new = "Format the needs-you assertion in the view tests"
+actor = "orchestrator"
+reason = 'gate B round 1: bash scripts/gate-stamp.sh run fails at cargo fmt --manifest-path glimpse/Cargo.toml -- --check, which reports a diff in glimpse/src/view/mod.rs at the assert_eq! on app.regions.items.len() with the message "the needs-you rows are hit targets"'
 
 [[items]]
 id = 1
@@ -3099,7 +3297,7 @@ id = 15
 ref = "model-the-snapshots-v2-records-in-glimpse"
 title = "Model the snapshot's v2 records in glimpse"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -3108,27 +3306,30 @@ files = [
     "glimpse/src/model.rs",
     "glimpse/src/model/plan.rs",
     "glimpse/tests/fixtures/snapshot.json",
+    "glimpse/src/view/details.rs",
+    "glimpse/src/view/ego.rs",
 ]
 needs = [
     3,
     4,
     11,
     14,
+    24,
 ]
 coupling = []
 deps_note = ""
 action = "Give glimpse's model the snapshot keys tomlctl now emits: on `Task` the `spec`, `file_notes`, `closes`, `refs` and `finding`; on `Snapshot` the `milestones`, `changes` and `plan`; on `Agent` the `usage`. Put the new types and a `PlanIndex` in model/plan.rs."
 detail = "Every new field is `#[serde(default)]`, so a snapshot from an older tomlctl still loads, as model.rs's module doc requires. `plan` is an `Option`; its types mirror the plan store's keys as plan-store.md documents them, the three run-record arrays included (`attempt`, `gate_round`, `report`). `PlanIndex` gives the lookups the views need without scanning: decisions and contracts by task id (a `binds` or `tasks` entry that is all digits names a task), handovers by source task, attempts by task, gate rounds by milestone, changes by ref, and the spec's health entries. Build it where `Index` is built. Add the new keys to tests/fixtures/snapshot.json with a small but complete v2 example (two milestones, a decision with a rejected option, a contract, a handover, runs, an attempt with a deviation, a gate round with a failing command, a report, a change, a task with a probed accept and an unprobed premise, an agent with usage), so the round-trip test still guards misspelt keys."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "e1379104558672fc25c9d2f5256a6fadfffc74ed"
 
 [[items]]
 id = 16
 ref = "give-the-list-surfaces-one-cursor-list-trait"
 title = "Give the list surfaces one cursor-list trait"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -3143,15 +3344,15 @@ deps_note = ""
 action = "Add a `CursorList` trait in surface.rs over the list operations `App::apply` uses, implement it for `ItemsState` and `InboxState`, add `App::list_mut()`, and replace each Inbox-versus-items guard pair in `App::apply` with one call through it, by design/glimpse.md, Cursor lists."
 detail = "The pairs to fold are the arms for `Page`, `ScrollView`, `SwitchSurface`'s viewed mark, `ItemMove` and `SelectItem`, plus `has_cursor_row` and the non-Tasks half of `copy_target`; sweep `App::apply` for any other arm that tests `self.surface == Surface::Inbox` and then falls back to `self.items`, and fold it the same way. `list_mut()` returns the current surface's list as `&mut dyn CursorList`, `None` on Tasks. Arms that only an item surface has (marks, menus, classify, request, queue, the sort and closed toggles where the two states differ in more than name) keep their own guard; say in your note which you left and why. The edits must go through whatever `edit_items` and `edit_inbox` do around a cursor move, so the behaviour of every existing key is unchanged; the existing tests in app.rs and surface.rs are the proof and must pass unedited."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "e1379104558672fc25c9d2f5256a6fadfffc74ed"
 
 [[items]]
 id = 17
 ref = "add-the-target-type-appopen-and-the-back-stack"
 title = "Add the Target type, App::open and the back stack"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -3167,15 +3368,15 @@ deps_note = ""
 action = "In nav.rs define `Target` and `Location` as design/glimpse.md, Target, gives them, add `App::back` and `App::open(target)`, and map `Backspace` to a new back action that pops the stack."
 detail = "This task resolves the targets whose rows exist today: `Task` (through `App::select`, so the trail rule in glimpse/CLAUDE.md holds), `Backlog` (the Backlog surface's row) and `Input` (the Inbox's row). A row hidden by a surface's filter or closed toggle is revealed before the cursor moves. Leave the other variants resolving to a footer notice that the target cannot be shown yet; later tasks fill them in nav.rs. `open` pushes the present `Location` before moving, and pushes nothing when the target resolves to nothing. The back action restores surface and cursor, does nothing on an empty stack, and the stack is cleared wherever the flow changes. `Esc`'s chain is untouched. Add tests in nav.rs or app.rs: open a task from a ledger surface and come back; open a hidden backlog row; an unknown id leaves state and stack unchanged; a flow switch empties the stack; Backspace maps to the new action and `Esc` still walks its chain."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "e1379104558672fc25c9d2f5256a6fadfffc74ed"
 
 [[items]]
 id = 18
 ref = "hold-the-authored-files-listing-in-the-app"
 title = "Hold the authored-files listing in the app"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -3190,15 +3391,15 @@ deps_note = ""
 action = "In authored.rs define the listing glimpse holds, deserialised from `tomlctl::authored_list`'s JSON (`AuthoredFile` with `path`, `kind`, `id`, `headline`, `state`, `task` and `sources`), and give `App` a field for it with an `apply_authored` method that swaps in a fresh listing."
 detail = "Every field is `#[serde(default)]`; `kind` is an enum with an unknown-value fallback, as `TaskStatus` has in model.rs. `apply_authored` takes the listing and its revision and does nothing when the revision is the one already held. Clear the listing where the flow changes. Add a lookup by path and one for a task's run note. Unit-test deserialising the shape in design/records.md, Authored files, an unknown kind, and the revision short-circuit."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "e1379104558672fc25c9d2f5256a6fadfffc74ed"
 
 [[items]]
 id = 19
 ref = "feed-the-authored-files-listing-from-the-poller"
 title = "Feed the authored-files listing from the poller"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -3219,15 +3420,15 @@ deps_note = ""
 action = "Add `Feed::Authored { slug }`, its change detector, a `WatchScope::Authored` over `<root>/docs/flows`, and the event that carries a fresh listing to `App::apply_authored`, by design/glimpse.md, Authored feed."
 detail = "The detector lives in scan.rs: on each scan, stat every `.md` file under `<root>/docs/flows/<slug>/` (the brief, `design/`, `notes/`, `notes/run/`) and call `tomlctl::authored_list` only when a stat moved, a file came or went, or a wake named the scope; glimpse/CLAUDE.md, 'The watch only wakes; the fingerprints decide', states the rule a new detector must follow. In watch.rs, add a recursive watch on `<root>/docs/flows` when it exists, classify its events into a wake for the flow whose directory changed, and ignore non-`.md` paths; when the directory appears later, add the watch the way `Wake::NewScope` adds a flow-less ledger directory, never watching a path twice. In mode.rs the new scope keeps its own miss streak. In runtime.rs, subscribe the feed for the viewed flow beside the existing feeds, resubscribe when the flow changes, and apply the event. A failed read is reported once, as the other feeds do. Add tests beside the existing poller tests: a new note is listed after a wake; an in-place edit is seen by the re-stat with no wake; an unrelated file under docs/flows wakes nothing; a missing docs/flows costs no error."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "e1379104558672fc25c9d2f5256a6fadfffc74ed"
 
 [[items]]
 id = 20
 ref = "total-time-and-tokens-by-task-milestone-and-executor"
 title = "Total time and tokens by task, milestone and executor"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -3239,20 +3440,23 @@ deps_note = ""
 action = "In rollup.rs write the pure function that totals time and tokens from a snapshot, by design/glimpse.md, Rollups, returning rows by milestone, by executor and the `other` remainder by agent type."
 detail = "Inputs are the snapshot and the present time; the function reads nothing else. Each row carries the agents counted, seconds, the four usage fields and `turns`, gate seconds for a milestone row, and whether its tokens are partial or not recorded. Parse the agents' RFC 3339 times with `hook::parse_utc`, which view/activity.rs already uses for elapsed time. Unit-test: a worker on one task; a segment naming two tasks in different milestones, split evenly; an open segment running to now; an agent with no usage making a total partial; a flow whose agents all lack usage reporting not recorded rather than zero; a non-worker agent landing in `other`; gate rounds adding gate time; and a snapshot with no agents giving no rows."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "e1379104558672fc25c9d2f5256a6fadfffc74ed"
 
 [[items]]
 id = 21
 ref = "build-the-plan-surfaces-rows"
 title = "Build the Plan surface's rows"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
 heading_depth = 3
-files = ["glimpse/src/plan_state.rs"]
+files = [
+    "glimpse/src/plan_state.rs",
+    "glimpse/src/surface.rs",
+]
 needs = [
     15,
     18,
@@ -3263,15 +3467,15 @@ deps_note = ""
 action = "In plan_state.rs define `PlanRow`, the eleven sections and `PlanState { tracking: Tracking<PlanRow>, .. }`, and the function that builds the rows from the snapshot, the authored listing and the rollups, by design/glimpse.md, Plan surface."
 detail = "A row has an id `<section>:<key>`, its section, the cells the table shows, and its `Target` where it has one (a decision, contract, handover, milestone, run, or authored file; a change, departure, cost or health row targets the task it names, or nothing). Implement `Tracked` for `PlanRow`, with the row's state as its status (a handover's done or open, a run's outcome, a health row's verdict, empty otherwise). `PlanState` keeps the cursor across a rebuild because ids are stable, exposes the visible order with its section headings, moves the cursor to the next or previous section's first row, and implements `CursorList`. The Changes section starts at the latest approval's time and is empty before any approval. The Health section follows the rule in the design exactly, using each entry's `probeable`. The surface's count is the Health rows plus open handovers. With no plan store the state holds no rows and says so. Unit-test the builder against the fixture's v2 example: every section's rows and ids, an empty section, the health rule (unprobed but not probeable is left out), changes before approval left out, cursor kept across a rebuild, and section jumps at both ends."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "e1379104558672fc25c9d2f5256a6fadfffc74ed"
 
 [[items]]
 id = 22
 ref = "wire-the-plan-surface-into-the-app"
 title = "Wire the Plan surface into the app"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -3294,15 +3498,15 @@ deps_note = ""
 action = "Add `Surface::Plan` as the seventh surface (key `7`, state name `plan`, label `Plan`), give each surface a two-letter `short` label, hold a `PlanState` on `App` rebuilt when the snapshot, the authored listing or the rollups change, route the list keys to it, and resolve the plan targets in `App::open`."
 detail = "surface.rs: the variant, its place last in `ALL`, and an arm in every exhaustive match; `ledger_kind`, `groups` and `sorts` give it none. keys.rs: the digit range `'1'..='6'` becomes `'1'..='7'`, and its tests that assert `7` maps to nothing change with it. app.rs: `list_mut()` returns the plan state on this surface; `Tab` and `Shift-Tab` move by section here and keep their meaning elsewhere; the item-only actions (marks, menus, classify, request, queue, filter prompts) do nothing here. Then sweep app.rs for every `!= Surface::Tasks`, `== Surface::Tasks` and catch-all `_ =>` arm over a surface and give Plan an explicit case where falling through would treat it as a ledger surface; `copy_target` copies the row's key, `needs_tick` needs nothing new. state.rs saves and restores `plan` as the last surface like any other. nav.rs: `Milestone`, `Decision`, `Contract`, `Handover`, `Run` and `Authored` targets switch to Plan and put the cursor on the row. Tests: `7` reaches the surface and `1` to `6` still reach theirs; cursor, page and section keys move the plan cursor; an item-only key does nothing; `--surface plan` and a saved `plan` restore it; opening a decision target lands on its row and back returns."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "e1379104558672fc25c9d2f5256a6fadfffc74ed"
 
 [[items]]
 id = 23
 ref = "draw-the-plan-surface-its-tab-and-its-key-hints"
 title = "Draw the Plan surface, its tab and its key hints"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -3321,15 +3525,15 @@ deps_note = ""
 action = "Draw the Plan surface's list in view/plan.rs through the shared table drawing, add its arm to `draw_surface`, and give the header, footer, legend and empty text an explicit case for it."
 detail = "view/plan.rs draws section headings and rows with `view/table.rs`, as view/inbox.rs does for the Inbox's sections, and returns the same `Drawn` so `draw_surface` records the row rects, scroll and page; a click selects a row. An empty section shows its heading and `none`; a flow with no plan store shows one line saying it is not a v2 flow. header.rs: the tab shows the surface's count, never an arrival flash, and the compact tabs label every surface by `Surface::short`; update the tests and doc comment that show single letters. footer.rs: on Plan list only the keys that work there (move, page, section, details, links, back, surfaces), not the item hints, and change the `1-6` hints to `1-7`. legend.rs: `1-7`, plus rows for the section keys, `b` and Backspace. items.rs: `empty_text` must not answer for Plan. Colours come only from existing theme tokens. Add view tests rendering the fixture at two widths: the sections and a row of each appear; an empty section reads `none`; the compact header shows distinct labels for Plan and Plan-review."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "e1379104558672fc25c9d2f5256a6fadfffc74ed"
 
 [[items]]
 id = 24
 ref = "make-details-builders-return-their-links"
 title = "Make details builders return their links"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -3344,15 +3548,15 @@ deps_note = ""
 action = "Define `Doc { text, links }` and `Link { label, target }` in view/doc.rs, and change the details builders in details.rs (`content` for a task, `item_content` for a ledger row) to return a `Doc`, filling `links` for the relations they already draw."
 detail = "For a task: its needs, coupled tasks, dependents and the tasks it shares files with, each a `Target::Task`, labelled by id and title. For a ledger row: the pending input records drawn under Inputs, each a `Target::Input`. `render` keeps drawing the text exactly as today and additionally hands the links to the app, so the links of the record whose details are showing are available to the links list; add the smallest accessor that does that, a pure function from `&App` to the current `Doc`'s links, in details.rs. Existing details tests keep passing unedited apart from the builder's return type; add tests that a task's links name its needs and dependents in the order the text shows them, and that a row with none has an empty list."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "e1379104558672fc25c9d2f5256a6fadfffc74ed"
 
 [[items]]
 id = 25
 ref = "show-a-v2-tasks-spec-changes-attempts-and-links-in-its-details"
 title = "Show a v2 task's spec, changes, attempts and links in its details"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -3371,15 +3575,15 @@ deps_note = ""
 action = "In view/task_spec.rs build the sections a task with a `spec` gains, by design/glimpse.md, Task details, and call it from the task builder in details.rs after the action and detail."
 detail = "The sections, in order: Outcome, Constraints, Means, Executor, Design, Precedent, Accept, Premises, Changes, Attempts, Links. An accept entry shows its behaviour, check, kind, owner and one of its probe verdict, `unprobed` (probeable, none recorded) or `not probed` (not probeable); a premise shows claim, check, when and verdict the same way. File notes are drawn beside the files they annotate in the existing Files section. The builder also returns links: the milestone, each binding decision and contract, each design entry (an `Authored` target for the file before the `#`), each precedent (a `Source` target with no line), the run note when the authored listing has one, the commit when stamped, the finding or backlog rows, and each attempt's proposed handover. A task with no `spec` gets nothing from this module and draws exactly as today. Bodies that are prose go through the existing markdown and indent helpers. Colours come only from existing theme tokens. Add tests over the fixture: each section appears with its content; an unprobed and a not-probeable check read differently; the links are in section order; a v1 task's details are byte for byte what they were."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "e1379104558672fc25c9d2f5256a6fadfffc74ed"
 
 [[items]]
 id = 26
 ref = "show-a-plan-rows-whole-record-in-the-details-panel"
 title = "Show a Plan row's whole record in the details panel"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -3397,15 +3601,15 @@ deps_note = ""
 action = "In view/plan_details.rs build the details `Doc` for each kind of Plan row, by design/glimpse.md, Plan row details and Links, and give `details::render` an arm that shows it on the Plan surface."
 detail = "One builder per row kind: decision, contract, handover, milestone (with every gate round and each command's outcome, duration, summary, failed ids and kept log path), run, change, departure, cost row and health row. An authored-file row's details are the fetched document, which another task draws; here it shows the file's kind, headline and source count, and its links are its sources (`Source` targets, or `Url`), plus its task for a run note. Each builder fills `links` by the table in the design: a decision's bound tasks and paths and the notes its evidence names as `notes/<id>.md`; a contract's tasks; a handover's source task; a milestone's tasks and kept logs; a run's dispatched tasks; a change's or departure's task. With no cursor row the panel reads as the other surfaces do when nothing is selected. Add tests over the fixture for each kind's text and links, including a milestone with a failed gate round and a decision whose evidence names a note."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "e1379104558672fc25c9d2f5256a6fadfffc74ed"
 
 [[items]]
 id = 27
 ref = "add-the-links-list"
 title = "Add the links list"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -3426,15 +3630,15 @@ deps_note = ""
 action = "Add the links list of design/glimpse.md, Links: `b` opens a modal list of the links of the record whose details are showing, the cursor keys move it, `Enter` or a click on a row opens that link through `App::open`, and `Esc` closes it."
 detail = "Model it on the existing overlays: app.rs holds its state (the links and a cursor) the way it holds the selector's, and while it is up it takes every key. It works on every surface, Tasks included. With no links `b` opens nothing and the footer says so. Opening a link closes the list first, so the back stack holds the place the user was. view/links.rs draws it with the shared panel and row helpers and records row rects for the mouse; view/mod.rs draws it above the body like the other modals; footer.rs shows its keys while it is up and adds `b` to the hints of surfaces whose details can have links. Tests: `b` on a task with needs lists them; Enter opens the first and Backspace returns to the task with the list closed; `b` with no links says so; Esc closes without moving; a click on a row opens it; on the Plan surface a decision's links open its bound task."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "e1379104558672fc25c9d2f5256a6fadfffc74ed"
 
 [[items]]
 id = 28
 ref = "fetch-documents-on-the-poller-thread"
 title = "Fetch documents on the poller thread"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -3453,15 +3657,15 @@ deps_note = ""
 action = "Add the document lane of design/glimpse.md, Document lane: a `DocRequest` the runtime sends the poller, read on the poller thread in source/doc.rs, answered with an event carrying the document or a one-line reason."
 detail = "source.rs gains a `Control` variant carrying `Option<DocRequest>` and an `Event` variant carrying the request and its result, beside `Control::Tail` and `Event::Tail`; runtime.rs gains a `Host` method to send it, as `set_tail` is sent, and applies the event to the app through a method the next task defines the state for: for now, hold the latest document on the screen state the way the tail view is held. source/doc.rs does the reads: `Authored` through `tomlctl::authored_read`; `Finding` through `tomlctl::review_finding`, rendered as `key: value` lines; `Commit` through `git show --stat --format=fuller <sha>`; `Source` by the rule in the design, comparing the shown text with the working tree's to set `changed since`. Run git as flows.rs already does, with the repo root as its working directory and arguments passed as separate values, never through a shell. Pass a sha only when it is 7 to 64 hex digits and a path only after it resolves inside the repo root; refuse a file over 2 MiB or not UTF-8. A new request replaces the old one and a stale answer is dropped. Tests in source/doc.rs over a temp git repo: a clean source at an older commit shows the old text and `changed since`; a dirty one shows the working tree and `read uncommitted`; no `read_at` shows `commit not recorded`; a path outside the root, a non-hex sha and an oversized file are each a one-line reason; a commit shows its stat."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "e1379104558672fc25c9d2f5256a6fadfffc74ed"
 
 [[items]]
 id = 29
 ref = "show-a-fetched-document-in-the-details-panel"
 title = "Show a fetched document in the details panel"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -3483,15 +3687,15 @@ deps_note = ""
 action = "Make `App::open` ask for a document when a target has no row (`Source`, `Commit`, `Finding`) and when the cursor rests on an authored-file row, hold the open document on `App`, and draw it in the details panel in place of the row's details."
 detail = "app.rs holds the open document's target, its state (loading, text or reason) and its scroll; nav.rs sets it from `open` and includes it in `Location`, so Backspace leaves a document and returns to what was under it. runtime.rs sends the request whenever the wanted document differs from the one last sent, as `follow_tail` does for the transcript, and clears it when none is wanted; move the document the previous task held on the screen state onto `App`. An authored-file row on the Plan surface wants its file while it is the cursor row and details are open. view/doc_view.rs draws the document: the title names the target and any notice (`read uncommitted`, `commit not recorded`, `changed since`); a `Source` starts scrolled so its line is in view and marks that line; an authored file is rendered through the markdown renderer, everything else as plain text; loading and a failure each show one line. The document's links are its sources (authored file), the tasks stamped with it (commit) or the task that fixes it (finding), so `b` works on a document too. `Url` copies the address through the existing copy path and says so in the footer. Opening the details panel is implied by opening a document. Tests: opening a source target requests it and shows loading, then its text at the line; Backspace returns to the note; an authored row's details show its rendered text; a failure shows its reason; a commit document links to its tasks."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "e1379104558672fc25c9d2f5256a6fadfffc74ed"
 
 [[items]]
 id = 30
 ref = "render-markdown-tables"
 title = "Render markdown tables"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -3503,15 +3707,15 @@ deps_note = ""
 action = "Make the markdown renderer handle tables: parse with tables enabled and draw a header row, a rule and body rows, with columns sized to their content and cells wrapped when the table is wider than the panel."
 detail = "The renderer builds its parser with `Parser::new`; tables need pulldown-cmark's table option through `Parser::new_ext`. Check the crate's `Options` at the version in glimpse/Cargo.toml before relying on the flag's name. The renderer's entry point has no width today; where a width is needed, take it as a parameter with a default the existing callers keep, so their output is unchanged for text without tables. Inline code, emphasis and links inside a cell keep their styles. Tests: a simple table; a table wider than the width, which wraps inside cells rather than overflowing; inline code in a cell; a document with no table rendering exactly as before."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "e1379104558672fc25c9d2f5256a6fadfffc74ed"
 
 [[items]]
 id = 31
 ref = "add-the-needs-you-section-to-the-inbox"
 title = "Add the needs-you section to the Inbox"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -3520,6 +3724,8 @@ files = [
     "glimpse/src/surface.rs",
     "glimpse/src/view/inbox.rs",
     "glimpse/src/app.rs",
+    "glimpse/src/view/header.rs",
+    "glimpse/src/view/mod.rs",
 ]
 needs = [29]
 coupling = []
@@ -3527,15 +3733,15 @@ deps_note = ""
 action = "Give the Inbox a first section, `needs you`, for the viewed flow: each parked task, each open handover and each entry of the plan store's latest report whose kind is not `parked` or `handover`, by design/glimpse.md, Needs you."
 detail = "The rows are read-only and built from the snapshot whenever it changes; they are not input records and never reach the input store. Give each a stable id (`need:task:<id>`, `need:handover:<id>`, `need:report:<n>`) so the cursor survives a refresh, and a `Target`: the task, the handover, or for a report entry its `path` as a `Source` when non-empty, else its `task` when non-zero; an entry with neither opens nothing and the footer says so. `Enter` on one opens its target through `App::open`. The answer, acknowledge, handle, withdraw and request actions skip these rows: with the cursor on one they do nothing and the footer says the row is read-only, and a marked set never includes one. The Inbox tab's count includes them; they do not flash as arrivals when the snapshot merely refreshes. The section is drawn first, with its heading, and is omitted when it has no rows or the flow has no plan store. Tests: a fixture with a parked task, an open and a done handover and a report yields the right rows in order; Enter opens the task and Backspace returns to the Inbox row; a write action on a row does nothing; the count includes them; a flow with no plan store shows the Inbox exactly as before."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "e1379104558672fc25c9d2f5256a6fadfffc74ed"
 
 [[items]]
 id = 32
 ref = "cover-the-v2-views-with-a-headless-render-test"
 title = "Cover the v2 views with a headless render test"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -3552,15 +3758,15 @@ deps_note = ""
 action = "Add cases to glimpse/tests/cli.rs that render the fixture headlessly with `--once --snapshot glimpse/tests/fixtures/snapshot.json` and assert what a user sees on the Plan surface, in a v2 task's details and in the Inbox's needs-you section."
 detail = "Use the file's existing helpers and sandbox; every case stays inside it, as glimpse/CLAUDE.md requires. Cases: `--surface plan --size 140x60` prints the section headings Decisions, Milestones, Notes and Health and the fixture decision's id; the same at `--size 80x30` still prints the tab's short label; the Tasks surface with details open on the fixture's v2 task prints `Outcome` and `Premises`, if `--once` has a way to open details from the command line, and otherwise assert this in the nearest existing way and say so in your note; `--surface inbox` prints `needs you` when the fixture holds a parked task. Assert on plain substrings of the rendered frame."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "e1379104558672fc25c9d2f5256a6fadfffc74ed"
 
 [[items]]
 id = 33
 ref = "document-the-v2-views-in-glimpses-readme-and-claudemd"
 title = "Document the v2 views in glimpse's README and CLAUDE.md"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -3575,8 +3781,8 @@ deps_note = ""
 action = "Update glimpse/README.md and glimpse/CLAUDE.md for what this milestone added: the Plan surface and its sections, v2 task details, the links list and back key, the document view, the needs-you section, the authored feed and the document lane."
 detail = "README.md: the Surfaces section's 'Six surfaces, switched with `1`–`6`' becomes seven and `1`–`7`, and the keys table's `1`–`6` row gains Plan; describe the Plan surface and its sections in one line each; add `7`, `b`, Backspace and the Plan surface's `Tab` and `Shift-Tab` to the keys table; add a short section on following links and reading documents, and one line that the Inbox opens with what waits on the user; add the authored-files feed and the document lane to the data-flow description. CLAUDE.md: add the new files to the Structure paragraph in the place their kind belongs; state in the write model that the Plan surface, the links list and the needs-you rows write nothing; add to the gotchas that the document lane runs git and file reads on the poller thread with hex-checked shas and root-contained paths, and that `docs/flows` is a watch scope with its own miss streak whose files are re-statted on every scan. Follow the files' existing style, and state what the code does, not how it came to be."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "e1379104558672fc25c9d2f5256a6fadfffc74ed"
 
 [[items]]
 id = 34
@@ -3694,3 +3900,46 @@ detail = ""
 acceptance = ""
 agent = "plan-worker-deep"
 commit = "7bae12e1ff4364748df30fb2c5f217e110ee3157"
+
+[[items]]
+id = 39
+ref = "make-the-plan-indexs-attempt-lookup-and-its-fixture-test-agree"
+title = "Make the plan index's attempt lookup and its fixture test agree"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "glimpse/src/model/plan.rs",
+    "glimpse/tests/fixtures/snapshot.json",
+]
+needs = [15]
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-deep"
+commit = "e1379104558672fc25c9d2f5256a6fadfffc74ed"
+
+[[items]]
+id = 40
+ref = "format-the-needs-you-assertion-in-the-view-tests"
+title = "Format the needs-you assertion in the view tests"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["glimpse/src/view/mod.rs"]
+needs = [31]
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "e1379104558672fc25c9d2f5256a6fadfffc74ed"

@@ -12695,3 +12695,255 @@ evidence = [
     "tomlctl/.cargo/config.toml:7",
     "glimpse/Cargo.toml:27",
 ]
+
+[[backlog]]
+id = "B-0ee4f204"
+kind = "direction"
+summary = "implement-v2 picks milestones in store order, so a deferred or unfinished milestone holds independent later milestones"
+area = "claude/skills/implement-v2-engine"
+tags = [
+    "implement-v2",
+    "milestones",
+    "elaboration",
+    "concurrency",
+]
+status = "open"
+created = 2026-11-12T13:20:22Z
+last_seen = 2026-11-12T13:20:22Z
+seen_count = 1
+dedup_id = "0ee4f2043f631199"
+origin = "conversation"
+context = """
+Seen 2026-11-12 on the reportdesignkit repo's `package-design-tools` flow. Its real shape is A -> {B, C} -> D: every C row needs only A rows or other C rows, C's files (apps/server, apps/demo, docs) are disjoint from B's (packages/shell-react, the test budget, one ADR, the a11y ledger), and `tomlctl tasks ready` listed C's first row beside B's. The stores hold it as the line A, B, C, D, so the whole flow waited while B was elaborated. run-milestone.md step 2 picks the first checkpoint in store order with a row not done, refuses `--milestone` while an earlier checkpoint is unfinished, and stops on a deferred milestone. Proposed: a milestone is runnable when it is not deferred and every `needs` of its rows outside it is done and committed; a deferred one is skipped and reported while another is runnable, and the engine stops only when none is. This differs from B-1fa8d53f, which was answered at plan time by how milestones are cut: elaboration writes no code, so the gate-tests-a-mixed-tree cost named there does not arise for the wait itself, though it does for two code milestones run out of order. Needs the pre-flight scoping in the related row to be usable. WHEN PICKED UP: first analyse the completed `package-design-tools` flow in the reportdesignkit repo (its tasks.toml `[[changes]]` trail, plan.toml `[[runs]]`, run notes and commit times) to measure how long B's and D's elaboration held runnable work, and whether anything in the run contradicts this proposal.
+
+MEASURED 2026-11-12, same flow, from the orchestrating session (times local, UTC+2; plan.toml `[[run]]` rows hold the UTC originals). Milestone A committed at 14:53 (dbbfb4bd). From then C's 12 rows (17 to 28) were all pending with no need outside A or C. B's elaboration ran 14:53 to 15:17 (design file, five decisions, six rows, one 4-minute cold read, commit 08f7671c): 24 minutes with no worker running. B's three implement runs then took 15:18 to 16:03, 45 minutes, and after the first 7-minute round B was a single chain (29 -> 31 -> 32), so rounds two and three ran one worker at a time in a pool of four. C was therefore held about 70 minutes before B's gate had even started, with three of four pool slots idle for about 38 of them. The user noticed it from the glimpse DAG view while one agent worked task 32 and asked why the C section was on hold. Nothing in the run contradicts the proposal: no C row gained a need on a B row during B's elaboration or its replans, and B's replans widened only B's own files."""
+base_sha = "ac4740d9664be2f939684f0711e4415de59c8c21"
+evidence = [
+    "claude/skills/implement-v2-engine/references/run-milestone.md:58",
+    "claude/skills/implement-v2-engine/SKILL.md:38",
+]
+related = [
+    "B-1fa8d53f",
+    "B-c2d75b04",
+    "B-4222c464",
+    "B-a505bedd",
+]
+
+[[backlog]]
+id = "B-c2d75b04"
+kind = "direction"
+summary = "implement-v2 pre-flight checks the whole flow, so a milestone being elaborated blocks milestones that are ready to run"
+area = "claude/skills/implement-v2-engine"
+tags = [
+    "implement-v2",
+    "pre-flight",
+    "elaboration",
+    "concurrency",
+]
+status = "open"
+created = 2026-11-12T13:20:22Z
+last_seen = 2026-11-12T13:20:22Z
+seen_count = 1
+dedup_id = "c2d75b04646bf250"
+origin = "conversation"
+context = "Seen 2026-11-12 on the reportdesignkit repo's `package-design-tools` flow: with milestone B's cold read open, `tomlctl plan stage` listed `open run: step cold-read` under `blockers`, and the engine's open-run rule says how to settle only `implement:<id>` and `reproduce:<id>` runs, so what a planning run does to an implement invocation is unspecified. `plan stage`, `plan check` and `tasks check` in pre-flight are all flow-wide, so half-written rows of one milestone stop every other. For a second attended /plan-v2 session to elaborate one milestone while /implement-v2 runs another: scope the pre-flight checks to the picked milestone, treat a planning run on a different milestone as not blocking, and keep a milestone `deferred` until its cold read passes. On that flow B read `elaborated` while its cold read was still open, and the flow-store commit after another milestone's gate would commit those unproved rows as runnable. WHEN PICKED UP: first analyse the completed `package-design-tools` flow in the reportdesignkit repo (stores, `[[changes]]` trail, `[[runs]]`, run notes) for what the elaboration sessions actually wrote and when, and which pre-flight checks would have tripped mid-elaboration."
+base_sha = "ac4740d9664be2f939684f0711e4415de59c8c21"
+evidence = [
+    "claude/skills/implement-v2-engine/references/run-milestone.md:17",
+    "claude/skills/implement-v2-engine/SKILL.md:89",
+]
+related = [
+    "B-1fa8d53f",
+    "B-0ee4f204",
+]
+
+[[backlog]]
+id = "B-4222c464"
+kind = "direction"
+summary = "Deferred-milestone elaboration has no owned procedure and could run as a task in the implement-v2 pool"
+area = "claude/skills/implement-v2-engine"
+tags = [
+    "implement-v2",
+    "elaboration",
+    "settle",
+    "concurrency",
+]
+status = "open"
+created = 2026-11-12T13:20:22Z
+last_seen = 2026-11-12T13:20:22Z
+seen_count = 1
+dedup_id = "4222c464d15a324f"
+origin = "conversation"
+context = """
+run-milestone.md says elaborating a deferred milestone is out of the engine's slice, and plan-v2's Prove step only says a deferred milestone is read when it is elaborated; no skill owns the steps between. On the reportdesignkit repo's `package-design-tools` flow (seen 2026-11-12) it was done by hand in a planning session while nothing else ran. Proposed, after apply-v2's settle milestone: an elaboration row whose `needs` are the tasks it waits on and whose only file is a proposal note, dispatched in the rolling pool beside other milestones' workers; at the drain the orchestrator asks the design questions in one gate, mints the rows and runs the cold read. One session, no second lane, but a real engine slice: an executor kind, a drain branch and a mint step. The smaller alternative is the two related rows (pick by dependencies, milestone-scoped pre-flight) plus a second attended session. WHEN PICKED UP: first analyse the completed `package-design-tools` flow in the reportdesignkit repo: how B's and D's elaboration split between agent work (investigation, design note, cold read) and user decisions (B took decisions D29 to D33), since that split decides whether a pool task with one question gate fits.
+
+MEASURED 2026-11-12 for milestone B's elaboration, from the session that did it (24 minutes, 14:53 to 15:17 local). The split: reading milestone A's output and the flow's notes was agent work and took most of the time; the user's part was ONE AskUserQuestion call of three questions (colour entry, page layout, what Save does), giving D29 to D31, with D32 and D33 agent-assumed; then a design file, two added rows and four updated ones, premises, probes, and a 4-minute cold read that returned 7 points (4 false premises, 3 unactionable), all fixed by row updates without a second cold read. So a pool task ending in one question gate fits this case. Two things an owned procedure would have caught that the hand-run one did not: (1) the engine has no step for elaboration on a `running` flow, so the session improvised from write-and-prove.md's first-Write rules, and `tasks update` rows needed `action` and `detail` under `set`, found only at the refusal; (2) a planned file pair `ColourField.tsx` beside `colourField.ts` broke the target repo's case-collision boundary rules and was found only when a worker's `bun run boundaries` went red, costing one failed round, since neither `plan check` nor the cold read looks at a project's own path rules."""
+base_sha = "ac4740d9664be2f939684f0711e4415de59c8c21"
+evidence = [
+    "claude/skills/implement-v2-engine/references/run-milestone.md:67",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md:243",
+]
+related = [
+    "B-1fa8d53f",
+    "B-0ee4f204",
+]
+
+[[backlog]]
+id = "B-a505bedd"
+kind = "direction"
+summary = "plan-v2 orders checkpoints by narrative, placing a deferred milestone ahead of upfront milestones that do not depend on it"
+area = "claude/skills/plan-v2-engine"
+tags = [
+    "plan-v2",
+    "milestones",
+    "elaboration",
+]
+status = "open"
+created = 2026-11-12T13:20:22Z
+last_seen = 2026-11-12T13:20:22Z
+seen_count = 1
+dedup_id = "a505bedd639d484b"
+origin = "conversation"
+context = "Seen 2026-11-12 on the reportdesignkit repo's `package-design-tools` flow: checkpoints were stored A, B, C, D with B deferred, though C needed nothing from B. Because implement-v2 runs checkpoints in store order, A, C, B, D would have let C run before B's elaboration was needed. write-and-prove.md says when to defer but nothing about where a deferred milestone sits. Proposed: at Write, place a milestone after every milestone it does not depend on that is further along in elaboration, or have `plan check` warn when a deferred milestone precedes an independent non-deferred one. This removes the idle wait without an engine change but not the serial order; overlap still needs the related implement-v2 rows. WHEN PICKED UP: first analyse the completed `package-design-tools` flow in the reportdesignkit repo to confirm C was runnable at approval (it too carried a defer reason before it was elaborated) and whether reordering alone would have helped."
+base_sha = "ac4740d9664be2f939684f0711e4415de59c8c21"
+evidence = ["claude/skills/plan-v2-engine/references/write-and-prove.md:57"]
+related = [
+    "B-1fa8d53f",
+    "B-0ee4f204",
+]
+
+[[backlog]]
+id = "B-bdb7be38"
+kind = "debt"
+summary = "stale allow(dead_code) attributes remain on glimpse items the links list and document view now use outside tests"
+area = "glimpse/src"
+tags = []
+status = "open"
+created = 2026-11-12T14:04:20Z
+last_seen = 2026-11-12T14:04:20Z
+seen_count = 1
+dedup_id = "bdb7be3826ceea5f"
+origin = "implement-v2"
+flow = "glimpse-v2-visibility"
+context = "Reported by the workers that wired the links list and the document view: the cfg_attr(not(test), allow(dead_code)) attributes on nav.rs's Target and App::open, view/doc.rs's Link, view/details.rs's links, source/doc.rs's DocRequest and Fetched, and source.rs's Control::Doc and set_doc were added while those items had no caller outside tests. Remove each one whose item clippy no longer reports as dead; a stale one would hide a later dead-code regression."
+base_sha = "ac4740d9664be2f939684f0711e4415de59c8c21"
+related = ["B-af2c5b24"]
+
+[[backlog]]
+id = "B-de64a07d"
+kind = "debt"
+summary = "the duration and token-count formatters are duplicated across glimpse's details, activity, plan_state and plan_details modules"
+area = "glimpse/src/view"
+tags = []
+status = "open"
+created = 2026-11-12T14:04:20Z
+last_seen = 2026-11-12T14:04:20Z
+seen_count = 1
+dedup_id = "de64a07df0ed0011"
+origin = "implement-v2"
+flow = "glimpse-v2-visibility"
+context = "Two workers reported it independently: view/details.rs and view/activity.rs each held a private copy, and plan_state.rs and view/plan_details.rs added their own because neither task held the others' files. One shared formatter would keep the panels' time and token text from drifting."
+base_sha = "ac4740d9664be2f939684f0711e4415de59c8c21"
+related = ["B-5c5da7b8"]
+
+[[backlog]]
+id = "B-60dc32ae"
+kind = "debt"
+summary = "PlanIndex::health has no caller and disagrees with the health rule the Plan surface uses"
+area = "glimpse/src/model/plan.rs"
+tags = []
+status = "open"
+created = 2026-11-12T14:04:20Z
+last_seen = 2026-11-12T14:04:20Z
+seen_count = 1
+dedup_id = "60dc32aee6784ec5"
+origin = "implement-v2"
+flow = "glimpse-v2-visibility"
+context = "PlanIndex::health leaves out an entry that is not probeable even when it has a recorded bad verdict; plan_state.rs builds the Plan surface's Health section with its own rule, which includes it as the design does. PlanIndex::health warns dead_code in the bin. Either delete it or make it the one rule and have plan_state call it."
+base_sha = "ac4740d9664be2f939684f0711e4415de59c8c21"
+related = ["B-4aecefff"]
+
+[[backlog]]
+id = "B-159fd5c8"
+kind = "annoyance"
+summary = "a v2 flow opens with its Brief and Notes rows flashing because the authored listing arrives after the first plan state build"
+area = "glimpse/src/plan_state.rs"
+tags = []
+status = "open"
+created = 2026-11-12T14:04:20Z
+last_seen = 2026-11-12T14:04:20Z
+seen_count = 1
+dedup_id = "159fd5c81514ebcc"
+origin = "implement-v2"
+flow = "glimpse-v2-visibility"
+context = "The plan state is first built from the snapshot alone, so when the authored listing arrives every Brief and Notes row counts as an arrival: it flashes and, off screen, raises new_since_view. Treating the first listing of a flow as a baseline rather than as arrivals would stop it."
+base_sha = "ac4740d9664be2f939684f0711e4415de59c8c21"
+related = ["B-6dfe12d1"]
+
+[[backlog]]
+id = "B-04032f96"
+kind = "debt"
+summary = "markdown_stats walks the whole docs/flows/<slug> tree on every scan, including subdirectories tomlctl does not list"
+area = "glimpse/src/source/scan.rs"
+tags = []
+status = "open"
+created = 2026-11-12T14:04:20Z
+last_seen = 2026-11-12T14:04:20Z
+seen_count = 1
+dedup_id = "04032f9668590878"
+origin = "implement-v2"
+flow = "glimpse-v2-visibility"
+context = "Cheap at about 70 files, but the cost grows with any non-note subtree a flow adds. Limiting the walk to the directories authored_list reads would bound it."
+base_sha = "ac4740d9664be2f939684f0711e4415de59c8c21"
+related = ["B-09b72bac"]
+
+[[backlog]]
+id = "B-3ca258b3"
+kind = "annoyance"
+summary = "the Inbox footer offers enter details on a needs-you row, where Enter opens the row's record"
+area = "glimpse/src/view/footer.rs"
+tags = []
+status = "open"
+created = 2026-11-12T14:04:20Z
+last_seen = 2026-11-12T14:04:20Z
+seen_count = 1
+dedup_id = "3ca258b3311f66e9"
+origin = "implement-v2"
+flow = "glimpse-v2-visibility"
+context = "The needs-you rows follow their target through App::open on Enter, but inbox_hints still prints the input records' hint. It could read enter open when the Inbox cursor is on a needs-you row."
+base_sha = "ac4740d9664be2f939684f0711e4415de59c8c21"
+related = ["B-d3bec364"]
+
+[[backlog]]
+id = "B-9ee2f020"
+kind = "debt"
+summary = "the legend's Inbox line does not mention the needs-you section or its parked glyph"
+area = "glimpse/src/view/legend.rs"
+tags = []
+status = "open"
+created = 2026-11-12T14:04:20Z
+last_seen = 2026-11-12T14:04:20Z
+seen_count = 1
+dedup_id = "9ee2f0205ab6cfb3"
+origin = "implement-v2"
+flow = "glimpse-v2-visibility"
+context = "The legend lists only the input statuses for the Inbox, so a reader cannot tell what its first section is. The KEYS block is at the 32-row cap its test enforces, so adding a line means merging or raising the cap."
+base_sha = "ac4740d9664be2f939684f0711e4415de59c8c21"
+related = ["B-20481746"]
+
+[[backlog]]
+id = "B-54a6997f"
+kind = "annoyance"
+summary = "glimpse --once cannot open the details panel, so v2 task details are not testable at binary level"
+area = "glimpse/src/runtime.rs"
+tags = []
+status = "open"
+created = 2026-11-12T14:04:20Z
+last_seen = 2026-11-12T14:04:20Z
+seen_count = 1
+dedup_id = "54a6997fb97d974a"
+origin = "implement-v2"
+flow = "glimpse-v2-visibility"
+context = "The headless cases in glimpse/tests/cli.rs can only assert that --select renders and that the fixture carries the spec keys; the Outcome and Premises sections of the details panel are covered by unit tests alone. A --details flag for --once would close the gap."
+base_sha = "ac4740d9664be2f939684f0711e4415de59c8c21"
+related = ["B-7a9a7f13"]
