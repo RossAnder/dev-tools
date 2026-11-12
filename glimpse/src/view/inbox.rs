@@ -1,4 +1,5 @@
-//! The Inbox surface: user input records and agent questions awaiting an answer.
+//! The Inbox surface: what the viewed flow waits on the user for, then user input
+//! records and agent questions awaiting an answer.
 //!
 //! A facet row counts the unanswered questions above the list, and a header row of
 //! column titles sits under it. A question row reads
@@ -20,7 +21,7 @@ use super::{Place, place, text_width, truncate};
 use crate::app::App;
 use crate::ledger::{InputRow, Seen};
 use crate::model::TaskStatus;
-use crate::surface::{HeaderKey, InboxColumn, InboxState, VisibleRow};
+use crate::surface::{HeaderKey, InboxColumn, InboxState, NeedRow, VisibleRow};
 use crate::theme::Theme;
 
 /// Draws the Inbox into `area` of `buf`; a `Frame` caller passes `frame.buffer_mut()`.
@@ -106,8 +107,16 @@ fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> Drawn {
                 app.theme.group_header,
             )))),
             VisibleRow::Item(id) => {
-                let row = state.row(id)?;
                 let is_cursor = state.cursor.as_deref() == Some(id.as_str());
+                if let Some(need) = state.need(id) {
+                    return Some(Row {
+                        line: need_line(app, need, &columns, width, is_cursor),
+                        fill: is_cursor.then_some(app.theme.selection),
+                        overlay: None,
+                        target: Some(id.clone()),
+                    });
+                }
+                let row = state.row(id)?;
                 let line = if row.is_unanswered_question() {
                     question_line(app, state, row, &columns, width, is_cursor)
                 } else {
@@ -186,6 +195,13 @@ impl Columns {
             status: 0,
             author: 0,
         };
+        for need in visible.iter().filter_map(|entry| match entry {
+            VisibleRow::Item(id) => state.need(id),
+            VisibleRow::Header { .. } => None,
+        }) {
+            columns.id = columns.id.max(text_width(&need.key));
+            columns.kind = columns.kind.max(text_width(&need.kind));
+        }
         for row in visible.iter().filter_map(|entry| match entry {
             VisibleRow::Item(id) => state.row(id),
             VisibleRow::Header { .. } => None,
@@ -329,6 +345,46 @@ fn record_line(
         note,
         is_cursor,
     )
+}
+
+/// `▸  ⊘ 8  parked   Wire the entry point`: a parked task takes its status glyph, and
+/// any other row the unknown-status dot. Its status cell stays blank, so its text starts
+/// in the records' text column.
+fn need_line(
+    app: &App,
+    need: &NeedRow,
+    columns: &Columns,
+    width: usize,
+    is_cursor: bool,
+) -> Line<'static> {
+    let theme = &app.theme;
+    let (glyph, style) = if need.kind == "parked" {
+        (TaskStatus::Parked.glyph(), theme.status("parked"))
+    } else {
+        ("·", theme.question)
+    };
+    let mut left = lead(
+        theme,
+        Span::styled(glyph, style),
+        &need.key,
+        columns.id,
+        is_cursor,
+    );
+    left.push(Span::styled(
+        format!(" {:<w$}", need.kind, w = columns.kind),
+        style,
+    ));
+    if columns.status > 0 {
+        left.push(Span::raw(format!(" {:<w$}", "", w = columns.status)));
+    }
+    left.push(Span::raw(" "));
+    let room = width.saturating_sub(spans_width(&left) + 1);
+    let text = truncate(&one_line(&need.text), room);
+    let used = text_width(&text);
+    left.push(Span::raw(text));
+    left.push(Span::raw(" ".repeat(room.saturating_sub(used))));
+    left.push(Span::raw(" "));
+    Line::from(left)
 }
 
 /// Appends the body and its trailer in the room `left` leaves, then the saving mark.
@@ -490,8 +546,15 @@ mod tests {
         }
     }
 
+    /// An app on the Inbox over `rows`, for a flow with no plan store and so no
+    /// needs-you section.
     fn inbox_app(rows: Vec<InputRow>) -> App {
-        let mut app = App::new(fixture(), &Config::default());
+        let mut snap = fixture();
+        snap.plan = None;
+        inbox_over(App::new(snap, &Config::default()), rows)
+    }
+
+    fn inbox_over(mut app: App, rows: Vec<InputRow>) -> App {
         app.apply(Action::SwitchSurface(Surface::Inbox));
         let inputs = Inputs {
             path: ".claude/inputs.toml".to_string(),
@@ -578,6 +641,48 @@ mod tests {
             "{line:?}"
         );
         assert!(row_of(&rows, "I1").1.trim_end().ends_with('↻'));
+    }
+
+    #[test]
+    fn the_needs_you_section_is_drawn_first() {
+        let question = InputRow {
+            prompt: "Which fix should land?".to_string(),
+            ..record("I4", "question", "review", "new")
+        };
+        let app = inbox_over(App::new(fixture(), &Config::default()), vec![question]);
+        let (rows, targets) = draw(&app, 100, 12);
+        let (heading, _) = row_of(&rows, "▾ needs you (3)");
+        let (parked, line) = row_of(&rows, "Wire the entry point");
+        assert!(
+            line.starts_with("▸  ⊘ 8"),
+            "the cursor starts here: {line:?}"
+        );
+        assert!(line.contains("parked"), "{line:?}");
+        let (handover, line) = row_of(&rows, "Restart the running app.");
+        assert!(line.contains("· H1 handover"), "{line:?}");
+        let (gate, line) = row_of(&rows, "milestone B failed");
+        assert!(line.contains(" gate"), "{line:?}");
+        let (questions, _) = row_of(&rows, "▾ questions (1)");
+        assert!(
+            heading < parked && parked < handover && handover < gate && gate < questions,
+            "{rows:#?}"
+        );
+        let ids: Vec<&str> = targets.iter().map(|(_, id)| id.as_str()).collect();
+        assert_eq!(
+            ids,
+            ["need:task:8", "need:handover:H1", "need:report:0", "I4"]
+        );
+        assert!(!rows.join("\n").contains("reconcile"), "it only informs");
+    }
+
+    #[test]
+    fn a_flow_without_a_plan_store_shows_the_inbox_as_before() {
+        let app = inbox_app(vec![record("I1", "note", "user", "new")]);
+        let (rows, targets) = draw(&app, 60, 5);
+        assert!(!rows.join("\n").contains("needs you"));
+        assert!(rows[2].contains("▾ new (1)"), "{rows:#?}");
+        let ids: Vec<&str> = targets.iter().map(|(_, id)| id.as_str()).collect();
+        assert_eq!(ids, ["I1"]);
     }
 
     #[test]

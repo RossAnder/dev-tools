@@ -1,8 +1,9 @@
-//! Filesystem watch over `.claude`, used only as a wake-up signal for the poller.
+//! Filesystem watch over `.claude` and `docs/flows`, used only as a wake-up signal for the
+//! poller.
 //!
-//! One watcher holds several scopes: `.claude/flows` recursively, `.claude` itself and each
-//! existing flow-less ledger directory non-recursively. Each path is watched once, since a
-//! second `watch` on one path leaks a handle and doubles events on Windows.
+//! One watcher holds several scopes: `.claude/flows` and `docs/flows` recursively, `.claude`
+//! itself and each existing flow-less ledger directory non-recursively. Each path is watched
+//! once, since a second `watch` on one path leaks a handle and doubles events on Windows.
 //!
 //! The watcher never decides what changed: it maps each raw event to a [`Wake`] naming how
 //! much cached state the poller should evict, and the poller's own fingerprinting stays the
@@ -33,6 +34,8 @@ pub(crate) enum Wake {
     Scope(LedgerKind),
     /// The flow-less ledger directory of a kind appeared and needs a watch of its own.
     NewScope(LedgerKind),
+    /// A markdown file under `docs/flows/<slug>/` changed, or a directory there came or went.
+    Authored { slug: String },
     /// Something unplaceable changed: evict everything, keep the watcher.
     All,
     /// The watch itself is suspect: evict everything and re-create the watcher.
@@ -78,18 +81,29 @@ fn scope_named(name: &str) -> Option<LedgerKind> {
 pub(crate) struct Roots {
     claude: PathBuf,
     flows: PathBuf,
+    /// `docs/flows` beside `.claude`, derived from the canonical `.claude` rather than
+    /// canonicalised itself, so it names one path whether or not it exists yet.
+    authored: PathBuf,
 }
 
 impl Roots {
     pub(crate) fn new(claude_dir: &Path) -> Roots {
+        let claude = canonical(claude_dir);
+        let repo = claude.parent().unwrap_or(&claude);
         Roots {
-            claude: canonical(claude_dir),
+            authored: repo.join("docs").join("flows"),
             flows: canonical(&claude_dir.join("flows")),
+            claude,
         }
     }
 
     pub(crate) fn scope_dir(&self, kind: LedgerKind) -> PathBuf {
         self.claude.join(kind.scope_dir())
+    }
+
+    /// The `docs/flows` directory, watched and matched at exactly this path.
+    pub(crate) fn authored(&self) -> &Path {
+        &self.authored
     }
 }
 
@@ -163,12 +177,15 @@ fn merge(a: Wake, b: Wake) -> Wake {
 
 /// The wake one event path calls for, by the allowlist.
 fn place(path: &Path, motion: Motion, roots: &Roots) -> Option<Wake> {
-    if path == roots.flows || path == roots.claude {
+    if path == roots.flows || path == roots.claude || path == roots.authored {
         return (motion == Motion::Depart).then_some(Wake::Rewatch);
     }
     let name = path.file_name()?.to_str()?;
     if name.ends_with(".sha256") || name.starts_with(".tmp") {
         return None;
+    }
+    if let Ok(rel) = path.strip_prefix(&roots.authored) {
+        return authored_wake(rel, name, motion);
     }
     if let Ok(rel) = path.strip_prefix(&roots.flows) {
         let mut parts = rel.components();
@@ -209,6 +226,32 @@ fn place(path: &Path, motion: Motion, roots: &Roots) -> Option<Wake> {
         }
         _ => None,
     }
+}
+
+/// The wake for `rel`, a path under `docs/flows` whose last component is `name`: a `.md` file
+/// inside a flow's directory, or an extensionless entry (a directory) arriving or departing,
+/// since a moved directory reports only itself. Any other file wakes nothing.
+fn authored_wake(rel: &Path, name: &str, motion: Motion) -> Option<Wake> {
+    let mut parts = rel.components();
+    let Component::Normal(slug) = parts.next()? else {
+        return None;
+    };
+    let slug = slug.to_str()?.to_owned();
+    let inside = parts.next().is_some();
+    let wakes = match Path::new(name).extension() {
+        Some(ext) => ext == "md" && inside,
+        None => motion != Motion::Change,
+    };
+    wakes.then_some(Wake::Authored { slug })
+}
+
+/// Watches `dir` recursively unless it is missing: `Ok(false)` then, as for [`add_scope`].
+pub(crate) fn add_tree(watcher: &mut RecommendedWatcher, dir: &Path) -> notify::Result<bool> {
+    if !dir.is_dir() {
+        return Ok(false);
+    }
+    watcher.watch(dir, RecursiveMode::Recursive)?;
+    Ok(true)
 }
 
 /// Watches `dir` non-recursively unless it is missing: `Ok(false)` then, not an error, since
@@ -276,7 +319,63 @@ mod tests {
         Roots {
             claude: claude(),
             flows: root(),
+            authored: docs(),
         }
+    }
+
+    fn docs() -> PathBuf {
+        PathBuf::from("/repo/docs/flows")
+    }
+
+    fn authored(slug: &str) -> Option<Wake> {
+        Some(Wake::Authored { slug: slug.into() })
+    }
+
+    #[test]
+    fn a_note_under_docs_flows_wakes_its_flow_and_other_files_wake_nothing() {
+        let note = docs().join("a").join("notes").join("run").join("task-1.md");
+        assert_eq!(classify(&event(write(), note), &roots()), authored("a"));
+        let to = EventKind::Modify(ModifyKind::Name(RenameMode::To));
+        assert_eq!(
+            classify(&event(to, docs().join("a").join("brief.md")), &roots()),
+            authored("a"),
+            "the rename that lands a save"
+        );
+        for path in [
+            docs().join("a").join("notes").join("scratch.txt"),
+            docs().join("a").join("brief.md.tmp"),
+            docs().join("README.md"),
+            PathBuf::from("/repo/docs/other.md"),
+        ] {
+            assert_eq!(
+                classify(&event(write(), path.clone()), &roots()),
+                None,
+                "{path:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_directory_under_docs_flows_wakes_only_when_it_moves() {
+        let notes = docs().join("a").join("notes");
+        let created = EventKind::Create(CreateKind::Folder);
+        assert_eq!(
+            classify(&event(created, notes.clone()), &roots()),
+            authored("a")
+        );
+        let removed = EventKind::Remove(RemoveKind::Folder);
+        assert_eq!(
+            classify(&event(removed, docs().join("a")), &roots()),
+            authored("a")
+        );
+        let any = EventKind::Modify(ModifyKind::Any);
+        assert_eq!(classify(&event(any, notes), &roots()), None);
+        let removed = EventKind::Remove(RemoveKind::Folder);
+        assert_eq!(
+            classify(&event(removed, docs()), &roots()),
+            Some(Wake::Rewatch),
+            "its watch is gone"
+        );
     }
 
     fn event(kind: EventKind, path: PathBuf) -> notify::Result<Event> {
@@ -570,6 +669,29 @@ mod tests {
         fs::write(reviews.join("main.toml"), "x = 1\n").unwrap();
         let scope = Wake::Scope(LedgerKind::Review);
         expect_wake(&rx, &scope, "a scope write");
+
+        drop(watcher);
+        let _ = fs::remove_dir_all(claude.parent().unwrap());
+    }
+
+    #[test]
+    fn live_note_writes_under_an_added_docs_tree_wake_their_flow() {
+        let claude = scratch("authored");
+        let (tx, rx) = mpsc::channel();
+        let (mut watcher, _) = start(&claude, move |wake| {
+            let _ = tx.send(wake);
+        })
+        .unwrap();
+        let docs = Roots::new(&claude).authored().to_path_buf();
+        assert!(!add_tree(&mut watcher, &docs).unwrap(), "missing");
+
+        let notes = docs.join("a").join("notes");
+        fs::create_dir_all(&notes).unwrap();
+        assert!(add_tree(&mut watcher, &docs).unwrap());
+        drain_until_quiet(&rx);
+        fs::write(notes.join("lens.md"), "# Lens\n").unwrap();
+        let wake = Wake::Authored { slug: "a".into() };
+        expect_wake(&rx, &wake, "a note write");
 
         drop(watcher);
         let _ = fs::remove_dir_all(claude.parent().unwrap());

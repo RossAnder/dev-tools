@@ -86,7 +86,7 @@ whose `tasks.toml` changed most recently and keeps following whichever flow
 changes next. Exit status is 0 on success, 1 on a runtime failure and 2 on a usage
 error; `hook` always exits 0, logging even a usage error. `--harness` is
 `claude-code` (the default) or `codex`. `--surface` is `tasks`, `review`,
-`optimise`, `plan-review`, `backlog` or `inbox`, the surface to open on; without
+`optimise`, `plan-review`, `backlog`, `inbox` or `plan`, the surface to open on; without
 it glimpse opens on the one it was left on. `--theme` is `kanso-zen`,
 `kanso-pearl`, `eggshell`, `ansi` or `mono`, the colour set to start in (see [Theme](#theme)).
 
@@ -101,12 +101,12 @@ is a runtime error.
 
 ## Surfaces
 
-Six surfaces, switched with `1`–`6`: **Tasks** (the task graph, in the views
-below), **Review**, **Optimise**, **Plan-review**, **Backlog** and **Inbox**. The
-four item surfaces list the viewed flow's `review-ledger.toml`,
+Seven surfaces, switched with `1`–`7`: **Tasks** (the task graph, in the views
+below), **Review**, **Optimise**, **Plan-review**, **Backlog**, **Inbox** and
+**Plan**. The four item surfaces list the viewed flow's `review-ledger.toml`,
 `optimise-findings.toml` and `plan-review-findings.toml`, and the repo's
 `.claude/backlog.toml`, and follow them live. Inbox lists `.claude/inputs.toml`
-(see [Inbox](#inbox)).
+(see [Inbox](#inbox)). Plan lists a v2 flow's records (see [Plan](#plan)).
 
 The header's second row holds the surface tabs, the current one flooded in the
 accent colour: ` Tasks   Review 12 +3   Optimise 4   Plan-review   Backlog 6   Inbox 2?`.
@@ -217,8 +217,11 @@ its triage status, `tier` and `focus` are left to agents.
 
 ## Inbox
 
-The Inbox lists `.claude/inputs.toml`, under a facet row such as
-`2 unanswered · closed hidden`. Questions awaiting your answer come first, under
+The Inbox opens with what waits on you, under `▾ needs you (n)`: the viewed v2
+flow's parked tasks, its open handovers, and the entries of its latest report that
+need a person. `Enter` on one opens the record it names; these rows are read-only
+and take no write. The Inbox then lists `.claude/inputs.toml`, under a facet row such as
+`2 unanswered · closed hidden`. Questions awaiting your answer come next, under
 `▾ questions (n)`, each marked `?` with its author, target, prompt and options.
 The other records follow grouped by status: `●` new, `◐` acknowledged, `✓`
 handled (with the handling agent's note after `→`) and `✗` withdrawn. `c` shows or
@@ -232,6 +235,38 @@ record under the cursor, after a confirmation, when it is your own and still
 `new`. The store's schema, lifecycle and which carrier consumes which record are
 the [`flow-contract-user-inputs`](../claude/skills/flow-contract-user-inputs/SKILL.md)
 skill's.
+
+## Plan
+
+The Plan surface lists a v2 flow's records, read-only, in eleven sections, each
+drawn as `▾ decisions (2)` and then its rows, or `none`:
+
+- **brief**: the plan's brief.
+- **decisions**: the decisions, with their reversibility and who made them.
+- **contracts**: the contracts tasks are bound by.
+- **handovers**: the steps left to a person, open ones first.
+- **milestones**: each milestone and where its tasks stand.
+- **timeline**: the run's recorded runs and gate rounds.
+- **notes**: the flow's authored files, with each research note's source references.
+- **changes**: the change trail of the plan's records.
+- **departures**: where the run departed from the plan.
+- **cost**: time and tokens by milestone and executor, from the agents' records.
+- **health**: the plan's probe and gate checks.
+
+`Tab` and `Shift+Tab` move the cursor between sections here, not between views.
+`Enter` opens a row's details, which show the whole record. A flow with no plan store
+shows one line saying so. A v2 task's details on the Tasks surface also show its
+spec, change trail and attempts.
+
+### Following links and reading documents
+
+Details list the records they relate to as links. `b` opens the links list; `j`/`k`
+or a click choose a row and `Enter` follows it. Following a task, note, source,
+commit or finding shows it in the details panel, a source with its cited line
+marked and a note or other authored file as rendered markdown; a URL link copies the
+address. `Backspace` returns to where the last followed link left, and `Esc` closes
+the document. A cited source is shown as its author saw it, from the commit the note
+recorded, or from the working tree when none was recorded, and the panel says which.
 
 ## Views and keys
 
@@ -362,7 +397,10 @@ The legend's `Keys` section lists the same keys.
 | `v` | release the mouse to select text, or take it back |
 | `T` | theme picker: `j`/`k` preview, `Enter` keeps, `Esc` reverts |
 | `?` | legend: every mark, colour and key, in the current theme |
-| `1`–`6` | switch surface: Tasks, Review, Optimise, Plan-review, Backlog, Inbox |
+| `1`–`7` | switch surface: Tasks, Review, Optimise, Plan-review, Backlog, Inbox, Plan |
+| `Tab` / `Shift+Tab` | Plan: next / previous section |
+| `b` | open or close the links list of the record shown in details |
+| `Backspace` | back to where the last followed link left |
 | `Space` | item surfaces: mark the cursor row and move to the next |
 | `V` | item surfaces: mark every visible row |
 | `g` | item surfaces: cycle the grouping |
@@ -594,7 +632,10 @@ glimpse form ─► writer thread ─► tomlctl ledger facade (CAS-guarded) ─
   compares the `(mtime, length)` of the viewed flow's four files and builds a
   snapshot in-process only when one moved, so in-place edits are seen as well as
   tomlctl's renames. The shown ledgers, the backlog and the input store are feeds
-  fingerprinted the same way, each re-read only when its own file moved. A safety
+  fingerprinted the same way, each re-read only when its own file moved. The viewed
+  flow's authored files under `docs/flows/<slug>/` are a feed too, watched
+  recursively and re-statted on every scan, since an in-place save moves no
+  directory mtime. A safety
   pass runs every 10 s regardless. If the watch cannot be set up, glimpse polls
   every `poll_ms` and keeps trying to watch, backing off from `poll_ms` to once a
   minute; if two passes find a change in one watched scope that its watch never
@@ -607,6 +648,10 @@ glimpse form ─► writer thread ─► tomlctl ledger facade (CAS-guarded) ─
   safety pass. On Windows the watch library's backend thread still wakes about ten
   times a second, and it drops a failed watch without reporting it, so there the
   safety pass is the only thing that notices a dead watch.
+- **Document lane.** A followed note, cited source, commit or v2 review finding is read
+  on demand by the poller thread, one request at a time, newest wins. It reads files and
+  runs `git show` from the repo root, and only for a hex sha and a repo-relative path;
+  a file over 2 MiB is refused with a reason. Nothing is written.
 - **Writer.** Every write runs on one serial writer thread, in the order you made
   them, because a call into tomlctl's ledger facade can wait up to 30 s for the
   ledger lock. The facade writes through tomlctl's locked mutation path, which

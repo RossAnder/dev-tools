@@ -98,7 +98,37 @@
       "detail": "",
       "acceptance": "`cargo test theme::` passes.",
       "agent": "",
-      "commit": ""
+      "commit": "",
+      "spec": {
+        "outcome": "Each status draws in its theme colour.",
+        "constraints": ["Colours come only from theme tokens."],
+        "means": [],
+        "executor": "lite",
+        "design": [],
+        "precedent": ["src/render.rs"],
+        "accept": [
+          {
+            "behaviour": "the theme tests pass",
+            "check": "cargo test theme::",
+            "kind": "forward",
+            "positive": "",
+            "writes_build": true,
+            "run_by": "covered",
+            "covered_by": "cargo test",
+            "owner": "covered",
+            "probeable": false
+          }
+        ],
+        "premises": []
+      },
+      "file_notes": { "src/theme.rs": "new tokens only" },
+      "closes": [],
+      "refs": [],
+      "finding": {
+        "store": ".claude/flows/demo-flow/review-v2.toml",
+        "fixes": ["F3"],
+        "settles": []
+      }
     },
     {
       "id": 6,
@@ -116,7 +146,64 @@
       "detail": "",
       "acceptance": "`cargo test keys::` passes.",
       "agent": "",
-      "commit": ""
+      "commit": "",
+      "spec": {
+        "outcome": "Every key event maps to one action.",
+        "constraints": ["Release events are dropped."],
+        "means": [
+          {
+            "text": "Map through one match in keys.rs",
+            "binding": "suggested",
+            "detail": "The config names the keys."
+          }
+        ],
+        "executor": "deep",
+        "design": ["design/keys.md#bindings"],
+        "precedent": [],
+        "accept": [
+          {
+            "behaviour": "the key map exists",
+            "check": "grep -q \"fn map\" src/keys.rs",
+            "kind": "forward",
+            "positive": "",
+            "writes_build": false,
+            "run_by": "worker",
+            "covered_by": "",
+            "owner": "worker",
+            "probeable": true,
+            "probe": { "at": "c3d4e5f", "neg_rc": 1, "pos_rc": null, "verdict": "healthy" }
+          },
+          {
+            "behaviour": "the key names come from the config",
+            "check": "grep -q \"config\" src/keys.rs",
+            "kind": "forward",
+            "positive": "test -f src/config.rs",
+            "writes_build": false,
+            "run_by": "",
+            "covered_by": "",
+            "owner": "worker",
+            "probeable": true,
+            "probe": { "at": "c3d4e5f", "neg_rc": 0, "pos_rc": 0, "verdict": "vacuous" }
+          }
+        ],
+        "premises": [
+          {
+            "claim": "the config parser exists",
+            "check": "test -f src/config.rs",
+            "at": "base",
+            "probeable": true
+          },
+          {
+            "claim": "the renderer draws rows",
+            "check": "grep -q \"fn render\" src/render.rs",
+            "at": "after:4",
+            "probeable": false
+          }
+        ]
+      },
+      "file_notes": {},
+      "closes": [],
+      "refs": ["B-1a2b3c4d"]
     },
     {
       "id": 7,
@@ -141,7 +228,7 @@
       "ref": "wire-the-entry-point",
       "title": "Wire the entry point",
       "effort": "M",
-      "status": "pending",
+      "status": "parked",
       "checkpoint": "B",
       "phase": "Phase C — wiring",
       "files": ["src/main.rs"],
@@ -151,15 +238,46 @@
       "action": "Parse the CLI and run the loop.",
       "detail": "",
       "acceptance": "`cargo run -- --once` prints a frame.",
-      "agent": "",
-      "commit": ""
+      "agent": "plan-worker-deep",
+      "commit": "",
+      "spec": {
+        "outcome": "The binary draws one frame and exits under --once.",
+        "constraints": [],
+        "means": [
+          {
+            "text": "Parse the arguments by hand",
+            "binding": "required",
+            "detail": "Start-up cost matters."
+          }
+        ],
+        "executor": "deep",
+        "design": [],
+        "precedent": [],
+        "accept": [
+          {
+            "behaviour": "one frame is printed",
+            "check": "cargo run -- --once",
+            "kind": "forward",
+            "positive": "",
+            "writes_build": true,
+            "run_by": "gate",
+            "covered_by": "",
+            "owner": "gate",
+            "probeable": false
+          }
+        ],
+        "premises": []
+      },
+      "file_notes": { "src/main.rs": "wiring only" },
+      "closes": ["B-5e6f7081"],
+      "refs": []
     }
   ],
   "layers": [[1, 2, 3], [4, 5, 6], [7, 8]],
   "frontier": {
     "ready": [6],
     "held": [{ "id": 5, "blocked_on_file": "src/render.rs", "holder": 4 }],
-    "next": [7, 8],
+    "next": [7],
     "blocked": []
   },
   "edges": [
@@ -311,6 +429,13 @@
       "transcript_path": "C:/Users/dev/.claude/projects/demo/c3349435-2f1e-4b8a-9d61-0a7e5c4b3f21/subagents/agent-a0b1c2d3e4f5a6b7c.jsonl",
       "summary": "Applied the schema and config tasks; both checks clean.",
       "context_tokens": 61872,
+      "usage": {
+        "input": 1820,
+        "cache_write": 40211,
+        "cache_read": 913004,
+        "output": 15233,
+        "turns": 41
+      },
       "segments": [
         { "task_ids": [2], "started_at": "2026-09-27T09:12:04Z", "ended_at": "2026-09-27T09:30:51Z" },
         { "task_ids": [3], "started_at": "2026-09-28T10:02:19Z", "ended_at": "2026-09-28T10:41:37Z" }
@@ -336,5 +461,308 @@
         { "task_ids": [4], "started_at": "2026-09-28T11:04:22Z", "ended_at": "" }
       ]
     }
-  ]
+  ],
+  "milestones": [
+    {
+      "id": "A",
+      "gates": ["cargo test"],
+      "elaboration": "upfront",
+      "defer_reason": "",
+      "gate_probes": [
+        { "gate": "cargo test", "probe": "cargo --version", "verdict": "holds", "at": "a1b2c3d" }
+      ]
+    },
+    {
+      "id": "B",
+      "gates": ["cargo test", "cargo clippy"],
+      "elaboration": "elaborated",
+      "defer_reason": "",
+      "gate_probes": [
+        { "gate": "cargo clippy", "probe": "cargo clippy --version", "verdict": "", "at": "" }
+      ]
+    }
+  ],
+  "changes": [
+    {
+      "at": "2026-09-28T09:15:00Z",
+      "ref": "bind-the-keys",
+      "field": "detail",
+      "old": "",
+      "new": "Read the key names from the config.",
+      "actor": "plan-update",
+      "reason": "the config task settled the names"
+    },
+    {
+      "at": "",
+      "ref": "wire-the-entry-point",
+      "field": "files",
+      "old": "src/lib.rs",
+      "new": "src/main.rs",
+      "actor": "drain",
+      "reason": "the entry point is the binary"
+    }
+  ],
+  "plan": {
+    "schema_version": 3,
+    "last_updated": "2026-09-28",
+    "binding": { "branch": "main", "scope": ["src/**"] },
+    "id_high_water": { "C": 1, "D": 1, "H": 2 },
+    "decision": [
+      {
+        "id": "D1",
+        "decision": "Read the key names from the config.",
+        "why": "Users rebind keys without a rebuild.",
+        "provenance": "agent-assumed",
+        "door": "two-way",
+        "binds": ["6", "src/render.rs"],
+        "rejected": [
+          { "option": "Hard-code the key names", "because": "a rebind would need a rebuild" }
+        ],
+        "evidence": "Read src/config.rs.",
+        "if_false": "keys.rs owns the names.",
+        "revisit_if": "",
+        "check": "",
+        "surfaced": false,
+        "vetoed": false
+      }
+    ],
+    "contract": [
+      {
+        "id": "C1",
+        "kind": "interface",
+        "claim": "The config exposes the key names the key map reads.",
+        "check": "grep -q \"keys\" src/config.rs",
+        "tasks": [3, 6],
+        "provides": "config",
+        "consumes": "key map"
+      }
+    ],
+    "approval": [
+      {
+        "commit": "0f1e2d3",
+        "at": "2026-09-27T08:00:00Z",
+        "brief_sha256": "9a8b7c6d5e4f30211203f4e5d6c7b8a9",
+        "by": "user",
+        "review": "ran",
+        "reason": ""
+      }
+    ],
+    "run": [
+      {
+        "step": "investigate",
+        "workflow": "plan-v2-investigate",
+        "args_hash": "5d41402abc4b2a76",
+        "run_id": "wf_1",
+        "session": "c3349435-2f1e-4b8a-9d61-0a7e5c4b3f21",
+        "started": "2026-09-26T15:00:00Z",
+        "finished": "2026-09-26T15:20:00Z",
+        "skip_reason": "",
+        "outcome": "ok",
+        "tasks": []
+      },
+      {
+        "step": "implement:A",
+        "workflow": "implement-v2-milestone",
+        "args_hash": "7d793037a0760186",
+        "run_id": "wf_2",
+        "session": "c3349435-2f1e-4b8a-9d61-0a7e5c4b3f21",
+        "started": "2026-09-27T09:10:00Z",
+        "finished": "2026-09-28T10:45:00Z",
+        "skip_reason": "",
+        "outcome": "ok",
+        "tasks": [1, 2, 3],
+        "store_digest": { "rows": "1111222233334444", "specs": "5555666677778888" },
+        "digest_at": "2026-09-27T09:09:58Z"
+      },
+      {
+        "step": "implement:B",
+        "workflow": "implement-v2-milestone",
+        "args_hash": "aa11bb22cc33dd44",
+        "run_id": "wf_3",
+        "session": "c3349435-2f1e-4b8a-9d61-0a7e5c4b3f21",
+        "started": "2026-09-28T11:00:00Z",
+        "finished": "2026-09-28T11:58:00Z",
+        "skip_reason": "",
+        "outcome": "stopped",
+        "reason": "",
+        "tasks": [4, 8]
+      }
+    ],
+    "handover": [
+      {
+        "id": "H1",
+        "reason": "restart",
+        "action": "Restart the running app.",
+        "when": "After the milestone A commit.",
+        "done_when": "The new config keys take effect.",
+        "source_task": 3,
+        "done": false
+      },
+      {
+        "id": "H2",
+        "reason": "permissions",
+        "action": "Grant write access to the store directory.",
+        "when": "Before the first run.",
+        "done_when": "The loader writes without an error.",
+        "source_task": 2,
+        "done": true
+      }
+    ],
+    "attempt": [
+      {
+        "task": 3,
+        "run_id": "wf_2",
+        "milestone": "A",
+        "status": "done",
+        "summary": "Config parser with defaults",
+        "block": "present",
+        "files_touched": ["src/config.rs"],
+        "deviations": [
+          {
+            "what": "Returned warnings beside the config",
+            "why": "An unknown key must reach the header",
+            "means": "Return the config alone"
+          }
+        ],
+        "tangential": [
+          {
+            "kind": "debt",
+            "area": "src/store.rs",
+            "summary": "The loader re-reads the file twice",
+            "why": "It doubles start-up I/O"
+          }
+        ],
+        "checks": [
+          { "command": "cargo clippy", "result": "pass" },
+          { "command": "cargo test config::", "result": "not-run" }
+        ],
+        "handover": {
+          "reason": "restart",
+          "action": "Restart the running app.",
+          "when": "After the commit.",
+          "done_when": "The new keys take effect."
+        }
+      },
+      {
+        "task": 8,
+        "run_id": "wf_3",
+        "milestone": "B",
+        "status": "parked",
+        "summary": "the required hand-rolled parser conflicts with the clap constraint",
+        "block": "present",
+        "files_touched": [],
+        "deviations": [],
+        "tangential": [],
+        "checks": []
+      }
+    ],
+    "gate_round": [
+      {
+        "milestone": "A",
+        "round": 0,
+        "seq": 1,
+        "at": "2026-09-28T10:20:00Z",
+        "outcome": "fail",
+        "commands": [
+          {
+            "command": "cargo clippy",
+            "outcome": "pass",
+            "exit": 0,
+            "duration_s": 31,
+            "summary": "clean",
+            "failed_ids": [],
+            "log": ""
+          },
+          {
+            "command": "cargo test",
+            "outcome": "fail",
+            "exit": 101,
+            "duration_s": 42,
+            "summary": "40 passed; 1 failed",
+            "failed_ids": ["config::tests::unknown_key"],
+            "log": ".claude/flows/demo-flow/gates/A-r0-s1-c2.log"
+          }
+        ]
+      },
+      {
+        "milestone": "A",
+        "round": 1,
+        "seq": 1,
+        "at": "2026-09-28T10:40:00Z",
+        "outcome": "pass",
+        "commands": [
+          {
+            "command": "cargo test",
+            "outcome": "pass",
+            "exit": 0,
+            "duration_s": 40,
+            "summary": "41 passed",
+            "failed_ids": [],
+            "log": ""
+          }
+        ]
+      },
+      {
+        "milestone": "B",
+        "round": 0,
+        "seq": 1,
+        "at": "2026-09-28T11:50:00Z",
+        "outcome": "fail",
+        "commands": [
+          {
+            "command": "cargo test",
+            "duration_s": 55,
+            "outcome": "fail",
+            "summary": "43 passed; 2 failed",
+            "failed_ids": ["render::tests::rows", "theme::tests::status"],
+            "log": ".claude/flows/demo-flow/gates/B-r0-s1-c1.log"
+          }
+        ]
+      }
+    ],
+    "report": [
+      {
+        "at": "2026-09-28T10:45:00Z",
+        "milestone": "A",
+        "why": "milestone A committed",
+        "entries": [
+          {
+            "kind": "handover",
+            "task": 3,
+            "text": "H1: Restart the running app.",
+            "path": "",
+            "needs_person": true
+          }
+        ]
+      },
+      {
+        "at": "2026-09-28T11:58:00Z",
+        "milestone": "B",
+        "why": "gate failed and a task is parked",
+        "entries": [
+          {
+            "kind": "gate",
+            "task": 0,
+            "text": "milestone B failed in round 0: cargo test — render::tests::rows",
+            "path": ".claude/flows/demo-flow/gates/B-r0-s1-c1.log",
+            "needs_person": true
+          },
+          {
+            "kind": "parked",
+            "task": 8,
+            "text": "8 parked: the required hand-rolled parser conflicts with the clap constraint",
+            "path": "docs/flows/demo-flow/notes/run/task-8.md",
+            "needs_person": true
+          },
+          {
+            "kind": "reconcile",
+            "task": 0,
+            "text": "the execution record was reconciled",
+            "path": "",
+            "needs_person": false
+          }
+        ]
+      }
+    ]
+  }
 }

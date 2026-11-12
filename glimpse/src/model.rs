@@ -8,7 +8,7 @@
 
 pub(crate) mod plan;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use serde::{Deserialize, Serialize};
 
@@ -34,6 +34,11 @@ pub(crate) struct Snapshot {
     pub(crate) checkpoints: Vec<Checkpoint>,
     pub(crate) record: Vec<RecordEntry>,
     pub(crate) agents: Vec<Agent>,
+    pub(crate) milestones: Vec<plan::Milestone>,
+    /// The task store's change trail, in stored order.
+    pub(crate) changes: Vec<plan::Change>,
+    /// The flow's `plan.toml`; `None` when it has none.
+    pub(crate) plan: Option<plan::Plan>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -64,6 +69,14 @@ pub(crate) struct Task {
     pub(crate) acceptance: String,
     pub(crate) agent: String,
     pub(crate) commit: String,
+    /// `None` when the store holds no spec for the row's `ref`.
+    pub(crate) spec: Option<plan::Spec>,
+    /// Path to note, for this row's files.
+    pub(crate) file_notes: BTreeMap<String, String>,
+    /// Backlog ids this row closes and refers to.
+    pub(crate) closes: Vec<String>,
+    pub(crate) refs: Vec<String>,
+    pub(crate) finding: Option<plan::FindingLink>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -281,6 +294,7 @@ pub(crate) struct Agent {
     pub(crate) transcript_path: String,
     pub(crate) summary: String,
     pub(crate) context_tokens: u64,
+    pub(crate) usage: plan::Usage,
     /// One per assignment; the last is open while its `ended_at` is `""`.
     pub(crate) segments: Vec<Segment>,
 }
@@ -331,6 +345,7 @@ pub(crate) struct Index {
     item_agents: HashMap<String, Vec<usize>>,
     checkpoint: HashMap<u32, usize>,
     topology: u64,
+    plan: plan::PlanIndex,
 }
 
 impl Snapshot {
@@ -445,6 +460,7 @@ impl Snapshot {
             item_agents,
             checkpoint,
             topology: topology_hash(&self.tasks),
+            plan: plan::PlanIndex::new(self),
         }
     }
 }
@@ -573,6 +589,11 @@ impl Index {
     /// other field leave it alone, so a layout keyed on it survives them.
     pub(crate) fn topology_hash(&self) -> u64 {
         self.topology
+    }
+
+    /// The lookups over the snapshot's plan records, task specs and change trail.
+    pub(crate) fn plan(&self) -> &plan::PlanIndex {
+        &self.plan
     }
 }
 
@@ -837,7 +858,7 @@ mod tests {
         assert_eq!(state(&snap, 6), Some(FrontierState::Ready));
         assert_eq!(state(&snap, 5), Some(FrontierState::Held));
         assert_eq!(state(&snap, 7), Some(FrontierState::Blocked), "next");
-        assert_eq!(state(&snap, 8), Some(FrontierState::Blocked));
+        assert_eq!(state(&snap, 8), None, "parked");
         assert_eq!(state(&snap, 4), None, "in progress");
         assert_eq!(state(&snap, 1), None, "done");
         assert_eq!(state(&snap, 99), None, "no such row");

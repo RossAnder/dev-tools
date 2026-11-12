@@ -24,6 +24,8 @@ pub(super) struct Wakes {
     pub(super) repo: BTreeSet<RepoFile>,
     pub(super) scopes: BTreeSet<LedgerKind>,
     pub(super) new_scopes: BTreeSet<LedgerKind>,
+    /// The flows whose `docs/flows/<slug>/` tree woke.
+    pub(super) authored: BTreeSet<String>,
     pub(super) all: bool,
     pub(super) rewatch: bool,
 }
@@ -48,6 +50,9 @@ impl Wakes {
                 self.new_scopes.insert(dir);
                 self.scopes.insert(dir);
             }
+            Wake::Authored { slug } => {
+                self.authored.insert(slug);
+            }
             Wake::All => self.all = true,
             Wake::Rewatch => self.rewatch = true,
         }
@@ -58,6 +63,7 @@ impl Wakes {
             && self.repo.is_empty()
             && self.scopes.is_empty()
             && self.new_scopes.is_empty()
+            && self.authored.is_empty()
             && !self.all
             && !self.rewatch
     }
@@ -73,9 +79,11 @@ impl Wakes {
     pub(super) fn woken(&self) -> BTreeSet<WatchScope> {
         let flows = (!self.flows.is_empty()).then_some(WatchScope::Flows);
         let repo = (!self.repo.is_empty()).then_some(WatchScope::Repo);
+        let authored = (!self.authored.is_empty()).then_some(WatchScope::Authored);
         flows
             .into_iter()
             .chain(repo)
+            .chain(authored)
             .chain(self.scopes.iter().copied().map(WatchScope::Ledgers))
             .collect()
     }
@@ -91,16 +99,20 @@ pub(super) enum WatchScope {
     Repo,
     /// The flow-less ledger directory of one kind.
     Ledgers(LedgerKind),
+    /// `docs/flows`, recursive, once it exists.
+    Authored,
 }
 
 /// Whether a watch is feeding the poller. The watcher lives here, on the poller thread.
 pub(super) enum Mode {
     /// The watch lives until the mode changes; `scopes` are the kinds whose flow-less ledger
-    /// dirs it already covers, so none is watched twice.
+    /// dirs it already covers, so none is watched twice, and `authored` is set once
+    /// `docs/flows` is covered.
     Watching {
         watcher: RecommendedWatcher,
         claude_dir: PathBuf,
         scopes: BTreeSet<LedgerKind>,
+        authored: bool,
     },
     /// Polling every `poll_ms` and retrying the watch at ticks, because the last start failed
     /// or a rewatch dropped the watcher. `backoff` is set once `watch::start` itself has
@@ -158,13 +170,45 @@ impl Mode {
         match watch::start(&claude_dir, move |wake| {
             let _ = tx.send(Control::Wake(wake));
         }) {
-            Ok((watcher, scopes)) => Mode::Watching {
-                watcher,
-                claude_dir,
-                scopes,
-            },
+            Ok((watcher, scopes)) => {
+                let mut mode = Mode::Watching {
+                    watcher,
+                    claude_dir,
+                    scopes,
+                    authored: false,
+                };
+                mode.probe_authored();
+                mode
+            }
             Err(_) => retrying(Some(Backoff::after_failure(prior, now, poll))),
         }
+    }
+
+    /// Adds the recursive `docs/flows` watch once that directory exists. No watched directory
+    /// reports its arrival, so this is probed before every tick, as a missing flows root is; a
+    /// missing directory or a failed watch leaves it for the next probe.
+    pub(super) fn probe_authored(&mut self) {
+        let Mode::Watching {
+            watcher,
+            claude_dir,
+            authored,
+            ..
+        } = self
+        else {
+            return;
+        };
+        if *authored {
+            return;
+        }
+        let roots = watch::Roots::new(claude_dir);
+        if let Ok(true) = watch::add_tree(watcher, roots.authored()) {
+            *authored = true;
+        }
+    }
+
+    /// Whether `docs/flows` is under the watch, so a change found there can count as missed.
+    pub(super) fn watches_authored(&self) -> bool {
+        matches!(self, Mode::Watching { authored: true, .. })
     }
 
     /// Adds a watch on a flow-less ledger dir that appeared after the watch started. A dir
@@ -175,6 +219,7 @@ impl Mode {
             watcher,
             claude_dir,
             scopes,
+            ..
         } = self
         else {
             return;
@@ -722,6 +767,42 @@ mod tests {
         );
         drop((mode, restarted));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_docs_flows_created_after_start_is_watched_once_it_appears() {
+        let root = temp_root("authored-probe");
+        let (control, _messages) = mpsc::channel();
+        let flows_root = flows::flows_root(&root);
+        let mut mode = Mode::start(&flows_root, &control, Duration::from_millis(500), None);
+        assert!(mode.is_watching());
+        assert!(!mode.watches_authored(), "no docs/flows yet");
+        mode.probe_authored();
+        assert!(!mode.watches_authored(), "still missing");
+
+        std::fs::create_dir_all(root.join("docs").join("flows")).expect("docs dir");
+        mode.probe_authored();
+        assert!(mode.watches_authored());
+        mode.probe_authored();
+        assert!(
+            mode.watches_authored(),
+            "a second probe watches nothing twice"
+        );
+
+        let restarted = Mode::start(&flows_root, &control, Duration::from_millis(500), None);
+        assert!(restarted.watches_authored(), "covered from the start");
+        drop((mode, restarted));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_authored_wake_vouches_for_its_own_scope() {
+        let mut wakes = Wakes::default();
+        wakes.add(Wake::Authored { slug: "a".into() });
+        assert!(!wakes.is_empty());
+        assert!(wakes.flows.is_empty(), "no flow cache is evicted");
+        assert_eq!(wakes.woken(), scopes([WatchScope::Authored]));
+        assert_eq!(TickCause::of(&wakes, false), TickCause::Wake);
     }
 
     #[test]

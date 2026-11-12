@@ -38,12 +38,65 @@ pub(super) fn has_task_store(fingerprint: &Fingerprint) -> bool {
 }
 
 /// The file a feed reads, at the path tomlctl reads it from. `None` for a flow slug or scope
-/// name tomlctl refuses: the feed then stats as unreadable, and its read reports the refusal.
+/// name tomlctl refuses, or a feed that reads a tree rather than one file: the feed then stats
+/// as unreadable, and its read reports any refusal.
 pub(super) fn feed_path(root: &Path, feed: &Feed) -> Option<PathBuf> {
     match feed {
         Feed::Inputs => Some(tomlctl::inputs_path(root)),
         Feed::Ledger(ledger) => ledger.path(root).ok(),
+        Feed::Authored { .. } => None,
     }
+}
+
+/// What a feed's change detector compares between scans.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum FeedStat {
+    /// The one file the feed reads.
+    File(FileStat),
+    /// Every markdown file under the feed's directory, by path.
+    Tree(BTreeMap<PathBuf, FileStat>),
+}
+
+/// The feed's [`FeedStat`], taken afresh: the authored feed re-stats every file, since an
+/// in-place save moves no directory mtime. A slug tomlctl refuses walks nothing, and its
+/// read reports the refusal.
+pub(super) fn feed_stat(root: &Path, feed: &Feed) -> FeedStat {
+    match feed {
+        Feed::Authored { slug } if tomlctl::validate_slug(slug).is_err() => {
+            FeedStat::Tree(BTreeMap::new())
+        }
+        Feed::Authored { slug } => FeedStat::Tree(markdown_stats(&authored_dir(root, slug))),
+        _ => FeedStat::File(feed_path(root, feed).and_then(|path| stat(&path))),
+    }
+}
+
+/// `<root>/docs/flows/<slug>`, where a flow's brief, design files and notes live.
+pub(super) fn authored_dir(root: &Path, slug: &str) -> PathBuf {
+    root.join("docs").join("flows").join(slug)
+}
+
+/// The stat of every `.md` file under `dir`, recursively; a missing `dir` holds none. A linked
+/// directory is not descended, so a link cycle cannot loop the walk.
+fn markdown_stats(dir: &Path) -> BTreeMap<PathBuf, FileStat> {
+    let mut stats = BTreeMap::new();
+    let mut pending = vec![dir.to_path_buf()];
+    while let Some(dir) = pending.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.filter_map(Result::ok) {
+            let path = entry.path();
+            match entry.file_type() {
+                Ok(kind) if kind.is_dir() => pending.push(path),
+                Ok(_) if path.extension().is_some_and(|ext| ext == "md") => {
+                    let current = stat(&path);
+                    stats.insert(path, current);
+                }
+                _ => {}
+            }
+        }
+    }
+    stats
 }
 
 /// What a flow listing shows of one flow: its `tasks.toml` and `context.toml` mtimes, and
@@ -246,6 +299,9 @@ pub(crate) trait Fetcher: Send {
     /// The input store, or `Ok(None)` when it still hashes to `known`; a missing file reads as
     /// no records with no revision.
     fn fetch_inputs(&mut self, root: &Path, known: Option<&str>) -> Result<Option<Inputs>, String>;
+    /// The `tomlctl::authored_list` document for flow `slug`; a missing directory lists no
+    /// files.
+    fn fetch_authored(&mut self, root: &Path, slug: &str) -> Result<serde_json::Value, String>;
 }
 
 /// Builds the `tasks snapshot` document in-process from `<root>/.claude/flows/<slug>`.
@@ -294,6 +350,10 @@ impl Fetcher for InProcessFetcher {
             .map(Inputs::from_value)
             .transpose()
     }
+
+    fn fetch_authored(&mut self, root: &Path, slug: &str) -> Result<serde_json::Value, String> {
+        tomlctl::authored_list(root, slug).map_err(|e| with_reinstall_hint(format!("{e:#}")))
+    }
 }
 
 /// Adds the fix to a tomlctl "newer than the supported" schema error. tomlctl's own advice is
@@ -336,6 +396,8 @@ pub(super) mod tests {
         ledger_reads: Arc<AtomicUsize>,
         inputs: Vec<Result<Inputs, String>>,
         input_reads: Arc<AtomicUsize>,
+        authored: Vec<Result<serde_json::Value, String>>,
+        authored_reads: Arc<AtomicUsize>,
     }
 
     impl Fetcher for FakeFetcher {
@@ -385,6 +447,36 @@ pub(super) mod tests {
             };
             Ok((known.is_none() || known != inputs.revision.as_deref()).then_some(inputs))
         }
+
+        fn fetch_authored(
+            &mut self,
+            _root: &Path,
+            _slug: &str,
+        ) -> Result<serde_json::Value, String> {
+            let n = self.authored_reads.fetch_add(1, Ordering::SeqCst);
+            match self.authored.len() {
+                0 => Ok(serde_json::json!({"files": []})),
+                len => self.authored[n.min(len - 1)].clone(),
+            }
+        }
+    }
+
+    /// A listing of one note at `path`.
+    pub(in crate::source) fn listing(path: &str) -> serde_json::Value {
+        serde_json::json!({"files": [{"path": path, "kind": "note"}]})
+    }
+
+    /// A fake whose authored reads step through `authored`, and the count of those reads.
+    pub(in crate::source) fn fake_authored(
+        authored: Vec<Result<serde_json::Value, String>>,
+    ) -> (Box<dyn Fetcher>, Arc<AtomicUsize>) {
+        let authored_reads = Arc::new(AtomicUsize::new(0));
+        let fetcher = FakeFetcher {
+            authored,
+            authored_reads: Arc::clone(&authored_reads),
+            ..empty_fake(Arc::new(AtomicUsize::new(0)), vec![Ok(with_revision("r1"))])
+        };
+        (Box::new(fetcher), authored_reads)
     }
 
     pub(in crate::source) fn with_revision(revision: &str) -> Snapshot {
@@ -452,6 +544,8 @@ pub(super) mod tests {
             ledger_reads: Arc::new(AtomicUsize::new(0)),
             inputs: Vec::new(),
             input_reads: Arc::new(AtomicUsize::new(0)),
+            authored: Vec::new(),
+            authored_reads: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -571,6 +665,45 @@ pub(super) mod tests {
         assert_eq!(
             flows.get("f").map(|t| t.ledgers),
             Some([true, false, false])
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_stat_of_authored_files_covers_every_markdown_file_and_nothing_else() {
+        let root = temp_root("authored-stat");
+        let feed = Feed::Authored { slug: "f".into() };
+        assert_eq!(
+            feed_stat(&root, &feed),
+            FeedStat::Tree(BTreeMap::new()),
+            "a missing docs/flows stats as empty"
+        );
+        let dir = authored_dir(&root, "f");
+        let run = dir.join("notes").join("run");
+        std::fs::create_dir_all(&run).expect("notes dir");
+        std::fs::write(dir.join("brief.md"), "# Brief\n").expect("brief");
+        std::fs::write(run.join("task-1.md"), "Status: done\n").expect("run note");
+        std::fs::write(dir.join("notes").join("scratch.txt"), "x").expect("scratch");
+        let FeedStat::Tree(stats) = feed_stat(&root, &feed) else {
+            panic!("a tree");
+        };
+        let names: BTreeSet<String> = stats
+            .keys()
+            .filter_map(|p| p.file_name()?.to_str().map(str::to_owned))
+            .collect();
+        assert_eq!(
+            names,
+            BTreeSet::from(["brief.md".to_string(), "task-1.md".to_string()])
+        );
+        assert_eq!(
+            feed_stat(
+                &root,
+                &Feed::Authored {
+                    slug: "../f".into()
+                }
+            ),
+            FeedStat::Tree(BTreeMap::new()),
+            "a refused slug walks nothing"
         );
         let _ = std::fs::remove_dir_all(&root);
     }

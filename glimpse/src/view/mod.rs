@@ -221,9 +221,15 @@ pub(crate) fn render(
         tabs,
         body,
         divider,
+        links: Vec::new(),
     };
     let form_open = app.overlay.as_ref().and_then(Overlay::form).is_some();
-    if app.selector_open || app.legend_open || app.theme_picker.is_some() || form_open {
+    if app.selector_open
+        || app.legend_open
+        || app.theme_picker.is_some()
+        || app.links.is_some()
+        || form_open
+    {
         // The footer keeps full strength: it carries the open overlay's keys.
         let behind = Rect {
             height: foot.y.saturating_sub(area.y),
@@ -241,6 +247,9 @@ pub(crate) fn render(
     }
     if app.theme_picker.is_some() {
         themes::render(frame, area, app);
+    }
+    if app.links.is_some() {
+        links::render(frame, area, app);
     }
     // The filter prompt is drawn in the item list's facet row, not as a modal.
     if let Some(form) = app.overlay.as_ref().and_then(Overlay::form) {
@@ -423,6 +432,12 @@ fn draw_surface(
                 state.scroll = drawn.scroll;
                 state.page = drawn.page;
             }
+            Hits::of(drawn)
+        }
+        Surface::Plan => {
+            let drawn = plan::render(frame.buffer_mut(), area, app);
+            app.plan.scroll = drawn.scroll;
+            app.plan.page = drawn.page;
             Hits::of(drawn)
         }
     }
@@ -942,8 +957,12 @@ mod tests {
 
         app.apply(Action::SwitchSurface(Surface::Inbox));
         let inbox = draw(&mut app, 120, 30).join("\n");
-        assert!(inbox.contains("reading the input store"), "{inbox}");
-        assert!(app.regions.items.is_empty());
+        assert!(inbox.contains("▾ needs you (3)"), "{inbox}");
+        assert_eq!(
+            app.regions.items.len(),
+            3,
+            "the needs-you rows are hit targets"
+        );
         app.apply_inputs(
             crate::ledger::Inputs {
                 path: ".claude/inputs.toml".to_string(),
@@ -959,10 +978,12 @@ mod tests {
             },
             Instant::now(),
         );
+        app.apply(Action::SelectItem("I1".to_string()));
         let inbox = draw(&mut app, 120, 30);
         let (row, _) = find(&inbox, "Keep the guard?").expect("the question");
-        assert_eq!(app.regions.items.len(), 1);
-        assert_eq!(usize::from(app.regions.items[0].0.y), row);
+        assert_eq!(app.regions.items.len(), 4);
+        assert_eq!(app.regions.items[3].1, "I1");
+        assert_eq!(usize::from(app.regions.items[3].0.y), row);
         assert!(
             inbox.last().is_some_and(|row| row.contains("enter answer")
                 && row.contains("n capture")
@@ -975,6 +996,34 @@ mod tests {
         let tasks = draw(&mut app, 120, 30);
         assert!(find(&tasks, "Render the rows").is_some());
         assert!(tasks.last().is_some_and(|row| row.contains("tab view")));
+    }
+
+    #[test]
+    fn the_plan_surface_draws_its_sections_and_a_click_selects_a_row() {
+        use crate::keys;
+        use ratatui::crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+
+        let mut app = app();
+        app.apply(Action::SwitchSurface(Surface::Plan));
+        let rows = draw(&mut app, 120, 40);
+        assert!(find(&rows, "▾ decisions (1)").is_some(), "{rows:#?}");
+        let (row, col) = find(&rows, "H2").expect("a handover row");
+        assert!(app.regions.items.iter().any(|(_, id)| id == "handovers:H2"));
+        assert!(
+            rows.last()
+                .is_some_and(|row| row.contains("tab section") && !row.contains("m actions")),
+            "{:?}",
+            rows.last()
+        );
+        let click = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: u16::try_from(col).expect("column"),
+            row: u16::try_from(row).expect("row"),
+            modifiers: KeyModifiers::NONE,
+        };
+        let action = keys::mouse(click, &app).expect("the row is a target");
+        app.apply(action);
+        assert_eq!(app.plan.cursor.as_deref(), Some("handovers:H2"));
     }
 
     #[test]

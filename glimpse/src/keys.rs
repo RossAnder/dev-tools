@@ -73,7 +73,9 @@ pub(crate) fn map(event: KeyEvent) -> Option<Action> {
         KeyCode::Char('-') => Action::ResizeColumns(false),
         KeyCode::Char('=' | '+') => Action::ResizeColumns(true),
         KeyCode::Char('q') | KeyCode::Esc => Action::Back,
-        KeyCode::Char(digit @ '1'..='6') => Action::SwitchSurface(Surface::from_digit(digit)?),
+        KeyCode::Backspace => Action::GoBack,
+        KeyCode::Char('b') => Action::ToggleLinks,
+        KeyCode::Char(digit @ '1'..='7') => Action::SwitchSurface(Surface::from_digit(digit)?),
         KeyCode::Char(' ') => Action::ToggleMark,
         KeyCode::Char('V') => Action::MarkVisible,
         KeyCode::Char('g') => Action::CycleGroup,
@@ -104,10 +106,11 @@ pub(crate) fn map(event: KeyEvent) -> Option<Action> {
 /// background starts a pan. Ctrl+wheel over the diagram zooms it. Only the press
 /// edge of a click acts, the mouse counterpart of dropping key `Release`. Every other
 /// kind, including the motion reports capture turns on, maps to nothing. With a form or
-/// the filter prompt up, nothing reacts; with the legend up the wheel scrolls it and
-/// with the theme picker or the selector up the wheel moves its cursor, and nothing else
-/// reacts; with the
-/// compact modal up, nothing in the body outside the details panel does.
+/// the filter prompt up, nothing reacts; with the links list up the wheel moves its
+/// cursor and a press on a row follows that link; with the legend up the wheel scrolls it
+/// and with the theme picker or the selector up the wheel moves its cursor, and nothing
+/// else reacts; with the compact modal up, nothing in the body outside the details panel
+/// does.
 ///
 /// During a drag or a pan, left-button motion, bare motion and a re-sent left press all
 /// move it, since a touch hold-drag need not report as a left-button drag; any
@@ -121,6 +124,17 @@ pub(crate) fn mouse(event: MouseEvent, app: &App) -> Option<Action> {
     }
     if app.overlay.is_some() {
         return None;
+    }
+    if app.links.is_some() {
+        let at = Position::new(event.column, event.row);
+        return match event.kind {
+            MouseEventKind::ScrollDown => Some(Action::Move(Dir::Down)),
+            MouseEventKind::ScrollUp => Some(Action::Move(Dir::Up)),
+            MouseEventKind::Down(MouseButton::Left) => {
+                hit(&app.regions.links, at).map(|i| Action::OpenLink(*i))
+            }
+            _ => None,
+        };
     }
     if app.legend_open {
         return match event.kind {
@@ -270,14 +284,13 @@ mod tests {
     }
 
     #[test]
-    fn queue_keys_map_and_b_stays_free() {
+    fn queue_keys_map() {
         assert_eq!(map(press(KeyCode::Char('P'))), Some(Action::ToggleQueue));
         assert_eq!(map(press(KeyCode::Char('<'))), Some(Action::QueueUp));
         assert_eq!(map(press(KeyCode::Char('>'))), Some(Action::QueueDown));
         // Some terminals set SHIFT on these; the character alone decides.
         let shifted = KeyEvent::new(KeyCode::Char('>'), KeyModifiers::SHIFT);
         assert_eq!(map(shifted), Some(Action::QueueDown));
-        assert_eq!(map(press(KeyCode::Char('b'))), None);
     }
 
     #[test]
@@ -323,15 +336,16 @@ mod tests {
             (KeyCode::Char('+'), Action::ResizeColumns(true)),
             (KeyCode::Char('q'), Action::Back),
             (KeyCode::Esc, Action::Back),
+            (KeyCode::Backspace, Action::GoBack),
             (KeyCode::Char('F'), Action::CycleFocus),
             (KeyCode::Char('z'), Action::Zoom(false)),
             (KeyCode::Char('Z'), Action::Zoom(true)),
             (KeyCode::Char('x'), Action::ToggleFit),
+            (KeyCode::Char('b'), Action::ToggleLinks),
         ];
         for (code, action) in cases {
             assert_eq!(map(press(code)), Some(action), "{code:?}");
         }
-        assert_eq!(map(press(KeyCode::Char('b'))), None);
     }
 
     #[test]
@@ -610,13 +624,14 @@ mod tests {
             ('4', Surface::PlanReview),
             ('5', Surface::Backlog),
             ('6', Surface::Inbox),
+            ('7', Surface::Plan),
         ] {
             assert_eq!(
                 map(press(KeyCode::Char(digit))),
                 Some(Action::SwitchSurface(surface))
             );
         }
-        assert_eq!(map(press(KeyCode::Char('7'))), None);
+        assert_eq!(map(press(KeyCode::Char('8'))), None);
         let cases = [
             (' ', Action::ToggleMark),
             ('V', Action::MarkVisible),
@@ -713,6 +728,26 @@ mod tests {
             Some(Action::SelectorPrev)
         );
         assert_eq!(mouse(event(MouseEventKind::ScrollLeft, 5, 4), &app), None);
+    }
+
+    #[test]
+    fn the_links_list_takes_the_wheel_and_a_row_click() {
+        let mut app = app_with_regions();
+        app.apply(Action::Select(5));
+        app.apply(Action::ToggleLinks);
+        assert!(app.links.is_some());
+        app.regions.links = vec![(Rect::new(20, 8, 30, 1), 0), (Rect::new(20, 9, 30, 1), 1)];
+        let left = MouseEventKind::Down(MouseButton::Left);
+        assert_eq!(mouse(event(left, 25, 9), &app), Some(Action::OpenLink(1)));
+        assert_eq!(
+            mouse(event(left, 5, 4), &app),
+            None,
+            "a task row underneath"
+        );
+        assert_eq!(
+            mouse(event(MouseEventKind::ScrollDown, 70, 10), &app),
+            Some(Action::Move(Dir::Down))
+        );
     }
 
     #[test]

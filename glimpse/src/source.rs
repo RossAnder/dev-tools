@@ -1,5 +1,6 @@
-//! Watches a repo's flows, ledgers and input store for changes and fetches fresh snapshots,
-//! ledgers and input records onto the event channel.
+//! Watches a repo's flows, ledgers, input store and authored flow documents for changes and
+//! fetches fresh snapshots, ledgers, input records and authored-file listings onto the event
+//! channel.
 //!
 //! A filesystem watch only wakes the poller; the fingerprints below still decide what changed.
 //! A safety tick every [`SAFETY_TICK`], on its own schedule whatever wakes arrive, catches what
@@ -20,6 +21,7 @@ mod mode;
 mod scan;
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread::JoinHandle;
@@ -28,21 +30,23 @@ use std::time::{Duration, Instant, SystemTime};
 use tomlctl::{LedgerKind, LedgerRef};
 
 use crate::app::TICK;
+use crate::authored::AuthoredList;
 use crate::flows::{self, FlowEntry};
 use crate::ledger::{Inputs, Ledger, Seen};
 use crate::model::Snapshot;
 use crate::transcript::{TailState, TailView};
 use crate::watch::{RepoFile, Wake};
 use crate::writer::WriteOutcome;
+pub(crate) use doc::{DocRequest, Fetched};
 use mode::{
     Deadlines, MissedChanges, Mode, Phase, SafetyClock, TickCause, Wakes, WatchScope, next_wait,
     safety_period,
 };
-pub(crate) use scan::{Fetcher, InProcessFetcher, task_store_mtimes, with_reinstall_hint};
 use scan::{
-    FileStat, Fingerprint, FlowStat, FlowTimes, FlowsChange, feed_path, fingerprint,
-    flows_fingerprint, has_task_store, scope_files, scopes_document, stat, task_stores,
+    FeedStat, Fingerprint, FlowStat, FlowTimes, FlowsChange, feed_stat, fingerprint,
+    flows_fingerprint, has_task_store, scope_files, scopes_document, task_stores,
 };
+pub(crate) use scan::{Fetcher, InProcessFetcher, task_store_mtimes, with_reinstall_hint};
 
 /// Everything the runtime's main loop receives, from the poller and the input thread alike.
 #[derive(Debug)]
@@ -66,8 +70,20 @@ pub(crate) enum Event {
     /// A document shaped as `tomlctl::ledger_scopes` returns it, built from the poller's own
     /// scan; sent with every flow list and whenever a flow-less ledger appears or goes.
     Scopes(Result<serde_json::Value, String>),
+    /// The [`Feed::Authored`] read of flow `slug`, with the revision it was read at, sent on
+    /// the same terms as [`Event::Ledger`].
+    Authored {
+        slug: String,
+        listing: Result<(AuthoredList, u64), String>,
+    },
     /// The targeted transcript's tail, sent on a retarget and whenever a refresh changed it.
     Tail(Box<TailView>),
+    /// The answer to a [`DocRequest`], the error being a one-line reason; sent once per
+    /// request the poller served.
+    Doc {
+        request: DocRequest,
+        document: Result<Fetched, String>,
+    },
     Input(ratatui::crossterm::event::Event),
     /// What became of one write; sent by the writer thread, never the poller.
     Written(WriteOutcome),
@@ -83,12 +99,42 @@ pub(crate) enum Feed {
     Ledger(LedgerRef),
     /// `.claude/inputs.toml`.
     Inputs,
+    /// The brief, design files and notes under `docs/flows/<slug>/`, listed by
+    /// `tomlctl::authored_list`.
+    Authored {
+        slug: String,
+    },
 }
 
 /// One successful feed read.
 enum FeedRead {
     Ledger(Ledger),
     Inputs(Inputs),
+    Authored(AuthoredRead),
+}
+
+/// An authored listing and the revision it was read at: a hash of the listing document, so
+/// a re-read that lists the same files with the same headlines and sources is not resent.
+struct AuthoredRead {
+    list: AuthoredList,
+    revision: u64,
+    /// `revision` in the form [`FeedState::sent`] compares.
+    key: Option<String>,
+}
+
+impl AuthoredRead {
+    fn from_value(value: serde_json::Value) -> Result<AuthoredRead, String> {
+        let mut hasher = DefaultHasher::new();
+        value.to_string().hash(&mut hasher);
+        let revision = hasher.finish();
+        let list = serde_json::from_value(value)
+            .map_err(|e| format!("bad authored-files listing: {e}"))?;
+        Ok(AuthoredRead {
+            list,
+            revision,
+            key: Some(format!("{revision:016x}")),
+        })
+    }
 }
 
 impl FeedRead {
@@ -96,17 +142,32 @@ impl FeedRead {
         match self {
             FeedRead::Ledger(ledger) => &ledger.revision,
             FeedRead::Inputs(inputs) => &inputs.revision,
+            FeedRead::Authored(read) => &read.key,
         }
     }
 }
 
 /// The event carrying `read` of `feed`.
 fn feed_event(feed: &Feed, read: Result<FeedRead, String>) -> Event {
+    if let Feed::Authored { slug } = feed {
+        let listing = read.and_then(|read| match read {
+            FeedRead::Authored(read) => Ok((read.list, read.revision)),
+            FeedRead::Ledger(_) | FeedRead::Inputs(_) => Err("not an authored listing".into()),
+        });
+        return Event::Authored {
+            slug: slug.clone(),
+            listing,
+        };
+    }
     match read {
         Ok(FeedRead::Inputs(inputs)) => Event::InputRecords(Ok(inputs)),
         Ok(FeedRead::Ledger(ledger)) => Event::Ledger {
             feed: feed.clone(),
             ledger: Ok(ledger),
+        },
+        Ok(FeedRead::Authored(_)) => Event::Ledger {
+            feed: feed.clone(),
+            ledger: Err("not a ledger".into()),
         },
         Err(e) if *feed == Feed::Inputs => Event::InputRecords(Err(e)),
         Err(e) => Event::Ledger {
@@ -123,6 +184,7 @@ impl Feed {
             Feed::Ledger(LedgerRef::Flow { .. }) => Some(WatchScope::Flows),
             Feed::Ledger(LedgerRef::Scope { kind, .. }) => Some(WatchScope::Ledgers(*kind)),
             Feed::Ledger(LedgerRef::Backlog) | Feed::Inputs => Some(WatchScope::Repo),
+            Feed::Authored { .. } => Some(WatchScope::Authored),
             Feed::Ledger(LedgerRef::File(_)) => None,
         }
     }
@@ -138,6 +200,7 @@ impl Feed {
             Feed::Ledger(LedgerRef::Scope { kind, .. }) => wakes.scopes.contains(kind),
             Feed::Ledger(LedgerRef::Backlog) => wakes.repo.contains(&RepoFile::Backlog),
             Feed::Inputs => wakes.repo.contains(&RepoFile::Inputs),
+            Feed::Authored { slug } => wakes.authored.contains(slug),
             Feed::Ledger(LedgerRef::File(_)) => false,
         }
     }
@@ -147,7 +210,7 @@ impl Feed {
 #[derive(Debug, Default)]
 struct FeedState {
     /// The stat the last read was taken against; `None` forces the next read.
-    stat: Option<FileStat>,
+    stat: Option<FeedStat>,
     /// The revision last sent.
     sent: Seen,
     /// Set while reads fail, so a failure is sent once rather than on every retry.
@@ -163,6 +226,9 @@ enum Control {
     Subscribe(Vec<Feed>),
     /// Tail this transcript from now on, reading it at once; `None` stops tailing.
     Tail(Option<String>),
+    /// Read this document once the queue is quiet, replacing any request not yet served;
+    /// `None` withdraws it.
+    Doc(Option<DocRequest>),
     /// The watcher saw something change; sent from notify's event thread.
     Wake(Wake),
     Stop,
@@ -213,6 +279,8 @@ struct Poller {
     /// The transcript the runtime asked to tail.
     tail: Option<Tail>,
     feeds: BTreeMap<Feed, FeedState>,
+    /// The document asked for and not yet read.
+    doc: Option<DocRequest>,
 }
 
 /// A targeted transcript and when it is next re-read.
@@ -244,7 +312,17 @@ impl Poller {
             retry_after: RETRY_AFTER,
             tail: None,
             feeds: BTreeMap::new(),
+            doc: None,
         }
+    }
+
+    /// Reads the pending document and sends it. Returns `false` once the receiver has gone.
+    fn serve_doc(&mut self) -> bool {
+        let Some(request) = self.doc.take() else {
+            return true;
+        };
+        let document = doc::fetch(&self.root, &request);
+        self.events.send(Event::Doc { request, document }).is_ok()
     }
 
     /// When the targeted transcript is next re-read.
@@ -361,8 +439,8 @@ impl Poller {
     fn poll_feeds(&mut self) -> Option<BTreeSet<WatchScope>> {
         let mut changed = BTreeSet::new();
         for (feed, state) in &mut self.feeds {
-            let current = feed_path(&self.root, feed).and_then(|path| stat(&path));
-            if state.stat == Some(current) {
+            let current = feed_stat(&self.root, feed);
+            if state.stat.as_ref() == Some(&current) {
                 continue;
             }
             if state.stat.is_some() {
@@ -384,6 +462,11 @@ impl Poller {
                     .fetcher
                     .fetch_inputs(&self.root, known)
                     .map(|read| read.map(FeedRead::Inputs)),
+                Feed::Authored { slug } => self
+                    .fetcher
+                    .fetch_authored(&self.root, slug)
+                    .and_then(AuthoredRead::from_value)
+                    .map(|read| Some(FeedRead::Authored(read))),
             };
             let read = match fetched {
                 Ok(None) => {
@@ -539,6 +622,7 @@ impl Poller {
             Control::Subscribe(feeds) => self.subscribe(feeds),
             Control::Wake(wake) => wakes.add(wake),
             Control::Tail(path) => return self.set_tail(path),
+            Control::Doc(request) => self.doc = request,
             Control::Stop => return false,
         }
         true
@@ -582,11 +666,16 @@ impl Poller {
             if mode.is_watching() && !was_watching {
                 misses = MissedChanges::default();
             }
+            mode.probe_authored();
             let safety_due = clock.is_due(Instant::now());
             let cause = TickCause::of(&wakes, safety_due);
-            let Some(changed) = self.step() else {
+            let Some(mut changed) = self.step() else {
                 return;
             };
+            // A change no watch could have reported is no evidence against the watch.
+            if !mode.watches_authored() {
+                changed.remove(&WatchScope::Authored);
+            }
             let abandon =
                 mode.is_watching() && misses.on_scoped_tick(cause, &wakes.woken(), &changed);
             mode.advance(Phase::Ticked { abandon }, &flows_root, control, poll);
@@ -599,23 +688,34 @@ impl Poller {
                     retry: self.retry_at(),
                     tail: self.tail_at(),
                 };
-                match messages.recv_timeout(next_wait(Instant::now(), &deadlines)) {
+                // A pending document is read once the queue is empty, so a request that
+                // arrives behind it replaces it unread.
+                let wait = if self.doc.is_some() {
+                    Duration::ZERO
+                } else {
+                    next_wait(Instant::now(), &deadlines)
+                };
+                match messages.recv_timeout(wait) {
                     Ok(message) => {
                         let woke = matches!(message, Control::Wake(_));
-                        let retail = matches!(message, Control::Tail(_));
+                        let untimed = matches!(message, Control::Tail(_) | Control::Doc(_));
                         if !self.handle(message, &mut wakes)
                             || (woke && !self.drain(messages, &mut wakes))
                         {
                             return;
                         }
-                        // A retarget has already read and sent the tail; it needs no tick.
-                        if retail {
+                        // A retarget has already read and sent the tail, and a document is
+                        // served from the wait; neither needs a tick.
+                        if untimed {
                             continue;
                         }
                         break;
                     }
                     Err(RecvTimeoutError::Disconnected) => return,
                     Err(RecvTimeoutError::Timeout) => {
+                        if !self.serve_doc() {
+                            return;
+                        }
                         let due = deadlines.due(Instant::now());
                         if due.tail && !self.refresh_tail() {
                             return;
@@ -686,8 +786,9 @@ impl Source {
         let _ = self.control.send(Control::SetSlug(slug));
     }
 
-    /// Replaces the poller's feeds, sending [`Event::Ledger`] or [`Event::InputRecords`] for
-    /// each new one at once and for any feed whenever its revision moves.
+    /// Replaces the poller's feeds, sending [`Event::Ledger`], [`Event::InputRecords`] or
+    /// [`Event::Authored`] for each new one at once and for any feed whenever its revision
+    /// moves.
     pub(crate) fn subscribe(&self, feeds: Vec<Feed>) {
         let _ = self.control.send(Control::Subscribe(feeds));
     }
@@ -696,6 +797,13 @@ impl Source {
     /// `None` stops tailing.
     pub(crate) fn set_tail(&self, path: Option<String>) {
         let _ = self.control.send(Control::Tail(path));
+    }
+
+    /// Asks for one document, answered by [`Event::Doc`]; a newer request replaces one not
+    /// yet served, and `None` withdraws it.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn set_doc(&self, request: Option<DocRequest>) {
+        let _ = self.control.send(Control::Doc(request));
     }
 
     #[cfg(test)]
@@ -729,8 +837,8 @@ impl Drop for Source {
 mod tests {
     use super::scan::flow_dir;
     use super::scan::tests::{
-        fake, fake_counting_lists, fake_inputs, fake_ledgers, inputs_with_revision,
-        ledger_with_revision, temp_root, with_revision, write_in_place, write_renamed,
+        fake, fake_authored, fake_counting_lists, fake_inputs, fake_ledgers, inputs_with_revision,
+        ledger_with_revision, listing, temp_root, with_revision, write_in_place, write_renamed,
     };
     use super::*;
     use std::collections::BTreeSet;
@@ -1376,6 +1484,182 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    fn authored_feed() -> Feed {
+        Feed::Authored { slug: "f".into() }
+    }
+
+    /// The listed paths of each authored event, or its error.
+    fn authored_reads(events: Vec<Event>) -> Vec<Result<Vec<String>, String>> {
+        events
+            .into_iter()
+            .filter_map(|e| match e {
+                Event::Authored { slug, listing } => {
+                    assert_eq!(slug, "f");
+                    Some(listing.map(|(list, _)| list.files.into_iter().map(|f| f.path).collect()))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn authored_root(name: &str) -> (PathBuf, PathBuf) {
+        let root = temp_root(name);
+        let dir = super::scan::authored_dir(&root, "f");
+        std::fs::create_dir_all(dir.join("notes")).expect("notes dir");
+        (root, dir)
+    }
+
+    #[test]
+    fn a_new_note_is_listed_after_an_authored_wake() {
+        let (root, dir) = authored_root("authored-wake");
+        let reads = vec![
+            Ok(serde_json::json!({"files": []})),
+            Ok(listing("notes/lens.md")),
+        ];
+        let (fetcher, reads_made) = fake_authored(reads);
+        let (tx, rx) = mpsc::channel();
+        let mut poller = Poller::new(root.clone(), None, fetcher, tx);
+        poller.subscribe(vec![authored_feed()]);
+        assert!(poller.tick());
+        assert_eq!(authored_reads(drain(&rx)), [Ok(Vec::new())]);
+
+        write_in_place(&dir.join("notes"), "lens.md", 100);
+        let mut wakes = Wakes::default();
+        wakes.add(Wake::Authored { slug: "f".into() });
+        assert_eq!(wakes.woken(), BTreeSet::from([WatchScope::Authored]));
+        poller.evict(&wakes);
+        assert!(poller.tick());
+        assert_eq!(
+            authored_reads(drain(&rx)),
+            [Ok(vec!["notes/lens.md".to_string()])]
+        );
+        assert_eq!(reads_made.load(Ordering::SeqCst), 2);
+
+        let mut wakes = Wakes::default();
+        wakes.add(Wake::Authored {
+            slug: "other".into(),
+        });
+        poller.evict(&wakes);
+        assert!(poller.tick());
+        assert_eq!(
+            reads_made.load(Ordering::SeqCst),
+            2,
+            "another flow's wake reads nothing"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_in_place_authored_edit_is_seen_by_the_restat_with_no_wake() {
+        let (root, dir) = authored_root("authored-restat");
+        write_renamed(&dir, "brief.md", 100);
+        let edited = serde_json::json!({"files": [
+            {"path": "brief.md", "kind": "brief", "headline": "edited"}
+        ]});
+        let (fetcher, reads_made) = fake_authored(vec![Ok(listing("brief.md")), Ok(edited)]);
+        let (tx, rx) = mpsc::channel();
+        let mut poller = Poller::new(root.clone(), None, fetcher, tx);
+        poller.subscribe(vec![authored_feed()]);
+        assert!(poller.tick());
+        assert!(poller.tick());
+        assert_eq!(
+            reads_made.load(Ordering::SeqCst),
+            1,
+            "an idle tick reads nothing"
+        );
+        assert_eq!(authored_reads(drain(&rx)).len(), 1);
+
+        write_in_place(&dir, "brief.md", 200);
+        let changed = poller.step().expect("receiver alive");
+        assert!(changed.contains(&WatchScope::Authored), "{changed:?}");
+        assert_eq!(reads_made.load(Ordering::SeqCst), 2);
+        let events = drain(&rx);
+        let [
+            Event::Authored {
+                listing: Ok((list, _)),
+                ..
+            },
+        ] = events.as_slice()
+        else {
+            panic!("{events:?}");
+        };
+        assert_eq!(list.files[0].headline, "edited");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_unrelated_file_beside_authored_notes_reads_nothing() {
+        let (root, dir) = authored_root("authored-unrelated");
+        let (fetcher, reads_made) = fake_authored(Vec::new());
+        let (tx, rx) = mpsc::channel();
+        let mut poller = Poller::new(root.clone(), None, fetcher, tx);
+        poller.subscribe(vec![authored_feed()]);
+        assert!(poller.tick());
+        drain(&rx);
+
+        std::fs::write(dir.join("notes").join("scratch.txt"), "x").expect("scratch");
+        let changed = poller.step().expect("receiver alive");
+        assert!(changed.is_empty(), "{changed:?}");
+        assert_eq!(reads_made.load(Ordering::SeqCst), 1);
+        assert!(drain(&rx).is_empty());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_missing_docs_flows_costs_the_authored_feed_no_error_until_it_appears() {
+        let root = temp_root("authored-missing");
+        let (fetcher, reads_made) = fake_authored(vec![
+            Ok(serde_json::json!({"files": []})),
+            Ok(listing("brief.md")),
+        ]);
+        let (tx, rx) = mpsc::channel();
+        let mut poller = Poller::new(root.clone(), None, fetcher, tx);
+        poller.subscribe(vec![authored_feed()]);
+        assert!(poller.tick());
+        assert!(poller.tick());
+        assert_eq!(authored_reads(drain(&rx)), [Ok(Vec::new())]);
+        assert_eq!(
+            reads_made.load(Ordering::SeqCst),
+            1,
+            "read once, not retried"
+        );
+
+        let dir = super::scan::authored_dir(&root, "f");
+        std::fs::create_dir_all(&dir).expect("docs dir created after start");
+        write_renamed(&dir, "brief.md", 100);
+        assert!(poller.tick());
+        assert_eq!(
+            authored_reads(drain(&rx)),
+            [Ok(vec!["brief.md".to_string()])]
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_failed_authored_read_is_reported_once_and_retried() {
+        let (root, _dir) = authored_root("authored-error");
+        let reads = vec![
+            Err("torn read".to_string()),
+            Err("torn read".to_string()),
+            Ok(listing("notes/lens.md")),
+        ];
+        let (fetcher, reads_made) = fake_authored(reads);
+        let (tx, rx) = mpsc::channel();
+        let mut poller = Poller::new(root.clone(), None, fetcher, tx);
+        poller.subscribe(vec![authored_feed()]);
+        assert!(poller.tick());
+        assert_eq!(authored_reads(drain(&rx)), [Err("torn read".to_string())]);
+        assert!(poller.tick());
+        assert!(authored_reads(drain(&rx)).is_empty(), "reported once");
+        assert!(poller.tick());
+        assert_eq!(
+            authored_reads(drain(&rx)),
+            [Ok(vec!["notes/lens.md".to_string()])]
+        );
+        assert_eq!(reads_made.load(Ordering::SeqCst), 3);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn the_scopes_sent_match_tomlctl_ledger_scopes() {
         let root = temp_root("scopes-parity");
@@ -1421,6 +1705,40 @@ mod tests {
         assert_eq!(sent, walked);
         assert_eq!(walked["flows"].as_array().map(Vec::len), Some(2));
         assert_eq!(walked["scopes"].as_array().map(Vec::len), Some(6));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn commit_request(sha: &str) -> DocRequest {
+        DocRequest::Commit { sha: sha.into() }
+    }
+
+    #[test]
+    fn a_document_request_queued_behind_another_replaces_it() {
+        let root = temp_root("doc-replace");
+        let (fetcher, _) = fake(Vec::new());
+        let (tx, rx) = mpsc::channel();
+        let mut poller = Poller::new(root.clone(), None, fetcher, tx);
+        let mut wakes = Wakes::default();
+
+        assert!(poller.handle(Control::Doc(Some(commit_request("bad"))), &mut wakes));
+        assert!(poller.handle(Control::Doc(Some(commit_request("nope"))), &mut wakes));
+        assert!(poller.serve_doc());
+        assert!(poller.serve_doc(), "nothing left to serve");
+        let events = drain(&rx);
+        let [Event::Doc { request, document }] = events.as_slice() else {
+            panic!("{events:?}");
+        };
+        assert_eq!(*request, commit_request("nope"));
+        assert!(
+            document
+                .as_ref()
+                .is_err_and(|reason| reason.contains("nope"))
+        );
+
+        poller.handle(Control::Doc(Some(commit_request("bad"))), &mut wakes);
+        poller.handle(Control::Doc(None), &mut wakes);
+        assert!(poller.serve_doc());
+        assert!(drain(&rx).is_empty(), "a withdrawn request is not served");
         let _ = std::fs::remove_dir_all(&root);
     }
 }

@@ -1049,17 +1049,26 @@ mod tests {
         let app = app_on(8);
         let theme = app.theme.clone();
         let rows = draw(&app, 120, 30, Orientation::Horizontal);
-        for needle in ["▷ 6 Bind the keys", "□ 5 Style the rows", "○ pending"] {
+        for needle in ["▷ 6 Bind the keys", "□ 5 Style the rows"] {
             find(&rows, needle);
         }
         for (needle, style) in [
             ("▷ 6", theme.frontier(FrontierState::Ready)),
             ("□ 5", theme.frontier(FrontierState::Held)),
-            ("○ pending", theme.frontier(FrontierState::Blocked)),
         ] {
             let cell = cell_at(&app, needle, Orientation::Horizontal);
             assert_eq!(Some(cell.fg), style.fg, "{needle}");
         }
+
+        let app = app_on(7);
+        let rows = draw(&app, 120, 30, Orientation::Horizontal);
+        find(&rows, "○ pending");
+        let cell = cell_at(&app, "○ pending", Orientation::Horizontal);
+        assert_eq!(
+            Some(cell.fg),
+            theme.frontier(FrontierState::Blocked).fg,
+            "○ pending"
+        );
 
         let app = app_on(4);
         let rows = draw(&app, 120, 30, Orientation::Horizontal);

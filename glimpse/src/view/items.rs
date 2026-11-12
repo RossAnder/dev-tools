@@ -176,13 +176,15 @@ fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> Drawn {
 }
 
 /// What an empty list says, naming the next step: the command that writes the ledger,
-/// or the key that widens what is shown.
+/// or the key that widens what is shown. A surface with no ledger says nothing here;
+/// Inbox and Plan draw their own empty text.
 fn empty_text(state: &ItemsState) -> String {
     let (name, command) = match state.surface {
+        Surface::Review => ("review", "/review"),
         Surface::Optimise => ("optimise", "/optimise"),
         Surface::PlanReview => ("plan-review", "/review-plan"),
         Surface::Backlog => ("backlog", "/backlog"),
-        _ => ("review", "/review"),
+        Surface::Tasks | Surface::Inbox | Surface::Plan => return String::new(),
     };
     match &state.revision {
         Seen::Unread => "reading the ledger…".to_string(),

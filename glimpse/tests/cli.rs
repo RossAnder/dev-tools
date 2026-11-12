@@ -173,6 +173,73 @@ fn once_renders_every_task_of_a_snapshot_file() {
     assert!(!text.contains('\u{1b}'), "no escape sequences");
 }
 
+/// The fixture rendered headlessly on `surface` at `size`, lower-cased so a heading's case
+/// does not decide the match.
+fn once_surface(case: &str, surface: &str, size: &str) -> String {
+    let sb = Sandbox::new(case);
+    let out = sb.run(
+        &[
+            "--once",
+            "--snapshot",
+            FIXTURE,
+            "--surface",
+            surface,
+            "--size",
+            size,
+        ],
+        "",
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    stdout(&out)
+}
+
+#[test]
+fn once_renders_the_plan_surface_sections() {
+    let text = once_surface("plan-wide", "plan", "140x60");
+    let lower = text.to_lowercase();
+    for heading in ["decisions", "milestones", "notes", "health"] {
+        assert!(lower.contains(heading), "`{heading}` missing:\n{text}");
+    }
+    assert!(text.contains("D1"), "the fixture decision:\n{text}");
+}
+
+#[test]
+fn once_renders_the_plan_tab_label_when_narrow() {
+    let text = once_surface("plan-narrow", "plan", "80x30");
+    assert!(text.contains("Pl"), "the tab's short label:\n{text}");
+}
+
+/// `--once` has no flag that opens the details panel, so the v2 task's sections are
+/// asserted where the headless path can reach them: the fixture carries the spec the panel
+/// draws `Outcome` and `Premises` from, and the selected task still renders.
+#[test]
+fn once_selects_the_v2_task_the_details_draw_from() {
+    let fixture = std::fs::read_to_string(FIXTURE).expect("the fixture is readable");
+    assert!(fixture.contains("\"outcome\""), "the spec outcome");
+    assert!(fixture.contains("\"premises\""), "the spec premises");
+    let sb = Sandbox::new("select-v2");
+    let out = sb.run(
+        &[
+            "--once",
+            "--snapshot",
+            FIXTURE,
+            "--select",
+            "8",
+            "--size",
+            "140x50",
+        ],
+        "",
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert!(stdout(&out).contains("8 Wire"), "{}", stdout(&out));
+}
+
+#[test]
+fn once_lists_a_parked_task_under_needs_you() {
+    let text = once_surface("inbox-needs", "inbox", "120x40");
+    assert!(text.contains("needs you"), "{text}");
+}
+
 #[test]
 fn once_renders_the_diagram_view() {
     let sb = Sandbox::new("diagram");

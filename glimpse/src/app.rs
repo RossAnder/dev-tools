@@ -16,6 +16,7 @@ use tui_input::Input;
 use tui_input::backend::crossterm::EventHandler;
 
 use crate::actions::{self, InputForm, Overlay, Plan, Purpose, Selection, Transition};
+use crate::authored::{Authored, AuthoredList};
 use crate::config::{
     COLUMN_RANGE, Config, Density, DensityPref, HintMode, ItemColumn, Orientation, OrientationPref,
     PANEL_PERCENT_RANGE, Split, ViewKind,
@@ -27,10 +28,15 @@ use crate::flows::{FlowEntry, ScopeEntry, Scopes};
 use crate::form::{FieldValue, Form, FormOutcome};
 use crate::ledger::{InputRow, Inputs, ItemRow, Ledger};
 use crate::model::{AgentStatus, Index, Snapshot, TaskStatus};
+use crate::nav::{DocLane, Location, OpenDoc};
+use crate::plan_state::PlanState;
+use crate::rollup;
 use crate::scroll;
-use crate::surface::{HeaderKey, InboxState, ItemsState, Surface};
+use crate::surface::{self, CursorList, HeaderKey, InboxState, ItemsState, NeedRow, Surface};
 use crate::theme::Theme;
 use crate::theme::sets::{self, ThemeSet};
+use crate::view::details;
+use crate::view::doc::Link;
 use crate::writer::{WriteOutcome, WriteRequest};
 use crate::writes::{Saving, Writes};
 
@@ -124,6 +130,8 @@ pub(crate) struct Regions {
     pub(crate) body: Rect,
     /// The strip between the view and a docked panel that a drag resizes from.
     pub(crate) divider: Option<Rect>,
+    /// One rect per drawn row of the links list, keyed by its index in the list.
+    pub(crate) links: Vec<(Rect, usize)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -243,7 +251,23 @@ pub(crate) enum Action {
     /// current item surface's marks, else closes the topmost panel, or quits when none is
     /// open.
     Back,
+    /// Returns to the location the last [`App::open`] left; nothing when none is stacked.
+    GoBack,
+    /// Opens the links list of the record whose details are showing, or closes it.
+    ToggleLinks,
+    /// A click on a links-list row: follows the link at that index.
+    OpenLink(usize),
     Quit,
+}
+
+/// The open links list. While it is up it takes every key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct LinksList {
+    pub(crate) links: Vec<Link>,
+    /// An index into `links`.
+    pub(crate) cursor: usize,
+    /// The rows the last frame drew; a page move steps by it.
+    pub(crate) page: usize,
 }
 
 /// One row the selector cursor can rest on, in display order.
@@ -397,6 +421,17 @@ pub(crate) struct App {
     pub(crate) overlay: Option<Overlay>,
     /// Queued and in-flight writes and the undo stack.
     pub(crate) writes: Writes,
+    /// The locations [`App::open`] left, newest last; emptied whenever the flow changes.
+    pub(crate) back: Vec<Location>,
+    /// The viewed flow's authored-files listing; emptied whenever the flow changes.
+    pub(crate) authored: Authored,
+    /// The Plan surface's list, rebuilt from the snapshot, the listing and the rollups.
+    pub(crate) plan: PlanState,
+    pub(crate) links: Option<LinksList>,
+    /// The source, commit or finding opened over a row; see [`App::open_doc`].
+    pub(crate) doc: Option<OpenDoc>,
+    /// The document the runtime last asked the poller for, and its answer.
+    pub(crate) lane: DocLane,
 }
 
 impl App {
@@ -484,16 +519,32 @@ impl App {
             ledger_sources: HashMap::new(),
             overlay: None,
             writes: Writes::default(),
+            back: Vec::new(),
+            authored: Authored::default(),
+            plan: PlanState::default(),
+            links: None,
+            doc: None,
+            lane: DocLane::default(),
         };
         app.show_set(set);
         app.refresh_stale();
         app.reselect();
+        // `--once` applies no snapshot after this, so the surface and the Inbox's
+        // needs-you rows are built here too.
+        app.rebuild_plan(Instant::now());
+        app.rebuild_needs();
         app
     }
 
     /// Returns the action when only the runtime can carry it out: `Quit`, `Copy`,
     /// `SetCapture`, or `SwitchFlow` to a flow other than the current one.
-    pub(crate) fn apply(&mut self, action: Action) -> Option<Action> {
+    pub(crate) fn apply(&mut self, mut action: Action) -> Option<Action> {
+        if self.links.is_some() {
+            match self.apply_links(action) {
+                Ok(handed_back) => return handed_back,
+                Err(passed) => action = passed,
+            }
+        }
         match action {
             Action::Move(dir) if self.theme_picker.is_some() => {
                 let delta = match dir {
@@ -568,6 +619,14 @@ impl App {
             }
             Action::Move(dir) => {
                 self.move_selection(dir);
+                None
+            }
+            Action::NextView if self.surface == Surface::Plan => {
+                self.edit_plan(PlanState::next_section);
+                None
+            }
+            Action::PrevView if self.surface == Surface::Plan => {
+                self.edit_plan(PlanState::prev_section);
                 None
             }
             Action::NextView => {
@@ -742,6 +801,13 @@ impl App {
                 }
                 None
             }
+            Action::Details if self.inbox_need().is_some() => {
+                match self.inbox_need().and_then(|need| need.target.clone()) {
+                    Some(target) => return self.open(target),
+                    None => self.notify("this entry names nothing to open".to_owned()),
+                }
+                None
+            }
             Action::Details if self.surface != Surface::Tasks && !self.has_cursor_row() => None,
             Action::Details => {
                 let compact = self.resolved_density == Density::Compact;
@@ -781,22 +847,14 @@ impl App {
                 self.scroll_details(scroll);
                 None
             }
-            Action::Page(scroll) if self.surface == Surface::Inbox => {
-                self.edit_inbox(|inbox| inbox.page_cursor(scroll));
-                None
-            }
             Action::Page(scroll) if self.surface != Surface::Tasks => {
-                self.edit_items(|state| state.page_cursor(scroll));
+                self.edit_list(|list| list.page_cursor(scroll));
                 None
             }
             Action::Page(scroll) => self.page_tasks(scroll),
-            Action::ScrollView(_, rows) if self.surface == Surface::Inbox => {
-                self.inbox.scroll_by(rows);
-                None
-            }
             Action::ScrollView(_, rows) if self.surface != Surface::Tasks => {
-                if let Some(state) = self.items.get_mut(&self.surface) {
-                    state.scroll_by(rows);
+                if let Some(list) = self.list_mut() {
+                    list.scroll_by(rows);
                 }
                 None
             }
@@ -887,6 +945,8 @@ impl App {
                 // A hand-picked flow would be switched away from at the next
                 // flow change otherwise.
                 self.auto_flow = false;
+                self.back.clear();
+                self.doc = None;
                 Some(Action::SwitchFlow(slug))
             }
             Action::SwitchScope(kind, scope) => {
@@ -895,17 +955,16 @@ impl App {
                     return None;
                 }
                 self.auto_flow = false;
+                self.back.clear();
+                self.doc = None;
                 self.scope = Some((kind, scope.clone()));
                 self.apply(Action::SwitchSurface(surface_of(kind)));
                 Some(Action::SwitchScope(kind, scope))
             }
             Action::SwitchSurface(surface) => {
                 self.surface = surface;
-                if let Some(state) = self.items.get_mut(&surface) {
-                    state.viewed();
-                }
-                if surface == Surface::Inbox {
-                    self.inbox.viewed();
+                if let Some(list) = self.list_mut() {
+                    list.viewed();
                 }
                 None
             }
@@ -915,27 +974,42 @@ impl App {
                     Dir::Down => 1,
                     Dir::Left | Dir::Right => return None,
                 };
-                if self.surface == Surface::Inbox {
-                    self.edit_inbox(|inbox| inbox.move_cursor(delta));
-                } else {
-                    self.edit_items(|state| state.move_cursor(delta));
-                }
-                None
-            }
-            Action::SelectItem(id) if self.surface == Surface::Inbox => {
-                self.edit_inbox(|inbox| {
-                    if inbox.row(&id).is_some() {
-                        inbox.cursor = Some(id);
-                    }
-                });
+                self.edit_list(|list| list.move_cursor(delta));
                 None
             }
             Action::SelectItem(id) => {
-                self.edit_items(|state| {
-                    if state.row(&id).is_some() {
-                        state.cursor = Some(id);
-                    }
-                });
+                self.edit_list(|list| list.select_row(&id));
+                None
+            }
+            Action::ToggleMark
+            | Action::OpenMenu
+            | Action::OpenClassify
+            | Action::OpenRequest
+            | Action::Withdraw
+                if self.inbox_need().is_some() =>
+            {
+                self.notify("a needs-you row is read-only".to_owned());
+                None
+            }
+            // The Plan surface is read-only and has no marks, groups, sorts or filter.
+            Action::ToggleMark
+            | Action::MarkVisible
+            | Action::CycleGroup
+            | Action::CycleSort
+            | Action::SortBy(_)
+            | Action::FlipSortDir
+            | Action::OpenColumns
+            | Action::ToggleClosed
+            | Action::OpenMenu
+            | Action::OpenClassify
+            | Action::ToggleQueue
+            | Action::QueueUp
+            | Action::QueueDown
+            | Action::OpenRequest
+            | Action::Withdraw
+            | Action::OpenFilter
+                if self.surface == Surface::Plan =>
+            {
                 None
             }
             Action::ToggleMark => {
@@ -1132,8 +1206,96 @@ impl App {
                 }
                 None
             }
+            Action::GoBack => {
+                self.go_back();
+                None
+            }
+            Action::ToggleLinks => {
+                if self.legend_open || self.selector_open || self.theme_picker.is_some() {
+                    return None;
+                }
+                let links = details::links(self);
+                if links.is_empty() {
+                    self.notify("no links from this record".to_owned());
+                } else {
+                    self.links = Some(LinksList {
+                        links,
+                        cursor: 0,
+                        page: 1,
+                    });
+                }
+                None
+            }
+            // A click can only land on a row while the list is up.
+            Action::OpenLink(_) => None,
             Action::Quit => Some(Action::Quit),
         }
+    }
+
+    /// An action while the links list is up: `Ok` with what to hand back when the list
+    /// took it, `Err` with the action for the runtime-facing ones it lets through.
+    fn apply_links(&mut self, action: Action) -> Result<Option<Action>, Action> {
+        let Some(list) = self.links.as_mut() else {
+            return Err(action);
+        };
+        let last = list.links.len().saturating_sub(1);
+        match action {
+            Action::Move(Dir::Up) => list.cursor = list.cursor.saturating_sub(1),
+            Action::Move(Dir::Down) => list.cursor = (list.cursor + 1).min(last),
+            Action::Page(scroll) => {
+                if let Some(to) =
+                    scroll::step(Some(list.cursor), list.links.len(), list.page, scroll)
+                {
+                    list.cursor = to;
+                }
+            }
+            Action::Details => {
+                let at = list.cursor;
+                return Ok(self.follow_link(at));
+            }
+            Action::OpenLink(at) => return Ok(self.follow_link(at)),
+            Action::Back | Action::ToggleLinks => self.links = None,
+            Action::Quit
+            | Action::Copy(_)
+            | Action::SetCapture(_)
+            | Action::ToggleCapture
+            | Action::DragTo(..)
+            | Action::DragEnd
+            | Action::PanTo(..)
+            | Action::PanEnd => return Err(action),
+            _ => {}
+        }
+        Ok(None)
+    }
+
+    /// Closes the links list, then opens its link at `at`, so the back stack holds the
+    /// place the list was opened from. Hands back what [`App::open`] does.
+    fn follow_link(&mut self, at: usize) -> Option<Action> {
+        let link = self
+            .links
+            .take()
+            .and_then(|list| list.links.into_iter().nth(at))?;
+        self.open(link.target)
+    }
+
+    /// Swaps in a fresh authored-files listing read at `revision`; the revision already
+    /// held changes nothing.
+    pub(crate) fn apply_authored(&mut self, list: AuthoredList, revision: u64) {
+        if self.authored.apply(list, revision) {
+            self.rebuild_plan(Instant::now());
+        }
+    }
+
+    /// Rebuilds the Plan surface from the snapshot, the authored listing and rollups
+    /// totalled up to the wall clock's present second.
+    pub(crate) fn rebuild_plan(&mut self, now: Instant) {
+        let secs = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs());
+        let cost = rollup::rollup(&self.snapshot, secs);
+        let viewing = self.surface == Surface::Plan;
+        self.plan
+            .rebuild(&self.snapshot, &self.authored.files, &cost, viewing, now);
     }
 
     /// Swaps in `snapshot`, flashing each task whose status changed. A
@@ -1154,6 +1316,11 @@ impl App {
         } else {
             self.flashes.clear();
             self.pending_changes = 0;
+            self.back.clear();
+            self.doc = None;
+            self.links = None;
+            self.authored.clear();
+            self.plan = PlanState::default();
             self.select(None);
         }
         self.index = snapshot.index();
@@ -1165,6 +1332,13 @@ impl App {
         self.expire_flashes(now);
         self.refresh_stale();
         self.reselect();
+        self.rebuild_plan(now);
+        self.rebuild_needs();
+    }
+
+    /// Rebuilds the Inbox's needs-you rows from the snapshot.
+    fn rebuild_needs(&mut self) {
+        self.inbox.set_needs(surface::needs_of(&self.snapshot));
     }
 
     /// Hands a ledger read to the item surface that lists its kind. Off screen,
@@ -1200,12 +1374,20 @@ impl App {
             .apply_inputs(inputs.rows, inputs.revision, viewing, now);
     }
 
-    /// The questions waiting on an answer; `None` until the input store is first read.
+    /// What waits on the user in the Inbox: the unanswered questions and the needs-you
+    /// rows. `None` until the input store is first read.
     pub(crate) fn inbox_unanswered(&self) -> Option<usize> {
         self.inbox
             .revision
             .is_read()
-            .then(|| self.inbox.unanswered())
+            .then(|| self.inbox.unanswered() + self.inbox.needs.len())
+    }
+
+    /// The Inbox's needs-you row under the cursor while the Inbox is shown.
+    fn inbox_need(&self) -> Option<&NeedRow> {
+        (self.surface == Surface::Inbox)
+            .then(|| self.inbox.cursor_need())
+            .flatten()
     }
 
     /// The Inbox cursor record while the Inbox is shown and it is an answerable question.
@@ -1215,26 +1397,78 @@ impl App {
             .flatten()
     }
 
-    /// Whether the current item surface or the Inbox has a row under its cursor.
+    /// Whether the current list surface has a row under its cursor.
     fn has_cursor_row(&self) -> bool {
-        if self.surface == Surface::Inbox {
-            return self.inbox.cursor_row().is_some();
-        }
-        self.current_items()
-            .and_then(ItemsState::cursor_row)
-            .is_some()
+        self.list().and_then(CursorList::cursor_row_id).is_some()
     }
 
-    /// The id `y` copies: the cursor row's on an item surface or the Inbox, the
-    /// selected task's on Tasks.
+    /// The id `y` copies: the cursor row's on a list surface, the selected task's on
+    /// Tasks.
     fn copy_target(&self) -> Option<String> {
         match self.surface {
             Surface::Tasks => self.selected.map(|id| id.to_string()),
-            Surface::Inbox => self.inbox.cursor_row().map(|row| row.id.clone()),
+            Surface::Plan => self
+                .plan
+                .cursor_row_id()
+                .map(|id| id.split_once(':').map_or(id, |(_, key)| key).to_owned()),
+            Surface::Inbox if self.inbox.cursor_need().is_some() => self
+                .inbox
+                .cursor_need()
+                .map(|need| need.key.clone())
+                .filter(|key| !key.is_empty()),
             _ => self
-                .current_items()
-                .and_then(ItemsState::cursor_row)
-                .map(|row| row.id.clone()),
+                .list()
+                .and_then(CursorList::cursor_row_id)
+                .map(str::to_owned),
+        }
+    }
+
+    /// The current surface's list; `None` on Tasks.
+    pub(crate) fn list(&self) -> Option<&dyn CursorList> {
+        match self.surface {
+            Surface::Inbox => Some(&self.inbox),
+            Surface::Plan => Some(&self.plan),
+            surface => self
+                .items
+                .get(&surface)
+                .map(|state| state as &dyn CursorList),
+        }
+    }
+
+    /// [`App::list`], for editing.
+    pub(crate) fn list_mut(&mut self) -> Option<&mut dyn CursorList> {
+        match self.surface {
+            Surface::Inbox => Some(&mut self.inbox),
+            Surface::Plan => Some(&mut self.plan),
+            surface => self
+                .items
+                .get_mut(&surface)
+                .map(|state| state as &mut dyn CursorList),
+        }
+    }
+
+    /// [`App::edit_list`] for an edit only the Plan surface's list offers.
+    fn edit_plan(&mut self, edit: impl FnOnce(&mut PlanState)) {
+        let before = self.plan.cursor.clone();
+        edit(&mut self.plan);
+        if self.plan.cursor != before {
+            self.plan.scroll_pinned = false;
+            self.details_scroll = 0;
+        }
+    }
+
+    /// Edits the current surface's list as [`App::edit_items`] does: a cursor the edit
+    /// moved unpins the list and starts the details scroll over.
+    pub(crate) fn edit_list(&mut self, edit: impl FnOnce(&mut dyn CursorList)) {
+        let Some(list) = self.list_mut() else {
+            return;
+        };
+        let before = list.cursor().map(str::to_owned);
+        edit(&mut *list);
+        let moved = list.cursor() != before.as_deref();
+        if moved {
+            list.unpin();
+            self.details_scroll = 0;
         }
     }
 
@@ -1288,7 +1522,7 @@ impl App {
     /// Edits the current surface's item state; a cursor the edit moved starts the
     /// details scroll over, as a new task selection does. A moved cursor or a changed
     /// visible order also lets the list follow the cursor again after the wheel.
-    fn edit_items(&mut self, edit: impl FnOnce(&mut ItemsState)) {
+    pub(crate) fn edit_items(&mut self, edit: impl FnOnce(&mut ItemsState)) {
         let Some(state) = self.items.get_mut(&self.surface) else {
             return;
         };
@@ -1309,7 +1543,7 @@ impl App {
     }
 
     /// [`App::edit_items`] for the Inbox.
-    fn edit_inbox(&mut self, edit: impl FnOnce(&mut InboxState)) {
+    pub(crate) fn edit_inbox(&mut self, edit: impl FnOnce(&mut InboxState)) {
         let order = |i: &InboxState| (i.show_closed, i.sort, i.sort_dir);
         let before = self.inbox.cursor.clone();
         let order_before = order(&self.inbox);
@@ -1651,6 +1885,11 @@ impl App {
             state.expire_flashes(now);
         }
         self.inbox.expire_flashes(now);
+        self.plan.expire_flashes(now);
+        // An open segment's time moves with the clock, so the Cost rows are re-totalled.
+        if self.surface == Surface::Plan {
+            self.rebuild_plan(now);
+        }
         if self.live_notice(now).is_none() {
             self.notice = None;
         }
@@ -1660,12 +1899,13 @@ impl App {
     /// True while something on screen changes with time alone: a live task or item
     /// flash or notice, or a running agent whose elapsed counter is still advancing.
     /// The agent clause applies only where an elapsed counter is drawn: the Tasks
-    /// surface, the details panel and the activity panel.
+    /// surface, the Plan surface's Cost rows, the details panel and the activity panel.
     pub(crate) fn needs_tick(&self, now: Instant) -> bool {
         let live = |at: &Instant| now.saturating_duration_since(*at) < FLASH;
         let surface_flashing = match self.surface {
             Surface::Tasks => self.flashes.values().any(live),
             Surface::Inbox => self.inbox.flashes.values().any(live),
+            Surface::Plan => self.plan.flashes.values().any(live),
             surface => self
                 .items
                 .get(&surface)
@@ -1673,7 +1913,9 @@ impl App {
         };
         surface_flashing
             || self.live_notice(now).is_some()
-            || ((self.surface == Surface::Tasks || self.details_open || self.activity_open)
+            || ((matches!(self.surface, Surface::Tasks | Surface::Plan)
+                || self.details_open
+                || self.activity_open)
                 && self.snapshot.agents.iter().any(|agent| {
                     agent.status == AgentStatus::Running && !self.stale_agents.contains(&agent.id)
                 }))
@@ -1711,7 +1953,7 @@ impl App {
             .map(|(text, _)| text.as_str())
     }
 
-    fn notify(&mut self, text: String) {
+    pub(crate) fn notify(&mut self, text: String) {
         self.notify_for(text, NOTICE);
     }
 
@@ -1778,7 +2020,7 @@ impl App {
     /// Every selection change goes through here so the details scroll starts over,
     /// the view follows the selection again, and the traversal trail, which no longer
     /// leads here, is dropped.
-    fn select(&mut self, id: Option<u32>) {
+    pub(crate) fn select(&mut self, id: Option<u32>) {
         if id != self.selected {
             self.details_scroll = 0;
             self.scroll_pinned = false;
@@ -1789,6 +2031,9 @@ impl App {
 
     /// Clamped against the bounds the last frame recorded; a page keeps one row of overlap.
     fn scroll_details(&mut self, scroll: Scroll) {
+        if self.scroll_doc(scroll) {
+            return;
+        }
         self.details_scroll = scroll::offset(
             self.details_scroll,
             self.details_max_scroll,
@@ -3639,21 +3884,183 @@ mod tests {
         }
     }
 
+    /// An app over a flow with no plan store, so its Inbox holds input records alone.
+    fn planless_app() -> App {
+        let mut snap = fixture();
+        snap.plan = None;
+        App::new(snap, &Config::default())
+    }
+
+    fn inputs_at(revision: &str, rows: Vec<InputRow>) -> Inputs {
+        Inputs {
+            path: ".claude/inputs.toml".to_string(),
+            revision: Some(revision.to_string()),
+            rows,
+        }
+    }
+
     /// An app on the Inbox holding a question `I1` and the user's own note `I2`.
     fn inbox_app() -> App {
+        let mut app = planless_app();
+        app.apply(Action::SwitchSurface(Surface::Inbox));
+        let rows = vec![
+            record("I1", "question", "review", "new"),
+            record("I2", "note", "user", "new"),
+        ];
+        app.apply_inputs(inputs_at("v1", rows), Instant::now());
+        app
+    }
+
+    /// [`inbox_app`] over the fixture's plan store, whose needs-you rows lead the Inbox.
+    fn needs_you_app() -> App {
         let mut app = app();
         app.apply(Action::SwitchSurface(Surface::Inbox));
         let rows = vec![
             record("I1", "question", "review", "new"),
             record("I2", "note", "user", "new"),
         ];
-        let inputs = Inputs {
-            path: ".claude/inputs.toml".to_string(),
-            revision: Some("v1".to_string()),
-            rows,
-        };
-        app.apply_inputs(inputs, Instant::now());
+        app.apply_inputs(inputs_at("v1", rows), Instant::now());
         app
+    }
+
+    fn inbox_ids(app: &App) -> Vec<String> {
+        crate::surface::item_ids(app.inbox.visible())
+    }
+
+    #[test]
+    fn the_inbox_leads_with_the_needs_you_rows() {
+        let app = needs_you_app();
+        assert_eq!(
+            inbox_ids(&app),
+            [
+                "need:task:8",
+                "need:handover:H1",
+                "need:report:0",
+                "I1",
+                "I2"
+            ]
+        );
+        assert_eq!(
+            app.inbox.cursor.as_deref(),
+            Some("need:task:8"),
+            "the cursor starts on the first row"
+        );
+    }
+
+    #[test]
+    fn enter_on_a_needs_you_row_opens_its_record_and_back_returns_to_it() {
+        let mut app = needs_you_app();
+        app.apply(Action::SelectItem("need:task:8".to_string()));
+        app.apply(Action::Details);
+        assert_eq!(app.surface, Surface::Tasks);
+        assert_eq!(app.selected, Some(8));
+        assert!(app.overlay.is_none());
+
+        app.apply(Action::GoBack);
+        assert_eq!(app.surface, Surface::Inbox);
+        assert_eq!(app.inbox.cursor.as_deref(), Some("need:task:8"));
+
+        app.apply(Action::SelectItem("need:handover:H1".to_string()));
+        app.apply(Action::Details);
+        assert_eq!(app.surface, Surface::Plan);
+        app.apply(Action::GoBack);
+        assert_eq!(app.inbox.cursor.as_deref(), Some("need:handover:H1"));
+
+        app.apply(Action::SelectItem("need:report:0".to_string()));
+        app.apply(Action::Details);
+        assert_eq!(app.surface, Surface::Inbox, "a path opens over the row");
+        assert!(matches!(
+            app.doc_target(),
+            Some(crate::nav::Target::Source { path, .. })
+                if path == ".claude/flows/demo-flow/gates/B-r0-s1-c1.log"
+        ));
+    }
+
+    #[test]
+    fn a_needs_you_entry_with_no_target_opens_nothing() {
+        let mut snap = fixture();
+        if let Some(plan) = snap.plan.as_mut() {
+            for entry in plan
+                .reports
+                .last_mut()
+                .expect("a report")
+                .entries
+                .iter_mut()
+            {
+                entry.path.clear();
+            }
+        }
+        let mut app = App::new(snap, &Config::default());
+        app.apply(Action::SwitchSurface(Surface::Inbox));
+        app.apply(Action::SelectItem("need:report:0".to_string()));
+        app.apply(Action::Details);
+        assert_eq!(app.surface, Surface::Inbox);
+        assert!(app.back.is_empty() && !app.details_open);
+        assert_eq!(
+            app.live_notice(Instant::now()),
+            Some("this entry names nothing to open")
+        );
+    }
+
+    #[test]
+    fn a_write_action_on_a_needs_you_row_does_nothing() {
+        let mut app = needs_you_app();
+        app.apply(Action::SelectItem("need:handover:H1".to_string()));
+        for action in [
+            Action::Withdraw,
+            Action::OpenRequest,
+            Action::OpenMenu,
+            Action::OpenClassify,
+            Action::ToggleMark,
+        ] {
+            app.notice = None;
+            app.apply(action.clone());
+            assert!(app.overlay.is_none(), "{action:?} opened {:?}", app.overlay);
+            assert_eq!(
+                app.live_notice(Instant::now()),
+                Some("a needs-you row is read-only"),
+                "{action:?}"
+            );
+        }
+        assert!(app.take_writes().is_empty());
+        assert_eq!(app.inbox.cursor.as_deref(), Some("need:handover:H1"));
+        assert_eq!(
+            app.apply(Action::CopyId),
+            Some(Action::Copy("H1".to_string()))
+        );
+    }
+
+    #[test]
+    fn the_inbox_count_includes_the_needs_you_rows_and_a_refresh_adds_no_arrival() {
+        let mut app = needs_you_app();
+        assert_eq!(
+            app.inbox_unanswered(),
+            Some(4),
+            "one question and three rows"
+        );
+        app.apply(Action::SwitchSurface(Surface::Tasks));
+        let mut snap = fixture();
+        snap.revision = "next".to_string();
+        app.apply_snapshot(snap, Instant::now());
+        assert_eq!(app.inbox.new_since_view, 0);
+        assert_eq!(app.inbox_unanswered(), Some(4));
+
+        let mut snap = fixture();
+        if let Some(plan) = snap.plan.as_mut() {
+            plan.handovers.iter_mut().for_each(|h| h.done = true);
+        }
+        app.apply_snapshot(snap, Instant::now());
+        assert_eq!(app.inbox_unanswered(), Some(3));
+        assert_eq!(app.inbox.new_since_view, 0);
+    }
+
+    #[test]
+    fn a_flow_without_a_plan_store_has_no_needs_you_section() {
+        let app = inbox_app();
+        assert_eq!(inbox_ids(&app), ["I1", "I2"]);
+        assert!(app.inbox.needs.is_empty());
+        assert_eq!(app.inbox.cursor.as_deref(), Some("I1"));
+        assert_eq!(app.inbox_unanswered(), Some(1));
     }
 
     #[test]
@@ -3708,7 +4115,7 @@ mod tests {
 
     #[test]
     fn apply_inputs_counts_unanswered_questions_once_read() {
-        let mut app = app();
+        let mut app = planless_app();
         assert_eq!(app.inbox_unanswered(), None, "nothing read yet");
         let inputs = Inputs {
             path: String::new(),
@@ -4032,5 +4439,111 @@ mod tests {
         assert!(app.flashes.is_empty());
         assert_eq!(app.pending_changes, 0);
         assert_eq!(app.selected, Some(4), "a new flow starts at its frontier");
+    }
+
+    fn press(app: &mut App, code: KeyCode) {
+        let event = KeyEvent::new(code, ratatui::crossterm::event::KeyModifiers::NONE);
+        let action = crate::keys::map(event).expect("a mapped key");
+        app.apply(action);
+    }
+
+    fn plan_cursor(app: &App) -> Option<&str> {
+        app.plan.cursor.as_deref()
+    }
+
+    #[test]
+    fn seven_reaches_the_plan_surface_and_the_other_digits_keep_theirs() {
+        let mut app = app();
+        press(&mut app, KeyCode::Char('7'));
+        assert_eq!(app.surface, Surface::Plan);
+        for surface in Surface::ALL {
+            press(&mut app, KeyCode::Char(surface.digit()));
+            assert_eq!(app.surface, surface);
+        }
+    }
+
+    #[test]
+    fn the_plan_surface_is_built_with_the_app() {
+        let app = app();
+        assert!(app.plan.has_plan);
+        assert_eq!(plan_cursor(&app), Some("decisions:D1"));
+    }
+
+    #[test]
+    fn cursor_page_and_section_keys_move_the_plan_surface_cursor() {
+        let mut app = app();
+        let view = app.view;
+        press(&mut app, KeyCode::Char('7'));
+        press(&mut app, KeyCode::Down);
+        assert_eq!(plan_cursor(&app), Some("contracts:C1"));
+        press(&mut app, KeyCode::Up);
+        assert_eq!(plan_cursor(&app), Some("decisions:D1"));
+        press(&mut app, KeyCode::Tab);
+        assert_eq!(plan_cursor(&app), Some("contracts:C1"));
+        press(&mut app, KeyCode::Tab);
+        assert_eq!(plan_cursor(&app), Some("handovers:H1"));
+        press(&mut app, KeyCode::BackTab);
+        assert_eq!(plan_cursor(&app), Some("contracts:C1"));
+        assert_eq!(app.view, view, "Tab leaves the task view alone here");
+        app.apply(Action::Page(Scroll::Bottom));
+        assert_eq!(plan_cursor(&app), Some("health:gate:B.0"));
+        app.apply(Action::Page(Scroll::Top));
+        assert_eq!(plan_cursor(&app), Some("decisions:D1"));
+        app.apply(Action::SelectItem("milestones:A".to_string()));
+        assert_eq!(plan_cursor(&app), Some("milestones:A"));
+        assert_eq!(
+            app.apply(Action::CopyId),
+            Some(Action::Copy("A".to_string()))
+        );
+    }
+
+    #[test]
+    fn tab_still_cycles_views_off_the_plan_surface() {
+        let mut app = app();
+        let before = app.view;
+        press(&mut app, KeyCode::Tab);
+        assert_eq!(app.view, before.next());
+    }
+
+    #[test]
+    fn item_actions_do_nothing_on_the_plan_surface() {
+        let mut app = app();
+        app.apply(Action::SwitchSurface(Surface::Plan));
+        for action in [
+            Action::ToggleMark,
+            Action::MarkVisible,
+            Action::CycleGroup,
+            Action::CycleSort,
+            Action::FlipSortDir,
+            Action::OpenColumns,
+            Action::ToggleClosed,
+            Action::OpenMenu,
+            Action::OpenClassify,
+            Action::ToggleQueue,
+            Action::OpenRequest,
+            Action::Withdraw,
+            Action::OpenFilter,
+        ] {
+            app.notice = None;
+            assert_eq!(app.apply(action.clone()), None, "{action:?}");
+            assert!(app.overlay.is_none(), "{action:?}");
+            assert!(app.notice.is_none(), "{action:?}");
+        }
+        assert!(app.take_writes().is_empty());
+        assert_eq!(plan_cursor(&app), Some("decisions:D1"));
+    }
+
+    #[test]
+    fn a_running_agent_keeps_the_plan_surface_ticking() {
+        let mut app = app();
+        let t0 = Instant::now();
+        app.stale_agents.clear();
+        app.surface = Surface::Review;
+        assert!(!app.needs_tick(t0));
+        app.surface = Surface::Plan;
+        assert!(
+            app.needs_tick(t0),
+            "the Cost rows count a running agent's time"
+        );
     }
 }

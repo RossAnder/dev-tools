@@ -20,25 +20,56 @@ use crate::app::App;
 use crate::hook::parse_utc;
 use crate::ledger::{Anchor, InputRow, ItemRow, StatusClass};
 use crate::model::{Agent, AgentKind, AgentStatus, FrontierState, RecordEntry, Task, TaskStatus};
+use crate::nav::Target;
 use crate::surface::{ItemsState, Surface};
 use crate::theme::Theme;
-use crate::view::{self, markdown};
+use crate::view::doc::{Doc, Link};
+use crate::view::{self, doc_view, markdown, plan_details, task_spec};
 
-const INDENT: &str = "  ";
+pub(super) const INDENT: &str = "  ";
 
 /// Draws the details of `app.selected`, or of the cursor row on an item
 /// surface, into `area` scrolled down `scroll` rows, and returns the wrapped
 /// content height in rows. The border names only the id; the first content
 /// row carries the whole title.
+/// An open document is drawn in place of the details, at its own scroll.
 pub(crate) fn render(frame: &mut Frame, area: Rect, app: &App, scroll: u16) -> u16 {
-    let now = SystemTime::now();
-    let (id, text) = match app.surface {
+    if let Some(target) = app.doc_target() {
+        let width = view::panel::block("", &app.theme).inner(area).width;
+        let (title, doc) = doc_view::content(app, &target, width);
+        let scroll = app.open_doc().map_or(scroll, |doc| doc.scroll);
+        return render_text(frame, area, &app.theme, title, doc.text, scroll);
+    }
+    let (id, doc) = shown(app, SystemTime::now());
+    let title = id.map_or_else(|| " details ".to_string(), |id| format!(" {id} "));
+    render_text(frame, area, &app.theme, title, doc.text, scroll)
+}
+
+/// The links of the record or document [`render`] draws, in the order its text
+/// mentions them.
+pub(crate) fn links(app: &App) -> Vec<Link> {
+    if let Some(target) = app.doc_target() {
+        return doc_view::content(app, &target, u16::MAX).1.links;
+    }
+    shown(app, SystemTime::now()).1.links
+}
+
+/// The shown record's id for the border, and its document.
+fn shown(app: &App, now: SystemTime) -> (Option<String>, Doc) {
+    match app.surface {
         Surface::Tasks => (
             app.selected
                 .and_then(|id| app.index.task(&app.snapshot, id))
                 .map(|task| format!("#{}", task.id)),
             content(app, now),
         ),
+        Surface::Plan => match app.plan.cursor_row() {
+            Some(row) => (Some(row.id.clone()), plan_details::content(app, row)),
+            None => (
+                None,
+                Text::from(Line::styled("No item selected.", app.theme.pending)).into(),
+            ),
+        },
         _ => match app.current_items().and_then(ItemsState::cursor_row) {
             Some(row) => {
                 let backlog = app.surface == Surface::Backlog;
@@ -60,12 +91,10 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, app: &App, scroll: u16) -> u
             }
             None => (
                 None,
-                Text::from(Line::styled("No item selected.", app.theme.pending)),
+                Text::from(Line::styled("No item selected.", app.theme.pending)).into(),
             ),
         },
-    };
-    let title = id.map_or_else(|| " details ".to_string(), |id| format!(" {id} "));
-    render_text(frame, area, &app.theme, title, text, scroll)
+    }
 }
 
 /// Draws `text` wrapped inside a bordered panel titled `title`. An offset past
@@ -111,17 +140,19 @@ fn render_text(
     height
 }
 
-/// The panel's lines for the selected task, unwrapped. `now` dates the open
-/// segment of a running agent.
-pub(crate) fn content(app: &App, now: SystemTime) -> Text<'static> {
+/// The panel's lines for the selected task, unwrapped, and its needs, coupled
+/// tasks, dependents and file-sharing tasks as links, each once at its first
+/// mention. `now` dates the open segment of a running agent.
+pub(crate) fn content(app: &App, now: SystemTime) -> Doc {
     let theme = &app.theme;
     let snapshot = &app.snapshot;
     let index = &app.index;
     let Some(task) = app.selected.and_then(|id| index.task(snapshot, id)) else {
-        return Text::from(Line::styled("No task selected.", theme.pending));
+        return Text::from(Line::styled("No task selected.", theme.pending)).into();
     };
 
     let mut out: Vec<Line<'static>> = Vec::new();
+    let mut links: Vec<Link> = Vec::new();
     out.push(Line::styled(
         format!("#{} {}", task.id, task.title),
         theme.slug,
@@ -158,11 +189,16 @@ pub(crate) fn content(app: &App, now: SystemTime) -> Text<'static> {
 
     if !task.files.is_empty() {
         section(&mut out, "Files", theme);
-        out.extend(
-            task.files
-                .iter()
-                .map(|f| Line::styled(format!("{INDENT}{f}"), theme.secondary)),
-        );
+        out.extend(task.files.iter().map(|f| {
+            match task.file_notes.get(f).filter(|_| task.spec.is_some()) {
+                Some(note) => Line::from(vec![
+                    Span::styled(format!("{INDENT}{f}"), theme.secondary),
+                    Span::styled("  — ", theme.secondary),
+                    Span::raw(note.clone()),
+                ]),
+                None => Line::styled(format!("{INDENT}{f}"), theme.secondary),
+            }
+        }));
     }
 
     let mut coupled: Vec<u32> = task
@@ -186,6 +222,13 @@ pub(crate) fn content(app: &App, now: SystemTime) -> Text<'static> {
         for id in ids {
             out.push(match index.task(snapshot, *id) {
                 Some(peer) => {
+                    let target = Target::Task(peer.id);
+                    if !links.iter().any(|link| link.target == target) {
+                        links.push(Link {
+                            label: format!("#{} {}", peer.id, peer.title),
+                            target,
+                        });
+                    }
                     let mut spans = vec![
                         Span::raw(INDENT),
                         peer_mark(app, peer),
@@ -201,18 +244,27 @@ pub(crate) fn content(app: &App, now: SystemTime) -> Text<'static> {
         }
     }
 
-    for (label, body) in [
-        ("Action", &task.action),
-        ("Detail", &task.detail),
-        ("Acceptance", &task.acceptance),
-        ("Dependency note", &task.deps_note),
-    ] {
-        if body.trim().is_empty() {
-            continue;
+    let bodies = |out: &mut Vec<Line<'static>>, bodies: [(&str, &String); 2]| {
+        for (label, body) in bodies {
+            if body.trim().is_empty() {
+                continue;
+            }
+            section(out, label, theme);
+            out.extend(indented(markdown::to_text(body, theme)));
         }
-        section(&mut out, label, theme);
-        out.extend(indented(markdown::to_text(body, theme)));
-    }
+    };
+    bodies(
+        &mut out,
+        [("Action", &task.action), ("Detail", &task.detail)],
+    );
+    task_spec::sections(app, task, &mut out, &mut links);
+    bodies(
+        &mut out,
+        [
+            ("Acceptance", &task.acceptance),
+            ("Dependency note", &task.deps_note),
+        ],
+    );
 
     let record = index.record_for(snapshot, task.id);
     if !record.is_empty() {
@@ -230,7 +282,10 @@ pub(crate) fn content(app: &App, now: SystemTime) -> Text<'static> {
         }
     }
 
-    Text::from(out)
+    Doc {
+        text: Text::from(out),
+        links,
+    }
 }
 
 /// A peer task's mark and id, as every other view draws that row.
@@ -319,7 +374,7 @@ fn frontier_lines(app: &App, task: &Task) -> Vec<Line<'static>> {
 /// The panel's lines for one ledger row, unwrapped. `agents` are those working
 /// the row; `inputs` are the pending input records naming it; `now` dates their
 /// open segments. `backlog` adds every stored backlog field; `queue` is the
-/// row's 1-based position and the queue length.
+/// row's 1-based position and the queue length. The links are `inputs`.
 pub(crate) fn item_content(
     row: &ItemRow,
     agents: &[&Agent],
@@ -328,7 +383,7 @@ pub(crate) fn item_content(
     queue: Option<(usize, usize)>,
     theme: &Theme,
     now: SystemTime,
-) -> Text<'static> {
+) -> Doc {
     let mut out: Vec<Line<'static>> = Vec::new();
     out.push(Line::styled(
         format!("{} {}", row.id, row.summary),
@@ -453,7 +508,16 @@ pub(crate) fn item_content(
         }
     }
 
-    Text::from(out)
+    Doc {
+        text: Text::from(out),
+        links: inputs
+            .iter()
+            .map(|input| Link {
+                label: format!("{} {}  {}", input.id, input.kind, input.text),
+                target: Target::Input(input.id.clone()),
+            })
+            .collect(),
+    }
 }
 
 /// Fields `item_content` already draws for a backlog row, so the catch-all
@@ -551,12 +615,12 @@ fn class_style(class: StatusClass, theme: &Theme) -> Style {
     theme.item_status(view::items::class_name(class))
 }
 
-fn section(out: &mut Vec<Line<'static>>, label: &str, theme: &Theme) {
+pub(super) fn section(out: &mut Vec<Line<'static>>, label: &str, theme: &Theme) {
     out.push(Line::default());
     out.push(Line::styled(label.to_string(), theme.section));
 }
 
-fn indented(text: Text<'static>) -> impl Iterator<Item = Line<'static>> {
+pub(super) fn indented(text: Text<'static>) -> impl Iterator<Item = Line<'static>> {
     text.lines.into_iter().map(|mut line| {
         if !line.spans.is_empty() {
             line.spans.insert(0, Span::raw(INDENT));
@@ -803,8 +867,9 @@ mod tests {
         app
     }
 
-    fn plain(text: &Text<'_>) -> Vec<String> {
-        text.lines
+    fn plain(doc: &Doc) -> Vec<String> {
+        doc.text
+            .lines
             .iter()
             .map(|line| line.spans.iter().map(|s| s.content.as_ref()).collect())
             .collect()
@@ -832,12 +897,15 @@ mod tests {
                 .cloned()
                 .collect::<Vec<_>>()
         };
-        assert_eq!(after("Files"), ["  src/render.rs", "  src/theme.rs"]);
+        assert_eq!(
+            after("Files"),
+            ["  src/render.rs", "  src/theme.rs  — new tokens only"]
+        );
         assert_eq!(
             after("Needs"),
             ["  ✓ 1 Scaffold the store", "  ✓ 2 Define the schema"]
         );
-        assert_eq!(after("Coupling"), ["  ○ 8 Wire the entry point"]);
+        assert_eq!(after("Coupling"), ["  ⊘ 8 Wire the entry point"]);
         assert_eq!(after("Dependents"), ["  ○ 7 Assemble the app"]);
         assert_eq!(after("Action"), ["  Apply the theme to each status."]);
         assert!(
@@ -891,7 +959,7 @@ mod tests {
     fn a_pending_row_names_its_frontier_state_and_what_holds_it() {
         let now = at("2026-09-28T12:00:00Z");
         let head = |app: &App| plain(&content(app, now))[1..3].to_vec();
-        let style = |app: &App| content(app, now).lines[1].spans[0].style;
+        let style = |app: &App| content(app, now).text.lines[1].spans[0].style;
 
         let app = app_on(6);
         let lines = head(&app);
@@ -912,13 +980,18 @@ mod tests {
 
         let mut snap = fixture();
         snap.frontier.blocked = vec![crate::model::Blocked {
-            id: 8,
+            id: 7,
             blocker: 4,
             blocker_status: "in-progress".to_string(),
         }];
         let mut app = App::new(snap, &Config::default());
-        app.selected = Some(8);
+        app.selected = Some(7);
         assert_eq!(head(&app)[1], "blocked by ◐ 4 Render the rows");
+        assert_eq!(
+            plain(&content(&app, now))[3],
+            "",
+            "the blocked set wins over the unmet needs"
+        );
 
         let mut snap = fixture();
         snap.running_milestone = "A".to_string();
@@ -1227,6 +1300,82 @@ mod tests {
         let rows = draw(&app);
         assert!(rows[0].contains(" details "), "{}", rows[0]);
         assert!(rows[1].contains("No item selected."), "{}", rows[1]);
+    }
+
+    #[test]
+    fn a_tasks_links_name_its_related_tasks_in_text_order() {
+        let app = app_on(5);
+        let doc = content(&app, at("2026-09-28T12:00:00Z"));
+        let lines = plain(&doc);
+        let targets: Vec<Target> = doc
+            .links
+            .iter()
+            .map(|link| link.target.clone())
+            .filter(|target| matches!(target, Target::Task(_)))
+            .collect();
+        assert_eq!(
+            targets,
+            [1, 2, 8, 7, 4].map(Target::Task),
+            "needs, coupling, dependents, then shared files"
+        );
+        assert_eq!(doc.links[0].label, "#1 Scaffold the store");
+        let section = |label: &str| lines.iter().position(|l| l == label).expect(label);
+        assert!(section("Needs") < section("Coupling"));
+        assert!(section("Dependents") < section("Shares files with"));
+        assert_eq!(
+            links(&app),
+            doc.links,
+            "the accessor returns the shown links"
+        );
+    }
+
+    #[test]
+    fn a_rows_links_name_its_pending_inputs() {
+        let app = review_app_on("R4");
+        let row = app
+            .current_items()
+            .and_then(ItemsState::cursor_row)
+            .expect("a cursor row");
+        let input = InputRow {
+            id: "I-3".into(),
+            kind: "note".into(),
+            status: "new".into(),
+            text: "check the tuple".into(),
+            ..InputRow::default()
+        };
+        let doc = item_content(
+            row,
+            &[],
+            &[&input],
+            false,
+            None,
+            &app.theme,
+            SystemTime::now(),
+        );
+        assert_eq!(
+            doc.links,
+            [Link {
+                label: "I-3 note  check the tuple".into(),
+                target: Target::Input("I-3".into()),
+            }]
+        );
+    }
+
+    #[test]
+    fn a_record_without_relations_has_no_links() {
+        let doc = item_content(
+            &ItemRow::default(),
+            &[],
+            &[],
+            false,
+            None,
+            &Theme::default(),
+            SystemTime::now(),
+        );
+        assert!(doc.links.is_empty());
+        let mut app = app_on(1);
+        app.selected = None;
+        assert!(links(&app).is_empty());
     }
 
     #[test]

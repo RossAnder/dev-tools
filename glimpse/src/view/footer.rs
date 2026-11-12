@@ -224,6 +224,14 @@ fn hints(app: &App) -> (Vec<Hint>, Option<Hint>) {
         };
         return (hints, None);
     }
+    if app.links.is_some() {
+        let hints = vec![
+            Hint::new("j/k", "move"),
+            Hint::new("enter", "open"),
+            Hint::new("esc", "close"),
+        ];
+        return (hints, None);
+    }
     if app.legend_open {
         return (vec![Hint::new("?", "close legend")], None);
     }
@@ -264,8 +272,7 @@ fn hints(app: &App) -> (Vec<Hint>, Option<Hint>) {
     } else {
         tasks_hints(app)
     };
-    let copies = app.surface == Surface::Tasks
-        || app.surface == Surface::Inbox
+    let copies = matches!(app.surface, Surface::Tasks | Surface::Inbox | Surface::Plan)
         || app.current_items().is_some();
     if copies {
         hints.push(Hint::new("y", "copy id"));
@@ -295,6 +302,7 @@ fn tasks_hints(app: &App) -> Vec<Hint> {
         hints.push(Hint::new("J/K", "scroll"));
     }
     hints.extend([
+        Hint::new("b", "links"),
         Hint::new("o", "orient"),
         Hint::new("|", "split"),
         Hint::new("t", "activity"),
@@ -320,9 +328,12 @@ fn surface_hints(app: &App, compact: bool) -> Vec<Hint> {
     if app.surface == Surface::Inbox {
         return inbox_hints(app, compact);
     }
+    if app.surface == Surface::Plan {
+        return plan_hints(compact);
+    }
     let Some(state) = app.current_items() else {
         return vec![
-            Hint::new("1-6", "surface"),
+            Hint::new("1-7", "surface"),
             Hint::new("s", "flows"),
             Hint::new("q", "back"),
         ];
@@ -349,6 +360,7 @@ fn surface_hints(app: &App, compact: bool) -> Vec<Hint> {
         _ => {}
     }
     hints.extend([
+        Hint::new("b", "links"),
         Hint::new("r", "request"),
         Hint::new("n", "capture"),
         Hint::new("u", "undo"),
@@ -357,10 +369,27 @@ fn surface_hints(app: &App, compact: bool) -> Vec<Hint> {
         Hint::new("g", "group"),
         Hint::new("S", "sort"),
         Hint::new("c", "closed"),
-        Hint::new("1-6", "surface"),
+        Hint::new("1-7", "surface"),
         Hint::new("s", "flows"),
         Hint::new("q", "back"),
     ]);
+    hints
+}
+
+/// The read-only Plan list offers moves, its section jumps, details and links; none of
+/// the item surfaces' marks, menus or edits.
+fn plan_hints(compact: bool) -> Vec<Hint> {
+    let mut hints = vec![
+        Hint::new("j/k", "move"),
+        Hint::new("tab", "section"),
+        Hint::new("enter", "details"),
+        Hint::new("b", "links"),
+        Hint::new("bksp", "back"),
+    ];
+    if !compact {
+        hints.insert(1, Hint::new("PgUp/Dn", "page"));
+        hints.push(Hint::new("1-7", "surface"));
+    }
     hints
 }
 
@@ -380,7 +409,7 @@ fn inbox_hints(app: &App, compact: bool) -> Vec<Hint> {
     hints.push(Hint::new("n", "capture"));
     hints.push(Hint::new("c", "closed"));
     if !compact {
-        hints.extend([Hint::new("1-6", "surface"), Hint::new("s", "flows")]);
+        hints.extend([Hint::new("1-7", "surface"), Hint::new("s", "flows")]);
     }
     hints.push(Hint::new("q", "back"));
     hints
@@ -540,10 +569,48 @@ mod tests {
     }
 
     #[test]
+    fn the_plan_list_names_only_the_keys_that_work_there() {
+        let mut app = app();
+        app.apply(Action::SwitchSurface(Surface::Plan));
+        app.hints = HintMode::Full;
+        let rows = text(&lines(&app, 200, Instant::now())).join(" · ");
+        for want in [
+            "j/k move",
+            "PgUp/Dn page",
+            "tab section",
+            "enter details",
+            "b links",
+            "bksp back",
+            "1-7 surface",
+            "y copy id",
+        ] {
+            assert!(rows.contains(want), "{want}: {rows}");
+        }
+        for item_only in ["space", "m actions", "e classify", "u undo", "/ filter"] {
+            assert!(!rows.contains(item_only), "{item_only}: {rows}");
+        }
+    }
+
+    #[test]
     fn modals_pin_no_keys_hint() {
         let mut app = app();
         app.legend_open = true;
         assert_eq!(text(&lines(&app, 110, Instant::now())), ["? close legend"]);
+    }
+
+    #[test]
+    fn the_links_list_lists_its_own_keys_and_tasks_offer_b() {
+        let mut app = app();
+        app.hints = HintMode::Full;
+        let rows = text(&lines(&app, 200, Instant::now())).join(" · ");
+        assert!(rows.contains("b links"), "{rows}");
+
+        app.apply(Action::Select(5));
+        app.apply(Action::ToggleLinks);
+        assert_eq!(
+            text(&lines(&app, 110, Instant::now())),
+            ["j/k move · enter open · esc close"]
+        );
     }
 
     #[test]

@@ -474,6 +474,19 @@ mod tests {
     }
 
     #[test]
+    fn a_saved_plan_surface_is_restored() {
+        let mut app = App::new(fixture(), &Config::default());
+        let baseline = State::default().apply(&mut app, false, false, false);
+        app.surface = Surface::Plan;
+        let text = State::capture(&app, &baseline).render();
+        assert!(text.contains("surface = \"plan\""), "{text}");
+
+        let mut restored = App::new(fixture(), &Config::default());
+        State::parse(&text).apply(&mut restored, false, false, false);
+        assert_eq!(restored.surface, Surface::Plan);
+    }
+
+    #[test]
     fn state_round_trips_surface_group_and_sort() {
         let mut app = App::new(fixture(), &Config::default());
         let baseline = State::default().apply(&mut app, false, false, false);

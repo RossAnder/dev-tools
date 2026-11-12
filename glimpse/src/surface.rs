@@ -10,6 +10,8 @@ use std::time::Instant;
 use crate::app::{FLASH, Scroll};
 use crate::config::ItemColumn;
 use crate::ledger::{Anchor, EFFORTS, InputRow, ItemRow, Kind, SEVERITIES, Seen, StatusClass};
+use crate::model::{Snapshot, TaskStatus};
+use crate::nav::Target;
 use crate::scroll;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
@@ -21,17 +23,20 @@ pub(crate) enum Surface {
     PlanReview,
     Backlog,
     Inbox,
+    /// A v2 flow's plan records and run history; read-only.
+    Plan,
 }
 
 impl Surface {
     /// In digit order: `ALL[n]` is the surface on key `n + 1`.
-    pub(crate) const ALL: [Surface; 6] = [
+    pub(crate) const ALL: [Surface; 7] = [
         Self::Tasks,
         Self::Review,
         Self::Optimise,
         Self::PlanReview,
         Self::Backlog,
         Self::Inbox,
+        Self::Plan,
     ];
 
     pub(crate) fn from_digit(digit: char) -> Option<Surface> {
@@ -53,6 +58,21 @@ impl Surface {
             Self::PlanReview => "Plan-review",
             Self::Backlog => "Backlog",
             Self::Inbox => "Inbox",
+            Self::Plan => "Plan",
+        }
+    }
+
+    /// The two-letter label the compact header draws; unique where initials are not.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn short(self) -> &'static str {
+        match self {
+            Self::Tasks => "Ta",
+            Self::Review => "Rv",
+            Self::Optimise => "Op",
+            Self::PlanReview => "PR",
+            Self::Backlog => "Bl",
+            Self::Inbox => "In",
+            Self::Plan => "Pl",
         }
     }
 
@@ -66,6 +86,7 @@ impl Surface {
             Self::PlanReview => "plan-review",
             Self::Backlog => "backlog",
             Self::Inbox => "inbox",
+            Self::Plan => "plan",
         }
     }
 
@@ -73,14 +94,14 @@ impl Surface {
         Self::ALL.into_iter().find(|surface| surface.key() == key)
     }
 
-    /// The ledger an item surface lists; `None` for Tasks and Inbox.
+    /// The ledger an item surface lists; `None` for Tasks, Inbox and Plan.
     pub(crate) fn ledger_kind(self) -> Option<Kind> {
         Some(match self {
             Self::Review => Kind::Review,
             Self::Optimise => Kind::Optimise,
             Self::PlanReview => Kind::PlanReview,
             Self::Backlog => Kind::Backlog,
-            Self::Tasks | Self::Inbox => return None,
+            Self::Tasks | Self::Inbox | Self::Plan => return None,
         })
     }
 
@@ -114,7 +135,7 @@ impl Surface {
                 Group::Flow,
                 Group::Tier,
             ],
-            Self::Tasks | Self::Inbox => &[Group::None],
+            Self::Tasks | Self::Inbox | Self::Plan => &[Group::None],
         }
     }
 
@@ -154,7 +175,7 @@ impl Surface {
                 Sort::Tier,
                 Sort::Focus,
             ],
-            Self::Tasks | Self::Inbox => &[Sort::Id],
+            Self::Tasks | Self::Inbox | Self::Plan => &[Sort::Id],
         }
     }
 
@@ -446,7 +467,7 @@ impl<R: Tracked> Tracking<R> {
     /// first read flashes nothing; later reads flash each new id and each status
     /// change, never moving the cursor to them. `true` when the cursor's row vanished,
     /// so the caller repositions it in its own visible order.
-    fn refresh(
+    pub(crate) fn refresh(
         &mut self,
         rows: Vec<R>,
         revision: Option<String>,
@@ -525,7 +546,7 @@ impl<R: Tracked> Tracking<R> {
 
     /// Moves the cursor `delta` ids through `items`, clamped to its ends. A cursor
     /// not in `items` lands on the first.
-    fn step_cursor(&mut self, items: &[String], delta: isize) {
+    pub(crate) fn step_cursor(&mut self, items: &[String], delta: isize) {
         if items.is_empty() {
             return;
         }
@@ -538,7 +559,7 @@ impl<R: Tracked> Tracking<R> {
 
     /// Moves the cursor through `items` by `scroll` and unpins the list. A cursor
     /// not in `items` lands on the first; an empty `items` leaves the cursor alone.
-    fn page_through(&mut self, items: &[String], scroll: Scroll) {
+    pub(crate) fn page_through(&mut self, items: &[String], scroll: Scroll) {
         let at = self.position_in(items);
         if let Some(next) = scroll::step(at, items.len(), self.page, scroll) {
             self.cursor = items.get(next).cloned();
@@ -546,7 +567,7 @@ impl<R: Tracked> Tracking<R> {
         }
     }
 
-    fn position_in(&self, items: &[String]) -> Option<usize> {
+    pub(crate) fn position_in(&self, items: &[String]) -> Option<usize> {
         let cursor = self.cursor.as_deref()?;
         items.iter().position(|id| id == cursor)
     }
@@ -782,13 +803,101 @@ impl ItemsState {
     }
 }
 
-/// The Inbox: unanswered agent questions first, then the other records grouped
-/// by status. Keyed by record id like [`ItemsState`], so a store refresh keeps
-/// the cursor and saving set.
+/// What the viewed flow waits on the user for, listed read-only at the top of the Inbox.
+/// Built from the snapshot, never from the input store, so no write can address one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NeedRow {
+    /// `need:task:<id>`, `need:handover:<id>` or `need:report:<entry index>`.
+    pub(crate) id: String,
+    /// `parked`, `handover`, or a report entry's kind.
+    pub(crate) kind: String,
+    /// The id column's text: the task or handover id, `""` for neither.
+    pub(crate) key: String,
+    pub(crate) text: String,
+    /// `None` for a report entry that names neither a path nor a task.
+    pub(crate) target: Option<Target>,
+}
+
+/// Every needs-you row id starts with this, and no input record id does.
+pub(crate) const NEED_PREFIX: &str = "need:";
+
+const NEEDS_LABEL: &str = "needs you";
+
+/// The viewed flow's needs-you rows: its parked tasks, its open handovers, then each
+/// entry of the latest report that needs a person and is not a parked task or handover
+/// already listed. None for a flow without a plan store.
+pub(crate) fn needs_of(snapshot: &Snapshot) -> Vec<NeedRow> {
+    let Some(plan) = &snapshot.plan else {
+        return Vec::new();
+    };
+    let parked = snapshot
+        .tasks
+        .iter()
+        .filter(|task| task.status == TaskStatus::Parked)
+        .map(|task| NeedRow {
+            id: format!("{NEED_PREFIX}task:{}", task.id),
+            kind: "parked".to_owned(),
+            key: task.id.to_string(),
+            text: task.title.clone(),
+            target: Some(Target::Task(task.id)),
+        });
+    let handovers = plan
+        .handovers
+        .iter()
+        .filter(|handover| !handover.done)
+        .map(|handover| NeedRow {
+            id: format!("{NEED_PREFIX}handover:{}", handover.id),
+            kind: "handover".to_owned(),
+            key: handover.id.clone(),
+            text: handover.action.clone(),
+            target: Some(Target::Handover(handover.id.clone())),
+        });
+    let entries = plan
+        .latest_report()
+        .map(|report| report.entries.as_slice())
+        .unwrap_or_default();
+    let reported = entries
+        .iter()
+        .enumerate()
+        .filter(|(_, entry)| {
+            entry.needs_person && !matches!(entry.kind.as_str(), "parked" | "handover")
+        })
+        .map(|(n, entry)| {
+            let target = if !entry.path.is_empty() {
+                Some(Target::Source {
+                    path: entry.path.clone(),
+                    line: None,
+                    read_at: String::new(),
+                    dirty: false,
+                })
+            } else {
+                (entry.task != 0).then_some(Target::Task(entry.task))
+            };
+            NeedRow {
+                id: format!("{NEED_PREFIX}report:{n}"),
+                kind: entry.kind.clone(),
+                key: if entry.task == 0 {
+                    String::new()
+                } else {
+                    entry.task.to_string()
+                },
+                text: entry.text.clone(),
+                target,
+            }
+        });
+    parked.chain(handovers).chain(reported).collect()
+}
+
+/// The Inbox: the needs-you rows first, then unanswered agent questions, then the other
+/// records grouped by status. Keyed by record id like [`ItemsState`], so a store refresh
+/// keeps the cursor and saving set.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct InboxState {
     /// Reached through `Deref`, so `state.rows` and `state.cursor` read as its own fields.
+    /// Its cursor may name a needs-you row, which `cursor_row` then does not return.
     pub(crate) tracking: Tracking<InputRow>,
+    /// Kept apart from `tracking`, so they never flash, count as arrivals or take a mark.
+    pub(crate) needs: Vec<NeedRow>,
     /// Shows `handled` and `withdrawn` records.
     pub(crate) show_closed: bool,
     /// The order within each section; the sections themselves keep their fixed order.
@@ -830,9 +939,35 @@ impl InboxState {
         let old_position = self.cursor_position();
         let cursor_lost = self.tracking.refresh(rows, revision, viewing, now);
         self.index_pending();
-        if cursor_lost {
+        if cursor_lost && self.cursor_need().is_none() {
             self.tracking.cursor = reposition(self.visible_ids(), old_position);
         }
+    }
+
+    /// Swaps in the needs-you rows built from a snapshot. A cursor on one that vanished
+    /// lands on the row that took its visible position; an unset cursor on the first row.
+    pub(crate) fn set_needs(&mut self, needs: Vec<NeedRow>) {
+        if needs == self.needs {
+            return;
+        }
+        let old_position = self.cursor_position();
+        self.needs = needs;
+        let lost = match self.tracking.cursor.as_deref() {
+            None => true,
+            Some(id) => id.starts_with(NEED_PREFIX) && self.need(id).is_none(),
+        };
+        if lost {
+            self.tracking.cursor = reposition(self.visible_ids(), old_position);
+        }
+    }
+
+    pub(crate) fn need(&self, id: &str) -> Option<&NeedRow> {
+        self.needs.iter().find(|need| need.id == id)
+    }
+
+    /// The needs-you row under the cursor.
+    pub(crate) fn cursor_need(&self) -> Option<&NeedRow> {
+        self.tracking.cursor.as_deref().and_then(|id| self.need(id))
     }
 
     fn index_pending(&mut self) {
@@ -885,7 +1020,8 @@ impl InboxState {
             .filter(|r| !r.read_only && r.author == "user" && r.status == "new")
     }
 
-    /// The rows the Inbox draws, each section under a header.
+    /// The rows the Inbox draws, each section under a header, the needs-you rows first
+    /// in the order they were built.
     pub(crate) fn visible(&self) -> Vec<VisibleRow> {
         let mut groups: BTreeMap<(u8, &str), Vec<&InputRow>> = BTreeMap::new();
         for row in self.rows.iter() {
@@ -895,6 +1031,17 @@ impl InboxState {
             groups.entry(inbox_section(row)).or_default().push(row);
         }
         let mut out = Vec::new();
+        if !self.needs.is_empty() {
+            out.push(VisibleRow::Header {
+                label: NEEDS_LABEL.to_owned(),
+                count: self.needs.len(),
+            });
+            out.extend(
+                self.needs
+                    .iter()
+                    .map(|need| VisibleRow::Item(need.id.clone())),
+            );
+        }
         for ((_, label), mut members) in groups {
             members.sort_by(|a, b| compare_input(self.sort, self.sort_dir, a, b));
             out.push(VisibleRow::Header {
@@ -936,6 +1083,96 @@ impl InboxState {
 
     fn cursor_position(&self) -> Option<usize> {
         self.tracking.position_in(&self.visible_ids())
+    }
+}
+
+/// The cursor operations every list surface answers, so `App` reaches the current
+/// surface's list through one accessor rather than testing which surface it is.
+pub(crate) trait CursorList {
+    /// Moves the cursor `delta` rows through the visible list, clamped to its ends.
+    fn move_cursor(&mut self, delta: isize);
+    /// Moves the cursor by `scroll`, a page being the rows the last frame drew.
+    fn page_cursor(&mut self, scroll: Scroll);
+    /// Scrolls the list without moving the cursor, and pins it there.
+    fn scroll_by(&mut self, rows: i32);
+    /// Called when the surface comes on screen.
+    fn viewed(&mut self);
+    /// Puts the cursor on `id` when the list holds that row; otherwise changes nothing.
+    fn select_row(&mut self, id: &str);
+    /// The cursor's id, whether or not a row still carries it.
+    fn cursor(&self) -> Option<&str>;
+    /// The id of the row under the cursor; `None` when no row carries the cursor's id.
+    fn cursor_row_id(&self) -> Option<&str>;
+    /// Lets the list follow the cursor again after the wheel pinned it.
+    fn unpin(&mut self);
+}
+
+impl<R: Tracked> Tracking<R> {
+    pub(crate) fn select_row(&mut self, id: &str) {
+        if self.row(id).is_some() {
+            self.cursor = Some(id.to_owned());
+        }
+    }
+}
+
+impl CursorList for ItemsState {
+    fn move_cursor(&mut self, delta: isize) {
+        ItemsState::move_cursor(self, delta);
+    }
+    fn page_cursor(&mut self, scroll: Scroll) {
+        ItemsState::page_cursor(self, scroll);
+    }
+    fn scroll_by(&mut self, rows: i32) {
+        self.tracking.scroll_by(rows);
+    }
+    fn viewed(&mut self) {
+        self.tracking.viewed();
+    }
+    fn select_row(&mut self, id: &str) {
+        self.tracking.select_row(id);
+    }
+    fn cursor(&self) -> Option<&str> {
+        self.tracking.cursor.as_deref()
+    }
+    fn cursor_row_id(&self) -> Option<&str> {
+        self.tracking.cursor_row().map(|row| row.id.as_str())
+    }
+    fn unpin(&mut self) {
+        self.tracking.scroll_pinned = false;
+    }
+}
+
+impl CursorList for InboxState {
+    fn move_cursor(&mut self, delta: isize) {
+        InboxState::move_cursor(self, delta);
+    }
+    fn page_cursor(&mut self, scroll: Scroll) {
+        InboxState::page_cursor(self, scroll);
+    }
+    fn scroll_by(&mut self, rows: i32) {
+        self.tracking.scroll_by(rows);
+    }
+    fn viewed(&mut self) {
+        self.tracking.viewed();
+    }
+    fn select_row(&mut self, id: &str) {
+        if self.need(id).is_some() {
+            self.tracking.cursor = Some(id.to_owned());
+        } else {
+            self.tracking.select_row(id);
+        }
+    }
+    fn cursor(&self) -> Option<&str> {
+        self.tracking.cursor.as_deref()
+    }
+    fn cursor_row_id(&self) -> Option<&str> {
+        match self.cursor_need() {
+            Some(need) => Some(need.id.as_str()),
+            None => self.tracking.cursor_row().map(|row| row.id.as_str()),
+        }
+    }
+    fn unpin(&mut self) {
+        self.tracking.scroll_pinned = false;
     }
 }
 
@@ -1007,14 +1244,14 @@ fn arrivals<R: Tracked>(old: &[R], new: &[R]) -> (Vec<String>, BTreeSet<String>)
 
 /// The id at the cursor's old visible position, clamped to the end, or the
 /// first id when there was no position.
-fn reposition(items: Vec<String>, old_position: Option<usize>) -> Option<String> {
+pub(crate) fn reposition(items: Vec<String>, old_position: Option<usize>) -> Option<String> {
     match old_position {
         Some(index) if !items.is_empty() => Some(items[index.min(items.len() - 1)].clone()),
         _ => items.into_iter().next(),
     }
 }
 
-fn item_ids(visible: Vec<VisibleRow>) -> Vec<String> {
+pub(crate) fn item_ids(visible: Vec<VisibleRow>) -> Vec<String> {
     visible
         .into_iter()
         .filter_map(|row| match row {
@@ -1272,12 +1509,24 @@ mod tests {
     fn digits_map_to_surfaces_in_order() {
         assert_eq!(Surface::from_digit('1'), Some(Surface::Tasks));
         assert_eq!(Surface::from_digit('6'), Some(Surface::Inbox));
+        assert_eq!(Surface::from_digit('7'), Some(Surface::Plan));
         assert_eq!(Surface::from_digit('0'), None);
-        assert_eq!(Surface::from_digit('7'), None);
+        assert_eq!(Surface::from_digit('8'), None);
         for surface in Surface::ALL {
             assert_eq!(Surface::from_digit(surface.digit()), Some(surface));
         }
         assert_eq!(Surface::PlanReview.label(), "Plan-review");
+        assert_eq!(Surface::Plan.label(), "Plan");
+    }
+
+    #[test]
+    fn short_labels_are_two_letters_and_unique() {
+        let shorts = Surface::ALL.map(Surface::short);
+        for short in shorts {
+            assert_eq!(short.chars().count(), 2, "{short}");
+        }
+        let unique: BTreeSet<&str> = shorts.into_iter().collect();
+        assert_eq!(unique.len(), Surface::ALL.len());
     }
 
     #[test]
@@ -1291,7 +1540,8 @@ mod tests {
                 "optimise",
                 "plan-review",
                 "backlog",
-                "inbox"
+                "inbox",
+                "plan"
             ]
         );
         for surface in Surface::ALL {
@@ -1575,6 +1825,102 @@ mod tests {
         let mut state = InboxState::default();
         state.apply_inputs(rows, rev(0), true, Instant::now());
         state
+    }
+
+    #[test]
+    fn needs_you_rows_list_parked_tasks_open_handovers_then_the_latest_report() {
+        let snap = crate::model::fixture();
+        let needs = needs_of(&snap);
+        let ids: Vec<&str> = needs.iter().map(|need| need.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            ["need:task:8", "need:handover:H1", "need:report:0"],
+            "H2 is done; the report's parked entry is listed as its task, and its \
+             informing entry is left out"
+        );
+        assert_eq!(needs[0].target, Some(Target::Task(8)));
+        assert_eq!(needs[1].target, Some(Target::Handover("H1".to_string())));
+        assert_eq!(needs[2].kind, "gate");
+        assert!(
+            matches!(&needs[2].target, Some(Target::Source { path, .. })
+                if path == ".claude/flows/demo-flow/gates/B-r0-s1-c1.log"),
+            "{:?}",
+            needs[2].target
+        );
+
+        let mut plain = snap.clone();
+        plain.plan = None;
+        assert!(needs_of(&plain).is_empty(), "no plan store, no section");
+    }
+
+    #[test]
+    fn a_report_entry_opens_its_path_else_its_task_else_nothing() {
+        use crate::model::plan::{Plan, Report, ReportEntry};
+        let entry = |task: u32, path: &str| ReportEntry {
+            kind: "gate".to_string(),
+            task,
+            path: path.to_string(),
+            ..ReportEntry::default()
+        };
+        let snap = Snapshot {
+            plan: Some(Plan {
+                reports: vec![Report {
+                    entries: vec![entry(3, ""), entry(0, ""), entry(3, "a.log")],
+                    ..Report::default()
+                }],
+                ..Plan::default()
+            }),
+            ..Snapshot::default()
+        };
+        let targets: Vec<Option<Target>> = needs_of(&snap).into_iter().map(|n| n.target).collect();
+        assert_eq!(targets[0], Some(Target::Task(3)));
+        assert_eq!(targets[1], None);
+        assert!(matches!(&targets[2], Some(Target::Source { path, .. }) if path == "a.log"));
+    }
+
+    #[test]
+    fn the_needs_you_section_leads_the_inbox_and_keeps_its_cursor() {
+        let mut state = inbox(vec![input("I1", "question", "review", "new")]);
+        state.set_needs(needs_of(&crate::model::fixture()));
+        let visible = state.visible();
+        assert_eq!(
+            visible[0],
+            VisibleRow::Header {
+                label: "needs you".to_string(),
+                count: 3
+            }
+        );
+        assert_eq!(visible[1], VisibleRow::Item("need:task:8".to_string()));
+        assert_eq!(
+            state.cursor.as_deref(),
+            Some("I1"),
+            "a set cursor stays put"
+        );
+
+        state.select_row("need:handover:H1");
+        assert_eq!(state.cursor_row_id(), Some("need:handover:H1"));
+        assert!(state.cursor_row().is_none(), "no input record is under it");
+        assert!(state.cursor_question().is_none() && state.cursor_withdrawable().is_none());
+
+        state.set_needs(needs_of(&crate::model::fixture()));
+        state.apply_inputs(
+            vec![input("I1", "question", "review", "new")],
+            rev(1),
+            false,
+            Instant::now(),
+        );
+        assert_eq!(state.cursor.as_deref(), Some("need:handover:H1"));
+        assert_eq!(state.new_since_view, 0, "the needs-you rows never arrive");
+        assert!(state.flashes.is_empty());
+
+        let mut needs = needs_of(&crate::model::fixture());
+        needs.remove(1);
+        state.set_needs(needs);
+        assert_eq!(
+            state.cursor.as_deref(),
+            Some("need:report:0"),
+            "a vanished row hands the cursor to the row in its place"
+        );
     }
 
     #[test]

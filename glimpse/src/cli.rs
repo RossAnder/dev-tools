@@ -25,8 +25,8 @@ VIEW OPTIONS
                                 the config's)
         --orientation <O>       auto, vertical or horizontal (default: the last run's
                                 flip, else the config's)
-        --surface <S>           tasks, review, optimise, plan-review, backlog or inbox:
-                                the surface to open on (default: the last run's)
+        --surface <S>           tasks, review, optimise, plan-review, backlog, inbox or
+                                plan: the surface to open on (default: the last run's)
         --theme <T>             kanso-zen, kanso-pearl, eggshell, ansi or mono: the
                                 colour set, over the config's and the last run's
         --once                  render one frame as plain text to stdout and exit
@@ -251,7 +251,7 @@ fn parse_inner<I: IntoIterator<Item = String>>(args: I) -> Result<Parsed, String
                 surface = Some(Surface::from_key(&v).ok_or_else(|| {
                     format!(
                         "unknown surface `{v}`: expected tasks, review, optimise, plan-review, \
-                         backlog or inbox"
+                         backlog, inbox or plan"
                     )
                 })?);
                 true
@@ -484,6 +484,7 @@ mod tests {
             Some(Surface::PlanReview)
         );
         assert_eq!(view(&["--surface=inbox"]).surface, Some(Surface::Inbox));
+        assert_eq!(view(&["--surface", "plan"]).surface, Some(Surface::Plan));
         let v = view(&["--once", "--ledger", "r.toml", "--surface", "review"]);
         assert_eq!(v.surface, Some(Surface::Review));
         assert_eq!(

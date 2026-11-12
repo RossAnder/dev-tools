@@ -103,11 +103,14 @@ fn push_tab(
     tabs.push((start, width, surface));
 }
 
-/// A tab's count text: open rows, and Inbox's unanswered questions marked `?`.
+/// A tab's count text: open rows, what waits on the user in the Inbox (its unanswered
+/// questions and needs-you rows) marked `?`, and Plan's health rows plus open handovers.
 /// `None` is Tasks, which has no count.
 fn tab_count(app: &App, surface: Surface) -> Option<TabCount> {
     let count = match surface {
         Surface::Tasks => return None,
+        Surface::Plan if app.plan.has_plan => TabCount::Count(app.plan.count().to_string()),
+        Surface::Plan => TabCount::Missing,
         Surface::Inbox => app.inbox_unanswered().map_or(TabCount::Unread, |n| {
             TabCount::Count(if n > 0 {
                 format!("{n}?")
@@ -167,9 +170,10 @@ fn tab_style(app: &App, surface: Surface, absent: bool) -> Style {
 }
 
 /// The `+N` arrivals since the surface was last on screen, when there are any, over
-/// the tab's own `style`.
+/// the tab's own `style`. Plan rebuilds on every snapshot, so it never shows one.
 fn arrival_badge(app: &App, surface: Surface, style: Style) -> Option<Span<'static>> {
     let arrived = match surface {
+        Surface::Tasks | Surface::Plan => 0,
         Surface::Inbox => app.inbox.new_since_view,
         _ => app
             .items
@@ -213,8 +217,8 @@ fn tabs_row(app: &App) -> Row {
     }
 }
 
-/// `R12+3 O4 P B6 I2?`: the item surfaces' tabs by initial, appended to the compact
-/// row's `spans`.
+/// `Rv12+3 Op4 PR Bl6 In2? Pl3`: every tab but Tasks by its two-letter
+/// [`Surface::short`] label, appended to the compact row's `spans`.
 fn compact_tabs(app: &App, spans: &mut Vec<Span<'static>>, tabs: &mut Vec<TabCells>) {
     let mut first = true;
     for surface in Surface::ALL {
@@ -226,9 +230,8 @@ fn compact_tabs(app: &App, spans: &mut Vec<Span<'static>>, tabs: &mut Vec<TabCel
         }
         first = false;
         let style = tab_style(app, surface, count.is_missing());
-        let initial = surface.label().chars().next().unwrap_or(' ');
         let count = count.text().unwrap_or_default();
-        let mut tab = vec![Span::styled(format!("{initial}{count}"), style)];
+        let mut tab = vec![Span::styled(format!("{}{count}", surface.short()), style)];
         tab.extend(arrival_badge(app, surface, style));
         push_tab(spans, tabs, surface, tab);
     }
@@ -472,10 +475,10 @@ mod tests {
         let rows = draw(&app);
         assert_eq!(
             rows[1],
-            " Tasks   Review 2 +3   Optimise 1   Plan-review   Backlog   Inbox"
+            " Tasks   Review 2 +3   Optimise 1   Plan-review   Backlog   Inbox   Plan 4"
         );
         assert!(
-            draw_as(&app, true)[0].ends_with("  R2+3 O1 P B I"),
+            draw_as(&app, true)[0].ends_with("  Rv2+3 Op1 PR Bl In Pl4"),
             "{:?}",
             draw_as(&app, true)[0]
         );
@@ -551,13 +554,61 @@ mod tests {
                 Surface::Optimise,
                 Surface::PlanReview,
                 Surface::Backlog,
-                Surface::Inbox
+                Surface::Inbox,
+                Surface::Plan
             ],
             "Tasks has no folded tab"
         );
-        let at = rows[0].find(" P ").expect("the plan-review tab") + 1;
+        let at = rows[0].find(" PR ").expect("the plan-review tab") + 1;
         let x = u16::try_from(rows[0][..at].chars().count()).expect("column");
-        assert_eq!(tabs[2].0, Rect::new(x, 0, 1, 1));
+        assert_eq!(tabs[2].0, Rect::new(x, 0, 2, 1));
+        let at = rows[0].find(" Pl4").expect("the plan tab") + 1;
+        let x = u16::try_from(rows[0][..at].chars().count()).expect("column");
+        assert_eq!(tabs[5].0, Rect::new(x, 0, 3, 1));
+    }
+
+    #[test]
+    fn the_compact_tabs_label_plan_and_plan_review_apart() {
+        let mut snap = fixture();
+        snap.plan = None;
+        for app in [
+            App::new(fixture(), &Config::default()),
+            App::new(snap, &Config::default()),
+        ] {
+            let row = &draw_as(&app, true)[0];
+            let labels: Vec<String> = row
+                .rsplit("   ")
+                .next()
+                .expect("the tabs")
+                .split(' ')
+                .map(|tab| tab.chars().take(2).collect())
+                .collect();
+            assert_eq!(labels, ["Rv", "Op", "PR", "Bl", "In", "Pl"], "{row:?}");
+        }
+    }
+
+    #[test]
+    fn the_plan_tab_counts_and_fades_without_a_plan_store() {
+        let mut app = App::new(fixture(), &Config::default());
+        app.plan.new_since_view = 2;
+        assert!(draw(&app)[1].ends_with("   Plan 4"), "{:?}", draw(&app)[1]);
+
+        let mut snap = fixture();
+        snap.plan = None;
+        let app = App::new(snap, &Config::default());
+        let rows = draw(&app);
+        assert!(rows[1].ends_with("   Plan"), "{:?}", rows[1]);
+        let mut terminal = Terminal::new(TestBackend::new(100, 3)).expect("terminal");
+        terminal
+            .draw(|frame| {
+                render(frame, frame.area(), &app, false, 40);
+            })
+            .expect("draw");
+        let x = u16::try_from(rows[1].chars().count() - "Plan".len()).expect("column");
+        assert_eq!(
+            terminal.backend().buffer()[(x, 1)].fg,
+            app.theme.tab_empty.fg.expect("a colour")
+        );
     }
 
     #[test]
@@ -574,30 +625,53 @@ mod tests {
             revision: Some(revision.to_string()),
             rows,
         };
-        let mut app = App::new(fixture(), &Config::default());
+        let mut snap = fixture();
+        snap.plan = None;
+        let mut app = App::new(snap, &Config::default());
         let t0 = std::time::Instant::now();
         app.apply_inputs(inputs("v1", vec![record("I1", "note", "new")]), t0);
-        assert!(draw(&app)[1].ends_with("Inbox 0"), "{:?}", draw(&app)[1]);
+        assert!(
+            draw(&app)[1].ends_with("Inbox 0   Plan"),
+            "{:?}",
+            draw(&app)[1]
+        );
 
         let rows = vec![
             record("I1", "note", "new"),
             record("I2", "question", "new"),
             record("I3", "question", "handled"),
         ];
-        app.apply_inputs(inputs("v2", rows), t0);
+        app.apply_inputs(inputs("v2", rows.clone()), t0);
         assert!(
-            draw(&app)[1].ends_with("Inbox 1? +2"),
+            draw(&app)[1].ends_with("Inbox 1? +2   Plan"),
             "{:?}",
             draw(&app)[1]
         );
-        assert!(draw_as(&app, true)[0].ends_with(" I1?+2"));
+        assert!(draw_as(&app, true)[0].ends_with(" In1?+2 Pl"));
+
+        // The fixture's plan store adds a parked task, an open handover and a report
+        // entry to the same count, and they arrive as no badge.
+        let mut app = App::new(fixture(), &Config::default());
+        app.apply_inputs(inputs("v1", vec![record("I1", "note", "new")]), t0);
+        assert!(
+            draw(&app)[1].ends_with("Inbox 3?   Plan 4"),
+            "{:?}",
+            draw(&app)[1]
+        );
+        app.apply_inputs(inputs("v2", rows), t0);
+        assert!(
+            draw(&app)[1].ends_with("Inbox 4? +2   Plan 4"),
+            "{:?}",
+            draw(&app)[1]
+        );
+        assert!(draw_as(&app, true)[0].ends_with(" In4?+2 Pl4"));
     }
 
     #[test]
     fn the_compact_header_is_one_short_row_unless_something_is_wrong() {
         let mut app = App::new(fixture(), &Config::default());
         let rows = draw_as(&app, true);
-        assert_eq!(rows[0], "demo-flow  3/8  ⟳   1▶   R O P B I");
+        assert_eq!(rows[0], "demo-flow  3/8  ⟳   1▶   Rv Op PR Bl In Pl4");
         assert_eq!(rows[1], "", "the flow event is dropped");
         assert_eq!(height(&app, true, 40), 1);
 

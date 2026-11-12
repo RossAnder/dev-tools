@@ -1,8 +1,10 @@
 //! The terminal event loop and one-shot frame rendering.
 //!
 //! Three threads feed one channel: the input thread owns the blocking terminal read, the
-//! source poller sends snapshots, flow changes, the subscribed ledgers, the input records and
-//! the activity panel's transcript tail, and the writer thread sends each write's outcome. The
+//! source poller sends snapshots, flow changes, the subscribed ledgers, the input records, the
+//! viewed flow's authored-files listing, the activity panel's transcript tail and any
+//! document asked of it, and the
+//! writer thread sends each write's outcome. The
 //! main loop drains whatever has queued before drawing once. Whenever the flow or flow-less ledger on show changes, the loop re-subscribes the poller's ledger
 //! feeds and drops any read still in flight for a feed it let go. The main loop reads no
 //! files. With no running agent and nothing on screen changing over time it blocks without
@@ -30,6 +32,7 @@ use ratatui::{DefaultTerminal, Frame, Terminal};
 use tomlctl::{LedgerKind, LedgerRef};
 
 use crate::app::{Action, App};
+use crate::authored::AuthoredList;
 use crate::cli::{self, Arrange};
 use crate::clipboard;
 use crate::config::Config;
@@ -39,7 +42,7 @@ use crate::hook;
 use crate::keys;
 use crate::ledger::{Inputs, Kind, Ledger, Seen, StatusClass};
 use crate::model::Snapshot;
-use crate::source::{Event, Feed, Source};
+use crate::source::{DocRequest, Event, Feed, Source};
 use crate::state::State;
 use crate::surface::Surface;
 use crate::transcript::TailView;
@@ -392,12 +395,21 @@ fn follow_tail(screen: &mut Screen, host: &mut impl Host, sent: &mut Option<Stri
     }
 }
 
+/// Asks the poller for the document the details panel wants when it differs from the one
+/// last asked for, or withdraws the request when it wants none.
+fn want_doc(app: &mut App, host: &mut impl Host) {
+    if let Some(request) = app.follow_doc() {
+        host.set_doc(request);
+    }
+}
+
 /// The loop's side effects, kept behind a trait so a test can script them.
 trait Host {
     fn draw(&mut self, screen: &mut Screen) -> Result<(), String>;
     fn set_slug(&mut self, slug: String);
     fn subscribe(&mut self, feeds: Vec<Feed>);
     fn set_tail(&mut self, path: Option<String>);
+    fn set_doc(&mut self, request: Option<DocRequest>);
     fn submit(&mut self, request: WriteRequest);
     fn copy(&mut self, text: &str);
     fn set_mouse_capture(&mut self, on: bool);
@@ -427,6 +439,10 @@ impl Host for TerminalHost<'_> {
 
     fn set_tail(&mut self, path: Option<String>) {
         self.source.set_tail(path);
+    }
+
+    fn set_doc(&mut self, request: Option<DocRequest>) {
+        self.source.set_doc(request);
     }
 
     fn submit(&mut self, request: WriteRequest) {
@@ -461,6 +477,8 @@ struct Pointed {
     slug: Option<String>,
     /// The feeds last subscribed; a ledger read for any other is a straggler.
     feeds: Vec<Feed>,
+    /// An authored listing read before its flow's snapshot arrived, applied with it.
+    authored: Option<(String, AuthoredList, u64)>,
 }
 
 impl Pointed {
@@ -490,6 +508,7 @@ fn run_loop(
     let mut last_tick = Instant::now();
     resubscribe(&screen.app, host, &mut pointed);
     follow_tail(screen, host, &mut tailing);
+    want_doc(&mut screen.app, host);
     host.draw(screen)?;
 
     loop {
@@ -535,6 +554,7 @@ fn run_loop(
             Some(_) => {}
         }
         follow_tail(screen, host, &mut tailing);
+        want_doc(&mut screen.app, host);
         if redraw {
             host.draw(screen)?;
         }
@@ -546,6 +566,7 @@ fn handle(screen: &mut Screen, event: Event, host: &mut impl Host, pointed: &mut
     match event {
         Event::Snapshot(snapshot) => {
             app.apply_snapshot(*snapshot, Instant::now());
+            apply_held_authored(app, pointed);
             Step::Redraw
         }
         Event::SourceError(message) => {
@@ -566,6 +587,7 @@ fn handle(screen: &mut Screen, event: Event, host: &mut impl Host, pointed: &mut
         }
         Event::Ledger { feed, ledger } => ledger_read(app, &feed, ledger, pointed),
         Event::InputRecords(inputs) => inputs_read(app, inputs),
+        Event::Authored { slug, listing } => authored_read(app, slug, listing, pointed),
         Event::Scopes(scopes) => match scopes.and_then(|value| Scopes::from_value(&value)) {
             Ok(scopes) => {
                 app.apply_scopes(scopes);
@@ -583,6 +605,7 @@ fn handle(screen: &mut Screen, event: Event, host: &mut impl Host, pointed: &mut
             screen.tail = *tail;
             Step::Redraw
         }
+        Event::Doc { request, document } => redraw_if(app.doc_answer(request, document)),
         Event::Input(TermEvent::Key(key)) if app.overlay.is_some() => overlay_input(app, key, host),
         Event::Input(input @ (TermEvent::Key(_) | TermEvent::Mouse(_))) => {
             let action = match input {
@@ -687,13 +710,15 @@ fn resubscribe(app: &App, host: &mut impl Host, pointed: &mut Pointed) {
 }
 
 /// The ledgers of the flow on show, whether picked as a ledger-only flow or as the slug
-/// the poller follows, plus the backlog and the input store. A picked flow-less ledger
-/// stands in for the flow's ledger of its kind; the flow's other ledgers stay live.
-fn feeds_for(app: &App, slug: Option<&str>) -> Vec<Feed> {
+/// the poller follows, plus the backlog, the input store and the authored files of the
+/// followed flow. A picked flow-less ledger stands in for the flow's ledger of its kind;
+/// the flow's other ledgers stay live.
+fn feeds_for(app: &App, followed: Option<&str>) -> Vec<Feed> {
+    let followed = followed.filter(|s| !s.is_empty());
     let slug = app
         .ledger_flow
         .as_deref()
-        .or(slug)
+        .or(followed)
         .filter(|s| !s.is_empty());
     let mut feeds: Vec<Feed> = LedgerKind::ALL
         .into_iter()
@@ -712,6 +737,11 @@ fn feeds_for(app: &App, slug: Option<&str>) -> Vec<Feed> {
         .collect();
     feeds.push(Feed::Ledger(LedgerRef::Backlog));
     feeds.push(Feed::Inputs);
+    if let Some(slug) = followed {
+        feeds.push(Feed::Authored {
+            slug: slug.to_string(),
+        });
+    }
     feeds
 }
 
@@ -722,7 +752,7 @@ fn feed_surface(feed: &Feed) -> Option<Surface> {
             Kind::from(*kind)
         }
         Feed::Ledger(LedgerRef::Backlog) => Kind::Backlog,
-        Feed::Ledger(LedgerRef::File(_)) | Feed::Inputs => return None,
+        Feed::Ledger(LedgerRef::File(_)) | Feed::Inputs | Feed::Authored { .. } => return None,
     };
     Surface::of_kind(kind)
 }
@@ -767,6 +797,49 @@ fn ledger_read(
             Step::Redraw
         }
         Err(_) => Step::Nothing,
+    }
+}
+
+/// Hands an authored listing to the app once its flow's snapshot is the one on show, holding
+/// it until then; a read for a feed no longer subscribed is dropped.
+fn authored_read(
+    app: &mut App,
+    slug: String,
+    listing: Result<(AuthoredList, u64), String>,
+    pointed: &mut Pointed,
+) -> Step {
+    let subscribed = pointed
+        .feeds
+        .iter()
+        .any(|feed| matches!(feed, Feed::Authored { slug: held } if *held == slug));
+    if !subscribed {
+        return Step::Nothing;
+    }
+    match listing {
+        Ok((list, revision)) if slug == app.snapshot.slug => {
+            pointed.authored = None;
+            let before = app.authored.revision;
+            app.apply_authored(list, revision);
+            redraw_if(app.authored.revision != before)
+        }
+        Ok((list, revision)) => {
+            pointed.authored = Some((slug, list, revision));
+            Step::Nothing
+        }
+        Err(message) => {
+            app.notify_error(message);
+            Step::Redraw
+        }
+    }
+}
+
+/// Applies the listing held for the flow whose snapshot has just arrived.
+fn apply_held_authored(app: &mut App, pointed: &mut Pointed) {
+    if let Some((_, list, revision)) = pointed
+        .authored
+        .take_if(|(slug, ..)| *slug == app.snapshot.slug)
+    {
+        app.apply_authored(list, revision);
     }
 }
 
@@ -837,6 +910,8 @@ mod tests {
     use crate::config::ViewKind;
     use crate::form::FieldValue;
     use crate::model::fixture;
+    use crate::nav::{DocState, Target};
+    use crate::source::Fetched;
     use crate::writer::{FakeWriter, WriteOutcome};
 
     fn opts(view: ViewKind) -> RunOpts {
@@ -860,6 +935,7 @@ mod tests {
         draws: usize,
         slugs: Vec<String>,
         tails: Vec<Option<String>>,
+        docs: Vec<Option<DocRequest>>,
         subscriptions: Vec<Vec<Feed>>,
         writer: FakeWriter,
         copies: Vec<String>,
@@ -882,6 +958,10 @@ mod tests {
 
         fn set_tail(&mut self, path: Option<String>) {
             self.tails.push(path);
+        }
+
+        fn set_doc(&mut self, request: Option<DocRequest>) {
+            self.docs.push(request);
         }
 
         fn submit(&mut self, request: WriteRequest) {
@@ -1010,6 +1090,61 @@ mod tests {
         assert_eq!(host.tails, [Some(expected), None], "closing stops the tail");
     }
 
+    fn commit_doc(sha: &str) -> DocRequest {
+        DocRequest::Commit { sha: sha.into() }
+    }
+
+    fn doc_answer(request: DocRequest, title: &str) -> Event {
+        Event::Doc {
+            request,
+            document: Ok(Fetched {
+                title: title.into(),
+                text: String::new(),
+                notices: Vec::new(),
+                line: None,
+                markdown: false,
+            }),
+        }
+    }
+
+    #[test]
+    fn an_answer_for_a_document_no_longer_wanted_is_dropped() {
+        let config = Config::default();
+        let mut screen = Screen::new(App::new(fixture(), &config), config, TailView::default());
+        let mut host = FakeHost::default();
+        let mut pointed = Pointed::starting(&screen.app);
+        let (first, second) = (commit_doc("aaaaaaa"), commit_doc("bbbbbbb"));
+
+        screen.app.open(Target::Commit("aaaaaaa".into()));
+        want_doc(&mut screen.app, &mut host);
+        want_doc(&mut screen.app, &mut host);
+        screen.app.open(Target::Commit("bbbbbbb".into()));
+        want_doc(&mut screen.app, &mut host);
+        assert_eq!(host.docs, [Some(first.clone()), Some(second.clone())]);
+
+        let late = doc_answer(first, "late");
+        assert!(matches!(
+            handle(&mut screen, late, &mut host, &mut pointed),
+            Step::Nothing
+        ));
+        assert_eq!(screen.app.lane.state, DocState::Loading, "not held");
+
+        let current = doc_answer(second, "current");
+        assert!(matches!(
+            handle(&mut screen, current, &mut host, &mut pointed),
+            Step::Redraw
+        ));
+        let DocState::Text(shown) = &screen.app.lane.state else {
+            panic!("held: {:?}", screen.app.lane.state);
+        };
+        assert_eq!(shown.title, "current");
+
+        screen.app.apply(Action::Back);
+        want_doc(&mut screen.app, &mut host);
+        assert_eq!(screen.app.lane.state, DocState::Loading, "withdrawn");
+        assert_eq!(host.docs.last(), Some(&None));
+    }
+
     #[test]
     fn a_quit_key_ends_the_loop_before_the_batch_draws() {
         let mut screen = idle_screen("demo-flow");
@@ -1130,7 +1265,75 @@ mod tests {
             .collect();
         feeds.push(Feed::Ledger(LedgerRef::Backlog));
         feeds.push(Feed::Inputs);
+        feeds.push(Feed::Authored {
+            slug: slug.to_string(),
+        });
         feeds
+    }
+
+    fn authored_event(slug: &str, path: &str, revision: u64) -> Event {
+        let list = serde_json::from_value(serde_json::json!({"files": [{"path": path}]}))
+            .expect("listing");
+        Event::Authored {
+            slug: slug.to_string(),
+            listing: Ok((list, revision)),
+        }
+    }
+
+    #[test]
+    fn an_authored_listing_lands_with_its_flow_and_a_straggler_is_dropped() {
+        let mut screen = idle_screen("demo-flow");
+        let mut host = FakeHost::default();
+        let mut pointed = Pointed::starting(&screen.app);
+        resubscribe(&screen.app, &mut host, &mut pointed);
+        let mut step =
+            |screen: &mut Screen, event: Event| handle(screen, event, &mut host, &mut pointed);
+
+        let read = authored_event("demo-flow", "brief.md", 1);
+        assert!(matches!(step(&mut screen, read), Step::Redraw));
+        assert!(screen.app.authored.by_path("brief.md").is_some());
+        let same = authored_event("demo-flow", "brief.md", 1);
+        assert!(matches!(step(&mut screen, same), Step::Nothing));
+
+        let straggler = authored_event("other", "notes/x.md", 2);
+        assert!(matches!(step(&mut screen, straggler), Step::Nothing));
+        assert!(screen.app.authored.by_path("notes/x.md").is_none());
+
+        let failed = Event::Authored {
+            slug: "demo-flow".to_string(),
+            listing: Err("bad listing".to_string()),
+        };
+        assert!(matches!(step(&mut screen, failed), Step::Redraw));
+        assert_eq!(screen.app.live_notice(Instant::now()), Some("bad listing"));
+    }
+
+    #[test]
+    fn an_authored_listing_read_ahead_of_its_snapshot_waits_for_it() {
+        let mut screen = idle_screen("demo-flow");
+        let mut host = FakeHost::default();
+        let mut pointed = Pointed::starting(&screen.app);
+        resubscribe(&screen.app, &mut host, &mut pointed);
+        let back = screen.app.apply(Action::SwitchFlow("other".to_string()));
+        carry_out(&mut screen.app, back, &mut host, &mut pointed);
+
+        let early = authored_event("other", "notes/x.md", 3);
+        handle(&mut screen, early, &mut host, &mut pointed);
+        assert!(screen.app.authored.by_path("notes/x.md").is_none());
+
+        let snapshot = Snapshot {
+            slug: "other".to_string(),
+            ..Snapshot::default()
+        };
+        handle(
+            &mut screen,
+            Event::Snapshot(Box::new(snapshot)),
+            &mut host,
+            &mut pointed,
+        );
+        assert!(
+            screen.app.authored.by_path("notes/x.md").is_some(),
+            "applied once the flow is on show"
+        );
     }
 
     fn review_feed(slug: &str) -> Feed {
@@ -1267,7 +1470,7 @@ mod tests {
         let mut host = FakeHost::default();
         let mut pointed = Pointed::starting(&screen.app);
         resubscribe(&screen.app, &mut host, &mut pointed);
-        assert_eq!(host.subscriptions[0].last(), Some(&Feed::Inputs));
+        assert!(host.subscriptions[0].contains(&Feed::Inputs));
         let mut step =
             |screen: &mut Screen, event: Event| handle(screen, event, &mut host, &mut pointed);
 

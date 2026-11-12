@@ -43,8 +43,7 @@ const KEYS: &[(&str, &str)] = &[
         "diagram: zoom out to status glyphs / in to titles (or ctrl+wheel)",
     ),
     ("x", "diagram: fit the view / show every task (drag pans)"),
-    ("f", "follow the frontier"),
-    ("s  a", "flows / auto-follow flows"),
+    ("f  s  a", "follow the frontier / flows / auto-follow flows"),
     (
         "H  d",
         "key hints: short, full, hidden / density: auto, compact, comfortable",
@@ -53,11 +52,18 @@ const KEYS: &[(&str, &str)] = &[
     ("v", "release the mouse to select text, or take it back"),
     ("T", "themes: preview with j k, enter keeps, esc reverts"),
     (
-        "1-6",
-        "surface: tasks review optimise plan-review backlog inbox",
+        "1-7",
+        "surface: tasks review optimise plan-review backlog inbox plan",
     ),
-    ("space", "mark the item and move on"),
-    ("V", "mark every visible item"),
+    ("tab S-tab", "plan: next / previous section"),
+    (
+        "b  Backspace",
+        "the row's links / back to where a link was followed from",
+    ),
+    (
+        "space  V",
+        "mark the item and move on / mark every visible item",
+    ),
     ("g  S", "items: next group-by / sort"),
     ("D", "items, inbox: flip the sort direction"),
     ("C", "items: choose the columns"),
@@ -502,10 +508,11 @@ mod tests {
         let keys: String = KEYS.iter().map(|(key, _)| format!(" {key} ")).collect();
         for key in [
             "m", "e", "r", "n", "u", "/", "w", "c", "enter", "J", "K", "H", "y", "v", "D", "C",
-            "T", "F", "z", "Z", "x", "P", "<", ">",
+            "T", "F", "z", "Z", "x", "P", "<", ">", "b",
         ] {
             assert!(keys.contains(&format!(" {key} ")), "{key} is missing");
         }
+        assert!(keys.contains(" Backspace "), "Backspace is missing");
     }
 
     #[test]
