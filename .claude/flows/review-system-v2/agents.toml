@@ -1,0 +1,2807 @@
+schema_version = 1
+last_updated = 2026-10-13
+
+[[agents]]
+id = "A1"
+harness = "claude-code"
+session_id = "be7caebc-ff89-4bc3-94e9-32ec3052928e"
+agent_id = "a2ac96b58980f8b6e"
+agent_type = "research-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T10:33:29.3455738Z"
+updated_at = "2026-10-12T10:59:55.9052861Z"
+ended_at = "2026-10-12T10:59:55.9052861Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\be7caebc-ff89-4bc3-94e9-32ec3052928e\subagents\agent-a2ac96b58980f8b6e.jsonl'
+summary = "That background search was the `find /` for the workflow-authoring skill files, which I'd already dropped after it timed out. I got the workflow script format by loading the skill directly, so its output changes nothing: my report and its 9 findings stand as delivered."
+context_tokens = 305820
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-12T10:33:29.3455738Z"
+ended_at = "2026-10-12T10:48:00.6040453Z"
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-12T10:59:52.4605261Z"
+ended_at = "2026-10-12T10:59:55.9052861Z"
+
+[[agents]]
+id = "A2"
+harness = "claude-code"
+session_id = "be7caebc-ff89-4bc3-94e9-32ec3052928e"
+agent_id = "ae716b11f58c50058"
+agent_type = "research-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T10:33:48.437727Z"
+updated_at = "2026-10-12T10:48:56.7172205Z"
+ended_at = "2026-10-12T10:48:56.7172205Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\be7caebc-ff89-4bc3-94e9-32ec3052928e\subagents\agent-ae716b11f58c50058.jsonl'
+summary = """
+I found 13 findings for the completeness lens: 8 warnings and 5 suggestions. None are critical. The ledger has no open items to cite: all 37 round-1 items are `merged`. Two findings re-raise round-1 intents that the rewrite only partly kept (finding 12, from P14 and P35; finding 10 extends P36).
+
+---
+
+### 1. A commit that only changes catalogue TOML skips the catalogue gate
+- **severity**: warning
+- **category**: completeness
+- **plan_section**: `### 46. Gate the catalogue and lint its files [M]`
+- **summary**: Edits to `vocabulary.toml` or `.claude/review-lenses/**` never trigger the pre-comm"""
+context_tokens = 325288
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-12T10:33:48.437727Z"
+ended_at = "2026-10-12T10:48:56.7172205Z"
+
+[[agents]]
+id = "A3"
+harness = "claude-code"
+session_id = "be7caebc-ff89-4bc3-94e9-32ec3052928e"
+agent_id = "a1fd2f0e730a81919"
+agent_type = "research-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T10:34:15.2987747Z"
+updated_at = "2026-10-12T10:41:56.0736816Z"
+ended_at = "2026-10-12T10:41:56.0736816Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\be7caebc-ff89-4bc3-94e9-32ec3052928e\subagents\agent-a1fd2f0e730a81919.jsonl'
+summary = """
+I found 14 findings in the executability lens: 10 warnings and 4 suggestions, with no criticals. Three of them regress round-1 intents (P19, P27, P29).
+
+The most consequential:
+- **Checkpoint B gates a red suite.** Task 4's stub verbs land in B, but the output cases that make the suite pass (task 20) don't, and B fires well before A.
+- **Every exported defect hits a v1 rule it can't satisfy.** v1 requires an `effort` field, and the defect kind has none.
+- **Several design rules are left for implementers to decide.** They cover the `resolve` outcomes, the routing function's signature, the plan-"""
+context_tokens = 216080
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-12T10:34:15.2987747Z"
+ended_at = "2026-10-12T10:41:56.0736816Z"
+
+[[agents]]
+id = "A4"
+harness = "claude-code"
+session_id = "be7caebc-ff89-4bc3-94e9-32ec3052928e"
+agent_id = "a9432e145d036f8d1"
+agent_type = "research-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T10:34:33.0889719Z"
+updated_at = "2026-10-12T10:45:27.9622894Z"
+ended_at = "2026-10-12T10:45:27.9622894Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\be7caebc-ff89-4bc3-94e9-32ec3052928e\subagents\agent-a9432e145d036f8d1.jsonl'
+summary = """
+I found 10 risk-lens findings in the review-system-v2 plan: 8 warnings and 2 suggestions, with no criticals. The plan's main exposures are Windows-specific and none of them is handled in the plan text:
+- Agents send findings to tomlctl as multi-row piped payloads, a method this project already knows fails on Windows.
+- `review add` matches quoted code exactly, and 469 tracked files here use CRLF line endings.
+- The installed tomlctl binary rejects some regex shorthands that the test build accepts.
+
+The `review-plan-v2` merge also leaves out several of v1's safety rules.
+
+---
+
+### 1. Detector p"""
+context_tokens = 275321
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-12T10:34:33.0889719Z"
+ended_at = "2026-10-12T10:45:27.9622894Z"
+
+[[agents]]
+id = "A5"
+harness = "claude-code"
+session_id = "be7caebc-ff89-4bc3-94e9-32ec3052928e"
+agent_id = "a26b01628e8ee3aef"
+agent_type = "verification"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T10:38:59.0123101Z"
+updated_at = "2026-10-12T10:40:24.1299141Z"
+ended_at = "2026-10-12T10:40:24.1299141Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\be7caebc-ff89-4bc3-94e9-32ec3052928e\subagents\agent-a26b01628e8ee3aef.jsonl'
+summary = """
+command: cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests
+outcome: pass
+exit: 0
+duration_s: 29
+log: C:/Users/rossa/AppData/Local/Temp/tmp.6Tsl0jh6ix/c1.log
+summary: libtest x1: 43 passed; 0 failed
+
+command: cargo test --manifest-path tomlctl/Cargo.toml --test capabilities
+outcome: pass
+exit: 0
+duration_s: 11
+log: C:/Users/rossa/AppData/Local/Temp/tmp.6Tsl0jh6ix/c2.log
+summary: libtest x1: 69 passed; 0 failed
+
+command: cargo test --manifest-path tomlctl/Cargo.toml --lib -- review::
+outcome: pass
+exit: 0
+duration_s: 1
+log: C:/Users/rossa/AppData/Local/Temp/tmp.6Tsl0jh6"""
+context_tokens = 36311
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-12T10:38:59.0123101Z"
+ended_at = "2026-10-12T10:40:24.1299141Z"
+
+[[agents]]
+id = "A6"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "ae4e4b85486812e57"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T11:11:19.539226Z"
+updated_at = "2026-10-12T11:20:59.2794812Z"
+ended_at = "2026-10-12T11:20:59.2794812Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-ae4e4b85486812e57.jsonl'
+summary = """
+## Cluster 1 — applied 1 item
+
+applied 1: added the `review` module, holding the field catalogue `FIELDS` (const data for every run, cell, finding and verdict field) plus `validate_row`, `project` and `route`. The ten named tests pass, and `mod review;` is registered in `lib.rs`.
+
+- **`FIELDS`** records, for each field: its type, which kinds it applies to (a `KindSet` bitmask), when it is required, its family (`plan_section` and the two anchor fields are plan-only), its enum values, its caps in characters (per string and per list), whether it is a path, whether the caller supplies it or tomlct"""
+context_tokens = 159774
+
+[[agents.segments]]
+task_ids = [1]
+started_at = "2026-10-12T11:11:19.539226Z"
+ended_at = "2026-10-12T11:20:59.2794812Z"
+
+[[agents]]
+id = "A7"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a05fab36034a9abb3"
+agent_type = "implement-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T11:11:27.6322659Z"
+updated_at = "2026-10-12T11:12:29.9881222Z"
+ended_at = "2026-10-12T11:12:29.9881222Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a05fab36034a9abb3.jsonl'
+summary = '''
+## Task 19 — applied 1 item
+
+applied 19: added `review-v2` to the `LEDGER` regex alternation in `tomlctl/src/agents/correlate.rs`, and added the test `ledger_line_attributes_review_v2_store`. The test asserts that a `ledger: .claude/flows/my-flow/review-v2.toml` line yields slug `my-flow` with no task ids and no item ids.
+
+## Files touched
+- C:\Users\rossa\dev\dev-tools\tomlctl\src\agents\correlate.rs (line 201, and a new test before `a_flowless_ledger_line_is_not_a_dispatch`)
+
+## Notes
+- Acceptance forward check: `grep -c 'review-v2'` on that file prints 2 (it was 0).
+- Falsifier observed: wi'''
+context_tokens = 50196
+
+[[agents.segments]]
+task_ids = [19]
+started_at = "2026-10-12T11:11:27.6322659Z"
+ended_at = "2026-10-12T11:12:29.9881222Z"
+
+[[agents]]
+id = "A8"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a5751164e8b58366f"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T11:11:36.772051Z"
+updated_at = "2026-10-12T11:14:13.2325725Z"
+ended_at = "2026-10-12T11:14:13.2325725Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a5751164e8b58366f.jsonl'
+summary = """
+I wrote the saved workflow `claude/workflows/review-v2.js` and added a `workflows` row to `scripts/deploy-claude.ps1`. All four acceptance probes pass. The deploy script's `-Check` mode now flags `workflows/` as out of sync, which is expected until someone runs it.
+
+## Cluster 49 — applied 1 item
+
+applied 49: wrote the `review-v2-pipeline` workflow and the deploy-script entry for it. The workflow runs one wave over `args.cells` and routes each returned finding by its `route`:
+- `verifier` gets one `review-verifier` per finding. At `quick` and `standard`, minor defects instead get one verifier """
+context_tokens = 102354
+
+[[agents.segments]]
+task_ids = [49]
+started_at = "2026-10-12T11:11:36.772051Z"
+ended_at = "2026-10-12T11:14:13.2325725Z"
+
+[[agents]]
+id = "A9"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a60ef6126f57040e9"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T11:11:46.3515985Z"
+updated_at = "2026-10-12T11:15:11.6739921Z"
+ended_at = "2026-10-12T11:15:11.6739921Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a60ef6126f57040e9.jsonl'
+summary = """
+I wrote all three Opus agents: `review-finder.md`, `review-verifier.md` and `plan-executor.md` in `claude/agents/`. The acceptance check passes: `grep -l '^model: opus' …` now prints `3`, and printed `0` before because the files did not exist. The shared-block verifier and the clippy build were not run, since these are markdown files; that is left to the orchestrator.
+
+## Cluster task-50 — applied 1 item
+
+applied 50: wrote review-finder (opus/high), review-verifier (opus/high) and plan-executor (opus/medium), each with the `skills:` preload, its own procedure, the `review-v2-store-writer` bloc"""
+context_tokens = 136057
+
+[[agents.segments]]
+task_ids = [50]
+started_at = "2026-10-12T11:11:46.3515985Z"
+ended_at = "2026-10-12T11:15:11.6739921Z"
+
+[[agents]]
+id = "A10"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "ad3e4cea2b84a74bd"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T11:11:55.1953406Z"
+updated_at = "2026-10-12T11:15:54.2299696Z"
+ended_at = "2026-10-12T11:15:54.2299696Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-ad3e4cea2b84a74bd.jsonl'
+summary = """
+## Cluster 51: applied 1 item
+
+applied 51: wrote the three Haiku agents `review-surveyor`, `review-sweeper` and `review-checker`. Each has `model: haiku`, `effort: medium`, `omitClaudeMd: true`, a `skills:` preload of `review-v2-method`, and the tools `Read, Grep, Glob, Bash, Write, Skill`. Each body is a numbered procedure with explicit stop conditions and the exact object it returns, and opens with "if `review-v2-method` is not loaded, invoke it first". All payloads are staged with Write in the run directory. The surveyor proposes judged signals with evidence paths and never sets `accepted`."""
+context_tokens = 131786
+
+[[agents.segments]]
+task_ids = [51]
+started_at = "2026-10-12T11:11:55.1953406Z"
+ended_at = "2026-10-12T11:15:54.2299696Z"
+
+[[agents]]
+id = "A11"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a1aa05936bedb973c"
+agent_type = "implement-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T11:16:30.3295854Z"
+updated_at = "2026-10-12T11:17:50.3792853Z"
+ended_at = "2026-10-12T11:17:50.3792853Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a1aa05936bedb973c.jsonl'
+summary = """
+## 52 — applied 1 item
+
+applied 52: added the `review-v2-store-writer` block, listing the six v2 agent files, to `scripts/shared-blocks.toml`. I also added the same six files to the `research-delivering` block.
+
+- **Forward check:** `grep -c 'review-v2-store-writer' scripts/shared-blocks.toml` prints `1`.
+- **Guard:** `bash scripts/verify-shared-blocks.sh` prints "shared-block parity: OK" and exits 0, so all six agent files already match byte for byte.
+- **Falsifier:** I temporarily listed `claude/agents/research-lite.md` as a seventh file in the new block. The script exited 1 with "research-l"""
+context_tokens = 47404
+
+[[agents.segments]]
+task_ids = [52]
+started_at = "2026-10-12T11:16:30.3295854Z"
+ended_at = "2026-10-12T11:17:50.3792853Z"
+
+[[agents]]
+id = "A12"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a0e11868e65405f8f"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T11:21:24.639845Z"
+updated_at = "2026-10-12T11:29:12.8869036Z"
+ended_at = "2026-10-12T11:29:12.8869036Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a0e11868e65405f8f.jsonl'
+summary = """
+## Cluster task-2: applied 1 item
+
+applied 2: Added the typed review store and the anchor matcher. Chose a typed core per record plus a `rest` table for the remaining keys (see Alternatives). `store.rs` has `Store` with `runs`, `cells`, `findings`, `verdicts` and the root `id_high_water`, each converted by hand-written `from_toml`/`to_toml`. It also has `resolve(slug, scope)`, which takes exactly one of the two and checks it with `flow::validate_slug`, `Target::run_dir`, and `load`, `mutate`, `mutate_minting` and `mint`. `matching.rs` has `anchor`, `candidates`, `Site` and `LINE_WINDOW = 10`. """
+context_tokens = 174552
+
+[[agents.segments]]
+task_ids = [2]
+started_at = "2026-10-12T11:21:24.639845Z"
+ended_at = "2026-10-12T11:29:12.8869036Z"
+
+[[agents]]
+id = "A13"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a61f298c4ca9457d0"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T11:29:31.4251558Z"
+updated_at = "2026-10-12T11:43:34.7670956Z"
+ended_at = "2026-10-12T11:43:34.7670956Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a61f298c4ca9457d0.jsonl'
+summary = """
+## Cluster task-3 — applied 1 item
+
+applied 3: added the lens catalogue core. The new module `tomlctl/src/review/catalogue.rs` is declared as `pub(crate) mod catalogue;` in `mod.rs`, under the same `dead_code` allow as its siblings. All twelve named tests pass, plus one extra test, `bind_cell_binds_checks_probes_and_depth_limits`.
+
+What it provides:
+- **Loading:** `Catalogue::load(builtin, project)` reads the four entry directories, both `vocabulary.toml` files and the project `config.toml`. It parses the `+++` TOML frontmatter and the body's `##` sections; `##` lines inside code fences are ig"""
+context_tokens = 192893
+
+[[agents.segments]]
+task_ids = [3]
+started_at = "2026-10-12T11:29:31.4251558Z"
+ended_at = "2026-10-12T11:43:34.7670956Z"
+
+[[agents]]
+id = "A14"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a15bda11c5bdd94e4"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T11:44:00.5699356Z"
+updated_at = "2026-10-12T12:00:46.5852294Z"
+ended_at = "2026-10-12T12:00:46.5852294Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a15bda11c5bdd94e4.jsonl'
+summary = """
+I did all the work for task 4, but the real tree won't compile until a one-line re-export lands in `tomlctl/src/cli/mod.rs`, which is outside my files. Everything was checked in a scratchpad copy of the crate with that line added.
+
+## Cluster 4 — applied 0 items, 1 escalated
+
+escalate 4: cross-cut — needs tomlctl/src/cli/mod.rs
+
+`cli/mod.rs` declares `mod types;` as private and re-exports only a fixed list of clap types. So `crate::review::*` can't name `ReviewOp` or the per-verb argument structs. Tasks already use the same route (`crate::cli::TasksOp`). Add the review names to the existing `p"""
+context_tokens = 248953
+
+[[agents.segments]]
+task_ids = [4]
+started_at = "2026-10-12T11:44:00.5699356Z"
+ended_at = "2026-10-12T12:00:46.5852294Z"
+
+[[agents]]
+id = "A15"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a2bf8ad8543541c38"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T12:01:23.3137186Z"
+updated_at = "2026-10-12T12:04:26.345994Z"
+ended_at = "2026-10-12T12:04:26.345994Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a2bf8ad8543541c38.jsonl'
+summary = """
+## Cluster task-4: 1 item applied
+
+applied 4: wired the `review` clap group into the crate. I added the 22 `Review*` clap types to the `pub(crate) use types::{…}` re-export list in `tomlctl/src/cli/mod.rs`, so `crate::review::*` can now name them. `ReviewStatsStore` and `ReviewTriageMode` stay out, as instructed. The work from the earlier attempt (clap tree, `Cmd::Review` routing, 15 stub verb modules, capabilities features, README) passed every check, so I left it as it was.
+
+## Files touched
+- tomlctl/src/cli/mod.rs (lines 34-43)
+- tomlctl/src/cli/types/review.rs (new)
+- tomlctl/src/cli/type"""
+context_tokens = 54576
+
+[[agents.segments]]
+task_ids = [4]
+started_at = "2026-10-12T12:01:23.3137186Z"
+ended_at = "2026-10-12T12:04:26.345994Z"
+
+[[agents]]
+id = "A16"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a2eff1b651b9647a0"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T12:05:00.4320499Z"
+updated_at = "2026-10-12T12:18:54.1726332Z"
+ended_at = "2026-10-12T12:18:54.1726332Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a2eff1b651b9647a0.jsonl'
+summary = """
+## Cluster 5 — applied 1 item
+
+applied 5: `review run start`, `review run update` and `review schema finding|cell-return|verdict-return [--kind]` are in. Nine tests are in `tomlctl/tests/review_runs.rs` and three unit tests in `schema_out.rs` (one is `schema_agrees_with_field_catalogue`). All 12 pass. The `finish` stub is unchanged.
+
+- **run start**
+  - Mints `U<n>` and stamps `started` as a whole-second UTC time.
+  - Resolves `--base` with `git rev-parse --verify --quiet --end-of-options <base>^{commit}` and stores the sha.
+  - Computes `changed_lines` from `git diff --numstat` over `base..HE"""
+context_tokens = 262631
+
+[[agents.segments]]
+task_ids = [5]
+started_at = "2026-10-12T12:05:00.4320499Z"
+ended_at = "2026-10-12T12:18:54.1726332Z"
+
+[[agents]]
+id = "A17"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "ac46b4e5b7b15594a"
+agent_type = "implement-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T12:05:10.4526967Z"
+updated_at = "2026-10-12T12:06:47.0263737Z"
+ended_at = "2026-10-12T12:06:47.0263737Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-ac46b4e5b7b15594a.jsonl'
+summary = '''
+## 18 — applied 1 item
+
+applied 18: `tomlctl review catalogue` is implemented with the default merged index, `--family`, `--signals`, `--vocabulary`, `--owners` and `--check`. I also added `tomlctl/tests/review_catalogue.rs` with the four named tests.
+
+## Files touched
+- `C:\Users\rossa\dev\dev-tools\tomlctl\src\review\catalogue_cmd.rs` (rewritten)
+- `C:\Users\rossa\dev\dev-tools\tomlctl\tests\review_catalogue.rs` (new)
+
+## Notes
+- note: `cargo nextest run --manifest-path tomlctl/Cargo.toml --test review_catalogue` passed 4 of 4. Clippy was not run separately; the test build compiled clean.
+- '''
+context_tokens = 101466
+
+[[agents.segments]]
+task_ids = [18]
+started_at = "2026-10-12T12:05:10.4526967Z"
+ended_at = "2026-10-12T12:06:47.0263737Z"
+
+[[agents]]
+id = "A18"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "aa453409666acc5ab"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T12:05:22.2205241Z"
+updated_at = "2026-10-12T12:11:48.8745343Z"
+ended_at = "2026-10-12T12:11:48.8745343Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-aa453409666acc5ab.jsonl'
+summary = """
+I wrote the `review-v2-method` skill: the shared `SKILL.md` and two reference files of worked examples. The skill's acceptance checks and the 43 `cli::dispatch::tests` gates all pass.
+
+## Cluster task-23 — applied 1 item
+
+applied 23: wrote the skill core (219 lines; description 846 characters) and two example files. The core covers:
+- the three kinds and the rule for choosing between them, including `fix_shape` (needs-plan) and the documented-choice → advisory `challenge` route;
+- per-kind field tables with caps, enums and required-ness taken from `tomlctl/src/review/fields.rs`, and a pointer """
+context_tokens = 185045
+
+[[agents.segments]]
+task_ids = [23]
+started_at = "2026-10-12T12:05:22.2205241Z"
+ended_at = "2026-10-12T12:11:48.8745343Z"
+
+[[agents]]
+id = "A19"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "ab04c27fd9e132503"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T12:05:36.2088832Z"
+updated_at = "2026-10-12T12:20:48.6627982Z"
+ended_at = "2026-10-12T12:20:48.6627982Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-ab04c27fd9e132503.jsonl'
+summary = """
+I wrote both catalogue files for task 24, and the vocabulary passes every check I could run against it. It has not been loaded through `Catalogue::load` yet. The installed tomlctl is 0.15.0 and has no `review` verb, and building one is not my job, so the load check is reasoned from `catalogue.rs`'s parser rather than run.
+
+## Cluster 24 — applied 1 item
+
+applied 24: wrote `vocabulary.toml` (29 signals, 95 concern tags, `[routing]` globs) and `SKILL.md` (271 lines, description 943 characters). SKILL.md states the entry format rules taken from `tomlctl/src/review/catalogue.rs`:
+- **Owns rule:** """
+context_tokens = 231315
+
+[[agents.segments]]
+task_ids = [24]
+started_at = "2026-10-12T12:05:36.2088832Z"
+ended_at = "2026-10-12T12:20:48.6627982Z"
+
+[[agents]]
+id = "A20"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a6b4ee3441a22b7ea"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T12:05:48.8609077Z"
+updated_at = "2026-10-12T12:13:53.9675371Z"
+ended_at = "2026-10-12T12:13:53.9675371Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a6b4ee3441a22b7ea.jsonl'
+summary = """
+## Cluster 48: applied 1 item
+
+applied 48: wrote the three engine references.
+- **`agent-waves.md`** is the Agent-tool fallback for stage 4. Its per-cell prompt copies the one in `claude/workflows/review-v2.js` word for word. It covers the `ledger:` line at column 0, one-shot background dispatch with no `name:`, at most 16 dispatches per message and at most 16 agents running at once, the wave barrier and the mop-up wave.
+- **`triage-and-close.md`** covers stages 6–8: the audit sample, advisory recommendations, the user disposition gate, the grammar mapped to `review triage` calls, the backlog """
+context_tokens = 194159
+
+[[agents.segments]]
+task_ids = [48]
+started_at = "2026-10-12T12:05:48.8609077Z"
+ended_at = "2026-10-12T12:13:53.9675371Z"
+
+[[agents]]
+id = "A21"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a201395ef70384117"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T12:14:50.410573Z"
+updated_at = "2026-10-12T12:17:47.4255433Z"
+ended_at = "2026-10-12T12:17:47.4255433Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a201395ef70384117.jsonl'
+summary = """
+## Cluster 59 — applied 1 item
+
+applied 59: checker batches and minor-verifier batches now get the `batch:` and `sweeper rows:` lines that `agent-waves.md` builds, and the checker and verifier agents now say batch returns come back as `{verdicts: [...]}`, matching the workflow's `batchSchema`. The batch ids are derived from args alone, so a relaunch reuses them.
+
+- **Workflow (`claude/workflows/review-v2.js`):**
+  - `verifierPrompt` takes an optional batch name. The minor batch passes `verify-<cellId>-minor`.
+  - `checkerPrompt` emits `batch: check-<wave>-<n>` and `sweeper rows: <ids | none>`."""
+context_tokens = 68334
+
+[[agents.segments]]
+task_ids = [59]
+started_at = "2026-10-12T12:14:50.410573Z"
+ended_at = "2026-10-12T12:17:47.4255433Z"
+
+[[agents]]
+id = "A22"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "ac9d93b7adad443b8"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T12:19:36.9712532Z"
+updated_at = "2026-10-12T12:34:35.5939308Z"
+ended_at = "2026-10-12T12:34:35.5939308Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-ac9d93b7adad443b8.jsonl'
+summary = """
+## Cluster 6 — applied 1 item
+
+applied 6: `review survey --run <U>` is implemented in `tomlctl/src/review/survey.rs`. It reads the catalogue paths the run recorded, then runs every `stack`, `diff` and `health` detector the way the `review-v2-lenses` SKILL.md "Detectors" section describes:
+- **Stack** detectors scan `git ls-files`. They match `files` globs, `manifest` key paths in TOML or JSON, and `contains` regexes compiled through `compile_user_bytes_regex`.
+- **Diff** detectors read the run's `base..HEAD -M` patch inside its scope. Changed paths and patch sections are paired in order, and i"""
+context_tokens = 200504
+
+[[agents.segments]]
+task_ids = [6]
+started_at = "2026-10-12T12:19:36.9712532Z"
+ended_at = "2026-10-12T12:34:35.5939308Z"
+
+[[agents]]
+id = "A23"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a0b17e7f81f9c3dfe"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T12:21:43.3951452Z"
+updated_at = "2026-10-12T12:32:44.2525967Z"
+ended_at = "2026-10-12T12:32:44.2525967Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a0b17e7f81f9c3dfe.jsonl'
+summary = """
+## Cluster 47 — applied 1 item
+
+applied 47: wrote the review-v2-engine orchestrator contract. `SKILL.md` covers stages 0–8 with the executor of each, the orchestrator's judgement-only role, the store flag, the column-0 `ledger:` line, the steering flags, the Workflow launch and its fallback, and the depth envelopes. `references/survey.md` covers the detectors, the surveyor dispatch, the judged candidates, checks by executor, the pack fences, the per-carrier baseline dispatches, the `baselines` record and the stage 3→4 barrier. `references/compose.md` covers the candidates, reading the proposal"""
+context_tokens = 207486
+
+[[agents.segments]]
+task_ids = [47]
+started_at = "2026-10-12T12:21:43.3951452Z"
+ended_at = "2026-10-12T12:32:44.2525967Z"
+
+[[agents]]
+id = "A24"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a78e73cff208c7099"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T12:21:55.7846893Z"
+updated_at = "2026-10-12T12:24:38.4247993Z"
+ended_at = "2026-10-12T12:24:38.4247993Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a78e73cff208c7099.jsonl'
+summary = """
+## Cluster 25: applied 1 item
+
+applied 25: wrote the three method entries `sweep`, `trace` and `history-idiom` in the catalogue format (`+++` TOML frontmatter with `id` and `status = "stable"`, free-form `##` sections). Each one rewrites its procedure from `research-methods`' codebase-review reference for the v2 finding fields, and refers to the v1 skill by name only.
+
+- **`sweep`** covers deriving the sweep from the defect, searching every form of it, searching the whole tree, `tomlctl sweep` and how its `coverage_complete` / `truncated` flags set the `complete` / `incomplete (≥N)` state, and"""
+context_tokens = 95057
+
+[[agents.segments]]
+task_ids = [25]
+started_at = "2026-10-12T12:21:55.7846893Z"
+ended_at = "2026-10-12T12:24:38.4247993Z"
+
+[[agents]]
+id = "A25"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a518db7c3523cd55b"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T12:22:06.4421588Z"
+updated_at = "2026-10-12T12:23:57.9975738Z"
+ended_at = "2026-10-12T12:23:57.9975738Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a518db7c3523cd55b.jsonl'
+summary = """
+I wrote the three method entries for task 26. The acceptance probe prints `0`, and none of the catalogue's validation errors name these files.
+
+## Cluster task-26 — applied 1 item
+
+applied 26: wrote three method entries. `measure` sets out the perf evidence ladder: benchmark or profile, then a complexity argument on a sourced input size, then an allocation or call count, then hypothesis, with "run a benchmark that exists, never build one". It ties each rung to a finding kind and an evidence grade. `dry-run` is the plan-executor procedure: hold only an implementer's context, fetch the task with"""
+context_tokens = 100770
+
+[[agents.segments]]
+task_ids = [26]
+started_at = "2026-10-12T12:22:06.4421588Z"
+ended_at = "2026-10-12T12:23:57.9975738Z"
+
+[[agents]]
+id = "A26"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a1e6ecf3591581655"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T12:22:17.0193188Z"
+updated_at = "2026-10-12T12:24:47.1409618Z"
+ended_at = "2026-10-12T12:24:47.1409618Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a1e6ecf3591581655.jsonl'
+summary = """
+## Cluster task-27 — applied 1 item
+
+applied 27: I wrote the three lens entries `correctness`, `type-design` and `domain-model`. All three now pass the catalogue validator: no error names any of my files. The acceptance loop prints `0`.
+
+- **Frontmatter** comes from the plan's lens table:
+  - `correctness`: floor, `quality`
+  - `type-design`: candidate, `architecture`
+  - `domain-model`: signal, `db`
+  - All three are code-family judgement lenses with `per-subsystem` slices and `produces` set to all three kinds.
+- **`owns`** matches the tag group named above each lens in `vocabulary.toml` exac"""
+context_tokens = 130521
+
+[[agents.segments]]
+task_ids = [27]
+started_at = "2026-10-12T12:22:17.0193188Z"
+ended_at = "2026-10-12T12:24:47.1409618Z"
+
+[[agents]]
+id = "A27"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a7a00986c55a1b53c"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T12:22:27.3509874Z"
+updated_at = "2026-10-12T12:24:53.9623564Z"
+ended_at = "2026-10-12T12:24:53.9623564Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a7a00986c55a1b53c.jsonl'
+summary = """
+I've written all three lens entries for task 28 (`architecture`, `idioms`, `duplication`). The catalogue check reports no errors against them, and the acceptance command prints `0`.
+
+## Cluster 28 — applied 1 item
+
+applied 28: wrote the `architecture`, `idioms` and `duplication` lens entries. Each has its frontmatter values from the plan's lens table, takes `owns` from its tag group in `vocabulary.toml`, gets one Owns paragraph per tag, and has every body section in order.
+
+- **`architecture`** owns `layering`, `placement` and `evolvability`. Its probes classify a fix that needs only edits as """
+context_tokens = 123776
+
+[[agents.segments]]
+task_ids = [28]
+started_at = "2026-10-12T12:22:27.3509874Z"
+ended_at = "2026-10-12T12:24:53.9623564Z"
+
+[[agents]]
+id = "A28"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "ad9611a11f09fbfee"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T12:22:37.9041818Z"
+updated_at = "2026-10-12T12:25:38.2049524Z"
+ended_at = "2026-10-12T12:25:38.2049524Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-ad9611a11f09fbfee.jsonl'
+summary = """
+## Cluster 29 — applied 1 item
+
+applied 29: wrote the `security`, `external-validity` and `hygiene` lens entries. Each has frontmatter taken from the plan's lens table and `owns` taken from the vocabulary groups. Each body has the seven sections in order: Question, Owns, a Probes section per declared family, Does not flag, Edit forms, Advisory angles and Severity calibration.
+
+- **`security`**: covers code and plan, `signal` on `trust-boundary` and `dependency-change`, `per-subsystem`. It owns input-validation, injection, access-control and secrets-and-crypto, and cites the `trace` method.
+  -"""
+context_tokens = 114424
+
+[[agents.segments]]
+task_ids = [29]
+started_at = "2026-10-12T12:22:37.9041818Z"
+ended_at = "2026-10-12T12:25:38.2049524Z"
+
+[[agents]]
+id = "A29"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a747825b8e446683b"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T12:22:48.4094352Z"
+updated_at = "2026-10-12T12:25:26.6303314Z"
+ended_at = "2026-10-12T12:25:26.6303314Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a747825b8e446683b.jsonl'
+summary = """
+## Cluster task-30 — applied 1 item
+
+applied 30: I wrote the three lens entries `ripple`, `test-gaps` and `seams`. The catalogue check reports no errors naming these files or the tags they own, and the acceptance loop prints `0`.
+
+- **`ripple`**: mechanical, code and plan, floor, whole-scope, writes cleanup only, cites the `sweep` method, `v1_category = "completeness"`. It owns `stale-references`, `unwired-seams`, `removed-justification` and `incomplete-sweep`. It has separate code and plan probe sections, and the plan section carries sweeps 1–3 plus the same-pattern sweep. A code-side unwired"""
+context_tokens = 124619
+
+[[agents.segments]]
+task_ids = [30]
+started_at = "2026-10-12T12:22:48.4094352Z"
+ended_at = "2026-10-12T12:25:26.6303314Z"
+
+[[agents]]
+id = "A30"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a07c97ae34b902fe7"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T12:24:31.7409925Z"
+updated_at = "2026-10-12T12:26:34.0835666Z"
+ended_at = "2026-10-12T12:26:34.0835666Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a07c97ae34b902fe7.jsonl'
+summary = """
+## Cluster 31: all 3 items applied
+
+Task 31 is done: I wrote the three lens entries and none of the catalogue validation errors come from them.
+
+applied 31: wrote the `diagnostics-dx`, `test-pruning` and `doc-drift` lens entries
+- **`diagnostics-dx`**: a candidate lens, sliced per subsystem, `v1_category = "testability"`. It owns `error-messages`, `log-quality` and `help-text`, adapted from v1 `/review` Agent 5. Its Does not flag section uses Agent 5's own rule: no debug-log gaps on paths the project does not already log, and no DX polish on internal-only surfaces.
+- **`test-pruning`**: a sign"""
+context_tokens = 130388
+
+[[agents.segments]]
+task_ids = [31]
+started_at = "2026-10-12T12:24:31.7409925Z"
+ended_at = "2026-10-12T12:26:34.0835666Z"
+
+[[agents]]
+id = "A31"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "ac55d78587c07dc43"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T12:25:21.4612876Z"
+updated_at = "2026-10-12T12:29:12.6169554Z"
+ended_at = "2026-10-12T12:29:12.6169554Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-ac55d78587c07dc43.jsonl'
+summary = """
+I wrote all three lens entries for task 32. The catalogue check reports no errors in my files, and the task's acceptance command prints `0`.
+
+## Cluster 32 — applied 1 item
+
+applied 32: wrote the three lens entries `doc-consolidation`, `contrarian` and `synthesis`. Each has its frontmatter values from the plan's lens table and the task Detail, its `owns` taken from its comment group in `vocabulary.toml`, and the sections in the order the catalogue skill sets. I chose `methods` myself for two of them (see Alternatives).
+- **`doc-consolidation`**: activated by the `doc-growth` signal; `v1_catego"""
+context_tokens = 137835
+
+[[agents.segments]]
+task_ids = [32]
+started_at = "2026-10-12T12:25:21.4612876Z"
+ended_at = "2026-10-12T12:29:12.6169554Z"
+
+[[agents]]
+id = "A32"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a86905b35f5435684"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T12:25:34.0493359Z"
+updated_at = "2026-10-12T12:28:14.1850121Z"
+ended_at = "2026-10-12T12:28:14.1850121Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a86905b35f5435684.jsonl'
+summary = """
+## Cluster 33 — applied 1 item
+
+applied 33: I wrote the three perf lens entries: memory-runtime, data-shape and data-access. They are drawn from `/optimise` Agents 1–3. Each one cites the `measure` method. In each, a perf defect has to state the workload, the input size and the cost with its magnitude. Without a PROFILE BASELINE, a defect needs a count or a complexity argument tied to a size the repo actually sees; otherwise the finding is advisory with `angle = risk`. The lens checker reports no errors in these files.
+
+- **Frontmatter.**
+  - **memory-runtime:** candidate, per-subsystem, `v1_c"""
+context_tokens = 119849
+
+[[agents.segments]]
+task_ids = [33]
+started_at = "2026-10-12T12:25:34.0493359Z"
+ended_at = "2026-10-12T12:28:14.1850121Z"
+
+[[agents]]
+id = "A33"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a5cddca08b3a02463"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T12:25:46.2135343Z"
+updated_at = "2026-10-12T12:29:18.1382577Z"
+ended_at = "2026-10-12T12:29:18.1382577Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a5cddca08b3a02463.jsonl'
+summary = """
+## Cluster 34: applied 1 item
+
+applied 34: wrote the three perf lens entries `algorithm`, `concurrency` and `io-process`. `tomlctl review catalogue --check` passes over the whole built-in catalogue and the task's acceptance command prints `0`.
+
+**Frontmatter** comes from the plan's lens table:
+- **`algorithm`**: floor activation, sliced per file, `v1_category = "algorithm"`.
+- **`concurrency`**: activates on the `async-concurrency` signal, sliced per subsystem, `v1_category = "concurrency"`.
+- **`io-process`**: activates on the `process-heavy` signal, sliced per subsystem, `v1_category = "algo"""
+context_tokens = 138866
+
+[[agents.segments]]
+task_ids = [34]
+started_at = "2026-10-12T12:25:46.2135343Z"
+ended_at = "2026-10-12T12:29:18.1382577Z"
+
+[[agents]]
+id = "A34"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a8cec511876ab3b55"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T12:26:13.9137103Z"
+updated_at = "2026-10-12T12:29:42.7652254Z"
+ended_at = "2026-10-12T12:29:42.7652254Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a8cec511876ab3b55.jsonl'
+summary = """
+## Cluster 35 — applied 1 item
+
+applied 35: wrote the three plan-family lens entries, `plan-grounding`, `plan-dependencies` and `feasibility`, from `claude/commands/review-plan.md` Agents 1–2 (read only). The catalogue check over the built-in catalogue passes and the task's acceptance command prints `0`.
+
+- **`plan-grounding`** (floor, whole-scope) owns `plan-alignment`, `enumeration-drift`, `behavioural-premises`, `unmentioned-consumers`, `cross-cutting-concerns` and `config-migration-build`. Its probes cover Agent 2's alignment check and sweeps 4–5: lists are re-derived with a recorded comma"""
+context_tokens = 146509
+
+[[agents.segments]]
+task_ids = [35]
+started_at = "2026-10-12T12:26:13.9137103Z"
+ended_at = "2026-10-12T12:29:42.7652254Z"
+
+[[agents]]
+id = "A35"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a11732d91d2fd92ce"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T12:26:26.6036466Z"
+updated_at = "2026-10-12T12:29:32.4842078Z"
+ended_at = "2026-10-12T12:29:32.4842078Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a11732d91d2fd92ce.jsonl'
+summary = """
+## Cluster 36: applied 1 item
+
+applied 36: I wrote the three plan lens entries. All three pass the catalogue check, and the task's acceptance command prints `0`.
+- **plan-executor**: `floor`, mode `executor`, `per-task`, cites the `dry-run` method. It owns `executor-decisions`, `files-parity`, `runnable-acceptance` and `task-sizing`. Its probes follow the dry-run steps and the plan-executor agent's own procedure, and add review-plan Agent 3's per-task checks: whether the Files line matches the task body, choices left to the executor, and task size.
+- **plan-risk**: `candidate`, `whole-scope`. """
+context_tokens = 132411
+
+[[agents.segments]]
+task_ids = [36]
+started_at = "2026-10-12T12:26:26.6036466Z"
+ended_at = "2026-10-12T12:29:32.4842078Z"
+
+[[agents]]
+id = "A36"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "af044ae4e7c3666b4"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T12:26:55.1697351Z"
+updated_at = "2026-10-12T12:29:26.162239Z"
+ended_at = "2026-10-12T12:29:26.162239Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-af044ae4e7c3666b4.jsonl'
+summary = """
+## Cluster 37 — applied 1 item
+
+applied 37: wrote the whole-plan `plan-structure` lens. Frontmatter is plan family, judgement, floor, slice `whole-scope`. It has no `v1_category`, `methods` or `apply_when`. It owns `goal-coverage`, `approver-sections`, `format-conformance` and `execution-policy`, which is exactly the `# plan-structure` group in `vocabulary.toml`. The body has a single `## Probes — plan` section and carries Agent 3's whole-plan half:
+- **Goal coverage:** every goal stated in Context or Summary is mapped to the Success Criteria that check it, and a criterion that only checks the"""
+context_tokens = 85804
+
+[[agents.segments]]
+task_ids = [37]
+started_at = "2026-10-12T12:26:55.1697351Z"
+ended_at = "2026-10-12T12:29:26.162239Z"
+
+[[agents]]
+id = "A37"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a171c090ddff57ed0"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T12:28:57.7925161Z"
+updated_at = "2026-10-12T12:36:07.7812189Z"
+ended_at = "2026-10-12T12:36:07.7812189Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a171c090ddff57ed0.jsonl'
+summary = """
+## Cluster 38 — applied 1 item
+
+applied 38: wrote the `rust`, `tokio` and `sqlx` facets. Each has a `## General` section, then a `## By lens` section with one `### For <lens-id>` subsection per attached lens. Every attached lens already exists. `review catalogue --builtin claude/skills/review-v2-lenses --check` printed `{"ok":true}` with no errors at all, mine or anyone else's, and the task's acceptance loop printed `0`.
+
+- **rust** (`lang:rust`, families code and perf) attaches to correctness, type-design, idioms, memory-runtime, algorithm and hygiene. Its pitfalls cover:
+  - edition 2024 cha"""
+context_tokens = 138188
+
+[[agents.segments]]
+task_ids = [38]
+started_at = "2026-10-12T12:28:57.7925161Z"
+ended_at = "2026-10-12T12:36:07.7812189Z"
+
+[[agents]]
+id = "A38"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a0ea62f509952e819"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T12:30:27.8604128Z"
+updated_at = "2026-10-12T12:35:18.4665808Z"
+ended_at = "2026-10-12T12:35:18.4665808Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a0ea62f509952e819.jsonl'
+summary = """
+## Cluster 39: all 3 items applied
+
+applied 39: I wrote the three facet entries `typescript`, `react` and `vue` in the catalogue format. Each has the frontmatter, a `## General` section, and a `## By lens` section with one `### For <lens-id>` subsection per attached lens.
+- **`typescript`**: families `code`, signal `lang:ts`, attached to type-design, correctness and idioms.
+- **`react`** (signal `framework:react`) and **`vue`** (signal `framework:vue`): families `code` and `perf`, attached to memory-runtime, algorithm, correctness and idioms. They carry the frontend text from `/optimise` Agent"""
+context_tokens = 119660
+
+[[agents.segments]]
+task_ids = [39]
+started_at = "2026-10-12T12:30:27.8604128Z"
+ended_at = "2026-10-12T12:35:18.4665808Z"
+
+[[agents]]
+id = "A39"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a9536e8e7c3523979"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T12:30:40.0587948Z"
+updated_at = "2026-10-12T12:35:13.5530471Z"
+ended_at = "2026-10-12T12:35:13.5530471Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a9536e8e7c3523979.jsonl'
+summary = """
+## Cluster 40: applied 1 item
+
+applied 40: wrote the three .NET facet entries. `dotnet` is keyed on `lang:csharp` and attaches to correctness, type-design, idioms, memory-runtime and concurrency. `efcore` is keyed on `db:efcore` and attaches to data-access and domain-model. `dapper-sql` is keyed on `db:dapper` and attaches to security, data-access and domain-model. Each file has TOML frontmatter between `+++` lines, a `## General` section, and a `## By lens` section with one `### For <lens-id>` per attached lens. None of them contains a bash fence or a `tomlctl` line.
+
+## Files touched
+- claud"""
+context_tokens = 114159
+
+[[agents.segments]]
+task_ids = [40]
+started_at = "2026-10-12T12:30:40.0587948Z"
+ended_at = "2026-10-12T12:35:13.5530471Z"
+
+[[agents]]
+id = "A40"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a9e19b5e3dcbbf436"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T12:30:51.1885246Z"
+updated_at = "2026-10-12T12:33:27.1303887Z"
+ended_at = "2026-10-12T12:33:27.1303887Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a9e19b5e3dcbbf436.jsonl'
+summary = """
+## Cluster 41 — applied 1 item
+
+applied 41: wrote the `claude-harness` facet (`harness:claude`, families `["code"]`, attached to `hygiene`, `doc-drift` and `ripple`). It has a `## General` section, then `## By lens` with one `### For <lens-id>` subsection per attached lens.
+
+**`## General`**: the checks a reviewer has to judge rather than run.
+- Required frontmatter per entry type, plus the silent failure when a description contains an unquoted `: ` and the YAML stops parsing.
+- `tools:` is the whole grant and fails silently, and MCP tools can stay hidden until ToolSearch surfaces them.
+- Cros"""
+context_tokens = 89781
+
+[[agents.segments]]
+task_ids = [41]
+started_at = "2026-10-12T12:30:51.1885246Z"
+ended_at = "2026-10-12T12:33:27.1303887Z"
+
+[[agents]]
+id = "A41"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a1402c942f38e0839"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T12:31:04.6969775Z"
+updated_at = "2026-10-12T12:35:56.0180323Z"
+ended_at = "2026-10-12T12:35:56.0180323Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a1402c942f38e0839.jsonl'
+summary = """
+## Cluster 42: applied 1 item
+
+applied 42: wrote the three `executor = "verification"` check entries, `lint-baseline` (code, `LINT BASELINE`), `profile-baseline` (perf, `PROFILE BASELINE`) and `break-set-baseline` (plan, `BREAK-SET BASELINE`). Each is `activation = "floor"` and has a `discover` ladder plus the Runs / Interpreting the result / Fence or finding mapping sections.
+
+- **`lint-baseline` ladder:** the plan's `lint:` key, then the CLAUDE.md `Build & test` command, then a default per stack root that meets the scope:
+  - Rust: `cargo clippy --manifest-path <root>/Cargo.toml --all-target"""
+context_tokens = 145378
+
+[[agents.segments]]
+task_ids = [42]
+started_at = "2026-10-12T12:31:04.6969775Z"
+ended_at = "2026-10-12T12:35:56.0180323Z"
+
+[[agents]]
+id = "A42"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a142655e887846f1b"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T12:31:17.3126421Z"
+updated_at = "2026-10-12T12:37:00.6256978Z"
+ended_at = "2026-10-12T12:37:00.6256978Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a142655e887846f1b.jsonl'
+summary = """
+## Cluster 43: 1 item applied
+
+applied 43: wrote the three `executor = "surveyor"` check entries. `store-check` (plan family) writes the `STORE CHECK` fence. `format-contract` (plan family) writes the `FORMAT CONTRACT` fence. `dev-server-probe` (code and perf families, signal tier on `frontend`) writes the `DEV SERVER` fence. Each step is something Haiku can settle with grep or one command, and none of the three has a bash fence, so `command_lint` and `guidance_lint` have no `tomlctl` lines to scan in them.
+
+- **`store-check`** runs `tomlctl tasks import-plan [--slug <slug>] --plan <plan> --dr"""
+context_tokens = 169134
+
+[[agents.segments]]
+task_ids = [43]
+started_at = "2026-10-12T12:31:17.3126421Z"
+ended_at = "2026-10-12T12:37:00.6256978Z"
+
+[[agents]]
+id = "A43"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "ad0a0c4bcc8a24043"
+agent_type = "implement-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T12:35:50.0089445Z"
+updated_at = "2026-10-12T12:37:26.4769034Z"
+ended_at = "2026-10-12T12:37:26.4769034Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-ad0a0c4bcc8a24043.jsonl'
+summary = """
+## 60 — applied 1 item
+
+applied 60: `Catalogue::bind_cell` now accepts 1–3 `check:<id>` concerns in one cell. Each must be an enabled `executor = "cell"` check serving the run's family. Such a cell is exempt from the depth maximum, binds each check as a single one did, and attaches no facets. It still refuses these cases:
+- a `check:` mixed with a lens or probe;
+- a check whose executor isn't `cell`;
+- a duplicate check id;
+- a missing check;
+- more than 3 checks.
+
+I added the unit test `bind_cell_bundles_cell_checks`. It adds `falsifiability` and `acceptance-contradiction` fixture checks with"""
+context_tokens = 58179
+
+[[agents.segments]]
+task_ids = [60]
+started_at = "2026-10-12T12:35:50.0089445Z"
+ended_at = "2026-10-12T12:37:26.4769034Z"
+
+[[agents]]
+id = "A44"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a7fd5cbd206c0cad5"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T12:36:05.5649438Z"
+updated_at = "2026-10-12T12:41:44.7195302Z"
+ended_at = "2026-10-12T12:41:44.7195302Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a7fd5cbd206c0cad5.jsonl'
+summary = """
+## Cluster 44: all 3 items applied
+
+applied 44: wrote the three `executor = "cell"` plan checks (`two-control-probe`, `falsifiability`, `acceptance-contradiction`) from `/review-plan` Step 2.6 checks 4, 3 and 2. Each has the plan family, `activation = "floor"`, and the three sections `Runs`, `Interpreting the result` and `Fence or finding mapping`. They are written to run together as the whole-plan `plan-checks` cell on `review-finder`.
+
+- **`two-control-probe`** doesn't restate the method. It points at `flow-contract-plan-output-format/references/acceptance-probing.md`, finding it the same wa"""
+context_tokens = 114775
+
+[[agents.segments]]
+task_ids = [44]
+started_at = "2026-10-12T12:36:05.5649438Z"
+ended_at = "2026-10-12T12:41:44.7195302Z"
+
+[[agents]]
+id = "A45"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a1ff149f1a2e232b8"
+agent_type = "implement-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T12:36:13.0930648Z"
+updated_at = "2026-10-12T12:37:01.880714Z"
+ended_at = "2026-10-12T12:37:01.880714Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a1ff149f1a2e232b8.jsonl'
+summary = '''
+## 45 — applied 1 item
+
+applied 45: wrote `.claude/review-lenses/config.toml` with only the `harness-gates` `[[checks]]` row (`families = ["code"]`, `paths = ["claude/**"]`, command `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`).
+
+## Files touched
+- `C:\Users\rossa\dev\dev-tools\.claude\review-lenses\config.toml` (new)
+
+## Notes
+- Acceptance: `grep -c 'id = "harness-gates"'` on the file prints `1`.
+- note: check `tomlctl review catalogue --check` returned `{"ok": true}` on the final file.
+- Falsifier: I misspelled `families` as `famlies`. `--check` then failed w'''
+context_tokens = 50236
+
+[[agents.segments]]
+task_ids = [45]
+started_at = "2026-10-12T12:36:13.0930648Z"
+ended_at = "2026-10-12T12:37:01.880714Z"
+
+[[agents]]
+id = "A46"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "ad2627502a4b8b104"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T12:38:14.9320837Z"
+updated_at = "2026-10-12T12:55:52.3638627Z"
+ended_at = "2026-10-12T12:55:52.3638627Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-ad2627502a4b8b104.jsonl'
+summary = """
+I've implemented task 7 in `tomlctl/src/review/cells.rs`: `review plan --propose`, `review plan --ndjson`, `review cover` and `coverage_accounting`. All 12 named tests in the new `tomlctl/tests/review_cells.rs` pass, and clippy is clean.
+
+## Cluster 7 — applied 1 item
+
+applied 7: `review plan --propose` builds the default coverage map following "Coverage proposal". `review plan --ndjson` validates each row, binds it through `bind_cell` and appends it with a `wave` and status `assigned`. `review cover` seals a cell, and a repeat with the same status and note succeeds without writing. `coverage_"""
+context_tokens = 281636
+
+[[agents.segments]]
+task_ids = [7]
+started_at = "2026-10-12T12:38:14.9320837Z"
+ended_at = "2026-10-12T12:55:52.3638627Z"
+
+[[agents]]
+id = "A47"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a1df0cda5b6dfcba3"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T12:56:17.387619Z"
+updated_at = "2026-10-12T13:09:11.4698611Z"
+ended_at = "2026-10-12T13:09:11.4698611Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a1df0cda5b6dfcba3.jsonl'
+summary = """
+## Cluster task-8 — applied 1 item
+
+applied 8: implemented `review add --run <U> --cell <C> --ndjson`. All 12 named tests are in `tomlctl/tests/review_add.rs` and pass. Each new assertion was checked against a deliberate break in the code, and the expected tests failed every time.
+
+What the verb does with each row, before taking the store lock:
+- Checks it with `fields::validate_row` (family from the run; `target_exists` is a real file check under the repo root).
+- Requires `lens` to be one of the cell's `concerns`.
+- For cleanup, requires the `old` text to start within 20 lines of `line`. It """
+context_tokens = 226187
+
+[[agents.segments]]
+task_ids = [8]
+started_at = "2026-10-12T12:56:17.387619Z"
+ended_at = "2026-10-12T13:09:11.4698611Z"
+
+[[agents]]
+id = "A48"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a1853918c51aee78f"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T13:09:43.8825705Z"
+updated_at = "2026-10-12T13:17:18.1083818Z"
+ended_at = "2026-10-12T13:17:18.1083818Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a1853918c51aee78f.jsonl'
+summary = """
+## Cluster task-9: 1 item applied
+
+applied 9: implemented `review verdict <F>` and its `--ndjson` batch form in `tomlctl/src/review/verdict.rs`, with 9 integration tests in the new `tomlctl/tests/review_verdict.rs`.
+- **Upsert:** verdicts are keyed on (finding, `by`, `seat`). An identical replay writes nothing, so the store file stays byte-identical (`unchanged: true`, same pattern as `review cover`). That makes the os-error-5 retry harmless. A changed verdict replaces the old one and moves to the end, where readers take the latest from.
+- **Checker rules:**
+  - `unsettled` re-routes the findi"""
+context_tokens = 160400
+
+[[agents.segments]]
+task_ids = [9]
+started_at = "2026-10-12T13:09:43.8825705Z"
+ended_at = "2026-10-12T13:17:18.1083818Z"
+
+[[agents]]
+id = "A49"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a9fa838ed952af816"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T13:17:48.7464743Z"
+updated_at = "2026-10-12T13:53:34.7869979Z"
+ended_at = "2026-10-12T13:53:34.7869979Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a9fa838ed952af816.jsonl'
+summary = """
+## Cluster task-10: 1 item applied
+
+applied 10: `review resolve --run <U> [--wave n]` is implemented. It finds every `unverified` finding in the run (and wave, if given) that has a `same_as` and complete verdicts. It repeats passes until a pass resolves nothing, so a target from the same run always resolves before the rows that name it, whatever order the verdicts arrived in. If the target is already `merged`, it follows `merged_into` to the finding it joined. The Approach's five outcomes are applied as written. If nothing changed, it writes nothing and prints `unchanged: true`. It prints `{ok"""
+context_tokens = 137250
+
+[[agents.segments]]
+task_ids = [10]
+started_at = "2026-10-12T13:17:48.7464743Z"
+ended_at = "2026-10-12T13:53:34.7869979Z"
+
+[[agents]]
+id = "A50"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a535f30bfed4e2b22"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T13:18:02.9578808Z"
+updated_at = "2026-10-12T13:48:57.3218711Z"
+ended_at = "2026-10-12T13:48:57.3218711Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a535f30bfed4e2b22.jsonl'
+summary = """
+## Cluster 11 — applied 1 item
+
+applied 11: `review list` and `review show --for <role>` are implemented in `tomlctl/src/review/query.rs`. Every row goes through `fields::project`, with a `ProjectCtx` built from the finding's verdicts in store order and its `same_as` target. Five tests are in the new `tomlctl/tests/review_query.rs`: all 5 pass, and the 2 unit tests in `review::query::tests` pass.
+
+What each projection gets on top of `fields::project`:
+- **`list`**: filters on `--kind`, `--lens`, `--run`, `--cell`, `--status`, `--route` and `--in <glob>`. `--in` matches like a `:(glob)` pathspe"""
+context_tokens = 229930
+
+[[agents.segments]]
+task_ids = [11]
+started_at = "2026-10-12T13:18:02.9578808Z"
+ended_at = "2026-10-12T13:48:57.3218711Z"
+
+[[agents]]
+id = "A51"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a6abe57266d58859f"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T13:18:16.4168547Z"
+updated_at = "2026-10-12T13:46:55.0949268Z"
+ended_at = "2026-10-12T13:46:55.0949268Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a6abe57266d58859f.jsonl'
+summary = """
+## Cluster 13: 1 item applied (partial)
+
+applied 13: partial. `review triage` now works for every mode: `--dismiss`, `--defer` with `--trigger`, `--reopen`, `--park`, `--resolve`, `--backlog-ref`, `--convert cleanup|defect --ndjson`, every `--<flag>-file` twin, and `--expect-status`. **Pending:** a converted row's `old` text and `anchor_old` are not checked against the files the way `review add` checks them. That needs `add.rs::prepare` (or `check_old` and `check_anchor_old`) made `pub(super)`, and the dispatch said to escalate rather than copy.
+
+**Expect-status.** The check works like `write_"""
+context_tokens = 181211
+
+[[agents.segments]]
+task_ids = [13]
+started_at = "2026-10-12T13:18:16.4168547Z"
+ended_at = "2026-10-12T13:46:55.0949268Z"
+
+[[agents]]
+id = "A52"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "abee0da55a525e8d5"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T13:18:29.8263815Z"
+updated_at = "2026-10-12T13:45:59.9196176Z"
+ended_at = "2026-10-12T13:45:59.9196176Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-abee0da55a525e8d5.jsonl'
+summary = """
+## Cluster 14: applied 1 item
+
+applied 14: implemented `review sync-v1`. It reads every distinct `export_ledger` recorded on the store's findings, plus the default v1 ledger for each family the store holds (`code` goes to review, `perf` to optimise), for the store's `--slug` or `--scope`. Each v1 row whose `v2_ref` names this store maps its status onto the v2 finding and upserts one verdict with `by = "sync"`, `verdict = "confirmed"`, `citation = "<ledger>#<v1 id>"` and `rationale = "<v1 status>: <resolution>"`.
+- The mapping is `fixed`/`applied` → `resolved`, `wontfix`/`wontapply`/`verified-c"""
+context_tokens = 139145
+
+[[agents.segments]]
+task_ids = [14]
+started_at = "2026-10-12T13:18:29.8263815Z"
+ended_at = "2026-10-12T13:45:59.9196176Z"
+
+[[agents]]
+id = "A53"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a23f1de9fb023dbff"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T13:47:26.4130805Z"
+updated_at = "2026-10-12T13:54:52.9339213Z"
+ended_at = "2026-10-12T13:54:52.9339213Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a23f1de9fb023dbff.jsonl'
+summary = """
+## Cluster 13: applied 1 item (re-dispatch, pending part only)
+
+applied 13: partial (pending part now landed); `--convert` now runs the same `old` and `anchor_old` checks as `review add`, and `reopen_reason` is in the field catalogue. The earlier attempt's triage work (all modes, `--expect-status` compare-and-set, convert minting `unverified`, 6 tests) is unchanged.
+
+1. **add.rs**: `check_old` and `check_anchor_old` are now `pub(super)`. Nothing else in `add.rs` changed, so `review add` behaves as before. `review_add` still passes 13/13.
+2. **triage.rs**: added `text_check_refusals`, which mir"""
+context_tokens = 85774
+
+[[agents.segments]]
+task_ids = [13]
+started_at = "2026-10-12T13:47:26.4130805Z"
+ended_at = "2026-10-12T13:54:52.9339213Z"
+
+[[agents]]
+id = "A54"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "af1efa7082820f8fe"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T13:49:52.8765823Z"
+updated_at = "2026-10-12T14:10:53.4132881Z"
+ended_at = "2026-10-12T14:10:53.4132881Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-af1efa7082820f8fe.jsonl'
+summary = """
+## Cluster 16 — applied 1 item
+
+applied 16: implemented `review export-v1 (<ids> | --all) --to <v1-ledger> [--dry-run]` in `tomlctl/src/review/export.rs`, with 8 integration tests in `tomlctl/tests/review_export.rs`.
+
+How it works:
+- **Building the row.** The v1 `description` is built from the `implementer` projection, through `fields::project(Role::Implementer, …)`. It holds `fix` or `edit` (with `direction`), then `old`, `target_file`, `instances`, then `failure_scenario`.
+- **Severity and category.** Severity uses the latest verdict that carries one, falling back to the finding's own: `majo"""
+context_tokens = 239175
+
+[[agents.segments]]
+task_ids = [16]
+started_at = "2026-10-12T13:49:52.8765823Z"
+ended_at = "2026-10-12T14:10:53.4132881Z"
+
+[[agents]]
+id = "A55"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a368f431550c2a4b7"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T13:54:17.6800685Z"
+updated_at = "2026-10-12T14:15:59.5710149Z"
+ended_at = "2026-10-12T14:15:59.5710149Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a368f431550c2a4b7.jsonl'
+summary = """
+## Cluster 12: applied 1 item
+
+applied 12: I implemented `review digest --run <U> [--since-wave n]` and `review report --run <U> --out <path>`, and added the 6 named tests plus 2 more. All 8 integration tests and 2 unit tests pass, and the acceptance grep prints `1`.
+
+**`review digest`** prints one compact JSON object. Its keys are `run`, `since_wave` (only when the flag is given), `counts` (by `kind`, `lens` and `status`), `cells` (`status` counts, `unsealed` ids, `notes` for `thin`/`uncovered`), `unverified` (`[{id, kind, route, cell}]`), `unselected`, `unsliced`, `disabled`, `contested`, `r"""
+context_tokens = 177190
+
+[[agents.segments]]
+task_ids = [12]
+started_at = "2026-10-12T13:54:17.6800685Z"
+ended_at = "2026-10-12T14:15:59.5710149Z"
+
+[[agents]]
+id = "A56"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "ab4a5ff820f1ade59"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T13:54:31.0261065Z"
+updated_at = "2026-10-12T14:17:09.3733478Z"
+ended_at = "2026-10-12T14:17:09.3733478Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-ab4a5ff820f1ade59.jsonl'
+summary = """
+## Cluster 15 — applied 1 item
+
+applied 15: `review stats` is implemented in `tomlctl/src/review/stats.rs`, and the six tests the task names are in `tomlctl/tests/review_stats.rs`. All six pass, plus three unit tests. Each of the six fails when the behaviour it guards is broken.
+
+What each part does:
+- **Grouping**
+  - `--by lens` (the default) puts each lens on one row, with its bound content hashes as a `hashes` column rather than a grouping key.
+  - `--by probe` groups on the `nearest <tag>:` prefix of the cell's `reason`. Probes without it go under `untagged`.
+  - `--by run` gives one row """
+context_tokens = 186448
+
+[[agents.segments]]
+task_ids = [15]
+started_at = "2026-10-12T13:54:31.0261065Z"
+ended_at = "2026-10-12T14:17:09.3733478Z"
+
+[[agents]]
+id = "A57"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "aaaf2c45e41ff4ec4"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T13:54:43.4039744Z"
+updated_at = "2026-10-12T14:19:00.2127383Z"
+ended_at = "2026-10-12T14:19:00.2127383Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-aaaf2c45e41ff4ec4.jsonl'
+summary = """
+## Cluster 17: applied 1 item
+
+applied 17: `review run finish <U> [--incomplete <reason> | --incomplete-file <path>]` now works. Before writing, it checks three things inside the store's write lock: findings still `unverified` with no `same_as`, findings still `unverified` that have a `same_as`, and the unselected or unsliced items that `cells::coverage_accounting` reports. If any of these exist and no reason was given, it refuses and writes nothing. Otherwise it stamps `finished`, writes `counts = {cells, uncovered, defect, cleanup, advisory, refuted, suppressed}` and records `incomplete = "<"""
+context_tokens = 125547
+
+[[agents.segments]]
+task_ids = [17]
+started_at = "2026-10-12T13:54:43.4039744Z"
+ended_at = "2026-10-12T14:19:00.2127383Z"
+
+[[agents]]
+id = "A58"
+harness = "claude-code"
+session_id = "0ed45d5c-745e-41cb-9c64-7070e13122fb"
+agent_id = "a4469d2363c2cc265"
+agent_type = "implement-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-12T13:54:51.9407805Z"
+updated_at = "2026-10-12T13:58:52.3703787Z"
+ended_at = "2026-10-12T13:58:52.3703787Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\0ed45d5c-745e-41cb-9c64-7070e13122fb\subagents\agent-a4469d2363c2cc265.jsonl'
+summary = '''
+## 62 — applied 1 item
+
+applied 62: the panel tally in `decide` now counts each seat once, by its latest verdict in store order. Copied or repeated panel rows no longer make a second seat. The `review_verdict` binary passes 11/11 with the fix restored.
+
+## Files touched
+- `C:\Users\rossa\dev\dev-tools\tomlctl\src\review\verdict.rs` (`decide`, lines 284-315)
+- `C:\Users\rossa\dev\dev-tools\tomlctl\tests\review_verdict.rs` (two new tests, before `severity_reassessment_is_recorded`)
+
+## Notes
+- **New tests:** `panel_counts_each_seat_once_by_its_latest_verdict` and `panel_latest_seat_vote_override'''
+context_tokens = 61442
+
+[[agents.segments]]
+task_ids = [62]
+started_at = "2026-10-12T13:54:51.9407805Z"
+ended_at = "2026-10-12T13:58:52.3703787Z"
+
+[[agents]]
+id = "A59"
+harness = "claude-code"
+session_id = "9d1ef695-c806-408b-a569-cd5bbfb9e7e0"
+agent_id = "aecdffe2b4baadc46"
+agent_type = "research-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T07:07:19.316406Z"
+updated_at = "2026-10-13T07:17:03.5409738Z"
+ended_at = "2026-10-13T07:17:03.5409738Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\9d1ef695-c806-408b-a569-cd5bbfb9e7e0\subagents\agent-aecdffe2b4baadc46.jsonl'
+summary = """
+I found 14 findings in the review module: two are real defects, and the other twelve are duplicated or loosely typed code where copies already disagree or could easily drift apart. All were checked by reading the code. I ran no clippy or builds, so anything clippy would see is left out.
+
+The two that matter most:
+- **`sync-v1` undoes a user's reopen** (`sync.rs`, high grade). After a finding is exported and synced back as resolved, dismissed or deferred, `review triage --reopen` sets it to `open`. The next `sync-v1` then puts it straight back, because sync still accepts `open` findings and the"""
+context_tokens = 338025
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-13T07:07:19.316406Z"
+ended_at = "2026-10-13T07:17:03.5409738Z"
+
+[[agents]]
+id = "A60"
+harness = "claude-code"
+session_id = "9d1ef695-c806-408b-a569-cd5bbfb9e7e0"
+agent_id = "a2f5d2e30253cc2e1"
+agent_type = "research-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T07:07:45.784588Z"
+updated_at = "2026-10-13T07:15:12.9612725Z"
+ended_at = "2026-10-13T07:15:12.9612725Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\9d1ef695-c806-408b-a569-cd5bbfb9e7e0\subagents\agent-a2f5d2e30253cc2e1.jsonl'
+summary = """
+I found 3 security findings: 2 warnings and 1 suggestion. The Rust path, regex and process-spawn boundaries are sound. All three findings are about one weakness: the review reads its own controls from the tree it is reviewing, and nothing checks them once the run has started.
+
+```ndjson
+{"file":"tomlctl/src/review/runs.rs","line":228,"symbol":"start_catalogue","severity":"warning","effort":"medium","category":"security","summary":"A change under review can configure its own review: the project lens layer is read from the reviewed tree, can disable floor and security lenses (which need no waive"""
+context_tokens = 170900
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-13T07:07:45.784588Z"
+ended_at = "2026-10-13T07:15:12.9612725Z"
+
+[[agents]]
+id = "A61"
+harness = "claude-code"
+session_id = "9d1ef695-c806-408b-a569-cd5bbfb9e7e0"
+agent_id = "a46ae7258164ca6ed"
+agent_type = "research-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T07:08:11.6959889Z"
+updated_at = "2026-10-13T07:18:35.9676206Z"
+ended_at = "2026-10-13T07:18:35.9676206Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\9d1ef695-c806-408b-a569-cd5bbfb9e7e0\subagents\agent-a46ae7258164ca6ed.jsonl'
+summary = """
+I found 11 issues in the review-v2 code, rated 3 warnings and 8 suggestions. Two of the warnings are real behaviour problems:
+
+- **Reopening is undone automatically.** If a finding is exported, applied in v1, and then reopened with `review triage --reopen`, the next run's first step (`review sync-v1`) quietly marks it resolved again. A re-export can't help either: it re-links to the v1 row that is already fixed.
+- **A run isn't tied to its catalogue.** Each run saves an absolute path to the lens catalogue on this machine (`C:/Users/...`) into a git-tracked store, plus a fingerprint (`tree_sha`"""
+context_tokens = 268743
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-13T07:08:11.6959889Z"
+ended_at = "2026-10-13T07:18:35.9676206Z"
+
+[[agents]]
+id = "A62"
+harness = "claude-code"
+session_id = "9d1ef695-c806-408b-a569-cd5bbfb9e7e0"
+agent_id = "a2fa3d6d655d045cd"
+agent_type = "research-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T07:08:38.7903123Z"
+updated_at = "2026-10-13T07:18:23.3465534Z"
+ended_at = "2026-10-13T07:18:23.3465534Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\9d1ef695-c806-408b-a569-cd5bbfb9e7e0\subagents\agent-a2fa3d6d655d045cd.jsonl'
+summary = """
+I found six things to fix in the v2 review work; the most important is that `run finish` closes a run whose cells never ran. All six were checked by running the current debug build (`tomlctl/target/debug/tomlctl.exe`, 0.16.0) against a throwaway repo in my scratchpad folder. The installed `tomlctl` is 0.15.0 and has no `review` group, so the engine's pre-flight halts on that binary as intended.
+
+1. **`run finish` ignores unsealed cells (warning).** After planning three cells and sealing none, `run finish U1` returned ok with `counts.cells:3, uncovered:0`. A later digest still listed `C3` as un"""
+context_tokens = 150398
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-13T07:08:38.7903123Z"
+ended_at = "2026-10-13T07:18:23.3465534Z"
+
+[[agents]]
+id = "A63"
+harness = "claude-code"
+session_id = "9d1ef695-c806-408b-a569-cd5bbfb9e7e0"
+agent_id = "adad91d3b0425433a"
+agent_type = "research-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T07:09:05.2958235Z"
+updated_at = "2026-10-13T07:16:22.913368Z"
+ended_at = "2026-10-13T07:16:22.913368Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\9d1ef695-c806-408b-a569-cd5bbfb9e7e0\subagents\agent-adad91d3b0425433a.jsonl'
+summary = """
+```ndjson
+{"file":"tomlctl/src/review/add.rs","line":129,"symbol":"review::add::run","severity":"warning","effort":"small","category":"testability","summary":"Nothing tests concurrent `review add` calls or the in-lock SealedMeanwhile re-check, even though v2 has agents writing the store in parallel","description":"In v2, finders call `review add` on sibling cells of one run at the same time, and a restarted agent can resubmit while its original is still writing. add.rs validates the cell before taking the lock, then re-checks the seal and recomputes `superseded` under it (lines 129-188). No re"""
+context_tokens = 165409
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-13T07:09:05.2958235Z"
+ended_at = "2026-10-13T07:16:22.913368Z"
+
+[[agents]]
+id = "A64"
+harness = "claude-code"
+session_id = "9d1ef695-c806-408b-a569-cd5bbfb9e7e0"
+agent_id = "a78ed1e8de79649f1"
+agent_type = "research-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T07:09:33.4812847Z"
+updated_at = "2026-10-13T07:20:32.6115994Z"
+ended_at = "2026-10-13T07:20:32.6115994Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\9d1ef695-c806-408b-a569-cd5bbfb9e7e0\subagents\agent-a78ed1e8de79649f1.jsonl'
+summary = """
+```ndjson
+{"file":"claude/agents/plan-executor.md","line":24,"symbol":"Hold an implementer's context, no more","severity":"warning","effort":"trivial","category":"package-quality","summary":"plan-executor is told to run `tomlctl tasks show <id>`, but its cell slice holds task refs and `tasks show` accepts only numeric ids","description":"`review plan` fills a plan-executor cell's slice with task refs. `order_tasks` returns `t.r#ref` strings, and the body itself says at line 20 that the slice is 'the task refs'. `tasks show` takes its positional through `TaskIds { ids: Vec<u32> }`, so `tomlctl """
+context_tokens = 191235
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-13T07:09:33.4812847Z"
+ended_at = "2026-10-13T07:20:32.6115994Z"
+
+[[agents]]
+id = "A65"
+harness = "claude-code"
+session_id = "21750e59-2b98-411f-a264-13e85a2b62b1"
+agent_id = "af56e7d995322015c"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T07:48:14.492115Z"
+updated_at = "2026-10-13T07:53:51.305467Z"
+ended_at = "2026-10-13T07:53:51.305467Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\21750e59-2b98-411f-a264-13e85a2b62b1\subagents\agent-af56e7d995322015c.jsonl'
+summary = """
+## Cluster R3 — applied 1 item
+
+applied R3: the "panel quorum, otherwise latest verdict" rule now lives in one place, a `pub(crate) fn settle(route, verdicts, counts) -> Option<Settled>` helper in verdict.rs. The rule is chosen by the finding's route, not by who voted. All three sites use it: verdict.rs `decide`, resolve.rs `decide`, and stats.rs `verifier_call` / `overturn`, which now receive the finding's route. `apply_one` now refuses any verdict on a panel-routed finding unless it is `by` panel or audit. It also refuses the reverse: a `by` panel verdict on a finding that is not panel-route"""
+context_tokens = 123536
+
+[[agents.segments]]
+task_ids = []
+item_ids = ["R3"]
+started_at = "2026-10-13T07:48:14.492115Z"
+ended_at = "2026-10-13T07:53:51.305467Z"
+
+[[agents]]
+id = "A66"
+harness = "claude-code"
+session_id = "21750e59-2b98-411f-a264-13e85a2b62b1"
+agent_id = "ad81b1bc5b6bfef23"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T07:48:33.5984608Z"
+updated_at = "2026-10-13T08:00:59.8240329Z"
+ended_at = "2026-10-13T08:00:59.8240329Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\21750e59-2b98-411f-a264-13e85a2b62b1\subagents\agent-ad81b1bc5b6bfef23.jsonl'
+summary = """
+## Cluster R4/R5/R7/R8/R22/R26/R28/R35: 7 items applied, 1 partial
+
+One thing needs action before the checkpoint. The R4 drift check breaks `failed_detector_records_unknown` in `tomlctl/tests/review_survey.rs`, which is not one of my files. I ran that test file and confirmed the failure. The test deliberately rewrites the built-in vocabulary after `run start`, and the new check refuses exactly that. To fix it, the test should delete `catalogue.tree_sha` from U1 in the store after rewriting the vocabulary. A run recorded without `tree_sha` is treated as an old store and is not checked, so the s"""
+context_tokens = 172649
+
+[[agents.segments]]
+task_ids = []
+item_ids = [
+    "R4",
+    "R5",
+    "R7",
+    "R8",
+    "R22",
+    "R26",
+    "R28",
+    "R35",
+]
+started_at = "2026-10-13T07:48:33.5984608Z"
+ended_at = "2026-10-13T08:00:59.8240329Z"
+
+[[agents]]
+id = "A67"
+harness = "claude-code"
+session_id = "21750e59-2b98-411f-a264-13e85a2b62b1"
+agent_id = "a4c06485019434055"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T07:48:44.4483078Z"
+updated_at = "2026-10-13T07:56:13.4432014Z"
+ended_at = "2026-10-13T07:56:13.4432014Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\21750e59-2b98-411f-a264-13e85a2b62b1\subagents\agent-a4c06485019434055.jsonl'
+summary = """
+## Cluster R9,R27,R30,R31,R33 — applied 5 items
+
+applied R27: `review cover` and `review survey` now refuse a finished run with the wording used by `plan --ndjson`, `review {verb}: run {id} is finished`. Each verb checks once before the lock and again inside the `store::mutate` closure, so a run finished in between is still refused. In cover the run comes from the cell's `run` field. A retry that matches an existing seal still returns `unchanged` and writes nothing, so that idempotent path is unchanged. `verdict` was not touched. New tests `cover_refuses_a_cell_of_a_finished_run` and `survey_r"""
+context_tokens = 134094
+
+[[agents.segments]]
+task_ids = []
+item_ids = [
+    "R9",
+    "R27",
+    "R30",
+    "R31",
+    "R33",
+]
+started_at = "2026-10-13T07:48:44.4483078Z"
+ended_at = "2026-10-13T07:56:13.4432014Z"
+
+[[agents]]
+id = "A68"
+harness = "claude-code"
+session_id = "21750e59-2b98-411f-a264-13e85a2b62b1"
+agent_id = "a023143b6a41fd5e5"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T07:48:53.1947704Z"
+updated_at = "2026-10-13T07:49:46.620122Z"
+ended_at = "2026-10-13T07:49:46.620122Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\21750e59-2b98-411f-a264-13e85a2b62b1\subagents\agent-a023143b6a41fd5e5.jsonl'
+summary = """
+## Cluster R6/R11/R43 — applied 3 items
+
+applied R6: the security lens and the review method now both say a secret's value never goes into the store. In `security.md` Edit forms, the `remove` row's `old` quotes only the part of the line that isn't secret (the key name and the `=`), and its `edit` and `summary` describe the value without repeating it. `review-v2-method/SKILL.md` gets a matching rule under "Fields every finding carries": no field may quote a secret, token, password or key value, and `old` and `evidence` stop short of the value. The precondition holds. `check_old` (tomlctl/src/re"""
+context_tokens = 69103
+
+[[agents.segments]]
+task_ids = []
+item_ids = [
+    "R6",
+    "R11",
+    "R43",
+]
+started_at = "2026-10-13T07:48:53.1947704Z"
+ended_at = "2026-10-13T07:49:46.620122Z"
+
+[[agents]]
+id = "A69"
+harness = "claude-code"
+session_id = "21750e59-2b98-411f-a264-13e85a2b62b1"
+agent_id = "ae51f451511662402"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T07:48:59.401647Z"
+updated_at = "2026-10-13T07:53:33.8454599Z"
+ended_at = "2026-10-13T07:53:33.8454599Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\21750e59-2b98-411f-a264-13e85a2b62b1\subagents\agent-ae51f451511662402.jsonl'
+summary = '''
+## Cluster R38: applied 1 item
+
+applied R38: the `command_lint` gate now also checks `claude/workflows/*.js`. Any backtick span that starts with `tomlctl ` is pulled out, whether it is a plain backtick or an escaped one nested inside an outer template. Each `${…}` in it is replaced with its own integer stand-in (`9000`, `9001`, …), and the line goes through the existing `lint_logical` path (shell_words, then the real clap `Cli`). The gate passes on the current tree, so `review-v2.js` has no flag drift.
+
+## Files touched
+- C:\Users\rossa\dev\dev-tools\tomlctl\src\cli\dispatch\tests\lint.rs (lin'''
+context_tokens = 84718
+
+[[agents.segments]]
+task_ids = []
+item_ids = ["R38"]
+started_at = "2026-10-13T07:48:59.401647Z"
+ended_at = "2026-10-13T07:53:33.8454599Z"
+
+[[agents]]
+id = "A70"
+harness = "claude-code"
+session_id = "21750e59-2b98-411f-a264-13e85a2b62b1"
+agent_id = "ae4fab4e414dcb8ec"
+agent_type = "implement-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T07:49:02.9768178Z"
+updated_at = "2026-10-13T07:49:11.0368991Z"
+ended_at = "2026-10-13T07:49:11.0368991Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\21750e59-2b98-411f-a264-13e85a2b62b1\subagents\agent-ae4fab4e414dcb8ec.jsonl'
+summary = '''
+applied R10: added a ref-to-id mapping step (`tomlctl tasks list --slug <flow slug> --select id,ref`) before the per-task `tasks show` call in `plan-executor.md`. The `show` call now takes the id whose ref matches. I didn't run any check, because it's a prose-only edit.
+
+## Files touched
+- C:\Users\rossa\dev\dev-tools\claude\agents\plan-executor.md (line 24)
+
+TANGENTIAL: none'''
+context_tokens = 46729
+
+[[agents.segments]]
+task_ids = []
+item_ids = ["R10"]
+started_at = "2026-10-13T07:49:02.9768178Z"
+ended_at = "2026-10-13T07:49:11.0368991Z"
+
+[[agents]]
+id = "A71"
+harness = "claude-code"
+session_id = "21750e59-2b98-411f-a264-13e85a2b62b1"
+agent_id = "ae94515029db008b9"
+agent_type = "implement-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T07:49:07.0460294Z"
+updated_at = "2026-10-13T07:49:16.7279744Z"
+ended_at = "2026-10-13T07:49:16.7279744Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\21750e59-2b98-411f-a264-13e85a2b62b1\subagents\agent-ae94515029db008b9.jsonl'
+summary = '''
+applied R25: the stage 3 "Store record" bullet no longer says `review stats` reads the cell's `question` and `reason`. It now says they record why the cell exists, and that its findings count under `correctness` in `review stats`, which does not separate them from the floor cell's. I did not run any check, since this was a one-sentence prose edit. I also did not re-read `tomlctl/src/review/stats.rs`, so the spec's description of how stats groups findings is unchecked.
+
+## Files touched
+- C:\Users\rossa\dev\dev-tools\claude\commands\review-v2.md (line 58)
+
+TANGENTIAL: none'''
+context_tokens = 44500
+
+[[agents.segments]]
+task_ids = []
+item_ids = ["R25"]
+started_at = "2026-10-13T07:49:07.0460294Z"
+ended_at = "2026-10-13T07:49:16.7279744Z"
+
+[[agents]]
+id = "A72"
+harness = "claude-code"
+session_id = "21750e59-2b98-411f-a264-13e85a2b62b1"
+agent_id = "a3343f2a0b80bd9ed"
+agent_type = "implement-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T07:49:10.3972428Z"
+updated_at = "2026-10-13T07:49:24.6262372Z"
+ended_at = "2026-10-13T07:49:24.6262372Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\21750e59-2b98-411f-a264-13e85a2b62b1\subagents\agent-a3343f2a0b80bd9ed.jsonl'
+summary = """
+applied R29: added a `review run update` synopsis line after `run start` in `tomlctl/README.md`, in the same format as its neighbours. I did not run a check, since this is a docs-only edit.
+
+The line is `tomlctl review run update <U> --slug <s> --set-json waivers=<json>`, with a comment naming the five patchable fields (`signals`, `waivers`, `audit`, `agents`, `baselines`) and the `--set` and `--set-file` alternatives. I took the flags from `ReviewRunUpdateArgs` in `tomlctl/src/cli/types/review.rs` and from the "run update" section of `claude/skills/tomlctl/references/review.md`. `FieldArgs` i"""
+context_tokens = 50200
+
+[[agents.segments]]
+task_ids = []
+item_ids = ["R29"]
+started_at = "2026-10-13T07:49:10.3972428Z"
+ended_at = "2026-10-13T07:49:24.6262372Z"
+
+[[agents]]
+id = "A73"
+harness = "claude-code"
+session_id = "21750e59-2b98-411f-a264-13e85a2b62b1"
+agent_id = "aa828698bcb78112a"
+agent_type = "implement-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T07:49:14.5448359Z"
+updated_at = "2026-10-13T07:50:11.9494125Z"
+ended_at = "2026-10-13T07:50:11.9494125Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\21750e59-2b98-411f-a264-13e85a2b62b1\subagents\agent-aa828698bcb78112a.jsonl'
+summary = """
+## R32 — applied 1 item
+
+applied R32: added `export_dry_run_writes_neither_ledger_nor_store` to `review_export.rs`. It covers two cases.
+- **No v1 ledger yet:** `export-v1 --dry-run F1` reports `dry_run` true and F1 under `would_change.exported`. The v2 store and its sidecar are byte-identical afterwards, and no v1 ledger or sidecar is created.
+- **Existing v1 ledger:** with the v1 ledger already seeded, `--dry-run F7` lists F7 under `would_change.exported`. The v1 ledger, the v2 store and their sidecars are all byte-identical afterwards.
+
+The new test uses a small `snapshot` helper that reads"""
+context_tokens = 56629
+
+[[agents.segments]]
+task_ids = []
+item_ids = ["R32"]
+started_at = "2026-10-13T07:49:14.5448359Z"
+ended_at = "2026-10-13T07:50:11.9494125Z"
+
+[[agents]]
+id = "A74"
+harness = "claude-code"
+session_id = "21750e59-2b98-411f-a264-13e85a2b62b1"
+agent_id = "ac6cb3cc57aaa72ff"
+agent_type = "implement-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T07:49:18.2011323Z"
+updated_at = "2026-10-13T07:50:00.6592523Z"
+ended_at = "2026-10-13T07:50:00.6592523Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\21750e59-2b98-411f-a264-13e85a2b62b1\subagents\agent-ac6cb3cc57aaa72ff.jsonl'
+summary = '''
+## R34 — applied 1 item
+
+applied R34: In `Fixture::new`, the missing-`vocabulary.toml` skip is now an `assert!` that panics with "the shipped vocabulary is missing at <path>". The git-missing skip is unchanged.
+
+## Files touched
+- C:\Users\rossa\dev\dev-tools\tomlctl\tests\review_vocabulary.rs (lines 38-43)
+
+## Notes
+- note: check `cargo test --manifest-path tomlctl/Cargo.toml --test review_vocabulary` — 6 passed, 0 failed.
+- note: `Fixture::new` still returns `Option<Self>` because the git-missing skip returns `None`.
+
+TANGENTIAL: none'''
+context_tokens = 45584
+
+[[agents.segments]]
+task_ids = []
+item_ids = ["R34"]
+started_at = "2026-10-13T07:49:18.2011323Z"
+ended_at = "2026-10-13T07:50:00.6592523Z"
+
+[[agents]]
+id = "A75"
+harness = "claude-code"
+session_id = "21750e59-2b98-411f-a264-13e85a2b62b1"
+agent_id = "a2c3199f000c3a614"
+agent_type = "implement-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T07:49:23.6772154Z"
+updated_at = "2026-10-13T07:49:39.7748943Z"
+ended_at = "2026-10-13T07:49:39.7748943Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\21750e59-2b98-411f-a264-13e85a2b62b1\subagents\agent-a2c3199f000c3a614.jsonl'
+summary = '''
+applied R37: added help text to `review list` in `ReviewListArgs`. `--for` now says `(default: orchestrator)`. `--status` now lists the twelve `FINDING_STATUSES` values and says `(default: every status except superseded)`. Parsing is unchanged.
+
+## Files touched
+- C:\Users\rossa\dev\dev-tools\tomlctl\src\cli\types\review.rs (lines 413-418, 436)
+
+## Notes
+- I checked the defaults against the spec's description, not against `query.rs` itself.
+- note: check not run. The edit only changes `help` strings, and a sibling's in-flight edits to `tomlctl/src/review/*.rs` would make a clippy failure unatt'''
+context_tokens = 47200
+
+[[agents.segments]]
+task_ids = []
+item_ids = ["R37"]
+started_at = "2026-10-13T07:49:23.6772154Z"
+ended_at = "2026-10-13T07:49:39.7748943Z"
+
+[[agents]]
+id = "A76"
+harness = "claude-code"
+session_id = "21750e59-2b98-411f-a264-13e85a2b62b1"
+agent_id = "ab780f0dfda04ab3d"
+agent_type = "implement-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T07:49:27.3246748Z"
+updated_at = "2026-10-13T07:49:38.5094226Z"
+ended_at = "2026-10-13T07:49:38.5094226Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\21750e59-2b98-411f-a264-13e85a2b62b1\subagents\agent-ab780f0dfda04ab3d.jsonl'
+summary = '''
+applied R39: `verifierPrompt` now picks its return wording from the `batch` argument instead of `ids.length === 1`. A one-row minor batch is told to return `verdicts`, as `batchSchema` requires.
+
+`verifierPrompt` already took a `batch` name as its third argument, and only `verifyBatch` passes it. So I changed the condition to `!batch` and left the call sites alone. `verifyOne` and `verifyPanel` pass no batch, so they keep the single-object wording.
+
+I ran no check, since this was a one-token condition change.
+
+## Files touched
+- C:\Users\rossa\dev\dev-tools\claude\workflows\review-v2.js (line '''
+context_tokens = 47662
+
+[[agents.segments]]
+task_ids = []
+item_ids = ["R39"]
+started_at = "2026-10-13T07:49:27.3246748Z"
+ended_at = "2026-10-13T07:49:38.5094226Z"
+
+[[agents]]
+id = "A77"
+harness = "claude-code"
+session_id = "21750e59-2b98-411f-a264-13e85a2b62b1"
+agent_id = "a3b6e3e1126e965c0"
+agent_type = "implement-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T07:49:33.2449592Z"
+updated_at = "2026-10-13T07:49:51.6565885Z"
+ended_at = "2026-10-13T07:49:51.6565885Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\21750e59-2b98-411f-a264-13e85a2b62b1\subagents\agent-a3b6e3e1126e965c0.jsonl'
+summary = """
+## R40, R44, R45 — applied 3 items
+
+applied R40: added `ripple` to the floor list in the Stage 3 compose section of `review-plan-v2.md`. `ripple.md` declares `activation = "floor"` and lists `plan` in its families, so the spec's premise holds.
+applied R44: copied the `> **Effort**` line from `review-v2.md:14` verbatim into `review-plan-v2.md` and `optimise-v2.md`. In both it sits after the intro paragraphs and before `## Bindings`. The line doesn't name review-v2, so I adapted nothing.
+applied R45: the `review-plan-v2.md` argument-hint now reads `[--probe "<question>"]... [--lens +id|-id]...`."""
+context_tokens = 52140
+
+[[agents.segments]]
+task_ids = []
+item_ids = [
+    "R40",
+    "R44",
+    "R45",
+]
+started_at = "2026-10-13T07:49:33.2449592Z"
+ended_at = "2026-10-13T07:49:51.6565885Z"
+
+[[agents]]
+id = "A78"
+harness = "claude-code"
+session_id = "21750e59-2b98-411f-a264-13e85a2b62b1"
+agent_id = "a41b24e54cbe252a8"
+agent_type = "implement-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T07:49:37.6476741Z"
+updated_at = "2026-10-13T07:49:48.726429Z"
+ended_at = "2026-10-13T07:49:48.726429Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\21750e59-2b98-411f-a264-13e85a2b62b1\subagents\agent-a41b24e54cbe252a8.jsonl'
+summary = '''
+## R42 — applied 1 item
+
+applied R42: added `review-v2.toml` to the file list and `review (the v2 review store)` to the verb-group list in the `description` of `claude/skills/tomlctl/SKILL.md`. Sentence shape is unchanged and the length is nearly the same.
+
+## Files touched
+- C:\Users\rossa\dev\dev-tools\claude\skills\tomlctl\SKILL.md (line 3)
+
+## Notes
+- note: check not run. The edit only changes frontmatter text. The pre-commit hook's `cli::dispatch::tests` run covers `claude/**/*.md`.
+
+TANGENTIAL: none'''
+context_tokens = 45009
+
+[[agents.segments]]
+task_ids = []
+item_ids = ["R42"]
+started_at = "2026-10-13T07:49:37.6476741Z"
+ended_at = "2026-10-13T07:49:48.726429Z"
+
+[[agents]]
+id = "A79"
+harness = "claude-code"
+session_id = "21750e59-2b98-411f-a264-13e85a2b62b1"
+agent_id = "a4d41d5936cdbc1a0"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T07:53:41.9963575Z"
+updated_at = "2026-10-13T07:55:43.2098499Z"
+ended_at = "2026-10-13T07:55:43.2098499Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\21750e59-2b98-411f-a264-13e85a2b62b1\subagents\agent-a4d41d5936cdbc1a0.jsonl'
+summary = """
+## Cluster R42 — applied 1 item
+
+applied R42: shortened the tomlctl skill description from 1056 to about 990 characters, under the 1024 cap. Both additions stay: `review-v2.toml` in the file list and the `review (the v2 review store)` verb group. Every file name and verb-group name is still there. I made four trims:
+- The `sweep` aside now ends "enumerator for findings" instead of "for review and optimise findings".
+- "re-verify and batch findings for the apply flow" became "re-verify and batch apply-flow findings".
+- "Use this for any TOML mutation in a flow command" became "Use for any flow """
+context_tokens = 50431
+
+[[agents.segments]]
+task_ids = []
+item_ids = ["R42"]
+started_at = "2026-10-13T07:53:41.9963575Z"
+ended_at = "2026-10-13T07:55:43.2098499Z"
+
+[[agents]]
+id = "A80"
+harness = "claude-code"
+session_id = "21750e59-2b98-411f-a264-13e85a2b62b1"
+agent_id = "a00a36f190d0ad13e"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T08:01:14.0483658Z"
+updated_at = "2026-10-13T08:04:38.9723791Z"
+ended_at = "2026-10-13T08:04:38.9723791Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\21750e59-2b98-411f-a264-13e85a2b62b1\subagents\agent-a00a36f190d0ad13e.jsonl'
+summary = """
+## Cluster R12: applied 1 item
+
+applied R12: removed the four module-level `dead_code` allows from `mod.rs`. Clippy then flagged 9 dead-code warnings, and each one is now fixed: genuinely dead items are deleted, and one narrowly-scoped allow sits inside each of two enum-generating macros. Behaviour is unchanged.
+
+What clippy flagged and what I did about it:
+- **`catalogue.rs`, `Catalogue::builtin_root` / `project_root` / `concerns`.** Nothing called these, not even tests, so I deleted them. That left the `builtin` and `project` struct fields write-only, so I deleted those fields and the lines """
+context_tokens = 69994
+
+[[agents.segments]]
+task_ids = []
+item_ids = ["R12"]
+started_at = "2026-10-13T08:01:14.0483658Z"
+ended_at = "2026-10-13T08:04:38.9723791Z"
+
+[[agents]]
+id = "A81"
+harness = "claude-code"
+session_id = "21750e59-2b98-411f-a264-13e85a2b62b1"
+agent_id = "a24b33bea3122f9d8"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T08:01:24.0599566Z"
+updated_at = "2026-10-13T08:03:40.5079468Z"
+ended_at = "2026-10-13T08:03:40.5079468Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\21750e59-2b98-411f-a264-13e85a2b62b1\subagents\agent-a24b33bea3122f9d8.jsonl'
+summary = """
+## Cluster R4/R7 (re-dispatch): 2 items applied
+
+applied R4: rewrote `failed_detector_records_unknown` so the run now pins its catalogue. The test starts a run on the unchanged fixture vocabulary and no longer rewrites `vocabulary.toml` after `run start`. Its intent still holds: the unparseable `web/package.json` is a failing detector, the test asserts that `framework:react` is recorded as unknown with a JSON reason, and every other detector is still evaluated (`lang:rust` resolves, `lang:ts` stays unstored). I dropped the `bad` uncompilable-regex part of the test (see Notes). `cargo test --te"""
+context_tokens = 58004
+
+[[agents.segments]]
+task_ids = []
+item_ids = [
+    "R4",
+    "R7",
+]
+started_at = "2026-10-13T08:01:24.0599566Z"
+ended_at = "2026-10-13T08:03:40.5079468Z"
+
+[[agents]]
+id = "A82"
+harness = "claude-code"
+session_id = "21750e59-2b98-411f-a264-13e85a2b62b1"
+agent_id = "aeaf8b2b821f501b7"
+agent_type = "verification"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T08:04:45.8371628Z"
+updated_at = "2026-10-13T08:12:49.0686382Z"
+ended_at = "2026-10-13T08:12:49.0686382Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\21750e59-2b98-411f-a264-13e85a2b62b1\subagents\agent-aeaf8b2b821f501b7.jsonl'
+summary = """
+command: cargo fmt --manifest-path tomlctl/Cargo.toml -- --check
+outcome: pass
+exit: 0
+duration_s: 3
+log: C:/Users/rossa/AppData/Local/Temp/tmp.Hd26xsH5sn/c1.log
+summary: none
+
+command: cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets -- -D warnings
+outcome: pass
+exit: 0
+duration_s: 27
+log: C:/Users/rossa/AppData/Local/Temp/tmp.Hd26xsH5sn/c2.log
+summary: none
+
+command: cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast
+outcome: pass
+exit: 0
+duration_s: 345
+log: C:/Users/rossa/AppData/Local/Temp/tmp.Hd26xsH5sn/c3.log
+summary: Summary [ 266.168s] 2073 tests run: 207"""
+context_tokens = 38776
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-13T08:04:45.8371628Z"
+ended_at = "2026-10-13T08:12:49.0686382Z"
+
+[[agents]]
+id = "A83"
+harness = "claude-code"
+session_id = "6c05d681-906e-4d56-a3be-dc4192f6e7e7"
+agent_id = "a664ffaa8db5cbed3"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T08:26:06.302001Z"
+updated_at = "2026-10-13T08:27:55.4427618Z"
+ended_at = "2026-10-13T08:27:55.4427618Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\6c05d681-906e-4d56-a3be-dc4192f6e7e7\subagents\agent-a664ffaa8db5cbed3.jsonl'
+summary = """
+## Cluster R13: 1 item applied
+
+applied R13: merged the two enum macros into one. `str_enum!` now derives `PartialOrd, Ord, Hash` and generates an `ALL: &'static [Self]` const listing the variants in declaration order. It is exported with `pub(crate) use str_enum;`, the same pattern as `advise` in io.rs, so mod.rs needed no change. `word_enum!` is deleted and the 8 catalogue vocabulary enums now use `str_enum!`. The hand-written `EntryType::ALL` is gone and the loop that used it reads `for &ty in EntryType::ALL`. Both `depth_rank` helpers (cells.rs and catalogue.rs) are deleted and their three"""
+context_tokens = 67464
+
+[[agents.segments]]
+task_ids = []
+item_ids = ["R13"]
+started_at = "2026-10-13T08:26:06.302001Z"
+ended_at = "2026-10-13T08:27:55.4427618Z"
+
+[[agents]]
+id = "A84"
+harness = "claude-code"
+session_id = "6c05d681-906e-4d56-a3be-dc4192f6e7e7"
+agent_id = "a2bc3d84d5f4444b6"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T08:26:14.3495257Z"
+updated_at = "2026-10-13T08:27:39.5870876Z"
+ended_at = "2026-10-13T08:27:39.5870876Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\6c05d681-906e-4d56-a3be-dc4192f6e7e7\subagents\agent-a2bc3d84d5f4444b6.jsonl'
+summary = """
+I've applied R19. The clippy run stopped on a sibling's resolve error, so my edits have not been type-checked.
+
+## Cluster R19 — applied 1 item
+
+applied R19: moved the verdict upsert and the latest-reassessed-severity rule into `store.rs` as two `impl Store` methods, `upsert_verdict(&mut self, Verdict)` and `severity(&self, &Finding) -> &str`. I deleted `sync::upsert`, `verdict::upsert`, `export::reassessed_severity` and `digest::severity`, and pointed every caller at the methods. Behaviour is the same: the (finding, by, seat) replace-or-append still leaves an identical record where it is, and"""
+context_tokens = 60463
+
+[[agents.segments]]
+task_ids = []
+item_ids = ["R19"]
+started_at = "2026-10-13T08:26:14.3495257Z"
+ended_at = "2026-10-13T08:27:39.5870876Z"
+
+[[agents]]
+id = "A85"
+harness = "claude-code"
+session_id = "6c05d681-906e-4d56-a3be-dc4192f6e7e7"
+agent_id = "a276124d53757e549"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T08:26:28.3077042Z"
+updated_at = "2026-10-13T08:29:49.281648Z"
+ended_at = "2026-10-13T08:29:49.281648Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\6c05d681-906e-4d56-a3be-dc4192f6e7e7\subagents\agent-a276124d53757e549.jsonl'
+summary = """
+## Cluster R20,R21: applied 2 items
+
+applied R20: the per-row checks that `review add` and triage's convert path both ran now live once, in `add.rs`, and both callers use them. Three helpers were added there, all `pub(super)`:
+- `field_refusals(root, row, family, cell: Option<&Cell>)` runs the field-catalogue validation and then the lens-vs-cell check.
+- `text_refusals(root, row, kind, family)` runs the `old` / `anchor_old` checks against the files.
+- `route_of(row, kind, run, globs)` computes the route.
+
+`add::prepare` now calls the three helpers. Triage's own copies are gone: `text_check_ref"""
+context_tokens = 94916
+
+[[agents.segments]]
+task_ids = []
+item_ids = [
+    "R20",
+    "R21",
+]
+started_at = "2026-10-13T08:26:28.3077042Z"
+ended_at = "2026-10-13T08:29:49.281648Z"
+
+[[agents]]
+id = "A86"
+harness = "claude-code"
+session_id = "6c05d681-906e-4d56-a3be-dc4192f6e7e7"
+agent_id = "afacea27c32d45f78"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T08:30:18.4725609Z"
+updated_at = "2026-10-13T08:32:22.4005253Z"
+ended_at = "2026-10-13T08:32:22.4005253Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\6c05d681-906e-4d56-a3be-dc4192f6e7e7\subagents\agent-afacea27c32d45f78.jsonl'
+summary = """
+I applied R14. Each piece of v1 vocabulary is now declared in one place instead of being copied into export, catalogue and sync. Clippy is clean across all targets, and the two named test binaries ran 16 tests, all passing (`review_stats` may not exist as its own binary).
+
+## Cluster R14 — applied 1 item
+
+applied R14: the v1 vocabulary now has one owner. In `ledgers.rs`, `SEVERITIES` and `EFFORTS` are raised to `pub(crate)`, and `LedgerKind` gains `id_prefix()` (R/O/P) and `categories()`, which returns the review or optimise list and `None` for plan-review. Export takes its severities, efforts"""
+context_tokens = 79479
+
+[[agents.segments]]
+task_ids = []
+item_ids = ["R14"]
+started_at = "2026-10-13T08:30:18.4725609Z"
+ended_at = "2026-10-13T08:32:22.4005253Z"
+
+[[agents]]
+id = "A87"
+harness = "claude-code"
+session_id = "6c05d681-906e-4d56-a3be-dc4192f6e7e7"
+agent_id = "a3ce78cfbbd410955"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T08:30:33.4952426Z"
+updated_at = "2026-10-13T08:34:22.2663336Z"
+ended_at = "2026-10-13T08:34:22.2663336Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\6c05d681-906e-4d56-a3be-dc4192f6e7e7\subagents\agent-a3ce78cfbbd410955.jsonl'
+summary = '''
+## Cluster R16+R17: applied 2 items
+
+applied R16: one shared path check now replaces the four hand-written copies. `pub(super) fn path_problem(path, noun) -> Option<String>` in `tomlctl/src/review/fields.rs` refuses the strictest union of what the copies checked: empty or whitespace-only paths, any `\`, a leading `/`, a `:` as the second byte whatever the first byte is, and any `..` segment. Field validation passes `"paths"`, `runs` passes `"scope paths"` and `cells` passes `"slice paths"`, so each keeps its current message text. `query::parse_citation` keeps its whitespace pre-check and calls'''
+context_tokens = 89638
+
+[[agents.segments]]
+task_ids = []
+item_ids = [
+    "R16",
+    "R17",
+]
+started_at = "2026-10-13T08:30:33.4952426Z"
+ended_at = "2026-10-13T08:34:22.2663336Z"
+
+[[agents]]
+id = "A88"
+harness = "claude-code"
+session_id = "6c05d681-906e-4d56-a3be-dc4192f6e7e7"
+agent_id = "a630289d4ede9b052"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T08:34:44.2750244Z"
+updated_at = "2026-10-13T08:37:32.0816327Z"
+ended_at = "2026-10-13T08:37:32.0816327Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\6c05d681-906e-4d56-a3be-dc4192f6e7e7\subagents\agent-a630289d4ede9b052.jsonl'
+summary = """
+## Cluster R15+R24: both items applied
+
+applied R15: the field caps and cell-agent names now come from the field catalogue. I added `fields::cap(record, name)`, and `cells::cover` reads `Record::Cell.note` through it while `sync::capped` reads `Record::Verdict.rationale`. Both local 600 constants are gone. `FINDER`, `SWEEPER` and `EXECUTOR` are now `pub(super)` consts in `fields.rs`, and `CELL_AGENTS` is built from them. `cells.rs`, `digest.rs` and `verdict.rs` import them, and their local copies are deleted. I did not add a `CellAgent` enum and did not retype `Cell.agent`. `cover`'s status ch"""
+context_tokens = 73092
+
+[[agents.segments]]
+task_ids = []
+item_ids = [
+    "R15",
+    "R24",
+]
+started_at = "2026-10-13T08:34:44.2750244Z"
+ended_at = "2026-10-13T08:37:32.0816327Z"
+
+[[agents]]
+id = "A89"
+harness = "claude-code"
+session_id = "6c05d681-906e-4d56-a3be-dc4192f6e7e7"
+agent_id = "a14bcad6fd32df5b4"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T08:34:52.8924657Z"
+updated_at = "2026-10-13T08:36:54.2785867Z"
+ended_at = "2026-10-13T08:36:54.2785867Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\6c05d681-906e-4d56-a3be-dc4192f6e7e7\subagents\agent-a14bcad6fd32df5b4.jsonl'
+summary = """
+## Cluster R18: applied 1 item
+
+applied R18: export now builds its per-finding implementer projection from one shared `View` instead of its own hand-written copy. `Selection::new` calls `View::new(stored)` once, then `view.project(Role::Implementer, i, false)` for each finding. I deleted `implementer_rows` and the imports it alone used (`toml_to_json`, `ProjectCtx`, `Record`, `fields::self`), and added `use super::query::View`. `View` already groups verdicts by finding in store order with a single lookup, where the old code scanned every verdict once per finding. It also passes `same_as_target"""
+context_tokens = 59362
+
+[[agents.segments]]
+task_ids = []
+item_ids = ["R18"]
+started_at = "2026-10-13T08:34:52.8924657Z"
+ended_at = "2026-10-13T08:36:54.2785867Z"
+
+[[agents]]
+id = "A90"
+harness = "claude-code"
+session_id = "6c05d681-906e-4d56-a3be-dc4192f6e7e7"
+agent_id = "a37fb6bee2a403a4e"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T08:37:55.2790266Z"
+updated_at = "2026-10-13T08:43:31.3399061Z"
+ended_at = "2026-10-13T08:43:31.3399061Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\6c05d681-906e-4d56-a3be-dc4192f6e7e7\subagents\agent-a37fb6bee2a403a4e.jsonl'
+summary = """
+## Cluster R23+R36: both items applied
+
+applied R36: `review::store::load` now does the existence check itself, so every verb reports one error for a missing store: `review store not found at <path>`, with kind `not_found`. I added two helpers in `store.rs`. `store::not_found(path)` builds that error. `store::require(path)` checks that the store file exists. `load` calls `require` in place of `strict_read_check`. I deleted all eight per-verb copies (add, cells, export, resolve, triage, verdict, and two in runs). The two in `runs.rs` became `store::require(...)` because those verbs go straight """
+context_tokens = 109548
+
+[[agents.segments]]
+task_ids = []
+item_ids = [
+    "R23",
+    "R36",
+]
+started_at = "2026-10-13T08:37:55.2790266Z"
+ended_at = "2026-10-13T08:43:31.3399061Z"
+
+[[agents]]
+id = "A91"
+harness = "claude-code"
+session_id = "6c05d681-906e-4d56-a3be-dc4192f6e7e7"
+agent_id = "a3bcbd6b1c2a61763"
+agent_type = "verification"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T08:44:02.8159117Z"
+updated_at = "2026-10-13T08:52:05.9320786Z"
+ended_at = "2026-10-13T08:52:05.9320786Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\6c05d681-906e-4d56-a3be-dc4192f6e7e7\subagents\agent-a3bcbd6b1c2a61763.jsonl'
+summary = """
+command: cargo fmt --manifest-path tomlctl/Cargo.toml -- --check
+outcome: pass
+exit: 0
+duration_s: 7
+log: C:/Users/rossa/AppData/Local/Temp/tmp.nfuyK5koqS/c1.log
+summary: none
+
+command: CARGO_INCREMENTAL=0 cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets -- -D warnings
+outcome: pass
+exit: 0
+duration_s: 56
+log: C:/Users/rossa/AppData/Local/Temp/tmp.nfuyK5koqS/c2.log
+summary: none
+
+command: CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast
+outcome: pass
+exit: 0
+duration_s: 305
+log: C:/Users/rossa/AppData/Local/Temp/tmp.nfuyK5koqS/c3.log
+summary:"""
+context_tokens = 37576
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-13T08:44:02.8159117Z"
+ended_at = "2026-10-13T08:52:05.9320786Z"
+
+[[agents]]
+id = "A92"
+harness = "claude-code"
+session_id = "6c05d681-906e-4d56-a3be-dc4192f6e7e7"
+agent_id = "afff906ea33b74352"
+agent_type = "flow-bootstrap"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T08:59:19.9772597Z"
+updated_at = "2026-10-13T08:59:32.0940047Z"
+ended_at = "2026-10-13T08:59:32.0940047Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\6c05d681-906e-4d56-a3be-dc4192f6e7e7\subagents\agent-afff906ea33b74352.jsonl'
+summary = '{"ok":true,"resolved":{"resolved":true,"slug":"review-system-v2","source":"active-latest","ties_broken":false,"tie_candidates":[],"context_path":".claude/flows/review-system-v2/context.toml","artifacts":{"review_ledger":".claude/flows/review-system-v2/review-ledger.toml","optimise_findings":".claude/flows/review-system-v2/optimise-findings.toml","execution_record":".claude/flows/review-system-v2/execution-record.toml","plan_review_findings":".claude/flows/review-system-v2/plan-review-findings.toml","tasks":".claude/flows/review-system-v2/tasks.toml"},"plan_path":"docs/plans/review-system-v2.md'
+context_tokens = 28132
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-13T08:59:19.9772597Z"
+ended_at = "2026-10-13T08:59:32.0940047Z"
+
+[[agents]]
+id = "A93"
+harness = "claude-code"
+session_id = "6c05d681-906e-4d56-a3be-dc4192f6e7e7"
+agent_id = "afff6db44d09de9e6"
+agent_type = "Explore"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T08:59:54.2290919Z"
+updated_at = "2026-10-13T09:02:25.1356781Z"
+ended_at = "2026-10-13T09:02:25.1356781Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\6c05d681-906e-4d56-a3be-dc4192f6e7e7\subagents\agent-afff6db44d09de9e6.jsonl'
+summary = '''
+I mapped the whole finding-status lifecycle under `C:\Users\rossa\dev\dev-tools\tomlctl\src\review\`. The main result: the reopen→sync defect is real, and no test covers it.
+
+**1. Vocabulary (`fields.rs`)**
+- `FINDING_STATUSES` (fields.rs:114): unverified, superseded, open, refuted, merged, parked, dismissed, deferred, backlogged, converted, resolved, exported.
+- `OUTCOMES`: repeat, contested, reopened, regression, suppressed.
+- `VERDICTS`: confirmed, plausible, refuted, unsettled. `VERDICT_BY`: verifier, panel, checker, audit, orchestrator, sync.
+- `CELL_STATUSES`: assigned, covered, thin, un'''
+context_tokens = 117688
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-13T08:59:54.2290919Z"
+ended_at = "2026-10-13T09:02:25.1356781Z"
+
+[[agents]]
+id = "A94"
+harness = "claude-code"
+session_id = "6c05d681-906e-4d56-a3be-dc4192f6e7e7"
+agent_id = "a76e0f4ccfdc3bd96"
+agent_type = "Explore"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T09:00:02.6802514Z"
+updated_at = "2026-10-13T09:02:57.6876239Z"
+ended_at = "2026-10-13T09:02:57.6876239Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\6c05d681-906e-4d56-a3be-dc4192f6e7e7\subagents\agent-a76e0f4ccfdc3bd96.jsonl'
+summary = """
+I answered all five questions by reading the code; I modified nothing. The only commands I ran were read-only `git log` probes. There are two surprises: the store's write order does not match the "retry after a failed sidecar rename" comments, and git misreads windows longer than about 20,700 days.
+
+## 1. `review plan --ndjson` and duplicate cells
+
+- **CLI:** `ReviewPlanArgs` in `tomlctl/src/cli/types/review.rs` uses a required `plan_mode` group, so you pass exactly one of `--propose` or `--ndjson <SRC>`. SRC is `-`, a path, or `@path`.
+- **Verb:** `cells.rs::plan` routes to `fn append(target,"""
+context_tokens = 110631
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-13T09:00:02.6802514Z"
+ended_at = "2026-10-13T09:02:57.6876239Z"
+
+[[agents]]
+id = "A95"
+harness = "claude-code"
+session_id = "6c05d681-906e-4d56-a3be-dc4192f6e7e7"
+agent_id = "a0da1613947eff698"
+agent_type = "Explore"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T09:00:11.5161219Z"
+updated_at = "2026-10-13T09:02:42.0953908Z"
+ended_at = "2026-10-13T09:02:42.0953908Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\6c05d681-906e-4d56-a3be-dc4192f6e7e7\subagents\agent-a0da1613947eff698.jsonl'
+summary = '''
+I found the files and code behind all three topics plus the backlog items. Nothing was changed. Root: `C:\Users\rossa\dev\dev-tools\`.
+
+## A. Context-free correctness cell
+
+**Agent frontmatter** (`claude/agents/*.md`):
+
+| agent | model | effort | omitClaudeMd |
+|---|---|---|---|
+| review-finder | opus | high | not set |
+| review-verifier | opus | high | not set |
+| plan-executor | opus | medium | not set |
+| review-checker | haiku | medium | true |
+| review-surveyor | haiku | medium | true |
+| review-sweeper | haiku | medium | true |
+
+- review-finder and review-verifier get Glob, Grep, Read, W'''
+context_tokens = 120721
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-13T09:00:11.5161219Z"
+ended_at = "2026-10-13T09:02:42.0953908Z"
+
+[[agents]]
+id = "A96"
+harness = "claude-code"
+session_id = "6c05d681-906e-4d56-a3be-dc4192f6e7e7"
+agent_id = "afef93ebb21b83b80"
+agent_type = "research-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T09:03:51.9618978Z"
+updated_at = "2026-10-13T09:06:01.1573818Z"
+ended_at = "2026-10-13T09:06:01.1573818Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\6c05d681-906e-4d56-a3be-dc4192f6e7e7\subagents\agent-afef93ebb21b83b80.jsonl'
+summary = """
+I found no per-call way to omit CLAUDE.md. Only an agent definition controls it, so a variant that drops CLAUDE.md needs a second agent file with the same body. All three answers come from the installed 2.1.296 binary, confirmed against the official sub-agents page.
+
+The install is the native single-file executable, not npm: `C:/Users/rossa/.local/bin/claude.exe`, byte-identical to `C:/Users/rossa/.local/share/claude/versions/2.1.296` (`cmp`). Anchors below are byte offsets found with `grep -a -b` in that file (it has no line numbers).
+
+- **Library/API or file**: Claude Code 2.1.296 binary, fu"""
+context_tokens = 81709
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-13T09:03:51.9618978Z"
+ended_at = "2026-10-13T09:06:01.1573818Z"
+
+[[agents]]
+id = "A97"
+harness = "claude-code"
+session_id = "6c05d681-906e-4d56-a3be-dc4192f6e7e7"
+agent_id = "a7b4816cd44c12420"
+agent_type = "research-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T09:03:58.7009389Z"
+updated_at = "2026-10-13T09:05:52.485368Z"
+ended_at = "2026-10-13T09:05:52.485368Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\6c05d681-906e-4d56-a3be-dc4192f6e7e7\subagents\agent-a7b4816cd44c12420.jsonl'
+summary = """
+I found four things, all graded high. The current `--since={days} days ago` is unsafe because git's date parser never reports an error. The cleanest fix is to work out the cutoff in Rust and pass git an integer with `--max-age=<secs>`. If the cutoff falls before 1970, don't pass a date filter at all. One trap: `Timestamp::checked_sub(Span::new().days(n))` does not work in jiff 0.2.37.
+
+- **Library/API or file**: git 2.55.0.windows.5, as used by `tomlctl/src/review/survey.rs:731` (`count_in_window`) and `:799` (`commits_per_file`)
+- **Source**: git `date.c` at v2.55.0 (raw.githubusercontent.com"""
+context_tokens = 65540
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-13T09:03:58.7009389Z"
+ended_at = "2026-10-13T09:05:52.485368Z"

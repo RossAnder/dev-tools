@@ -1,0 +1,121 @@
+schema_version = 1
+last_updated = 2026-10-13
+
+[[agents]]
+id = "A1"
+harness = "claude-code"
+session_id = "1fcf61b2-045d-49e5-949a-af12e123b5d9"
+agent_id = "ad74da2eb96dd4e9b"
+agent_type = "research-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T09:18:58.0517872Z"
+updated_at = "2026-10-13T09:29:41.8307569Z"
+ended_at = "2026-10-13T09:29:41.8307569Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\1fcf61b2-045d-49e5-949a-af12e123b5d9\subagents\agent-ad74da2eb96dd4e9b.jsonl'
+summary = """
+I found 15 problems with the plan and none are critical. The two most important are that checkpoint A fails its own `-D warnings` gate (finding 1), and that task 10 can't type the status field without editing a file it doesn't own (finding 2). Everything below is from reading the code; I ran no builds or tests.
+
+---
+
+### 1. Checkpoint A can't pass its own clippy `-D warnings` gate
+- **severity**: warning · **category**: feasibility
+- **plan_section**: `## Execution Policy`
+- **Library/API or file**: `tomlctl/src/review/fields.rs:25-28` (`str_enum!`'s `allow(dead_code)` covers only the macro's """
+context_tokens = 262762
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-13T09:18:58.0517872Z"
+ended_at = "2026-10-13T09:29:41.8307569Z"
+
+[[agents]]
+id = "A2"
+harness = "claude-code"
+session_id = "1fcf61b2-045d-49e5-949a-af12e123b5d9"
+agent_id = "af2b779c488b510a9"
+agent_type = "research-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T09:19:18.5900655Z"
+updated_at = "2026-10-13T09:31:35.7958978Z"
+ended_at = "2026-10-13T09:31:35.7958978Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\1fcf61b2-045d-49e5-949a-af12e123b5d9\subagents\agent-af2b779c488b510a9.jsonl'
+summary = """
+I found 16 plan defects: 9 warnings and 7 suggestions. There are no criticals. The most serious gap is that the context-free finder cell loses the instructions it currently gets only from stage 4's hand-written prompt, which the plan deletes.
+
+I ran all five sweeps, plus a full read of the plan and the review modules it touches. No build or test command was run. Every count and line number below comes from a Grep or a read I quote.
+
+---
+
+**F1**
+- **Library/API or file**: `claude/workflows/review-v2.js:40-58` (`preamble`, `cellPrompt`); `tomlctl/src/review/query.rs:298-348` (`assignment`); `cla"""
+context_tokens = 295635
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-13T09:19:18.5900655Z"
+ended_at = "2026-10-13T09:31:35.7958978Z"
+
+[[agents]]
+id = "A3"
+harness = "claude-code"
+session_id = "1fcf61b2-045d-49e5-949a-af12e123b5d9"
+agent_id = "a233e0448782d880e"
+agent_type = "research-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T09:19:54.0469225Z"
+updated_at = "2026-10-13T09:26:31.7206075Z"
+ended_at = "2026-10-13T09:26:31.7206075Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\1fcf61b2-045d-49e5-949a-af12e123b5d9\subagents\agent-a233e0448782d880e.jsonl'
+summary = """
+I found 13 findings for lens 3 (Agent-Executability & Clarity): 0 critical, 7 warnings, 6 suggestions. The ones that matter most:
+- **Task 14** asks the executor to find a "context-free" marker in the store, and none exists.
+- **Tasks 13 and 15** have acceptance commands that already pass on today's tree.
+- **Tasks 6, 9 and 10** each cannot be done as specified without the executor making a decision or touching a file outside its Files line.
+
+A cross-cutting design gap also leaves the cf cell, run through the Workflow, without the instructions it needs. Every anchor below was re-read before wr"""
+context_tokens = 136102
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-13T09:19:54.0469225Z"
+ended_at = "2026-10-13T09:26:31.7206075Z"
+
+[[agents]]
+id = "A4"
+harness = "claude-code"
+session_id = "1fcf61b2-045d-49e5-949a-af12e123b5d9"
+agent_id = "a28f7a3dcbf326b30"
+agent_type = "research-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-13T09:20:16.3313078Z"
+updated_at = "2026-10-13T09:28:22.15825Z"
+ended_at = "2026-10-13T09:28:22.15825Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\1fcf61b2-045d-49e5-949a-af12e123b5d9\subagents\agent-a28f7a3dcbf326b30.jsonl'
+summary = """
+I have 10 findings for **Risk & External Validity**: 4 warnings and 6 suggestions. The Rust ones need fixing before tasks 4, 5, 6 and 1 start. They are mostly behaviour changes the plan assumes away, either "each predicate's set equals today's constant, so behaviour does not move" or "the digest output must stay byte-identical". The pinned tools all check out: jiff, git `--max-age`, nextest, `omitClaudeMd`, and Workflow `agent({agentType})`. `cargo audit` is clean and no dependency is added.
+
+---
+
+### F1
+- **severity**: warning
+- **category**: risk
+- **plan_section**: `### Retired links`
+- **s"""
+context_tokens = 199912
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-13T09:20:16.3313078Z"
+ended_at = "2026-10-13T09:28:22.15825Z"

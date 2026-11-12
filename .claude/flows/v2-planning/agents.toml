@@ -1,0 +1,224 @@
+schema_version = 1
+last_updated = 2026-11-05
+
+[[agents]]
+id = "A1"
+harness = "claude-code"
+session_id = "3326eaab-faa9-476d-a21e-bdeaeb2568ba"
+agent_id = "a30428519cea25993"
+agent_type = "research-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-05T11:33:22.9467045Z"
+updated_at = "2026-11-05T11:50:57.0374468Z"
+ended_at = "2026-11-05T11:50:57.0374468Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools-tomlctl\3326eaab-faa9-476d-a21e-bdeaeb2568ba\subagents\agent-a30428519cea25993.jsonl'
+summary = """
+The background digest sweep has finished and confirms finding 3. Exactly 17 tracked sidecars differ from their LF blobs at `HEAD`: the plan's 16 plus `.claude/flows/lumina-schema-deepening/plan-review-findings.toml.sha256`. Nothing else changes in the 14 findings above.
+
+The list is at `C:/Users/rossa/AppData/Local/Temp/claude/a033d467f3e81900/3326eaab-faa9-476d-a21e-bdeaeb2568ba/scratchpad/feasibility/mismatch.txt`."""
+context_tokens = 256486
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-11-05T11:33:22.9467045Z"
+ended_at = "2026-11-05T11:50:50.304004Z"
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-11-05T11:50:51.0546095Z"
+ended_at = "2026-11-05T11:50:57.0374468Z"
+
+[[agents]]
+id = "A2"
+harness = "claude-code"
+session_id = "3326eaab-faa9-476d-a21e-bdeaeb2568ba"
+agent_id = "a45da383b9ccd551f"
+agent_type = "research-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-05T11:33:33.9314046Z"
+updated_at = "2026-11-05T11:54:23.4321453Z"
+ended_at = "2026-11-05T11:54:23.4321453Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools-tomlctl\3326eaab-faa9-476d-a21e-bdeaeb2568ba\subagents\agent-a45da383b9ccd551f.jsonl'
+summary = """
+# Completeness, Scope & Codebase Alignment: `/review-plan` round 1
+
+Reviewed `C:/Users/rossa/dev/dev-tools/docs/plans/v2-planning.md`. Paths below are relative to `C:/Users/rossa/dev/dev-tools`. There are 20 findings: 4 critical, 11 warning, 5 suggestion. No prior findings existed in the ledger to dedupe against.
+
+The plan's biggest problems:
+- Its "drafts are hidden" premise is false.
+- Four files or gates are missing from its task lists, so tasks 9, 10, 11, 14 and 24 cannot pass as written.
+
+## Sweeps
+
+- **Sweep 1 (renamed or deleted symbols):** the plan renames nothing but falsifies stated """
+context_tokens = 339464
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-11-05T11:33:33.9314046Z"
+ended_at = "2026-11-05T11:54:23.4321453Z"
+
+[[agents]]
+id = "A3"
+harness = "claude-code"
+session_id = "3326eaab-faa9-476d-a21e-bdeaeb2568ba"
+agent_id = "a34ca3786db5937cc"
+agent_type = "research-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-05T11:34:06.3632455Z"
+updated_at = "2026-11-05T11:50:32.6319935Z"
+ended_at = "2026-11-05T11:50:32.6319935Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools-tomlctl\3326eaab-faa9-476d-a21e-bdeaeb2568ba\subagents\agent-a34ca3786db5937cc.jsonl'
+summary = """
+# Agent-Executability & Clarity: round 1 findings
+
+All paths are relative to `C:/Users/rossa/dev/dev-tools`. Every anchor was counted against the plan text, which has LF line endings, and appears once under its section.
+
+## Critical
+
+### 1. Task 10's acceptance cannot pass, and its Files line misses the files that hold the feature
+
+- **severity**: critical
+- **plan_section**: `#### 10. Advertise plan in capabilities [S]`
+- **summary**: The feature list is not in `capabilities.rs`, so no correct implementation can print `1`, and the README gate turns red.
+- **description**: `FEATURES` lives at """
+context_tokens = 227578
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-11-05T11:34:06.3632455Z"
+ended_at = "2026-11-05T11:50:32.6319935Z"
+
+[[agents]]
+id = "A4"
+harness = "claude-code"
+session_id = "3326eaab-faa9-476d-a21e-bdeaeb2568ba"
+agent_id = "aab0524a05de1e0d4"
+agent_type = "research-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-05T11:34:15.3108812Z"
+updated_at = "2026-11-05T11:53:47.4160125Z"
+ended_at = "2026-11-05T11:53:47.4160125Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools-tomlctl\3326eaab-faa9-476d-a21e-bdeaeb2568ba\subagents\agent-aab0524a05de1e0d4.jsonl'
+summary = """
+The background sidecar job finished with exit code 0. It was the slower duplicate of the scratch digest pass and doesn't change any finding.
+
+Rereading my report turned up three corrections and one garbled line:
+
+- **Finding 11:** "about 121 paths" is wrong. Step 2 only touches `w/crlf` paths whose `eol` attribute is `lf`, which is 109: 105 under flows, plus the two `.claude/plans/` files and the two `.claude/reviews/` files.
+- **Finding 3:** I said the WSL run lacks this repo's `tomlctl.exe` and Git for Windows context, but I didn't test that, and WSL interop can often reach Windows executabl"""
+context_tokens = 204207
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-11-05T11:34:15.3108812Z"
+ended_at = "2026-11-05T11:52:59.5018552Z"
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-11-05T11:53:34.6340995Z"
+ended_at = "2026-11-05T11:53:47.4160125Z"
+
+[[agents]]
+id = "A5"
+harness = "claude-code"
+session_id = "3326eaab-faa9-476d-a21e-bdeaeb2568ba"
+agent_id = "ac73bcc12644fc711"
+agent_type = "verification"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-05T11:35:48.9863342Z"
+updated_at = "2026-11-05T11:43:01.4376461Z"
+ended_at = "2026-11-05T11:43:01.4376461Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools-tomlctl\3326eaab-faa9-476d-a21e-bdeaeb2568ba\subagents\agent-ac73bcc12644fc711.jsonl'
+summary = """
+command: cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast
+outcome: timeout
+exit: 124
+duration_s: 300
+log: C:/Users/rossa/AppData/Local/Temp/tmp.6l1TYgB59n/c2.log
+summary: none
+failed_ids: repo_root::tests::a_submodule_worktree_asks_git 
+tail:
+        PASS [   1.876s] (1270/2302) tomlctl tasks::schema::tests::an_unannotated_store_neither_reads_nor_writes_the_note_keys
+        PASS [   1.725s] (1271/2302) tomlctl tasks::schema::tests::an_unlinked_store_neither_reads_nor_writes_backlog_links
+        PASS [   1.791s] (1272/2302) tomlctl tasks::schema::tests::backlog_links_round_"""
+context_tokens = 36993
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-11-05T11:35:48.9863342Z"
+ended_at = "2026-11-05T11:43:01.4376461Z"
+
+[[agents]]
+id = "A6"
+harness = "claude-code"
+session_id = "3326eaab-faa9-476d-a21e-bdeaeb2568ba"
+agent_id = "aff63ceab8564a992"
+agent_type = "verification"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-05T11:54:47.6230041Z"
+updated_at = "2026-11-05T12:01:45.3123435Z"
+ended_at = "2026-11-05T12:01:45.3123435Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools-tomlctl\3326eaab-faa9-476d-a21e-bdeaeb2568ba\subagents\agent-aff63ceab8564a992.jsonl'
+summary = """
+command: cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast
+outcome: fail
+exit: 100
+duration_s: 351
+log: C:/Users/rossa/AppData/Local/Temp/tmp.JQsu3KOB1M/c1.log
+summary: Summary [ 322.140s] 2302 tests run: 2296 passed (7 slow), 6 failed, 1 skipped
+failed_ids: backlog_show_accepts_a_hidden_ids_flag backlog_triage_accepts_a_hidden_id_flag backlog_triage_splits_a_comma_separated_id_list relate_as_related_is_relates_to tasks_show_accepts_a_hidden_id_flag tasks_update_accepts_a_hidden_id_flag
+rerun: cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast -j 1 -- --exact"""
+context_tokens = 39394
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-11-05T11:54:47.6230041Z"
+ended_at = "2026-11-05T12:01:45.3123435Z"
+
+[[agents]]
+id = "A7"
+harness = "claude-code"
+session_id = "3326eaab-faa9-476d-a21e-bdeaeb2568ba"
+agent_id = "a8f73f2dbbb4701c6"
+agent_type = "verification"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-05T12:01:53.7929877Z"
+updated_at = "2026-11-05T12:04:29.1411829Z"
+ended_at = "2026-11-05T12:04:29.1411829Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools-tomlctl\3326eaab-faa9-476d-a21e-bdeaeb2568ba\subagents\agent-a8f73f2dbbb4701c6.jsonl'
+summary = """
+command: cargo clippy --manifest-path glimpse/Cargo.toml --locked
+outcome: pass
+exit: 0
+duration_s: 131
+log: C:/Users/rossa/AppData/Local/Temp/tmp.tv0JmRBMOu/c1.log
+summary: none
+TANGENTIAL: none"""
+context_tokens = 31098
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-11-05T12:01:53.7929877Z"
+ended_at = "2026-11-05T12:04:29.1411829Z"

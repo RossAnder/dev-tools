@@ -1,0 +1,1671 @@
+schema_version = 1
+last_updated = 2026-11-10
+
+[[agents]]
+id = "A1"
+harness = "claude-code"
+session_id = "cc28ed7a-70f7-4d8c-bfc1-3cfd33b3eaa1"
+agent_id = "af9da0596946ed376"
+agent_type = "research-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T09:50:47.8030821Z"
+updated_at = "2026-11-10T10:01:59.8330618Z"
+ended_at = "2026-11-10T10:01:59.8330618Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\cc28ed7a-70f7-4d8c-bfc1-3cfd33b3eaa1\subagents\agent-af9da0596946ed376.jsonl'
+summary = """
+I found 8 problems, 5 of them high-evidence. Two of them would leave checkpoint B red as the plan is written: the missing `output_options.rs` case for `review run show`, and task 20's README instruction. Two task prescriptions would fail their own gates: the agent counter in task 22 and the strict export key in task 6. The rest are a wrong claim about how runs measure today, one missing dependency edge, files the tasks must edit but do not list, and `plan-v2-review.js` left on the old design.
+
+---
+
+**1.**
+- **severity**: warning
+- **plan_section**: `### 19. Add the `review run show` read verb """
+context_tokens = 308242
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-11-10T09:50:47.8030821Z"
+ended_at = "2026-11-10T10:01:59.8330618Z"
+
+[[agents]]
+id = "A2"
+harness = "claude-code"
+session_id = "cc28ed7a-70f7-4d8c-bfc1-3cfd33b3eaa1"
+agent_id = "a8d71bb023f319a05"
+agent_type = "research-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T09:51:12.0894523Z"
+updated_at = "2026-11-10T10:03:45.4110827Z"
+ended_at = "2026-11-10T10:03:45.4110827Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\cc28ed7a-70f7-4d8c-bfc1-3cfd33b3eaa1\subagents\agent-a8d71bb023f319a05.jsonl'
+summary = """
+I found 13 problems with the plan and no critical ones. Most are files or call sites the plan's tasks leave out, plus three places where the plan describes the current code wrongly. Every finding was re-checked against the tree. I ran no cargo build or test.
+
+---
+
+**1.**
+- **severity**: warning
+- **plan_section**: `### 2. Move `review cover` into its own module [M]`
+- **summary**: Moving `coverage_accounting` out of `cells.rs` breaks two callers that task 2 does not list, and one of them collides with task 9.
+- **description**: The plan says the four listed files "are inseparable", meaning the"""
+context_tokens = 246109
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-11-10T09:51:12.0894523Z"
+ended_at = "2026-11-10T10:03:45.4110827Z"
+
+[[agents]]
+id = "A3"
+harness = "claude-code"
+session_id = "cc28ed7a-70f7-4d8c-bfc1-3cfd33b3eaa1"
+agent_id = "a93f25c6ff1b3294f"
+agent_type = "research-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T09:51:52.1231196Z"
+updated_at = "2026-11-10T10:02:20.4235242Z"
+ended_at = "2026-11-10T10:02:20.4235242Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\cc28ed7a-70f7-4d8c-bfc1-3cfd33b3eaa1\subagents\agent-a93f25c6ff1b3294f.jsonl'
+summary = """
+I found 15 problems in the plan for this lens: 9 warnings and 6 suggestions, and I reached no critical findings. The ones to fix first: task 3 as written breaks an existing test and the checkpoint A suite (finding 1), and three tasks leave files off their **Files** line (finding 3). The Approach also claims a finder-written cleanup row is checked "like a sweeper's row", but the checker cannot refute it today (finding 4).
+
+### 1. Task 3's visibility rule breaks `show_cell_carries_bound_catalogue_paths`
+- **severity**: warning
+- **plan_section**: `### 3. Add the `head` run field and the `ruled_o"""
+context_tokens = 210742
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-11-10T09:51:52.1231196Z"
+ended_at = "2026-11-10T10:02:20.4235242Z"
+
+[[agents]]
+id = "A4"
+harness = "claude-code"
+session_id = "cc28ed7a-70f7-4d8c-bfc1-3cfd33b3eaa1"
+agent_id = "acccea1cb98ae6b39"
+agent_type = "research-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T09:52:21.2809831Z"
+updated_at = "2026-11-10T10:02:26.3662593Z"
+ended_at = "2026-11-10T10:02:26.3662593Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\cc28ed7a-70f7-4d8c-bfc1-3cfd33b3eaa1\subagents\agent-acccea1cb98ae6b39.jsonl'
+summary = """
+I found 12 issues in the plan. Four are high-grade warnings that change what tasks 6 and 10 must specify, and three of those four concern the export fold. No new dependency is implied anywhere, `cargo audit` is clean on both lockfiles, and stores written by 0.21.0 and 0.22.0 read each other safely.
+
+The most important is finding 1. The strict export key names `lens`, but v1 ledger rows never carry a `lens` field, so the key cannot be checked as written.
+
+---
+
+### 1. The strict fold key compares a field that v1 rows do not have
+- **severity**: warning
+- **plan_section**: `### 6. Fold `export-v1"""
+context_tokens = 213348
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-11-10T09:52:21.2809831Z"
+ended_at = "2026-11-10T10:02:26.3662593Z"
+
+[[agents]]
+id = "A5"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "a77153b5c4ce1a837"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T10:26:00.0791884Z"
+updated_at = "2026-11-10T10:34:40.3988138Z"
+ended_at = "2026-11-10T10:34:40.3988138Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-a77153b5c4ce1a837.jsonl'
+summary = """
+## Cluster task-1 — applied 1 item
+
+applied 1: split `tomlctl/src/cli/types/review.rs` into a `review/` directory of seven modules. Behaviour is unchanged. The acceptance check prints `split`, clippy is clean and `command_lint` passes 6 of 6.
+
+Where things went:
+- **`mod.rs`** keeps `ReviewOp`, `ReviewRunOp`, `ReviewStore` and `ReviewStatsStore`. It re-exports each child module with `pub(crate) use <child>::*`. The parent's existing `mod review;` / `pub(crate) use review::*;` didn't need changing, so no path outside the module changed.
+- **`run.rs`** has the four `ReviewRun*Args`.
+- **`cells.r"""
+context_tokens = 93176
+
+[[agents.segments]]
+task_ids = [1]
+started_at = "2026-11-10T10:26:00.0791884Z"
+ended_at = "2026-11-10T10:34:40.3988138Z"
+
+[[agents]]
+id = "A6"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "aab85e16d2a3b0468"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T10:26:08.6882899Z"
+updated_at = "2026-11-10T10:41:33.51405Z"
+ended_at = "2026-11-10T10:41:33.51405Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-aab85e16d2a3b0468.jsonl'
+summary = """
+## Cluster task 2: 1 item applied
+
+applied 2: moved the `cover` verb, `Accounting` and `coverage_accounting` out of `cells.rs` into the new `tomlctl/src/review/cover.rs`. Behaviour is unchanged; the code moved as written.
+- The helpers both halves use stay in `cells.rs`, now `pub(super)`: `read_args`, `find_run`, `list_tracked`, `ScopeView` (with `new` and the `files` field), `Signals` (with `of`), `Pick` (with the `lens` and `accountable` fields), `pick_lenses`, `pick_checks` and `disabled_lenses`. `PathSet` was already `pub(super)`. `Tier` stays private.
+- `cells.rs` now carries `pub(crate) """
+context_tokens = 99816
+
+[[agents.segments]]
+task_ids = [2]
+started_at = "2026-11-10T10:26:08.6882899Z"
+ended_at = "2026-11-10T10:41:33.51405Z"
+
+[[agents]]
+id = "A7"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "a73002d470cc8f76c"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T10:26:17.1193425Z"
+updated_at = "2026-11-10T10:41:29.8403299Z"
+ended_at = "2026-11-10T10:41:29.8403299Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-a73002d470cc8f76c.jsonl'
+summary = """
+## Cluster task-3 — applied 1 item
+
+applied 3: added `head` to runs and `ruled_out` to cells in the field catalogue and the typed store, plus a `ruled_out_refusals` validator. The validator follows the `Waiver` pattern: a typed `RuledOut { file, symbol, line, reason }` with a `ruled_out_from_toml`/`ruled_out_to_toml` pair. A store that has neither field writes back byte-identical.
+
+- **Catalogue entries.** `field(Run, "head", Ty::Str, RECORD_STATE)` sits beside `base`. `field(Cell, "ruled_out", Ty::TableList, RECORD_STATE).computed()` sits after `note`, so only the orchestrator and report colu"""
+context_tokens = 112868
+
+[[agents.segments]]
+task_ids = [3]
+started_at = "2026-11-10T10:26:17.1193425Z"
+ended_at = "2026-11-10T10:41:29.8403299Z"
+
+[[agents]]
+id = "A8"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "ad3f74eb9428eb066"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T10:26:25.5372597Z"
+updated_at = "2026-11-10T10:41:45.7052239Z"
+ended_at = "2026-11-10T10:41:45.7052239Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-ad3f74eb9428eb066.jsonl'
+summary = """
+## Cluster task-4: applied 1 item
+
+applied 4: an explicit `--flow <slug>` that matches no flow now fails with `kind=not_found` and exits 1, whether or not `--strict-read` is set. Before, it fell through to the later steps (scope, binding, latest, branch) and could bind a different flow. That flow's stores are what a carrier would then write, so this closes the wrong-flow path. I checked that nothing else gets around it: step 1 now returns on every path when `--flow` is given.
+
+- `tomlctl/src/flow/resolve.rs`: the fall-through warning branch is gone and step 1 always returns the tagged error. `"""
+context_tokens = 102026
+
+[[agents.segments]]
+task_ids = [4]
+started_at = "2026-11-10T10:26:25.5372597Z"
+ended_at = "2026-11-10T10:33:36.5432947Z"
+
+[[agents.segments]]
+task_ids = [4]
+started_at = "2026-11-10T10:33:37.6841536Z"
+ended_at = "2026-11-10T10:33:39.5033314Z"
+
+[[agents.segments]]
+task_ids = [4]
+started_at = "2026-11-10T10:34:04.6780995Z"
+ended_at = "2026-11-10T10:37:17.1299086Z"
+
+[[agents.segments]]
+task_ids = [4]
+started_at = "2026-11-10T10:38:46.2865658Z"
+ended_at = "2026-11-10T10:38:59.0338798Z"
+
+[[agents.segments]]
+task_ids = [4]
+started_at = "2026-11-10T10:39:07.0359126Z"
+ended_at = "2026-11-10T10:41:45.7052239Z"
+
+[[agents]]
+id = "A9"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "a6156641ff5974e1c"
+agent_type = "implement-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T10:26:34.0162062Z"
+updated_at = "2026-11-10T10:27:42.3949216Z"
+ended_at = "2026-11-10T10:27:42.3949216Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-a6156641ff5974e1c.jsonl'
+summary = '''
+## 5 — applied 1 item
+
+applied 5 [vet-recommended]: `review stats --by run` now reports `waves` as the highest `wave` among the run's cells, via a new `pub(crate) fn run_waves` helper in `stats.rs`. A run with no wave-bearing cells reports `0`. I wrote the test `stats_by_run_reports_waves_from_cells`, but neither the test nor the change has been compiled or run — uncertain: the crate does not compile because of sibling edits.
+
+## Files touched
+- C:\Users\rossa\dev\dev-tools\tomlctl\src\review\stats.rs (new helper `run_waves`, `by_run` call site)
+- C:\Users\rossa\dev\dev-tools\tomlctl\tests\rev'''
+context_tokens = 95187
+
+[[agents.segments]]
+task_ids = [5]
+started_at = "2026-11-10T10:26:34.0162062Z"
+ended_at = "2026-11-10T10:27:42.3949216Z"
+
+[[agents]]
+id = "A10"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "a8f69d6787067c357"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T10:26:42.5618143Z"
+updated_at = "2026-11-10T10:45:18.1340269Z"
+ended_at = "2026-11-10T10:45:18.1340269Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-a8f69d6787067c357.jsonl'
+summary = """
+## Cluster task-6 — applied 1 item
+
+applied 6: `export-v1` now reuses an open v1 row only on the strict key, and two findings in one export call no longer fold into each other. The finding's lens is checked by looking the row's own `v2_ref` up in this store, so a row whose `v2_ref` is missing or points at another store never matches on the second clause. A finding whose `same_as` names another finding exports onto that finding's row. The old loose rule (same file, and the same non-empty symbol or the exact summary) still decides `Settled` and `Regression`. If an open row matches only on that l"""
+context_tokens = 114756
+
+[[agents.segments]]
+task_ids = [6]
+started_at = "2026-11-10T10:26:42.5618143Z"
+ended_at = "2026-11-10T10:45:18.1340269Z"
+
+[[agents]]
+id = "A11"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "a8c04df62b967eddc"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T10:28:05.0262835Z"
+updated_at = "2026-11-10T10:43:34.8053148Z"
+ended_at = "2026-11-10T10:43:34.8053148Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-a8c04df62b967eddc.jsonl'
+summary = """
+## Cluster task-7: 1 item applied
+
+applied 7: `review add` now accepts a `cleanup` row whose `lens` the cell does not bind, as long as the row carries `old` and its lens is sweeper-executed. A lens counts as sweeper-executed when the run's merged catalogue gives it `mode = "mechanical"`, it lists the run's family and it is not disabled. No lens ids are hardcoded. These rows get the same route `route_of` gives any cleanup. `review add` still refuses every other out-of-cell lens, including a defect on a mechanical lens. `field_refusals` has the same signature and now delegates to a new private `"""
+context_tokens = 125454
+
+[[agents.segments]]
+task_ids = [7]
+started_at = "2026-11-10T10:28:05.0262835Z"
+ended_at = "2026-11-10T10:43:34.8053148Z"
+
+[[agents]]
+id = "A12"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "a6b58c613567b1d2f"
+agent_type = "implement-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T10:36:01.5847887Z"
+updated_at = "2026-11-10T10:41:20.2548862Z"
+ended_at = "2026-11-10T10:41:20.2548862Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-a6b58c613567b1d2f.jsonl'
+summary = """
+## 8 — applied 1 item
+
+applied 8: `review catalogue` now prints `executor` and `command` on every entry, and `catalogue_prints_project_check_executor_and_command` is added and passing.
+
+The test writes a project `config.toml` with a `lint` check and asserts it prints `executor = "verification"` and `command = "cargo clippy"`. It also asserts a lens prints both as null.
+
+`Entry` already carried `executor` and `command`, and the project loader already sets both. Only the index output in `catalogue.rs` needed changing, so `catalogue_cmd.rs` is untouched. A built-in check has no `command` key in i"""
+context_tokens = 91606
+
+[[agents.segments]]
+task_ids = [8]
+started_at = "2026-11-10T10:36:01.5847887Z"
+ended_at = "2026-11-10T10:41:20.2548862Z"
+
+[[agents]]
+id = "A13"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "a8617cce9041bc86c"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T10:42:28.7472353Z"
+updated_at = "2026-11-10T10:54:08.3487695Z"
+ended_at = "2026-11-10T10:54:08.3487695Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-a8617cce9041bc86c.jsonl'
+summary = '''
+## Cluster task-9 — applied 1 item
+
+applied 9: the audit sample now fills each empty refuted slot with another standing defect, and a defect counts as standing when its deciding verdict is `confirmed` or `plausible`. The extra picks are chosen by the same `spread` rule over the standing defects not already picked, then put back in store order. Output keys are unchanged, and the extra picks go in `confirmed_defects`.
+
+## Files touched
+- C:\Users\rossa\dev\dev-tools\tomlctl\src\review\digest.rs (lines 212-302)
+- C:\Users\rossa\dev\dev-tools\tomlctl\tests\review_digest.rs (lines 379-460)
+
+## Cros'''
+context_tokens = 76776
+
+[[agents.segments]]
+task_ids = [9]
+started_at = "2026-11-10T10:42:28.7472353Z"
+ended_at = "2026-11-10T10:46:35.8393873Z"
+
+[[agents.segments]]
+task_ids = [9]
+started_at = "2026-11-10T10:47:03.9756879Z"
+ended_at = "2026-11-10T10:53:04.3797029Z"
+
+[[agents.segments]]
+task_ids = [9]
+started_at = "2026-11-10T10:53:55.1022699Z"
+ended_at = "2026-11-10T10:54:08.3487695Z"
+
+[[agents]]
+id = "A14"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "a07e817889a1856fb"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T10:42:39.0467379Z"
+updated_at = "2026-11-10T11:08:34.710843Z"
+ended_at = "2026-11-10T11:08:34.710843Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-a07e817889a1856fb.jsonl'
+summary = """
+## Cluster task-10: applied 1 item
+
+applied 10: `review run start` now takes an optional `--head <REV>`. It resolves the same way `--base` does, is stored as a sha in the run's `head`, and is refused when it is not a descendant of base (a head equal to base is allowed). `changed_lines` and `project_layer_changes` now read `base..head`, falling back to `base..HEAD` when no head is given. The `run start` output prints `head`, or null when it is absent. Each `run list` row carries `head`, and its `waves` now comes from `stats::run_waves` over the run's cells instead of the stored `run.waves`, whi"""
+context_tokens = 106987
+
+[[agents.segments]]
+task_ids = [10]
+started_at = "2026-11-10T10:42:39.0467379Z"
+ended_at = "2026-11-10T11:08:34.710843Z"
+
+[[agents]]
+id = "A15"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "a0093f66c08b64bca"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T10:42:49.0811402Z"
+updated_at = "2026-11-10T11:13:34.6612676Z"
+ended_at = "2026-11-10T11:13:34.6612676Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-a0093f66c08b64bca.jsonl'
+summary = """
+## Cluster task-12: applied 1 item
+
+applied 12: `review plan --propose` now never proposes more cells than the ceiling minus the cells already planned, with check cells counted. Floor slices merge before any signal lens is cut, sweeper slices are capped at 40 files, and `over_cap` reports cells that still exceed the cap. Chose Alt 1 (see below).
+
+How it works now, all in `propose` and its helpers:
+- **Floor lenses** first merge adjacent slices (same parent directory, in the order `slices_for` yields them, smallest merged pair first) until the floor fits in half the budget, repeats included. If"""
+context_tokens = 153043
+
+[[agents.segments]]
+task_ids = [12]
+started_at = "2026-11-10T10:42:49.0811402Z"
+ended_at = "2026-11-10T11:13:34.6612676Z"
+
+[[agents]]
+id = "A16"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "ac14e79bb45a57385"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T10:42:59.5655015Z"
+updated_at = "2026-11-10T11:10:53.629845Z"
+ended_at = "2026-11-10T11:10:53.629845Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-ac14e79bb45a57385.jsonl'
+summary = """
+## Cluster 13: applied 1 item
+
+applied 13: `review cover --ruled-out <SRC>` now checks each entry with `ruled_out_refusals` and stores the set on the cell's `ruled_out`. One refused entry refuses the whole cover and nothing gets sealed. An entry whose file is outside the cell's slice is refused unless the cell binds a `mode = "mechanical"` lens. Re-covering replaces the earlier rule-outs, and a cover without `--ruled-out` leaves them as they were. Security implication (input validation): every entry goes through `ruled_out_refusals`, which checks the allowed keys, that `file` is repo-relative """
+context_tokens = 121754
+
+[[agents.segments]]
+task_ids = [13]
+started_at = "2026-11-10T10:42:59.5655015Z"
+ended_at = "2026-11-10T10:54:25.60177Z"
+
+[[agents.segments]]
+task_ids = [13]
+started_at = "2026-11-10T11:01:41.8369868Z"
+ended_at = "2026-11-10T11:01:59.8707564Z"
+
+[[agents.segments]]
+task_ids = [13]
+started_at = "2026-11-10T11:07:36.6807309Z"
+ended_at = "2026-11-10T11:10:53.629845Z"
+
+[[agents]]
+id = "A17"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "a4f803bb0594ce83d"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T10:44:01.9088614Z"
+updated_at = "2026-11-10T11:01:33.2583795Z"
+ended_at = "2026-11-10T11:01:33.2583795Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-a4f803bb0594ce83d.jsonl'
+summary = """
+## Cluster task-18: 1 item applied
+
+applied 18: `review resolve` now takes a repeatable `--same-as <DUP>=<TARGET>` flag. It sets the duplicate's `same_as` and resolves the pair in the same call through the existing `apply` / `Outcome::for_target` table, which is unchanged. This works on rows that are already verified (open or refuted), and linked pairs are listed under `linked` in the output. Every pair is checked before anything is written. A pair is refused when: either id is missing, belongs to a different run or is superseded; the two findings are from different families; it links a findin"""
+context_tokens = 104040
+
+[[agents.segments]]
+task_ids = [18]
+started_at = "2026-11-10T10:44:01.9088614Z"
+ended_at = "2026-11-10T10:56:20.9964658Z"
+
+[[agents.segments]]
+task_ids = [18]
+started_at = "2026-11-10T10:56:21.3073991Z"
+ended_at = "2026-11-10T10:59:32.190487Z"
+
+[[agents.segments]]
+task_ids = [18]
+started_at = "2026-11-10T11:01:16.7163566Z"
+ended_at = "2026-11-10T11:01:33.2583795Z"
+
+[[agents]]
+id = "A18"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "ac0f1e78041ee95cd"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T10:45:47.5425032Z"
+updated_at = "2026-11-10T11:04:47.2202268Z"
+ended_at = "2026-11-10T11:04:47.2202268Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-ac0f1e78041ee95cd.jsonl'
+summary = '''
+## Cluster 41: applied 1 item
+
+applied 41: a checker can now refute a cleanup row from any cell when the run's catalogue marks that row's lens `mode = "mechanical"`. Before this, it could only refute rows a sweeper cell wrote. The lens list is read from the run's catalogue for the finding's family, skipping disabled lenses, the same way `review add` reads it. No lens ids are hardcoded. Every other checker refute is still refused with the same message as before. This is not security code; it only decides which verdicts a role may give.
+
+## Files touched
+- C:\Users\rossa\dev\dev-tools\tomlctl\sr'''
+context_tokens = 101208
+
+[[agents.segments]]
+task_ids = [41]
+started_at = "2026-11-10T10:45:47.5425032Z"
+ended_at = "2026-11-10T10:53:16.2290807Z"
+
+[[agents.segments]]
+task_ids = [41]
+started_at = "2026-11-10T10:58:43.2450234Z"
+ended_at = "2026-11-10T11:04:47.2202268Z"
+
+[[agents]]
+id = "A19"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "ad52cf9be6c3af423"
+agent_type = "implement-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T10:54:52.4580546Z"
+updated_at = "2026-11-10T11:01:35.3108317Z"
+ended_at = "2026-11-10T11:01:35.3108317Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-ad52cf9be6c3af423.jsonl'
+summary = '''
+## 14 — applied 1 item
+
+applied 14: `review show <cell> --for finder` now prints the run's `head` when the run has one, and `finder_assignment_carries_head_when_the_run_has_one` covers it.
+
+## Files touched
+- `C:\Users\rossa\dev\dev-tools\tomlctl\src\review\query.rs` (`assignment`, lines 278-285)
+- `C:\Users\rossa\dev\dev-tools\tomlctl\tests\review_query.rs` (new test before `bindable_lens`)
+
+## Notes
+- `head` is emitted only for the context-free finder (`review-finder-cf`). That is the only cell that gets `base`, and the only one that diffs from the run's bounds instead of reading the pack. T'''
+context_tokens = 78490
+
+[[agents.segments]]
+task_ids = [14]
+started_at = "2026-11-10T10:54:52.4580546Z"
+ended_at = "2026-11-10T10:58:49.4681331Z"
+
+[[agents.segments]]
+task_ids = [14]
+started_at = "2026-11-10T11:01:24.6601088Z"
+ended_at = "2026-11-10T11:01:35.3108317Z"
+
+[[agents]]
+id = "A20"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "a3fcccc57fa2a004b"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T11:02:22.8105876Z"
+updated_at = "2026-11-10T11:08:29.7799685Z"
+ended_at = "2026-11-10T11:08:29.7799685Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-a3fcccc57fa2a004b.jsonl'
+summary = """
+## Cluster 22 — applied 1 item
+
+applied 22: changed `routeCell` and `index` in `claude/workflows/review-v2.js` to match Approach, "Workflow index". Verifier-routed `cleanup` rows now go out in one batch per cell, at every depth. The index returns the escalation texts and an agent count. The checker prompt gets a `mechanical lenses:` line. `SCRIPT_VERSION` is now `'2'`.
+
+- **Index shape:** the index is now `{run, wave, cells, verified, agents, errors, script_version, escalations}`, with `escalations` last. Each cell entry keeps its `escalated` count. Each escalation becomes `{cell, text}`, cut """
+context_tokens = 79494
+
+[[agents.segments]]
+task_ids = [22]
+started_at = "2026-11-10T11:02:22.8105876Z"
+ended_at = "2026-11-10T11:08:29.7799685Z"
+
+[[agents]]
+id = "A21"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "a71381874872dfbbe"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T11:02:32.5855819Z"
+updated_at = "2026-11-10T11:04:09.9172588Z"
+ended_at = "2026-11-10T11:04:09.9172588Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-a71381874872dfbbe.jsonl'
+summary = """
+## Cluster task-40: 1 item applied
+
+applied 40: F4 now has its own ledger row, R49, and R31 is folded into R26 and closed as its duplicate. Both acceptance commands now print the expected result.
+
+**R22.** `v2_ref` now names F1 only. `related = ["R49"]` was added.
+
+**R49 (new).** The fields come from `tomlctl review show F4 --for implementer`:
+- `file`: `claude/workflows/implement-v2-milestone.js`, line 169, `symbol = toEntry`.
+- `severity = suggestion`, because F4's `minor` maps to it the same way R22's does. `effort = small`, `category = quality`.
+- `description` is F4's fix followed by its """
+context_tokens = 73969
+
+[[agents.segments]]
+task_ids = [40]
+started_at = "2026-11-10T11:02:32.5855819Z"
+ended_at = "2026-11-10T11:04:09.9172588Z"
+
+[[agents]]
+id = "A22"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "a8e4aa308a1362cf9"
+agent_type = "verification"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T11:14:38.3528588Z"
+updated_at = "2026-11-10T11:26:57.1815097Z"
+ended_at = "2026-11-10T11:26:57.1815097Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-a8e4aa308a1362cf9.jsonl'
+summary = """
+command: cargo fmt --manifest-path tomlctl/Cargo.toml -- --check
+outcome: pass
+exit: 0
+duration_s: 4
+log: C:/Users/rossa/AppData/Local/Temp/tmp.Aayxmuvslg/c1.log
+summary: none
+
+command: cargo build --manifest-path tomlctl/Cargo.toml
+outcome: pass
+exit: 0
+duration_s: 63
+log: C:/Users/rossa/AppData/Local/Temp/tmp.Aayxmuvslg/c2.log
+summary: none
+
+command: cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast
+outcome: pass
+exit: 0
+duration_s: 636
+log: C:/Users/rossa/AppData/Local/Temp/tmp.Aayxmuvslg/c3.log
+summary: Summary [ 624.823s] 2914 tests run: 2914 passed (11 slow), 1 skipped
+"""
+context_tokens = 39768
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-11-10T11:14:38.3528588Z"
+ended_at = "2026-11-10T11:26:57.1815097Z"
+
+[[agents]]
+id = "A23"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "a2dda712fc5342ac1"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T11:54:38.8275821Z"
+updated_at = "2026-11-10T12:13:21.6484436Z"
+ended_at = "2026-11-10T12:13:21.6484436Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-a2dda712fc5342ac1.jsonl'
+summary = '''
+## Cluster 11 — applied 1 item
+
+applied 11: the survey's diff detectors now read `base..head` when the run has a `head`, and commits-per-file hotspot evidence and roots keep only files in the run's scope. Commit counts still cover the whole repo's history. Added `survey_diff_stops_at_head` and `survey_hotspots_are_limited_to_scope`; all 16 tests in `review_survey` passed.
+
+## Files touched
+- C:\Users\rossa\dev\dev-tools\tomlctl\src\review\survey.rs (lines 1-11, 164-170, 471-505, 547-552, 618-635, 811-840)
+- C:\Users\rossa\dev\dev-tools\tomlctl\tests\review_survey.rs (lines 196-226, 556-651)
+
+#'''
+context_tokens = 100384
+
+[[agents.segments]]
+task_ids = [11]
+started_at = "2026-11-10T11:54:38.8275821Z"
+ended_at = "2026-11-10T12:07:20.3895543Z"
+
+[[agents.segments]]
+task_ids = [11]
+started_at = "2026-11-10T12:13:07.4374887Z"
+ended_at = "2026-11-10T12:13:21.6484436Z"
+
+[[agents]]
+id = "A24"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "a75d84ecd6cd9f356"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T11:54:48.6968649Z"
+updated_at = "2026-11-10T12:16:41.835119Z"
+ended_at = "2026-11-10T12:16:41.835119Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-a75d84ecd6cd9f356.jsonl'
+summary = '''
+## Cluster task-15 — applied 1 item
+
+applied 15: `review digest` now has two new keys, `duplicate_candidates` and `ruled_out_hits`. Both use one new anchor matcher, `matching::same_place`. The report's run line now takes `waves` from the run's cells through `stats::run_waves`. All 4 tests the task named are added, plus one unit test for the matcher, and all pass.
+
+## Files touched
+- C:\Users\rossa\dev\dev-tools\tomlctl\src\review\matching.rs (lines 7-8, 50-90, ~170-185)
+- C:\Users\rossa\dev\dev-tools\tomlctl\src\review\digest.rs (lines 16-18, 132-160, ~200-310, ~610-625)
+- C:\Users\rossa\dev\d'''
+context_tokens = 123290
+
+[[agents.segments]]
+task_ids = [15]
+started_at = "2026-11-10T11:54:48.6968649Z"
+ended_at = "2026-11-10T12:16:41.835119Z"
+
+[[agents]]
+id = "A25"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "a27583a3ea5dfca01"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T11:54:58.3081317Z"
+updated_at = "2026-11-10T12:16:35.6536934Z"
+ended_at = "2026-11-10T12:16:35.6536934Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-a27583a3ea5dfca01.jsonl'
+summary = """
+## Cluster 19: applied 1 item
+
+applied 19: added `review run show <RUN>`. It prints the run id, `base`, `head`, `scope`, `depth`, `baselines` (`{}` when none are recorded), `waves` (from `stats::run_waves`), `agents`, `audit` (null when unset) and `signals`. Each signal carries its `roots` limited to the run's scope, plus a `roots_outside_scope` count. An unknown run fails with `kind=not_found`. Output goes through `print_report` with `Rows::Field("signals")`, so `--lines` prints the run fields as a header line and then one line per signal.
+
+## Files touched
+- tomlctl/src/review/run_show.rs (n"""
+context_tokens = 146982
+
+[[agents.segments]]
+task_ids = [19]
+started_at = "2026-11-10T11:54:58.3081317Z"
+ended_at = "2026-11-10T12:16:35.6536934Z"
+
+[[agents]]
+id = "A26"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "a6da081cb670bf910"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T11:55:07.9978743Z"
+updated_at = "2026-11-10T12:01:18.3428969Z"
+ended_at = "2026-11-10T12:01:18.3428969Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-a6da081cb670bf910.jsonl'
+summary = '''
+## Cluster 43: applied 1 item
+
+applied 43: replaced the three private mechanical-lens filters with one shared helper in `catalogue.rs`, with no behaviour change. `add.rs` and `verdict.rs` now call `Catalogue::mechanical_lenses(family)`. `cover.rs` keeps its wider filter and calls the shared `Entry::is_mechanical_lens()` predicate, which `mechanical_lenses` is also built on.
+
+## Files touched
+- C:\Users\rossa\dev\dev-tools\tomlctl\src\review\catalogue.rs (lines 464-469, 727-735)
+- C:\Users\rossa\dev\dev-tools\tomlctl\src\review\add.rs (lines 19, 109; removed `swept_lenses` at former lines 287-3'''
+context_tokens = 76999
+
+[[agents.segments]]
+task_ids = [43]
+started_at = "2026-11-10T11:55:07.9978743Z"
+ended_at = "2026-11-10T12:01:18.3428969Z"
+
+[[agents]]
+id = "A27"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "ab70069de00fec56c"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T12:17:36.3073333Z"
+updated_at = "2026-11-10T12:27:57.0986384Z"
+ended_at = "2026-11-10T12:27:57.0986384Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-ab70069de00fec56c.jsonl'
+summary = """
+## Cluster 16: 1 item applied
+
+applied 16: `review show` and `review list` with `--for verifier` and `--for audit` now give each finding a `ruled_out` array of `{cell, reason}`. It holds the rule-outs that other cells of the finding's run recorded at the finding's place, matched with `matching::same_place`. The key is left out when nothing matches. A cell's own rule-outs never count against its own findings, the same rule as `ruled_out_hits` in `review digest`. The finder projection never carries the key. Both new tests pass, and so does the rest of `review_query` (13 of 13).
+
+## Files touched"""
+context_tokens = 92626
+
+[[agents.segments]]
+task_ids = [16]
+started_at = "2026-11-10T12:17:36.3073333Z"
+ended_at = "2026-11-10T12:27:57.0986384Z"
+
+[[agents]]
+id = "A28"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "acf91319d06e5a98f"
+agent_type = "implement-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T12:17:44.3203707Z"
+updated_at = "2026-11-10T12:20:37.4974325Z"
+ended_at = "2026-11-10T12:20:37.4974325Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-acf91319d06e5a98f.jsonl'
+summary = '''
+## 44 — applied 1 item
+
+applied 44: `run_show.rs` now calls the catalogue's `meets` and `within` instead of its own copy. Both are widened to `pub(super)` in `catalogue.rs`, and the duplicate functions in `run_show.rs` are deleted.
+
+## Files touched
+- `C:\Users\rossa\dev\dev-tools\tomlctl\src\review\catalogue.rs` (lines 1344, 1357)
+- `C:\Users\rossa\dev\dev-tools\tomlctl\src\review\run_show.rs` (import added near line 4; the two functions and their doc comment removed)
+
+## Notes
+- The two copies had identical bodies. The only differences were a parameter name (`scope_entry` against `slice_entr'''
+context_tokens = 61582
+
+[[agents.segments]]
+task_ids = [44]
+started_at = "2026-11-10T12:17:44.3203707Z"
+ended_at = "2026-11-10T12:20:37.4974325Z"
+
+[[agents]]
+id = "A29"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "aee534814b217e626"
+agent_type = "implement-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T12:28:19.3654458Z"
+updated_at = "2026-11-10T12:34:34.6405989Z"
+ended_at = "2026-11-10T12:34:34.6405989Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-aee534814b217e626.jsonl'
+summary = """
+## 17 — applied 1 item
+
+applied 17: `review list` takes `--fix-shape <SHAPE>`, keeps findings whose `fix_shape` equals it, and refuses an unknown value with `kind=validation`.
+
+- **Vocabulary:** the check reads the allowed values from the `fix_shape` entry in `FIELDS`, because `FIX_SHAPES` in `fields.rs` is private and `fields.rs` is outside this task's files.
+- **Test:** I added `list_filters_by_fix_shape_across_runs`. It appends two `needs-plan` defects to the fixture store, `F7` under run `U2` and `F8` under run `U1`, and lists with no `--run`. It expects `F7` and `F8` for `needs-plan`, `F1"""
+context_tokens = 75683
+
+[[agents.segments]]
+task_ids = [17]
+started_at = "2026-11-10T12:28:19.3654458Z"
+ended_at = "2026-11-10T12:34:34.6405989Z"
+
+[[agents]]
+id = "A30"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "a98835bd9c4948093"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T12:34:59.5566131Z"
+updated_at = "2026-11-10T12:46:44.9703779Z"
+ended_at = "2026-11-10T12:46:44.9703779Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-a98835bd9c4948093.jsonl'
+summary = '''
+Task 20 is done: tomlctl is now at 0.22.0, and `review run show` plus the five new feature names are registered. The capabilities tests (86) pass, both clippy runs are clean (tomlctl with `--all-targets`, glimpse with `--locked`), and rustfmt reports no changes.
+
+## Cluster 20 — applied 1 item
+
+applied 20: bumped tomlctl to 0.22.0 and registered `review run show` and the five feature names in the source, the tests and the README; refreshed `glimpse/Cargo.lock`
+
+## Files touched
+- C:\Users\rossa\dev\dev-tools\tomlctl\Cargo.toml (line 3)
+- C:\Users\rossa\dev\dev-tools\tomlctl\Cargo.lock (line 63'''
+context_tokens = 102202
+
+[[agents.segments]]
+task_ids = [20]
+started_at = "2026-11-10T12:34:59.5566131Z"
+ended_at = "2026-11-10T12:46:44.9703779Z"
+
+[[agents]]
+id = "A31"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "ab022c8b54aec19f2"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T12:47:17.1758247Z"
+updated_at = "2026-11-10T12:54:26.9666601Z"
+ended_at = "2026-11-10T12:54:26.9666601Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-ab022c8b54aec19f2.jsonl'
+summary = """
+## Cluster task-21 — applied 1 item
+
+applied 21: moved the `review run` verbs out of `review.md` into a new `references/review-runs.md` and documented every new flag, verb, field and output key, working from the source code rather than the plan. `review.md` went from 583 to 541 lines, and the new file is 108 lines.
+
+What changed:
+
+- **`claude/skills/tomlctl/references/review-runs.md` (new):**
+  - A Bounds section: `base..head`, falling back to `base..HEAD` when there is no `head`; the survey reads changed files' bytes at `head`; the finder-cf cell carries `head`; agents still read the working """
+context_tokens = 202257
+
+[[agents.segments]]
+task_ids = [21]
+started_at = "2026-11-10T12:47:17.1758247Z"
+ended_at = "2026-11-10T12:54:26.9666601Z"
+
+[[agents]]
+id = "A32"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "ae9b90baa8943b47f"
+agent_type = "verification"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T12:54:45.5142112Z"
+updated_at = "2026-11-10T12:55:03.5530952Z"
+ended_at = "2026-11-10T12:55:03.5530952Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-ae9b90baa8943b47f.jsonl'
+summary = '''
+command: cargo fmt --manifest-path tomlctl/Cargo.toml -- --check
+outcome: fail
+exit: 1
+duration_s: 2
+log: C:/Users/rossa/AppData/Local/Temp/tmp.CqUdSUp9dr/c1.log
+summary: none
+failed_ids: none
+tail:
+Diff in \\?\C:\Users\rossa\dev\dev-tools\tomlctl\src\cli\mod.rs:42:
+     ReviewCatalogueArgs, ReviewCoverArgs, ReviewDigestArgs, ReviewExportArgs, ReviewListArgs,
+     ReviewOp, ReviewPlanArgs, ReviewReportArgs, ReviewResolveArgs, ReviewRunFinishArgs,
+     ReviewRunListArgs, ReviewRunOp, ReviewRunShowArgs, ReviewRunStartArgs, ReviewRunUpdateArgs,
+-    ReviewSchemaArgs,
+-    ReviewShowArgs, ReviewSt'''
+context_tokens = 34228
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-11-10T12:54:45.5142112Z"
+ended_at = "2026-11-10T12:55:03.5530952Z"
+
+[[agents]]
+id = "A33"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "a0d1a17c4118d8d6f"
+agent_type = "verification"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T12:55:09.888598Z"
+updated_at = "2026-11-10T13:05:24.2094709Z"
+ended_at = "2026-11-10T13:05:24.2094709Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-a0d1a17c4118d8d6f.jsonl'
+summary = """
+command: cargo fmt --manifest-path tomlctl/Cargo.toml -- --check
+outcome: pass
+exit: 0
+duration_s: 3
+log: C:/Users/rossa/AppData/Local/Temp/tmp.4lxJe1uRpA/c1.log
+summary: none
+
+command: cargo build --manifest-path tomlctl/Cargo.toml
+outcome: pass
+exit: 0
+duration_s: 30
+log: C:/Users/rossa/AppData/Local/Temp/tmp.4lxJe1uRpA/c2.log
+summary: none
+
+command: cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast
+outcome: pass
+exit: 0
+duration_s: 527
+log: C:/Users/rossa/AppData/Local/Temp/tmp.4lxJe1uRpA/c3.log
+summary: Summary [ 414.727s] 2928 tests run: 2928 passed (9 slow), 1 skipped
+
+"""
+context_tokens = 40289
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-11-10T12:55:09.888598Z"
+ended_at = "2026-11-10T13:05:24.2094709Z"
+
+[[agents]]
+id = "A34"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "a957e0fffad964717"
+agent_type = "verification"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T13:17:56.4404063Z"
+updated_at = "2026-11-10T13:26:52.21051Z"
+ended_at = "2026-11-10T13:26:52.21051Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-a957e0fffad964717.jsonl'
+summary = """
+command: cargo install --path tomlctl
+outcome: pass
+exit: 0
+duration_s: 232
+log: C:/Users/rossa/AppData/Local/Temp/tmp.Y7RUcyUr3h/c1.log
+summary: none
+
+command: cargo install --path glimpse
+outcome: pass
+exit: 0
+duration_s: 273
+log: C:/Users/rossa/AppData/Local/Temp/tmp.Y7RUcyUr3h/c2.log
+summary: none
+
+command: tomlctl --version
+outcome: pass
+exit: 0
+duration_s: 0
+log: C:/Users/rossa/AppData/Local/Temp/tmp.Y7RUcyUr3h/c3.log
+summary: none
+
+Version line: `tomlctl 0.22.0`"""
+context_tokens = 37562
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-11-10T13:17:56.4404063Z"
+ended_at = "2026-11-10T13:26:52.21051Z"
+
+[[agents]]
+id = "A35"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "a677bed4bbda64363"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T13:27:14.3151747Z"
+updated_at = "2026-11-10T13:31:12.5340344Z"
+ended_at = "2026-11-10T13:31:12.5340344Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-a677bed4bbda64363.jsonl'
+summary = """
+## Cluster task-23 — applied 1 item
+
+applied 23: `claude/workflows/plan-v2-review.js` now follows the plan's "Workflow index" rules. It counts every agent call, the surveyor prompt no longer carries signals, all baselines go out in one dispatch, `mechanical_lenses` is passed through to each wave, escalations go to the lead's settle prompt, and the script re-verifies the ids settle names under `reverify`.
+
+- **Agent count:** `let agents` goes up by one at each of the script's own calls: surveyor, baseline dispatch, every lead phase, every re-verification. Each wave adds `ran.agents`, or 0 when """
+context_tokens = 103358
+
+[[agents.segments]]
+task_ids = [23]
+started_at = "2026-11-10T13:27:14.3151747Z"
+ended_at = "2026-11-10T13:31:12.5340344Z"
+
+[[agents]]
+id = "A36"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "a53685c704eb65e7e"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T13:27:24.682574Z"
+updated_at = "2026-11-10T13:31:06.7629925Z"
+ended_at = "2026-11-10T13:31:06.7629925Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-a53685c704eb65e7e.jsonl'
+summary = """
+## Cluster task-24 — applied 1 item
+
+applied 24: rewrote the stage 0, stage 1, baseline, stage 4 and stage 5 passages of `claude/skills/review-v2-engine/SKILL.md`, and fixed the three sentences other tasks had made stale.
+
+- **Stage 0:** the `.features` gate now also requires `review_run_head`, `review_run_show`, `review_ruled_out`, `review_same_as_link` and `review_list_fix_shape`. The installed 0.22.0 binary lists all five. A new step 5 runs `review list --status parked` and `review list --status open --fix-shape needs-plan`, and reports both in the run's opening lines. The plan-family step """
+context_tokens = 98527
+
+[[agents.segments]]
+task_ids = [24]
+started_at = "2026-11-10T13:27:24.682574Z"
+ended_at = "2026-11-10T13:31:06.7629925Z"
+
+[[agents]]
+id = "A37"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "a0e7dc151b3bc6a1c"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T13:27:35.8879665Z"
+updated_at = "2026-11-10T13:30:10.8374837Z"
+ended_at = "2026-11-10T13:30:10.8374837Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-a0e7dc151b3bc6a1c.jsonl'
+summary = """
+## Cluster 26: applied 1 item
+
+applied 26: added the stage-5 settling steps to `compose.md` and corrected its judged-candidate, proposal, sweeper-slice and baseline lines.
+
+- **Stage 5 order:** stage 5 now runs mop-up, then Duplicates, then Rule-out hits, then Escalations, then Follow-up.
+- **Duplicates:** each `duplicate_candidates` pair is either linked with `tomlctl review resolve --run <run> --slug <slug> --same-as <DUP>=<TARGET>` or left as distinct. Each decision gets one line of reasoning in `<run-dir>/duplicates-w<wave>.md`, and the section says to finish this before export. It also co"""
+context_tokens = 86460
+
+[[agents.segments]]
+task_ids = [26]
+started_at = "2026-11-10T13:27:35.8879665Z"
+ended_at = "2026-11-10T13:30:10.8374837Z"
+
+[[agents]]
+id = "A38"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "a3ae4ab59df49c462"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T13:27:46.4263986Z"
+updated_at = "2026-11-10T13:29:36.1015943Z"
+ended_at = "2026-11-10T13:29:36.1015943Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-a3ae4ab59df49c462.jsonl'
+summary = """
+## Cluster task-27 — applied 1 item
+
+applied 27: brought the stage-4 fallback reference in line with the version-2 Workflow. Covers verifier-routed cleanup rows batched per cell, the checker's `mechanical lenses:` line, `agents` and `escalations` in the wave index, a surveyor prompt that carries no signals, and an agent total counted once.
+
+- **Routing table**: new row. At every depth, a cell's verifier-routed cleanup rows go to one `review-verifier` batch named `verify-<cell>-cleanup`. A cell with only one such row sends it to one single-finding verifier. The verifier prompt section now cover"""
+context_tokens = 79071
+
+[[agents.segments]]
+task_ids = [27]
+started_at = "2026-11-10T13:27:46.4263986Z"
+ended_at = "2026-11-10T13:29:36.1015943Z"
+
+[[agents]]
+id = "A39"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "af4b9a15a761e5ba1"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T13:27:56.5264212Z"
+updated_at = "2026-11-10T13:30:57.1454532Z"
+ended_at = "2026-11-10T13:30:57.1454532Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-af4b9a15a761e5ba1.jsonl'
+summary = """
+## Cluster 28: applied 1 item
+
+applied 28: rewrote the stage-6 sample and recording passages, the `plan` grammar row and stage 8's backlog step, and added unhandled escalations to the close summary in `triage-and-close.md`.
+
+- **Sample:** the sample line now describes `audit_sample` as the 0.22.0 reference does. Its standing group is defects whose latest verdict is CONFIRMED or PLAUSIBLE. It also takes two REFUTED non-critical defects and two checker-decided cleanup rows, one from a sweeper cell when there is one. Each REFUTED slot the run cannot fill takes one more standing defect.
+- **Record"""
+context_tokens = 82396
+
+[[agents.segments]]
+task_ids = [28]
+started_at = "2026-11-10T13:27:56.5264212Z"
+ended_at = "2026-11-10T13:30:57.1454532Z"
+
+[[agents]]
+id = "A40"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "a4b1acb53c4874df4"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T13:28:08.8220815Z"
+updated_at = "2026-11-10T13:32:48.3389952Z"
+ended_at = "2026-11-10T13:32:48.3389952Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-a4b1acb53c4874df4.jsonl'
+summary = """
+## Cluster 33: 1 item applied
+
+applied 33: I made the same edit to the shared `review-finder-body` block in both finder files, and changed the frontmatter of `review-finder-cf.md` only. The body changes:
+- The `research-methods` sentence now holds for both files. The skill is preloaded when the frontmatter lists it. A context-free cell neither preloads nor invokes it and works from `review-v2-method`'s bar alone.
+- The context-free slice is read as `git diff <base> <head> -- <slice entries>` when the assignment carries `head`.
+- A context-free cell reads nothing under `.claude/flows/` or `docs"""
+context_tokens = 71735
+
+[[agents.segments]]
+task_ids = [33]
+started_at = "2026-11-10T13:28:08.8220815Z"
+ended_at = "2026-11-10T13:32:48.3389952Z"
+
+[[agents]]
+id = "A41"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "ac0c4654d454f0b98"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T13:29:59.8428132Z"
+updated_at = "2026-11-10T13:32:15.5642488Z"
+ended_at = "2026-11-10T13:32:15.5642488Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-ac0c4654d454f0b98.jsonl'
+summary = """
+## Cluster 35 — applied 1 item
+
+applied 35: rewrote the surveyor's assignment, signal, catalogue, candidate-evidence, verification-command and file-writing steps in `claude/agents/review-surveyor.md`, and added a rule that bounds its output.
+
+- **Signals.** The assignment no longer carries signals, and the rule to stop with `missing: signals` is gone. A new step 3 reads the signals with `tomlctl review run show <run> <store flag> --lines`. The surveyor now stops only when the run id, store flag or run directory is missing, or when the run is not found. `review run show` is added to the allowed"""
+context_tokens = 76566
+
+[[agents.segments]]
+task_ids = [35]
+started_at = "2026-11-10T13:29:59.8428132Z"
+ended_at = "2026-11-10T13:32:15.5642488Z"
+
+[[agents]]
+id = "A42"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "aa7f58d98c4305d4a"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T13:30:32.9529219Z"
+updated_at = "2026-11-10T13:32:54.9755209Z"
+ended_at = "2026-11-10T13:32:54.9755209Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-aa7f58d98c4305d4a.jsonl'
+summary = """
+I rewrote the signals hand-off, the project-check rule and the baselines section of `survey.md`. Both acceptance greps pass, and the narrow test (`cli::dispatch::tests`) passed 54 of 54.
+
+## Cluster 25 — applied 1 item
+
+applied 25: rewrote the signals hand-off, the project-check rule and the baselines section of survey.md. The surveyor prompt now carries no signals; the surveyor reads them with `tomlctl review run show <run> <store flag>`, and the old "only copy of the signals" paragraph is replaced by one saying the store holds them. The diff detectors read `base..head` when the run records a"""
+context_tokens = 82108
+
+[[agents.segments]]
+task_ids = [25]
+started_at = "2026-11-10T13:30:32.9529219Z"
+ended_at = "2026-11-10T13:32:54.9755209Z"
+
+[[agents]]
+id = "A43"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "afaba28b86c0c4d18"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T13:31:54.0752292Z"
+updated_at = "2026-11-10T13:37:26.5500158Z"
+ended_at = "2026-11-10T13:37:26.5500158Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-afaba28b86c0c4d18.jsonl'
+summary = '''
+## Cluster 29: 1 item applied
+
+applied 29: In `measurement.md` I added the low-side `suspect` refute band as a Thresholds row, the 30-audited-rows-per-class floor for the audit-overturn bands (read pooled per model), two watch items, and a new "Seeded precision check" section. I also replaced the stale "No v2 plan has run under an execution engine yet…" sentence and its "Until one does," clause with the fact that `/implement-v2` has run `human-only-handovers`. The "Contract note for the execution engine" section is untouched.
+
+## Files touched
+- C:\Users\rossa\dev\dev-tools\claude\skills\revie'''
+context_tokens = 93178
+
+[[agents.segments]]
+task_ids = [29]
+started_at = "2026-11-10T13:31:54.0752292Z"
+ended_at = "2026-11-10T13:37:26.5500158Z"
+
+[[agents]]
+id = "A44"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "aa9c7d6b0d2df4992"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T13:32:06.371211Z"
+updated_at = "2026-11-10T13:33:46.6668351Z"
+ended_at = "2026-11-10T13:33:46.6668351Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-aa9c7d6b0d2df4992.jsonl'
+summary = """
+## Cluster task-31 — applied 1 item
+
+applied 31: added four shared agent rules to `claude/skills/review-v2-method/SKILL.md`, each under its own heading so the agent files can cite it by name.
+- **"Mechanical-cleanup exception"** (a `####` under `cleanup`): a cell may write a cleanup on a lens outside its own concerns if the catalogue marks that lens `mode = "mechanical"` and the row carries exact `old`. The rule gives the `review catalogue` command that lists those lenses. The fields table's `lens` row points to this heading.
+- **"Swept"** (under the coverage statuses): a sweeper cell is `cove"""
+context_tokens = 77270
+
+[[agents.segments]]
+task_ids = [31]
+started_at = "2026-11-10T13:32:06.371211Z"
+ended_at = "2026-11-10T13:33:46.6668351Z"
+
+[[agents]]
+id = "A45"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "ab6efa3de6e7febee"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T13:32:19.4856858Z"
+updated_at = "2026-11-10T13:34:31.0836712Z"
+ended_at = "2026-11-10T13:34:31.0836712Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-ab6efa3de6e7febee.jsonl'
+summary = '''
+## Cluster task-37: 1 item applied
+
+applied 37: In `plan-executor.md`, a cell now stages a rule-out file and seals with `--ruled-out`, and its note aims at 450 characters, with 600 as the limit (citing `review-v2-method`). In `plan-review-lead.md`, `settle` now links duplicate pairs, collects rule-out hits under `reverify` and handles each `escalations:` line. `audit` now records a `confirmed`/`refuted` verdict for every sampled row in one NDJSON batch.
+
+## Files touched
+- C:\Users\rossa\dev\dev-tools\claude\agents\plan-executor.md (lines 42-45)
+- C:\Users\rossa\dev\dev-tools\claude\agents\pla'''
+context_tokens = 95339
+
+[[agents.segments]]
+task_ids = [37]
+started_at = "2026-11-10T13:32:19.4856858Z"
+ended_at = "2026-11-10T13:34:31.0836712Z"
+
+[[agents]]
+id = "A46"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "a3b33753da96b6f76"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T13:32:46.6949403Z"
+updated_at = "2026-11-10T13:36:37.362275Z"
+ended_at = "2026-11-10T13:36:37.362275Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-a3b33753da96b6f76.jsonl'
+summary = """
+## Cluster task-34 — applied 1 item
+
+applied 34: rewrote the sweeper's sweep and seal steps and the two catalogue files it cites. The sweeper now builds `NAMES` (every name the slice's diff removed or renamed) and sweeps from that list instead of reading whole files. It searches tree-wide with narrow paths, one directory root per Grep call and never a brace glob from the repo root, and `tomlctl sweep` is preferred. A stale reference outside the run's scope is now a `ripple` row anchored on that file. The note aims for 450 characters with 600 as the hard limit, and the seal status follows the s"""
+context_tokens = 81905
+
+[[agents.segments]]
+task_ids = [34]
+started_at = "2026-11-10T13:32:46.6949403Z"
+ended_at = "2026-11-10T13:36:37.362275Z"
+
+[[agents]]
+id = "A47"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "afdd5d8cb8777a9d0"
+agent_type = "implement-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T13:33:33.7896248Z"
+updated_at = "2026-11-10T13:33:59.0743559Z"
+ended_at = "2026-11-10T13:33:59.0743559Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-afdd5d8cb8777a9d0.jsonl'
+summary = '''
+## 36 — applied 1 item
+
+applied 36: Added three rules to `review-verifier.md`. A finding's `ruled_out` entries must be addressed in the rationale, a batch may hold one cell's cleanup rows as well as minor defects, and the rationale aims for 450 characters (the `review-v2-method` skill is cited, 600 is the enforced limit).
+
+## Files touched
+- C:\Users\rossa\dev\dev-tools\claude\agents\review-verifier.md (lines 34-38, 46)
+
+## Notes
+- note: acceptance `grep -c 'ruled_out'` prints 1 (it was 0 before). The narrow nextest test was not run, because it is a prose-only edit that cites no flags.
+- I did'''
+context_tokens = 60484
+
+[[agents.segments]]
+task_ids = [36]
+started_at = "2026-11-10T13:33:33.7896248Z"
+ended_at = "2026-11-10T13:33:59.0743559Z"
+
+[[agents]]
+id = "A48"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "a7e3bedfb3c678a4e"
+agent_type = "implement-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T13:33:46.4991897Z"
+updated_at = "2026-11-10T13:36:54.7246959Z"
+ended_at = "2026-11-10T13:36:54.7246959Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-a7e3bedfb3c678a4e.jsonl'
+summary = """
+## 30 — applied 1 item
+
+applied 30: updated `plan-flow.md` to match the `SCRIPT_VERSION = '2'` Workflow. Changes:
+- **Pre-flight (section 1):** the `.features` gate now also requires `review_run_head`, `review_run_show`, `review_ruled_out`, `review_same_as_link` and `review_list_fix_shape`.
+- **Scope (sections 2 and 10):** scope lists are staged at `<scratch>/review-scope.json` and passed as `scope=@<scratch>/review-scope.json`.
+- **Signals (section 3):** the sentence saying no read verb returns the signals is replaced. `review run show` returns them, and the surveyor reads them that way.
+- **"""
+context_tokens = 81629
+
+[[agents.segments]]
+task_ids = [30]
+started_at = "2026-11-10T13:33:46.4991897Z"
+ended_at = "2026-11-10T13:36:54.7246959Z"
+
+[[agents]]
+id = "A49"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "ac4454faa82e0eeab"
+agent_type = "implement-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T13:34:28.001341Z"
+updated_at = "2026-11-10T13:37:22.1886107Z"
+ended_at = "2026-11-10T13:37:22.1886107Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-ac4454faa82e0eeab.jsonl'
+summary = """
+## 42 — applied 1 item
+
+applied 42: `claude/agents/review-checker.md` now lets the checker refute a cleanup row whose lens the `mechanical lenses:` line names, as well as a row on the `sweeper rows:` line.
+
+- **Rule:** the `refuted` rule now cites the `review-v2-method` skill's "Mechanical-cleanup exception". The conditions are unchanged: a predicate is false and a grep shows it.
+- **Assignment step:** it now says the assignment carries both the `sweeper rows:` and `mechanical lenses:` lines, each `none` when empty, and the stop-if-missing check covers both. The wording matches `checkerPrompt`"""
+context_tokens = 61319
+
+[[agents.segments]]
+task_ids = [42]
+started_at = "2026-11-10T13:34:28.001341Z"
+ended_at = "2026-11-10T13:37:22.1886107Z"
+
+[[agents]]
+id = "A50"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "a2d2f735db7009713"
+agent_type = "implement-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T13:34:39.5512019Z"
+updated_at = "2026-11-10T13:38:25.3642425Z"
+ended_at = "2026-11-10T13:38:25.3642425Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-a2d2f735db7009713.jsonl'
+summary = """
+## 32 — applied 1 item
+
+applied 32: The 450-character target now sits beside each 600 cap in the three review-v2-method references, and the stale handover field list is replaced. I added one worked `ruled_out` verdict to `verifying.md`.
+
+- **`plan-records.md`:** the handover `target` row lists `reason`, `action`, `when`, `done_when`, `source_task` and `done`. `command` is gone.
+- **`finding-kinds.md`:** the coverage-note line says to aim for 450 characters, at most 600, and points to Length in `SKILL.md`.
+- **`verifying.md`:** the rationale line says it aims for 450 characters and is refused o"""
+context_tokens = 71122
+
+[[agents.segments]]
+task_ids = [32]
+started_at = "2026-11-10T13:34:39.5512019Z"
+ended_at = "2026-11-10T13:37:16.2201334Z"
+
+[[agents.segments]]
+task_ids = [32]
+started_at = "2026-11-10T13:37:17.7350724Z"
+ended_at = "2026-11-10T13:38:25.3642425Z"
+
+[[agents]]
+id = "A51"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "a01ccf13212e3f6e5"
+agent_type = "implement-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T13:35:11.503281Z"
+updated_at = "2026-11-10T13:37:33.8844387Z"
+ended_at = "2026-11-10T13:37:33.8844387Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-a01ccf13212e3f6e5.jsonl'
+summary = """
+## 38 — applied 1 item
+
+applied 38: The three carriers now point at the engine's stage 1 (scope and bounds) and survey section 6 (baselines) instead of restating them. Each names `--head` as the run's upper bound, and scope lists are staged outside the repository.
+
+- **`review-v2.md`:** The scope argument is described as a range, a commit list or paths, with a pointer to stage 1 for how `--base`, `--head` and the scope list are chosen. The per-line baseline dispatch sentence is replaced by a pointer to survey section 6. The context-free finder now reads `git diff <base>`, or `git diff <base> <"""
+context_tokens = 73216
+
+[[agents.segments]]
+task_ids = [38]
+started_at = "2026-11-10T13:35:11.503281Z"
+ended_at = "2026-11-10T13:37:33.8844387Z"
+
+[[agents]]
+id = "A52"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "aae8ccb9fdb0281ec"
+agent_type = "implement-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T13:37:01.7651666Z"
+updated_at = "2026-11-10T13:39:30.6205405Z"
+ended_at = "2026-11-10T13:39:30.6205405Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-aae8ccb9fdb0281ec.jsonl'
+summary = """
+## 39 — applied 1 item
+
+applied 39: The lenses SKILL.md now says a mechanical lens owns its rows but accepts a `cleanup` row with exact `old` text from any cell. `hygiene.md` says the same, and its Diff detector line now reads `<base>..<head>`.
+
+- **Acceptance:** `grep -ci 'from any cell' claude/skills/review-v2-lenses/SKILL.md` now prints `1` (it was `0`).
+- **Checks run:** `tomlctl review catalogue --check` printed `{"ok":true}`. The narrow test `cargo nextest run --manifest-path tomlctl/Cargo.toml --lib -E 'test(/cli::dispatch::tests/)'` passed 54 of 54, including `catalogue_validates` and """
+context_tokens = 70146
+
+[[agents.segments]]
+task_ids = [39]
+started_at = "2026-11-10T13:37:01.7651666Z"
+ended_at = "2026-11-10T13:39:30.6205405Z"
+
+[[agents]]
+id = "A53"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "aa1d92abdab6ecdc3"
+agent_type = "verification"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T13:39:48.5307189Z"
+updated_at = "2026-11-10T13:48:45.1653075Z"
+ended_at = "2026-11-10T13:48:45.1653075Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-aa1d92abdab6ecdc3.jsonl'
+summary = """
+All seven commands passed on the first run. No command was retried, and no `not_run:` line is needed.
+
+command: bash scripts/verify-shared-blocks.sh
+outcome: pass
+exit: 0
+duration_s: 33
+log: C:/Users/rossa/AppData/Local/Temp/tmp.W13vQczioY/c1.log
+summary: shared-block parity: OK
+
+command: bash scripts/verify-plan-story-blocks.sh
+outcome: pass
+exit: 0
+duration_s: 11
+log: C:/Users/rossa/AppData/Local/Temp/tmp.W13vQczioY/c2.log
+summary: verify-plan-story-blocks: OK (§l.0 coverage, §l.4 citations, Skill()-dispatch documented, no disable-model-invocation flag).
+
+command: cargo fmt --manifest-path t"""
+context_tokens = 43308
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-11-10T13:39:48.5307189Z"
+ended_at = "2026-11-10T13:48:45.1653075Z"
+
+[[agents]]
+id = "A54"
+harness = "claude-code"
+session_id = "076c3d98-f8f7-43cb-be46-efe0be7f4aaa"
+agent_id = "ae64f99de687df6db"
+agent_type = "verification"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-10T13:49:27.2550413Z"
+updated_at = "2026-11-10T14:08:27.955643Z"
+ended_at = "2026-11-10T14:08:27.955643Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\076c3d98-f8f7-43cb-be46-efe0be7f4aaa\subagents\agent-ae64f99de687df6db.jsonl'
+summary = """
+Stopped at command 21: the `cargo install --path glimpse` failed twice with the same `Access is denied` move error, and the one transient retry did not clear it. Commands 1–20 all passed, and command 21 is the last in the list, so there is no `not_run:` line.
+
+command: CARGO_INCREMENTAL=0 cargo build --manifest-path tomlctl/Cargo.toml
+outcome: pass
+exit: 0
+duration_s: 48
+log: C:/Users/rossa/AppData/Local/Temp/tmp.IuiCYwU5LV/c1.log
+summary: none
+
+command: CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast
+outcome: pass
+exit: 0
+duration_s: 776
+log: C:/Users/r"""
+context_tokens = 62849
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-11-10T13:49:27.2550413Z"
+ended_at = "2026-11-10T14:08:27.955643Z"

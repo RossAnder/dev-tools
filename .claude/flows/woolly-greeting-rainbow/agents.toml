@@ -1,0 +1,393 @@
+schema_version = 1
+last_updated = 2026-09-29
+
+[[agents]]
+id = "A1"
+harness = "claude-code"
+session_id = "79e8f40e-fe73-4465-9679-3726cba9e42e"
+agent_id = "af4edb88fd953a7da"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-09-29T10:04:51.4093136Z"
+updated_at = "2026-09-29T10:07:28.610688Z"
+ended_at = "2026-09-29T10:07:28.610688Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\79e8f40e-fe73-4465-9679-3726cba9e42e\subagents\agent-af4edb88fd953a7da.jsonl'
+summary = """
+## Cluster task-1: 1 item applied
+
+applied 1: added `git_command(dir)` to `test_support.rs`. It sets `current_dir`, then `env_remove`s GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE, GIT_COMMON_DIR and GIT_OBJECT_DIRECTORY, in that order. All test-side git spawns now go through it: `git_available` and `git` in `test_support.rs`, the `--exec-path` probe and fixture `git init` in `skills.rs`, and both test spawns in `evidence_ops.rs`. The production `ignored_set` spawn is unchanged. I also added the test `git_command_ignores_an_inherited_git_dir`. It holds `env_lock()`, and a `GitDirGuard` puts back the"""
+context_tokens = 61680
+
+[[agents.segments]]
+task_ids = [1]
+started_at = "2026-09-29T10:04:51.4093136Z"
+ended_at = "2026-09-29T10:07:28.610688Z"
+
+[[agents]]
+id = "A2"
+harness = "claude-code"
+session_id = "79e8f40e-fe73-4465-9679-3726cba9e42e"
+agent_id = "a13eadddf8f61310f"
+agent_type = "implement-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-09-29T10:05:18.4292934Z"
+updated_at = "2026-09-29T10:05:51.1926306Z"
+ended_at = "2026-09-29T10:05:51.1926306Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\79e8f40e-fe73-4465-9679-3726cba9e42e\subagents\agent-a13eadddf8f61310f.jsonl'
+summary = """
+## 2 — applied 1 item
+
+applied 2: Added `git_command(dir)` to `tomlctl/tests/common/mod.rs`. It sets `current_dir` and then removes `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`, `GIT_COMMON_DIR` and `GIT_OBJECT_DIRECTORY`, in that order. `sandbox`'s `git init`, `git_available` and the `git add` in `tomlctl/tests/backlog_read.rs` now go through it.
+
+## Files touched
+- `C:/Users/rossa/dev/dev-tools/tomlctl/tests/common/mod.rs` (`sandbox`, new `git_command`, `git_available`)
+- `C:/Users/rossa/dev/dev-tools/tomlctl/tests/backlog_read.rs` (line 694)
+
+## Notes
+- note: acceptance count is 0 for `back"""
+context_tokens = 55807
+
+[[agents.segments]]
+task_ids = [2]
+started_at = "2026-09-29T10:05:18.4292934Z"
+ended_at = "2026-09-29T10:05:51.1926306Z"
+
+[[agents]]
+id = "A3"
+harness = "claude-code"
+session_id = "79e8f40e-fe73-4465-9679-3726cba9e42e"
+agent_id = "a2b242ca7bfdbca5e"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-09-29T10:05:50.771352Z"
+updated_at = "2026-09-29T10:09:55.8671509Z"
+ended_at = "2026-09-29T10:09:55.8671509Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\79e8f40e-fe73-4465-9679-3726cba9e42e\subagents\agent-a2b242ca7bfdbca5e.jsonl'
+summary = """
+## Cluster task-3: 1 item applied
+
+applied 3: added `tomlctl/src/owner.rs` with `pub(crate) fn is_owned_by_current_user(path: &Path) -> std::io::Result<bool>`, declared it in `main.rs`, and added `windows-sys` (cfg windows) and `libc` (cfg unix) as direct dependencies. Security note: the function never widens trust. It returns `Ok(true)` only when the path's owner SID matches the process token's `TokenUser` SID (`EqualSid`, after an `IsValidSid` check on a non-null owner) on Windows, or when `lstat` uid equals a non-zero euid on Unix. A group owner (for example Administrators), a UNC, device o"""
+context_tokens = 71951
+
+[[agents.segments]]
+task_ids = [3]
+started_at = "2026-09-29T10:05:50.771352Z"
+ended_at = "2026-09-29T10:09:55.8671509Z"
+
+[[agents]]
+id = "A4"
+harness = "claude-code"
+session_id = "79e8f40e-fe73-4465-9679-3726cba9e42e"
+agent_id = "a1032a8daaa085456"
+agent_type = "implement-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-09-29T10:06:18.6301279Z"
+updated_at = "2026-09-29T10:07:59.0796946Z"
+ended_at = "2026-09-29T10:07:59.0796946Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\79e8f40e-fe73-4465-9679-3726cba9e42e\subagents\agent-a1032a8daaa085456.jsonl'
+summary = """
+## 7 — applied 1 item
+
+applied 7: head-line dispatch fallback for transcripts over `WHOLE_READ_MAX`. When the tail yields no dispatch, `head_dispatch` reads the first line (up to `TAIL_BYTES`) and scans it with the same `prompt_of`. It is wired into `latest_dispatch`, `codex_latest_dispatch` and `dispatch_and_tokens_with`, through a new `latest_dispatch_with`. A dispatch found in the tail still wins. Tokens still come from the tail only, and the public signatures are unchanged.
+
+## Files touched
+- tomlctl/src/agents/correlate.rs (lines 101-125, 145-155, 182-189, and tests near the end of the f"""
+context_tokens = 63225
+
+[[agents.segments]]
+task_ids = [7]
+started_at = "2026-09-29T10:06:18.6301279Z"
+ended_at = "2026-09-29T10:07:59.0796946Z"
+
+[[agents]]
+id = "A5"
+harness = "claude-code"
+session_id = "79e8f40e-fe73-4465-9679-3726cba9e42e"
+agent_id = "aed38afb47cd96775"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-09-29T10:06:48.289446Z"
+updated_at = "2026-09-29T10:11:04.389344Z"
+ended_at = "2026-09-29T10:11:04.389344Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\79e8f40e-fe73-4465-9679-3726cba9e42e\subagents\agent-aed38afb47cd96775.jsonl'
+summary = """
+## Cluster task-8: 1 item applied
+
+applied 8: added `REAP_AFTER` (1 h) and a pure `reap(store, now, except, idle, mtime_of) -> usize` to `tomlctl/src/agents/record.rs`. It runs inside the `mutate_doc_conditional` closure after `apply`, and the store is written when the event changed it or `reaped > 0`. `record()` still reports the event's own outcome.
+
+How `reap` behaves:
+- **Which rows it stops:** only `Running` rows that are not the event's own `(session_id, agent_id)`. For each, the transcript mtime must be more than `idle` before `now`.
+- **What a stopped row gets:** `status = Stopped`. `e"""
+context_tokens = 85968
+
+[[agents.segments]]
+task_ids = [8]
+started_at = "2026-09-29T10:06:48.289446Z"
+ended_at = "2026-09-29T10:11:04.389344Z"
+
+[[agents]]
+id = "A6"
+harness = "claude-code"
+session_id = "79e8f40e-fe73-4465-9679-3726cba9e42e"
+agent_id = "a8f4d60160b1b3774"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-09-29T10:11:18.1882717Z"
+updated_at = "2026-09-29T10:19:15.4413272Z"
+ended_at = "2026-09-29T10:19:15.4413272Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\79e8f40e-fe73-4465-9679-3726cba9e42e\subagents\agent-a8f4d60160b1b3774.jsonl'
+summary = """
+I added `tomlctl/src/repo_root.rs`, which finds the repo root without spawning git. It answers only when it can show git would give the same root, and hands every other case back to git. It is declared in `main.rs`. All 16 `repo_root::` tests pass, including the check against real git.
+
+## Cluster task-4 — applied 1 item
+
+applied 4: added `repo_root.rs` with `Discovery::{Root, NoRepo, AskGit}` and `discover(start, env)`. It checks the discovery env vars, canonicalises the start, then walks up the ancestors, with a device-boundary stop on Unix only. At each level it checks the `.git` dir or git"""
+context_tokens = 107401
+
+[[agents.segments]]
+task_ids = [4]
+started_at = "2026-09-29T10:11:18.1882717Z"
+ended_at = "2026-09-29T10:19:15.4413272Z"
+
+[[agents]]
+id = "A7"
+harness = "claude-code"
+session_id = "79e8f40e-fe73-4465-9679-3726cba9e42e"
+agent_id = "a05e8e829bdaaeecf"
+agent_type = "implement-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-09-29T10:11:58.3957078Z"
+updated_at = "2026-09-29T10:12:37.3979785Z"
+ended_at = "2026-09-29T10:12:37.3979785Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\79e8f40e-fe73-4465-9679-3726cba9e42e\subagents\agent-a05e8e829bdaaeecf.jsonl'
+summary = """
+## 9 — applied 1 item
+
+applied 9: added the stale-start rule, the reaping rule and the `stale-start` reason to `claude/skills/tomlctl/references/agents.md`.
+
+- **Stale start:** the `SubagentStart` row now says a start earlier than the `ended_at` already recorded on a stopped row is ignored and prints `stale-start`. A later resume still reopens the row.
+- **Reaping:** a new paragraph in Events covers reaping on every recorded event. It sets any other `running` row to `stopped` when its transcript has been quiet for over an hour, with `ended_at` and the open segment's end at the transcript mtime"""
+context_tokens = 55550
+
+[[agents.segments]]
+task_ids = [9]
+started_at = "2026-09-29T10:11:58.3957078Z"
+ended_at = "2026-09-29T10:12:37.3979785Z"
+
+[[agents]]
+id = "A8"
+harness = "claude-code"
+session_id = "79e8f40e-fe73-4465-9679-3726cba9e42e"
+agent_id = "a75156caf240cc999"
+agent_type = "verification"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-09-29T10:19:36.0620781Z"
+updated_at = "2026-09-29T10:21:19.5005636Z"
+ended_at = "2026-09-29T10:21:19.5005636Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\79e8f40e-fe73-4465-9679-3726cba9e42e\subagents\agent-a75156caf240cc999.jsonl'
+summary = '''
+Now I'll provide the final report:
+
+---
+
+command: cargo build --manifest-path tomlctl/Cargo.toml
+outcome: pass
+exit: 0
+duration_s: 19
+log: C:/Users/rossa/AppData/Local/Temp/tmp.sarSO7S2fD/c1.log
+summary: none
+
+command: cargo fmt --manifest-path tomlctl/Cargo.toml -- --check
+outcome: fail
+exit: 1
+duration_s: 2
+log: C:/Users/rossa/AppData/Local/Temp/tmp.sarSO7S2fD/c2.log
+summary: none
+tail:
+Diff in \\?\C:\Users\rossa\dev\dev-tools\tomlctl\src\backlog\evidence_ops.rs:527:
+-            let _ = git_command(guard.root())
+-                .args(["init", "-q", "."])
+-                .output();
++      '''
+context_tokens = 37415
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-09-29T10:19:36.0620781Z"
+ended_at = "2026-09-29T10:21:19.5005636Z"
+
+[[agents]]
+id = "A9"
+harness = "claude-code"
+session_id = "79e8f40e-fe73-4465-9679-3726cba9e42e"
+agent_id = "ad95139e4944b6e24"
+agent_type = "verification"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-09-29T10:21:31.3982537Z"
+updated_at = "2026-09-29T10:24:41.7810509Z"
+ended_at = "2026-09-29T10:24:41.7810509Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\79e8f40e-fe73-4465-9679-3726cba9e42e\subagents\agent-ad95139e4944b6e24.jsonl'
+summary = """
+**Summary**
+
+All commands passed successfully.
+
+```
+command: cargo build --manifest-path tomlctl/Cargo.toml
+outcome: pass
+exit: 0
+duration_s: 5
+log: C:/Users/rossa/AppData/Local/Temp/tmp.Gnk61fOIIl/c1.log
+summary: none
+
+command: cargo fmt --manifest-path tomlctl/Cargo.toml -- --check
+outcome: pass
+exit: 0
+duration_s: 2
+log: C:/Users/rossa/AppData/Local/Temp/tmp.Gnk61fOIIl/c2.log
+summary: none
+
+command: cargo test --manifest-path tomlctl/Cargo.toml --no-fail-fast
+outcome: pass
+exit: 0
+duration_s: 123
+log: C:/Users/rossa/AppData/Local/Temp/tmp.Gnk61fOIIl/c3.log
+summary: libtest x32: 1438 passed;"""
+context_tokens = 28148
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-09-29T10:21:31.3982537Z"
+ended_at = "2026-09-29T10:24:41.7810509Z"
+
+[[agents]]
+id = "A10"
+harness = "claude-code"
+session_id = "79e8f40e-fe73-4465-9679-3726cba9e42e"
+agent_id = "a63d918260ef8a244"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-09-29T10:25:53.9470674Z"
+updated_at = "2026-09-29T10:28:06.5017432Z"
+ended_at = "2026-09-29T10:28:06.5017432Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\79e8f40e-fe73-4465-9679-3726cba9e42e\subagents\agent-a63d918260ef8a244.jsonl'
+summary = """
+## Cluster task-5: 1 item applied
+
+applied 5: `repo_or_cwd_root` now checks `TOMLCTL_ROOT` first, then the `OnceLock` fast path, then calls `crate::repo_root::discover(&cwd, |k| std::env::var_os(k).is_some())`. `Root` becomes the root. `NoRepo` uses `cwd.canonicalize().unwrap_or(cwd)`, the same expression as the old git-failure arm. `AskGit` calls a new private `git_toplevel_or_cwd(cwd)`, which holds the old spawn code unchanged.
+- The cache is still lazy. Whatever the walk, git or cwd chain produces goes into the same `get_or_init` slot.
+- A `current_dir()` failure still returns the same `?` """
+context_tokens = 58090
+
+[[agents.segments]]
+task_ids = [5]
+started_at = "2026-09-29T10:25:53.9470674Z"
+ended_at = "2026-09-29T10:28:06.5017432Z"
+
+[[agents]]
+id = "A11"
+harness = "claude-code"
+session_id = "79e8f40e-fe73-4465-9679-3726cba9e42e"
+agent_id = "a1f5b4e44bfaffd0c"
+agent_type = "implement-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-09-29T10:28:44.0526829Z"
+updated_at = "2026-09-29T10:28:59.7610935Z"
+ended_at = "2026-09-29T10:28:59.7610935Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\79e8f40e-fe73-4465-9679-3726cba9e42e\subagents\agent-a1f5b4e44bfaffd0c.jsonl'
+summary = '''
+## 6 — applied 1 item
+
+applied 6: Reworded the two doc comments that named `git rev-parse --show-toplevel`. Both now say "the repository top level" and defer to `io::repo_or_cwd_root` for how it is found.
+
+## Files touched
+- C:\Users\rossa\dev\dev-tools\tomlctl\src\flow\active.rs (lines 54-57)
+- C:\Users\rossa\dev\dev-tools\tomlctl\tests\flow_find_plans.rs (line 8)
+
+## Notes
+- note: check acceptance grep — `active.rs` 0, `flow_find_plans.rs` 0. No build or test run, since only comments changed.
+- note: I left the other `rev-parse --show-toplevel` mentions alone, as the task said to. `tomlctl/s'''
+context_tokens = 48161
+
+[[agents.segments]]
+task_ids = [6]
+started_at = "2026-09-29T10:28:44.0526829Z"
+ended_at = "2026-09-29T10:28:59.7610935Z"
+
+[[agents]]
+id = "A12"
+harness = "claude-code"
+session_id = "79e8f40e-fe73-4465-9679-3726cba9e42e"
+agent_id = "a2afcac2514a5220a"
+agent_type = "verification"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-09-29T10:29:16.7783426Z"
+updated_at = "2026-09-29T10:33:26.9697274Z"
+ended_at = "2026-09-29T10:33:26.9697274Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\79e8f40e-fe73-4465-9679-3726cba9e42e\subagents\agent-a2afcac2514a5220a.jsonl'
+summary = """
+All verification commands completed successfully. Here are the results:
+
+```
+command: cargo build --manifest-path tomlctl/Cargo.toml
+outcome: pass
+exit: 0
+duration_s: 13
+log: C:/Users/rossa/AppData/Local/Temp/tmp.49TI36JPqO/c1.log
+summary: none
+
+command: cargo fmt --manifest-path tomlctl/Cargo.toml -- --check
+outcome: pass
+exit: 0
+duration_s: 2
+log: C:/Users/rossa/AppData/Local/Temp/tmp.49TI36JPqO/c2.log
+summary: none
+
+command: cargo test --manifest-path tomlctl/Cargo.toml --no-fail-fast
+outcome: pass
+exit: 0
+duration_s: 116
+log: C:/Users/rossa/AppData/Local/Temp/tmp.49TI36JPqO/c3.log
+summary:"""
+context_tokens = 29208
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-09-29T10:29:16.7783426Z"
+ended_at = "2026-09-29T10:33:26.9697274Z"

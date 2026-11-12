@@ -1,0 +1,60 @@
+schema_version = 1
+last_updated = 2026-11-09
+
+[[agents]]
+id = "A1"
+harness = "claude-code"
+session_id = "644152d8-257a-46d5-950c-c3a34c009174"
+agent_id = "afd68f050024df0ce"
+agent_type = "plan-cold-reader"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-09T07:56:07.8240232Z"
+updated_at = "2026-11-09T07:56:07.8240232Z"
+ended_at = "2026-11-09T07:56:07.8240232Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\644152d8-257a-46d5-950c-c3a34c009174\subagents\workflows\wf_b65a0b30-aa4\agent-afd68f050024df0ce.jsonl'
+summary = ""
+context_tokens = 68240
+
+[[agents.segments]]
+task_ids = [
+    8,
+    9,
+    10,
+    11,
+    12,
+]
+started_at = "2026-11-09T07:56:07.8240232Z"
+ended_at = "2026-11-09T07:56:07.8240232Z"
+
+[[agents]]
+id = "A2"
+harness = "claude-code"
+session_id = "644152d8-257a-46d5-950c-c3a34c009174"
+agent_id = "aa3b628501570c64b"
+agent_type = "plan-cold-reader"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-09T07:57:16.5434641Z"
+updated_at = "2026-11-09T07:57:16.5434641Z"
+ended_at = "2026-11-09T07:57:16.5434641Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\644152d8-257a-46d5-950c-c3a34c009174\subagents\workflows\wf_b65a0b30-aa4\agent-aa3b628501570c64b.jsonl'
+summary = ""
+context_tokens = 82645
+
+[[agents.segments]]
+task_ids = [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+]
+started_at = "2026-11-09T07:57:16.5434641Z"
+ended_at = "2026-11-09T07:57:16.5434641Z"

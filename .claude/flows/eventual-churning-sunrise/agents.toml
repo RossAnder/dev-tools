@@ -1,0 +1,497 @@
+schema_version = 1
+last_updated = 2026-10-09
+
+[[agents]]
+id = "A1"
+harness = "claude-code"
+session_id = "b2779700-7034-44e2-b0af-541b2cdf53be"
+agent_id = "a4995f39979aef3c4"
+agent_type = "verification"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-09T11:48:39.569449Z"
+updated_at = "2026-10-09T11:57:46.3342738Z"
+ended_at = "2026-10-09T11:57:46.3342738Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\b2779700-7034-44e2-b0af-541b2cdf53be\subagents\agent-a4995f39979aef3c4.jsonl'
+summary = """
+command: CARGO_INCREMENTAL=0 cargo build --manifest-path tomlctl/Cargo.toml
+outcome: pass
+exit: 0
+duration_s: 15
+log: C:/Users/rossa/AppData/Local/Temp/tmp.iZ0wHm2job/c1.log
+summary: none
+
+command: CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast
+outcome: pass
+exit: 0
+duration_s: 213
+log: C:/Users/rossa/AppData/Local/Temp/tmp.iZ0wHm2job/c2.log
+summary: Summary [ 172.216s] 1802 tests run: 1802 passed (1 slow), 1 skipped
+
+command: CARGO_INCREMENTAL=0 cargo clippy --manifest-path glimpse/Cargo.toml --all-targets --locked
+outcome: pass
+exit: 0
+duration_s: 18
+"""
+context_tokens = 58836
+
+[[agents.segments]]
+task_ids = [
+    1,
+    3,
+]
+started_at = "2026-10-09T11:48:39.569449Z"
+ended_at = "2026-10-09T11:57:46.3342738Z"
+
+[[agents]]
+id = "A2"
+harness = "claude-code"
+session_id = "b2779700-7034-44e2-b0af-541b2cdf53be"
+agent_id = "abca257ba3ab1c066"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-09T12:02:31.9015896Z"
+updated_at = "2026-10-09T12:12:46.0257971Z"
+ended_at = "2026-10-09T12:12:46.0257971Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\b2779700-7034-44e2-b0af-541b2cdf53be\subagents\agent-abca257ba3ab1c066.jsonl'
+summary = """
+## Cluster backlog-sweep — applied 2 items
+
+applied B-85dd4b61: `normalise` now checks the types of the reconcile and status-transition fields. `findings_count` must be an integer, and a digit string is converted (same as `retries` and `duration_s`). `commits_checked` must be an array, and a string is refused with the `--set-json` hint that `commits` gives. `from_status` and `to_status` must each be one of `draft`, `in-progress`, `review` or `complete`.
+
+applied B-abf38c95: on `task-completion`, the four dispatch fields (`dispatch_tier`, `dispatch_agent`, `vet`, `retries`) are now required onl"""
+context_tokens = 73825
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-09T12:02:31.9015896Z"
+ended_at = "2026-10-09T12:12:46.0257971Z"
+
+[[agents]]
+id = "A3"
+harness = "claude-code"
+session_id = "b2779700-7034-44e2-b0af-541b2cdf53be"
+agent_id = "a5d8c7ce22f6ab93a"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-09T12:02:41.9691812Z"
+updated_at = "2026-10-09T12:08:13.4543433Z"
+ended_at = "2026-10-09T12:08:13.4543433Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\b2779700-7034-44e2-b0af-541b2cdf53be\subagents\agent-a5d8c7ce22f6ab93a.jsonl'
+summary = """
+## Cluster B-efda464f — applied 1 item
+
+applied B-efda464f: moved the `[artifacts].execution_record` path lookup and its repo-root check into one helper, `crate::flow::execution_record_path`. `flow record` and `tasks import-plan --reconcile-record` now both call it. Behaviour is unchanged for both.
+
+**What changed**
+- **New file `tomlctl/src/flow/record_path.rs`**: it defines `execution_record_path(root, flow_dir, context_path, context: Option<&TomlValue>) -> Result<PathBuf>`.
+  - If `context.toml` names a record path, the helper returns that path joined to the repo root, provided it stays ins"""
+context_tokens = 73733
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-09T12:02:41.9691812Z"
+ended_at = "2026-10-09T12:08:13.4543433Z"
+
+[[agents]]
+id = "A4"
+harness = "claude-code"
+session_id = "b2779700-7034-44e2-b0af-541b2cdf53be"
+agent_id = "a17d1e68467b12f9f"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-09T12:02:51.5207002Z"
+updated_at = "2026-10-09T12:12:24.5000047Z"
+ended_at = "2026-10-09T12:12:24.5000047Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\b2779700-7034-44e2-b0af-541b2cdf53be\subagents\agent-a17d1e68467b12f9f.jsonl'
+summary = """
+## Cluster B-70b747df: applied 1 item
+
+applied B-70b747df: a row report's `--get`, `--select` or `--template` path that names a header field but no row field now ends its error with `; it is a header field — add --header`. Every other error message is unchanged.
+
+The hint shows only where `--header` is actually accepted. That means a row report whose rows sit in a field. It does not show for a `--rows` reroot of a single report, for bare row arrays, or for list verbs. It is also skipped when the path is the rows field itself or a path under it (`items`, `items.id`). On the header those resolve"""
+context_tokens = 72902
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-09T12:02:51.5207002Z"
+ended_at = "2026-10-09T12:12:24.5000047Z"
+
+[[agents]]
+id = "A5"
+harness = "claude-code"
+session_id = "b2779700-7034-44e2-b0af-541b2cdf53be"
+agent_id = "a7d086c8938d4d001"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-09T12:03:01.0982175Z"
+updated_at = "2026-10-09T12:12:39.3103811Z"
+ended_at = "2026-10-09T12:12:39.3103811Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\b2779700-7034-44e2-b0af-541b2cdf53be\subagents\agent-a7d086c8938d4d001.jsonl'
+summary = """
+## Cluster backlog-sweep (B-d86434c6): 1 item applied
+
+applied B-d86434c6: `backlog check --summary '@<path>'` now fails with a `kind=validation` error when `<path>` is an existing file, resolved from the cwd. The message tells the caller to stage the text and pass `--summary - < <path>`. An `@` value that names no file, such as `@handle mention`, a bare `@`, or `@` followed by a directory name, is still probed as literal text. I did not touch `io::read_text_arg`, and the `--ndjson` batch path is unchanged.
+
+The change is a new `refuse_at_file(raw, base)` in check.rs. `dispatch` calls it with """
+context_tokens = 64816
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-09T12:03:01.0982175Z"
+ended_at = "2026-10-09T12:12:39.3103811Z"
+
+[[agents]]
+id = "A6"
+harness = "claude-code"
+session_id = "b2779700-7034-44e2-b0af-541b2cdf53be"
+agent_id = "a9f3721bb5a10ab05"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-09T12:03:10.7658818Z"
+updated_at = "2026-10-09T12:06:30.5318847Z"
+ended_at = "2026-10-09T12:06:30.5318847Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\b2779700-7034-44e2-b0af-541b2cdf53be\subagents\agent-a9f3721bb5a10ab05.jsonl'
+summary = """
+I fixed B-3af9064d: `backlog add --dry-run` now includes the would-be `action` and `id` in its preview, so `--template '{action} {id} {advisories}'` prints something like `added B-xxxxxxxx []` instead of `  []`. Clippy is clean and the four dry-run tests in `backlog_write` pass, two of them failing against the old code.
+
+**The fix.** In `tomlctl/src/backlog/add.rs`, the dry-run branch now adds the same per-capture keys the live envelope uses: `action` (`added`/`bumped`/`skipped`), `id`, and either `dedup_id` (for a new mint) or `seen_count` (for a bump). They sit next to the existing `would_ch"""
+context_tokens = 96642
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-09T12:03:10.7658818Z"
+ended_at = "2026-10-09T12:06:30.5318847Z"
+
+[[agents]]
+id = "A7"
+harness = "claude-code"
+session_id = "b2779700-7034-44e2-b0af-541b2cdf53be"
+agent_id = "a73b576c32d44f224"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-09T12:03:21.684639Z"
+updated_at = "2026-10-09T12:12:54.7839847Z"
+ended_at = "2026-10-09T12:12:54.7839847Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\b2779700-7034-44e2-b0af-541b2cdf53be\subagents\agent-a73b576c32d44f224.jsonl'
+summary = """
+I applied B-02b4692e: `tomlctl flow init` no longer seeds `tasks.toml` for a `/tdd` cycle sub-flow. It still writes `context.toml` and `execution-record.toml`. Lint is clean and the narrow tests pass. However, `flow doctor` probably will still warn for such a flow, which I reported rather than fixed (point 2 below).
+
+## Cluster backlog-sweep — applied 1 item
+
+applied B-02b4692e: `flow init` skips seeding `tasks.toml` for slugs matching `^.+-tdd-[0-9]{3,}$`. `context.toml`, `execution-record.toml` and the active-flow registry entry are still written.
+
+1. **What changed in `init.rs`:**
+   - A ne"""
+context_tokens = 78961
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-09T12:03:21.684639Z"
+ended_at = "2026-10-09T12:12:54.7839847Z"
+
+[[agents]]
+id = "A8"
+harness = "claude-code"
+session_id = "b2779700-7034-44e2-b0af-541b2cdf53be"
+agent_id = "aef3c5fc76c44150a"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-09T12:03:35.1638341Z"
+updated_at = "2026-10-09T12:06:12.3630254Z"
+ended_at = "2026-10-09T12:06:12.3630254Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\b2779700-7034-44e2-b0af-541b2cdf53be\subagents\agent-aef3c5fc76c44150a.jsonl'
+summary = """
+I've fixed B-76668b92 in both carriers. A completed `/review` or `/optimise` run now always leaves `last_updated` fresh. The doc gate passes. I couldn't try the new command on a scratch ledger because the permission layer refused `--allow-outside` (including a `--dry-run`), so I checked the flags with `--help` and the tomlctl write reference instead.
+
+**What changed.** I added the same two sentences to Step 3 of both carriers, right after the existing "stamps `last_updated` itself, completing the bump the checkpoint deferred" sentence:
+
+> When Step 3 lands nothing — the merge left nothing to p"""
+context_tokens = 72717
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-09T12:03:35.1638341Z"
+ended_at = "2026-10-09T12:06:12.3630254Z"
+
+[[agents]]
+id = "A9"
+harness = "claude-code"
+session_id = "b2779700-7034-44e2-b0af-541b2cdf53be"
+agent_id = "ac32ad77b13c3c33d"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-09T12:06:51.9530208Z"
+updated_at = "2026-10-09T12:34:24.2291027Z"
+ended_at = "2026-10-09T12:34:24.2291027Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\b2779700-7034-44e2-b0af-541b2cdf53be\subagents\agent-ac32ad77b13c3c33d.jsonl'
+summary = """
+I've given `tomlctl get` the same borrowed fast path as `parse`. Output is byte-identical to the old reader, but I couldn't confirm the ~20% speed-up: on this machine process start-up and load noise hide any difference.
+
+## What changed (B-d1dc0366)
+
+- **Same condition as `parse`.** Without `--verify-integrity`, `get` now reads through `read_doc_borrowed`. With it, `get` keeps the owned `read_doc` path.
+- **Fallback on a bad file.** If the borrowed read fails, `get` redoes the read the owned way. Without this, a file with an out-of-range integer reported a different error message than before ("""
+context_tokens = 103777
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-09T12:06:51.9530208Z"
+ended_at = "2026-10-09T12:34:24.2291027Z"
+
+[[agents]]
+id = "A10"
+harness = "claude-code"
+session_id = "b2779700-7034-44e2-b0af-541b2cdf53be"
+agent_id = "adf4732ddec6dea2f"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-09T12:07:04.1970933Z"
+updated_at = "2026-10-09T12:33:14.4360354Z"
+ended_at = "2026-10-09T12:33:14.4360354Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\b2779700-7034-44e2-b0af-541b2cdf53be\subagents\agent-adf4732ddec6dea2f.jsonl'
+summary = '''
+I've split the 65 s test into six per-family tests and cut the files each write copies, but the full suite did not get faster. On this machine the suite is limited by how fast processes can be started, not by the one long test. The binary alone dropped from 76.8 s to 50.4 s; the full suite took 177.6 s afterwards, against the 160–173 s baseline in the item. I did not re-measure the baseline myself, and sibling agents were compiling during my runs.
+
+**What changed** (all in `C:\Users\rossa\dev\dev-tools\tomlctl\tests\output_options.rs`):
+- **Split:** `every_case_honours_the_output_options` is n'''
+context_tokens = 114789
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-09T12:07:04.1970933Z"
+ended_at = "2026-10-09T12:33:14.4360354Z"
+
+[[agents]]
+id = "A11"
+harness = "claude-code"
+session_id = "b2779700-7034-44e2-b0af-541b2cdf53be"
+agent_id = "ad15d7c3bf138d90e"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-09T12:13:49.156961Z"
+updated_at = "2026-10-09T12:18:03.0365935Z"
+ended_at = "2026-10-09T12:18:03.0365935Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\b2779700-7034-44e2-b0af-541b2cdf53be\subagents\agent-ad15d7c3bf138d90e.jsonl'
+summary = """
+I made both fixes. The tests I added fail when I put the old behaviour back, and pass with the new code; nothing else needed changing.
+
+**A) `flow doctor` no longer warns about a missing task store for a `/tdd` sub-flow.**
+- `is_tdd_subflow_slug` is now `pub(crate)` and stays in `init.rs`. `flow/mod.rs` already declares `mod init;` and `mod doctor;` as siblings, so `doctor.rs` can call it as `super::init::is_tdd_subflow_slug` without moving it.
+- In `doctor.rs` there is a new branch in the `tasks-exists` check. It applies when the plan declares `## Tasks`, no store exists on disk, and the slug"""
+context_tokens = 71825
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-09T12:13:49.156961Z"
+ended_at = "2026-10-09T12:18:03.0365935Z"
+
+[[agents]]
+id = "A12"
+harness = "claude-code"
+session_id = "b2779700-7034-44e2-b0af-541b2cdf53be"
+agent_id = "a04578d0a5a33400c"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-09T12:14:01.4008798Z"
+updated_at = "2026-10-09T12:17:35.8184732Z"
+ended_at = "2026-10-09T12:17:35.8184732Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\b2779700-7034-44e2-b0af-541b2cdf53be\subagents\agent-a04578d0a5a33400c.jsonl'
+summary = """
+## Backlog sweep: execution-record docs (B-abf38c95, B-85dd4b61, B-a7e28a05)
+
+Both items are done in the docs, and the `cli::dispatch::tests` gate passes. I did not build tomlctl. The new `flow record` behaviour is described from the source (`tomlctl/src/flow/record_schema.rs`, `record.rs`, `items.rs`), not from running it. Installed 0.15.0 predates it.
+
+applied B-abf38c95 + B-85dd4b61 (docs side): the schema skill, `/plan-update migrate` and `/tdd` now follow the new `flow record` rules
+- **`SKILL.md`**:
+  - **Type table:** the four dispatch fields are required only when `agent = "implement"`"""
+context_tokens = 93845
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-09T12:14:01.4008798Z"
+ended_at = "2026-10-09T12:17:35.8184732Z"
+
+[[agents]]
+id = "A13"
+harness = "claude-code"
+session_id = "b2779700-7034-44e2-b0af-541b2cdf53be"
+agent_id = "ac3cbcc44ad273bda"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-09T12:14:09.9445323Z"
+updated_at = "2026-10-09T12:16:47.6717895Z"
+ended_at = "2026-10-09T12:16:47.6717895Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\b2779700-7034-44e2-b0af-541b2cdf53be\subagents\agent-ac3cbcc44ad273bda.jsonl'
+summary = """
+Both items are documented and the gate passes: 41 tests, 0 failed. I wrote the docs from the source in `tomlctl/src/backlog/check.rs` and `tomlctl/src/backlog/add.rs`. I couldn't run the new behaviour itself, because the installed `tomlctl` 0.15.0 is older than these code fixes.
+
+**B-d86434c6 (`backlog check --summary '@<path>'` is now refused)**
+- `claude/skills/backlog-capture/SKILL.md`: the Idioms paragraph no longer says an `@<path>` "is probed as the literal summary text". It now says `backlog check` refuses an `@<path>` that names an existing file with `kind=validation` and points at `--"""
+context_tokens = 60872
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-09T12:14:09.9445323Z"
+ended_at = "2026-10-09T12:16:47.6717895Z"
+
+[[agents]]
+id = "A14"
+harness = "claude-code"
+session_id = "b2779700-7034-44e2-b0af-541b2cdf53be"
+agent_id = "af9ce64ca3010fad4"
+agent_type = "implement-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-09T12:14:17.63766Z"
+updated_at = "2026-10-09T12:15:37.7947467Z"
+ended_at = "2026-10-09T12:15:37.7947467Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\b2779700-7034-44e2-b0af-541b2cdf53be\subagents\agent-af9ce64ca3010fad4.jsonl'
+summary = """
+## Backlog sweep — applied 2 items
+
+applied B-fc049d3c: In `flow.md`, the "every tag site is enumerated" claim is gone and the table is now described as listing representative sites per kind. The three named sites are added: `backlog triage` (no item with the given id) under `not_found`, and `backlog check --ndjson` per-line errors and the `backlog check --summary '@<file>'` refusal under `validation`.
+
+applied B-b95e1533: In `SKILL.md`, both examples now quote the timestamp (`"2026-04-17T14:32:00Z"` and `"2026-05-08T14:32:00Z"`). Both field descriptions now read "string, ISO 8601 UTC (seconds"""
+context_tokens = 53679
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-09T12:14:17.63766Z"
+ended_at = "2026-10-09T12:15:37.7947467Z"
+
+[[agents]]
+id = "A15"
+harness = "claude-code"
+session_id = "b2779700-7034-44e2-b0af-541b2cdf53be"
+agent_id = "a75fd2b1e24a803e1"
+agent_type = "implement-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-09T12:33:38.1712377Z"
+updated_at = "2026-10-09T12:46:48.4101807Z"
+ended_at = "2026-10-09T12:46:48.4101807Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\b2779700-7034-44e2-b0af-541b2cdf53be\subagents\agent-a75fd2b1e24a803e1.jsonl'
+summary = """
+## Cluster B-0e9237a7 (agents_record wait) — applied 0 items
+
+escalate B-0e9237a7: cross-cut — needs tomlctl/src/time.rs. The `wait_for_file` theory is wrong. The stall is in jiff's global time-zone database, which `crate::time::today_utc_date` sets up through `.in_tz("UTC")`. That function lives in `tomlctl/src/time.rs`, which is outside my files.
+
+### Diagnosis
+**`wait_for_file` is not the cause.**
+- The `Projects::agent` fixture always writes both the transcript and the `.meta.json`. No test omits a file the code waits for.
+- One invocation can wait about 1 s at most. If the transcript is m"""
+context_tokens = 130476
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-09T12:33:38.1712377Z"
+ended_at = "2026-10-09T12:46:48.4101807Z"
+
+[[agents]]
+id = "A16"
+harness = "claude-code"
+session_id = "b2779700-7034-44e2-b0af-541b2cdf53be"
+agent_id = "a8a63c40735e19247"
+agent_type = "implement-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-09T12:34:35.9839724Z"
+updated_at = "2026-10-09T12:36:21.7493104Z"
+ended_at = "2026-10-09T12:36:21.7493104Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\b2779700-7034-44e2-b0af-541b2cdf53be\subagents\agent-a8a63c40735e19247.jsonl'
+summary = """
+All three edits are in. Clippy is clean, and the narrow tests pass (3 of 3 in the integration filter, 51 of 51 in `io::`).
+
+**What changed**
+1. **`parse` fallback.** The `Cmd::Parse` arm now falls back to the owned `read_doc` when the borrowed read errors, so the error text comes from the owned parser, as in `get`. `get` has no shared helper to reuse; its fallback is a local `owned` closure inside its arm. `parse` gets a matching local closure, so the two arms now carry near-identical logic.
+2. **Test.** I added a sibling test, `parse_borrowed_and_owned_reads_print_identical_errors`. On the ou"""
+context_tokens = 54568
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-09T12:34:35.9839724Z"
+ended_at = "2026-10-09T12:36:21.7493104Z"
+
+[[agents]]
+id = "A17"
+harness = "claude-code"
+session_id = "b2779700-7034-44e2-b0af-541b2cdf53be"
+agent_id = "adc68c1aa9588d9ce"
+agent_type = "verification"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-10-09T12:47:17.8337688Z"
+updated_at = "2026-10-09T12:54:35.6574873Z"
+ended_at = "2026-10-09T12:54:35.6574873Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\b2779700-7034-44e2-b0af-541b2cdf53be\subagents\agent-adc68c1aa9588d9ce.jsonl'
+summary = """
+command: cargo build --manifest-path tomlctl/Cargo.toml --all-targets
+outcome: pass
+exit: 0
+duration_s: 55
+log: C:/Users/rossa/AppData/Local/Temp/tmp.PmFN2kwLJE/c1.log
+summary: none
+
+command: cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast
+outcome: pass
+exit: 0
+duration_s: 219
+log: C:/Users/rossa/AppData/Local/Temp/tmp.PmFN2kwLJE/c2.log
+summary: Summary [ 171.970s] 1833 tests run: 1833 passed (3 slow), 1 skipped
+failed_ids: none
+slowest 10 tests:
+- 72.524s tomlctl cli::dispatch::tests::skills::blocks_verify_agrees_with_shell_gate
+- 61.542s tomlctl::output_options every_case"""
+context_tokens = 40198
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-10-09T12:47:17.8337688Z"
+ended_at = "2026-10-09T12:54:35.6574873Z"
