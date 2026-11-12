@@ -1021,3 +1021,10 @@ last_used = "2026-11-11T15:19:13.0238832Z"
 
 [active.binding]
 branch = "main"
+
+[[active]]
+slug = "glimpse-v2-visibility"
+last_used = "2026-11-12T10:55:02.7088576Z"
+
+[active.binding]
+branch = "main"

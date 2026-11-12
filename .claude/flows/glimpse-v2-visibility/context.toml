@@ -1,9 +1,10 @@
 slug = "glimpse-v2-visibility"
 plan_path = "docs/flows/glimpse-v2-visibility/brief.md"
-status = "draft"
+status = "in-progress"
 created = 2026-11-12
 updated = 2026-11-12
 scope = []
+branch = "main"
 
 [tasks]
 total = 0
