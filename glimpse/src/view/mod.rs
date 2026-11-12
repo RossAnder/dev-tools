@@ -8,6 +8,8 @@
 
 pub(crate) mod activity;
 pub(crate) mod details;
+pub(crate) mod doc;
+pub(crate) mod doc_view;
 pub(crate) mod ego;
 pub(crate) mod footer;
 pub(crate) mod form;
@@ -16,10 +18,14 @@ pub(crate) mod inbox;
 pub(crate) mod items;
 pub(crate) mod layers;
 pub(crate) mod legend;
+pub(crate) mod links;
 pub(crate) mod markdown;
 pub(crate) mod panel;
+pub(crate) mod plan;
+pub(crate) mod plan_details;
 pub(crate) mod selector;
 pub(crate) mod table;
+pub(crate) mod task_spec;
 pub(crate) mod themes;
 
 use std::time::{Instant, SystemTime};

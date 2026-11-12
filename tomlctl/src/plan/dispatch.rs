@@ -4,7 +4,10 @@
 
 use anyhow::Result;
 
-use super::{approve, check, drift, emit, milestone, open, probes, records, stage, view};
+use super::{
+    approve, check, drift, emit, milestone, open, probes, records, run_gate, run_notes, run_report,
+    stage, view,
+};
 use crate::cli::{PlanHandoverOp, PlanMilestoneOp, PlanOp, PlanRunAbandonArgs, PlanRunOp};
 
 pub(crate) fn dispatch(op: PlanOp) -> Result<()> {
@@ -26,6 +29,9 @@ pub(crate) fn dispatch(op: PlanOp) -> Result<()> {
                 integrity,
             }) => records::run_abandon(&target.slug, &step, &reason, &integrity),
             PlanRunOp::Skip(args) => records::run_skip(args),
+            PlanRunOp::Notes(args) => run_notes::run(args),
+            PlanRunOp::Gate(args) => run_gate::run(args),
+            PlanRunOp::Report(args) => run_report::run(args),
         },
         PlanOp::Milestone { op } => match op {
             PlanMilestoneOp::Add(args) => milestone::add(args),

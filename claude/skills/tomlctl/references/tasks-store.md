@@ -242,13 +242,20 @@ The envelope's keys, in emission order:
 | `flow_status` | `context.toml`'s `status`, `""` when the context is absent |
 | `policy` | `checkpoints`, `max_parallel`, `commit_granularity` — the notes and `origin` are not carried |
 | `running_milestone` | the `<id>` of the oldest open run in `plan.toml` whose `step` is `implement:<id>`, `""` with no such run or no `plan.toml` |
-| `tasks` | one object per row in store order: `id`, `ref`, `title`, `effort`, `status`, `checkpoint`, `phase`, `files`, `needs`, `coupling`, `deps_note`, `action`, `detail`, `acceptance`, `agent`, `commit` |
+| `tasks` | one object per row in store order: `id`, `ref`, `title`, `effort`, `status`, `checkpoint`, `phase`, `files`, `needs`, `coupling`, `deps_note`, `action`, `detail`, `acceptance`, `agent`, `commit`, then the v2 keys below |
+| task `spec` | the row's spec, absent when the store holds none for its `ref`: `outcome`, `constraints`, `means`, `executor`, `design`, `precedent`, `accept`, `premises`; each accept and premise entry carries `probeable`, `false` when the probe emitter would skip it, and `probe` once recorded |
+| task `file_notes` | object of path to note for the row's `ref`, `{}` when none |
+| task `closes`, `refs` | the backlog ids of the row's backlog link, `[]` when none |
+| task `finding` | `{store, fixes, settles}` from the row's finding link, absent when none |
 | `layers` | the Kahn layers `tasks batches` reports |
 | `frontier` | the `tasks ready` shape, with every `in-progress` row passed as in flight |
 | `edges` | the `tasks edges` list, every kind |
 | `checkpoints` | per group: `id`, `rationale`, `members`, `maximal`, `valid_cut`, `commits`, `verification` |
 | `record` | every execution-record entry verbatim plus `task_id`; `checkpoint` entries also carry `checkpoint_ids` |
 | `agents` | every `[[agents]]` row of `agents.toml` verbatim, unknown keys included |
+| `milestones` | one object per `[[milestones]]` row: `id`, `gates`, `elaboration`, `defer_reason`, `gate_probes` (`gate`, `probe`, `verdict`, `at`) |
+| `changes` | the `[[changes]]` trail in stored order: `at`, `ref`, `field`, `old`, `new`, `actor`, `reason` |
+| `plan` | the `plan.toml` store as JSON in its own shape, `null` when the flow has no `plan.toml` |
 
 A record entry's `task_id` resolves its `task_ref` exactly, then through the separator-blind
 matcher `--reconcile-record` uses, and is `null` when neither places it. `checkpoint` entries

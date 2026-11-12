@@ -5,6 +5,7 @@
 //! schema_version = 1
 //! last_updated = 2026-09-28
 //! [[agents]]            # one row per (session_id, agent_id)
+//! [agents.usage]        # token totals, written at stop, absent while zero
 //! [[agents.segments]]   # one per assignment: task_ids, item_ids, started_at, ended_at
 //! ```
 //!
@@ -63,7 +64,40 @@ pub(crate) struct AgentRecord {
     pub(crate) transcript_path: String,
     pub(crate) summary: String,
     pub(crate) context_tokens: u64,
+    /// Totals over the whole transcript, written at stop; omitted from the
+    /// TOML while every field is zero.
+    pub(crate) usage: Usage,
     pub(crate) segments: Vec<Segment>,
+}
+
+/// Token counts summed over an agent's distinct assistant messages, and the
+/// number of those messages.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct Usage {
+    pub(crate) input: u64,
+    pub(crate) cache_write: u64,
+    pub(crate) cache_read: u64,
+    pub(crate) output: u64,
+    pub(crate) turns: u64,
+}
+
+impl Usage {
+    /// Field order of the TOML table.
+    const KEYS: [&'static str; 5] = ["input", "cache_write", "cache_read", "output", "turns"];
+
+    pub(crate) fn is_zero(&self) -> bool {
+        *self == Self::default()
+    }
+
+    fn values(&self) -> [u64; 5] {
+        [
+            self.input,
+            self.cache_write,
+            self.cache_read,
+            self.output,
+            self.turns,
+        ]
+    }
 }
 
 /// One assignment: the tasks or ledger items an agent was dispatched on, and
@@ -407,9 +441,39 @@ fn record_from_toml(value: &TomlValue, index: usize) -> Result<AgentRecord> {
             .and_then(TomlValue::as_integer)
             .and_then(|n| u64::try_from(n).ok())
             .unwrap_or(0),
+        usage: table.get("usage").map(usage_from_toml).unwrap_or_default(),
         segments,
         id,
     })
+}
+
+/// Telemetry like `context_tokens`: a malformed table or count reads as zero.
+fn usage_from_toml(value: &TomlValue) -> Usage {
+    let count = |key: &str| {
+        value
+            .get(key)
+            .and_then(TomlValue::as_integer)
+            .and_then(|n| u64::try_from(n).ok())
+            .unwrap_or(0)
+    };
+    Usage {
+        input: count("input"),
+        cache_write: count("cache_write"),
+        cache_read: count("cache_read"),
+        output: count("output"),
+        turns: count("turns"),
+    }
+}
+
+fn usage_to_toml(usage: &Usage) -> TomlValue {
+    let mut table = Table::new();
+    for (key, value) in Usage::KEYS.iter().zip(usage.values()) {
+        table.insert(
+            (*key).to_string(),
+            TomlValue::Integer(i64::try_from(value).unwrap_or(i64::MAX)),
+        );
+    }
+    TomlValue::Table(table)
 }
 
 fn record_to_toml(record: &AgentRecord) -> TomlValue {
@@ -429,6 +493,7 @@ fn record_to_toml(record: &AgentRecord) -> TomlValue {
         transcript_path,
         summary,
         context_tokens,
+        usage,
         segments,
     } = record;
 
@@ -454,6 +519,9 @@ fn record_to_toml(record: &AgentRecord) -> TomlValue {
         "context_tokens".to_string(),
         TomlValue::Integer(i64::try_from(*context_tokens).unwrap_or(i64::MAX)),
     );
+    if !usage.is_zero() {
+        table.insert("usage".to_string(), usage_to_toml(usage));
+    }
     table.insert(
         "segments".to_string(),
         TomlValue::Array(segments.iter().map(segment_to_toml).collect()),
@@ -624,6 +692,13 @@ mod tests {
                     transcript_path: "C:/Users/x/subagents/agent-a007.jsonl".to_string(),
                     summary: "Applied.\nTwo lines.".to_string(),
                     context_tokens: 48_213,
+                    usage: Usage {
+                        input: 12,
+                        cache_write: 40_211,
+                        cache_read: 913_004,
+                        output: 15_233,
+                        turns: 41,
+                    },
                     segments: vec![Segment {
                         task_ids: vec![16],
                         item_ids: Vec::new(),
@@ -701,9 +776,18 @@ mod tests {
                 "transcript_path",
                 "summary",
                 "context_tokens",
+                "usage",
                 "segments",
             ]
         );
+        let usage_keys: Vec<&str> = doc["agents"][0]["usage"]
+            .as_table()
+            .expect("usage table")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(usage_keys, Usage::KEYS);
+        assert!(doc["agents"][1].get("usage").is_none(), "{first}");
         let segments = &doc["agents"][1]["segments"];
         assert!(segments[0].get("item_ids").is_none(), "{first}");
         let segment_keys: Vec<&str> = segments[1]

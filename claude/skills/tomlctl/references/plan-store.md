@@ -75,11 +75,74 @@ when = "Once the run reports done."
 done_when = "The new command appears in a fresh session's command list."
 source_task = 3
 done = false
+
+[[attempt]]
+task = 7
+run_id = "wf_4e7f630b-d4a"
+milestone = "B"
+status = "done"
+summary = "the one line after the dash"
+block = "present"
+files_touched = ["glimpse/src/nav.rs"]
+
+[[attempt.deviations]]
+what = "Kept the selector overlay rather than adding a links overlay"
+why = "The selector already lists and dispatches rows"
+means = "Add a links overlay"
+
+[[attempt.tangential]]
+kind = "debt"
+area = "glimpse/src/app.rs"
+summary = "what was found"
+why = "why it matters"
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path glimpse/Cargo.toml"
+result = "pass"
+
+[attempt.handover]
+reason = "restart"
+action = "Restart glimpse."
+when = "After the commit."
+done_when = "The overlay opens."
+
+[[gate_round]]
+milestone = "B"
+round = 0
+seq = 1
+at = 2026-11-12T10:00:00Z
+outcome = "fail"
+
+[[gate_round.commands]]
+command = "cargo test --manifest-path glimpse/Cargo.toml"
+outcome = "fail"
+exit = 101
+duration_s = 84
+summary = "412 passed; 2 failed"
+failed_ids = ["view::plan::tests::sections"]
+log = ".claude/flows/<slug>/gates/B-r0-s1-c1.log"
+
+[[report]]
+at = 2026-11-12T10:30:00Z
+milestone = "B"
+why = "gate failed after round 2"
+
+[[report.entries]]
+kind = "gate"
+task = 0
+text = "milestone B failed after round 2: cargo test — view::plan::tests::sections"
+path = ""
+needs_person = true
 ```
 
 Keys are written in that order, each root key but `schema_version` omitted while empty. Every write
 restamps `last_updated`, re-emits the store from this shape, so an unknown key is dropped, and
 LF-normalises free text. A `schema_version` newer than the binary's is refused rather than read.
+
+The stamp is `2` while the store holds no `[[attempt]]`, `[[gate_round]]` or `[[report]]`, and `3`
+while it holds any. A binary that predates those arrays therefore refuses such a store rather than
+rewriting it without them, and a store that holds none reads and writes as it did before they
+existed. Emptying all three returns the stamp to `2`. An absent `schema_version` reads as `2`.
 
 `[binding]` holds the branch and scope a draft keeps here until approval, so that it matches no
 flow-resolver step before then.
@@ -147,3 +210,47 @@ id is then never minted again.
 | `done_when` | What the user can observe to know it is done. |
 | `source_task` | The task id that makes it necessary. `plan check` reports an id no row carries. |
 | `done` | Set by `plan handover done`. |
+
+The three run-record arrays are written by the orchestrator through `plan run` leaves only; workers
+never write `plan.toml`, so a worker's `tasks update` cannot drop them.
+
+`[[attempt]]` is one worker's run note, written by `plan run notes`, which upserts it on
+`(task, run_id)`.
+
+| `[[attempt]]` key | Meaning |
+|---|---|
+| `task` | The task id the note is for. Required. |
+| `run_id` | The Workflow run the attempt belonged to. |
+| `milestone` | The milestone the task sits in. |
+| `status` | The note's `Status:` word, as written. |
+| `summary` | The one line after the status word's dash. |
+| `block` | `present`, `absent` or `malformed`: whether the note's structured block was found and read. An unknown value is refused. |
+| `files_touched` | The paths the worker reported editing. |
+| `deviations` | Each `{what, why, means}`; `means` names the suggested means departed from, `""` when none. |
+| `tangential` | Each `{kind, area, summary, why}`, the note's `TANGENTIAL:` lines. `kind` is kept as written. |
+| `checks` | Each `{command, result}`, `result` one of `pass`, `fail` or `not-run`. |
+| `handover` | The handover the worker proposed, `{reason, action, when, done_when}`; absent when it proposed none. `reason` is kept as written. |
+
+`[[gate_round]]` is one run of a milestone's gate, written by `plan run gate` and keyed on
+`(milestone, round, seq)`. A call without `--rerun` records a new run of its round, one `seq` above
+the highest recorded for it; `--rerun` merges into the latest run of the round, replacing the
+commands it names.
+
+| `[[gate_round]]` key | Meaning |
+|---|---|
+| `milestone` | The milestone gated. Required. |
+| `round` | `0` for the first gate run, `n` for the run after fix round `n`. Required. |
+| `seq` | `1` for the round's first gate run, one more for each later run of it. Required. |
+| `at` | When the run was recorded. Required. |
+| `outcome` | `pass` when every command is `pass` or `flaky`, `timeout` when a timeout is the only non-pass, otherwise `fail`. |
+| `commands` | Each command's `{command, outcome, exit, duration_s, summary, failed_ids, log}`. `outcome` is `pass`, `flaky`, `fail` or `timeout`; `exit` is absent when the agent reported none; `log` names the kept log, `<milestone>-r<round>-s<seq>-c<n>.log`, or `""` when none was kept. |
+
+`[[report]]` is what one invocation left for a person, appended by `plan run report`, one per
+invocation.
+
+| `[[report]]` key | Meaning |
+|---|---|
+| `at` | When the report was written. Required. |
+| `milestone` | The milestone the invocation ran. |
+| `why` | Why the invocation stopped. |
+| `entries` | Each `{kind, task, text, path, needs_person}`. `kind` is `parked`, `failed`, `handover`, `no-worker`, `withheld`, `gate`, `audit`, `out-of-lane`, `store-change` or `reconcile`; `task` is `0` when the entry names none; `path` is a repo-relative path or `""`; `needs_person` is `false` for a line that only informs and reads as `true` when absent. |

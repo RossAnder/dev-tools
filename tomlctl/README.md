@@ -391,7 +391,9 @@ downstream flow-command templates can feature-gate at boot without parsing
                "review_add_dry_run", "review_reproduce_checker",
                "accept_run_by", "reproduce_status_milestone",
                "gate_probes", "plan_emit", "agents_audit",
-               "plan_emit_lane_check"],
+               "plan_emit_lane_check", "snapshot_plan_records",
+               "plan_run_records", "authored_files", "agent_usage",
+               "review_finding_read"],
   "subcommands": ["parse", "get", "set", "set-json", "validate",
                   "items", "blocks", "array-append", "capabilities",
                   "integrity", "flow", "json", "backlog", "tasks",
@@ -599,3 +601,8 @@ Feature meanings:
 | `plan_emit` | `plan emit launch-args\|gate-list\|reproduce-units --slug <SLUG> --milestone <ID>` print the milestone Workflow's args with their hash, the gate's command list, and the reproduce check's launches, built from the stores and writing nothing; `plan run start --tasks <N1,N2>` stores the ids a launch dispatched |
 | `agents_audit` | `agents audit --transcripts <DIR> [--pattern <REGEX>]...` prints `{agent, command}` rows for the Bash commands in a launch's `agent-*.jsonl` transcripts that match a pattern, by default a cargo build, test or nextest run and a recursive grep; writes nothing |
 | `plan_emit_lane_check` | `plan emit lane-check --slug <SLUG> --milestone <ID>` reports the uncommitted paths outside the latest `implement:<ID>` run's lanes and every task-store write beyond a worker's `status` and `agent`, from the `[[changes]]` trail and the `store_digest` `plan run start` records on the run; `plan emit launch-args` also takes `--max-compile-parallel <N>` |
+| `snapshot_plan_records` | `tasks snapshot` also carries each task's spec, the plan's milestones, its changes and its plan keys |
+| `plan_run_records` | `plan run notes`, `plan run gate` and `plan run report` read and record a milestone run's notes, gate result and report |
+| `authored_files` | the library's `authored_list` and `authored_read` list and read the authored files under a flow's directory |
+| `agent_usage` | the agent record carries a `usage` table of the token counts a hook payload reported |
+| `review_finding_read` | the library's `review_finding` reads a single finding row from a review store |

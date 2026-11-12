@@ -256,6 +256,9 @@ fn top_level_keys_follow_the_contract_order() {
             "checkpoints",
             "record",
             "agents",
+            "milestones",
+            "changes",
+            "plan",
         ]
     );
     let snap = parse(&stdout);
@@ -392,4 +395,255 @@ fn absent_record_and_agents_read_as_empty_and_are_not_created() {
     assert_eq!(dir_listing(&flow), before, "a read creates no file");
     assert!(!flow.join("execution-record.toml").exists());
     assert!(!flow.join("agents.toml").exists());
+}
+
+/// The side tables a v2 store keys on a row's `ref`, all on row 4, plus a
+/// milestone and a change trail. Accept 0 is a worker check and probed; accept
+/// 1 writes the build, so the gate owns it and no probe runs it. Premise 0 is
+/// a probed `base` premise, 1 waits on pending row 5 and 2 on done row 1.
+const V2_TABLES: &str = r#"
+[[specs]]
+ref = "render-the-plan"
+outcome = "the plan renders"
+constraints = ["no new deps"]
+design = ["design/render.md#layout"]
+precedent = ["tomlctl/src/tasks/show.rs"]
+executor = "deep"
+means = [{ text = "reuse the renderer", binding = "required", detail = "it exists" }]
+accept = [
+    { behaviour = "renders", check = "grep -q render src/a.rs", kind = "forward", positive = "", writes_build = false, probe = { at = "abc", neg_rc = 1, pos_rc = 0, verdict = "healthy" } },
+    { behaviour = "builds", check = "cargo test render", kind = "forward", positive = "", writes_build = true },
+]
+premises = [
+    { claim = "the renderer exists", check = "grep -q fn src/r.rs", at = "base", probe = { at = "abc", neg_rc = 0, verdict = "holds" } },
+    { claim = "the docs landed", check = "test -f README.md", at = "after:5" },
+    { claim = "the tree is scaffolded", check = "test -d src", at = "after:1" },
+]
+
+[[file_notes]]
+ref = "render-the-plan"
+file = "tomlctl/src/tasks/shared.rs"
+note = "(new)"
+
+[[backlog_links]]
+ref = "render-the-plan"
+closes = ["B-1"]
+refs = ["B-2"]
+
+[[finding_links]]
+ref = "render-the-plan"
+store = ".claude/review-v2/demo.toml"
+fixes = ["F1"]
+settles = []
+
+[[milestones]]
+id = "A"
+gates = ["cargo test"]
+elaboration = "upfront"
+defer_reason = ""
+gate_probes = [{ gate = "cargo test", probe = "cargo --version", verdict = "holds", at = "abc" }]
+
+[[changes]]
+at = 2026-11-05T12:00:00Z
+ref = "render-the-plan"
+field = "status"
+old = "pending"
+new = "in-progress"
+actor = "orchestrator"
+reason = "dispatched"
+"#;
+
+fn v2_store() -> String {
+    format!(
+        "{}{V2_TABLES}",
+        STORE.replacen("schema_version = 1", "schema_version = 2", 1)
+    )
+}
+
+/// The task keys a row gains after `commit`, with the optional ones present.
+fn task_keys(task: &Value) -> Vec<&str> {
+    task.as_object()
+        .expect("a task object")
+        .keys()
+        .map(String::as_str)
+        .skip_while(|key| *key != "commit")
+        .collect()
+}
+
+#[test]
+fn a_v1_store_gains_only_empty_keys() {
+    let (_tmp, root) = sandbox();
+    seed_full(&root);
+
+    let snap = snapshot(&root);
+    for task in snap["tasks"].as_array().expect("tasks") {
+        assert_eq!(
+            task_keys(task),
+            ["commit", "file_notes", "closes", "refs"],
+            "{task}"
+        );
+        assert_eq!(task["file_notes"], json!({}));
+        assert_eq!(task["closes"], json!([]));
+        assert_eq!(task["refs"], json!([]));
+    }
+    assert_eq!(snap["milestones"], json!([]));
+    assert_eq!(snap["changes"], json!([]));
+}
+
+#[test]
+fn a_v2_task_carries_its_spec_notes_and_links() {
+    let (_tmp, root) = sandbox();
+    seed_tasks(&root, &v2_store());
+
+    let snap = snapshot(&root);
+    let task = &snap["tasks"][3];
+    assert_eq!(task["id"], json!(4));
+    assert_eq!(
+        task_keys(task),
+        ["commit", "spec", "file_notes", "closes", "refs", "finding"]
+    );
+    assert_eq!(
+        task["file_notes"],
+        json!({"tomlctl/src/tasks/shared.rs": "(new)"})
+    );
+    assert_eq!(task["closes"], json!(["B-1"]));
+    assert_eq!(task["refs"], json!(["B-2"]));
+    assert_eq!(
+        task["finding"],
+        json!({"store": ".claude/review-v2/demo.toml", "fixes": ["F1"], "settles": []})
+    );
+
+    let spec = &task["spec"];
+    assert_eq!(spec["outcome"], json!("the plan renders"));
+    assert_eq!(spec["executor"], json!("deep"));
+    assert_eq!(spec["means"][0]["binding"], json!("required"));
+    assert_eq!(
+        spec["accept"][0],
+        json!({
+            "behaviour": "renders",
+            "check": "grep -q render src/a.rs",
+            "kind": "forward",
+            "positive": "",
+            "writes_build": false,
+            "run_by": "",
+            "covered_by": "",
+            "owner": "worker",
+            "probeable": true,
+            "probe": {"at": "abc", "neg_rc": 1, "pos_rc": 0, "verdict": "healthy"},
+        })
+    );
+    assert_eq!(spec["accept"][1]["owner"], json!("gate"));
+    assert_eq!(spec["accept"][1]["probeable"], json!(false));
+    assert!(spec["accept"][1].get("probe").is_none());
+
+    assert_eq!(
+        spec["premises"][0],
+        json!({
+            "claim": "the renderer exists",
+            "check": "grep -q fn src/r.rs",
+            "at": "base",
+            "probeable": true,
+            "probe": {"at": "abc", "neg_rc": 0, "verdict": "holds"},
+        })
+    );
+    assert_eq!(
+        spec["premises"][1]["probeable"],
+        json!(false),
+        "row 5 is not done"
+    );
+    assert_eq!(
+        spec["premises"][2]["probeable"],
+        json!(true),
+        "row 1 is done"
+    );
+
+    let other = &snap["tasks"][0];
+    assert_eq!(
+        task_keys(other),
+        ["commit", "file_notes", "closes", "refs"],
+        "a row without a spec or finding link has neither key"
+    );
+}
+
+#[test]
+fn a_v2_store_carries_its_milestones_and_change_trail() {
+    let (_tmp, root) = sandbox();
+    seed_tasks(&root, &v2_store());
+
+    let snap = snapshot(&root);
+    assert_eq!(
+        snap["milestones"],
+        json!([{
+            "id": "A",
+            "gates": ["cargo test"],
+            "elaboration": "upfront",
+            "defer_reason": "",
+            "gate_probes": [{
+                "gate": "cargo test",
+                "probe": "cargo --version",
+                "verdict": "holds",
+                "at": "abc",
+            }],
+        }])
+    );
+    assert_eq!(
+        snap["changes"],
+        json!([{
+            "at": "2026-11-05T12:00:00Z",
+            "ref": "render-the-plan",
+            "field": "status",
+            "old": "pending",
+            "new": "in-progress",
+            "actor": "orchestrator",
+            "reason": "dispatched",
+        }])
+    );
+}
+
+const PLAN_STORE: &str = r#"schema_version = 1
+
+[[decision]]
+id = "D1"
+decision = "one carrier"
+why = "fewer moving parts"
+provenance = "user-stated"
+door = "two-way"
+
+[[run]]
+step = "implement:A"
+run_id = "wf_1"
+started = 2026-11-11T10:00:00Z
+finished = ""
+"#;
+
+#[test]
+fn the_plan_store_rides_under_plan_and_is_null_without_one() {
+    let (_tmp, root) = sandbox();
+    seed_full(&root);
+    assert_eq!(snapshot(&root)["plan"], Value::Null);
+
+    fs::write(flow_dir(&root).join("plan.toml"), PLAN_STORE).unwrap();
+    let snap = snapshot(&root);
+    assert_eq!(snap["plan"]["decision"][0]["id"], json!("D1"));
+    assert_eq!(snap["plan"]["run"][0]["step"], json!("implement:A"));
+    assert_eq!(snap["running_milestone"], json!("A"));
+}
+
+#[test]
+fn tasks_show_reports_a_recorded_premise_probe() {
+    let (_tmp, root) = sandbox();
+    seed_tasks(&root, &v2_store());
+
+    let shown = parse(&tasks_stdout(&root, &["show", "4", "--with", "spec"]));
+    let premises = &shown["spec"]["premises"];
+    assert_eq!(
+        premises[0]["probe"],
+        json!({"at": "abc", "neg_rc": 0, "verdict": "holds"})
+    );
+    assert!(premises[1].get("probe").is_none(), "{premises}");
+    assert!(
+        premises[0].get("probeable").is_none(),
+        "probeable is the snapshot's alone"
+    );
+    assert!(shown["spec"]["accept"][1].get("run_by").is_none());
 }

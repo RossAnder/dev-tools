@@ -125,6 +125,32 @@ pub fn flow_list_matching(
     flow::list_all(root, keep)
 }
 
+/// `{"files": [...]}`: each brief, design file, note, run note and settle note
+/// under `<root>/docs/flows/<slug>`, with its kind, id, headline, state, task
+/// and sources, sorted by path. A file resolving outside that directory is
+/// left out, and a missing directory lists no files.
+pub fn authored_list(root: &Path, slug: &str) -> anyhow::Result<serde_json::Value> {
+    io::silence_advisories();
+    plan::authored::list(root, slug)
+}
+
+/// `{"path", "text"}` for one path [`authored_list`] would carry, the text
+/// LF-normalised; any other path, or one resolving outside the flow's
+/// directory, is refused.
+pub fn authored_read(root: &Path, slug: &str, path: &str) -> anyhow::Result<serde_json::Value> {
+    io::silence_advisories();
+    plan::authored::read(root, slug, path)
+}
+
+/// Finding `id` of the v2 review store at the repo-relative `store`, such as
+/// `.claude/flows/<slug>/review-v2.toml`, as `review show --for report` prints
+/// it, read without integrity checks. A store path that is absolute, holds
+/// `..` or resolves outside `<root>/.claude` is refused.
+pub fn review_finding(root: &Path, store: &str, id: &str) -> anyhow::Result<serde_json::Value> {
+    io::silence_advisories();
+    review::facade::finding(root, store, id)
+}
+
 /// One ledger's `{"path", "kind", "revision", "items"}`, read without
 /// integrity checks. `revision` is the hex sha256 of the file's bytes, and a
 /// missing file reads as no items with a null revision.

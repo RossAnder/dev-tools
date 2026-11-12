@@ -6,6 +6,8 @@
 //! tomlctl degrades rather than failing to load. The cost is that a misspelt
 //! field also reads as empty, which the fixture round-trip test guards.
 
+pub(crate) mod plan;
+
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};

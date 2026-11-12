@@ -239,6 +239,129 @@ fn a_stop_marks_the_subagent_stopped_with_its_summary() {
     assert_ne!(segments[0]["ended_at"], "");
 }
 
+/// One transcript line of assistant message `id`, as Claude Code writes it:
+/// each content block of a message is its own line repeating the usage.
+fn assistant_line(id: &str, input: u64, cache_write: u64, cache_read: u64, output: u64) -> String {
+    json!({"type": "assistant", "message": {"id": id, "role": "assistant", "usage": {
+        "input_tokens": input, "cache_creation_input_tokens": cache_write,
+        "cache_read_input_tokens": cache_read, "output_tokens": output,
+        "output_tokens_details": {"thinking_tokens": 0}}}})
+    .to_string()
+}
+
+fn stop_usage(root: &Path, projects: &Projects, agent_id: &str) -> Value {
+    let out = record(root, &payload("SubagentStop", root, projects, agent_id));
+    assert_eq!(out["recorded"], true, "{out}");
+    list(root, TASKS_SLUG)[0]
+        .get("usage")
+        .cloned()
+        .unwrap_or(Value::Null)
+}
+
+#[test]
+fn a_stop_counts_a_message_repeated_over_several_lines_once() {
+    let (_dir, root) = flow();
+    let projects = Projects::new();
+    projects.agent(
+        "a1",
+        &[
+            dispatch_line(2, TASKS_SLUG),
+            assistant_line("msg_1", 2, 8154, 0, 138),
+            assistant_line("msg_1", 2, 8154, 0, 138),
+            assistant_line("msg_1", 2, 8154, 0, 138),
+        ],
+        &subagent_meta(),
+    );
+    record(&root, &payload("SubagentStart", &root, &projects, "a1"));
+
+    assert_eq!(
+        stop_usage(&root, &projects, "a1"),
+        json!({"input": 2, "cache_write": 8154, "cache_read": 0, "output": 138, "turns": 1})
+    );
+}
+
+#[test]
+fn a_stop_sums_the_usage_of_every_assistant_message() {
+    let (_dir, root) = flow();
+    let projects = Projects::new();
+    projects.agent(
+        "a1",
+        &[
+            dispatch_line(2, TASKS_SLUG),
+            assistant_line("msg_1", 2, 8154, 0, 138),
+            assistant_line("msg_1", 2, 8154, 0, 138),
+            user_line("tool result"),
+            assistant_line("msg_2", 2, 1767, 8154, 153),
+            assistant_line("msg_3", 2, 7735, 9921, 249),
+        ],
+        &subagent_meta(),
+    );
+    record(&root, &payload("SubagentStart", &root, &projects, "a1"));
+
+    let usage = stop_usage(&root, &projects, "a1");
+    assert_eq!(
+        usage,
+        json!({"input": 6, "cache_write": 17656, "cache_read": 18075, "output": 540, "turns": 3})
+    );
+    let text = fs::read_to_string(store(&root)).unwrap();
+    let doc: toml::Value = toml::from_str(&text).unwrap();
+    assert_eq!(
+        doc["agents"][0]["usage"]["cache_write"].as_integer(),
+        Some(17656),
+        "{text}"
+    );
+    assert_eq!(
+        doc["agents"][0]["context_tokens"].as_integer(),
+        Some(2 + 7735 + 9921 + 249)
+    );
+}
+
+#[test]
+fn a_stop_with_no_usage_in_its_transcript_writes_no_usage_table() {
+    let (_dir, root) = flow();
+    let projects = Projects::new();
+    projects.agent(
+        "a1",
+        &[
+            dispatch_line(2, TASKS_SLUG),
+            json!({"type": "assistant", "message": {"id": "msg_1", "content": "done"}}).to_string(),
+        ],
+        &subagent_meta(),
+    );
+    record(&root, &payload("SubagentStart", &root, &projects, "a1"));
+
+    assert_eq!(stop_usage(&root, &projects, "a1"), Value::Null);
+    let text = fs::read_to_string(store(&root)).unwrap();
+    assert!(!text.contains("usage"), "{text}");
+    assert_eq!(list(&root, TASKS_SLUG)[0]["status"], "stopped");
+}
+
+#[test]
+fn a_second_stop_replaces_the_usage_rather_than_adding_to_it() {
+    let (_dir, root) = flow();
+    let projects = Projects::new();
+    projects.agent(
+        "a1",
+        &[
+            dispatch_line(2, TASKS_SLUG),
+            assistant_line("msg_1", 2, 100, 0, 10),
+            assistant_line("msg_2", 3, 50, 100, 20),
+        ],
+        &subagent_meta(),
+    );
+    record(&root, &payload("SubagentStart", &root, &projects, "a1"));
+
+    let once = json!({"input": 5, "cache_write": 150, "cache_read": 100, "output": 30, "turns": 2});
+    assert_eq!(stop_usage(&root, &projects, "a1"), once);
+    assert_eq!(stop_usage(&root, &projects, "a1"), once);
+
+    projects.append("a1", &assistant_line("msg_3", 1, 0, 150, 7));
+    assert_eq!(
+        stop_usage(&root, &projects, "a1"),
+        json!({"input": 6, "cache_write": 150, "cache_read": 250, "output": 37, "turns": 3})
+    );
+}
+
 fn ledger_line(slug: &str, items: &str) -> String {
     user_line(&format!(
         "ledger: .claude/flows/{slug}/review-ledger.toml items: {items}\nApply them."

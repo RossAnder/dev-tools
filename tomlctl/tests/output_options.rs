@@ -456,7 +456,8 @@ struct Case {
     /// Runs on its own copy of the fixture; set for every write.
     isolated: bool,
     git: bool,
-    /// The report carries the time of day, so runs a second apart differ.
+    /// The report carries the time of the call, so runs a second apart differ
+    /// there; `run` replaces that stamp with [`CALL_TIME`].
     clock: bool,
     /// The stderr text of the command's refusal of `--lines`, for a command
     /// that refuses it.
@@ -1160,6 +1161,54 @@ fn cases() -> Vec<Case> {
         write(
             &[
                 "plan",
+                "run",
+                "notes",
+                "--slug",
+                PLAN_SLUG,
+                "--milestone",
+                "A",
+            ],
+            "task",
+        )
+        .rows("rows"),
+        write(
+            &[
+                "plan",
+                "run",
+                "gate",
+                "--slug",
+                PLAN_SLUG,
+                "--milestone",
+                "A",
+                "--round",
+                "0",
+                "--ndjson",
+                "-",
+            ],
+            "command",
+        )
+        .rows("commands")
+        .stdin(r#"{"command":"cargo test","outcome":"pass","duration_s":3,"summary":"ok"}"#),
+        write(
+            &[
+                "plan",
+                "run",
+                "report",
+                "--slug",
+                PLAN_SLUG,
+                "--milestone",
+                "A",
+                "--why",
+                "gate failed",
+                "--ndjson",
+                "-",
+            ],
+            "entries",
+        )
+        .stdin(r#"{"kind":"gate","text":"cargo test failed"}"#),
+        write(
+            &[
+                "plan",
                 "milestone",
                 "add",
                 "--slug",
@@ -1691,9 +1740,15 @@ fn snapshot(root: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
     out
 }
 
+/// Stands in for a `clock` case's call-time stamp. It keeps a whole-second
+/// UTC stamp's length and first character, so a `--max-chars` trim of the
+/// real stamp, which no mask can recognise, still compares equal.
+const CALL_TIME: &str = "2000-01-01T00:00:00Z";
+
 /// Run `case` with `before` ahead of the subcommand and `after` behind it —
 /// globals are accepted in either position. A write runs on its own copy of
-/// the fixture.
+/// the fixture. A `clock` case's stdout has each stamp no earlier than the
+/// call's second replaced with [`CALL_TIME`]; older stamps are left as data.
 fn run(fx: &Fixture, case: &Case, before: &[&str], after: &[&str]) -> Run {
     let mut copy = None;
     let root = if case.isolated {
@@ -1713,6 +1768,7 @@ fn run(fx: &Fixture, case: &Case, before: &[&str], after: &[&str]) -> Run {
                 .replace("{B2}", &fx.backlog[1])
         })
         .collect();
+    let called = jiff::Timestamp::now().as_second();
     let out = cli(&root)
         .current_dir(&root)
         .args(before)
@@ -1725,9 +1781,22 @@ fn run(fx: &Fixture, case: &Case, before: &[&str], after: &[&str]) -> Run {
         )
         .output()
         .unwrap();
+    let stdout = if case.clock {
+        datetime()
+            .replace_all(&out.stdout, |m: &regex::bytes::Captures| {
+                let stamp = std::str::from_utf8(&m[0]).unwrap();
+                match stamp.parse::<jiff::Timestamp>() {
+                    Ok(at) if at.as_second() >= called => CALL_TIME.as_bytes().to_vec(),
+                    _ => m[0].to_vec(),
+                }
+            })
+            .into_owned()
+    } else {
+        out.stdout
+    };
     Run {
         code: out.status.code(),
-        stdout: String::from_utf8(out.stdout).unwrap(),
+        stdout: String::from_utf8(stdout).unwrap(),
         stderr: String::from_utf8(out.stderr).unwrap(),
         root,
         _copy: copy,
@@ -1932,20 +2001,7 @@ fn keys(v: &Value) -> Vec<&String> {
 }
 
 /// Every failure of `case`, as messages; empty when it passes.
-/// `check_once`, run again for a `clock` case that failed: its runs straddled
-/// a second boundary unless it fails every time.
 fn check(fx: &Fixture, case: &Case) -> Vec<String> {
-    let mut fails = check_once(fx, case);
-    for _ in 0..2 {
-        if fails.is_empty() || !case.clock {
-            break;
-        }
-        fails = check_once(fx, case);
-    }
-    fails
-}
-
-fn check_once(fx: &Fixture, case: &Case) -> Vec<String> {
     let what = case.argv.join(" ");
     let mut fails = Vec::new();
     let mut fail = |msg: String| fails.push(format!("`{what}`: {msg}"));

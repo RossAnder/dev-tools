@@ -15,13 +15,14 @@ use sha2::{Digest, Sha256};
 use toml::Value as TomlValue;
 
 use super::graph::{Tense, build_or_refuse, nodes_of};
-use super::schema::{Status, TaskRow};
+use super::schema::{Change, MilestoneSpec, Status, Store, TaskRow, TaskSpec};
 use super::snapshot_record::{checkpoint_facts, record_view};
-use super::{edges, ready, schema, store};
+use super::{edges, ready, schema, show, store};
 use crate::cli::{ReadIntegrityArgs, read_integrity_opts};
 use crate::convert::toml_to_json;
 use crate::integrity::hex_lower;
 use crate::io::{items_array, parse_toml_bytes, read_doc_owned};
+use crate::plan::probes;
 
 const SCHEMA: u32 = 1;
 // The store's siblings, named once in `SNAPSHOT_INPUTS` so a viewer's
@@ -102,13 +103,19 @@ pub(crate) fn snapshot(
                 parse_optional(&plan_path, plan_raw)?,
             )
         };
-    let running_milestone = match &plan {
-        Some(doc) => crate::plan::running_milestone(
-            &crate::plan::schema::from_toml(doc)
+    let plan_store = match &plan {
+        Some(doc) => Some(
+            crate::plan::schema::from_toml(doc)
                 .with_context(|| format!("parsing {}", plan_path.display()))?,
         ),
-        None => String::new(),
+        None => None,
     };
+    let running_milestone = plan_store
+        .as_ref()
+        .map_or_else(String::new, crate::plan::running_milestone);
+    let plan_json = plan_store.as_ref().map_or(JsonValue::Null, |parsed| {
+        toml_to_json(&crate::plan::schema::to_toml(parsed))
+    });
 
     let nodes = nodes_of(&store.items);
     let graph = build_or_refuse(&nodes, "the snapshot", Tense::Stored)?;
@@ -180,7 +187,13 @@ pub(crate) fn snapshot(
     out.insert("running_milestone".into(), json!(running_milestone));
     out.insert(
         "tasks".into(),
-        JsonValue::Array(store.items.iter().map(task_json).collect()),
+        JsonValue::Array(
+            store
+                .items
+                .iter()
+                .map(|row| task_json(&store, row))
+                .collect(),
+        ),
     );
     out.insert("layers".into(), json!(layers));
     out.insert("frontier".into(), frontier);
@@ -188,6 +201,15 @@ pub(crate) fn snapshot(
     out.insert("checkpoints".into(), JsonValue::Array(checkpoints));
     out.insert("record".into(), record_json);
     out.insert("agents".into(), JsonValue::Array(agents_json));
+    out.insert(
+        "milestones".into(),
+        JsonValue::Array(store.milestones.iter().map(milestone_json).collect()),
+    );
+    out.insert(
+        "changes".into(),
+        JsonValue::Array(store.changes.iter().map(change_json).collect()),
+    );
+    out.insert("plan".into(), plan_json);
     Ok(Some(JsonValue::Object(out)))
 }
 
@@ -231,7 +253,131 @@ fn revision(files: &[&Option<Vec<u8>>]) -> String {
     hex
 }
 
-fn task_json(row: &TaskRow) -> JsonValue {
+/// The row's own keys, then the spec and links the store keys on its `ref`.
+fn task_json(store: &Store, row: &TaskRow) -> JsonValue {
+    let mut out = row_json(row);
+    let JsonValue::Object(map) = &mut out else {
+        unreachable!("json! of an object literal is an object");
+    };
+    if let Some(spec) = store.spec_for(&row.r#ref) {
+        map.insert("spec".into(), spec_json(store, spec));
+    }
+    let notes: JsonMap<String, JsonValue> = store
+        .file_notes
+        .iter()
+        .filter(|entry| entry.r#ref == row.r#ref)
+        .map(|entry| (entry.file.clone(), json!(entry.note)))
+        .collect();
+    map.insert("file_notes".into(), JsonValue::Object(notes));
+    let link = store.links_for(&row.r#ref);
+    map.insert("closes".into(), json!(link.map_or(&[][..], |l| &l.closes)));
+    map.insert("refs".into(), json!(link.map_or(&[][..], |l| &l.refs)));
+    if let Some(link) = store
+        .finding_links
+        .iter()
+        .find(|link| link.r#ref == row.r#ref)
+    {
+        map.insert(
+            "finding".into(),
+            json!({"store": link.store, "fixes": link.fixes, "settles": link.settles}),
+        );
+    }
+    out
+}
+
+/// Unlike `tasks show`, every accept entry carries `run_by` and `covered_by`
+/// even when empty, plus its derived `owner`; `probeable` is the probe
+/// emitter's own skip rule, so a viewer never restates it.
+fn spec_json(store: &Store, spec: &TaskSpec) -> JsonValue {
+    let accept: Vec<JsonValue> = spec
+        .accept
+        .iter()
+        .map(|entry| {
+            let mut map = JsonMap::new();
+            map.insert("behaviour".into(), json!(entry.behaviour));
+            map.insert("check".into(), json!(entry.check));
+            map.insert("kind".into(), json!(entry.kind));
+            map.insert("positive".into(), json!(entry.positive));
+            map.insert("writes_build".into(), json!(entry.writes_build));
+            map.insert("run_by".into(), json!(entry.run_by));
+            map.insert("covered_by".into(), json!(entry.covered_by));
+            map.insert("owner".into(), json!(entry.owner()));
+            map.insert(
+                "probeable".into(),
+                json!(probes::skip_reason(entry).is_none()),
+            );
+            if let Some(probe) = &entry.probe {
+                map.insert("probe".into(), show::accept_probe_json(probe));
+            }
+            JsonValue::Object(map)
+        })
+        .collect();
+    let premises: Vec<JsonValue> = spec
+        .premises
+        .iter()
+        .map(|premise| {
+            let mut map = JsonMap::new();
+            map.insert("claim".into(), json!(premise.claim));
+            map.insert("check".into(), json!(premise.check));
+            map.insert("at".into(), json!(premise.at));
+            map.insert(
+                "probeable".into(),
+                json!(probes::premise_skip_reason(store, premise).is_none()),
+            );
+            if let Some(probe) = &premise.probe {
+                map.insert("probe".into(), show::premise_probe_json(probe));
+            }
+            JsonValue::Object(map)
+        })
+        .collect();
+    json!({
+        "outcome": spec.outcome,
+        "constraints": spec.constraints,
+        "means": show::means_json(&spec.means),
+        "executor": spec.executor,
+        "design": spec.design,
+        "precedent": spec.precedent,
+        "accept": accept,
+        "premises": premises,
+    })
+}
+
+fn milestone_json(milestone: &MilestoneSpec) -> JsonValue {
+    let gate_probes: Vec<JsonValue> = milestone
+        .gate_probes
+        .iter()
+        .map(|entry| {
+            json!({
+                "gate": entry.gate,
+                "probe": entry.probe,
+                "verdict": entry.verdict,
+                "at": entry.at,
+            })
+        })
+        .collect();
+    json!({
+        "id": milestone.id,
+        "gates": milestone.gates,
+        "elaboration": milestone.elaboration,
+        "defer_reason": milestone.defer_reason,
+        "gate_probes": gate_probes,
+    })
+}
+
+/// `at` is `""` for a change stored without a timestamp.
+fn change_json(change: &Change) -> JsonValue {
+    json!({
+        "at": change.at.map(|at| at.to_string()).unwrap_or_default(),
+        "ref": change.r#ref,
+        "field": change.field,
+        "old": change.old,
+        "new": change.new,
+        "actor": change.actor,
+        "reason": change.reason,
+    })
+}
+
+fn row_json(row: &TaskRow) -> JsonValue {
     json!({
         "id": row.id,
         "ref": row.r#ref,
@@ -340,6 +486,9 @@ needs = [1]
                 "checkpoints",
                 "record",
                 "agents",
+                "milestones",
+                "changes",
+                "plan",
             ]
         );
         assert_eq!(snap["slug"], json!("demo"));
@@ -364,8 +513,14 @@ needs = [1]
                 "acceptance",
                 "agent",
                 "commit",
+                "file_notes",
+                "closes",
+                "refs",
             ]
         );
+        assert_eq!(snap["tasks"][0]["file_notes"], json!({}));
+        assert_eq!(snap["milestones"], json!([]));
+        assert_eq!(snap["changes"], json!([]));
         assert_eq!(
             snap["checkpoints"][0],
             json!({

@@ -115,6 +115,15 @@ pub(crate) enum PlanRunOp {
     Abandon(PlanRunAbandonArgs),
     /// Record a step not run, and why.
     Skip(PlanRunSkipArgs),
+    /// Read the run note of every task the milestone's latest run dispatched
+    /// into one attempt each, printing one row per task.
+    Notes(PlanRunNotesArgs),
+    /// Record one run of a milestone's gate from one row per command, keeping
+    /// the tail of each non-pass command's log under the flow directory.
+    Gate(PlanRunGateArgs),
+    /// Append one report of what this invocation left for a person, from one
+    /// row per entry.
+    Report(PlanRunReportArgs),
 }
 
 /// `plan milestone` leaves.
@@ -322,6 +331,77 @@ pub(crate) struct PlanRunSkipArgs {
     pub(crate) step: String,
     #[arg(long = "reason", value_name = "TEXT", help = "Why it was not run")]
     pub(crate) reason: String,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct PlanRunNotesArgs {
+    #[command(flatten)]
+    pub(crate) target: PlanTarget,
+    #[arg(
+        long = "milestone",
+        value_name = "ID",
+        help = "The milestone whose latest `implement:<id>` run's notes are read"
+    )]
+    pub(crate) milestone: String,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct PlanRunGateArgs {
+    #[command(flatten)]
+    pub(crate) target: PlanTarget,
+    #[arg(
+        long = "milestone",
+        value_name = "ID",
+        help = "The milestone whose gate ran"
+    )]
+    pub(crate) milestone: String,
+    #[arg(
+        long = "round",
+        value_name = "N",
+        help = "0 for the milestone's first gate run, the fix round's number after that"
+    )]
+    pub(crate) round: u32,
+    #[arg(
+        long = "ndjson",
+        value_name = "SRC",
+        help = "One row per command: command, outcome, exit, duration_s, summary, failed_ids, log; `-` for stdin, otherwise a file path (a leading `@` is accepted; a `.toml` path is a record file)"
+    )]
+    pub(crate) ndjson: String,
+    #[arg(
+        long = "rerun",
+        help = "Merge into the round's latest recorded run, replacing the commands named, rather than record a new run"
+    )]
+    pub(crate) rerun: bool,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct PlanRunReportArgs {
+    #[command(flatten)]
+    pub(crate) target: PlanTarget,
+    #[arg(
+        long = "milestone",
+        value_name = "ID",
+        help = "The milestone the invocation ran"
+    )]
+    pub(crate) milestone: String,
+    #[arg(
+        long = "why",
+        value_name = "TEXT",
+        help = "Why the invocation stopped where it did"
+    )]
+    pub(crate) why: String,
+    #[arg(
+        long = "ndjson",
+        value_name = "SRC",
+        help = "One row per entry: kind, task, text, path, needs_person; `-` for stdin, otherwise a file path (a leading `@` is accepted; a `.toml` path is a record file); absent, the report has no entries"
+    )]
+    pub(crate) ndjson: Option<String>,
     #[command(flatten)]
     pub(crate) integrity: WriteIntegrityArgs,
 }

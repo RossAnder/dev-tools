@@ -2,8 +2,9 @@
 
 The `tomlctl plan` verbs over a v2 flow's `.claude/flows/<slug>/plan.toml`,
 `docs/flows/<slug>/brief.md` and task store: each verb's flags and output, and the check classes.
-`plan probes`, with its scripts and verdicts, is [plan-probes.md](plan-probes.md), and `plan stage`
-and `plan emit` are [plan-engine.md](plan-engine.md). The shape of
+`plan probes`, with its scripts and verdicts, is [plan-probes.md](plan-probes.md), `plan stage`
+and `plan emit` are [plan-engine.md](plan-engine.md), and the run-record leaves `plan run notes`,
+`gate` and `report` are [plan-run.md](plan-run.md). The shape of
 `plan.toml` and what its fields mean are [plan-store.md](plan-store.md). The side tables a plan adds to `tasks.toml` (`[[specs]]`,
 `[[milestones]]`, `[[changes]]`, `audit`) are [tasks-store.md](tasks-store.md), and the `spec`,
 `reason` and `file_notes` row keys that fill them are
@@ -22,6 +23,8 @@ of planning is owned by the [`plan-v2-engine` skill](../../plan-v2-engine/SKILL.
 - [`plan run finish`](#plan-run-finish)
 - [`plan run abandon`](#plan-run-abandon)
 - [`plan run skip`](#plan-run-skip)
+- [Run records](#run-records): [`plan run notes`](plan-run.md#plan-run-notes),
+  [`plan run gate`](plan-run.md#plan-run-gate) and [`plan run report`](plan-run.md#plan-run-report)
 - [`plan milestone add`](#plan-milestone-add)
 - [`plan milestone update`](#plan-milestone-update)
 - [`plan check`](#plan-check)
@@ -40,7 +43,7 @@ rule so that it cannot reach outside `.claude/flows/` or `docs/flows/`. The writ
 `--verify-integrity`), and `plan check`, `view`, `stage`, `gate`, `drift` and `emit` the read bundle
 (`--verify-integrity`, `--strict-read`). Neither is repeated in the tables below. Only `plan open`
 creates a `plan.toml`, because its presence is what makes a flow v2. `plan decide`, `contract`,
-`handover set|done`, `run start|finish|abandon|skip`, `milestone add|update` and `approve` refuse a flow without
+`handover set|done`, `run start|finish|abandon|skip|notes|gate|report`, `milestone add|update` and `approve` refuse a flow without
 one with `kind=not_found`, naming `tomlctl plan open --slug <slug>`, and write nothing, not even a
 directory. `--no-create` is accepted on them but has no effect.
 
@@ -270,6 +273,11 @@ tomlctl plan run skip --slug <slug> --step <step> --reason '<text>'
 | `--reason` | text | Why it was not run; blank is refused. | required |
 
 Prints `{"ok":true}`.
+
+## Run records
+
+`plan run notes`, `plan run gate` and `plan run report` record a milestone's attempts, gate runs and
+needs-human report in `plan.toml`; their flags and output are [plan-run.md](plan-run.md).
 
 ## `plan milestone add`
 

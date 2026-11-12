@@ -171,7 +171,7 @@ pub(super) fn run(mut args: PlanProbesArgs) -> Result<()> {
 /// Why a row gets no probe line. Only a worker-owned check with an explicit
 /// `writes_build = false` runs, so an unlabelled command, which reads as `true`,
 /// never does, and neither does one a gate owns.
-pub(super) fn skip_reason(accept: &Accept) -> Option<&'static str> {
+pub(crate) fn skip_reason(accept: &Accept) -> Option<&'static str> {
     if accept.check.trim().is_empty() {
         Some("empty check")
     } else if accept.writes_build {
@@ -190,7 +190,7 @@ fn has_positive(accept: &Accept) -> bool {
 /// Why a premise gets no line. An `after:` premise holds only once its task
 /// lands, so it is checked only when that task is done. The reason reaches the
 /// script, so it holds no stored string.
-fn premise_skip_reason(store: &Store, premise: &Premise) -> Option<String> {
+pub(crate) fn premise_skip_reason(store: &Store, premise: &Premise) -> Option<String> {
     if premise.check.trim().is_empty() {
         return Some("empty check".to_string());
     }

@@ -3,14 +3,20 @@
 //! `tomlctl plan` verbs.
 
 mod approve;
+pub(crate) mod authored;
 pub(crate) mod check;
 mod drift;
 mod emit;
 mod lane;
 mod milestone;
+mod note_sources;
 mod open;
-mod probes;
+pub(crate) mod probes;
 mod records;
+mod run_gate;
+mod run_note;
+mod run_notes;
+mod run_report;
 mod stage;
 pub(crate) mod target;
 mod view;

@@ -1419,3 +1419,337 @@ fn inputs_writes_refuse_a_mismatched_root() {
     );
     assert!(!inputs_path(&pinned).exists());
 }
+
+const AUTHORED_SLUG: &str = "authored-flow";
+
+/// Writes `text` at `relative` under the flow's authored directory.
+fn author(root: &Path, relative: &str, text: &str) {
+    let path = root
+        .join("docs")
+        .join("flows")
+        .join(AUTHORED_SLUG)
+        .join(relative);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, text).unwrap();
+}
+
+fn listed<'a>(list: &'a Value, path: &str) -> &'a Value {
+    list["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["path"] == path)
+        .unwrap_or_else(|| panic!("{path} is not listed: {list:#}"))
+}
+
+/// One file of every kind, a research note citing sources inline and one
+/// citing them in a block, and files the listing leaves out.
+fn stage_authored(root: &Path) {
+    fs::create_dir_all(root.join("glimpse").join("src")).unwrap();
+    fs::write(root.join("glimpse").join("src").join("surface.rs"), "").unwrap();
+    author(root, "brief.md", "# The flow\r\n\r\n## Intent\r\n");
+    author(root, "design/records.md", "# Records\n\nshapes\n");
+    author(
+        root,
+        "notes/surface-nav.md",
+        "Verdict: a new surface (glimpse/src/surface.rs:16, gone/file.rs:3)\n",
+    );
+    author(
+        root,
+        "notes/structure-challenge.md",
+        "Verdict: restructure\n\n```toml sources\nread_at = \"abc123\"\n\n\
+         [[source]]\npath = \"glimpse/src/app.rs\"\nline = 902\nclaim = \"keeps the cursor\"\n```\n",
+    );
+    author(root, "notes/cold-read-A.md", "Verdict: actionable\n");
+    author(
+        root,
+        "notes/backlog-B4.md",
+        "\n\nA flaky test in glimpse (glimpse/src/surface.rs:2)\n",
+    );
+    author(
+        root,
+        "notes/run/task-12.md",
+        "Status: parked — waiting on a person\n\nprose\n",
+    );
+    author(root, "notes/settle/F3.md", "Proposal: widen the check\n");
+    author(root, "notes/scratch.txt", "left out\n");
+    author(root, "notes/run/summary.md", "left out\n");
+    author(root, "other/stray.md", "left out\n");
+}
+
+#[test]
+fn authored_list_names_every_kind_sorted() {
+    let (_dir, root) = sandbox();
+    stage_authored(&root);
+    let list = tomlctl::authored_list(&root, AUTHORED_SLUG).expect("list the flow's files");
+
+    let paths: Vec<&str> = list["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["path"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        paths,
+        [
+            "brief.md",
+            "design/records.md",
+            "notes/backlog-B4.md",
+            "notes/cold-read-A.md",
+            "notes/run/task-12.md",
+            "notes/settle/F3.md",
+            "notes/structure-challenge.md",
+            "notes/surface-nav.md",
+        ]
+    );
+
+    let kinds = [
+        ("brief.md", "brief", "brief", "The flow"),
+        ("design/records.md", "design", "records", "Records"),
+        (
+            "notes/backlog-B4.md",
+            "backlog",
+            "B4",
+            "A flaky test in glimpse (glimpse/src/surface.rs:2)",
+        ),
+        ("notes/cold-read-A.md", "cold-read", "A", "actionable"),
+        (
+            "notes/run/task-12.md",
+            "run-note",
+            "task-12",
+            "waiting on a person",
+        ),
+        (
+            "notes/settle/F3.md",
+            "settle",
+            "F3",
+            "Proposal: widen the check",
+        ),
+        (
+            "notes/structure-challenge.md",
+            "challenge",
+            "structure-challenge",
+            "restructure",
+        ),
+        (
+            "notes/surface-nav.md",
+            "note",
+            "surface-nav",
+            "a new surface (glimpse/src/surface.rs:16, gone/file.rs:3)",
+        ),
+    ];
+    for (path, kind, id, headline) in kinds {
+        let file = listed(&list, path);
+        assert_eq!(file["kind"], kind, "{path}");
+        assert_eq!(file["id"], id, "{path}");
+        assert_eq!(file["headline"], headline, "{path}");
+    }
+
+    let run = listed(&list, "notes/run/task-12.md");
+    assert_eq!(run["task"], 12);
+    assert_eq!(run["state"], "parked");
+    assert_eq!(listed(&list, "notes/surface-nav.md")["task"], 0);
+    assert_eq!(listed(&list, "notes/surface-nav.md")["state"], "");
+
+    assert_eq!(
+        listed(&list, "notes/surface-nav.md")["sources"],
+        json!([{"path": "glimpse/src/surface.rs", "line": 16, "claim": "", "url": "",
+                "read_at": "", "dirty": false, "origin": "inline"}])
+    );
+    assert_eq!(
+        listed(&list, "notes/structure-challenge.md")["sources"],
+        json!([{"path": "glimpse/src/app.rs", "line": 902, "claim": "keeps the cursor",
+                "url": "", "read_at": "abc123", "dirty": false, "origin": "block"}])
+    );
+    for path in [
+        "brief.md",
+        "design/records.md",
+        "notes/backlog-B4.md",
+        "notes/run/task-12.md",
+        "notes/settle/F3.md",
+    ] {
+        assert_eq!(listed(&list, path)["sources"], json!([]), "{path}");
+    }
+}
+
+#[test]
+fn authored_list_of_a_missing_directory_is_empty() {
+    let (_dir, root) = sandbox();
+    let list = tomlctl::authored_list(&root, AUTHORED_SLUG).expect("list nothing");
+    assert_eq!(list, json!({"files": []}));
+}
+
+#[test]
+fn authored_reads_refuse_a_bad_slug() {
+    let (_dir, root) = sandbox();
+    stage_authored(&root);
+    for slug in ["../x", "Foo"] {
+        assert!(
+            tomlctl::authored_list(&root, slug).is_err(),
+            "{slug} listed"
+        );
+        assert!(
+            tomlctl::authored_read(&root, slug, "brief.md").is_err(),
+            "{slug} read"
+        );
+    }
+}
+
+#[test]
+fn authored_read_returns_lf_text_and_refuses_an_unlisted_path() {
+    let (_dir, root) = sandbox();
+    stage_authored(&root);
+    fs::write(
+        root.join("docs").join("flows").join("secret.md"),
+        "outside\n",
+    )
+    .unwrap();
+
+    let read = tomlctl::authored_read(&root, AUTHORED_SLUG, "brief.md").expect("read the brief");
+    assert_eq!(
+        read,
+        json!({"path": "brief.md", "text": "# The flow\n\n## Intent\n"})
+    );
+    for path in [
+        "notes/scratch.txt",
+        "notes/run/summary.md",
+        "other/stray.md",
+        "../secret.md",
+        "notes/../../secret.md",
+        "notes\\..\\..\\secret.md",
+        "notes/missing.md",
+    ] {
+        let err = tomlctl::authored_read(&root, AUTHORED_SLUG, path).expect_err(path);
+        assert!(format!("{err:#}").contains(path), "{path}: {err:#}");
+    }
+}
+
+#[test]
+fn authored_files_linking_outside_the_flow_are_refused() {
+    let (_dir, root) = sandbox();
+    stage_authored(&root);
+    let outside = root.join("outside.md");
+    fs::write(&outside, "Verdict: leaked\n").unwrap();
+    let link = root
+        .join("docs")
+        .join("flows")
+        .join(AUTHORED_SLUG)
+        .join("notes")
+        .join("escape.md");
+    #[cfg(unix)]
+    let made = std::os::unix::fs::symlink(&outside, &link);
+    #[cfg(windows)]
+    let made = std::os::windows::fs::symlink_file(&outside, &link);
+    if made.is_err() {
+        // Creating a symlink needs a privilege this platform may withhold.
+        return;
+    }
+
+    let list = tomlctl::authored_list(&root, AUTHORED_SLUG).expect("list the flow's files");
+    assert!(
+        list["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|f| f["path"] != "notes/escape.md"),
+        "{list:#}"
+    );
+    assert!(tomlctl::authored_read(&root, AUTHORED_SLUG, "notes/escape.md").is_err());
+}
+
+const REVIEW_STORE: &str = ".claude/review-v2/facade.toml";
+
+const REVIEW: &str = r#"schema_version = 1
+
+[[runs]]
+id = "U1"
+command = "review-v2"
+family = "code"
+depth = "standard"
+started = "2026-10-12T10:00:00Z"
+catalogue = { builtin = "catalogue" }
+
+[[findings]]
+id = "F1"
+run = "U1"
+cell = "C1"
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "src/lib.rs"
+line = 30
+summary = "the limit is off by one"
+severity = "major"
+failure_scenario = "a nine-row input returns eight rows"
+fix = "compare with <= instead of <"
+status = "open"
+
+[[verdicts]]
+finding = "F1"
+run = "U1"
+by = "verifier"
+seat = 1
+verdict = "confirmed"
+citation = "src/lib.rs:30"
+rationale = "reproduced with nine rows"
+"#;
+
+fn stage_review(root: &Path) {
+    let path = root.join(REVIEW_STORE);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, REVIEW).unwrap();
+}
+
+#[test]
+fn review_finding_matches_the_report_projection() {
+    let (_dir, root) = sandbox();
+    stage_review(&root);
+
+    let facade = tomlctl::review_finding(&root, REVIEW_STORE, "F1").expect("read the finding");
+    assert_eq!(facade["summary"], "the limit is off by one");
+    assert_eq!(facade["status"], "open");
+
+    let out = cli(&root)
+        .current_dir(&root)
+        .args([
+            "review", "show", "F1", "--for", "report", "--scope", "facade",
+        ])
+        .assert()
+        .success();
+    let verb: Value = serde_json::from_slice(&out.get_output().stdout).expect("show prints JSON");
+    assert_eq!(facade, verb["items"][0]);
+}
+
+#[test]
+fn review_finding_of_an_unknown_id_or_store_names_it() {
+    let (_dir, root) = sandbox();
+    stage_review(&root);
+
+    let err = tomlctl::review_finding(&root, REVIEW_STORE, "F9").expect_err("unknown id");
+    assert!(format!("{err:#}").contains("F9"), "{err:#}");
+    let missing = ".claude/review-v2/absent.toml";
+    let err = tomlctl::review_finding(&root, missing, "F1").expect_err("unknown store");
+    assert!(format!("{err:#}").contains("absent.toml"), "{err:#}");
+}
+
+#[test]
+fn review_finding_refuses_a_store_outside_claude() {
+    let (_dir, root) = sandbox();
+    stage_review(&root);
+    fs::create_dir_all(root.join("docs")).unwrap();
+    fs::write(root.join("docs").join("review.toml"), REVIEW).unwrap();
+    let absolute = root.join(REVIEW_STORE).to_string_lossy().into_owned();
+
+    for store in [
+        "docs/review.toml",
+        ".claude/../docs/review.toml",
+        "../review.toml",
+        absolute.as_str(),
+    ] {
+        assert!(
+            tomlctl::review_finding(&root, store, "F1").is_err(),
+            "{store} was read"
+        );
+    }
+}

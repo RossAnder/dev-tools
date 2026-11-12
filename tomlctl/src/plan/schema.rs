@@ -5,11 +5,14 @@
 //! last_updated = 2026-11-05
 //! [binding] / [id_high_water]
 //! [[decision]] / [[contract]] / [[approval]] / [[run]] / [[handover]]
+//! [[attempt]] / [[gate_round]] / [[report]]
 //! ```
 //!
 //! `to_toml` inserts keys in that order and `preserve_order` holds it, so a
-//! write is byte-stable with no sort step. Every write stamps the current
-//! `SCHEMA_VERSION`, and each root key but `schema_version` is omitted while empty. Free text is LF-normalised on both read and write,
+//! write is byte-stable with no sort step. A write stamps `SCHEMA_VERSION` when
+//! the store holds an attempt, gate round or report, so that a binary predating
+//! those arrays refuses it rather than dropping them, and `BASE_SCHEMA_VERSION`
+//! otherwise. Each root key but `schema_version` is omitted while empty. Free text is LF-normalised on both read and write,
 //! because a lone `\r` forces `toml`'s escaped string form. Unknown keys are
 //! dropped: the store is tool-owned and every write re-emits it from this shape.
 
@@ -24,7 +27,14 @@ use crate::tasks::schema::{
     as_date as as_datetime, id_array, lf, normal_path, str_arr_value, str_array,
 };
 
-pub(crate) const SCHEMA_VERSION: i64 = 2;
+/// The newest stamp this build reads; a store holding run records is written at it.
+pub(crate) const SCHEMA_VERSION: i64 = 3;
+
+/// The stamp of a store holding no attempt, gate round or report, and the
+/// version an unstamped store reads as.
+pub(crate) const BASE_SCHEMA_VERSION: i64 = 2;
+
+const _: () = assert!(SCHEMA_VERSION > BASE_SCHEMA_VERSION);
 
 type Table = Map<String, TomlValue>;
 
@@ -120,6 +130,59 @@ vocabulary!(
     }
 );
 
+vocabulary!(
+    /// Whether a run note carried its structured block, read cleanly.
+    NoteBlock {
+        Present => "present",
+        Absent => "absent",
+        Malformed => "malformed",
+    }
+);
+
+vocabulary!(
+    /// The result a worker reported for one check it ran.
+    CheckResult {
+        Pass => "pass",
+        Fail => "fail",
+        NotRun => "not-run",
+    }
+);
+
+vocabulary!(
+    /// How one gate run ended as a whole.
+    GateOutcome {
+        Pass => "pass",
+        Fail => "fail",
+        Timeout => "timeout",
+    }
+);
+
+vocabulary!(
+    /// How one command of a gate run ended.
+    CommandOutcome {
+        Pass => "pass",
+        Flaky => "flaky",
+        Fail => "fail",
+        Timeout => "timeout",
+    }
+);
+
+vocabulary!(
+    /// What a needs-human report entry is about.
+    ReportKind {
+        Parked => "parked",
+        Failed => "failed",
+        Handover => "handover",
+        NoWorker => "no-worker",
+        Withheld => "withheld",
+        Gate => "gate",
+        Audit => "audit",
+        OutOfLane => "out-of-lane",
+        StoreChange => "store-change",
+        Reconcile => "reconcile",
+    }
+);
+
 /// The record kinds whose ids are minted, each under its own number sequence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RecordKind {
@@ -153,6 +216,9 @@ pub(crate) struct PlanStore {
     pub(crate) approvals: Vec<Approval>,
     pub(crate) runs: Vec<Run>,
     pub(crate) handovers: Vec<Handover>,
+    pub(crate) attempts: Vec<Attempt>,
+    pub(crate) gate_rounds: Vec<GateRound>,
+    pub(crate) reports: Vec<Report>,
 }
 
 /// The branch and scope a draft holds here until approval, so that it matches
@@ -328,10 +394,106 @@ pub(crate) struct Handover {
     pub(crate) done: bool,
 }
 
+/// One worker's run note, read into the store; upserted on `(task, run_id)`.
+/// `status`, `tangential.kind` and `handover.reason` are copied from the note
+/// as written, so they are free strings rather than vocabularies.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Attempt {
+    pub(crate) task: u32,
+    pub(crate) run_id: String,
+    pub(crate) milestone: String,
+    pub(crate) status: String,
+    pub(crate) summary: String,
+    pub(crate) block: NoteBlock,
+    pub(crate) files_touched: Vec<String>,
+    pub(crate) deviations: Vec<Deviation>,
+    pub(crate) tangential: Vec<Tangential>,
+    pub(crate) checks: Vec<CheckRun>,
+    /// Omitted from the TOML while `None`.
+    pub(crate) handover: Option<ProposedHandover>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Deviation {
+    pub(crate) what: String,
+    pub(crate) why: String,
+    /// The suggested means departed from, `""` when none.
+    pub(crate) means: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Tangential {
+    pub(crate) kind: String,
+    pub(crate) area: String,
+    pub(crate) summary: String,
+    pub(crate) why: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CheckRun {
+    pub(crate) command: String,
+    pub(crate) result: CheckResult,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ProposedHandover {
+    pub(crate) reason: String,
+    pub(crate) action: String,
+    pub(crate) when: String,
+    pub(crate) done_when: String,
+}
+
+/// One run of a milestone's gate, keyed on `(milestone, round, seq)`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct GateRound {
+    pub(crate) milestone: String,
+    /// 0 for the first gate run, n for the run after fix round n.
+    pub(crate) round: u32,
+    /// 1 for the round's first gate run, one more for each later run of it.
+    pub(crate) seq: u32,
+    pub(crate) at: Datetime,
+    pub(crate) outcome: GateOutcome,
+    pub(crate) commands: Vec<GateCommand>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct GateCommand {
+    pub(crate) command: String,
+    pub(crate) outcome: CommandOutcome,
+    /// Omitted from the TOML while `None`: the agent reported no exit code.
+    pub(crate) exit: Option<i64>,
+    pub(crate) duration_s: u64,
+    pub(crate) summary: String,
+    pub(crate) failed_ids: Vec<String>,
+    /// `""` when no log was kept.
+    pub(crate) log: String,
+}
+
+/// What one orchestrator invocation left for a person; appended, never merged.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Report {
+    pub(crate) at: Datetime,
+    pub(crate) milestone: String,
+    pub(crate) why: String,
+    pub(crate) entries: Vec<ReportEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ReportEntry {
+    pub(crate) kind: ReportKind,
+    /// 0 when the entry names no task.
+    pub(crate) task: u32,
+    pub(crate) text: String,
+    /// A repo-relative path the entry points at, `""` when none.
+    pub(crate) path: String,
+    /// False for a line that only informs. An absent key reads as true.
+    pub(crate) needs_person: bool,
+}
+
 impl Default for PlanStore {
     fn default() -> Self {
         Self {
-            schema_version: SCHEMA_VERSION,
+            schema_version: BASE_SCHEMA_VERSION,
             last_updated: None,
             binding: Binding::default(),
             id_high_water: BTreeMap::new(),
@@ -340,11 +502,23 @@ impl Default for PlanStore {
             approvals: Vec::new(),
             runs: Vec::new(),
             handovers: Vec::new(),
+            attempts: Vec::new(),
+            gate_rounds: Vec::new(),
+            reports: Vec::new(),
         }
     }
 }
 
 impl PlanStore {
+    /// The stamp a write gives this store.
+    pub(crate) fn write_version(&self) -> i64 {
+        if self.attempts.is_empty() && self.gate_rounds.is_empty() && self.reports.is_empty() {
+            BASE_SCHEMA_VERSION
+        } else {
+            SCHEMA_VERSION
+        }
+    }
+
     /// One past the highest number `kind`'s rows carry or its prefix has ever
     /// been assigned, raising the mark so that the id outlives its row.
     pub(crate) fn mint_id(&mut self, kind: RecordKind) -> String {
@@ -374,7 +548,7 @@ pub(crate) fn from_toml(doc: &TomlValue) -> Result<PlanStore> {
     let schema_version = root
         .get("schema_version")
         .and_then(TomlValue::as_integer)
-        .unwrap_or(SCHEMA_VERSION);
+        .unwrap_or(BASE_SCHEMA_VERSION);
     // A newer store holds keys this shape drops, so a write from this binary
     // would lose them silently.
     if schema_version > SCHEMA_VERSION {
@@ -397,6 +571,9 @@ pub(crate) fn from_toml(doc: &TomlValue) -> Result<PlanStore> {
         approvals: records(root, "approval", approval_from_toml)?,
         runs: records(root, "run", run_from_toml)?,
         handovers: records(root, "handover", handover_from_toml)?,
+        attempts: records(root, "attempt", attempt_from_toml)?,
+        gate_rounds: records(root, "gate_round", gate_round_from_toml)?,
+        reports: records(root, "report", report_from_toml)?,
     })
 }
 
@@ -411,12 +588,15 @@ pub(crate) fn to_toml(store: &PlanStore) -> TomlValue {
         approvals,
         runs,
         handovers,
+        attempts,
+        gate_rounds,
+        reports,
     } = store;
 
     let mut root = Table::new();
     root.insert(
         "schema_version".to_string(),
-        TomlValue::Integer(SCHEMA_VERSION),
+        TomlValue::Integer(store.write_version()),
     );
     if let Some(date) = last_updated {
         root.insert("last_updated".to_string(), TomlValue::Datetime(*date));
@@ -435,6 +615,9 @@ pub(crate) fn to_toml(store: &PlanStore) -> TomlValue {
     insert_records(&mut root, "approval", approvals, approval_to_toml);
     insert_records(&mut root, "run", runs, run_to_toml);
     insert_records(&mut root, "handover", handovers, handover_to_toml);
+    insert_records(&mut root, "attempt", attempts, attempt_to_toml);
+    insert_records(&mut root, "gate_round", gate_rounds, gate_round_to_toml);
+    insert_records(&mut root, "report", reports, report_to_toml);
     TomlValue::Table(root)
 }
 
@@ -870,6 +1053,357 @@ fn handover_to_toml(handover: &Handover) -> TomlValue {
     TomlValue::Table(table)
 }
 
+fn attempt_from_toml(table: &Table, context: &str) -> Result<Attempt> {
+    let task = required_u32(table, "task", context)?;
+    let context = format!("attempt for task {task}");
+    Ok(Attempt {
+        task,
+        run_id: str_or(table, "run_id"),
+        milestone: str_or(table, "milestone"),
+        status: str_or(table, "status"),
+        summary: lf(&str_or(table, "summary")),
+        block: vocab(table, "block", &context)?,
+        files_touched: str_array(table, "files_touched"),
+        deviations: nested(table, "deviations", &context, |entry, _| {
+            Ok(Deviation {
+                what: lf(&str_or(entry, "what")),
+                why: lf(&str_or(entry, "why")),
+                means: lf(&str_or(entry, "means")),
+            })
+        })?,
+        tangential: nested(table, "tangential", &context, |entry, _| {
+            Ok(Tangential {
+                kind: str_or(entry, "kind"),
+                area: str_or(entry, "area"),
+                summary: lf(&str_or(entry, "summary")),
+                why: lf(&str_or(entry, "why")),
+            })
+        })?,
+        checks: nested(table, "checks", &context, |entry, context| {
+            Ok(CheckRun {
+                command: str_or(entry, "command"),
+                result: vocab(entry, "result", context)?,
+            })
+        })?,
+        handover: match table.get("handover") {
+            None => None,
+            Some(TomlValue::Table(entry)) => Some(ProposedHandover {
+                reason: str_or(entry, "reason"),
+                action: lf(&str_or(entry, "action")),
+                when: lf(&str_or(entry, "when")),
+                done_when: lf(&str_or(entry, "done_when")),
+            }),
+            Some(_) => return Err(anyhow!("{context}: `handover` is not a table")),
+        },
+    })
+}
+
+fn attempt_to_toml(attempt: &Attempt) -> TomlValue {
+    let Attempt {
+        task,
+        run_id,
+        milestone,
+        status,
+        summary,
+        block,
+        files_touched,
+        deviations,
+        tangential,
+        checks,
+        handover,
+    } = attempt;
+    let mut table = Table::new();
+    table.insert("task".to_string(), TomlValue::Integer(i64::from(*task)));
+    table.insert("run_id".to_string(), TomlValue::String(run_id.clone()));
+    table.insert(
+        "milestone".to_string(),
+        TomlValue::String(milestone.clone()),
+    );
+    table.insert("status".to_string(), TomlValue::String(status.clone()));
+    table.insert("summary".to_string(), TomlValue::String(lf(summary)));
+    table.insert(
+        "block".to_string(),
+        TomlValue::String(block.as_str().to_string()),
+    );
+    table.insert("files_touched".to_string(), str_arr_value(files_touched));
+    table.insert(
+        "deviations".to_string(),
+        TomlValue::Array(
+            deviations
+                .iter()
+                .map(|Deviation { what, why, means }| {
+                    text_table(&[("what", what), ("why", why), ("means", means)])
+                })
+                .collect(),
+        ),
+    );
+    table.insert(
+        "tangential".to_string(),
+        TomlValue::Array(
+            tangential
+                .iter()
+                .map(
+                    |Tangential {
+                         kind,
+                         area,
+                         summary,
+                         why,
+                     }| {
+                        text_table(&[
+                            ("kind", kind),
+                            ("area", area),
+                            ("summary", summary),
+                            ("why", why),
+                        ])
+                    },
+                )
+                .collect(),
+        ),
+    );
+    table.insert(
+        "checks".to_string(),
+        TomlValue::Array(
+            checks
+                .iter()
+                .map(|CheckRun { command, result }| {
+                    let mut entry = Table::new();
+                    entry.insert("command".to_string(), TomlValue::String(command.clone()));
+                    entry.insert(
+                        "result".to_string(),
+                        TomlValue::String(result.as_str().to_string()),
+                    );
+                    TomlValue::Table(entry)
+                })
+                .collect(),
+        ),
+    );
+    if let Some(ProposedHandover {
+        reason,
+        action,
+        when,
+        done_when,
+    }) = handover
+    {
+        table.insert(
+            "handover".to_string(),
+            text_table(&[
+                ("reason", reason),
+                ("action", action),
+                ("when", when),
+                ("done_when", done_when),
+            ]),
+        );
+    }
+    TomlValue::Table(table)
+}
+
+fn gate_round_from_toml(table: &Table, context: &str) -> Result<GateRound> {
+    let milestone = required_str(table, "milestone", context)?;
+    let round = required_u32(table, "round", context)?;
+    let seq = required_u32(table, "seq", context)?;
+    let context = format!("gate_round {milestone} r{round} s{seq}");
+    Ok(GateRound {
+        at: required_datetime(table, "at", &context)?,
+        outcome: vocab(table, "outcome", &context)?,
+        commands: nested(table, "commands", &context, |entry, context| {
+            Ok(GateCommand {
+                command: str_or(entry, "command"),
+                outcome: vocab(entry, "outcome", context)?,
+                exit: match entry.get("exit") {
+                    None => None,
+                    Some(raw) => Some(
+                        raw.as_integer()
+                            .ok_or_else(|| anyhow!("{context}: `exit` is not an integer"))?,
+                    ),
+                },
+                duration_s: match entry.get("duration_s") {
+                    None => 0,
+                    Some(raw) => raw
+                        .as_integer()
+                        .and_then(|n| u64::try_from(n).ok())
+                        .ok_or_else(|| {
+                            anyhow!("{context}: `duration_s` is not a non-negative integer")
+                        })?,
+                },
+                summary: lf(&str_or(entry, "summary")),
+                failed_ids: str_array(entry, "failed_ids"),
+                log: str_or(entry, "log"),
+            })
+        })?,
+        milestone,
+        round,
+        seq,
+    })
+}
+
+fn gate_round_to_toml(gate_round: &GateRound) -> TomlValue {
+    let GateRound {
+        milestone,
+        round,
+        seq,
+        at,
+        outcome,
+        commands,
+    } = gate_round;
+    let mut table = Table::new();
+    table.insert(
+        "milestone".to_string(),
+        TomlValue::String(milestone.clone()),
+    );
+    table.insert("round".to_string(), TomlValue::Integer(i64::from(*round)));
+    table.insert("seq".to_string(), TomlValue::Integer(i64::from(*seq)));
+    table.insert("at".to_string(), TomlValue::Datetime(*at));
+    table.insert(
+        "outcome".to_string(),
+        TomlValue::String(outcome.as_str().to_string()),
+    );
+    table.insert(
+        "commands".to_string(),
+        TomlValue::Array(commands.iter().map(gate_command_to_toml).collect()),
+    );
+    TomlValue::Table(table)
+}
+
+fn gate_command_to_toml(command: &GateCommand) -> TomlValue {
+    let GateCommand {
+        command,
+        outcome,
+        exit,
+        duration_s,
+        summary,
+        failed_ids,
+        log,
+    } = command;
+    let mut table = Table::new();
+    table.insert("command".to_string(), TomlValue::String(command.clone()));
+    table.insert(
+        "outcome".to_string(),
+        TomlValue::String(outcome.as_str().to_string()),
+    );
+    if let Some(exit) = exit {
+        table.insert("exit".to_string(), TomlValue::Integer(*exit));
+    }
+    table.insert(
+        "duration_s".to_string(),
+        TomlValue::Integer(i64::try_from(*duration_s).unwrap_or(i64::MAX)),
+    );
+    table.insert("summary".to_string(), TomlValue::String(lf(summary)));
+    table.insert("failed_ids".to_string(), str_arr_value(failed_ids));
+    table.insert("log".to_string(), TomlValue::String(log.clone()));
+    TomlValue::Table(table)
+}
+
+fn report_from_toml(table: &Table, context: &str) -> Result<Report> {
+    Ok(Report {
+        at: required_datetime(table, "at", context)?,
+        milestone: str_or(table, "milestone"),
+        why: lf(&str_or(table, "why")),
+        entries: nested(table, "entries", context, |entry, context| {
+            Ok(ReportEntry {
+                kind: vocab(entry, "kind", context)?,
+                task: match entry.get("task") {
+                    None => 0,
+                    Some(_) => required_u32(entry, "task", context)?,
+                },
+                text: lf(&str_or(entry, "text")),
+                path: str_or(entry, "path"),
+                needs_person: bool_or(entry, "needs_person", true, context)?,
+            })
+        })?,
+    })
+}
+
+fn report_to_toml(report: &Report) -> TomlValue {
+    let Report {
+        at,
+        milestone,
+        why,
+        entries,
+    } = report;
+    let mut table = Table::new();
+    table.insert("at".to_string(), TomlValue::Datetime(*at));
+    table.insert(
+        "milestone".to_string(),
+        TomlValue::String(milestone.clone()),
+    );
+    table.insert("why".to_string(), TomlValue::String(lf(why)));
+    table.insert(
+        "entries".to_string(),
+        TomlValue::Array(
+            entries
+                .iter()
+                .map(
+                    |ReportEntry {
+                         kind,
+                         task,
+                         text,
+                         path,
+                         needs_person,
+                     }| {
+                        let mut entry = Table::new();
+                        entry.insert(
+                            "kind".to_string(),
+                            TomlValue::String(kind.as_str().to_string()),
+                        );
+                        entry.insert("task".to_string(), TomlValue::Integer(i64::from(*task)));
+                        entry.insert("text".to_string(), TomlValue::String(lf(text)));
+                        entry.insert("path".to_string(), TomlValue::String(path.clone()));
+                        entry.insert(
+                            "needs_person".to_string(),
+                            TomlValue::Boolean(*needs_person),
+                        );
+                        TomlValue::Table(entry)
+                    },
+                )
+                .collect(),
+        ),
+    );
+    TomlValue::Table(table)
+}
+
+/// A table of string keys, each LF-normalised, in the order given.
+fn text_table(fields: &[(&str, &String)]) -> TomlValue {
+    TomlValue::Table(
+        fields
+            .iter()
+            .map(|(key, text)| ((*key).to_string(), TomlValue::String(lf(text))))
+            .collect(),
+    )
+}
+
+/// A record's array of sub-tables; absent reads as empty.
+fn nested<T>(
+    table: &Table,
+    key: &str,
+    context: &str,
+    parse: impl Fn(&Table, &str) -> Result<T>,
+) -> Result<Vec<T>> {
+    let Some(raw) = table.get(key) else {
+        return Ok(Vec::new());
+    };
+    let entries = raw
+        .as_array()
+        .ok_or_else(|| anyhow!("{context}: `{key}` is not an array"))?;
+    entries
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| {
+            let entry = entry
+                .as_table()
+                .ok_or_else(|| anyhow!("{context}: `{key}` holds a non-table entry `{entry}`"))?;
+            parse(entry, &format!("{context} {key}[{index}]"))
+        })
+        .collect()
+}
+
+fn required_u32(table: &Table, key: &str, context: &str) -> Result<u32> {
+    table
+        .get(key)
+        .and_then(TomlValue::as_integer)
+        .and_then(|n| u32::try_from(n).ok())
+        .ok_or_else(|| anyhow!("{context}: `{key}` is missing or not a non-negative integer"))
+}
+
 fn str_or(table: &Table, key: &str) -> String {
     table
         .get(key)
@@ -912,8 +1446,12 @@ fn vocab<T: Vocabulary>(table: &Table, key: &str, context: &str) -> Result<T> {
 /// A present non-boolean is refused: `surfaced = "true"` read as `false` would
 /// slip a decision past approval's answered check.
 fn bool_or_false(table: &Table, key: &str, context: &str) -> Result<bool> {
+    bool_or(table, key, false, context)
+}
+
+fn bool_or(table: &Table, key: &str, absent: bool, context: &str) -> Result<bool> {
     match table.get(key) {
-        None => Ok(false),
+        None => Ok(absent),
         Some(raw) => raw
             .as_bool()
             .ok_or_else(|| anyhow!("{context}: `{key}` is not a boolean")),
@@ -1016,7 +1554,114 @@ pub(crate) mod tests {
                 source_task: 3,
                 done: true,
             }],
+            attempts: vec![attempt()],
+            gate_rounds: vec![gate_round()],
+            reports: vec![report()],
         }
+    }
+
+    fn attempt() -> Attempt {
+        Attempt {
+            task: 7,
+            run_id: "wf_4e7f630b-d4a".to_string(),
+            milestone: "B".to_string(),
+            status: "done".to_string(),
+            summary: "The links overlay lists every row.".to_string(),
+            block: NoteBlock::Present,
+            files_touched: vec!["glimpse/src/nav.rs".to_string()],
+            deviations: vec![Deviation {
+                what: "Kept the selector overlay.".to_string(),
+                why: "It already lists and dispatches rows.".to_string(),
+                means: "Add a links overlay".to_string(),
+            }],
+            tangential: vec![Tangential {
+                kind: "debt".to_string(),
+                area: "glimpse/src/app.rs".to_string(),
+                summary: "The key map is duplicated.".to_string(),
+                why: "Two places to change.".to_string(),
+            }],
+            checks: vec![CheckRun {
+                command: "cargo clippy --manifest-path glimpse/Cargo.toml".to_string(),
+                result: CheckResult::Pass,
+            }],
+            handover: Some(ProposedHandover {
+                reason: "restart".to_string(),
+                action: "Restart glimpse.".to_string(),
+                when: "After the commit.".to_string(),
+                done_when: "The overlay opens.".to_string(),
+            }),
+        }
+    }
+
+    fn gate_round() -> GateRound {
+        GateRound {
+            milestone: "B".to_string(),
+            round: 0,
+            seq: 1,
+            at: at("2026-11-12T10:00:00Z"),
+            outcome: GateOutcome::Fail,
+            commands: vec![
+                GateCommand {
+                    command: "cargo test --manifest-path glimpse/Cargo.toml".to_string(),
+                    outcome: CommandOutcome::Fail,
+                    exit: Some(101),
+                    duration_s: 84,
+                    summary: "412 passed; 2 failed".to_string(),
+                    failed_ids: vec!["view::plan::tests::sections".to_string()],
+                    log: ".claude/flows/x/gates/B-r0-s1-c1.log".to_string(),
+                },
+                GateCommand {
+                    command: "cargo fmt --check".to_string(),
+                    outcome: CommandOutcome::Pass,
+                    exit: None,
+                    duration_s: 2,
+                    summary: String::new(),
+                    failed_ids: Vec::new(),
+                    log: String::new(),
+                },
+            ],
+        }
+    }
+
+    fn report() -> Report {
+        Report {
+            at: at("2026-11-12T10:30:00Z"),
+            milestone: "B".to_string(),
+            why: "gate failed after round 2".to_string(),
+            entries: vec![
+                ReportEntry {
+                    kind: ReportKind::Gate,
+                    task: 0,
+                    text: "milestone B failed after round 2".to_string(),
+                    path: String::new(),
+                    needs_person: true,
+                },
+                ReportEntry {
+                    kind: ReportKind::OutOfLane,
+                    task: 7,
+                    text: "touched a sibling's file".to_string(),
+                    path: "glimpse/src/app.rs".to_string(),
+                    needs_person: false,
+                },
+            ],
+        }
+    }
+
+    /// The fixture with none of the run records, as a store predating them holds.
+    fn base_fixture() -> PlanStore {
+        PlanStore {
+            schema_version: BASE_SCHEMA_VERSION,
+            attempts: Vec::new(),
+            gate_rounds: Vec::new(),
+            reports: Vec::new(),
+            ..fixture()
+        }
+    }
+
+    fn rendered_round_trip(store: &PlanStore) -> PlanStore {
+        let text = toml::to_string_pretty(&to_toml(store)).expect("renders");
+        let doc: TomlValue = toml::from_str(&text).expect("the rendered text parses");
+        from_toml(&doc).expect("parses")
     }
 
     fn record_mut<'a>(doc: &'a mut TomlValue, key: &str) -> &'a mut Table {
@@ -1060,11 +1705,126 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn an_absent_schema_version_reads_as_current() {
+    fn an_absent_schema_version_reads_as_the_base() {
         let doc = TomlValue::Table(Table::new());
         assert_eq!(
             from_toml(&doc).expect("parses").schema_version,
-            SCHEMA_VERSION
+            BASE_SCHEMA_VERSION
+        );
+    }
+
+    #[test]
+    fn each_run_record_array_alone_round_trips_and_raises_the_stamp() {
+        let base = base_fixture();
+        let alone = [
+            PlanStore {
+                attempts: vec![attempt()],
+                ..base.clone()
+            },
+            PlanStore {
+                gate_rounds: vec![gate_round()],
+                ..base.clone()
+            },
+            PlanStore {
+                reports: vec![report()],
+                ..base
+            },
+        ];
+        for store in alone {
+            let store = PlanStore {
+                schema_version: SCHEMA_VERSION,
+                ..store
+            };
+            assert_eq!(
+                to_toml(&store)["schema_version"].as_integer(),
+                Some(SCHEMA_VERSION)
+            );
+            assert_eq!(rendered_round_trip(&store), store);
+        }
+    }
+
+    #[test]
+    fn all_three_run_record_arrays_round_trip_together_after_the_handovers() {
+        let store = fixture();
+        assert_eq!(rendered_round_trip(&store), store);
+        let doc = to_toml(&store);
+        let keys: Vec<&str> = doc
+            .as_table()
+            .expect("root table")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            &keys[keys.len() - 4..],
+            ["handover", "attempt", "gate_round", "report"]
+        );
+        assert_eq!(doc["schema_version"].as_integer(), Some(SCHEMA_VERSION));
+    }
+
+    #[test]
+    fn an_emptied_store_returns_to_the_base_stamp_and_omits_the_arrays() {
+        let mut store = fixture();
+        store.attempts.clear();
+        store.gate_rounds.clear();
+        store.reports.clear();
+        let doc = to_toml(&store);
+        assert_eq!(
+            doc["schema_version"].as_integer(),
+            Some(BASE_SCHEMA_VERSION)
+        );
+        for key in ["attempt", "gate_round", "report"] {
+            assert!(doc.get(key).is_none(), "{key}: {doc}");
+        }
+        assert_eq!(doc, to_toml(&base_fixture()));
+        assert_eq!(from_toml(&doc).expect("parses"), base_fixture());
+    }
+
+    /// The stamp an older binary refuses is the one a store holding run records
+    /// carries, so such a binary cannot rewrite the store without them.
+    #[test]
+    fn a_store_holding_run_records_is_stamped_above_the_base() {
+        assert_eq!(fixture().write_version(), SCHEMA_VERSION);
+        assert_eq!(base_fixture().write_version(), BASE_SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn optional_run_record_keys_stay_absent_while_unset() {
+        let mut store = fixture();
+        store.attempts[0].handover = None;
+        let doc = to_toml(&store);
+        assert!(doc["attempt"][0].get("handover").is_none(), "{doc}");
+        assert!(doc["gate_round"][0]["commands"][0].get("exit").is_some());
+        assert!(doc["gate_round"][0]["commands"][1].get("exit").is_none());
+        assert_eq!(rendered_round_trip(&store), store);
+    }
+
+    #[test]
+    fn a_report_entry_without_needs_person_reads_as_needing_one() {
+        let mut raw = to_toml(&fixture());
+        let entry = record_mut(&mut raw, "report")
+            .get_mut("entries")
+            .expect("entries")
+            .as_array_mut()
+            .expect("an array")[1]
+            .as_table_mut()
+            .expect("an entry table");
+        entry.remove("needs_person");
+        entry.remove("task");
+        let read = from_toml(&raw).expect("parses");
+        assert!(read.reports[0].entries[1].needs_person);
+        assert_eq!(read.reports[0].entries[1].task, 0);
+    }
+
+    #[test]
+    fn crlf_run_record_text_normalises_to_lf() {
+        let mut store = fixture();
+        store.attempts[0].summary = "One.\r\nTwo.".to_string();
+        store.reports[0].entries[0].text = "Three.\r\nFour.".to_string();
+        let doc = to_toml(&store);
+        assert_eq!(doc["attempt"][0]["summary"].as_str(), Some("One.\nTwo."));
+        assert_eq!(
+            doc["report"][0]["entries"][0]["text"].as_str(),
+            Some("Three.\nFour.")
         );
     }
 
@@ -1104,6 +1864,8 @@ pub(crate) mod tests {
             ("contract", "kind", "promise", "invariant"),
             ("approval", "review", "waved", "skipped-flag"),
             ("handover", "reason", "whim", "credentials"),
+            ("attempt", "block", "torn", "malformed"),
+            ("gate_round", "outcome", "meh", "timeout"),
         ];
         for (array, key, bad, listed) in cases {
             let mut raw = to_toml(&fixture());
@@ -1130,6 +1892,14 @@ pub(crate) mod tests {
             ("run", "started"),
             ("handover", "id"),
             ("handover", "source_task"),
+            ("attempt", "task"),
+            ("attempt", "block"),
+            ("gate_round", "milestone"),
+            ("gate_round", "round"),
+            ("gate_round", "seq"),
+            ("gate_round", "at"),
+            ("gate_round", "outcome"),
+            ("report", "at"),
         ];
         for (array, key) in cases {
             let mut raw = to_toml(&fixture());

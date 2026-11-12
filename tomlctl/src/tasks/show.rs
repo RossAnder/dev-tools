@@ -13,7 +13,9 @@ use anyhow::{Result, anyhow};
 use serde_json::{Map as JsonMap, Value as JsonValue, json};
 
 use super::graph::{Graph, nodes_of};
-use super::schema::{Accept, FileKind, ImportOverride, Means, Premise, Store, TaskRow, TaskSpec};
+use super::schema::{
+    Accept, FileKind, ImportOverride, Means, Premise, Probe, Store, TaskRow, TaskSpec,
+};
 use super::store;
 use crate::cli::{ReadIntegrityArgs, ShowPart, TasksTarget};
 use crate::errors::{ErrorKind, tagged_err};
@@ -157,15 +159,7 @@ pub(super) fn accept_json(entries: &[Accept]) -> JsonValue {
                 map.insert("covered_by".to_string(), json!(entry.covered_by));
             }
             if let Some(probe) = &entry.probe {
-                map.insert(
-                    "probe".to_string(),
-                    json!({
-                        "at": probe.at,
-                        "neg_rc": probe.neg_rc,
-                        "pos_rc": probe.pos_rc,
-                        "verdict": probe.verdict,
-                    }),
-                );
+                map.insert("probe".to_string(), accept_probe_json(probe));
             }
             JsonValue::Object(map)
         })
@@ -176,8 +170,31 @@ pub(super) fn accept_json(entries: &[Accept]) -> JsonValue {
 pub(super) fn premises_json(premises: &[Premise]) -> JsonValue {
     premises
         .iter()
-        .map(|p| json!({"claim": p.claim, "check": p.check, "at": p.at}))
+        .map(|p| {
+            let mut map = JsonMap::new();
+            map.insert("claim".to_string(), json!(p.claim));
+            map.insert("check".to_string(), json!(p.check));
+            map.insert("at".to_string(), json!(p.at));
+            if let Some(probe) = &p.probe {
+                map.insert("probe".to_string(), premise_probe_json(probe));
+            }
+            JsonValue::Object(map)
+        })
         .collect()
+}
+
+/// A premise's probe has no positive control, so `pos_rc` is left out.
+pub(super) fn premise_probe_json(probe: &Probe) -> JsonValue {
+    json!({"at": probe.at, "neg_rc": probe.neg_rc, "verdict": probe.verdict})
+}
+
+pub(super) fn accept_probe_json(probe: &Probe) -> JsonValue {
+    json!({
+        "at": probe.at,
+        "neg_rc": probe.neg_rc,
+        "pos_rc": probe.pos_rc,
+        "verdict": probe.verdict,
+    })
 }
 
 pub(super) fn means_json(means: &[Means]) -> JsonValue {

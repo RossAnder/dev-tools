@@ -15,6 +15,7 @@
 //! The poller also tails the activity panel's transcript, re-reading it every [`TICK`] while
 //! the runtime has one targeted; a tail refresh never counts as a tick.
 
+mod doc;
 mod mode;
 mod scan;
 

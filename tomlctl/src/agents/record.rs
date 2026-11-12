@@ -17,7 +17,9 @@ use anyhow::{Result, bail};
 use serde_json::{Value as JsonValue, json};
 
 use super::correlate::{self, Dispatch};
-use super::schema::{self, AgentKind, AgentRecord, AgentStatus, AgentsStore, Harness, STORE_FILE};
+use super::schema::{
+    self, AgentKind, AgentRecord, AgentStatus, AgentsStore, Harness, STORE_FILE, Usage,
+};
 use crate::cli::{WriteIntegrityArgs, write_integrity_opts};
 use crate::io;
 
@@ -53,6 +55,7 @@ pub(crate) enum Event {
         team: String,
         summary: String,
         context_tokens: u64,
+        usage: Usage,
         transcript_path: String,
         task_ids: Option<Vec<u32>>,
         item_ids: Option<Vec<String>>,
@@ -155,6 +158,7 @@ pub(crate) fn apply(store: &mut AgentsStore, event: Event, now: &str) -> Outcome
             team,
             summary,
             context_tokens,
+            usage,
             transcript_path,
             task_ids,
             item_ids,
@@ -217,6 +221,11 @@ pub(crate) fn apply(store: &mut AgentsStore, event: Event, now: &str) -> Outcome
             }
             if context_tokens > 0 {
                 row.context_tokens = context_tokens;
+            }
+            // The totals cover the whole transcript, so a later stop replaces
+            // them rather than adding to them.
+            if !usage.is_zero() {
+                row.usage = usage;
             }
             fill(&mut row.transcript_path, transcript_path);
             row.updated_at = now.to_string();
@@ -519,6 +528,11 @@ pub(crate) fn record(
         (_, Some(path)) if codex => (correlate::codex_latest_dispatch(path), 0),
         (_, Some(path)) => (correlate::latest_dispatch(path), 0),
     };
+    // A Codex rollout records no usage.
+    let stop_usage = match (kind, transcript.as_deref()) {
+        (Kind::Stop, Some(path)) if !codex => correlate::usage(path),
+        _ => Usage::default(),
+    };
     let spawn = match (kind, &dispatch, transcript.as_deref()) {
         (Kind::Stop, None, Some(path)) if codex => correlate::codex_spawn_dispatch(path),
         (Kind::Stop, None, Some(path)) => correlate::spawn_dispatch(path),
@@ -607,6 +621,7 @@ pub(crate) fn record(
             team: meta.team,
             summary: field(payload, "last_assistant_message").to_string(),
             context_tokens: stop_tokens,
+            usage: stop_usage,
             transcript_path,
             task_ids,
             item_ids,
@@ -738,6 +753,7 @@ mod tests {
             team: String::new(),
             summary: "  Applied.  ".into(),
             context_tokens: 1234,
+            usage: Usage::default(),
             transcript_path: String::new(),
             task_ids: task_ids.map(<[u32]>::to_vec),
             item_ids: task_ids.map(|_| Vec::new()),
@@ -1476,6 +1492,7 @@ mod tests {
             assert_eq!(row.status, AgentStatus::Stopped);
             assert_eq!(row.summary, "Applied task 6.");
             assert_eq!(row.context_tokens, 42200);
+            assert!(row.usage.is_zero(), "a Codex agent records no usage");
             assert!(
                 row.transcript_path.ends_with(&format!("{child}.jsonl")),
                 "{}",

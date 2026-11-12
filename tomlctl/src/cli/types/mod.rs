@@ -211,6 +211,13 @@ pub(crate) const FEATURES: &[&str] = &[
     "plan_emit",
     "agents_audit",
     "plan_emit_lane_check",
+    // Plan records in the snapshot, run records, authored files, agent usage
+    // and single-finding reads.
+    "snapshot_plan_records",
+    "plan_run_records",
+    "authored_files",
+    "agent_usage",
+    "review_finding_read",
 ];
 
 /// User-facing top-level subcommand names, as they appear in

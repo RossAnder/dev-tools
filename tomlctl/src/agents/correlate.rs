@@ -1,6 +1,6 @@
 //! Read-only correlation from a hook payload to the facts a record needs: the
 //! agent's transcript, the flow and tasks it was dispatched on, its teammate
-//! metadata, and its context size.
+//! metadata, its context size and its cumulative token usage.
 //!
 //! Observed against Claude Code 2.1.283, 2026-09-28. A subagent's transcript is
 //! `<dirname(transcript_path)>/<session_id>/subagents/agent-<agent_id>.jsonl`,
@@ -13,7 +13,8 @@
 //! Every failure degrades to `None`, a default, or `0`: a hook has nobody to
 //! report an error to.
 
-use std::io::{Read, Seek, SeekFrom};
+use std::collections::HashMap;
+use std::io::{BufRead, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -21,7 +22,7 @@ use std::time::Duration;
 use regex::Regex;
 use serde_json::Value as JsonValue;
 
-use super::schema::AgentKind;
+use super::schema::{AgentKind, Usage};
 
 /// A transcript up to this size is read whole.
 const WHOLE_READ_MAX: u64 = 4 * 1024 * 1024;
@@ -473,6 +474,69 @@ fn tokens_in(text: &str) -> u64 {
     0
 }
 
+/// Token totals over every assistant message in the transcript at `path`,
+/// streamed line by line, so its size is unbounded; only a stop calls this.
+/// Each `message.id` counts once, at the last line seen for it, since one
+/// message spans several lines that repeat its usage. An unreadable file is
+/// zero usage.
+pub(crate) fn usage(path: &Path) -> Usage {
+    let Ok(file) = std::fs::File::open(path) else {
+        return Usage::default();
+    };
+    usage_in(std::io::BufReader::new(file))
+}
+
+fn usage_in(mut reader: impl BufRead) -> Usage {
+    let mut by_id: HashMap<String, [u64; 4]> = HashMap::new();
+    let mut total = Usage::default();
+    let mut add = |counts: [u64; 4]| {
+        total.input = total.input.saturating_add(counts[0]);
+        total.cache_write = total.cache_write.saturating_add(counts[1]);
+        total.cache_read = total.cache_read.saturating_add(counts[2]);
+        total.output = total.output.saturating_add(counts[3]);
+        total.turns = total.turns.saturating_add(1);
+    };
+    let mut buf = Vec::new();
+    loop {
+        buf.clear();
+        match reader.read_until(b'\n', &mut buf) {
+            Ok(0) | Err(_) => break,
+            Ok(_) => {}
+        }
+        let line = String::from_utf8_lossy(&buf);
+        if !line.contains("\"assistant\"") || !line.contains("\"usage\"") {
+            continue;
+        }
+        let Ok(value) = serde_json::from_str::<JsonValue>(&line) else {
+            continue;
+        };
+        if value.get("type").and_then(JsonValue::as_str) != Some("assistant") {
+            continue;
+        }
+        let Some(message) = value.get("message") else {
+            continue;
+        };
+        let Some(usage) = message.get("usage") else {
+            continue;
+        };
+        let count = |key: &str| usage.get(key).and_then(JsonValue::as_u64).unwrap_or(0);
+        let counts = [
+            count("input_tokens"),
+            count("cache_creation_input_tokens"),
+            count("cache_read_input_tokens"),
+            count("output_tokens"),
+        ];
+        match message.get("id").and_then(JsonValue::as_str) {
+            Some(id) if !id.is_empty() => {
+                by_id.insert(id.to_string(), counts);
+            }
+            _ => add(counts),
+        }
+    }
+    by_id.into_values().for_each(&mut add);
+    total
+}
+
 /// The context size at a Codex agent's last response: that response's
 /// `total_tokens`, whose input count already includes the cached tokens.
 fn codex_tokens_in(text: &str) -> u64 {
@@ -877,6 +941,40 @@ mod tests {
         assert_eq!(meta_with(&agent, 0), Meta::default());
         std::fs::remove_file(agent.with_extension("meta.json")).expect("remove");
         assert_eq!(meta_with(&agent, 0), Meta::default());
+    }
+
+    #[test]
+    fn usage_counts_each_message_id_once_at_its_last_line() {
+        let line = |id: Option<&str>, input: u64, output: u64| {
+            let mut message = serde_json::json!({"usage": {
+                "input_tokens": input, "cache_creation_input_tokens": 100,
+                "cache_read_input_tokens": 1000, "output_tokens": output}});
+            if let Some(id) = id {
+                message["id"] = serde_json::json!(id);
+            }
+            serde_json::json!({"type": "assistant", "message": message}).to_string()
+        };
+        let text = [
+            line(Some("m1"), 1, 5),
+            line(Some("m1"), 1, 7),
+            line(Some("m2"), 2, 3),
+            line(None, 4, 1),
+            user_line("usage \"assistant\""),
+            "not json \"assistant\" \"usage\"".to_string(),
+        ]
+        .join("\n");
+        assert_eq!(
+            usage_in(text.as_bytes()),
+            Usage {
+                input: 7,
+                cache_write: 300,
+                cache_read: 3000,
+                output: 11,
+                turns: 3,
+            }
+        );
+        assert!(usage_in(&b""[..]).is_zero());
+        assert!(usage(Path::new("definitely/not/here.jsonl")).is_zero());
     }
 
     #[test]

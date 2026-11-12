@@ -134,6 +134,13 @@ transcript_path = "C:/Users/…/subagents/agent-a007fe3fdba915afd.jsonl"
 summary = "…"
 context_tokens = 48213
 
+[agents.usage]
+input = 1820
+cache_write = 40211
+cache_read = 913004
+output = 15233
+turns = 41
+
 [[agents.segments]]
 task_ids = [16]
 started_at = "2026-09-28T04:44:22Z"
@@ -176,6 +183,7 @@ and any key not listed here is dropped.
 | `transcript_path` | path | The agent's own transcript, canonicalised. |
 | `summary` | text | The stop payload's `last_assistant_message`, trimmed to 600 characters with line endings folded to LF. A stop without one keeps the previous summary. |
 | `context_tokens` | integer | Context size at the agent's last assistant turn: that turn's input, cache-read, cache-creation and output token counts summed. Under Codex, the `total_tokens` of the rollout's last `token_count` event or `token_usage_record` — its input count already includes cached tokens. `0` until a stop reads it; a malformed value reads as `0`. |
+| `usage` | table | Tokens the agent used in total: `input`, `cache_write`, `cache_read` and `output` sum the transcript's `input_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens` and `output_tokens` over its assistant messages, and `turns` counts those messages. One message spans several transcript lines that repeat its usage, so each `message.id` counts once, at its last line. Written at each stop from a read of the whole transcript, replacing the previous totals; a start or idle event never reads it. Omitted while every field is `0`, which is always so under Codex and when the transcript is absent or unreadable; a malformed count reads as `0`. `context_tokens` is unaffected. |
 | `segments` | array of tables | One per assignment, oldest first. |
 
 An unknown `harness`, `kind` or `status` value refuses the whole store, naming the row.

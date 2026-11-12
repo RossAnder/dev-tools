@@ -1648,7 +1648,8 @@ fn carries_probe(entry: bool, value: &JsonValue) -> bool {
     }
 }
 
-/// A field's whole value as JSON, with every `accept` entry's probe removed:
+/// A field's whole value as JSON, with every `accept` and `premises` entry's
+/// probe removed:
 /// a review edit never supplies one, and the patch path keeps a stored probe
 /// on an entry it leaves unchanged.
 fn review_value(store: &Store, id: u32, target: ReviewTarget) -> Result<JsonValue> {
@@ -1685,7 +1686,17 @@ fn spec_value(spec: &TaskSpec, field: &str) -> JsonValue {
         "constraints" => json!(spec.constraints),
         "design" => json!(spec.design),
         "precedent" => json!(spec.precedent),
-        "premises" => premises_json(&spec.premises),
+        "premises" => {
+            let unprobed: Vec<Premise> = spec
+                .premises
+                .iter()
+                .map(|entry| Premise {
+                    probe: None,
+                    ..entry.clone()
+                })
+                .collect();
+            premises_json(&unprobed)
+        }
         "means" => means_json(&spec.means),
         "accept" => {
             let unprobed: Vec<Accept> = spec

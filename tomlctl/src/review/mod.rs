@@ -23,6 +23,7 @@ mod cells;
 mod cover;
 mod digest;
 mod export;
+pub(crate) mod facade;
 mod query;
 mod recheck;
 mod reconcile;
