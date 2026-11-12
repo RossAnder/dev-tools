@@ -1,0 +1,582 @@
+schema_version = 2
+last_updated = 2026-11-12
+
+[binding]
+branch = "main"
+scope = []
+
+[id_high_water]
+C = 5
+D = 17
+H = 2
+
+[[decision]]
+id = "D1"
+decision = "Compute the time and token rollups from the flow's agents.toml, which is tracked in git like every other flow store; add no separate stamped totals record."
+why = "The user removed the ignore rule for per-flow agent records on 2026-11-12 and expects flow stores in git history, so the agent records are themselves the durable source."
+provenance = "user-stated"
+door = "two-way"
+binds = [
+    "tomlctl/src/agents/schema.rs",
+    "11",
+    "20",
+]
+rejected = []
+evidence = "User answer 2026-11-12: 'I've updated gitignore for flow files since I expect stores to be included in git history.' git diff .gitignore removes `.claude/flows/*/agents.toml*`; git check-ignore on a flow's agents.toml exits 1."
+if_false = "agents.toml is ignored again and the rollups need a stamped totals record written at the drain."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = true
+
+[[decision]]
+id = "D2"
+decision = "Offer a record's related records and source references as a selectable links list beside its details, opened with the keyboard or a click on a list row, rather than as clickable text inside the details body."
+why = "The details pane wraps flattened spans and has no hit targets, so inline links need link ranges carried through the wrap; a list reuses the existing row and overlay patterns."
+provenance = "user-confirmed"
+door = "two-way"
+binds = [
+    "glimpse/src/view/details.rs",
+    "glimpse/src/app.rs",
+    "24",
+    "27",
+]
+rejected = []
+evidence = "glimpse/src/view/details.rs wrap and pieces flatten spans to (String, Style); Regions holds one details rect; notes/surface-nav.md finding 3; notes/structure-challenge.md point 2."
+if_false = "Links are clickable in place in the details text: wrap carries link ranges into a new Regions field, and the details pane gains a line cursor for keyboard use."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D3"
+decision = "Adopt the challenger's structure: one Target type with a single App::open and back stack, details builders that return their links, one read-only Plan surface over Tracking<R>, and a CursorList trait with App::list_mut in place of the Inbox-versus-items guard pairs."
+why = "Links between ten kinds of record grow pairwise without a shared target, and a third list surface falls silently into the items branch of every guard pair."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "glimpse/src/app.rs",
+    "glimpse/src/surface.rs",
+    "glimpse/src/view/details.rs",
+    "16",
+    "17",
+    "21",
+    "22",
+    "24",
+]
+evidence = "Read glimpse/src/app.rs Action::Page, ScrollView, SwitchSurface, ItemMove, SelectItem, Back, has_cursor_row and copy_target; glimpse/src/surface.rs Surface, Tracking, InboxState and Tracked; glimpse/src/view/details.rs render. notes/structure-challenge.md and notes/surface-nav.md reach the same reading independently."
+if_false = "Each link is its own action with its own destination-cursor code, and the Plan surface needs a guarded arm added by hand at every site notes/surface-nav.md lists."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Keep the present structure and add a handler per link"
+because = "App::apply holds nine Inbox-versus-items guard pairs (Page, ScrollView, SwitchSurface, ItemMove, SelectItem and others) that route any third list to self.items, where items.get_mut returns None and the key does nothing"
+
+[[decision.rejected]]
+option = "One surface per record kind"
+because = "keys::map takes digits 1 to 6 only and the plan has eleven kinds of row"
+
+[[decision.rejected]]
+option = "Plan rows in ItemsState"
+because = "ItemsState carries marks and a write target, so the item menus would offer status moves on read-only records"
+
+[[decision]]
+id = "D4"
+decision = "Keep the run's records (attempts, gate rounds, needs-human reports) in plan.toml, written by new `plan run` leaves, not in the task store."
+why = "Every worker's `tasks update` rewrites tasks.toml whole and the lane check digests it; plan.toml is written by the orchestrator alone and already holds the run rows these records extend."
+provenance = "agent-assumed"
+door = "one-way"
+binds = [
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/plan/records.rs",
+    "tomlctl/src/plan/dispatch.rs",
+    "4",
+    "8",
+    "9",
+    "10",
+]
+evidence = "Read tomlctl/src/plan/schema.rs PlanStore and Run, tomlctl/src/tasks/schema.rs Store, tomlctl/src/lib.rs SNAPSHOT_INPUTS; notes/worker-note.md findings 4 and 5."
+if_false = "The arrays move to tasks.toml with a schema stamp above 2, the drain records after the lane check only, and the pre-flight must refuse older binaries before any worker runs."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "A new section in tasks.toml"
+because = "tasks/schema.rs drops unknown keys on every write, so a worker running an older binary would delete the records, and a drain write there before the lane check shows as a store change in the digest's rest section"
+
+[[decision.rejected]]
+option = "A new store file"
+because = "it would need a sixth SNAPSHOT_INPUTS slot, a wider glimpse fingerprint and its own verb group for three small arrays"
+
+[[decision]]
+id = "D5"
+decision = "Carry the spec, milestone, change and plan records through the existing `tasks snapshot` as new keys; add no second fetch for them."
+why = "The snapshot already reads, hashes and parses tasks.toml and plan.toml under one revision and then drops these records."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/tasks/snapshot.rs",
+    "tomlctl/src/tasks/show.rs",
+    "glimpse/src/model.rs",
+    "2",
+    "3",
+    "15",
+]
+evidence = "Read tomlctl/src/tasks/snapshot.rs snapshot and task_json, tomlctl/src/tasks/show.rs spec_json, accept_json and premises_json (premises_json emits no probe); notes/snapshot-path.md."
+if_false = "glimpse gains a second feed and model for plan records, with its own revision."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "A separate plan snapshot call or feed"
+because = "it would read and hash both stores twice, and two events could show a task's spec out of step with its row"
+
+[[decision]]
+id = "D6"
+decision = "Give the files under docs/flows/<slug>/ a feed of their own in glimpse, with a tomlctl library listing and read, a walk-and-stat change detector and a watch scope over docs/flows."
+why = "They are outside the snapshot's inputs and every watch scope, and folding about 70 files into the snapshot would tie each note write to a graph rebuild."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "glimpse/src/source.rs",
+    "glimpse/src/watch.rs",
+    "glimpse/src/source/mode.rs",
+    "tomlctl/src/lib.rs",
+    "tomlctl/src/plan/store.rs",
+    "7",
+    "18",
+    "19",
+]
+evidence = "Read glimpse/src/source.rs Feed, Control and FeedState, glimpse/src/source/mode.rs WatchScope, glimpse/CLAUDE.md on change detectors; notes/snapshot-path.md finding 3."
+if_false = "The notes list is static until the flow is reselected."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Add the files to the snapshot"
+because = "SNAPSHOT_INPUTS is a fixed array of names in the flow directory and cannot describe a nested tree of varying size"
+
+[[decision.rejected]]
+option = "Read notes only when one is opened"
+because = "the notes list needs each note's verdict and sources without opening it"
+
+[[decision]]
+id = "D7"
+decision = "Pin a research note's sources with the HEAD commit the agent read at and the list of cited paths that were dirty then; preview a clean path from that commit and a dirty one from the working tree with a notice."
+why = "Agents read the working tree, which is often dirty at planning time, so a commit alone would show text the agent never saw."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "claude/agents/plan-investigator.md",
+    "claude/agents/plan-challenger.md",
+    "claude/agents/plan-cold-reader.md",
+    "6",
+    "28",
+    "35",
+]
+evidence = "notes/research-note.md finding 4; claude/agents/plan-investigator.md Write the note and the plan-v2-note-writer block."
+if_false = "Source previews show the working tree only, with no claim about what the author saw."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Record each file's blob id"
+because = "git hash-object writes no object, so the blob of an uncommitted file cannot be read back later, and it costs the agent one command per cited file"
+
+[[decision.rejected]]
+option = "Record the commit alone"
+because = "the brief and every note are untracked until approval and other files are routinely modified, as docs/ideas/v2-pipeline.md was during this plan's own investigation"
+
+[[decision]]
+id = "D8"
+decision = "Keep the last 200 lines, cut to 64 KiB, of each failed, timed-out or flaky gate command's log under .claude/flows/<slug>/gates/, committed with the flow's stores."
+why = "The verification agent's logs sit in a temp directory that does not outlive the session, and the user expects flow stores in git history."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "claude/agents/verification.md",
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "9",
+    "36",
+]
+evidence = "Read claude/agents/verification.md Step 0 and Output; notes/gate-record.md; the user's 2026-11-12 answer that flow stores belong in git history."
+if_false = "Gate history shows each command's outcome, duration and failed ids with no log."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Store only the log's temp path"
+because = "claude/agents/verification.md writes logs to a mktemp directory in system temp, so the path would name nothing once the session ends"
+
+[[decision.rejected]]
+option = "Keep whole logs"
+because = "a full suite's output is megabytes per round and would be committed on every failed gate"
+
+[[decision]]
+id = "D9"
+decision = "Add a cumulative `usage` table to each agent record, summed over the transcript's distinct assistant messages when the agent stops; leave `context_tokens` as it is."
+why = "The brief asks for tokens totalled, and context_tokens is the context size at the last turn, not spend."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/agents/schema.rs",
+    "tomlctl/src/agents/correlate.rs",
+    "tomlctl/src/agents/record.rs",
+    "11",
+    "20",
+]
+evidence = "Read tomlctl/src/agents/correlate.rs tokens_in and tomlctl/src/agents/record.rs Stop handling; notes/agent-metrics.md finding 1."
+if_false = "The Cost section shows time only and labels context size as such."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Total the existing context_tokens"
+because = "tokens_in returns the usage of the last assistant turn only, so the sum would be a sum of final context sizes"
+
+[[decision.rejected]]
+option = "Have glimpse read each transcript"
+because = "the UI thread does no file I/O and transcripts live outside the repo"
+
+[[decision]]
+id = "D10"
+decision = "Show a fetched source, commit or finding in the details panel in place of the row's details; add no third panel."
+why = "draw_panels lays out exactly two panels, and the details panel already scrolls, wraps and goes full screen."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "glimpse/src/view/mod.rs",
+    "glimpse/src/view/details.rs",
+    "29",
+]
+evidence = "notes/surface-nav.md finding 4 and its counter; glimpse/src/view/details.rs render and render_text."
+if_false = "The preview gets its own pane, scroll state and layout case."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "A third preview pane"
+because = "split_body and draw_panels match on two flags, so a third pane needs a new layout case, its own scroll state and a Regions rect for a view the details panel can already show"
+
+[[decision]]
+id = "D11"
+decision = "Show what waits on the user as a first, read-only `needs you` section of the Inbox, built from the viewed flow's parked tasks, open handovers and latest report."
+why = "The user agreed on 2026-11-12 that the needs-you queue belongs in the Inbox, where questions to them already arrive."
+provenance = "user-confirmed"
+door = "two-way"
+binds = [
+    "glimpse/src/surface.rs",
+    "glimpse/src/view/inbox.rs",
+    "31",
+]
+evidence = "docs/ideas/v2-pipeline.md, Flow state and glimpse, Needs-you queue; the user's reply 'All sound good' to that list on 2026-11-12."
+if_false = "The rows move to a Plan surface section and the Inbox stays input records only."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "A Waiting section of the Plan surface only"
+because = "the user agreed the Inbox as its place, and the Inbox tab's count is what they already watch"
+
+[[decision]]
+id = "D12"
+decision = "Run tomlctl first, glimpse second and the agent and engine contract edits last, and change the carrier's pre-flight list only in the last milestone."
+why = "The engine's references are read live while a flow runs, so a drain step must not land before the installed binary has its verb, nor a pre-flight entry before the gate that installs it has passed."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "claude/commands/implement-v2.md",
+    "claude/agents/plan-worker-deep.md",
+    "claude/agents/plan-worker-lite.md",
+    "13",
+    "34",
+    "36",
+]
+evidence = "claude/commands/implement-v2.md pre-flight step 2; CLAUDE.md, 'Nothing in this repo deploys claude/' and the link scripts, which junction skills and symlink agents to this repository; design/engine.md."
+if_false = "The milestones merge and the drain edits need a capability check of their own before each new step."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "One milestone"
+because = "the drain edits would be live while its own milestone's workers were in flight, calling verbs the installed binary lacks"
+
+[[decision.rejected]]
+option = "Contract edits with the tomlctl milestone"
+because = "a failed first gate would leave a pre-flight list that refuses the binary the gate was meant to install"
+
+[[decision]]
+id = "D13"
+decision = "Show a finding and a commit as fetched documents reached by link; add no surface for the v2 review store."
+why = "glimpse reads no v2 review store today, and the brief leaves the review surfaces alone beyond links into and out of them."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/lib.rs",
+    "tomlctl/src/review/mod.rs",
+    "glimpse/src/source.rs",
+    "12",
+    "28",
+    "29",
+]
+evidence = "rg 'review-v2|review_v2' over glimpse/src and tomlctl/src/lib.rs returned no match; brief Non-goals."
+if_false = "A v2 review feed and surface are added, which is its own plan."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Jump to the finding's row on the Review surface"
+because = "a search of glimpse/src for review-v2 finds nothing: the Review surface reads the v1 review ledger only"
+
+[[decision]]
+id = "D14"
+decision = "Total time and tokens in glimpse from the snapshot: worker agents by task, rolled up to milestone and executor, every other agent of the flow in one `other` row, and gate time from the recorded gate rounds."
+why = "Segments already name the tasks a worker was dispatched on, while verification and planning agents carry no task ids."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/agents/correlate.rs",
+    "glimpse/src/model.rs",
+    "20",
+    "21",
+]
+evidence = "Read tomlctl/src/agents/correlate.rs dispatch_in and tomlctl/src/agents/schema.rs Segment; notes/agent-metrics.md findings 2 and 3."
+if_false = "Gate and planning agents gain a milestone marker and the `other` row shrinks."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Attribute gate and planning agents to a milestone by a prompt marker"
+because = "dispatch_in matches three prompt patterns only, so it needs a new pattern, a segment field and edits to every dispatching prompt, for time the gate rounds already record"
+
+[[decision]]
+id = "D15"
+decision = "Label the surface Plan on key 7, give every surface a two-letter compact label, open the links list with `b` and go back with Backspace."
+why = "The compact header labels a tab by its first letter, which Plan and Plan-review share; `b` and Backspace are unmapped."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "glimpse/src/keys.rs",
+    "glimpse/src/view/header.rs",
+    "glimpse/src/surface.rs",
+    "17",
+    "22",
+    "23",
+    "27",
+]
+evidence = "notes/surface-nav.md findings 2 and 3; glimpse/src/keys.rs tests assert `b` maps to nothing."
+if_false = "Another free key is chosen; nothing else changes."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Pop the back stack on Esc"
+because = "Esc already walks a fixed chain that closes panels and quits, so a stacked location would change what a habitual Esc does"
+
+[[decision]]
+id = "D16"
+decision = "Move a worker's tangential discoveries, deviations and handover proposal into a structured block opening its run note, and a research note's sources into a structured block after its Verdict line; keep the first line of each note as it is."
+why = "The user agreed on 2026-11-12 that output contracts change to a structured form wherever that serves a view better than parsing prose; workers spell the deviations heading four ways."
+provenance = "user-confirmed"
+door = "two-way"
+binds = [
+    "claude/agents/plan-worker-deep.md",
+    "claude/agents/plan-worker-lite.md",
+    "claude/agents/plan-investigator.md",
+    "5",
+    "6",
+    "34",
+    "35",
+]
+evidence = "notes/worker-note.md and notes/research-note.md; the user's reply 'we can change output contracts to structured where optimal'."
+if_false = "glimpse shows notes as prose only and the deviations feed is dropped."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Parse the prose"
+because = "118 run notes spell the deviations heading four ways while every one opens with a conforming Status line"
+
+[[decision.rejected]]
+option = "Put the block first"
+because = "the drain, the parked re-ask and the pending-lens rule all key on the first line of a note"
+
+[[decision]]
+id = "D17"
+decision = "Plan all three slices (reading what exists, structured contracts, insight views) in this one plan."
+why = "The user asked for all slices on 2026-11-12."
+provenance = "user-stated"
+door = "two-way"
+binds = ["docs/ideas/v2-pipeline.md"]
+rejected = []
+evidence = "The user's message 'I want all slices' in reply to the three-slice proposal."
+if_false = "The contracts and insight views become later plans."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[contract]]
+id = "C1"
+kind = "interface"
+claim = "The snapshot keys tomlctl emits for a v2 flow (a task's spec, file_notes, closes, refs and finding; top-level milestones, changes and plan) are the keys glimpse's model reads, as design/records.md, Snapshot keys, names them."
+check = 'grep -q "\"plan\"" tomlctl/src/tasks/snapshot.rs && grep -q "\"milestones\"" tomlctl/src/tasks/snapshot.rs && grep -q "pub(crate) spec:" glimpse/src/model.rs && grep -q "\"probeable\"" glimpse/tests/fixtures/snapshot.json'
+tasks = [
+    2,
+    3,
+    15,
+]
+provides = "tasks snapshot"
+consumes = "glimpse model"
+
+[[contract]]
+id = "C2"
+kind = "interface"
+claim = "tomlctl::authored_list returns the listing shape of design/records.md, Authored files, and glimpse's AuthoredFile deserialises exactly that shape."
+check = 'grep -q "pub fn authored_list" tomlctl/src/lib.rs && grep -q "pub(crate) struct AuthoredFile" glimpse/src/authored.rs && grep -q "authored_list" glimpse/src/source/scan.rs'
+tasks = [
+    7,
+    18,
+    19,
+]
+provides = "tomlctl::authored_list"
+consumes = "glimpse authored feed"
+
+[[contract]]
+id = "C3"
+kind = "interface"
+claim = "The block a worker writes after its Status line and the block the run-note parser reads are the same: a fenced block with the info string `toml run-note` holding the keys of design/records.md, Run-note block."
+check = 'grep -q "toml run-note" tomlctl/src/plan/run_note.rs && grep -q "toml run-note" claude/agents/plan-worker-deep.md && grep -q "toml run-note" claude/agents/plan-worker-lite.md'
+tasks = [
+    5,
+    8,
+    34,
+]
+provides = "plan-worker-procedure"
+consumes = "plan run notes"
+
+[[contract]]
+id = "C4"
+kind = "interface"
+claim = "The block a research agent writes after its Verdict line and the block the sources parser reads are the same: a fenced block with the info string `toml sources` holding the keys of design/records.md, Sources block."
+check = 'grep -q "toml sources" tomlctl/src/plan/note_sources.rs && grep -q "toml sources" claude/agents/plan-investigator.md'
+tasks = [
+    6,
+    35,
+]
+provides = "plan-v2-note-writer"
+consumes = "authored_list"
+
+[[contract]]
+id = "C5"
+kind = "interface"
+claim = "The plan store's attempt, gate_round and report arrays hold the keys of design/records.md, Run records, and glimpse's plan model reads those keys."
+check = 'grep -q "gate_round" tomlctl/src/plan/schema.rs && grep -q "gate_round" glimpse/src/model/plan.rs'
+tasks = [
+    4,
+    8,
+    9,
+    10,
+    15,
+]
+provides = "plan store"
+consumes = "glimpse plan model"
+
+[[run]]
+step = "investigate"
+workflow = "plan-v2-investigate"
+args_hash = "17523d9f6608d9c5a8b7bb251959a701c493cafa280be4b265aee03de469830b"
+run_id = "wf_377580df-bf7"
+session = "9c1cf859-6611-4657-99fd-e1ab8d85c709"
+started = 2026-11-12T09:22:14Z
+finished = 2026-11-12T09:28:27Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "challenge"
+run_id = ""
+session = "9c1cf859-6611-4657-99fd-e1ab8d85c709"
+started = 2026-11-12T09:28:53Z
+finished = 2026-11-12T09:34:15Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "surface"
+run_id = ""
+session = "9c1cf859-6611-4657-99fd-e1ab8d85c709"
+started = 2026-11-12T09:38:02Z
+finished = 2026-11-12T09:38:02Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "cold-read"
+workflow = "plan-v2-prove"
+args_hash = "c126408432f30538b163c7d874dfa9ff35b2823706675fced8ec7499ac12457a"
+run_id = "wf_74a697eb-3bf"
+session = "9c1cf859-6611-4657-99fd-e1ab8d85c709"
+started = 2026-11-12T09:54:43Z
+finished = 2026-11-12T10:00:34Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "review"
+workflow = "plan-v2-review"
+run_id = "wf_d7016c79-67b"
+session = "9c1cf859-6611-4657-99fd-e1ab8d85c709"
+started = 2026-11-12T10:03:51Z
+finished = 2026-11-12T10:52:31Z
+skip_reason = ""
+outcome = "ok"
+
+[[handover]]
+id = "H1"
+reason = "restart"
+action = "Close every running glimpse pane, run `cargo install --path glimpse`, then open glimpse again. A running glimpse holds its own binary open on Windows, so no agent can replace it."
+when = "After milestone B is committed."
+done_when = "Pressing 7 in glimpse shows the Plan surface."
+source_task = 33
+done = false
+
+[[handover]]
+id = "H2"
+reason = "restart"
+action = "Restart each Claude Code session that will run /plan-v2 or /implement-v2, so it loads the edited worker and research agents."
+when = "After milestone C is committed."
+done_when = "The next run note a worker writes holds a `toml run-note` block after its Status line, and after that milestone's drain `tomlctl items list .claude/flows/<slug>/plan.toml --array attempt --count` prints more than zero."
+source_task = 34
+done = false

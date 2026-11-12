@@ -1,0 +1,18 @@
+slug = "glimpse-v2-visibility"
+plan_path = "docs/flows/glimpse-v2-visibility/brief.md"
+status = "draft"
+created = 2026-11-12
+updated = 2026-11-12
+scope = []
+
+[tasks]
+total = 0
+completed = 0
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/glimpse-v2-visibility/review-ledger.toml"
+optimise_findings = ".claude/flows/glimpse-v2-visibility/optimise-findings.toml"
+execution_record = ".claude/flows/glimpse-v2-visibility/execution-record.toml"
+plan_review_findings = ".claude/flows/glimpse-v2-visibility/plan-review-findings.toml"
+tasks = ".claude/flows/glimpse-v2-visibility/tasks.toml"

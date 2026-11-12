@@ -1,0 +1,3624 @@
+schema_version = 2
+last_updated = 2026-11-12
+plan_path = ""
+last_import_refs = []
+
+[policy]
+checkpoints = "milestones"
+max_parallel = 6
+commit_granularity = "per-task"
+origin = "plan"
+note = ""
+
+[[checkpoints]]
+id = "A"
+rationale = "tomlctl carries every v2 record glimpse will show: the snapshot emits specs, milestones, changes and the plan store, the library lists and reads authored files and findings, agents record cumulative usage, and the plan store holds attempts, gate rounds and reports written by new plan run leaves"
+
+[[checkpoints]]
+id = "B"
+rationale = "glimpse shows a v2 flow in full: v2 task details, the Plan surface with its eleven sections, research notes with source previews, links between records with a way back, the needs-you section of the Inbox, and time and token totals"
+
+[[checkpoints]]
+id = "C"
+rationale = "runs leave structured records: workers and research agents write the note blocks, the drain records attempts, gate rounds and the report, and the carrier pre-flight requires the binary that can"
+
+[[file_notes]]
+ref = "declare-the-new-tomlctl-plan-modules"
+file = "tomlctl/src/plan/run_note.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "declare-the-new-tomlctl-plan-modules"
+file = "tomlctl/src/plan/note_sources.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "declare-the-new-tomlctl-plan-modules"
+file = "tomlctl/src/plan/authored.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "declare-the-new-tomlctl-plan-modules"
+file = "tomlctl/src/plan/run_notes.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "declare-the-new-tomlctl-plan-modules"
+file = "tomlctl/src/plan/run_gate.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "declare-the-new-tomlctl-plan-modules"
+file = "tomlctl/src/plan/run_report.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "add-plan-run-notes-to-record-a-runs-attempts"
+file = "tomlctl/tests/plan_run_records.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "read-one-review-finding-through-the-library"
+file = "tomlctl/src/review/facade.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "declare-the-new-glimpse-modules"
+file = "glimpse/src/nav.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "declare-the-new-glimpse-modules"
+file = "glimpse/src/authored.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "declare-the-new-glimpse-modules"
+file = "glimpse/src/plan_state.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "declare-the-new-glimpse-modules"
+file = "glimpse/src/rollup.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "declare-the-new-glimpse-modules"
+file = "glimpse/src/model/plan.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "declare-the-new-glimpse-modules"
+file = "glimpse/src/source/doc.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "declare-the-new-glimpse-modules"
+file = "glimpse/src/view/doc.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "declare-the-new-glimpse-modules"
+file = "glimpse/src/view/task_spec.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "declare-the-new-glimpse-modules"
+file = "glimpse/src/view/plan.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "declare-the-new-glimpse-modules"
+file = "glimpse/src/view/plan_details.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "declare-the-new-glimpse-modules"
+file = "glimpse/src/view/links.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "declare-the-new-glimpse-modules"
+file = "glimpse/src/view/doc_view.rs"
+note = "(new)"
+
+[[specs]]
+ref = "declare-the-new-tomlctl-plan-modules"
+outcome = "The plan module declares its six new submodules and exposes probes to the crate, so later tasks each fill one file without touching the module list."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Add no item to the new files beyond the module doc line.",
+    "Change nothing else in tomlctl/src/plan/mod.rs.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the plan module declares every new submodule"
+check = 'grep -q "mod run_note;" tomlctl/src/plan/mod.rs && grep -q "mod note_sources;" tomlctl/src/plan/mod.rs && grep -q "mod run_notes;" tomlctl/src/plan/mod.rs && grep -q "mod run_gate;" tomlctl/src/plan/mod.rs && grep -q "mod run_report;" tomlctl/src/plan/mod.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "probes and authored are visible to the rest of the crate"
+check = 'grep -q "pub(crate) mod probes;" tomlctl/src/plan/mod.rs && grep -q "pub(crate) mod authored;" tomlctl/src/plan/mod.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "probes is a private module of plan today"
+check = 'grep -q "^mod probes;" tomlctl/src/plan/mod.rs'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "emit-each-tasks-spec-notes-and-links-and-the-milestones-and-changes-in-the-snapshot"
+outcome = "The snapshot of a v2 flow carries every task's spec with its accept checks, premises and their probe verdicts, its file notes and backlog and finding links, and the flow's milestones and change trail; a v1 flow's snapshot differs only by the new empty keys."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Keep every existing snapshot key and its position.",
+    "`revision` and `SNAPSHOT_INPUTS` do not change.",
+    "`tasks show` output changes only by a premise gaining `probe` when one is recorded.",
+    "Do not add the `plan` key; another task owns it.",
+]
+design = ["design/records.md#snapshot-keys"]
+precedent = ["tomlctl/src/tasks/show.rs"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the snapshot emits a milestones key and a changes key"
+check = 'grep -q "\"milestones\".into()" tomlctl/src/tasks/snapshot.rs && grep -q "\"changes\".into()" tomlctl/src/tasks/snapshot.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the snapshot marks each accept entry and premise as probeable or not"
+check = 'grep -q "probeable" tomlctl/src/tasks/snapshot.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a v2 store's snapshot carries spec, probe verdicts, file notes, links, milestones and changes, and a v1 store's gains only empty keys"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(tasks_snapshot)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.accept]]
+behaviour = "the snapshot tests cover the probeable flag"
+check = 'grep -q "probeable" tomlctl/tests/tasks_snapshot.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the snapshot builds each task object from the row alone"
+check = 'grep -q "fn task_json(row: &TaskRow)" tomlctl/src/tasks/snapshot.rs'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "the probe emitter's accept skip rule is a function of plan::probes"
+check = 'grep -q "fn skip_reason(accept: &Accept)" tomlctl/src/plan/probes.rs'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "probes is reachable from outside plan"
+check = 'grep -q "pub(crate) mod probes;" tomlctl/src/plan/mod.rs'
+at = "after:1"
+
+[[specs.means]]
+text = "Add an accept entry's `owner` and `probeable`, and always emit its `run_by` and `covered_by`, in the snapshot's own emitter; leave `show::accept_json` as it is."
+binding = "required"
+detail = "The constraint allows `tasks show` to change only by a premise gaining `probe`, and `accept_json` omits `run_by` and `covered_by` while they are empty."
+
+[[specs]]
+ref = "emit-the-plan-store-in-the-snapshot-and-document-the-new-keys"
+outcome = "The snapshot carries the flow's whole plan store, and the reference documents every key the snapshot now emits."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Parse plan.toml once per snapshot.",
+    "A flow with no plan.toml emits `plan` as null and nothing else changes for it.",
+]
+means = []
+design = ["design/records.md#snapshot-keys"]
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the snapshot emits a plan key"
+check = 'grep -q "\"plan\"" tomlctl/src/tasks/snapshot.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the reference documents the new envelope keys"
+check = """awk '/^## The snapshot read/{f=1;next} f&&/^## /{f=0} f' claude/skills/tomlctl/references/tasks-store.md | grep -q "file_notes" && grep -q "probeable" claude/skills/tomlctl/references/tasks-store.md"""
+kind = "forward"
+positive = '''printf '## The snapshot read\nfile_notes\n## Frozen contracts\n' | awk '/^## The snapshot read/{f=1;next} f&&/^## /{f=0} f' | grep -q "file_notes"'''
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+pos_rc = 0
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a flow with a plan store carries it under plan, and one without carries null"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(tasks_snapshot)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.accept]]
+behaviour = "the snapshot tests cover a flow with no plan store"
+check = 'grep -q "\"plan\"" tomlctl/tests/tasks_snapshot.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the snapshot already parses the plan store for the running milestone"
+check = 'grep -q "running_milestone" tomlctl/src/tasks/snapshot.rs'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "hold-attempts-gate-rounds-and-reports-in-the-plan-store"
+outcome = "A plan store can hold a run's attempts, gate rounds and needs-human reports, they round-trip unchanged, and an older binary refuses a store that holds any."
+constraints = [
+    "Touch no file outside this task's files.",
+    "A plan store holding none of the three arrays reads and writes byte for byte as it does today.",
+    "Add no verb here; the `plan run` leaves are other tasks.",
+    "Change no existing record's keys.",
+]
+design = ["design/records.md#run-records"]
+precedent = ["tomlctl/src/tasks/schema.rs"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the plan store types the three arrays"
+check = 'grep -q "gate_round" tomlctl/src/plan/schema.rs && grep -q "attempt" tomlctl/src/plan/schema.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the store reference documents the three arrays"
+check = 'grep -q "gate_round" claude/skills/tomlctl/references/plan-store.md && grep -q "\[\[attempt\]\]" claude/skills/tomlctl/references/plan-store.md && grep -q "\[\[report\]\]" claude/skills/tomlctl/references/plan-store.md'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the arrays round-trip, an empty store keeps the old stamp and a newer stamp is refused"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(plan::schema)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.accept]]
+behaviour = "the schema tests gain cases for the three arrays"
+check = '''test "$(grep -c '#\[test\]' tomlctl/src/plan/schema.rs)" -gt 23'''
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the plan store refuses a schema version above its own"
+check = 'grep -q "schema_version > SCHEMA_VERSION" tomlctl/src/plan/schema.rs'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "the plan store holds runs as a list of Run"
+check = 'grep -q "pub(crate) runs: Vec<Run>" tomlctl/src/plan/schema.rs'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.means]]
+text = "A gate round holds `seq` and is keyed on (milestone, round, seq); a report entry holds `needs_person`, a bool that reads as true when absent."
+binding = "required"
+detail = "design/records.md, Run records, gives both; glimpse's needs-you section and gate history read them."
+
+[[specs]]
+ref = "parse-the-block-opening-a-workers-run-note"
+outcome = "tomlctl can read a worker's run note, with or without the structured block, into one typed value."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Read no file and no store; the function takes text.",
+    "A note written before this contract, and one that holds only a Status line, must parse.",
+]
+design = ["design/records.md#run-note-block"]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the parser recognises the block by its info string"
+check = 'grep -q "toml run-note" tomlctl/src/plan/run_note.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "notes with a block, without one and with a malformed one each parse to the documented value"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(plan::run_note)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.accept]]
+behaviour = "the run-note parser carries its own tests"
+check = 'grep -q "#\[test\]" tomlctl/src/plan/run_note.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "run_note.rs exists as a declared, empty module"
+check = 'test -f tomlctl/src/plan/run_note.rs && grep -q "mod run_note;" tomlctl/src/plan/mod.rs'
+at = "after:1"
+
+[[specs.means]]
+text = "A `toml run-note` fence that is separated from the Status line by anything but blank lines reads as `malformed`, with a reason naming the cause; only a note holding no `toml run-note` fence at all is `absent`. Add a unit test for a note whose block follows prose. This replaces the detail's reading that such a note has no block."
+binding = "required"
+detail = "design/records.md, Run-note block, says so; read as absent, a block after prose would drop its deviations, tangential entries and handover with no problem reported."
+
+[[specs]]
+ref = "parse-a-research-notes-sources"
+outcome = "tomlctl can list the sources a research note cites, whether the note carries the structured block or only inline references."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Read no file; existence is the caller's predicate.",
+    "Never return an absolute path or one containing `..`.",
+]
+design = ["design/records.md#sources-block"]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the parser recognises the block by its info string"
+check = 'grep -q "toml sources" tomlctl/src/plan/note_sources.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "block sources and inline references each parse to the documented list"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(plan::note_sources)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.accept]]
+behaviour = "the sources parser carries its own tests"
+check = 'grep -q "#\[test\]" tomlctl/src/plan/note_sources.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "note_sources.rs exists as a declared, empty module"
+check = 'test -f tomlctl/src/plan/note_sources.rs && grep -q "mod note_sources;" tomlctl/src/plan/mod.rs'
+at = "after:1"
+
+[[specs.means]]
+text = 'A source from the block has `origin = "block"`; one found in the prose has `origin = "inline"`, an empty `claim`, `url` and `read_at`, and `dirty = false`. A source with no line has `line` absent.'
+binding = "required"
+detail = "The authored listing passes these values through unchanged, and glimpse tells a pinned source from an unpinned one by them."
+
+[[specs]]
+ref = "list-and-read-a-flows-authored-files-through-the-library"
+outcome = "A library caller can list a flow's brief, design files, notes and run notes with each one's kind, headline, state and sources, and read any one of them, without leaving the flow's directory."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Take `root` explicitly; read no process-global root.",
+    "Write nothing.",
+    "Add the two functions to lib.rs and change no existing facade function.",
+]
+design = ["design/records.md#authored-files"]
+precedent = ["tomlctl/src/plan/store.rs"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the library exposes the listing and the read"
+check = 'grep -q "pub fn authored_list" tomlctl/src/lib.rs && grep -q "pub fn authored_read" tomlctl/src/lib.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the listing names every kind with its headline, state and sources, and a path outside the flow's directory is refused"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(library_facade)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.accept]]
+behaviour = "the facade tests cover the authored listing"
+check = 'grep -q "authored_list" tomlctl/tests/library_facade.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the library facade takes root explicitly on its reads"
+check = 'grep -q "pub fn snapshot_if_changed" tomlctl/src/lib.rs'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "the brief locator contains a path to the flow's authored directory"
+check = 'grep -q "fn locate_brief" tomlctl/src/plan/store.rs'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.means]]
+text = "Canonicalise each file against the `root` argument. Do not call `store::locate_brief` or `authored_anchor`: both resolve through the process root."
+binding = "required"
+detail = "The library reads take `root` explicitly, and the poller thread that will call these never sets a process root."
+
+[[specs.means]]
+text = """Also walk `notes/settle/*.md`: list each as kind `settle`, id `<F>`, headline its first line, state `""` and sources `[]`, and add a library_facade case that lists one. This widens the detail's 'only' list of walked paths."""
+binding = "required"
+detail = "design/records.md, Authored files, lists the `settle` kind for `notes/settle/<F>.md`, which apply-v2 flows write."
+
+[[specs]]
+ref = "add-plan-run-notes-to-record-a-runs-attempts"
+outcome = "After a milestone's run, one command turns its workers' run notes into durable attempt records and tells the caller which notes had a problem."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Write only the `[[attempt]]` array of plan.toml.",
+    "A note without a block, a missing note and a malformed block each record an attempt; none fails the command.",
+    "Run `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` before returning, since a new verb and its doc are gated there.",
+]
+means = []
+design = [
+    "design/records.md#run-records",
+    "design/engine.md#drain-changes",
+]
+precedent = ["tomlctl/src/plan/records.rs"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "plan run has a notes leaf"
+check = 'grep -q "Notes" tomlctl/src/cli/types/plan.rs && grep -q "PlanRunOp::Notes" tomlctl/src/plan/dispatch.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the reference documents the verb"
+check = 'grep -q "plan run notes" claude/skills/tomlctl/references/plan.md'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "attempts are recorded per task and run, problems are reported, and a second call changes nothing"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(plan_run_records)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.accept]]
+behaviour = "the run-record tests exist"
+check = "test -f tomlctl/tests/plan_run_records.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "plan run leaves are variants of PlanRunOp dispatched in plan/dispatch.rs"
+check = 'grep -q "pub(crate) enum PlanRunOp" tomlctl/src/cli/types/plan.rs && grep -q "PlanRunOp::Start(args) => records::run_start(args)" tomlctl/src/plan/dispatch.rs'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "a run row records the task ids its launch dispatched"
+check = 'grep -q "pub(crate) tasks: Vec<u32>" tomlctl/src/plan/schema.rs'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "add-plan-run-gate-to-record-a-gate-round"
+outcome = "A milestone's gate round, with each command's outcome, duration, summary, failed ids and the tail of its log, is recorded durably in the flow."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Write only the `[[gate_round]]` array of plan.toml and files under `.claude/flows/<slug>/gates/`.",
+    "Run no command; the caller supplies every result.",
+    "An unreadable log never fails the record.",
+    "Run `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` before returning.",
+    "Row keys: `command` and `outcome` are required; `exit` may be absent and is then omitted from the store; `summary`, `duration_s`, `failed_ids` and `log` default to empty or zero when absent. Any other key refuses the batch.",
+    "In the output, `commands` is the round's stored command rows after the merge, each as `{command, outcome, log}`; `unread` lists the commands whose log could not be read.",
+]
+design = [
+    "design/records.md#run-records",
+    "design/engine.md#drain-changes",
+]
+precedent = ["tomlctl/src/plan/run_notes.rs"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "plan run has a gate leaf"
+check = 'grep -q "PlanRunOp::Gate" tomlctl/src/plan/dispatch.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the reference documents the verb"
+check = 'grep -q "plan run gate" claude/skills/tomlctl/references/plan.md'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a round is recorded with its commands, a non-pass log's tail is kept and cut, and a re-record replaces only the commands it names"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(plan_run_records)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.accept]]
+behaviour = "the run-record tests cover the gate leaf"
+check = 'grep -q "\"gate\"" tomlctl/tests/plan_run_records.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the notes leaf is registered, showing where a plan run leaf goes"
+check = 'grep -q "PlanRunOp::Notes" tomlctl/src/plan/dispatch.rs'
+at = "after:8"
+
+[[specs.means]]
+text = "`n` in the log file name is the command's 1-based position in the round as stored after the merge. A relative `log` path in a row resolves against the current directory."
+binding = "required"
+detail = "A re-record must overwrite the same file for the same command, and the orchestrator passes the verification agent's path as it received it."
+
+[[specs.means]]
+text = "Take a `--rerun` flag. Without it the call records a new run of the round, with `seq` one more than the highest recorded for that (milestone, round). With it the call merges into the latest run of the round and replaces the commands it names; `--rerun` with no run recorded for the round is refused. The kept log is named `<milestone>-r<round>-s<seq>-c<n>.log`. Where the action and detail say a call for the same round replaces commands, that holds only under `--rerun`. Test both paths."
+binding = "required"
+detail = "A gate run again at a later invocation reuses the round number, and a plain upsert on (milestone, round) would overwrite the earlier run's results."
+
+[[specs.means]]
+text = """Read a row's source `log` only when its canonical path lies under the canonical OS temp directory (`std::env::temp_dir()`); any other path stores `log = ""` and is listed in `unread`, and never fails the record. Add a test with a log outside the temp directory. The kept file is `<milestone>-r<round>-s<seq>-c<n>.log`, replacing the detail's name."""
+binding = "required"
+detail = "design/records.md, Run records: the kept tail is committed with the flow's stores, so the verb must not copy an arbitrary readable file a row names."
+
+[[specs]]
+ref = "add-plan-run-report-to-store-the-needs-human-report"
+outcome = "What an invocation reported as needing a person is kept in the flow, one report per invocation, latest last."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Write only the `[[report]]` array of plan.toml.",
+    "Never replace or remove an earlier report.",
+    "Run `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` before returning.",
+]
+design = [
+    "design/records.md#run-records",
+    "design/engine.md#drain-changes",
+]
+precedent = ["tomlctl/src/plan/run_gate.rs"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "plan run has a report leaf"
+check = 'grep -q "PlanRunOp::Report" tomlctl/src/plan/dispatch.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the reference documents the verb"
+check = 'grep -q "plan run report" claude/skills/tomlctl/references/plan.md'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "reports append in order with their entries, and an unknown kind is refused"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(plan_run_records)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.accept]]
+behaviour = "the run-record tests cover the report leaf"
+check = 'grep -q "\"report\"" tomlctl/tests/plan_run_records.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the gate leaf is registered"
+check = 'grep -q "PlanRunOp::Gate" tomlctl/src/plan/dispatch.rs'
+at = "after:9"
+
+[[specs.means]]
+text = "A row also takes `needs_person`, a bool that defaults to true, making its accepted keys `kind`, `task`, `text`, `path` and `needs_person`."
+binding = "required"
+detail = "The drain's report lists lines that only inform, and glimpse's needs-you section must leave those out."
+
+[[specs]]
+ref = "record-each-agents-cumulative-token-usage"
+outcome = "A stopped agent's record carries the tokens it used in total, split into input, cache write, cache read and output, with the number of turns."
+constraints = [
+    "Touch no file outside this task's files.",
+    "`context_tokens` is unchanged in meaning and value.",
+    "Read the whole transcript only when an agent stops, never on a start or idle event.",
+    "An unreadable or absent transcript records no usage and fails nothing.",
+]
+means = []
+design = ["design/records.md#agent-usage"]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the agent record types a usage table"
+check = 'grep -q "cache_write" tomlctl/src/agents/schema.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the reference documents the usage table"
+check = 'grep -q "cache_write" claude/skills/tomlctl/references/agents.md'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "usage sums each assistant message once and a second stop does not double it"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(agents_record)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.accept]]
+behaviour = "the agent-record tests cover usage"
+check = 'grep -q "cache_write" tomlctl/tests/agents_record.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the stop path stores only the last turn's context size today"
+check = 'grep -q "fn tokens_in(text: &str) -> u64" tomlctl/src/agents/correlate.rs && grep -q "pub(crate) context_tokens: u64" tomlctl/src/agents/schema.rs'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "read-one-review-finding-through-the-library"
+outcome = "A library caller can read one v2 review finding, as a person would be shown it, by its store path and id."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Write nothing.",
+    "Add one function to lib.rs and one `mod` line to review/mod.rs; change no existing function.",
+    "Build no second projection of a finding.",
+]
+means = []
+design = ["design/records.md#finding-read"]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the library exposes the finding read"
+check = 'grep -q "pub fn review_finding" tomlctl/src/lib.rs && grep -q "mod facade;" tomlctl/src/review/mod.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a finding reads back, an unknown id errors and a store outside .claude is refused"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(library_facade)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.accept]]
+behaviour = "the facade tests cover the finding read"
+check = 'grep -q "tomlctl::review_finding" tomlctl/tests/library_facade.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "each review verb lives in its own module declared in review/mod.rs"
+check = 'grep -q "^mod query;" tomlctl/src/review/mod.rs'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "advertise-the-new-tomlctl-capabilities"
+outcome = "`tomlctl capabilities` names the five features this milestone added, so a carrier can tell a binary that has them from one that does not."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Do not change the crate version.",
+    "Append the names; reorder nothing.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the feature list names the five features"
+check = 'grep -q "snapshot_plan_records" tomlctl/src/cli/types/mod.rs && grep -q "plan_run_records" tomlctl/src/cli/types/mod.rs && grep -q "authored_files" tomlctl/src/cli/types/mod.rs && grep -q "agent_usage" tomlctl/src/cli/types/mod.rs && grep -q "review_finding_read" tomlctl/src/cli/types/mod.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the README names them"
+check = 'grep -q "plan_run_records" tomlctl/README.md && grep -q "authored_files" tomlctl/README.md'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the capabilities test agrees with the list"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'binary(capabilities)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.accept]]
+behaviour = "the capabilities test names the new features"
+check = 'grep -q "snapshot_plan_records" tomlctl/tests/capabilities.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "features are one list in cli/types/mod.rs"
+check = 'grep -q "pub(crate) const FEATURES: &\[&str\]" tomlctl/src/cli/types/mod.rs'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "declare-the-new-glimpse-modules"
+outcome = "glimpse declares every module this plan adds, so later tasks each fill one file without touching a module list."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Add no item to the new files beyond the module doc line.",
+    "Change nothing in the four existing files but the `mod` lines.",
+]
+means = []
+design = ["design/glimpse.md#modules"]
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the crate root declares its four new modules"
+check = 'grep -q "^mod nav;" glimpse/src/main.rs && grep -q "^mod authored;" glimpse/src/main.rs && grep -q "^mod plan_state;" glimpse/src/main.rs && grep -q "^mod rollup;" glimpse/src/main.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the view, source and model modules declare theirs"
+check = 'grep -q "mod doc_view;" glimpse/src/view/mod.rs && grep -q "mod links;" glimpse/src/view/mod.rs && grep -q "mod plan_details;" glimpse/src/view/mod.rs && grep -q "mod task_spec;" glimpse/src/view/mod.rs && grep -q "^mod doc;" glimpse/src/source.rs && grep -q "mod plan;" glimpse/src/model.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the view module declares its children as pub(crate) mod"
+check = 'grep -q "^pub(crate) mod details;" glimpse/src/view/mod.rs'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "the source module declares mode and scan"
+check = 'grep -q "^mod mode;" glimpse/src/source.rs && grep -q "^mod scan;" glimpse/src/source.rs'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "model-the-snapshots-v2-records-in-glimpse"
+outcome = "glimpse holds every v2 record the snapshot carries in typed form, with the lookups its views need, and still loads a snapshot that lacks them."
+constraints = [
+    "Touch no file outside this task's files.",
+    "A snapshot without the new keys must deserialise to empty values, never fail.",
+    "Keep `Task`'s existing fields and `Index`'s existing lookups as they are.",
+    "Put new types in model/plan.rs; model.rs gains only fields and the index wiring.",
+]
+design = [
+    "design/records.md#snapshot-keys",
+    "design/records.md#run-records",
+    "design/records.md#agent-usage",
+]
+precedent = ["glimpse/src/model.rs"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the model holds a task's spec and the plan"
+check = 'grep -q "PlanIndex" glimpse/src/model/plan.rs && grep -q "pub(crate) spec:" glimpse/src/model.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the fixture carries the v2 keys"
+check = 'grep -q "\"gate_round\"" glimpse/tests/fixtures/snapshot.json && grep -q "\"probeable\"" glimpse/tests/fixtures/snapshot.json'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the fixture round-trips through the model and a snapshot without the new keys still loads"
+check = "cargo test --manifest-path glimpse/Cargo.toml model::"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo test --manifest-path glimpse/Cargo.toml"
+
+[[specs.accept]]
+behaviour = "the plan model carries its own tests"
+check = 'grep -q "#\[test\]" glimpse/src/model/plan.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the task model holds only the row fields today"
+check = 'grep -q "pub(crate) acceptance: String," glimpse/src/model.rs && ! grep -q "pub(crate) spec:" glimpse/src/model.rs'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "the snapshot emits the plan key"
+check = 'grep -q "\"plan\"" tomlctl/src/tasks/snapshot.rs'
+at = "after:3"
+
+[[specs.means]]
+text = "The fixture's v2 example also holds a task whose status is `parked`, one open and one done handover, two reports of which the later has entries of kind `gate` with a `path` and of kind `parked` naming the parked task, an accept entry whose probe verdict is not `healthy`, and a gate probe with no verdict."
+binding = "required"
+detail = "The needs-you section, the Health section and the headless render test are proved against this fixture, and none of those tasks may edit it; the second report and the parked entry let them show only the latest report is read and parked or handover entries are skipped."
+
+[[specs]]
+ref = "give-the-list-surfaces-one-cursor-list-trait"
+outcome = "Every list surface answers the same cursor operations through one trait, so a new list surface is reached by adding one case rather than one guard at every site."
+constraints = [
+    "Touch no file outside this task's files.",
+    "No key or mouse action changes behaviour on any existing surface.",
+    "Edit no existing test's assertions.",
+    "Add no new surface here.",
+]
+means = []
+design = ["design/glimpse.md#cursor-lists"]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the trait and the accessor exist"
+check = 'grep -q "trait CursorList" glimpse/src/surface.rs && grep -q "fn list_mut" glimpse/src/app.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "every existing list key behaves as before"
+check = "cargo test --manifest-path glimpse/Cargo.toml app::"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo test --manifest-path glimpse/Cargo.toml"
+
+[[specs.premises]]
+claim = "App::apply routes list actions by an Inbox guard and an items fallback"
+check = 'grep -q "Action::Page(scroll) if self.surface == Surface::Inbox" glimpse/src/app.rs && grep -q "Action::Page(scroll) if self.surface != Surface::Tasks" glimpse/src/app.rs'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "add-the-target-type-appopen-and-the-back-stack"
+outcome = "glimpse has one way to go to any record and one way back, working today for tasks, backlog rows and input records."
+constraints = [
+    "Touch no file outside this task's files.",
+    "A task is selected only through `App::select`.",
+    "`Esc` behaves exactly as before.",
+    "The UI thread reads no file and runs no command here.",
+]
+means = []
+design = ["design/glimpse.md#target"]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the target type and the open path exist"
+check = 'grep -q "pub(crate) enum Target" glimpse/src/nav.rs && grep -q "fn open(" glimpse/src/nav.rs glimpse/src/app.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "Backspace is mapped"
+check = 'grep -q "KeyCode::Backspace" glimpse/src/keys.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "opening a target moves to its row and back returns to where the user was"
+check = "cargo test --manifest-path glimpse/Cargo.toml nav"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo test --manifest-path glimpse/Cargo.toml"
+
+[[specs.accept]]
+behaviour = "the nav module carries its own tests"
+check = 'grep -q "#\[test\]" glimpse/src/nav.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "no key maps Backspace today"
+check = '! grep -q "KeyCode::Backspace" glimpse/src/keys.rs'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "the list accessor exists"
+check = 'grep -q "fn list_mut" glimpse/src/app.rs'
+at = "after:16"
+
+[[specs]]
+ref = "hold-the-authored-files-listing-in-the-app"
+outcome = "The app holds the viewed flow's authored-files listing and can look a file up by path or by task."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Read no file here; the listing arrives as a value.",
+    "An unknown `kind` loads rather than failing the listing.",
+]
+means = []
+design = ["design/records.md#authored-files"]
+precedent = ["glimpse/src/model.rs"]
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the listing type and the app's apply method exist"
+check = 'grep -q "pub(crate) struct AuthoredFile" glimpse/src/authored.rs && grep -q "fn apply_authored" glimpse/src/app.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the documented listing shape loads, and an unchanged revision is not re-applied"
+check = "cargo test --manifest-path glimpse/Cargo.toml authored"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo test --manifest-path glimpse/Cargo.toml"
+
+[[specs.accept]]
+behaviour = "the authored module carries its own tests"
+check = 'grep -q "#\[test\]" glimpse/src/authored.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "authored.rs is a declared, empty module"
+check = 'grep -q "^mod authored;" glimpse/src/main.rs'
+at = "after:14"
+
+[[specs]]
+ref = "feed-the-authored-files-listing-from-the-poller"
+outcome = "While glimpse shows a flow, its listing of that flow's brief, design files, notes and run notes stays current as files are written, with or without a working watch."
+constraints = [
+    "Touch no file outside this task's files.",
+    "The watch callback only classifies and posts; it never blocks or reads.",
+    "No path is watched twice.",
+    "The snapshot fetch, its fingerprint and the existing feeds behave as before.",
+    "The UI thread reads no file.",
+]
+design = ["design/glimpse.md#authored-feed"]
+precedent = ["glimpse/src/source.rs"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the feed and its watch scope exist"
+check = 'grep -q "Authored" glimpse/src/source.rs && grep -q "Authored" glimpse/src/source/mode.rs && grep -q "authored_list" glimpse/src/source/scan.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a written note reaches the app's listing by wake and by re-stat"
+check = "cargo test --manifest-path glimpse/Cargo.toml source::"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo test --manifest-path glimpse/Cargo.toml"
+
+[[specs.accept]]
+behaviour = "the poller tests cover the authored feed"
+check = 'grep -q "fn [a-z_]*authored" glimpse/src/source.rs glimpse/src/source/scan.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "a feed is a variant of Feed with a scope and a wake test"
+check = 'grep -q "pub(crate) enum Feed" glimpse/src/source.rs && grep -q "fn woken_by" glimpse/src/source.rs'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "watch scopes are the WatchScope enum"
+check = 'grep -q "pub(super) enum WatchScope" glimpse/src/source/mode.rs'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "the library lists authored files"
+check = 'grep -q "pub fn authored_list" tomlctl/src/lib.rs'
+at = "after:7"
+
+[[specs.means]]
+text = "`Wake::NewScope` carries a `LedgerKind` today; give the late-appearing `docs/flows` directory its own wake variant rather than widening that payload."
+binding = "suggested"
+detail = "The existing variant's handlers match on the ledger kind."
+
+[[specs.means]]
+text = "While `<root>/docs/flows` is missing, probe for it on each scan, as a missing flows root is re-probed, and add the recursive watch when it appears; route its arrival through no wake. A change the re-stat finds while the scope has no watch counts no miss. Test a docs/flows created after start. This replaces the detail's `Wake::NewScope` clause and the suggested means."
+binding = "required"
+detail = "watch.rs raises `Wake::NewScope` only for a directory arriving directly under `.claude`, and nothing watches `docs/`; design/glimpse.md, Authored feed, gives the probe."
+
+[[specs]]
+ref = "total-time-and-tokens-by-task-milestone-and-executor"
+outcome = "glimpse can say how much time and how many tokens each milestone and each executor used, and never shows a missing measurement as zero."
+constraints = [
+    "Touch no file outside this task's files.",
+    "The function is pure: no clock read, no file read.",
+    "Count only agents whose type starts `plan-worker-` toward a task.",
+]
+means = []
+design = ["design/glimpse.md#rollups"]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the rollup function exists"
+check = 'grep -q "pub(crate) fn " glimpse/src/rollup.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "time and tokens roll up to milestone and executor, shared segments split evenly and absent usage is marked not recorded"
+check = "cargo test --manifest-path glimpse/Cargo.toml rollup"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo test --manifest-path glimpse/Cargo.toml"
+
+[[specs.accept]]
+behaviour = "the rollup module carries its own tests"
+check = 'grep -q "#\[test\]" glimpse/src/rollup.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the model carries agent usage and task specs"
+check = 'grep -q "usage" glimpse/src/model.rs && grep -q "pub(crate) spec:" glimpse/src/model.rs'
+at = "after:15"
+
+[[specs]]
+ref = "build-the-plan-surfaces-rows"
+outcome = "glimpse can turn a v2 flow's records into the Plan surface's list: eleven sections of rows, each knowing what it shows and where it leads."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Building rows reads nothing but its arguments.",
+    "Offer no write: the state has no marks, no menu and no write target.",
+    "Row ids are stable across rebuilds.",
+    "The tests start from the parsed fixture and alter it in code for cases it lacks (an approval with changes before and after it, an unprobed entry that is not probeable, an empty section); never edit the fixture file.",
+]
+design = ["design/glimpse.md#plan-surface"]
+precedent = ["glimpse/src/surface.rs"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the plan state and its row type exist"
+check = 'grep -q "pub(crate) struct PlanState" glimpse/src/plan_state.rs && grep -q "pub(crate) struct PlanRow" glimpse/src/plan_state.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the builder yields every section's rows from the fixture and keeps the cursor across a rebuild"
+check = "cargo test --manifest-path glimpse/Cargo.toml plan_state"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo test --manifest-path glimpse/Cargo.toml"
+
+[[specs.accept]]
+behaviour = "the plan state carries its own tests"
+check = 'grep -q "#\[test\]" glimpse/src/plan_state.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the shared list state is Tracking over a Tracked row"
+check = 'grep -q "pub(crate) struct Tracking<R>" glimpse/src/surface.rs && grep -q "pub(crate) trait Tracked" glimpse/src/surface.rs'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "the cursor-list trait exists"
+check = 'grep -q "trait CursorList" glimpse/src/surface.rs'
+at = "after:16"
+
+[[specs.means]]
+text = "A milestone's goal is its checkpoint's `rationale`, which the model already holds; the snapshot's `milestones` entries carry no goal."
+binding = "required"
+detail = "`plan milestone add --goal` stores the goal as the `[[checkpoints]]` row's rationale."
+
+[[specs]]
+ref = "wire-the-plan-surface-into-the-app"
+outcome = "The Plan surface is reachable by key, by saved state and by link, its list answers the cursor keys, and no ledger action reaches it."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Every existing surface keeps its key, its saved name and its behaviour.",
+    "No write action is offered or performed on the Plan surface.",
+    "Draw nothing here; the view is another task.",
+]
+design = [
+    "design/glimpse.md#plan-surface",
+    "design/glimpse.md#target",
+]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "Plan is a surface with a short label"
+check = 'grep -q "Self::Plan =>" glimpse/src/surface.rs && grep -q "fn short" glimpse/src/surface.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the digit keys reach seven surfaces"
+check = """grep -q "'1'..='7'" glimpse/src/keys.rs"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the surface is reached by key, saved state and link, and takes no item action"
+check = "cargo test --manifest-path glimpse/Cargo.toml plan"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo test --manifest-path glimpse/Cargo.toml"
+
+[[specs.accept]]
+behaviour = "a test reaches the plan surface by key"
+check = 'grep -q "fn [a-z_]*plan_surface" glimpse/src/app.rs glimpse/src/keys.rs glimpse/src/surface.rs glimpse/src/nav.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the digit keys reach six surfaces today"
+check = """grep -q "'1'..='6'" glimpse/src/keys.rs"""
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "the surface list is a six-entry array"
+check = 'grep -q "pub(crate) const ALL: \[Surface; 6\]" glimpse/src/surface.rs'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "the plan state exists"
+check = 'grep -q "pub(crate) struct PlanState" glimpse/src/plan_state.rs'
+at = "after:21"
+
+[[specs.means]]
+text = "Build the plan state in `App::new` as well as on every later snapshot, listing or rollup change."
+binding = "required"
+detail = "`--once` constructs the app from one snapshot and applies none afterwards, so a state built only on change renders empty there."
+
+[[specs.means]]
+text = "Add `plan` to the surfaces the `--surface` help text in cli.rs lists."
+binding = "required"
+detail = "The flag parses through `Surface::from_key` and so accepts `plan` once the variant exists, but its help text names the surfaces by hand."
+
+[[specs.means]]
+text = "Compute the rollups through rollup.rs wherever the plan state is rebuilt, and again on the app's tick while the Plan surface is showing; add the Plan surface to `needs_tick`'s running-agent case. This replaces the detail's statement that `needs_tick` needs nothing new."
+binding = "required"
+detail = "An open segment's time moves with the clock, so a Cost section built only on a snapshot change freezes between snapshots."
+
+[[specs]]
+ref = "draw-the-plan-surface-its-tab-and-its-key-hints"
+outcome = "The Plan surface is visible: its sections and rows are drawn, its tab is labelled and counted, and the footer and legend describe only what works there."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Use only existing theme tokens; name no colour.",
+    "Every existing surface draws as before, apart from the compact tab labels.",
+    "A pointer move that maps to no action causes no redraw.",
+]
+means = []
+design = ["design/glimpse.md#plan-surface"]
+precedent = ["glimpse/src/view/inbox.rs"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the plan view draws through draw_surface"
+check = 'grep -q "Surface::Plan =>" glimpse/src/view/mod.rs && grep -q "pub(crate) fn render" glimpse/src/view/plan.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the footer and legend name seven surfaces"
+check = 'grep -q "1-7" glimpse/src/view/footer.rs && grep -q "1-7" glimpse/src/view/legend.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the sections and rows render and the compact tabs are distinct"
+check = "cargo test --manifest-path glimpse/Cargo.toml view::"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo test --manifest-path glimpse/Cargo.toml"
+
+[[specs.accept]]
+behaviour = "the plan view carries its own tests"
+check = 'grep -q "#\[test\]" glimpse/src/view/plan.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the compact header labels a tab by its label's first character"
+check = 'grep -q "fn compact_tabs" glimpse/src/view/header.rs'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "the footer hints name six surfaces"
+check = 'grep -q "1-6" glimpse/src/view/footer.rs'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "Plan is a surface"
+check = 'grep -q "Self::Plan =>" glimpse/src/surface.rs'
+at = "after:22"
+
+[[specs]]
+ref = "make-details-builders-return-their-links"
+outcome = "Whatever the details panel shows, glimpse also knows the records it relates to, in order, ready to be followed."
+constraints = [
+    "Touch no file outside this task's files.",
+    "The details text of every existing record is unchanged.",
+    "Add no key and no overlay here.",
+]
+means = []
+design = ["design/glimpse.md#links"]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the Doc and Link types exist and the builders use them"
+check = 'grep -q "pub(crate) struct Doc" glimpse/src/view/doc.rs && grep -q "pub(crate) struct Link" glimpse/src/view/doc.rs && grep -q "Doc" glimpse/src/view/details.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a task's links name its related tasks in the order shown, and the text is unchanged"
+check = "cargo test --manifest-path glimpse/Cargo.toml details"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo test --manifest-path glimpse/Cargo.toml"
+
+[[specs.accept]]
+behaviour = "a test covers a record's links"
+check = 'grep -q "fn [a-z_]*links_name_[a-z_]*" glimpse/src/view/details.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the details renderer builds its text in details.rs"
+check = 'grep -q "pub(crate) fn render(frame: &mut Frame, area: Rect, app: &App, scroll: u16) -> u16" glimpse/src/view/details.rs'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "the target type exists"
+check = 'grep -q "pub(crate) enum Target" glimpse/src/nav.rs'
+at = "after:17"
+
+[[specs]]
+ref = "show-a-v2-tasks-spec-changes-attempts-and-links-in-its-details"
+outcome = "A v2 task's details show everything its spec, its change trail and its attempts hold, and offer links to every record it relates to; a v1 task's details are unchanged."
+constraints = [
+    "Touch no file outside this task's files.",
+    "A task with no spec draws exactly as before.",
+    "Use only existing theme tokens.",
+    "details.rs gains only the call and the file-note marks; the sections live in task_spec.rs.",
+]
+means = []
+design = [
+    "design/glimpse.md#task-details",
+    "design/glimpse.md#links",
+]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the spec sections are built in their own module and called from the task builder"
+check = 'grep -q "Premises" glimpse/src/view/task_spec.rs && grep -q "task_spec::" glimpse/src/view/details.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a v2 task shows every section with probe verdicts, and a v1 task is unchanged"
+check = "cargo test --manifest-path glimpse/Cargo.toml task_spec"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo test --manifest-path glimpse/Cargo.toml"
+
+[[specs.accept]]
+behaviour = "the task spec view carries its own tests"
+check = 'grep -q "#\[test\]" glimpse/src/view/task_spec.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "details builders return a Doc"
+check = 'grep -q "Doc" glimpse/src/view/details.rs'
+at = "after:24"
+
+[[specs]]
+ref = "show-a-plan-rows-whole-record-in-the-details-panel"
+outcome = "Selecting any row of the Plan surface shows that record in full in the details panel, with links to everything it relates to."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Use only existing theme tokens.",
+    "details.rs gains only the Plan arm; the builders live in plan_details.rs.",
+    "Read no file; a document's text arrives through the document lane, which is another task.",
+]
+design = [
+    "design/glimpse.md#plan-row-details",
+    "design/glimpse.md#links",
+]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "plan row details are built in their own module and shown on the Plan surface"
+check = 'grep -q "pub(crate) fn " glimpse/src/view/plan_details.rs && grep -q "plan_details::" glimpse/src/view/details.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "each kind of row shows its whole record and its links"
+check = "cargo test --manifest-path glimpse/Cargo.toml plan_details"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo test --manifest-path glimpse/Cargo.toml"
+
+[[specs.accept]]
+behaviour = "the plan details view carries its own tests"
+check = 'grep -q "#\[test\]" glimpse/src/view/plan_details.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the details renderer matches on the surface"
+check = 'grep -q "let (id, text) = match app.surface" glimpse/src/view/details.rs || grep -q "match app.surface" glimpse/src/view/details.rs'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "the task spec call is in place, so this task edits details.rs after it"
+check = 'grep -q "task_spec::" glimpse/src/view/details.rs'
+at = "after:25"
+
+[[specs.means]]
+text = "A milestone's goal is its checkpoint's `rationale`, which the model already holds."
+binding = "required"
+detail = "The snapshot's `milestones` entries carry no goal."
+
+[[specs.means]]
+text = "A milestone's details list every run of every gate round, ordered by round and then `seq`."
+binding = "required"
+detail = "A round can be gated more than once across invocations, and each run is recorded."
+
+[[specs.means]]
+text = "An authored-file row for a note other than a run note also links, after its sources, to each decision whose `evidence` names it as `notes/<id>.md`. Add a test where a note row links to the fixture decision that cites it."
+binding = "required"
+detail = "design/glimpse.md, Links, gives these back-links, and the brief's success criteria require a note to reach the decisions resting on it."
+
+[[specs]]
+ref = "add-the-links-list"
+outcome = "From any record's details the user can list what it relates to, pick one and go there, then come back."
+constraints = [
+    "Touch no file outside this task's files.",
+    "A link is followed only through `App::open`.",
+    "`Esc` closes the list and does nothing else.",
+    "Details text stays unclickable.",
+]
+means = []
+design = ["design/glimpse.md#links"]
+precedent = ["glimpse/src/view/selector.rs"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the links list is drawn and b is mapped"
+check = """grep -q "pub(crate) fn render" glimpse/src/view/links.rs && grep -q "KeyCode::Char('b') =>" glimpse/src/keys.rs"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the list opens for a record with links, Enter follows one and Backspace returns"
+check = "cargo test --manifest-path glimpse/Cargo.toml links"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo test --manifest-path glimpse/Cargo.toml"
+
+[[specs.accept]]
+behaviour = "the links list carries its own tests"
+check = 'grep -q "#\[test\]" glimpse/src/view/links.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "b maps to nothing today"
+check = """grep -q "assert_eq!(map(press(KeyCode::Char('b'))), None);" glimpse/src/keys.rs"""
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "plan row details supply links"
+check = 'grep -q "plan_details::" glimpse/src/view/details.rs'
+at = "after:26"
+
+[[specs]]
+ref = "fetch-documents-on-the-poller-thread"
+outcome = "glimpse can fetch an authored file, a cited source as its author saw it, a commit or a finding without the UI thread reading a file or running a command."
+constraints = [
+    "Touch no file outside this task's files.",
+    "The UI thread reads no file and spawns no process.",
+    "No value from a note reaches a shell: git takes separate arguments, a sha is hex-checked and a path is contained in the repo root.",
+    "A failed read is a document with a reason, never a panic or a blocked poller.",
+    "The transcript tail and every feed behave as before.",
+]
+design = ["design/glimpse.md#document-lane"]
+precedent = ["glimpse/src/flows.rs"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the request type exists and the poller serves it"
+check = 'grep -q "enum DocRequest" glimpse/src/source/doc.rs && grep -q "DocRequest" glimpse/src/source.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a source is shown as read where that is known, and unsafe or oversized requests are refused with a reason"
+check = "cargo test --manifest-path glimpse/Cargo.toml source::doc"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo test --manifest-path glimpse/Cargo.toml"
+
+[[specs.accept]]
+behaviour = "the document reads carry their own tests"
+check = 'grep -q "#\[test\]" glimpse/src/source/doc.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the poller takes a tail request as a Control variant"
+check = 'grep -q "Tail(Option<String>)," glimpse/src/source.rs && grep -q "fn set_tail(&mut self, path: Option<String>);" glimpse/src/runtime.rs'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "the library reads a finding"
+check = 'grep -q "pub fn review_finding" tomlctl/src/lib.rs'
+at = "after:12"
+
+[[specs.means]]
+text = "source/doc.rs defines `pub(crate) struct Fetched { title: String, text: String, notices: Vec<&'static str>, line: Option<u32>, markdown: bool }`, and the event carries the request with `Result<Fetched, String>`, the error being the one-line reason. The notices are `read uncommitted`, `commit not recorded` and `changed since`, kept out of `text`."
+binding = "required"
+detail = "The document view titles the notices, scrolls to the line and renders markdown only for an authored file, so it needs each apart from the text."
+
+[[specs.means]]
+text = "For a read from git, accept a path that is relative, `/`-separated and has no `..`, root or drive component, without requiring the file to exist. For a working-tree read, also canonicalise it and require the result under the canonical repo root. A git read of a path absent from the working tree shows the old text with `changed since`."
+binding = "required"
+detail = "Canonicalising a path that was deleted or renamed since it was read fails, though git can still show it as it was."
+
+[[specs.means]]
+text = "Test that an answer for a request that is no longer current is dropped, that a `Finding` request renders its fields, and that a file that is not UTF-8 is refused with a reason."
+binding = "required"
+detail = "These three paths are stated in the design and exercised by no other test."
+
+[[specs]]
+ref = "show-a-fetched-document-in-the-details-panel"
+outcome = "The user can read any note, design file, cited source, commit or finding inside glimpse's details panel, arrive at the cited line, and step back to where they came from."
+constraints = [
+    "Touch no file outside this task's files.",
+    "The UI thread reads no file and spawns no process.",
+    "The details of every row with no document are unchanged.",
+    "glimpse opens no browser.",
+]
+design = [
+    "design/glimpse.md#document-lane",
+    "design/glimpse.md#target",
+    "design/glimpse.md#links",
+]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the document view draws through the details panel"
+check = 'grep -q "pub(crate) fn " glimpse/src/view/doc_view.rs && grep -q "doc_view::" glimpse/src/view/details.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a source opens at its line, a note renders, and Backspace returns"
+check = "cargo test --manifest-path glimpse/Cargo.toml doc_view"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo test --manifest-path glimpse/Cargo.toml"
+
+[[specs.accept]]
+behaviour = "the document view carries its own tests"
+check = 'grep -q "#\[test\]" glimpse/src/view/doc_view.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the poller serves document requests"
+check = 'grep -q "DocRequest" glimpse/src/source.rs'
+at = "after:28"
+
+[[specs.means]]
+text = "Test that an answer arriving for a document that is no longer wanted is not shown."
+binding = "required"
+detail = "The runtime replaces the wanted document as the cursor moves, and a late answer would otherwise draw the wrong text."
+
+[[specs.means]]
+text = "An authored document's links are the links its Plan row carries: its sources, a run note's task, and for any other note each decision whose `evidence` names it as `notes/<id>.md`. Add a test where `b` on an open note lists that decision."
+binding = "required"
+detail = "design/glimpse.md, Links, lists the decision back-links for a note, and an open document replaces the row's details, so `b` reads the document's links."
+
+[[specs]]
+ref = "render-markdown-tables"
+outcome = "A note or design file that holds a table shows it as a table in glimpse rather than as raw pipe text."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Markdown without tables renders exactly as before.",
+    "Add no dependency.",
+]
+means = []
+design = ["design/glimpse.md#markdown"]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the renderer enables and handles tables"
+check = 'grep -q "ENABLE_TABLES" glimpse/src/view/markdown.rs && grep -q "Tag::Table" glimpse/src/view/markdown.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "tables render with sized, wrapped columns and other markdown is unchanged"
+check = "cargo test --manifest-path glimpse/Cargo.toml markdown"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo test --manifest-path glimpse/Cargo.toml"
+
+[[specs.accept]]
+behaviour = "a test covers table rendering"
+check = 'grep -q "fn [a-z_]*table" glimpse/src/view/markdown.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the renderer parses without options today"
+check = 'grep -q "Parser::new(" glimpse/src/view/markdown.rs && ! grep -q "ENABLE_TABLES" glimpse/src/view/markdown.rs'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "add-the-needs-you-section-to-the-inbox"
+outcome = "Everything in the viewed flow that waits on the user (parked tasks, open handovers and what the last invocation reported as needing a person) appears at the top of the Inbox and leads to the record it concerns."
+constraints = [
+    "Touch no file outside this task's files.",
+    "No write is offered or made for these rows, and none reaches the input store.",
+    "The Inbox of a flow with no plan store, and every input record's behaviour, is unchanged.",
+    "A row is followed only through `App::open`.",
+]
+design = ["design/glimpse.md#needs-you"]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the Inbox has a needs-you section"
+check = 'grep -q "needs you" glimpse/src/surface.rs && grep -q "need:" glimpse/src/surface.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "parked tasks, open handovers and report entries are listed first, open their records and take no write"
+check = "cargo test --manifest-path glimpse/Cargo.toml inbox"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo test --manifest-path glimpse/Cargo.toml"
+
+[[specs.accept]]
+behaviour = "a test covers the needs-you section"
+check = 'grep -q "fn [a-z_]*needs_you" glimpse/src/view/inbox.rs glimpse/src/surface.rs glimpse/src/app.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the Inbox state tracks input rows in sections"
+check = 'grep -q "pub(crate) struct InboxState" glimpse/src/surface.rs && grep -q "pub(crate) tracking: Tracking<InputRow>," glimpse/src/surface.rs'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "the app holds an open document, so this task edits app.rs after it"
+check = 'grep -q "doc_view::" glimpse/src/view/details.rs'
+at = "after:29"
+
+[[specs.means]]
+text = "Hold the needs-you rows in a list of their own on `InboxState`, beside `tracking`, and join the two only in the visible order and the cursor: the cursor is one row id, and an id starting `need:` names a needs-you row."
+binding = "required"
+detail = "`tracking` is `Tracking<InputRow>`, and its flashes, saving marks and marks belong to input records. A synthetic input row would reach every write action; with a separate list, `cursor_row` returns no input row on a needs-you row, so those actions have nothing to act on."
+
+[[specs.means]]
+text = "Build the needs-you rows in `App::new` as well as on every later snapshot."
+binding = "required"
+detail = "`--once` constructs the app from one snapshot and applies none afterwards."
+
+[[specs.means]]
+text = "Leave out a report entry whose `needs_person` is false."
+binding = "required"
+detail = "The drain records lines that only inform, such as an allowed audit command, in the same report."
+
+[[specs]]
+ref = "cover-the-v2-views-with-a-headless-render-test"
+outcome = "A test drives the built binary over the fixture and fails if the Plan surface, the v2 task details or the needs-you section stop rendering."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Every case stays inside the file's sandbox and reads no flow of this repository.",
+    "Add no production code.",
+]
+means = []
+design = []
+precedent = ["glimpse/tests/cli.rs"]
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the binary-level tests render the plan surface"
+check = 'grep -q "needs you" glimpse/tests/cli.rs && grep -qi "decisions" glimpse/tests/cli.rs && grep -qi "premises" glimpse/tests/cli.rs'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the headless render shows the plan sections, v2 task details and needs-you rows"
+check = "cargo test --manifest-path glimpse/Cargo.toml --test cli"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo test --manifest-path glimpse/Cargo.toml"
+
+[[specs.premises]]
+claim = "the binary-level tests drive the built glimpse"
+check = 'grep -q "CARGO_BIN_EXE_glimpse" glimpse/tests/cli.rs'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "document-the-v2-views-in-glimpses-readme-and-claudemd"
+outcome = "glimpse's README tells a user how to reach and use the v2 views, and its CLAUDE.md tells a maintainer where they live and what rules they follow."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Describe only behaviour the code has; add no history and no plan references.",
+    "Keep both files' existing structure.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the README describes seven surfaces and the new keys"
+check = 'grep -q "Seven surfaces" glimpse/README.md && grep -q "Backspace" glimpse/README.md && ! grep -q "Six surfaces" glimpse/README.md'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "CLAUDE.md names the new modules"
+check = 'grep -q "nav.rs" glimpse/CLAUDE.md && grep -q "plan_state.rs" glimpse/CLAUDE.md && grep -q "docs/flows" glimpse/CLAUDE.md'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the README describes six surfaces today"
+check = 'grep -q "Six surfaces" glimpse/README.md'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "have-workers-open-their-run-note-with-the-structured-block"
+outcome = "A worker's run note carries its deviations, tangential discoveries, checks and handover proposal as structured records after its Status line."
+constraints = [
+    "Touch no file outside this task's files.",
+    "The shared block stays byte-identical in both agents.",
+    "The Status first line and the return object do not change.",
+    "Run `bash scripts/verify-shared-blocks.sh` and `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` before returning.",
+]
+means = []
+design = [
+    "design/records.md#run-note-block",
+    "design/engine.md#agent-contracts",
+]
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "both worker agents describe the run-note block"
+check = 'grep -q "toml run-note" claude/agents/plan-worker-deep.md && grep -q "toml run-note" claude/agents/plan-worker-lite.md'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the TANGENTIAL line form is no longer asked for"
+check = '! grep -q "^TANGENTIAL: <kind>" claude/agents/plan-worker-deep.md'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the shared block is identical in both agents"
+check = "bash scripts/verify-shared-blocks.sh"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "bash scripts/verify-shared-blocks.sh"
+
+[[specs.premises]]
+claim = "the note contract lives in the shared plan-worker-procedure block"
+check = 'grep -q "SHARED-BLOCK:plan-worker-procedure END" claude/agents/plan-worker-deep.md && grep -q "SHARED-BLOCK:plan-worker-procedure END" claude/agents/plan-worker-lite.md'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "the worker writes tangential discoveries as TANGENTIAL lines today"
+check = 'grep -q "^TANGENTIAL: <kind> | <area> | <summary> | <why it matters>" claude/agents/plan-worker-deep.md'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "have-research-agents-record-their-sources-in-a-block"
+outcome = "An investigator's, challenger's or cold reader's note lists the sources its claims rest on in a structured block, with the commit and the dirty paths it read them at."
+constraints = [
+    "Touch no file outside this task's files.",
+    "The shared block stays byte-identical in the three agents.",
+    "Each note's first line and each agent's return object do not change.",
+    "Leave the `research-finding-record` block untouched.",
+    "Run `bash scripts/verify-shared-blocks.sh` and `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` before returning.",
+]
+means = []
+design = [
+    "design/records.md#sources-block",
+    "design/engine.md#agent-contracts",
+]
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the three plan agents describe the sources block"
+check = 'grep -q "toml sources" claude/agents/plan-investigator.md && grep -q "toml sources" claude/agents/plan-challenger.md && grep -q "toml sources" claude/agents/plan-cold-reader.md'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the shared block is identical in the three agents"
+check = "bash scripts/verify-shared-blocks.sh"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "bash scripts/verify-shared-blocks.sh"
+
+[[specs.premises]]
+claim = "the three plan agents share the plan-v2-note-writer block"
+check = 'grep -q "SHARED-BLOCK:plan-v2-note-writer START" claude/agents/plan-investigator.md && grep -q "SHARED-BLOCK:plan-v2-note-writer START" claude/agents/plan-challenger.md && grep -q "SHARED-BLOCK:plan-v2-note-writer START" claude/agents/plan-cold-reader.md'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "record-attempts-gate-rounds-and-the-report-in-the-drain"
+outcome = "Every implement-v2 invocation leaves its workers' attempts, each gate round's command results and its closing report in the flow's plan store, and refuses to start on a binary that cannot write them."
+constraints = [
+    "Touch no file outside this task's files.",
+    "The lane check still runs before any store write of the drain but step 4's resets.",
+    "Change no other step's behaviour: the replan, the fix-round limit, the commits and the parked re-ask stay as they are.",
+    "A fenced `tomlctl` command takes single-token placeholders.",
+    "Run `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` before returning.",
+    "Keep drain step 2's rule that a tangential entry reporting breakage this milestone's own work caused in a file no row holds, such as a test a task's rename broke, is a replan input (step 6) and not a backlog candidate; state it where step 8 takes its candidates from the attempts' tangential entries.",
+]
+design = [
+    "design/engine.md#drain-changes",
+    "design/engine.md#milestone-order",
+    "design/records.md#run-records",
+]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the drain calls the three plan run leaves"
+check = 'grep -q "tomlctl plan run notes" claude/skills/implement-v2-engine/references/drain.md && grep -q "tomlctl plan run gate" claude/skills/implement-v2-engine/references/drain.md && grep -q "tomlctl plan run report" claude/skills/implement-v2-engine/references/drain.md'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the carrier's pre-flight requires the feature"
+check = 'grep -q "plan_run_records" claude/commands/implement-v2.md'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the project instructions name the new pre-flight requirement"
+check = 'grep -q "plan run notes" CLAUDE.md'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the documented commands match the CLI"
+check = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "bash scripts/gate-stamp.sh run"
+
+[[specs.premises]]
+claim = "the drain greps every note for TANGENTIAL and Status lines today"
+check = 'grep -q "Two things are taken from every note of the run without reading it, with the Grep tool" claude/skills/implement-v2-engine/references/drain.md'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "the drain's report is its step 11"
+check = 'grep -q "^## 11. The .needs_human. report" claude/skills/implement-v2-engine/references/drain.md'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "the carrier's pre-flight lists features by name"
+check = 'grep -q "plan_emit_lane_check" claude/commands/implement-v2.md'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "the binary advertises the run-record leaves"
+check = 'grep -q "plan_run_records" tomlctl/src/cli/types/mod.rs'
+at = "after:13"
+
+[[specs.means]]
+text = "Map each section of the step 11 report to a report entry `kind`: parked, failed, handovers to `handover`, no worker to `no-worker`, withheld, gate, audit, out of lane to `out-of-lane`, store changes to `store-change`, reconcile. An entry's `path` is the run note or file its line names, when it names one."
+binding = "required"
+detail = "`plan run report` refuses a kind outside the ten that design/records.md, Run records, lists."
+
+[[specs.means]]
+text = "Name the three leaves in CLAUDE.md as `plan run notes`, `plan run gate` and `plan run report`."
+binding = "required"
+detail = "The Deploy sentence lists what the pre-flight refuses a binary without, in prose."
+
+[[specs.means]]
+text = "In CLAUDE.md's Backlog capture section, change the first bullet's 'A sub-agent surfaces candidates in its `TANGENTIAL:` report line' so a plan worker surfaces them as `[[tangential]]` entries in its run note's block and other sub-agents on a `TANGENTIAL:` line."
+binding = "required"
+detail = "The plan workers' agent file stops asking for the line form."
+
+[[specs.means]]
+text = "Stage a report line that only informs with `needs_person = false`: an allowed audit command, a run that was not audited, and a check a gate covers. Every other line needs a person."
+binding = "required"
+detail = "glimpse's needs-you section shows every report entry that needs a person."
+
+[[specs.means]]
+text = "The step 7 call passes `--rerun` for a second dispatch of the same drain, for held commands or after a timeout, and no flag otherwise."
+binding = "required"
+detail = "Without the flag the verb records a new run of the round, so a gate run again at a later invocation keeps the earlier results."
+
+[[specs.means]]
+text = "When the milestone commits and step 10's Next rule ends the invocation there, drain.md makes the `plan run report` call before step 10's flow-store commit, so the report lands in it; otherwise the call stays at step 11. State the rule in both steps."
+binding = "required"
+detail = "design/engine.md, Drain changes: step 11 runs after the flow-store commit, so a report recorded only there stays uncommitted."
+
+[[specs.means]]
+text = "Add `plan_run_records` to the feature list in claude/commands/apply-v2.md's pre-flight step 2 as well, and extend the sentence after it the same way as implement-v2.md's."
+binding = "required"
+detail = "/apply-v2 hands its fix milestones to the same drain, so without it a binary lacking the plan run leaves passes its pre-flight and fails at drain step 3."
+
+[[specs]]
+ref = "mark-flow-state-and-glimpse-as-built-in-the-design-record"
+outcome = "The v2 pipeline's design record says flow state and glimpse is built and matches what was built."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change nothing outside the status line, 'Where things stand', topic 6's row and the 'Flow state and glimpse' section.",
+    "State what is true now; add no history of how the plan went.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the record names the flow directory as where topic 6 was built"
+check = 'grep -q "docs/flows/glimpse-v2-visibility" docs/ideas/v2-pipeline.md'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "topic 6 is no longer listed as only agreed"
+check = '! grep -q "not planned or built" docs/ideas/v2-pipeline.md'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the record lists topic 6 as agreed and not built"
+check = 'grep -q "not planned or built" docs/ideas/v2-pipeline.md'
+at = "base"
+
+[specs.premises.probe]
+at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+neg_rc = 0
+verdict = "holds"
+
+[[milestones]]
+id = "A"
+gates = [
+    "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets",
+    "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast",
+    "bash scripts/gate-stamp.sh run",
+    "cargo install --path tomlctl",
+]
+elaboration = "upfront"
+defer_reason = ""
+
+[[milestones]]
+id = "B"
+gates = [
+    "cargo clippy --manifest-path glimpse/Cargo.toml --all-targets --locked",
+    "cargo test --manifest-path glimpse/Cargo.toml",
+    "bash scripts/gate-stamp.sh run",
+]
+elaboration = "upfront"
+defer_reason = ""
+
+[[milestones]]
+id = "C"
+gates = [
+    "bash scripts/verify-shared-blocks.sh",
+    "bash scripts/gate-stamp.sh run",
+]
+elaboration = "upfront"
+defer_reason = ""
+
+[[items]]
+id = 1
+ref = "declare-the-new-tomlctl-plan-modules"
+title = "Declare the new tomlctl plan modules"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/mod.rs",
+    "tomlctl/src/plan/run_note.rs",
+    "tomlctl/src/plan/note_sources.rs",
+    "tomlctl/src/plan/authored.rs",
+    "tomlctl/src/plan/run_notes.rs",
+    "tomlctl/src/plan/run_gate.rs",
+    "tomlctl/src/plan/run_report.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Create the six new module files, each holding only a `//!` module doc line saying what it will hold, and declare each in tomlctl/src/plan/mod.rs beside the existing private modules: `pub(crate) mod authored;`, which lib.rs calls into, and a private `mod <name>;` for the other five. Change `mod probes;` to `pub(crate) mod probes;`."
+detail = "The six modules: run_note (parses the block opening a worker's run note), note_sources (parses a research note's sources), authored (lists and reads docs/flows/<slug>/), run_notes, run_gate and run_report (the three `plan run` leaves). Later tasks fill each file and add no `mod` line. Run `rustfmt --edition 2024 --check` on each new file."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 2
+ref = "emit-each-tasks-spec-notes-and-links-and-the-milestones-and-changes-in-the-snapshot"
+title = "Emit each task's spec, notes and links, and the milestones and changes, in the snapshot"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/tasks/snapshot.rs",
+    "tomlctl/src/tasks/show.rs",
+    "tomlctl/src/plan/probes.rs",
+    "tomlctl/src/tasks/update.rs",
+    "tomlctl/tests/tasks_snapshot.rs",
+]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "Extend `tasks snapshot` so each task object carries `spec`, `file_notes`, `closes`, `refs` and `finding`, and the document carries top-level `milestones` and `changes`, in the shape of design/records.md, Snapshot keys."
+detail = "`task_json` in snapshot.rs takes only the row today; it needs the store to look up the row's spec, file notes and links by `ref`. `premises_json` in show.rs emits no probe: add `probe` when one is recorded, as `accept_json` does. `probeable` comes from `probes::skip_reason` (accept) and `premise_skip_reason` (premise), which you make reachable from the tasks module. The new top-level keys go after `agents`; the `plan` key is another task's. Update the key-order assertions in snapshot.rs's own tests and in tests/tasks_snapshot.rs, and add cases for a v2 store (spec with a probed accept and a probed premise, a file note, a finding link, a milestone with a gate probe, a change row) and for a v1 store, which gains only empty keys."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 3
+ref = "emit-the-plan-store-in-the-snapshot-and-document-the-new-keys"
+title = "Emit the plan store in the snapshot and document the new keys"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/tasks/snapshot.rs",
+    "tomlctl/tests/tasks_snapshot.rs",
+    "claude/skills/tomlctl/references/tasks-store.md",
+]
+needs = [2]
+coupling = []
+deps_note = ""
+action = "Add a top-level `plan` key to the snapshot, after `changes`: the parsed plan store as JSON through `convert::toml_to_json` over `plan::schema::to_toml`, or `null` when the flow has no plan.toml. Then add every key this plan added to the envelope table in tasks-store.md."
+detail = "snapshot.rs already parses the plan store to compute `running_milestone`; keep that one parse and reuse its result. Add a test with a plan.toml holding a decision and a run, and one with none. The envelope table is the one headed by the sentence 'The envelope's keys, in emission order' in tasks-store.md: add the per-task keys (`spec`, `file_notes`, `closes`, `refs`, `finding`) and the top-level `milestones`, `changes` and `plan`, each with one line saying what it holds."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 4
+ref = "hold-attempts-gate-rounds-and-reports-in-the-plan-store"
+title = "Hold attempts, gate rounds and reports in the plan store"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/schema.rs",
+    "claude/skills/tomlctl/references/plan-store.md",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add three arrays to `PlanStore`, `attempt`, `gate_round` and `report`, in the shape of design/records.md, Run records, with their `from_toml` and `to_toml` arms, and document them in plan-store.md."
+detail = "Each array is omitted from the TOML while empty, like the store's other root keys. The stamp: `to_toml` writes a schema version above the present one when, and only when, one of the three arrays is non-empty, so a binary that predates them refuses the store instead of rewriting it without them; a store holding none is stamped exactly as today. Free text is LF-normalised as the module doc says for the other records. Add round-trip unit tests beside the existing ones in schema.rs: each array alone, all three together, an emptied store returning to the old stamp, and a store stamped above what this build knows being refused. In plan-store.md add the three arrays to the sample, the key order and a key table each, and say which verb writes each."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 5
+ref = "parse-the-block-opening-a-workers-run-note"
+title = "Parse the block opening a worker's run note"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/src/plan/run_note.rs"]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "In run_note.rs, write the parser that turns a run note's text into its Status word, its one-line summary, whether its block is present, absent or malformed, and the block's files touched, deviations, tangential entries, checks and handover, by design/records.md, Run-note block."
+detail = "Expose one `pub(crate)` function taking the note text and returning a plain struct; no file or store access here. The block is the first fenced block whose info string is exactly `toml run-note`, and it must follow the Status line with only blank lines between. A note with no such block is `absent`: take its Status line and every prose line of the form `TANGENTIAL: <kind> | <area> | <summary> | <why>`, skipping `TANGENTIAL: none`. A block that fails to parse as TOML or holds a key outside the documented set is `malformed`, with a reason. A note whose first line is not a Status line returns an error value naming that. Cover each case with unit tests in the file, including CRLF line endings and a fence with trailing spaces."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 6
+ref = "parse-a-research-notes-sources"
+title = "Parse a research note's sources"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/src/plan/note_sources.rs"]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "In note_sources.rs, write the parser that turns a research note's text into its list of sources, from the `toml sources` block when it has one and from `path:line` references in its prose when it has none, by design/records.md, Sources block."
+detail = '''Expose one `pub(crate)` function taking the note text and a predicate that says whether a repo-relative path exists, and returning the sources as `{path, line, claim, url, read_at, dirty, origin}`; the function itself touches no file. From a block, `read_at` is the block's and `dirty` is whether the block's `dirty` list holds the path. With no block, match `path:line` and `path:line-line` where the path has at least one `/` and an extension, normalise `\` to `/`, keep the first line of a range, drop a path the predicate rejects, and list each (path, line) once in first-seen order. A malformed block yields the inline sources and a reason. Unit-test a block with path and url sources, a note with inline references inside backticks and tables, duplicates, a Windows-style path, and a path the predicate rejects.'''
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 7
+ref = "list-and-read-a-flows-authored-files-through-the-library"
+title = "List and read a flow's authored files through the library"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/authored.rs",
+    "tomlctl/src/lib.rs",
+    "tomlctl/tests/library_facade.rs",
+]
+needs = [
+    5,
+    6,
+]
+coupling = []
+deps_note = ""
+action = "Write `authored_list(root, slug)` and `authored_read(root, slug, path)` in authored.rs and expose both as `pub fn` in lib.rs, by design/records.md, Authored files."
+detail = "Both build `<root>/docs/flows/<slug>` from their `root` argument, never from the process root: `plan::store::authored_dir` joins onto the process root and cannot be used. Refuse a slug `flow::validate_slug` refuses. Canonicalise each file and leave out, or refuse on read, any whose canonical path leaves the flow's directory, as `store::locate_brief` does for the brief. Walk `brief.md`, `design/*.md`, `notes/*.md` and `notes/run/*.md` only. `headline` and `state` come from the first line by kind; a run note's come from the run-note parser and a research note's sources from the sources parser, with a predicate that checks the path exists under `root`. `sources` is `[]` for `brief`, `design`, `backlog` and `run-note` files; only `note`, `challenge` and `cold-read` files carry sources. A missing directory lists no files. `authored_read` LF-normalises the text. Like the other facade reads, call `io::silence_advisories()`. Add library_facade.rs cases over a temp root: every kind listed and sorted, a run note's `task` and `state`, sources from a block and inline, a symlink or `..` path refused where the platform allows the test, a bad slug refused, and a read of an unlisted path refused."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 8
+ref = "add-plan-run-notes-to-record-a-runs-attempts"
+title = "Add `plan run notes` to record a run's attempts"
+effort = "L"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/run_notes.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/src/plan/dispatch.rs",
+    "tomlctl/tests/output_options.rs",
+    "tomlctl/tests/plan_run_records.rs",
+    "claude/skills/tomlctl/references/plan.md",
+]
+needs = [
+    4,
+    5,
+]
+coupling = []
+deps_note = ""
+action = "Add the leaf verb `tomlctl plan run notes --slug <slug> --milestone <id>`: it reads the run note of every task the milestone's latest `implement:<id>` run dispatched, upserts one `[[attempt]]` per task keyed on (task, run id), and prints one row per task."
+detail = '''Register it as a `PlanRunOp` variant in cli/types/plan.rs, whose doc comment is its help, with a one-line arm in plan/dispatch.rs; the work lives in run_notes.rs. The run is the last `[[run]]` row whose step is `implement:<id>`; its `tasks` are the dispatched ids and its `run_id` keys the attempts. No such run is an error naming the milestone. Each note is `docs/flows/<slug>/notes/run/task-<n>.md`, read through the plan store's own path helpers and parsed by `run_note`. Output is a row report, one row per task: `task`, `status`, `block`, `deviations` and `tangential` (counts), `handover` (bool) and `problem`, which is empty or one line: the note is missing, the block is malformed and why, or the Status word differs from the task row's status. A missing note still records an attempt with `block = "absent"` and the row's status. Running it twice writes the same store. Honour the write verbs' shared flags as `plan run start` does. Add its case to tests/output_options.rs, tests in the new tests/plan_run_records.rs (a run with a block note, an old-style note with TANGENTIAL lines, a missing note, a status disagreement, and idempotence), and a `## \`plan run notes\`` section with its flag table and output keys in plan.md, after `plan run skip`. Fenced commands in the doc take single-token placeholders.'''
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 9
+ref = "add-plan-run-gate-to-record-a-gate-round"
+title = "Add `plan run gate` to record a gate round"
+effort = "L"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/run_gate.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/src/plan/dispatch.rs",
+    "tomlctl/tests/output_options.rs",
+    "tomlctl/tests/plan_run_records.rs",
+    "claude/skills/tomlctl/references/plan.md",
+]
+needs = [8]
+coupling = []
+deps_note = ""
+action = "Add the leaf verb `tomlctl plan run gate --slug <slug> --milestone <id> --round <n> --ndjson <path>`: it upserts the `[[gate_round]]` for (milestone, round) from one row per command, and keeps the tail of each non-pass command's log under the flow directory."
+detail = """Register it as `plan run notes` was. A row's keys are exactly `command`, `outcome` (`pass`, `flaky`, `fail` or `timeout`), `exit`, `duration_s`, `summary`, `failed_ids` and `log`; an unknown key or outcome refuses the batch before any write, naming the line. `--ndjson` takes the forms the other batch verbs take, a `.toml` record file included. For a row whose outcome is not `pass` and whose `log` names a readable file, write its last 200 lines, cut to the last 64 KiB, to `.claude/flows/<slug>/gates/<milestone>-r<round>-s<seq>-c<n>.log`, `n` being the command's position in the run, and store that repo-relative path as `log`; an unreadable log stores `""` and is named in the output's `unread` list. A `pass` row stores `log = ""`. Without `--rerun` a call records a new run of the round; with `--rerun` it merges into the latest run, replacing the commands it names by `command` and keeping the others. The round's `outcome` is computed as design/records.md says, and `at` is the time of the call. Output: `{ok, milestone, round, outcome, commands, unread}`. Add the output_options case, tests in tests/plan_run_records.rs (a failing round with a log tail kept and cut, a pass round, a re-record that replaces one command, a refused row), and the plan.md section after `plan run notes`."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 10
+ref = "add-plan-run-report-to-store-the-needs-human-report"
+title = "Add `plan run report` to store the needs-human report"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/run_report.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/src/plan/dispatch.rs",
+    "tomlctl/tests/output_options.rs",
+    "tomlctl/tests/plan_run_records.rs",
+    "claude/skills/tomlctl/references/plan.md",
+]
+needs = [9]
+coupling = []
+deps_note = ""
+action = "Add the leaf verb `tomlctl plan run report --slug <slug> --milestone <id> --why <text> [--ndjson <path>]`: it appends one `[[report]]` with the entries the rows give."
+detail = "Register it as the two leaves before it. A row's keys are exactly `kind`, `task`, `text` and `path`; `kind` is one of the ten values in design/records.md, `task` defaults to 0 and `path` to empty, and `path` must be repo-relative with no `..`. An unknown key or kind refuses the batch before any write. With no `--ndjson` the report has no entries. `at` is the time of the call. Output: `{ok, milestone, entries}`, `entries` being the count. Add the output_options case, tests in tests/plan_run_records.rs (a report with entries, an empty report, two reports kept in order, a refused kind), and the plan.md section after `plan run gate`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 11
+ref = "record-each-agents-cumulative-token-usage"
+title = "Record each agent's cumulative token usage"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/agents/schema.rs",
+    "tomlctl/src/agents/correlate.rs",
+    "tomlctl/src/agents/record.rs",
+    "tomlctl/tests/agents_record.rs",
+    "claude/skills/tomlctl/references/agents.md",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add a `usage` table to the agent record, `{input, cache_write, cache_read, output, turns}`, summed over the transcript's distinct assistant messages and written when the agent stops, by design/records.md, Agent usage."
+detail = "`tokens_in` in correlate.rs reads the transcript's tail for the last assistant turn; cumulative usage needs every assistant line, so read the whole transcript on the stop path only. A message can span several transcript lines that repeat its `usage`: key on the message's id (`message.id`) and count each id once, taking the last line seen for it; a line with no id counts on its own. Map `input_tokens` to `input`, `cache_creation_input_tokens` to `cache_write`, `cache_read_input_tokens` to `cache_read` and `output_tokens` to `output`. Confirm that shape against a real transcript under the Claude config dir's projects directory before relying on it, and say in your note what you saw. Omit the table from the TOML while every field is zero; a Codex agent records none. `context_tokens` keeps its meaning and code path. The snapshot's agent objects come from `toml_to_json` over the store, so the key reaches the snapshot with no change there. Add agents_record.rs cases: a transcript with repeated lines for one message id, several messages, no usage at all, and a second stop that does not double the totals. Document the table in agents.md beside `context_tokens`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 12
+ref = "read-one-review-finding-through-the-library"
+title = "Read one review finding through the library"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/facade.rs",
+    "tomlctl/src/review/mod.rs",
+    "tomlctl/src/lib.rs",
+    "tomlctl/tests/library_facade.rs",
+]
+needs = [7]
+coupling = []
+deps_note = ""
+action = "Add `pub fn review_finding(root, store, id)` to lib.rs, implemented in a new tomlctl/src/review/facade.rs declared as `pub(crate) mod facade;` in review/mod.rs: it returns one finding of a v2 review store as the object `review show --for report` prints for it."
+detail = "`store` is a repo-relative path such as `.claude/flows/<slug>/review-v2.toml`; resolve it against `root`, refuse one that is absolute, contains `..` or resolves outside `<root>/.claude`, and read it without integrity checks and with advisories silenced, as the other facade reads do. Reuse the projection `review show` builds for the `report` role rather than writing a second one; add the one `pub(crate) mod facade;` line to review/mod.rs and change nothing else there. An unknown store or id is an error naming it. Add library_facade.rs cases: a finding read back with its summary and status, an unknown id, and a store path outside `.claude` refused."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 13
+ref = "advertise-the-new-tomlctl-capabilities"
+title = "Advertise the new tomlctl capabilities"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/README.md",
+]
+needs = [
+    3,
+    10,
+    11,
+    12,
+]
+coupling = []
+deps_note = ""
+action = "Add five names to the `FEATURES` list in cli/types/mod.rs: `snapshot_plan_records`, `plan_run_records`, `authored_files`, `agent_usage` and `review_finding_read`, and update the places pinned to that list."
+detail = "tests/capabilities.rs asserts the list; add the five names there in the same order. tomlctl/README.md holds a sample capabilities block and a feature table; add the names to both, each table row saying in one line what it enables: the snapshot's spec, milestone, change and plan keys; the `plan run notes`, `gate` and `report` leaves; `authored_list` and `authored_read`; the agent record's `usage` table; `review_finding`. Do not edit claude/commands/implement-v2.md: its pre-flight list changes in a later milestone."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 14
+ref = "declare-the-new-glimpse-modules"
+title = "Declare the new glimpse modules"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "glimpse/src/main.rs",
+    "glimpse/src/view/mod.rs",
+    "glimpse/src/source.rs",
+    "glimpse/src/model.rs",
+    "glimpse/src/nav.rs",
+    "glimpse/src/authored.rs",
+    "glimpse/src/plan_state.rs",
+    "glimpse/src/rollup.rs",
+    "glimpse/src/model/plan.rs",
+    "glimpse/src/source/doc.rs",
+    "glimpse/src/view/doc.rs",
+    "glimpse/src/view/task_spec.rs",
+    "glimpse/src/view/plan.rs",
+    "glimpse/src/view/plan_details.rs",
+    "glimpse/src/view/links.rs",
+    "glimpse/src/view/doc_view.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Create the twelve new module files of design/glimpse.md, Modules, each holding only a `//!` doc line saying what it will hold, and declare each where its parent declares modules."
+detail = "main.rs declares `nav`, `authored`, `plan_state` and `rollup` in its alphabetical `mod` list. view/mod.rs declares `doc`, `doc_view`, `links`, `plan`, `plan_details` and `task_spec` as `pub(crate) mod`, as it does `details`. source.rs declares `doc` beside `mod mode;` and `mod scan;`. model.rs declares `pub(crate) mod plan;`, whose file is glimpse/src/model/plan.rs. Later tasks fill each file and add no `mod` line. Run `rustfmt --edition 2024 --check` on each new file."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 15
+ref = "model-the-snapshots-v2-records-in-glimpse"
+title = "Model the snapshot's v2 records in glimpse"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "glimpse/src/model.rs",
+    "glimpse/src/model/plan.rs",
+    "glimpse/tests/fixtures/snapshot.json",
+]
+needs = [
+    3,
+    4,
+    11,
+    14,
+]
+coupling = []
+deps_note = ""
+action = "Give glimpse's model the snapshot keys tomlctl now emits: on `Task` the `spec`, `file_notes`, `closes`, `refs` and `finding`; on `Snapshot` the `milestones`, `changes` and `plan`; on `Agent` the `usage`. Put the new types and a `PlanIndex` in model/plan.rs."
+detail = "Every new field is `#[serde(default)]`, so a snapshot from an older tomlctl still loads, as model.rs's module doc requires. `plan` is an `Option`; its types mirror the plan store's keys as plan-store.md documents them, the three run-record arrays included (`attempt`, `gate_round`, `report`). `PlanIndex` gives the lookups the views need without scanning: decisions and contracts by task id (a `binds` or `tasks` entry that is all digits names a task), handovers by source task, attempts by task, gate rounds by milestone, changes by ref, and the spec's health entries. Build it where `Index` is built. Add the new keys to tests/fixtures/snapshot.json with a small but complete v2 example (two milestones, a decision with a rejected option, a contract, a handover, runs, an attempt with a deviation, a gate round with a failing command, a report, a change, a task with a probed accept and an unprobed premise, an agent with usage), so the round-trip test still guards misspelt keys."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 16
+ref = "give-the-list-surfaces-one-cursor-list-trait"
+title = "Give the list surfaces one cursor-list trait"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "glimpse/src/surface.rs",
+    "glimpse/src/app.rs",
+]
+needs = [14]
+coupling = []
+deps_note = ""
+action = "Add a `CursorList` trait in surface.rs over the list operations `App::apply` uses, implement it for `ItemsState` and `InboxState`, add `App::list_mut()`, and replace each Inbox-versus-items guard pair in `App::apply` with one call through it, by design/glimpse.md, Cursor lists."
+detail = "The pairs to fold are the arms for `Page`, `ScrollView`, `SwitchSurface`'s viewed mark, `ItemMove` and `SelectItem`, plus `has_cursor_row` and the non-Tasks half of `copy_target`; sweep `App::apply` for any other arm that tests `self.surface == Surface::Inbox` and then falls back to `self.items`, and fold it the same way. `list_mut()` returns the current surface's list as `&mut dyn CursorList`, `None` on Tasks. Arms that only an item surface has (marks, menus, classify, request, queue, the sort and closed toggles where the two states differ in more than name) keep their own guard; say in your note which you left and why. The edits must go through whatever `edit_items` and `edit_inbox` do around a cursor move, so the behaviour of every existing key is unchanged; the existing tests in app.rs and surface.rs are the proof and must pass unedited."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 17
+ref = "add-the-target-type-appopen-and-the-back-stack"
+title = "Add the Target type, App::open and the back stack"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "glimpse/src/nav.rs",
+    "glimpse/src/app.rs",
+    "glimpse/src/keys.rs",
+]
+needs = [16]
+coupling = []
+deps_note = ""
+action = "In nav.rs define `Target` and `Location` as design/glimpse.md, Target, gives them, add `App::back` and `App::open(target)`, and map `Backspace` to a new back action that pops the stack."
+detail = "This task resolves the targets whose rows exist today: `Task` (through `App::select`, so the trail rule in glimpse/CLAUDE.md holds), `Backlog` (the Backlog surface's row) and `Input` (the Inbox's row). A row hidden by a surface's filter or closed toggle is revealed before the cursor moves. Leave the other variants resolving to a footer notice that the target cannot be shown yet; later tasks fill them in nav.rs. `open` pushes the present `Location` before moving, and pushes nothing when the target resolves to nothing. The back action restores surface and cursor, does nothing on an empty stack, and the stack is cleared wherever the flow changes. `Esc`'s chain is untouched. Add tests in nav.rs or app.rs: open a task from a ledger surface and come back; open a hidden backlog row; an unknown id leaves state and stack unchanged; a flow switch empties the stack; Backspace maps to the new action and `Esc` still walks its chain."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 18
+ref = "hold-the-authored-files-listing-in-the-app"
+title = "Hold the authored-files listing in the app"
+effort = "S"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "glimpse/src/authored.rs",
+    "glimpse/src/app.rs",
+]
+needs = [17]
+coupling = []
+deps_note = ""
+action = "In authored.rs define the listing glimpse holds, deserialised from `tomlctl::authored_list`'s JSON (`AuthoredFile` with `path`, `kind`, `id`, `headline`, `state`, `task` and `sources`), and give `App` a field for it with an `apply_authored` method that swaps in a fresh listing."
+detail = "Every field is `#[serde(default)]`; `kind` is an enum with an unknown-value fallback, as `TaskStatus` has in model.rs. `apply_authored` takes the listing and its revision and does nothing when the revision is the one already held. Clear the listing where the flow changes. Add a lookup by path and one for a task's run note. Unit-test deserialising the shape in design/records.md, Authored files, an unknown kind, and the revision short-circuit."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 19
+ref = "feed-the-authored-files-listing-from-the-poller"
+title = "Feed the authored-files listing from the poller"
+effort = "L"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "glimpse/src/source.rs",
+    "glimpse/src/source/scan.rs",
+    "glimpse/src/source/mode.rs",
+    "glimpse/src/watch.rs",
+    "glimpse/src/runtime.rs",
+]
+needs = [
+    7,
+    18,
+]
+coupling = []
+deps_note = ""
+action = "Add `Feed::Authored { slug }`, its change detector, a `WatchScope::Authored` over `<root>/docs/flows`, and the event that carries a fresh listing to `App::apply_authored`, by design/glimpse.md, Authored feed."
+detail = "The detector lives in scan.rs: on each scan, stat every `.md` file under `<root>/docs/flows/<slug>/` (the brief, `design/`, `notes/`, `notes/run/`) and call `tomlctl::authored_list` only when a stat moved, a file came or went, or a wake named the scope; glimpse/CLAUDE.md, 'The watch only wakes; the fingerprints decide', states the rule a new detector must follow. In watch.rs, add a recursive watch on `<root>/docs/flows` when it exists, classify its events into a wake for the flow whose directory changed, and ignore non-`.md` paths; when the directory appears later, add the watch the way `Wake::NewScope` adds a flow-less ledger directory, never watching a path twice. In mode.rs the new scope keeps its own miss streak. In runtime.rs, subscribe the feed for the viewed flow beside the existing feeds, resubscribe when the flow changes, and apply the event. A failed read is reported once, as the other feeds do. Add tests beside the existing poller tests: a new note is listed after a wake; an in-place edit is seen by the re-stat with no wake; an unrelated file under docs/flows wakes nothing; a missing docs/flows costs no error."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 20
+ref = "total-time-and-tokens-by-task-milestone-and-executor"
+title = "Total time and tokens by task, milestone and executor"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["glimpse/src/rollup.rs"]
+needs = [15]
+coupling = []
+deps_note = ""
+action = "In rollup.rs write the pure function that totals time and tokens from a snapshot, by design/glimpse.md, Rollups, returning rows by milestone, by executor and the `other` remainder by agent type."
+detail = "Inputs are the snapshot and the present time; the function reads nothing else. Each row carries the agents counted, seconds, the four usage fields and `turns`, gate seconds for a milestone row, and whether its tokens are partial or not recorded. Parse the agents' RFC 3339 times with `hook::parse_utc`, which view/activity.rs already uses for elapsed time. Unit-test: a worker on one task; a segment naming two tasks in different milestones, split evenly; an open segment running to now; an agent with no usage making a total partial; a flow whose agents all lack usage reporting not recorded rather than zero; a non-worker agent landing in `other`; gate rounds adding gate time; and a snapshot with no agents giving no rows."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 21
+ref = "build-the-plan-surfaces-rows"
+title = "Build the Plan surface's rows"
+effort = "L"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["glimpse/src/plan_state.rs"]
+needs = [
+    15,
+    18,
+    20,
+]
+coupling = []
+deps_note = ""
+action = "In plan_state.rs define `PlanRow`, the eleven sections and `PlanState { tracking: Tracking<PlanRow>, .. }`, and the function that builds the rows from the snapshot, the authored listing and the rollups, by design/glimpse.md, Plan surface."
+detail = "A row has an id `<section>:<key>`, its section, the cells the table shows, and its `Target` where it has one (a decision, contract, handover, milestone, run, or authored file; a change, departure, cost or health row targets the task it names, or nothing). Implement `Tracked` for `PlanRow`, with the row's state as its status (a handover's done or open, a run's outcome, a health row's verdict, empty otherwise). `PlanState` keeps the cursor across a rebuild because ids are stable, exposes the visible order with its section headings, moves the cursor to the next or previous section's first row, and implements `CursorList`. The Changes section starts at the latest approval's time and is empty before any approval. The Health section follows the rule in the design exactly, using each entry's `probeable`. The surface's count is the Health rows plus open handovers. With no plan store the state holds no rows and says so. Unit-test the builder against the fixture's v2 example: every section's rows and ids, an empty section, the health rule (unprobed but not probeable is left out), changes before approval left out, cursor kept across a rebuild, and section jumps at both ends."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 22
+ref = "wire-the-plan-surface-into-the-app"
+title = "Wire the Plan surface into the app"
+effort = "L"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "glimpse/src/surface.rs",
+    "glimpse/src/app.rs",
+    "glimpse/src/keys.rs",
+    "glimpse/src/state.rs",
+    "glimpse/src/nav.rs",
+    "glimpse/src/cli.rs",
+    "glimpse/src/view/mod.rs",
+]
+needs = [
+    17,
+    21,
+]
+coupling = []
+deps_note = ""
+action = "Add `Surface::Plan` as the seventh surface (key `7`, state name `plan`, label `Plan`), give each surface a two-letter `short` label, hold a `PlanState` on `App` rebuilt when the snapshot, the authored listing or the rollups change, route the list keys to it, and resolve the plan targets in `App::open`."
+detail = "surface.rs: the variant, its place last in `ALL`, and an arm in every exhaustive match; `ledger_kind`, `groups` and `sorts` give it none. keys.rs: the digit range `'1'..='6'` becomes `'1'..='7'`, and its tests that assert `7` maps to nothing change with it. app.rs: `list_mut()` returns the plan state on this surface; `Tab` and `Shift-Tab` move by section here and keep their meaning elsewhere; the item-only actions (marks, menus, classify, request, queue, filter prompts) do nothing here. Then sweep app.rs for every `!= Surface::Tasks`, `== Surface::Tasks` and catch-all `_ =>` arm over a surface and give Plan an explicit case where falling through would treat it as a ledger surface; `copy_target` copies the row's key, `needs_tick` needs nothing new. state.rs saves and restores `plan` as the last surface like any other. nav.rs: `Milestone`, `Decision`, `Contract`, `Handover`, `Run` and `Authored` targets switch to Plan and put the cursor on the row. Tests: `7` reaches the surface and `1` to `6` still reach theirs; cursor, page and section keys move the plan cursor; an item-only key does nothing; `--surface plan` and a saved `plan` restore it; opening a decision target lands on its row and back returns."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 23
+ref = "draw-the-plan-surface-its-tab-and-its-key-hints"
+title = "Draw the Plan surface, its tab and its key hints"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "glimpse/src/view/plan.rs",
+    "glimpse/src/view/mod.rs",
+    "glimpse/src/view/header.rs",
+    "glimpse/src/view/footer.rs",
+    "glimpse/src/view/legend.rs",
+    "glimpse/src/view/items.rs",
+]
+needs = [22]
+coupling = []
+deps_note = ""
+action = "Draw the Plan surface's list in view/plan.rs through the shared table drawing, add its arm to `draw_surface`, and give the header, footer, legend and empty text an explicit case for it."
+detail = "view/plan.rs draws section headings and rows with `view/table.rs`, as view/inbox.rs does for the Inbox's sections, and returns the same `Drawn` so `draw_surface` records the row rects, scroll and page; a click selects a row. An empty section shows its heading and `none`; a flow with no plan store shows one line saying it is not a v2 flow. header.rs: the tab shows the surface's count, never an arrival flash, and the compact tabs label every surface by `Surface::short`; update the tests and doc comment that show single letters. footer.rs: on Plan list only the keys that work there (move, page, section, details, links, back, surfaces), not the item hints, and change the `1-6` hints to `1-7`. legend.rs: `1-7`, plus rows for the section keys, `b` and Backspace. items.rs: `empty_text` must not answer for Plan. Colours come only from existing theme tokens. Add view tests rendering the fixture at two widths: the sections and a row of each appear; an empty section reads `none`; the compact header shows distinct labels for Plan and Plan-review."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 24
+ref = "make-details-builders-return-their-links"
+title = "Make details builders return their links"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "glimpse/src/view/doc.rs",
+    "glimpse/src/view/details.rs",
+]
+needs = [17]
+coupling = []
+deps_note = ""
+action = "Define `Doc { text, links }` and `Link { label, target }` in view/doc.rs, and change the details builders in details.rs (`content` for a task, `item_content` for a ledger row) to return a `Doc`, filling `links` for the relations they already draw."
+detail = "For a task: its needs, coupled tasks, dependents and the tasks it shares files with, each a `Target::Task`, labelled by id and title. For a ledger row: the pending input records drawn under Inputs, each a `Target::Input`. `render` keeps drawing the text exactly as today and additionally hands the links to the app, so the links of the record whose details are showing are available to the links list; add the smallest accessor that does that, a pure function from `&App` to the current `Doc`'s links, in details.rs. Existing details tests keep passing unedited apart from the builder's return type; add tests that a task's links name its needs and dependents in the order the text shows them, and that a row with none has an empty list."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 25
+ref = "show-a-v2-tasks-spec-changes-attempts-and-links-in-its-details"
+title = "Show a v2 task's spec, changes, attempts and links in its details"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "glimpse/src/view/task_spec.rs",
+    "glimpse/src/view/details.rs",
+]
+needs = [
+    15,
+    18,
+    24,
+]
+coupling = []
+deps_note = ""
+action = "In view/task_spec.rs build the sections a task with a `spec` gains, by design/glimpse.md, Task details, and call it from the task builder in details.rs after the action and detail."
+detail = "The sections, in order: Outcome, Constraints, Means, Executor, Design, Precedent, Accept, Premises, Changes, Attempts, Links. An accept entry shows its behaviour, check, kind, owner and one of its probe verdict, `unprobed` (probeable, none recorded) or `not probed` (not probeable); a premise shows claim, check, when and verdict the same way. File notes are drawn beside the files they annotate in the existing Files section. The builder also returns links: the milestone, each binding decision and contract, each design entry (an `Authored` target for the file before the `#`), each precedent (a `Source` target with no line), the run note when the authored listing has one, the commit when stamped, the finding or backlog rows, and each attempt's proposed handover. A task with no `spec` gets nothing from this module and draws exactly as today. Bodies that are prose go through the existing markdown and indent helpers. Colours come only from existing theme tokens. Add tests over the fixture: each section appears with its content; an unprobed and a not-probeable check read differently; the links are in section order; a v1 task's details are byte for byte what they were."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 26
+ref = "show-a-plan-rows-whole-record-in-the-details-panel"
+title = "Show a Plan row's whole record in the details panel"
+effort = "L"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "glimpse/src/view/plan_details.rs",
+    "glimpse/src/view/details.rs",
+]
+needs = [
+    22,
+    25,
+]
+coupling = []
+deps_note = ""
+action = "In view/plan_details.rs build the details `Doc` for each kind of Plan row, by design/glimpse.md, Plan row details and Links, and give `details::render` an arm that shows it on the Plan surface."
+detail = "One builder per row kind: decision, contract, handover, milestone (with every gate round and each command's outcome, duration, summary, failed ids and kept log path), run, change, departure, cost row and health row. An authored-file row's details are the fetched document, which another task draws; here it shows the file's kind, headline and source count, and its links are its sources (`Source` targets, or `Url`), plus its task for a run note. Each builder fills `links` by the table in the design: a decision's bound tasks and paths and the notes its evidence names as `notes/<id>.md`; a contract's tasks; a handover's source task; a milestone's tasks and kept logs; a run's dispatched tasks; a change's or departure's task. With no cursor row the panel reads as the other surfaces do when nothing is selected. Add tests over the fixture for each kind's text and links, including a milestone with a failed gate round and a decision whose evidence names a note."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 27
+ref = "add-the-links-list"
+title = "Add the links list"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "glimpse/src/view/links.rs",
+    "glimpse/src/app.rs",
+    "glimpse/src/keys.rs",
+    "glimpse/src/view/mod.rs",
+    "glimpse/src/view/footer.rs",
+]
+needs = [
+    23,
+    26,
+]
+coupling = []
+deps_note = ""
+action = "Add the links list of design/glimpse.md, Links: `b` opens a modal list of the links of the record whose details are showing, the cursor keys move it, `Enter` or a click on a row opens that link through `App::open`, and `Esc` closes it."
+detail = "Model it on the existing overlays: app.rs holds its state (the links and a cursor) the way it holds the selector's, and while it is up it takes every key. It works on every surface, Tasks included. With no links `b` opens nothing and the footer says so. Opening a link closes the list first, so the back stack holds the place the user was. view/links.rs draws it with the shared panel and row helpers and records row rects for the mouse; view/mod.rs draws it above the body like the other modals; footer.rs shows its keys while it is up and adds `b` to the hints of surfaces whose details can have links. Tests: `b` on a task with needs lists them; Enter opens the first and Backspace returns to the task with the list closed; `b` with no links says so; Esc closes without moving; a click on a row opens it; on the Plan surface a decision's links open its bound task."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 28
+ref = "fetch-documents-on-the-poller-thread"
+title = "Fetch documents on the poller thread"
+effort = "L"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "glimpse/src/source/doc.rs",
+    "glimpse/src/source.rs",
+    "glimpse/src/runtime.rs",
+]
+needs = [
+    12,
+    19,
+]
+coupling = []
+deps_note = ""
+action = "Add the document lane of design/glimpse.md, Document lane: a `DocRequest` the runtime sends the poller, read on the poller thread in source/doc.rs, answered with an event carrying the document or a one-line reason."
+detail = "source.rs gains a `Control` variant carrying `Option<DocRequest>` and an `Event` variant carrying the request and its result, beside `Control::Tail` and `Event::Tail`; runtime.rs gains a `Host` method to send it, as `set_tail` is sent, and applies the event to the app through a method the next task defines the state for: for now, hold the latest document on the screen state the way the tail view is held. source/doc.rs does the reads: `Authored` through `tomlctl::authored_read`; `Finding` through `tomlctl::review_finding`, rendered as `key: value` lines; `Commit` through `git show --stat --format=fuller <sha>`; `Source` by the rule in the design, comparing the shown text with the working tree's to set `changed since`. Run git as flows.rs already does, with the repo root as its working directory and arguments passed as separate values, never through a shell. Pass a sha only when it is 7 to 64 hex digits and a path only after it resolves inside the repo root; refuse a file over 2 MiB or not UTF-8. A new request replaces the old one and a stale answer is dropped. Tests in source/doc.rs over a temp git repo: a clean source at an older commit shows the old text and `changed since`; a dirty one shows the working tree and `read uncommitted`; no `read_at` shows `commit not recorded`; a path outside the root, a non-hex sha and an oversized file are each a one-line reason; a commit shows its stat."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 29
+ref = "show-a-fetched-document-in-the-details-panel"
+title = "Show a fetched document in the details panel"
+effort = "L"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "glimpse/src/view/doc_view.rs",
+    "glimpse/src/view/details.rs",
+    "glimpse/src/app.rs",
+    "glimpse/src/nav.rs",
+    "glimpse/src/runtime.rs",
+]
+needs = [
+    27,
+    28,
+    30,
+]
+coupling = []
+deps_note = ""
+action = "Make `App::open` ask for a document when a target has no row (`Source`, `Commit`, `Finding`) and when the cursor rests on an authored-file row, hold the open document on `App`, and draw it in the details panel in place of the row's details."
+detail = "app.rs holds the open document's target, its state (loading, text or reason) and its scroll; nav.rs sets it from `open` and includes it in `Location`, so Backspace leaves a document and returns to what was under it. runtime.rs sends the request whenever the wanted document differs from the one last sent, as `follow_tail` does for the transcript, and clears it when none is wanted; move the document the previous task held on the screen state onto `App`. An authored-file row on the Plan surface wants its file while it is the cursor row and details are open. view/doc_view.rs draws the document: the title names the target and any notice (`read uncommitted`, `commit not recorded`, `changed since`); a `Source` starts scrolled so its line is in view and marks that line; an authored file is rendered through the markdown renderer, everything else as plain text; loading and a failure each show one line. The document's links are its sources (authored file), the tasks stamped with it (commit) or the task that fixes it (finding), so `b` works on a document too. `Url` copies the address through the existing copy path and says so in the footer. Opening the details panel is implied by opening a document. Tests: opening a source target requests it and shows loading, then its text at the line; Backspace returns to the note; an authored row's details show its rendered text; a failure shows its reason; a commit document links to its tasks."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 30
+ref = "render-markdown-tables"
+title = "Render markdown tables"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["glimpse/src/view/markdown.rs"]
+needs = [14]
+coupling = []
+deps_note = ""
+action = "Make the markdown renderer handle tables: parse with tables enabled and draw a header row, a rule and body rows, with columns sized to their content and cells wrapped when the table is wider than the panel."
+detail = "The renderer builds its parser with `Parser::new`; tables need pulldown-cmark's table option through `Parser::new_ext`. Check the crate's `Options` at the version in glimpse/Cargo.toml before relying on the flag's name. The renderer's entry point has no width today; where a width is needed, take it as a parameter with a default the existing callers keep, so their output is unchanged for text without tables. Inline code, emphasis and links inside a cell keep their styles. Tests: a simple table; a table wider than the width, which wraps inside cells rather than overflowing; inline code in a cell; a document with no table rendering exactly as before."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 31
+ref = "add-the-needs-you-section-to-the-inbox"
+title = "Add the needs-you section to the Inbox"
+effort = "L"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "glimpse/src/surface.rs",
+    "glimpse/src/view/inbox.rs",
+    "glimpse/src/app.rs",
+]
+needs = [29]
+coupling = []
+deps_note = ""
+action = "Give the Inbox a first section, `needs you`, for the viewed flow: each parked task, each open handover and each entry of the plan store's latest report whose kind is not `parked` or `handover`, by design/glimpse.md, Needs you."
+detail = "The rows are read-only and built from the snapshot whenever it changes; they are not input records and never reach the input store. Give each a stable id (`need:task:<id>`, `need:handover:<id>`, `need:report:<n>`) so the cursor survives a refresh, and a `Target`: the task, the handover, or for a report entry its `path` as a `Source` when non-empty, else its `task` when non-zero; an entry with neither opens nothing and the footer says so. `Enter` on one opens its target through `App::open`. The answer, acknowledge, handle, withdraw and request actions skip these rows: with the cursor on one they do nothing and the footer says the row is read-only, and a marked set never includes one. The Inbox tab's count includes them; they do not flash as arrivals when the snapshot merely refreshes. The section is drawn first, with its heading, and is omitted when it has no rows or the flow has no plan store. Tests: a fixture with a parked task, an open and a done handover and a report yields the right rows in order; Enter opens the task and Backspace returns to the Inbox row; a write action on a row does nothing; the count includes them; a flow with no plan store shows the Inbox exactly as before."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 32
+ref = "cover-the-v2-views-with-a-headless-render-test"
+title = "Cover the v2 views with a headless render test"
+effort = "S"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["glimpse/tests/cli.rs"]
+needs = [
+    23,
+    25,
+    26,
+    31,
+]
+coupling = []
+deps_note = ""
+action = "Add cases to glimpse/tests/cli.rs that render the fixture headlessly with `--once --snapshot glimpse/tests/fixtures/snapshot.json` and assert what a user sees on the Plan surface, in a v2 task's details and in the Inbox's needs-you section."
+detail = "Use the file's existing helpers and sandbox; every case stays inside it, as glimpse/CLAUDE.md requires. Cases: `--surface plan --size 140x60` prints the section headings Decisions, Milestones, Notes and Health and the fixture decision's id; the same at `--size 80x30` still prints the tab's short label; the Tasks surface with details open on the fixture's v2 task prints `Outcome` and `Premises`, if `--once` has a way to open details from the command line, and otherwise assert this in the nearest existing way and say so in your note; `--surface inbox` prints `needs you` when the fixture holds a parked task. Assert on plain substrings of the rendered frame."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 33
+ref = "document-the-v2-views-in-glimpses-readme-and-claudemd"
+title = "Document the v2 views in glimpse's README and CLAUDE.md"
+effort = "S"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "glimpse/README.md",
+    "glimpse/CLAUDE.md",
+]
+needs = [31]
+coupling = []
+deps_note = ""
+action = "Update glimpse/README.md and glimpse/CLAUDE.md for what this milestone added: the Plan surface and its sections, v2 task details, the links list and back key, the document view, the needs-you section, the authored feed and the document lane."
+detail = "README.md: the Surfaces section's 'Six surfaces, switched with `1`–`6`' becomes seven and `1`–`7`, and the keys table's `1`–`6` row gains Plan; describe the Plan surface and its sections in one line each; add `7`, `b`, Backspace and the Plan surface's `Tab` and `Shift-Tab` to the keys table; add a short section on following links and reading documents, and one line that the Inbox opens with what waits on the user; add the authored-files feed and the document lane to the data-flow description. CLAUDE.md: add the new files to the Structure paragraph in the place their kind belongs; state in the write model that the Plan surface, the links list and the needs-you rows write nothing; add to the gotchas that the document lane runs git and file reads on the poller thread with hex-checked shas and root-contained paths, and that `docs/flows` is a watch scope with its own miss streak whose files are re-statted on every scan. Follow the files' existing style, and state what the code does, not how it came to be."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 34
+ref = "have-workers-open-their-run-note-with-the-structured-block"
+title = "Have workers open their run note with the structured block"
+effort = "S"
+status = "pending"
+checkpoint = "C"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/agents/plan-worker-deep.md",
+    "claude/agents/plan-worker-lite.md",
+]
+needs = [5]
+coupling = []
+deps_note = ""
+action = "In the shared `plan-worker-procedure` block of both worker agents, rewrite the section 'The note' so the note opens with its Status line, then the `toml run-note` block of design/records.md, Run-note block, then the prose."
+detail = "The block must be byte-identical in both files; `bash scripts/verify-shared-blocks.sh` checks it. Keep the Status first line and its wording. Say that the block follows it after one blank line, show the block once as a fenced example with every table it can hold, and say what goes where: `files_touched`; a `[[deviations]]` entry per departure from a `suggested` means with `what`, `why` and the `means` departed from; a `[[tangential]]` entry per tangential discovery with `kind`, `area`, `summary` and `why`, replacing the `TANGENTIAL:` line form, which is no longer written; a `[[checks]]` entry per check run with its `command` and `result`; `[handover]` only when one is proposed, with `reason`, `action`, `when` and `done_when`. Say every key is optional and an empty block is valid. The prose that follows still says what changed file by file and, for `failed` or `parked`, the reason and what would unblock it. Keep the sentences about a tangential discovery being left unfixed and about the note being public text. Leave the 'Return' section as it is. The example fence holds no `tomlctl` command."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 35
+ref = "have-research-agents-record-their-sources-in-a-block"
+title = "Have research agents record their sources in a block"
+effort = "S"
+status = "pending"
+checkpoint = "C"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/agents/plan-investigator.md",
+    "claude/agents/plan-challenger.md",
+    "claude/agents/plan-cold-reader.md",
+]
+needs = [6]
+coupling = []
+deps_note = ""
+action = "In the shared `plan-v2-note-writer` block of the three plan agents, add the `toml sources` block of design/records.md, Sources block: where it goes, what each key holds, and how to fill `read_at` and `dirty`."
+detail = "The block must be byte-identical in all three files; `bash scripts/verify-shared-blocks.sh` checks it. Add a paragraph and one fenced example after the sentence about writing the note in one call: the note's first line stays as the agent's own section says; after one blank line comes a fenced block with the info string `toml sources`, listing every file or page the note's claims rest on. `read_at` is the output of `git rev-parse HEAD`; `dirty` is the cited paths that `git status --porcelain -- <paths>` lists; both commands only read. Each `[[source]]` has a repo-relative `path` with `/` separators and an optional `line`, or a `url`, and a one-line `claim` saying what it supports. A note that cites nothing writes the block with no `[[source]]`. Do not edit the `research-finding-record` block, which the v1 research agents share. The example fence holds no `tomlctl` command."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 36
+ref = "record-attempts-gate-rounds-and-the-report-in-the-drain"
+title = "Record attempts, gate rounds and the report in the drain"
+effort = "M"
+status = "pending"
+checkpoint = "C"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "claude/commands/implement-v2.md",
+    "claude/commands/apply-v2.md",
+    "CLAUDE.md",
+]
+needs = [
+    8,
+    9,
+    10,
+    13,
+]
+coupling = []
+deps_note = ""
+action = "Edit the implement engine's drain so it records each run's attempts, each gate round and the closing report through the three `plan run` leaves, by design/engine.md, Drain changes; add `plan_run_records` to the carrier's pre-flight list; and name it in CLAUDE.md's Implement v2 deploy sentence."
+detail = "drain.md, three edits. (1) After the lane check in step 3, add the `tomlctl plan run notes --slug <slug> --milestone <id>` call and say what its rows mean. In step 2, 'Which notes you read', replace the two things taken from every note with the Grep tool (the `TANGENTIAL:` lines and the `Status:` line) with that output: `problem` reports a Status disagreement or a missing or malformed note, and tangential entries, deviations and handover proposals are read from the recorded attempts with `tomlctl plan view --slug <slug> --for digest` or `tomlctl items list .claude/flows/<slug>/plan.toml --array attempt`; pick whichever read exists and works, and state the exact command. Since step 2 comes before step 3, say there that these are read once step 3 has recorded them, and keep the rule for which notes are read in full. Step 8 takes its candidates from the attempts' tangential entries; keep its `backlog check` and `backlog add` procedure, and keep reading `TANGENTIAL: flaky-test` lines from verification blocks, which are not notes. (2) In step 7, after the outcome table, add the `plan run gate` call with its row keys and say `<n>` is 0 for the first gate run and the fix round's number after it, that a held-command dispatch or a timeout re-dispatch records under the same round, and that the count of rounds spent still comes from the `gate <id> round` reasons. (3) In step 11, before the report is printed, add the `plan run report` call, one row per report line with its `kind`, `task`, `text` and `path`, made even when there is nothing to report. Every fenced `tomlctl` command takes single-token placeholders. implement-v2.md: add `plan_run_records` to the feature list in pre-flight step 2 and extend the sentence after it to say the binary must be able to record a run's attempts, gate rounds and report. CLAUDE.md: in the Implement v2 section's Deploy bullet, add the three `plan run` leaves to what the pre-flight refuses a binary without."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 37
+ref = "mark-flow-state-and-glimpse-as-built-in-the-design-record"
+title = "Mark flow state and glimpse as built in the design record"
+effort = "S"
+status = "pending"
+checkpoint = "C"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["docs/ideas/v2-pipeline.md"]
+needs = [36]
+coupling = []
+deps_note = ""
+action = "Update docs/ideas/v2-pipeline.md to say topic 6 is built: the status line, the 'Where things stand' list, the topic table row and the 'Flow state and glimpse' section."
+detail = "The status line near the top stops listing topic 6 as agreed and says topics 4, 7 and 8 remain open. Add a bullet to 'Where things stand' saying glimpse shows a v2 flow in full and runs leave attempts, gate rounds and reports in the plan store, naming `docs/flows/glimpse-v2-visibility/` as the record. Topic 6's table row reads built, pointing at that directory. In the 'Flow state and glimpse' section, replace the opening paragraph's statement that glimpse reads only the v1 row fields with one sentence saying the section records the agreed design and where it was built, and correct the three bullets the plan departed from: the rollups are computed from the tracked agents.toml with no stamped totals; the run's records live in plan.toml, not the task store; and a source is pinned by the commit read at and the paths dirty then. In the 'Smaller fixes' list, the Glimpse bullet stays."
+acceptance = ""
+agent = ""
+commit = ""
