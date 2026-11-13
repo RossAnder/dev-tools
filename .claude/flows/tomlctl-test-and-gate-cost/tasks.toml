@@ -1,0 +1,1399 @@
+schema_version = 2
+last_updated = 2026-11-13
+plan_path = ""
+last_import_refs = []
+
+[policy]
+checkpoints = "milestones"
+max_parallel = 6
+commit_granularity = "per-task"
+origin = "plan"
+note = ""
+
+[[checkpoints]]
+id = "A"
+rationale = "Cheap cuts and the entry point: a sandbox without git init, a one-pass shell verifier, per-step gate stamps, and tomlctl::run_with with its per-run context."
+
+[[checkpoints]]
+id = "B"
+rationale = "Tests run tomlctl in-process through one builder, and tomlctl and glimpse are one cargo workspace with one clippy."
+
+[[checkpoints]]
+id = "C"
+rationale = "The suite passes in under 200 s: cut what still dominates after the in-process swap."
+
+[[file_notes]]
+ref = "add-the-per-run-invocation-context"
+file = "tomlctl/src/invocation.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "add-the-run_with-entry-point"
+file = "tomlctl/tests/in_process.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "make-tomlctl-and-glimpse-one-cargo-workspace"
+file = "Cargo.toml"
+note = "(new)"
+
+[[file_notes]]
+ref = "make-tomlctl-and-glimpse-one-cargo-workspace"
+file = "Cargo.lock"
+note = "(new)"
+
+[[file_notes]]
+ref = "make-tomlctl-and-glimpse-one-cargo-workspace"
+file = "tomlctl/Cargo.lock"
+note = "(delete)"
+
+[[file_notes]]
+ref = "make-tomlctl-and-glimpse-one-cargo-workspace"
+file = "glimpse/Cargo.lock"
+note = "(delete)"
+
+[[specs]]
+ref = "copy-a-git-init-template-in-the-test-sandbox"
+outcome = "A test's sandbox is a git repository without the test starting a git process, once the template exists."
+constraints = [
+    "The sandbox a test receives has the same `.git` content `git init -q .` gives on this machine, hook samples included.",
+    "The SHARED-BLOCK:shipped-gitignore span in this file stays byte-identical.",
+    "Touch no file outside this task's files.",
+]
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "sandbox() takes its repository from a template under the cargo target tmp directory"
+check = "grep -q 'CARGO_TARGET_TMPDIR' tomlctl/tests/common/mod.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "every integration test still passes on a sandbox built from the template"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^(backlog_read|flow_active|plan_drift)::/)'"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.premises]]
+claim = "sandbox() runs git init through git_command"
+check = '''grep -q 'git_command(&root).args(\["init", "-q", "."\])' tomlctl/tests/common/mod.rs'''
+at = "base"
+
+[specs.premises.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "verify-shared-blocks-in-one-gawk-pass"
+outcome = "The shared-block verifier reaches the same verdict as before in a fraction of the time."
+constraints = [
+    "The gnu-awk-resolver block stays byte-identical, since scripts/doc-diff-gate.sh carries the same block.",
+    "Every message text, the order errors are reported in, and exit codes 0, 1 and 2 stay as they are.",
+    "GNU awk stays required.",
+    "Touch no file outside this task's files.",
+]
+means = []
+design = ["design/gates.md#one-pass-verifier"]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the per-pair hash pipeline is gone from the verifier"
+check = """! grep -q 'has_marker "' scripts/verify-shared-blocks.sh"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the verifier still reports parity on this repository"
+check = "bash scripts/verify-shared-blocks.sh"
+kind = "guard"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 0
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the Rust mirror and the shell gate still agree, on the repository and on the CR-marker and empty-span fixtures"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/cli::dispatch::tests::skills::/)'"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.accept]]
+behaviour = "the verifier finishes in under half of the 24 s measured 2026-11-13"
+check = "s=$(date +%s%N); bash scripts/verify-shared-blocks.sh >/dev/null && test $(( ($(date +%s%N) - s) / 1000000 )) -lt 12000"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the verifier defines has_marker and extract_block"
+check = "grep -q '^has_marker()' scripts/verify-shared-blocks.sh && grep -q '^extract_block()' scripts/verify-shared-blocks.sh"
+at = "base"
+
+[specs.premises.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "stamp-each-commit-gate-step-on-its-own-inputs"
+outcome = "A commit gate step that already passed is skipped until a file under its own roots changes."
+constraints = [
+    "The staged-path triggers in the hook stay as they are.",
+    "The hook never writes a stamp.",
+    "The verifiers, the documentation gate and the sidecar comparison in the hook are untouched.",
+    "Touch no file outside this task's files.",
+]
+means = []
+design = [
+    "design/gates.md#step-table",
+    "design/gates.md#stamps",
+    "design/gates.md#hook",
+]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the stamp script knows its steps by id"
+check = "grep -q 'plan-corpus' scripts/gate-stamp.sh && grep -q 'dispatch-tests' scripts/gate-stamp.sh"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the hook asks for a step by id and no longer writes the cargo commands itself"
+check = "grep -q 'gate fmt-tomlctl' .githooks/pre-commit && ! grep -q 'gate cargo' .githooks/pre-commit"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "an unknown step id is a usage error"
+check = "bash scripts/gate-stamp.sh check no-such-step; test $? -eq 2"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the plan-corpus step reads the backlog store"
+check = "grep -q '.claude/backlog.toml' scripts/gate-stamp.sh"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "after a passing run, an untracked file under docs/plans voids the plan-corpus stamp and leaves the format and clippy stamps matching"
+check = 'f=docs/plans/.gate-stamp-probe.md; : > "$f"; bash scripts/gate-stamp.sh check fmt-tomlctl && bash scripts/gate-stamp.sh check fmt-glimpse && bash scripts/gate-stamp.sh check glimpse-clippy && ! bash scripts/gate-stamp.sh check plan-corpus; rc=$?; rm -f "$f"; exit $rc'
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.accept]]
+behaviour = "after a passing run, changing the fmt-tomlctl command in a copy of the script voids that step's stamp while the real script still matches it"
+check = """t=scripts/.gate-stamp-probe.sh; sed 's#tomlctl/Cargo.toml -- --check#tomlctl/Cargo.toml -- --check --color never#g' scripts/gate-stamp.sh > "$t"; bash scripts/gate-stamp.sh check fmt-tomlctl && ! bash "$t" check fmt-tomlctl; rc=$?; rm -f "$t"; exit $rc"""
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.premises]]
+claim = "gate-stamp.sh hashes one ROOTS list"
+check = "grep -q '^ROOTS=(tomlctl glimpse claude .claude/review-lenses docs/plans scripts)' scripts/gate-stamp.sh"
+at = "base"
+
+[specs.premises.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "the hook keeps one STAMP_STATE for every gate"
+check = "grep -q '^STAMP_STATE=unchecked' .githooks/pre-commit"
+at = "base"
+
+[specs.premises.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "add-the-per-run-invocation-context"
+outcome = "One run's streams, stdin, environment overlay and output options can be held per thread, and without a context every accessor behaves as the process does today."
+constraints = [
+    "No accessor changes behaviour when no context is installed.",
+    "No new dependency.",
+    "Touch no file outside this task's files.",
+]
+means = []
+design = [
+    "design/invocation.md#context",
+    "design/invocation.md#accessors",
+    "design/invocation.md#exit-marker",
+]
+precedent = ["tomlctl/src/output.rs"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the invocation module exists and is part of the library"
+check = "test -f tomlctl/src/invocation.rs && grep -q '^mod invocation;' tomlctl/src/lib.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the module carries the exit marker"
+check = "grep -q 'struct ExitWith' tomlctl/src/invocation.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the accessors read the context when one is installed and the process otherwise"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^invocation::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.premises]]
+claim = "StdoutClosed is the existing silent marker error in output.rs"
+check = "grep -q 'fn is_stdout_closed' tomlctl/src/output.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "return-an-exit-marker-in-place-of-process-exit"
+outcome = "No verb ends the process itself; the same exit codes reach the shell through run()."
+constraints = [
+    "stdout, stderr and the exit code of each of the six verbs are byte-for-byte what they are today.",
+    "Touch no file outside this task's files.",
+]
+means = []
+design = ["design/invocation.md#exit-marker"]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "no verb code calls process exit"
+check = "! grep -rq 'process::exit' tomlctl/src/cli/dispatch.rs tomlctl/src/plan/check.rs tomlctl/src/tasks/dispatch.rs tomlctl/src/review/anchor.rs tomlctl/src/review/reproduce.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the six verbs still exit 1 on their failing verdicts"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^(plan_check|tasks_render|review_anchor|review_reproduce|blocks)::/)'"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.premises]]
+claim = "six process::exit calls sit in the five verb files"
+check = """test "$(cat tomlctl/src/cli/dispatch.rs tomlctl/src/plan/check.rs tomlctl/src/tasks/dispatch.rs tomlctl/src/review/anchor.rs tomlctl/src/review/reproduce.rs | grep -c 'std::process::exit(')" -eq 6"""
+at = "base"
+
+[specs.premises.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "the exit marker exists"
+check = "grep -q 'struct ExitWith' tomlctl/src/invocation.rs"
+at = "after:4"
+
+[[specs]]
+ref = "send-output-and-the-output-options-through-the-context"
+outcome = "With a context installed, everything a command prints lands in the context's buffers and its output options last one run; without one, nothing changes."
+constraints = [
+    "`std::io::stdout()` appears in output.rs only.",
+    "The bytes the installed binary writes to stdout and stderr are unchanged.",
+    "A caller of `output::opts()` outside these two files keeps compiling without an edit there.",
+    "Touch no file outside this task's files.",
+]
+means = []
+design = ["design/invocation.md#accessors"]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "output.rs has no direct stderr print left"
+check = "! grep -q 'eprintln!' tomlctl/src/output.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "output.rs consults the invocation context"
+check = "grep -q 'invocation::' tomlctl/src/output.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the output options and shaping still behave as before from the binary"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^(output_options|output_trim|output_nesting)::/)'"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.accept]]
+behaviour = "emit_error in lib.rs writes through the stderr accessor"
+check = '''! grep -qE 'eprintln!|std::io::stderr\(\)' tomlctl/src/lib.rs'''
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the output options are a process OnceLock"
+check = "grep -q '^static OPTS: OnceLock<OutputOpts>' tomlctl/src/output.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "read-stdin-and-the-environment-through-the-context"
+outcome = "With a context installed, a command reads the stdin bytes and the four variables the context gives it; without one, nothing changes."
+constraints = [
+    "The cwd-derived REPO_ROOT cache in io.rs stays process-wide.",
+    "The once-per-process legacy-pointer warning in flow/active.rs is left as it is.",
+    "Touch no file outside this task's files.",
+]
+means = []
+design = ["design/invocation.md#accessors"]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "io.rs reads stdin and the environment through the context"
+check = "grep -q 'invocation::stdin_reader' tomlctl/src/io.rs && grep -q 'invocation::env_var_os' tomlctl/src/io.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the dedup switch and the Claude config dir read the overlay"
+check = "grep -q 'invocation::env_var_os' tomlctl/src/items.rs && grep -q 'invocation::env_var_os' tomlctl/src/review/catalogue.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the stdin claim is a process-wide flag"
+check = "grep -q '^static STDIN_CONSUMED' tomlctl/src/io.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "the accessors exist"
+check = "grep -q 'fn env_var_os' tomlctl/src/invocation.rs"
+at = "after:4"
+
+[[specs]]
+ref = "add-the-run_with-entry-point"
+outcome = "A caller can run one tomlctl command inside its own process, from given arguments, environment and stdin, and get the exit code, stdout and stderr the binary would give."
+constraints = [
+    "run() and the binary keep clap's own parse and exit path.",
+    "`run_with` and `Outcome` are `#[doc(hidden)]`.",
+    "Touch no file outside this task's files.",
+]
+means = []
+design = ["design/invocation.md#entry-point"]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the library exports run_with"
+check = "grep -q 'pub fn run_with' tomlctl/src/lib.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the dispatcher no longer reads the process arguments"
+check = "! grep -q 'args_os' tomlctl/src/cli/dispatch.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "run_with gives the binary's exit code, stdout and stderr, and two runs in one process do not leak into each other"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^in_process::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.accept]]
+behaviour = "the in-process tests exist and are declared in tests/it.rs"
+check = '''grep -q '^mod in_process;' tomlctl/tests/it.rs && test "$(grep -c '#\[test\]' tomlctl/tests/in_process.rs)" -ge 5'''
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "run() parses the process arguments with Cli::parse"
+check = "grep -q 'let cli = Cli::parse();' tomlctl/src/lib.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "the dispatcher reads args_os for the --where placement check"
+check = "grep -q 'args_os' tomlctl/src/cli/dispatch.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "run-the-tests-commands-through-an-in-process-builder"
+outcome = "A test command built through the shared helpers runs inside the test process unless it needs a working directory, a foreign environment variable or a real process."
+constraints = [
+    "No assertion in any test changes.",
+    "A command the in-process path cannot honour starts the built binary exactly as before.",
+    "The SHARED-BLOCK:shipped-gitignore span in tests/common/mod.rs stays byte-identical.",
+    "Touch no file outside this task's files.",
+]
+means = []
+design = ["design/invocation.md#child-tier"]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the shared helpers build the in-process command"
+check = "grep -q 'tomlctl::run_with' tomlctl/tests/common/mod.rs && grep -q 'pub fn tomlctl_process' tomlctl/tests/common/mod.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "none of the fourteen files names assert_cmd's Command"
+check = "! grep -l 'assert_cmd::Command' tomlctl/tests/agents_record.rs tomlctl/tests/capabilities.rs tomlctl/tests/review_apply.rs tomlctl/tests/review_cells.rs tomlctl/tests/review_digest.rs tomlctl/tests/review_finish.rs tomlctl/tests/review_plan_records.rs tomlctl/tests/review_runs.rs tomlctl/tests/review_settle.rs tomlctl/tests/review_survey.rs tomlctl/tests/review_vocabulary.rs tomlctl/tests/tasks_import.rs tomlctl/tests/tasks_render.rs tomlctl/tests/tasks_write.rs | grep -q ."
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the tasks_write writer race still starts real processes"
+check = "grep -q 'tomlctl_process' tomlctl/tests/tasks_write.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the builder sends a working directory, a foreign variable, tomlctl_process and `agents record` to a child, and the four overlay keys in-process; after `agents record` through the builder with a payload cwd that is another existing directory, the test process's current directory is unchanged"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^common::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.premises]]
+claim = "cli() starts the built binary through assert_cmd"
+check = "grep -q 'pub fn cli(root: &Path) -> Command' tomlctl/tests/common/mod.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "the library exports run_with"
+check = "grep -q 'pub fn run_with' tomlctl/src/lib.rs"
+at = "after:8"
+
+[[specs]]
+ref = "move-the-items-and-integration-tests-to-the-shared-builder"
+outcome = "The nine files' commands run through the shared builder, in-process where it allows."
+constraints = [
+    "No assertion in any test changes.",
+    "Touch no file outside this task's files.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "none of the nine files imports assert_cmd's Command"
+check = "! grep -l 'use assert_cmd::Command;' tomlctl/tests/integration.rs tomlctl/tests/items_dedupe.rs tomlctl/tests/items_dry_run.rs tomlctl/tests/json.rs tomlctl/tests/render_progress_log.rs tomlctl/tests/integrity_guards.rs tomlctl/tests/agent_contract.rs tomlctl/tests/blocks.rs tomlctl/tests/review_catalogue.rs | grep -q ."
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the lock contention smoke test still spawns the built binary directly"
+check = "grep -q 'assert_cmd::cargo::cargo_bin' tomlctl/tests/integration.rs"
+kind = "guard"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 0
+verdict = "healthy"
+
+[[specs]]
+ref = "move-the-flow-tests-to-the-shared-builder"
+outcome = "The ten files' commands run through the shared builder, in-process where it allows."
+constraints = [
+    "No assertion in any test changes.",
+    "Touch no file outside this task's files.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "none of the ten files imports assert_cmd's Command"
+check = "! grep -l 'use assert_cmd::Command;' tomlctl/tests/flow_stale.rs tomlctl/tests/flow_active.rs tomlctl/tests/flow_envelope.rs tomlctl/tests/flow_resolve.rs tomlctl/tests/flow_list.rs tomlctl/tests/flow_init.rs tomlctl/tests/flow_find_plans.rs tomlctl/tests/flow_ensure_artifact.rs tomlctl/tests/flow_doctor.rs tomlctl/tests/flow_path_seam.rs | grep -q ."
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the concurrent add test still starts real processes"
+check = "grep -q 'tomlctl_process' tomlctl/tests/flow_active.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs]]
+ref = "move-the-plan-tests-to-the-shared-builder"
+outcome = "The nine files' commands run through the shared builder, in-process where it allows."
+constraints = [
+    "No assertion in any test changes.",
+    "Touch no file outside this task's files.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "none of the nine files imports assert_cmd's Command"
+check = "! grep -l 'use assert_cmd::Command;' tomlctl/tests/plan_check.rs tomlctl/tests/plan_stage.rs tomlctl/tests/plan_records.rs tomlctl/tests/plan_view.rs tomlctl/tests/plan_refusals.rs tomlctl/tests/plan_lifecycle.rs tomlctl/tests/plan_drift.rs tomlctl/tests/plan_approve.rs tomlctl/tests/plan_open.rs | grep -q ."
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs]]
+ref = "keep-the-writer-races-on-real-processes"
+outcome = "The id-prefix writer race still runs one process per writer."
+constraints = [
+    "No assertion in the test changes.",
+    "Touch no file outside this task's files.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the race test asks for a real process"
+check = "grep -q 'tomlctl_process' tomlctl/tests/items_id_prefix.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the id-prefix race test exists"
+check = "grep -q 'fn concurrent_id_prefix_adds_mint_distinct_ids' tomlctl/tests/items_id_prefix.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "make-tomlctl-and-glimpse-one-cargo-workspace"
+outcome = "tomlctl and glimpse resolve from one lockfile and build into one target directory, and every existing `--manifest-path` command and both `cargo install --path` calls still work."
+constraints = [
+    "No root .cargo/config.toml.",
+    "No version of a dependency both lockfiles held changes.",
+    "statusline and lumina stay outside the workspace.",
+    "Touch no file outside this task's files.",
+]
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the repo root is a workspace over the two crates"
+check = '''grep -q '^members = \["tomlctl", "glimpse"\]' Cargo.toml && grep -q 'resolver = "3"' Cargo.toml'''
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "one lockfile is left"
+check = "test -f Cargo.lock && ! test -e tomlctl/Cargo.lock && ! test -e glimpse/Cargo.lock"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the member manifests carry no profile table"
+check = '''! grep -q '^\[profile' tomlctl/Cargo.toml glimpse/Cargo.toml'''
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the lockfile resolves both members offline without change"
+check = "cargo metadata --locked --offline --format-version 1 --manifest-path glimpse/Cargo.toml"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "gate"
+
+[[specs.premises]]
+claim = "glimpse depends on tomlctl by path"
+check = """grep -q 'tomlctl = { path = "../tomlctl"' glimpse/Cargo.toml"""
+at = "base"
+
+[specs.premises.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "there is no root manifest yet"
+check = "! test -e Cargo.toml"
+at = "base"
+
+[specs.premises.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "point-the-hook-the-gate-stamp-and-the-docs-at-the-workspace"
+outcome = "The commit gate compiles tomlctl once, through one workspace clippy, and no live document names a lockfile or target directory that no longer exists."
+constraints = [
+    "The staged-path triggers for the other four steps stay as they are.",
+    "Records under .claude/flows, .claude/plans and docs/plans are history and are not edited.",
+    "Touch no file outside this task's files.",
+]
+means = []
+design = [
+    "design/gates.md#step-table",
+    "design/gates.md#hook",
+]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the gate runs one workspace clippy"
+check = "grep -q 'cargo clippy --workspace --locked' scripts/gate-stamp.sh && ! grep -q 'glimpse-clippy' scripts/gate-stamp.sh .githooks/pre-commit"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "no live document names a member lockfile"
+check = '''! grep -q 'tomlctl/Cargo.lock\|glimpse/Cargo.lock' CLAUDE.md glimpse/CLAUDE.md .githooks/pre-commit'''
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "no live document names the old tomlctl target directory"
+check = "! grep -q 'tomlctl/target' CLAUDE.md claude/skills/backlog-clear/SKILL.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the stamp script has a glimpse-clippy step"
+check = "grep -q 'glimpse-clippy' scripts/gate-stamp.sh"
+at = "after:3"
+
+[[specs.premises]]
+claim = "CLAUDE.md names the tomlctl lockfile for cargo audit"
+check = "grep -q 'cargo audit --file tomlctl/Cargo.lock' CLAUDE.md"
+at = "base"
+
+[specs.premises.probe]
+at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "cut-the-process-starts-that-still-dominate-the-suite"
+outcome = "The full tomlctl suite passes in under 200 s on this machine."
+constraints = [
+    "No test loses a check it makes today.",
+    "Tests that need a real process still start one.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the full suite passes in under 200 s of wall time"
+check = ""
+kind = ""
+positive = ""
+writes_build = true
+
+[[milestones]]
+id = "A"
+gates = [
+    "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets",
+    "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast",
+    "bash scripts/gate-stamp.sh run",
+]
+elaboration = "upfront"
+defer_reason = ""
+
+[[milestones]]
+id = "B"
+gates = [
+    "cargo clippy --workspace --all-targets --locked",
+    "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast",
+    "bash scripts/gate-stamp.sh run",
+]
+elaboration = "upfront"
+defer_reason = ""
+
+[[milestones]]
+id = "C"
+gates = ["cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"]
+elaboration = "deferred"
+defer_reason = "Which tests stay slow after milestone B (the cwd-bound review fixtures, output_options, or the fixtures git add and commit) is only known from a sampled suite run on B."
+
+[[items]]
+id = 1
+ref = "copy-a-git-init-template-in-the-test-sandbox"
+title = "Copy a git init template in the test sandbox"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/tests/common/mod.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Make sandbox() copy a cached `git init` template into the new temp directory in place of running `git init` there."
+detail = """Build the template once per machine under `env!("CARGO_TARGET_TMPDIR")`: run `git init -q .` through git_command in a uniquely named sibling directory, then rename it to the fixed template name; when the rename fails and the template directory now exists, another test process won: delete the loser and use the winner. When it fails and no template exists, something such as an antivirus scan holds the new directory: retry the rename a few times with a short pause before failing the test. Copy the template's `.git` tree directory by directory, creating every directory including empty ones: `git init` leaves `objects/info`, `objects/pack`, `refs/heads` and `refs/tags` empty, and git does not recognise a `.git` without `objects/` and `refs/`. Keep today's tolerance: when git cannot be started at all, sandbox() creates no `.git`, and when `git init` runs and fails the test fails with the same message. Each test is its own process under nextest, so the per-process cost left is the copy. Name the template directory after a hash of the git executable's path, size and modified time and of the modified time of the user's global git config file when one exists, found without starting a process (search PATH for the executable; the config is `.gitconfig` in the home directory), so a git upgrade or a config change builds a new template."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 2
+ref = "verify-shared-blocks-in-one-gawk-pass"
+title = "Verify shared blocks in one gawk pass"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "scripts/verify-shared-blocks.sh",
+    "tomlctl/src/cli/dispatch/tests/skills.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Replace the loop over (block, file) pairs with one gawk program, as design/gates.md#one-pass-verifier sets out."
+detail = "notes/shell-gate-cost.md has the measurements and the eight fixture shapes a prototype was compared on (ok, a CR-CR-LF marker, an empty span, drift, a missing START, a CRLF carrier, two spans against one, a missing file). Build those fixtures in a scratch directory outside the repo, each a `git init` directory with its own manifest passed as `MANIFEST=manifest.toml`, and compare exit code and stderr with the script as it is at HEAD before finishing. Today a missing file is reported in pair order, between the marker and drift errors of the pairs around it: to keep that order, pass the result of each bash `-f` test into the gawk program and print the missing-file message there, in sequence. In tomlctl/src/cli/dispatch/tests/skills.rs add a test beside both_gates_reject_a_cr_marker_and_an_empty_span that builds a drift fixture (two carriers with different spans) and a missing-START fixture the same way and asserts that both blocks_verify and run_shell_gate reject each, so the string comparison that replaces the hash comparison stays pinned. Run `bash scripts/verify-shared-blocks.sh` yourself; it builds nothing."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 3
+ref = "stamp-each-commit-gate-step-on-its-own-inputs"
+title = "Stamp each commit gate step on its own inputs"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "scripts/gate-stamp.sh",
+    ".githooks/pre-commit",
+    "CLAUDE.md",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Give scripts/gate-stamp.sh the step table and per-step stamps of design/gates.md, and make the hook's gate take a step id."
+detail = "The table, the stamp files, the `run`, `check` and `command` forms and the hook's behaviour are in design/gates.md#step-table, #stamps and #hook. Compute one file listing and one hash pass for all steps, then fold each step's digest from its own subset, so `check` does not scan five times. In the hook, read the words `gate-stamp.sh command <id>` prints into an array with `read -ra` and run that array; no command has a space inside a word, and the commands use paths relative to the repo root, where git runs the hook. In CLAUDE.md rewrite only the two paragraphs under Developer setup that describe the hook's cargo steps and scripts/gate-stamp.sh, so they state the per-step behaviour. Both scripts are run by every commit, unsandboxed: change nothing beyond what the design asks."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 4
+ref = "add-the-per-run-invocation-context"
+title = "Add the per-run invocation context"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/invocation.rs",
+    "tomlctl/src/lib.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Create tomlctl/src/invocation.rs with the thread-local context, its accessors and the ExitWith marker, and declare the module in lib.rs."
+detail = "The context's contents are in design/invocation.md#context, the accessors and their no-context fallbacks in #accessors, and ExitWith in #exit-marker. Provide an install guard that removes the context on drop, and a way to take the stdout and stderr buffers out when the run ends. An accessor whose fallback is private to another file returns an Option and leaves the fallback to its caller: `opts() -> Option<Option<&'static crate::output::OutputOpts>>` and `set_opts(&'static OutputOpts) -> bool`, `claim_stdin() -> Option<bool>` giving the previous claimed flag, and `with_stdout_buffer` returning None, each None or false with no context. Add `is_active() -> bool`, true while a context is installed. Nothing calls the accessors yet; unit-test them in this file with a context installed and without one. In lib.rs add only the `mod invocation;` line. `std::io::stdout()` may not appear in this file: the `output_gate` test under src/cli/dispatch/tests allows it in output.rs only."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 5
+ref = "return-an-exit-marker-in-place-of-process-exit"
+title = "Return an exit marker in place of process exit"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/src/tasks/dispatch.rs",
+    "tomlctl/src/review/anchor.rs",
+    "tomlctl/src/review/reproduce.rs",
+    "tomlctl/src/lib.rs",
+]
+needs = [4]
+coupling = []
+deps_note = ""
+action = "Replace each of the six `std::process::exit(code)` calls in verb code with `return Err(invocation::ExitWith(code).into())`, and map the marker to its exit code in run()."
+detail = "The sites: blocks verify in cli/dispatch.rs, plan check in plan/check.rs, tasks check and tasks render --check in tasks/dispatch.rs, review anchor in review/anchor.rs, review reproduce-status in review/reproduce.rs. Each already flushes its output before exiting. In lib.rs, run() returns the marker's code and does not call emit_error for it, the way it already skips a closed stdout; `ExitCode::from(code as u8)` carries it. design/invocation.md#exit-marker has the rule."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 6
+ref = "send-output-and-the-output-options-through-the-context"
+title = "Send output and the output options through the context"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/output.rs",
+    "tomlctl/src/lib.rs",
+]
+needs = [5]
+coupling = []
+deps_note = ""
+action = "Make output.rs write stdout and its stderr notices through the invocation accessors and keep its options in the context when one is installed; make emit_error in lib.rs write through the stderr accessor."
+detail = "design/invocation.md#accessors lists each site. with_stdout asks `invocation::with_stdout_buffer` first and keeps its own `std::io::stdout().lock()` for the no-context case. `opts()` keeps returning `&'static OutputOpts`, because callers in cli/dispatch/items.rs, backlog/query.rs and tasks/list.rs pass it straight into a `&OutputOpts` parameter: with a context installed, `configure` leaks one boxed `OutputOpts` for that run (`Box::leak`) and stores the reference in the context, and `opts()` returns it; a context with no options configured yet gives the same unconfigured default `opts()` gives today. So a second command in one process neither trips the `debug_assert` in configure nor sees the first command's options. The four `eprintln!` sites in output.rs and the two stderr writes in lib.rs emit_error go through the stderr accessor."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 7
+ref = "read-stdin-and-the-environment-through-the-context"
+title = "Read stdin and the environment through the context"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/io.rs",
+    "tomlctl/src/items.rs",
+    "tomlctl/src/review/catalogue.rs",
+]
+needs = [4]
+coupling = []
+deps_note = ""
+action = "Route the three stdin readers, the stdin claim, the advisory writer and the four environment reads through the invocation accessors."
+detail = "design/invocation.md#accessors lists each site. In io.rs: read_json_arg, read_text_arg and read_json_value_from_arg read from `invocation::stdin_reader` and ask `invocation::stdin_is_terminal`; claim_stdin uses `invocation::claim_stdin`; advise_fmt returns early when `invocation::is_active()`; the `TOMLCTL_ROOT` reads in repo_or_cwd_root and in ensure_process_root, and the `TOMLCTL_LOCK_TIMEOUT` read in resolve_lock_timeout, go through `invocation::env_var_os`. The other `TOMLCTL_LOCK_TIMEOUT` read in io.rs is inside `mod tests` and stays as it is. In items.rs the `TOMLCTL_NO_DEDUP_ID` read does the same. In review/catalogue.rs, claude_dir reads `CLAUDE_CONFIG_DIR` through the accessor and skips its `OnceLock` cache when `invocation::is_active()`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 8
+ref = "add-the-run_with-entry-point"
+title = "Add the run_with entry point"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/lib.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/src/cli/mod.rs",
+    "tomlctl/tests/in_process.rs",
+    "tomlctl/tests/it.rs",
+]
+needs = [
+    5,
+    6,
+    7,
+]
+coupling = []
+deps_note = ""
+action = "Add `pub fn run_with` and `pub struct Outcome` to lib.rs as design/invocation.md#entry-point gives them, pass the arguments into cli::run, and cover it with tomlctl/tests/in_process.rs."
+detail = """cli::run in cli/dispatch.rs takes the argument list as a parameter for check_where_placement in place of reading `std::env::args_os`; run() passes the process arguments. In cli/mod.rs change only the module doc's sentence that says the library root's `run` calls `cli::run(cli)`, so it names both callers, `run` and `run_with`, and the arguments they pass. The new test file is a module of tests/it.rs, so add its `mod in_process;` line there in alphabetical order. Its tests pass `env!("CARGO_BIN_EXE_tomlctl")` as run_with's program name, since clap takes the usage line's bin_name from it and the binary prints `tomlctl.exe` on Windows. Its tests, each comparing run_with against the built binary started with `Command::cargo_bin`: a read verb's stdout, stderr and code; `--help` (code 0, stdout) and an unknown flag (code 2, stderr); a verb that exits 1 through the marker, such as `tasks check` on a store with a cycle; a command reading stdin through `-`; two commands with different output options run one after the other in one test; and `TOMLCTL_NO_DEDUP_ID` set for one run only."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 9
+ref = "run-the-tests-commands-through-an-in-process-builder"
+title = "Run the tests' commands through an in-process builder"
+effort = "L"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/tests/common/mod.rs",
+    "tomlctl/tests/agents_record.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/tests/review_apply.rs",
+    "tomlctl/tests/review_cells.rs",
+    "tomlctl/tests/review_digest.rs",
+    "tomlctl/tests/review_finish.rs",
+    "tomlctl/tests/review_plan_records.rs",
+    "tomlctl/tests/review_runs.rs",
+    "tomlctl/tests/review_settle.rs",
+    "tomlctl/tests/review_survey.rs",
+    "tomlctl/tests/review_vocabulary.rs",
+    "tomlctl/tests/tasks_import.rs",
+    "tomlctl/tests/tasks_render.rs",
+    "tomlctl/tests/tasks_write.rs",
+]
+needs = [
+    1,
+    8,
+]
+coupling = []
+deps_note = ""
+action = "Add the `Command` builder of design/invocation.md#child-tier to tests/common/mod.rs, make cli() and the other helpers there return it, and make the fourteen listed test files name the builder where they name assert_cmd's Command."
+detail = "The builder, its child-tier rule and the `Output` it builds are in design/invocation.md#child-tier. Add `pub fn tomlctl_process() -> assert_cmd::Command` for a test that must start the binary. The fourteen other files call cli() and also name `assert_cmd::Command`, so they stop compiling when cli() returns the builder. Four import it (agents_record.rs, capabilities.rs, tasks_import.rs, tasks_render.rs): change `use assert_cmd::Command;` to `use crate::common::Command;`. Nine review_* files name it fully qualified as a helper's return type, such as `fn tomlctl(&self) -> assert_cmd::Command`: change that to `common::Command`. tasks_write.rs calls `assert_cmd::Command::cargo_bin` fully qualified in its test that races several writers, which must keep real processes: build those commands with `common::tomlctl_process()`. Change nothing else in those files unless one fails to compile, and then only that; where a file names `std::process::Command` for git, leave it. Give `common::Command` a `pub fn runs_in_process(&self) -> bool` that reports the tier the builder would choose, and add a `#[cfg(test)] mod tests` at the end of tests/common/mod.rs with four tests, `current_dir_runs_a_child`, `foreign_env_runs_a_child`, `tomlctl_process_runs_a_child` and `overlay_keys_run_in_process`, which the `test(/^common::/)` accept runs. Compile with `cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 10
+ref = "move-the-items-and-integration-tests-to-the-shared-builder"
+title = "Move the items and integration tests to the shared builder"
+effort = "S"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/tests/integration.rs",
+    "tomlctl/tests/items_dedupe.rs",
+    "tomlctl/tests/items_dry_run.rs",
+    "tomlctl/tests/json.rs",
+    "tomlctl/tests/render_progress_log.rs",
+    "tomlctl/tests/integrity_guards.rs",
+    "tomlctl/tests/agent_contract.rs",
+    "tomlctl/tests/blocks.rs",
+    "tomlctl/tests/review_catalogue.rs",
+]
+needs = [9]
+coupling = []
+deps_note = ""
+action = "In each listed file change `use assert_cmd::Command;` to `use crate::common::Command;`."
+detail = "Nothing else in a file changes unless it fails to compile, and then only that. integration.rs `items_add_lock_contention_smoke` builds a `std::process::Command` from `assert_cmd::cargo::cargo_bin` and spawns two children at once; it already uses real processes and stays exactly as it is. Compile with `cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 11
+ref = "move-the-flow-tests-to-the-shared-builder"
+title = "Move the flow tests to the shared builder"
+effort = "S"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/tests/flow_stale.rs",
+    "tomlctl/tests/flow_active.rs",
+    "tomlctl/tests/flow_envelope.rs",
+    "tomlctl/tests/flow_resolve.rs",
+    "tomlctl/tests/flow_list.rs",
+    "tomlctl/tests/flow_init.rs",
+    "tomlctl/tests/flow_find_plans.rs",
+    "tomlctl/tests/flow_ensure_artifact.rs",
+    "tomlctl/tests/flow_doctor.rs",
+    "tomlctl/tests/flow_path_seam.rs",
+]
+needs = [9]
+coupling = []
+deps_note = ""
+action = "In each listed file change `use assert_cmd::Command;` to `use crate::common::Command;`."
+detail = "Nothing else in a file changes unless it fails to compile, and then only that. One exception: flow_active.rs `concurrent_add_invocations_serialise_no_entry_loss` races several writers and must keep real processes; build its commands with `common::tomlctl_process()`. Compile with `cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 12
+ref = "move-the-plan-tests-to-the-shared-builder"
+title = "Move the plan tests to the shared builder"
+effort = "S"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/tests/plan_check.rs",
+    "tomlctl/tests/plan_stage.rs",
+    "tomlctl/tests/plan_records.rs",
+    "tomlctl/tests/plan_view.rs",
+    "tomlctl/tests/plan_refusals.rs",
+    "tomlctl/tests/plan_lifecycle.rs",
+    "tomlctl/tests/plan_drift.rs",
+    "tomlctl/tests/plan_approve.rs",
+    "tomlctl/tests/plan_open.rs",
+]
+needs = [9]
+coupling = []
+deps_note = ""
+action = "In each listed file change `use assert_cmd::Command;` to `use crate::common::Command;`, adding `use crate::common;` only where the file has no common import."
+detail = "Nothing else in a file changes unless it fails to compile, and then only that. Compile with `cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 13
+ref = "keep-the-writer-races-on-real-processes"
+title = "Keep the writer races on real processes"
+effort = "S"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/tests/items_id_prefix.rs"]
+needs = [9]
+coupling = []
+deps_note = ""
+action = "Build the commands of the concurrent-writer test in items_id_prefix.rs with `common::tomlctl_process()`, setting the same environment cli() sets."
+detail = "The test is `concurrent_id_prefix_adds_mint_distinct_ids`. It asserts that separate processes exclude each other on the store's lock, which an in-process run would no longer show. cli() sets `TOMLCTL_ROOT` to the sandbox root and `TOMLCTL_LOCK_TIMEOUT` to `5`. The matching race in review_add.rs sets a working directory on its commands, so the builder already gives it real processes and it needs no edit."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 14
+ref = "make-tomlctl-and-glimpse-one-cargo-workspace"
+title = "Make tomlctl and glimpse one cargo workspace"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "Cargo.toml",
+    "Cargo.lock",
+    "tomlctl/Cargo.lock",
+    "glimpse/Cargo.lock",
+    "tomlctl/Cargo.toml",
+    "glimpse/Cargo.toml",
+    "tomlctl/.cargo/config.toml",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add a root virtual workspace over tomlctl and glimpse with one root lockfile, and move the release profiles to the root."
+detail = """Root Cargo.toml: `[workspace]` with `members = ["tomlctl", "glimpse"]`, `exclude = ["statusline", "lumina"]` and `resolver = "3"`, then the `[profile.release]` both crates share and tomlctl's `[profile.dev.package."*"]`; delete those profile tables from the two member manifests. Seed the root lock so shared versions do not move: copy glimpse/Cargo.lock to Cargo.lock, run `cargo tree --manifest-path tomlctl/Cargo.toml` once so cargo adds tomlctl's dev and optional dependencies, then delete both member lockfiles from the working tree with `rm`; the milestone commit stages the deletions. Keep the `/tomlctl/target/` and `/glimpse/target/` lines in .gitignore: the old directories stay on disk, glimpse has no .gitignore of its own, and `/target/` covers only the new root directory. In tomlctl/.cargo/config.toml fix only the comment that says the file is scoped to the crate and not the workspace root. notes/workspace-impact.md has the probes behind each step. Do not delete the old tomlctl/target or glimpse/target directories."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 15
+ref = "point-the-hook-the-gate-stamp-and-the-docs-at-the-workspace"
+title = "Point the hook, the gate stamp and the docs at the workspace"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    ".githooks/pre-commit",
+    "scripts/gate-stamp.sh",
+    "CLAUDE.md",
+    "glimpse/CLAUDE.md",
+    "claude/skills/backlog-clear/SKILL.md",
+]
+needs = [
+    3,
+    14,
+]
+coupling = []
+deps_note = ""
+action = "Replace the glimpse clippy step with one workspace clippy, add the root manifest and lockfile to the steps that read them, and correct the prose that names the old lockfiles and target directories."
+detail = "In scripts/gate-stamp.sh rename the step `glimpse-clippy` to `workspace-clippy` with the command `cargo clippy --workspace --locked`, and add `Cargo.toml` and `Cargo.lock` to the roots of `dispatch-tests`, `plan-corpus` and `workspace-clippy` (design/gates.md#step-table). In the hook, call the renamed step, let a staged root `Cargo.toml` or `Cargo.lock` trigger it too, and replace the comment about refreshing glimpse/Cargo.lock: a dependency change now needs the root Cargo.lock staged in the same commit. In CLAUDE.md fix every sentence under Developer setup that names the glimpse clippy or glimpse/Cargo.lock (the hook paragraph and the gate-stamp paragraph), `cargo audit --file tomlctl/Cargo.lock` (now `Cargo.lock`), and the two mentions of `tomlctl/target` under Build discipline (the shared directory is now `target/` at the repo root); add one sentence that a build started inside a crate directory uses that crate's rustflags and rebuilds the shared artifacts. In glimpse/CLAUDE.md fix the sentence that says glimpse has its own Cargo.lock and target directory. In backlog-clear/SKILL.md fix the one mention of `tomlctl/target`. After editing a claude/**/*.md file run `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 16
+ref = "cut-the-process-starts-that-still-dominate-the-suite"
+title = "Cut the process starts that still dominate the suite"
+effort = "L"
+status = "pending"
+checkpoint = "C"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/tests/output_options.rs",
+    "tomlctl/tests/common/mod.rs",
+]
+needs = [
+    9,
+    10,
+    11,
+    12,
+    13,
+]
+coupling = []
+deps_note = ""
+action = "Sample a full suite run on milestone B, then remove the largest remaining class of process starts until the suite passes in under 200 s."
+detail = ""
+acceptance = ""
+agent = ""
+commit = ""

@@ -1,0 +1,350 @@
+schema_version = 2
+last_updated = 2026-11-13
+
+[binding]
+branch = "tomlctl-build-gate-cost"
+scope = []
+
+[id_high_water]
+C = 2
+D = 12
+
+[[decision]]
+id = "D1"
+decision = "Hold the full tomlctl suite to under 200 s on this machine, not 150 s."
+why = "The measured shares make 200 s reachable with the sandbox, in-process and shell-verifier cuts; 150 s is borderline and could fail the plan on machine noise."
+provenance = "user-confirmed"
+door = "two-way"
+binds = [
+    "tomlctl/tests/common/mod.rs",
+    "16",
+]
+rejected = []
+evidence = "Process sampling of a full suite run on 2026-11-13, recorded in the brief's Background; the user chose this target through AskUserQuestion on 2026-11-13."
+if_false = "A 150 s target adds tasks that cut the fixtures' git add and commit calls."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D2"
+decision = "Run one `cargo clippy --workspace --locked` in the hook and the gate stamp in place of the separate glimpse clippy."
+why = "glimpse builds tomlctl and four shared crates with different features, so a shared target directory alone still compiles tomlctl twice."
+provenance = "user-confirmed"
+door = "two-way"
+binds = [
+    ".githooks/pre-commit",
+    "scripts/gate-stamp.sh",
+    "15",
+]
+rejected = []
+evidence = "notes/workspace-impact.md and notes/structure-challenge.md both report the cargo tree feature diff; the user chose this through AskUserQuestion on 2026-11-13."
+if_false = "The workspace keeps two clippy commands and the glimpse clippy still recompiles tomlctl."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D3"
+decision = "Keep one run's state (stdout and stderr sinks, stdin bytes and the claimed flag, an environment overlay, the output options) in a thread-local context in a new tomlctl/src/invocation.rs, whose accessors fall back to the process handles and the process environment when no context is installed."
+why = "A test runs about 15 commands in one process, and today the output options, the stdin claim and the streams are once-per-process."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/lib.rs",
+    "tomlctl/src/output.rs",
+    "tomlctl/src/io.rs",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+]
+evidence = "Read tomlctl/src/lib.rs run and emit_error, the OPTS, with_stdout and with_sink sites in output.rs, and STDIN_CONSUMED, VISIBLE and repo_or_cwd_root in io.rs; notes/in-process-seams.md lists every site."
+if_false = "The entry point needs a context parameter on every verb, several times the edits."
+revisit_if = "a verb starts writing output from a second thread"
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Thread a context parameter through every verb"
+because = "it touches every print path for no gain over a thread-local scoped to the one CLI thread"
+
+[[decision.rejected]]
+option = "Set the process environment per call behind a mutex, as pin_root does"
+because = "it needs unsafe set_var and serialises every in-process test"
+
+[[decision]]
+id = "D4"
+decision = "Adopt the structure the challenger drafted; it is the structure the investigators' notes already led to."
+why = "The blind draft and the notes agree on the context, the workspace, the per-step stamp and the one-pass verifier."
+provenance = "agent-assumed"
+door = "two-way"
+binds = ["tomlctl/src/lib.rs"]
+rejected = []
+evidence = "notes/structure-challenge.md against notes/in-process-seams.md, notes/workspace-impact.md, notes/gate-stamp-inputs.md and notes/shell-gate-cost.md."
+if_false = "Nothing changes; there was no competing structure to keep."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D5"
+decision = "Leave git children on the process environment: add no overlay-aware git constructor, and let a test command that removes or sets any variable outside TOMLCTL_ROOT, TOMLCTL_LOCK_TIMEOUT, TOMLCTL_NO_DEDUP_ID and CLAUDE_CONFIG_DIR run as a child process."
+why = "Only a handful of tests remove GIT_* variables, and rewriting tomlctl's 14 git call sites for them costs more than leaving those tests as they are."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/repo_files.rs",
+    "tomlctl/tests/common/mod.rs",
+    "9",
+]
+evidence = 'Grep of Command::new("git") over tomlctl/src; notes/test-harness-shape.md lists the env keys the tests set.'
+if_false = "The 14 git sites move to one constructor and the GIT_* tests run in-process too."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "One invocation::git() constructor that applies the overlay at all 14 sites"
+because = "it widens the library change for tests that can simply keep a real process"
+
+[[decision]]
+id = "D6"
+decision = "Let the tests' command builder choose per command: run in-process through tomlctl::run_with, unless the command sets a working directory, removes a variable or sets one outside the four overlay keys, in which case start the built binary as today."
+why = "The choice needs no per-test edit, and a command the in-process path cannot honour still gets a real process."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/tests/common/mod.rs",
+    "9",
+    "10",
+    "11",
+    "12",
+]
+evidence = "Read cli() in tomlctl/tests/common/mod.rs; the .current_dir( count over tomlctl/tests is 59 in 35 files, mostly one fixture helper per review_* file."
+if_false = "Every test file needs a hand conversion and the plan grows by about 30 files of judged edits."
+revisit_if = "the cwd-bound review tests still dominate after milestone B"
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Convert each test file by hand and decide per test"
+because = "226 cli() call sites and 254 direct launches would each need a judgement a rule can make"
+
+[[decision]]
+id = "D7"
+decision = "Keep the closed-pipe tests and the lock-race tests on a real child process, named explicitly in the test."
+why = "They assert what separate processes do to each other, which an in-process run would no longer show."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/tests/broken_pipe.rs",
+    "tomlctl/tests/integration.rs",
+    "9",
+    "10",
+    "11",
+    "13",
+]
+rejected = []
+evidence = "notes/test-harness-shape.md: broken_pipe.rs, integration.rs items_add_lock_contention_smoke, flow_active.rs, items_id_prefix.rs, review_add.rs and tasks_write.rs races."
+if_false = "The races run as threads and test exclusion between handles, not processes."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D8"
+decision = "Have sandbox() copy a `git init` template that the first test process builds once under the cargo target tmp directory, in place of running `git init` in every test."
+why = "`git init` started by tests averaged 3.5 live processes of about 14 slots, about a quarter of the suite."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/tests/common/mod.rs",
+    "1",
+]
+evidence = "Read sandbox() in tomlctl/tests/common/mod.rs; the sampling in the brief's Background."
+if_false = "Each test keeps its git init and the suite keeps about a quarter of its time."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Write a minimal .git by hand"
+because = "it would drift from what this machine's git creates, such as the default branch name"
+
+[[decision.rejected]]
+option = "Run git init only in tests that ask for a repo"
+because = "which of 1646 tests read the repo is not known per test, and a missed one fails far from the cause"
+
+[[decision]]
+id = "D9"
+decision = "Replace the per-pair loop of scripts/verify-shared-blocks.sh with one gawk pass that compares block text and hashes only on drift, keeping the resolver block, the messages, the exit codes and the bash -f check."
+why = "The 24 s is about 500 process starts; a prototype of this shape ran in 0.84 s with the same verdict on the repo and eight fixtures."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "scripts/verify-shared-blocks.sh",
+    "2",
+]
+evidence = "notes/shell-gate-cost.md, with the xtrace counts and the fixture comparison."
+if_false = "The verifier keeps its loop and each commit keeps paying 24 s."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Have the hook call tomlctl blocks verify"
+because = "the script is the canonical gate and the mirror is tested against it"
+
+[[decision]]
+id = "D10"
+decision = "Give scripts/gate-stamp.sh one step table (id, command, read roots) and one stamp per step, and have the hook's gate take a step id; the plan-corpus step also reads .claude/backlog.toml."
+why = "One digest over six roots voids every step when any root changes, and the five commands are written twice."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "scripts/gate-stamp.sh",
+    ".githooks/pre-commit",
+    "3",
+    "15",
+]
+evidence = "Read scripts/gate-stamp.sh in full and the gate() function of .githooks/pre-commit; notes/gate-stamp-inputs.md gives each step's reads."
+if_false = "The stamp stays all-or-nothing."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "A tomlctl gate verb with a ledger"
+because = "the brief rules it out; the script already holds the digest logic"
+
+[[decision]]
+id = "D11"
+decision = "Make the repo root a virtual cargo workspace with members tomlctl and glimpse, excluding statusline and lumina, with one root Cargo.lock seeded from glimpse's, the release profiles at the root, and no root .cargo/config.toml."
+why = "One lockfile and one target directory serve both crates, and every --manifest-path command and both cargo install --path calls keep working."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/Cargo.toml",
+    "glimpse/Cargo.toml",
+    ".gitignore",
+    "14",
+    "15",
+]
+evidence = "notes/workspace-impact.md scratch-workspace probes; the brief's VERIFIED paragraph on where the rustflags apply."
+if_false = "The crates stay separate and the hook keeps its glimpse lockfile refresh rule."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "A shared target-dir without a workspace"
+because = "it changes neither the lockfile nor which wrapper compiles tomlctl"
+
+[[decision.rejected]]
+option = "A root .cargo/config.toml carrying the rustflags"
+because = "it would reach lumina and statusline builds started from the root"
+
+[[decision]]
+id = "D12"
+decision = "Defer the milestone that cuts what still dominates after the in-process swap, and put the 200 s check on it."
+why = "Which tests remain slow, the cwd-bound review fixtures, output_options or the fixtures' git add and commit, is only known once milestone B has run."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/tests/output_options.rs",
+    "16",
+]
+rejected = []
+evidence = "59 .current_dir( sites in 35 test files stay on a child process under the builder's rule; their share after the swap has not been measured."
+if_false = "The remaining cuts are guessed now and may target tests that no longer matter."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[contract]]
+id = "C1"
+kind = "interface"
+claim = "tomlctl::run_with takes the argument list starting with the program name, an environment overlay of (name, value or unset) pairs and the stdin bytes, and returns an Outcome with the exit code, stdout and stderr."
+check = "grep -q 'pub fn run_with' tomlctl/src/lib.rs && grep -q 'pub struct Outcome' tomlctl/src/lib.rs"
+tasks = [
+    8,
+    9,
+]
+provides = "tomlctl::run_with"
+consumes = "the Command builder in tomlctl/tests/common/mod.rs"
+
+[[contract]]
+id = "C2"
+kind = "interface"
+claim = "scripts/gate-stamp.sh answers `check <id>` and `command <id>` for the step ids fmt-tomlctl, dispatch-tests, plan-corpus, fmt-glimpse and a clippy step, and the hook calls gate with those ids."
+check = "bash scripts/gate-stamp.sh command fmt-tomlctl | grep -q 'cargo fmt'"
+tasks = [
+    3,
+    15,
+]
+provides = "the gate-stamp step table"
+consumes = "gate in .githooks/pre-commit"
+
+[[run]]
+step = "investigate"
+workflow = "plan-v2-investigate"
+args_hash = "a0e8101f683c1aeb199ae6ceb7e0961e500cbb9cf9f7ce7599f4eb700e252625"
+run_id = "wf_92fcfeb6-956"
+session = "ec0edfee-9a4a-4217-a92b-e51867367ba7"
+started = 2026-11-13T08:45:43Z
+finished = 2026-11-13T08:52:09Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "challenge"
+run_id = ""
+session = "ec0edfee-9a4a-4217-a92b-e51867367ba7"
+started = 2026-11-13T08:52:36Z
+finished = 2026-11-13T09:04:25Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "surface"
+run_id = ""
+session = "ec0edfee-9a4a-4217-a92b-e51867367ba7"
+started = 2026-11-13T10:04:35Z
+finished = 2026-11-13T10:04:35Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "cold-read"
+workflow = "plan-v2-prove"
+args_hash = "517ce871419cc97d7f0ffc39efd2e1f385107a55cc5dc945c09b57eb9aff594d"
+run_id = "wf_44d66855-414"
+session = "ec0edfee-9a4a-4217-a92b-e51867367ba7"
+started = 2026-11-13T10:08:57Z
+finished = 2026-11-13T10:13:27Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "review"
+workflow = "plan-v2-review"
+run_id = "wf_73323cd2-5c4"
+session = "ec0edfee-9a4a-4217-a92b-e51867367ba7"
+started = 2026-11-13T10:33:26Z
+finished = 2026-11-13T11:09:42Z
+skip_reason = ""
+outcome = "ok"
