@@ -5660,7 +5660,7 @@ kind = "annoyance"
 summary = "the tomlctl suite wall time is bounded by process-start throughput on Windows, about 13 starts per second, so test layout changes cannot cut it below about 170 seconds"
 area = "tomlctl/tests"
 tags = ["test-speed"]
-status = "open"
+status = "resolved"
 created = 2026-10-09
 last_seen = 2026-10-09
 seen_count = 1
@@ -5669,6 +5669,8 @@ origin = "backlog"
 context = "Measured 2026-10-09: 1833 tests in about 172s after splitting output_options and removing the per-process jiff zone-database init. Groupings and nextest ordering configs all converge on the same wall. Remaining levers: run read-only CLI checks in-process instead of spawning the binary (output_options' six family tests still take 47-62s each), and batch the shell-gate calls in cli::dispatch::tests::skills::blocks_verify_agrees_with_shell_gate (72s). CLAUDE.md still says the suite takes about 10s."
 base_sha = "6ced9304c492b45f4f0d7615f967fc5c110118f8"
 related = ["B-0e9237a7"]
+resolved = 2026-11-13
+resolution = "flow tomlctl-test-and-gate-cost: tests run tomlctl in-process through tomlctl::run_with, so most process starts are gone; profiling then showed the remaining bound is file and process work under the antivirus filter, recorded in CLAUDE.md"
 
 [[backlog]]
 id = "B-4c4edeac"
@@ -12665,7 +12667,7 @@ kind = "debt"
 summary = "the full tomlctl nextest suite takes 9 to 12 minutes on this machine, against the about 10 seconds CLAUDE.md documents"
 area = "tomlctl/tests"
 tags = ["test-speed"]
-status = "open"
+status = "resolved"
 created = 2026-11-12T12:41:11Z
 last_seen = 2026-11-12T12:41:11Z
 seen_count = 1
@@ -12678,6 +12680,8 @@ Measured 2026-11-12 at the glimpse-v2-visibility milestone A gate with `cargo ne
 MEASURED 2026-11-13 with `cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast`: 3233 tests in 461 s, 6442 test-seconds in all, so all 14 slots stay busy and the wall is total work, not a long tail. Process starts are the work: 60 `tomlctl --version` starts from each of 1, 4 and 14 parallel spawners gave 33, 67 and 60 starts a second, so starts are serialised machine-wide and capping test concurrency cannot help. The lib's 1612 unit tests take 34 s in one process under `cargo test --lib`. Heaviest by test-seconds: output_options 810, the lib tests 776 (203 of it blocks_verify_agrees_with_shell_gate, whose script takes 24 s alone), plan_approve 452, plan_probes 330, review_runs 302, plan_drift 249. Integration tests average about 15 starts each. The remaining lever is fewer starts: an in-process CLI entry point (`tomlctl::run` parses the process arguments, and about 20 sites exit the process or read arguments or the working directory), which needs a plan. The CLAUDE.md line now carries the measured time and a 1500 s gate budget."""
 base_sha = "b80589b3f3180ca0fa32d2a26ab42d15506229cb"
 related = ["B-edb20f98"]
+resolved = 2026-11-13
+resolution = "flow tomlctl-test-and-gate-cost: one test binary, in-process test commands and cached git fixtures took the suite from 461-525 s to 275-325 s (measured 2026-11-13); the remaining cost is machine contention, with the next cuts in B-cbe0368e and B-4a3bf1d8"
 
 [[backlog]]
 id = "B-2cd62ff7"
@@ -12690,7 +12694,7 @@ tags = [
     "gates",
     "dx",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-12T12:43:53Z
 last_seen = 2026-11-12T12:43:53Z
 seen_count = 1
@@ -12708,6 +12712,8 @@ evidence = [
     "tomlctl/.cargo/config.toml:7",
     "glimpse/Cargo.toml:27",
 ]
+resolved = 2026-11-13
+resolution = "flow tomlctl-test-and-gate-cost: one-pass shared-block verifier, per-step gate stamps, one tomlctl and glimpse workspace with a single clippy, and the single test binary (commits 2f22029e, 69e4adbf)"
 
 [[backlog]]
 id = "B-0ee4f204"
