@@ -12644,7 +12644,7 @@ kind = "flaky-test"
 summary = "every_case_honours_the_output_options::plan fails intermittently in the full nextest run and passes on a narrow rerun"
 area = "tomlctl/tests/output_options.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-11T15:35:52Z
 last_seen = 2026-11-11T15:35:52Z
 seen_count = 1
@@ -12656,6 +12656,8 @@ Seen once on 2026-11-11 gating the plan/milestone-width fix: 1 of 3174 failed in
 
 SEEN AGAIN 2026-11-13 at the tomlctl-test-and-gate-cost milestone B gate, with the cause visible in the log: copy_tree in tomlctl/tests/output_options.rs panicked on fs::copy with os error 2 (file not found). A file listed in the shared fixture was gone by the time it was copied, which fits another worker thread's command creating and removing a short-lived file there (a lock or a git index.lock) while an isolated case copies the tree. Skipping a file that vanished, or copying from a fixture no command runs in, would close it."""
 base_sha = "9a6c5117189fdf9811d2fca94332b2b1f629f8c8"
+resolved = 2026-11-13
+resolution = "copy_tree in tomlctl/tests/output_options.rs skips a source file that is NotFound at copy time (commit 8ee2bffc); three full suite runs since passed with no failure"
 
 [[backlog]]
 id = "B-68943ec6"
@@ -12974,4 +12976,55 @@ origin = "implement-v2"
 flow = "tomlctl-test-and-gate-cost"
 context = "Reported by the worker that built the tests' in-process command builder. Under nextest each test is its own process, so nothing shows. Under cargo test, where tests are threads of one process, a library-facade test that calls silence_advisories() first turns advisories off for a later in-process command, and the cwd-derived REPO_ROOT cache and the no-context output options are shared too. Run the tomlctl suite with nextest, as CLAUDE.md says; if cargo test must work, move those caches into the invocation context."
 base_sha = "1e5b02be7a389bdc3ac5d71562d7d470301b2ba4"
+related = ["B-68943ec6"]
+
+[[backlog]]
+id = "B-cbe0368e"
+kind = "debt"
+summary = "each in-process plan approve starts two git processes, a git status in refuse_uncommitted and a git rev-parse in head_commit"
+area = "tomlctl/src/plan/approve.rs"
+tags = ["test-speed"]
+status = "open"
+created = 2026-11-13T14:03:48Z
+last_seen = 2026-11-13T14:03:48Z
+seen_count = 1
+dedup_id = "cbe0368e16e4e398"
+origin = "implement-v2"
+flow = "tomlctl-test-and-gate-cost"
+context = "Measured 2026-11-13 by the worker that profiled plan_approve: 0.20 to 0.36 s per approve alone and 0.8 to 2.0 s when the module's 34 tests run at once, about a quarter of those tests' time. head_commit could read .git/HEAD and its loose ref, as committed_fixture::head in tomlctl/tests/plan_approve.rs does, keeping rev-parse as the fallback. Full profile: docs/flows/tomlctl-test-and-gate-cost/notes/run/task-21.md."
+base_sha = "64c957a54a801ffb95c5af2f93e7008ba2e460fa"
+related = ["B-68943ec6"]
+
+[[backlog]]
+id = "B-4a3bf1d8"
+kind = "debt"
+summary = "output_options group tests are bound by file creation and deletion in the per-case fixture copies; hard-linking the read-only working-tree inputs needs a guard that the fixture bytes are unchanged"
+area = "tomlctl/tests/output_options.rs"
+tags = ["test-speed"]
+status = "open"
+created = 2026-11-13T14:03:48Z
+last_seen = 2026-11-13T14:03:48Z
+seen_count = 1
+dedup_id = "4a3bf1d80eb65940"
+origin = "implement-v2"
+flow = "tomlctl-test-and-gate-cost"
+context = "Measured 2026-11-13: the eight group tests take about 66 s as a module and are the longest tests in the suite; copy_tree is the largest cost, about 0.7 s per copy of a 156-file fixture. Git object files are already hard-linked. Linking src, the lens catalogue, transcripts and docs/plans too is the next cut, but tomlctl has in-place writes (fs::write in plan/run_gate.rs and review/runs.rs), so add a check that the shared fixture is byte-identical after the cases run. More threads buy nothing: serial and parallel runs took the same time. Timings on this machine drift 30% between back-to-back runs, so compare with interleaved A/B runs only. Profile: docs/flows/tomlctl-test-and-gate-cost/notes/run/task-20.md."
+base_sha = "64c957a54a801ffb95c5af2f93e7008ba2e460fa"
+related = ["B-68943ec6"]
+
+[[backlog]]
+id = "B-4d1fa282"
+kind = "debt"
+summary = "the committed_fixture test helper lives in plan_approve.rs instead of tests/common/mod.rs, and its committed-fixture templates under target/tmp are never pruned"
+area = "tomlctl/tests/plan_approve.rs"
+tags = ["test-speed"]
+status = "open"
+created = 2026-11-13T14:03:48Z
+last_seen = 2026-11-13T14:03:48Z
+seen_count = 1
+dedup_id = "4d1fa282f30e111e"
+origin = "implement-v2"
+flow = "tomlctl-test-and-gate-cost"
+context = "plan_drift.rs imports the module from plan_approve.rs because common/mod.rs was another task's file when it was written; plan_stage and plan_lifecycle could use it once it moves beside sandbox(). The cache key covers context.toml, which carries the date, so a new set of small committed-fixture-* directories appears each day the suite runs and stays until cargo clean."
+base_sha = "64c957a54a801ffb95c5af2f93e7008ba2e460fa"
 related = ["B-68943ec6"]

@@ -1774,3 +1774,331 @@ turns = 19
 task_ids = []
 started_at = "2026-11-13T11:41:18.8083004Z"
 ended_at = "2026-11-13T11:52:26.3584383Z"
+
+[[agents]]
+id = "A61"
+harness = "claude-code"
+session_id = "ec0edfee-9a4a-4217-a92b-e51867367ba7"
+agent_id = "a1f23b3974937ab13"
+agent_type = "plan-worker-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-13T12:14:28.2791604Z"
+updated_at = "2026-11-13T12:20:27.9665931Z"
+ended_at = "2026-11-13T12:20:27.9665931Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\ec0edfee-9a4a-4217-a92b-e51867367ba7\subagents\workflows\wf_0957e222-6e9\agent-a1f23b3974937ab13.jsonl'
+summary = ""
+context_tokens = 124609
+
+[agents.usage]
+input = 50
+cache_write = 122492
+cache_read = 2364934
+output = 15449
+turns = 25
+
+[[agents.segments]]
+task_ids = [16]
+started_at = "2026-11-13T12:14:28.2791604Z"
+ended_at = "2026-11-13T12:20:27.9665931Z"
+
+[[agents]]
+id = "A62"
+harness = "claude-code"
+session_id = "ec0edfee-9a4a-4217-a92b-e51867367ba7"
+agent_id = "a7b2c6ff36f46c553"
+agent_type = "plan-worker-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-13T12:14:29.7657616Z"
+updated_at = "2026-11-13T12:20:17.5054702Z"
+ended_at = "2026-11-13T12:20:17.5054702Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\ec0edfee-9a4a-4217-a92b-e51867367ba7\subagents\workflows\wf_0957e222-6e9\agent-a7b2c6ff36f46c553.jsonl'
+summary = ""
+context_tokens = 102829
+
+[agents.usage]
+input = 48
+cache_write = 90076
+cache_read = 1733552
+output = 27022
+turns = 23
+
+[[agents.segments]]
+task_ids = [19]
+started_at = "2026-11-13T12:14:29.7657616Z"
+ended_at = "2026-11-13T12:20:17.5054702Z"
+
+[[agents]]
+id = "A63"
+harness = "claude-code"
+session_id = "ec0edfee-9a4a-4217-a92b-e51867367ba7"
+agent_id = "a8585d4cf92a40fd0"
+agent_type = "plan-worker-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-13T12:20:28.2033057Z"
+updated_at = "2026-11-13T12:21:08.9219802Z"
+ended_at = "2026-11-13T12:21:08.9219802Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\ec0edfee-9a4a-4217-a92b-e51867367ba7\subagents\workflows\wf_0957e222-6e9\agent-a8585d4cf92a40fd0.jsonl'
+summary = ""
+context_tokens = 55109
+
+[agents.usage]
+input = 16
+cache_write = 54324
+cache_read = 304461
+output = 2931
+turns = 7
+
+[[agents.segments]]
+task_ids = [18]
+started_at = "2026-11-13T12:20:28.2033057Z"
+ended_at = "2026-11-13T12:21:08.9219802Z"
+
+[[agents]]
+id = "A64"
+harness = "claude-code"
+session_id = "ec0edfee-9a4a-4217-a92b-e51867367ba7"
+agent_id = "a25f836a88720e579"
+agent_type = "plan-worker-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-13T12:20:28.1305334Z"
+updated_at = "2026-11-13T12:27:47.2240143Z"
+ended_at = "2026-11-13T12:27:47.2240143Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\ec0edfee-9a4a-4217-a92b-e51867367ba7\subagents\workflows\wf_0957e222-6e9\agent-a25f836a88720e579.jsonl'
+summary = ""
+context_tokens = 110724
+
+[agents.usage]
+input = 92
+cache_write = 97721
+cache_read = 3568024
+output = 22964
+turns = 45
+
+[[agents.segments]]
+task_ids = [17]
+started_at = "2026-11-13T12:20:28.1305334Z"
+ended_at = "2026-11-13T12:27:47.2240143Z"
+
+[[agents]]
+id = "A65"
+harness = "claude-code"
+session_id = "ec0edfee-9a4a-4217-a92b-e51867367ba7"
+agent_id = "aa04a8348b363f808"
+agent_type = "verification"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-13T12:28:12.0637053Z"
+updated_at = "2026-11-13T12:39:49.7680107Z"
+ended_at = "2026-11-13T12:39:49.7680107Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\ec0edfee-9a4a-4217-a92b-e51867367ba7\subagents\agent-aa04a8348b363f808.jsonl'
+summary = """
+outcome: pass | command: cargo clippy --workspace --all-targets --locked | duration: 8 | summary: none | log: C:/Users/rossa/AppData/Local/Temp/tmp.liFS9tSfTa/c1.log
+
+outcome: pass | command: cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast | duration: 328 | summary: Summary [ 324.832s] 3261 tests run: 3261 passed (5 slow), 1 skipped
+
+command: s=$SECONDS; cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast >/dev/null 2>&1; rc=$?; d=$((SECONDS-s)); echo "suite rc=$rc seconds=$d"; test $rc -eq 0 && test $d -lt 200
+outcome: fail
+exit: 1
+duration_s: 320
+log: C:/U"""
+context_tokens = 44324
+
+[agents.usage]
+input = 26
+cache_write = 43264
+cache_read = 461867
+output = 7202
+turns = 13
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-11-13T12:28:12.0637053Z"
+ended_at = "2026-11-13T12:39:49.7680107Z"
+
+[[agents]]
+id = "A66"
+harness = "claude-code"
+session_id = "ec0edfee-9a4a-4217-a92b-e51867367ba7"
+agent_id = "a756d00cd5e009592"
+agent_type = "verification"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-13T12:41:02.8326114Z"
+updated_at = "2026-11-13T12:46:27.4539467Z"
+ended_at = "2026-11-13T12:46:27.4539467Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\ec0edfee-9a4a-4217-a92b-e51867367ba7\subagents\agent-a756d00cd5e009592.jsonl'
+summary = '''
+outcome: pass | command: pwsh -NoProfile -File 'C:\Users\rossa\AppData\Local\Temp\claude\a6d08affc8f5ac32\ec0edfee-9a4a-4217-a92b-e51867367ba7\scratchpad\sample-suite.ps1' | duration: not reported | summary: 3261 tests run: 3261 passed (3 slow), 1 skipped | stdout: verbatim below
+
+```
+samples: 620; suite exit: 0
+-- avg live
+it(test)                                            11.04
+bash Files\Git\bin\..\usr\bin\bash.exe" "source <- bash.exe   2.00
+bash Files\Git\bin\bash.exe" "source <- other        1.00
+bash Files\Git\bin\..\usr\bin\bash.exe" <- bash.exe   0.65
+git user.name=t user.email=t@exa'''
+context_tokens = 35452
+
+[agents.usage]
+input = 8
+cache_write = 25836
+cache_read = 77575
+output = 1038
+turns = 3
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-11-13T12:41:02.8326114Z"
+ended_at = "2026-11-13T12:44:11.5494985Z"
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-11-13T12:46:18.2560955Z"
+ended_at = "2026-11-13T12:46:27.4539467Z"
+
+[[agents]]
+id = "A67"
+harness = "claude-code"
+session_id = "ec0edfee-9a4a-4217-a92b-e51867367ba7"
+agent_id = "a65cae8f335493799"
+agent_type = "plan-worker-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-13T13:22:28.0013958Z"
+updated_at = "2026-11-13T13:46:34.3959148Z"
+ended_at = "2026-11-13T13:46:34.3959148Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\ec0edfee-9a4a-4217-a92b-e51867367ba7\subagents\workflows\wf_59a39a02-5de\agent-a65cae8f335493799.jsonl'
+summary = ""
+context_tokens = 122544
+
+[agents.usage]
+input = 76
+cache_write = 122157
+cache_read = 3241337
+output = 27723
+turns = 37
+
+[[agents.segments]]
+task_ids = [20]
+started_at = "2026-11-13T13:22:28.0013958Z"
+ended_at = "2026-11-13T13:46:34.3959148Z"
+
+[[agents]]
+id = "A68"
+harness = "claude-code"
+session_id = "ec0edfee-9a4a-4217-a92b-e51867367ba7"
+agent_id = "a55f0f7628b786f1d"
+agent_type = "plan-worker-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-13T13:22:30.1584928Z"
+updated_at = "2026-11-13T13:34:08.0804869Z"
+ended_at = "2026-11-13T13:34:08.0804869Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\ec0edfee-9a4a-4217-a92b-e51867367ba7\subagents\workflows\wf_59a39a02-5de\agent-a55f0f7628b786f1d.jsonl'
+summary = ""
+context_tokens = 133502
+
+[agents.usage]
+input = 94
+cache_write = 120791
+cache_read = 4332844
+output = 37241
+turns = 46
+
+[[agents.segments]]
+task_ids = [21]
+started_at = "2026-11-13T13:22:30.1584928Z"
+ended_at = "2026-11-13T13:34:08.0804869Z"
+
+[[agents]]
+id = "A69"
+harness = "claude-code"
+session_id = "ec0edfee-9a4a-4217-a92b-e51867367ba7"
+agent_id = "a596eed753b401e89"
+agent_type = "verification"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-13T13:46:49.4566631Z"
+updated_at = "2026-11-13T13:57:06.3933196Z"
+ended_at = "2026-11-13T13:57:06.3933196Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\ec0edfee-9a4a-4217-a92b-e51867367ba7\subagents\agent-a596eed753b401e89.jsonl'
+summary = """
+outcome: pass | command: cargo clippy --workspace --all-targets --locked | duration: 8 | summary: none | log: C:/Users/rossa/AppData/Local/Temp/tmp.njhZwuo7DF/c1.log
+
+outcome: pass | command: cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast | duration: 280 | summary: Summary [ 277.758s] 3261 tests run: 3261 passed (3 slow), 1 skipped
+
+command: s=$SECONDS; cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast >/dev/null 2>&1; rc=$?; d=$((SECONDS-s)); echo "suite rc=$rc seconds=$d"; test $rc -eq 0 && test $d -lt 200
+outcome: fail
+exit: 1
+duration_s: 286
+log: C:/U"""
+context_tokens = 44338
+
+[agents.usage]
+input = 26
+cache_write = 43493
+cache_read = 468598
+output = 7052
+turns = 13
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-11-13T13:46:49.4566631Z"
+ended_at = "2026-11-13T13:57:06.3933196Z"
+
+[[agents]]
+id = "A70"
+harness = "claude-code"
+session_id = "ec0edfee-9a4a-4217-a92b-e51867367ba7"
+agent_id = "a319185e1a451623f"
+agent_type = "verification"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-13T13:58:15.9967851Z"
+updated_at = "2026-11-13T14:03:11.7091804Z"
+ended_at = "2026-11-13T14:03:11.7091804Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\ec0edfee-9a4a-4217-a92b-e51867367ba7\subagents\agent-a319185e1a451623f.jsonl'
+summary = """
+outcome: pass | command: `s=$SECONDS; cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast >/dev/null 2>&1; rc=$?; d=$((SECONDS-s)); echo "suite rc=$rc seconds=$d"; test $rc -eq 0 && test $d -lt 360` | duration: 275 | summary: none | log: C:/Users/rossa/AppData/Local/Temp/tmp.5EGjcm1fLv/c1.log
+
+Echoed line, verbatim: `suite rc=0 seconds=275`
+
+The run exited 0 in 275 s, under the 360 s bound. The extractor found no nextest summary line, so the runner's own count is not in the log because stdout was discarded. No transient retry or narrow rerun was needed."""
+context_tokens = 38286
+
+[agents.usage]
+input = 12
+cache_write = 28483
+cache_read = 189026
+output = 3388
+turns = 6
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-11-13T13:58:15.9967851Z"
+ended_at = "2026-11-13T14:03:11.7091804Z"

@@ -27,7 +27,7 @@ About 20 tasks over three or four milestones. The in-process entry point is the 
 
 ## Success criteria
 
-- `cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast`, or its workspace equivalent, passes in under 200 s on this machine, against 461 s to 525 s measured 2026-11-13 (target confirmed by the user 2026-11-13).
+- `cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast`, or its workspace equivalent, passes in under 360 s on this machine, against 461 s to 525 s measured 2026-11-13. The user first set 200 s, then moved the bound to 360 s the same day, after two gate runs of milestone C measured 278 s to 325 s with every test passing and the profile put the rest on machine contention.
 - No test loses a check it makes today, and tests that need a real process (a closed pipe, a lock held by another process, a process exit code) still start one.
 - The installed `tomlctl` behaves as before: same output, same exit codes, same stderr.
 - The commit gate compiles tomlctl once: one `cargo clippy --workspace --locked` replaces the separate glimpse clippy (confirmed by the user 2026-11-13).

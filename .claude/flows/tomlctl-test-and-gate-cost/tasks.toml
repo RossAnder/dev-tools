@@ -935,7 +935,7 @@ verdict = "holds"
 
 [[specs]]
 ref = "cut-the-process-starts-that-still-dominate-the-suite"
-outcome = "The full tomlctl suite passes in under 200 s on this machine."
+outcome = "The full tomlctl suite passes in under 360 s on this machine."
 constraints = [
     "No test loses a check it makes today.",
     "Tests that need a real process still start one.",
@@ -948,13 +948,13 @@ precedent = []
 executor = "deep"
 
 [[specs.accept]]
-behaviour = "the full suite passes in under 200 s of wall time"
-check = "s=$SECONDS; cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast >/dev/null 2>&1; test $((SECONDS-s)) -lt 200"
+behaviour = "the full suite passes in under 360 s of wall time"
+check = "s=$SECONDS; cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast >/dev/null 2>&1; test $((SECONDS-s)) -lt 360"
 kind = "forward"
 positive = ""
 writes_build = true
 run_by = "covered"
-covered_by = "s=$SECONDS; cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast >/dev/null 2>&1; test $((SECONDS-s)) -lt 200"
+covered_by = "s=$SECONDS; cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast >/dev/null 2>&1; test $((SECONDS-s)) -lt 360"
 
 [[specs.accept]]
 behaviour = "at most one output_options command still sets a working directory"
@@ -1007,7 +1007,7 @@ check = "grep -q 'self.foreign_env = true;' tomlctl/tests/common/mod.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "3d242cd9df14766a21ecedefbc98f39f9059b421"
+at = "64c957a54a801ffb95c5af2f93e7008ba2e460fa"
 neg_rc = 0
 verdict = "holds"
 
@@ -1017,7 +1017,7 @@ check = '''test "$(grep -c '\.current_dir(' tomlctl/tests/output_options.rs)" -e
 at = "base"
 
 [specs.premises.probe]
-at = "3d242cd9df14766a21ecedefbc98f39f9059b421"
+at = "64c957a54a801ffb95c5af2f93e7008ba2e460fa"
 neg_rc = 0
 verdict = "holds"
 
@@ -1061,7 +1061,7 @@ check = '''test "$(cat tomlctl/tests/review_runs.rs tomlctl/tests/review_survey.
 at = "base"
 
 [specs.premises.probe]
-at = "3d242cd9df14766a21ecedefbc98f39f9059b421"
+at = "64c957a54a801ffb95c5af2f93e7008ba2e460fa"
 neg_rc = 0
 verdict = "holds"
 
@@ -1079,16 +1079,11 @@ precedent = []
 executor = "lite"
 
 [[specs.accept]]
-behaviour = "at most two of the five files still set a working directory"
-check = '''test "$(grep -l '\.current_dir(' tomlctl/tests/plan_lifecycle.rs tomlctl/tests/plan_stage.rs tomlctl/tests/plan_probes.rs tomlctl/tests/field_flags.rs tomlctl/tests/backlog_check_batch.rs | wc -l)" -le 2'''
+behaviour = "field_flags.rs sets no working directory on a tomlctl command"
+check = '''! grep -q '\.current_dir(' tomlctl/tests/field_flags.rs'''
 kind = "forward"
 positive = ""
 writes_build = false
-
-[specs.accept.probe]
-at = "3d242cd9df14766a21ecedefbc98f39f9059b421"
-neg_rc = 1
-verdict = "healthy"
 
 [[specs.accept]]
 behaviour = "the five files' tests still pass"
@@ -1105,7 +1100,7 @@ check = '''test "$(grep -l '\.current_dir(' tomlctl/tests/plan_lifecycle.rs toml
 at = "base"
 
 [specs.premises.probe]
-at = "3d242cd9df14766a21ecedefbc98f39f9059b421"
+at = "64c957a54a801ffb95c5af2f93e7008ba2e460fa"
 neg_rc = 0
 verdict = "holds"
 
@@ -1144,6 +1139,78 @@ at = "3d242cd9df14766a21ecedefbc98f39f9059b421"
 neg_rc = 2
 verdict = "healthy"
 
+[[specs]]
+ref = "profile-the-output_options-group-tests-and-cut-what-the-profile-finds"
+outcome = "The output_options group tests take a fraction of their current time and make every check they make today."
+constraints = [
+    "No case loses a check it makes today: every option is still exercised against every case.",
+    "The copy_tree NotFound skip stays.",
+    "No timing or debug output is left in the file.",
+    "Touch no file outside this task's files.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the note records the module's time before and after"
+check = "grep -qis 'seconds before' docs/flows/tomlctl-test-and-gate-cost/notes/run/task-20.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "64c957a54a801ffb95c5af2f93e7008ba2e460fa"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the output_options tests pass"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^output_options::/)'"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs]]
+ref = "profile-an-in-process-plan_approve-test-and-cut-what-the-profile-finds"
+outcome = "The note says where a plan_approve test's seconds go, and the two files spend less of them."
+constraints = [
+    "No assertion in any test changes.",
+    "Each test still runs against a real git repository with real commits.",
+    "No timing or debug output is left in either file.",
+    "Touch no file outside this task's files.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the note records where the test's seconds go before and after"
+check = "grep -qis 'seconds before' docs/flows/tomlctl-test-and-gate-cost/notes/run/task-21.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "64c957a54a801ffb95c5af2f93e7008ba2e460fa"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the plan approval and drift tests pass"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^(plan_approve|plan_drift)::/)'"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
 [[milestones]]
 id = "A"
 gates = [
@@ -1169,7 +1236,7 @@ id = "C"
 gates = [
     "cargo clippy --workspace --all-targets --locked",
     "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast",
-    "s=$SECONDS; cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast >/dev/null 2>&1; test $((SECONDS-s)) -lt 200",
+    "s=$SECONDS; cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast >/dev/null 2>&1; test $((SECONDS-s)) -lt 360",
 ]
 elaboration = "elaborated"
 defer_reason = "Which tests stay slow after milestone B (the cwd-bound review fixtures, output_options, or the fixtures git add and commit) is only known from a sampled suite run on B."
@@ -1290,6 +1357,60 @@ old = """[{"behaviour":"the plan approval and drift tests still pass","check":"c
 new = """[{"behaviour":"the plan approval and drift tests still pass","check":"cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^(plan_approve|plan_drift)::/)'","kind":"guard","positive":"","writes_build":true,"run_by":"covered","covered_by":"cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"},{"behaviour":"the worker's note records the git starts per test before and after","check":"grep -qis 'git starts' docs/flows/tomlctl-test-and-gate-cost/notes/run/task-19.md","kind":"forward","positive":"","writes_build":false}]"""
 actor = "orchestrator"
 reason = "the note check's probe was broken: grep named the run note before it exists; -s keeps a missing note a plain failure"
+
+[[changes]]
+at = 2026-11-13T12:28:04Z
+ref = "run-the-plan-and-field-tests-commands-without-a-working-directory"
+field = "spec.accept"
+old = '''[{"behaviour":"at most two of the five files still set a working directory","check":"test \"$(grep -l '\\.current_dir(' tomlctl/tests/plan_lifecycle.rs tomlctl/tests/plan_stage.rs tomlctl/tests/plan_probes.rs tomlctl/tests/field_flags.rs tomlctl/tests/backlog_check_batch.rs | wc -l)\" -le 2","kind":"forward","positive":"","writes_build":false,"probe":{"at":"3d242cd9df14766a21ecedefbc98f39f9059b421","neg_rc":1,"pos_rc":null,"verdict":"healthy"}},{"behaviour":"the five files' tests still pass","check":"cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^(plan_lifecycle|plan_stage|plan_probes|field_flags|backlog_check_batch)::/)'","kind":"guard","positive":"","writes_build":true,"run_by":"covered","covered_by":"cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"}]'''
+new = '''[{"behaviour":"field_flags.rs sets no working directory on a tomlctl command","check":"! grep -q '\\.current_dir(' tomlctl/tests/field_flags.rs","kind":"forward","positive":"","writes_build":false},{"behaviour":"the five files' tests still pass","check":"cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^(plan_lifecycle|plan_stage|plan_probes|field_flags|backlog_check_batch)::/)'","kind":"guard","positive":"","writes_build":true,"run_by":"covered","covered_by":"cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"}]'''
+actor = "orchestrator"
+reason = "replan after the worker's failed return: the spec's bound was wrong, not the work. In plan_lifecycle, plan_stage and plan_probes the only working directory is on a bash command the detail says to leave, and backlog_check_batch asserts on the relative @notes.txt form; field_flags.rs is the one file that could change and the worker changed it, so the row is done under the corrected check"
+
+[[changes]]
+at = 2026-11-13T13:22:20Z
+ref = "profile-the-output_options-group-tests-and-cut-what-the-profile-finds"
+field = "*"
+old = ""
+new = "Profile the output_options group tests and cut what the profile finds"
+actor = "orchestrator"
+reason = "gate C round 1: the timed suite ran 319 s against a 200 s bound with every test passing; output_options is the heaviest module at 628 test-seconds over 12 tests, its plan group alone 180 s, although its commands now run inside the test process"
+
+[[changes]]
+at = 2026-11-13T13:22:20Z
+ref = "profile-an-in-process-plan_approve-test-and-cut-what-the-profile-finds"
+field = "*"
+old = ""
+new = "Profile an in-process plan_approve test and cut what the profile finds"
+actor = "orchestrator"
+reason = "gate C round 1: the timed suite ran 319 s against a 200 s bound; plan_approve still averages 10.8 s a test (366 test-seconds over 34) and plan_drift 15.8 s in a full run, unchanged by the cached git fixture, with almost no child process alive under them"
+
+[[changes]]
+at = 2026-11-13T13:58:08Z
+ref = "milestone:C"
+field = "gates"
+old = '["cargo clippy --workspace --all-targets --locked","cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast","s=$SECONDS; cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast >/dev/null 2>&1; test $((SECONDS-s)) -lt 200"]'
+new = '["cargo clippy --workspace --all-targets --locked","cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast","s=$SECONDS; cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast >/dev/null 2>&1; test $((SECONDS-s)) -lt 360"]'
+actor = "orchestrator"
+reason = "the user set the suite bound to 360 s after two gate rounds measured 278 to 325 s with every test passing"
+
+[[changes]]
+at = 2026-11-13T13:58:08Z
+ref = "cut-the-process-starts-that-still-dominate-the-suite"
+field = "spec.outcome"
+old = "The full tomlctl suite passes in under 200 s on this machine."
+new = "The full tomlctl suite passes in under 360 s on this machine."
+actor = "orchestrator"
+reason = "the user set the suite bound to 360 s after gate C rounds 0 and 1: every test passes and the suite runs in 278 to 325 s, the profile in the task 20 and 21 notes puts the rest on machine contention under the antivirus filter, and run-to-run drift is about 30%"
+
+[[changes]]
+at = 2026-11-13T13:58:08Z
+ref = "cut-the-process-starts-that-still-dominate-the-suite"
+field = "spec.accept"
+old = '''[{"behaviour":"the full suite passes in under 200 s of wall time","check":"s=$SECONDS; cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast >/dev/null 2>&1; test $((SECONDS-s)) -lt 200","kind":"forward","positive":"","writes_build":true,"run_by":"covered","covered_by":"s=$SECONDS; cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast >/dev/null 2>&1; test $((SECONDS-s)) -lt 200"},{"behaviour":"at most one output_options command still sets a working directory","check":"test \"$(grep -c '\\.current_dir(' tomlctl/tests/output_options.rs)\" -le 1","kind":"forward","positive":"","writes_build":false,"probe":{"at":"3d242cd9df14766a21ecedefbc98f39f9059b421","neg_rc":1,"pos_rc":null,"verdict":"healthy"}},{"behaviour":"copy_tree skips a file that vanished before it was copied","check":"grep -q 'NotFound' tomlctl/tests/output_options.rs","kind":"forward","positive":"","writes_build":false,"probe":{"at":"3d242cd9df14766a21ecedefbc98f39f9059b421","neg_rc":1,"pos_rc":null,"verdict":"healthy"}},{"behaviour":"removing a variable the test process lacks keeps a command in-process","check":"grep -q 'var_os' tomlctl/tests/common/mod.rs && grep -q 'fn note_env' tomlctl/tests/common/mod.rs","kind":"guard","positive":"","writes_build":false,"probe":{"at":"3d242cd9df14766a21ecedefbc98f39f9059b421","neg_rc":0,"pos_rc":null,"verdict":"healthy"}},{"behaviour":"the output_options and builder tests pass","check":"cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^(output_options|common)::/)'","kind":"guard","positive":"","writes_build":true,"run_by":"covered","covered_by":"cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"}]'''
+new = '''[{"behaviour":"the full suite passes in under 360 s of wall time","check":"s=$SECONDS; cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast >/dev/null 2>&1; test $((SECONDS-s)) -lt 360","kind":"forward","positive":"","writes_build":true,"run_by":"covered","covered_by":"s=$SECONDS; cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast >/dev/null 2>&1; test $((SECONDS-s)) -lt 360"},{"behaviour":"at most one output_options command still sets a working directory","check":"test \"$(grep -c '\\.current_dir(' tomlctl/tests/output_options.rs)\" -le 1","kind":"forward","positive":"","writes_build":false,"probe":{"at":"3d242cd9df14766a21ecedefbc98f39f9059b421","neg_rc":1,"pos_rc":null,"verdict":"healthy"}},{"behaviour":"copy_tree skips a file that vanished before it was copied","check":"grep -q 'NotFound' tomlctl/tests/output_options.rs","kind":"forward","positive":"","writes_build":false,"probe":{"at":"3d242cd9df14766a21ecedefbc98f39f9059b421","neg_rc":1,"pos_rc":null,"verdict":"healthy"}},{"behaviour":"removing a variable the test process lacks keeps a command in-process","check":"grep -q 'var_os' tomlctl/tests/common/mod.rs && grep -q 'fn note_env' tomlctl/tests/common/mod.rs","kind":"guard","positive":"","writes_build":false,"probe":{"at":"3d242cd9df14766a21ecedefbc98f39f9059b421","neg_rc":0,"pos_rc":null,"verdict":"healthy"}},{"behaviour":"the output_options and builder tests pass","check":"cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^(output_options|common)::/)'","kind":"guard","positive":"","writes_build":true,"run_by":"covered","covered_by":"cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"}]'''
+actor = "orchestrator"
+reason = "the user set the suite bound to 360 s after gate C rounds 0 and 1: every test passes and the suite runs in 278 to 325 s, the profile in the task 20 and 21 notes puts the rest on machine contention under the antivirus filter, and run-to-run drift is about 30%"
 
 [[items]]
 id = 1
@@ -1697,7 +1818,7 @@ id = 16
 ref = "cut-the-process-starts-that-still-dominate-the-suite"
 title = "Cut the process starts that still dominate the suite"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = ""
 phase_depth = 0
@@ -1718,15 +1839,15 @@ deps_note = ""
 action = "Let a command that removes a variable the test process does not have stay in-process, run the output_options cases without a working directory, and make copy_tree skip a file that vanished."
 detail = "Three changes. (1) In tests/common/mod.rs, `Command::env_remove` of a variable outside OVERLAY_KEYS marks the command foreign only when `std::env::var_os` shows the test process has that variable; removing an absent variable changes nothing, so the command may run in-process. Setting a foreign variable still sends it to a child. Add a test beside the existing builder tests in that file for both cases. (2) In tests/output_options.rs, the five `cli(..)` commands call `.current_dir(..)` on the fixture root, which sends every one to a child process. Drop each call where the command still gives the same result: a case's argv then needs any path it names relative to the fixture root made absolute, by joining it to the run's root when the case is built for a run (the fixture root, or the isolated copy's root). The checks compare runs of one case with each other, so an absolute path is consistent between them; where a report echoes the path, mask the root as snapshot() already does. A case that cannot work without a working directory keeps its `.current_dir(..)` and is named in your note. (3) copy_tree's `fs::copy(..).unwrap()` panics when another worker thread's command removed a short-lived file between the directory listing and the copy: skip a source file that is NotFound at copy time, and keep panicking on any other error. Compile with `cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets`, and run your own module with `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^(output_options|common)::/)'`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "8ee2bffc36906054358dc27e955373b2da781536"
 
 [[items]]
 id = 17
 ref = "run-the-review-tests-commands-without-a-working-directory"
 title = "Run the review tests' commands without a working directory"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = ""
 phase_depth = 0
@@ -1762,15 +1883,15 @@ deps_note = ""
 action = "In each listed file, drop the `.current_dir(..)` call from a tomlctl command wherever that file's tests still pass without it."
 detail = "A tomlctl command built through `common::cli` or `common::Command` runs inside the test process unless it sets a working directory, so each `.current_dir(..)` on one sends it to a child process. tomlctl takes its root from `TOMLCTL_ROOT`, which cli() sets, and needs the working directory only for a path argument given relative to it and for the few verbs that start git without `-C`. For each file: remove the call from the helper or test that builds a tomlctl command; where the command passes a path relative to the old working directory, pass it joined to that directory; then run that file's tests with `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^<file>::/)'`. Keep the removal when every test passes and put the call back when one fails, naming the file and the test in your note. Leave `.current_dir(..)` on a `git` command, and on a test that asserts what a real process does (the writer race in review_add.rs builds its commands so on purpose). Work through the files in the order listed; the heaviest are review_runs, review_survey, review_cells, review_apply and review_vocabulary. Two test runs at a time at most."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "8ee2bffc36906054358dc27e955373b2da781536"
 
 [[items]]
 id = 18
 ref = "run-the-plan-and-field-tests-commands-without-a-working-directory"
 title = "Run the plan and field tests' commands without a working directory"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = ""
 phase_depth = 0
@@ -1788,15 +1909,15 @@ deps_note = ""
 action = "In each listed file, drop the `.current_dir(..)` call from a tomlctl command wherever that file's tests still pass without it."
 detail = "A tomlctl command built through `common::cli` or `common::Command` runs inside the test process unless it sets a working directory. tomlctl takes its root from `TOMLCTL_ROOT`, which cli() sets, and needs the working directory only for a path argument given relative to it and for the few verbs that start git without `-C`. For each file: remove the call from the helper or test that builds a tomlctl command; where the command passes a path relative to the old working directory, pass it joined to that directory; then run that file's tests with `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^<file>::/)'`. Keep the removal when every test passes and put the call back when one fails, naming the file and the test in your note. Leave `.current_dir(..)` on a `git` or `bash` command. One test run at a time."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "8ee2bffc36906054358dc27e955373b2da781536"
 
 [[items]]
 id = 19
 ref = "build-the-plan-approval-and-drift-fixtures-with-fewer-git-starts"
 title = "Build the plan approval and drift fixtures with fewer git starts"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = ""
 phase_depth = 0
@@ -1811,5 +1932,48 @@ deps_note = ""
 action = "Cut the git processes each plan_approve and plan_drift test starts to build its committed fixture, without changing what any test asserts."
 detail = """Each test is its own process under nextest, and a git start costs about 100 ms here against a few for a file copy. Read how each file builds its repository and commits, then take the cheapest of these that keeps every assertion: (a) combine separate `git add` and `git commit` calls into one `git commit -a` or one `git add` over all paths where the result is the same commit content; (b) drop a git call whose result no assertion or later step reads, such as a repeated `git --version` probe or a `rev-parse` whose output is unused; (c) where many tests build the same starting repository, build it once under `env!("CARGO_TARGET_TMPDIR")` and copy it into each test's sandbox, as `sandbox()` in tests/common/mod.rs does for its `git init` template: a uniquely named directory renamed into place, keyed on a hash of what the fixture writes. Commit hashes may differ from today's only where no test compares one to a literal. Run each file's tests with `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_approve::/)'` and the same for plan_drift, one run at a time, and say in your note how many git starts a test makes before and after."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "8ee2bffc36906054358dc27e955373b2da781536"
+
+[[items]]
+id = 20
+ref = "profile-the-output_options-group-tests-and-cut-what-the-profile-finds"
+title = "Profile the output_options group tests and cut what the profile finds"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/tests/output_options.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Measure where each every_case_honours_the_output_options group spends its time, then cut the largest costs without dropping a check."
+detail = "A sampled full run shows almost no child processes left under these tests, so the time is inside the test process. Measure before changing anything: add temporary timing (std::time::Instant, printed with eprintln!) around copy_tree, each in-process command, snapshot() and the fixture's setup, and run one group alone with `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(=output_options::every_case_honours_the_output_options::plan)' --no-capture`. Report the split in your note. Then cut, largest first, whatever the numbers show. Candidates to judge against the profile, none of them required: a read-only case needs no isolated copy of the fixture; a copy need not carry `.git` objects when the case's command reads no git state, or can carry them as hard links; snapshots of an unchanged tree can be taken once and reused; cases of one group can run on several threads (std::thread::scope) since each in-process command carries its own root. Files created on this machine are scanned by an antivirus filter, so the number of files created and copied matters more than their bytes. Remove the timing code before you finish. Run the whole module with `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^output_options::/)'` before and after, one run at a time, and give both wall times and the per-group times in your note under a line containing the words `seconds before`."
+acceptance = ""
+agent = "plan-worker-deep"
+commit = "8ee2bffc36906054358dc27e955373b2da781536"
+
+[[items]]
+id = 21
+ref = "profile-an-in-process-plan_approve-test-and-cut-what-the-profile-finds"
+title = "Profile an in-process plan_approve test and cut what the profile finds"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/tests/plan_approve.rs",
+    "tomlctl/tests/plan_drift.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Find what a plan_approve test spends its seconds on inside the test process, alone and in a full-module run, and cut it where these two files can."
+detail = "Task 19 removed most git starts from these fixtures and the per-test time did not move, so the cost is elsewhere. Measure first: add temporary timing (std::time::Instant with eprintln!) around each step of `plan_approve::a_second_approval_needs_amend_and_keeps_the_first_stamp` and of the Flow builders it uses (sandbox copy, the committed_fixture hash and copy, each tomlctl command, each git call), and run it alone with `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(=plan_approve::a_second_approval_needs_amend_and_keeps_the_first_stamp)' --no-capture`, then again as part of `-E 'test(/^plan_approve::/)'`, where 34 tests run at once. Put both splits in your note under a line containing the words `seconds before`. A step that is fast alone and slow in the module run is waiting on a shared resource: say which (process starts, file creation under the antivirus filter, a lock under target/tmp, a retry sleep). Then cut what these two files control: fewer files written or copied per test, a cache lookup that hashes less, a fixture step repeated per test that could be shared, a git call that a file read can answer. If the largest cost is inside tomlctl/src (a sleep, a retry loop, a git call the verb makes), do not edit it: name the file, the function and the measured seconds in your note and set needs_files. Remove the timing code before you finish. One test run at a time."
+acceptance = ""
+agent = "plan-worker-deep"
+commit = "8ee2bffc36906054358dc27e955373b2da781536"
