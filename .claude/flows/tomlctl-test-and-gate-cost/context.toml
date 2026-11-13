@@ -1,9 +1,10 @@
 slug = "tomlctl-test-and-gate-cost"
 plan_path = "docs/flows/tomlctl-test-and-gate-cost/brief.md"
-status = "draft"
+status = "in-progress"
 created = 2026-11-13
 updated = 2026-11-13
 scope = []
+branch = "tomlctl-build-gate-cost"
 
 [tasks]
 total = 0

@@ -299,6 +299,14 @@ tasks = [
 provides = "the gate-stamp step table"
 consumes = "gate in .githooks/pre-commit"
 
+[[approval]]
+commit = "a8dbf060c7463c86f7ad414795701117727c17bc"
+at = 2026-11-13T11:11:04Z
+brief_sha256 = "75100b8878fc53a14f364b7c5e565bb908716b93b253165a05a0104c7c9bef3c"
+by = "user"
+review = "ran"
+reason = ""
+
 [[run]]
 step = "investigate"
 workflow = "plan-v2-investigate"
