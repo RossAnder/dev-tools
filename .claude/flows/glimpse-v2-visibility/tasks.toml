@@ -1,5 +1,5 @@
 schema_version = 2
-last_updated = 2026-11-12
+last_updated = 2026-11-13
 plan_path = ""
 last_import_refs = []
 audit = true
@@ -2455,7 +2455,7 @@ check = 'grep -q "SHARED-BLOCK:plan-worker-procedure END" claude/agents/plan-wor
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "18614eed4e68b2cdf55295fa644e1315e6a622c2"
 neg_rc = 0
 verdict = "holds"
 
@@ -2465,7 +2465,7 @@ check = 'grep -q "^TANGENTIAL: <kind> | <area> | <summary> | <why it matters>" c
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "18614eed4e68b2cdf55295fa644e1315e6a622c2"
 neg_rc = 0
 verdict = "holds"
 
@@ -2514,7 +2514,7 @@ check = 'grep -q "SHARED-BLOCK:plan-v2-note-writer START" claude/agents/plan-inv
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "18614eed4e68b2cdf55295fa644e1315e6a622c2"
 neg_rc = 0
 verdict = "holds"
 
@@ -2588,7 +2588,7 @@ check = 'grep -q "Two things are taken from every note of the run without readin
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "18614eed4e68b2cdf55295fa644e1315e6a622c2"
 neg_rc = 0
 verdict = "holds"
 
@@ -2598,7 +2598,7 @@ check = 'grep -q "^## 11. The .needs_human. report" claude/skills/implement-v2-e
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "18614eed4e68b2cdf55295fa644e1315e6a622c2"
 neg_rc = 0
 verdict = "holds"
 
@@ -2608,7 +2608,7 @@ check = 'grep -q "plan_emit_lane_check" claude/commands/implement-v2.md'
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "18614eed4e68b2cdf55295fa644e1315e6a622c2"
 neg_rc = 0
 verdict = "holds"
 
@@ -2616,6 +2616,11 @@ verdict = "holds"
 claim = "the binary advertises the run-record leaves"
 check = 'grep -q "plan_run_records" tomlctl/src/cli/types/mod.rs'
 at = "after:13"
+
+[specs.premises.probe]
+at = "18614eed4e68b2cdf55295fa644e1315e6a622c2"
+neg_rc = 0
+verdict = "holds"
 
 [[specs.means]]
 text = "Map each section of the step 11 report to a report entry `kind`: parked, failed, handovers to `handover`, no worker to `no-worker`, withheld, gate, audit, out of lane to `out-of-lane`, store changes to `store-change`, reconcile. An entry's `path` is the run note or file its line names, when it names one."
@@ -2695,7 +2700,7 @@ check = 'grep -q "not planned or built" docs/ideas/v2-pipeline.md'
 at = "base"
 
 [specs.premises.probe]
-at = "207a03a1ff85394de1138fcd1b9b8ff41d2aebc7"
+at = "18614eed4e68b2cdf55295fa644e1315e6a622c2"
 neg_rc = 0
 verdict = "holds"
 
@@ -3789,7 +3794,7 @@ id = 34
 ref = "have-workers-open-their-run-note-with-the-structured-block"
 title = "Have workers open their run note with the structured block"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = ""
 phase_depth = 0
@@ -3804,15 +3809,15 @@ deps_note = ""
 action = "In the shared `plan-worker-procedure` block of both worker agents, rewrite the section 'The note' so the note opens with its Status line, then the `toml run-note` block of design/records.md, Run-note block, then the prose."
 detail = "The block must be byte-identical in both files; `bash scripts/verify-shared-blocks.sh` checks it. Keep the Status first line and its wording. Say that the block follows it after one blank line, show the block once as a fenced example with every table it can hold, and say what goes where: `files_touched`; a `[[deviations]]` entry per departure from a `suggested` means with `what`, `why` and the `means` departed from; a `[[tangential]]` entry per tangential discovery with `kind`, `area`, `summary` and `why`, replacing the `TANGENTIAL:` line form, which is no longer written; a `[[checks]]` entry per check run with its `command` and `result`; `[handover]` only when one is proposed, with `reason`, `action`, `when` and `done_when`. Say every key is optional and an empty block is valid. The prose that follows still says what changed file by file and, for `failed` or `parked`, the reason and what would unblock it. Keep the sentences about a tangential discovery being left unfixed and about the note being public text. Leave the 'Return' section as it is. The example fence holds no `tomlctl` command."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "7838eb2be7923aa49deb305c005ca567cfd68077"
 
 [[items]]
 id = 35
 ref = "have-research-agents-record-their-sources-in-a-block"
 title = "Have research agents record their sources in a block"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = ""
 phase_depth = 0
@@ -3828,15 +3833,15 @@ deps_note = ""
 action = "In the shared `plan-v2-note-writer` block of the three plan agents, add the `toml sources` block of design/records.md, Sources block: where it goes, what each key holds, and how to fill `read_at` and `dirty`."
 detail = "The block must be byte-identical in all three files; `bash scripts/verify-shared-blocks.sh` checks it. Add a paragraph and one fenced example after the sentence about writing the note in one call: the note's first line stays as the agent's own section says; after one blank line comes a fenced block with the info string `toml sources`, listing every file or page the note's claims rest on. `read_at` is the output of `git rev-parse HEAD`; `dirty` is the cited paths that `git status --porcelain -- <paths>` lists; both commands only read. Each `[[source]]` has a repo-relative `path` with `/` separators and an optional `line`, or a `url`, and a one-line `claim` saying what it supports. A note that cites nothing writes the block with no `[[source]]`. Do not edit the `research-finding-record` block, which the v1 research agents share. The example fence holds no `tomlctl` command."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "7838eb2be7923aa49deb305c005ca567cfd68077"
 
 [[items]]
 id = 36
 ref = "record-attempts-gate-rounds-and-the-report-in-the-drain"
 title = "Record attempts, gate rounds and the report in the drain"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = ""
 phase_depth = 0
@@ -3858,15 +3863,15 @@ deps_note = ""
 action = "Edit the implement engine's drain so it records each run's attempts, each gate round and the closing report through the three `plan run` leaves, by design/engine.md, Drain changes; add `plan_run_records` to the carrier's pre-flight list; and name it in CLAUDE.md's Implement v2 deploy sentence."
 detail = "drain.md, three edits. (1) After the lane check in step 3, add the `tomlctl plan run notes --slug <slug> --milestone <id>` call and say what its rows mean. In step 2, 'Which notes you read', replace the two things taken from every note with the Grep tool (the `TANGENTIAL:` lines and the `Status:` line) with that output: `problem` reports a Status disagreement or a missing or malformed note, and tangential entries, deviations and handover proposals are read from the recorded attempts with `tomlctl plan view --slug <slug> --for digest` or `tomlctl items list .claude/flows/<slug>/plan.toml --array attempt`; pick whichever read exists and works, and state the exact command. Since step 2 comes before step 3, say there that these are read once step 3 has recorded them, and keep the rule for which notes are read in full. Step 8 takes its candidates from the attempts' tangential entries; keep its `backlog check` and `backlog add` procedure, and keep reading `TANGENTIAL: flaky-test` lines from verification blocks, which are not notes. (2) In step 7, after the outcome table, add the `plan run gate` call with its row keys and say `<n>` is 0 for the first gate run and the fix round's number after it, that a held-command dispatch or a timeout re-dispatch records under the same round, and that the count of rounds spent still comes from the `gate <id> round` reasons. (3) In step 11, before the report is printed, add the `plan run report` call, one row per report line with its `kind`, `task`, `text` and `path`, made even when there is nothing to report. Every fenced `tomlctl` command takes single-token placeholders. implement-v2.md: add `plan_run_records` to the feature list in pre-flight step 2 and extend the sentence after it to say the binary must be able to record a run's attempts, gate rounds and report. CLAUDE.md: in the Implement v2 section's Deploy bullet, add the three `plan run` leaves to what the pre-flight refuses a binary without."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "7838eb2be7923aa49deb305c005ca567cfd68077"
 
 [[items]]
 id = 37
 ref = "mark-flow-state-and-glimpse-as-built-in-the-design-record"
 title = "Mark flow state and glimpse as built in the design record"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = ""
 phase_depth = 0
@@ -3878,8 +3883,8 @@ deps_note = ""
 action = "Update docs/ideas/v2-pipeline.md to say topic 6 is built: the status line, the 'Where things stand' list, the topic table row and the 'Flow state and glimpse' section."
 detail = "The status line near the top stops listing topic 6 as agreed and says topics 4, 7 and 8 remain open. Add a bullet to 'Where things stand' saying glimpse shows a v2 flow in full and runs leave attempts, gate rounds and reports in the plan store, naming `docs/flows/glimpse-v2-visibility/` as the record. Topic 6's table row reads built, pointing at that directory. In the 'Flow state and glimpse' section, replace the opening paragraph's statement that glimpse reads only the v1 row fields with one sentence saying the section records the agreed design and where it was built, and correct the three bullets the plan departed from: the rollups are computed from the tracked agents.toml with no stamped totals; the run's records live in plan.toml, not the task store; and a source is pinned by the commit read at and the paths dirty then. In the 'Smaller fixes' list, the Glimpse bullet stays."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "7838eb2be7923aa49deb305c005ca567cfd68077"
 
 [[items]]
 id = 38
