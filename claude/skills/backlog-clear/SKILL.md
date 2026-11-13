@@ -156,7 +156,7 @@ named and nothing incidental. If it widened, `git checkout -- <path>` the strays
 
 Verify with the narrowest check that covers the change — `cargo clippy`, or the one test
 that exercises it. **Do not run full builds or whole suites**: siblings share this
-machine and `tomlctl/target`, so a full `cargo build` serialises everyone on the build
+machine and the repo-root `target/`, so a full `cargo build` serialises everyone on the build
 lock. That rule is `CLAUDE.md` → *Build discipline in multi-agent flows*.
 
 ## Step 5: Report

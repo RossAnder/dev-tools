@@ -82,7 +82,8 @@ fn concurrent_id_prefix_adds_mint_distinct_ids() {
             let l = l.clone();
             let payload = format!(r#"{{"summary":"{summary}"}}"#);
             thread::spawn(move || {
-                cli(&root)
+                common::tomlctl_process()
+                    .env("TOMLCTL_ROOT", &root)
                     .env("TOMLCTL_LOCK_TIMEOUT", "30")
                     .args(["items", "add", &l, "--json", &payload, "--id-prefix", "E"])
                     .write_stdin("")

@@ -3,7 +3,7 @@
 
 #![allow(dead_code)]
 
-use assert_cmd::Command;
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, PoisonError};
@@ -484,6 +484,149 @@ pub fn cli(root: &Path) -> Command {
     cmd
 }
 
+/// The built binary as a real process, for a test that asserts what separate
+/// processes do to each other.
+pub fn tomlctl_process() -> assert_cmd::Command {
+    assert_cmd::Command::cargo_bin("tomlctl").unwrap()
+}
+
+/// The variables an in-process run takes as its overlay. Setting or removing
+/// any other one sends the command to a child process, since the in-process
+/// run reads the rest of its environment from the test process.
+const OVERLAY_KEYS: [&str; 4] = [
+    "TOMLCTL_ROOT",
+    "TOMLCTL_LOCK_TIMEOUT",
+    "TOMLCTL_NO_DEDUP_ID",
+    "CLAUDE_CONFIG_DIR",
+];
+
+/// A tomlctl command shaped like `assert_cmd::Command`. It runs inside the
+/// test process through `tomlctl::run_with` unless it sets a working
+/// directory, touches a variable outside [`OVERLAY_KEYS`] or runs `agents
+/// record`, which moves its process into the payload's `cwd`; those start the
+/// built binary, configured call for call as the in-process path is.
+#[derive(Debug)]
+pub struct Command {
+    child: assert_cmd::Command,
+    is_tomlctl: bool,
+    args: Vec<OsString>,
+    env: Vec<(OsString, Option<OsString>)>,
+    sets_current_dir: bool,
+    foreign_env: bool,
+    stdin: Vec<u8>,
+}
+
+impl Command {
+    pub fn cargo_bin<S: AsRef<str>>(name: S) -> Result<Self, assert_cmd::cargo::CargoError> {
+        Ok(Self {
+            child: assert_cmd::Command::cargo_bin(name.as_ref())?,
+            is_tomlctl: name.as_ref() == "tomlctl",
+            args: Vec::new(),
+            env: Vec::new(),
+            sets_current_dir: false,
+            foreign_env: false,
+            stdin: Vec::new(),
+        })
+    }
+
+    pub fn arg<S: AsRef<OsStr>>(&mut self, arg: S) -> &mut Self {
+        self.child.arg(arg.as_ref());
+        self.args.push(arg.as_ref().to_owned());
+        self
+    }
+
+    pub fn args<I, S>(&mut self, args: I) -> &mut Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
+        for arg in args {
+            self.arg(arg);
+        }
+        self
+    }
+
+    pub fn env<K: AsRef<OsStr>, V: AsRef<OsStr>>(&mut self, key: K, val: V) -> &mut Self {
+        self.child.env(key.as_ref(), val.as_ref());
+        self.note_env(key.as_ref(), Some(val.as_ref().to_owned()));
+        self
+    }
+
+    pub fn env_remove<K: AsRef<OsStr>>(&mut self, key: K) -> &mut Self {
+        self.child.env_remove(key.as_ref());
+        self.note_env(key.as_ref(), None);
+        self
+    }
+
+    pub fn current_dir<P: AsRef<Path>>(&mut self, dir: P) -> &mut Self {
+        self.child.current_dir(dir);
+        self.sets_current_dir = true;
+        self
+    }
+
+    pub fn write_stdin<S: Into<Vec<u8>>>(&mut self, buffer: S) -> &mut Self {
+        let buffer = buffer.into();
+        self.child.write_stdin(buffer.clone());
+        self.stdin = buffer;
+        self
+    }
+
+    /// Whether [`Command::output`] and [`Command::assert`] would run this
+    /// command in the test process rather than start the binary.
+    pub fn runs_in_process(&self) -> bool {
+        let records_agent = self
+            .args
+            .windows(2)
+            .any(|pair| pair[0] == "agents" && pair[1] == "record");
+        self.is_tomlctl && !self.sets_current_dir && !self.foreign_env && !records_agent
+    }
+
+    pub fn output(&mut self) -> std::io::Result<std::process::Output> {
+        if !self.runs_in_process() {
+            return self.child.output();
+        }
+        let argv = std::iter::once(OsString::from(env!("CARGO_BIN_EXE_tomlctl")))
+            .chain(self.args.iter().cloned());
+        let outcome = tomlctl::run_with(argv, &self.env, &self.stdin);
+        Ok(std::process::Output {
+            status: exit_status(outcome.code),
+            stdout: outcome.stdout,
+            stderr: outcome.stderr,
+        })
+    }
+
+    #[must_use]
+    #[track_caller]
+    pub fn assert(&mut self) -> assert_cmd::assert::Assert {
+        if !self.runs_in_process() {
+            return self.child.assert();
+        }
+        let output = self.output().expect("an in-process run returns its output");
+        assert_cmd::assert::Assert::new(output)
+            .append_context("command", format!("{:?} (in process)", self.child))
+    }
+
+    fn note_env(&mut self, key: &OsStr, value: Option<OsString>) {
+        if !OVERLAY_KEYS.iter().any(|known| key == *known) {
+            self.foreign_env = true;
+        }
+        self.env.retain(|(name, _)| name.as_os_str() != key);
+        self.env.push((key.to_owned(), value));
+    }
+}
+
+#[cfg(windows)]
+fn exit_status(code: i32) -> std::process::ExitStatus {
+    use std::os::windows::process::ExitStatusExt;
+    std::process::ExitStatus::from_raw(code as u32)
+}
+
+#[cfg(unix)]
+fn exit_status(code: i32) -> std::process::ExitStatus {
+    use std::os::unix::process::ExitStatusExt;
+    std::process::ExitStatus::from_raw(code << 8)
+}
+
 pub fn stdout_json(assert: &assert_cmd::assert::Assert) -> serde_json::Value {
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
     serde_json::from_str(stdout.trim())
@@ -620,4 +763,81 @@ fn refresh_sidecar(file: &Path) {
     };
     let basename = file.file_name().unwrap().to_string_lossy();
     fs::write(&sidecar, format!("{hex}  {basename}\n")).unwrap();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Run `record` with an `agents record` payload whose `cwd` is another
+    /// existing directory, and require this process's working directory
+    /// unchanged afterwards.
+    fn record_agent_elsewhere(record: impl FnOnce(String)) {
+        let elsewhere = tempfile::tempdir().unwrap();
+        let payload = serde_json::json!({
+            "hook_event_name": "Notification",
+            "session_id": "s",
+            "agent_id": "a",
+            "cwd": elsewhere.path(),
+        });
+        let before = std::env::current_dir().unwrap();
+        record(payload.to_string());
+        assert_eq!(std::env::current_dir().unwrap(), before);
+    }
+
+    #[test]
+    fn current_dir_runs_a_child() {
+        let (_dir, root) = sandbox();
+        let mut cmd = cli(&root);
+        assert!(cmd.runs_in_process());
+        cmd.current_dir(&root);
+        assert!(!cmd.runs_in_process());
+    }
+
+    #[test]
+    fn foreign_env_runs_a_child() {
+        let (_dir, root) = sandbox();
+        let mut set = cli(&root);
+        set.env("GIT_DIR", root.join(".git"));
+        assert!(!set.runs_in_process());
+        let mut removed = cli(&root);
+        removed.env_remove("GIT_WORK_TREE");
+        assert!(!removed.runs_in_process());
+    }
+
+    #[test]
+    fn tomlctl_process_runs_a_child() {
+        let (_dir, root) = sandbox();
+        record_agent_elsewhere(|payload| {
+            tomlctl_process()
+                .env("TOMLCTL_ROOT", &root)
+                .args(["agents", "record", "--harness", "claude-code"])
+                .write_stdin(payload)
+                .output()
+                .unwrap();
+        });
+    }
+
+    #[test]
+    fn agents_record_runs_a_child() {
+        let (_dir, root) = sandbox();
+        let mut cmd = cli(&root);
+        cmd.args(["agents", "record", "--harness", "claude-code"]);
+        assert!(!cmd.runs_in_process());
+        record_agent_elsewhere(|payload| {
+            cmd.write_stdin(payload).output().unwrap();
+        });
+    }
+
+    #[test]
+    fn overlay_keys_run_in_process() {
+        let (_dir, root) = sandbox();
+        let mut cmd = cli(&root);
+        cmd.env("TOMLCTL_NO_DEDUP_ID", "1")
+            .env("CLAUDE_CONFIG_DIR", root.join("config"))
+            .env_remove("TOMLCTL_LOCK_TIMEOUT");
+        assert!(cmd.runs_in_process());
+        let out = cmd.arg("--version").assert().success();
+        assert!(String::from_utf8_lossy(&out.get_output().stdout).contains("tomlctl"));
+    }
 }

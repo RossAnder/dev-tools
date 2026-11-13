@@ -11,7 +11,7 @@ use std::fs;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
-use assert_cmd::Command;
+use crate::common::Command;
 use common::{TASKS_SLUG, cli, git_available, sandbox, seed_tasks};
 use serde_json::{Value, json};
 

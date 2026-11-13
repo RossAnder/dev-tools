@@ -5,7 +5,7 @@
 //! envelope's shape, fields, and (for the error paths) the
 //! `kind=validation` envelope on stderr.
 
-use assert_cmd::Command;
+use crate::common::Command;
 
 use crate::common;
 use common::parse_json_error_envelope;

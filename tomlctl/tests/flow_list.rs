@@ -7,7 +7,7 @@
 //! state means parallel test runs don't race — each `assert_cmd`
 //! invocation forks a fresh process with its own copy of the env.
 
-use assert_cmd::Command;
+use crate::common::Command;
 use serde_json::Value as JsonValue;
 use std::fs;
 use std::path::{Path, PathBuf};

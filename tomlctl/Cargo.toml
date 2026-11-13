@@ -93,16 +93,6 @@ predicates = { version = "^3", default-features = false, features = ["diff"] }
 # its inner spaces.
 shell-words = "^1"
 
-[profile.release]
-opt-level = 3
-lto = "fat"
-codegen-units = 1
-panic = "abort"
-strip = true
-
-[profile.dev.package."*"]
-opt-level = 2
-
 # Doc-link rot is silent: a renamed item leaves every [`Link`] to it pointing at
 # nothing, and rustdoc only warns. Denied here so it fails the build instead.
 [lints.rustdoc]

@@ -1,7 +1,7 @@
 //! `plan stage` over flows seeded directly on disk, starting from one that
 //! reaches `ready` so each case's mutation is the only reason for its stage.
 
-use assert_cmd::Command;
+use crate::common::Command;
 use serde_json::{Value, json};
 use std::fs;
 use std::path::PathBuf;

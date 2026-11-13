@@ -1,7 +1,7 @@
 //! `plan view` over flows seeded directly on disk: what each projection carries,
 //! what the worker's leaves out, and the refusals the verb owns.
 
-use assert_cmd::Command;
+use crate::common::Command;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::fs;

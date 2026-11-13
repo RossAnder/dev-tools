@@ -1,7 +1,7 @@
 //! `plan check` over flows seeded directly on disk, starting from one that
 //! raises nothing, so each case's mutation is the only reason for its class.
 
-use assert_cmd::Command;
+use crate::common::Command;
 use serde_json::Value;
 use std::fs;
 use std::path::PathBuf;

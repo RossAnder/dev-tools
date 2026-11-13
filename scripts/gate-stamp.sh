@@ -20,20 +20,21 @@ LEGACY_STAMP="$GIT_DIR_ABS/gate-stamp"
 
 # The step table, in run order. Commands are repo-relative and have no space inside
 # a word: the hook splits the printed command on whitespace.
-STEPS=(fmt-tomlctl dispatch-tests plan-corpus fmt-glimpse glimpse-clippy)
+STEPS=(fmt-tomlctl dispatch-tests plan-corpus fmt-glimpse workspace-clippy)
 declare -A COMMAND ROOTS
 COMMAND[fmt-tomlctl]='cargo fmt --manifest-path tomlctl/Cargo.toml -- --check'
 ROOTS[fmt-tomlctl]='tomlctl'
 # scripts/ is a root because the dispatch tests read scripts/shared-blocks.toml
-# and run scripts/verify-shared-blocks.sh.
+# and run scripts/verify-shared-blocks.sh. Every step that compiles reads the
+# workspace's root Cargo.toml and Cargo.lock.
 COMMAND[dispatch-tests]='cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests'
-ROOTS[dispatch-tests]='tomlctl claude .claude/review-lenses scripts'
+ROOTS[dispatch-tests]='tomlctl claude .claude/review-lenses scripts Cargo.toml Cargo.lock'
 COMMAND[plan-corpus]='cargo test --manifest-path tomlctl/Cargo.toml --test tasks_corpus -- --ignored'
-ROOTS[plan-corpus]='tomlctl docs/plans .claude/backlog.toml'
+ROOTS[plan-corpus]='tomlctl docs/plans .claude/backlog.toml Cargo.toml Cargo.lock'
 COMMAND[fmt-glimpse]='cargo fmt --manifest-path glimpse/Cargo.toml -- --check'
 ROOTS[fmt-glimpse]='glimpse'
-COMMAND[glimpse-clippy]='cargo clippy --manifest-path glimpse/Cargo.toml --locked'
-ROOTS[glimpse-clippy]='glimpse tomlctl'
+COMMAND[workspace-clippy]='cargo clippy --workspace --locked'
+ROOTS[workspace-clippy]='glimpse tomlctl Cargo.toml Cargo.lock'
 
 usage() {
   printf 'usage: %s run [<id>...] | check [<id>] | command <id>\n  ids: %s\n' \

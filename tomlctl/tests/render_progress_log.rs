@@ -7,7 +7,7 @@
 //! LF via `tomlctl/.gitattributes` so a Windows checkout can't flip the
 //! expected bytes to CRLF.
 
-use assert_cmd::Command;
+use crate::common::Command;
 use std::fs;
 use std::path::{Path, PathBuf};
 

@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::Path;
 
-use assert_cmd::Command;
+use crate::common::Command;
 use serde_json::Value;
 
 const VOCABULARY: &str = r#"

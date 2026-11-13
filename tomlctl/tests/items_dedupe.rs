@@ -2,7 +2,7 @@
 //! `items find-duplicates --across`, and `items backfill-dedup-id`.
 //! Helpers live in `tests/common/mod.rs`.
 
-use assert_cmd::Command;
+use crate::common::Command;
 use std::fs;
 use std::path::PathBuf;
 

@@ -8,7 +8,7 @@
 //! missing source — `flow init` itself does NOT read the plan file; it
 //! records its repo-relative path in `context.toml`.
 
-use assert_cmd::Command;
+use crate::common::Command;
 use std::fs;
 use std::path::{Path, PathBuf};
 

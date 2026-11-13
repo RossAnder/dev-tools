@@ -1,7 +1,7 @@
 //! `tasks import-plan`, `tasks render` and `tasks check --plan` on a flow whose
 //! directory holds a `plan.toml`.
 
-use assert_cmd::Command;
+use crate::common::Command;
 use std::fs;
 use std::path::{Path, PathBuf};
 

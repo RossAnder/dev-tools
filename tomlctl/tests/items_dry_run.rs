@@ -11,7 +11,7 @@
 //! serialised through the same `toml::to_string_pretty` emit path the live
 //! apply uses, is byte-identical to the bytes a real apply lands on disk.
 
-use assert_cmd::Command;
+use crate::common::Command;
 use std::fs;
 use std::path::PathBuf;
 

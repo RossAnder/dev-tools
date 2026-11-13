@@ -5,7 +5,7 @@
 //! Sandbox strategy mirrors `tests/flow_resolve.rs` — a `tempfile::tempdir()`
 //! per test with `TOMLCTL_ROOT` pointed at it, fixtures synthesised in-test.
 
-use assert_cmd::Command;
+use crate::common::Command;
 use serde_json::Value as JsonValue;
 use std::fs;
 use std::path::{Path, PathBuf};

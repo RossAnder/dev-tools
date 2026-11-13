@@ -1,6 +1,6 @@
 //! `plan drift` over a flow `plan open` created, in a throwaway repository.
 
-use assert_cmd::Command;
+use crate::common::Command;
 use serde_json::{Value, json};
 use std::fs;
 use std::path::PathBuf;

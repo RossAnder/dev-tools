@@ -8,7 +8,7 @@
 //! don't race — each `assert_cmd` invocation forks a fresh process with
 //! its own copy of the env.
 
-use assert_cmd::Command;
+use crate::common::Command;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -620,7 +620,7 @@ fn concurrent_add_invocations_serialise_no_entry_loss() {
             let path = dir_path.clone();
             let slug = slug.to_string();
             thread::spawn(move || {
-                let mut cmd = Command::cargo_bin("tomlctl").unwrap();
+                let mut cmd = common::tomlctl_process();
                 cmd.env("TOMLCTL_ROOT", &path)
                     .env("TOMLCTL_LOCK_TIMEOUT", "30")
                     .arg("flow")

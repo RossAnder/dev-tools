@@ -1,0 +1,19 @@
+# One lockfile and one `target/` for tomlctl and the glimpse crate that links it.
+# statusline has no `[workspace]` of its own, so it must be excluded or its builds
+# fail; lumina is its own workspace root. Rustflags stay in each member's
+# `.cargo/config.toml`, never a root one, so they never reach lumina or statusline.
+[workspace]
+members = ["tomlctl", "glimpse"]
+exclude = ["statusline", "lumina"]
+resolver = "3"
+
+# A member's `[profile]` is ignored inside a workspace, so the profiles live here.
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.dev.package."*"]
+opt-level = 2

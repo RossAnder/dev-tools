@@ -9,7 +9,7 @@
 //! the CHECKED-IN `.claude/settings.json`, which would invalidate every
 //! configuration assertion.
 
-use assert_cmd::Command;
+use crate::common::Command;
 use serde_json::Value as JsonValue;
 use std::fs;
 use std::path::{Path, PathBuf};

@@ -188,7 +188,7 @@ impl Flow {
         flow
     }
 
-    fn tomlctl(&self, args: &[&str]) -> assert_cmd::Command {
+    fn tomlctl(&self, args: &[&str]) -> common::Command {
         let mut cmd = cli(&self.root);
         cmd.current_dir(&self.root).args(args).write_stdin("");
         cmd

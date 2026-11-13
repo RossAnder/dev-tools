@@ -2,7 +2,7 @@
 //! throwaway repository, in the order a carrier would call the verbs, so each
 //! verb reads what the verbs before it actually wrote.
 
-use assert_cmd::Command;
+use crate::common::Command;
 use serde_json::{Value, json};
 use std::fs;
 use std::path::{Path, PathBuf};

@@ -4,7 +4,7 @@
 //! optionally seeds the artifact + sidecar, and runs the built `tomlctl`
 //! binary via `assert_cmd` with `TOMLCTL_ROOT` pointed at the tempdir.
 
-use assert_cmd::Command;
+use crate::common::Command;
 use serde_json::Value as JsonValue;
 use sha2::{Digest, Sha256};
 use std::fs;

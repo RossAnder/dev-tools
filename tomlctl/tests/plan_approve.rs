@@ -1,7 +1,7 @@
 //! `plan gate` and `plan approve` over a flow `plan open` created, seeded with a
 //! plan that `plan check` passes and committed to a throwaway repository.
 
-use assert_cmd::Command;
+use crate::common::Command;
 use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};

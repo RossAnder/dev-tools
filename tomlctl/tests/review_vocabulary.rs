@@ -81,7 +81,7 @@ impl Fixture {
         self.git(&["rev-parse", "HEAD"])
     }
 
-    fn tomlctl(&self) -> assert_cmd::Command {
+    fn tomlctl(&self) -> common::Command {
         let mut cmd = cli(&self.root);
         cmd.current_dir(&self.root)
             .env_remove("GIT_DIR")

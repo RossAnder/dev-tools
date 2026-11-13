@@ -85,10 +85,10 @@ fi
 
 # glimpse compiles all of tomlctl's library, with no feature gate narrowing it, so any
 # library source can break glimpse's build; only the binary's main.rs is outside it.
-# A tomlctl version bump or dependency change also needs glimpse/Cargo.lock
-# refreshed and staged in the same commit:
-# `cargo tree --manifest-path glimpse/Cargo.toml >/dev/null` rewrites it.
+# The clippy runs over the whole workspace, so tomlctl compiles once. With --locked, a
+# tomlctl version bump or dependency change blocks until the root Cargo.lock is
+# refreshed and staged in the same commit.
 LINKED=$(grep -Ev '^tomlctl/src/main\.rs$' <<<"$STAGED" || true)
-if grep -Eq '^tomlctl/(Cargo\.toml|src/.+\.rs)$' <<<"$LINKED"; then
-  gate glimpse-clippy
+if grep -Eq '^(Cargo\.(toml|lock)|tomlctl/(Cargo\.toml|src/.+\.rs))$' <<<"$LINKED"; then
+  gate workspace-clippy
 fi

@@ -15,7 +15,7 @@
 //!   5. branch-match (with `complete` filter and tie reporting)
 //!   6. none
 
-use assert_cmd::Command;
+use crate::common::Command;
 use std::fs;
 use std::path::{Path, PathBuf};
 

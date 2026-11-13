@@ -23,7 +23,7 @@
 //! case is built here from the golden's own bytes, so a CRLF working-tree copy
 //! would leave that test comparing a document against itself.
 
-use assert_cmd::Command;
+use crate::common::Command;
 use std::fs;
 use std::path::{Path, PathBuf};
 

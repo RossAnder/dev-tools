@@ -6,7 +6,7 @@
 //! contract, and the README ↔ `capabilities` feature-vocabulary parity
 //! gate. Shared helpers live in `tests/common/mod.rs`.
 
-use assert_cmd::Command;
+use crate::common::Command;
 use std::fs;
 
 use crate::common;

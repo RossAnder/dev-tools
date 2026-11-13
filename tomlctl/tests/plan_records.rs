@@ -1,6 +1,6 @@
 //! `plan decide`, `plan contract`, `plan handover` and `plan run`.
 
-use assert_cmd::Command;
+use crate::common::Command;
 use std::fs;
 use std::path::Path;
 

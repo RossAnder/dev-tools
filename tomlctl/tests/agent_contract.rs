@@ -6,7 +6,7 @@
 
 use crate::common;
 
-use assert_cmd::Command;
+use crate::common::Command;
 use std::fs;
 use std::path::{Path, PathBuf};
 

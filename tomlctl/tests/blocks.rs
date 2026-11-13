@@ -1,6 +1,6 @@
 //! Black-box integration tests for the `blocks` subcommand.
 
-use assert_cmd::Command;
+use crate::common::Command;
 
 /// `blocks verify` must NOT accept any of the four integrity/containment
 /// flags (`--verify-integrity`, `--no-write-integrity`, `--strict-integrity`,

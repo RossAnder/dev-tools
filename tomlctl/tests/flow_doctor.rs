@@ -6,7 +6,7 @@
 //! tempdir. Mirrors the sandbox strategy used in `tests/flow_active.rs`
 //! and `tests/flow_ensure_artifact.rs`.
 
-use assert_cmd::Command;
+use crate::common::Command;
 use serde_json::Value as JsonValue;
 use sha2::{Digest, Sha256};
 use std::fs;

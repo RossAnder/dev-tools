@@ -30,13 +30,6 @@ tomlctl = { path = "../tomlctl", default-features = false }
 # The light/dark preference and its change notification (`appearance.rs`).
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Registry"] }
 
-[profile.release]
-opt-level = 3
-lto = "fat"
-codegen-units = 1
-panic = "abort"
-strip = true
-
 # Doc-link rot is silent: a renamed item leaves every [`Link`] to it pointing at
 # nothing, and rustdoc only warns. Denied here so it fails the build instead.
 [lints.rustdoc]

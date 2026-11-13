@@ -24,7 +24,7 @@
 //! list-query runners, sidecar assertion) live in `tests/common/mod.rs` and
 //! are pulled in via `mod common;` below.
 
-use assert_cmd::Command;
+use crate::common::Command;
 use predicates::prelude::*;
 use std::fs;
 use std::path::{Path, PathBuf};

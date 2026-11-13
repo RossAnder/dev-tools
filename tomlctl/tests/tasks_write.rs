@@ -1114,7 +1114,7 @@ fn concurrent_adds_serialise_with_no_row_loss() {
             let root = root.clone();
             let title = (*title).to_string();
             thread::spawn(move || {
-                let mut cmd = assert_cmd::Command::cargo_bin("tomlctl").unwrap();
+                let mut cmd = common::tomlctl_process();
                 cmd.env("TOMLCTL_ROOT", &root)
                     .env("TOMLCTL_LOCK_TIMEOUT", "30")
                     .args(["tasks", "add", "--slug", TASKS_SLUG, "--title"])

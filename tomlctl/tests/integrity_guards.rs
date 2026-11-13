@@ -1,7 +1,7 @@
 //! The integrity surface's two refusals: stamping a sidecar over a CRLF `.toml`,
 //! and a writer's `--verify-integrity` check on a store that fails it.
 
-use assert_cmd::Command;
+use crate::common::Command;
 use serde_json::Value as JsonValue;
 use sha2::{Digest, Sha256};
 use std::fs;

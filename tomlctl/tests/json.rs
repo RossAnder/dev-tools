@@ -14,7 +14,7 @@
 //!  9. `--raw` on a scalar emits bare unquoted output.
 //! 10. `--strict-read` on a missing file → `kind=not_found`.
 
-use assert_cmd::Command;
+use crate::common::Command;
 use std::fs;
 use std::path::{Path, PathBuf};
 

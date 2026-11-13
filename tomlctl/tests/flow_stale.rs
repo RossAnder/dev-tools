@@ -4,7 +4,7 @@
 //! (or omits it, for the missing-file paths) and runs the CLI through
 //! `assert_cmd`, asserting on the JSON staleness envelope.
 
-use assert_cmd::Command;
+use crate::common::Command;
 use std::fs;
 use std::path::PathBuf;
 
