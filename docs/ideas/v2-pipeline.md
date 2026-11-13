@@ -1,7 +1,7 @@
 # Idea: The full v2 harness pipeline
 
 > Captured: 2026-11-05
-> Status: Paused 2026-11-05. The planning flow (topic 2) is decided by `docs/plans/v2-planning.md`; topic 6 was agreed 2026-11-12, and topics 4, 7 and 8 remain open. Where a decision below conflicts with that plan, the plan wins (see its "What departs from the idea doc").
+> Status: Paused 2026-11-05. The planning flow (topic 2) is decided by `docs/plans/v2-planning.md`; topic 6 is built (`docs/flows/glimpse-v2-visibility/`), and topics 4, 7 and 8 remain open. Where a decision below conflicts with that plan, the plan wins (see its "What departs from the idea doc").
 
 The goal is one v2 chain from planning through implementation, review and apply. The review commands stay untrialled until the whole chain exists. Every design is discussed before it is planned, and no v1 practice carries over by default.
 
@@ -11,6 +11,7 @@ The goal is one v2 chain from planning through implementation, review and apply.
 - Run once for real work: `/plan-v2` (v2 planning), which planned and approved `human-only-handovers`, the proof recorded in `docs/ideas/plan-v2-probes.md`.
 - Run once for real work: `/implement-v2`, the execution engine's first slice (`docs/plans/jiggly-exploring-robin.md`), which ran `human-only-handovers` end to end on 2026-11-10, both milestones gated and committed.
 - Built: `/apply-v2`, native apply over the shared execution engine, with settle tasks for blocked findings and the reproduce check (see **Apply** below). Not started: trials, the `tool` and `clerk` executors, the rest of vetting, and harvest and clearance.
+- Built: flow state and glimpse (see **Flow state and glimpse** below). Glimpse shows a v2 flow in full, and runs leave attempts, gate rounds and reports in the plan store; the record is `docs/flows/glimpse-v2-visibility/`.
 - v1 stays in use while v2 is built. `/tdd` runs inside v1 flows and dispatches v1 `/implement`, so it needs v1 until it is ported.
 
 ## Design topics
@@ -22,7 +23,7 @@ The goal is one v2 chain from planning through implementation, review and apply.
 | 3 | Plan review | Decided |
 | 4 | Execution engine | First slice built and run (`docs/plans/jiggly-exploring-robin.md`); `tool`, `clerk` and vetting open |
 | 5 | Apply | Built (`/apply-v2`, see **Apply** below); trials and the `tool` executor are later slices |
-| 6 | Flow state and glimpse | Agreed (see **Flow state and glimpse** below); not planned or built |
+| 6 | Flow state and glimpse | Built (see **Flow state and glimpse** below; `docs/flows/glimpse-v2-visibility/`) |
 | 7 | Re-audit of the built review stage | Open |
 | 8 | Naming, coexistence, gates, carrier shape | Open |
 
@@ -215,18 +216,18 @@ Apply is vetting's first consumer: one cell per task at milestone drain, before 
 
 ### Flow state and glimpse
 
-Agreed 2026-11-12. Glimpse reads only the v1 row fields of a task, so a v2 task shows its action and detail and nothing from `[[specs]]`, `plan.toml`, the brief, the design files or the notes.
+This section records the agreed design and where it was built: `docs/flows/glimpse-v2-visibility/`.
 
 - **Data path:** tomlctl's library snapshot carries the plan and spec records; glimpse parses no TOML of its own.
 - **Task detail:** the spec (outcome, constraints, means, executor, design and precedent links), accept checks and premises with their probe verdicts, file notes, the task's `[[changes]]` history, its linked finding or backlog row, and its run note.
 - **Plan surface:** a seventh surface holding the brief, decisions (with rejected options, evidence and bound tasks), contracts, handovers, milestones with their gates, and the run timeline.
-- **Research view:** under the Plan surface, notes listed by kind with their verdict line and rendered as markdown; each source reference is selectable, to preview the source or open it in the editor.
+- **Research view:** under the Plan surface, notes listed by kind with their verdict line and rendered as markdown; each source reference is selectable, to preview the source or open it in the editor. A source is pinned by the commit read at and the paths dirty then.
 - **Cross-links:** decision, note, task, commit and finding navigate to one another.
 - **Deviations feed:** one flow-level list of where workers departed from the plan.
-- **Approved versus actual:** tasks added, retitled or widened after approval, with the reason, from `[[changes]]`.
+- **Approved versus actual:** tasks added, retitled or widened after approval, with the reason, from `[[changes]]`. The run's records live in `plan.toml`, not the task store.
 - **Gate history:** per milestone, each command's outcome, duration and log path, and the fix rounds taken.
 - **Needs-you queue:** parked tasks, open handovers and `needs_human` entries together in the Inbox.
-- **Rollups:** tokens and time by milestone and by executor.
+- **Rollups:** tokens and time by milestone and by executor, computed from the tracked `agents.toml` with no stamped totals.
 - **Probe health:** unprobed or unhealthy premises and accept checks, visible before launch.
 - **Structured contracts:** output contracts change wherever a structured form serves these views better than parsing prose. Candidates are a worker's deviations and an investigator's source references; the forms are the plan's to design.
 
