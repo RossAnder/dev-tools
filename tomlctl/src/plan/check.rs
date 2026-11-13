@@ -41,13 +41,12 @@ pub(super) fn run(args: PlanCheckArgs) -> Result<()> {
     let findings = findings(&args.target.slug, &args.integrity)?;
     let code = exit_code(&findings);
     let rendered: Vec<_> = findings.iter().map(finding_json).collect();
-    // `print_report` flushes before returning, so the exit below loses nothing.
     print_report(
         json!({ "ok": code == 0, "findings": rendered }),
         Rows::Field("findings"),
     )?;
     if code != 0 {
-        std::process::exit(code);
+        return Err(crate::invocation::ExitWith(code).into());
     }
     Ok(())
 }

@@ -332,45 +332,75 @@ fn both_gates_reject_a_cr_marker_and_an_empty_span() {
     ];
 
     for (label, defective) in cases {
-        let case_dir = dir.path().join(label);
-        fs::create_dir_all(&case_dir).unwrap();
-        let a = case_dir.join("a.md");
-        let b = case_dir.join("b.md");
         // Matching carriers for the empty-span case, so the only thing that can
         // fail it is the emptiness itself.
-        fs::write(&a, if label == "empty-span" { defective } else { lf }).unwrap();
-        fs::write(&b, defective).unwrap();
-        fs::write(
-            case_dir.join("manifest.toml"),
-            "[[block]]\nname = \"foo\"\nfiles = [\n  \"a.md\",\n  \"b.md\",\n]\n",
-        )
-        .unwrap();
+        let a = if label == "empty-span" { defective } else { lf };
+        assert_both_gates_reject(&repo_root, &dir.path().join(label), label, a, defective);
+    }
+}
 
-        let report = blocks_verify(&[a, b], &["foo".to_string()]).unwrap();
-        assert!(
-            !report.ok,
-            "{label}: the mirror must reject what the shell gate rejects: {:?}",
-            report.report
-        );
+/// Two well-formed carriers whose spans differ, and a carrier holding only an
+/// END marker. The shell gate decides both by comparing extracted text, so each
+/// must be a failure on both sides.
+#[test]
+fn both_gates_reject_drift_and_a_missing_start() {
+    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let repo_root = crate_dir.parent().expect("repo root").to_path_buf();
+    let dir = tempfile::tempdir().unwrap();
 
-        // The shell verifier resolves its paths from the git top level, so the
-        // fixture needs to be one.
-        let inited = crate::test_support::git_command(&case_dir)
-            .args(["init", "-q", "."])
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
-        if !inited {
-            eprintln!("{label}: git init failed, skipping the shell half");
-            continue;
-        }
-        match run_shell_gate(&repo_root, &case_dir, Some("manifest.toml")) {
-            Ok(shell_ok) => assert!(
-                !shell_ok,
-                "{label}: shell gate accepted a fixture the mirror rejects"
-            ),
-            Err(why) => eprintln!("{label}: shell gate not runnable ({why}), shell half skipped"),
-        }
+    let lf = "<!-- SHARED-BLOCK:foo START -->\nline one\n<!-- SHARED-BLOCK:foo END -->\n";
+    let cases: [(&str, &str); 2] = [
+        (
+            "drift",
+            "<!-- SHARED-BLOCK:foo START -->\nline two\n<!-- SHARED-BLOCK:foo END -->\n",
+        ),
+        ("missing-start", "line one\n<!-- SHARED-BLOCK:foo END -->\n"),
+    ];
+
+    for (label, defective) in cases {
+        assert_both_gates_reject(&repo_root, &dir.path().join(label), label, lf, defective);
+    }
+}
+
+/// Writes carriers `a.md` and `b.md` and a one-block manifest naming them into
+/// `case_dir`, then asserts that `blocks_verify` and the shell gate each reject
+/// the pair. The shell half is skipped, with a reason, when it cannot run.
+fn assert_both_gates_reject(repo_root: &Path, case_dir: &Path, label: &str, a: &str, b: &str) {
+    fs::create_dir_all(case_dir).unwrap();
+    let a_path = case_dir.join("a.md");
+    let b_path = case_dir.join("b.md");
+    fs::write(&a_path, a).unwrap();
+    fs::write(&b_path, b).unwrap();
+    fs::write(
+        case_dir.join("manifest.toml"),
+        "[[block]]\nname = \"foo\"\nfiles = [\n  \"a.md\",\n  \"b.md\",\n]\n",
+    )
+    .unwrap();
+
+    let report = blocks_verify(&[a_path, b_path], &["foo".to_string()]).unwrap();
+    assert!(
+        !report.ok,
+        "{label}: the mirror must reject what the shell gate rejects: {:?}",
+        report.report
+    );
+
+    // The shell verifier resolves its paths from the git top level, so the
+    // fixture needs to be one.
+    let inited = crate::test_support::git_command(case_dir)
+        .args(["init", "-q", "."])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    if !inited {
+        eprintln!("{label}: git init failed, skipping the shell half");
+        return;
+    }
+    match run_shell_gate(repo_root, case_dir, Some("manifest.toml")) {
+        Ok(shell_ok) => assert!(
+            !shell_ok,
+            "{label}: shell gate accepted a fixture the mirror rejects"
+        ),
+        Err(why) => eprintln!("{label}: shell gate not runnable ({why}), shell half skipped"),
     }
 }
 

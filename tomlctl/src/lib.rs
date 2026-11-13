@@ -18,6 +18,7 @@ mod fields;
 mod flow;
 mod inputs;
 mod integrity;
+mod invocation;
 mod io;
 mod items;
 mod items_sweep;
@@ -40,6 +41,7 @@ mod test_support;
 mod time;
 mod union_find;
 
+use std::ffi::OsString;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -416,22 +418,120 @@ pub fn record_agent(
 
 /// Parses the process arguments, runs the selected verb and reports any error
 /// on stderr. Returns `ExitCode::FAILURE` on error, except that a reader
-/// closing stdout early (`tomlctl … | head`) exits quietly with success; clap's
-/// own parse-error and `--help` / `--version` exits happen inside `Cli::parse`.
+/// closing stdout early (`tomlctl … | head`) exits quietly with success and a
+/// verb's `ExitWith` exits quietly with its own code; clap's
+/// own parse-error and `--help` / `--version` exits happen inside
+/// `Cli::parse_from`.
 pub fn run() -> ExitCode {
     // Parse `Cli` exactly once, here: peeking `--error-format` with a second
     // `try_parse()` swallows clap's errors on the peek path and double-renders
     // `--help` / `--version`. `error_format` is plucked from the parsed struct
     // so `emit_error` still has it after `run()` bails.
-    let cli = Cli::parse();
+    let args: Vec<OsString> = std::env::args_os().collect();
+    let cli = Cli::parse_from(&args);
     let error_format = cli.error_format;
-    match cli::run(cli) {
+    match cli::run(cli, &args) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) if output::is_stdout_closed(&err) => ExitCode::SUCCESS,
-        Err(err) => {
-            emit_error(&err, error_format);
-            ExitCode::FAILURE
+        Err(err) => match invocation::exit_code(&err) {
+            Some(code) => ExitCode::from(code as u8),
+            None => {
+                emit_error(&err, error_format);
+                ExitCode::FAILURE
+            }
+        },
+    }
+}
+
+/// What one in-process run gives back: the code the binary would exit with
+/// and everything the run wrote to stdout and stderr.
+#[doc(hidden)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Outcome {
+    pub code: i32,
+    pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
+}
+
+/// Run one command inside this process as the binary would run it. `args`
+/// starts with the program name, which clap puts in the usage line; an `env`
+/// pair with `None` reads as unset for this run whatever the process holds.
+/// Child processes and the working directory are the process's own.
+#[doc(hidden)]
+pub fn run_with<I, S>(args: I, env: &[(OsString, Option<OsString>)], stdin: &[u8]) -> Outcome
+where
+    I: IntoIterator<Item = S>,
+    S: Into<OsString> + Clone,
+{
+    let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
+    let mut context = invocation::Invocation::new().stdin(stdin);
+    for (name, value) in env {
+        context = match value {
+            Some(value) => context.env(name.clone(), value.clone()),
+            None => context.unset(name.clone()),
+        };
+    }
+    // The command tree needs the binary's stack, and a fresh thread keeps the
+    // context away from whatever the caller's thread has installed.
+    std::thread::scope(|scope| {
+        std::thread::Builder::new()
+            .name("tomlctl-run".to_string())
+            .stack_size(CLI_STACK_BYTES)
+            .spawn_scoped(scope, || run_in_context(context, &args))
+            .expect("spawn a thread for an in-process run")
+            .join()
+            .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+    })
+}
+
+/// Install `context`, run the command under it and collect its output. A
+/// panic is caught here so the output written before it is kept.
+fn run_in_context(context: invocation::Invocation, args: &[OsString]) -> Outcome {
+    let guard = context.install();
+    let code = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_args(args))) {
+        Ok(code) => code,
+        Err(panic) => {
+            let message = panic
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .or_else(|| panic.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "a non-string panic payload".to_string());
+            invocation::stderr_line(format_args!("tomlctl: panicked: {message}"));
+            101
         }
+    };
+    let captured = guard.finish();
+    Outcome {
+        code,
+        stdout: captured.stdout,
+        stderr: captured.stderr,
+    }
+}
+
+/// `run`'s parse, dispatch and error report, with clap's own print-and-exit
+/// replaced by writing to the installed context and returning the code.
+fn run_args(args: &[OsString]) -> i32 {
+    let cli = match Cli::try_parse_from(args) {
+        Ok(cli) => cli,
+        Err(err) => {
+            let rendered = err.render().to_string();
+            if err.use_stderr() {
+                // Writing to the context's buffer cannot fail.
+                let _ = invocation::stderr().write_all(rendered.as_bytes());
+            } else {
+                invocation::with_stdout_buffer(|buf| buf.extend_from_slice(rendered.as_bytes()));
+            }
+            return err.exit_code();
+        }
+    };
+    let error_format = cli.error_format;
+    match cli::run(cli, args) {
+        Ok(()) => 0,
+        Err(err) if output::is_stdout_closed(&err) => 0,
+        Err(err) => invocation::exit_code(&err).unwrap_or_else(|| {
+            emit_error(&err, error_format);
+            1
+        }),
     }
 }
 
@@ -442,7 +542,7 @@ fn emit_error(err: &anyhow::Error, fmt: ErrorFormat) {
             // with `with_context(…"parsing {}", path)` in `read_toml`, toml's
             // Display impl then emits line:col + caret diagnostics for syntax
             // errors.
-            eprintln!("tomlctl: {:#}", err);
+            invocation::stderr_line(format_args!("tomlctl: {:#}", err));
         }
         ErrorFormat::Json => {
             // Must be anyhow's inherent `downcast_ref`, not
@@ -473,7 +573,7 @@ fn emit_error(err: &anyhow::Error, fmt: ErrorFormat) {
             // Ignore write errors on the stderr path — if stderr itself is
             // broken there's nothing reasonable to do, and the process is
             // about to exit 1 regardless.
-            let mut stderr = std::io::stderr().lock();
+            let mut stderr = invocation::stderr();
             let _ = serde_json::to_writer(&mut stderr, &envelope);
             let _ = writeln!(stderr);
         }

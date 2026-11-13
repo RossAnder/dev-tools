@@ -381,8 +381,7 @@ pub(crate) fn status(
         "findings": findings,
     }))?;
     if !ok {
-        // stdout is flushed by the print above, so skipping destructors loses nothing.
-        std::process::exit(1);
+        return Err(crate::invocation::ExitWith(1).into());
     }
     Ok(())
 }

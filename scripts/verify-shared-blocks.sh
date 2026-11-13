@@ -71,44 +71,6 @@ else
   exit 2
 fi
 
-# Canonical extraction, and the reason the mirror in tomlctl/src/blocks.rs is a
-# mirror: this is what the pre-commit hook runs, so `tomlctl blocks verify` must
-# never accept a tree this rejects. The in-crate
-# `blocks_verify_agrees_with_shell_gate` holds the two to one verdict by running
-# this script.
-#
-# CR contract: carriers are pinned LF by .gitattributes. A marker matches the
-# line exactly as this awk reads it — MSYS gawk's text-mode read drops one CR,
-# as str::lines() does in the mirror — so a marker ending `\r\r\n` matches
-# nothing; content lines lose one further CR. A CR-preserving gawk (non-MSYS)
-# extracts nothing from a CRLF carrier the mirror accepts, and fails the
-# empty-extraction guard below rather than passing.
-extract_block() {
-  local file=$1 name=$2
-  "$AWK" -v start="<!-- SHARED-BLOCK:${name} START -->" \
-      -v end="<!-- SHARED-BLOCK:${name} END -->" '
-    $0 == start { in_block=1; next }
-    $0 == end   { in_block=0; next }
-    in_block    { sub(/\r$/, ""); print }
-  ' "$file"
-}
-
-# Marker presence, in the already-resolved awk rather than `grep -qF`. A guard
-# that shells out cannot name its own failure: on a PATH without grep the
-# invocation dies 127 and every carrier is reported as missing its START marker,
-# blaming the files for an absent binary. The test is whole-line equality, the
-# extractor's own semantics, with a single deliberate relaxation — a trailing CR
-# is stripped here and NOT in extract_block's marker match, so a marker keeping
-# a CR clears this guard and trips the empty-extraction guard below, which
-# names line endings instead.
-has_marker() {
-  local file=$1 marker=$2
-  "$AWK" -v m="$marker" '
-    { line = $0; sub(/\r$/, "", line); if (line == m) { found = 1; exit } }
-    END { exit(found ? 0 : 1) }
-  ' "$file"
-}
-
 pairs=$("$AWK" '
   /^\[\[block\]\]/ { name=""; in_files=0; next }
   /^name = "/ {
@@ -129,52 +91,100 @@ if [[ -z $pairs ]]; then
   exit 2
 fi
 
-fail=0
-declare -A first_hash first_file
-
+# The regular-file test is the `-f` builtin, which treats a directory as
+# missing and starts no process. Its result rides along as a third field so the
+# missing-file message keeps its place in pair order among the checker's others.
+checked=''
 while IFS=$'\t' read -r bname bfile; do
   [[ -z $bname || -z $bfile ]] && continue
-
-  if [[ ! -f $bfile ]]; then
-    echo "error: block '$bname' references missing file: $bfile" >&2
-    fail=1
-    continue
-  fi
-
-  if ! has_marker "$bfile" "<!-- SHARED-BLOCK:${bname} START -->"; then
-    echo "error: $bfile missing START marker for block '$bname'" >&2
-    fail=1
-    continue
-  fi
-  if ! has_marker "$bfile" "<!-- SHARED-BLOCK:${bname} END -->"; then
-    echo "error: $bfile missing END marker for block '$bname'" >&2
-    fail=1
-    continue
-  fi
-
-  # The trailing 'x' preserves the block's own trailing newlines through the
-  # command substitution so the hashed bytes are unchanged.
-  block=$(extract_block "$bfile" "$bname"; printf 'x')
-  block=${block%x}
-
-  if [[ -z $block ]]; then
-    echo "error: block '$bname' in $bfile extracted to no content between its markers (empty span, or a marker line still ending in CR after awk's read — see the CR contract at extract_block)" >&2
-    fail=1
-    continue
-  fi
-
-  h=$(printf '%s' "$block" | $HASHER | "$AWK" '{print $1}')
-
-  if [[ -z ${first_hash[$bname]:-} ]]; then
-    first_hash[$bname]=$h
-    first_file[$bname]=$bfile
-  elif [[ ${first_hash[$bname]} != "$h" ]]; then
-    echo "error: block '$bname' drift:" >&2
-    printf '  %s  hash=%s\n' "${first_file[$bname]}" "${first_hash[$bname]}" >&2
-    printf '  %s  hash=%s\n' "$bfile" "$h" >&2
-    fail=1
-  fi
+  if [[ -f $bfile ]]; then is_file=1; else is_file=0; fi
+  checked+="${bname}"$'\t'"${bfile}"$'\t'"${is_file}"$'\n'
 done <<< "$pairs"
+
+# Canonical extraction, and the reason the mirror in tomlctl/src/blocks.rs is a
+# mirror: this is what the pre-commit hook runs, so `tomlctl blocks verify` must
+# never accept a tree this rejects. The in-crate
+# `blocks_verify_agrees_with_shell_gate` holds the two to one verdict by running
+# this script.
+#
+# One gawk process checks every pair, reading each carrier with `getline`, and
+# decides parity by string equality; it starts the hasher only to print a drift.
+#
+# CR contract: carriers are pinned LF by .gitattributes. A marker matches the
+# line exactly as gawk reads it — MSYS gawk's text-mode read drops one CR, as
+# str::lines() does in the mirror — so a marker ending `\r\r\n` matches nothing;
+# content lines lose one further CR. Marker presence is the one relaxation: it
+# strips a trailing CR before comparing, so a marker keeping a CR passes the
+# presence check and fails the empty-extraction check, which names line endings.
+# A CR-preserving gawk (non-MSYS) extracts nothing from a CRLF carrier the mirror
+# accepts, and fails that same check rather than passing.
+fail=0
+"$AWK" -v hasher="$HASHER" '
+  # Sets has_start and has_end as a side effect; returns the concatenated text
+  # of every span, each content line ending in a newline.
+  function extract_block(file, name,    start, end, line, bare, in_block, block) {
+    start = "<!-- SHARED-BLOCK:" name " START -->"
+    end = "<!-- SHARED-BLOCK:" name " END -->"
+    has_start = has_end = 0
+    while ((getline line < file) > 0) {
+      bare = line
+      sub(/\r$/, "", bare)
+      if (bare == start) has_start = 1
+      if (bare == end) has_end = 1
+      if (line == start) { in_block = 1; continue }
+      if (line == end) { in_block = 0; continue }
+      if (in_block) { sub(/\r$/, "", line); block = block line "\n" }
+    }
+    close(file)
+    return block
+  }
+  function digest(s,    out, field) {
+    printf "%s", s |& hasher
+    close(hasher, "to")
+    hasher |& getline out
+    close(hasher)
+    split(out, field, " ")
+    return field[1]
+  }
+  BEGIN { FS = "\t"; q = "\047"; err = "/dev/stderr" }
+  NF < 3 { next }
+  {
+    name = $1
+    file = $2
+    if ($3 != "1") {
+      print "error: block " q name q " references missing file: " file > err
+      fail = 1
+      next
+    }
+    block = extract_block(file, name)
+    if (!has_start) {
+      print "error: " file " missing START marker for block " q name q > err
+      fail = 1
+      next
+    }
+    if (!has_end) {
+      print "error: " file " missing END marker for block " q name q > err
+      fail = 1
+      next
+    }
+    if (block == "") {
+      print "error: block " q name q " in " file " extracted to no content between its markers (empty span, or a marker line still ending in CR after awk" q "s read — see the CR contract at extract_block)" > err
+      fail = 1
+      next
+    }
+    if (!(name in first_block)) {
+      first_block[name] = block
+      first_file[name] = file
+    } else if (first_block[name] != block) {
+      if (!(name in first_digest)) first_digest[name] = digest(first_block[name])
+      print "error: block " q name q " drift:" > err
+      printf "  %s  hash=%s\n", first_file[name], first_digest[name] > err
+      printf "  %s  hash=%s\n", file, digest(block) > err
+      fail = 1
+    }
+  }
+  END { exit fail }
+' <<< "$checked" || fail=$?
 
 if [[ $fail -eq 0 ]]; then
   echo "shared-block parity: OK"

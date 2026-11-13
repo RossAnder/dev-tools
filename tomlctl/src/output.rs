@@ -283,19 +283,28 @@ fn insert_nested(root: &mut JsonValue, parent: &str, last: &str, value: JsonValu
     }
 }
 
-/// Validate and install the process's output options. Call once, before any
-/// output; a second call is a bug.
+/// Validate and install the output options: for the installed invocation's
+/// run when there is one, which leaks one `OutputOpts` per run so `opts`
+/// keeps its `'static` borrow, otherwise for the process. A second call on
+/// the process is a bug.
 pub(crate) fn configure(opts: OutputOpts) -> Result<()> {
     opts.validate()?;
+    if crate::invocation::is_active() {
+        crate::invocation::set_opts(Box::leak(Box::new(opts)));
+        return Ok(());
+    }
     let first = OPTS.set(opts).is_ok();
     debug_assert!(first, "output::configure called twice");
     Ok(())
 }
 
 /// The installed options, or the inert defaults for a caller that never
-/// configured them (the library facade, unit tests).
+/// configured them (the library facade, unit tests, a run not yet configured).
 pub(crate) fn opts() -> &'static OutputOpts {
-    OPTS.get().unwrap_or(&UNCONFIGURED)
+    match crate::invocation::opts() {
+        Some(run) => run.unwrap_or(&UNCONFIGURED),
+        None => OPTS.get().unwrap_or(&UNCONFIGURED),
+    }
 }
 
 /// How a report is laid out: one value, or rows somewhere in it.
@@ -858,9 +867,18 @@ impl<W: Write> Write for StdoutSink<W> {
     }
 }
 
-/// Run `f` against locked stdout and flush it. When a write failed because
-/// the reader went away, the error is `StdoutClosed` whatever `f` returned.
+/// Run `f` against the installed invocation's stdout buffer, or locked
+/// stdout without one, and flush it. When a write failed because the reader
+/// went away, the error is `StdoutClosed` whatever `f` returned.
 fn with_stdout<T>(f: impl FnOnce(&mut dyn Write) -> Result<T>) -> Result<T> {
+    let mut f = Some(f);
+    let buffered = crate::invocation::with_stdout_buffer(|buf| f.take().map(|f| with_sink(buf, f)));
+    if let Some(Some(out)) = buffered {
+        return out;
+    }
+    let Some(f) = f else {
+        unreachable!("the stdout buffer took the writer and returned its result");
+    };
     with_sink(std::io::stdout().lock(), f)
 }
 
@@ -906,10 +924,10 @@ fn write_emitted(emitted: Emitted, opts: &OutputOpts) -> Result<()> {
         return Ok(());
     }
     for warning in &emitted.warnings {
-        eprintln!("{warning}");
+        crate::invocation::stderr_line(warning);
     }
     if let Some(notice) = emitted.notice {
-        eprintln!("{notice}");
+        crate::invocation::stderr_line(notice);
     }
     Ok(())
 }
@@ -1215,7 +1233,7 @@ pub(crate) fn print_json_compact(v: &JsonValue) -> Result<()> {
     }
     let (emitted, warning) = compact_lenient(v, Shape::One, o)?;
     if let Some(w) = warning {
-        eprintln!("{w}");
+        crate::invocation::stderr_line(w);
     }
     write_emitted(emitted, o)
 }
@@ -1230,7 +1248,7 @@ pub(crate) fn print_rows_compact(v: &JsonValue, rows: Rows) -> Result<()> {
     }
     let (emitted, warning) = compact_lenient(v, Shape::Rows(rows), o)?;
     if let Some(w) = warning {
-        eprintln!("{w}");
+        crate::invocation::stderr_line(w);
     }
     write_emitted(emitted, o)
 }

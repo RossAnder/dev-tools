@@ -84,8 +84,7 @@ pub(crate) fn run(
         "reason": reason,
     }))?;
     if !ok {
-        // stdout is flushed by the print above, so skipping destructors loses nothing.
-        std::process::exit(1);
+        return Err(crate::invocation::ExitWith(1).into());
     }
     Ok(())
 }

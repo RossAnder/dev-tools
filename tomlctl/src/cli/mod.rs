@@ -17,8 +17,10 @@
 //!   [`crate::output`] module — sibling of `cli`, not child — because they
 //!   don't touch clap types and shouldn't carry a CLI-scoped path.
 //!
-//! The external caller, the library root's `run` in `lib.rs`, imports
-//! `crate::cli::{Cli, ErrorFormat}` and calls `cli::run(cli)`; the
+//! The external callers, the library root's `run` and `run_with` in
+//! `lib.rs`, import `crate::cli::{Cli, ErrorFormat}` and call
+//! `cli::run(cli, &args)`, passing the argument list they parsed: the process
+//! arguments for `run`, the caller's own for `run_with`. The
 //! `pub(crate) use` re-exports below keep that surface stable.
 
 mod dispatch;

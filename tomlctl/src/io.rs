@@ -74,7 +74,7 @@ pub(crate) use advise;
 /// Backing call for `advise!`. Takes `Arguments` so a suppressed advisory
 /// never formats its message.
 pub(crate) fn advise_fmt(args: std::fmt::Arguments<'_>) {
-    if !advisories_visible() {
+    if crate::invocation::is_active() || !advisories_visible() {
         return;
     }
     let mut stderr = std::io::stderr().lock();
@@ -100,8 +100,8 @@ pub(crate) fn silence_advisories() {
 /// `MAX_LOCK_TIMEOUT_SECS`. Shared by `with_exclusive_lock` and
 /// `with_shared_lock` so the clamp policy lives in exactly one place.
 fn resolve_lock_timeout() -> std::time::Duration {
-    std::env::var("TOMLCTL_LOCK_TIMEOUT")
-        .ok()
+    crate::invocation::env_var_os("TOMLCTL_LOCK_TIMEOUT")
+        .and_then(|v| v.into_string().ok())
         .and_then(|s| s.parse::<u64>().ok())
         .map(|requested| {
             if requested > MAX_LOCK_TIMEOUT_SECS {
@@ -259,9 +259,11 @@ static STDIN_CONSUMED: std::sync::atomic::AtomicBool = std::sync::atomic::Atomic
 /// already-drained handle and silently returns an empty payload.
 ///
 /// `swap(true, SeqCst)` is both the check and the mark, so concurrent calls
-/// can't both see `false`.
+/// can't both see `false`. An installed invocation context holds its own flag.
 fn claim_stdin() -> Result<()> {
-    if STDIN_CONSUMED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+    let already = crate::invocation::claim_stdin()
+        .unwrap_or_else(|| STDIN_CONSUMED.swap(true, std::sync::atomic::Ordering::SeqCst));
+    if already {
         bail!(
             "stdin already consumed by another flag on this invocation; only one of --json/--ops/--ndjson/--defaults-json `-`, --set-file KEY=- or --summary - can read stdin per call — pass the others from a file (`@<path>` for the JSON flags, a plain path for --set-file)"
         );
@@ -320,12 +322,12 @@ fn stdin_overflow_message() -> String {
 pub(crate) fn read_json_arg(arg: &str) -> Result<String> {
     if arg == "-" {
         claim_stdin()?;
-        if std::io::stdin().is_terminal() {
+        if crate::invocation::stdin_is_terminal() {
             bail!(
                 "stdin is a TTY — pipe JSON (e.g. `cat payload.json | tomlctl … --json -`), pass `--json @payload.json`, or pass `--json '<literal>'`"
             );
         }
-        let buf = read_capped_to_string(std::io::stdin().lock(), "JSON")?;
+        let buf = read_capped_to_string(crate::invocation::stdin_reader(), "JSON")?;
         if buf.trim().is_empty() {
             bail!(
                 "stdin was empty — expected JSON payload (e.g. an object `{{...}}`, array `[...]`, or NDJSON depending on the flag)"
@@ -398,7 +400,7 @@ pub(crate) fn read_text_arg(arg: &str) -> Result<String> {
         return Ok(arg.to_string());
     }
     claim_stdin()?;
-    if std::io::stdin().is_terminal() {
+    if crate::invocation::stdin_is_terminal() {
         return Err(tagged_err(
             ErrorKind::Validation,
             None,
@@ -408,7 +410,7 @@ pub(crate) fn read_text_arg(arg: &str) -> Result<String> {
                 .to_string(),
         ));
     }
-    let buf = read_capped_to_string(std::io::stdin().lock(), "text")?;
+    let buf = read_capped_to_string(crate::invocation::stdin_reader(), "text")?;
     if buf.trim().is_empty() {
         return Err(tagged_err(
             ErrorKind::Validation,
@@ -504,13 +506,12 @@ pub(crate) fn strip_flag_text(mut text: String) -> String {
 pub(crate) fn read_json_value_from_arg(arg: &str) -> Result<serde_json::Value> {
     if arg == "-" {
         claim_stdin()?;
-        if std::io::stdin().is_terminal() {
+        if crate::invocation::stdin_is_terminal() {
             bail!(
                 "stdin is a TTY — pipe JSON (e.g. `cat payload.json | tomlctl … --json -`), pass `--json @payload.json`, or pass `--json '<literal>'`"
             );
         }
-        let stdin = std::io::stdin();
-        parse_json_capped(stdin.lock())
+        parse_json_capped(crate::invocation::stdin_reader())
     } else if let Some(path) = at_file_path(arg) {
         let text = read_at_file(path)?;
         convert_payload_text(path, text, crate::payload::toml_payload_value, |t| {
@@ -1898,7 +1899,8 @@ fn refuse_outside_symlink_leaf(path: &Path) -> Result<()> {
 pub(crate) fn repo_or_cwd_root() -> Result<PathBuf> {
     // Env override is always live — never cached, so a test flipping
     // TOMLCTL_ROOT sees the new value on the next call.
-    if let Ok(env_root) = std::env::var("TOMLCTL_ROOT")
+    if let Some(env_root) =
+        crate::invocation::env_var_os("TOMLCTL_ROOT").and_then(|v| v.into_string().ok())
         && !env_root.is_empty()
     {
         let p = PathBuf::from(&env_root);
@@ -1933,7 +1935,8 @@ pub(crate) fn ensure_process_root(root: &Path) -> Result<()> {
         .canonicalize()
         .with_context(|| format!("canonicalising root {}", root.display()))?;
     if given != process {
-        let source = if std::env::var_os("TOMLCTL_ROOT").is_some_and(|v| !v.is_empty()) {
+        let source = if crate::invocation::env_var_os("TOMLCTL_ROOT").is_some_and(|v| !v.is_empty())
+        {
             "taken from TOMLCTL_ROOT"
         } else {
             "the working directory's repository, as TOMLCTL_ROOT is unset"

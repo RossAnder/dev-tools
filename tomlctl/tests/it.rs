@@ -34,6 +34,7 @@ mod flow_resolve;
 mod flow_stale;
 mod id_aliases;
 mod id_minting;
+mod in_process;
 mod inputs;
 mod integration;
 mod integrity_guards;

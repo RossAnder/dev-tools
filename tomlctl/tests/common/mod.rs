@@ -294,24 +294,124 @@ pub fn sandbox() -> (tempfile::TempDir, PathBuf) {
     let root = dir.path().canonicalize().unwrap();
     fs::create_dir_all(root.join(".claude")).unwrap();
     fs::write(root.join(".gitignore"), shipped_gitignore()).unwrap();
-    // An init that ran and failed would surface much later as an unrelated
-    // tracked-count assertion, so it is caught here instead. A git that never
-    // ran at all stays tolerated: the tests that need a repo gate on
-    // `git_available`, the rest do not care.
-    if let Ok(init) = git_command(&root).args(["init", "-q", "."]).output() {
-        assert!(
-            init.status.success(),
-            "`git init` failed in {}: {}",
-            root.display(),
-            String::from_utf8_lossy(&init.stderr)
-        );
-        assert!(
-            root.join(".git").is_dir(),
-            "`git init` reported success but {} has no .git directory",
-            root.display()
-        );
+    // A git that never ran at all stays tolerated: the tests that need a repo
+    // gate on `git_available`, the rest do not care.
+    if let Some(template) = git_init_template() {
+        copy_tree(&template.join(".git"), &root.join(".git"));
     }
     (dir, root)
+}
+
+/// A directory holding what `git init -q .` creates on this machine, built
+/// once per git install and global config, or `None` when git cannot be
+/// started. Copying it saves each test a git process.
+fn git_init_template() -> Option<PathBuf> {
+    static TEMPLATE: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+    TEMPLATE.get_or_init(build_git_init_template).clone()
+}
+
+fn build_git_init_template() -> Option<PathBuf> {
+    let base = Path::new(env!("CARGO_TARGET_TMPDIR"));
+    let template = base.join(format!("git-init-template-{}", git_install_key()));
+    if template.join(".git").is_dir() {
+        return Some(template);
+    }
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_nanos());
+    let building = base.join(format!(
+        "git-init-template-building-{}-{nanos}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&building).unwrap();
+    // An init that ran and failed would surface much later as an unrelated
+    // tracked-count assertion, so it is caught here instead.
+    let Ok(init) = git_command(&building).args(["init", "-q", "."]).output() else {
+        let _ = fs::remove_dir_all(&building);
+        return None;
+    };
+    if !init.status.success() || !building.join(".git").is_dir() {
+        let _ = fs::remove_dir_all(&building);
+    }
+    assert!(
+        init.status.success(),
+        "`git init` failed in {}: {}",
+        building.display(),
+        String::from_utf8_lossy(&init.stderr)
+    );
+    assert!(
+        building.join(".git").is_dir(),
+        "`git init` reported success but {} has no .git directory",
+        building.display()
+    );
+    // Another test process may publish the same template first, and a scanner
+    // can hold the fresh directory open for a moment, refusing the rename.
+    let mut last_error = None;
+    for _ in 0..20 {
+        match fs::rename(&building, &template) {
+            Ok(()) => return Some(template),
+            Err(_) if template.join(".git").is_dir() => {
+                let _ = fs::remove_dir_all(&building);
+                return Some(template);
+            }
+            Err(error) => last_error = Some(error),
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    panic!(
+        "could not publish the git init template {} as {}: {:?}",
+        building.display(),
+        template.display(),
+        last_error
+    );
+}
+
+/// A digest of the git executable on PATH and the user's global config, read
+/// without starting a process, so an upgrade or a config edit gets a fresh
+/// template.
+fn git_install_key() -> String {
+    let exe_name = format!("git{}", std::env::consts::EXE_SUFFIX);
+    let git_exe = std::env::var_os("PATH").and_then(|path| {
+        std::env::split_paths(&path)
+            .map(|dir| dir.join(&exe_name))
+            .find(|candidate| candidate.is_file())
+    });
+    let home = std::env::var_os("HOME")
+        .filter(|home| !home.is_empty())
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from);
+    let modified_nanos = |meta: &fs::Metadata| {
+        meta.modified()
+            .ok()
+            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+            .map_or(0, |since| since.as_nanos())
+    };
+    let mut key = String::new();
+    if let Some(exe) = &git_exe {
+        key.push_str(&exe.to_string_lossy());
+        if let Ok(meta) = fs::metadata(exe) {
+            key.push_str(&format!("|{}|{}", meta.len(), modified_nanos(&meta)));
+        }
+    }
+    if let Some(meta) = home.and_then(|home| fs::metadata(home.join(".gitconfig")).ok()) {
+        key.push_str(&format!("|gitconfig {}", modified_nanos(&meta)));
+    }
+    hex_digest(key.as_bytes())[..16].to_string()
+}
+
+/// Copy `from` into `to` directory by directory, creating the empty ones too:
+/// git does not recognise a `.git` that lacks `objects/` or `refs/`.
+fn copy_tree(from: &Path, to: &Path) {
+    fs::create_dir_all(to).unwrap();
+    for entry in fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let target = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_tree(&entry.path(), &target);
+        } else {
+            fs::copy(entry.path(), &target).unwrap();
+        }
+    }
 }
 
 pub fn store_path(root: &Path) -> PathBuf {

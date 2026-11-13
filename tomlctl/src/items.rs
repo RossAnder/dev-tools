@@ -35,7 +35,7 @@ const DEDUP_ID_KILL_SWITCH: &str = "TOMLCTL_NO_DEDUP_ID";
 /// flag inside the per-funnel hook because the flag only gates the
 /// auto-populate side-effect, not the whole operation.
 pub(crate) fn dedup_id_disabled() -> bool {
-    std::env::var(DEDUP_ID_KILL_SWITCH).is_ok()
+    crate::invocation::env_var_os(DEDUP_ID_KILL_SWITCH).is_some_and(|v| v.into_string().is_ok())
 }
 
 /// Auto-populate `dedup_id` on a single-item add. If the caller already

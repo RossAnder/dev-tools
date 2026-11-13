@@ -2193,16 +2193,22 @@ fn parse_config(path: &Path, text: &str, errors: &mut Vec<CatalogueError>) -> Co
 }
 
 /// The Claude config directory: `CLAUDE_CONFIG_DIR` when set and non-empty,
-/// else `USERPROFILE`, then `HOME`, joined with `.claude`. Read once per process.
+/// else `USERPROFILE`, then `HOME`, joined with `.claude`. Read once per
+/// process, or on every call while an invocation context is installed, whose
+/// environment overlay may differ from one run to the next.
 pub(crate) fn claude_dir() -> Option<PathBuf> {
-    static DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
-    DIR.get_or_init(|| {
-        let config = std::env::var("CLAUDE_CONFIG_DIR").ok();
+    fn resolve() -> Option<PathBuf> {
+        let config =
+            crate::invocation::env_var_os("CLAUDE_CONFIG_DIR").and_then(|v| v.into_string().ok());
         let user_profile = std::env::var("USERPROFILE").ok();
         let home = std::env::var("HOME").ok();
         claude_dir_from(config.as_deref(), user_profile.as_deref(), home.as_deref())
-    })
-    .clone()
+    }
+    if crate::invocation::is_active() {
+        return resolve();
+    }
+    static DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
+    DIR.get_or_init(resolve).clone()
 }
 
 /// Pure over its inputs because `std::env::set_var` is `unsafe` in edition

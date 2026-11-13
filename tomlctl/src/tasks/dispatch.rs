@@ -315,15 +315,12 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
             }
             let code = check::exit_code(&findings);
             let rendered: Vec<_> = findings.iter().map(finding_json).collect();
-            // `print_report` writes through a buffered stdout writer and flushes
-            // it before returning, so nothing is left buffered when the exit
-            // below skips every destructor.
             print_report(
                 json!({ "ok": code == 0, "findings": rendered }),
                 Rows::Field("findings"),
             )?;
             if code != 0 {
-                std::process::exit(code);
+                return Err(crate::invocation::ExitWith(code).into());
             }
             Ok(())
         }
@@ -353,7 +350,7 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
                     "findings": drift.iter().map(finding_json).collect::<Vec<_>>(),
                 }))?;
                 if code != 0 {
-                    std::process::exit(code);
+                    return Err(crate::invocation::ExitWith(code).into());
                 }
                 return Ok(());
             }

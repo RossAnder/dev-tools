@@ -145,16 +145,17 @@ fn output_opts(cli: &Cli) -> OutputOpts {
 }
 
 /// Top-level dispatch entrypoint, called by the library root's `run` (which
-/// the binary's `main` wraps); all the dispatch/output plumbing lives in a
-/// normal module rather than the crate root.
+/// the binary's `main` wraps) and `run_with`; all the dispatch/output
+/// plumbing lives in a normal module rather than the crate root.
 ///
-/// The `Cli` is parsed once in the library root's `run` and threaded in
-/// here. A second parse here (a `try_parse()` peek for `--error-format`,
-/// then a full `Cli::parse()` on entry) would silently swallow errors on
-/// the peek path and risk double `--help` rendering.
-pub(crate) fn run(cli: Cli) -> Result<()> {
+/// The `Cli` is parsed once by the caller and threaded in here, with the
+/// argument list it was parsed from (program name first) for the `--where*`
+/// placement check. A second parse here (a `try_parse()` peek for
+/// `--error-format`, then a full `Cli::parse()` on entry) would silently
+/// swallow errors on the peek path and risk double `--help` rendering.
+pub(crate) fn run(cli: Cli, args: &[std::ffi::OsString]) -> Result<()> {
     let opts = output_opts(&cli);
-    crate::output::check_where_placement(std::env::args_os().skip(1), &opts.filters)?;
+    crate::output::check_where_placement(args.iter().skip(1), &opts.filters)?;
     crate::output::configure(opts)?;
     match cli.cmd {
         Cmd::Parse { file, integrity } => {
@@ -393,7 +394,7 @@ fn blocks_dispatch(op: BlocksOp) -> Result<()> {
             let report = blocks_verify(&files, &block)?;
             print_report(report.report, Rows::Field("blocks"))?;
             if !report.ok {
-                std::process::exit(1);
+                return Err(crate::invocation::ExitWith(1).into());
             }
         }
     }
