@@ -307,6 +307,14 @@ by = "user"
 review = "ran"
 reason = ""
 
+[[approval]]
+commit = "aff3a25da24b53f72f9191c5616bacd72bb1abe9"
+at = 2026-11-13T14:04:57Z
+brief_sha256 = "95b566719f2831a12706995df301cc7ae4e9d5721aaa1eacdb22c62fbc6ec545"
+by = "user"
+review = "skipped-low-risk"
+reason = "one success criterion changed: the user moved the suite bound from 200 s to 360 s after two measured gate rounds; nothing else in the brief changed"
+
 [[run]]
 step = "investigate"
 workflow = "plan-v2-investigate"
