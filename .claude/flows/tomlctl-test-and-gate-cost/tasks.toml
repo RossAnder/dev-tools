@@ -939,8 +939,9 @@ outcome = "The full tomlctl suite passes in under 200 s on this machine."
 constraints = [
     "No test loses a check it makes today.",
     "Tests that need a real process still start one.",
+    "The SHARED-BLOCK:shipped-gitignore span in tests/common/mod.rs stays byte-identical.",
+    "Touch no file outside this task's files.",
 ]
-premises = []
 means = []
 design = []
 precedent = []
@@ -948,10 +949,200 @@ executor = "deep"
 
 [[specs.accept]]
 behaviour = "the full suite passes in under 200 s of wall time"
-check = ""
-kind = ""
+check = "s=$SECONDS; cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast >/dev/null 2>&1; test $((SECONDS-s)) -lt 200"
+kind = "forward"
 positive = ""
 writes_build = true
+run_by = "covered"
+covered_by = "s=$SECONDS; cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast >/dev/null 2>&1; test $((SECONDS-s)) -lt 200"
+
+[[specs.accept]]
+behaviour = "at most one output_options command still sets a working directory"
+check = '''test "$(grep -c '\.current_dir(' tomlctl/tests/output_options.rs)" -le 1'''
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "3d242cd9df14766a21ecedefbc98f39f9059b421"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "copy_tree skips a file that vanished before it was copied"
+check = "grep -q 'NotFound' tomlctl/tests/output_options.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "3d242cd9df14766a21ecedefbc98f39f9059b421"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "removing a variable the test process lacks keeps a command in-process"
+check = "grep -q 'var_os' tomlctl/tests/common/mod.rs && grep -q 'fn note_env' tomlctl/tests/common/mod.rs"
+kind = "guard"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "3d242cd9df14766a21ecedefbc98f39f9059b421"
+neg_rc = 0
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the output_options and builder tests pass"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^(output_options|common)::/)'"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.premises]]
+claim = "the builder marks any variable outside OVERLAY_KEYS as foreign"
+check = "grep -q 'self.foreign_env = true;' tomlctl/tests/common/mod.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "3d242cd9df14766a21ecedefbc98f39f9059b421"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "output_options sets a working directory on five commands"
+check = '''test "$(grep -c '\.current_dir(' tomlctl/tests/output_options.rs)" -eq 5'''
+at = "base"
+
+[specs.premises.probe]
+at = "3d242cd9df14766a21ecedefbc98f39f9059b421"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "run-the-review-tests-commands-without-a-working-directory"
+outcome = "The review tests run their tomlctl commands inside the test process wherever the result is the same."
+constraints = [
+    "No assertion in any test changes.",
+    "A test that fails without the working directory gets it back unchanged.",
+    "Touch no file outside this task's files.",
+]
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the five heaviest review modules set no working directory on more than one command between them"
+check = '''test "$(cat tomlctl/tests/review_runs.rs tomlctl/tests/review_survey.rs tomlctl/tests/review_cells.rs tomlctl/tests/review_apply.rs tomlctl/tests/review_vocabulary.rs | grep -c '\.current_dir(')" -le 1'''
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "3d242cd9df14766a21ecedefbc98f39f9059b421"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "every review test still passes"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^review_/)'"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.premises]]
+claim = "the five heaviest review modules set a working directory on six commands"
+check = '''test "$(cat tomlctl/tests/review_runs.rs tomlctl/tests/review_survey.rs tomlctl/tests/review_cells.rs tomlctl/tests/review_apply.rs tomlctl/tests/review_vocabulary.rs | grep -c '\.current_dir(')" -eq 6'''
+at = "base"
+
+[specs.premises.probe]
+at = "3d242cd9df14766a21ecedefbc98f39f9059b421"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "run-the-plan-and-field-tests-commands-without-a-working-directory"
+outcome = "The five files run their tomlctl commands inside the test process wherever the result is the same."
+constraints = [
+    "No assertion in any test changes.",
+    "A test that fails without the working directory gets it back unchanged.",
+    "Touch no file outside this task's files.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "at most two of the five files still set a working directory"
+check = '''test "$(grep -l '\.current_dir(' tomlctl/tests/plan_lifecycle.rs tomlctl/tests/plan_stage.rs tomlctl/tests/plan_probes.rs tomlctl/tests/field_flags.rs tomlctl/tests/backlog_check_batch.rs | wc -l)" -le 2'''
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "3d242cd9df14766a21ecedefbc98f39f9059b421"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the five files' tests still pass"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^(plan_lifecycle|plan_stage|plan_probes|field_flags|backlog_check_batch)::/)'"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.premises]]
+claim = "each of the five files sets a working directory"
+check = '''test "$(grep -l '\.current_dir(' tomlctl/tests/plan_lifecycle.rs tomlctl/tests/plan_stage.rs tomlctl/tests/plan_probes.rs tomlctl/tests/field_flags.rs tomlctl/tests/backlog_check_batch.rs | wc -l)" -eq 5'''
+at = "base"
+
+[specs.premises.probe]
+at = "3d242cd9df14766a21ecedefbc98f39f9059b421"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "build-the-plan-approval-and-drift-fixtures-with-fewer-git-starts"
+outcome = "A plan_approve or plan_drift test starts fewer git processes to build its fixture and asserts what it asserted before."
+constraints = [
+    "No assertion in any test changes.",
+    "Each test still runs against a real git repository with real commits.",
+    "Touch no file outside this task's files.",
+]
+premises = []
+means = []
+design = []
+precedent = ["tomlctl/tests/common/mod.rs"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the plan approval and drift tests still pass"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^(plan_approve|plan_drift)::/)'"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.accept]]
+behaviour = "the worker's note records the git starts per test before and after"
+check = "grep -qis 'git starts' docs/flows/tomlctl-test-and-gate-cost/notes/run/task-19.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "3d242cd9df14766a21ecedefbc98f39f9059b421"
+neg_rc = 2
+verdict = "healthy"
 
 [[milestones]]
 id = "A"
@@ -975,9 +1166,130 @@ defer_reason = ""
 
 [[milestones]]
 id = "C"
-gates = ["cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"]
-elaboration = "deferred"
+gates = [
+    "cargo clippy --workspace --all-targets --locked",
+    "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast",
+    "s=$SECONDS; cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast >/dev/null 2>&1; test $((SECONDS-s)) -lt 200",
+]
+elaboration = "elaborated"
 defer_reason = "Which tests stay slow after milestone B (the cwd-bound review fixtures, output_options, or the fixtures git add and commit) is only known from a sampled suite run on B."
+
+[[changes]]
+at = 2026-11-13T12:11:51Z
+ref = "milestone:C"
+field = "gates"
+old = '["cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"]'
+new = '["cargo clippy --workspace --all-targets --locked","s=$SECONDS; cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast >/dev/null 2>&1; test $((SECONDS-s)) -lt 200"]'
+actor = "orchestrator"
+reason = "elaborated from the sampled suite run on milestone B; the 200 s bound becomes a gate"
+
+[[changes]]
+at = 2026-11-13T12:11:51Z
+ref = "milestone:C"
+field = "elaboration"
+old = "deferred"
+new = "elaborated"
+actor = "orchestrator"
+reason = "elaborated from the sampled suite run on milestone B; the 200 s bound becomes a gate"
+
+[[changes]]
+at = 2026-11-13T12:11:51Z
+ref = "cut-the-process-starts-that-still-dominate-the-suite"
+field = "action"
+old = "Sample a full suite run on milestone B, then remove the largest remaining class of process starts until the suite passes in under 200 s."
+new = "Let a command that removes a variable the test process does not have stay in-process, run the output_options cases without a working directory, and make copy_tree skip a file that vanished."
+actor = "orchestrator"
+reason = "elaborating milestone C from a sampled suite run on milestone B (262 s, 3502 test-seconds): output_options is the heaviest module at 424 test-seconds because every command sets a working directory, and its plan group failed on the copy_tree race in two of three runs"
+
+[[changes]]
+at = 2026-11-13T12:11:51Z
+ref = "cut-the-process-starts-that-still-dominate-the-suite"
+field = "detail"
+old = ""
+new = "Three changes. (1) In tests/common/mod.rs, `Command::env_remove` of a variable outside OVERLAY_KEYS marks the command foreign only when `std::env::var_os` shows the test process has that variable; removing an absent variable changes nothing, so the command may run in-process. Setting a foreign variable still sends it to a child. Add a test beside the existing builder tests in that file for both cases. (2) In tests/output_options.rs, the five `cli(..)` commands call `.current_dir(..)` on the fixture root, which sends every one to a child process. Drop each call where the command still gives the same result: a case's argv then needs any path it names relative to the fixture root made absolute, by joining it to the run's root when the case is built for a run (the fixture root, or the isolated copy's root). The checks compare runs of one case with each other, so an absolute path is consistent between them; where a report echoes the path, mask the root as snapshot() already does. A case that cannot work without a working directory keeps its `.current_dir(..)` and is named in your note. (3) copy_tree's `fs::copy(..).unwrap()` panics when another worker thread's command removed a short-lived file between the directory listing and the copy: skip a source file that is NotFound at copy time, and keep panicking on any other error. Compile with `cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets`, and run your own module with `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^(output_options|common)::/)'`."
+actor = "orchestrator"
+reason = "elaborating milestone C from a sampled suite run on milestone B (262 s, 3502 test-seconds): output_options is the heaviest module at 424 test-seconds because every command sets a working directory, and its plan group failed on the copy_tree race in two of three runs"
+
+[[changes]]
+at = 2026-11-13T12:11:51Z
+ref = "cut-the-process-starts-that-still-dominate-the-suite"
+field = "files"
+old = '["tomlctl/tests/output_options.rs","tomlctl/tests/common/mod.rs"]'
+new = '["tomlctl/tests/common/mod.rs","tomlctl/tests/output_options.rs"]'
+actor = "orchestrator"
+reason = "elaborating milestone C from a sampled suite run on milestone B (262 s, 3502 test-seconds): output_options is the heaviest module at 424 test-seconds because every command sets a working directory, and its plan group failed on the copy_tree race in two of three runs"
+
+[[changes]]
+at = 2026-11-13T12:11:51Z
+ref = "cut-the-process-starts-that-still-dominate-the-suite"
+field = "spec.constraints"
+old = '["No test loses a check it makes today.","Tests that need a real process still start one."]'
+new = """["No test loses a check it makes today.","Tests that need a real process still start one.","The SHARED-BLOCK:shipped-gitignore span in tests/common/mod.rs stays byte-identical.","Touch no file outside this task's files."]"""
+actor = "orchestrator"
+reason = "elaborating milestone C from a sampled suite run on milestone B (262 s, 3502 test-seconds): output_options is the heaviest module at 424 test-seconds because every command sets a working directory, and its plan group failed on the copy_tree race in two of three runs"
+
+[[changes]]
+at = 2026-11-13T12:11:51Z
+ref = "cut-the-process-starts-that-still-dominate-the-suite"
+field = "spec.accept"
+old = '[{"behaviour":"the full suite passes in under 200 s of wall time","check":"","kind":"","positive":"","writes_build":true}]'
+new = '''[{"behaviour":"the full suite passes in under 200 s of wall time","check":"s=$SECONDS; cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast >/dev/null 2>&1; test $((SECONDS-s)) -lt 200","kind":"forward","positive":"","writes_build":true,"run_by":"covered","covered_by":"s=$SECONDS; cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast >/dev/null 2>&1; test $((SECONDS-s)) -lt 200"},{"behaviour":"at most one output_options command still sets a working directory","check":"test \"$(grep -c '\\.current_dir(' tomlctl/tests/output_options.rs)\" -le 1","kind":"forward","positive":"","writes_build":false},{"behaviour":"copy_tree skips a file that vanished before it was copied","check":"grep -q 'NotFound' tomlctl/tests/output_options.rs","kind":"forward","positive":"","writes_build":false},{"behaviour":"removing a variable the test process lacks keeps a command in-process","check":"grep -q 'var_os' tomlctl/tests/common/mod.rs && grep -q 'fn note_env' tomlctl/tests/common/mod.rs","kind":"guard","positive":"","writes_build":false},{"behaviour":"the output_options and builder tests pass","check":"cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^(output_options|common)::/)'","kind":"guard","positive":"","writes_build":true,"run_by":"covered","covered_by":"cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"}]'''
+actor = "orchestrator"
+reason = "elaborating milestone C from a sampled suite run on milestone B (262 s, 3502 test-seconds): output_options is the heaviest module at 424 test-seconds because every command sets a working directory, and its plan group failed on the copy_tree race in two of three runs"
+
+[[changes]]
+at = 2026-11-13T12:11:51Z
+ref = "cut-the-process-starts-that-still-dominate-the-suite"
+field = "spec.premises"
+old = "[]"
+new = '''[{"claim":"the builder marks any variable outside OVERLAY_KEYS as foreign","check":"grep -q 'self.foreign_env = true;' tomlctl/tests/common/mod.rs","at":"base"},{"claim":"output_options sets a working directory on five commands","check":"test \"$(grep -c '\\.current_dir(' tomlctl/tests/output_options.rs)\" -eq 5","at":"base"}]'''
+actor = "orchestrator"
+reason = "elaborating milestone C from a sampled suite run on milestone B (262 s, 3502 test-seconds): output_options is the heaviest module at 424 test-seconds because every command sets a working directory, and its plan group failed on the copy_tree race in two of three runs"
+
+[[changes]]
+at = 2026-11-13T12:11:51Z
+ref = "run-the-review-tests-commands-without-a-working-directory"
+field = "*"
+old = ""
+new = "Run the review tests' commands without a working directory"
+actor = "orchestrator"
+reason = "elaborating milestone C: the sampled run on milestone B shows the review_* modules (runs 208, survey 137, cells 100, apply 77, vocabulary 71 test-seconds) still start a child process per command, because their fixture helpers set a working directory"
+
+[[changes]]
+at = 2026-11-13T12:11:51Z
+ref = "run-the-plan-and-field-tests-commands-without-a-working-directory"
+field = "*"
+old = ""
+new = "Run the plan and field tests' commands without a working directory"
+actor = "orchestrator"
+reason = "elaborating milestone C: these five files each set a working directory on a tomlctl command, which keeps plan_probes (147 test-seconds), plan_stage (55) and plan_lifecycle (39) on child processes"
+
+[[changes]]
+at = 2026-11-13T12:11:51Z
+ref = "build-the-plan-approval-and-drift-fixtures-with-fewer-git-starts"
+field = "*"
+old = ""
+new = "Build the plan approval and drift fixtures with fewer git starts"
+actor = "orchestrator"
+reason = "elaborating milestone C: plan_approve (366 test-seconds over 34 tests) and plan_drift (194 over 12) are the heaviest modules after output_options, and the sampled run shows test-started `git commit` and `git add` as the largest remaining child processes"
+
+[[changes]]
+at = 2026-11-13T12:13:06Z
+ref = "milestone:C"
+field = "gates"
+old = '["cargo clippy --workspace --all-targets --locked","s=$SECONDS; cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast >/dev/null 2>&1; test $((SECONDS-s)) -lt 200"]'
+new = '["cargo clippy --workspace --all-targets --locked","cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast","s=$SECONDS; cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast >/dev/null 2>&1; test $((SECONDS-s)) -lt 200"]'
+actor = "orchestrator"
+reason = "the plain nextest run is the gate the rows narrow test checks are covered by; the timed run follows it"
+
+[[changes]]
+at = 2026-11-13T12:13:40Z
+ref = "build-the-plan-approval-and-drift-fixtures-with-fewer-git-starts"
+field = "spec.accept"
+old = """[{"behaviour":"the plan approval and drift tests still pass","check":"cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^(plan_approve|plan_drift)::/)'","kind":"guard","positive":"","writes_build":true,"run_by":"covered","covered_by":"cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"},{"behaviour":"the worker's note records the git starts per test before and after","check":"grep -qi 'git starts' docs/flows/tomlctl-test-and-gate-cost/notes/run/task-19.md","kind":"forward","positive":"","writes_build":false,"probe":{"at":"3d242cd9df14766a21ecedefbc98f39f9059b421","neg_rc":2,"pos_rc":null,"verdict":"broken"}}]"""
+new = """[{"behaviour":"the plan approval and drift tests still pass","check":"cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^(plan_approve|plan_drift)::/)'","kind":"guard","positive":"","writes_build":true,"run_by":"covered","covered_by":"cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"},{"behaviour":"the worker's note records the git starts per test before and after","check":"grep -qis 'git starts' docs/flows/tomlctl-test-and-gate-cost/notes/run/task-19.md","kind":"forward","positive":"","writes_build":false}]"""
+actor = "orchestrator"
+reason = "the note check's probe was broken: grep named the run note before it exists; -s keeps a missing note a plain failure"
 
 [[items]]
 id = 1
@@ -1391,8 +1703,8 @@ phase = ""
 phase_depth = 0
 heading_depth = 3
 files = [
-    "tomlctl/tests/output_options.rs",
     "tomlctl/tests/common/mod.rs",
+    "tomlctl/tests/output_options.rs",
 ]
 needs = [
     9,
@@ -1403,8 +1715,101 @@ needs = [
 ]
 coupling = []
 deps_note = ""
-action = "Sample a full suite run on milestone B, then remove the largest remaining class of process starts until the suite passes in under 200 s."
-detail = ""
+action = "Let a command that removes a variable the test process does not have stay in-process, run the output_options cases without a working directory, and make copy_tree skip a file that vanished."
+detail = "Three changes. (1) In tests/common/mod.rs, `Command::env_remove` of a variable outside OVERLAY_KEYS marks the command foreign only when `std::env::var_os` shows the test process has that variable; removing an absent variable changes nothing, so the command may run in-process. Setting a foreign variable still sends it to a child. Add a test beside the existing builder tests in that file for both cases. (2) In tests/output_options.rs, the five `cli(..)` commands call `.current_dir(..)` on the fixture root, which sends every one to a child process. Drop each call where the command still gives the same result: a case's argv then needs any path it names relative to the fixture root made absolute, by joining it to the run's root when the case is built for a run (the fixture root, or the isolated copy's root). The checks compare runs of one case with each other, so an absolute path is consistent between them; where a report echoes the path, mask the root as snapshot() already does. A case that cannot work without a working directory keeps its `.current_dir(..)` and is named in your note. (3) copy_tree's `fs::copy(..).unwrap()` panics when another worker thread's command removed a short-lived file between the directory listing and the copy: skip a source file that is NotFound at copy time, and keep panicking on any other error. Compile with `cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets`, and run your own module with `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^(output_options|common)::/)'`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 17
+ref = "run-the-review-tests-commands-without-a-working-directory"
+title = "Run the review tests' commands without a working directory"
+effort = "M"
+status = "pending"
+checkpoint = "C"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/tests/review_add.rs",
+    "tomlctl/tests/review_anchor.rs",
+    "tomlctl/tests/review_apply.rs",
+    "tomlctl/tests/review_cells.rs",
+    "tomlctl/tests/review_cover.rs",
+    "tomlctl/tests/review_digest.rs",
+    "tomlctl/tests/review_export.rs",
+    "tomlctl/tests/review_finish.rs",
+    "tomlctl/tests/review_plan_records.rs",
+    "tomlctl/tests/review_query.rs",
+    "tomlctl/tests/review_reconcile.rs",
+    "tomlctl/tests/review_reproduce.rs",
+    "tomlctl/tests/review_resolve.rs",
+    "tomlctl/tests/review_runs.rs",
+    "tomlctl/tests/review_schedule.rs",
+    "tomlctl/tests/review_settle.rs",
+    "tomlctl/tests/review_stats.rs",
+    "tomlctl/tests/review_store_v2.rs",
+    "tomlctl/tests/review_survey.rs",
+    "tomlctl/tests/review_sync.rs",
+    "tomlctl/tests/review_triage.rs",
+    "tomlctl/tests/review_verdict.rs",
+    "tomlctl/tests/review_vocabulary.rs",
+]
+needs = [16]
+coupling = []
+deps_note = ""
+action = "In each listed file, drop the `.current_dir(..)` call from a tomlctl command wherever that file's tests still pass without it."
+detail = "A tomlctl command built through `common::cli` or `common::Command` runs inside the test process unless it sets a working directory, so each `.current_dir(..)` on one sends it to a child process. tomlctl takes its root from `TOMLCTL_ROOT`, which cli() sets, and needs the working directory only for a path argument given relative to it and for the few verbs that start git without `-C`. For each file: remove the call from the helper or test that builds a tomlctl command; where the command passes a path relative to the old working directory, pass it joined to that directory; then run that file's tests with `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^<file>::/)'`. Keep the removal when every test passes and put the call back when one fails, naming the file and the test in your note. Leave `.current_dir(..)` on a `git` command, and on a test that asserts what a real process does (the writer race in review_add.rs builds its commands so on purpose). Work through the files in the order listed; the heaviest are review_runs, review_survey, review_cells, review_apply and review_vocabulary. Two test runs at a time at most."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 18
+ref = "run-the-plan-and-field-tests-commands-without-a-working-directory"
+title = "Run the plan and field tests' commands without a working directory"
+effort = "S"
+status = "pending"
+checkpoint = "C"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/tests/plan_lifecycle.rs",
+    "tomlctl/tests/plan_stage.rs",
+    "tomlctl/tests/plan_probes.rs",
+    "tomlctl/tests/field_flags.rs",
+    "tomlctl/tests/backlog_check_batch.rs",
+]
+needs = [16]
+coupling = []
+deps_note = ""
+action = "In each listed file, drop the `.current_dir(..)` call from a tomlctl command wherever that file's tests still pass without it."
+detail = "A tomlctl command built through `common::cli` or `common::Command` runs inside the test process unless it sets a working directory. tomlctl takes its root from `TOMLCTL_ROOT`, which cli() sets, and needs the working directory only for a path argument given relative to it and for the few verbs that start git without `-C`. For each file: remove the call from the helper or test that builds a tomlctl command; where the command passes a path relative to the old working directory, pass it joined to that directory; then run that file's tests with `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^<file>::/)'`. Keep the removal when every test passes and put the call back when one fails, naming the file and the test in your note. Leave `.current_dir(..)` on a `git` or `bash` command. One test run at a time."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 19
+ref = "build-the-plan-approval-and-drift-fixtures-with-fewer-git-starts"
+title = "Build the plan approval and drift fixtures with fewer git starts"
+effort = "M"
+status = "pending"
+checkpoint = "C"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/tests/plan_approve.rs",
+    "tomlctl/tests/plan_drift.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Cut the git processes each plan_approve and plan_drift test starts to build its committed fixture, without changing what any test asserts."
+detail = """Each test is its own process under nextest, and a git start costs about 100 ms here against a few for a file copy. Read how each file builds its repository and commits, then take the cheapest of these that keeps every assertion: (a) combine separate `git add` and `git commit` calls into one `git commit -a` or one `git add` over all paths where the result is the same commit content; (b) drop a git call whose result no assertion or later step reads, such as a repeated `git --version` probe or a `rev-parse` whose output is unused; (c) where many tests build the same starting repository, build it once under `env!("CARGO_TARGET_TMPDIR")` and copy it into each test's sandbox, as `sandbox()` in tests/common/mod.rs does for its `git init` template: a uniquely named directory renamed into place, keyed on a hash of what the fixture writes. Commit hashes may differ from today's only where no test compares one to a literal. Run each file's tests with `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_approve::/)'` and the same for plan_drift, one run at a time, and say in your note how many git starts a test makes before and after."""
 acceptance = ""
 agent = ""
 commit = ""
