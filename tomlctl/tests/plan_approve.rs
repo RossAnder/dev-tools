@@ -61,6 +61,175 @@ checkpoint = "A"
 files = ["src/a.rs"]
 "#;
 
+/// A fixture's first commit, made once per distinct content: the `.git` files
+/// the commit wrote are kept under the target tmpdir, keyed on every byte the
+/// fixture holds, and copied over the `.git` of the next test holding the same
+/// bytes, which then starts no git process to commit.
+pub(crate) mod committed_fixture {
+    use std::collections::HashMap;
+    use std::fs;
+    use std::path::Path;
+
+    use crate::common::hex_digest;
+
+    /// Lock files are named for the absolute root, so they stay out of the key
+    /// and travel with the cached `.git`, which tracks them.
+    const LOCKS: &str = ".claude/.locks";
+
+    /// What `git init` put in `hooks/`, inert samples by default, which a commit
+    /// never rewrites; reading them into the key costs a file open each.
+    const HOOKS: &str = ".git/hooks";
+
+    /// Leave `root` committed, by `commit` or by a cached copy of what it
+    /// left. `recipe` names the commit `commit` makes, keeping two callers'
+    /// caches apart.
+    pub(crate) fn commit(root: &Path, recipe: &str, commit: impl FnOnce()) {
+        let mut files = Vec::new();
+        collect(root, "", &mut files);
+        files.sort();
+        let base = Path::new(env!("CARGO_TARGET_TMPDIR"));
+        let template = base.join(format!("committed-fixture-{}", key(recipe, &files)));
+        // The key holds every byte of the `.git` the commit started from, its
+        // hooks aside, and a commit only adds and rewrites files there, so
+        // laying the cached files over that `.git` leaves what the commit left.
+        if template.join(".git").is_dir() {
+            copy_tree(&template.join(".git"), &root.join(".git"))
+                .expect("the cached fixture copies");
+            replace(&template.join("locks"), &root.join(LOCKS));
+            return;
+        }
+        commit();
+        let before: HashMap<String, Vec<u8>> = files
+            .into_iter()
+            .filter(|(path, _)| path.starts_with(".git/"))
+            .collect();
+        publish(root, base, &template, &before);
+    }
+
+    fn key(recipe: &str, files: &[(String, Vec<u8>)]) -> String {
+        let mut bytes = recipe.as_bytes().to_vec();
+        for (path, content) in files {
+            bytes.extend_from_slice(format!("\0{path}\0{}\0", content.len()).as_bytes());
+            bytes.extend_from_slice(content);
+        }
+        hex_digest(&bytes)[..16].to_string()
+    }
+
+    /// HEAD's commit, read from the loose ref a fresh repository keeps, or
+    /// `None` where the ref is stored some other way.
+    pub(crate) fn head(root: &Path) -> Option<String> {
+        let git = root.join(".git");
+        let head = fs::read_to_string(git.join("HEAD")).ok()?;
+        let branch = head.strip_prefix("ref: ")?.trim().to_string();
+        let commit = fs::read_to_string(git.join(branch))
+            .ok()?
+            .trim()
+            .to_string();
+        (commit.len() >= 40 && commit.bytes().all(|b| b.is_ascii_hexdigit())).then_some(commit)
+    }
+
+    fn collect(dir: &Path, prefix: &str, out: &mut Vec<(String, Vec<u8>)>) {
+        for entry in fs::read_dir(dir).expect("readable fixture") {
+            let entry = entry.expect("a directory entry");
+            let path = format!("{prefix}{}", entry.file_name().to_string_lossy());
+            if path == LOCKS || path == HOOKS {
+                continue;
+            }
+            if entry.file_type().expect("a file type").is_dir() {
+                collect(&entry.path(), &format!("{path}/"), out);
+            } else {
+                out.push((path, fs::read(entry.path()).expect("readable fixture file")));
+            }
+        }
+    }
+
+    fn replace(from: &Path, to: &Path) {
+        if to.exists() {
+            fs::remove_dir_all(to).expect("the replaced directory is removable");
+        }
+        if from.is_dir() {
+            copy_tree(from, to).expect("the cached fixture copies");
+        }
+    }
+
+    /// Best effort: a cache that cannot be published costs the next test its
+    /// git processes, never its result. The rename makes a template appear
+    /// whole, and a template, once published, is never written again.
+    fn publish(root: &Path, base: &Path, template: &Path, before: &HashMap<String, Vec<u8>>) {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| since.as_nanos());
+        let building = base.join(format!(
+            "committed-fixture-building-{}-{nanos}",
+            std::process::id()
+        ));
+        let locks = root.join(LOCKS);
+        let copied = copy_written(&root.join(".git"), &building.join(".git"), ".git/", before)
+            .and_then(|()| {
+                if locks.is_dir() {
+                    copy_tree(&locks, &building.join("locks"))
+                } else {
+                    Ok(())
+                }
+            });
+        if copied.is_err() {
+            let _ = fs::remove_dir_all(&building);
+            return;
+        }
+        for _ in 0..20 {
+            if fs::rename(&building, template).is_ok() {
+                return;
+            }
+            if template.join(".git").is_dir() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        let _ = fs::remove_dir_all(&building);
+    }
+
+    /// The files under `from` absent from `before` or holding other bytes,
+    /// each kept at its path relative to `prefix`.
+    fn copy_written(
+        from: &Path,
+        to: &Path,
+        prefix: &str,
+        before: &HashMap<String, Vec<u8>>,
+    ) -> std::io::Result<()> {
+        fs::create_dir_all(to)?;
+        for entry in fs::read_dir(from)? {
+            let entry = entry?;
+            let path = format!("{prefix}{}", entry.file_name().to_string_lossy());
+            let target = to.join(entry.file_name());
+            if entry.file_type()?.is_dir() {
+                copy_written(&entry.path(), &target, &format!("{path}/"), before)?;
+            } else {
+                let content = fs::read(entry.path())?;
+                if before.get(&path) != Some(&content) {
+                    fs::write(&target, content)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Empty directories are copied too: git does not recognise a `.git`
+    /// that lacks `objects/` or `refs/`.
+    fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
+        fs::create_dir_all(to)?;
+        for entry in fs::read_dir(from)? {
+            let entry = entry?;
+            let target = to.join(entry.file_name());
+            if entry.file_type()?.is_dir() {
+                copy_tree(&entry.path(), &target)?;
+            } else {
+                fs::copy(entry.path(), &target)?;
+            }
+        }
+        Ok(())
+    }
+}
+
 struct Flow {
     _dir: tempfile::TempDir,
     root: PathBuf,
@@ -69,11 +238,14 @@ struct Flow {
 impl Flow {
     /// An opened draft holding `plan` and `tasks`, not yet committed.
     fn staged(plan: &str, tasks: &str, brief: &[u8]) -> Self {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let root = dir.path().canonicalize().expect("canonical root");
-        fs::create_dir_all(root.join(".claude")).expect(".claude");
+        // `sandbox` copies a `git init` built once per git install; its ignore
+        // rules are not this fixture's, so they go.
+        let (dir, root) = common::sandbox();
+        fs::remove_file(root.join(".gitignore")).expect("the sandbox's .gitignore");
         let flow = Self { _dir: dir, root };
-        flow.git(&["init", "-q", "."]);
+        if !flow.root.join(".git").is_dir() {
+            flow.git(&["init", "-q", "."]);
+        }
         flow.tomlctl(&["plan", "open", "--slug", SLUG])
             .assert()
             .success();
@@ -85,7 +257,7 @@ impl Flow {
 
     fn committed(plan: &str, tasks: &str, brief: &[u8]) -> Self {
         let flow = Self::staged(plan, tasks, brief);
-        flow.commit();
+        committed_fixture::commit(&flow.root, "plan-approve", || flow.commit());
         flow
     }
 
@@ -124,6 +296,10 @@ impl Flow {
     fn commit(&self) {
         self.git(&["add", "-f", "."]);
         self.commit_index();
+    }
+
+    fn head(&self) -> String {
+        committed_fixture::head(&self.root).unwrap_or_else(|| self.git(&["rev-parse", "HEAD"]))
     }
 
     fn commit_index(&self) {
@@ -239,7 +415,7 @@ fn approve_stamps_the_plan_and_activates_the_flow() {
         .collect();
     flow.write("context.toml", format!("{}\n", aged.join("\n")).as_bytes());
     let context_before = flow.toml(&flow.path("context.toml"));
-    let head = flow.git(&["rev-parse", "HEAD"]);
+    let head = flow.head();
 
     let envelope = flow.approve(&skip_args());
 
@@ -846,7 +1022,7 @@ fn a_second_approval_needs_amend_and_keeps_the_first_stamp() {
         .collect();
     flow.write("tasks.toml", format!("{}\n", aged.join("\n")).as_bytes());
     flow.commit();
-    let head = flow.git(&["rev-parse", "HEAD"]);
+    let head = flow.head();
     let registry = fs::read(flow.registry()).expect("the registry");
     let tasks = fs::read(flow.path("tasks.toml")).expect("the task store");
     let context = fs::read(flow.path("context.toml")).expect("the context");

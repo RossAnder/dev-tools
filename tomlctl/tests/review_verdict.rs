@@ -181,7 +181,6 @@ impl Repo {
 
     fn verdict(&self, finding: &str, args: &[&str]) -> assert_cmd::assert::Assert {
         cli(&self.root)
-            .current_dir(&self.root)
             .args(["--error-format", "json", "review", "verdict", finding])
             .args(["--scope", SCOPE])
             .args(args)
@@ -198,7 +197,6 @@ impl Repo {
         let text: String = rows.iter().map(|r| format!("{r}\n")).collect();
         fs::write(&payload, text).unwrap();
         cli(&self.root)
-            .current_dir(&self.root)
             .args(["--error-format", "json", "review", "verdict"])
             .args(["--scope", SCOPE, "--ndjson"])
             .arg(payload)

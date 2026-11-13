@@ -210,7 +210,6 @@ fn set_json_reads_an_at_path_file() {
     )
     .unwrap();
     cli(&root)
-        .current_dir(&root)
         .args([
             "review",
             "run",

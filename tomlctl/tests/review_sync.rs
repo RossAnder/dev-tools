@@ -240,7 +240,6 @@ impl Repo {
 
     fn sync(&self) -> JsonValue {
         let out = cli(&self.root)
-            .current_dir(&self.root)
             .args([
                 "--error-format",
                 "json",
@@ -256,7 +255,6 @@ impl Repo {
 
     fn triage(&self, id: &str, args: &[&str]) {
         cli(&self.root)
-            .current_dir(&self.root)
             .args(["review", "triage", id, "--scope", "t"])
             .args(args)
             .assert()
@@ -585,7 +583,6 @@ fn missing_v1_ledger_is_a_no_op() {
 
     let (_dir, bare) = sandbox();
     let out = cli(&bare)
-        .current_dir(&bare)
         .args(["review", "sync-v1", "--scope", "t"])
         .assert()
         .success();

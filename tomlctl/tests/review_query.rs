@@ -160,7 +160,6 @@ impl Repo {
 
     fn review(&self, args: &[&str]) -> assert_cmd::assert::Assert {
         cli(&self.root)
-            .current_dir(&self.root)
             .env("CLAUDE_CONFIG_DIR", &self.claude_dir)
             .args(["--error-format", "json", "review"])
             .args(args)
@@ -508,7 +507,6 @@ fn show_cell_names_the_flow_only_in_flow_mode() {
     fs::write(flow.join("review-v2.toml"), &plan_run).unwrap();
     let show = |repo: &Repo| -> JsonValue {
         let out = cli(&repo.root)
-            .current_dir(&repo.root)
             .env("CLAUDE_CONFIG_DIR", &repo.claude_dir)
             .args(["--error-format", "json", "review", "show", "C1"])
             .args(["--for", "finder", "--slug", "demo"])

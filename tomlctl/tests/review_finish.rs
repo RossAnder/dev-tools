@@ -104,8 +104,7 @@ impl Repo {
 
     fn tomlctl(&self) -> common::Command {
         let mut cmd = cli(&self.root);
-        cmd.current_dir(&self.root)
-            .env_remove("GIT_DIR")
+        cmd.env_remove("GIT_DIR")
             .env_remove("GIT_WORK_TREE")
             .env_remove("GIT_INDEX_FILE");
         cmd

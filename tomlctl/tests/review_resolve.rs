@@ -123,7 +123,6 @@ impl Repo {
 
     fn vote(&self, finding: &str, verdict: &str, by: &[&str]) {
         cli(&self.root)
-            .current_dir(&self.root)
             .args(["--error-format", "json", "review", "verdict", finding])
             .args(["--scope", SCOPE, "--verdict", verdict])
             .args(by)
@@ -135,7 +134,6 @@ impl Repo {
 
     fn resolve(&self, extra: &[&str]) -> JsonValue {
         let out = cli(&self.root)
-            .current_dir(&self.root)
             .args(["--error-format", "json", "review", "resolve"])
             .args(["--scope", SCOPE, "--run", "U2"])
             .args(extra)
@@ -146,7 +144,6 @@ impl Repo {
 
     fn resolve_refused(&self, extra: &[&str]) -> String {
         let out = cli(&self.root)
-            .current_dir(&self.root)
             .args(["--error-format", "json", "review", "resolve"])
             .args(["--scope", SCOPE, "--run", "U2"])
             .args(extra)

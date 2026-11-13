@@ -134,7 +134,6 @@ impl Repo {
 
     fn anchor(&self, args: &[&str]) -> assert_cmd::assert::Assert {
         cli(&self.root)
-            .current_dir(&self.root)
             .args(["--error-format", "json", "review", "anchor"])
             .args(args)
             .args(["--scope", SCOPE])

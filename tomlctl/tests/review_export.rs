@@ -315,7 +315,6 @@ impl Repo {
 
     fn export(&self, args: &[&str]) -> assert_cmd::assert::Assert {
         cli(&self.root)
-            .current_dir(&self.root)
             .args([
                 "--error-format",
                 "json",
@@ -325,7 +324,8 @@ impl Repo {
                 "t",
             ])
             .args(args)
-            .args(["--to", LEDGER])
+            .arg("--to")
+            .arg(self.root.join(LEDGER))
             .assert()
     }
 
@@ -365,7 +365,6 @@ impl Repo {
     /// Runs `review <verb> <args>` against the store and expects success.
     fn review(&self, args: &[&str]) {
         cli(&self.root)
-            .current_dir(&self.root)
             .arg("review")
             .args(args)
             .args(["--scope", "t"])

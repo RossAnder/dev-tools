@@ -6,6 +6,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::common;
+use crate::plan_approve::committed_fixture;
 use common::{git_command, parse_json_error_envelope};
 
 const SLUG: &str = "plan-drift";
@@ -52,12 +53,15 @@ struct Flow {
 
 impl Flow {
     fn new() -> Self {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let root = dir.path().canonicalize().expect("canonical root");
-        fs::create_dir_all(root.join(".claude")).expect(".claude");
+        // `sandbox` copies a `git init` built once per git install; its ignore
+        // rules are not this fixture's, so they go.
+        let (dir, root) = common::sandbox();
+        fs::remove_file(root.join(".gitignore")).expect("the sandbox's .gitignore");
         fs::create_dir_all(root.join("src")).expect("src");
         let flow = Self { _dir: dir, root };
-        flow.git(&["init", "-q", "."]);
+        if !flow.root.join(".git").is_dir() {
+            flow.git(&["init", "-q", "."]);
+        }
         flow.tomlctl(&["plan", "open", "--slug", SLUG])
             .assert()
             .success();
@@ -65,7 +69,9 @@ impl Flow {
         for name in ["a", "b", "c"] {
             flow.write_src(name, "fn parse() {}\n");
         }
-        flow.commit("plan");
+        committed_fixture::commit(&flow.root, "plan-drift", || {
+            flow.commit("plan");
+        });
         flow
     }
 
@@ -112,7 +118,11 @@ impl Flow {
             "-m",
             message,
         ]);
-        self.git(&["rev-parse", "HEAD"])
+        self.head()
+    }
+
+    fn head(&self) -> String {
+        committed_fixture::head(&self.root).unwrap_or_else(|| self.git(&["rev-parse", "HEAD"]))
     }
 
     fn flow_path(&self, name: &str) -> PathBuf {
@@ -434,7 +444,7 @@ fn an_approved_commit_that_no_longer_resolves_is_refused_until_amended() {
     ])
     .assert()
     .success();
-    let head = flow.git(&["rev-parse", "HEAD"]);
+    let head = flow.head();
     let report = flow.drift();
     assert_eq!(report["approved_commit"], head.as_str());
     assert_eq!(affected_ids(&report), Vec::<u64>::new());

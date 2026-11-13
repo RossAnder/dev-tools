@@ -216,7 +216,6 @@ impl Repo {
 
     fn command(&self, args: &[&str]) -> assert_cmd::assert::Assert {
         cli(&self.root)
-            .current_dir(&self.root)
             .args(["--error-format", "json", "review", "schedule"])
             .args(args)
             .args(["--scope", SCOPE, "--flow", TASKS_SLUG, "--checkpoint", "A"])
@@ -593,11 +592,7 @@ fn emitted_checks_parse() {
     for check in checks {
         let words: Vec<&str> = check.split_whitespace().collect();
         assert_eq!(words[0], "tomlctl", "{check}");
-        let out = cli(&repo.root)
-            .current_dir(&repo.root)
-            .args(&words[1..])
-            .output()
-            .unwrap();
+        let out = cli(&repo.root).args(&words[1..]).output().unwrap();
         let code = out.status.code();
         assert!(matches!(code, Some(0 | 1)), "{check} exited {code:?}");
         let stdout = String::from_utf8_lossy(&out.stdout);
@@ -937,7 +932,6 @@ fn a_dry_run_needs_no_flow() {
     let repo = Repo::new(&[bug("F1", "src/a.rs", "alpha")]);
     let review_before = repo.review_bytes();
     let out = cli(&repo.root)
-        .current_dir(&repo.root)
         .args(["review", "schedule", "--all", "--scope", SCOPE, "--dry-run"])
         .assert()
         .success();
@@ -947,7 +941,6 @@ fn a_dry_run_needs_no_flow() {
     assert_eq!(repo.review_bytes(), review_before);
 
     cli(&repo.root)
-        .current_dir(&repo.root)
         .args(["review", "schedule", "--all", "--scope", SCOPE])
         .assert()
         .failure();

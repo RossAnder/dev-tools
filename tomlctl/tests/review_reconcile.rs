@@ -161,7 +161,6 @@ impl Repo {
 
     fn reconcile(&self) -> JsonValue {
         let assert = cli(&self.root)
-            .current_dir(&self.root)
             .args(["--error-format", "json", "review", "reconcile"])
             .args(["--scope", SCOPE, "--flow", TASKS_SLUG])
             .assert()

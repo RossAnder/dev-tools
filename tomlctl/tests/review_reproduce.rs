@@ -94,7 +94,6 @@ impl Repo {
         let body: String = rows.iter().map(|r| format!("{r}\n")).collect();
         fs::write(&path, body).unwrap();
         cli(&self.root)
-            .current_dir(&self.root)
             .args(["--error-format", "json", "review", "reproduce", "--ndjson"])
             .arg(&path)
             .args(["--scope", SCOPE])
@@ -103,7 +102,6 @@ impl Repo {
 
     fn status(&self, ids: &str, expect: &str) -> assert_cmd::assert::Assert {
         cli(&self.root)
-            .current_dir(&self.root)
             .args(["--error-format", "json", "review", "reproduce-status", ids])
             .args(["--expect", expect, "--scope", SCOPE])
             .assert()
@@ -369,7 +367,6 @@ fn seed_flow(repo: &Repo) {
 impl Repo {
     fn milestone_status(&self, milestone: &str, expect: &str) -> assert_cmd::assert::Assert {
         cli(&self.root)
-            .current_dir(&self.root)
             .args(["--error-format", "json", "review", "reproduce-status"])
             .args(["--flow", common::TASKS_SLUG, "--milestone", milestone])
             .args(["--expect", expect, "--scope", SCOPE])
@@ -415,7 +412,6 @@ fn reproduce_status_milestone_excludes_positional_ids() {
     seed_flow(&repo);
     let run = |args: &[&str]| {
         cli(&repo.root)
-            .current_dir(&repo.root)
             .args(["review", "reproduce-status"])
             .args(args)
             .args(["--expect", "gone", "--scope", SCOPE])

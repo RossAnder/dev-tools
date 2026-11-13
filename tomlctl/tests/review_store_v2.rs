@@ -120,7 +120,6 @@ impl Repo {
 
     fn review(&self, args: &[&str]) -> assert_cmd::assert::Assert {
         cli(&self.root)
-            .current_dir(&self.root)
             .args(["--error-format", "json", "review"])
             .args(args)
             .args(["--scope", SCOPE])

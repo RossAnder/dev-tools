@@ -490,9 +490,10 @@ pub fn tomlctl_process() -> assert_cmd::Command {
     assert_cmd::Command::cargo_bin("tomlctl").unwrap()
 }
 
-/// The variables an in-process run takes as its overlay. Setting or removing
-/// any other one sends the command to a child process, since the in-process
-/// run reads the rest of its environment from the test process.
+/// The variables an in-process run takes as its overlay. Setting any other
+/// one, or removing one the test process has, sends the command to a child
+/// process, since the in-process run reads the rest of its environment from
+/// the test process.
 const OVERLAY_KEYS: [&str; 4] = [
     "TOMLCTL_ROOT",
     "TOMLCTL_LOCK_TIMEOUT",
@@ -502,7 +503,7 @@ const OVERLAY_KEYS: [&str; 4] = [
 
 /// A tomlctl command shaped like `assert_cmd::Command`. It runs inside the
 /// test process through `tomlctl::run_with` unless it sets a working
-/// directory, touches a variable outside [`OVERLAY_KEYS`] or runs `agents
+/// directory, changes a variable outside [`OVERLAY_KEYS`] or runs `agents
 /// record`, which moves its process into the payload's `cwd`; those start the
 /// built binary, configured call for call as the in-process path is.
 #[derive(Debug)]
@@ -606,8 +607,11 @@ impl Command {
             .append_context("command", format!("{:?} (in process)", self.child))
     }
 
+    /// Removing a variable the test process lacks changes nothing a child
+    /// would see, so only that case stays in-process.
     fn note_env(&mut self, key: &OsStr, value: Option<OsString>) {
-        if !OVERLAY_KEYS.iter().any(|known| key == *known) {
+        let overlay = OVERLAY_KEYS.iter().any(|known| key == *known);
+        if !overlay && (value.is_some() || std::env::var_os(key).is_some()) {
             self.foreign_env = true;
         }
         self.env.retain(|(name, _)| name.as_os_str() != key);
@@ -800,9 +804,28 @@ mod tests {
         let mut set = cli(&root);
         set.env("GIT_DIR", root.join(".git"));
         assert!(!set.runs_in_process());
+        let present = std::env::vars_os()
+            .map(|(name, _)| name)
+            .find(|name| !OVERLAY_KEYS.iter().any(|known| name == *known))
+            .expect("the test process has a variable outside the overlay");
         let mut removed = cli(&root);
-        removed.env_remove("GIT_WORK_TREE");
+        removed.env_remove(&present);
         assert!(!removed.runs_in_process());
+    }
+
+    #[test]
+    fn removing_an_absent_variable_runs_in_process() {
+        let (_dir, root) = sandbox();
+        let absent = "TOMLCTL_TEST_NEVER_SET_7F3A";
+        assert!(std::env::var_os(absent).is_none());
+        let mut removed = cli(&root);
+        removed.env_remove(absent);
+        assert!(removed.runs_in_process());
+        let out = removed.arg("--version").assert().success();
+        assert!(String::from_utf8_lossy(&out.get_output().stdout).contains("tomlctl"));
+        let mut set = cli(&root);
+        set.env(absent, "1");
+        assert!(!set.runs_in_process());
     }
 
     #[test]

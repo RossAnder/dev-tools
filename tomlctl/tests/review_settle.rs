@@ -92,8 +92,7 @@ impl Repo {
 
     fn tomlctl(&self) -> common::Command {
         let mut cmd = cli(&self.root);
-        cmd.current_dir(&self.root)
-            .env_remove("GIT_DIR")
+        cmd.env_remove("GIT_DIR")
             .env_remove("GIT_WORK_TREE")
             .env_remove("GIT_INDEX_FILE");
         cmd
@@ -110,6 +109,11 @@ impl Repo {
         let path = self.root.join(".claude").join(name);
         fs::write(&path, text).unwrap();
         path.to_string_lossy().into_owned()
+    }
+
+    /// `rel` under the repo, as an absolute `--proposal` value.
+    fn under_root(&self, rel: &str) -> String {
+        self.root.join(rel).display().to_string()
     }
 
     fn bytes(&self) -> String {
@@ -244,9 +248,10 @@ fn settle_defers_once_and_refuses_a_second_deferral() {
         return;
     };
     repo.seed(&finding("F1", "scheduled", &format!("{EVIDENCE}{LINK}")));
+    let proposal = repo.under_root("docs/proposal.md");
     let out = stdout_json(
         &repo
-            .settle("F1", &["--defer", "--proposal", "docs/proposal.md"])
+            .settle("F1", &["--defer", "--proposal", &proposal])
             .success(),
     );
     assert_eq!(out["outcome"], "deferred", "{out}");
@@ -259,12 +264,15 @@ fn settle_defers_once_and_refuses_a_second_deferral() {
     assert!(at.time.is_some() && at.offset.is_some(), "{at}");
 
     let before = repo.bytes();
-    repo.settle("F1", &["--defer", "--proposal", "docs/proposal.md"])
+    repo.settle("F1", &["--defer", "--proposal", &proposal])
         .success();
     assert_eq!(repo.bytes(), before, "the same deferral replays unchanged");
 
     let refused = repo
-        .settle("F1", &["--defer", "--proposal", "docs/other.md"])
+        .settle(
+            "F1",
+            &["--defer", "--proposal", &repo.under_root("docs/other.md")],
+        )
         .failure();
     assert!(
         stderr(&refused).contains("already carries proposal"),
@@ -296,7 +304,14 @@ fn settle_refuses_a_finding_not_blocked_on_evidence() {
         stderr(&refused)
     );
     let refused = repo
-        .settle("F2", &["--defer", "--proposal", "docs/proposal.md"])
+        .settle(
+            "F2",
+            &[
+                "--defer",
+                "--proposal",
+                &repo.under_root("docs/proposal.md"),
+            ],
+        )
         .failure();
     assert!(
         stderr(&refused).contains("is not blocked"),

@@ -120,7 +120,6 @@ impl Repo {
 
     fn triage(&self, ids: &str, args: &[&str]) -> assert_cmd::assert::Assert {
         cli(&self.root)
-            .current_dir(&self.root)
             .args(["review", "triage", ids, "--scope", SCOPE])
             .args(args)
             .assert()
@@ -489,7 +488,6 @@ fn convert_into_open_run() {
 
     let finish = |root: &Path| {
         cli(root)
-            .current_dir(root)
             .args(["review", "run", "finish", "U2", "--scope", SCOPE])
             .assert()
     };
@@ -498,7 +496,6 @@ fn convert_into_open_run() {
     assert!(stderr.contains("unverified findings: F5"), "{stderr}");
 
     cli(&repo.root)
-        .current_dir(&repo.root)
         .args(["review", "verdict", "F5", "--scope", SCOPE])
         .args(["--verdict", "confirmed", "--by", "checker"])
         .args([
@@ -911,7 +908,6 @@ fn recheck_targets_union_applied_and_addressed() {
     );
     let recheck = |run: &str| {
         cli(&repo.root)
-            .current_dir(&repo.root)
             .args(["review", "recheck-targets", "--run", run, "--scope", SCOPE])
             .assert()
     };

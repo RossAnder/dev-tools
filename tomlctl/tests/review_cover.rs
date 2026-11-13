@@ -105,7 +105,7 @@ impl Repo {
 
     fn cover_noting(&self, note: &str, ruled_out: Option<&Path>) -> assert_cmd::assert::Assert {
         let mut cmd = cli(&self.root);
-        cmd.current_dir(&self.root).args([
+        cmd.args([
             "review", "cover", "C1", "--scope", SCOPE, "--status", "covered", "--note", note,
         ]);
         if let Some(path) = ruled_out {
@@ -342,12 +342,11 @@ fn seed_flow(repo: &Repo, v2: bool) -> PathBuf {
 
 fn cover_flow(repo: &Repo, ruled_out: &Path) -> assert_cmd::assert::Assert {
     let mut cmd = cli(&repo.root);
-    cmd.current_dir(&repo.root)
-        .args([
-            "review", "cover", "C1", "--slug", SLUG, "--status", "covered", "--note", "swept",
-        ])
-        .arg("--ruled-out")
-        .arg(ruled_out);
+    cmd.args([
+        "review", "cover", "C1", "--slug", SLUG, "--status", "covered", "--note", "swept",
+    ])
+    .arg("--ruled-out")
+    .arg(ruled_out);
     cmd.assert()
 }
 

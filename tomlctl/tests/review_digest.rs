@@ -121,8 +121,7 @@ impl Repo {
 
     fn tomlctl(&self) -> common::Command {
         let mut cmd = cli(&self.root);
-        cmd.current_dir(&self.root)
-            .env_remove("GIT_DIR")
+        cmd.env_remove("GIT_DIR")
             .env_remove("GIT_WORK_TREE")
             .env_remove("GIT_INDEX_FILE");
         cmd
@@ -146,7 +145,8 @@ impl Repo {
     fn report(&self) -> JsonValue {
         let out = self
             .tomlctl()
-            .args(["review", "report", "--run", "U1", "--out", REPORT])
+            .args(["review", "report", "--run", "U1", "--out"])
+            .arg(self.root.join(REPORT))
             .args(STORE)
             .assert()
             .success();
@@ -796,7 +796,8 @@ fn report_refuses_an_out_beside_the_runs_root_unless_allowed_outside() {
     fs::create_dir_all(repo.root.join("docs")).unwrap();
     let report = || {
         let mut cmd = repo.tomlctl();
-        cmd.args(["review", "report", "--run", "U1", "--out", "docs/report.md"])
+        cmd.args(["review", "report", "--run", "U1", "--out"])
+            .arg(repo.root.join("docs/report.md"))
             .args(STORE);
         cmd
     };
@@ -820,7 +821,8 @@ fn report_refuses_a_runs_root_linked_outside_the_repo() {
     let outside = tempfile::tempdir().unwrap();
     std::os::unix::fs::symlink(outside.path(), repo.root.join(".review-v2-runs")).unwrap();
     repo.tomlctl()
-        .args(["review", "report", "--run", "U1", "--out", REPORT])
+        .args(["review", "report", "--run", "U1", "--out"])
+        .arg(repo.root.join(REPORT))
         .args(STORE)
         .assert()
         .failure();

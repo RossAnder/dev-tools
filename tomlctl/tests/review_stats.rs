@@ -425,11 +425,7 @@ impl Repo {
     fn stats(&self, extra: &[&str]) -> JsonValue {
         let mut args = vec!["--error-format", "json", "review", "stats"];
         args.extend_from_slice(extra);
-        let out = cli(&self.root)
-            .current_dir(&self.root)
-            .args(&args)
-            .assert()
-            .success();
+        let out = cli(&self.root).args(&args).assert().success();
         serde_json::from_slice(&out.get_output().stdout).expect("stats prints JSON")
     }
 }

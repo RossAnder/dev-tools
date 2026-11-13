@@ -130,7 +130,6 @@ impl Repo {
         let text: String = rows.iter().map(|r| format!("{r}\n")).collect();
         fs::write(&payload, text).unwrap();
         cli(&self.root)
-            .current_dir(&self.root)
             .args([
                 "review", "add", "--scope", SCOPE, "--run", run, "--cell", cell,
             ])

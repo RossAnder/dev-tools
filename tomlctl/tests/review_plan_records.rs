@@ -190,7 +190,7 @@ impl Flow {
 
     fn tomlctl(&self, args: &[&str]) -> common::Command {
         let mut cmd = cli(&self.root);
-        cmd.current_dir(&self.root).args(args).write_stdin("");
+        cmd.args(args).write_stdin("");
         cmd
     }
 
@@ -920,7 +920,6 @@ impl Scoped {
         let payload = self.root.join(".claude/payload.ndjson");
         fs::write(&payload, format!("{row}\n")).unwrap();
         cli(&self.root)
-            .current_dir(&self.root)
             .args([
                 "review", "add", "--scope", "t", "--run", run, "--cell", cell,
             ])

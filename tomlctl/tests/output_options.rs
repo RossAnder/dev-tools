@@ -25,6 +25,10 @@ use common::{
 
 const LEDGER: &str = ".claude/review-ledger.toml";
 const JSON_DOC: &str = ".claude/data.json";
+const BLOCK_FILE: &str = "doc.md";
+const PLANS_DIR: &str = "docs/plans";
+const EXPORT_LEDGER: &str = ".claude/reviews/exported.toml";
+const REVIEW_REPORT: &str = ".claude/review-report.md";
 
 /// `R1` and `R2` are tier-A duplicates sharing `src/a.rs`; `R3` depends on
 /// `R1` and sweeps for `gamma`; `R4` names a file that does not exist, so
@@ -128,8 +132,9 @@ const BLOCK_DOC: &str =
     "# doc\n\n<!-- SHARED-BLOCK:demo START -->\nshared\n<!-- SHARED-BLOCK:demo END -->\n";
 
 /// The built-in and project lens catalogue layers, inside the fixture so no
-/// `review` case reads the developer's claude dir.
-const BUILTIN: &str = "catalogue";
+/// `review` case reads the developer's claude dir. No subcommand may share a
+/// name with one of the [`PATH_ARGS`].
+const BUILTIN: &str = "builtin-catalogue";
 const PROJECT_LENSES: &str = ".claude/review-lenses";
 
 const REVIEW_VOCABULARY: &str = r#"[signals."lang:rust"]
@@ -609,7 +614,7 @@ fn cases() -> Vec<Case> {
         read(&["items", "clusters", LEDGER], Field("clusters"), "id"),
         write(&["items", "backfill-dedup-id", LEDGER], "backfilled"),
         read(
-            &["blocks", "verify", "doc.md", "--block", "demo"],
+            &["blocks", "verify", BLOCK_FILE, "--block", "demo"],
             Field("blocks"),
             "name",
         ),
@@ -629,7 +634,7 @@ fn cases() -> Vec<Case> {
         write(&["flow", "active", "add", "--slug", "other"], "slug"),
         write(&["flow", "active", "remove", "--slug", S], "removed"),
         write(&["flow", "active", "touch", "--slug", S], "slug"),
-        read(&["flow", "find-plans", "--dirs", "docs/plans"], Top, "slug"),
+        read(&["flow", "find-plans", "--dirs", PLANS_DIR], Top, "slug"),
         read(&["flow", "stale", "--slug", S], One, "stale"),
         write(
             &[
@@ -961,7 +966,7 @@ fn cases() -> Vec<Case> {
                 "--slug",
                 S,
                 "--to",
-                ".claude/reviews/exported.toml",
+                EXPORT_LEDGER,
             ],
             "ledger",
         ),
@@ -1041,7 +1046,7 @@ fn cases() -> Vec<Case> {
                 "--run",
                 "U1",
                 "--out",
-                ".claude/review-report.md",
+                REVIEW_REPORT,
             ],
             One,
             "path",
@@ -1355,7 +1360,6 @@ fn put(root: &Path, rel: &str, bytes: &str) {
 
 fn setup(root: &Path, argv: &[&str], stdin: &str) -> Value {
     let out = cli(root)
-        .current_dir(root)
         .args(argv)
         .write_stdin(stdin.to_string())
         .output()
@@ -1570,7 +1574,7 @@ fn fixture() -> Fixture {
     seed_ledger_in(&root, "review-ledger.toml", LEDGER_FIXTURE);
     put(&root, "src/a.rs", "fn alpha() {}\n");
     put(&root, "src/b.rs", "fn gamma() {}\n");
-    put(&root, "doc.md", BLOCK_DOC);
+    put(&root, BLOCK_FILE, BLOCK_DOC);
     put(&root, JSON_DOC, r#"{"a":{"b":1},"list":[1,2]}"#);
     put(&root, &format!("docs/plans/{S}.md"), "# Fixture plan\n");
     put(&root, ".claude/backlog-evidence/B-deadbeef/note.txt", "x\n");
@@ -1656,6 +1660,13 @@ fn fixture() -> Fixture {
 /// command reads: sample hooks, the comment-only exclude file and the gitweb
 /// description. Every copied file is one more an on-access scanner reads.
 fn copy_tree(src: &Path, dst: &Path) {
+    copy_dir(src, dst, false);
+}
+
+/// Git object files are hard-linked rather than copied: git never rewrites
+/// one in place, and a link is a new directory entry, not a new file for the
+/// scanner to read.
+fn copy_dir(src: &Path, dst: &Path, objects: bool) {
     fs::create_dir_all(dst).unwrap();
     let in_git = src.file_name().is_some_and(|d| d == ".git");
     for entry in fs::read_dir(src).unwrap() {
@@ -1668,9 +1679,21 @@ fn copy_tree(src: &Path, dst: &Path) {
         }
         let to = dst.join(&name);
         if entry.file_type().unwrap().is_dir() {
-            copy_tree(&entry.path(), &to);
+            copy_dir(&entry.path(), &to, objects || (in_git && name == "objects"));
         } else {
-            fs::copy(entry.path(), &to).unwrap();
+            let made = if objects {
+                fs::hard_link(entry.path(), &to).or_else(|_| fs::copy(entry.path(), &to).map(drop))
+            } else {
+                fs::copy(entry.path(), &to).map(drop)
+            };
+            // A command on another worker thread may remove a short-lived
+            // file between the listing and the copy.
+            match made {
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                other => {
+                    other.unwrap();
+                }
+            }
         }
     }
 }
@@ -1745,6 +1768,21 @@ fn snapshot(root: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
 /// real stamp, which no mask can recognise, still compares equal.
 const CALL_TIME: &str = "2000-01-01T00:00:00Z";
 
+/// The case arguments that name a fixture path. A run sets no working
+/// directory, so `run` joins each to the run's root before passing it on.
+const PATH_ARGS: &[&str] = &[
+    LEDGER,
+    JSON_DOC,
+    BLOCK_FILE,
+    PLANS_DIR,
+    TRANSCRIPTS,
+    BUILTIN,
+    PROJECT_LENSES,
+    PROBE_CAPTURE,
+    EXPORT_LEDGER,
+    REVIEW_REPORT,
+];
+
 /// Run `case` with `before` ahead of the subcommand and `after` behind it —
 /// globals are accepted in either position. A write runs on its own copy of
 /// the fixture. A `clock` case's stdout has each stamp no earlier than the
@@ -1764,13 +1802,15 @@ fn run(fx: &Fixture, case: &Case, before: &[&str], after: &[&str]) -> Run {
         .argv
         .iter()
         .map(|a| {
+            if PATH_ARGS.contains(a) {
+                return root.join(a).to_string_lossy().into_owned();
+            }
             a.replace("{B1}", &fx.backlog[0])
                 .replace("{B2}", &fx.backlog[1])
         })
         .collect();
     let called = jiff::Timestamp::now().as_second();
     let out = cli(&root)
-        .current_dir(&root)
         .args(before)
         .args(&argv)
         .args(after)
@@ -2280,11 +2320,21 @@ fn a_compact_read_fails_a_bad_get() {
         &["flow", "envelope", "build", "--command", "review"],
         &["flow", "active", "list"],
     ];
+    let doc = root.join("doc.toml");
     for argv in reads {
+        let argv: Vec<&str> = argv
+            .iter()
+            .map(|a| {
+                if *a == "doc.toml" {
+                    doc.to_str().unwrap()
+                } else {
+                    a
+                }
+            })
+            .collect();
         let out = cli(&root)
-            .current_dir(&root)
             .args(["--error-format", "json"])
-            .args(*argv)
+            .args(&argv)
             .args(["--get", "nope"])
             .output()
             .unwrap();
@@ -2305,7 +2355,6 @@ fn text_view_renders_each_report_shape() {
     let [b1, b2] = &fx.backlog;
     let view = |argv: &[&str]| {
         let out = cli(&fx.root)
-            .current_dir(&fx.root)
             .args(argv)
             .arg("--text-view")
             .output()
@@ -2336,7 +2385,6 @@ fn text_view_renders_each_report_shape() {
     assert!(!field.trim_start().starts_with('{'), "{field}");
 
     let clash = cli(&fx.root)
-        .current_dir(&fx.root)
         .args(["tasks", "list", "--slug", S, "--text-view", "--lines"])
         .output()
         .unwrap();

@@ -173,7 +173,7 @@ impl Flow {
 
     fn tomlctl(&self, args: &[&str]) -> common::Command {
         let mut cmd = cli(&self.root);
-        cmd.current_dir(&self.root).args(args).write_stdin("");
+        cmd.args(args).write_stdin("");
         cmd
     }
 
