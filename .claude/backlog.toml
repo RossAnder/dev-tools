@@ -12651,7 +12651,10 @@ seen_count = 1
 dedup_id = "fc6e271c4e2c1c28"
 origin = "implement-v2"
 flow = "milestone-cadence"
-context = "Seen once on 2026-11-11 gating the plan/milestone-width fix: 1 of 3174 failed in the parallel run, then passed with -j 1 --exact. The two full runs earlier the same day passed. Seen again on 2026-11-12 gating glimpse-v2-visibility milestone A: 1 of 3233 failed in the parallel run after about 320 s and passed with -j 1 --exact. That failure was a scoped thread panicking in the harness's copy_tree, where fs::copy unwrapped a file-not-found: the directory listing named a file that was gone by the time it was copied, so the fixture tree is being changed while a case copies it. Under a gate it comes back as flaky, which is a pass; the narrow rerun is the workaround. A separate one-second digest_at mismatch in the same case was fixed on 2026-11-12 by normalising the call-time stamp."
+context = """
+Seen once on 2026-11-11 gating the plan/milestone-width fix: 1 of 3174 failed in the parallel run, then passed with -j 1 --exact. The two full runs earlier the same day passed. Seen again on 2026-11-12 gating glimpse-v2-visibility milestone A: 1 of 3233 failed in the parallel run after about 320 s and passed with -j 1 --exact. That failure was a scoped thread panicking in the harness's copy_tree, where fs::copy unwrapped a file-not-found: the directory listing named a file that was gone by the time it was copied, so the fixture tree is being changed while a case copies it. Under a gate it comes back as flaky, which is a pass; the narrow rerun is the workaround. A separate one-second digest_at mismatch in the same case was fixed on 2026-11-12 by normalising the call-time stamp.
+
+SEEN AGAIN 2026-11-13 at the tomlctl-test-and-gate-cost milestone B gate, with the cause visible in the log: copy_tree in tomlctl/tests/output_options.rs panicked on fs::copy with os error 2 (file not found). A file listed in the shared fixture was gone by the time it was copied, which fits another worker thread's command creating and removing a short-lived file there (a lock or a git index.lock) while an isolated case copies the tree. Skipping a file that vanished, or copying from a fixture no command runs in, would close it."""
 base_sha = "9a6c5117189fdf9811d2fca94332b2b1f629f8c8"
 
 [[backlog]]
@@ -12955,3 +12958,20 @@ flow = "glimpse-v2-visibility"
 context = "The headless cases in glimpse/tests/cli.rs can only assert that --select renders and that the fixture carries the spec keys; the Outcome and Premises sections of the details panel are covered by unit tests alone. A --details flag for --once would close the gap."
 base_sha = "ac4740d9664be2f939684f0711e4415de59c8c21"
 related = ["B-7a9a7f13"]
+
+[[backlog]]
+id = "B-194c521d"
+kind = "debt"
+summary = "in-process test commands share the process-wide advisory, output-option and repo-root caches with other tests when the suite runs under cargo test instead of nextest"
+area = "tomlctl/src/io.rs"
+tags = ["test-speed"]
+status = "open"
+created = 2026-11-13T11:53:12Z
+last_seen = 2026-11-13T11:53:12Z
+seen_count = 1
+dedup_id = "194c521dc1b983df"
+origin = "implement-v2"
+flow = "tomlctl-test-and-gate-cost"
+context = "Reported by the worker that built the tests' in-process command builder. Under nextest each test is its own process, so nothing shows. Under cargo test, where tests are threads of one process, a library-facade test that calls silence_advisories() first turns advisories off for a later in-process command, and the cwd-derived REPO_ROOT cache and the no-context output options are shared too. Run the tomlctl suite with nextest, as CLAUDE.md says; if cargo test must work, move those caches into the invocation context."
+base_sha = "1e5b02be7a389bdc3ac5d71562d7d470301b2ba4"
+related = ["B-68943ec6"]

@@ -386,6 +386,34 @@ rest = "a70f10ac1a8b33af"
 rows = "6b6a859d318aed64"
 specs = "6cb721ca0a9734e4"
 
+[[run]]
+step = "implement:B"
+workflow = "implement-v2-milestone"
+args_hash = "45fe241db721eaea05c49063f11c6d3cd32887f3596d49a5130efb0424fc27ab"
+run_id = "wf_f3b21c88-6ef"
+session = "ec0edfee-9a4a-4217-a92b-e51867367ba7"
+started = 2026-11-13T11:35:00Z
+finished = 2026-11-13T11:41:14Z
+skip_reason = ""
+outcome = "ok"
+tasks = [
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+]
+digest_at = 2026-11-13T11:34:41Z
+
+[run.store_digest]
+changes = "4f53cda18c2baa0c"
+milestones = "e6f71459acd1aacd"
+rest = "a70f10ac1a8b33af"
+rows = "42f59f4166dd8950"
+specs = "b96ba58aafd40cca"
+
 [[attempt]]
 task = 1
 run_id = "wf_2e815eda-3c3"
@@ -576,6 +604,185 @@ result = "pass"
 command = "grep -q 'pub fn run_with' tomlctl/src/lib.rs && grep -q 'pub struct Outcome' tomlctl/src/lib.rs"
 result = "pass"
 
+[[attempt]]
+task = 9
+run_id = "wf_f3b21c88-6ef"
+milestone = "B"
+status = "done"
+summary = "the tests' `common::Command` builder runs tomlctl in-process through `tomlctl::run_with` and falls back to the built binary for a working directory, a foreign variable, `agents record` or `tomlctl_process()`"
+block = "present"
+files_touched = [
+    "tomlctl/tests/common/mod.rs",
+    "tomlctl/tests/agents_record.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/tests/review_apply.rs",
+    "tomlctl/tests/review_cells.rs",
+    "tomlctl/tests/review_digest.rs",
+    "tomlctl/tests/review_finish.rs",
+    "tomlctl/tests/review_plan_records.rs",
+    "tomlctl/tests/review_runs.rs",
+    "tomlctl/tests/review_settle.rs",
+    "tomlctl/tests/review_survey.rs",
+    "tomlctl/tests/review_vocabulary.rs",
+    "tomlctl/tests/tasks_import.rs",
+    "tomlctl/tests/tasks_render.rs",
+    "tomlctl/tests/tasks_write.rs",
+]
+
+[[attempt.deviations]]
+what = "tests/common/mod.rs carries a fifth test, agents_record_runs_a_child, beside the four the detail names"
+why = "The gate-run accept check requires that `agents record` through the builder goes to a child and leaves the test process's working directory unchanged; none of the four named tests covers that, and the `test(/^common::/)` filter runs the fifth too"
+means = "detail: add a #[cfg(test)] mod tests with four tests"
+
+[[attempt.deviations]]
+what = "tomlctl_process_runs_a_child shows the child by running `agents record` with a payload cwd elsewhere and checking the test process's cwd is unchanged"
+why = "tomlctl_process() returns assert_cmd::Command, which has no runs_in_process(), so the observable effect is the only thing to test; the alternative, matching the binary path inside the Debug text, depends on how std formats a Windows path"
+means = "detail: tomlctl_process_runs_a_child"
+
+[[attempt.tangential]]
+kind = "question"
+area = "tomlctl/src/io.rs"
+summary = "In-process runs share process-wide OnceLocks with every other test in the same process: io::VISIBLE (advisories, which the library facade's silence_advisories() turns off for good), output::OPTS and the cached REPO_ROOT"
+why = "Under nextest each test is its own process, so this is invisible there; under `cargo test` a facade test that ran first could silence advisories that a later in-process command's stderr assertion expects"
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+result = "pass"
+
+[[attempt.checks]]
+command = "rustfmt --edition 2024 --check on the fifteen edited files"
+result = "pass"
+
+[[attempt.checks]]
+command = "bash scripts/verify-shared-blocks.sh"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -q 'tomlctl::run_with' tomlctl/tests/common/mod.rs && grep -q 'pub fn tomlctl_process' tomlctl/tests/common/mod.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "! grep -l 'assert_cmd::Command' <the fourteen files> | grep -q ."
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -q 'tomlctl_process' tomlctl/tests/tasks_write.rs"
+result = "pass"
+
+[[attempt]]
+task = 10
+run_id = "wf_f3b21c88-6ef"
+milestone = "B"
+status = "done"
+summary = "nine test files now import the shared Command builder"
+block = "present"
+files_touched = [
+    "tomlctl/tests/integration.rs",
+    "tomlctl/tests/items_dedupe.rs",
+    "tomlctl/tests/items_dry_run.rs",
+    "tomlctl/tests/json.rs",
+    "tomlctl/tests/render_progress_log.rs",
+    "tomlctl/tests/integrity_guards.rs",
+    "tomlctl/tests/agent_contract.rs",
+    "tomlctl/tests/blocks.rs",
+    "tomlctl/tests/review_catalogue.rs",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+result = "pass"
+
+[[attempt.checks]]
+command = "accept: no file imports assert_cmd Command"
+result = "pass"
+
+[[attempt.checks]]
+command = "accept: integration.rs still uses assert_cmd::cargo::cargo_bin"
+result = "pass"
+
+[[attempt]]
+task = 11
+run_id = "wf_f3b21c88-6ef"
+milestone = "B"
+status = "done"
+summary = "ten flow test files now use the shared command builder"
+block = "present"
+files_touched = [
+    "tomlctl/tests/flow_stale.rs",
+    "tomlctl/tests/flow_active.rs",
+    "tomlctl/tests/flow_envelope.rs",
+    "tomlctl/tests/flow_resolve.rs",
+    "tomlctl/tests/flow_list.rs",
+    "tomlctl/tests/flow_init.rs",
+    "tomlctl/tests/flow_find_plans.rs",
+    "tomlctl/tests/flow_ensure_artifact.rs",
+    "tomlctl/tests/flow_doctor.rs",
+    "tomlctl/tests/flow_path_seam.rs",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+result = "pass"
+
+[[attempt.checks]]
+command = "accept: no assert_cmd Command import; tomlctl_process in flow_active.rs"
+result = "pass"
+
+[[attempt]]
+task = 12
+run_id = "wf_f3b21c88-6ef"
+milestone = "B"
+status = "done"
+summary = "nine plan test files now import the shared Command builder"
+block = "malformed"
+files_touched = []
+deviations = []
+tangential = []
+checks = []
+
+[[attempt]]
+task = 13
+run_id = "wf_f3b21c88-6ef"
+milestone = "B"
+status = "done"
+summary = "the id-prefix writer race now builds its commands with common::tomlctl_process()"
+block = "present"
+files_touched = ["tomlctl/tests/items_id_prefix.rs"]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "grep -q 'tomlctl_process' tomlctl/tests/items_id_prefix.rs"
+result = "pass"
+
+[[attempt]]
+task = 14
+run_id = "wf_f3b21c88-6ef"
+milestone = "B"
+status = "done"
+summary = "repo root is now a virtual workspace over tomlctl and glimpse with one root Cargo.lock and the profiles moved to the root"
+block = "malformed"
+files_touched = []
+deviations = []
+tangential = []
+checks = []
+
+[[attempt]]
+task = 15
+run_id = "wf_f3b21c88-6ef"
+milestone = "B"
+status = "done"
+summary = "the hook and gate stamp run one workspace clippy, and the docs name the root lockfile and target directory"
+block = "malformed"
+files_touched = []
+deviations = []
+tangential = []
+checks = []
+
 [[gate_round]]
 milestone = "A"
 round = 0
@@ -622,3 +829,105 @@ duration_s = 3
 summary = ""
 failed_ids = []
 log = ""
+
+[[gate_round]]
+milestone = "B"
+round = 0
+seq = 1
+at = 2026-11-13T11:52:57Z
+outcome = "pass"
+
+[[gate_round.commands]]
+command = "cargo clippy --workspace --all-targets --locked"
+outcome = "pass"
+duration_s = 89
+summary = ""
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "flaky"
+exit = 100
+duration_s = 402
+summary = "Summary [ 339.543s] 3260 tests run: 3259 passed (6 slow), 1 failed, 1 skipped"
+failed_ids = ["output_options::every_case_honours_the_output_options::plan"]
+log = ".claude/flows/tomlctl-test-and-gate-cost/gates/B-r0-s1-c2.log"
+
+[[gate_round.commands]]
+command = "bash scripts/gate-stamp.sh run"
+outcome = "pass"
+duration_s = 64
+summary = "libtest x2: 57 passed; 0 failed"
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^common::/)'"
+outcome = "pass"
+duration_s = 3
+summary = "Summary [   0.357s] 5 tests run: 5 passed, 3256 skipped"
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "cargo metadata --locked --offline --format-version 1 --manifest-path glimpse/Cargo.toml"
+outcome = "pass"
+duration_s = 1
+summary = ""
+failed_ids = []
+log = ""
+
+[[report]]
+at = 2026-11-13T11:54:12Z
+milestone = "C"
+why = "milestone C is deferred and must be elaborated before it can run"
+
+[[report.entries]]
+kind = "gate"
+task = 0
+text = "milestone A did not run tasks 1, 2, 4, 5, 6 and 8's narrow test checks: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 0
+text = "milestone B: cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast was flaky: output_options::every_case_honours_the_output_options::plan failed in the parallel run and passed on a narrow rerun (known flake B-fc6e271c)"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "agent-a8994859d6314fdff, agent-a980b9b544c7358c2: the tasks' own grep accept checks — allowed"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "agent-a45b604e13fc06cbd: cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests — allowed"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "agent-a3ac7f26fdd5db280, agent-aef6cb40eed2f1433, agent-ab7e1590f1dca10b5: recursive grep over named test and source files, not an accept check — breach"
+path = ""
+needs_person = true
+
+[[report.entries]]
+kind = "reconcile"
+task = 0
+text = "tasks 2, 4, 5, 6, 7, 12, 14 and 15: the run note's block is malformed, a checks.result carries text after `pass`; each note's Status line and its task row both read done"
+path = ""
+needs_person = true
+
+[[report.entries]]
+kind = "gate"
+task = 0
+text = "milestone C is deferred and was not run: it must be elaborated from a sampled suite run before it can launch"
+path = ""
+needs_person = true

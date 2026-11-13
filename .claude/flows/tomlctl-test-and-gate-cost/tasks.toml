@@ -636,7 +636,7 @@ check = "grep -q 'pub fn cli(root: &Path) -> Command' tomlctl/tests/common/mod.r
 at = "base"
 
 [specs.premises.probe]
-at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+at = "1e5b02be7a389bdc3ac5d71562d7d470301b2ba4"
 neg_rc = 0
 verdict = "holds"
 
@@ -644,6 +644,11 @@ verdict = "holds"
 claim = "the library exports run_with"
 check = "grep -q 'pub fn run_with' tomlctl/src/lib.rs"
 at = "after:8"
+
+[specs.premises.probe]
+at = "1e5b02be7a389bdc3ac5d71562d7d470301b2ba4"
+neg_rc = 0
+verdict = "holds"
 
 [[specs]]
 ref = "move-the-items-and-integration-tests-to-the-shared-builder"
@@ -774,7 +779,7 @@ check = "grep -q 'fn concurrent_id_prefix_adds_mint_distinct_ids' tomlctl/tests/
 at = "base"
 
 [specs.premises.probe]
-at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+at = "1e5b02be7a389bdc3ac5d71562d7d470301b2ba4"
 neg_rc = 0
 verdict = "holds"
 
@@ -842,7 +847,7 @@ check = """grep -q 'tomlctl = { path = "../tomlctl"' glimpse/Cargo.toml"""
 at = "base"
 
 [specs.premises.probe]
-at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+at = "1e5b02be7a389bdc3ac5d71562d7d470301b2ba4"
 neg_rc = 0
 verdict = "holds"
 
@@ -852,7 +857,7 @@ check = "! test -e Cargo.toml"
 at = "base"
 
 [specs.premises.probe]
-at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+at = "1e5b02be7a389bdc3ac5d71562d7d470301b2ba4"
 neg_rc = 0
 verdict = "holds"
 
@@ -913,13 +918,18 @@ claim = "the stamp script has a glimpse-clippy step"
 check = "grep -q 'glimpse-clippy' scripts/gate-stamp.sh"
 at = "after:3"
 
+[specs.premises.probe]
+at = "1e5b02be7a389bdc3ac5d71562d7d470301b2ba4"
+neg_rc = 0
+verdict = "holds"
+
 [[specs.premises]]
 claim = "CLAUDE.md names the tomlctl lockfile for cargo audit"
 check = "grep -q 'cargo audit --file tomlctl/Cargo.lock' CLAUDE.md"
 at = "base"
 
 [specs.premises.probe]
-at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+at = "1e5b02be7a389bdc3ac5d71562d7d470301b2ba4"
 neg_rc = 0
 verdict = "holds"
 
@@ -1168,7 +1178,7 @@ id = 9
 ref = "run-the-tests-commands-through-an-in-process-builder"
 title = "Run the tests' commands through an in-process builder"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -1199,15 +1209,15 @@ deps_note = ""
 action = "Add the `Command` builder of design/invocation.md#child-tier to tests/common/mod.rs, make cli() and the other helpers there return it, and make the fourteen listed test files name the builder where they name assert_cmd's Command."
 detail = "The builder, its child-tier rule and the `Output` it builds are in design/invocation.md#child-tier. Add `pub fn tomlctl_process() -> assert_cmd::Command` for a test that must start the binary. The fourteen other files call cli() and also name `assert_cmd::Command`, so they stop compiling when cli() returns the builder. Four import it (agents_record.rs, capabilities.rs, tasks_import.rs, tasks_render.rs): change `use assert_cmd::Command;` to `use crate::common::Command;`. Nine review_* files name it fully qualified as a helper's return type, such as `fn tomlctl(&self) -> assert_cmd::Command`: change that to `common::Command`. tasks_write.rs calls `assert_cmd::Command::cargo_bin` fully qualified in its test that races several writers, which must keep real processes: build those commands with `common::tomlctl_process()`. Change nothing else in those files unless one fails to compile, and then only that; where a file names `std::process::Command` for git, leave it. Give `common::Command` a `pub fn runs_in_process(&self) -> bool` that reports the tier the builder would choose, and add a `#[cfg(test)] mod tests` at the end of tests/common/mod.rs with four tests, `current_dir_runs_a_child`, `foreign_env_runs_a_child`, `tomlctl_process_runs_a_child` and `overlay_keys_run_in_process`, which the `test(/^common::/)` accept runs. Compile with `cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "69e4adbfcf632a0cbc7dea866877f5f5493d9846"
 
 [[items]]
 id = 10
 ref = "move-the-items-and-integration-tests-to-the-shared-builder"
 title = "Move the items and integration tests to the shared builder"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -1229,15 +1239,15 @@ deps_note = ""
 action = "In each listed file change `use assert_cmd::Command;` to `use crate::common::Command;`."
 detail = "Nothing else in a file changes unless it fails to compile, and then only that. integration.rs `items_add_lock_contention_smoke` builds a `std::process::Command` from `assert_cmd::cargo::cargo_bin` and spawns two children at once; it already uses real processes and stays exactly as it is. Compile with `cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "69e4adbfcf632a0cbc7dea866877f5f5493d9846"
 
 [[items]]
 id = 11
 ref = "move-the-flow-tests-to-the-shared-builder"
 title = "Move the flow tests to the shared builder"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -1260,15 +1270,15 @@ deps_note = ""
 action = "In each listed file change `use assert_cmd::Command;` to `use crate::common::Command;`."
 detail = "Nothing else in a file changes unless it fails to compile, and then only that. One exception: flow_active.rs `concurrent_add_invocations_serialise_no_entry_loss` races several writers and must keep real processes; build its commands with `common::tomlctl_process()`. Compile with `cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "69e4adbfcf632a0cbc7dea866877f5f5493d9846"
 
 [[items]]
 id = 12
 ref = "move-the-plan-tests-to-the-shared-builder"
 title = "Move the plan tests to the shared builder"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -1290,15 +1300,15 @@ deps_note = ""
 action = "In each listed file change `use assert_cmd::Command;` to `use crate::common::Command;`, adding `use crate::common;` only where the file has no common import."
 detail = "Nothing else in a file changes unless it fails to compile, and then only that. Compile with `cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "69e4adbfcf632a0cbc7dea866877f5f5493d9846"
 
 [[items]]
 id = 13
 ref = "keep-the-writer-races-on-real-processes"
 title = "Keep the writer races on real processes"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -1310,15 +1320,15 @@ deps_note = ""
 action = "Build the commands of the concurrent-writer test in items_id_prefix.rs with `common::tomlctl_process()`, setting the same environment cli() sets."
 detail = "The test is `concurrent_id_prefix_adds_mint_distinct_ids`. It asserts that separate processes exclude each other on the store's lock, which an in-process run would no longer show. cli() sets `TOMLCTL_ROOT` to the sandbox root and `TOMLCTL_LOCK_TIMEOUT` to `5`. The matching race in review_add.rs sets a working directory on its commands, so the builder already gives it real processes and it needs no edit."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "69e4adbfcf632a0cbc7dea866877f5f5493d9846"
 
 [[items]]
 id = 14
 ref = "make-tomlctl-and-glimpse-one-cargo-workspace"
 title = "Make tomlctl and glimpse one cargo workspace"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -1338,15 +1348,15 @@ deps_note = ""
 action = "Add a root virtual workspace over tomlctl and glimpse with one root lockfile, and move the release profiles to the root."
 detail = """Root Cargo.toml: `[workspace]` with `members = ["tomlctl", "glimpse"]`, `exclude = ["statusline", "lumina"]` and `resolver = "3"`, then the `[profile.release]` both crates share and tomlctl's `[profile.dev.package."*"]`; delete those profile tables from the two member manifests. Seed the root lock so shared versions do not move: copy glimpse/Cargo.lock to Cargo.lock, run `cargo tree --manifest-path tomlctl/Cargo.toml` once so cargo adds tomlctl's dev and optional dependencies, then delete both member lockfiles from the working tree with `rm`; the milestone commit stages the deletions. Keep the `/tomlctl/target/` and `/glimpse/target/` lines in .gitignore: the old directories stay on disk, glimpse has no .gitignore of its own, and `/target/` covers only the new root directory. In tomlctl/.cargo/config.toml fix only the comment that says the file is scoped to the crate and not the workspace root. notes/workspace-impact.md has the probes behind each step. Do not delete the old tomlctl/target or glimpse/target directories."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "69e4adbfcf632a0cbc7dea866877f5f5493d9846"
 
 [[items]]
 id = 15
 ref = "point-the-hook-the-gate-stamp-and-the-docs-at-the-workspace"
 title = "Point the hook, the gate stamp and the docs at the workspace"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -1367,8 +1377,8 @@ deps_note = ""
 action = "Replace the glimpse clippy step with one workspace clippy, add the root manifest and lockfile to the steps that read them, and correct the prose that names the old lockfiles and target directories."
 detail = "In scripts/gate-stamp.sh rename the step `glimpse-clippy` to `workspace-clippy` with the command `cargo clippy --workspace --locked`, and add `Cargo.toml` and `Cargo.lock` to the roots of `dispatch-tests`, `plan-corpus` and `workspace-clippy` (design/gates.md#step-table). In the hook, call the renamed step, let a staged root `Cargo.toml` or `Cargo.lock` trigger it too, and replace the comment about refreshing glimpse/Cargo.lock: a dependency change now needs the root Cargo.lock staged in the same commit. In CLAUDE.md fix every sentence under Developer setup that names the glimpse clippy or glimpse/Cargo.lock (the hook paragraph and the gate-stamp paragraph), `cargo audit --file tomlctl/Cargo.lock` (now `Cargo.lock`), and the two mentions of `tomlctl/target` under Build discipline (the shared directory is now `target/` at the repo root); add one sentence that a build started inside a crate directory uses that crate's rustflags and rebuilds the shared artifacts. In glimpse/CLAUDE.md fix the sentence that says glimpse has its own Cargo.lock and target directory. In backlog-clear/SKILL.md fix the one mention of `tomlctl/target`. After editing a claude/**/*.md file run `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "69e4adbfcf632a0cbc7dea866877f5f5493d9846"
 
 [[items]]
 id = 16
