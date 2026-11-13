@@ -93,7 +93,7 @@ check = '''grep -q 'git_command(&root).args(\["init", "-q", "."\])' tomlctl/test
 at = "base"
 
 [specs.premises.probe]
-at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+at = "49ce73edc945f6e7d7312485e728e56863809833"
 neg_rc = 0
 verdict = "holds"
 
@@ -162,7 +162,7 @@ check = "grep -q '^has_marker()' scripts/verify-shared-blocks.sh && grep -q '^ex
 at = "base"
 
 [specs.premises.probe]
-at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+at = "49ce73edc945f6e7d7312485e728e56863809833"
 neg_rc = 0
 verdict = "holds"
 
@@ -252,7 +252,7 @@ check = "grep -q '^ROOTS=(tomlctl glimpse claude .claude/review-lenses docs/plan
 at = "base"
 
 [specs.premises.probe]
-at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+at = "49ce73edc945f6e7d7312485e728e56863809833"
 neg_rc = 0
 verdict = "holds"
 
@@ -262,7 +262,7 @@ check = "grep -q '^STAMP_STATE=unchecked' .githooks/pre-commit"
 at = "base"
 
 [specs.premises.probe]
-at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+at = "49ce73edc945f6e7d7312485e728e56863809833"
 neg_rc = 0
 verdict = "holds"
 
@@ -322,7 +322,7 @@ check = "grep -q 'fn is_stdout_closed' tomlctl/src/output.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+at = "49ce73edc945f6e7d7312485e728e56863809833"
 neg_rc = 0
 verdict = "holds"
 
@@ -365,7 +365,7 @@ check = """test "$(cat tomlctl/src/cli/dispatch.rs tomlctl/src/plan/check.rs tom
 at = "base"
 
 [specs.premises.probe]
-at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+at = "49ce73edc945f6e7d7312485e728e56863809833"
 neg_rc = 0
 verdict = "holds"
 
@@ -439,7 +439,7 @@ check = "grep -q '^static OPTS: OnceLock<OutputOpts>' tomlctl/src/output.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+at = "49ce73edc945f6e7d7312485e728e56863809833"
 neg_rc = 0
 verdict = "holds"
 
@@ -486,7 +486,7 @@ check = "grep -q '^static STDIN_CONSUMED' tomlctl/src/io.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+at = "49ce73edc945f6e7d7312485e728e56863809833"
 neg_rc = 0
 verdict = "holds"
 
@@ -559,7 +559,7 @@ check = "grep -q 'let cli = Cli::parse();' tomlctl/src/lib.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+at = "49ce73edc945f6e7d7312485e728e56863809833"
 neg_rc = 0
 verdict = "holds"
 
@@ -569,7 +569,7 @@ check = "grep -q 'args_os' tomlctl/src/cli/dispatch.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "4eeac3e0c844dd0a0bc51c08f4945cf11baadc42"
+at = "49ce73edc945f6e7d7312485e728e56863809833"
 neg_rc = 0
 verdict = "holds"
 
@@ -974,7 +974,7 @@ id = 1
 ref = "copy-a-git-init-template-in-the-test-sandbox"
 title = "Copy a git init template in the test sandbox"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -986,15 +986,15 @@ deps_note = ""
 action = "Make sandbox() copy a cached `git init` template into the new temp directory in place of running `git init` there."
 detail = """Build the template once per machine under `env!("CARGO_TARGET_TMPDIR")`: run `git init -q .` through git_command in a uniquely named sibling directory, then rename it to the fixed template name; when the rename fails and the template directory now exists, another test process won: delete the loser and use the winner. When it fails and no template exists, something such as an antivirus scan holds the new directory: retry the rename a few times with a short pause before failing the test. Copy the template's `.git` tree directory by directory, creating every directory including empty ones: `git init` leaves `objects/info`, `objects/pack`, `refs/heads` and `refs/tags` empty, and git does not recognise a `.git` without `objects/` and `refs/`. Keep today's tolerance: when git cannot be started at all, sandbox() creates no `.git`, and when `git init` runs and fails the test fails with the same message. Each test is its own process under nextest, so the per-process cost left is the copy. Name the template directory after a hash of the git executable's path, size and modified time and of the modified time of the user's global git config file when one exists, found without starting a process (search PATH for the executable; the config is `.gitconfig` in the home directory), so a git upgrade or a config change builds a new template."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "2f22029e98b50ed348db70cd78562f78a6252e1a"
 
 [[items]]
 id = 2
 ref = "verify-shared-blocks-in-one-gawk-pass"
 title = "Verify shared blocks in one gawk pass"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1009,15 +1009,15 @@ deps_note = ""
 action = "Replace the loop over (block, file) pairs with one gawk program, as design/gates.md#one-pass-verifier sets out."
 detail = "notes/shell-gate-cost.md has the measurements and the eight fixture shapes a prototype was compared on (ok, a CR-CR-LF marker, an empty span, drift, a missing START, a CRLF carrier, two spans against one, a missing file). Build those fixtures in a scratch directory outside the repo, each a `git init` directory with its own manifest passed as `MANIFEST=manifest.toml`, and compare exit code and stderr with the script as it is at HEAD before finishing. Today a missing file is reported in pair order, between the marker and drift errors of the pairs around it: to keep that order, pass the result of each bash `-f` test into the gawk program and print the missing-file message there, in sequence. In tomlctl/src/cli/dispatch/tests/skills.rs add a test beside both_gates_reject_a_cr_marker_and_an_empty_span that builds a drift fixture (two carriers with different spans) and a missing-START fixture the same way and asserts that both blocks_verify and run_shell_gate reject each, so the string comparison that replaces the hash comparison stays pinned. Run `bash scripts/verify-shared-blocks.sh` yourself; it builds nothing."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "2f22029e98b50ed348db70cd78562f78a6252e1a"
 
 [[items]]
 id = 3
 ref = "stamp-each-commit-gate-step-on-its-own-inputs"
 title = "Stamp each commit gate step on its own inputs"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1033,15 +1033,15 @@ deps_note = ""
 action = "Give scripts/gate-stamp.sh the step table and per-step stamps of design/gates.md, and make the hook's gate take a step id."
 detail = "The table, the stamp files, the `run`, `check` and `command` forms and the hook's behaviour are in design/gates.md#step-table, #stamps and #hook. Compute one file listing and one hash pass for all steps, then fold each step's digest from its own subset, so `check` does not scan five times. In the hook, read the words `gate-stamp.sh command <id>` prints into an array with `read -ra` and run that array; no command has a space inside a word, and the commands use paths relative to the repo root, where git runs the hook. In CLAUDE.md rewrite only the two paragraphs under Developer setup that describe the hook's cargo steps and scripts/gate-stamp.sh, so they state the per-step behaviour. Both scripts are run by every commit, unsandboxed: change nothing beyond what the design asks."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "2f22029e98b50ed348db70cd78562f78a6252e1a"
 
 [[items]]
 id = 4
 ref = "add-the-per-run-invocation-context"
 title = "Add the per-run invocation context"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1056,15 +1056,15 @@ deps_note = ""
 action = "Create tomlctl/src/invocation.rs with the thread-local context, its accessors and the ExitWith marker, and declare the module in lib.rs."
 detail = "The context's contents are in design/invocation.md#context, the accessors and their no-context fallbacks in #accessors, and ExitWith in #exit-marker. Provide an install guard that removes the context on drop, and a way to take the stdout and stderr buffers out when the run ends. An accessor whose fallback is private to another file returns an Option and leaves the fallback to its caller: `opts() -> Option<Option<&'static crate::output::OutputOpts>>` and `set_opts(&'static OutputOpts) -> bool`, `claim_stdin() -> Option<bool>` giving the previous claimed flag, and `with_stdout_buffer` returning None, each None or false with no context. Add `is_active() -> bool`, true while a context is installed. Nothing calls the accessors yet; unit-test them in this file with a context installed and without one. In lib.rs add only the `mod invocation;` line. `std::io::stdout()` may not appear in this file: the `output_gate` test under src/cli/dispatch/tests allows it in output.rs only."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "2f22029e98b50ed348db70cd78562f78a6252e1a"
 
 [[items]]
 id = 5
 ref = "return-an-exit-marker-in-place-of-process-exit"
 title = "Return an exit marker in place of process exit"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1083,15 +1083,15 @@ deps_note = ""
 action = "Replace each of the six `std::process::exit(code)` calls in verb code with `return Err(invocation::ExitWith(code).into())`, and map the marker to its exit code in run()."
 detail = "The sites: blocks verify in cli/dispatch.rs, plan check in plan/check.rs, tasks check and tasks render --check in tasks/dispatch.rs, review anchor in review/anchor.rs, review reproduce-status in review/reproduce.rs. Each already flushes its output before exiting. In lib.rs, run() returns the marker's code and does not call emit_error for it, the way it already skips a closed stdout; `ExitCode::from(code as u8)` carries it. design/invocation.md#exit-marker has the rule."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "2f22029e98b50ed348db70cd78562f78a6252e1a"
 
 [[items]]
 id = 6
 ref = "send-output-and-the-output-options-through-the-context"
 title = "Send output and the output options through the context"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1106,15 +1106,15 @@ deps_note = ""
 action = "Make output.rs write stdout and its stderr notices through the invocation accessors and keep its options in the context when one is installed; make emit_error in lib.rs write through the stderr accessor."
 detail = "design/invocation.md#accessors lists each site. with_stdout asks `invocation::with_stdout_buffer` first and keeps its own `std::io::stdout().lock()` for the no-context case. `opts()` keeps returning `&'static OutputOpts`, because callers in cli/dispatch/items.rs, backlog/query.rs and tasks/list.rs pass it straight into a `&OutputOpts` parameter: with a context installed, `configure` leaks one boxed `OutputOpts` for that run (`Box::leak`) and stores the reference in the context, and `opts()` returns it; a context with no options configured yet gives the same unconfigured default `opts()` gives today. So a second command in one process neither trips the `debug_assert` in configure nor sees the first command's options. The four `eprintln!` sites in output.rs and the two stderr writes in lib.rs emit_error go through the stderr accessor."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "2f22029e98b50ed348db70cd78562f78a6252e1a"
 
 [[items]]
 id = 7
 ref = "read-stdin-and-the-environment-through-the-context"
 title = "Read stdin and the environment through the context"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1130,15 +1130,15 @@ deps_note = ""
 action = "Route the three stdin readers, the stdin claim, the advisory writer and the four environment reads through the invocation accessors."
 detail = "design/invocation.md#accessors lists each site. In io.rs: read_json_arg, read_text_arg and read_json_value_from_arg read from `invocation::stdin_reader` and ask `invocation::stdin_is_terminal`; claim_stdin uses `invocation::claim_stdin`; advise_fmt returns early when `invocation::is_active()`; the `TOMLCTL_ROOT` reads in repo_or_cwd_root and in ensure_process_root, and the `TOMLCTL_LOCK_TIMEOUT` read in resolve_lock_timeout, go through `invocation::env_var_os`. The other `TOMLCTL_LOCK_TIMEOUT` read in io.rs is inside `mod tests` and stays as it is. In items.rs the `TOMLCTL_NO_DEDUP_ID` read does the same. In review/catalogue.rs, claude_dir reads `CLAUDE_CONFIG_DIR` through the accessor and skips its `OnceLock` cache when `invocation::is_active()`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "2f22029e98b50ed348db70cd78562f78a6252e1a"
 
 [[items]]
 id = 8
 ref = "add-the-run_with-entry-point"
 title = "Add the run_with entry point"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1160,8 +1160,8 @@ deps_note = ""
 action = "Add `pub fn run_with` and `pub struct Outcome` to lib.rs as design/invocation.md#entry-point gives them, pass the arguments into cli::run, and cover it with tomlctl/tests/in_process.rs."
 detail = """cli::run in cli/dispatch.rs takes the argument list as a parameter for check_where_placement in place of reading `std::env::args_os`; run() passes the process arguments. In cli/mod.rs change only the module doc's sentence that says the library root's `run` calls `cli::run(cli)`, so it names both callers, `run` and `run_with`, and the arguments they pass. The new test file is a module of tests/it.rs, so add its `mod in_process;` line there in alphabetical order. Its tests pass `env!("CARGO_BIN_EXE_tomlctl")` as run_with's program name, since clap takes the usage line's bin_name from it and the binary prints `tomlctl.exe` on Windows. Its tests, each comparing run_with against the built binary started with `Command::cargo_bin`: a read verb's stdout, stderr and code; `--help` (code 0, stdout) and an unknown flag (code 2, stderr); a verb that exits 1 through the marker, such as `tasks check` on a store with a cycle; a command reading stdin through `-`; two commands with different output options run one after the other in one test; and `TOMLCTL_NO_DEDUP_ID` set for one run only."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "2f22029e98b50ed348db70cd78562f78a6252e1a"
 
 [[items]]
 id = 9

@@ -1,4 +1,4 @@
-schema_version = 2
+schema_version = 3
 last_updated = 2026-11-13
 
 [binding]
@@ -356,3 +356,269 @@ started = 2026-11-13T10:33:26Z
 finished = 2026-11-13T11:09:42Z
 skip_reason = ""
 outcome = "ok"
+
+[[run]]
+step = "implement:A"
+workflow = "implement-v2-milestone"
+args_hash = "61ad0f25c20507bce6f5330aeb6b7ee8bfd4fd62871e3665fee199e13bad32b9"
+run_id = "wf_2e815eda-3c3"
+session = "ec0edfee-9a4a-4217-a92b-e51867367ba7"
+started = 2026-11-13T11:12:33Z
+finished = 2026-11-13T11:23:03Z
+skip_reason = ""
+outcome = "ok"
+tasks = [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+]
+digest_at = 2026-11-13T11:12:18Z
+
+[run.store_digest]
+changes = "4f53cda18c2baa0c"
+milestones = "e6f71459acd1aacd"
+rest = "a70f10ac1a8b33af"
+rows = "6b6a859d318aed64"
+specs = "6cb721ca0a9734e4"
+
+[[attempt]]
+task = 1
+run_id = "wf_2e815eda-3c3"
+milestone = "A"
+status = "done"
+summary = "sandbox() now copies a cached `git init` template from the cargo target tmp directory"
+block = "present"
+files_touched = ["tomlctl/tests/common/mod.rs"]
+deviations = []
+
+[[attempt.tangential]]
+kind = "question"
+area = "tomlctl/tests/common/mod.rs"
+summary = "The template's .git/config carries filesystem probes git makes at init time (core.symlinks, core.ignorecase, core.filemode) for the target tmp directory's volume, not the sandbox's"
+why = "If CARGO_TARGET_TMPDIR and the system temp directory ever sit on filesystems with different capabilities, a sandbox's config would describe the wrong one; today both are on the same NTFS volume"
+
+[[attempt.checks]]
+command = "rustfmt --edition 2024 --check tomlctl/tests/common/mod.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --test it"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -q 'CARGO_TARGET_TMPDIR' tomlctl/tests/common/mod.rs"
+result = "pass"
+
+[[attempt]]
+task = 2
+run_id = "wf_2e815eda-3c3"
+milestone = "A"
+status = "done"
+summary = "the shared-block verifier checks every pair in one gawk pass, 0.62 s against about 24 s, with identical verdicts and stderr"
+block = "malformed"
+files_touched = []
+deviations = []
+tangential = []
+checks = []
+
+[[attempt]]
+task = 3
+run_id = "wf_2e815eda-3c3"
+milestone = "A"
+status = "done"
+summary = "gate-stamp.sh has a step table with per-step stamps, and the hook's gate takes a step id"
+block = "present"
+files_touched = [
+    "scripts/gate-stamp.sh",
+    ".githooks/pre-commit",
+    "CLAUDE.md",
+]
+tangential = []
+
+[[attempt.deviations]]
+what = "`run` keeps going when a step's roots changed while it ran: it writes no stamp for that step, runs the remaining steps, and exits 1 at the end naming every step left unstamped"
+why = "The design says only that such a step gets no stamp. Stopping is reserved for a failing command. Running on means the other steps can still earn their stamps, and exit 1 still tells the caller to rerun."
+means = "design/gates.md#stamps"
+
+[[attempt.deviations]]
+what = "`check <id>` and each per-step digest list only the roots of the steps asked for, not all six roots"
+why = "The detail asks for one listing and one hash pass shared by all steps. `digests` does that for every id it is given, so `check` with no id and `run`'s pre-flight scan once. The hook asks for one step at a time, so its listing covers only that step's roots, which is less work than scanning all of them."
+means = "detail: compute one file listing and one hash pass for all steps"
+
+[[attempt.checks]]
+command = "grep -q 'plan-corpus' scripts/gate-stamp.sh && grep -q 'dispatch-tests' scripts/gate-stamp.sh"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -q 'gate fmt-tomlctl' .githooks/pre-commit && ! grep -q 'gate cargo' .githooks/pre-commit"
+result = "pass"
+
+[[attempt.checks]]
+command = "bash scripts/gate-stamp.sh check no-such-step; test $? -eq 2"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -q '.claude/backlog.toml' scripts/gate-stamp.sh"
+result = "pass"
+
+[[attempt.checks]]
+command = "bash scripts/gate-stamp.sh command fmt-tomlctl | grep -q 'cargo fmt'"
+result = "pass"
+
+[[attempt.checks]]
+command = "bash -n .githooks/pre-commit"
+result = "pass"
+
+[[attempt.checks]]
+command = "copy of gate-stamp.sh in the scratchpad with each command prefixed by `true`: run, check per step, untracked docs/plans probe file, then one step's command set to `false`"
+result = "pass"
+
+[[attempt]]
+task = 4
+run_id = "wf_2e815eda-3c3"
+milestone = "A"
+status = "done"
+summary = "tomlctl/src/invocation.rs holds the per-run thread-local context, its accessors and ExitWith; lib.rs declares it"
+block = "malformed"
+files_touched = []
+deviations = []
+tangential = []
+checks = []
+
+[[attempt]]
+task = 5
+run_id = "wf_2e815eda-3c3"
+milestone = "A"
+status = "done"
+summary = "the six verb exits return an ExitWith marker that run() maps to the exit code"
+block = "malformed"
+files_touched = []
+deviations = []
+tangential = []
+checks = []
+
+[[attempt]]
+task = 6
+run_id = "wf_2e815eda-3c3"
+milestone = "A"
+status = "done"
+summary = "output.rs and emit_error now write through the invocation accessors, and the output options last one run under a context"
+block = "malformed"
+files_touched = []
+deviations = []
+tangential = []
+checks = []
+
+[[attempt]]
+task = 7
+run_id = "wf_2e815eda-3c3"
+milestone = "A"
+status = "done"
+summary = "stdin readers, the stdin claim, advisories and the four environment reads go through the invocation accessors"
+block = "malformed"
+files_touched = []
+deviations = []
+tangential = []
+checks = []
+
+[[attempt]]
+task = 8
+run_id = "wf_2e815eda-3c3"
+milestone = "A"
+status = "done"
+summary = "tomlctl::run_with and Outcome run one command in-process and are covered by tests/in_process.rs"
+block = "present"
+files_touched = [
+    "tomlctl/src/lib.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/src/cli/mod.rs",
+    "tomlctl/tests/in_process.rs",
+    "tomlctl/tests/it.rs",
+]
+tangential = []
+
+[[attempt.deviations]]
+what = "run() now collects std::env::args_os() once and parses with Cli::parse_from(&args) instead of Cli::parse()"
+why = "cli::run takes the argument list for the --where placement check, so run() needs the same list it parsed; parse_from keeps clap's own print-and-exit path, as the constraint requires"
+means = "the base premise's `let cli = Cli::parse();` in run()"
+
+[[attempt.deviations]]
+what = "a panic in run_with is caught inside the run thread with catch_unwind, so output written before the panic is kept, and the stderr line reads `tomlctl: panicked: <message>`"
+why = "the design gives code 101 with the panic message appended to the stderr buffer but no line format; the process's default panic hook still prints its own report to the real stderr"
+means = "design/invocation.md#entry-point"
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+result = "pass"
+
+[[attempt.checks]]
+command = "rustfmt --edition 2024 tomlctl/tests/in_process.rs; cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -q 'pub fn run_with' tomlctl/src/lib.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "! grep -q 'args_os' tomlctl/src/cli/dispatch.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = '''grep -q '^mod in_process;' tomlctl/tests/it.rs && test "$(grep -c '#\[test\]' tomlctl/tests/in_process.rs)" -ge 5'''
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -q 'pub fn run_with' tomlctl/src/lib.rs && grep -q 'pub struct Outcome' tomlctl/src/lib.rs"
+result = "pass"
+
+[[gate_round]]
+milestone = "A"
+round = 0
+seq = 1
+at = 2026-11-13T11:33:41Z
+outcome = "pass"
+
+[[gate_round.commands]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+duration_s = 1
+summary = ""
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 441
+summary = "Summary [ 370.847s] 3255 tests run: 3255 passed (7 slow), 1 skipped"
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "bash scripts/gate-stamp.sh run"
+outcome = "pass"
+duration_s = 51
+summary = "libtest x2: 57 passed; 0 failed"
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = 'f=docs/plans/.gate-stamp-probe.md; : > "$f"; bash scripts/gate-stamp.sh check fmt-tomlctl && bash scripts/gate-stamp.sh check fmt-glimpse && bash scripts/gate-stamp.sh check glimpse-clippy && ! bash scripts/gate-stamp.sh check plan-corpus; rc=$?; rm -f "$f"; exit $rc'
+outcome = "pass"
+duration_s = 5
+summary = ""
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = """t=scripts/.gate-stamp-probe.sh; sed 's#tomlctl/Cargo.toml -- --check#tomlctl/Cargo.toml -- --check --color never#g' scripts/gate-stamp.sh > "$t"; bash scripts/gate-stamp.sh check fmt-tomlctl && ! bash "$t" check fmt-tomlctl; rc=$?; rm -f "$t"; exit $rc"""
+outcome = "pass"
+duration_s = 3
+summary = ""
+failed_ids = []
+log = ""
