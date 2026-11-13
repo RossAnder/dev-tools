@@ -2,7 +2,7 @@
 //! hand, with a temp-dir catalogue holding only the `[routing]` globs and
 //! v1 ledgers written per test.
 
-mod common;
+use crate::common;
 
 use std::fs;
 use std::path::{Path, PathBuf};

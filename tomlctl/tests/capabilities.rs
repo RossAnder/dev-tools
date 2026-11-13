@@ -9,7 +9,7 @@
 use assert_cmd::Command;
 use std::fs;
 
-mod common;
+use crate::common;
 use common::{
     QUERY_FIXTURE, cli, parse_json_error_envelope, run_list_query, run_list_query_with, seed_ledger,
 };

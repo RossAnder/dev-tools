@@ -10,8 +10,6 @@ use serde_json::Value as JsonValue;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-mod common;
-
 fn fresh_root() -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_path_buf();

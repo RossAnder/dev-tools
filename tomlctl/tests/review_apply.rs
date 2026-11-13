@@ -4,7 +4,7 @@
 //! the tiers, the refusals that write nothing, compare-and-set, repeated edits,
 //! the approved and audited flows, prose edits and `--dry-run`.
 
-mod common;
+use crate::common;
 
 use std::cell::Cell;
 use std::fs;

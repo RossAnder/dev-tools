@@ -5,7 +5,7 @@
 use serde_json::{Value, json};
 use std::path::Path;
 
-mod common;
+use crate::common;
 use common::{cli, parse_json_error_envelope, sandbox, seed_ledger_in};
 
 const LEDGER: &str = r#"schema_version = 1

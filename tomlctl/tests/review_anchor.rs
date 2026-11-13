@@ -2,7 +2,7 @@
 //! anchor holds, 1 once it has drifted, and `--gone` only for a `remove`
 //! cleanup whose `old` has left the whole edit target file.
 
-mod common;
+use crate::common;
 
 use std::fs;
 use std::path::PathBuf;

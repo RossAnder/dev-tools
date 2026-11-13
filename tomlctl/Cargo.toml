@@ -6,6 +6,9 @@ rust-version = "1.98"
 authors = ["Ross Anderson"]
 description = "Flow-tooling CLI for Claude Code: TOML read/write, ledger ops, shared-block parity verification"
 license = "MIT OR Apache-2.0"
+# Every file under `tests/` is a module of the one `it` target, so the files
+# must not also be discovered as targets of their own.
+autotests = false
 
 [lib]
 name = "tomlctl"
@@ -15,6 +18,14 @@ doctest = false
 [[bin]]
 name = "tomlctl"
 path = "src/main.rs"
+
+[[test]]
+name = "it"
+path = "tests/it.rs"
+
+[[test]]
+name = "tasks_corpus"
+path = "tests/tasks_corpus.rs"
 
 # `mimalloc` only sets the binary's global allocator and is opt-in; a library
 # consumer never gets it, since the static lives in `src/main.rs`.

@@ -15,7 +15,7 @@ use assert_cmd::Command;
 use std::fs;
 use std::path::PathBuf;
 
-mod common;
+use crate::common;
 use common::seed_ledger;
 
 /// `remove --dry-run <id>` leaves the ledger file byte-identical

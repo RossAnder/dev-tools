@@ -6,7 +6,7 @@ use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-mod common;
+use crate::common;
 use common::{assert_sidecar_matches, git_command, hex_digest, stdout_json};
 
 const SLUG: &str = "plan-approve";

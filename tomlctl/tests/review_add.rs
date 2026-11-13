@@ -2,7 +2,7 @@
 //! the runs, cells and prior findings each test needs, and a temp-dir
 //! catalogue holding only the vocabulary's `[routing]` globs.
 
-mod common;
+use crate::common;
 
 use std::fs;
 use std::path::{Path, PathBuf};

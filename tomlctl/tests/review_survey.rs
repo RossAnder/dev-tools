@@ -3,7 +3,7 @@
 //! catalogue, so no test reads the developer's claude dir or the shipped
 //! vocabulary.
 
-mod common;
+use crate::common;
 
 use std::fs;
 use std::path::{Path, PathBuf};

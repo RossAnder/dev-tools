@@ -1,7 +1,7 @@
 //! `tomlctl review stats` against a sandbox store with two runs, verifier and
 //! audit verdicts, probe cells, and v1 rows linked back through `v2_ref`.
 
-mod common;
+use crate::common;
 
 use std::fs;
 use std::path::PathBuf;

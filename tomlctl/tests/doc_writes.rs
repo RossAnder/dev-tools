@@ -4,7 +4,7 @@
 use std::fs;
 use std::path::Path;
 
-mod common;
+use crate::common;
 use common::{assert_sidecar_matches, cli, seed_ledger};
 
 const CONTEXT: &str = "status = \"draft\"\n\n[tasks]\ntotal = 0\ncompleted = 0\n";

@@ -5,7 +5,7 @@
 //! `<session>/subagents/agent-<id>.jsonl` and its `.meta.json`. Hook payloads
 //! are piped on stdin, exactly as an async hook delivers them.
 
-mod common;
+use crate::common;
 
 use std::fs;
 use std::io::Write as _;

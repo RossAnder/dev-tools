@@ -3,7 +3,7 @@
 //! finding's status and verdicts alone, and a status read answered by exit
 //! code from each finding's last reproduction.
 
-mod common;
+use crate::common;
 
 use std::fs;
 use std::path::PathBuf;

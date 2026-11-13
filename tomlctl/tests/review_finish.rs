@@ -1,7 +1,7 @@
 //! `tomlctl review run finish` against a sandbox repo whose store is seeded
 //! by hand with the run, cells and findings each test needs.
 
-mod common;
+use crate::common;
 
 use std::fs;
 use std::path::{Path, PathBuf};

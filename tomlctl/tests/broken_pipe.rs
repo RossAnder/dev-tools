@@ -4,7 +4,7 @@
 
 use std::process::{Command, Stdio};
 
-mod common;
+use crate::common;
 use common::{QUERY_FIXTURE, seed_ledger};
 
 fn run_into_closed_pipe(cmd: &mut Command) {

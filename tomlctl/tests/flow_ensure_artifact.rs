@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-mod common;
+use crate::common;
 use common::parse_json_error_envelope;
 
 /// Build `<tmp>/.claude/flows/<slug>/` and return `(tempdir, root, flow_dir)`.

@@ -5,7 +5,7 @@
 use serde_json::Value;
 use std::path::Path;
 
-mod common;
+use crate::common;
 use common::{TASKS_SLUG, cli, parse_json_error_envelope, sandbox, seed_tasks};
 
 /// Task 3 depends on tasks 1 and 2; task 2 depends on task 1. Task 2's detail

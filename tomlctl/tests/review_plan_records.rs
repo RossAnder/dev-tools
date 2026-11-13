@@ -4,7 +4,7 @@
 //! verdict and at advisory mint, the tier staying frozen, the report's target
 //! lines, and the requiredness that markdown and code stores keep.
 
-mod common;
+use crate::common;
 
 use std::cell::Cell;
 use std::fs;

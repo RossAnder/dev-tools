@@ -5,7 +5,7 @@
 use std::fs;
 use std::path::Path;
 
-mod common;
+use crate::common;
 use common::{cli, seed_ledger};
 
 const OLD: &str = "2026-01-01";

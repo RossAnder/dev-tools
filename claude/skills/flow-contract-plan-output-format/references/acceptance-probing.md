@@ -12,7 +12,7 @@ rule in the skill's `SKILL.md`; a criterion is probed under the polarity its lab
 ```markdown
 - **Acceptance**:
   - forward: `grep -c '^## Summary' docs/plans/x.md` prints `1` (today: `0`).
-  - guard: `cargo test --manifest-path tomlctl/Cargo.toml --test tasks_read` passes.
+  - guard: `cargo test --manifest-path tomlctl/Cargo.toml --test it tasks_read::` passes.
 ```
 
 ## Two-control rule

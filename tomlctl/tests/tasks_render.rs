@@ -27,7 +27,7 @@ use assert_cmd::Command;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-mod common;
+use crate::common;
 use common::{stage_tasks_flow, tasks_context, write_tasks_store};
 
 const FIXTURE_PLAN: &str = include_str!("fixtures/tasks/house-plan.md");

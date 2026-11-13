@@ -2,7 +2,7 @@
 //! with a prior run `U1` holding each target and a current run `U2` holding
 //! the rows that name them in `same_as`. Verdicts go through `review verdict`.
 
-mod common;
+use crate::common;
 
 use std::fs;
 use std::path::PathBuf;

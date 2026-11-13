@@ -4,7 +4,7 @@ use serde_json::json;
 use std::fs;
 use std::path::Path;
 
-mod common;
+use crate::common;
 use common::{assert_sidecar_matches, backlog, cli, sandbox, store_path};
 
 fn mint(root: &Path, summary: &str) -> String {

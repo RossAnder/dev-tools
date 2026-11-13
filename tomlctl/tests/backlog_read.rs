@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-mod common;
+use crate::common;
 use common::{
     age_terminal_date, backlog, backlog_stdout, cli, git_available, ids_from,
     parse_json_error_envelope, sandbox, store_path,

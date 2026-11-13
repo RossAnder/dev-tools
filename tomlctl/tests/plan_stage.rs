@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 use std::fs;
 use std::path::PathBuf;
 
-mod common;
+use crate::common;
 use common::{git_available, git_bash, git_command, hex_digest, stage_tasks_flow};
 
 const SLUG: &str = "plan-stage";

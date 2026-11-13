@@ -30,7 +30,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
-mod common;
+use crate::common;
 use common::{
     assert_sidecar_matches, ids_from, parse_json_error_envelope, run_list_query, seed_ledger,
 };

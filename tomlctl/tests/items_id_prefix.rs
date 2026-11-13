@@ -4,7 +4,7 @@
 use std::fs;
 use std::path::Path;
 
-mod common;
+use crate::common;
 use common::{cli, seed_ledger};
 
 fn run(root: &Path, args: &[&str]) -> std::process::Output {

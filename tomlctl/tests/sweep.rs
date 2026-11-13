@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use std::fs;
 use std::path::Path;
 
-mod common;
+use crate::common;
 use common::{
     assert_sidecar_matches, cli, git_available, parse_json_error_envelope, sandbox, seed_ledger_in,
 };

@@ -9,7 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
-mod common;
+use crate::common;
 use common::{TASKS_SLUG, backlog, cli, sandbox, seed_tasks, store_path};
 
 const TASKS_FIXTURE: &str = r#"schema_version = 1

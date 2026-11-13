@@ -4,7 +4,7 @@
 //! package management or legacy references. A detector that drifts from those
 //! layouts fails here rather than in a live review.
 
-mod common;
+use crate::common;
 
 use std::fs;
 use std::path::{Path, PathBuf};

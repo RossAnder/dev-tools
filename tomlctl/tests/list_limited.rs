@@ -7,7 +7,7 @@
 use serde_json::{Value, json};
 use std::path::Path;
 
-mod common;
+use crate::common;
 use common::{TASKS_SLUG, cli, sandbox, seed_ledger_in, seed_tasks, store_path};
 
 const LEDGER: &str = r#"schema_version = 1

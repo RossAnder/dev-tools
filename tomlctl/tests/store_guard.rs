@@ -2,7 +2,7 @@
 //! verb-owned stores unless `--raw-store` is passed, and leaves other stores
 //! and all reads alone.
 
-mod common;
+use crate::common;
 
 use std::fs;
 use std::path::Path;

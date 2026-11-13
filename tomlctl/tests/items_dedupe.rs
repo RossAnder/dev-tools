@@ -6,7 +6,7 @@ use assert_cmd::Command;
 use std::fs;
 use std::path::PathBuf;
 
-mod common;
+use crate::common;
 use common::seed_ledger;
 
 // ---------------------------------------------------------------------------

@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-mod common;
+use crate::common;
 use common::{
     TASKS_SLUG, cli, git_available, git_command, sandbox, seed_ledger_in, write_tasks_store,
 };

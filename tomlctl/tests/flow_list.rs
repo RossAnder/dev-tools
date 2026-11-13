@@ -12,8 +12,6 @@ use serde_json::Value as JsonValue;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-mod common;
-
 /// Build a mock repo root in a fresh tempdir. Returns (tempdir, root path).
 /// The `.claude/` directory is pre-created because `tomlctl` resolves
 /// `<root>/.claude/flows/` relative to the env-anchored root and would

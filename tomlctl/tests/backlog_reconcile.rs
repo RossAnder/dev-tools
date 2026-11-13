@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-mod common;
+use crate::common;
 use common::{TASKS_SLUG, assert_sidecar_matches, backlog, cli, sandbox, seed_tasks, store_path};
 
 const OTHER_SLUG: &str = "fixture-other-flow";

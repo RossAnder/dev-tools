@@ -1,7 +1,7 @@
 //! `tomlctl review settle` and the ageing of deferred proposals, against a
 //! sandbox repo whose store is seeded by hand.
 
-mod common;
+use crate::common;
 
 use std::fs;
 use std::path::PathBuf;

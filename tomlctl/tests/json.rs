@@ -18,7 +18,7 @@ use assert_cmd::Command;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-mod common;
+use crate::common;
 use common::parse_json_error_envelope;
 
 /// Create a tempdir, return (TempDir, repo-root-path). The caller seeds

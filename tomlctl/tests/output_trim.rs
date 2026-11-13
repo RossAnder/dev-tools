@@ -6,7 +6,7 @@ use serde_json::Value;
 use std::fs;
 use std::path::Path;
 
-mod common;
+use crate::common;
 use common::{
     TASKS_SLUG, cli, parse_json_error_envelope, sandbox, seed_ledger_in, seed_tasks,
     stage_tasks_flow,

@@ -2,7 +2,7 @@
 //! store carries `[[finding_links]]`, and a flow-less review store whose
 //! findings are `scheduled` into that flow.
 
-mod common;
+use crate::common;
 
 use std::fs;
 use std::path::PathBuf;

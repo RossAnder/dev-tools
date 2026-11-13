@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use std::fs;
 use std::path::Path;
 
-mod common;
+use crate::common;
 use common::{TASKS_SLUG, cli, sandbox, seed_tasks};
 
 /// 1 → {2, 3}, 1 → 4, 3 → 5, plus a `coupling` edge 2 → 3. Row 3 is the one

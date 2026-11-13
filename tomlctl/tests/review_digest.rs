@@ -2,7 +2,7 @@
 //! temp-dir catalogue and a store seeded by hand with the rows each test
 //! reads.
 
-mod common;
+use crate::common;
 
 use std::fs;
 use std::path::{Path, PathBuf};

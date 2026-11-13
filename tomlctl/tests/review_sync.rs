@@ -1,7 +1,7 @@
 //! `tomlctl review sync-v1` against a sandbox whose v2 store holds exported
 //! findings and whose v1 ledgers carry the `v2_ref`s an export writes.
 
-mod common;
+use crate::common;
 
 use std::fs;
 use std::path::PathBuf;

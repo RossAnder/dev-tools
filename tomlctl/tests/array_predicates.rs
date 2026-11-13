@@ -5,7 +5,7 @@
 use serde_json::Value;
 use std::path::Path;
 
-mod common;
+use crate::common;
 use common::{TASKS_SLUG, cli, sandbox, seed_tasks};
 
 const STORE: &str = r#"schema_version = 1

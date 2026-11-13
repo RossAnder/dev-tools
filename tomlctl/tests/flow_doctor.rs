@@ -12,7 +12,7 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-mod common;
+use crate::common;
 
 /// Build `<tmp>/.claude/` and return `(tempdir, root)`. Tests drive flow
 /// creation off this base.

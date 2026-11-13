@@ -10,7 +10,7 @@ use serde_json::Value;
 use std::fs;
 use std::path::Path;
 
-mod common;
+use crate::common;
 use common::{TASKS_SLUG, cli, sandbox, seed_ledger_in, seed_tasks, store_path};
 
 /// `hangar` sits only in B1's `context`, `tangerine` only in the dismissed

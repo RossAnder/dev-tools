@@ -8,7 +8,7 @@ use assert_cmd::Command;
 use std::fs;
 use std::path::PathBuf;
 
-mod common;
+use crate::common;
 use common::parse_json_error_envelope;
 
 /// Build `<root>/.claude/flows/<slug>/` and write `context.toml` with the

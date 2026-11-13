@@ -2,7 +2,7 @@
 //! against sandbox repos and a temp-dir catalogue. Stores are seeded by hand
 //! with the run row a test needs, so no test depends on `review survey`.
 
-mod common;
+use crate::common;
 
 use std::fs;
 use std::path::{Path, PathBuf};

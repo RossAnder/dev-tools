@@ -2,8 +2,6 @@
 
 use assert_cmd::Command;
 
-mod common;
-
 /// `blocks verify` must NOT accept any of the four integrity/containment
 /// flags (`--verify-integrity`, `--no-write-integrity`, `--strict-integrity`,
 /// `--allow-outside`): it scans markdown, not the TOML + sidecar pair, so

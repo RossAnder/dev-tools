@@ -1,7 +1,7 @@
 //! `review run show`: one run read back from the store, with signal roots
 //! limited to the run's scope and waves derived from its cells.
 
-mod common;
+use crate::common;
 
 use std::fs;
 use std::path::Path;

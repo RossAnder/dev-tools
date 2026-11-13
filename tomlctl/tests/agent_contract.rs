@@ -4,7 +4,7 @@
 //! `--tier`. Each is documented in `claude/skills/tomlctl/references/`;
 //! these pin the behaviour those references promise.
 
-mod common;
+use crate::common;
 
 use assert_cmd::Command;
 use std::fs;

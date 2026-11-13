@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-mod common;
+use crate::common;
 use common::{
     TASKS_SLUG, cli, git_bash, git_command, hex_digest, parse_json_error_envelope, sandbox,
     seed_tasks,

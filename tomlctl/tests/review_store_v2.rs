@@ -3,7 +3,7 @@
 //! scheduled finding, and every existing verb treats a scheduled finding as
 //! held by its apply task.
 
-mod common;
+use crate::common;
 
 use std::fs;
 use std::path::PathBuf;

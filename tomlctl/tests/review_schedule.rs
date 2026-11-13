@@ -3,7 +3,7 @@
 //! findings become fix task rows linked through `[[finding_links]]`, and the
 //! findings move to `scheduled`.
 
-mod common;
+use crate::common;
 
 use std::fs;
 use std::path::PathBuf;

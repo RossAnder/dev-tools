@@ -6,7 +6,7 @@ use serde_json::Value;
 use std::fs;
 use std::path::PathBuf;
 
-mod common;
+use crate::common;
 use common::{hex_digest, stage_tasks_flow};
 
 const SLUG: &str = "plan-check";

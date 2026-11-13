@@ -1,7 +1,7 @@
 //! `tomlctl review cover --ruled-out` against hand-seeded stores and a
 //! temp-dir catalogue holding one judgement lens and one mechanical lens.
 
-mod common;
+use crate::common;
 
 use std::fs;
 use std::path::{Path, PathBuf};

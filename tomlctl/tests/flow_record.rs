@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 
-mod common;
+use crate::common;
 use common::{TASKS_SLUG, cli, parse_json_error_envelope, sandbox, seed_tasks};
 
 const STORE: &str = r#"schema_version = 1

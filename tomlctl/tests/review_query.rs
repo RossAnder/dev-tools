@@ -2,7 +2,7 @@
 //! seeded by hand, with a temp-dir catalogue and claude dir for the paths a
 //! finder's assignment carries.
 
-mod common;
+use crate::common;
 
 use std::fs;
 use std::path::{Path, PathBuf};

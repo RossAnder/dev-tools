@@ -1,7 +1,7 @@
 //! `tomlctl review verdict` against a sandbox whose store is seeded by hand
 //! with a finder cell, a sweeper cell and unverified findings of each route.
 
-mod common;
+use crate::common;
 
 use std::fs;
 use std::path::PathBuf;

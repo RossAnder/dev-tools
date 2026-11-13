@@ -12,7 +12,7 @@ use assert_cmd::Command;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-mod common;
+use crate::common;
 use common::assert_sidecar_matches;
 
 /// Bootstrap an empty `.claude/` under a fresh tempdir and create a

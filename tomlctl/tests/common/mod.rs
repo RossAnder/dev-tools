@@ -1,13 +1,5 @@
-//! Shared helpers for the integration-test binaries under `tomlctl/tests/`.
-//!
-//! Each test binary declares `mod common;` to pull this module in. Cargo
-//! does NOT treat `tomlctl/tests/common/mod.rs` as its own test binary
-//! (only top-level files under `tests/` are test binaries), so this file
-//! is linked once per consumer without fanning out `#[test]` runs.
-//!
-//! Helpers are `#[allow(dead_code)]` because any given consumer may use
-//! only a subset; without the attribute, unused-item warnings would fire
-//! on every test binary that skips one of the helpers.
+//! Shared helpers for the integration tests under `tomlctl/tests/`, declared
+//! once by `tests/it.rs`; each test file reaches it with `use crate::common;`.
 
 #![allow(dead_code)]
 

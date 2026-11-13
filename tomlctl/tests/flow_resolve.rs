@@ -19,7 +19,7 @@ use assert_cmd::Command;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-mod common;
+use crate::common;
 
 // ---------------------------------------------------------------------------
 // Fixture builders

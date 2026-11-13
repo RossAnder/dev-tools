@@ -7,7 +7,7 @@
 
 use assert_cmd::Command;
 
-mod common;
+use crate::common;
 use common::parse_json_error_envelope;
 
 /// Acceptance: minimal-args invocation emits a JSON envelope with the

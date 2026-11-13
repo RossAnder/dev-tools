@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 use std::fs;
 use std::path::PathBuf;
 
-mod common;
+use crate::common;
 use common::{git_command, parse_json_error_envelope};
 
 const SLUG: &str = "plan-drift";

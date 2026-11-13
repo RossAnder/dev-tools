@@ -16,7 +16,7 @@
 use serde_json::{Value, json};
 use std::path::Path;
 
-mod common;
+use crate::common;
 use common::{TASKS_SLUG, cli, parse_json_error_envelope, sandbox, seed_tasks};
 
 /// 1 → 2, 1 → {3, 4}, 3 → 5, plus a `coupling` edge 2 → 3 so `deps` and

@@ -2,7 +2,7 @@
 //! fixture JSON lines into a tempdir, which the verb reads as a launch's
 //! transcript directory.
 
-mod common;
+use crate::common;
 
 use std::fs;
 use std::path::Path;

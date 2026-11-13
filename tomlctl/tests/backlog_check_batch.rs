@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-mod common;
+use crate::common;
 use common::{backlog, backlog_stdout, cli, parse_json_error_envelope, sandbox};
 
 const FLAKE_SUMMARY: &str = "pty_readiness_probe flakes on slow CI";

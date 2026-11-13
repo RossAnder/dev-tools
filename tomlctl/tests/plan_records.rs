@@ -4,7 +4,7 @@ use assert_cmd::Command;
 use std::fs;
 use std::path::Path;
 
-mod common;
+use crate::common;
 use common::{parse_json_error_envelope, stdout_json};
 
 const SLUG: &str = "rec-flow";

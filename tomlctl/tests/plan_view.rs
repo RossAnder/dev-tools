@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-mod common;
+use crate::common;
 use common::{parse_json_error_envelope, stage_tasks_flow};
 
 const SLUG: &str = "plan-view";

@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 use std::fs;
 use std::path::Path;
 
-mod common;
+use crate::common;
 use common::{
     TASKS_SLUG, cli, git_available, git_command, hex_digest, parse_json_error_envelope, sandbox,
     seed_tasks, stdout_json,

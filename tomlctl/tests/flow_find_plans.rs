@@ -14,8 +14,6 @@ use serde_json::Value as JsonValue;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-mod common;
-
 /// Build a mock repo root in a fresh tempdir. Returns (tempdir, root path).
 /// Caller is responsible for populating plans + settings + flows.
 fn make_root() -> (tempfile::TempDir, PathBuf) {
