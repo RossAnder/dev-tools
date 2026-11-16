@@ -801,3 +801,90 @@ fn gate_probe_must_name_a_gate() {
         "a probe whose gate was replaced is reported"
     );
 }
+
+fn after_of(doc: &toml::Value, index: usize) -> Vec<String> {
+    table(doc, "milestones")[index]
+        .get("after")
+        .and_then(toml::Value::as_array)
+        .map_or_else(Vec::new, |list| {
+            list.iter()
+                .map(|entry| entry.as_str().unwrap().to_string())
+                .collect()
+        })
+}
+
+fn two_milestones(root: &Path) -> std::path::PathBuf {
+    let store = seed_v2(root, FIXTURE);
+    milestone(root, "add", &["--id", "A", "--goal", "g"]).success();
+    milestone(root, "add", &["--id", "B", "--goal", "g", "--after", "A"]).success();
+    store
+}
+
+#[test]
+fn add_with_after_stores_the_list() {
+    let (_tmp, root) = sandbox();
+    let store = two_milestones(&root);
+
+    let doc = read_store(&store);
+    assert_eq!(after_of(&doc, 1), vec!["A".to_string()]);
+}
+
+#[test]
+fn after_naming_a_later_or_unknown_milestone_is_refused_and_writes_nothing() {
+    let (_tmp, root) = sandbox();
+    let store = two_milestones(&root);
+    let before = fs::read(&store).unwrap();
+
+    let unknown = refused(
+        &root,
+        "add",
+        &["--id", "C", "--goal", "g", "--after", "nope"],
+    );
+    assert_eq!(unknown["kind"], json!("validation"), "{unknown}");
+    let later = refused(&root, "update", &["--id", "A", "--after", "B"]);
+    assert_eq!(later["kind"], json!("validation"), "{later}");
+    let itself = refused(&root, "update", &["--id", "A", "--after", "A"]);
+    assert_eq!(itself["kind"], json!("validation"), "{itself}");
+
+    assert_eq!(fs::read(&store).unwrap(), before);
+}
+
+#[test]
+fn update_after_replaces_and_clear_after_empties() {
+    let (_tmp, root) = sandbox();
+    let store = two_milestones(&root);
+    milestone(&root, "add", &["--id", "C", "--goal", "g"]).success();
+
+    milestone(
+        &root,
+        "update",
+        &["--id", "C", "--after", "A", "--after", "B"],
+    )
+    .success();
+    assert_eq!(
+        after_of(&read_store(&store), 2),
+        vec!["A".to_string(), "B".to_string()]
+    );
+
+    milestone(&root, "update", &["--id", "C", "--after", "B"]).success();
+    assert_eq!(after_of(&read_store(&store), 2), vec!["B".to_string()]);
+
+    milestone(&root, "update", &["--id", "C", "--clear-after"]).success();
+    assert!(after_of(&read_store(&store), 2).is_empty());
+}
+
+#[test]
+fn clear_after_beside_after_is_refused_and_writes_nothing() {
+    let (_tmp, root) = sandbox();
+    let store = two_milestones(&root);
+    let before = fs::read(&store).unwrap();
+
+    let err = refused(
+        &root,
+        "update",
+        &["--id", "B", "--clear-after", "--after", "A"],
+    );
+
+    assert_eq!(err["kind"], json!("validation"), "{err}");
+    assert_eq!(fs::read(&store).unwrap(), before);
+}

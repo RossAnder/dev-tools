@@ -47,6 +47,7 @@ pub(super) fn dispatch(op: PlanEmitOp) -> Result<()> {
         PlanEmitOp::GateList(args) => gate_list(args),
         PlanEmitOp::ReproduceUnits(args) => reproduce_units(args),
         PlanEmitOp::LaneCheck(args) => super::lane::lane_check(args),
+        PlanEmitOp::Schedule(args) => super::schedule::run(args),
     }
 }
 
@@ -752,7 +753,15 @@ fn stranded(
 ) -> Option<(u32, String)> {
     let id = candidate.row.id;
     for &need in &candidate.row.needs {
-        let status = status_of(store, need);
+        let need_row = store.items.iter().find(|row| row.id == need);
+        let status = need_row.map(|row| row.status);
+        let outside = need_row.is_some_and(|row| row.checkpoint != candidate.row.checkpoint);
+        if outside && status == Some(Status::Done) {
+            if need_row.is_some_and(|row| row.commit.is_empty()) {
+                return Some((id, format!("need-not-committed:{need}")));
+            }
+            continue;
+        }
         if status == Some(Status::Done) || candidates.contains_key(&need) {
             continue;
         }

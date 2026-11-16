@@ -1859,6 +1859,7 @@ fn capabilities_features_contains_every_plan_feature() {
         "plan_emit",
         "agents_audit",
         "plan_emit_lane_check",
+        "milestone_schedule",
         // Plan records in the snapshot, run records, authored files, agent
         // usage and single-finding reads.
         "snapshot_plan_records",

@@ -14,16 +14,9 @@ Each check below stops the engine on failure, with the reason reported; none is 
 tomlctl plan stage --slug <slug>
 ```
 
-`stage` must read `approved` (every row still `pending`) or `running`. `done` means every row is `done`: there is nothing to run, so report that the flow's status is still to be moved and stop. Any other stage means the plan is not approved: stop and name `/plan-v2 <slug>`, which owns everything before approval. `open_runs` naming an `implement:<id>` step is an open run, settled by the skill's Re-entry section before anything here continues. A `blockers` entry other than an open run, such as a brief changed since approval, stops the engine with that entry quoted.
+`stage` must read `approved` (every row still `pending`) or `running`. `done` means every row is `done`: there is nothing to run, so report that the flow's status is still to be moved and stop. Any other stage means the plan is not approved: stop and name `/plan-v2 <slug>`, which owns everything before approval. `open_runs` naming an `implement:<id>` or `reproduce:<id>` step is an open run, settled by the skill's Re-entry section before anything here continues. An `open_runs` entry `elaborate:<id>` or `cold-read:<id>` is a plan-v2 elaboration in progress in another session: leave it alone and never settle it here. It owns no task rows, so it is not an open run for the stale `in-progress` reset below either. A `blockers` entry other than an open run, such as a brief changed since approval, stops the engine with that entry quoted.
 
-**The stores.**
-
-```bash
-tomlctl plan check --slug <slug>
-tomlctl tasks check --slug <slug>
-```
-
-Each exits 1 on an error-class finding. Report the findings and stop; the fix is a replan through audited verbs, never an edit that makes a check pass.
+The store checks run in step 2, scoped to the picked milestone, never flow-wide: a milestone being elaborated holds half-written rows that would otherwise refuse every milestone.
 
 **The working tree.**
 
@@ -44,7 +37,7 @@ The tree must be clean except for:
 
 Paths under `.claude/flows/<slug>/` and `docs/flows/<slug>/`, the flow's own directories, are never listed. Any other path is someone else's edit, and a worker would build on it or a milestone commit, which stages its rows' `files`, would sweep it in. Stop and name each path; the user commits, moves or discards it, never the engine.
 
-**Stale `in-progress` rows.** With no open run, a row still `in-progress` is left over from a run that ended without its worker's final status. Reset every one to `pending`, leaving its edits in place for the next worker's own-diff step:
+**Stale `in-progress` rows.** With no open `implement:` or `reproduce:` run, a row still `in-progress` is left over from a run that ended without its worker's final status. Reset every one to `pending`, leaving its edits in place for the next worker's own-diff step:
 
 ```bash
 tomlctl tasks list --slug <slug> --where status=in-progress --select id --lines
@@ -55,24 +48,47 @@ tomlctl tasks update <N1,N2> --slug <slug> --status pending
 
 ## 2. Pick the milestone
 
-The milestone is the first checkpoint, in store order, holding a row that is not `done`. `--milestone <id>` names it instead, and is refused when an earlier checkpoint still holds a row that is not `done`, since its rows' dependents would launch on unfinished work.
+The schedule names the milestone. It gives every milestone a state from its rows, its `elaboration`, its `after` list and the milestones its rows reach through `needs` and `coupling`, and picks the first one in store order whose upstream milestones are all done and committed:
 
 ```bash
-tomlctl items list .claude/flows/<slug>/tasks.toml --array checkpoints --select id --lines
-tomlctl tasks list --slug <slug> --where checkpoint=<id> --where-not status=done --select id,status --lines
+tomlctl plan emit schedule --slug <slug> --get pick
+tomlctl plan emit schedule --slug <slug> --rows milestones --select id,state,on,left
 ```
 
-Walk the checkpoints in the order the first command prints, running the second for each until it prints a row.
+The first prints the pick, empty when nothing can run. The second prints each milestone as `{id, state, on, left}` in store order, where `on` names the milestones it waits or is held on and `left` counts its rows not `done`:
 
-**A deferred milestone stops the engine.** Its tasks carry no checks or premises yet, and elaborating them is out of this slice:
+| `state` | Means |
+|---|---|
+| `runnable` | Every upstream milestone is done and committed; it can run |
+| `started` | A row has a worker's edits and no commit; while one is, only it can be picked |
+| `held` | It could run, but a `started` or `unstamped` milestone, named in `on`, comes first |
+| `waiting` | An upstream milestone, named in `on`, is not done and committed |
+| `parked` | No row is started, and a row is `parked` or every unfinished row is `deferred` |
+| `deferred` | Its tasks carry no checks or premises yet; it is never picked |
+| `elaborating` | Deferred, with an open `elaborate:<id>` run: another session is writing its tasks |
+| `unstamped` | Every row is `done` and at least one carries no `commit` |
+| `done`, `empty` | Nothing to run |
+
+**Parked milestones first.** Before taking the pick, re-ask the parked rows of each milestone the schedule reports `parked`, as if it were about to run, by [drain.md](drain.md), section "Parked rows at the next invocation". Then read the schedule again: a row the user unparked may make that milestone, or one downstream of it, the pick.
+
+**An empty pick.** With an `unstamped` milestone, go to the skill's Re-entry section, which stamps it or runs its gate again, and read the schedule again once it is settled. Otherwise nothing can run: end the invocation with the report, naming
+
+- each `deferred` milestone, adding `/plan-v2 <slug> --elaborate <id>` when its `on` is empty, since nothing it stands on is unfinished;
+- each `elaborating` milestone, being written in another session;
+- each `parked` milestone, with the rows the user left parked;
+- each `waiting` milestone, with its `on`.
+
+A deferred milestone is never picked and never stops the engine; the schedule runs the milestones that do not stand on it, and reports it with the rest.
+
+**`--milestone <id>`** names the milestone instead. It is taken when the schedule reports that milestone `runnable`, or when it is the pick, and refused otherwise, naming its state and its `on`: its rows' dependents would launch on unfinished work, or over another milestone's uncommitted edits.
+
+**The stores.** Once the milestone is known, on every pick, a continuation to the next milestone included:
 
 ```bash
-tomlctl items list .claude/flows/<slug>/tasks.toml --array milestones --where id=<id> --select id,elaboration --lines
+tomlctl plan check --slug <slug> --milestone <id>
 ```
 
-An `elaboration` of `deferred` stops with a message naming the milestone and saying it must be elaborated before it can run. `upfront` and `elaborated` go on.
-
-**Rows already settled.** A milestone whose rows are all `done` but carry an empty `commit` goes to the skill's Re-entry section, which stamps it or runs its gate again. Parked rows of the milestone are re-asked by the same section before the premises run, so by step 3 each one is either `pending` again or still parked by the user's choice.
+It runs the task store's checks and the plan classes, and counts and prints only the findings on the milestone's rows, on its upstream milestones' rows, or naming no task, so a half-written milestone elsewhere stops nothing. It exits 1 on an error-class finding: report the findings and stop. The fix is a replan through audited verbs, never an edit that makes a check pass.
 
 **Gate probes.** A gate that cannot pass in this environment, such as one calling a tool that is not installed, would otherwise be found only after every worker of the milestone has run. A milestone may carry `gate_probes`, each a cheap command that fails where its gate cannot pass. They run here, once the milestone is known and before its first launch; a relaunch from the drain goes back to step 3 and does not run them again. A milestone with no stored probe skips this:
 
@@ -168,7 +184,8 @@ The call fails, naming `plan probes --emit --premises --milestone <id>`, when a 
 | `needs-withheld:<task>` | The row transitively needs `<task>`, which was dropped for a reason of its own | Waits on `<task>`'s replan, then a later launch |
 | `executor:<value>` | The spec's `executor` is neither `lite` nor `deep` (`none` when the row has no spec). A `tool` or `clerk` row has no worker in this slice | The `needs_human` report, with its executor |
 | `no-files` | The row's `files` is empty: the Workflow refuses one, and a task that edits nothing has nothing to dispatch | The drain replan |
-| `need-not-done:<task>:<status>` | A need is neither `done` nor dispatched. A need in a later milestone, or one left unfinished in an earlier one, means the milestone cut is wrong, which `tasks check` reports as an invalid cut | The drain, reporting the need and its status |
+| `need-not-done:<task>:<status>` | A need is neither `done` nor dispatched, such as one left unfinished in another milestone | The drain, reporting the need and its status |
+| `need-not-committed:<task>` | A need in another milestone is `done` but carries no `commit` stamp, so its edits are not yet in a gated commit | The drain, reporting the need |
 
 **`after_checks`.** Each entry, `{task, premise, after, check}`, is an `after:<after>` premise of a dispatched `task` whose own target is in this launch, so its worker will run `check` once `after` returns `done`. Read every `check` before launch, as step 3 reads the premise script: the worker runs it with the same rights, and no permission prompt stands in front of it. One that does anything but read, such as a write, a network call or a build, is not launched around: stop, replan that premise as step 3 does for a premise line that writes, and emit again.
 

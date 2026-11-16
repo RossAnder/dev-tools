@@ -92,6 +92,8 @@ pub(crate) enum PlanEmitOp {
     /// paths no started row holds, and task-store writes beyond a worker's
     /// own `status` and `agent`.
     LaneCheck(PlanEmitLaneCheckArgs),
+    /// Print each milestone's state and the milestone /implement-v2 runs next
+    Schedule(PlanEmitScheduleArgs),
 }
 
 /// `plan handover` leaves.
@@ -432,6 +434,12 @@ pub(crate) struct PlanMilestoneAddArgs {
     )]
     pub(crate) gate_probe: Vec<String>,
     #[arg(
+        long = "after",
+        value_name = "ID",
+        help = "A milestone stored earlier that this one must run after; repeat for several"
+    )]
+    pub(crate) after: Vec<String>,
+    #[arg(
         long = "defer",
         help = "Elaborate the milestone's tasks just before it runs; takes --reason"
     )]
@@ -475,6 +483,17 @@ pub(crate) struct PlanMilestoneUpdateArgs {
     )]
     pub(crate) gate_probe: Vec<String>,
     #[arg(
+        long = "after",
+        value_name = "ID",
+        help = "A milestone stored earlier that this one must run after; repeat for several (the flags given replace the whole list)"
+    )]
+    pub(crate) after: Vec<String>,
+    #[arg(
+        long = "clear-after",
+        help = "Empty the after list; refused with --after"
+    )]
+    pub(crate) clear_after: bool,
+    #[arg(
         long = "defer",
         help = "Elaborate the milestone's tasks just before it runs; takes --reason"
     )]
@@ -498,6 +517,12 @@ pub(crate) struct PlanMilestoneUpdateArgs {
 pub(crate) struct PlanCheckArgs {
     #[command(flatten)]
     pub(crate) target: PlanTarget,
+    #[arg(
+        long = "milestone",
+        value_name = "ID",
+        help = "Report only findings on this milestone's rows, its upstream milestones' rows, and findings naming no task"
+    )]
+    pub(crate) milestone: Option<String>,
     #[command(flatten)]
     pub(crate) integrity: ReadIntegrityArgs,
 }
@@ -641,6 +666,14 @@ pub(crate) struct PlanEmitLaneCheckArgs {
         help = "The checkpoint whose latest `implement:<id>` run is checked"
     )]
     pub(crate) milestone: String,
+    #[command(flatten)]
+    pub(crate) integrity: ReadIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct PlanEmitScheduleArgs {
+    #[command(flatten)]
+    pub(crate) target: PlanTarget,
     #[command(flatten)]
     pub(crate) integrity: ReadIntegrityArgs,
 }

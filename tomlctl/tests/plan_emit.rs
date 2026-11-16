@@ -1307,3 +1307,118 @@ fn reproduce_units_entry_matches_the_pipeline_args() {
          validates them"
     );
 }
+
+fn schedule(root: &Path) -> Value {
+    stdout_json(
+        &cli(root)
+            .args(["plan", "emit", "schedule", "--slug", TASKS_SLUG])
+            .assert()
+            .success(),
+    )
+}
+
+fn state_of(out: &Value, id: &str) -> Value {
+    let entry = out["milestones"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["id"] == id)
+        .unwrap_or_else(|| panic!("no milestone {id} in {out}"));
+    json!({ "state": entry["state"], "on": entry["on"] })
+}
+
+#[test]
+fn schedule_picks_the_runnable_milestone_and_reports_why_the_rest_wait() {
+    let (_dir, root) = sandbox();
+    let mut items = vec![
+        row(1, "done", "A", &[], &["src/one.rs"]),
+        row(2, "pending", "B", &[1], &["src/two.rs"]),
+        row(3, "pending", "C", &[1], &["src/three.rs"]),
+        row(4, "pending", "D", &[2, 3], &["src/four.rs"]),
+    ];
+    items[0]["agent"] = json!("plan-worker-lite");
+    items[0]["commit"] = json!("abc1234");
+    let specs = (1..=4).map(|id| spec(id, "lite", json!([]))).collect();
+    let extra = json!({
+        "checkpoints": [
+            { "id": "A", "rationale": "first" },
+            { "id": "B", "rationale": "deferred" },
+            { "id": "C", "rationale": "ready" },
+            { "id": "D", "rationale": "last" },
+        ],
+        "milestones": [
+            { "id": "B", "elaboration": "deferred", "defer_reason": "later", "gates": [] },
+        ],
+    });
+    let store_path = seed_tasks(&root, &store(items, specs, extra));
+    fs::write(
+        store_path.with_file_name("plan.toml"),
+        "schema_version = 2\n",
+    )
+    .unwrap();
+
+    let out = schedule(&root);
+    assert_eq!(out["pick"], "C", "{out}");
+    assert_eq!(state_of(&out, "A")["state"], "done");
+    assert_eq!(
+        state_of(&out, "B"),
+        json!({ "state": "deferred", "on": [] })
+    );
+    assert_eq!(state_of(&out, "C")["state"], "runnable");
+    assert_eq!(
+        state_of(&out, "D"),
+        json!({ "state": "waiting", "on": ["B", "C"] })
+    );
+
+    run_start(&root, &["--step", "elaborate:B"]).success();
+    let out = schedule(&root);
+    assert_eq!(state_of(&out, "B")["state"], "elaborating", "{out}");
+    assert_eq!(out["pick"], "C", "{out}");
+
+    cli(&root)
+        .args(["plan", "milestone", "update", "--slug", TASKS_SLUG])
+        .args(["--id", "C", "--after", "B"])
+        .assert()
+        .success();
+    let out = schedule(&root);
+    assert_eq!(out["pick"], "", "{out}");
+    assert_eq!(
+        state_of(&out, "C"),
+        json!({ "state": "waiting", "on": ["B"] })
+    );
+}
+
+#[test]
+fn launch_args_need_a_commit_stamp_on_a_need_outside_the_milestone() {
+    let (_dir, root) = sandbox();
+    if committed(&root).is_none() {
+        return;
+    }
+    let build = |commit: &str| {
+        let mut items = vec![
+            row(1, "done", OTHER, &[], &["src/one.rs"]),
+            row(2, "pending", MILESTONE, &[1], &["src/two.rs"]),
+        ];
+        items[0]["commit"] = json!(commit);
+        let specs = vec![spec(1, "lite", json!([])), spec(2, "lite", json!([]))];
+        store(items, specs, json!({}))
+    };
+
+    seed_tasks(&root, &build(""));
+    let out = stdout_json(&launch_args(&root, &[]).success());
+    assert_eq!(
+        dropped(&out),
+        [(2, "need-not-committed:1".to_string())],
+        "{out}"
+    );
+
+    seed_tasks(&root, &build("abc1234"));
+    let out = stdout_json(&launch_args(&root, &[]).success());
+    let ids: Vec<u64> = out["args"]["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["id"].as_u64().unwrap())
+        .collect();
+    assert_eq!(ids, [2], "{out}");
+}

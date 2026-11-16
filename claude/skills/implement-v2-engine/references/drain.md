@@ -66,7 +66,7 @@ One read answers both what the run edited outside its lanes and what it wrote to
 tomlctl plan emit lane-check --slug <slug> --milestone <id>
 ```
 
-It reads the latest `implement:<id>` run and the task ids `plan run start --tasks` recorded on it, so it answers for an abandoned run settled at re-entry as for one this session launched. It prints `{clean, run_id, out_of_lane, store_writes, digest}`. On `"clean": true` there is nothing out of lane and no store change: go on to the attempts below. Otherwise read `out_of_lane` here and `store_writes` and `digest` in step 5.
+It reads the latest `implement:<id>` run and the task ids `plan run start --tasks` recorded on it, so it answers for an abandoned run settled at re-entry as for one this session launched. Rows, specs and trail rows of a milestone deferred when the run opened are left out, so a second session's elaboration is not reported. It prints `{clean, run_id, out_of_lane, store_writes, digest}`. On `"clean": true` there is nothing out of lane and no store change: go on to the attempts below. Otherwise read `out_of_lane` here and `store_writes` and `digest` in step 5.
 
 **Out-of-lane edits.** Each `out_of_lane` entry is `{path, rows}`: an uncommitted path in no row the run dispatched, in no started row as the pre-flight in [run-milestone.md](run-milestone.md), step 1, defines it, and not the backlog store or a linked review store, by [apply-rows.md](apply-rows.md), section "Linked review stores in the clean-tree and lane checks", nor their sidecars. Paths under `.claude/flows/<slug>/` and `docs/flows/<slug>/` are never listed. A non-empty `rows` names the rows holding the path, none of which a worker has started. Look for the worker that made the edit in the notes you read and in the `files_touched` they name. When a note accounts for the path and the task needed it, widen that task's `files` through the replan (step 6) so the edit is in its lane. Otherwise list the path in `needs_human` and do not gate: the engine never commits, moves or discards an edit nobody owns.
 
@@ -465,7 +465,7 @@ git add -- <each path that printed>
 git commit -m "<message>" -- <each path that printed>
 ```
 
-Each store's `.sha256` sidecar is staged beside it; the pre-commit hook compares the two.
+Each store's `.sha256` sidecar is staged beside it; the pre-commit hook compares the two. This commit may stage another session's elaboration writes, which stay non-runnable because that milestone stays deferred until its elaboration's last write.
 
 ### Stamping on re-entry
 
@@ -473,7 +473,7 @@ A milestone whose rows are all `done` with an empty `commit` is one whose run en
 
 ### Next
 
-Go to run-milestone step 2 for the next milestone only when this milestone was committed, nothing in the flow is parked, and `--milestone` was not given. Otherwise end the invocation with the report below: the stop rule of step 6, a parked row, and a gate that failed after round 2 or timed out twice all reach here without a commit.
+Go to run-milestone step 2 when this milestone was committed and `--milestone` was not given; step 2's schedule decides whether anything runs, so a parked row no longer stops the engine by itself. Otherwise end the invocation with the report below: the stop rule of step 6, and a gate that failed after round 2 or timed out twice, reach here without a commit.
 
 ## 11. The `needs_human` report
 
@@ -518,7 +518,7 @@ milestones committed this invocation: <id> <sha>, …
 flow: <plan stage>; <next step>
 ```
 
-The last line names what happens next: `/implement-v2 <slug>` once the parked rows have an answer; the next milestone when one is pending; and when every milestone is committed, that the flow's status is still to be moved, which this engine does not do.
+The last line names what happens next: `/implement-v2 <slug>` once the parked rows have an answer; the schedule's pick when there is one, and each deferred milestone with `/plan-v2 <slug> --elaborate <id>`; and when every milestone is committed, that the flow's status is still to be moved, which this engine does not do.
 
 ### Record the report
 
@@ -560,7 +560,7 @@ An invocation with nothing to report still records a report: call it without `--
 
 ## Parked rows at the next invocation
 
-The skill's Re-entry runs this before run-milestone step 3, for each parked row of the milestone about to run:
+The skill's Re-entry runs this before run-milestone step 3, for each milestone the schedule reports `parked` before the pick, as well as for the milestone about to run, and for each parked row of it:
 
 ```bash
 tomlctl tasks list --slug <slug> --where checkpoint=<id> --where status=parked --select id,title --lines

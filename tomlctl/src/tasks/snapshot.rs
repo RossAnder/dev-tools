@@ -361,6 +361,7 @@ fn milestone_json(milestone: &MilestoneSpec) -> JsonValue {
         "elaboration": milestone.elaboration,
         "defer_reason": milestone.defer_reason,
         "gate_probes": gate_probes,
+        "after": milestone.after,
     })
 }
 

@@ -372,6 +372,7 @@ pub(crate) struct MilestoneSpec {
     pub(crate) elaboration: String,
     pub(crate) defer_reason: String,
     pub(crate) gate_probes: Vec<GateProbe>,
+    pub(crate) after: Vec<String>,
 }
 
 /// A cheap command that fails where `gate`, one of its milestone's gates, cannot
@@ -1339,6 +1340,7 @@ fn milestone_from_toml(value: &TomlValue, index: usize) -> Result<MilestoneSpec>
         elaboration: str_or(table, "elaboration", ELABORATION_UPFRONT),
         defer_reason: lf(&str_or(table, "defer_reason", "")),
         gate_probes,
+        after: lf_array(table, "after"),
     })
 }
 
@@ -1351,6 +1353,7 @@ fn milestone_to_toml(entry: &MilestoneSpec) -> TomlValue {
         elaboration,
         defer_reason,
         gate_probes,
+        after,
     } = entry;
     let mut table = Table::new();
     table.insert("id".to_string(), TomlValue::String(id.clone()));
@@ -1382,6 +1385,9 @@ fn milestone_to_toml(entry: &MilestoneSpec) -> TomlValue {
             })
             .collect();
         table.insert("gate_probes".to_string(), TomlValue::Array(entries));
+    }
+    if !after.is_empty() {
+        table.insert("after".to_string(), lf_arr_value(after));
     }
     TomlValue::Table(table)
 }
@@ -2089,6 +2095,7 @@ mod tests {
                     verdict: "holds".to_string(),
                     at: "0d1bf49".to_string(),
                 }],
+                after: Vec::new(),
             }],
             changes: vec![Change {
                 at: Some("2026-11-05".parse().expect("bare date parses")),
@@ -2434,6 +2441,25 @@ commit = ""
         let read = from_toml(&doc).expect("parses");
         assert_eq!(read.milestones[0].elaboration, ELABORATION_UPFRONT);
         assert_eq!(read.milestones[0].gates, Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_milestone_after_list_round_trips_and_is_omitted_when_empty() {
+        let doc: TomlValue = toml::from_str(
+            "[[milestones]]\nid = \"B\"\nafter = [\"A\"]\n\n[[milestones]]\nid = \"C\"\n",
+        )
+        .expect("parses");
+        let read = from_toml(&doc).expect("parses");
+        assert_eq!(read.milestones[0].after, vec!["A".to_string()]);
+        assert!(read.milestones[1].after.is_empty());
+        let written = to_toml(&read);
+        let tables = written["milestones"].as_array().expect("milestones");
+        assert!(tables[0].as_table().expect("table").contains_key("after"));
+        assert!(!tables[1].as_table().expect("table").contains_key("after"));
+        assert_eq!(
+            from_toml(&written).expect("parses").milestones,
+            read.milestones
+        );
     }
 
     #[test]

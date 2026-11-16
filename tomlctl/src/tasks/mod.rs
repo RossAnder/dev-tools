@@ -43,6 +43,10 @@ pub(crate) mod backlog_refs;
 pub(crate) mod check;
 pub(crate) mod finding;
 pub(crate) mod schema;
+
+// `plan emit schedule` prints the milestone pick and `plan check` reads each
+// milestone's upstream set, both off the store's own rows.
+pub(crate) mod milestones;
 pub(crate) mod slug;
 
 // `items clusters` layers ledger items and names a cycle through the same

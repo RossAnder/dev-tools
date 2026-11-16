@@ -117,6 +117,29 @@ fn gate_probes_json(probes: &[GateProbe]) -> String {
     JsonValue::Array(pairs).to_string()
 }
 
+/// Refuses an `after` id that is not stored before `id` in `[[checkpoints]]`;
+/// an id not yet stored counts as last.
+fn check_after(store: &Store, id: &str, after: &[String]) -> Result<()> {
+    let own = store
+        .checkpoints
+        .iter()
+        .position(|entry| entry.id == id)
+        .unwrap_or(store.checkpoints.len());
+    for target in after {
+        let earlier = store
+            .checkpoints
+            .iter()
+            .position(|entry| &entry.id == target)
+            .is_some_and(|index| index < own);
+        if !earlier {
+            return Err(refuse(format!(
+                "`--after {target}` names no milestone stored before `{id}`"
+            )));
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn add(args: PlanMilestoneAddArgs) -> Result<()> {
     let id = args.id.trim().to_string();
     if id.is_empty() {
@@ -140,6 +163,7 @@ pub(super) fn add(args: PlanMilestoneAddArgs) -> Result<()> {
         {
             return Err(refuse(format!("milestone `{id}` already exists")));
         }
+        check_after(store, &id, &args.after)?;
         store.checkpoints.push(Checkpoint {
             id: id.clone(),
             rationale: args.goal.clone(),
@@ -156,6 +180,7 @@ pub(super) fn add(args: PlanMilestoneAddArgs) -> Result<()> {
                 false => String::new(),
             },
             gate_probes: gate_probes.clone(),
+            after: args.after.clone(),
         });
         if store.audit {
             store.changes.push(change(
@@ -178,13 +203,20 @@ pub(super) fn update(args: PlanMilestoneUpdateArgs) -> Result<()> {
         && args.gate.is_empty()
         && !args.clear_gate
         && args.gate_probe.is_empty()
+        && args.after.is_empty()
+        && !args.clear_after
         && !args.defer
         && !args.elaborated
     {
         return Err(refuse(
             "nothing to update: pass `--goal`, `--gate`, `--clear-gate`, `--gate-probe`, \
-             `--defer` or `--elaborated`"
+             `--after`, `--clear-after`, `--defer` or `--elaborated`"
                 .to_string(),
+        ));
+    }
+    if args.clear_after && !args.after.is_empty() {
+        return Err(refuse(
+            "`--clear-after` and `--after` set the after list two different ways".to_string(),
         ));
     }
     let gate_probes = parse_gate_probes(&args.gate_probe)?;
@@ -211,6 +243,7 @@ pub(super) fn update(args: PlanMilestoneUpdateArgs) -> Result<()> {
         goal: args.goal.clone(),
         gates: (!args.gate.is_empty() || args.clear_gate).then(|| args.gate.clone()),
         gate_probes: (!gate_probes.is_empty()).then_some(gate_probes),
+        after: (!args.after.is_empty() || args.clear_after).then(|| args.after.clone()),
         elaboration: match (args.defer, args.elaborated) {
             (true, _) => Some(ELABORATION_DEFERRED.to_string()),
             (_, true) => Some(ELABORATION_ELABORATED.to_string()),
@@ -232,6 +265,7 @@ struct MilestonePatch {
     /// `(gate, probe)` pairs replacing the whole probe list, each checked
     /// against the gates the patch leaves.
     gate_probes: Option<Vec<(String, String)>>,
+    after: Option<Vec<String>>,
     elaboration: Option<String>,
     defer_reason: Option<String>,
 }
@@ -252,13 +286,21 @@ fn patch_milestone(
             "this store is audited: pass --reason <text> to update a milestone".to_string(),
         ));
     }
-    let Some(checkpoint) = store.checkpoints.iter_mut().find(|entry| entry.id == id) else {
+    if !store.checkpoints.iter().any(|entry| entry.id == id) {
         return Err(tagged_err(
             ErrorKind::NotFound,
             None,
             format!("no milestone `{id}` in the store"),
         ));
-    };
+    }
+    if let Some(after) = &patch.after {
+        check_after(store, id, after)?;
+    }
+    let checkpoint = store
+        .checkpoints
+        .iter_mut()
+        .find(|entry| entry.id == id)
+        .expect("checkpoint presence checked above");
     let mut changes: Vec<(&str, String, String)> = Vec::new();
     if let Some(goal) = &patch.goal {
         let old = std::mem::replace(&mut checkpoint.rationale, goal.clone());
@@ -273,6 +315,7 @@ fn patch_milestone(
                 elaboration: ELABORATION_UPFRONT.to_string(),
                 defer_reason: String::new(),
                 gate_probes: Vec::new(),
+                after: Vec::new(),
             });
             store.milestones.len() - 1
         }
@@ -290,6 +333,10 @@ fn patch_milestone(
             gate_probes_json(&old),
             gate_probes_json(&spec.gate_probes),
         ));
+    }
+    if let Some(after) = &patch.after {
+        let old = std::mem::replace(&mut spec.after, after.clone());
+        changes.push(("after", json!(old).to_string(), json!(after).to_string()));
     }
     if let Some(elaboration) = &patch.elaboration {
         if !ELABORATIONS.contains(&elaboration.as_str()) {

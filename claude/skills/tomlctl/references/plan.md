@@ -287,7 +287,7 @@ table is refused. On an audited store `--reason` is required, blank is refused, 
 `[[changes]]` row with `field = "*"` carrying that reason.
 
 ```bash
-tomlctl plan milestone add --slug <slug> --id <id> --goal '<text>' [--gate '<command>']... [--gate-probe '<gate> :: <probe>']... [--defer --reason '<text>']
+tomlctl plan milestone add --slug <slug> --id <id> --goal '<text>' [--gate '<command>']... [--gate-probe '<gate> :: <probe>']... [--after <id>]... [--defer --reason '<text>']
 ```
 
 | Flag | Value | Meaning | Default |
@@ -296,6 +296,7 @@ tomlctl plan milestone add --slug <slug> --id <id> --goal '<text>' [--gate '<com
 | `--goal` | text | What the milestone delivers. | required |
 | `--gate` | command, repeatable | Command that must pass at the milestone's drain. | none |
 | `--gate-probe` | `<gate> :: <probe>`, repeatable | Stores a [gate probe](plan-probes.md#gate-probes), split at the first ` :: `. `<gate>` must equal one of the milestone's gates; no separator, an empty side, or a probe equal to its gate is refused. | none |
+| `--after` | id, repeatable | An earlier milestone this one must run after, stored as `after`. It must name a checkpoint stored before this one, or `plan check` reports `plan/milestone-after-unknown` or `plan/milestone-after-forward`. | none |
 | `--defer` | — | Sets `elaboration = "deferred"`, so the milestone's tasks are elaborated just before it runs. Needs `--reason`. | `upfront` |
 | `--reason` | text | Why it is deferred, and why it was added on an audited store, which requires it. | `""` |
 
@@ -310,7 +311,7 @@ with `ref = "milestone:<id>"`: `goal`, `gates`, `gate_probes`, `elaboration`, `d
 or `gate_probes` row's `old` and `new` are compact JSON, such as `["a","b"]`.
 
 ```bash
-tomlctl plan milestone update --slug <slug> --id <id> [--goal '<text>'] [--gate '<command>']... [--clear-gate] [--gate-probe '<gate> :: <probe>']... [--defer] [--elaborated] [--reason '<text>']
+tomlctl plan milestone update --slug <slug> --id <id> [--goal '<text>'] [--gate '<command>']... [--clear-gate] [--gate-probe '<gate> :: <probe>']... [--after <id>]... [--clear-after] [--defer] [--elaborated] [--reason '<text>']
 ```
 
 | Flag | Value | Meaning | Default |
@@ -320,6 +321,8 @@ tomlctl plan milestone update --slug <slug> --id <id> [--goal '<text>'] [--gate 
 | `--gate` | command, repeatable | Replaces the whole gate list. | keeps it |
 | `--clear-gate` | — | Empties the gate list, which `plan check` then reports as `plan/milestone-no-gate`. Refused with `kind=validation` alongside `--gate`. | keeps it |
 | `--gate-probe` | `<gate> :: <probe>`, repeatable | Replaces the whole probe list, checked against the gates this call leaves; a pair already stored keeps its verdict. | keeps it |
+| `--after` | id, repeatable | Replaces the whole `after` list with the ids given, each a checkpoint stored before this one. | keeps it |
+| `--clear-after` | — | Empties the `after` list. Refused with `kind=validation` alongside `--after`. | keeps it |
 | `--defer` | — | Sets `elaboration = "deferred"` and `defer_reason`. Needs `--reason`. No flag moves a milestone back to `upfront`. | keeps it |
 | `--elaborated` | — | Sets `elaboration = "elaborated"` on a milestone currently `deferred`, keeping `defer_reason`. Needs `--reason`. Refused on an `upfront` or already `elaborated` milestone, and alongside `--defer`. | keeps it |
 | `--reason` | text | Why it is deferred or elaborated, and why it changed on an audited store. | `""` |
@@ -333,8 +336,12 @@ Runs [`tasks check`](tasks.md#tasks-check) plus the `backlog/*` join and the
 warnings alone. A store that cannot be read, `tasks.toml` included, is a refusal rather than a finding.
 
 ```bash
-tomlctl plan check --slug <slug>
+tomlctl plan check --slug <slug> [--milestone <id>]
 ```
+
+| Flag | Value | Meaning | Default |
+|---|---|---|---|
+| `--milestone` | id | Report only findings on the rows of this milestone and of every milestone upstream of it, and findings naming no task. A graph, cut or handover class is kept whatever it names. An id naming no checkpoint is refused with `kind=validation`. | all findings |
 
 A row report with `ok` as its header and one [finding](tasks.md#finding-shape) per row:
 `{"ok":false,"findings":[{"class","severity","ids","detail"}]}`. A `files` entry and a `binds` path
@@ -535,8 +542,11 @@ input, gate command list and reproduce launches from; their flags and output are
 | `plan/means-required-no-reason` | error | A `means` entry with `binding = "required"` has a blank `detail`. |
 | `plan/design-anchor-dead` | error | A spec's `design` citation resolves to no section. |
 | `plan/deferred-no-reason` | error | A deferred milestone has a blank `defer_reason`. |
+| `plan/milestone-after-unknown` | error | A milestone's `after` names an id no checkpoint carries. `plan milestone update --after <id>` with a real id, or `--clear-after`, clears it. |
+| `plan/milestone-after-forward` | error | A milestone's `after` names itself or a milestone not stored before it in `[[checkpoints]]`. `plan milestone update --after <id>` with an earlier id, or `--clear-after`, clears it. |
 | `plan/probe-unhealthy` | error | An `accept` entry's recorded verdict is anything but `healthy`. |
 | `plan/probe-absent` | warning | An `accept` entry of a `pending` row, with a non-empty `check`, `writes_build = false` and an effective owner of `worker`, has no probe. A row added after approval, which an audited store marks with a `[[changes]]` row of `field = "*"` and an empty `old`, is not reported, since probes run only before approval. |
 | `plan/milestone-no-gate` | warning | A milestone, or a checkpoint with no `[[milestones]]` row, has no non-blank gate. |
+| `plan/milestone-order-unqualified` | warning | One finding per milestone after the first that does not depend, through `needs`, `coupling` or `after` at any distance, on an earlier milestone, so `/implement-v2` may run it first. `detail` names the earlier milestones. `plan milestone update --id <later> --after <earlier>` where the earlier one must go first. |
 | `plan/file-only-chain` | info | Before the first approval only: one finding per milestone holding a `needs` link whose two rows share a file but no contract names both and no premise of the later row is at `after:<earlier>`. `ids` names the linked rows; `detail` lists each link with its shared files, and the milestone's longest `needs` chain against its row count. Splitting the file lets the rows run together. |
-| `plan/milestone-width` | info | Before the first approval only: one finding per milestone, after the first and not deferred, holding rows whose direct `needs` all sit in a milestone earlier than the one just before it, or that have no `needs`. `ids` names the rows; `detail` gives the earliest milestone each could join, the one after its latest need or the first when it has none, and how many of the milestone's rows wait. Moving the rows earlier, or merging the milestones, lets them run sooner. |
+| `plan/milestone-width` | info | Before the first approval only: one finding per milestone, after the first and not deferred, holding rows whose direct `needs` all sit in a milestone earlier than the one just before it, or that have no `needs`. `ids` names the rows; `detail` gives the earliest milestone each could join, the one after its latest need or the first when it has none, skipping any deferred milestone, and how many of the milestone's rows wait. Moving the rows earlier, or merging the milestones, lets them run sooner. |

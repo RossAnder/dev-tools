@@ -225,7 +225,9 @@ tomlctl plan view --slug <slug> --for digest --select stage_inputs.runs
 
 Record the relaunch on the open row when it notifies, with `plan run finish --slug <slug> --step investigate --run-id <new runId> --outcome <outcome>`, then recompute the pending lenses from `notes/` as in section 2. An agent the relaunch reran meets its own earlier note and returns `no-note`; its note on disk still counts as done when it opens `Verdict:`.
 
-**Otherwise abandon**, which is the only path for a `challenge` run and for any run from another session:
+**Never abandon or relaunch an `implement:` or `reproduce:` run**: those belong to `/implement-v2`. An `elaborate:<id>` or `cold-read:<id>` run from another session is asked about through `AskUserQuestion`, never abandoned silently.
+
+**Otherwise abandon**, which is the only path for a `challenge` run and for any other run from another session:
 
 ```bash
 tomlctl plan run abandon --slug <slug> --step <step> --reason '<why>'

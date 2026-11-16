@@ -30,7 +30,9 @@ use crate::errors::{ErrorKind, tagged_err};
 use crate::integrity::hex_lower;
 use crate::io::repo_or_cwd_root;
 use crate::output::print_json_line;
-use crate::tasks::schema::{Status, Store, normal_path, to_toml};
+use crate::tasks::schema::{
+    Change, ELABORATION_DEFERRED, MILESTONE_REF_PREFIX, Status, Store, normal_path, to_toml,
+};
 use crate::tasks::{load_store, resolve_store_path};
 
 const STEP_PREFIX: &str = "implement:";
@@ -82,9 +84,87 @@ pub(super) fn run_store_digest(
     }
 }
 
+/// The records of every milestone that was deferred when a window opening at
+/// `started` opened, which a second session may elaborate while the run is
+/// open. Read from the store and its trail alone, so the digest taken at the
+/// open and the one taken at the check agree on the set.
+struct Deferred {
+    milestones: BTreeSet<String>,
+    refs: BTreeSet<String>,
+}
+
+impl Deferred {
+    /// A milestone's state at the open is the `old` of its first `elaboration`
+    /// trail row inside the window; one added inside the window was not there;
+    /// one with neither row in the window is in the state it holds now.
+    fn at_open(store: &Store, started: &Datetime) -> Self {
+        let since = instant(started);
+        let mut in_window: Vec<&Change> = store
+            .changes
+            .iter()
+            .filter(|change| written_since(change.at.as_ref(), since))
+            .collect();
+        in_window.sort_by_key(|change| change.at.as_ref().and_then(instant));
+        let milestones: BTreeSet<String> = store
+            .milestones
+            .iter()
+            .filter(|spec| {
+                let key = milestone_ref(&spec.id);
+                let first = in_window.iter().find(|change| {
+                    change.r#ref == key && (change.field == "elaboration" || change.field == "*")
+                });
+                match first {
+                    Some(change) if change.field == "elaboration" => {
+                        change.old == ELABORATION_DEFERRED
+                    }
+                    Some(_) => false,
+                    None => spec.is_deferred(),
+                }
+            })
+            .map(|spec| spec.id.clone())
+            .collect();
+        let refs = store
+            .items
+            .iter()
+            .filter(|row| milestones.contains(&row.checkpoint))
+            .map(|row| row.r#ref.clone())
+            .collect();
+        Self { milestones, refs }
+    }
+
+    fn owns(&self, change: &Change) -> bool {
+        self.refs.contains(&change.r#ref)
+            || change
+                .r#ref
+                .strip_prefix(MILESTONE_REF_PREFIX)
+                .is_some_and(|id| self.milestones.contains(id))
+    }
+
+    fn drop_from(&self, store: &mut Store) {
+        store
+            .items
+            .retain(|row| !self.milestones.contains(&row.checkpoint));
+        for r#ref in &self.refs {
+            store.drop_ref_entries(r#ref);
+        }
+        store
+            .checkpoints
+            .retain(|entry| !self.milestones.contains(&entry.id));
+        store
+            .milestones
+            .retain(|entry| !self.milestones.contains(&entry.id));
+        store.changes.retain(|change| !self.owns(change));
+    }
+}
+
+fn milestone_ref(id: &str) -> String {
+    format!("{MILESTONE_REF_PREFIX}{id}")
+}
+
 /// Each section of `store` hashed with the dispatched rows' `status` and
-/// `agent` blanked and only the trail rows written before `started`, which are
-/// the ones that existed when the digest was taken.
+/// `agent` blanked, the records of a milestone deferred at the open left out,
+/// and only the trail rows written before `started`, which are the ones that
+/// existed when the digest was taken.
 pub(crate) fn store_digest(
     store: &Store,
     dispatched: &[u32],
@@ -92,6 +172,7 @@ pub(crate) fn store_digest(
 ) -> BTreeMap<String, String> {
     let mut projected = store.clone();
     projected.last_updated = None;
+    Deferred::at_open(store, started).drop_from(&mut projected);
     for row in &mut projected.items {
         if dispatched.contains(&row.id) {
             row.status = Status::Pending;
@@ -356,12 +437,14 @@ fn out_of_lane(tasks: &Store, run: &Run, slug: &str) -> Result<Vec<JsonValue>> {
 
 /// Every trail row written while the run was open. The orchestrator writes none
 /// then, and `status` and `agent` leave no trail row, so each one is a write
-/// beyond a worker's licence.
+/// beyond a worker's licence. A row on the records of a milestone deferred at
+/// the open is an elaboration's, not a worker's, and is left out.
 fn trail_writes(tasks: &Store, run: &Run) -> Vec<JsonValue> {
+    let deferred = Deferred::at_open(tasks, window_start(run));
     tasks
         .changes
         .iter()
-        .filter(|change| written_within(change.at.as_ref(), run))
+        .filter(|change| written_within(change.at.as_ref(), run) && !deferred.owns(change))
         .map(|change| {
             let task = tasks
                 .items
@@ -385,7 +468,10 @@ fn trail_writes(tasks: &Store, run: &Run) -> Vec<JsonValue> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tasks::schema::{Change, Effort, TaskRow, TaskSpec};
+    use crate::tasks::schema::{
+        BacklogLink, Checkpoint, ELABORATION_ELABORATED, ELABORATION_UPFRONT, Effort, FileNote,
+        MilestoneSpec, TaskRow, TaskSpec,
+    };
 
     fn at(text: &str) -> Datetime {
         text.parse().expect("a TOML datetime")
@@ -594,6 +680,167 @@ mod tests {
         run.digest_at = None;
         run.finished = None;
         assert_eq!(fields(&run), ["at-start", "during", "after"]);
+    }
+
+    fn milestone(id: &str, elaboration: &str) -> MilestoneSpec {
+        MilestoneSpec {
+            id: id.to_string(),
+            gates: Vec::new(),
+            elaboration: elaboration.to_string(),
+            defer_reason: String::new(),
+            gate_probes: Vec::new(),
+            after: Vec::new(),
+        }
+    }
+
+    fn trail(when: &str, r#ref: &str, field: &str, old: &str, new: &str) -> Change {
+        Change {
+            at: Some(at(when)),
+            r#ref: r#ref.to_string(),
+            field: field.to_string(),
+            old: old.to_string(),
+            new: new.to_string(),
+            actor: "orchestrator".to_string(),
+            reason: "r".to_string(),
+        }
+    }
+
+    fn spec(r#ref: &str, outcome: &str) -> TaskSpec {
+        TaskSpec {
+            r#ref: r#ref.to_string(),
+            outcome: outcome.to_string(),
+            constraints: Vec::new(),
+            accept: Vec::new(),
+            premises: Vec::new(),
+            means: Vec::new(),
+            design: Vec::new(),
+            precedent: Vec::new(),
+            executor: "lite".to_string(),
+        }
+    }
+
+    /// Milestone A runs rows 1 and 2; milestone B is deferred with row 3.
+    fn flow_with_deferred() -> Store {
+        let mut tasks = store();
+        let mut deferred = row(3, Status::Pending, "");
+        deferred.checkpoint = "B".to_string();
+        tasks.items.push(deferred);
+        tasks.specs.push(spec("task-3", "Three"));
+        tasks.checkpoints = vec![
+            Checkpoint {
+                id: "A".to_string(),
+                rationale: String::new(),
+            },
+            Checkpoint {
+                id: "B".to_string(),
+                rationale: String::new(),
+            },
+        ];
+        tasks.milestones = vec![
+            milestone("A", ELABORATION_UPFRONT),
+            milestone("B", ELABORATION_DEFERRED),
+        ];
+        tasks.audit = true;
+        tasks
+            .changes
+            .push(trail("2026-11-11T11:00:00Z", "milestone:B", "*", "", "B"));
+        tasks
+    }
+
+    fn elaborate_b(tasks: &mut Store) {
+        let mut added = row(4, Status::Pending, "");
+        added.checkpoint = "B".to_string();
+        tasks.items.push(added);
+        tasks.specs.push(spec("task-4", "Four"));
+        tasks.file_notes.push(FileNote {
+            r#ref: "task-4".to_string(),
+            file: "src/4.rs".to_string(),
+            note: "new".to_string(),
+        });
+        tasks.backlog_links.push(BacklogLink {
+            r#ref: "task-4".to_string(),
+            closes: vec!["B-00000000".to_string()],
+            refs: Vec::new(),
+        });
+        tasks
+            .changes
+            .push(trail("2026-11-11T12:05:00Z", "task-4", "*", "", "Task 4"));
+        tasks.specs[1].outcome = "Three, elaborated".to_string();
+        tasks.changes.push(trail(
+            "2026-11-11T12:06:00Z",
+            "task-3",
+            "outcome",
+            "Three",
+            "Three, elaborated",
+        ));
+        tasks.milestones[1].elaboration = ELABORATION_ELABORATED.to_string();
+        tasks.changes.push(trail(
+            "2026-11-11T12:07:00Z",
+            "milestone:B",
+            "elaboration",
+            ELABORATION_DEFERRED,
+            ELABORATION_ELABORATED,
+        ));
+    }
+
+    fn run_from(started: &str) -> Run {
+        Run {
+            step: "implement:A".to_string(),
+            workflow: String::new(),
+            args_hash: String::new(),
+            run_id: "wf_1".to_string(),
+            session: String::new(),
+            started: at(started),
+            finished: None,
+            skip_reason: String::new(),
+            outcome: None,
+            reason: String::new(),
+            tasks: vec![1],
+            store_digest: BTreeMap::new(),
+            digest_at: None,
+        }
+    }
+
+    #[test]
+    fn elaborating_a_milestone_deferred_at_the_open_is_no_lane_write() {
+        let before = flow_with_deferred();
+        let mut after = before.clone();
+        elaborate_b(&mut after);
+        assert!(changed(&before, &after).is_empty());
+        assert!(trail_writes(&after, &run_from(STARTED)).is_empty());
+    }
+
+    #[test]
+    fn a_write_on_the_running_milestone_is_still_reported_beside_an_elaboration() {
+        let before = flow_with_deferred();
+        let mut after = before.clone();
+        elaborate_b(&mut after);
+        after.items[0].files.push("src/extra.rs".to_string());
+        after
+            .changes
+            .push(trail("2026-11-11T12:08:00Z", "task-1", "files", "a", "b"));
+        assert_eq!(changed(&before, &after), ["rows"]);
+        let writes = trail_writes(&after, &run_from(STARTED));
+        assert_eq!(writes.len(), 1);
+        assert_eq!(writes[0]["ref"], json!("task-1"));
+    }
+
+    #[test]
+    fn a_milestone_deferred_inside_the_window_is_digested_as_before() {
+        let mut before = flow_with_deferred();
+        before.milestones[1].elaboration = ELABORATION_UPFRONT.to_string();
+        let mut after = before.clone();
+        after.milestones[1].elaboration = ELABORATION_DEFERRED.to_string();
+        after.changes.push(trail(
+            "2026-11-11T12:05:00Z",
+            "milestone:B",
+            "elaboration",
+            ELABORATION_UPFRONT,
+            ELABORATION_DEFERRED,
+        ));
+        after.items[2].files.push("src/extra.rs".to_string());
+        assert_eq!(changed(&before, &after), ["milestones", "rows"]);
+        assert_eq!(trail_writes(&after, &run_from(STARTED)).len(), 1);
     }
 
     #[test]

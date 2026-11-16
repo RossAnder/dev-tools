@@ -38,6 +38,7 @@ Read the arguments before anything else:
 - `--milestones few|default`: how the Design step cuts the plan. `default` follows the `How many` rule of `references/write-and-prove.md`; `few` asks for one milestone, with another only where one must be deferred. Default `default`.
 - `--no-review`: a bare flag that records the fixed review skip reason `the user passed --no-review`. Text after it is not a reason; it is part of the discussion.
 - `--review`: a bare flag forcing the Review step to run, whatever you would judge of the plan's risk. Given with `--no-review`, ask through `AskUserQuestion` which one the user meant before Open or re-entry.
+- `--elaborate <id>`: with a slug, runs [references/elaborate.md](references/elaborate.md) for that deferred milestone of an approved or running plan and nothing else. Refused on a plan not yet approved, whose Write and Prove steps cover every milestone.
 
 Anything else is the discussion being planned.
 
@@ -65,6 +66,7 @@ The references hold the procedure:
 - [references/open-and-challenge.md](references/open-and-challenge.md): writing under `docs/flows/`, Open, Investigate, the fan-out check around every launch with its script `scripts/fanout-check.sh`, the structure challenge, Surface, and open runs on re-entry.
 - [references/write-and-prove.md](references/write-and-prove.md): Design, Surface again, Write, and Prove with its store check, premises, cold read, probes and the cold-read relaunch rule.
 - [references/approve.md](references/approve.md): the Review step with its skip table, the gate, the two commits, the approval stamp, the status transition, and the v1-carrier warning shown at the gate and repeated at the close.
+- [references/elaborate.md](references/elaborate.md): `--elaborate <id>`, the procedure for elaborating a deferred milestone of an approved or running plan.
 
 ## Depth
 
@@ -101,6 +103,7 @@ Keep the rows whose `plan_path` is under `docs/flows/`, and offer them through `
 - **A run still live in this session**, its notification not yet arrived, is not re-entry. Wait for the notification, or stop it with `TaskStop` and the launch's `taskId`. Never abandon and relaunch over a live run.
 - **Relaunch** an `investigate` or `cold-read` run with `Workflow({name, args, resumeFromRunId})` only when all three hold: the open row's `session` is this session's `CLAUDE_CODE_SESSION_ID`; the args file in `<scratch>` still hashes to the open row's `args_hash`, since the runtime does not hold the args and the store holds only that hash; and nothing a prompt points at has changed since launch, HEAD included, against the `head-before.txt` that launch's fan-out snapshot wrote and by a fan-out check against that snapshot. A relaunch returns the cached result of every agent whose prompt is unchanged, even when a file that prompt points at has changed, and a changed prompt reruns that agent and every one after it, so an edited relaunch buys nothing over a fresh launch.
 - **A `review` run** is never relaunched and never abandoned by this rule: the review store holds what it reached, so resume it from the store by the `review-v2-engine` skill's `references/plan-flow.md` section 13, which also says when the user's dropping the review abandons the row.
+- **An `implement:` or `reproduce:` run** belongs to `/implement-v2`: never abandon or relaunch it. An `elaborate:<id>` or `cold-read:<id>` run from another session is asked about through `AskUserQuestion`, never abandoned silently.
 - **Otherwise abandon** with `tomlctl plan run abandon --slug <slug> --step <s> --reason '<why>'`, recompute what is pending from the brief's Unknowns and `notes/`, and launch afresh. A `challenge` run, and any `investigate` or `cold-read` run from another session, is always abandoned.
 
 The detail, and what "nothing changed" means for each step, is in [open-and-challenge.md](references/open-and-challenge.md), section "Open runs on re-entry", for `investigate` and `challenge`, and in [write-and-prove.md](references/write-and-prove.md), the cold-read "Relaunch" rule, for `cold-read`.

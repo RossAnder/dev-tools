@@ -2,9 +2,9 @@
 //! can raise, which read `plan.toml`, the task store's side tables, `brief.md`
 //! and the `design/` documents.
 //!
-//! Warnings are `plan/milestone-no-gate` and `plan/probe-absent`, and
-//! `plan/file-only-chain` and `plan/milestone-width` are info; every other
-//! class raised here is an error.
+//! Warnings are `plan/milestone-no-gate`, `plan/milestone-order-unqualified` and
+//! `plan/probe-absent`, and `plan/file-only-chain` and `plan/milestone-width`
+//! are info; every other class raised here is an error.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -16,6 +16,7 @@ use serde_json::json;
 use super::schema::{Bind, Contract, Decision, Handover, PlanStore};
 use super::store::{self, BRIEF_FILE, brief_digest};
 use crate::cli::{PlanCheckArgs, ReadIntegrityArgs};
+use crate::errors::{ErrorKind, tagged_err};
 use crate::io::repo_or_cwd_root;
 use crate::output::{Rows, print_report};
 use crate::tasks::backlog_refs::linked_backlog_findings;
@@ -24,6 +25,7 @@ use crate::tasks::finding::{
     ERROR, Finding, INFO, NO_TASK, WARNING, finding_json, quoted_list, task_list,
 };
 use crate::tasks::markdown::FenceState;
+use crate::tasks::milestones;
 use crate::tasks::schema::{
     BINDING_REQUIRED, Premise, Status, Store, TaskRow, TaskSpec, VERDICT_HEALTHY, normal_path,
 };
@@ -38,7 +40,18 @@ pub(crate) const REQUIRED_SECTIONS: [&str; 4] =
 pub(super) const CLASS_BRIEF_CHANGED: &str = "plan/brief-changed";
 
 pub(super) fn run(args: PlanCheckArgs) -> Result<()> {
-    let findings = findings(&args.target.slug, &args.integrity)?;
+    let scope = match &args.milestone {
+        Some(milestone) => Some(milestone_scope(
+            &args.target.slug,
+            milestone,
+            &args.integrity,
+        )?),
+        None => None,
+    };
+    let mut findings = findings(&args.target.slug, &args.integrity)?;
+    if let Some(scope) = &scope {
+        findings.retain(|finding| scope.keeps(finding));
+    }
     let code = exit_code(&findings);
     let rendered: Vec<_> = findings.iter().map(finding_json).collect();
     print_report(
@@ -49,6 +62,82 @@ pub(super) fn run(args: PlanCheckArgs) -> Result<()> {
         return Err(crate::invocation::ExitWith(code).into());
     }
     Ok(())
+}
+
+/// The rows `plan check --milestone` reports on: the milestone's own and those of
+/// every milestone upstream of it, at any distance, beside every row id the
+/// store carries.
+struct MilestoneScope {
+    rows: BTreeSet<u32>,
+    stored: BTreeSet<u32>,
+    /// Set when the milestone graph cannot be formed, so no finding is dropped
+    /// and the classes reporting why stay in view.
+    unscoped: bool,
+}
+
+impl MilestoneScope {
+    /// A finding naming no task, or a task no row carries, belongs to no other
+    /// milestone. A broken graph, a bad cut or an unfinished handover blocks
+    /// every milestone, so those classes are kept whatever they name.
+    fn keeps(&self, finding: &Finding) -> bool {
+        self.unscoped
+            || finding.ids.is_empty()
+            || finding.class.starts_with("dag/")
+            || matches!(
+                finding.class,
+                "checkpoint/invalid-cut"
+                    | "plan/handover-incomplete"
+                    | "plan/handover-task-unknown"
+            )
+            || finding
+                .ids
+                .iter()
+                .any(|id| self.rows.contains(id) || !self.stored.contains(id))
+    }
+}
+
+/// Refuses a `--milestone` naming no checkpoint.
+fn milestone_scope(
+    slug: &str,
+    milestone: &str,
+    integrity: &ReadIntegrityArgs,
+) -> Result<MilestoneScope> {
+    let tasks = load_store(&resolve_store_path(Some(slug), None)?, integrity)?;
+    if !tasks.checkpoints.iter().any(|c| c.id == milestone) {
+        return Err(tagged_err(
+            ErrorKind::Validation,
+            None,
+            format!("`--milestone {milestone}` names no checkpoint in the store"),
+        ));
+    }
+    let stored: BTreeSet<u32> = tasks.items.iter().map(|row| row.id).collect();
+    let Ok(direct) = milestones::upstream(&tasks) else {
+        return Ok(MilestoneScope {
+            rows: BTreeSet::new(),
+            stored,
+            unscoped: true,
+        });
+    };
+    let mut reached: BTreeSet<&str> = BTreeSet::from([milestone]);
+    let mut frontier = vec![milestone];
+    while let Some(id) = frontier.pop() {
+        for up in direct.get(id).into_iter().flatten() {
+            if reached.insert(up.as_str()) {
+                frontier.push(up.as_str());
+            }
+        }
+    }
+    let rows = tasks
+        .items
+        .iter()
+        .filter(|row| reached.contains(row.checkpoint.as_str()))
+        .map(|row| row.id)
+        .collect();
+    Ok(MilestoneScope {
+        rows,
+        stored,
+        unscoped: false,
+    })
 }
 
 /// Everything `plan check` reports for `slug`, sorted by class and ids. A store
@@ -94,6 +183,7 @@ pub(crate) fn findings(slug: &str, integrity: &ReadIntegrityArgs) -> Result<Vec<
     if plan.approvals.is_empty() {
         found.extend(file_chain_findings(&tasks, &plan));
         found.extend(milestone_width_findings(&tasks));
+        found.extend(milestone_order_findings(&tasks));
     }
     found.sort_by(|a, b| (a.class, &a.ids).cmp(&(b.class, &b.ids)));
     Ok(found)
@@ -612,6 +702,7 @@ fn milestone_findings(tasks: &Store) -> Vec<Finding> {
                 .map(|milestone| milestone.id.as_str()),
         )
         .collect();
+    let stored = checkpoint_order(tasks);
     for id in declared {
         let gated = tasks
             .milestones
@@ -635,6 +726,31 @@ fn milestone_findings(tasks: &Store) -> Vec<Finding> {
                 members(&milestone.id),
                 format!("milestone `{}` is deferred with no reason", milestone.id),
             ));
+        }
+        let own = stored.iter().position(|id| *id == milestone.id);
+        for named in &milestone.after {
+            match stored.iter().position(|id| *id == named.as_str()) {
+                None => findings.push(error(
+                    "plan/milestone-after-unknown",
+                    members(&milestone.id),
+                    format!(
+                        "milestone `{}` is after `{named}`, which names no checkpoint",
+                        milestone.id
+                    ),
+                )),
+                Some(at) if *named == milestone.id || own.is_some_and(|own| at >= own) => {
+                    findings.push(error(
+                        "plan/milestone-after-forward",
+                        members(&milestone.id),
+                        format!(
+                            "milestone `{}` is after `{named}`, which is not stored before it in \
+                             `[[checkpoints]]`",
+                            milestone.id
+                        ),
+                    ));
+                }
+                Some(_) => {}
+            }
         }
         for (index, probe) in milestone.gate_probes.iter().enumerate() {
             if !milestone.gates.contains(&probe.gate) {
@@ -725,14 +841,10 @@ fn file_chain_findings(tasks: &Store, plan: &PlanStore) -> Vec<Finding> {
 /// could join an earlier one: the milestone after the latest one holding a
 /// direct need, whose gate the row may wait on, or the first when it has no
 /// needs. A deferred milestone is a boundary its plan chose, so it raises
-/// nothing, and a row with a need in no listed milestone is left out.
+/// nothing and is never a target: the row is offered the next milestone that is
+/// not deferred instead. A row with a need in no listed milestone is left out.
 fn milestone_width_findings(tasks: &Store) -> Vec<Finding> {
-    let mut order: Vec<&str> = Vec::new();
-    for checkpoint in &tasks.checkpoints {
-        if !order.contains(&checkpoint.id.as_str()) {
-            order.push(checkpoint.id.as_str());
-        }
-    }
+    let order = checkpoint_order(tasks);
     let index_of = |checkpoint: &str| order.iter().position(|id| *id == checkpoint);
     let row_index = |id: u32| {
         tasks
@@ -769,8 +881,8 @@ fn milestone_width_findings(tasks: &Store) -> Vec<Finding> {
             else {
                 continue;
             };
-            let target = placed.iter().copied().max().map_or(0, |latest| latest + 1);
-            if target < index {
+            let earliest = placed.iter().copied().max().map_or(0, |latest| latest + 1);
+            if let Some(target) = (earliest..index).find(|&at| !deferred(order[at])) {
                 waiting.push((row.id, target));
             }
         }
@@ -796,6 +908,64 @@ fn milestone_width_findings(tasks: &Store) -> Vec<Finding> {
         });
     }
     findings
+}
+
+/// Per milestone after the first, the earlier milestones it does not depend on
+/// through `needs`, `coupling` or `after`, at any distance: the dependency pick
+/// may run it before them. A store whose milestone graph cannot be formed is
+/// left to the classes that report why.
+fn milestone_order_findings(tasks: &Store) -> Vec<Finding> {
+    let Ok(direct) = milestones::upstream(tasks) else {
+        return Vec::new();
+    };
+    let reach = |start: &str| -> BTreeSet<&str> {
+        let mut seen: BTreeSet<&str> = BTreeSet::new();
+        let mut frontier = vec![start];
+        while let Some(id) = frontier.pop() {
+            for up in direct.get(id).into_iter().flatten() {
+                if seen.insert(up.as_str()) {
+                    frontier.push(up.as_str());
+                }
+            }
+        }
+        seen
+    };
+
+    let order = checkpoint_order(tasks);
+    let mut findings = Vec::new();
+    for (index, milestone) in order.iter().enumerate().skip(1) {
+        let ups = reach(milestone);
+        let unordered: Vec<&str> = order[..index]
+            .iter()
+            .copied()
+            .filter(|earlier| !ups.contains(earlier))
+            .collect();
+        if unordered.is_empty() {
+            continue;
+        }
+        findings.push(Finding {
+            class: "plan/milestone-order-unqualified",
+            severity: WARNING,
+            ids: Vec::new(),
+            detail: format!(
+                "milestone `{milestone}` does not depend on {}, so /implement-v2 may run it \
+                 first; add `--after <id>` to `{milestone}` where the earlier one must go first",
+                quoted_list(&unordered, "no milestone")
+            ),
+        });
+    }
+    findings
+}
+
+/// `[[checkpoints]]` ids in store order, each once.
+fn checkpoint_order(tasks: &Store) -> Vec<&str> {
+    let mut order: Vec<&str> = Vec::new();
+    for checkpoint in &tasks.checkpoints {
+        if !order.contains(&checkpoint.id.as_str()) {
+            order.push(checkpoint.id.as_str());
+        }
+    }
+    order
 }
 
 /// A contract naming both rows, or a premise of `later` waiting on `earlier`,

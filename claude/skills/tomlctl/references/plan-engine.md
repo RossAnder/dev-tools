@@ -12,6 +12,7 @@ for them is owned by the [`plan-v2-engine`](../../plan-v2-engine/SKILL.md) and
 
 - [`plan stage`](#plan-stage)
 - [`plan emit`](#plan-emit)
+- [`plan emit schedule`](#plan-emit-schedule)
 - [`plan emit launch-args`](#plan-emit-launch-args)
 - [`plan emit gate-list`](#plan-emit-gate-list)
 - [`plan emit reproduce-units`](#plan-emit-reproduce-units)
@@ -66,6 +67,9 @@ Each open row adds `open run: step <s>, started <at>` to `blockers`, ahead of th
 stages past approval can show blockers. `open_runs` lists the step of each open row in store order,
 with duplicates kept.
 
+After approval, an open run of step `elaborate:<id>` or `cold-read:<id>` belongs to another
+session's milestone work: it stays in `open_runs`, adds no `open run:` blocker and does not set `next`.
+
 On `approved`, `running` and `done`, when `brief.md` differs from the newest approval's digest, `stage`
 keeps its name, adds the blocker ``plan/brief-changed (1): `brief.md` differs from the brief approved at `<commit>` ``
 and sets `next` to `plan approve --amend --review <outcome>`. When an unanswered decision or another
@@ -81,8 +85,8 @@ missing brief, so restoring the approved bytes is what clears it. An open run ou
 
 ## `plan emit`
 
-Four read-only leaves that build what the execution engine passes on from the stores, or check a
-run against them. Each takes `--milestone <id>`, refuses an id the task store does not declare,
+Read-only leaves that build what the execution engine passes on from the stores, or check a
+run against them. Each but `schedule` takes `--milestone <id>`, refuses an id the task store does not declare,
 prints one JSON object, writes nothing and runs no stored command.
 
 ```bash
@@ -90,7 +94,48 @@ tomlctl plan emit launch-args --slug <slug> --milestone <id> [--max-parallel <n>
 tomlctl plan emit gate-list --slug <slug> --milestone <id>
 tomlctl plan emit reproduce-units --slug <slug> --milestone <id> [--since-launch] [--relaunch <n> --round <r> --task <refs>]
 tomlctl plan emit lane-check --slug <slug> --milestone <id>
+tomlctl plan emit schedule --slug <slug>
 ```
+
+## `plan emit schedule`
+
+Each milestone's state and the milestone `/implement-v2` runs next. It takes no flag beyond `--slug` and
+the read bundle, reads `tasks.toml` and the open `elaborate:<id>` runs of `plan.toml`, and writes nothing.
+
+Milestone N is upstream of milestone M when a row of M reaches a row of N through `needs` or `coupling`
+(the edges `tasks closure --checkpoint <M>` walks), N not being M, or when M's `after` names N. Each
+milestone in `[[checkpoints]]` order gets the first state below that fits. A row is **started** when
+its `agent` is `plan-worker-lite` or `plan-worker-deep` and its `commit` is empty.
+
+| State | When | `on` |
+|---|---|---|
+| `elaborating` | `elaboration` is `deferred` and `plan.toml` holds an open run of step `elaborate:<id>` | the upstream milestones not `done` or `empty`, in store order |
+| `deferred` | `elaboration` is `deferred` | the upstream milestones not `done` or `empty`, in store order |
+| `empty` | The milestone has no rows | — |
+| `done` | Every row is `done` with a non-empty `commit` | — |
+| `unstamped` | Every row is `done` and at least one has an empty `commit` | — |
+| `started` | A row is started and not every row is `done` | — |
+| `parked` | No row is started, and a row is `parked` or every row not `done` is `deferred` | — |
+| `waiting` | An upstream milestone is not `done` or `empty` | the upstream milestones not `done` or `empty`, in store order |
+| `runnable` | None of the above | — |
+
+The pick: when any milestone is `unstamped` it is empty, and every `started` and `runnable` milestone is
+reported `held`, `on` naming the unstamped ones. Otherwise, when any milestone is `started`, it is the
+first `started` one in store order, and every other `started` or `runnable` milestone is `held`, `on`
+naming the pick. Otherwise it is the first `runnable` milestone in store order, or empty. `held` replaces
+the state it overrides; the other states are never overridden. A `parked` milestone is never picked, and
+a milestone downstream of it stays `waiting`.
+
+Prints `{pick, milestones}`:
+
+```json
+{"pick": "C", "milestones": [{"id": "A", "state": "done", "on": [], "left": 0}, {"id": "B", "state": "elaborating", "on": [], "left": 6}, {"id": "C", "state": "runnable", "on": [], "left": 12}, {"id": "D", "state": "waiting", "on": ["B", "C"], "left": 5}]}
+```
+
+| Key | Holds |
+|---|---|
+| `pick` | The milestone id, or `""` when nothing can run. Read it with `--get pick`. |
+| `milestones` | One object per milestone in `[[checkpoints]]` order, read with `--rows milestones`: `id`, `state`, `on` and `left`, the count of its rows not `done`. A `deferred` milestone with an empty `on` is ready to elaborate. |
 
 ## `plan emit launch-args`
 
@@ -111,7 +156,7 @@ Prints `{args, args_sha256, store_digest, digest_at, after_checks, dropped}`.
 | `store_digest` | The task store's digest for the tasks in `args`, as one token, `<section>:<hex>` per section joined by commas, for `plan run start --store-digest`. |
 | `digest_at` | When the digest was taken, an RFC 3339 timestamp to the second, for `plan run start --digest-at`. It is the second after the newest `[[changes]]` row when that row carries the current second, so a replan written just before the emit stays outside the window. |
 | `after_checks` | One row per `after:<m>` premise whose task `m` is dispatched in this launch: `task`, `premise`, `after`, `check`. The task stays in `args` with `m` in its `after`. |
-| `dropped` | Each row left out, with `reason`: `not-pending`, `withheld:<task>:<premise>:<verdict>`, `needs-withheld:<task>`, `executor:<value>`, `no-files` or `need-not-done:<task>:<status>`. |
+| `dropped` | Each row left out, with `reason`: `not-pending`, `withheld:<task>:<premise>:<verdict>`, `needs-withheld:<task>`, `executor:<value>`, `no-files`, `need-not-done:<task>:<status>` or `need-not-committed:<task>`. |
 
 A `base` premise, or an `after:<m>` one whose task `m` is `done`, needs a probe at `HEAD`, or the call
 fails naming `plan probes --emit --premises --milestone <id>`.
@@ -182,7 +227,8 @@ Prints `{clean, run_id, out_of_lane, store_writes, digest}`. A clean run prints
 | `digest` | `matched`, `changed`, or `unrecorded` for a run whose `plan run start` took no digest, which leaves only the trail to answer. |
 
 The window opens at the run's `digest_at`, or at its `started` when it has none, and closes at its
-`finished`, or now while it is open.
+`finished`, or now while it is open. The rows, specs, file notes, backlog and finding links and trail
+rows of a milestone deferred at the window's open are left out.
 
 The run's `store_digest` is one 16-hex SHA-256 prefix per section, taken over the task store with
 `last_updated` and every dispatched row's `status` and `agent` left out. `launch-args` takes it

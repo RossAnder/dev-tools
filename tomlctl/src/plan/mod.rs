@@ -17,6 +17,7 @@ mod run_gate;
 mod run_note;
 mod run_notes;
 mod run_report;
+mod schedule;
 mod stage;
 pub(crate) mod target;
 mod view;

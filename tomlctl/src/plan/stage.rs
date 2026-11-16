@@ -58,9 +58,17 @@ pub(super) fn run(args: PlanStageArgs) -> Result<()> {
     );
 
     let open_runs = store::open_runs(&plan);
+    // After approval a milestone-scoped planning run belongs to another session's
+    // elaboration; it is listed but never blocks or steers `next`.
+    let approved = !plan.approvals.is_empty();
+    let blocking_runs: Vec<&Run> = open_runs
+        .iter()
+        .copied()
+        .filter(|run| !(approved && is_milestone_scoped(&run.step)))
+        .collect();
     let report = with_open_runs(
         assess(&plan, &tasks, &findings, &review_blockers, &brief),
-        &open_runs,
+        &blocking_runs,
     );
     let open_steps: Vec<&str> = open_runs.iter().map(|run| run.step.as_str()).collect();
     print_json_line(&json!({
@@ -69,6 +77,10 @@ pub(super) fn run(args: PlanStageArgs) -> Result<()> {
         "blockers": report.blockers,
         "open_runs": open_steps,
     }))
+}
+
+fn is_milestone_scoped(step: &str) -> bool {
+    step.starts_with("elaborate:") || step.starts_with("cold-read:")
 }
 
 struct Report {

@@ -131,7 +131,8 @@ otherwise; `writes_build` keeps its one meaning, whether running the check build
 
 `[[milestones]]`: `id` (a `[[checkpoints]]` id), `gates`, `gate_probes`, `elaboration` (`upfront`
 when absent, `deferred`, or `elaborated` once a deferred milestone's tasks exist) and
-`defer_reason`. `gate_probes` is a list of `{gate, probe, verdict, at}` tables written as
+`defer_reason`, and `after`, the earlier milestone ids this one runs after, set by
+`plan milestone add|update --after` and omitted while empty. `gate_probes` is a list of `{gate, probe, verdict, at}` tables written as
 `[[milestones.gate_probes]]` and omitted while empty: `gate` is one of the milestone's `gates`,
 `probe` a cheap command that fails where that gate cannot pass here, and `verdict` (`holds`, `fails`
 or `broken`) and `at` (the capture's head) are written only by `plan probes --record --gates`
@@ -253,7 +254,7 @@ The envelope's keys, in emission order:
 | `checkpoints` | per group: `id`, `rationale`, `members`, `maximal`, `valid_cut`, `commits`, `verification` |
 | `record` | every execution-record entry verbatim plus `task_id`; `checkpoint` entries also carry `checkpoint_ids` |
 | `agents` | every `[[agents]]` row of `agents.toml` verbatim, unknown keys included |
-| `milestones` | one object per `[[milestones]]` row: `id`, `gates`, `elaboration`, `defer_reason`, `gate_probes` (`gate`, `probe`, `verdict`, `at`) |
+| `milestones` | one object per `[[milestones]]` row: `id`, `gates`, `elaboration`, `defer_reason`, `after`, `gate_probes` (`gate`, `probe`, `verdict`, `at`) |
 | `changes` | the `[[changes]]` trail in stored order: `at`, `ref`, `field`, `old`, `new`, `actor`, `reason` |
 | `plan` | the `plan.toml` store as JSON in its own shape, `null` when the flow has no `plan.toml` |
 

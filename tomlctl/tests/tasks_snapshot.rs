@@ -584,6 +584,7 @@ fn a_v2_store_carries_its_milestones_and_change_trail() {
                 "verdict": "holds",
                 "at": "abc",
             }],
+            "after": [],
         }])
     );
     assert_eq!(

@@ -106,7 +106,7 @@ git status --porcelain -- <every edited path>
 tomlctl tasks list --slug <slug> --where-not status=done --select id,status,checkpoint --lines
 ```
 
-  When it prints any row, the execution engine would run those milestones before the fix milestone, since it takes the first with a row that is not `done` and refuses `--milestone` past it. That is plan work nobody asked this command for. Ask with `AskUserQuestion`, naming the milestones and their row counts: run the plan's unfinished work first and then the fixes, or stop. On stop, nothing has been written; say that `/implement-v2 <slug>` finishes the plan and that this command can be rerun after it. A new flow has no earlier rows and skips this.
+  When it prints any row, the execution engine runs any milestone its schedule allows, so the fix milestone can run before the plan's unfinished milestones when nothing orders it. That is plan work nobody asked this command for. Ask with `AskUserQuestion`, naming the milestones and their row counts: run the plan's unfinished work first, which adds `--after <id>` for each unfinished milestone to the fix milestone's add (and to `settle-<n>` when there is one); let the fixes run as soon as they can; or stop. On stop, nothing has been written; say that `/implement-v2 <slug>` finishes the plan and that this command can be rerun after it. A new flow has no earlier rows and skips this.
 
 Report what will be scheduled, held and refused, each with its reason, and go on.
 
@@ -168,10 +168,10 @@ On the reviewed flow, whose plan is approved, add `--reason 'apply <store>: <fin
 
 ```bash
 tomlctl plan milestone add --slug <flow> --id settle-<n> --goal 'Settle <finding ids> from <store>'
-tomlctl plan milestone add --slug <flow> --id apply-<n> --goal 'Fix <finding ids> from <store>' --gate '<command>'
+tomlctl plan milestone add --slug <flow> --id apply-<n> --goal 'Fix <finding ids> from <store>' --gate '<command>' --after settle-<n>
 ```
 
-The execution engine's settle drain judges each proposal when the settle milestone's rows are `done`, asks the user once about those only the user can accept, and schedules the accepted findings into `apply-<n>`, the checkpoint after `settle-<n>`. When every selected finding is blocked on evidence, `apply-<n>` starts with no rows and takes its tasks from that drain. Step 3 still resolves its gates, from the edited paths of the findings it fixes now, or when there are none, from the paths of the blocked findings' `file`, where their fixes are expected to land.
+The fix milestone runs after its settle milestone by that `--after settle-<n>` edge, not by store adjacency: settle rows have no needs, so without the edge the engine could run a non-empty `apply-<n>` first and the settle drain would add rows to a committed milestone. The execution engine's settle drain judges each proposal when the settle milestone's rows are `done`, asks the user once about those only the user can accept, and names the fix milestone by its id pair, `apply-<n>` for `settle-<n>`, to schedule the accepted findings into it. When every selected finding is blocked on evidence, `apply-<n>` starts with no rows and takes its tasks from that drain. Step 3 still resolves its gates, from the edited paths of the findings it fixes now, or when there are none, from the paths of the blocked findings' `file`, where their fixes are expected to land.
 
 ### 6. Schedule
 
@@ -206,7 +206,7 @@ Covered by step 7's pointer: the plan check, the stamp, the record and the secon
 
 ### 9. Run
 
-Invoke the `implement-v2-engine` skill and follow it from its Arguments section with `<flow>` as the slug, and no `--milestone`. It picks the first milestone with a row that is not `done`: on the reviewed flow, a milestone of the plan still unfinished runs before the fix milestone, and the engine continues to the fix milestone while nothing is parked. The user agreed to that order at step 2 when the plan had unfinished rows.
+Invoke the `implement-v2-engine` skill and follow it from its Arguments section with `<flow>` as the slug, and no `--milestone`. The engine runs milestones in its schedule's order and continues while nothing is parked. A milestone of the plan still unfinished runs before the fix milestone only when step 2's answer added `--after` for it; otherwise the fix milestone runs as soon as its own edges allow.
 
 The engine's report is the run's outcome; this skill adds nothing to it but the close.
 

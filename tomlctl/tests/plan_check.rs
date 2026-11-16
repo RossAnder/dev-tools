@@ -125,11 +125,16 @@ impl Flow {
     }
 
     fn run(&self) -> (Option<i32>, Value) {
+        self.run_with(&[])
+    }
+
+    fn run_with(&self, extra: &[&str]) -> (Option<i32>, Value) {
         let output = Command::cargo_bin("tomlctl")
             .expect("the binary builds")
             .env("TOMLCTL_ROOT", &self.root)
             .env("TOMLCTL_LOCK_TIMEOUT", "5")
             .args(["plan", "check", "--slug", SLUG])
+            .args(extra)
             .write_stdin("")
             .output()
             .expect("the binary runs");
@@ -877,11 +882,20 @@ files = ["src/c.rs"]
 #[test]
 fn milestone_width_reports_a_later_row_with_no_needs_at_info() {
     let flow = Flow::with_tasks(&format!("{TASKS}{LATER}"));
-    assert_eq!(flow.classes(), only("plan/milestone-width", "info"));
+    assert_eq!(
+        flow.classes(),
+        vec![
+            (
+                "plan/milestone-order-unqualified".to_string(),
+                "warning".to_string()
+            ),
+            ("plan/milestone-width".to_string(), "info".to_string()),
+        ]
+    );
     let (code, report) = flow.run();
     assert_eq!(code, Some(0), "{report}");
     assert_eq!(report["ok"], true, "{report}");
-    let finding = &report["findings"][0];
+    let finding = &report["findings"][1];
     assert_eq!(finding["ids"], serde_json::json!([2]), "{report}");
     let detail = finding["detail"].as_str().expect("a detail");
     assert!(detail.contains("milestone `B`"), "{detail}");
@@ -932,7 +946,208 @@ fn milestone_width_is_not_raised_for_a_deferred_milestone() {
         "defer_reason = \"\"",
         "defer_reason = \"depends on the guard\"",
     );
-    assert_clean(&Flow::with_tasks(&format!("{TASKS}{deferred}")));
+    assert_reports_warning(
+        &Flow::with_tasks(&format!("{TASKS}{deferred}")),
+        "plan/milestone-order-unqualified",
+    );
+}
+
+/// `TASKS`, then a deferred milestone `B` with no rows, then `LATER` as `C`.
+fn deferred_between(row_needs: &str) -> String {
+    let middle = "\n[[checkpoints]]\nid = \"B\"\nrationale = \"later\"\n\n[[milestones]]\n\
+                  id = \"B\"\ngates = [\"cargo test\"]\nelaboration = \"deferred\"\n\
+                  defer_reason = \"depends on the guard\"\n";
+    let third = swap(
+        &swap(LATER, "id = \"B\"", "id = \"C\""),
+        "checkpoint = \"B\"",
+        "checkpoint = \"C\"",
+    );
+    format!("{TASKS}{middle}{third}{row_needs}")
+}
+
+fn widths(flow: &Flow) -> Vec<Value> {
+    let (code, report) = flow.run();
+    assert_eq!(code, Some(0), "{report}");
+    report["findings"]
+        .as_array()
+        .expect("a findings array")
+        .iter()
+        .filter(|finding| finding["class"] == "plan/milestone-width")
+        .cloned()
+        .collect()
+}
+
+#[test]
+fn milestone_width_never_offers_a_deferred_milestone() {
+    let after_deferred = widths(&Flow::with_tasks(&deferred_between("needs = [1]\n")));
+    assert!(after_deferred.is_empty(), "{after_deferred:?}");
+
+    let with_needs = widths(&Flow::with_tasks(&deferred_between("")));
+    assert_eq!(with_needs.len(), 1, "{with_needs:?}");
+    let detail = with_needs[0]["detail"].as_str().expect("a detail");
+    assert!(detail.contains("2 could join `A`"), "{detail}");
+}
+
+#[test]
+fn milestone_width_moves_a_deferred_target_to_the_next_milestone() {
+    let deferred_first = swap(
+        &swap(
+            TASKS,
+            "elaboration = \"upfront\"",
+            "elaboration = \"deferred\"",
+        ),
+        "defer_reason = \"\"",
+        "defer_reason = \"depends on the store\"",
+    );
+    let middle = "\n[[checkpoints]]\nid = \"B\"\nrationale = \"between\"\n\n[[milestones]]\n\
+                  id = \"B\"\ngates = [\"cargo test\"]\nelaboration = \"upfront\"\n\
+                  defer_reason = \"\"\n";
+    let third = swap(
+        &swap(LATER, "id = \"B\"", "id = \"C\""),
+        "checkpoint = \"B\"",
+        "checkpoint = \"C\"",
+    );
+    let moved = widths(&Flow::with_tasks(&format!(
+        "{deferred_first}{middle}{third}"
+    )));
+    assert_eq!(moved.len(), 1, "{moved:?}");
+    assert_eq!(moved[0]["ids"], serde_json::json!([2]));
+    let detail = moved[0]["detail"].as_str().expect("a detail");
+    assert!(detail.contains("2 could join `B`"), "{detail}");
+
+    let none_earlier = widths(&Flow::with_tasks(&format!("{deferred_first}{LATER}")));
+    assert!(none_earlier.is_empty(), "{none_earlier:?}");
+}
+
+/// `LATER` with `after` on its milestone row.
+fn later_after(after: &str) -> String {
+    swap(
+        LATER,
+        "elaboration = \"upfront\"\ndefer_reason = \"\"",
+        &format!("elaboration = \"upfront\"\ndefer_reason = \"\"\nafter = {after}"),
+    )
+}
+
+#[test]
+fn an_after_naming_no_checkpoint_is_an_error() {
+    let flow = Flow::with_tasks(&format!("{TASKS}{}", later_after("[\"Z\"]")));
+    let classes = flow.classes();
+    assert!(
+        classes.contains(&(
+            "plan/milestone-after-unknown".to_string(),
+            "error".to_string()
+        )),
+        "{classes:?}"
+    );
+    let (code, report) = flow.run();
+    assert_eq!(code, Some(1), "{report}");
+}
+
+#[test]
+fn an_after_naming_itself_or_a_later_milestone_is_an_error() {
+    let own = Flow::with_tasks(&format!("{TASKS}{}", later_after("[\"B\"]")));
+    assert!(
+        own.class_names()
+            .contains(&"plan/milestone-after-forward".to_string()),
+        "{:?}",
+        own.class_names()
+    );
+
+    let forward = swap(
+        TASKS,
+        "elaboration = \"upfront\"\ndefer_reason = \"\"",
+        "elaboration = \"upfront\"\ndefer_reason = \"\"\nafter = [\"B\"]",
+    );
+    let flow = Flow::with_tasks(&format!("{forward}{LATER}"));
+    let (code, report) = flow.run();
+    assert_eq!(code, Some(1), "{report}");
+    let forwards: Vec<&Value> = report["findings"]
+        .as_array()
+        .expect("a findings array")
+        .iter()
+        .filter(|finding| finding["class"] == "plan/milestone-after-forward")
+        .collect();
+    assert_eq!(forwards.len(), 1, "{report}");
+    assert_eq!(forwards[0]["ids"], serde_json::json!([1]), "{report}");
+}
+
+#[test]
+fn an_after_naming_an_earlier_milestone_is_accepted_and_orders_it() {
+    let needing = format!("{}needs = [1]\n", later_after("[\"A\"]"));
+    assert_clean(&Flow::with_tasks(&format!("{TASKS}{needing}")));
+}
+
+#[test]
+fn an_independent_later_milestone_warns_that_it_may_run_first() {
+    let flow = Flow::with_tasks(&format!("{TASKS}{LATER}needs = []\n"));
+    let (code, report) = flow.run();
+    assert_eq!(code, Some(0), "{report}");
+    let orders: Vec<&Value> = report["findings"]
+        .as_array()
+        .expect("a findings array")
+        .iter()
+        .filter(|finding| finding["class"] == "plan/milestone-order-unqualified")
+        .collect();
+    assert_eq!(orders.len(), 1, "{report}");
+    assert_eq!(orders[0]["severity"], "warning", "{report}");
+    assert_eq!(orders[0]["ids"], serde_json::json!([]), "{report}");
+    let detail = orders[0]["detail"].as_str().expect("a detail");
+    assert!(
+        detail.contains("milestone `B` does not depend on `A`"),
+        "{detail}"
+    );
+    assert!(detail.contains("--after <id>"), "{detail}");
+}
+
+#[test]
+fn milestone_order_counts_after_coupling_and_distant_needs() {
+    let after = Flow::with_tasks(&format!("{TASKS}{}", later_after("[\"A\"]")));
+    assert_eq!(after.classes(), only("plan/milestone-width", "info"));
+
+    let coupled = Flow::with_tasks(&format!("{TASKS}{LATER}coupling = [1]\n"));
+    assert!(
+        !coupled
+            .class_names()
+            .contains(&"plan/milestone-order-unqualified".to_string()),
+        "{:?}",
+        coupled.class_names()
+    );
+
+    let middle = "\n[[checkpoints]]\nid = \"B\"\nrationale = \"between\"\n\n[[milestones]]\n\
+                  id = \"B\"\ngates = [\"cargo test\"]\nelaboration = \"upfront\"\n\
+                  defer_reason = \"\"\nafter = [\"A\"]\n";
+    let third = swap(
+        &swap(LATER, "id = \"B\"", "id = \"C\""),
+        "checkpoint = \"B\"",
+        "checkpoint = \"C\"",
+    );
+    let chained = swap(
+        &third,
+        "defer_reason = \"\"",
+        "defer_reason = \"\"\nafter = [\"B\"]",
+    );
+    let transitive = Flow::with_tasks(&format!("{TASKS}{middle}{chained}"));
+    assert!(
+        !transitive
+            .class_names()
+            .contains(&"plan/milestone-order-unqualified".to_string()),
+        "{:?}",
+        transitive.class_names()
+    );
+}
+
+#[test]
+fn milestone_order_is_not_raised_once_the_plan_is_approved() {
+    let approved = format!(
+        "{PLAN}{}",
+        approval(&hex_digest(BRIEF.as_bytes()), "abc1234")
+    );
+    let flow = Flow::seeded(
+        &format!("{TASKS}{LATER}needs = []\n"),
+        &approved,
+        BRIEF.as_bytes(),
+    );
+    assert_clean(&flow);
 }
 
 #[test]
@@ -975,4 +1190,96 @@ fn every_defect_is_reported_in_one_run_sorted_by_class() {
             "plan/spec-no-outcome".to_string(),
         ]
     );
+}
+
+/// `TASKS`, a deferred milestone `D` holding row 3 with no spec yet, then
+/// `LATER` with `row_needs` appended to its row.
+fn half_written_between(row_needs: &str) -> String {
+    let middle = "\n[[checkpoints]]\nid = \"D\"\nrationale = \"later\"\n\n[[milestones]]\n\
+                  id = \"D\"\ngates = [\"cargo test\"]\nelaboration = \"deferred\"\n\
+                  defer_reason = \"depends on the guard\"\n\n[[items]]\nid = 3\n\
+                  ref = \"half-written\"\ntitle = \"Half written\"\neffort = \"S\"\n\
+                  checkpoint = \"D\"\nfiles = [\"src/d.rs\"]\n";
+    format!("{TASKS}{middle}{LATER}{row_needs}")
+}
+
+fn scoped_classes(report: &Value) -> Vec<String> {
+    report["findings"]
+        .as_array()
+        .expect("a findings array")
+        .iter()
+        .map(|finding| finding["class"].as_str().expect("a class").to_string())
+        .collect()
+}
+
+#[test]
+fn a_half_written_row_fails_only_milestones_standing_on_it() {
+    let independent = Flow::with_tasks(&half_written_between(""));
+    let (code, report) = independent.run();
+    assert_eq!(code, Some(1), "{report}");
+    assert!(
+        scoped_classes(&report).contains(&"plan/task-no-spec".to_string()),
+        "{report}"
+    );
+
+    for milestone in ["A", "B"] {
+        let (code, report) = independent.run_with(&["--milestone", milestone]);
+        assert_eq!(code, Some(0), "--milestone {milestone}: {report}");
+        assert_eq!(report["ok"], true, "{report}");
+        assert!(
+            !scoped_classes(&report).contains(&"plan/task-no-spec".to_string()),
+            "{report}"
+        );
+    }
+
+    let downstream = Flow::with_tasks(&half_written_between("needs = [3]\n"));
+    let (code, report) = downstream.run_with(&["--milestone", "B"]);
+    assert_eq!(code, Some(1), "{report}");
+    assert_eq!(report["ok"], false, "{report}");
+    assert!(
+        scoped_classes(&report).contains(&"plan/task-no-spec".to_string()),
+        "{report}"
+    );
+}
+
+#[test]
+fn a_contract_naming_a_removed_task_fails_every_milestone_scope() {
+    let plan = swap(PLAN, "tasks = [1]", "tasks = [1, 9]");
+    let flow = Flow::seeded(&format!("{TASKS}{LATER}"), &plan, BRIEF.as_bytes());
+    let (code, report) = flow.run_with(&["--milestone", "B"]);
+    assert_eq!(code, Some(1), "{report}");
+    assert!(
+        scoped_classes(&report).contains(&"plan/contract-task-unknown".to_string()),
+        "{report}"
+    );
+}
+
+#[test]
+fn an_incomplete_handover_fails_every_milestone_scope() {
+    let tasks = swap(
+        &format!("{TASKS}{LATER}"),
+        "status = \"pending\"\ncheckpoint = \"A\"",
+        "status = \"done\"\ncheckpoint = \"A\"",
+    );
+    let plan = format!("{PLAN}\n[[handover]]\nid = \"H1\"\nsource_task = 1\ndone = false\n");
+    let flow = Flow::seeded(&tasks, &plan, BRIEF.as_bytes());
+    let (code, report) = flow.run_with(&["--milestone", "B"]);
+    assert_eq!(code, Some(1), "{report}");
+    assert!(
+        scoped_classes(&report).contains(&"plan/handover-incomplete".to_string()),
+        "{report}"
+    );
+}
+
+#[test]
+fn a_milestone_scope_naming_no_checkpoint_is_refused() {
+    let flow = Flow::with_tasks(TASKS);
+    Command::cargo_bin("tomlctl")
+        .expect("the binary builds")
+        .env("TOMLCTL_ROOT", &flow.root)
+        .args(["plan", "check", "--slug", SLUG, "--milestone", "Z"])
+        .write_stdin("")
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("names no checkpoint"));
 }

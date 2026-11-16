@@ -1,6 +1,6 @@
 ---
 description: Author a v2 plan in an attended session — a brief, investigator notes, a structure challenge, decisions, contracts and task rows written through `tomlctl plan`, proved by store checks, probes and cold readers, then approved and committed
-argument-hint: '[<slug>] [--from <id>[,<id>...]] [--depth quick|standard|deep] [--milestones few|default] [--no-review] [--review] [the work to plan]'
+argument-hint: '[<slug>] [--from <id>[,<id>...]] [--depth quick|standard|deep] [--milestones few|default] [--no-review] [--review] [--elaborate <id>] [the work to plan]'
 ---
 
 # /plan-v2 — author a v2 plan
@@ -21,6 +21,7 @@ A v2 plan has no plan document: it lives in `docs/flows/<slug>/` and in `.claude
 | `--milestones few\|default` | Default `default`; how each value cuts the plan is the engine's Arguments section |
 | `--no-review` | A bare flag recording the fixed review skip reason `the user passed --no-review`; text after it is part of the discussion, not a reason |
 | `--review` | A bare flag forcing the Review step to run, overriding a low-risk judgement, as the engine's Arguments section says |
+| `--elaborate <id>` | Elaborates that deferred milestone of an approved plan; the engine's Arguments section |
 | Anything else | The discussion being planned |
 
 This carrier builds no flow envelope: a bare `flow resolve` returns no draft flow, so the envelope would name an unrelated flow, and `tomlctl plan stage` with `tomlctl flow doctor --slug <slug>` answer everything the engine needs.
@@ -30,7 +31,7 @@ This carrier builds no flow envelope: a bare `flow resolve` returns no draft flo
 Run these in order, before anything else. Each failure stops the command with the message given.
 
 1. **The `tomlctl` skill.** Invoke the `tomlctl` skill, before the first `tomlctl` call below.
-2. **The `plan` group and `review apply`.** Run `tomlctl capabilities --get subcommands`, then `tomlctl capabilities --get features`. When `plan` is not in the first list, or `review_apply` is not in the second, the installed binary predates the verbs the plan and its Review step run: stop and name `cargo install --path tomlctl`, so no Workflow launches against a binary that cannot apply its findings.
+2. **The `plan` group and `review apply`.** Run `tomlctl capabilities --get subcommands`, then `tomlctl capabilities --get features`. When `plan` is not in the first list, or `review_apply` or `milestone_schedule` is not in the second, the installed binary predates the verbs the plan and its Review step run: stop and name `cargo install --path tomlctl`, so no Workflow launches against a binary that cannot apply its findings.
 3. **`AskUserQuestion`.** When the tool is unavailable, stop: this command runs attended only, and every question to the user comes from this conversation.
 4. **`Workflow`.** When the tool is absent, stop: Investigate and the cold read are saved Workflows with no Agent-tool fallback.
 

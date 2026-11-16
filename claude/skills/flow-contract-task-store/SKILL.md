@@ -131,6 +131,7 @@ id = "A"
 gates = ["cargo nextest run --manifest-path x/Cargo.toml"]
 elaboration = "upfront"
 defer_reason = ""
+after = []
 
 [[changes]]
 at = 2026-11-05T12:00:00Z
@@ -148,7 +149,7 @@ reason = "..."
 - **`means`** entries take `text`, `binding` (`required` \| `suggested`, mandatory) and `detail`.
 - **`executor`** is `tool`, `clerk`, `lite` or `deep`.
 - **Unknown keys are refused** inside `spec`, `accept`, `premises` and `means`, each refusal naming the row's line and the accepted set. The store's own reader still drops unknown keys, as for every table.
-- **`[[milestones]]`** hold execution facts for a `[[checkpoints]]` id: `gates`, `elaboration` (`upfront` when absent, `deferred`, or `elaborated` once a deferred milestone's tasks exist) and `defer_reason`. A `plan milestone` verb writes them.
+- **`[[milestones]]`** hold execution facts for a `[[checkpoints]]` id: `gates`, `elaboration` (`upfront` when absent, `deferred`, or `elaborated` once a deferred milestone's tasks exist), `defer_reason` and `after` (earlier milestone ids this one runs after; set by `plan milestone add|update --after`). A `plan milestone` verb writes them.
 - **`audit`** is set by `plan approve`. From then on a plan field changes only with a reason, and each change appends a `[[changes]]` row (§5). `[[changes]]` outlives the row it records, so a removal remains as a tombstone (`field = "*"`, `old` the removed title, `new` empty). `actor` defaults to `orchestrator`. A milestone's rows use `ref = "milestone:<id>"`. `old` and `new` hold a plain scalar as it stands and a structured value as compact JSON, using the field names `tasks show` emits, so a reader can parse them.
 - **`id_high_water`** keeps an id from naming a second task, because plan records (`Decision.binds`, `Contract.tasks`, `Handover.source_task`) and a premise's `after:<id>` name tasks by id. `tasks remove` raises it to the removed id on a store in a flow with a `plan.toml` or already holding a v2 key, and `add` and `add-many` mint past it, so a record naming a removed task stays a dangling `plan check` finding instead of silently binding the new one. A v1 store never gains the key and goes on reusing a freed top id.
 - **v2 flows refuse `import-plan` and `render`.** A flow with a `plan.toml` has no plan document, so both fail with `kind=validation` naming `plan view`. `check --plan` skips the render-drift comparison there.

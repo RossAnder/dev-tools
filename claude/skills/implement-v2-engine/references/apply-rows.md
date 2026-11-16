@@ -212,14 +212,13 @@ A finding the last command shows no longer `scheduled` was recorded by an earlie
    ```
 
    `--accept` takes the fix the proposal settled on, staged with the Write tool from the proposal file's edit-level fix; the user tier is accepted only on the user's yes. A rejected or unanswered proposal is deferred: the finding keeps its proposal, gets no second settle round, since `review schedule` refuses an evidence block whose proposal is already made, and ages toward a forced disposition at its family's later review runs.
-5. **Schedule** the accepted findings into the fix milestone, one call per store. The fix milestone is the checkpoint that follows this one in store order, which `apply-v2-engine` adds right after it:
+5. **Schedule** the accepted findings into the fix milestone, one call per store. The fix milestone is `apply-<n>`, the id pair of this `settle-<n>`, ordered after it by its `after`:
 
    ```bash
-   tomlctl items list .claude/flows/<slug>/tasks.toml --array checkpoints --select id --lines
    tomlctl review schedule <F1,F2> --slug <slug> --flow <slug> --checkpoint <fix id>
    ```
 
-   The verb writes each minted row's `reason` itself. Report its `held` and `refused` rows in `needs_human`: such a finding stays `open` with its accepted fix, for a later `/apply-v2`. When no checkpoint follows this one, schedule nothing and report the accepted findings there the same way.
+   The verb writes each minted row's `reason` itself. Report its `held` and `refused` rows in `needs_human`: such a finding stays `open` with its accepted fix, for a later `/apply-v2`. When the flow holds no `apply-<n>` checkpoint, schedule nothing and report the accepted findings there the same way.
 
 The milestone commit then holds the proposal files, which are its rows' `files`; the review store, the task store with the minted fix rows, and the run notes go in the flow-store commit, as **Reconcile** stages them. Reconcile finds no settle finding still `scheduled` into this flow, since step 4 took each off; one it does find, because this step never recorded it, it reopens as committed with no recorded proposal.
 

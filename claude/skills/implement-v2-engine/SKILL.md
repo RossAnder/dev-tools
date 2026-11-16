@@ -7,7 +7,7 @@ description: "Orchestrator contract for running an approved v2 plan one mileston
 
 This is the orchestrator's half of running an approved v2 plan. The `/implement-v2` carrier checks that the session can run it and then invokes this skill; everything from reading the arguments to the closing report is here and in its references. The workers' half is the `plan-worker-lite` and `plan-worker-deep` agents and their shared procedure: the `implement-v2-milestone` Workflow gives each one a task, never a restatement of its method.
 
-A v2 plan lives in `.claude/flows/<slug>/` (`plan.toml` and `tasks.toml`, written only through `tomlctl` verbs) and in `docs/flows/<slug>/` (the brief, `design/` and the notes, all committed). This engine runs one milestone per Workflow run: it checks the milestone's premises, launches its dispatchable tasks, drains what comes back, gates the milestone and commits it once. It then continues to the next milestone while nothing in the flow is parked.
+A v2 plan lives in `.claude/flows/<slug>/` (`plan.toml` and `tasks.toml`, written only through `tomlctl` verbs) and in `docs/flows/<slug>/` (the brief, `design/` and the notes, all committed). This engine runs one milestone per Workflow run: it checks the milestone's premises, launches its dispatchable tasks, drains what comes back, gates the milestone and commits it once. It then continues to the next milestone while `plan emit schedule` names a pick.
 
 ## Your role
 
@@ -35,7 +35,7 @@ The workers hold the edits, the store holds the progress, and you hold the plan'
 Read the arguments before anything else:
 
 - `<slug>`: the first word, naming a flow whose plan `tomlctl plan stage` can read. It is required; with none, stop and say `/implement-v2 <slug>` needs one. A flow whose stage is not `approved` or `running` is refused by the pre-flight.
-- `--milestone <id>`: run this milestone instead of the first one with a row that is not `done`. It is refused when `<id>` names no checkpoint in the store, and when an earlier checkpoint, in store order, still holds a row that is not `done`, since its rows' dependents would launch on unfinished work. A named milestone whose elaboration is `deferred` stops the engine like any other deferred milestone. With `--milestone`, the engine runs that milestone only and does not continue to the next.
+- `--milestone <id>`: run this milestone instead of the schedule's pick. It is taken when `plan emit schedule` reports it `runnable` or as the pick, and refused naming its state otherwise, which covers an upstream milestone not done, a deferred one and one that names no checkpoint in the store. With `--milestone`, the engine runs that milestone only and does not continue to the next.
 
 Anything else is not an argument: say so and stop, rather than guess what it was meant to change.
 
@@ -61,7 +61,7 @@ Anything else is not an argument: say so and stop, rather than guess what it was
 | Reconcile | — | The milestone holds no apply row | [apply-rows.md](references/apply-rows.md), section "Reconcile"; between the stamp and the flow-store commit |
 | `needs_human` report | — | Never | [drain.md](references/drain.md), step 11 |
 
-Between the drain and the gate the engine loops: a replan that leaves a dispatchable row goes back to the premises with the launch count raised by one, and the reproduce check's and the gate's fix rounds, and a settle row the settle drain fails, go back the same way. After a commit, the engine picks the next milestone while nothing in the flow is parked and `--milestone` was not given; otherwise it ends with the report.
+Between the drain and the gate the engine loops: a replan that leaves a dispatchable row goes back to the premises with the launch count raised by one, and the reproduce check's and the gate's fix rounds, and a settle row the settle drain fails, go back the same way. After a commit, the engine picks the next milestone while `plan emit schedule` names a pick and `--milestone` was not given; otherwise it ends with the report.
 
 The references hold the procedure:
 
@@ -74,7 +74,7 @@ The references hold the procedure:
 This engine stops, and says so in the `needs_human` report, rather than reach for any of these:
 
 - **A `tool` or `clerk` executor.** Such a row has no worker yet; the launch lists it under `no worker` with every member that needs it.
-- **A deferred milestone.** Its tasks carry no checks or premises; the engine stops and says it must be elaborated first.
+- **A deferred milestone.** Its tasks carry no checks or premises; the engine skips it and reports it, and `/plan-v2 <slug> --elaborate <id>` elaborates it.
 - **Vetting and harvest.** The reproduce check, which asks of each finding an apply row fixed whether it still reproduces, is the one vet pass over a worker's return; otherwise the drain's drift and store checks, and its read of `tomlctl agents audit` over the launch's transcript directory, are the only cross-checks. That verb reads the transcripts itself and prints only the commands matching its patterns, a build, a test run or a recursive grep, so the rule that you never read a worker's transcript stands. Apply rows are in scope, by [apply-rows.md](references/apply-rows.md).
 - **Worktree isolation.** Workers edit the main working tree, the tasks running at once holding disjoint `files`.
 - **An Agent-tool fallback** when the Workflow is unavailable or refuses a launch.
@@ -84,9 +84,9 @@ It never touches `/implement`, the v1 implementer agents or a v1 plan.
 
 ## Re-entry
 
-Every invocation is a re-entry: the engine reads where the flow stands from the store, never from memory. Settle what is below in this order, after the pre-flight's stage and store checks and before the premises run.
+Every invocation is a re-entry: the engine reads where the flow stands from the store, never from memory. Settle what is below in this order, after the pre-flight's stage check; the scoped `plan check --milestone <id>` runs after the pick, before the premises.
 
-**The open-run rule.** `plan stage` lists each run still open in `open_runs`; an `implement:<id>` entry is a launch whose drain never ran `plan run finish`, and a `reproduce:<id>` entry is a reproduce check whose store was never read. Both are settled the same way. Read the open rows with their `session` and `run_id`:
+**The open-run rule.** `plan stage` lists each run still open in `open_runs`; an `implement:<id>` entry is a launch whose drain never ran `plan run finish`, and a `reproduce:<id>` entry is a reproduce check whose store was never read. Both are settled the same way. An open `elaborate:<id>` or `cold-read:<id>` run belongs to a plan-v2 elaboration: leave it alone, neither abandon nor wait on it. Read the open rows with their `session` and `run_id`:
 
 ```bash
 tomlctl plan view --slug <slug> --for digest --select stage_inputs.runs
@@ -108,8 +108,8 @@ An abandoned `implement:<id>` run has no index, so its rows stand in for one. It
 
 **Stale `in-progress` rows.** With every run settled, the pre-flight resets each row still `in-progress` to `pending`, its edits left in place for the next worker's own-diff step. With a run still open this reset waits, because a live run's workers own those rows.
 
-**Unstamped milestones.** A milestone whose rows are all `done` with an empty `commit` is one whose invocation ended between the commit and the stamp, or before the gate passed; the pick step passes it over, since every row is `done`. Find it in the pre-flight's listing of rows with an empty `commit`, which prints each row's `status` and `checkpoint`, confirm with the pick step's per-checkpoint listing that the checkpoint holds no row that is not `done`, and settle it before picking, by [drain.md](references/drain.md), subsection "Stamping on re-entry": stamp it from `HEAD` (a milestone holding an apply row also runs the findings reconcile), or otherwise send an apply milestone back through the reproduce check and the settle drain before its gate, and rerun the gate for a milestone with no apply row. A gate run here still counts the fix rounds already spent from the `gate <id> round ` reasons, so a milestone stopped after round 2 stops again.
+**Unstamped milestones.** A milestone whose rows are all `done` with an empty `commit` is one whose invocation ended between the commit and the stamp, or before the gate passed; the schedule reports it `unstamped`, which empties the pick until the milestone is settled. Settle it before picking, by [drain.md](references/drain.md), subsection "Stamping on re-entry": stamp it from `HEAD` (a milestone holding an apply row also runs the findings reconcile), or otherwise send an apply milestone back through the reproduce check and the settle drain before its gate, and rerun the gate for a milestone with no apply row. A gate run here still counts the fix rounds already spent from the `gate <id> round ` reasons, so a milestone stopped after round 2 stops again.
 
-**Parked rows.** For each parked row of the milestone about to run, ask the user through `AskUserQuestion` how it is unblocked, and replan it to `pending` through audited verbs with the answer as the `reason`, before the premise step. The procedure, the record shape and dropping a task are [drain.md](references/drain.md), section "Parked rows at the next invocation". A row the user leaves parked stays parked: the milestone runs its disjoint work, cannot gate, and the engine does not continue past it.
+**Parked rows.** For each parked row of every milestone the schedule reports `parked`, not only the one about to run, ask the user through `AskUserQuestion` how it is unblocked, and replan it to `pending` through audited verbs with the answer as the `reason`, before the pick. The procedure, the record shape and dropping a task are [drain.md](references/drain.md), section "Parked rows at the next invocation". A row the user leaves parked stays parked and holds its own milestone and the milestones downstream of it; when a worker had started it, the schedule holds every milestone on it.
 
 **Failed rows.** A row of the milestone left `failed` by an earlier invocation is not dispatched again as it stands, since the dispatch set keeps only `pending` rows. Read its note and replan it by [drain.md](references/drain.md), step 6, or an apply row by [apply-rows.md](references/apply-rows.md), section "Failure on an apply row", before the premises run.

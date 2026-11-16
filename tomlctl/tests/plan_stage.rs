@@ -843,6 +843,63 @@ fn several_open_steps_clear_oldest_first_and_each_row_has_a_blocker() {
     assert_eq!(report["blockers"].as_array().unwrap().len(), 3, "{report}");
 }
 
+fn start_step(flow: &Flow, step: &str) {
+    flow.verb(
+        &[
+            "plan",
+            "run",
+            "start",
+            "--step",
+            step,
+            "--workflow",
+            "w",
+            "--args-hash",
+            "h",
+        ],
+        "",
+    );
+}
+
+#[test]
+fn after_approval_a_milestone_planning_run_is_listed_but_does_not_block() {
+    let plan = format!("{PLAN}{}", approval());
+    let flow = Flow::seeded(TASKS, &plan, Some(BRIEF), None);
+    start_step(&flow, "elaborate:B");
+    start_step(&flow, "cold-read:B");
+    let report = assert_stage(&flow, "approved", "none");
+    assert_eq!(
+        report["open_runs"],
+        json!(["elaborate:B", "cold-read:B"]),
+        "{report}"
+    );
+    assert_eq!(report["blockers"], json!([]), "{report}");
+}
+
+#[test]
+fn after_approval_an_open_implement_run_still_blocks() {
+    let plan = format!("{PLAN}{}", approval());
+    let flow = Flow::seeded(TASKS, &plan, Some(BRIEF), None);
+    start_step(&flow, "elaborate:B");
+    start_step(&flow, "implement:A");
+    let report = flow.stage();
+    assert_eq!(report["next"], open_run_next("implement:A"), "{report}");
+    assert_eq!(report["blockers"].as_array().unwrap().len(), 1, "{report}");
+    assert_eq!(
+        report["open_runs"],
+        json!(["elaborate:B", "implement:A"]),
+        "{report}"
+    );
+}
+
+#[test]
+fn before_approval_an_open_cold_read_run_still_blocks() {
+    let flow = clean(REVIEW_STORE_FINISHED);
+    start_step(&flow, "cold-read:A");
+    let report = flow.stage();
+    assert_eq!(report["next"], open_run_next("cold-read:A"), "{report}");
+    assert_eq!(report["blockers"].as_array().unwrap().len(), 1, "{report}");
+}
+
 #[test]
 fn a_row_closed_by_outcome_alone_is_not_open() {
     let plan = format!(

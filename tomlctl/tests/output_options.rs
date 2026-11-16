@@ -1337,6 +1337,11 @@ fn cases() -> Vec<Case> {
             "clean",
         )
         .git(),
+        read(
+            &["plan", "emit", "schedule", "--slug", PLAN_SLUG],
+            One,
+            "pick",
+        ),
     ]
 }
 
