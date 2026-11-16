@@ -390,6 +390,11 @@ fn refuse_uncommitted(root: &Path, slug: &str) -> Result<()> {
 }
 
 fn head_commit(root: &Path) -> Result<String> {
+    if std::env::var_os("GIT_DIR").is_none()
+        && let Some(commit) = loose_head(root)
+    {
+        return Ok(commit);
+    }
     let out = git_stdout(
         Command::new("git")
             .arg("-C")
@@ -398,6 +403,38 @@ fn head_commit(root: &Path) -> Result<String> {
         "git rev-parse HEAD",
     )?;
     Ok(out.trim().to_string())
+}
+
+/// HEAD's commit read from `.git/HEAD` and the loose branch ref it names,
+/// sparing a git process. `None` sends the caller to `git rev-parse` wherever
+/// git could see something else: a `.git` file, a packed or unborn ref, or
+/// contents that are not a bare object id.
+fn loose_head(root: &Path) -> Option<String> {
+    let git = root.join(".git");
+    if !git.is_dir() {
+        return None;
+    }
+    let head = std::fs::read_to_string(git.join("HEAD")).ok()?;
+    let head = head.trim_end_matches(['\r', '\n']);
+    let commit = match head.strip_prefix("ref: ") {
+        Some(branch) => {
+            let loose = branch.starts_with("refs/heads/")
+                && branch
+                    .split('/')
+                    .all(|part| !part.is_empty() && part != "." && part != "..");
+            if !loose {
+                return None;
+            }
+            std::fs::read_to_string(git.join(branch)).ok()?
+        }
+        None => head.to_string(),
+    };
+    let commit = commit.trim_end_matches(['\r', '\n']);
+    let object_id = matches!(commit.len(), 40 | 64)
+        && commit
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+    object_id.then(|| commit.to_string())
 }
 
 fn git_stdout(cmd: &mut Command, what: &str) -> Result<String> {
@@ -497,4 +534,45 @@ fn activate(context_path: &Path, plan: &PlanStore, integrity: &WriteIntegrityArg
         },
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ID: &str = "0123456789abcdef0123456789abcdef01234567";
+
+    fn repo(head: &str) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("a tempdir");
+        std::fs::create_dir_all(dir.path().join(".git/refs/heads")).expect("refs dir");
+        std::fs::write(dir.path().join(".git/HEAD"), head).expect("HEAD");
+        dir
+    }
+
+    #[test]
+    fn loose_head_reads_a_branch_ref_or_a_detached_id() {
+        let dir = repo("ref: refs/heads/main\n");
+        std::fs::write(dir.path().join(".git/refs/heads/main"), format!("{ID}\n")).unwrap();
+        assert_eq!(loose_head(dir.path()).as_deref(), Some(ID));
+
+        let dir = repo(&format!("{ID}\n"));
+        assert_eq!(loose_head(dir.path()).as_deref(), Some(ID));
+    }
+
+    #[test]
+    fn loose_head_defers_to_git_for_anything_else() {
+        let unborn = repo("ref: refs/heads/main\n");
+        assert_eq!(loose_head(unborn.path()), None);
+
+        let escaping = repo("ref: refs/heads/../../HEAD\n");
+        assert_eq!(loose_head(escaping.path()), None);
+
+        let garbled = repo("ref: refs/heads/main\n");
+        std::fs::write(garbled.path().join(".git/refs/heads/main"), "not an id\n").unwrap();
+        assert_eq!(loose_head(garbled.path()), None);
+
+        let worktree = tempfile::tempdir().unwrap();
+        std::fs::write(worktree.path().join(".git"), "gitdir: elsewhere\n").unwrap();
+        assert_eq!(loose_head(worktree.path()), None);
+    }
 }
