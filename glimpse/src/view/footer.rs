@@ -393,12 +393,15 @@ fn plan_hints(compact: bool) -> Vec<Hint> {
     hints
 }
 
-/// Enter answers the cursor question and opens details on any other record; `w` shows
-/// only while the cursor is on a record the user may withdraw.
+/// Enter answers the cursor question, opens the record a needs-you row targets, and opens
+/// details on any other record; `w` shows only while the cursor is on a record the user may
+/// withdraw.
 fn inbox_hints(app: &App, compact: bool) -> Vec<Hint> {
     let inbox = &app.inbox;
     let enter = if inbox.cursor_question().is_some() {
         "answer"
+    } else if inbox.cursor_need().is_some() {
+        "open"
     } else {
         "details"
     };
@@ -589,6 +592,21 @@ mod tests {
         for item_only in ["space", "m actions", "e classify", "u undo", "/ filter"] {
             assert!(!rows.contains(item_only), "{item_only}: {rows}");
         }
+    }
+
+    #[test]
+    fn enter_opens_a_needs_you_row_and_shows_details_on_an_input_record() {
+        let mut app = app();
+        app.apply(Action::SwitchSurface(Surface::Inbox));
+        app.hints = HintMode::Full;
+        let needs = crate::surface::needs_of(&fixture());
+        let first = needs.first().expect("a needs-you row").id.clone();
+        app.inbox.set_needs(needs);
+        app.inbox.select_row(&first);
+        assert!(app.inbox.cursor_need().is_some());
+        let rows = text(&lines(&app, 200, Instant::now())).join(" · ");
+        assert!(rows.contains("enter open"), "{rows}");
+        assert!(!rows.contains("enter details"), "{rows}");
     }
 
     #[test]
