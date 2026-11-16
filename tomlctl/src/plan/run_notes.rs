@@ -45,8 +45,8 @@ pub(super) fn run(args: PlanRunNotesArgs) -> Result<()> {
         let (run_id, dispatched) = latest_run(plan, &step)?;
         let mut rows = Vec::with_capacity(dispatched.len());
         for task in dispatched {
-            let (attempt, problem) = read_attempt(&authored, &tasks, task, &run_id, &milestone)?;
-            rows.push(row(&attempt, &problem));
+            let attempt = read_attempt(&authored, &tasks, task, &run_id, &milestone)?;
+            rows.push(row(&attempt));
             upsert(plan, attempt);
         }
         Ok((run_id, rows))
@@ -89,15 +89,16 @@ fn latest_run(plan: &PlanStore, step: &str) -> Result<(String, Vec<u32>)> {
     Ok((run.run_id.clone(), run.tasks.clone()))
 }
 
-/// The attempt `task`'s note records, and the one-line problem with it, `""`
-/// when there is none. Only an I/O failure other than a missing note is an error.
+/// The attempt `task`'s note records, its `problem` the one line saying what
+/// was wrong with the note. Only an I/O failure other than a missing note is
+/// an error.
 fn read_attempt(
     authored: &Path,
     tasks: &Store,
     task: u32,
     run_id: &str,
     milestone: &str,
-) -> Result<(Attempt, String)> {
+) -> Result<Attempt> {
     let relative = format!("notes/run/task-{task}.md");
     let row_status = tasks
         .items
@@ -116,17 +117,18 @@ fn read_attempt(
         tangential: Vec::new(),
         checks: Vec::new(),
         handover: None,
+        problem: String::new(),
     };
 
     let text = match read_note(authored, &relative)? {
         NoteRead::Missing => {
-            return Ok((attempt, format!("the run note `{relative}` is missing")));
+            attempt.problem = format!("the run note `{relative}` is missing");
+            return Ok(attempt);
         }
         NoteRead::Outside => {
-            return Ok((
-                attempt,
-                format!("the run note `{relative}` resolves outside the flow's docs directory"),
-            ));
+            attempt.problem =
+                format!("the run note `{relative}` resolves outside the flow's docs directory");
+            return Ok(attempt);
         }
         NoteRead::Text(text) => text,
     };
@@ -134,21 +136,27 @@ fn read_attempt(
         Ok(note) => note,
         Err(err) => {
             attempt.block = NoteBlock::Malformed;
-            return Ok((attempt, format!("the note is malformed: {err}")));
+            attempt.problem = format!("the note is malformed: {err}");
+            return Ok(attempt);
         }
     };
 
-    let problem = if note.block == NoteBlock::Malformed {
+    attempt.problem = if note.block == NoteBlock::Malformed {
         format!("the block is malformed: {}", note.reason)
     } else {
-        match row_status {
+        let status = match row_status {
             None => format!("task {task} has no row in the task store"),
             Some(row) if row != note.status => format!(
                 "the note's Status is `{}` but the task row is `{row}`",
                 note.status
             ),
             Some(_) => String::new(),
-        }
+        };
+        [status, note.reason]
+            .into_iter()
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join("; ")
     };
     attempt.status = note.status;
     attempt.summary = note.summary;
@@ -158,7 +166,7 @@ fn read_attempt(
     attempt.tangential = note.tangential;
     attempt.checks = note.checks;
     attempt.handover = note.handover;
-    Ok((attempt, problem))
+    Ok(attempt)
 }
 
 /// The note's text, held inside the authored anchor so that a symlink cannot
@@ -190,7 +198,7 @@ fn upsert(plan: &mut PlanStore, attempt: Attempt) {
     }
 }
 
-fn row(attempt: &Attempt, problem: &str) -> JsonValue {
+fn row(attempt: &Attempt) -> JsonValue {
     json!({
         "task": attempt.task,
         "status": attempt.status,
@@ -198,6 +206,6 @@ fn row(attempt: &Attempt, problem: &str) -> JsonValue {
         "deviations": attempt.deviations.len(),
         "tangential": attempt.tangential.len(),
         "handover": attempt.handover.is_some(),
-        "problem": problem,
+        "problem": attempt.problem,
     })
 }

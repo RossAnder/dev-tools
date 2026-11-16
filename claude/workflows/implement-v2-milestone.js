@@ -19,7 +19,7 @@ export const meta = {
 // non-`done` return is reported `blocked` and never dispatched. Nothing is
 // retried; the engine's drain decides what runs again. `error` is a thrown
 // error or a bad return, and null otherwise.
-const SCRIPT_VERSION = '4'
+const SCRIPT_VERSION = '5'
 const MAX_PARALLEL = 8
 const MAX_NEEDS_FILES = 16
 const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/
@@ -158,6 +158,7 @@ const fileKey = (f) => f.replace(/\\/g, '/').toLowerCase()
 
 const workerPrompt = (t, siblings) => `slug: ${a.slug}
 task: ${t.id}
+agent: ${WORKERS[t.executor].agentType}
 root: ${a.root}
 note: ${notePath(t.id)}
 siblings: ${siblings.length ? siblings.join(', ') : 'none'}

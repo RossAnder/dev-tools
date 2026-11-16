@@ -236,7 +236,8 @@ pub(crate) fn run(cli: Cli, args: &[std::ffi::OsString]) -> Result<()> {
             AgentsOp::Audit {
                 transcripts,
                 pattern,
-            } => crate::agents::dispatch::dispatch_audit(&transcripts, &pattern)?,
+                gate,
+            } => crate::agents::dispatch::dispatch_audit(&transcripts, &pattern, &gate)?,
         },
         Cmd::Inputs { op } => inputs_dispatch(op)?,
         Cmd::Review { op } => crate::review::dispatch(op)?,

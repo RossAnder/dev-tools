@@ -45,16 +45,18 @@ S=$( { grep -E '^ *Summary \[' "$L" | tail -n 1
   awk '/^test result:/{n++; for(i=2;i<=NF;i++){if($i~/^passed/)p+=$(i-1); if($i~/^failed/)f+=$(i-1)}} END{if(n)print "libtest x" n ": " p " passed; " f " failed"}' "$L"
   grep -E '^ +[0-9]+ (passed|failed|flaky|skipped|did not run|interrupted)' "$L"
   grep -E '^ +(Test Files|Tests) +[0-9]' "$L"
+  grep -E '^ *[0-9]+ (pass|fail|skip|todo) *$' "$L"
   grep -E '^(Test Suites|Tests): |^Ran [0-9]+ tests? across' "$L"
   grep -E '^=+ .*[0-9]+ (passed|failed|errors?)' "$L" | tail -n 1
 } | awk '{sub(/^ +/, ""); s = s (NR > 1 ? "; " : "") $0} END{print s}')
 echo "SUMMARY: ${S:-none}"
-echo "$S" | grep -qE '(^|[^0-9])[1-9][0-9]* passed' && echo "PASSED_ANY: yes" || echo "PASSED_ANY: no"
+echo "$S" | grep -qE '(^|[^0-9])[1-9][0-9]* pass(ed)?([^a-z]|$)' && echo "PASSED_ANY: yes" || echo "PASSED_ANY: no"
 { grep -E '^ *(TRY [0-9]+ )?(FAIL|FLAKY|TIMEOUT|ABORT|SIG[A-Z]+|LEAK-FAIL)( [0-9]+/[0-9]+)? +\[' "$L" | awk '{print $NF}'
   grep -E '^test .+ \.\.\. FAILED$' "$L" | awk '{print $2}'
   awk '/^ +[0-9]+ (failed|flaky) *$/{s=1; next} /^ +[0-9]+ [a-z]/{s=0} s && match($0, /[^ ]+:[0-9]+:[0-9]+/){x=substr($0, RSTART, RLENGTH); sub(/:[0-9]+$/, "", x); print x}' "$L"
   grep -E '^ *FAIL(ED)? +[^ []' "$L" | awk '{print $2}'
   grep -E '^ *--- FAIL: ' "$L" | awk '{print $3}'
+  sed -nE 's/^ *\(fail\) (.+)$/\1/p' "$L" | sed -E 's/ \[[0-9.]+ ?m?s\]$//'
 } | sort -u > "$L.ids"
 echo "FAILED_COUNT: $(wc -l < "$L.ids" | tr -d ' ')"
 echo "FAILED_IDS: $(head -n 20 "$L.ids" | tr '\n' ' ')"

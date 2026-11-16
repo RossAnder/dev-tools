@@ -97,19 +97,21 @@ subdirectory, and writes nothing. It takes no store flag and no `--slug`.
 ```bash
 tomlctl agents audit --transcripts <dir>
 tomlctl agents audit --transcripts <dir> --pattern '<regex>' --pattern '<regex>'
+tomlctl agents audit --transcripts <dir> --gate '<command>' --gate '<command>'
 ```
 
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
 | `--transcripts` | directory | The transcript directory the launch reports. | required |
-| `--pattern` | regex, repeatable | A command matching any pattern is reported. Given patterns replace the defaults; an invalid one errors naming it. | a `cargo build`, `cargo test` or `cargo nextest` run, and a recursive `grep` (`-r`, `-R`, `--recursive` or `--dereference-recursive`, including `egrep` and `fgrep`) |
+| `--pattern` | regex, repeatable | A command matching any pattern is reported. Given patterns replace the defaults; an invalid one errors naming it. | a build or whole-suite test run: `cargo build`, `test` or `nextest`; `bun`, `npm`, `pnpm` or `yarn` `test` or `build`, with or without `run`; `vitest`, `jest` or `playwright test` through `npx`, `bunx` or `pnpm exec`; `docker build`, `docker compose build` or `docker buildx build`; `go build` or `test`; `dotnet build` or `test`; `pytest`. Compile checks (`cargo clippy`, a `type-check` script) and reading commands such as a recursive `grep` are not reported |
+| `--gate` | command, repeatable | A gate command, taken literally: a Bash command containing it, with runs of whitespace collapsed on both sides, is reported as well as one matching a pattern. A blank value is ignored. | none |
 
 `agent` is the file name without `.jsonl`, and `command` is the tool call's `input.command`, cut to
 200 characters. Each transcript line is read as JSON, and only `tool_use` entries named `Bash` in
 its `message.content` array count; a line that is not JSON, or has no such array, is skipped. A
-directory with no matching command prints `[]`. The default patterns name the commands a milestone
-gate owns and a sub-agent must not run, so a row is a lead to read, not a verdict: a quoted ` -r `
-in a grep's search text also matches.
+directory with no matching command prints `[]`. The default patterns and the `--gate` commands name what a milestone
+gate owns and a sub-agent must not run, so a row is a lead to read, not a verdict: a quoted
+`bun test` in a grep's search text also matches.
 
 ## Store shape
 

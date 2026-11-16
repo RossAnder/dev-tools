@@ -28,8 +28,10 @@ Each note is `docs/flows/<slug>/notes/run/task-<n>.md`, parsed for its `Status:`
 note, or one that resolves outside `docs/flows/<slug>/` once symlinks are resolved, records an
 attempt with `block = "absent"` and the task row's status. A note without a block keeps its prose
 `TANGENTIAL:` lines, and a malformed block, or a first line that is not a `Status:` line, records
-`block = "malformed"`. None of these fails the command. A second call over unchanged notes writes
-the same store.
+`block = "malformed"`. A check whose `result` is outside `pass`, `fail` and `not-run` does not
+make the block malformed: that check is left out, the rest of the block is recorded, and the row's
+`problem` names it. None of these fails the command, and each row's `problem` is also stored on its
+attempt. A second call over unchanged notes writes the same store.
 
 ```bash
 tomlctl plan run notes --slug <slug> --milestone <id>

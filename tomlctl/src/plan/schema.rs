@@ -411,6 +411,8 @@ pub(crate) struct Attempt {
     pub(crate) checks: Vec<CheckRun>,
     /// Omitted from the TOML while `None`.
     pub(crate) handover: Option<ProposedHandover>,
+    /// What `plan run notes` found wrong with the note; omitted while `""`.
+    pub(crate) problem: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1095,6 +1097,7 @@ fn attempt_from_toml(table: &Table, context: &str) -> Result<Attempt> {
             }),
             Some(_) => return Err(anyhow!("{context}: `handover` is not a table")),
         },
+        problem: lf(&str_or(table, "problem")),
     })
 }
 
@@ -1111,6 +1114,7 @@ fn attempt_to_toml(attempt: &Attempt) -> TomlValue {
         tangential,
         checks,
         handover,
+        problem,
     } = attempt;
     let mut table = Table::new();
     table.insert("task".to_string(), TomlValue::Integer(i64::from(*task)));
@@ -1177,6 +1181,9 @@ fn attempt_to_toml(attempt: &Attempt) -> TomlValue {
                 .collect(),
         ),
     );
+    if !problem.is_empty() {
+        table.insert("problem".to_string(), TomlValue::String(lf(problem)));
+    }
     if let Some(ProposedHandover {
         reason,
         action,
@@ -1590,6 +1597,7 @@ pub(crate) mod tests {
                 when: "After the commit.".to_string(),
                 done_when: "The overlay opens.".to_string(),
             }),
+            problem: "the check `c` was dropped".to_string(),
         }
     }
 

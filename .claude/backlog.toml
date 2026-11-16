@@ -13151,3 +13151,168 @@ base_sha = "08de98d16f0cda3af314fead95eee65fdb4632cd"
 related = ["B-c2d75b04"]
 resolved = 2026-11-16
 resolution = "58b230e0: write-and-prove's cold-read Relaunch rule now leaves the HEAD test to fanout-check.sh check, which fails on any HEAD move it does not tolerate; elaborate.md follows the shared rule."
+
+[[backlog]]
+id = "B-091e2d4f"
+kind = "question"
+summary = "implement-v2 pre-flight clean-tree check stops on other flows' untracked .claude/flows/<other-slug>/ records, which no milestone commit stages and no worker builds on"
+area = "claude/skills/implement-v2-engine"
+tags = [
+    "implement-v2",
+    "pre-flight",
+]
+status = "resolved"
+created = 2026-11-16T11:21:28Z
+last_seen = 2026-11-16T11:21:28Z
+seen_count = 1
+dedup_id = "091e2d4fae89f369"
+origin = "implement-v2"
+context = "Seen 2026-11-16 on strapi-server's cloud-deploy-parallel-run milestone A: plan drift --uncommitted listed 33 untracked files under five other v1 flows' directories, and run-milestone.md section 1 exempts only the running flow's own .claude/flows/<slug>/ and docs/flows/<slug>/, so the engine had to stop (the user chose to proceed, then committed them). The milestone commit stages rows' files by path, so these can never be swept in. Decide whether every .claude/flows/*/ path is exempt from the clean-tree check, or whether plan drift --uncommitted should leave them out."
+base_sha = "04b98a98e4c2569089b04ec1db9c9db9b3e219d9"
+related = ["B-6d577c72"]
+resolved = 2026-11-16
+resolution = "run-milestone.md pre-flight now exempts paths under another flow's .claude/flows/<other>/ or docs/flows/<other>/ unless a row's files names them (both commits stage by path, so neither can sweep them in), naming them in one informing report line."
+
+[[backlog]]
+id = "B-3fb11c9a"
+kind = "bug"
+summary = "plan-worker-lite stamps agent as implement-lite or plan-worker instead of its frontmatter name, so the next round's lane check reports its uncommitted files as out_of_lane"
+area = "claude/agents/plan-worker-lite.md"
+tags = [
+    "implement-v2",
+    "plan-worker",
+    "lane-check",
+]
+status = "resolved"
+created = 2026-11-16T11:21:28Z
+last_seen = 2026-11-16T11:21:28Z
+seen_count = 1
+dedup_id = "3fb11c9a8d85cc75"
+origin = "implement-v2"
+context = "Seen 2026-11-16 on strapi-server (milestone A): 14 of 15 lite rows across three launches got agent = implement-lite, one got plan-worker; the deep workers all wrote plan-worker-deep. The agent file says to use the name: in its own frontmatter, which the model evidently does not resolve. tasks update --agent accepts any string. Round 1's lane check was clean (dispatched rows are exempt), but round 2's reported 19 of those rows' files as out_of_lane, because a row counts as started only with agent plan-worker-lite or plan-worker-deep. Workaround: re-stamp with tasks update <ids> --agent plan-worker-lite before the next lane check. Fix: have the implement-v2-milestone Workflow put the literal agent name in each worker's prompt, and/or have tomlctl refuse an agent value outside a known set while a run is open."
+base_sha = "04b98a98e4c2569089b04ec1db9c9db9b3e219d9"
+resolved = 2026-11-16
+resolution = "implement-v2-milestone.js (script_version 5) puts an agent: line with the literal plan-worker-lite or plan-worker-deep in each worker prompt; the shared worker procedure's step 6 takes --agent from it, falling back to the executor's tier name, never another agent's. Workflow harness test added."
+
+[[backlog]]
+id = "B-2417764c"
+kind = "bug"
+summary = "plan workers write free text in a run note's [[checks]] result (pass (9 tests), not run: shellcheck is not installed) instead of pass, fail or not-run"
+area = "claude/agents"
+tags = [
+    "implement-v2",
+    "plan-worker",
+    "run-note",
+]
+status = "resolved"
+created = 2026-11-16T11:21:28Z
+last_seen = 2026-11-16T11:21:28Z
+seen_count = 1
+dedup_id = "2417764c637292e5"
+origin = "implement-v2"
+context = 'Seen 2026-11-16 on strapi-server: 11 of 27 run notes across three launches (both tiers) had a non-vocabulary checks.result, e.g. pass (209 tests, 12 files) and fail only in scripts/sync/aca.ts (sibling file). plan run notes then marks the block malformed. The agent files show result = "pass" in the example but do not state that the value is a closed vocabulary or where qualifying detail goes. Fix: say so in plan-worker-lite.md and plan-worker-deep.md, and give the detail its own key (e.g. checks.detail).'
+base_sha = "04b98a98e4c2569089b04ec1db9c9db9b3e219d9"
+resolved = 2026-11-16
+resolution = "The shared worker procedure now states checks.result is exactly pass, fail or not-run, with counts, not-run reasons and sibling-file failures going in the prose; an off-vocabulary result is dropped from the record."
+
+[[backlog]]
+id = "B-7975429a"
+kind = "debt"
+summary = "plan run notes treats one bad checks.result value as a malformed block and records no deviations or tangential entries for that attempt"
+area = "tomlctl/src/plan/run_note.rs"
+tags = [
+    "implement-v2",
+    "run-note",
+]
+status = "resolved"
+created = 2026-11-16T11:21:28Z
+last_seen = 2026-11-16T11:21:28Z
+seen_count = 1
+dedup_id = "7975429a25671ccb"
+origin = "implement-v2"
+context = "run_note.rs rejects the whole block on one out-of-vocabulary checks.result (the check near line 272), so the attempt records block = malformed with empty deviations, tangential and checks arrays. In the 2026-11-16 strapi-server run that silently dropped 12 tangential entries across 7 notes; the orchestrator recovered them only by reading every malformed note by hand. The attempt also keeps block = malformed but not the reason, so a later invocation cannot rebuild the report's reconcile lines from the store. Fix: accept the rest of a block that fails only on checks.result (record the bad value as a problem), and store the malformed reason on the attempt."
+base_sha = "04b98a98e4c2569089b04ec1db9c9db9b3e219d9"
+resolved = 2026-11-16
+resolution = "run_note.rs drops only a check whose result is outside the vocabulary and keeps the rest of the block as present, naming the dropped check; plan run notes stores each row's problem on its [[attempt]] as problem (omitted when empty). Unit and integration tests added; plan-store.md, plan-run.md and drain.md updated."
+
+[[backlog]]
+id = "B-0bc81d84"
+kind = "debt"
+summary = "agents audit default patterns are cargo-only plus recursive grep, so in a bun or npm repo it flags every read-only grep -r as a breach and misses bun test, bun run type-check and docker build"
+area = "tomlctl/src/agents/audit.rs"
+tags = [
+    "implement-v2",
+    "agents-audit",
+]
+status = "resolved"
+created = 2026-11-16T11:21:28Z
+last_seen = 2026-11-16T11:21:28Z
+seen_count = 1
+dedup_id = "0bc81d84b30c00c0"
+origin = "implement-v2"
+context = "Seen 2026-11-16 on strapi-server (bun/TypeScript): the drain's audit over three launches returned 73 rows, nearly all read-only grep -r research (mostly into node_modules), each a breach under drain.md step 3's rule since none matches an accept check. A worker's full bun run type-check was caught only because the same line held a grep. The allowed-list exception names tomlctl's own cli::dispatch::tests. Fix: derive the default patterns from the milestone's gate commands (anything matching a gate is the gate's), and narrow or drop the recursive-grep pattern, which flags reading rather than building."
+base_sha = "04b98a98e4c2569089b04ec1db9c9db9b3e219d9"
+resolved = 2026-11-16
+resolution = "agents audit defaults now cover bun/npm/pnpm/yarn test and build, vitest/jest/playwright via npx/bunx/pnpm exec, docker build, go, dotnet and pytest, and drop the recursive-grep pattern; new repeatable --gate <command> reports any command containing a gate command. drain.md passes each gate-list command as --gate."
+
+[[backlog]]
+id = "B-b56d967f"
+kind = "bug"
+summary = "verification extract.sh has no bun test patterns, so a failing bun test block reports no failed_ids and a summary without pass or fail counts"
+area = "claude/agents/verification.md"
+tags = [
+    "verification",
+    "bun",
+]
+status = "resolved"
+created = 2026-11-16T11:21:28Z
+last_seen = 2026-11-16T11:21:28Z
+seen_count = 1
+dedup_id = "b56d967f7331e126"
+origin = "implement-v2"
+context = '''Seen 2026-11-16 on strapi-server: bun test failed one test, and the block came back with summary 'Ran 1189 tests across 65 files', no failed_ids and PASSED_ANY no. bun prints failures as '(fail) <describe> > <test> [1.23ms]' and counts as ' 1185 pass' / ' 1 fail', none of which extract.sh matches (it expects 'passed'/'failed'). The orchestrator had to grep the log for the failing id. Fix: add a '^\(fail\) ' id pattern and ' N pass' / ' N fail' count lines to extract.sh.'''
+base_sha = "04b98a98e4c2569089b04ec1db9c9db9b3e219d9"
+resolved = 2026-11-16
+resolution = "verification.md extract.sh reads bun's ' N pass' / ' N fail' / skip / todo count lines into SUMMARY, counts 'N pass' for PASSED_ANY, and takes failed ids from '(fail) <name> [time]' lines. Checked against sample bun and libtest logs."
+
+[[backlog]]
+id = "B-edac32a5"
+kind = "question"
+summary = "implement-v2 flow-store commit assumes gate logs and the backlog are tracked, but .claude/flows/<slug>/gates/*.log and .claude/backlog.toml are git-ignored in consumers with *.log or .claude/* ignore rules"
+area = "claude/skills/implement-v2-engine"
+tags = [
+    "implement-v2",
+    "gitignore",
+]
+status = "resolved"
+created = 2026-11-16T11:21:28Z
+last_seen = 2026-11-16T11:21:28Z
+seen_count = 1
+dedup_id = "edac32a53c25b29a"
+origin = "implement-v2"
+context = "Seen 2026-11-16 on strapi-server: its .gitignore has *.log and .claude/* (with exceptions), so drain.md step 10's git status over the flow paths never printed the gate logs plan run gate copied or the 17 rows minted into .claude/backlog.toml, and the flow-store commit carried neither. Nothing warned. Options: name the gate copies with a non-.log extension, have plan run gate or the engine report when a path it expects to commit is ignored (git check-ignore), or document the ignore rules a consumer needs."
+base_sha = "04b98a98e4c2569089b04ec1db9c9db9b3e219d9"
+related = ["B-07136a3d"]
+resolved = 2026-11-16
+resolution = "drain.md's flow-store commit runs git status --porcelain --ignored; each !! path is staged by no one (never git add -f) and gets a needs_person reconcile report entry quoting the git check-ignore -v rule, so an ignored gate log or backlog no longer drops silently."
+
+[[backlog]]
+id = "B-4e1fadea"
+kind = "question"
+summary = "plan-worker-deep connected to a consumer's live production database with the repo's .env credentials and ran a read-only pg_dump smoke; the worker contract says nothing about live-system access"
+area = "claude/agents/plan-worker-deep.md"
+tags = [
+    "implement-v2",
+    "plan-worker",
+    "safety",
+]
+status = "resolved"
+created = 2026-11-16T11:21:28Z
+last_seen = 2026-11-16T11:21:28Z
+seen_count = 1
+dedup_id = "4e1fadea86dbadfd"
+origin = "implement-v2"
+context = "Seen 2026-11-16 on strapi-server, task 15 (a database sync script): to check its table manifest the worker opened a read-only session (default_transaction_read_only=on) against the live database using the DATABASE_* values in .env, and ran pg_dump -Fc of live data plus pg_restore -l. Nothing was written, but production data was read and dumped to a temp file without the user being asked. The build discipline governs builds and test runs only. Decide whether workers may touch live systems at all, and if not, say so in both plan-worker agents (or require the plan to grant it per task)."
+base_sha = "04b98a98e4c2569089b04ec1db9c9db9b3e219d9"
+resolved = 2026-11-16
+resolution = "Workers may not touch live systems: the shared plan-worker forbidden-ops block now forbids connecting to deployed services, production or shared databases or cloud accounts with repository credentials, even read-only, or copying their data, unless the task's constraints name the system and grant access; a check needing one is not-run, a task needing one is parked."

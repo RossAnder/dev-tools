@@ -228,7 +228,8 @@ never write `plan.toml`, so a worker's `tasks update` cannot drop them.
 | `files_touched` | The paths the worker reported editing. |
 | `deviations` | Each `{what, why, means}`; `means` names the suggested means departed from, `""` when none. |
 | `tangential` | Each `{kind, area, summary, why}`, the note's `TANGENTIAL:` lines. `kind` is kept as written. |
-| `checks` | Each `{command, result}`, `result` one of `pass`, `fail` or `not-run`. |
+| `checks` | Each `{command, result}`, `result` one of `pass`, `fail` or `not-run`. A note's check with any other `result` is left out and named in `problem`. |
+| `problem` | The one line `plan run notes` reported as the row's `problem`: a missing or malformed note with the reason, a Status that disagrees with the task row, or the checks left out. Absent when there was none. |
 | `handover` | The handover the worker proposed, `{reason, action, when, done_when}`; absent when it proposed none. `reason` is kept as written. |
 
 `[[gate_round]]` is one run of a milestone's gate, written by `plan run gate` and keyed on

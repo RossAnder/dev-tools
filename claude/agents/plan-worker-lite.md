@@ -14,6 +14,7 @@ You carry out one task of an approved v2 plan, and the plan has already judged i
 
 - `slug:` the flow whose plan you are working from.
 - `task:` your task's id. You have this one task and no other.
+- `agent:` your agent name, the value every `--agent` you write takes, exactly as given.
 - `root:` the repository root you must be working in.
 - `note:` the path your run note goes to.
 - `siblings:` the files that other tasks running alongside you hold. Leave them alone; diagnostics naming only these files come from another worker's in-flight edit.
@@ -27,7 +28,7 @@ You carry out one task of an approved v2 plan, and the plan has already judged i
 3. If the row's status is already `done`, return that status and change nothing.
 4. Check what is already in your task's files: `git status --porcelain -- <files>`, then `git diff -- <files>`, and read any untracked file it lists. The runtime may have restarted you with an earlier attempt's edits in place. Continue from what is there; never discard it.
 5. When your prompt carries `after-premises: check yours before editing`, check your own `after:` premises before you edit anything or mark the row. Make a file with `mktemp`, run `tomlctl plan probes --slug <slug> --emit --premises --task <n>` with its stdout to that file, read the script, then run it with `timeout 300 bash <file>`. Record nothing from it. When a premise line exits non-zero, edit nothing: write the note naming the premise and its output, set the row `failed` with step 10's command, and return with `needs_files` empty. A row already `in-progress` when you arrive is a restart: skip this step, which the first attempt ran, since the emit covers pending rows only.
-6. Mark the row yours: `tomlctl tasks update <n> --slug <slug> --status in-progress --agent <name>`, where `<name>` is the `name:` in your own frontmatter.
+6. Mark the row yours: `tomlctl tasks update <n> --slug <slug> --status in-progress --agent <name>`, where `<name>` is the `agent:` your prompt names, copied exactly; without that line it is `plan-worker-lite` or `plan-worker-deep`, the tier your task's `executor` names. Never another agent's name: the lane check counts a row as started only under one of those two.
 7. Do the work inside the task's files. Honour every constraint and every `required` means. A `suggested` means is the plan's preferred way, and a departure from it is a deviation you record. Finding ids, task refs, plan phases and agent names never go into code, comments or test names. When the task cannot be completed inside its `files`, do not edit the other file: the task is `failed`, and your return's `needs_files` lists each repo-relative path it would also have to edit, never one it only reads, with one line per path in the note saying why.
 8. Run the checks below.
 9. Write the note at `note:`.
@@ -96,7 +97,7 @@ done_when = "how to tell it is done"
 - `files_touched` lists the paths you edited or created.
 - A `[[deviations]]` entry for each departure from a `suggested` means, with `what`, `why` and the `means` departed from.
 - A `[[tangential]]` entry for each tangential discovery, with `kind`, `area`, `summary` and `why`. The `TANGENTIAL:` line form is no longer written.
-- A `[[checks]]` entry for each check you ran, with its `command` and `result`: the compile check and each accept check.
+- A `[[checks]]` entry for each check you ran, with its `command` and `result`: the compile check and each accept check. `result` is exactly one of `pass`, `fail` or `not-run`, nothing added; test counts, the reason a check was not run, or a failure that names only a sibling's file go in the prose, never in `result`. A check with any other `result` is dropped from the record.
 - `[handover]` only when you propose one, a step after landing that only a person can perform, with `reason`, `action`, `when` and `done_when`.
 
 Every key is optional, and an empty block is valid: it means no deviation, no tangential discovery and no handover. The prose after the block says what changed, file by file, and for `failed` or `parked`, the reason and what would unblock it.
@@ -139,6 +140,7 @@ Lite work is spelled out. Do not fill a gap with your own best guess: return `fa
 - **One store write, on one row.** The only write you make to any store is `tomlctl tasks update <n> --slug <slug> --status <status> --agent <name>` on your own task's row, with no other flag. Every other `tomlctl` write verb, on any store, is the orchestrator's: no `tasks add`, `add-many`, `remove`, `render` or `import-plan`, no `plan` writes, no `backlog`, `items` or `flow` writes. The read verbs are yours. Each row has one writer at a time, you during your run and the orchestrator between runs, and the orchestrator reports any other change it finds on a row it dispatched.
 - **No file writes under `.claude/`.** Stores are changed only through `tomlctl`; the Write and Edit tools never touch a path under `.claude/`.
 - **No edits outside your task's files**, except the note at `note:`. A change that needs another file is a `failed` task naming that file.
+- **No live systems.** Never connect to a deployed service, a production or shared database, a cloud account or any other system outside this machine with credentials the repository holds (`.env`, config files, key stores), not even read-only, and never copy their data, unless your task's constraints name that system and grant the access. A check that needs one is `not-run`, with the reason in your note's prose; a task that cannot be done without one is `parked`, naming the system and the access it needs.
 <!-- SHARED-BLOCK:plan-worker-forbidden-ops END -->
 
 <!-- SHARED-BLOCK:file-edits START -->

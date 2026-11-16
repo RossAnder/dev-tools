@@ -4,7 +4,9 @@
 //! fenced block whose info string is exactly `toml run-note`. A note with no
 //! such fence reads as `absent` and keeps its prose `TANGENTIAL:` lines; a
 //! fence that is not valid TOML, holds an unknown key or follows prose reads
-//! as `malformed` and yields the Status line alone.
+//! as `malformed` and yields the Status line alone. A check whose `result` is
+//! outside the vocabulary is dropped and named in `reason`, and the rest of
+//! the block still reads as `present`.
 
 use std::fmt;
 
@@ -22,7 +24,8 @@ pub(crate) struct RunNote {
     pub(crate) status: String,
     pub(crate) summary: String,
     pub(crate) block: NoteBlock,
-    /// Why the block is malformed, `""` otherwise.
+    /// Why the block is malformed, or which checks a present block dropped;
+    /// `""` when neither.
     pub(crate) reason: String,
     pub(crate) files_touched: Vec<String>,
     pub(crate) deviations: Vec<Deviation>,
@@ -57,6 +60,7 @@ struct BlockFields {
     tangential: Vec<Tangential>,
     checks: Vec<CheckRun>,
     handover: Option<ProposedHandover>,
+    dropped: Vec<String>,
 }
 
 pub(crate) fn parse(text: &str) -> Result<RunNote, NoStatusLine> {
@@ -94,6 +98,7 @@ pub(crate) fn parse(text: &str) -> Result<RunNote, NoStatusLine> {
                 note.tangential = fields.tangential;
                 note.checks = fields.checks;
                 note.handover = fields.handover;
+                note.reason = fields.dropped.join("; ");
             }
             Err(reason) => {
                 note.block = NoteBlock::Malformed;
@@ -265,16 +270,19 @@ fn read_block(body: &str) -> Result<BlockFields, String> {
                 })?;
             }
             "checks" => {
-                fields.checks = tables(value, "checks", |entry| {
-                    let [command, result] = strings(entry, "checks", ["command", "result"])?;
-                    let result = CheckResult::parse(&result).ok_or_else(|| {
-                        format!(
-                            "`checks.result` is `{result}`, expected one of {}",
-                            CheckResult::VOCABULARY.join(", ")
-                        )
-                    })?;
-                    Ok(CheckRun { command, result })
+                let entries = tables(value, "checks", |entry| {
+                    strings(entry, "checks", ["command", "result"])
                 })?;
+                for [command, result] in entries {
+                    match CheckResult::parse(&result) {
+                        Some(result) => fields.checks.push(CheckRun { command, result }),
+                        None => fields.dropped.push(format!(
+                            "the check `{command}` was dropped: its `result` is `{result}`, \
+                             expected one of {}",
+                            CheckResult::VOCABULARY.join(", ")
+                        )),
+                    }
+                }
             }
             "handover" => {
                 let entry = value.as_table().ok_or("`handover` is not a table")?;
@@ -483,16 +491,33 @@ TANGENTIAL: bug | ignored.rs | prose is not read | the block wins
     }
 
     #[test]
-    fn a_wrong_type_or_check_result_is_malformed() {
+    fn a_wrong_type_is_malformed() {
         let typed = parse("Status: done — x\n```toml run-note\nfiles_touched = \"a.rs\"\n```\n")
             .expect("parses");
         assert_eq!(typed.block, NoteBlock::Malformed);
-        let result = parse(
-            "Status: done — x\n```toml run-note\n[[checks]]\ncommand = \"c\"\nresult = \"ok\"\n```\n",
+    }
+
+    #[test]
+    fn an_unknown_check_result_drops_that_check_and_keeps_the_rest() {
+        let note = parse(
+            "Status: done — x\n```toml run-note\nfiles_touched = [\"a.rs\"]\n\n\
+             [[tangential]]\nkind = \"bug\"\narea = \"b.rs\"\nsummary = \"s\"\nwhy = \"w\"\n\n\
+             [[checks]]\ncommand = \"c1\"\nresult = \"pass (9 tests)\"\n\n\
+             [[checks]]\ncommand = \"c2\"\nresult = \"fail\"\n```\n",
         )
         .expect("parses");
-        assert_eq!(result.block, NoteBlock::Malformed);
-        assert!(result.reason.contains("`ok`"), "{}", result.reason);
+        assert_eq!(note.block, NoteBlock::Present);
+        assert_eq!(note.files_touched, ["a.rs"]);
+        assert_eq!(note.tangential.len(), 1);
+        assert_eq!(
+            note.checks,
+            [CheckRun {
+                command: "c2".into(),
+                result: CheckResult::Fail,
+            }]
+        );
+        assert!(note.reason.contains("`c1`"), "{}", note.reason);
+        assert!(note.reason.contains("`pass (9 tests)`"), "{}", note.reason);
     }
 
     #[test]

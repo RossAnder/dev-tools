@@ -9,21 +9,32 @@ use anyhow::{Context, Result};
 use regex::Regex;
 use serde_json::{Value as JsonValue, json};
 
-/// The patterns used when none is given: a cargo build, test or nextest run,
-/// which the milestone gate owns, and a recursive grep, which walks ignored
-/// trees such as `target/` and `.git/`.
+/// The patterns used when none is given: the build and whole-suite test runs
+/// of the common toolchains, which a milestone gate owns. Compile checks such
+/// as `cargo clippy` or a `type-check` script are a worker's, so they pass.
 pub(crate) const DEFAULT_PATTERNS: &[&str] = &[
     r"\bcargo\s+(?:\+\S+\s+)?(?:build|test|nextest)\b",
-    r"\b[ef]?grep\b[^|;&\n]*\s(?:-[A-Za-z]*[rR][A-Za-z]*|--recursive|--dereference-recursive)(?:\s|$)",
+    r"\b(?:bun|npm|pnpm|yarn)\s+(?:run\s+)?(?:test|build)\b",
+    r"\b(?:npx|bunx|pnpm\s+exec)\s+(?:vitest|jest|playwright\s+test)\b",
+    r"\bdocker\s+(?:compose\s+|buildx\s+)?build\b",
+    r"\bgo\s+(?:build|test)\b",
+    r"\bdotnet\s+(?:build|test)\b",
+    r"\bpytest\b",
 ];
 
 /// The longest command a row carries, in characters.
 pub(crate) const COMMAND_CAP: usize = 200;
 
 /// One `{agent, command}` row per matching Bash command, ordered by
-/// transcript file name and then by position in the transcript.
-pub(crate) fn rows(dir: &Path, patterns: &[String]) -> Result<JsonValue> {
+/// transcript file name and then by position in the transcript. A command
+/// also matches when it contains one of `gates`, whitespace runs collapsed.
+pub(crate) fn rows(dir: &Path, patterns: &[String], gates: &[String]) -> Result<JsonValue> {
     let regexes = compile(patterns)?;
+    let gates: Vec<String> = gates
+        .iter()
+        .map(|g| collapse(g))
+        .filter(|g| !g.is_empty())
+        .collect();
     let mut files: Vec<(String, std::path::PathBuf)> = fs::read_dir(dir)
         .with_context(|| format!("agents audit: reading {}", dir.display()))?
         .filter_map(|entry| entry.ok())
@@ -43,7 +54,10 @@ pub(crate) fn rows(dir: &Path, patterns: &[String]) -> Result<JsonValue> {
             fs::read(&path).with_context(|| format!("agents audit: reading {}", path.display()))?;
         let text = String::from_utf8_lossy(&text);
         for command in bash_commands(&text) {
-            if regexes.iter().any(|re| re.is_match(&command)) {
+            let collapsed = collapse(&command);
+            if regexes.iter().any(|re| re.is_match(&command))
+                || gates.iter().any(|g| collapsed.contains(g.as_str()))
+            {
                 out.push(json!({"agent": agent, "command": truncate(&command)}));
             }
         }
@@ -101,6 +115,10 @@ fn truncate(command: &str) -> String {
     command.chars().take(COMMAND_CAP).collect()
 }
 
+fn collapse(command: &str) -> String {
+    command.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -110,26 +128,33 @@ mod tests {
     }
 
     #[test]
-    fn default_patterns_flag_gate_owned_runs_and_recursive_greps() {
+    fn default_patterns_flag_gate_owned_runs() {
         for command in [
             "cargo test --manifest-path tomlctl/Cargo.toml",
             "CARGO_INCREMENTAL=0 cargo build",
             "cargo nextest run -E 'test(x)'",
             "cargo +nightly test",
-            "grep -rn foo .",
-            "grep -n foo -R src",
-            "cd x && grep --recursive foo",
+            "bun test",
+            "cd web && bun run build",
+            "npm test -- --watch=false",
+            "pnpm exec vitest run",
+            "docker build -t app .",
+            "docker compose build",
+            "go test ./...",
+            "dotnet build",
+            "python -m pytest",
         ] {
             assert!(flagged(command), "{command}");
         }
     }
 
     #[test]
-    fn default_patterns_pass_narrow_checks() {
+    fn default_patterns_pass_narrow_checks_and_reading() {
         for command in [
             "cargo clippy --manifest-path tomlctl/Cargo.toml",
+            "bun run type-check",
             "rg -n foo src",
-            "grep -n foo file.rs",
+            "grep -rn foo node_modules/pkg",
             "grep --include=*.rs foo file",
             "rustfmt --edition 2024 --check src/a.rs",
         ] {

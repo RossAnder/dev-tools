@@ -428,10 +428,14 @@ pub(crate) enum AgentsOp {
         /// The launch's transcript directory.
         #[arg(long = "transcripts", value_name = "DIR")]
         transcripts: std::path::PathBuf,
-        /// Regex a command must match; repeatable. Without one, a cargo
-        /// build, test or nextest run and a recursive grep are reported.
+        /// Regex a command must match; repeatable. Without one, the build and
+        /// test-suite runs of the common toolchains are reported.
         #[arg(long = "pattern", value_name = "REGEX")]
         pattern: Vec<String>,
+        /// A gate command, taken literally; repeatable. A command containing
+        /// it, whitespace runs collapsed, is reported too.
+        #[arg(long = "gate", value_name = "COMMAND")]
+        gate: Vec<String>,
     },
 }
 

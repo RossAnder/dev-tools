@@ -271,11 +271,36 @@ fn a_malformed_block_or_first_line_records_a_malformed_attempt() {
     }
     let recorded = attempts(&root);
     assert_eq!(recorded.len(), 2);
-    assert!(
-        recorded
-            .iter()
-            .all(|a| a["block"].as_str() == Some("malformed"))
+    assert!(recorded.iter().all(|a| {
+        a["block"].as_str() == Some("malformed")
+            && a["problem"]
+                .as_str()
+                .is_some_and(|p| p.contains("malformed"))
+    }));
+}
+
+#[test]
+fn an_unknown_check_result_keeps_the_rest_of_the_block_and_records_the_problem() {
+    let (_dir, root) = flow(&["done"]);
+    write_note(
+        &root,
+        1,
+        "Status: done — x\n\n```toml run-note\n\
+         [[tangential]]\nkind = \"bug\"\narea = \"a.rs\"\nsummary = \"s\"\nwhy = \"w\"\n\n\
+         [[checks]]\ncommand = \"bun test\"\nresult = \"pass (9 tests)\"\n```\n",
     );
+
+    let out = stdout_json(&notes(&root).success());
+    let row = &rows(&out)[0];
+    assert_eq!(row["block"], json!("present"));
+    assert_eq!(row["tangential"], json!(1));
+    let problem = row["problem"].as_str().unwrap();
+    assert!(problem.contains("`pass (9 tests)`"), "{problem}");
+
+    let attempt = attempt_of(&attempts(&root), 1, RUN_ID);
+    assert_eq!(attempt["tangential"].as_array().map(Vec::len), Some(1));
+    assert_eq!(attempt["checks"].as_array().map(Vec::len), Some(0));
+    assert_eq!(attempt["problem"].as_str(), Some(problem));
 }
 
 #[test]

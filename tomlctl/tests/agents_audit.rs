@@ -85,20 +85,46 @@ fn audit_reports_gate_owned_commands() {
 }
 
 #[test]
-fn audit_reports_recursive_grep() {
+fn audit_reports_a_bun_suite_and_cuts_long_commands() {
     let tmp = tempfile::tempdir().unwrap();
-    let long = format!("grep -rn {} .", "x".repeat(300));
+    let long = format!("bun test {}", "x".repeat(300));
     write_transcript(
         tmp.path(),
         "agent-a1.jsonl",
-        &[bash_line("grep -rn 'fn main' ."), bash_line(&long)],
+        &[
+            bash_line("grep -rn 'fn main' ."),
+            bash_line("bun test"),
+            bash_line(&long),
+        ],
     );
 
     let rows = audit(tmp.path(), &[]);
     let rows = rows.as_array().unwrap();
     assert_eq!(rows.len(), 2);
-    assert_eq!(rows[0]["command"], "grep -rn 'fn main' .");
+    assert_eq!(rows[0]["command"], "bun test");
     assert_eq!(rows[1]["command"].as_str().unwrap().chars().count(), 200);
+}
+
+#[test]
+fn audit_reports_a_command_holding_a_gate_command() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_transcript(
+        tmp.path(),
+        "agent-a1.jsonl",
+        &[
+            bash_line("cd web &&  make   check 2>&1 | tail"),
+            bash_line("make lint"),
+        ],
+    );
+
+    let mut cmd = cli(tmp.path());
+    cmd.args(["agents", "audit", "--transcripts"])
+        .arg(tmp.path())
+        .args(["--gate", "make check", "--gate", "  "]);
+    assert_eq!(
+        stdout_json(&cmd.assert().success()),
+        json!([{"agent": "agent-a1", "command": "cd web &&  make   check 2>&1 | tail"}])
+    );
 }
 
 #[test]

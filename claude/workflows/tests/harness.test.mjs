@@ -417,6 +417,16 @@ test('implement-v2-milestone: an after task starts once its target is done', asy
   assert.deepEqual(out.tasks.map((t) => t.status), ['done', 'done'])
 })
 
+test('implement-v2-milestone: each worker prompt names its own agent', async () => {
+  const rt = runtime(null, { deferred: true })
+  const done = rt.run('implement-v2-milestone', milestoneArgs([task(1, ['a.rs']), task(2, ['b.rs'], { executor: 'deep' })]))
+  await tick()
+  assert.deepEqual(rt.calls.map((c) => lineOf(c.prompt, 'agent')), ['plan-worker-lite', 'plan-worker-deep'])
+  await finish(rt, 1)
+  await finish(rt, 2)
+  await done
+})
+
 test('implement-v2-milestone: an after task is blocked when its target fails', async () => {
   const rt = runtime(null, { deferred: true })
   const done = rt.run('implement-v2-milestone', milestoneArgs([task(1, ['a.rs']), task(2, ['b.rs'], { after: [1] })]))
