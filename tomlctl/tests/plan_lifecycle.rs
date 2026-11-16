@@ -672,6 +672,10 @@ fn a_plan_runs_from_open_to_drift() {
     assert_eq!(tombstone["field"].as_str(), Some("*"));
     assert_eq!(tombstone["old"].as_str(), Some("Spare work"));
     assert_eq!(tombstone["reason"].as_str(), Some("Out of scope."));
+    let left = &array(&store, "changes")[2];
+    assert_eq!(left["ref"].as_str(), Some("spare-work"));
+    assert_eq!(left["field"].as_str(), Some("checkpoint"));
+    assert_eq!(left["new"].as_str(), Some(""));
 
     let (kind, message) = flow.refused(&["tasks", "import-plan", "--slug", SLUG]);
     assert_eq!(kind, "validation", "{message}");
@@ -711,7 +715,7 @@ fn a_plan_runs_from_open_to_drift() {
         Vec::<u64>::new(),
         "a commit the row records is the plan's own: {drift}"
     );
-    assert_eq!(array(&flow.doc(&tasks_path), "changes").len(), 2);
+    assert_eq!(array(&flow.doc(&tasks_path), "changes").len(), 3);
 
     // Finish.
     flow.plan(&["handover", "done", "H1"]);

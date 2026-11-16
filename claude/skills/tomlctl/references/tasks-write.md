@@ -295,7 +295,7 @@ tomlctl tasks remove <id> --slug <slug> --force
 |---|---|---|---|
 | *(positional)* | id | Task to remove. Required; an id no row carries is refused. | — |
 | `--force` | — | Remove a row past `pending`, or one other rows depend on. Re-points each dependent's edges at the removed row's own dependencies. | off |
-| `--reason` | text | Why the row goes. Required and non-blank on an audited store, where the removal appends a tombstone `[[changes]]` row (`field = "*"`, `old` the title) and, under `--force`, one `needs` row per rewired dependent, with `old` and `new` as compact JSON. | — |
+| `--reason` | text | Why the row goes. Required and non-blank on an audited store, where the removal appends a tombstone `[[changes]]` row (`field = "*"`, `old` the title), a `checkpoint` row (`old` the row's milestone, `new` empty) when the row had one, and, under `--force`, one `needs` row per rewired dependent, with `old` and `new` as compact JSON. | — |
 
 Without `--force` two removals are refused, each naming what stands in the way: a row whose
 status is not `pending`, named with its `ref` — the execution record's `task_ref` and the commit

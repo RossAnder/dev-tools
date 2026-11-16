@@ -1127,7 +1127,41 @@ fn a_new_row_does_not_reclaim_a_tombstoned_ref() {
         "wire-the-renderer-2"
     );
     let refs: Vec<String> = trail(&store).into_iter().map(|row| row.0).collect();
-    assert_eq!(refs, ["wire-the-renderer", "wire-the-renderer-2"]);
+    assert_eq!(
+        refs,
+        [
+            "wire-the-renderer",
+            "wire-the-renderer",
+            "wire-the-renderer-2"
+        ]
+    );
+}
+
+/// `plan emit lane-check` reads this row to attribute a removal to the
+/// milestone the row left.
+#[test]
+fn a_removal_records_the_milestone_the_row_left() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, &audited());
+    remove(&root, "2", "dropped");
+
+    assert_eq!(
+        trail(&store),
+        [
+            (
+                "wire-the-renderer".to_string(),
+                "*".to_string(),
+                "Wire the renderer".to_string(),
+                String::new()
+            ),
+            (
+                "wire-the-renderer".to_string(),
+                "checkpoint".to_string(),
+                "A".to_string(),
+                String::new()
+            ),
+        ]
+    );
 }
 
 #[test]

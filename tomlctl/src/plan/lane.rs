@@ -51,6 +51,7 @@ const SECTIONS: [(&str, &[&str]); 4] = [
 ];
 const REST: &str = "rest";
 const UNSTAMPED_KEY: &str = "last_updated";
+const CHECKPOINT_FIELD: &str = "checkpoint";
 
 /// The store's digest by section, for a run of `step` dispatching `tasks` that
 /// started at `started`, with the `digest_at` to record when [`window_open`]
@@ -96,7 +97,9 @@ struct Deferred {
 impl Deferred {
     /// A milestone's state at the open is the `old` of its first `elaboration`
     /// trail row inside the window; one added inside the window was not there;
-    /// one with neither row in the window is in the state it holds now.
+    /// one with neither row in the window is in the state it holds now. A
+    /// removed row's ref belongs to the milestone its last `checkpoint` trail
+    /// row left it in, since no live row carries it.
     fn at_open(store: &Store, started: &Datetime) -> Self {
         let since = instant(started);
         let mut in_window: Vec<&Change> = store
@@ -123,12 +126,29 @@ impl Deferred {
             })
             .map(|spec| spec.id.clone())
             .collect();
-        let refs = store
+        let mut refs: BTreeSet<String> = store
             .items
             .iter()
             .filter(|row| milestones.contains(&row.checkpoint))
             .map(|row| row.r#ref.clone())
             .collect();
+        let live: BTreeSet<&str> = store.items.iter().map(|row| row.r#ref.as_str()).collect();
+        let mut removed_from: BTreeMap<&str, &str> = BTreeMap::new();
+        for change in &store.changes {
+            if change.field == CHECKPOINT_FIELD && !live.contains(change.r#ref.as_str()) {
+                let held = match change.new.is_empty() {
+                    true => &change.old,
+                    false => &change.new,
+                };
+                removed_from.insert(&change.r#ref, held);
+            }
+        }
+        refs.extend(
+            removed_from
+                .into_iter()
+                .filter(|(_, milestone)| milestones.contains(*milestone))
+                .map(|(r#ref, _)| r#ref.to_string()),
+        );
         Self { milestones, refs }
     }
 
@@ -808,6 +828,47 @@ mod tests {
         elaborate_b(&mut after);
         assert!(changed(&before, &after).is_empty());
         assert!(trail_writes(&after, &run_from(STARTED)).is_empty());
+    }
+
+    #[test]
+    fn removing_a_row_of_a_milestone_deferred_at_the_open_is_no_lane_write() {
+        let mut before = flow_with_deferred();
+        before
+            .changes
+            .push(trail("2026-11-11T11:00:00Z", "task-3", "*", "", "Task 3"));
+        let mut after = before.clone();
+        after.items.retain(|row| row.id != 3);
+        after.drop_ref_entries("task-3");
+        after
+            .changes
+            .push(trail("2026-11-11T12:05:00Z", "task-3", "*", "Task 3", ""));
+        after.changes.push(trail(
+            "2026-11-11T12:05:00Z",
+            "task-3",
+            "checkpoint",
+            "B",
+            "",
+        ));
+        assert!(changed(&before, &after).is_empty());
+        assert!(trail_writes(&after, &run_from(STARTED)).is_empty());
+    }
+
+    #[test]
+    fn removing_a_row_of_the_running_milestone_is_still_reported() {
+        let before = flow_with_deferred();
+        let mut after = before.clone();
+        after.items.retain(|row| row.id != 2);
+        after
+            .changes
+            .push(trail("2026-11-11T12:05:00Z", "task-2", "*", "Task 2", ""));
+        after.changes.push(trail(
+            "2026-11-11T12:05:00Z",
+            "task-2",
+            "checkpoint",
+            "A",
+            "",
+        ));
+        assert_eq!(trail_writes(&after, &run_from(STARTED)).len(), 2);
     }
 
     #[test]

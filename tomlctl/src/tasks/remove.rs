@@ -157,6 +157,19 @@ fn retire(
             actor: DEFAULT_ACTOR.to_string(),
             reason: reason.to_string(),
         });
+        // The tombstone alone does not say which milestone the row left, and
+        // `plan emit lane-check` attributes a removal to it by this row.
+        if !row.checkpoint.is_empty() {
+            store.changes.push(Change {
+                at,
+                r#ref: row.r#ref.clone(),
+                field: "checkpoint".to_string(),
+                old: row.checkpoint.clone(),
+                new: String::new(),
+                actor: DEFAULT_ACTOR.to_string(),
+                reason: reason.to_string(),
+            });
+        }
         store.changes.extend(needs_changes);
     }
     // The next import would drop it anyway; leaving it until then holds an

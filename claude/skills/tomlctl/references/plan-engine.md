@@ -228,7 +228,8 @@ Prints `{clean, run_id, out_of_lane, store_writes, digest}`. A clean run prints
 
 The window opens at the run's `digest_at`, or at its `started` when it has none, and closes at its
 `finished`, or now while it is open. The rows, specs, file notes, backlog and finding links and trail
-rows of a milestone deferred at the window's open are left out.
+rows of a milestone deferred at the window's open are left out, and so are those of a row removed
+from it, which the removal's `checkpoint` trail row names.
 
 The run's `store_digest` is one 16-hex SHA-256 prefix per section, taken over the task store with
 `last_updated` and every dispatched row's `status` and `agent` left out. `launch-args` takes it

@@ -142,7 +142,8 @@ or `broken`) and `at` (the capture's head) are written only by `plan probes --re
 `old`, `new`, `actor` and `reason`. `field` is a row field, `*` for an added or removed row,
 `spec.<field>` for a spec field, or `file_notes`, `closes` or `refs`. `old` and `new` hold a plain
 scalar as it stands and a structured value as compact JSON, so a reader can parse them. The trail
-outlives the row it records, so a removal stays as a tombstone, and its `ref` (a `milestone:` key
+outlives the row it records, so a removal stays as a tombstone, with a `checkpoint` row naming the
+milestone the row left, and its `ref` (a `milestone:` key
 excepted) stays retired: `tasks add` suffixes past it and `tasks update --ref` refuses it. A rename
 moves the row's trail to the new `ref`, freeing the old key.
 
