@@ -801,7 +801,6 @@ impl Source {
 
     /// Asks for one document, answered by [`Event::Doc`]; a newer request replaces one not
     /// yet served, and `None` withdraws it.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn set_doc(&self, request: Option<DocRequest>) {
         let _ = self.control.send(Control::Doc(request));
     }

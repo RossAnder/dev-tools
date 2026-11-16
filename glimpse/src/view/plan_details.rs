@@ -16,6 +16,7 @@ use crate::rollup::{self, Tokens};
 use crate::theme::Theme;
 use crate::view::details::{INDENT, indented, section};
 use crate::view::doc::{Doc, Link};
+use crate::view::fmt::{count, duration, row_tokens};
 use crate::view::{self, markdown};
 
 /// The details of `row`, a row of the Plan surface.
@@ -123,36 +124,6 @@ fn kind_name(kind: AuthoredKind) -> &'static str {
 
 fn yes_no(flag: bool) -> &'static str {
     if flag { "yes" } else { "no" }
-}
-
-fn duration(seconds: u64) -> String {
-    let (d, h, m, s) = (
-        seconds / 86_400,
-        seconds / 3600 % 24,
-        seconds / 60 % 60,
-        seconds % 60,
-    );
-    if d > 0 {
-        format!("{d}d{h:02}h")
-    } else if h > 0 {
-        format!("{h}h{m:02}m")
-    } else if m > 0 {
-        format!("{m}m{s:02}s")
-    } else {
-        format!("{s}s")
-    }
-}
-
-fn count(n: u64) -> String {
-    if n < 1000 {
-        n.to_string()
-    } else if n < 1_000_000 {
-        let tenths = (n + 50) / 100;
-        format!("{}.{}k", tenths / 10, tenths % 10)
-    } else {
-        let tenths = (n + 50_000) / 100_000;
-        format!("{}.{}M", tenths / 10, tenths % 10)
-    }
 }
 
 /// The text and links of one record, built top to bottom.
@@ -629,13 +600,7 @@ impl<'a> Builder<'a> {
         if cost.gate_seconds > 0 {
             self.fact("gate time", &duration(cost.gate_seconds), theme.badge);
         }
-        let usage = &cost.usage;
-        let total = usage.input + usage.cache_write + usage.cache_read + usage.output;
-        let tokens = match cost.tokens {
-            Tokens::Recorded => count(total),
-            Tokens::Partial => format!("{} partial", count(total)),
-            Tokens::NotRecorded => "not recorded".to_string(),
-        };
+        let tokens = row_tokens(cost);
         let style = if cost.tokens == Tokens::Recorded {
             theme.badge
         } else {

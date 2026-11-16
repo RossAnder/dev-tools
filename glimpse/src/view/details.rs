@@ -24,6 +24,7 @@ use crate::nav::Target;
 use crate::surface::{ItemsState, Surface};
 use crate::theme::Theme;
 use crate::view::doc::{Doc, Link};
+use crate::view::fmt::{count, duration};
 use crate::view::{self, doc_view, markdown, plan_details, task_spec};
 
 pub(super) const INDENT: &str = "  ";
@@ -679,7 +680,7 @@ fn agent_lines(out: &mut Vec<Line<'static>>, agent: &Agent, theme: &Theme, now: 
     if agent.context_tokens > 0 {
         head.push(Span::raw(format!(
             "  {} tokens",
-            tokens(agent.context_tokens)
+            count(agent.context_tokens)
         )));
     }
     out.push(Line::from(head));
@@ -714,34 +715,6 @@ fn agent_lines(out: &mut Vec<Line<'static>>, agent: &Agent, theme: &Theme, now: 
             format!("{INDENT}{INDENT}{}", agent.summary),
             theme.secondary,
         ));
-    }
-}
-
-fn tokens(count: u64) -> String {
-    if count < 1000 {
-        count.to_string()
-    } else {
-        // One decimal, rounded, without going through floats.
-        let tenths = (count + 50) / 100;
-        format!("{}.{}k", tenths / 10, tenths % 10)
-    }
-}
-
-fn duration(seconds: u64) -> String {
-    let (d, h, m, s) = (
-        seconds / 86_400,
-        seconds / 3600 % 24,
-        seconds / 60 % 60,
-        seconds % 60,
-    );
-    if d > 0 {
-        format!("{d}d{h:02}h")
-    } else if h > 0 {
-        format!("{h}h{m:02}m")
-    } else if m > 0 {
-        format!("{m}m{s:02}s")
-    } else {
-        format!("{s}s")
     }
 }
 
@@ -1077,15 +1050,6 @@ mod tests {
         let (_, _, last_page, _) = draw(height - 6);
         assert_eq!(clamped, last_page);
         assert!(bottom.contains(&format!(" {}/{height} ", height - 5)));
-    }
-
-    #[test]
-    fn helpers_format_times_and_counts() {
-        assert_eq!(duration(42), "42s");
-        assert_eq!(duration(3 * 3600 + 5 * 60), "3h05m");
-        assert_eq!(duration(2 * 86_400 + 3600), "2d01h");
-        assert_eq!(tokens(999), "999");
-        assert_eq!(tokens(61_872), "61.9k");
     }
 
     fn rows(text: Vec<Line<'static>>, width: u16) -> Vec<String> {

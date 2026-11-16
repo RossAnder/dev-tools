@@ -22,7 +22,6 @@ pub(crate) const CHANGED_SINCE: &str = "changed since";
 
 /// One document the runtime asks the poller to read.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) enum DocRequest {
     /// A file under `docs/flows/<slug>/`, as `tomlctl::authored_list` names it.
     Authored {
@@ -50,7 +49,6 @@ pub(crate) enum DocRequest {
 /// A document read for the details panel. The notices are kept out of `text` so the view
 /// can title them; `markdown` is set only for an authored markdown file.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct Fetched {
     pub(crate) title: String,
     pub(crate) text: String,

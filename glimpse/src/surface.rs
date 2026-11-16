@@ -63,7 +63,6 @@ impl Surface {
     }
 
     /// The two-letter label the compact header draws; unique where initials are not.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn short(self) -> &'static str {
         match self {
             Self::Tasks => "Ta",

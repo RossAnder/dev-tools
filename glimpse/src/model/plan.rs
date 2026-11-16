@@ -376,9 +376,8 @@ pub(crate) enum HealthSite {
     GateProbe { milestone: String, index: usize },
 }
 
-/// A probe that is due and not good: a probeable accept not recorded `healthy`, a
-/// probeable premise or a gate probe not recorded `holds`. `verdict` is `""` when
-/// the probe was never recorded.
+/// A probe that needs attention, as the Plan surface's Health section lists it.
+/// `verdict` is `""` when the probe was never recorded.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Health {
     pub(crate) site: HealthSite,
@@ -395,7 +394,6 @@ pub(crate) struct PlanIndex {
     attempts: HashMap<u32, Vec<usize>>,
     gate_rounds: HashMap<String, Vec<usize>>,
     changes: HashMap<String, Vec<usize>>,
-    health: Vec<Health>,
 }
 
 /// The task id an all-digit `binds` entry names.
@@ -404,10 +402,6 @@ fn bound_task(entry: &str) -> Option<u32> {
         return None;
     }
     entry.parse().ok()
-}
-
-fn verdict_of(probe: Option<&Probe>) -> &str {
-    probe.map_or("", |probe| probe.verdict.as_str())
 }
 
 fn push_once(map: &mut HashMap<u32, Vec<usize>>, id: u32, pos: usize) {
@@ -461,47 +455,6 @@ impl PlanIndex {
                 .push(pos);
         }
 
-        for task in &snapshot.tasks {
-            let Some(spec) = &task.spec else { continue };
-            for (i, accept) in spec.accept.iter().enumerate() {
-                let verdict = verdict_of(accept.probe.as_ref());
-                if accept.probeable && verdict != "healthy" {
-                    index.health.push(Health {
-                        site: HealthSite::Accept {
-                            task: task.id,
-                            index: i,
-                        },
-                        verdict: verdict.to_string(),
-                    });
-                }
-            }
-            for (i, premise) in spec.premises.iter().enumerate() {
-                let verdict = verdict_of(premise.probe.as_ref());
-                if premise.probeable && verdict != "holds" {
-                    index.health.push(Health {
-                        site: HealthSite::Premise {
-                            task: task.id,
-                            index: i,
-                        },
-                        verdict: verdict.to_string(),
-                    });
-                }
-            }
-        }
-        for milestone in &snapshot.milestones {
-            for (i, probe) in milestone.gate_probes.iter().enumerate() {
-                if probe.verdict != "holds" {
-                    index.health.push(Health {
-                        site: HealthSite::GateProbe {
-                            milestone: milestone.id.clone(),
-                            index: i,
-                        },
-                        verdict: probe.verdict.clone(),
-                    });
-                }
-            }
-        }
-
         index
     }
 
@@ -546,12 +499,6 @@ impl PlanIndex {
         task_ref: &str,
     ) -> Vec<&'s Change> {
         pick(&self.changes, task_ref, &snapshot.changes)
-    }
-
-    /// Every probe needing attention: tasks in snapshot order with each task's
-    /// accept entries before its premises, then each milestone's gate probes.
-    pub(crate) fn health(&self) -> &[Health] {
-        &self.health
     }
 }
 
@@ -657,31 +604,6 @@ mod tests {
     }
 
     #[test]
-    fn health_lists_each_due_probe_that_is_not_good() {
-        let snap = fixture();
-        let index = snap.index();
-        let sites: Vec<&HealthSite> = index.plan().health().iter().map(|h| &h.site).collect();
-        assert_eq!(
-            sites,
-            [
-                &HealthSite::Accept { task: 6, index: 1 },
-                &HealthSite::Premise { task: 6, index: 0 },
-                &HealthSite::GateProbe {
-                    milestone: "B".to_string(),
-                    index: 0
-                },
-            ]
-        );
-        let verdicts: Vec<&str> = index
-            .plan()
-            .health()
-            .iter()
-            .map(|h| h.verdict.as_str())
-            .collect();
-        assert_eq!(verdicts, ["vacuous", "", ""]);
-    }
-
-    #[test]
     fn a_snapshot_without_the_new_keys_loads_empty() {
         let snap: Snapshot =
             serde_json::from_str(r#"{"tasks":[{"id":3}],"agents":[{"id":"A1"}]}"#).expect("parses");
@@ -692,7 +614,6 @@ mod tests {
         assert!(task.file_notes.is_empty() && task.closes.is_empty() && task.refs.is_empty());
         assert_eq!(snap.agents[0].usage, Usage::default());
         let index = snap.index();
-        assert!(index.plan().health().is_empty());
         assert!(index.plan().decisions_for(&snap, 3).is_empty());
     }
 

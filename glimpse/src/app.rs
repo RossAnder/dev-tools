@@ -1295,7 +1295,7 @@ impl App {
         let cost = rollup::rollup(&self.snapshot, secs);
         let viewing = self.surface == Surface::Plan;
         self.plan
-            .rebuild(&self.snapshot, &self.authored.files, &cost, viewing, now);
+            .rebuild(&self.snapshot, &self.authored, &cost, viewing, now);
     }
 
     /// Swaps in `snapshot`, flashing each task whose status changed. A

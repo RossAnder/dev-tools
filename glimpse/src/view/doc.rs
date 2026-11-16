@@ -23,7 +23,6 @@ impl From<Text<'static>> for Doc {
 
 /// One related record, as the links list names it.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct Link {
     pub(crate) label: String,
     pub(crate) target: Target,

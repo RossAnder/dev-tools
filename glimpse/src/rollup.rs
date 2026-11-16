@@ -8,10 +8,6 @@
 //! segments. Every other agent, and any worker time no known task absorbs,
 //! lands in one `other` row per agent type. An agent whose `usage` is still
 //! all zero has no recorded tokens, and a total including one is partial.
-#![cfg_attr(
-    not(test),
-    allow(dead_code, reason = "the plan surface reads these rows")
-)]
 
 use std::collections::BTreeMap;
 

@@ -4,23 +4,20 @@
 //! reads nothing but its arguments. A row's id is `<section>:<key>`, built from the
 //! record's own id, path or store position, so a rebuild keeps the cursor. The
 //! state is read-only: it holds no marks, offers no menu and has no write target.
-#![cfg_attr(
-    not(test),
-    allow(dead_code, reason = "the plan surface's wiring and view read these")
-)]
 
 use std::collections::BTreeSet;
 use std::ops::{Deref, DerefMut};
 use std::time::Instant;
 
 use crate::app::Scroll;
-use crate::authored::{AuthoredFile, AuthoredKind};
+use crate::authored::{Authored, AuthoredFile, AuthoredKind};
 use crate::hook::parse_utc;
 use crate::model::plan::{Health, HealthSite, Probe};
 use crate::model::{Snapshot, TaskStatus};
 use crate::nav::Target;
-use crate::rollup::{self, RowKind, Tokens};
+use crate::rollup::{self, RowKind};
 use crate::surface::{CursorList, Tracked, Tracking, VisibleRow, item_ids, reposition};
+use crate::view::fmt::{duration, row_tokens};
 
 /// What the surface says in place of its sections when the flow has no plan store.
 pub(crate) const NOT_V2: &str = "not a v2 flow: it has no plan store";
@@ -135,6 +132,8 @@ pub(crate) struct PlanState {
     pub(crate) tracking: Tracking<PlanRow>,
     /// Whether the last rebuild's snapshot carried a plan store.
     pub(crate) has_plan: bool,
+    /// Whether a rebuild has seen the flow's authored listing.
+    listed: bool,
 }
 
 impl Deref for PlanState {
@@ -153,20 +152,36 @@ impl DerefMut for PlanState {
 impl PlanState {
     /// Rebuilds the rows from the snapshot, the authored listing and the rollups,
     /// keeping the cursor on its id; a cursor whose row vanished takes the row at its
-    /// visible position.
+    /// visible position. The flow's first listing is a baseline: its Brief and Notes
+    /// rows neither flash nor count as new.
     pub(crate) fn rebuild(
         &mut self,
         snapshot: &Snapshot,
-        authored: &[AuthoredFile],
+        authored: &Authored,
         cost: &[rollup::Row],
         viewing: bool,
         now: Instant,
     ) {
         let old_position = self.cursor_position();
         self.has_plan = snapshot.plan.is_some();
-        let cursor_lost = self
-            .tracking
-            .refresh(rows(snapshot, authored, cost), None, viewing, now);
+        let rows = rows(snapshot, &authored.files, cost);
+        let baseline: Vec<String> = if authored.revision.is_some() && !self.listed {
+            let held: BTreeSet<&str> = self.rows.iter().map(|r| r.id.as_str()).collect();
+            rows.iter()
+                .filter(|r| matches!(r.section, Section::Brief | Section::Notes))
+                .filter(|r| !held.contains(r.id.as_str()))
+                .map(|r| r.id.clone())
+                .collect()
+        } else {
+            Vec::new()
+        };
+        self.listed = authored.revision.is_some();
+        let cursor_lost = self.tracking.refresh(rows, None, viewing, now);
+        for id in baseline {
+            if self.tracking.flashes.remove(&id).is_some() && !viewing {
+                self.tracking.new_since_view = self.tracking.new_since_view.saturating_sub(1);
+            }
+        }
         if cursor_lost {
             self.tracking.cursor = reposition(self.visible_ids(), old_position);
         }
@@ -555,7 +570,7 @@ pub(crate) fn rows(
         push(
             Section::Cost,
             &key,
-            vec![name, row.agents.len().to_string(), time, tokens(row)],
+            vec![name, row.agents.len().to_string(), time, row_tokens(row)],
             None,
             Record::Cost(row.clone()),
             "",
@@ -698,47 +713,6 @@ fn minute(at: &str) -> String {
     }
 }
 
-/// The row's token total, marked `partial` when some counted agents have no usage.
-fn tokens(row: &rollup::Row) -> String {
-    let usage = &row.usage;
-    let total = usage.input + usage.cache_write + usage.cache_read + usage.output;
-    match row.tokens {
-        Tokens::Recorded => count(total),
-        Tokens::Partial => format!("{} partial", count(total)),
-        Tokens::NotRecorded => "not recorded".to_owned(),
-    }
-}
-
-fn count(n: u64) -> String {
-    if n < 1000 {
-        n.to_string()
-    } else if n < 1_000_000 {
-        let tenths = (n + 50) / 100;
-        format!("{}.{}k", tenths / 10, tenths % 10)
-    } else {
-        let tenths = (n + 50_000) / 100_000;
-        format!("{}.{}M", tenths / 10, tenths % 10)
-    }
-}
-
-fn duration(seconds: u64) -> String {
-    let (d, h, m, s) = (
-        seconds / 86_400,
-        seconds / 3600 % 24,
-        seconds / 60 % 60,
-        seconds % 60,
-    );
-    if d > 0 {
-        format!("{d}d{h:02}h")
-    } else if h > 0 {
-        format!("{h}h{m:02}m")
-    } else if m > 0 {
-        format!("{m}m{s:02}s")
-    } else {
-        format!("{s}s")
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -785,11 +759,44 @@ mod tests {
             .collect()
     }
 
+    fn listed(files: Vec<AuthoredFile>, revision: u64) -> Authored {
+        Authored {
+            files,
+            revision: Some(revision),
+        }
+    }
+
     fn state(snap: &Snapshot, authored: &[AuthoredFile]) -> PlanState {
         let cost = rollup::rollup(snap, parse_utc(NOW).unwrap());
         let mut state = PlanState::default();
-        state.rebuild(snap, authored, &cost, true, Instant::now());
+        state.rebuild(
+            snap,
+            &listed(authored.to_vec(), 1),
+            &cost,
+            true,
+            Instant::now(),
+        );
         state
+    }
+
+    #[test]
+    fn the_first_authored_listing_is_a_baseline_not_arrivals() {
+        let snap = fixture();
+        let cost = rollup::rollup(&snap, parse_utc(NOW).unwrap());
+        let now = Instant::now();
+        let mut state = PlanState::default();
+        state.rebuild(&snap, &Authored::default(), &cost, false, now);
+        state.rebuild(&snap, &listed(listing(), 1), &cost, false, now);
+        assert!(state.rows.iter().any(|r| r.id == "brief:brief.md"));
+        assert_eq!(state.new_since_view, 0);
+        assert!(!state.is_flashing("brief:brief.md", now));
+        assert!(!state.is_flashing("notes:notes/keys.md", now));
+
+        let mut more = listing();
+        more.push(file("notes/late.md", AuthoredKind::Note, "late", 0));
+        state.rebuild(&snap, &listed(more, 2), &cost, false, now);
+        assert_eq!(state.new_since_view, 1, "a later listing's new row arrives");
+        assert!(state.is_flashing("notes:notes/late.md", now));
     }
 
     #[test]
@@ -1043,11 +1050,11 @@ mod tests {
         let mut changed = snap.clone();
         changed.plan.as_mut().unwrap().decisions.clear();
         let cost = rollup::rollup(&changed, parse_utc(NOW).unwrap());
-        state.rebuild(&changed, &listing(), &cost, true, Instant::now());
+        state.rebuild(&changed, &listed(listing(), 1), &cost, true, Instant::now());
         assert_eq!(state.cursor.as_deref(), Some("handovers:H2"));
 
         changed.plan.as_mut().unwrap().handovers.pop();
-        state.rebuild(&changed, &listing(), &cost, true, Instant::now());
+        state.rebuild(&changed, &listed(listing(), 1), &cost, true, Instant::now());
         assert_eq!(
             state.cursor.as_deref(),
             Some("milestones:A"),
@@ -1109,12 +1116,8 @@ mod tests {
     }
 
     #[test]
-    fn plan_state_formats_times_and_tokens_compactly() {
+    fn plan_state_cuts_timestamps_to_the_minute() {
         assert_eq!(minute("2026-09-27T08:00:00Z"), "2026-09-27 08:00");
         assert_eq!(minute(""), "");
-        assert_eq!(duration(3_480), "58m00s");
-        assert_eq!(count(999), "999");
-        assert_eq!(count(1_250), "1.3k");
-        assert_eq!(count(2_340_000), "2.3M");
     }
 }

@@ -11,6 +11,7 @@ use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
+use super::fmt::count;
 use super::panel;
 use crate::app::App;
 use crate::hook::parse_utc;
@@ -62,7 +63,7 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, app: &App, tail: &TailView, 
     }
     let tokens = tail.tokens.unwrap_or(agent.context_tokens);
     if tokens > 0 {
-        status.push(Span::raw(format!("  {} tokens", format_tokens(tokens))));
+        status.push(Span::raw(format!("  {} tokens", count(tokens))));
     }
     if app.stale_agents.contains(&agent.id) {
         status.push(Span::styled("  stale", app.theme.warning));
@@ -116,14 +117,6 @@ fn format_elapsed(secs: u64) -> String {
         format!("{m}m {s:02}s")
     } else {
         format!("{s}s")
-    }
-}
-
-fn format_tokens(tokens: u64) -> String {
-    if tokens >= 1_000 {
-        format!("{:.1}k", tokens as f64 / 1_000.0)
-    } else {
-        tokens.to_string()
     }
 }
 
@@ -250,11 +243,9 @@ mod tests {
     }
 
     #[test]
-    fn elapsed_and_tokens_format_compactly() {
+    fn elapsed_formats_compactly() {
         assert_eq!(format_elapsed(45), "45s");
         assert_eq!(format_elapsed(754), "12m 34s");
         assert_eq!(format_elapsed(7_560), "2h 06m");
-        assert_eq!(format_tokens(999), "999");
-        assert_eq!(format_tokens(61_872), "61.9k");
     }
 }

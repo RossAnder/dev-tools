@@ -11,6 +11,7 @@ pub(crate) mod details;
 pub(crate) mod doc;
 pub(crate) mod doc_view;
 pub(crate) mod ego;
+pub(crate) mod fmt;
 pub(crate) mod footer;
 pub(crate) mod form;
 pub(crate) mod header;
