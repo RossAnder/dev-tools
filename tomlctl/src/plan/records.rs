@@ -650,10 +650,7 @@ pub(super) fn run_start(args: PlanRunStartArgs) -> Result<()> {
             let at: toml::value::Datetime = at.parse().map_err(|_| not_a_stamp())?;
             (digest, Some(at))
         }
-        _ => (
-            super::lane::run_store_digest(&args.target.slug, &args.step, &tasks, &started),
-            None,
-        ),
+        _ => super::lane::run_store_digest(&args.target.slug, &args.step, &tasks, &started),
     };
     mutate_plan(&args.target.slug, &args.integrity, |plan| {
         plan.runs.push(Run {

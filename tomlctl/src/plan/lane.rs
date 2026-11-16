@@ -51,16 +51,17 @@ const REST: &str = "rest";
 const UNSTAMPED_KEY: &str = "last_updated";
 
 /// The store's digest by section, for a run of `step` dispatching `tasks` that
-/// started at `started`. Empty unless `step` is an `implement:` step and the
-/// flow's task store reads, so a run it cannot cover is never refused for it.
+/// started at `started`, with the `digest_at` to record when [`window_open`]
+/// moves the window past `started`. Empty unless `step` is an `implement:` step
+/// and the flow's task store reads, so a run it cannot cover is never refused.
 pub(super) fn run_store_digest(
     slug: &str,
     step: &str,
     tasks: &[u32],
     started: &Datetime,
-) -> BTreeMap<String, String> {
+) -> (BTreeMap<String, String>, Option<Datetime>) {
     if !step.starts_with(STEP_PREFIX) {
-        return BTreeMap::new();
+        return (BTreeMap::new(), None);
     }
     let read = || -> Result<Store> {
         let path = resolve_store_path(Some(slug), None)?;
@@ -72,9 +73,12 @@ pub(super) fn run_store_digest(
             },
         )
     };
-    match read() {
-        Ok(store) => store_digest(&store, tasks, started),
-        Err(_) => BTreeMap::new(),
+    let Ok(store) = read() else {
+        return (BTreeMap::new(), None);
+    };
+    match window_open(&store, started) {
+        Ok(open) if open != *started => (store_digest(&store, tasks, &open), Some(open)),
+        _ => (store_digest(&store, tasks, started), None),
     }
 }
 
@@ -623,7 +627,8 @@ mod tests {
 
     #[test]
     fn a_digest_is_taken_only_for_an_implement_step() {
-        let digest = run_store_digest("no-such-flow", "review", &[1], &at(STARTED));
+        let (digest, digest_at) = run_store_digest("no-such-flow", "review", &[1], &at(STARTED));
         assert!(digest.is_empty());
+        assert!(digest_at.is_none());
     }
 }
