@@ -2137,3 +2137,39 @@ turns = 6
 task_ids = []
 started_at = "2026-11-16T10:08:19.7316516Z"
 ended_at = "2026-11-16T10:13:31.0146549Z"
+
+[[agents]]
+id = "A73"
+harness = "claude-code"
+session_id = "208b1a5f-8531-474c-bad5-ee200728b64a"
+agent_id = "a337149f664c3aadb"
+agent_type = "verification"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-16T10:53:08.4932039Z"
+updated_at = "2026-11-16T11:00:51.645344Z"
+ended_at = "2026-11-16T11:00:51.645344Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\208b1a5f-8531-474c-bad5-ee200728b64a\subagents\agent-a337149f664c3aadb.jsonl'
+summary = """
+outcome: pass | command: cargo fmt --manifest-path tomlctl/Cargo.toml -- --check | duration: 3 | summary: none | log: C:/Users/rossa/AppData/Local/Temp/tmp.c6YkaAUtsk/c1.log
+
+outcome: pass | command: CARGO_INCREMENTAL=0 cargo clippy --workspace --locked --all-targets | duration: 32 | summary: none | log: C:/Users/rossa/AppData/Local/Temp/tmp.c6YkaAUtsk/c2.log
+
+outcome: pass | command: cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests | duration: 5 | summary: libtest x1: 56 passed; 0 failed
+
+command: CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.t"""
+context_tokens = 45402
+
+[agents.usage]
+input = 26
+cache_write = 43307
+cache_read = 458768
+output = 8809
+turns = 13
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-11-16T10:53:08.4932039Z"
+ended_at = "2026-11-16T11:00:51.645344Z"
