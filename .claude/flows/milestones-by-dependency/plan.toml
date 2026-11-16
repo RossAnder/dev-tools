@@ -453,6 +453,14 @@ tasks = [
 provides = "fanout-check.sh --exclude"
 consumes = "elaborate.md cold read"
 
+[[approval]]
+commit = "ed8332ca213f4087d4c095905db24f31fa91cdc2"
+at = 2026-11-16T09:10:31Z
+brief_sha256 = "c29f365025ee2349d6af5d4c1606d6cd1df70108cc5775e7bcdb80739aceb589"
+by = "user"
+review = "ran"
+reason = ""
+
 [[run]]
 step = "investigate"
 workflow = "plan-v2-investigate"

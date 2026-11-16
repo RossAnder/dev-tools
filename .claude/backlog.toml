@@ -12738,7 +12738,7 @@ tags = [
     "elaboration",
     "concurrency",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-12T13:20:22Z
 last_seen = 2026-11-12T13:20:22Z
 seen_count = 1
@@ -12759,6 +12759,8 @@ related = [
     "B-4222c464",
     "B-a505bedd",
 ]
+promoted = 2026-11-16
+promoted_to = "milestones-by-dependency"
 
 [[backlog]]
 id = "B-c2d75b04"
@@ -12771,7 +12773,7 @@ tags = [
     "elaboration",
     "concurrency",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-12T13:20:22Z
 last_seen = 2026-11-12T13:20:22Z
 seen_count = 1
@@ -12787,6 +12789,8 @@ related = [
     "B-1fa8d53f",
     "B-0ee4f204",
 ]
+promoted = 2026-11-16
+promoted_to = "milestones-by-dependency"
 
 [[backlog]]
 id = "B-4222c464"
@@ -12799,7 +12803,7 @@ tags = [
     "settle",
     "concurrency",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-12T13:20:22Z
 last_seen = 2026-11-12T13:20:22Z
 seen_count = 1
@@ -12818,6 +12822,8 @@ related = [
     "B-1fa8d53f",
     "B-0ee4f204",
 ]
+promoted = 2026-11-16
+promoted_to = "milestones-by-dependency"
 
 [[backlog]]
 id = "B-a505bedd"
@@ -12829,7 +12835,7 @@ tags = [
     "milestones",
     "elaboration",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-12T13:20:22Z
 last_seen = 2026-11-12T13:20:22Z
 seen_count = 1
@@ -12842,6 +12848,8 @@ related = [
     "B-1fa8d53f",
     "B-0ee4f204",
 ]
+promoted = 2026-11-16
+promoted_to = "milestones-by-dependency"
 
 [[backlog]]
 id = "B-bdb7be38"

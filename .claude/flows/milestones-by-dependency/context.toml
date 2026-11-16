@@ -1,9 +1,13 @@
 slug = "milestones-by-dependency"
 plan_path = "docs/flows/milestones-by-dependency/brief.md"
-status = "draft"
+status = "in-progress"
 created = 2026-11-16
 updated = 2026-11-16
-scope = []
+scope = [
+    "claude/skills/implement-v2-engine/**",
+    "claude/skills/plan-v2-engine/**",
+]
+branch = "main"
 
 [tasks]
 total = 0

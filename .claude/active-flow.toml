@@ -1035,3 +1035,14 @@ last_used = "2026-11-13T11:11:04.6210694Z"
 
 [active.binding]
 branch = "tomlctl-build-gate-cost"
+
+[[active]]
+slug = "milestones-by-dependency"
+last_used = "2026-11-16T09:10:31.4233158Z"
+
+[active.binding]
+branch = "main"
+scope = [
+    "claude/skills/implement-v2-engine/**",
+    "claude/skills/plan-v2-engine/**",
+]
