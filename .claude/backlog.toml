@@ -12738,7 +12738,7 @@ tags = [
     "elaboration",
     "concurrency",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-11-12T13:20:22Z
 last_seen = 2026-11-12T13:20:22Z
 seen_count = 1
@@ -12761,6 +12761,11 @@ related = [
 ]
 promoted = 2026-11-16
 promoted_to = "milestones-by-dependency"
+resolved = 2026-11-16
+resolution = "resolved by flow `milestones-by-dependency` (tasks pick-the-milestone-from-plan-emit-schedule-in-run-milestone)"
+resolved_flow = "milestones-by-dependency"
+resolved_tasks = ["pick-the-milestone-from-plan-emit-schedule-in-run-milestone"]
+resolved_commits = ["566c2dea077e03812fb12e71b66062e2081b3ea3"]
 
 [[backlog]]
 id = "B-c2d75b04"
@@ -12773,7 +12778,7 @@ tags = [
     "elaboration",
     "concurrency",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-11-12T13:20:22Z
 last_seen = 2026-11-12T13:20:22Z
 seen_count = 1
@@ -12791,6 +12796,11 @@ related = [
 ]
 promoted = 2026-11-16
 promoted_to = "milestones-by-dependency"
+resolved = 2026-11-16
+resolution = "resolved by flow `milestones-by-dependency` (tasks leave-a-deferred-milestones-records-out-of-the-lane-check)"
+resolved_flow = "milestones-by-dependency"
+resolved_tasks = ["leave-a-deferred-milestones-records-out-of-the-lane-check"]
+resolved_commits = ["566c2dea077e03812fb12e71b66062e2081b3ea3"]
 
 [[backlog]]
 id = "B-4222c464"
@@ -12803,7 +12813,7 @@ tags = [
     "settle",
     "concurrency",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-11-12T13:20:22Z
 last_seen = 2026-11-12T13:20:22Z
 seen_count = 1
@@ -12824,6 +12834,11 @@ related = [
 ]
 promoted = 2026-11-16
 promoted_to = "milestones-by-dependency"
+resolved = 2026-11-16
+resolution = "resolved by flow `milestones-by-dependency` (tasks write-the-elaboration-procedure-for-a-running-flow)"
+resolved_flow = "milestones-by-dependency"
+resolved_tasks = ["write-the-elaboration-procedure-for-a-running-flow"]
+resolved_commits = ["566c2dea077e03812fb12e71b66062e2081b3ea3"]
 
 [[backlog]]
 id = "B-a505bedd"
@@ -12835,7 +12850,7 @@ tags = [
     "milestones",
     "elaboration",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-11-12T13:20:22Z
 last_seen = 2026-11-12T13:20:22Z
 seen_count = 1
@@ -12850,6 +12865,11 @@ related = [
 ]
 promoted = 2026-11-16
 promoted_to = "milestones-by-dependency"
+resolved = 2026-11-16
+resolution = "resolved by flow `milestones-by-dependency` (tasks check-after-edges-and-unqualified-milestone-order-in-plan-check)"
+resolved_flow = "milestones-by-dependency"
+resolved_tasks = ["check-after-edges-and-unqualified-milestone-order-in-plan-check"]
+resolved_commits = ["566c2dea077e03812fb12e71b66062e2081b3ea3"]
 
 [[backlog]]
 id = "B-bdb7be38"
@@ -13074,3 +13094,54 @@ base_sha = "64c957a54a801ffb95c5af2f93e7008ba2e460fa"
 related = ["B-68943ec6"]
 resolved = 2026-11-16
 resolution = "fixed in 52254fdd: committed_fixture lives in tests/common and prunes templates older than two days"
+
+[[backlog]]
+id = "B-de423ca1"
+kind = "debt"
+summary = "A row removed from a deferred milestone during elaboration leaves a `*` tombstone trail row whose ref no live row carries, so the lane check's trail_writes cannot attribute it to the deferred milestone and reports it as a store write"
+area = "tomlctl/src/plan/lane.rs"
+tags = []
+status = "open"
+created = 2026-11-16T09:40:06Z
+last_seen = 2026-11-16T09:40:06Z
+seen_count = 1
+dedup_id = "de423ca1e7d367f5"
+origin = "implement-v2"
+flow = "milestones-by-dependency"
+context = "An elaboration that drops a deferred row shows one false trail write in plan emit lane-check. Judge such a store_writes entry by hand until the tombstone carries the row's milestone or trail_writes looks the ref up before the window."
+base_sha = "08de98d16f0cda3af314fead95eee65fdb4632cd"
+related = ["B-ccdfe310"]
+
+[[backlog]]
+id = "B-adeeced3"
+kind = "question"
+summary = "`plan milestone update --elaborated` writes its trail row only on an audited store, so on an unaudited store the flip leaves no trail and the elaborated milestone's records re-enter the lane digest"
+area = "tomlctl/src/plan/milestone.rs"
+tags = []
+status = "open"
+created = 2026-11-16T09:40:06Z
+last_seen = 2026-11-16T09:40:06Z
+seen_count = 1
+dedup_id = "adeeced3eac30dad"
+origin = "implement-v2"
+flow = "milestones-by-dependency"
+context = "The lane check's deferred-milestone exclusion dates the elaboration flip from the trail. On an unaudited v2 store the elaboration would read as a digest change; decide whether the flip should always leave a trail row."
+base_sha = "08de98d16f0cda3af314fead95eee65fdb4632cd"
+related = ["B-ccdfe310"]
+
+[[backlog]]
+id = "B-5f19d9fd"
+kind = "question"
+summary = "write-and-prove.md's cold-read Relaunch rule requires HEAD to equal head-before.txt, while fanout-check.sh --exclude tolerates HEAD moves through excluded paths; the two disagree for a milestone-scoped cold read beside a live run"
+area = "claude/skills/plan-v2-engine/references/write-and-prove.md"
+tags = []
+status = "open"
+created = 2026-11-16T09:40:06Z
+last_seen = 2026-11-16T09:40:06Z
+seen_count = 1
+dedup_id = "5f19d9fd5cd2c91d"
+origin = "implement-v2"
+flow = "milestones-by-dependency"
+context = "elaborate.md relaxes the rule locally for its own cold reads. If write-and-prove's cold read ever runs beside a live implement-v2 run, the stricter HEAD rule forces needless abandons; align it with the fan-out check's excludes."
+base_sha = "08de98d16f0cda3af314fead95eee65fdb4632cd"
+related = ["B-c2d75b04"]

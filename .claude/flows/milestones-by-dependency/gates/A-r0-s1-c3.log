@@ -1,0 +1,200 @@
+        PASS [   1.312s] (3126/3300) tomlctl::it tasks_audit::closes_and_refs_replace_independently_and_a_link_emptied_is_dropped
+        PASS [   1.385s] (3127/3300) tomlctl::it tasks_audit::dropping_a_path_drops_its_note_so_adding_it_back_starts_clean
+        PASS [   1.361s] (3128/3300) tomlctl::it tasks_audit::each_moved_field_writes_one_change_stamped_with_time_actor_and_reason
+        PASS [   1.239s] (3129/3300) tomlctl::it tasks_audit::file_notes_are_validated_as_add_many_validates_them
+        PASS [   1.176s] (3130/3300) tomlctl::it tasks_audit::list_fields_and_the_checkpoint_are_audited
+        PASS [   1.601s] (3131/3300) tomlctl::it tasks_audit::file_notes_replace_the_rows_whole_set_and_touch_no_other_row
+        PASS [   1.384s] (3132/3300) tomlctl::it tasks_audit::multi_element_lists_are_stored_as_compact_json
+        PASS [   1.339s] (3133/3300) tomlctl::it tasks_audit::notes_and_links_land_under_a_ref_the_same_row_renames
+        PASS [   1.207s] (3134/3300) tomlctl::it tasks_audit::re_issued_notes_and_links_move_nothing_and_need_no_reason
+        PASS [   1.219s] (3135/3300) tomlctl::it tasks_audit::status_agent_and_commit_need_no_reason_and_write_no_change
+        PASS [   1.425s] (3136/3300) tomlctl::it tasks_audit::only_the_dropped_paths_note_goes_and_no_other_rows
+        PASS [   1.206s] (3137/3300) tomlctl::it tasks_audit::the_positional_form_still_moves_unaudited_fields_on_an_audited_store
+        PASS [   1.153s] (3138/3300) tomlctl::it tasks_audit::the_unlock_flag_writes_no_stamp_on_a_v2_flow
+        PASS [   1.363s] (3139/3300) tomlctl::it tasks_finding_links::a_store_with_no_finding_links_writes_no_key_and_stays_v1
+        PASS [   1.132s] (3140/3300) tomlctl::it tasks_finding_links::a_stored_entry_naming_no_finding_is_dropped
+        PASS [   1.440s] (3141/3300) tomlctl::it tasks_finding_links::a_ref_rename_carries_the_link_to_the_new_ref
+        PASS [   1.128s] (3142/3300) tomlctl::it tasks_finding_links::add_many_lands_one_link_keyed_by_the_minted_ref
+        PASS [   1.042s] (3143/3300) tomlctl::it tasks_finding_links::an_empty_settles_list_is_written_as_an_empty_array
+        PASS [  11.862s] (3144/3300) tomlctl::it review_vocabulary::dapper_detected_through_legacy_reference
+        PASS [   2.633s] (3145/3300) tomlctl::it tasks_audit::the_positional_form_refuses_an_audited_change_naming_ndjson
+        PASS [  11.857s] (3146/3300) tomlctl::it review_vocabulary::efcore_detected_through_central_package_management
+        PASS [   1.435s] (3147/3300) tomlctl::it tasks_finding_links::finding_ids_without_a_review_store_are_refused
+        PASS [  11.922s] (3148/3300) tomlctl::it review_vocabulary::rust_crate_at_depth_three_detected_with_root
+        PASS [   0.860s] (3149/3300) tomlctl::it tasks_graph::a_cyclic_store_fails_check_and_refuses_the_graph_verbs
+        PASS [   0.900s] (3150/3300) tomlctl::it tasks_graph::a_row_declared_in_flight_is_not_reported_as_a_stalled_dependency
+        PASS [   0.871s] (3151/3300) tomlctl::it tasks_graph::batches_layers_the_graph_in_dependency_order
+        PASS [   1.085s] (3152/3300) tomlctl::it tasks_finding_links::the_link_survives_an_unrelated_write_unchanged
+        PASS [  12.356s] (3153/3300) tomlctl::it review_vocabulary::react_detected_in_bun_workspace
+        PASS [  12.297s] (3154/3300) tomlctl::it review_vocabulary::vue_root_is_its_subdirectory_only
+        PASS [   1.103s] (3155/3300) tomlctl::it tasks_graph::a_store_past_the_node_cap_fails_check_with_an_error_class_finding
+        PASS [   0.781s] (3156/3300) tomlctl::it tasks_graph::check_reports_the_stall_the_overlap_pair_and_the_orphan_row_as_warnings_at_exit_zero
+        PASS [   0.765s] (3157/3300) tomlctl::it tasks_graph::closure_refuses_a_checkpoint_paired_with_a_direction
+        PASS [   1.293s] (3158/3300) tomlctl::it tasks_finding_links::removing_the_row_drops_its_link_and_no_other
+        PASS [   0.827s] (3159/3300) tomlctl::it tasks_graph::closure_reports_group_membership_and_walks_one_task_both_ways
+        PASS [   2.111s] (3160/3300) tomlctl::it tasks_finding_links::malformed_finding_keys_are_refused
+        PASS [   0.716s] (3161/3300) tomlctl::it tasks_graph::every_graph_verb_refuses_an_empty_target_as_validation
+        PASS [   0.631s] (3162/3300) tomlctl::it tasks_graph::ready_separates_the_dispatchable_frontier_from_a_held_file_claim
+        PASS [   0.525s] (3163/3300) tomlctl::it tasks_import::a_backlog_bullet_imports_links_renders_back_and_checks_clean_of_foreign_claims
+        PASS [   0.483s] (3164/3300) tomlctl::it tasks_import::a_fenced_example_inside_the_tasks_section_changes_nothing
+        PASS [   0.579s] (3165/3300) tomlctl::it tasks_import::a_dry_run_against_a_store_writes_no_bytes
+        PASS [   0.540s] (3166/3300) tomlctl::it tasks_import::a_files_annotation_survives_the_plan_to_plan_round_trip
+        PASS [   0.648s] (3167/3300) tomlctl::it tasks_import::a_crlf_plan_imports_byte_identically
+        PASS [   0.582s] (3168/3300) tomlctl::it tasks_import::a_fresh_import_matches_the_golden_store
+        PASS [   0.583s] (3169/3300) tomlctl::it tasks_import::a_renamed_heading_reports_both_sides_of_the_ref_diff
+        PASS [   0.646s] (3170/3300) tomlctl::it tasks_import::a_taskless_plan_is_refused_and_leaves_the_checkpoints_and_policy_alone
+        PASS [   0.885s] (3171/3300) tomlctl::it tasks_import::a_second_import_changes_no_content_and_keeps_execution_state
+        PASS [   0.764s] (3172/3300) tomlctl::it tasks_import::an_error_class_finding_aborts_the_write
+        PASS [   0.494s] (3173/3300) tomlctl::it tasks_import::plan_mode_validates_without_a_store_target
+        PASS [   0.702s] (3174/3300) tomlctl::it tasks_import::importing_the_rendered_plan_reproduces_the_golden_store
+        PASS [   0.941s] (3175/3300) tomlctl::it tasks_import::a_settled_mint_the_plan_is_behind_on_passes_the_ref_set_gate
+        PASS [   0.789s] (3176/3300) tomlctl::it tasks_import::an_unrecordable_plan_argument_is_refused_and_an_absolute_one_records_a_relative_path
+        PASS [   0.842s] (3177/3300) tomlctl::it tasks_import::an_unclosed_fence_inside_the_tasks_section_is_refused
+        PASS [   1.489s] (3178/3300) tomlctl::it tasks_graph::unreachable_claim_skips_done_committed_rows
+        PASS [   1.161s] (3179/3300) tomlctl::it tasks_import::a_settled_mint_passes_the_check_and_a_re_import_ahead_of_any_render
+        PASS [   1.365s] (3180/3300) tomlctl::it tasks_import::a_mint_the_plan_has_named_and_then_dropped_is_an_orphan
+        PASS [   0.958s] (3181/3300) tomlctl::it tasks_import::an_existing_coupling_edge_survives_a_re_import
+        PASS [   1.781s] (3182/3300) tomlctl::it tasks_graph::every_non_writing_verb_refuses_a_tampered_sidecar_under_verify_integrity
+        PASS [   0.461s] (3183/3300) tomlctl::it tasks_import::reconcile_record_adopts_a_separator_only_ref
+        PASS [   0.415s] (3184/3300) tomlctl::it tasks_import::the_written_store_stamps_a_bare_date
+        PASS [   0.583s] (3185/3300) tomlctl::it tasks_import::reconcile_record_honours_the_artifacts_override_and_holds_it_under_the_root
+        PASS [   0.742s] (3186/3300) tomlctl::it tasks_read::a_fetch_for_an_absent_row_is_a_not_found_envelope
+        PASS [   0.751s] (3187/3300) tomlctl::it tasks_read::a_ref_set_predicate_composes_with_a_projection
+        PASS [   0.868s] (3188/3300) tomlctl::it tasks_read::dependents_walk_forward_transitively_where_deps_name_only_direct_targets
+        PASS [   0.928s] (3189/3300) tomlctl::it tasks_read::a_stamped_row_shows_the_plan_values_its_patch_replaced
+        PASS [   0.971s] (3190/3300) tomlctl::it tasks_read::dot_source_is_emitted_as_bare_graphviz_bytes
+        PASS [   1.015s] (3191/3300) tomlctl::it tasks_read::one_unknown_id_among_several_fails_the_whole_fetch
+        PASS [   1.028s] (3192/3300) tomlctl::it tasks_read::every_read_verb_refuses_an_empty_target_as_validation
+        PASS [   1.095s] (3193/3300) tomlctl::it tasks_read::raw_is_the_single_value_form_and_lines_the_newline_delimited_one
+        PASS [   1.095s] (3194/3300) tomlctl::it tasks_read::raw_over_the_unprojected_row_array_is_refused
+        PASS [   1.088s] (3195/3300) tomlctl::it tasks_read::several_ids_print_one_row_each_in_the_order_given
+        PASS [   1.111s] (3196/3300) tomlctl::it tasks_read::the_count_shapes_answer_over_the_whole_store
+        PASS [   1.218s] (3197/3300) tomlctl::it tasks_read::show_without_a_projection_emits_the_summary_in_its_declared_key_order
+        PASS [   1.216s] (3198/3300) tomlctl::it tasks_read::the_edge_list_groups_the_stored_kinds_ahead_of_the_computed_overlap
+        PASS [   1.030s] (3199/3300) tomlctl::it tasks_read::the_fetch_by_id_projection_carries_the_body_the_files_and_a_summary_per_dep
+        PASS [   0.517s] (3200/3300) tomlctl::it tasks_render::an_imported_files_line_reports_its_new_and_deleted_paths
+        PASS [   0.548s] (3201/3300) tomlctl::it tasks_render::an_escaping_plan_path_is_refused_with_no_write
+        PASS [   0.780s] (3202/3300) tomlctl::it tasks_render::a_plan_in_the_full_section_order_renders_unchanged
+        PASS [   0.918s] (3203/3300) tomlctl::it tasks_read::the_skip_list_query_emits_a_flat_array_of_the_settled_refs
+        PASS [   0.731s] (3204/3300) tomlctl::it tasks_render::a_render_matches_the_golden_rendered_plan
+        PASS [   0.745s] (3205/3300) tomlctl::it tasks_render::a_render_into_a_crlf_plan_writes_uniform_crlf
+        PASS [   0.431s] (3206/3300) tomlctl::it tasks_render::check_passes_on_a_crlf_copy_of_the_render
+        PASS [   1.121s] (3207/3300) tomlctl::it tasks_read::the_file_flag_names_the_store_rather_than_filtering_rows
+        PASS [   0.476s] (3208/3300) tomlctl::it tasks_render::bytes_outside_the_owned_sections_survive_the_write
+        PASS [   0.688s] (3209/3300) tomlctl::it tasks_render::an_out_of_order_plan_is_reported_as_drift_and_corrected_by_the_render
+        PASS [   1.008s] (3210/3300) tomlctl::it tasks_read::the_streaming_encoding_matches_the_batched_array_row_for_row
+        PASS [   0.260s] (3211/3300) tomlctl::it tasks_render::check_plan_refuses_a_context_naming_a_document_the_store_never_came_from
+        PASS [   0.368s] (3212/3300) tomlctl::it tasks_render::check_plan_re_derives_the_exit_code_over_both_halves
+        PASS [   0.521s] (3213/3300) tomlctl::it tasks_render::check_plan_folds_the_drift_finding_in_at_exit_zero
+        PASS [   0.345s] (3214/3300) tomlctl::it tasks_render::check_reports_drift_and_repairs_nothing
+        PASS [   0.344s] (3215/3300) tomlctl::it tasks_render::stdout_previews_the_render_and_writes_no_bytes
+        PASS [   0.559s] (3216/3300) tomlctl::it tasks_render::check_plan_refuses_an_escaping_or_non_markdown_plan_path
+        FAIL [   0.827s] (3217/3300) tomlctl::it tasks_snapshot::a_v2_store_carries_its_milestones_and_change_trail
+  stdout ───
+
+    running 1 test
+    test tasks_snapshot::a_v2_store_carries_its_milestones_and_change_trail ... FAILED
+
+    failures:
+
+    failures:
+        tasks_snapshot::a_v2_store_carries_its_milestones_and_change_trail
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1654 filtered out; finished in 0.55s
+
+  stderr ───
+
+    thread 'tasks_snapshot::a_v2_store_carries_its_milestones_and_change_trail' (4572) panicked at tomlctl\tests\tasks_snapshot.rs:574:5:
+    assertion `left == right` failed
+      left: Array [Object {"id": String("A"), "gates": Array [String("cargo test")], "elaboration": String("upfront"), "defer_reason": String(""), "gate_probes": Array [Object {"gate": String("cargo test"), "probe": String("cargo --version"), "verdict": String("holds"), "at": String("abc")}], "after": Array []}]
+     right: Array [Object {"id": String("A"), "gates": Array [String("cargo test")], "elaboration": String("upfront"), "defer_reason": String(""), "gate_probes": Array [Object {"gate": String("cargo test"), "probe": String("cargo --version"), "verdict": String("holds"), "at": String("abc")}]}]
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        PASS [   0.866s] (3218/3300) tomlctl::it tasks_snapshot::a_v1_store_gains_only_empty_keys
+        PASS [   0.862s] (3219/3300) tomlctl::it tasks_snapshot::a_v2_task_carries_its_spec_notes_and_links
+        PASS [   1.045s] (3220/3300) tomlctl::it tasks_snapshot::absent_record_and_agents_read_as_empty_and_are_not_created
+        PASS [   1.071s] (3221/3300) tomlctl::it tasks_snapshot::checkpoints_carry_their_commits_and_verification
+        PASS [   1.084s] (3222/3300) tomlctl::it tasks_snapshot::frontier_is_byte_equal_to_ready_with_the_in_progress_row_in_flight
+        PASS [   1.123s] (3223/3300) tomlctl::it tasks_snapshot::file_target_takes_its_slug_from_the_flow_directory
+        PASS [   1.141s] (3224/3300) tomlctl::it tasks_snapshot::layers_equal_the_batches_verb
+        PASS [   1.087s] (3225/3300) tomlctl::it tasks_snapshot::record_entries_resolve_their_task_and_checkpoint
+        PASS [   1.062s] (3226/3300) tomlctl::it tasks_snapshot::tasks_show_reports_a_recorded_premise_probe
+        PASS [   1.294s] (3227/3300) tomlctl::it tasks_snapshot::the_plan_store_rides_under_plan_and_is_null_without_one
+        PASS [   1.461s] (3228/3300) tomlctl::it tasks_snapshot::revision_is_stable_and_moves_with_agents_and_context
+        PASS [   1.341s] (3229/3300) tomlctl::it tasks_snapshot::top_level_keys_follow_the_contract_order
+        PASS [   0.987s] (3230/3300) tomlctl::it tasks_spec_add::a_check_with_no_kind_is_refused
+        PASS [   1.087s] (3231/3300) tomlctl::it tasks_spec_add::a_behaviour_with_no_check_needs_no_kind
+        PASS [   1.020s] (3232/3300) tomlctl::it tasks_spec_add::a_minted_ref_keeps_its_own_entries_and_drops_a_removed_rows
+        PASS [   1.036s] (3233/3300) tomlctl::it tasks_spec_add::a_plain_batch_stays_a_v1_store_with_no_side_tables
+        PASS [   1.024s] (3234/3300) tomlctl::it tasks_spec_add::a_premise_after_a_row_nothing_carries_is_refused
+        PASS [   1.037s] (3235/3300) tomlctl::it tasks_spec_add::a_supplied_probe_is_refused
+        PASS [   1.435s] (3236/3300) tomlctl::it tasks_spec_add::a_premise_may_name_a_stored_row_or_one_in_its_batch
+        PASS [   1.421s] (3237/3300) tomlctl::it tasks_spec_add::a_row_taking_over_an_orphan_spec_names_what_it_discarded
+        PASS [   1.506s] (3238/3300) tomlctl::it tasks_spec_add::a_row_discarding_nothing_raises_no_advisory
+        PASS [   1.221s] (3239/3300) tomlctl::it tasks_spec_add::a_spec_lands_keyed_by_the_minted_ref_and_stamps_the_store
+        PASS [   1.030s] (3240/3300) tomlctl::it tasks_spec_add::a_toml_record_files_refusal_names_the_row
+        PASS [   1.134s] (3241/3300) tomlctl::it tasks_spec_add::a_toml_record_file_carries_a_spec_through_ndjson
+        PASS [   1.247s] (3242/3300) tomlctl::it tasks_spec_add::accept_run_by_round_trips
+        PASS [   2.419s] (3243/3300) tomlctl::it tasks_spec_add::a_file_note_off_the_rows_files_or_blank_is_refused
+        PASS [   1.179s] (3244/3300) tomlctl::it tasks_spec_add::an_audited_store_writes_a_change_for_each_added_row
+        PASS [   0.978s] (3245/3300) tomlctl::it tasks_spec_add::an_unaudited_store_writes_no_change_for_a_reason
+        PASS [   1.040s] (3246/3300) tomlctl::it tasks_spec_add::an_unlabelled_accept_counts_as_writing_the_build
+        PASS [   1.729s] (3247/3300) tomlctl::it tasks_spec_add::an_audited_store_refuses_a_row_without_a_reason
+        PASS [   1.200s] (3248/3300) tomlctl::it tasks_spec_add::file_notes_and_backlog_links_land_in_their_side_tables
+        PASS [   1.237s] (3249/3300) tomlctl::it tasks_spec_add::tasks_add_is_refused_on_an_audited_store_and_names_add_many
+        PASS [   1.310s] (3250/3300) tomlctl::it tasks_spec_add::tasks_add_still_works_on_an_unaudited_store
+        PASS [   0.888s] (3251/3300) tomlctl::it tasks_train::a_dependency_cycle_between_merged_groups_collapses_into_one_group
+        PASS [   0.906s] (3252/3300) tomlctl::it tasks_train::a_file_a_pending_row_also_claims_is_reported
+        PASS [   0.884s] (3253/3300) tomlctl::it tasks_train::committed_rows_are_excluded_but_still_order_the_rest
+        PASS [   1.014s] (3254/3300) tomlctl::it tasks_train::an_unknown_checkpoint_is_a_validation_error
+        PASS [   0.918s] (3255/3300) tomlctl::it tasks_train::granularity_flag_overrides_the_policy_and_single_commit_is_one_group
+        PASS [   0.933s] (3256/3300) tomlctl::it tasks_train::groups_commit_in_dependency_order_with_lowest_id_first_within_a_layer
+        PASS [   0.935s] (3257/3300) tomlctl::it tasks_train::per_checkpoint_groups_one_commit_per_checkpoint
+        PASS [   0.958s] (3258/3300) tomlctl::it tasks_train::per_task_groups_merge_two_tasks_that_share_a_file
+        PASS [   0.995s] (3259/3300) tomlctl::it tasks_train::the_window_narrows_to_named_checkpoints_or_ids
+        PASS [   1.132s] (3260/3300) tomlctl::it tasks_write::a_dangling_dependency_target_is_refused_by_id
+        PASS [   0.963s] (3261/3300) tomlctl::it tasks_write::a_write_closing_a_cycle_is_refused_and_leaves_the_store_untouched
+        PASS [   1.094s] (3262/3300) tomlctl::it tasks_write::a_removal_reports_the_import_override_fields_it_pruned
+        PASS [   1.186s] (3263/3300) tomlctl::it tasks_write::a_forced_removal_splices_its_dependencies_into_every_dependent
+        PASS [   3.761s] (3264/3300) tomlctl::it tasks_spec_add::accept_worker_owner_refuses_a_building_check
+        PASS [   0.889s] (3265/3300) tomlctl::it tasks_write::add_many_refuses_an_unknown_row_key_and_writes_nothing
+        PASS [   1.169s] (3266/3300) tomlctl::it tasks_write::add_appends_a_row_and_refreshes_the_sidecar
+        PASS [   1.082s] (3267/3300) tomlctl::it tasks_write::add_many_reports_id_ref_and_batch_per_row
+        PASS [   1.170s] (3268/3300) tomlctl::it tasks_write::add_reads_the_title_from_a_file
+        PASS [   4.130s] (3269/3300) tomlctl::it tasks_spec_add::out_of_vocabulary_values_are_refused
+        PASS [  22.540s] (3270/3300) tomlctl::it review_vocabulary::rust_test_growth_counts_test_attributes
+        PASS [   4.044s] (3271/3300) tomlctl::it tasks_spec_add::unknown_keys_inside_a_spec_are_refused_at_every_level
+        PASS [   1.269s] (3272/3300) tomlctl::it tasks_write::every_write_verb_refuses_an_empty_target_as_validation
+        PASS [   1.274s] (3273/3300) tomlctl::it tasks_write::update_ndjson_conflicts_with_positional_ids_and_value_flags
+        PASS [   1.357s] (3274/3300) tomlctl::it tasks_write::remove_refuses_a_settled_row_and_a_depended_on_row_without_force
+        PASS [   1.599s] (3275/3300) tomlctl::it tasks_write::update_ndjson_lands_a_commit_train_without_positional_ids
+        PASS [   1.255s] (3276/3300) tomlctl::it tasks_write::update_ndjson_refuses_a_list_element_holding_a_comma
+        PASS [   1.129s] (3277/3300) tomlctl::it tasks_write::update_ndjson_refuses_a_task_named_by_two_rows
+        PASS [   2.072s] (3278/3300) tomlctl::it tasks_write::concurrent_adds_serialise_with_no_row_loss
+        PASS [   1.426s] (3279/3300) tomlctl::it tasks_write::update_ndjson_refuses_a_batch_ending_in_a_cycle
+        PASS [   1.652s] (3280/3300) tomlctl::it tasks_write::update_ndjson_reads_a_toml_record_file
+        PASS [   6.563s] (3281/3300) tomlctl::it tasks_spec_add::a_premise_at_outside_the_two_forms_is_refused
+        PASS [   4.659s] (3282/3300) tomlctl::it tasks_spec_add::wrong_shapes_inside_a_spec_are_refused
+        PASS [   1.016s] (3283/3300) tomlctl::it tasks_write::update_ndjson_refuses_unknown_keys_and_a_shared_ref
+        PASS [   0.450s] (3284/3300) tomlctl::it updated_stamp::a_context_without_updated_gains_none
+        PASS [   0.509s] (3285/3300) tomlctl::it updated_stamp::another_file_keeps_its_updated
+        PASS [   0.564s] (3286/3300) tomlctl::it updated_stamp::a_write_that_sets_updated_keeps_the_callers_value
+        PASS [   1.028s] (3287/3300) tomlctl::it tasks_write::update_ndjson_writes_nothing_when_any_row_is_refused
+        PASS [   1.116s] (3288/3300) tomlctl::it tasks_write::update_ndjson_sweeps_status_and_agent_per_row
+        PASS [   0.385s] (3289/3300) tomlctl::it updated_stamp::array_append_on_a_context_refreshes_updated
+        PASS [   1.058s] (3290/3300) tomlctl::it tasks_write::update_refuses_an_id_the_store_does_not_carry
+        PASS [   0.467s] (3291/3300) tomlctl::it updated_stamp::no_stamp_keeps_the_old_updated
+        PASS [   0.339s] (3292/3300) tomlctl::it updated_stamp::noop_set_leaves_bytes_unchanged
+        PASS [   0.871s] (3293/3300) tomlctl::it tasks_write::update_reports_only_the_fields_that_moved
+        PASS [   0.877s] (3294/3300) tomlctl::it tasks_write::update_reports_the_renamed_ref
+        PASS [   0.408s] (3295/3300) tomlctl::it updated_stamp::set_json_on_a_context_refreshes_updated
+        PASS [   0.345s] (3296/3300) tomlctl::it updated_stamp::set_on_a_context_refreshes_updated_as_a_date
+        PASS [   0.921s] (3297/3300) tomlctl::it tasks_write::update_with_an_unknown_id_among_valid_ones_writes_nothing
+        PASS [   0.397s] (3298/3300) tomlctl::tasks_corpus the_scope_filter_reads_only_the_tasks_section
+        PASS [   1.577s] (3299/3300) tomlctl::it tasks_write::update_ndjson_reversing_an_edge_passes_in_either_row_order
+        PASS [   1.463s] (3300/3300) tomlctl::it tasks_write::update_patches_every_id_in_a_comma_or_space_list
+────────────
+     Summary [ 297.393s] 3300 tests run: 3298 passed (3 slow), 2 failed, 1 skipped
+        FAIL [  23.777s] (2593/3300) tomlctl::it plan_lifecycle::a_plan_runs_from_open_to_drift
+        FAIL [   0.827s] (3217/3300) tomlctl::it tasks_snapshot::a_v2_store_carries_its_milestones_and_change_trail
+error: test run failed

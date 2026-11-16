@@ -1,0 +1,30 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.73s
+────────────
+ Nextest run ID e358b922-68e3-4812-888a-3bf67c55c47d with nextest profile: default
+    Starting 1 test across 4 binaries (3300 tests skipped)
+        FAIL [   4.132s] (1/1) tomlctl::it plan_lifecycle::a_plan_runs_from_open_to_drift
+  stdout ───
+
+    running 1 test
+    test plan_lifecycle::a_plan_runs_from_open_to_drift ... FAILED
+
+    failures:
+
+    failures:
+        plan_lifecycle::a_plan_runs_from_open_to_drift
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1654 filtered out; finished in 4.10s
+
+  stderr ───
+
+    thread 'plan_lifecycle::a_plan_runs_from_open_to_drift' (11400) panicked at tomlctl\tests\plan_lifecycle.rs:682:5:
+    assertion `left == right` failed: {"ok":true,"findings":[{"class":"plan/milestone-no-gate","severity":"warning","ids":[3],"detail":"milestone `B` has no gate"}]}
+      left: ["plan/milestone-no-gate"]
+     right: ["plan/milestone-no-gate", "plan/milestone-order-unqualified"]
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+  Cancelling due to test failure: 
+────────────
+     Summary [   4.141s] 1 test run: 0 passed, 1 failed, 3300 skipped
+        FAIL [   4.132s] (1/1) tomlctl::it plan_lifecycle::a_plan_runs_from_open_to_drift
+error: test run failed

@@ -1,4 +1,4 @@
-schema_version = 2
+schema_version = 3
 last_updated = 2026-11-16
 
 [binding]
@@ -510,3 +510,787 @@ started = 2026-11-16T08:23:17Z
 finished = 2026-11-16T09:08:20Z
 skip_reason = ""
 outcome = "ok"
+
+[[run]]
+step = "implement:A"
+workflow = "implement-v2-milestone"
+args_hash = "3081bf20da7a6e777fe77f7f53b944f9089bf046eac776b8f32d9e3ff1816f6b"
+run_id = "wf_2648efc5-821"
+session = "208b1a5f-8531-474c-bad5-ee200728b64a"
+started = 2026-11-16T09:14:19Z
+finished = 2026-11-16T09:39:02Z
+skip_reason = ""
+outcome = "ok"
+tasks = [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+]
+digest_at = 2026-11-16T09:13:41Z
+
+[run.store_digest]
+changes = "4f53cda18c2baa0c"
+milestones = "acddbfd860c4d07b"
+rest = "fe599f94b080a631"
+rows = "dec9327f295990d3"
+specs = "77fda69a67a40f60"
+
+[[run]]
+step = "implement:A"
+workflow = "implement-v2-milestone"
+args_hash = "9f48cf5228fbbcb8a1f6059aaed57630332d25ed5b05b7348b49a422ea98f82b"
+run_id = "wf_65aa101a-0a1"
+session = "208b1a5f-8531-474c-bad5-ee200728b64a"
+started = 2026-11-16T09:49:41Z
+finished = 2026-11-16T09:50:16Z
+skip_reason = ""
+outcome = "ok"
+tasks = [
+    22,
+    23,
+]
+digest_at = 2026-11-16T09:49:29Z
+
+[run.store_digest]
+changes = "9e860fd77460b82e"
+milestones = "acddbfd860c4d07b"
+rest = "fe599f94b080a631"
+rows = "ef76a3ca3e1756c7"
+specs = "1b0d61cf02174a56"
+
+[[run]]
+step = "implement:A"
+workflow = "implement-v2-milestone"
+args_hash = "39d69b54550f65e405b8567693b8138c2be5d4623177fce883cde34c54290096"
+run_id = "wf_349a9cdd-fbc"
+session = "208b1a5f-8531-474c-bad5-ee200728b64a"
+started = 2026-11-16T09:58:59Z
+finished = 2026-11-16T09:59:22Z
+skip_reason = ""
+outcome = "ok"
+tasks = [24]
+digest_at = 2026-11-16T09:58:47Z
+
+[run.store_digest]
+changes = "c9505c99e9d9893b"
+milestones = "acddbfd860c4d07b"
+rest = "fe599f94b080a631"
+rows = "ff3652a5876a5769"
+specs = "eeadbdc720e8ee37"
+
+[[attempt]]
+task = 1
+run_id = "wf_2648efc5-821"
+milestone = "A"
+status = "done"
+summary = "MilestoneSpec carries an `after` list, read, written (omitted when empty) and exported in the snapshot."
+block = "present"
+files_touched = [
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/tasks/snapshot.rs",
+    "tomlctl/src/plan/milestone.rs",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "grep -qF 'pub(crate) after: Vec<String>' tomlctl/src/tasks/schema.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = """grep -qF '"after": ' tomlctl/src/tasks/snapshot.rs"""
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+result = "pass"
+
+[[attempt]]
+task = 2
+run_id = "wf_2648efc5-821"
+milestone = "A"
+status = "done"
+summary = "`--after` on plan milestone add and update, `--clear-after` on update, validated against store order."
+block = "malformed"
+files_touched = []
+deviations = []
+tangential = []
+checks = []
+
+[[attempt]]
+task = 3
+run_id = "wf_2648efc5-821"
+milestone = "A"
+status = "done"
+summary = "tasks/milestones.rs computes upstream milestones, each milestone's state and the pick, with 12 unit tests"
+block = "malformed"
+files_touched = []
+deviations = []
+tangential = []
+checks = []
+
+[[attempt]]
+task = 4
+run_id = "wf_2648efc5-821"
+milestone = "A"
+status = "done"
+summary = "added the `plan emit schedule` leaf"
+block = "present"
+files_touched = [
+    "tomlctl/src/plan/schedule.rs",
+    "tomlctl/src/plan/mod.rs",
+    "tomlctl/src/plan/emit.rs",
+    "tomlctl/src/cli/types/plan.rs",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml"
+result = "pass"
+
+[[attempt.checks]]
+command = "rustfmt --edition 2024 --check tomlctl/src/plan/schedule.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "both accept greps"
+result = "pass"
+
+[[attempt]]
+task = 5
+run_id = "wf_2648efc5-821"
+milestone = "A"
+status = "done"
+summary = "schedule leaf tests and output_options case added"
+block = "malformed"
+files_touched = []
+deviations = []
+tangential = []
+checks = []
+
+[[attempt]]
+task = 6
+run_id = "wf_2648efc5-821"
+milestone = "A"
+status = "done"
+summary = "plan check gains the after-edge errors, the pre-approval order warning, and a milestone-width that never targets a deferred milestone"
+block = "malformed"
+files_touched = []
+deviations = []
+tangential = []
+checks = []
+
+[[attempt]]
+task = 7
+run_id = "wf_2648efc5-821"
+milestone = "A"
+status = "done"
+summary = "plan check takes --milestone and keeps only findings on that milestone, its upstream milestones, no task, or an absent task"
+block = "malformed"
+files_touched = []
+deviations = []
+tangential = []
+checks = []
+
+[[attempt]]
+task = 8
+run_id = "wf_2648efc5-821"
+milestone = "A"
+status = "done"
+summary = "launch-args drops a row whose outside need is done but unstamped"
+block = "present"
+files_touched = [
+    "tomlctl/src/plan/emit.rs",
+    "tomlctl/tests/plan_emit.rs",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -qF 'need-not-committed' tomlctl/src/plan/emit.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_emit::launch_args/)'"
+result = "pass"
+
+[[attempt]]
+task = 9
+run_id = "wf_2648efc5-821"
+milestone = "A"
+status = "done"
+summary = "after approval, plan stage lists elaborate/cold-read runs in open_runs without making them blockers"
+block = "present"
+files_touched = [
+    "tomlctl/src/plan/stage.rs",
+    "tomlctl/tests/plan_stage.rs",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_stage::/)'"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -qF 'elaborate:' tomlctl/src/plan/stage.rs"
+result = "pass"
+
+[[attempt]]
+task = 10
+run_id = "wf_2648efc5-821"
+milestone = "A"
+status = "done"
+summary = "the lane check's digest and trail leave out every record of a milestone deferred at the window's open"
+block = "malformed"
+files_touched = []
+deviations = []
+tangential = []
+checks = []
+
+[[attempt]]
+task = 11
+run_id = "wf_2648efc5-821"
+milestone = "A"
+status = "done"
+summary = "fanout-check.sh takes repeatable --exclude and tolerates HEAD moving through commits to excluded paths; ten-case test script added"
+block = "malformed"
+files_touched = []
+deviations = []
+tangential = []
+checks = []
+
+[[attempt]]
+task = 12
+run_id = "wf_2648efc5-821"
+milestone = "A"
+status = "done"
+summary = "milestone_schedule added to FEATURES, capabilities test, README and implement-v2 pre-flight"
+block = "present"
+files_touched = [
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/README.md",
+    "claude/commands/implement-v2.md",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "grep -qF feature in mod.rs, implement-v2.md, README.md"
+result = "pass"
+
+[[attempt]]
+task = 13
+run_id = "wf_2648efc5-821"
+milestone = "A"
+status = "done"
+summary = "the schedule surface is documented in the tomlctl references and the task-store contract"
+block = "present"
+files_touched = [
+    "claude/skills/tomlctl/references/plan.md",
+    "claude/skills/tomlctl/references/plan-engine.md",
+    "claude/skills/tomlctl/references/tasks-store.md",
+    "claude/skills/tomlctl/SKILL.md",
+    "claude/skills/flow-contract-task-store/SKILL.md",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "grep accept check (plan emit schedule, plan/milestone-order-unqualified, clear-after)"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "pass"
+
+[[attempt]]
+task = 14
+run_id = "wf_2648efc5-821"
+milestone = "A"
+status = "done"
+summary = "run-milestone.md picks from `plan emit schedule` and runs `plan check --milestone` after each pick"
+block = "malformed"
+files_touched = []
+deviations = []
+tangential = []
+checks = []
+
+[[attempt]]
+task = 15
+run_id = "wf_2648efc5-821"
+milestone = "A"
+status = "done"
+summary = "SKILL.md now describes the dependency pick"
+block = "present"
+files_touched = ["claude/skills/implement-v2-engine/SKILL.md"]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "grep accept checks (schedule + --elaborate present; earlier-checkpoint refusal gone)"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "pass"
+
+[[attempt]]
+task = 16
+run_id = "wf_2648efc5-821"
+milestone = "A"
+status = "done"
+summary = "drain Next rule, lane note, flow-store note, report line, parked-rows scope and settle pairing updated"
+block = "present"
+files_touched = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "claude/skills/implement-v2-engine/references/apply-rows.md",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "the four accept checks"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "pass"
+
+[[attempt]]
+task = 17
+run_id = "wf_2648efc5-821"
+milestone = "A"
+status = "done"
+summary = "apply-v2 orders apply-<n> after settle-<n> with --after and records the unfinished-work choice the same way"
+block = "present"
+files_touched = ["claude/skills/apply-v2-engine/SKILL.md"]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "grep -qF -- '--after settle-<n>' claude/skills/apply-v2-engine/SKILL.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "pass"
+
+[[attempt]]
+task = 18
+run_id = "wf_2648efc5-821"
+milestone = "A"
+status = "done"
+summary = "wrote plan-v2-engine/references/elaborate.md, the elaboration procedure that flips a deferred milestone only after its cold read and probes"
+block = "malformed"
+files_touched = []
+deviations = []
+tangential = []
+checks = []
+
+[[attempt]]
+task = 19
+run_id = "wf_2648efc5-821"
+milestone = "A"
+status = "done"
+summary = "--elaborate wired into plan-v2 skill, carrier and re-entry rules"
+block = "present"
+files_touched = [
+    "claude/skills/plan-v2-engine/SKILL.md",
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md",
+    "claude/commands/plan-v2.md",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "both accept greps"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "pass"
+
+[[attempt]]
+task = 20
+run_id = "wf_2648efc5-821"
+milestone = "A"
+status = "done"
+summary = "Design, 4a and 4c of write-and-prove.md now cover milestone order with --after."
+block = "present"
+files_touched = ["claude/skills/plan-v2-engine/references/write-and-prove.md"]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "grep accept check for '--after <id>', 'plan/milestone-order-unqualified', 'elaborate.md'"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "pass"
+
+[[attempt]]
+task = 21
+run_id = "wf_2648efc5-821"
+milestone = "A"
+status = "done"
+summary = "CLAUDE.md describes the dependency pick and the --elaborate entry"
+block = "present"
+files_touched = ["CLAUDE.md"]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "grep -qF 'plan emit schedule' CLAUDE.md && grep -qF -- '--elaborate <id>' CLAUDE.md"
+result = "pass"
+
+[[attempt]]
+task = 22
+run_id = "wf_65aa101a-0a1"
+milestone = "A"
+status = "done"
+summary = "added the `after` key to the expected milestone JSON in the v2 snapshot test"
+block = "present"
+files_touched = ["tomlctl/tests/tasks_snapshot.rs"]
+deviations = []
+tangential = []
+checks = []
+
+[[attempt]]
+task = 23
+run_id = "wf_65aa101a-0a1"
+milestone = "A"
+status = "done"
+summary = "added plan/milestone-order-unqualified to both finding-class lists in the lifecycle test"
+block = "present"
+files_touched = ["tomlctl/tests/plan_lifecycle.rs"]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "rustfmt --edition 2024 --check tomlctl/tests/plan_lifecycle.rs"
+result = "pass"
+
+[[attempt]]
+task = 24
+run_id = "wf_349a9cdd-fbc"
+milestone = "A"
+status = "done"
+summary = 'second finding-class expectation in the lifecycle test is back to ["plan/milestone-no-gate"]'
+block = "present"
+files_touched = ["tomlctl/tests/plan_lifecycle.rs"]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "rustfmt --edition 2024 --check tomlctl/tests/plan_lifecycle.rs"
+result = "pass"
+
+[[gate_round]]
+milestone = "A"
+round = 0
+seq = 1
+at = 2026-11-16T09:48:44Z
+outcome = "fail"
+
+[[gate_round.commands]]
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+duration_s = 4
+summary = ""
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "CARGO_INCREMENTAL=0 cargo clippy --workspace --locked --all-targets"
+outcome = "pass"
+duration_s = 44
+summary = ""
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "fail"
+exit = 100
+duration_s = 365
+summary = "Summary [ 297.393s] 3300 tests run: 3298 passed (3 slow), 2 failed, 1 skipped"
+failed_ids = [
+    "plan_lifecycle::a_plan_runs_from_open_to_drift",
+    "tasks_snapshot::a_v2_store_carries_its_milestones_and_change_trail",
+]
+log = ".claude/flows/milestones-by-dependency/gates/A-r0-s1-c3.log"
+
+[[gate_round.commands]]
+command = "bash claude/skills/plan-v2-engine/scripts/fanout-check.test.sh"
+outcome = "pass"
+duration_s = 39
+summary = ""
+failed_ids = []
+log = ""
+
+[[gate_round]]
+milestone = "A"
+round = 1
+seq = 1
+at = 2026-11-16T09:58:32Z
+outcome = "fail"
+
+[[gate_round.commands]]
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+duration_s = 3
+summary = ""
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "CARGO_INCREMENTAL=0 cargo clippy --workspace --locked --all-targets"
+outcome = "pass"
+duration_s = 12
+summary = ""
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "fail"
+exit = 100
+duration_s = 303
+summary = "Summary [ 279.712s] 3300 tests run: 3299 passed (2 slow), 1 failed, 1 skipped"
+failed_ids = ["plan_lifecycle::a_plan_runs_from_open_to_drift"]
+log = ".claude/flows/milestones-by-dependency/gates/A-r1-s1-c3.log"
+
+[[gate_round.commands]]
+command = "bash claude/skills/plan-v2-engine/scripts/fanout-check.test.sh"
+outcome = "pass"
+duration_s = 38
+summary = ""
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(=tasks_snapshot::a_v2_store_carries_its_milestones_and_change_trail)'"
+outcome = "pass"
+duration_s = 23
+summary = "Summary [ 0.241s] 1 test run: 1 passed, 3300 skipped"
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(=plan_lifecycle::a_plan_runs_from_open_to_drift)'"
+outcome = "fail"
+exit = 100
+duration_s = 6
+summary = "Summary [   4.141s] 1 test run: 0 passed, 1 failed, 3300 skipped"
+failed_ids = ["plan_lifecycle::a_plan_runs_from_open_to_drift"]
+log = ".claude/flows/milestones-by-dependency/gates/A-r1-s1-c6.log"
+
+[[gate_round]]
+milestone = "A"
+round = 2
+seq = 1
+at = 2026-11-16T10:13:37Z
+outcome = "pass"
+
+[[gate_round.commands]]
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+duration_s = 3
+summary = ""
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "CARGO_INCREMENTAL=0 cargo clippy --workspace --locked --all-targets"
+outcome = "pass"
+duration_s = 12
+summary = ""
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 360
+summary = "Summary [ 332.271s] 3300 tests run: 3300 passed (3 slow), 1 skipped"
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "bash claude/skills/plan-v2-engine/scripts/fanout-check.test.sh"
+outcome = "pass"
+duration_s = 50
+summary = ""
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(=tasks_snapshot::a_v2_store_carries_its_milestones_and_change_trail)'"
+outcome = "pass"
+duration_s = 19
+summary = "Summary [   0.194s] 1 test run: 1 passed, 3300 skipped"
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(=plan_lifecycle::a_plan_runs_from_open_to_drift)'"
+outcome = "pass"
+duration_s = 12
+summary = "Summary [  10.066s] 1 test run: 1 passed, 3300 skipped"
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "cargo install --path tomlctl --locked"
+outcome = "pass"
+duration_s = 291
+summary = ""
+failed_ids = []
+log = ""
+
+[[report]]
+at = 2026-11-16T10:15:08Z
+milestone = "A"
+why = "every milestone committed"
+
+[[report.entries]]
+kind = "gate"
+task = 0
+text = "milestone A did not run task 1..13 accept checks covered_by CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast (task 11's by bash claude/skills/plan-v2-engine/scripts/fanout-check.test.sh)"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "agent-a8c086277b4404f25: grep -rn over tomlctl/src (three commands) — breach"
+path = ""
+needs_person = true
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "agent-aa4dda9d84d86d980: grep -rn over tomlctl/src — breach"
+path = ""
+needs_person = true
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "agent-ab5a1e8ab294c0827: grep -rn over claude/ — breach"
+path = ""
+needs_person = true
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "agent-acf3dbe1373744f09: grep -rn over claude/skills/implement-v2-engine/ — breach"
+path = ""
+needs_person = true
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "agent-a20eb08022668de70: grep -rn over tomlctl (fix round 1) — breach"
+path = ""
+needs_person = true
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "21 other rows: accept-check greps, narrowed cargo nextest/cargo test runs, rustfmt/clippy and the cli::dispatch::tests subset — allowed"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "reconcile"
+task = 2
+text = "task 2: the block is malformed: `checks.result` is `pass (25 tests)`, expected one of pass, fail, not-run — docs/flows/milestones-by-dependency/notes/run/task-2.md"
+path = "docs/flows/milestones-by-dependency/notes/run/task-2.md"
+needs_person = true
+
+[[report.entries]]
+kind = "reconcile"
+task = 3
+text = "task 3: the block is malformed: `checks.result` carries a parenthetical after pass — docs/flows/milestones-by-dependency/notes/run/task-3.md"
+path = "docs/flows/milestones-by-dependency/notes/run/task-3.md"
+needs_person = true
+
+[[report.entries]]
+kind = "reconcile"
+task = 5
+text = "task 5: the block is malformed: `checks.result` is `pass after applying the one reported diff` — docs/flows/milestones-by-dependency/notes/run/task-5.md"
+path = "docs/flows/milestones-by-dependency/notes/run/task-5.md"
+needs_person = true
+
+[[report.entries]]
+kind = "reconcile"
+task = 6
+text = "task 6: the block is malformed: `checks.result` is `pass (after applying rustfmt to plan_check.rs)` — docs/flows/milestones-by-dependency/notes/run/task-6.md"
+path = "docs/flows/milestones-by-dependency/notes/run/task-6.md"
+needs_person = true
+
+[[report.entries]]
+kind = "reconcile"
+task = 7
+text = "task 7: the block is malformed: `checks.result` is `pass (after applying rustfmt to check.rs)` — docs/flows/milestones-by-dependency/notes/run/task-7.md"
+path = "docs/flows/milestones-by-dependency/notes/run/task-7.md"
+needs_person = true
+
+[[report.entries]]
+kind = "reconcile"
+task = 10
+text = "task 10: the block is malformed: `checks.result` is `pass (14 tests)` — docs/flows/milestones-by-dependency/notes/run/task-10.md"
+path = "docs/flows/milestones-by-dependency/notes/run/task-10.md"
+needs_person = true
+
+[[report.entries]]
+kind = "reconcile"
+task = 11
+text = "task 11: the block is malformed: `checks.result` is `pass (10 of 10 cases)` — docs/flows/milestones-by-dependency/notes/run/task-11.md"
+path = "docs/flows/milestones-by-dependency/notes/run/task-11.md"
+needs_person = true
+
+[[report.entries]]
+kind = "reconcile"
+task = 14
+text = "task 14: the block is malformed: `checks.result` is `pass (56 passed)` — docs/flows/milestones-by-dependency/notes/run/task-14.md"
+path = "docs/flows/milestones-by-dependency/notes/run/task-14.md"
+needs_person = true
+
+[[report.entries]]
+kind = "reconcile"
+task = 18
+text = "task 18: the block is malformed: `checks.result` is `pass (56 passed)` — docs/flows/milestones-by-dependency/notes/run/task-18.md"
+path = "docs/flows/milestones-by-dependency/notes/run/task-18.md"
+needs_person = true
