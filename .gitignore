@@ -39,3 +39,6 @@
 # resumes from — so it must survive the launcher's `reset --hard` resync, which
 # leaves untracked files alone. Committing it would put a diff on every batch.
 /BACKLOG-RUN.md
+
+# Per-machine Claude Code permissions
+.claude/settings.local.json
