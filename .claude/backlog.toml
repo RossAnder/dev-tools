@@ -13101,7 +13101,7 @@ kind = "debt"
 summary = "A row removed from a deferred milestone during elaboration leaves a `*` tombstone trail row whose ref no live row carries, so the lane check's trail_writes cannot attribute it to the deferred milestone and reports it as a store write"
 area = "tomlctl/src/plan/lane.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-16T09:40:06Z
 last_seen = 2026-11-16T09:40:06Z
 seen_count = 1
@@ -13111,6 +13111,8 @@ flow = "milestones-by-dependency"
 context = "An elaboration that drops a deferred row shows one false trail write in plan emit lane-check. Judge such a store_writes entry by hand until the tombstone carries the row's milestone or trail_writes looks the ref up before the window."
 base_sha = "08de98d16f0cda3af314fead95eee65fdb4632cd"
 related = ["B-ccdfe310"]
+resolved = 2026-11-16
+resolution = "8af5bcba: tasks remove now writes a checkpoint trail row naming the milestone the row left, and plan emit lane-check attributes a removed ref to a deferred milestone by its last checkpoint row."
 
 [[backlog]]
 id = "B-adeeced3"
@@ -13118,7 +13120,7 @@ kind = "question"
 summary = "`plan milestone update --elaborated` writes its trail row only on an audited store, so on an unaudited store the flip leaves no trail and the elaborated milestone's records re-enter the lane digest"
 area = "tomlctl/src/plan/milestone.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-16T09:40:06Z
 last_seen = 2026-11-16T09:40:06Z
 seen_count = 1
@@ -13128,6 +13130,8 @@ flow = "milestones-by-dependency"
 context = "The lane check's deferred-milestone exclusion dates the elaboration flip from the trail. On an unaudited v2 store the elaboration would read as a digest change; decide whether the flip should always leave a trail row."
 base_sha = "08de98d16f0cda3af314fead95eee65fdb4632cd"
 related = ["B-ccdfe310"]
+resolved = 2026-11-16
+resolution = "Not reachable: plan approve sets audit = true and no verb clears it, so every task store an implement run touches is audited and plan milestone update --elaborated always writes its elaboration trail row there. No code change."
 
 [[backlog]]
 id = "B-5f19d9fd"
@@ -13135,7 +13139,7 @@ kind = "question"
 summary = "write-and-prove.md's cold-read Relaunch rule requires HEAD to equal head-before.txt, while fanout-check.sh --exclude tolerates HEAD moves through excluded paths; the two disagree for a milestone-scoped cold read beside a live run"
 area = "claude/skills/plan-v2-engine/references/write-and-prove.md"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-11-16T09:40:06Z
 last_seen = 2026-11-16T09:40:06Z
 seen_count = 1
@@ -13145,3 +13149,5 @@ flow = "milestones-by-dependency"
 context = "elaborate.md relaxes the rule locally for its own cold reads. If write-and-prove's cold read ever runs beside a live implement-v2 run, the stricter HEAD rule forces needless abandons; align it with the fan-out check's excludes."
 base_sha = "08de98d16f0cda3af314fead95eee65fdb4632cd"
 related = ["B-c2d75b04"]
+resolved = 2026-11-16
+resolution = "58b230e0: write-and-prove's cold-read Relaunch rule now leaves the HEAD test to fanout-check.sh check, which fails on any HEAD move it does not tolerate; elaborate.md follows the shared rule."
