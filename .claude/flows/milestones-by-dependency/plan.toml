@@ -1,0 +1,504 @@
+schema_version = 2
+last_updated = 2026-11-16
+
+[binding]
+branch = "main"
+scope = [
+    "claude/skills/implement-v2-engine/**",
+    "claude/skills/plan-v2-engine/**",
+]
+
+[id_high_water]
+C = 4
+D = 18
+
+[[decision]]
+id = "D1"
+decision = "Let the implement-v2 flow-store commit go ahead while another session's elaborate:<id> run is open; the elaborating milestone stays deferred until that procedure's last write, so any of its rows the commit sweeps in are not runnable."
+why = "Elaborated-last already meets the goal the earlier refusal was for (no half-written row committed as runnable), and a refusal would hold the stamp commit for the length of the elaboration."
+provenance = "user-confirmed"
+door = "two-way"
+binds = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "16",
+    "18",
+]
+rejected = []
+evidence = "notes/concurrent-elaboration.md (flow-store commit stages all of .claude/flows/<slug>/, drain.md:463); notes/elaboration-procedure.md (deferral relaxes only accept-no-check, so premises, cold read and probes all run on a still-deferred milestone); recorded stance c372393f 04:59Z accepted a refusal as part of the full-scope option"
+if_false = "drain step 10 gains a guard: with an open elaborate:<id> run from another session, the milestone commit lands and the flow-store commit waits until that run closes, and the engine stops rather than continue"
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D2"
+decision = "Let the elaboration's cold read run beside a live implement-v2 run: fanout-check.sh takes extra excluded paths (the running implement milestone's row files and docs/flows/<slug>/notes/run/) and accepts HEAD moving through commits that touch only excluded paths or the flow's own directories."
+why = "The cold read is the one Workflow in an elaboration, and without the excludes it fails whenever a worker edits or a milestone commits, which would serialise the two sessions."
+provenance = "user-confirmed"
+door = "two-way"
+binds = [
+    "claude/skills/plan-v2-engine/scripts/fanout-check.sh",
+    "11",
+    "18",
+]
+rejected = []
+evidence = "notes/concurrent-elaboration.md (fanout-check.sh:29-38 captures HEAD, the tracked diff and untracked digests repo-wide, excluding only the asked notes and .claude/flows/<slug>); read fanout-check.sh in full"
+if_false = "the elaboration procedure waits for a moment when no implement:<id> run is open before launching its cold read, and fanout-check.sh is unchanged; the injection guard keeps full coverage but the cold read can wait a whole milestone run"
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D3"
+decision = "Give milestones an explicit `after = [ids]` field for order that carries intent, and pick any milestone whose rows' needs and coupling outside it and whose `after` milestones are done and committed, preferring store order; a deferred milestone is skipped and reported rather than stopping the engine."
+why = "Store order carried intent in all three multi-milestone flows that ran (pdt review F10 risk-first order, glimpse C behind handover H1, gate-cost task 14 protecting the build), so a needs-only pick would have broken each; an explicit field keeps that intent while freeing the independent cases."
+provenance = "user-confirmed"
+door = "one-way"
+binds = [
+    "tomlctl/src/tasks/schema.rs",
+    "claude/skills/implement-v2-engine/references/run-milestone.md",
+    "1",
+    "2",
+    "3",
+    "14",
+]
+evidence = "notes/session-friction.md (transcripts 7664d9d9, 9c1cf859, ec0edfee); notes/milestone-dag-measure.md (independent sibling milestones in 3 of 7 flows); user answer in session c372393f at 2026-11-16T04:59:34Z"
+if_false = "the engine keeps store order and only the deferred stop changes"
+revisit_if = "plans routinely set `after` on every milestone, which would mean store order should have stayed the default"
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Skip a deferred milestone only, with no new field"
+because = "it keeps narrative order as the schedule for every upfront milestone, so glimpse C and harness D would still wait on unrelated milestones"
+
+[[decision.rejected]]
+option = "Keep store order as law and only warn at plan time"
+because = "it removes no wait at run time; the user chose the explicit field on 2026-11-16 (session c372393f, 04:59Z)"
+
+[[decision]]
+id = "D4"
+decision = "Scope elaboration fully: an owned procedure for elaborating a deferred milestone on a running flow, plus a milestone-scoped pre-flight, lane check and open-run handling so a second attended session can elaborate while /implement-v2 runs another milestone."
+why = "Both corpus elaborations were improvised differently (one with a cold read, one without), and every flow-wide check the second session would trip is named in notes/concurrent-elaboration.md."
+provenance = "user-confirmed"
+door = "two-way"
+binds = [
+    "claude/skills/plan-v2-engine/SKILL.md",
+    "claude/skills/implement-v2-engine/references/run-milestone.md",
+    "9",
+    "10",
+    "18",
+]
+evidence = "notes/elaboration-procedure.md; notes/concurrent-elaboration.md; user answer in session c372393f at 2026-11-16T04:59:34Z"
+if_false = "drop the lane scoping, the stage change and the fan-out excludes; elaboration runs in a quiet flow"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Owned procedure only, elaborating while nothing else runs"
+because = "the measured hold on pdt was B's elaboration with C ready; the user chose the concurrent scope on 2026-11-16"
+
+[[decision]]
+id = "D5"
+decision = "Do not make elaboration a task in the implement-v2 worker pool, and do not dispatch later milestones' rows into the running milestone's pool."
+why = "In the one timed elaboration only 2.1 of 20.5 minutes was agent-only reading; the user's questions came before any spec could be drafted; and pool lookahead was settled at plan time by B-1fa8d53f's cut rule."
+provenance = "user-confirmed"
+door = "two-way"
+binds = [
+    "claude/skills/implement-v2-engine/SKILL.md",
+    "15",
+]
+evidence = "notes/elaboration-procedure.md timing table from transcript f526a28c; notes/milestone-dag-measure.md; recommendation accepted in session c372393f at 2026-11-16T04:59:34Z"
+if_false = "an elaboration executor kind, a drain branch and a mint step join the plan"
+revisit_if = "a measured elaboration spends more than half its time in agent-only reading or drafting, or a flow defers several milestones at once"
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "An elaboration row in the pool modelled on apply-v2's settle milestone"
+because = "it needs a new link kind, a worker-view section, both worker agents and a drain section, and still serialises everything but the reading (notes/elaboration-procedure.md)"
+
+[[decision]]
+id = "D6"
+decision = "Adopt the structure challenge's draft: one milestone-schedule module in tomlctl/src/tasks/milestones.rs above graph.rs, a `plan emit schedule` leaf that overlays open elaborate runs and prints each milestone's state and the pick, lane scoping inside lane.rs, and elaboration recorded as an `elaborate:<id>` run whose milestone stays deferred until its last write."
+why = "The pick needs each milestone's outside needs with status and commit, `after` edges and elaboration state in one read, which today takes a closure plus a list per milestone and emit.rs says the engine should not assemble by hand."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/plan/emit.rs",
+    "tomlctl/src/tasks/graph.rs",
+    "tomlctl/src/plan/lane.rs",
+    "3",
+    "4",
+    "10",
+]
+evidence = "notes/structure-challenge.md; read emit.rs:1-50 and 745-770, lane.rs:1-130, schema.rs:369-392"
+if_false = "the pick stays prose in run-milestone.md and each consumer reads rows itself"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Keep the pick in engine prose with extra calls"
+because = "one closure, one list and an elaboration read per milestone on every pick, built from row reads (emit.rs header)"
+
+[[decision.rejected]]
+option = "A fourth elaboration value `elaborating`"
+because = "it carries no session or start time and no abandon path, and every is_deferred() reader would have to classify it; a run row has both"
+
+[[decision.rejected]]
+option = "Put the milestone DAG in graph.rs"
+because = "Node carries no commit or run state and graph.rs is the task-level seam"
+
+[[decision]]
+id = "D7"
+decision = "Keep `checkpoint/invalid-cut` unchanged and let `after` name only milestones stored earlier, so store order stays a topological order of the milestone graph and the pick is the first runnable milestone in store order."
+why = "valid_cut already forces every upstream milestone earlier in the store, which makes store order a deterministic tie-break, and v1 /implement commits against it so it cannot be relaxed."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/tasks/check.rs",
+    "tomlctl/src/plan/milestone.rs",
+    "2",
+    "6",
+]
+evidence = "notes/pick-and-preflight-sites.md (tasks/check.rs:665, graph.rs:364, implement.md:175)"
+if_false = "plan check gains a milestone-cycle class and --milestone validation needs its own reachability walk"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Allow narrative store order with a v2 cycle check over the milestone graph"
+because = "it demotes invalid-cut for v2 flows only and costs the deterministic tie-break"
+
+[[decision]]
+id = "D8"
+decision = "While any milestone holds a started, unstamped row (agent a plan worker, commit empty), only that milestone can be picked and every other is held on it; a done but unstamped milestone is settled by Re-entry before any pick."
+why = "Every gate in the corpus is crate-wide and the clean-tree exemption and lane set cover every started row in the flow, so running another milestone over half-finished edits would gate and commit a mixed tree."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/plan/lane.rs",
+    "claude/skills/implement-v2-engine/references/run-milestone.md",
+    "3",
+]
+evidence = "notes/out-of-order-commit.md (run-milestone.md:37-45, lane.rs:328, drain.md:295-327); gates of v2-harness-tuning and v2-apply read with tomlctl"
+if_false = "a gate could pass or fail on another milestone's partial edits and its commit would not be the tree the gate passed"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Block only on a file shared with the started milestone"
+because = "crate-wide gates test the whole tree whatever files the milestones share (notes/out-of-order-commit.md)"
+
+[[decision]]
+id = "D9"
+decision = "In plan emit launch-args, count a need outside the milestone as met only when it is done and carries a commit stamp, dropping the row with `need-not-committed:<task>` otherwise."
+why = "Under an out-of-order pick a done but ungated need would let dependents build on code their own commit leaves out; the schedule rule guards this, and the emit check keeps the verb correct on its own."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/plan/emit.rs",
+    "8",
+]
+rejected = []
+evidence = "read emit.rs:745-767 (stranded accepts Status::Done without reading commit)"
+if_false = "launch-args alone would accept an unstamped need"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D10"
+decision = "Own elaboration in plan-v2-engine as a new reference, references/elaborate.md, entered as `/plan-v2 <slug> --elaborate <id>`: preconditions, one surface and decide pass, row revision, prove while still deferred (scoped plan check, premises, a `cold-read:<id>` cold read, accept and gate probes), then `plan milestone update --elaborated` as the last store write and one commit."
+why = "plan-v2's role rules already own decisions, records, design files and the cold read; no verb filters on deferral, so everything can be proved before the flip; and the flip cannot be undone."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "claude/skills/plan-v2-engine/SKILL.md",
+    "claude/commands/plan-v2.md",
+    "18",
+    "19",
+]
+evidence = "notes/elaboration-procedure.md (check.rs:440-451, 520; tomlctl plan.md:324; transcript f526a28c 13:10-13:17Z)"
+if_false = "elaboration stays improvised and a milestone can be runnable before its cold read"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Set --elaborated first so the normal Prove step reads the milestone"
+because = "pdt B read elaborated for 6 minutes while its cold read was still finding 4 false premises, and a pick in that window launches unproved rows"
+
+[[decision]]
+id = "D11"
+decision = "After approval, plan stage lists open `elaborate:<id>` and `cold-read:<id>` runs in open_runs but not in blockers and does not point next at them; implement-v2 leaves them alone, and plan-v2 never abandons an `implement:` or `reproduce:` run and asks before abandoning another session's `elaborate:` run."
+why = "Today every open run of any step is a stage blocker that stops /implement-v2, and plan-v2 re-entry abandons another session's runs without asking, a live implement run included."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/plan/stage.rs",
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md",
+    "9",
+    "19",
+]
+rejected = []
+evidence = "read stage.rs:48-110 and 160-195; open-and-challenge.md:228; notes/concurrent-elaboration.md"
+if_false = "one session's planning run stops the other's implement pre-flight, or its re-entry abandons a live implement run"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D12"
+decision = "Leave out of the lane check's digest and trail every record a milestone deferred at the window's open owns (its rows, their specs, its checkpoint and milestone entries, and trail rows on them), deriving that set from the store and its trail at both ends so the run row needs no new field."
+why = "An audited elaboration writes rows, specs and a milestone trail row inside the implement run's window, and the drain today reports each as a worker out of its lane."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/plan/lane.rs",
+    "10",
+]
+evidence = "read lane.rs:1-130; notes/concurrent-elaboration.md (lane.rs:44, 357-364; drain.md:135)"
+if_false = "a worker's write to a deferred milestone's row would be reported, and so would every elaboration write"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Record the excluded set on the run at plan run start"
+because = "it needs a new run-start flag and carrier change when the trail already dates each elaboration flip"
+
+[[decision]]
+id = "D13"
+decision = "Give plan check a `--milestone <id>` scope: error-class findings count, and print, only when their ids touch the milestone's rows or its upstream rows, or carry no ids; implement-v2 runs that scoped check after each pick instead of the flow-wide plan check and tasks check."
+why = "plan check already includes tasks check's findings, and a half-written row of a milestone being elaborated raises task-no-spec and spec errors that today refuse every milestone; the continue path also skipped the check entirely."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/plan/check.rs",
+    "7",
+    "14",
+]
+rejected = []
+evidence = "read check.rs:55-100 (findings calls check(&tasks) first); notes/pick-and-preflight-sites.md; notes/concurrent-elaboration.md (Next goes to the pick, not the pre-flight)"
+if_false = "a second session's half-written rows stop /implement-v2 flow-wide"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D14"
+decision = "After a milestone commit, continue to the next milestone while plan emit schedule names a pick and --milestone was not given; a parked row holds back its own milestone and its downstream milestones, and through the started-row rule every milestone when a worker had started it."
+why = "The current rule stops on any parked row anywhere in the flow, which holds independent ready work the user did not ask to hold."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "15",
+    "16",
+]
+evidence = "drain.md Next section; notes/structure-challenge.md (left undecided); notes/pick-and-preflight-sites.md"
+if_false = "the engine stops at the first parked row and the user re-invokes"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Keep stopping on any parked row in the flow"
+because = "it is a store-order-era rule; the started-row rule already holds everything when the parked work left edits in the tree"
+
+[[decision]]
+id = "D15"
+decision = "Order apply-v2's fix milestone after its settle milestone with `--after settle-<n>` on `apply-<n>`, name the fix milestone by its id pair in the settle drain, and carry out apply-v2's run-the-plan-first answer as `--after` on each unfinished milestone."
+why = "settle-<n> precedes apply-<n> only by store adjacency, since settle rows have no needs; a dependency pick would otherwise run a non-empty apply-<n> first and the settle drain would add rows to a committed milestone."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "claude/skills/apply-v2-engine/SKILL.md",
+    "claude/skills/implement-v2-engine/references/apply-rows.md",
+    "16",
+    "17",
+]
+rejected = []
+evidence = "read apply-rows.md:210-222 and apply-v2-engine SKILL.md:105-112, 160-176; notes/out-of-order-commit.md (schedule.rs:646)"
+if_false = "a fix milestone can run and commit before its settle drain schedules into it"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D16"
+decision = "Answer B-a505bedd with a plan check warning, `plan/milestone-order-unqualified`, before approval: a milestone stored ahead of another that does not depend on it through needs, coupling or after, naming that the later one may run first and that `--after` keeps the order; and stop `plan/milestone-width` from naming a deferred milestone as a target."
+why = "Under the dependency pick a deferred milestone ahead of independent work no longer holds it, so the warning worth giving is the one that catches an order the planner meant but did not record, the F10 case; the deferred case is one instance of it."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/plan/check.rs",
+    "6",
+    "20",
+]
+evidence = "notes/session-friction.md (F10 re-cut, check.rs:729 compares no milestone order); notes/pick-and-preflight-sites.md (milestone-width can target a deferred milestone, check.rs:753-772); user accepted a plan check warning in session c372393f"
+if_false = "plan check warns only on the deferred case, and an unrecorded intent order passes silently"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Warn only when a deferred milestone precedes an independent one"
+because = "that wait no longer happens under the new pick, while the lost-intent case it misses is the one the transcripts show"
+
+[[decision]]
+id = "D17"
+decision = "Read flows approved before this change with no `after` and no legacy mode."
+why = "The only v2 flow with unfinished rows is reportdesignkit's package-design-tools, whose pending milestone D needs rows of A, B and C, so the new pick changes no order there."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/tasks/schema.rs",
+    "1",
+]
+rejected = []
+evidence = "tomlctl tasks list --where-not status=done --count-by checkpoint over all seven v2 flows: only package-design-tools D (5 rows) is unfinished"
+if_false = "an in-flight flow whose order carried intent would need `after` added before its next run"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D18"
+decision = "Set `after` with a repeatable `--after <id>` on plan milestone add and update; on update any --after replaces the list and --clear-after empties it; each id must name a milestone stored before this one, and an update is audited like the other milestone fields."
+why = "It matches the gate flags' replace-and-clear shape on the same verb, and the earlier-only rule keeps store order topological."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/plan/milestone.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "2",
+]
+rejected = []
+evidence = "read cli/types/plan.rs:410-497 (--gate repeatable, --clear-gate) and milestone.rs:120-175"
+if_false = "a different flag shape"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[contract]]
+id = "C1"
+kind = "interface"
+claim = "tasks::milestones::schedule(store, elaborating) returns the pick and per-milestone states that plan emit schedule prints unchanged."
+check = "grep -qF 'milestones::schedule(' tomlctl/src/plan/schedule.rs"
+tasks = [
+    3,
+    4,
+]
+provides = "tasks::milestones::schedule"
+consumes = "plan emit schedule"
+
+[[contract]]
+id = "C2"
+kind = "interface"
+claim = "tasks::milestones::upstream(store) gives each milestone's upstream milestone ids, which plan check uses for the order warning and the --milestone scope."
+check = "grep -qF 'milestones::upstream(' tomlctl/src/plan/check.rs"
+tasks = [
+    3,
+    6,
+    7,
+]
+provides = "tasks::milestones::upstream"
+consumes = "plan check"
+
+[[contract]]
+id = "C3"
+kind = "interface"
+claim = "plan emit schedule prints a single object with `pick` and `milestones`, which run-milestone.md reads with --get pick and --rows milestones."
+check = """grep -qF '"pick"' tomlctl/src/plan/schedule.rs && grep -qF -- '--rows milestones' claude/skills/implement-v2-engine/references/run-milestone.md"""
+tasks = [
+    4,
+    14,
+]
+provides = "plan emit schedule output"
+consumes = "implement-v2 pick"
+
+[[contract]]
+id = "C4"
+kind = "interface"
+claim = "fanout-check.sh takes repeatable --exclude <path> before the note paths, and the elaboration procedure passes the pick's row files and notes/run that way."
+check = "grep -q -- '--exclude' claude/skills/plan-v2-engine/scripts/fanout-check.sh && grep -q -- '--exclude' claude/skills/plan-v2-engine/references/elaborate.md"
+tasks = [
+    11,
+    18,
+]
+provides = "fanout-check.sh --exclude"
+consumes = "elaborate.md cold read"
+
+[[run]]
+step = "investigate"
+workflow = "plan-v2-investigate"
+args_hash = "066d575c3a6d75a524c88d2596d0d4b7b589aa92ea8824e351e18185baf505c2"
+run_id = "wf_19634bab-35a"
+session = "85c21d01-6a53-4e60-a163-d909549213fb"
+started = 2026-11-16T07:48:38Z
+finished = 2026-11-16T07:54:40Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "challenge"
+run_id = ""
+session = "85c21d01-6a53-4e60-a163-d909549213fb"
+started = 2026-11-16T07:56:31Z
+finished = 2026-11-16T08:01:28Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "surface"
+run_id = ""
+session = "85c21d01-6a53-4e60-a163-d909549213fb"
+started = 2026-11-16T08:04:48Z
+finished = 2026-11-16T08:04:48Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "cold-read"
+workflow = "plan-v2-prove"
+args_hash = "178f763bed276c1d1fa66270289649758b67ce76bb6f6e8f6d99b68c4ef66a8d"
+run_id = "wf_127e459b-624"
+session = "85c21d01-6a53-4e60-a163-d909549213fb"
+started = 2026-11-16T08:15:46Z
+finished = 2026-11-16T08:21:26Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "review"
+workflow = "plan-v2-review"
+run_id = "wf_5a759f0c-455"
+session = "85c21d01-6a53-4e60-a163-d909549213fb"
+started = 2026-11-16T08:23:17Z
+finished = 2026-11-16T09:08:20Z
+skip_reason = ""
+outcome = "ok"

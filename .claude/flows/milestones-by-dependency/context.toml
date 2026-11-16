@@ -1,0 +1,18 @@
+slug = "milestones-by-dependency"
+plan_path = "docs/flows/milestones-by-dependency/brief.md"
+status = "draft"
+created = 2026-11-16
+updated = 2026-11-16
+scope = []
+
+[tasks]
+total = 0
+completed = 0
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/milestones-by-dependency/review-ledger.toml"
+optimise_findings = ".claude/flows/milestones-by-dependency/optimise-findings.toml"
+execution_record = ".claude/flows/milestones-by-dependency/execution-record.toml"
+plan_review_findings = ".claude/flows/milestones-by-dependency/plan-review-findings.toml"
+tasks = ".claude/flows/milestones-by-dependency/tasks.toml"

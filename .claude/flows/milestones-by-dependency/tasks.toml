@@ -1,0 +1,1670 @@
+schema_version = 2
+last_updated = 2026-11-16
+plan_path = ""
+last_import_refs = []
+
+[policy]
+checkpoints = "milestones"
+max_parallel = 6
+commit_granularity = "per-task"
+origin = "plan"
+note = ""
+
+[[checkpoints]]
+id = "A"
+rationale = "Milestones run in dependency order with explicit after, a deferred milestone is skipped and reported, and a second session can elaborate one by an owned procedure while /implement-v2 runs another"
+
+[[file_notes]]
+ref = "let-the-fan-out-check-exclude-paths-and-tolerate-commits-to-them"
+file = "claude/skills/plan-v2-engine/scripts/fanout-check.test.sh"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-elaboration-procedure-for-a-running-flow"
+file = "claude/skills/plan-v2-engine/references/elaborate.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "compute-milestone-states-and-the-pick-in-one-tasks-module"
+file = "tomlctl/src/tasks/milestones.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "add-the-plan-emit-schedule-leaf"
+file = "tomlctl/src/plan/schedule.rs"
+note = "(new)"
+
+[[backlog_links]]
+ref = "check-after-edges-and-unqualified-milestone-order-in-plan-check"
+closes = ["B-a505bedd"]
+refs = []
+
+[[backlog_links]]
+ref = "leave-a-deferred-milestones-records-out-of-the-lane-check"
+closes = ["B-c2d75b04"]
+refs = []
+
+[[backlog_links]]
+ref = "pick-the-milestone-from-plan-emit-schedule-in-run-milestone"
+closes = ["B-0ee4f204"]
+refs = []
+
+[[backlog_links]]
+ref = "write-the-elaboration-procedure-for-a-running-flow"
+closes = ["B-4222c464"]
+refs = []
+
+[[specs]]
+ref = "add-the-after-field-to-milestones-in-the-task-store"
+outcome = "A milestone in the task store can carry an `after` list of milestone ids, which survives every read and write and appears in the snapshot."
+constraints = [
+    "Touch no file outside this task's files.",
+    "A store with no `after` key reads and writes exactly as before.",
+    "Add no CLI flag; the next task adds `--after`.",
+]
+means = []
+design = []
+precedent = [
+    "tomlctl/src/tasks/schema.rs#milestone_from_toml",
+    "tomlctl/src/tasks/schema.rs#milestone_to_toml",
+]
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "MilestoneSpec has an after field"
+check = "grep -qF 'pub(crate) after: Vec<String>' tomlctl/src/tasks/schema.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the snapshot exports after"
+check = """grep -qF '"after": ' tomlctl/src/tasks/snapshot.rs"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the field round-trips and is omitted when empty"
+check = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.premises]]
+claim = "MilestoneSpec ends with gate_probes"
+check = "grep -qF 'pub(crate) gate_probes: Vec<GateProbe>,' tomlctl/src/tasks/schema.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "the snapshot exports gate_probes on the milestone object"
+check = """grep -qF '"gate_probes": gate_probes' tomlctl/src/tasks/snapshot.rs"""
+at = "base"
+
+[specs.premises.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "set-after-with-plan-milestone-add-and-update"
+outcome = "A planner sets and clears a milestone's `after` list through `plan milestone add` and `update`, and can name only milestones stored before it."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Keep the flag shapes parallel to --gate and --clear-gate.",
+]
+means = []
+design = []
+precedent = [
+    "tomlctl/src/cli/types/plan.rs#PlanMilestoneUpdateArgs",
+    "tomlctl/src/plan/milestone.rs#update",
+]
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "add and update take --after"
+check = """grep -qF 'long = "after"' tomlctl/src/cli/types/plan.rs"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "update takes --clear-after"
+check = """grep -qF 'long = "clear-after"' tomlctl/src/cli/types/plan.rs"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "after is validated against store order and replaced or cleared on update"
+check = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.premises]]
+claim = "update already has the --clear-gate shape to copy"
+check = """grep -qF 'long = "clear-gate"' tomlctl/src/cli/types/plan.rs"""
+at = "base"
+
+[specs.premises.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "MilestoneSpec has an after field"
+check = "grep -qF 'pub(crate) after: Vec<String>' tomlctl/src/tasks/schema.rs"
+at = "after:1"
+
+[[specs]]
+ref = "compute-milestone-states-and-the-pick-in-one-tasks-module"
+outcome = "One function answers, from the task store and the set of milestones under elaboration, every milestone's state and which milestone /implement-v2 runs next."
+constraints = [
+    "Touch no file outside this task's files.",
+    "The tasks module imports nothing from crate::plan; keep the two worker agent names in a constant of this module.",
+    "graph.rs is not changed.",
+    "Follow design/schedule.md; where it is silent, choose the reading that never picks a milestone the design would hold, and say so in the run note.",
+]
+means = []
+design = []
+precedent = [
+    "tomlctl/src/tasks/closure.rs",
+    "tomlctl/src/tasks/graph.rs",
+]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the module exists and is registered"
+check = "test -f tomlctl/src/tasks/milestones.rs && grep -qF 'mod milestones;' tomlctl/src/tasks/mod.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "schedule and upstream are exposed"
+check = "test -f tomlctl/src/tasks/milestones.rs && grep -qF 'pub(crate) fn schedule(' tomlctl/src/tasks/milestones.rs && grep -qF 'pub(crate) fn upstream(' tomlctl/src/tasks/milestones.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the module carries a unit test per listed case"
+check = '''test -f tomlctl/src/tasks/milestones.rs && grep -qF '#[cfg(test)]' tomlctl/src/tasks/milestones.rs && test "$(grep -c '#\[test\]' tomlctl/src/tasks/milestones.rs)" -ge 11'''
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the states and pick follow the design on the listed cases"
+check = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.premises]]
+claim = "tasks closure computes a dependency_closure over needs and coupling"
+check = "grep -q 'dependency_closure' tomlctl/src/tasks/closure.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "MilestoneSpec has an after field"
+check = "grep -qF 'pub(crate) after: Vec<String>' tomlctl/src/tasks/schema.rs"
+at = "after:1"
+
+[[specs]]
+ref = "add-the-plan-emit-schedule-leaf"
+outcome = "The engine reads which milestone runs next, and why every other one does not, from one read-only call."
+constraints = [
+    "Touch no file outside this task's files.",
+    "The verb writes nothing.",
+    "The state rules live in tasks/milestones.rs; this leaf only gathers inputs and prints.",
+]
+means = []
+design = []
+precedent = ["tomlctl/src/plan/emit.rs#gate_list"]
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the leaf is registered under plan emit"
+check = "grep -qF 'Schedule(PlanEmitScheduleArgs)' tomlctl/src/cli/types/plan.rs && grep -qF 'PlanEmitOp::Schedule' tomlctl/src/plan/emit.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the leaf reads open elaborate runs"
+check = "test -f tomlctl/src/plan/schedule.rs && grep -qF 'elaborate:' tomlctl/src/plan/schedule.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "plan emit dispatches its leaves from emit.rs"
+check = "grep -qF 'PlanEmitOp::GateList(args) => gate_list(args)' tomlctl/src/plan/emit.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "plan.toml open runs are listed by store::open_runs"
+check = "grep -q 'fn open_runs' tomlctl/src/plan/store.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "the schedule module exposes schedule()"
+check = "grep -qF 'pub(crate) fn schedule(' tomlctl/src/tasks/milestones.rs"
+at = "after:3"
+
+[[specs]]
+ref = "test-plan-emit-schedule-and-add-its-output-options-case"
+outcome = "The schedule leaf's pick, deferred skip, elaborating state and after edge are pinned by tests, and the leaf honours the global output options."
+constraints = ["Touch no file outside this task's files."]
+means = []
+design = []
+precedent = [
+    "tomlctl/tests/plan_emit.rs",
+    "tomlctl/tests/output_options.rs",
+]
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "plan_emit.rs exercises the schedule leaf"
+check = """grep -qF '"schedule"' tomlctl/tests/plan_emit.rs"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "output_options covers the plan emit schedule leaf"
+check = """grep -A1 -F '"emit",' tomlctl/tests/output_options.rs | grep -qF '"schedule"' """
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the tests pass"
+check = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.premises]]
+claim = "output_options lists plan emit lane-check as a case"
+check = """grep -qF '"lane-check",' tomlctl/tests/output_options.rs"""
+at = "base"
+
+[specs.premises.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "check-after-edges-and-unqualified-milestone-order-in-plan-check"
+outcome = "plan check refuses an after list that breaks store order, warns before approval where independent milestones could run in either order, and never advises moving a row into a deferred milestone."
+constraints = [
+    "Touch no file outside this task's files.",
+    "The new class names are documented by a later task; documented_plan_classes_match_the_source fails until it lands, so do not run the cli::dispatch::tests subset.",
+]
+means = []
+design = []
+precedent = ["tomlctl/src/plan/check.rs#milestone_width_findings"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the three classes exist"
+check = "grep -qF 'plan/milestone-after-unknown' tomlctl/src/plan/check.rs && grep -qF 'plan/milestone-after-forward' tomlctl/src/plan/check.rs && grep -qF 'plan/milestone-order-unqualified' tomlctl/src/plan/check.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the classes and the width change are tested"
+check = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.premises]]
+claim = "milestone-width runs only before approval"
+check = "grep -q 'if plan.approvals.is_empty()' tomlctl/src/plan/check.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "the schedule module exposes upstream()"
+check = "grep -qF 'pub(crate) fn upstream(' tomlctl/src/tasks/milestones.rs"
+at = "after:3"
+
+[[specs]]
+ref = "scope-plan-check-to-a-milestone-with-milestone"
+outcome = "/implement-v2 checks only what the milestone it is about to run stands on, so another milestone's half-written rows do not refuse it."
+constraints = [
+    "Touch no file outside this task's files.",
+    "plan check without --milestone behaves exactly as before.",
+]
+means = []
+design = []
+precedent = ["tomlctl/src/plan/check.rs#run"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "plan check takes --milestone"
+check = "grep -qF 'Report only findings on this milestone' tomlctl/src/cli/types/plan.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the scope keeps upstream rows and drops independent ones"
+check = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.premises]]
+claim = "PlanCheckArgs has only the target and integrity args"
+check = "grep -q 'pub(crate) struct PlanCheckArgs' tomlctl/src/cli/types/plan.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "plan check findings start from tasks check"
+check = "grep -qF 'let mut found = check(&tasks, &[]);' tomlctl/src/plan/check.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "require-a-commit-stamp-on-needs-outside-the-launched-milestone"
+outcome = "A milestone run out of store order never launches rows on a dependency whose milestone has not been gated and committed."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Needs inside the launched milestone are judged as before.",
+]
+means = []
+design = []
+precedent = ["tomlctl/src/plan/emit.rs#stranded"]
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "launch-args names the new dropped reason"
+check = "grep -qF 'need-not-committed' tomlctl/src/plan/emit.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "an unstamped outside need drops the row and a stamped one does not"
+check = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.premises]]
+claim = "stranded accepts a done need without reading commit"
+check = "grep -qF 'if status == Some(Status::Done) || candidates.contains_key(&need)' tomlctl/src/plan/emit.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "keep-milestone-scoped-planning-runs-out-of-plan-stage-blockers"
+outcome = "A second session elaborating one milestone no longer makes plan stage report a blocker that stops /implement-v2 on another milestone."
+constraints = [
+    "Touch no file outside this task's files.",
+    "plan stage before approval behaves exactly as before.",
+]
+means = []
+design = []
+precedent = ["tomlctl/src/plan/stage.rs#with_open_runs"]
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "stage tells elaborate runs apart"
+check = "grep -qF 'elaborate:' tomlctl/src/plan/stage.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "planning runs on a milestone are not blockers after approval"
+check = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.premises]]
+claim = "every open run is spliced into blockers"
+check = "grep -q 'fn with_open_runs' tomlctl/src/plan/stage.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "leave-a-deferred-milestones-records-out-of-the-lane-check"
+outcome = "A second session elaborating a deferred milestone during an implement run is not reported as a worker writing outside its lane, while a worker's out-of-lane write on the running milestone still is."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Records of milestones that were not deferred at the window's open are digested exactly as before.",
+]
+means = []
+design = []
+precedent = [
+    "tomlctl/src/plan/lane.rs#store_digest",
+    "tomlctl/src/plan/lane.rs#trail_writes",
+]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the digest consults deferral"
+check = '''grep -q 'is_deferred\|ELABORATION_DEFERRED' tomlctl/src/plan/lane.rs'''
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "elaboration writes are excluded and running-milestone writes are not"
+check = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.premises]]
+claim = "the digest hashes rows, specs, milestones and changes sections"
+check = """grep -qF '("milestones", &["checkpoints", "milestones"])' tomlctl/src/plan/lane.rs"""
+at = "base"
+
+[specs.premises.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "trail_writes reads the run window"
+check = "grep -q 'fn trail_writes' tomlctl/src/plan/lane.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "let-the-fan-out-check-exclude-paths-and-tolerate-commits-to-them"
+outcome = "A cold read can run beside a live /implement-v2 run without the workers' edits and commits reading as cold-reader writes, while any write outside the named paths is still caught."
+constraints = [
+    "Touch no file outside this task's files.",
+    "No new git command runs before the config comparison.",
+    "Without --exclude the script's output and exit codes are unchanged.",
+]
+means = []
+design = []
+precedent = ["claude/skills/plan-v2-engine/scripts/fanout-check.sh"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the script records its excludes at snapshot"
+check = "grep -qF 'excludes.txt' claude/skills/plan-v2-engine/scripts/fanout-check.sh"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the six cases behave as specified"
+check = "bash claude/skills/plan-v2-engine/scripts/fanout-check.test.sh"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "bash claude/skills/plan-v2-engine/scripts/fanout-check.test.sh"
+
+[[specs.premises]]
+claim = "the script builds its pathspec excludes from the note paths"
+check = """grep -qF 'specs+=(":(exclude)$note")' claude/skills/plan-v2-engine/scripts/fanout-check.sh"""
+at = "base"
+
+[specs.premises.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "advertise-the-milestone_schedule-capability"
+outcome = "An installed tomlctl reports whether it has the milestone schedule surface, and /implement-v2 refuses a binary that does not."
+constraints = ["Touch no file outside this task's files."]
+means = []
+design = []
+precedent = ["tomlctl/src/cli/types/mod.rs"]
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the feature is listed and required"
+check = """grep -qF '"milestone_schedule"' tomlctl/src/cli/types/mod.rs && grep -qF 'milestone_schedule' claude/commands/implement-v2.md && grep -qF 'milestone_schedule' tomlctl/README.md"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the capabilities test agrees"
+check = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.premises]]
+claim = "FEATURES lists plan_emit_lane_check"
+check = """grep -qF '"plan_emit_lane_check",' tomlctl/src/cli/types/mod.rs"""
+at = "base"
+
+[specs.premises.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "document-the-schedule-surface-in-the-tomlctl-references"
+outcome = "Every new flag, leaf, class and behaviour is documented where the tomlctl skill sends a reader, and the dispatch doc gates pass."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Every reference file stays under 600 lines.",
+    "Fenced tomlctl commands use single-token placeholders.",
+]
+means = []
+design = []
+precedent = ["claude/skills/tomlctl/references/plan-engine.md"]
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the leaf and classes are documented"
+check = "grep -qF 'plan emit schedule' claude/skills/tomlctl/references/plan-engine.md && grep -qF 'plan/milestone-order-unqualified' claude/skills/tomlctl/references/plan.md && grep -qF 'clear-after' claude/skills/tomlctl/references/plan.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the doc, flag-table and command lint gates pass"
+check = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.premises]]
+claim = "plan-engine.md documents the lane-check leaf"
+check = "grep -q 'lane-check' claude/skills/tomlctl/references/plan-engine.md"
+at = "base"
+
+[specs.premises.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "pick-the-milestone-from-plan-emit-schedule-in-run-milestone"
+outcome = "/implement-v2 runs the first milestone the schedule allows, skips and reports deferred and elaborating milestones, and checks only what that milestone stands on."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Every fenced tomlctl command names flags the CLI has; run the cli::dispatch::tests subset after editing.",
+    "The file stays under 600 lines.",
+]
+means = []
+design = []
+precedent = ["docs/flows/milestones-by-dependency/design/schedule.md"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the pick reads plan emit schedule"
+check = "grep -qF 'tomlctl plan emit schedule --slug <slug>' claude/skills/implement-v2-engine/references/run-milestone.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the store check is scoped to the pick"
+check = "grep -qF 'tomlctl plan check --slug <slug> --milestone <id>' claude/skills/implement-v2-engine/references/run-milestone.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the store-order walk is gone"
+check = "! grep -qF 'The milestone is the first checkpoint, in store order' claude/skills/implement-v2-engine/references/run-milestone.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the flow-wide store checks are gone from the pre-flight"
+check = "! grep -qx 'tomlctl plan check --slug <slug>' claude/skills/implement-v2-engine/references/run-milestone.md && ! grep -qx 'tomlctl tasks check --slug <slug>' claude/skills/implement-v2-engine/references/run-milestone.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "run-milestone picks the first checkpoint in store order"
+check = "grep -qF 'The milestone is the first checkpoint, in store order' claude/skills/implement-v2-engine/references/run-milestone.md"
+at = "base"
+
+[specs.premises.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "update-the-implement-v2-engine-contract-for-the-dependency-pick"
+outcome = "The engine contract says milestones run in schedule order and that a deferred or elaborating milestone is reported, not stopped on."
+constraints = [
+    "Touch no file outside this task's files.",
+    "The file stays under 500 lines.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the skill names the schedule and the elaborate entry"
+check = "grep -qF 'plan emit schedule' claude/skills/implement-v2-engine/SKILL.md && grep -qF -- '--elaborate <id>' claude/skills/implement-v2-engine/SKILL.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the earlier-checkpoint refusal is gone"
+check = "! grep -qF 'when an earlier checkpoint, in store order, still holds a row' claude/skills/implement-v2-engine/SKILL.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "SKILL.md refuses --milestone past an earlier unfinished checkpoint"
+check = "grep -qF 'when an earlier checkpoint, in store order, still holds a row' claude/skills/implement-v2-engine/SKILL.md"
+at = "base"
+
+[specs.premises.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "update-the-drains-next-rule-lane-note-and-settle-pairing"
+outcome = "The drain continues by the schedule, explains why a concurrent elaboration does not trip its checks, and finds the fix milestone without relying on store adjacency."
+constraints = [
+    "Touch no file outside this task's files.",
+    "drain.md stays under 600 lines.",
+    "Run the cli::dispatch::tests subset after editing.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the settle drain no longer uses store adjacency"
+check = "! grep -qF 'the checkpoint that follows this one in store order' claude/skills/implement-v2-engine/references/apply-rows.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the Next rule no longer stops on any parked row"
+check = "! grep -qF 'nothing in the flow is parked, and `--milestone` was not given' claude/skills/implement-v2-engine/references/drain.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the report names the elaborate entry and the settle drain names the id pair"
+check = "grep -qF -- '--elaborate <id>' claude/skills/implement-v2-engine/references/drain.md && grep -qF 'id pair' claude/skills/implement-v2-engine/references/apply-rows.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "drain.md stays under the reference ceiling"
+check = "test $(wc -l < claude/skills/implement-v2-engine/references/drain.md) -lt 600"
+kind = "guard"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 0
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the Next rule stops on any parked row"
+check = "grep -qF 'nothing in the flow is parked, and `--milestone` was not given' claude/skills/implement-v2-engine/references/drain.md"
+at = "base"
+
+[specs.premises.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "order-apply-v2s-fix-milestone-with-after"
+outcome = "apply-v2's settle and fix milestones run in order by an explicit edge, and the user's choice about the plan's unfinished work is recorded the same way."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Run the cli::dispatch::tests subset after editing.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "apply-n is added after settle-n"
+check = "grep -qF -- '--after settle-<n>' claude/skills/apply-v2-engine/SKILL.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "apply-v2 adds apply-n with no ordering flag"
+check = """grep -qF -- "--id apply-<n> --goal 'Fix <finding ids> from <store>' --gate '<command>'" claude/skills/apply-v2-engine/SKILL.md"""
+at = "base"
+
+[specs.premises.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "write-the-elaboration-procedure-for-a-running-flow"
+outcome = "Elaborating a deferred milestone on a running flow follows one written procedure that keeps the milestone non-runnable until its cold read and probes have passed."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Every fenced tomlctl command names flags the CLI has, with single-token placeholders; run the cli::dispatch::tests subset after writing.",
+    "Under 600 lines; reference write-and-prove.md and open-and-challenge.md sections rather than restating them.",
+]
+premises = []
+means = []
+design = []
+precedent = [
+    "claude/skills/plan-v2-engine/references/write-and-prove.md",
+    "docs/flows/milestones-by-dependency/notes/elaboration-procedure.md",
+]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the procedure exists and flips only after the cold read"
+check = "test -f claude/skills/plan-v2-engine/references/elaborate.md && grep -qF 'elaborate:<id>' claude/skills/plan-v2-engine/references/elaborate.md && awk '/cold-read:<id>/ && !c {c=NR} /milestone update.*--elaborated/ && !e {e=NR} END {exit !(c && e && c < e)}' claude/skills/plan-v2-engine/references/elaborate.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the cold read excludes the running milestone's files"
+check = "test -f claude/skills/plan-v2-engine/references/elaborate.md && grep -qF -- '--exclude' claude/skills/plan-v2-engine/references/elaborate.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs]]
+ref = "wire-elaborate-into-plan-v2s-skill-re-entry-rule-and-carrier"
+outcome = "/plan-v2 <slug> --elaborate <id> reaches the owned procedure, and plan-v2 never closes another engine's run."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Run the cli::dispatch::tests subset after editing; the elaborate.md link must resolve.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the skill and carrier take --elaborate"
+check = "grep -qF -- '--elaborate <id>' claude/skills/plan-v2-engine/SKILL.md && grep -qF -- '--elaborate <id>' claude/commands/plan-v2.md && grep -qF 'references/elaborate.md' claude/skills/plan-v2-engine/SKILL.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "re-entry leaves implement runs alone"
+check = "grep -qF 'implement:' claude/skills/plan-v2-engine/references/open-and-challenge.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "open-and-challenge section 6 abandons any run from another session"
+check = "grep -qF 'for any run from another session' claude/skills/plan-v2-engine/references/open-and-challenge.md"
+at = "base"
+
+[specs.premises.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "teach-plan-v2-design-to-record-milestone-order-with-after"
+outcome = "A planner records intended milestone order explicitly and knows how a deferred milestone gets elaborated later."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Run the cli::dispatch::tests subset after editing.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "Design names --after and 4a names the warning"
+check = "grep -qF -- '--after <id>' claude/skills/plan-v2-engine/references/write-and-prove.md && grep -qF 'plan/milestone-order-unqualified' claude/skills/plan-v2-engine/references/write-and-prove.md && grep -qF 'elaborate.md' claude/skills/plan-v2-engine/references/write-and-prove.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "4c says a deferred milestone is read when elaborated"
+check = "grep -qF 'A deferred milestone is read when it is elaborated, not now.' claude/skills/plan-v2-engine/references/write-and-prove.md"
+at = "base"
+
+[specs.premises.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "update-claudemd-for-the-dependency-pick-and-elaborate"
+outcome = "The project instructions describe the dependency pick and the elaboration entry."
+constraints = ["Touch no file outside this task's files."]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "CLAUDE.md names the schedule and --elaborate"
+check = "grep -qF 'plan emit schedule' CLAUDE.md && grep -qF -- '--elaborate <id>' CLAUDE.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "CLAUDE.md says implement-v2 continues while nothing is parked"
+check = "grep -qF 'continues to the next milestone while nothing in the flow is parked' CLAUDE.md"
+at = "base"
+
+[specs.premises.probe]
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+neg_rc = 0
+verdict = "holds"
+
+[[milestones]]
+id = "A"
+gates = [
+    "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check",
+    "CARGO_INCREMENTAL=0 cargo clippy --workspace --locked --all-targets",
+    "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast",
+    "bash claude/skills/plan-v2-engine/scripts/fanout-check.test.sh",
+    "cargo install --path tomlctl --locked",
+]
+elaboration = "upfront"
+defer_reason = ""
+
+[[milestones.gate_probes]]
+gate = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+probe = "cargo nextest --version"
+verdict = "holds"
+at = "5aca3e7be8f169ba2b524edbb4e87b955e5b67da"
+
+[[items]]
+id = 1
+ref = "add-the-after-field-to-milestones-in-the-task-store"
+title = "Add the after field to milestones in the task store"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/tasks/snapshot.rs",
+    "tomlctl/src/plan/milestone.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add `after: Vec<String>` to MilestoneSpec, read and write it, and export it in the snapshot."
+detail = """In tomlctl/src/tasks/schema.rs add `pub(crate) after: Vec<String>` to `MilestoneSpec` after `gate_probes`. In `milestone_from_toml` read it with `lf_array(table, "after")`, as `gates` is read. In `milestone_to_toml` write the key `after` only when the list is not empty, the way `gate_probes` is written only when it holds an entry, so stores without it serialise byte for byte as before. Add `after: Vec::new()` at every other `MilestoneSpec { .. }` construction in schema.rs and in tomlctl/src/plan/milestone.rs (the `add` verb and the patch path), changing nothing else in milestone.rs. In tomlctl/src/tasks/snapshot.rs add `"after": milestone.after` to the milestone object beside `"gate_probes"`. Add one unit test in schema.rs's test module that round-trips a milestone with `after = ["A"]` and one without the key, asserting the second writes no `after` key."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 2
+ref = "set-after-with-plan-milestone-add-and-update"
+title = "Set after with plan milestone add and update"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/src/plan/milestone.rs",
+    "tomlctl/tests/plan_milestone.rs",
+]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "Add a repeatable `--after <ID>` to `plan milestone add` and `update`, and `--clear-after` to `update`."
+detail = 'In tomlctl/src/cli/types/plan.rs add to `PlanMilestoneAddArgs` and `PlanMilestoneUpdateArgs` a `#[arg(long = "after", value_name = "ID")] after: Vec<String>` with help "A milestone stored earlier that this one must run after; repeat for several". Add `#[arg(long = "clear-after", help = "Empty the after list; refused with --after")] clear_after: bool` to the update args only, as `--clear-gate` is. In tomlctl/src/plan/milestone.rs: on `add`, refuse an `--after` id that names no milestone already in `[[checkpoints]]` with "`--after <X>` names no milestone stored before `<ID>`", and store the list. On `update`, `--after` replaces the whole list and `--clear-after` empties it, carried through `MilestonePatch` and `patch_milestone`, the path every other field takes; refuse both flags together; refuse an id equal to the milestone itself or one not stored earlier in `[[checkpoints]]` with the same message; count either flag as a change in the nothing-to-update check; on an audited store push a change row with field `after` whose old and new values are JSON-encoded, as `gates` is (`json!(old).to_string()`). Do not add `after` to `REVIEW_FIELDS`. Tests in tomlctl/tests/plan_milestone.rs: add with `--after A` stores it; `--after` naming a later or unknown milestone is refused and writes nothing; update `--after` replaces, `--clear-after` empties, and the two together are refused.'
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 3
+ref = "compute-milestone-states-and-the-pick-in-one-tasks-module"
+title = "Compute milestone states and the pick in one tasks module"
+effort = "L"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/tasks/milestones.rs",
+    "tomlctl/src/tasks/mod.rs",
+]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "Write tasks/milestones.rs: the milestone graph from rows' needs and coupling plus `after`, each milestone's state, and the pick, per design/schedule.md."
+detail = "New module `tomlctl/src/tasks/milestones.rs`, registered in tomlctl/src/tasks/mod.rs as `pub(crate) mod milestones;`. It exposes `pub(crate) fn upstream(store: &Store) -> Result<BTreeMap<String, BTreeSet<String>>>`, each milestone id to the ids of its upstream milestones as design/schedule.md#upstream-milestones defines them, and `pub(crate) fn schedule(store: &Store, elaborating: &BTreeSet<String>) -> Result<Schedule>`, where `Schedule { pick: Option<String>, milestones: Vec<MilestoneState> }` and `MilestoneState { id, state: &'static str, on: Vec<String>, left: usize }`, following design/schedule.md#states and design/schedule.md#the-pick exactly. Walk row edges with the graph module's upward closure over `needs` and `coupling`, as `tasks closure --checkpoint` does for `dependency_closure`, mapping a `Graph::build` or closure error through `graph::refuse` as closure.rs does, and refusing an `after` id that names no stored milestone; a refusal stops the pick. Do not add milestone or commit state to graph.rs. Unit tests in the module, one `#[test]` each, at least these eleven: (1) A done, B deferred, C runnable, D needing B and C gives pick C and D waiting on B and C; (2) an `elaborating` id; (3) `after` holds a milestone with no row edge; (4) a started row holds every other milestone on it; (5) an unstamped milestone empties the pick; (6) a coupling edge makes a milestone upstream; (7) an empty milestone counts as satisfied; (8) a deferred milestone with no rows reads `deferred` and a milestone after it is `waiting`; (9) a milestone whose only unfinished row is parked and unstarted reads `parked` and the pick moves to the next runnable milestone; (10) a milestone whose unfinished rows are all row-status `deferred`, none started, reads `parked`; (11) a deferred milestone whose row needs a row of an unfinished earlier milestone reads `deferred` with that milestone in `on`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 4
+ref = "add-the-plan-emit-schedule-leaf"
+title = "Add the plan emit schedule leaf"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/schedule.rs",
+    "tomlctl/src/plan/mod.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/src/plan/emit.rs",
+]
+needs = [
+    2,
+    3,
+]
+coupling = []
+deps_note = ""
+action = "Add `tomlctl plan emit schedule --slug <slug>`, printing tasks::milestones::schedule over the task store with the open `elaborate:<id>` runs from plan.toml."
+detail = """New `tomlctl/src/plan/schedule.rs`, registered in tomlctl/src/plan/mod.rs as `mod schedule;`. Its `run(args)` resolves the flow, loads plan.toml with `store::load` and the task store with `load_store`, builds the elaborating set from `store::open_runs(&plan)` whose step starts with `elaborate:` (the id after the colon), calls `crate::tasks::milestones::schedule`, and prints one object with `print_json_line`, shaped as design/schedule.md#output: `{"pick": "<id>" or "", "milestones": [{"id","state","on","left"}]}`. In tomlctl/src/cli/types/plan.rs add `Schedule(PlanEmitScheduleArgs)` to `PlanEmitOp` with the doc comment "Print each milestone's state and the milestone /implement-v2 runs next", and `PlanEmitScheduleArgs { target: PlanTarget, integrity: ReadIntegrityArgs }` with the same attributes `PlanEmitGateListArgs` uses for those two fields. In tomlctl/src/plan/emit.rs add the dispatch arm `PlanEmitOp::Schedule(args) => super::schedule::run(args),`."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 5
+ref = "test-plan-emit-schedule-and-add-its-output-options-case"
+title = "Test plan emit schedule and add its output options case"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/tests/plan_emit.rs",
+    "tomlctl/tests/output_options.rs",
+]
+needs = [4]
+coupling = []
+deps_note = ""
+action = "Add integration tests for `plan emit schedule` to plan_emit.rs and its case to output_options.rs."
+detail = """In tomlctl/tests/plan_emit.rs, using the file's existing fixture helpers, add: a flow with milestones A (rows done and stamped), B (deferred), C (runnable, rows needing only A) and D (rows needing B and C) prints `pick` C, B `deferred`, D `waiting` with `on` ["B","C"]; with an open `plan run start --step elaborate:B` B reads `elaborating`; `plan milestone update --id C --after B` makes C `waiting` and the pick empty. In tomlctl/tests/output_options.rs add a `read(&["plan","emit","schedule","--slug",PLAN_SLUG], One, "pick")` entry beside the `lane-check` entry, following its shape."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 6
+ref = "check-after-edges-and-unqualified-milestone-order-in-plan-check"
+title = "Check after edges and unqualified milestone order in plan check"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/tests/plan_check.rs",
+]
+needs = [3]
+coupling = []
+deps_note = ""
+action = "Add `plan/milestone-after-unknown` and `plan/milestone-after-forward` (errors), `plan/milestone-order-unqualified` (warning, before approval), and stop milestone-width naming a deferred target."
+detail = """In tomlctl/src/plan/check.rs, beside `milestone_findings`: `plan/milestone-after-unknown`, ERROR, for an `after` id naming no checkpoint; `plan/milestone-after-forward`, ERROR, for an `after` id naming the milestone itself or one stored at or after it in `[[checkpoints]]`. Before approval only, inside the existing `if plan.approvals.is_empty()` block, `plan/milestone-order-unqualified`, WARNING: for each milestone M after the first, the earlier milestones that are not in M's transitive upstream set from `crate::tasks::milestones::upstream`, one finding per M, detail "milestone `M` does not depend on `X`, `Y`, so /implement-v2 may run it first; add `--after <id>` to M where the earlier one must go first", ids empty. In `milestone_width_findings`, when the computed target index names a deferred milestone, move the target to the next non-deferred milestone after it, or skip the row when none is earlier than its own. Tests in tomlctl/tests/plan_check.rs for each class and the width change."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 7
+ref = "scope-plan-check-to-a-milestone-with-milestone"
+title = "Scope plan check to a milestone with --milestone"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/tests/plan_check.rs",
+]
+needs = [
+    4,
+    6,
+]
+coupling = []
+deps_note = ""
+action = "Add `plan check --milestone <ID>`, keeping only findings that touch the milestone's rows or its upstream milestones' rows, or name no task."
+detail = """Add `#[arg(long = "milestone", value_name = "ID", help = "Report only findings on this milestone's rows, its upstream milestones' rows, and findings naming no task")] milestone: Option<String>` to `PlanCheckArgs` in tomlctl/src/cli/types/plan.rs. In tomlctl/src/plan/check.rs `run`: with `--milestone`, refuse an id naming no checkpoint; compute the row set as the milestone's rows plus the rows of every milestone in its transitive upstream set from `crate::tasks::milestones::upstream`; keep a finding when its `ids` is empty, shares an id with that set, or names an id no row of the store carries (an absent id belongs to no milestone, so it is never another milestone's half-written row); always keep `plan/handover-incomplete` and `plan/handover-task-unknown` findings and the `dag/*` and `checkpoint/invalid-cut` classes, whatever their ids; compute `ok` and the exit status from the kept findings only. Leave `findings()` unchanged, since plan stage reads it. Tests in tomlctl/tests/plan_check.rs: a row of a deferred milestone with no spec fails the flow-wide check but not `--milestone` of an independent milestone, and does fail `--milestone` of a milestone downstream of it; a contract naming a removed task fails `--milestone` of an independent milestone; an incomplete handover sourced in a done independent milestone fails `--milestone` of another; an unknown id is refused."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 8
+ref = "require-a-commit-stamp-on-needs-outside-the-launched-milestone"
+title = "Require a commit stamp on needs outside the launched milestone"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/emit.rs",
+    "tomlctl/tests/plan_emit.rs",
+]
+needs = [
+    4,
+    5,
+]
+coupling = []
+deps_note = ""
+action = "In launch-args, drop a row whose need outside the milestone is done but unstamped, with reason `need-not-committed:<task>`."
+detail = "In `stranded` in tomlctl/src/plan/emit.rs, for each need: when the need's row is in the launched milestone, keep today's test (done or dispatched). When it is in another milestone, the need is met only when its status is `done` and its `commit` is not empty; a done but unstamped need returns `need-not-committed:<need>`, and any other status keeps `need-not-done:<need>:<status>`. Add a test in tomlctl/tests/plan_emit.rs: a need in another milestone, done with an empty commit, drops the row with `need-not-committed`, and the same need stamped lets it launch."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 9
+ref = "keep-milestone-scoped-planning-runs-out-of-plan-stage-blockers"
+title = "Keep milestone-scoped planning runs out of plan stage blockers"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/stage.rs",
+    "tomlctl/tests/plan_stage.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "After approval, list open `elaborate:<id>` and `cold-read:<id>` runs in `open_runs` but not in `blockers`, and do not point `next` at them."
+detail = "In tomlctl/src/plan/stage.rs `run`: when the plan has an approval, split `store::open_runs(&plan)` into milestone-scoped planning runs, whose step starts with `elaborate:` or `cold-read:`, and the rest. Pass only the rest to `with_open_runs`, so only they become blockers and the `relaunch_or_abandon` hint; keep every open run's step in the printed `open_runs`. Before approval nothing changes. Tests in tomlctl/tests/plan_stage.rs: on an approved plan an open `elaborate:B` run appears in `open_runs`, not in `blockers`, and `next` is the stage's own hint; an open `implement:A` run still blocks; before approval an open `cold-read` run still blocks."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 10
+ref = "leave-a-deferred-milestones-records-out-of-the-lane-check"
+title = "Leave a deferred milestone's records out of the lane check"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/src/plan/lane.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Exclude from the store digest and the trail every record owned by a milestone deferred when the run's window opened."
+detail = "In tomlctl/src/plan/lane.rs compute the excluded milestones from the store itself, so the run row needs no new field: milestones whose `elaboration` is `deferred` now, plus milestones whose `[[changes]]` trail holds an `elaboration` change stamped inside the window (at or after its open). In `store_digest`, before hashing, drop from the projection every row whose `checkpoint` is excluded, the specs of those rows, the `file_notes`, `backlog_links` and `finding_links` entries keyed by those rows' refs, the excluded ids' `[[checkpoints]]` and `[[milestones]]` entries, and the trail rows on any of those. In `trail_writes`, skip trail rows on those rows or on an excluded milestone. Read how `plan milestone update` and `tasks add-many`/`update` key their trail rows before writing the filter. `store_digest`'s signature stays, since plan emit launch-args and plan run start call it. Add unit tests in the module's tests: an elaboration that adds rows to a deferred milestone, one carrying a file note and a backlog close, updates their specs and flips the milestone to elaborated inside the window leaves the digest unchanged and no trail write; a write to a row of the running milestone's beyond status and agent is still reported."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 11
+ref = "let-the-fan-out-check-exclude-paths-and-tolerate-commits-to-them"
+title = "Let the fan-out check exclude paths and tolerate commits to them"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/plan-v2-engine/scripts/fanout-check.sh",
+    "claude/skills/plan-v2-engine/scripts/fanout-check.test.sh",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add repeatable `--exclude <path>` to fanout-check.sh and accept a HEAD move whose commits touch only excluded paths or the flow's directories; add a test script."
+detail = "Usage becomes `fanout-check.sh snapshot|check <scratch-dir> <slug> [--exclude <path>]... <note-path>...`. Each `--exclude` path passes the same refusal rules as a note path and adds a `:(exclude)<path>` pathspec. At snapshot, write the excludes to `<scratch-dir>/excludes.txt`; at check, exit 3 when the excludes differ from the snapshot's. Only when at least one `--exclude` is given: `.claude/backlog.toml` and `.claude/backlog.toml.sha256` are excluded from the status, diff and untracked captures too, since an implement-v2 drain writes and commits them; and a HEAD move is tolerated when `git merge-base --is-ancestor <before> HEAD` holds and every path `git diff --name-only <before> HEAD` lists lies under an excluded path, a note path, `.claude/flows/<slug>/`, `docs/flows/<slug>/notes/run/` or the backlog store; any other move reports `head changed` as today. The config comparison still runs first, and a run with no `--exclude` behaves exactly as today. New `fanout-check.test.sh` beside it: in a fresh repo under `mktemp -d`, cover (1) an edit to an excluded file passes, (2) a commit touching only an excluded file passes, (3) an edit to any other file exits 1, (4) a commit touching another file exits 1, (5) a config change exits 2, (6) no `--exclude` with an edit exits 1, (7) with `--exclude`, a commit touching only `.claude/backlog.toml` passes, (8) a rewind of HEAD past a commit that touched another file exits 1, (9) no `--exclude` and a commit touching only `.claude/flows/<slug>/` exits 1 with `head changed`; print one line per case and exit non-zero on any wrong result. Run it with `bash claude/skills/plan-v2-engine/scripts/fanout-check.test.sh`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 12
+ref = "advertise-the-milestone_schedule-capability"
+title = "Advertise the milestone_schedule capability"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/README.md",
+    "claude/commands/implement-v2.md",
+]
+needs = [
+    2,
+    4,
+    7,
+    8,
+    9,
+    10,
+    13,
+]
+coupling = []
+deps_note = ""
+action = "Add the `milestone_schedule` feature to FEATURES, its test, the README sample and table, and the implement-v2 carrier's pre-flight list."
+detail = """Add "milestone_schedule" after "plan_emit_lane_check" in `FEATURES` in tomlctl/src/cli/types/mod.rs and in the expected list in tomlctl/tests/capabilities.rs. In tomlctl/README.md add it to the sample block beside `plan_emit_lane_check` and a feature-table row: "`plan emit schedule --slug <SLUG>` prints each milestone's state and the milestone /implement-v2 runs next; `plan milestone add|update --after <ID>` and `update --clear-after` order a milestone after an earlier one; `plan check --milestone <ID>` keeps findings on that milestone and its upstream rows; after approval `plan stage` keeps open `elaborate:<id>` and `cold-read:<id>` runs out of `blockers`; `plan emit launch-args` drops `need-not-committed:<task>`; the lane check leaves out milestones deferred when the run opened". In claude/commands/implement-v2.md add `milestone_schedule` to the pre-flight feature list after `plan_emit_lane_check`, add "pick a milestone by its dependencies" to the sentence's list of what a stale binary cannot do, and reword the `--milestone <id>` Bindings row to run that milestone in place of the schedule's pick, not "the first milestone with a row not done"."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 13
+ref = "document-the-schedule-surface-in-the-tomlctl-references"
+title = "Document the schedule surface in the tomlctl references"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/tomlctl/references/plan.md",
+    "claude/skills/tomlctl/references/plan-engine.md",
+    "claude/skills/tomlctl/references/tasks-store.md",
+    "claude/skills/tomlctl/SKILL.md",
+    "claude/skills/flow-contract-task-store/SKILL.md",
+]
+needs = [
+    2,
+    4,
+    7,
+    8,
+    9,
+    10,
+]
+coupling = []
+deps_note = ""
+action = "Add the new flags, leaf, classes, dropped reason and stage behaviour to the tomlctl references."
+detail = """plan.md: rows for `--after <ID>` (add, update) and `--clear-after` (update) in the milestone flag tables; the `plan check` section (near plan.md:329) has a command block and prose but no flag table, so add a small flag table there with `--milestone <ID>`; rows for `plan/milestone-after-unknown` (error), `plan/milestone-after-forward` (error) and `plan/milestone-order-unqualified` (warning) in the check-class table, each with when it fires and the verb that clears it; reword the `plan/milestone-width` row (near plan.md:542) so its target skips a deferred milestone. plan-engine.md: qualify the `plan stage` open-run paragraph (near plan-engine.md:61-67): after approval an open `elaborate:<id>` or `cold-read:<id>` run stays in `open_runs`, adds no `open run:` blocker and does not set `next`; a `plan emit schedule` section with its flags and output keys, copying the states table of docs/flows/milestones-by-dependency/design/schedule.md (not a link); a `need-not-committed:<task>` row in launch-args' dropped reasons; one sentence under lane-check that rows, specs, file notes, backlog and finding links and trail rows of a milestone deferred at the window's open are left out. tasks-store.md: the `after` key on `[[milestones]]`, and `after` in the snapshot's milestone field list (near tasks-store.md:256). SKILL.md: add `schedule` to the `plan emit` leaves in the Quick Reference row "Build a v2 milestone's Workflow args...". claude/skills/flow-contract-task-store/SKILL.md: add `after` (earlier milestone ids this one runs after; set by `plan milestone add|update --after`) to the `[[milestones]]` bullet in section 1a beside `gates`, `elaboration` and `defer_reason`, and an `after = []` line to that section's example `[[milestones]]` block. plan.md must stay under 600 lines."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 14
+ref = "pick-the-milestone-from-plan-emit-schedule-in-run-milestone"
+title = "Pick the milestone from plan emit schedule in run-milestone"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/implement-v2-engine/references/run-milestone.md"]
+needs = [
+    4,
+    7,
+    8,
+    9,
+    13,
+]
+coupling = []
+deps_note = ""
+action = "Rewrite run-milestone.md sections 1 and 2 so the pick comes from `plan emit schedule` and the store check runs scoped to the pick."
+detail = """Section 1, The stage: an `open_runs` entry `elaborate:<id>` or `cold-read:<id>` is a plan-v2 elaboration in progress, left alone and never settled here; it owns no task rows, so it does not count as an open run for the stale `in-progress` reset either. Section 1, The stores: remove the flow-wide `plan check` and `tasks check`; they move into section 2. Section 2: replace the store-order walk with `tomlctl plan emit schedule --slug <slug>`, read with `--get pick` and `--rows milestones`. Before taking the pick, re-ask the parked rows of each milestone the schedule reports `parked`, by drain.md's "Parked rows at the next invocation", as if it were about to run, then read the schedule again. An empty pick with an `unstamped` milestone goes to the skill's Re-entry stamping; an empty pick otherwise ends the invocation with the report, naming each `deferred` milestone (with `/plan-v2 <slug> --elaborate <id>` when its `on` is empty), each `elaborating` one, each `parked` one, and each `waiting` one with its `on`. A deferred milestone is never picked and never stops the engine. `--milestone <id>` is taken when that milestone's state is `runnable`, or it is the pick, and refused naming its state otherwise. After the pick, run `tomlctl plan check --slug <slug> --milestone <id>` and stop on an error-class finding, as the stores check did; this runs on every pick, a continuation included. Remove the old deferred-stop subsection's stop. In the dropped table add `need-not-committed:<task>` (a need in another milestone is done but has no commit stamp; the drain reports it) and reword `need-not-done` without "the milestone cut is wrong". Keep sections 3 and 4 otherwise as they are."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 15
+ref = "update-the-implement-v2-engine-contract-for-the-dependency-pick"
+title = "Update the implement-v2 engine contract for the dependency pick"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/implement-v2-engine/SKILL.md"]
+needs = [
+    4,
+    13,
+]
+coupling = []
+deps_note = ""
+action = "Change SKILL.md's --milestone rule, continuation, Out of scope deferred line, open-run rule and parked rule to the dependency pick."
+detail = """Line 10 and the loop paragraph after the step table: the engine continues while `plan emit schedule` names a pick. Arguments, `--milestone <id>`: taken when the schedule reports it `runnable` or as the pick; refused naming its state otherwise, which covers an upstream milestone not done and a deferred one. Out of scope, "A deferred milestone": it is skipped and reported, and `/plan-v2 <slug> --elaborate <id>` elaborates it. Re-entry's opening sentence: settle "after the pre-flight's stage check", and name the scoped `plan check --milestone <id>` as running after the pick. Re-entry, the open-run rule: an open `elaborate:<id>` or `cold-read:<id>` run belongs to a plan-v2 elaboration; leave it alone, neither abandon nor wait on it. Unstamped milestones: replace "the pick step passes it over, since every row is `done`" and the per-checkpoint confirmation with the schedule's `unstamped` state, which empties the pick until the milestone is settled. Parked rows: the parked rows of every milestone the schedule reports `parked` are re-asked before the pick, not only those of the milestone about to run; a row the user leaves parked holds its own milestone and the milestones downstream of it; when a worker had started it, the schedule holds every milestone on it."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 16
+ref = "update-the-drains-next-rule-lane-note-and-settle-pairing"
+title = "Update the drain's Next rule, lane note and settle pairing"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "claude/skills/implement-v2-engine/references/apply-rows.md",
+]
+needs = [
+    4,
+    10,
+    13,
+]
+coupling = []
+deps_note = ""
+action = "Make drain.md's Next rule follow the schedule, note the lane and flow-store behaviour under a concurrent elaboration, and name the fix milestone by its id pair in apply-rows.md."
+detail = """drain.md, Next: go to run-milestone step 2 when this milestone was committed and `--milestone` was not given; step 2's schedule decides whether anything runs, so a parked row no longer stops the engine by itself. drain.md, step 3, "### The lane check" (near drain.md:61): one sentence that rows, specs and trail rows of a milestone deferred when the run opened are left out, so a second session's elaboration is not reported. drain.md, the flow-store commit: one sentence that it may stage another session's elaboration writes, which stay non-runnable because that milestone stays deferred until its elaboration's last write. drain.md, step 11, the report's last line: name the schedule's pick when there is one, and each deferred milestone with `/plan-v2 <slug> --elaborate <id>`, instead of "the next milestone when one is pending". drain.md, "Parked rows at the next invocation": it runs for each milestone the schedule reports `parked`, before the pick, as well as for the milestone about to run. drain.md is at 586 lines and must stay under 600: make each change by replacing sentences, not adding paragraphs. apply-rows.md, Settle drain step 5: the fix milestone is `apply-<n>`, the id pair of this `settle-<n>`, ordered after it by its `after`; drop "the checkpoint that follows this one in store order" and the checkpoints listing, keep the `review schedule --checkpoint <fix id>` call, and replace "When no checkpoint follows this one, schedule nothing" with "When the flow holds no `apply-<n>` checkpoint, schedule nothing", keeping its report clause."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 17
+ref = "order-apply-v2s-fix-milestone-with-after"
+title = "Order apply-v2's fix milestone with after"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/apply-v2-engine/SKILL.md"]
+needs = [
+    2,
+    13,
+]
+coupling = []
+deps_note = ""
+action = "Add `--after settle-<n>` to the apply-<n> milestone add, and carry out step 2's run-the-plan-first answer with `--after`."
+detail = """In the settle milestone section, the `apply-<n>` add line gains `--after settle-<n>`, and the sentence after it says the fix milestone runs after its settle milestone by that edge. Step 2's question (the paragraph beginning "When it prints any row"): the execution engine now runs any milestone its schedule allows, so the fix milestone can run before the plan's unfinished milestones when nothing orders it. Ask with AskUserQuestion: run the plan's unfinished work first, which adds `--after <id>` for each unfinished milestone to the fix milestone's add (and to `settle-<n>` when there is one); let the fixes run as soon as they can; or stop. Step 9 ("### 9. Run"): rewrite its paragraph, which states the store-order pick and that the user agreed at step 2 to plan work running first, so it says the engine runs milestones in its schedule's order and plan work comes first only when step 2's answer added `--after`."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 18
+ref = "write-the-elaboration-procedure-for-a-running-flow"
+title = "Write the elaboration procedure for a running flow"
+effort = "L"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/plan-v2-engine/references/elaborate.md"]
+needs = [
+    4,
+    7,
+    9,
+    11,
+    13,
+]
+coupling = []
+deps_note = ""
+action = "Write plan-v2-engine/references/elaborate.md: elaborating a deferred milestone on an approved or running flow, ending with --elaborated as the last store write."
+detail = """The procedure, for `/plan-v2 <slug> --elaborate <id>`, in this order. (1) Preconditions: `tomlctl plan emit schedule --slug <slug>` reports `<id>` `deferred` (refuse `elaborating`: another session holds it; ask before abandoning that run); an `on` that is not empty is put to the user, since its upstream has not built yet. Record `tomlctl plan run start --slug <slug> --step elaborate:<id> --session "$CLAUDE_CODE_SESSION_ID"` before any write. Read the defer reason, the brief, the notes and what the upstream milestones built. (2) Surface and decide: the three Surface tests from open-and-challenge.md section 5, the survivors in ONE AskUserQuestion call, `plan decide` rows, `design/<name>.md` only where a row needs prose. (3) Revise rows: `tasks add-many` with `needs` only on existing ids of this milestone or of milestones stored before it, and a `reason` on every row; a row that would need a later-stored milestone means the plan's order is wrong, so stop and put it to the user rather than write it, since `checkpoint/invalid-cut` would refuse it; `tasks update --ndjson` with `action`, `detail`, `title` and `checkpoint` under `[record.set]`, `spec` top-level and `reason` on every row (show one record of this shape); then `set.needs` edges by printed ids, decision binds and contract tasks, and the renamed-names sweep of write-and-prove.md 4a. (4) Prove while still deferred: `tomlctl plan check --slug <slug> --milestone <id>`; premises with `--milestone <id>`; the cold read through `plan-v2-prove` for this milestone only, recorded as step `cold-read:<id>`, deleting `notes/cold-read-<id>.md` first; the fan-out snapshot and check pass `--exclude` for each file of the rows of every milestone the schedule reports neither `done`, `empty`, `deferred` nor `elaborating`, for `docs/flows/<slug>/notes/run`, and, when the flow has `[[finding_links]]`, for the review stores they name, so a live /implement-v2 run, even one that moves to its next milestone during the read, does not trip it (user decision D2; the script itself tolerates the backlog store); apply the cold read's points; accept probes and gate probes with `--milestone <id>`. (5) Flip: `tomlctl plan milestone update --slug <slug> --id <id> --elaborated --reason '<what landed>'` as the last tasks.toml write, then `plan check --milestone <id>` once more. (6) `plan run finish --step elaborate:<id> --outcome ok`, then commit once, staging by name plan.toml, tasks.toml, both sidecars, the design files and the cold-read note, through commit-conventions; list the agent-assumed decisions in the close. Say that a flow-store commit from a concurrent /implement-v2 may sweep this session's rows in, which is safe because the milestone stays deferred until (5) (user decision D1). Abandon rule: an `elaborate:<id>` run from another session is asked about, never abandoned silently."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 19
+ref = "wire-elaborate-into-plan-v2s-skill-re-entry-rule-and-carrier"
+title = "Wire --elaborate into plan-v2's skill, re-entry rule and carrier"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/plan-v2-engine/SKILL.md",
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md",
+    "claude/commands/plan-v2.md",
+]
+needs = [
+    12,
+    18,
+]
+coupling = []
+deps_note = ""
+action = "Add the --elaborate argument to plan-v2-engine and its carrier, and stop plan-v2 re-entry abandoning implement-v2's runs."
+detail = """SKILL.md, Arguments: `--elaborate <id>` with a slug runs references/elaborate.md for that milestone of an approved or running plan and nothing else; refused on a plan not yet approved, whose Write and Prove steps cover every milestone. Add elaborate.md to the references list. Re-entry, the open-run rule: never abandon or relaunch an `implement:` or `reproduce:` run, which belong to /implement-v2; an `elaborate:<id>` or `cold-read:<id>` run from another session is asked about through AskUserQuestion, never abandoned silently. open-and-challenge.md section 6, "Otherwise abandon": make the same exception in its sentence about runs from another session. claude/commands/plan-v2.md: a Bindings row `--elaborate <id>` ("Elaborates that deferred milestone of an approved plan; the engine's Arguments section"), `[--elaborate <id>]` in the `argument-hint` frontmatter beside the other flags, and `milestone_schedule` in pre-flight step 2's feature check beside `review_apply`."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 20
+ref = "teach-plan-v2-design-to-record-milestone-order-with-after"
+title = "Teach plan-v2 Design to record milestone order with after"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/plan-v2-engine/references/write-and-prove.md"]
+needs = [
+    6,
+    13,
+    18,
+]
+coupling = []
+deps_note = ""
+action = "Add after guidance to Design's milestones, the order warning to 4a, and the elaboration pointer to 4c."
+detail = """Design, after "How many": milestones run in any order their dependencies allow, store order only breaking ties; when one milestone must run after another that none of its rows needs, such as a risk-first order, a handover or install that must land first, or a change to the build environment, add `--after <id>` to the later milestone's `milestone add`. A deferred milestone is stored after every milestone whose output its elaboration may read, and gets `--after <id>` on each such milestone none of its rows already needs: after approval its new rows may need only milestones stored before it, no verb reorders milestones, and the schedule reports it ready to elaborate only from its recorded edges. 4a: a `plan/milestone-order-unqualified` warning names milestones that could run before an earlier one; add `--after` where the order matters, otherwise leave it. 4c, "Which milestones": a deferred milestone is cold-read when it is elaborated, by references/elaborate.md. Keep under 600 lines."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 21
+ref = "update-claudemd-for-the-dependency-pick-and-elaborate"
+title = "Update CLAUDE.md for the dependency pick and --elaborate"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["CLAUDE.md"]
+needs = [12]
+coupling = []
+deps_note = ""
+action = "Update CLAUDE.md's Implement v2 and Planning v2 sections."
+detail = """Implement v2: replace "continues to the next milestone while nothing in the flow is parked" with: milestones run in the order `tomlctl plan emit schedule` allows (each one's outside needs and `after` done and committed, store order breaking ties); a deferred milestone is skipped and reported. Add `milestone_schedule` to the Deploy bullet's list of what the carrier's pre-flight refuses. Planning v2: one sentence that `/plan-v2 <slug> --elaborate <id>` elaborates a deferred milestone of an approved plan, in a second session if /implement-v2 is running."""
+acceptance = ""
+agent = ""
+commit = ""
