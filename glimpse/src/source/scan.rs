@@ -75,24 +75,26 @@ pub(super) fn authored_dir(root: &Path, slug: &str) -> PathBuf {
     root.join("docs").join("flows").join(slug)
 }
 
-/// The stat of every `.md` file under `dir`, recursively; a missing `dir` holds none. A linked
-/// directory is not descended, so a link cycle cannot loop the walk.
+/// The stat of every file `tomlctl::authored_list` can list under `dir`: `brief.md`, and the
+/// `.md` files directly in `design`, `notes`, `notes/run` and `notes/settle`. A missing
+/// directory holds none, and no other subdirectory is walked.
 fn markdown_stats(dir: &Path) -> BTreeMap<PathBuf, FileStat> {
     let mut stats = BTreeMap::new();
-    let mut pending = vec![dir.to_path_buf()];
-    while let Some(dir) = pending.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else {
+    let brief = dir.join("brief.md");
+    if brief.is_file() {
+        let current = stat(&brief);
+        stats.insert(brief, current);
+    }
+    for sub in ["design", "notes", "notes/run", "notes/settle"] {
+        let Ok(entries) = std::fs::read_dir(dir.join(sub)) else {
             continue;
         };
         for entry in entries.filter_map(Result::ok) {
             let path = entry.path();
-            match entry.file_type() {
-                Ok(kind) if kind.is_dir() => pending.push(path),
-                Ok(_) if path.extension().is_some_and(|ext| ext == "md") => {
-                    let current = stat(&path);
-                    stats.insert(path, current);
-                }
-                _ => {}
+            let is_dir = entry.file_type().is_ok_and(|kind| kind.is_dir());
+            if !is_dir && path.extension().is_some_and(|ext| ext == "md") {
+                let current = stat(&path);
+                stats.insert(path, current);
             }
         }
     }
@@ -670,7 +672,7 @@ pub(super) mod tests {
     }
 
     #[test]
-    fn the_stat_of_authored_files_covers_every_markdown_file_and_nothing_else() {
+    fn the_stat_of_authored_files_covers_only_the_listed_markdown_files() {
         let root = temp_root("authored-stat");
         let feed = Feed::Authored { slug: "f".into() };
         assert_eq!(
@@ -684,6 +686,10 @@ pub(super) mod tests {
         std::fs::write(dir.join("brief.md"), "# Brief\n").expect("brief");
         std::fs::write(run.join("task-1.md"), "Status: done\n").expect("run note");
         std::fs::write(dir.join("notes").join("scratch.txt"), "x").expect("scratch");
+        let unlisted = dir.join("scratch");
+        std::fs::create_dir_all(&unlisted).expect("unlisted dir");
+        std::fs::write(unlisted.join("skipped.md"), "x").expect("unlisted note");
+        std::fs::write(dir.join("loose.md"), "x").expect("loose");
         let FeedStat::Tree(stats) = feed_stat(&root, &feed) else {
             panic!("a tree");
         };
