@@ -6,8 +6,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::common;
-use crate::plan_approve::committed_fixture;
-use common::{git_command, parse_json_error_envelope};
+use common::{committed_fixture, git_command, parse_json_error_envelope};
 
 const SLUG: &str = "plan-drift";
 
