@@ -13,7 +13,14 @@ use crate::theme::sets;
 const TITLE: &str = " themes ";
 
 /// Status words drawn in the previewed theme.
-const SAMPLE: [&str; 5] = ["pending", "in-progress", "done", "failed", "deferred"];
+const SAMPLE: [&str; 6] = [
+    "pending",
+    "in-progress",
+    "done",
+    "failed",
+    "deferred",
+    "parked",
+];
 
 fn row(app: &App, i: usize, name: &str) -> Line<'static> {
     let at_cursor = app.theme_picker.as_ref().is_some_and(|p| p.cursor == i);
@@ -123,6 +130,9 @@ mod tests {
         assert!(text.contains("▸ ") && text.contains("ansi"), "{text}");
         assert!(text.contains("● kanso-zen"), "current set marked: {text}");
         assert!(text.contains("in-progress"), "sample chips: {text}");
+        for status in SAMPLE {
+            assert!(text.contains(status), "{status} sampled: {text}");
+        }
         assert!(
             text.contains("▷ ready □ held ○ blocked ◷ waiting"),
             "frontier sample: {text}"

@@ -293,8 +293,9 @@ fn lines(theme: &Theme) -> Vec<Line<'static>> {
             Span::styled("◐", theme.input_acknowledged),
             Span::styled("✓", theme.input_handled),
             Span::styled("✗", theme.secondary),
+            Span::styled(TaskStatus::Parked.glyph(), theme.status("parked")),
         ],
-        "inbox: question, new, acknowledged, handled, withdrawn",
+        "inbox: question, new, acknowledged, handled, withdrawn, needs-you parked",
     ));
 
     heading(&mut out, "Keys");
@@ -492,13 +493,17 @@ mod tests {
             ]
         );
         assert_eq!(
-            samples("inbox: question, new, acknowledged, handled, withdrawn"),
+            samples("inbox: question, new, acknowledged, handled, withdrawn, needs-you parked"),
             [
                 ("?".to_string(), theme.question),
                 ("●".to_string(), theme.input_new),
                 ("◐".to_string(), theme.input_acknowledged),
                 ("✓".to_string(), theme.input_handled),
                 ("✗".to_string(), theme.secondary),
+                (
+                    TaskStatus::Parked.glyph().to_string(),
+                    theme.status("parked")
+                ),
             ]
         );
     }
