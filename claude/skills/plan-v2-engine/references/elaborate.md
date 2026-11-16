@@ -239,7 +239,7 @@ tomlctl plan view --slug <slug> --for digest --select stage_inputs.runs
 ```
 
 - **This session's own run** resumes where the store stands: decisions recorded, rows written, a `cold-read:<id>` row open or closed, probe verdicts recorded, the milestone's `elaboration`. Each section above re-runs safely from its start; skip what the store shows done.
-- **An open `cold-read:<id>` run** follows write-and-prove's "Relaunch" rule, with two differences: the args file is `<scratch>/elaborate-prove-args.json`, and HEAD may differ from that launch's `head-before.txt` when the fan-out check against that launch's snapshot, with its exact arguments, exits 0. Otherwise abandon it with `tomlctl plan run abandon --slug <slug> --step cold-read:<id> --reason '<why>'`, delete the note unless it opens `Verdict:` and no row changed since, and launch afresh.
+- **An open `cold-read:<id>` run** follows write-and-prove's "Relaunch" rule, with `<scratch>/elaborate-prove-args.json` as the args file. Because this launch's snapshot took the excludes, its fan-out check lets HEAD move through another session's milestone and flow-store commits. Otherwise abandon it with `tomlctl plan run abandon --slug <slug> --step cold-read:<id> --reason '<why>'`, delete the note unless it opens `Verdict:` and no row changed since, and launch afresh.
 - **Another session's run** is never abandoned silently. Ask the user through `AskUserQuestion` whether that session is still working, with leaving it as the default. Only on the user's answer that it is dead, abandon both of its rows and start afresh from section 1:
 
 ```bash

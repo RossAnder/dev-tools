@@ -343,7 +343,7 @@ Then re-run `plan check` as in 4a.
 
 - the open row's `session` is this session's `CLAUDE_CODE_SESSION_ID`, and the run is no longer live; a run still live is waited for, or stopped with `TaskStop` and the launch's `taskId`;
 - `<scratch>/prove-args.json` still exists and its hash, `sha256sum <scratch>/prove-args.json | cut -d' ' -f1`, equals the open row's `args_hash`, read from `tomlctl plan view --slug <slug> --for digest --select stage_inputs.runs`; a row with an empty `args_hash` is abandoned;
-- nothing a prompt points at has changed since launch: `git rev-parse HEAD` equals `<scratch>/fanout-cold-read/head-before.txt`, `fanout-check.sh check` against that launch's snapshot, with its arguments, exits 0, and no `tasks` or `plan` write other than the run's own records has landed since.
+- nothing a prompt points at has changed since launch: `fanout-check.sh check` against that launch's snapshot, with its exact arguments, exits 0, and no `tasks` or `plan` write other than the run's own records has landed since. The check fails on any HEAD move unless the snapshot took `--exclude` paths and every commit since touches only the paths those tolerate, so it is the one HEAD test.
 
 Otherwise abandon the run, keep every cold-read note that opens `Verdict:` and whose milestone has not changed since, delete the rest and launch afresh for those milestones:
 
