@@ -1,0 +1,2901 @@
+schema_version = 1
+last_updated = 2026-11-17
+
+[id_high_water]
+U = 1
+
+[[runs]]
+id = "U1"
+command = "review-plan-v2"
+family = "plan"
+depth = "standard"
+started = "2026-11-17T12:01:06Z"
+finished = "2026-11-17T12:31:24Z"
+base = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+scope = [
+    "docs/flows/v2-ui-fidelity/brief.md",
+    "docs/flows/v2-ui-fidelity/design/*.md",
+]
+substrate = "workflow"
+agents = 32
+
+[runs.models]
+surveyor = "haiku"
+sweeper = "haiku"
+checker = "haiku"
+finder = "opus"
+finder-cf = "opus"
+verifier = "opus"
+executor = "opus"
+lead = "opus"
+
+[runs.catalogue]
+project = ".claude/review-lenses"
+tree_sha = "21ebe8ee87dbd10e663580aa488c38b2c76a04561cc3cf234758424eb48b880f"
+config_sha = "43eed0e78dc0dd0c218061c5c3815a24759d33c893287e7aeb2feb5b593f9463"
+
+[[runs.signals]]
+name = "lang:rust"
+source = "detector"
+roots = [
+    ".",
+    "glimpse",
+    "lumina",
+    "lumina/companion",
+    "lumina/core",
+    "lumina/protocol",
+    "lumina/server",
+    "statusline",
+    "tomlctl",
+]
+
+[[runs.signals]]
+name = "lang:ts"
+source = "detector"
+roots = ["lumina/web"]
+
+[[runs.signals]]
+name = "framework:vue"
+source = "detector"
+roots = ["lumina/web"]
+
+[[runs.signals]]
+name = "runtime:tokio"
+source = "detector"
+roots = [
+    "lumina/companion",
+    "lumina/core",
+    "lumina/server",
+]
+
+[[runs.signals]]
+name = "db:sqlx"
+source = "detector"
+roots = [
+    "lumina",
+    "lumina/core",
+    "lumina/server",
+]
+
+[[runs.signals]]
+name = "harness:claude"
+source = "detector"
+roots = [
+    ".claude/skills/adopt-flow-registry",
+    ".claude/skills/testing-discipline",
+    "claude/agents",
+    "claude/commands",
+    "claude/plugins/lumina-story-blocks/skills/acceptance-criteria",
+    "claude/plugins/lumina-story-blocks/skills/alternatives",
+    "claude/plugins/lumina-story-blocks/skills/approach",
+    "claude/plugins/lumina-story-blocks/skills/closure-gate",
+    "claude/plugins/lumina-story-blocks/skills/compose-sprint",
+    "claude/plugins/lumina-story-blocks/skills/create-project",
+    "claude/plugins/lumina-story-blocks/skills/decompose-tasks",
+    "claude/plugins/lumina-story-blocks/skills/edge-cases",
+    "claude/plugins/lumina-story-blocks/skills/epic-close-criteria",
+    "claude/plugins/lumina-story-blocks/skills/epic-outcome",
+    "claude/plugins/lumina-story-blocks/skills/focus-framing",
+    "claude/plugins/lumina-story-blocks/skills/focus-shape",
+    "claude/plugins/lumina-story-blocks/skills/lifecycle",
+    "claude/plugins/lumina-story-blocks/skills/mcp",
+    "claude/plugins/lumina-story-blocks/skills/next-block",
+    "claude/plugins/lumina-story-blocks/skills/not-doing",
+    "claude/plugins/lumina-story-blocks/skills/plan-story",
+    "claude/plugins/lumina-story-blocks/skills/problem-statement",
+    "claude/plugins/lumina-story-blocks/skills/relevance",
+    "claude/plugins/lumina-story-blocks/skills/research-directed",
+    "claude/plugins/lumina-story-blocks/skills/research-explore",
+    "claude/plugins/lumina-story-blocks/skills/research-notes",
+    "claude/plugins/lumina-story-blocks/skills/risks",
+    "claude/plugins/lumina-story-blocks/skills/run-sprint",
+    "claude/plugins/lumina-story-blocks/skills/set-task-spec",
+    "claude/plugins/lumina-story-blocks/skills/story-review",
+    "claude/plugins/lumina-story-blocks/skills/user-interrogation",
+    "claude/plugins/lumina-story-blocks/skills/verification-commands",
+    "claude/plugins/lumina-story-blocks/skills/vet-research",
+    "claude/plugins/lumina-story-blocks/skills/wire-task-deps",
+    "claude/skills/apply-v2-engine",
+    "claude/skills/backlog-capture",
+    "claude/skills/backlog-clear",
+    "claude/skills/commit-conventions",
+    "claude/skills/documentation-conventions",
+    "claude/skills/flow-contract-apply-constraints",
+    "claude/skills/flow-contract-apply-dependency-sort",
+    "claude/skills/flow-contract-apply-pipeline",
+    "claude/skills/flow-contract-apply-rollback-protocol",
+    "claude/skills/flow-contract-apply-vet-implement-lite",
+    "claude/skills/flow-contract-execution-record-schema",
+    "claude/skills/flow-contract-flow-context",
+    "claude/skills/flow-contract-ledger-disposition-sweep",
+    "claude/skills/flow-contract-ledger-schema",
+    "claude/skills/flow-contract-plan-output-format",
+    "claude/skills/flow-contract-plan-restructure",
+    "claude/skills/flow-contract-plansdirectory-prompt",
+    "claude/skills/flow-contract-reconciler",
+    "claude/skills/flow-contract-showcase-bundle",
+    "claude/skills/flow-contract-task-store",
+    "claude/skills/flow-contract-user-inputs",
+    "claude/skills/flow-contract-vet-research",
+    "claude/skills/implement-v2-engine",
+    "claude/skills/plan-v2-engine",
+    "claude/skills/research-methods",
+    "claude/skills/review-v2-engine",
+    "claude/skills/review-v2-lenses",
+    "claude/skills/review-v2-method",
+    "claude/skills/test-author",
+    "claude/skills/tomlctl",
+]
+
+[[runs.signals]]
+name = "doc-growth"
+source = "detector"
+roots = [
+    ".",
+    ".claude/flows/eventual-churning-sunrise",
+    ".claude/flows/federated-beaming-hollerith",
+    ".claude/flows/giggly-conjuring-brook",
+    ".claude/flows/glimpse-ux-backlog",
+    ".claude/flows/glimpse-v2-visibility",
+    ".claude/flows/human-only-handovers",
+    ".claude/flows/jiggly-exploring-robin",
+    ".claude/flows/lively-twirling-babbage",
+    ".claude/flows/milestone-cadence",
+    ".claude/flows/milestones-by-dependency",
+    ".claude/flows/polymorphic-wondering-magpie",
+    ".claude/flows/proud-leaping-conway",
+    ".claude/flows/review-system-v2",
+    ".claude/flows/review-system-v2/archive",
+    ".claude/flows/review-v2-first-run-repairs",
+    ".claude/flows/shimmying-marinating-bumblebee",
+    ".claude/flows/temporal-snuggling-pnueli",
+    ".claude/flows/toasty-wobbling-stonebraker",
+    ".claude/flows/tomlctl-backlog-capture",
+    ".claude/flows/tomlctl-followups",
+    ".claude/flows/tomlctl-followups-round-2",
+    ".claude/flows/tomlctl-items-sweep-clusters",
+    ".claude/flows/tomlctl-test-and-gate-cost",
+    ".claude/flows/twinkling-hopping-otter",
+    ".claude/flows/unified-singing-gem",
+    ".claude/flows/v2-apply",
+    ".claude/flows/v2-harness-tuning",
+    ".claude/flows/v2-planning",
+    ".claude/flows/we-ve-just-implement-the-shimmying-kettle",
+    ".claude/flows/whimsical-hugging-puppy",
+    ".claude/flows/woolly-greeting-rainbow",
+    ".claude/rules",
+    ".github/agents",
+    ".github/skills/backlog-capture",
+    ".github/skills/flow-contract-apply-constraints",
+    ".github/skills/flow-contract-apply-dependency-sort",
+    ".github/skills/flow-contract-apply-pipeline",
+    ".github/skills/flow-contract-apply-pipeline/references",
+    ".github/skills/flow-contract-apply-rollback-protocol",
+    ".github/skills/flow-contract-apply-vet-implement-lite",
+    ".github/skills/flow-contract-execution-record-schema",
+    ".github/skills/flow-contract-flow-context",
+    ".github/skills/flow-contract-ledger-disposition-sweep",
+    ".github/skills/flow-contract-ledger-schema",
+    ".github/skills/flow-contract-plan-output-format",
+    ".github/skills/flow-contract-plan-restructure",
+    ".github/skills/flow-contract-plansdirectory-prompt",
+    ".github/skills/flow-contract-reconciler",
+    ".github/skills/flow-contract-task-store",
+    ".github/skills/flow-contract-vet-research",
+    ".github/skills/tomlctl",
+    ".github/skills/tomlctl/references",
+    "claude/agents",
+    "claude/commands",
+    "claude/plugins/lumina-story-blocks/skills/mcp",
+    "claude/skills/apply-v2-engine",
+    "claude/skills/backlog-capture",
+    "claude/skills/backlog-clear",
+    "claude/skills/commit-conventions",
+    "claude/skills/documentation-conventions",
+    "claude/skills/documentation-conventions/references",
+    "claude/skills/flow-contract-apply-constraints",
+    "claude/skills/flow-contract-apply-dependency-sort",
+    "claude/skills/flow-contract-apply-pipeline",
+    "claude/skills/flow-contract-apply-pipeline/references",
+    "claude/skills/flow-contract-apply-rollback-protocol",
+    "claude/skills/flow-contract-apply-vet-implement-lite",
+    "claude/skills/flow-contract-execution-record-schema",
+    "claude/skills/flow-contract-flow-context",
+    "claude/skills/flow-contract-ledger-disposition-sweep",
+    "claude/skills/flow-contract-ledger-schema",
+    "claude/skills/flow-contract-plan-output-format",
+    "claude/skills/flow-contract-plan-output-format/references",
+    "claude/skills/flow-contract-plan-restructure",
+    "claude/skills/flow-contract-plansdirectory-prompt",
+    "claude/skills/flow-contract-reconciler",
+    "claude/skills/flow-contract-showcase-bundle",
+    "claude/skills/flow-contract-task-store",
+    "claude/skills/flow-contract-task-visibility",
+    "claude/skills/flow-contract-user-inputs",
+    "claude/skills/flow-contract-vet-research",
+    "claude/skills/implement-v2-engine",
+    "claude/skills/implement-v2-engine/references",
+    "claude/skills/plan-v2-engine",
+    "claude/skills/plan-v2-engine/references",
+    "claude/skills/research-methods",
+    "claude/skills/research-methods/references",
+    "claude/skills/review-v2-engine",
+    "claude/skills/review-v2-engine/references",
+    "claude/skills/review-v2-lenses",
+    "claude/skills/review-v2-lenses/checks",
+    "claude/skills/review-v2-lenses/facets",
+    "claude/skills/review-v2-lenses/lenses",
+    "claude/skills/review-v2-lenses/methods",
+    "claude/skills/review-v2-method",
+    "claude/skills/review-v2-method/references",
+    "claude/skills/test-author",
+    "claude/skills/tomlctl",
+    "claude/skills/tomlctl/references",
+    "config/nvim",
+    "docs/flows/glimpse-v2-visibility",
+    "docs/flows/glimpse-v2-visibility/design",
+    "docs/flows/glimpse-v2-visibility/notes",
+    "docs/flows/glimpse-v2-visibility/notes/run",
+    "docs/flows/human-only-handovers",
+    "docs/flows/human-only-handovers/design",
+    "docs/flows/human-only-handovers/notes",
+    "docs/flows/human-only-handovers/notes/run",
+    "docs/flows/milestone-cadence",
+    "docs/flows/milestone-cadence/notes",
+    "docs/flows/milestone-cadence/notes/run",
+    "docs/flows/milestones-by-dependency",
+    "docs/flows/milestones-by-dependency/design",
+    "docs/flows/milestones-by-dependency/notes",
+    "docs/flows/milestones-by-dependency/notes/run",
+    "docs/flows/tomlctl-test-and-gate-cost",
+    "docs/flows/tomlctl-test-and-gate-cost/design",
+    "docs/flows/tomlctl-test-and-gate-cost/notes",
+    "docs/flows/tomlctl-test-and-gate-cost/notes/run",
+    "docs/flows/v2-apply",
+    "docs/flows/v2-apply/design",
+    "docs/flows/v2-apply/notes",
+    "docs/flows/v2-apply/notes/run",
+    "docs/flows/v2-harness-tuning",
+    "docs/flows/v2-harness-tuning/design",
+    "docs/flows/v2-harness-tuning/notes",
+    "docs/flows/v2-harness-tuning/notes/run",
+    "docs/ideas",
+    "docs/plans",
+    "glimpse",
+    "lumina",
+    "lumina/docs/runbooks",
+    "scripts/templates",
+    "statusline",
+    "themes",
+    "themes/firefox",
+    "themes/nvim",
+    "tomlctl",
+    "tomlctl/tests/fixtures/tasks",
+]
+
+[[runs.signals]]
+name = "backlog-cluster"
+source = "detector"
+roots = [".claude"]
+
+[[runs.signals]]
+name = "new-seam"
+source = "judged"
+accepted = true
+evidence = ["docs/flows/v2-ui-fidelity/brief.md"]
+
+[runs.baselines]
+break-set-baseline = "none — v2 flow carries no predicted break sets"
+
+[runs.counts]
+cells = 12
+uncovered = 0
+defect = 16
+cleanup = 3
+advisory = 4
+refuted = 1
+suppressed = 0
+
+[runs.audit]
+sampled = 4
+overturned = 0
+
+[[runs]]
+id = "U2"
+command = "review-plan-v2"
+family = "plan"
+depth = "quick"
+started = "2026-11-17T12:31:40Z"
+finished = "2026-11-17T12:48:04Z"
+base = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+scope = [
+    "docs/flows/v2-ui-fidelity/brief.md",
+    "docs/flows/v2-ui-fidelity/design/*.md",
+]
+substrate = "workflow"
+agents = 19
+rechecks = "U1"
+
+[runs.models]
+surveyor = "haiku"
+sweeper = "haiku"
+checker = "haiku"
+finder = "opus"
+finder-cf = "opus"
+verifier = "opus"
+executor = "opus"
+lead = "opus"
+
+[runs.catalogue]
+project = ".claude/review-lenses"
+tree_sha = "21ebe8ee87dbd10e663580aa488c38b2c76a04561cc3cf234758424eb48b880f"
+config_sha = "43eed0e78dc0dd0c218061c5c3815a24759d33c893287e7aeb2feb5b593f9463"
+
+[runs.counts]
+cells = 6
+uncovered = 0
+defect = 6
+cleanup = 5
+advisory = 0
+refuted = 1
+suppressed = 0
+
+[runs.audit]
+sampled = 4
+overturned = 0
+
+[[cells]]
+id = "C1"
+run = "U1"
+wave = 1
+slice = [
+    "docs/flows/v2-ui-fidelity/brief.md",
+    "docs/flows/v2-ui-fidelity/design/*.md",
+]
+concerns = [
+    "plan-dependencies",
+    "plan-grounding",
+    "plan-structure",
+]
+agent = "review-finder"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = "Read brief.md in full (design/ holds no files) and plan view --for human for criterion-to-task mapping. Grounding: 9 Background premises checked against the tree (worker tools, playwright grants, Surface quotes, approve.md, accept kinds/owners, handover reasons, 31 lenses), 1 drifted. Structure: 12 success criteria mapped to tasks, 2 unsatisfiable as worded; scope count 1 off. Dependencies: brief carries no edges; STORE CHECK clean (info only). 2 sites ruled out."
+
+[[cells.bound]]
+concern = "plan-dependencies"
+hash = "9089785602b0543b25d6250d57e92421e8481a00e172a0841a5128641d0a8fe5"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/plan-dependencies.md"
+
+[[cells.bound]]
+concern = "plan-grounding"
+hash = "c1bb5e742f421490b368f9a34717fb9761016edf03a18ef10c84b254fdba434b"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/plan-grounding.md"
+methods = [
+    "sweep",
+    "trace",
+]
+
+[[cells.bound]]
+concern = "plan-structure"
+hash = "560267297438cfbc751712728baa5905475de166a2a2bf66fc51e4d333384a65"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/plan-structure.md"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-ui-fidelity/brief.md"
+symbol = "Scope budget"
+reason = "'each landable on its own' vs D24's single build milestone A: a scoping note, not an edge; tasks check reports no findings and no data flow is blocked"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-ui-fidelity/brief.md"
+symbol = "Background"
+reason = "Surface quotes ('the normal case', 'a different plan', at most three) checked against open-and-challenge.md:146-150 and elaborate.md:51; paraphrase holds"
+
+[[cells]]
+id = "C2"
+run = "U1"
+wave = 1
+slice = [
+    "docs/flows/v2-ui-fidelity/brief.md",
+    "docs/flows/v2-ui-fidelity/design/*.md",
+]
+concerns = ["ripple"]
+agent = "review-sweeper"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = "Slice: docs/flows/v2-ui-fidelity/brief.md read via plan view; design/*.md matched no files. Diff empty (flow files untracked, base 52fe01b9), so NAMES came from the brief: 3 introduced lens ids (ui-visual, interaction, intent-fidelity) and 12 in-repo paths it cites. Searched: git grep for the 3 lens ids tree-wide (no hits, none exist yet); existence check of 12 cited paths (all present; package-design-tools plan.toml lives in another repo, not stale). Ripple probes run: 4 (stale-references, unwired-seams, removed-justification, incomplete-sweep), all clean. Lens count and doc-drift items…(+49)"
+
+[[cells.bound]]
+concern = "ripple"
+hash = "2ea56e25c8e6ec6fd719397e0b3ef7bab7a35dd20fe64aec4aa80baa05e6c02d"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/ripple.md"
+methods = ["sweep"]
+
+[[cells]]
+id = "C3"
+run = "U1"
+wave = 1
+slice = [
+    "docs/flows/v2-ui-fidelity/brief.md",
+    "docs/flows/v2-ui-fidelity/design/*.md",
+]
+concerns = [
+    "check:acceptance-contradiction",
+    "check:falsifiability",
+    "check:two-control-probe",
+]
+agent = "review-finder"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = "Read brief.md in full; design/*.md matches no file. Swept 12 success criteria under 3 checks against 34 tasks, 30 decisions, 4 contracts and plan check. No runnable criterion: two-control-probe has nothing to probe (falsifiability judged statically; break-set baseline none). 12 criteria paired with removers; 3 contradictions, 1 advisory, 1 mechanical ripple row. 4 sites ruled out. Task accept entries left to the task cells (prior F5-F8)."
+
+[[cells.bound]]
+concern = "check:acceptance-contradiction"
+hash = "4985093da6fef6abeafcca320af7ec8da1bfc118fb984f13b4da2fcda0209b05"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/checks/acceptance-contradiction.md"
+
+[[cells.bound]]
+concern = "check:falsifiability"
+hash = "7de096e64b9ea41b357986229d38a551976371cfc00fd0da97d22e8898aacf09"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/checks/falsifiability.md"
+
+[[cells.bound]]
+concern = "check:two-control-probe"
+hash = "9bf3f291401cba73b8a53117119812c481ac9dc127b04783160450f6196787bc"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/checks/two-control-probe.md"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-ui-fidelity/brief.md"
+line = 43
+reason = "the 'aims to build better' sentence restates user-stated D6; the bullet's first sentence names a failing input, so the criterion discriminates"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-ui-fidelity/brief.md"
+line = 38
+reason = "'as pictures': task 22 renders PNGs and an Artifact page, text grids for terminal UIs per D26; the ASCII-only fallback without Artifact is a design choice"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-ui-fidelity/brief.md"
+line = 50
+reason = "grep-only criterion is enforced by tasks 6, 23 and 25 (warning-floor scope is goal coverage, not a contradiction or vacuous criterion)"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-ui-fidelity/brief.md"
+line = 34
+reason = "gate-then-report criterion agrees with D2 and D18 (pass after gate, before commit); fixture coverage of its defect kinds is prior F5"
+
+[[cells]]
+id = "C4"
+run = "U1"
+wave = 1
+slice = [
+    "docs/flows/v2-ui-fidelity/brief.md",
+    "docs/flows/v2-ui-fidelity/design/*.md",
+]
+concerns = [
+    "contrarian",
+    "feasibility",
+    "plan-risk",
+]
+agent = "review-finder"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = "Read brief.md in full (design/ holds no files); cross-read against plan view: D1-D30, C1-C4, milestones A/B, tasks 13, 15, 19, 22. Contrarian: argued single milestone vs per-area milestones (held: How many rule), Artifact-vs-PNG pictures (held: task 22 fallback), optional geometry vs required (raised). Feasibility: each success criterion checked against decisions; plan-risk: glimpse schema_version read, no refusal. 3 rule-outs."
+
+[[cells.bound]]
+concern = "contrarian"
+hash = "d66046b428a86f2f01bbcb8c49687b04ee9e3d2743ecf8aaad01010e3f602a9f"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/contrarian.md"
+methods = ["steelman"]
+
+[[cells.bound]]
+concern = "feasibility"
+hash = "dc1a293342e78b61aa982b6092375bf977170d57a047abfea29891ea6ef61f9f"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/feasibility.md"
+methods = ["trace"]
+
+[[cells.bound]]
+concern = "plan-risk"
+hash = "3ffdf49eb449c3182a94b5becc8f24be319d258d67ed89fd32389ead42a8f58f"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/plan-risk.md"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-ui-fidelity/brief.md"
+symbol = "Scope budget"
+reason = "'each landable on its own' vs D24's single milestone A: write-and-prove.md How many defaults to one milestone and forbids cutting by theme; deliberate engine rule"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-ui-fidelity/brief.md"
+symbol = "Success criteria"
+reason = "'shown ... as pictures' holds: task 22 renders PNGs via render.sh when no Artifact tool, and terminal options as text grids per D26"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-ui-fidelity/brief.md"
+symbol = "Unknowns"
+reason = "the six to-decide items are answered by D1-D6/D8 as the brief says they would be; launch questions kept verbatim by design"
+
+[[cells]]
+id = "C5"
+run = "U1"
+wave = 1
+slice = [
+    "docs/flows/v2-ui-fidelity/brief.md",
+    "docs/flows/v2-ui-fidelity/design/*.md",
+]
+concerns = ["test-gaps"]
+agent = "review-finder"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = "Read brief.md in full (design/*.md matched no file) and the plan view's 34 tasks, 30 decisions and 4 contracts; mapped each of the 12 Success criteria to the task accept entries that pin it; probed 4 proposed greps against HEAD (all fail at base, so they discriminate) and checked existing round-trip tests for task 5. 4 defects, 4 sites ruled out."
+
+[[cells.bound]]
+concern = "test-gaps"
+hash = "e50a44ddcbcf1985988dd67c56f0ceb0274e7835d2c6b992056bb56e64cb901b"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/test-gaps.md"
+
+[[cells.ruled_out]]
+file = ".claude/flows/v2-ui-fidelity/tasks.toml"
+symbol = "accept-a-look-owner-judged-on-capture-states"
+reason = "Byte-identical round-trip of existing accept entries is already pinned by schema.rs a_store_with_every_v2_key_round_trips_exactly_at_version_2"
+
+[[cells.ruled_out]]
+file = ".claude/flows/v2-ui-fidelity/tasks.toml"
+symbol = "update-elaboration-and-approval-for-the-new-surfacing-rules"
+reason = "Skill-prose tasks (21-25, 28-31) accepted on grep: an executable test of agent prose costs out of proportion; gaps raised only where a brief criterion's clause goes unchecked"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-ui-fidelity/brief.md"
+symbol = "Success criteria"
+reason = "'A plan with no UI work runs exactly as today' is pinned by tasks 1, 4, 6, 7 tests (classless store, empty ui lists, no new check finding, no visual key)"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-ui-fidelity/brief.md"
+symbol = "Unknowns"
+reason = "No design/*.md exists in the flow; the slice's design glob matched nothing"
+
+[[cells]]
+id = "C6"
+run = "U1"
+wave = 1
+pass = 2
+slice = [
+    "docs/flows/v2-ui-fidelity/design/*.md",
+    "docs/flows/v2-ui-fidelity/brief.md",
+]
+concerns = [
+    "plan-dependencies",
+    "plan-grounding",
+    "plan-structure",
+]
+agent = "review-finder"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = "Read brief.md in full; design/*.md matches no file (none exist, and no task cites a design anchor). Grounding: 9 Background premises checked against the tree, 0 contradicted; the seed-repo counts were not re-derived. Goal coverage: 12 success criteria mapped to tasks, 2 gaps found and 1 proof risk raised. The 6 Unknowns map to D1-D6. Dependencies: STORE CHECK is clean apart from one file-only-chain info. 1 site ruled out."
+
+[[cells.bound]]
+concern = "plan-dependencies"
+hash = "9089785602b0543b25d6250d57e92421e8481a00e172a0841a5128641d0a8fe5"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/plan-dependencies.md"
+
+[[cells.bound]]
+concern = "plan-grounding"
+hash = "c1bb5e742f421490b368f9a34717fb9761016edf03a18ef10c84b254fdba434b"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/plan-grounding.md"
+methods = [
+    "sweep",
+    "trace",
+]
+
+[[cells.bound]]
+concern = "plan-structure"
+hash = "560267297438cfbc751712728baa5905475de166a2a2bf66fc51e4d333384a65"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/plan-structure.md"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-ui-fidelity/brief.md"
+symbol = "Background"
+reason = "Harness-today premises (worker tools, playwright grants, Surface tests, accept owners, handover reasons, 31 lenses) all match the tree at HEAD"
+
+[[cells]]
+id = "C7"
+run = "U1"
+wave = 1
+pass = 2
+slice = [
+    "docs/flows/v2-ui-fidelity/design/*.md",
+    "docs/flows/v2-ui-fidelity/brief.md",
+]
+concerns = ["ripple"]
+agent = "review-sweeper"
+reason = "proposed"
+status = "thin"
+sealed = true
+note = """Ripple sweep of brief.md (design/*.md matches no file). Slice diff empty (flow untracked), so NAMES came from plan view plus the brief's own named paths. Checked existence of 10 named paths, the lens count (31), and the accept run_by and handover reason sets against schema.rs and plan.md. Ran 1 tomlctl sweep with 6 patterns (gate_probes, clear-ui, three tests, open-and-challenge, write-and-prove, browser-observation); read the first 60 hits only. Clean: 0 rows. Not swept: the plan's rename text ("restated three tests", write-and-prove.md 82-88) tree-wide, and sweep hits past the first 60…(+49)"""
+
+[[cells.bound]]
+concern = "ripple"
+hash = "2ea56e25c8e6ec6fd719397e0b3ef7bab7a35dd20fe64aec4aa80baa05e6c02d"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/ripple.md"
+methods = ["sweep"]
+
+[[cells]]
+id = "C8"
+run = "U1"
+wave = 1
+slice = [
+    "write-the-implement-v2-visual-pass",
+    "document-decision-classes-the-one-way-rule-and-milestone-ui-flags",
+    "teach-plan-workers-to-ask-the-user-mid-run",
+    "bring-design-surface-again-and-the-spec-rules-into-line",
+]
+concerns = ["plan-executor"]
+agent = "plan-executor"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = "Dry-ran 4 tasks from the brief and worker views. 17: read apply-rows reproduce check, plan-run refs and task 16's args; 2 faults. 9: read plan.md, plan-store.md and plan-records.md tables; acceptance polarity probed (0 hits today); clean. 20: read both worker files, shared-blocks.toml, inputs.md; probed inputs list --where/--get; 2 faults. 23: read write-and-prove.md sections 1-4 and open-and-challenge section 5; acceptance judged by reading; clean. Checked Files overlap across all rows."
+
+[[cells.bound]]
+concern = "plan-executor"
+hash = "8ed9686fe20cd07ec74dc00bab8517268a55f04b768ae3377cefbdcc8a9d8ebe"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/plan-executor.md"
+methods = ["dry-run"]
+
+[[cells.ruled_out]]
+file = ".claude/flows/v2-ui-fidelity/tasks.toml"
+symbol = "bring-design-surface-again-and-the-spec-rules-into-line"
+reason = "Replacing lines 82-88 also drops the survivor-shape paragraph, but the Detail cites open-and-challenge section 5, which carries that shape; not load-bearing."
+
+[[cells]]
+id = "C9"
+run = "U1"
+wave = 1
+slice = [
+    "add-the-intent-fidelity-lens-and-its-compose-rule",
+    "add-an-optional-class-to-plan-decisions",
+    "refuse-approval-over-a-silent-one-way-door",
+    "give-milestones-capture-states-and-controls",
+]
+concerns = ["plan-executor"]
+agent = "plan-executor"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = "Dry-ran 4 tasks via plan view --for worker plus brief.md (no design/ dir). T1: schema.rs version tiers, Decision literals in 3 files, records.rs keys/decide NDJSON checked; clean. T2: store/approve/stage/view call sites read; 2 rows. T4: MilestoneSpec literals (4 sites), gate_probes precedent, tasks schema versioning read; 1 advisory. T29: catalogue frontmatter rules, vocabulary groups, compose.md:32, lens items-list query run; clean. 5 accept checks judged, all forward probes fail at base."
+
+[[cells.bound]]
+concern = "plan-executor"
+hash = "8ed9686fe20cd07ec74dc00bab8517268a55f04b768ae3377cefbdcc8a9d8ebe"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/plan-executor.md"
+methods = ["dry-run"]
+
+[[cells.ruled_out]]
+file = ".claude/flows/v2-ui-fidelity/tasks.toml"
+symbol = "add-an-optional-class-to-plan-decisions"
+reason = "Run-record stamp tests asserting SCHEMA_VERSION sit in schema.rs, on the Files line; D30 settles the 3/4 tiers so the executor's edit is determined"
+
+[[cells]]
+id = "C10"
+run = "U1"
+wave = 1
+slice = [
+    "accept-a-look-owner-judged-on-capture-states",
+    "check-look-entries-and-structural-ui-acceptance",
+    "emit-the-visual-pass-inputs-from-gate-list",
+    "write-the-ui-capture-contract-and-defect-rubric",
+]
+concerns = ["plan-executor"]
+agent = "plan-executor"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = "Dry-ran tasks 5,6,7,13 from worker views (brief; no design files). Read schema.rs Accept/owner_problem/to/from_toml, add.rs accept_entry, probes.rs skip_reason/discriminates, check.rs row_spec_findings, approve.rs, emit.rs gate_list, show.rs, update.rs, store.rs, snapshot.rs, skills.rs gates. 9 line premises checked (check.rs:464 drifted to 488). 8 accept checks judged by reading. File collisions checked. 7 and 13 clean. 2 defects."
+
+[[cells.bound]]
+concern = "plan-executor"
+hash = "8ed9686fe20cd07ec74dc00bab8517268a55f04b768ae3377cefbdcc8a9d8ebe"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/plan-executor.md"
+methods = ["dry-run"]
+
+[[cells]]
+id = "C11"
+run = "U1"
+wave = 2
+slice = ["docs/flows/v2-ui-fidelity/brief.md"]
+concerns = ["probe:contract-c1-design-source"]
+question = "Contract C1 says implement-v2-engine's visual.md builds the capture and the inspector launch from plan emit gate-list's visual object {states, controls, looks} and from nothing else, yet task 16's implement-v2-visual Workflow takes a `design` arg and task 15's inspector compares the captures against the milestone's chosen design (D4: docs/flows/<slug>/design/ui-<milestone>.md, written by task 22). Findings F8 and F28 already cover task 17's accept and detail; no finding targets contract C1, task 7's gate-list visual object or D4's bindings. Check whether C1, task 7 or D4 must name the chosen design path as a launch input so that a worker obeying C1 can source it, and write a finding on the record that should carry it; do not re-file F8 or F28."
+agent = "review-finder"
+reason = "nearest plan-structure: escalation C5 — contract C1's 'and from nothing else' leaves the design arg unsourced; F8 and F28 fix task 17 only, and no wave-1 finding targets contract:C1, task 7 or D4"
+status = "covered"
+sealed = true
+note = "Probe answered, 0 findings. Read brief.md in full, plan view (D4, D5, D16, D18, C1-C3), tasks 7/15/16/17/22/23/24 and worker views for 15 and 17. C1 is the record that must name the design path; F22 (cell C3, contract:C1.claim) already carries that fix, so it is not re-filed. Task 7 and D4 need no change: ui_states are declared only in the design step, and C1 reaches task 17's worker view. 3 sites ruled out."
+
+[[cells.ruled_out]]
+file = ".claude/flows/v2-ui-fidelity/tasks.toml"
+symbol = "emit-the-visual-pass-inputs-from-gate-list"
+reason = "gate-list need not emit the design: ui_states are set only in the design step (tasks 22, 23), so design/ui-<milestone>.md exists and C1 can name it by slug and milestone (F22)"
+
+[[cells.ruled_out]]
+file = ".claude/flows/v2-ui-fidelity/plan.toml"
+symbol = "D4"
+reason = "D4 binds omit 15-17, but task 17's worker view carries C1, so naming the path in C1 (F22's new) reaches it; widening D4.binds would be redundant"
+
+[[cells.ruled_out]]
+file = ".claude/flows/v2-ui-fidelity/plan.toml"
+symbol = "C1"
+reason = "the probe's fault is already open as F22 on contract:C1.claim with this exact fix; not re-filed"
+
+[[cells]]
+id = "C12"
+run = "U1"
+wave = 2
+slice = ["docs/flows/v2-ui-fidelity/brief.md"]
+concerns = ["ripple"]
+question = "C7 sealed thin: it read only the first 60 hits of its sweep and did not sweep tree-wide for the text task 23 replaces, the restated three Surface tests in claude/skills/plan-v2-engine/references/write-and-prove.md section 2 (lines 82-88). Sweep the tree for other files that cite or restate those three tests or that section, and read every hit of the plan's renamed names past the first 60 that C7 left unread."
+agent = "review-sweeper"
+reason = "C7 sealed thin: its ripple sweep stopped at 60 hits and skipped the tree-wide sweep for write-and-prove.md's restated three tests, which task 23 replaces"
+status = "thin"
+sealed = true
+note = '''Ripple sweep for task 23's removal of the restated three Surface tests (write-and-prove.md 82-88). Searched 7 tree-wide sweep strings: the three test wordings, "Surface again", "write-and-prove\.md", "lines 82-88", "section 2", plus line-number citations of write-and-prove and open-and-challenge 140-159. Each run coverage_complete true, truncated false; 130 hits in the first run, all classed. Read at line: the three test wordings (6 hits: write-and-prove 84-86 is the removed text; open-and-challenge 146-148 is the source); every Surface again hit in claude/ and the v2-ui-fidelity notes;…(+286)'''
+
+[[cells.bound]]
+concern = "ripple"
+hash = "2ea56e25c8e6ec6fd719397e0b3ef7bab7a35dd20fe64aec4aa80baa05e6c02d"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/ripple.md"
+methods = ["sweep"]
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-ui-fidelity/notes/structure-challenge.md"
+line = 237
+reason = "Flow record of the restatement that task 23 removes; historical evidence, not a shipped reference."
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-ui-fidelity/notes/design-step.md"
+line = 106
+reason = "Flow investigator note citing write-and-prove.md:84 as the restatement source; historical record of pre-edit lines."
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-ui-fidelity/notes/surface-mechanics.md"
+line = 15
+reason = "Flow investigator claim that Surface again reuses the three tests; describes pre-edit state, kept as record."
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-ui-fidelity/brief.md"
+line = 96
+reason = "Brief says write-and-prove section 2 reuses the same tests; still true once section 2 cites open-and-challenge section 5."
+
+[[cells.ruled_out]]
+file = "claude/skills/plan-v2-engine/references/open-and-challenge.md"
+line = 208
+reason = "Links to write-and-prove.md#2-surface-again; the heading is kept by task 23, so the anchor still resolves."
+
+[[cells.ruled_out]]
+file = "claude/skills/plan-v2-engine/SKILL.md"
+line = 56
+reason = "Table row says nothing Design raised passes the tests; generic, names no restated text, survives the edit."
+
+[[cells.ruled_out]]
+file = "docs/flows/milestones-by-dependency/notes/structure-challenge.md"
+line = 231
+reason = "Completed flow's investigator note citing write-and-prove.md; historical record, not a live reference."
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-harness-tuning/notes/cold-read-E.md"
+line = 86
+reason = "Completed flow cold-read note citing write-and-prove.md line numbers; historical record."
+
+[[cells]]
+id = "C13"
+run = "U2"
+wave = 1
+slice = [
+    "docs/flows/v2-ui-fidelity/brief.md",
+    "docs/flows/v2-ui-fidelity/design/*.md",
+]
+concerns = [
+    "plan-dependencies",
+    "plan-grounding",
+    "plan-structure",
+]
+agent = "review-finder"
+reason = "recheck: the one plan lens cell over the run's scope for the edited records decision:D3.decision, decision:D26.decision, decision:D34.decision, contract:C1.claim and contract:C3.claim, plus brief#Background, brief#Scope budget and brief#Success criteria, and the task edits the executor cell leaves out: accept-a-look-owner-judged-on-capture-states (detail, files), bring-design-surface-again-and-the-spec-rules-into-line (detail), build-the-web-fixture-panel (action), check-look-entries-and-structural-ui-acceptance (action, detail), document-decision-classes-the-one-way-rule-and-milestone-ui-flags (action), give-milestones-capture-states-and-controls (detail), refuse-approval-over-a-silent-one-way-door (detail), ship-the-web-geometry-probe-and-html-renderer (detail), write-the-ui-capture-contract-and-defect-rubric (detail)"
+status = "covered"
+sealed = true
+note = "Read in full: brief.md (1 file); design/*.md matches no file. Plan view read for D1-D34, C1-C4, milestones, tasks 21-34. Grounding: 9 Background premises checked (lens count, tool grants, accept kinds/run_by, handover reasons, Surface s5, s2, approve, UI mentions), 1 slip ruled out. Goal coverage: 12 criteria mapped to tasks/decisions, 2 stack-wording rows. Dependencies: scope-budget coupling, 1 row. STORE CHECK: info only. 5 rule-outs."
+
+[[cells.bound]]
+concern = "plan-dependencies"
+hash = "9089785602b0543b25d6250d57e92421e8481a00e172a0841a5128641d0a8fe5"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/plan-dependencies.md"
+
+[[cells.bound]]
+concern = "plan-grounding"
+hash = "c1bb5e742f421490b368f9a34717fb9761016edf03a18ef10c84b254fdba434b"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/plan-grounding.md"
+methods = [
+    "sweep",
+    "trace",
+]
+
+[[cells.bound]]
+concern = "plan-structure"
+hash = "560267297438cfbc751712728baa5905475de166a2a2bf66fc51e4d333384a65"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/plan-structure.md"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-ui-fidelity/brief.md"
+symbol = "Unknowns"
+reason = "Open questions all answered by D1-D6 and D25, but the section records the launch verbatim and says it settles nothing; historical, not stale"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-ui-fidelity/brief.md"
+symbol = "Background"
+reason = "'34 agent-assumed' in reportdesignkit now greps 36; a dated snapshot of another repo, drives no task"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-ui-fidelity/brief.md"
+symbol = "Background"
+line = 103
+reason = "write-and-prove.md s2 reuses the tests but states no cap; task 23 cites s5 budget anyway, so no task acts on the slip"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-ui-fidelity/brief.md"
+line = 61
+reason = "QML leg has no fixture, but C3's command contract is stack-neutral and D29 is a user-recorded proof scope"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-ui-fidelity/brief.md"
+line = 46
+reason = "Aspirational 'build better than the user would specify' sentence mirrors D6 text; a user-owned framing, not an unchecked goal"
+
+[[cells]]
+id = "C14"
+run = "U2"
+wave = 1
+slice = ["docs/flows/v2-ui-fidelity/brief.md"]
+concerns = [
+    "feasibility",
+    "plan-risk",
+    "test-gaps",
+]
+agent = "review-finder"
+reason = "recheck: sliced to brief.md for brief#Background, brief#Scope budget and brief#Success criteria, and re-checks the feasibility and test coverage of the edited task records task:accept-a-look-owner-judged-on-capture-states.detail/.files, task:check-look-entries-and-structural-ui-acceptance.action/.detail, task:give-milestones-capture-states-and-controls.detail, task:refuse-approval-over-a-silent-one-way-door.detail, task:ship-the-web-geometry-probe-and-html-renderer.detail, task:write-the-ui-capture-contract-and-defect-rubric.detail, task:build-the-web-fixture-panel.action and task:write-the-implement-v2-visual-pass.spec.accept[+]"
+status = "covered"
+sealed = true
+note = "Read in full: brief.md, plan view (34 tasks, 34 decisions, 4 contracts), elaborate.md sections 2, 5, 6; read stage.rs assess and amend_report, the write-and-prove.md Surface again section, and the zero-questions phrasing across plan-v2-engine. Checks: 12 success criteria mapped to their tasks; the intent-fidelity decision query and the silent one-way query run; Background claims checked against the tree. 2 defects; 3 sites ruled out. No design/ files exist yet."
+
+[[cells.bound]]
+concern = "feasibility"
+hash = "dc1a293342e78b61aa982b6092375bf977170d57a047abfea29891ea6ef61f9f"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/feasibility.md"
+methods = ["trace"]
+
+[[cells.bound]]
+concern = "plan-risk"
+hash = "3ffdf49eb449c3182a94b5becc8f24be319d258d67ed89fd32389ead42a8f58f"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/plan-risk.md"
+
+[[cells.bound]]
+concern = "test-gaps"
+hash = "e50a44ddcbcf1985988dd67c56f0ceb0274e7835d2c6b992056bb56e64cb901b"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/test-gaps.md"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-ui-fidelity/brief.md"
+symbol = "Background"
+reason = "Checked: 31 lens files, plan-worker tools hold no browser, review-finder/research agents list mcp__playwright tools; all match the tree"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-ui-fidelity/brief.md"
+symbol = "Scope budget"
+reason = "'Each landable on its own' vs one milestone A: D24 records the two-milestone cut; the cadence is the user's call"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-ui-fidelity/brief.md"
+symbol = "Success criteria"
+reason = "QML absent from milestone B's proof is D29's recorded choice; surfacing and build-question criteria proven by greps only is parked F17"
+
+[[cells]]
+id = "C15"
+run = "U2"
+wave = 1
+slice = ["docs/flows/v2-ui-fidelity/brief.md"]
+concerns = ["ripple"]
+agent = "review-sweeper"
+reason = "recheck: sliced to brief.md for brief#Background, brief#Scope budget and brief#Success criteria; the edits to decision:D3, D26, D34 and contract:C1, C3 may have renamed terms the brief still names"
+status = "covered"
+sealed = true
+note = "Slice: docs/flows/v2-ui-fidelity/brief.md read in full (design/ absent). Diff empty (untracked), so NAMES taken from the plan view: no task renames or deletes a name (0 hits rename/delete/remove). NAMES = names the brief cites. Searched: 12 cited repo paths (11 exist; package-design-tools plan.toml lives in another repo), lens count 31 (matches), ACCEPT_KINDS forward/falsifier/guard and run_by owners (match), handover reasons six (match), section refs open-and-challenge 5, write-and-prove 2, elaborate 2 (match), decisions D6 D9 D11 D26 D31 D32 (present in plan), mcp__playwright in revie…(+216)"
+
+[[cells.bound]]
+concern = "ripple"
+hash = "2ea56e25c8e6ec6fd719397e0b3ef7bab7a35dd20fe64aec4aa80baa05e6c02d"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/ripple.md"
+methods = ["sweep"]
+
+[[cells]]
+id = "C16"
+run = "U2"
+wave = 1
+slice = [
+    "docs/flows/v2-ui-fidelity/brief.md",
+    "docs/flows/v2-ui-fidelity/design/*.md",
+]
+concerns = [
+    "check:acceptance-contradiction",
+    "check:falsifiability",
+    "check:two-control-probe",
+]
+agent = "review-finder"
+reason = "recheck: plan-checks cell as proposed, re-checking the edited acceptance entries task:rewrite-surface-for-taste-compromise-and-follow-up-questions.spec.accept[0], task:wire-the-visual-pass-and-the-question-loop-into-the-implement-v2-engine.spec.accept[0] and task:write-the-implement-v2-visual-pass.spec.accept[+]"
+status = "covered"
+sealed = true
+note = "Read brief.md in full. design/*.md matches no file, since the flow has no design/ directory. Checked the 12 Success criteria against D1-D34, C1-C4, the A/B gates and the accept entries and details of tasks 13-34. Batch probes not run, as on any v2 flow. Ran plan check: no probe-unhealthy or probe-absent results. Paired every criterion with what removes it and found 1 contradiction, on the review path's geometry. Found no vacuous criterion. 3 sites ruled out."
+
+[[cells.bound]]
+concern = "check:acceptance-contradiction"
+hash = "4985093da6fef6abeafcca320af7ec8da1bfc118fb984f13b4da2fcda0209b05"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/checks/acceptance-contradiction.md"
+
+[[cells.bound]]
+concern = "check:falsifiability"
+hash = "7de096e64b9ea41b357986229d38a551976371cfc00fd0da97d22e8898aacf09"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/checks/falsifiability.md"
+
+[[cells.bound]]
+concern = "check:two-control-probe"
+hash = "9bf3f291401cba73b8a53117119812c481ac9dc127b04783160450f6196787bc"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/checks/two-control-probe.md"
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-ui-fidelity/brief.md"
+symbol = "Success criteria"
+reason = "'builds better than the user would specify' cannot be falsified, but it is the user's own goal (D6, user-stated). The first sentence of that bullet is the check."
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-ui-fidelity/brief.md"
+symbol = "Success criteria"
+reason = "The criterion 'no user-visible behaviour on grep alone' covers the plans the harness writes (area 4), not this flow's prose tasks. It is enforced by task 23's rule, task 25 and D17."
+
+[[cells.ruled_out]]
+file = "docs/flows/v2-ui-fidelity/brief.md"
+symbol = "Success criteria"
+reason = "Workers parking for the drain (task 20) is still 'while the milestone runs'. The criterion and D9/D11 agree."
+
+[[cells]]
+id = "C17"
+run = "U2"
+wave = 1
+slice = [
+    "write-the-implement-v2-visual-pass",
+    "teach-plan-workers-to-ask-the-user-mid-run",
+    "rewrite-surface-for-taste-compromise-and-follow-up-questions",
+    "wire-the-visual-pass-and-the-question-loop-into-the-implement-v2-engine",
+]
+concerns = ["plan-executor"]
+agent = "plan-executor"
+reason = "recheck: quick allows 4 tasks of the 13 the targets name, so the dry run takes the four whose spec was edited, since a spec edit changes what a worker runs and checks: write-the-implement-v2-visual-pass (L; spec.accept[+], detail), teach-plan-workers-to-ask-the-user-mid-run (spec.constraints[2], detail), rewrite-surface-for-taste-compromise-and-follow-up-questions (spec.accept[0], detail), wire-the-visual-pass-and-the-question-loop-into-the-implement-v2-engine (spec.accept[0]); the other task targets' prose edits go to the two lens cells"
+status = "covered"
+sealed = true
+note = "Dry-ran 4 tasks (17, 20, 21, 19) from brief plus worker views. Read apply-rows.md, drain.md, run-milestone.md, implement-v2 SKILL.md, both plan-worker files, shared-blocks.toml, plan-v2 SKILL.md, open-and-challenge.md, v2-planning.md:651, verification.md, records.rs run_start, run_report.rs, plan/schema.rs, run_note.rs. Checked inputs add/list flags and --where. Probed 4 accept checks read-only: all fail today. 20's premises held. 4 findings, 3 rule-outs."
+
+[[cells.bound]]
+concern = "plan-executor"
+hash = "8ed9686fe20cd07ec74dc00bab8517268a55f04b768ae3377cefbdcc8a9d8ebe"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/plan-executor.md"
+methods = ["dry-run"]
+
+[[cells.ruled_out]]
+file = ".claude/flows/v2-ui-fidelity/tasks.toml"
+symbol = "teach-plan-workers-to-ask-the-user-mid-run"
+reason = "Where the question id goes in the run note: the note format puts a parked row's reason in prose, and run_note.rs refuses unknown block keys, so prose is the one reading."
+
+[[cells.ruled_out]]
+file = ".claude/flows/v2-ui-fidelity/tasks.toml"
+symbol = "write-the-implement-v2-visual-pass"
+reason = "Handling no-return/error states in the visual index is settled by 'Model it on apply-rows.md's Reproduce check', which relaunches unsettled units once."
+
+[[cells.ruled_out]]
+file = ".claude/flows/v2-ui-fidelity/tasks.toml"
+symbol = "rewrite-surface-for-taste-compromise-and-follow-up-questions"
+reason = "The class values for the decision template come from task 1's schema, a need of task 21, readable in code at dispatch."
+
+[[cells]]
+id = "C18"
+run = "U2"
+wave = 2
+slice = [
+    "docs/flows/v2-ui-fidelity/brief.md",
+    "docs/flows/v2-ui-fidelity/design/*.md",
+    "claude/skills/plan-v2-engine/SKILL.md",
+]
+concerns = ["probe:plan-v2-engine-skill-gaps"]
+question = "Wave 1's plan-executor cell C17 escalated two gaps in claude/skills/plan-v2-engine/SKILL.md, the file task 21 owns, that no task in the plan closes. First: the SKILL.md open-run rule names only implement: and reproduce: as /implement-v2's runs, so a /plan-v2 --elaborate session would treat an open visual:<id> run (the visual pass this flow adds) as abandoned; check whether any task's spec or detail adds visual: to that rule, and if none does, write a finding against the task that owns the file. Second: task 22 adds a new references/ui-layout.md to the plan-v2-engine skill, but the SKILL.md references list gains no entry for it in any task; check the same way and write a finding against the owning task when the entry is missing. Each finding should name the exact task record it edits."
+agent = "review-finder"
+reason = "nearest plan-structure: follow-up for C17's two escalations, collected into the one review-finder escalation probe quick allows; no lens cell in wave 1 sliced plan-v2-engine SKILL.md or checked the plan's coverage of it"
+status = "covered"
+sealed = true
+note = "Read in full: brief.md, plan-v2-engine SKILL.md, tasks 19, 21, 22, 23, 24 (spec and body); design/*.md glob matched no file. Probe settled both gaps: grep of tasks.toml and plan.toml for visual:, ui-layout and the open-run text; read open-and-challenge.md section 6, elaborate.md sections 1 and 7, stage.rs open-run filter, records.rs run finish. Both gaps confirmed against task 21, the only task owning SKILL.md. 0 sites ruled out."
+
+[[findings]]
+id = "F1"
+run = "U1"
+cell = "C1"
+seen_in = ["U1"]
+family = "plan"
+kind = "cleanup"
+lens = "plan-structure"
+route = "verifier"
+file = "docs/flows/v2-ui-fidelity/brief.md"
+line = 20
+symbol = "Scope budget"
+summary = "Scope budget says the flow spans five areas but lists six, the sixth (build-time questions, D9/D11) added later"
+effort = "trivial"
+counter = "If area 6 were meant as part of area 3 (Surfacing), the fix is to fold it in rather than recount."
+edit = "Change 'across five areas' to 'across six areas' so the count matches the numbered list."
+direction = "change"
+target = "brief#Scope budget"
+expect = '"across five areas"'
+new = '"across six areas"'
+tier = "user"
+anchor = "plan|docs/flows/v2-ui-fidelity/brief.md|Scope budget"
+status = "resolved"
+first_seen = 2026-11-17
+resolution = "Accepted by the user and fixed by hand: recounted to seven areas once the direction area was added."
+resolved = 2026-11-17
+addressed = ["brief#Scope budget"]
+
+[[findings]]
+id = "F2"
+run = "U1"
+cell = "C1"
+seen_in = ["U1"]
+family = "plan"
+kind = "cleanup"
+lens = "plan-structure"
+route = "verifier"
+file = "docs/flows/v2-ui-fidelity/brief.md"
+symbol = "Success criteria"
+summary = "Criterion 'a plan with no UI work runs exactly as today' is false by design: D6, D10, D13, D14 and D9 change Surface, approval and workers for every plan"
+effort = "trivial"
+counter = "If the user meant only 'no UI-specific step runs' and reads 'exactly' loosely, an auditor may pass it; the literal text still contradicts Tasks 2, 20 and 21."
+edit = "Narrow the criterion to the goal it means: the UI machinery is inert for a plan without UI work, while the surfacing, approval and build-time question changes apply to every plan by D6, D9, D10 and D14. Task 2 refuses approval of any plan over an unsurfaced agent-assumed one-way door, Task 21 rewrites Surface for all plans and Task 20 teaches every worker to ask, so the criterion as written cannot pass and checks no goal the plan holds."
+direction = "change"
+target = "brief#Success criteria"
+expect = '"A plan with no UI work runs exactly as it does today."'
+new = '"A plan with no UI work runs no capture, visual pass, layout design step or look check, and its milestone records and `plan emit gate-list` output are as they are today; the surfacing, approval and build-time question changes (D6, D9, D10, D14) apply to every plan."'
+tier = "user"
+same_as = "F21"
+anchor = "plan|docs/flows/v2-ui-fidelity/brief.md|Success criteria"
+outcome = "repeat"
+status = "merged"
+first_seen = 2026-11-17
+merged_into = "F21"
+
+[[findings]]
+id = "F3"
+run = "U1"
+cell = "C1"
+seen_in = ["U1"]
+family = "plan"
+kind = "cleanup"
+lens = "plan-structure"
+route = "verifier"
+file = "docs/flows/v2-ui-fidelity/brief.md"
+symbol = "Success criteria"
+summary = "Design-step criterion demands layout options 'as pictures', which a terminal UI's design step (text grids, Task 22, D26) cannot meet"
+effort = "trivial"
+counter = "If 'pictures' is read to include a rendered text grid, the criterion already holds; the stack-agnostic criterion (D26) suggests it should say so."
+edit = "Let the criterion admit the terminal case D26 and Task 22 settle on: options are shown as pictures, or as text grids for a terminal UI. Task 22's outcome already reads 'pictures or text grids', and its constraint says nothing in the step requires a browser for a terminal UI."
+direction = "change"
+target = "brief#Success criteria"
+expect = '"concrete layout options as pictures and picks one"'
+new = '"concrete layout options as pictures, or as text grids for a terminal UI, and picks one"'
+tier = "user"
+anchor = "plan|docs/flows/v2-ui-fidelity/brief.md|Success criteria"
+status = "resolved"
+first_seen = 2026-11-17
+resolution = "applied to brief#Success criteria"
+resolved = 2026-11-17
+
+[findings.applied]
+at = "2026-11-17T12:23:44.3647589Z"
+tier = "user"
+target = "brief#Success criteria"
+old = '"concrete layout options as pictures and picks one"'
+new = '"concrete layout options as pictures, or as text grids for a terminal UI, and picks one"'
+by = "user"
+recovered = false
+
+[[findings]]
+id = "F4"
+run = "U1"
+cell = "C1"
+seen_in = ["U1"]
+family = "plan"
+kind = "cleanup"
+lens = "plan-grounding"
+route = "verifier"
+file = "docs/flows/v2-ui-fidelity/brief.md"
+symbol = "Background"
+summary = "Background lists accept kinds as forward or falsifier; tasks/schema.rs ACCEPT_KINDS also holds guard"
+effort = "trivial"
+counter = "If guard were being removed by some task, the two-kind list would be the target state; no task in the plan removes it."
+edit = "Name all three accept kinds: tomlctl/src/tasks/schema.rs defines KIND_GUARD and ACCEPT_KINDS = [forward, falsifier, guard] (lines 41-44). Task 5's detail already names guard."
+direction = "change"
+target = "brief#Background"
+expect = '"have `kind` `forward` or `falsifier`"'
+new = '"have `kind` `forward`, `falsifier` or `guard`"'
+tier = "cited"
+anchor = "plan|docs/flows/v2-ui-fidelity/brief.md|Background"
+status = "resolved"
+first_seen = 2026-11-17
+resolution = "applied to brief#Background"
+resolved = 2026-11-17
+
+[findings.applied]
+at = "2026-11-17T12:19:54.4500935Z"
+tier = "cited"
+target = "brief#Background"
+old = '"have `kind` `forward` or `falsifier`"'
+new = '"have `kind` `forward`, `falsifier` or `guard`"'
+by = "tool"
+recovered = false
+
+[[findings]]
+id = "F5"
+run = "U1"
+cell = "C5"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "test-gaps"
+route = "verifier"
+file = ".claude/flows/v2-ui-fidelity/tasks.toml"
+symbol = "build-the-web-fixture-panel"
+summary = "The proof fixtures plant no 'panel taller or shorter than its content' control, a defect kind Success criterion 1 names"
+severity = "major"
+failure_scenario = "Milestone B measures the inspector's catch rate on planted controls: web (scaling tiles, blank notices band, overflowing label, off-style glyph) and terminal (column, truncation, border, blank band). None plants a panel sized independently of its content, the brief's 'panel always at full screen height' case. The inspector can miss that class every time and B still reports a full catch rate, so the visual pass ships unproven on it and the user finds it after the build again."
+fix = "Add a fifth planted-defect control state to task 32's action: a panel pinned to the full viewport height with a short list (and, optionally, one clipped shorter than its content), so each defect kind Success criterion 1 enumerates has a control in the proof."
+effort = "trivial"
+counter = "Milestone B is deferred and elaborated later; the elaborator could add the state, but nothing in the plan asks it to, and the reserved-band control is a different defect (a fixed empty line, not panel sizing)."
+grade = "high"
+evidence = [
+    "docs/flows/v2-ui-fidelity/brief.md Success criteria 1: 'a panel taller or shorter than its content needs'",
+    "tasks show 32 action: controls are tiles scaling, reserved blank notices band, overflowing label, off-style +/- glyph",
+    "tasks show 33 action: terminal controls are column out of line, truncation, border collision, blank band",
+]
+target = "task:build-the-web-fixture-panel.action"
+expect = """"A small static panel in the project's high-contrast style, with clean states (empty list, one item, many items, long label) and planted-defect control states (tiles scaling with the panel, a reserved blank notices band, overflowing label, an off-style +/- glyph), each state selected by URL fragment.""""
+new = """"A small static panel in the project's high-contrast style, with clean states (empty list, one item, many items, long label) and planted-defect control states (tiles scaling with the panel, a reserved blank notices band, overflowing label, an off-style +/- glyph, a panel held at full viewport height over a one-item list), each state selected by URL fragment.""""
+tier = "advisory"
+anchor = "plan|.claude/flows/v2-ui-fidelity/tasks.toml|build-the-web-fixture-panel"
+status = "resolved"
+first_seen = 2026-11-17
+resolution = "applied to task:build-the-web-fixture-panel.action"
+resolved = 2026-11-17
+
+[findings.applied]
+at = "2026-11-17T12:28:13.7984089Z"
+tier = "advisory"
+target = "task:build-the-web-fixture-panel.action"
+old = """"A small static panel in the project's high-contrast style, with clean states (empty list, one item, many items, long label) and planted-defect control states (tiles scaling with the panel, a reserved blank notices band, overflowing label, an off-style +/- glyph), each state selected by URL fragment.""""
+new = """"A small static panel in the project's high-contrast style, with clean states (empty list, one item, many items, long label) and planted-defect control states (tiles scaling with the panel, a reserved blank notices band, overflowing label, an off-style +/- glyph, a panel held at full viewport height over a one-item list), each state selected by URL fragment.""""
+by = "user"
+recovered = false
+
+[[findings]]
+id = "F6"
+run = "U1"
+cell = "C5"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "test-gaps"
+route = "verifier"
+file = ".claude/flows/v2-ui-fidelity/tasks.toml"
+symbol = "rewrite-surface-for-taste-compromise-and-follow-up-questions"
+summary = "Task 21's accept claims the constraint-cost line and the after-Open read-back but its check tests neither"
+severity = "minor"
+failure_scenario = "Task 21 is the only task that writes the brief's 'a question narrowed by an engineering limit says what lifting it would cost' rule and the read-back right after the brief. A worker that omits both from open-and-challenge.md still passes the check (compromise, eight, outside the budget, class, removed SKILL.md line), and no later gate or task notices, so two Success criteria ship missing."
+fix = "Extend the check with two greps that fail at base (both count 0 in open-and-challenge.md today): `grep -qi 'lift' ...open-and-challenge.md` for the constraint-cost line and `grep -qi 'see and do' ...open-and-challenge.md` for the read-back."
+effort = "trivial"
+counter = "If another task's check pinned either clause the gap would be closed; task 23's check pins only write-and-prove.md's read-back before Design, not the one after Open."
+grade = "high"
+evidence = [
+    "tasks show 21 accept[0] behaviour names 'constraint-cost line' and 'Open reads the intent back'; check greps neither",
+    "grep -ci 'lift' and 'see and do' on open-and-challenge.md at HEAD: 0 and 0",
+]
+target = "task:rewrite-surface-for-taste-compromise-and-follow-up-questions.spec.accept[0]"
+expect = """{"behaviour":"Surface uses the new test, budget, follow-up rule, class and constraint-cost line, and Open reads the intent back","check":"grep -q 'compromise' claude/skills/plan-v2-engine/references/open-and-challenge.md && grep -qi 'eight' claude/skills/plan-v2-engine/references/open-and-challenge.md && grep -qi 'outside the budget' claude/skills/plan-v2-engine/references/open-and-challenge.md && grep -q 'class' claude/skills/plan-v2-engine/references/open-and-challenge.md && ! grep -q 'zero questions before the gate is the normal case' claude/skills/plan-v2-engine/SKILL.md","kind":"forward","positive":"","writes_build":false}"""
+new = """{"behaviour":"Surface uses the new test, budget, follow-up rule, class and constraint-cost line, and Open reads the intent back","check":"grep -q 'compromise' claude/skills/plan-v2-engine/references/open-and-challenge.md && grep -qi 'eight' claude/skills/plan-v2-engine/references/open-and-challenge.md && grep -qi 'outside the budget' claude/skills/plan-v2-engine/references/open-and-challenge.md && grep -q 'class' claude/skills/plan-v2-engine/references/open-and-challenge.md && grep -qi 'lift' claude/skills/plan-v2-engine/references/open-and-challenge.md && grep -qi 'see and do' claude/skills/plan-v2-engine/references/open-and-challenge.md && ! grep -q 'zero questions before the gate is the normal case' claude/skills/plan-v2-engine/SKILL.md","kind":"forward","positive":"","writes_build":false}"""
+tier = "cited"
+anchor = "plan|.claude/flows/v2-ui-fidelity/tasks.toml|rewrite-surface-for-taste-compromise-and-follow-up-questions"
+status = "resolved"
+first_seen = 2026-11-17
+resolution = "applied to task:rewrite-surface-for-taste-compromise-and-follow-up-questions.spec.accept[0]"
+resolved = 2026-11-17
+
+[findings.applied]
+at = "2026-11-17T12:19:54.6661494Z"
+tier = "cited"
+target = "task:rewrite-surface-for-taste-compromise-and-follow-up-questions.spec.accept[0]"
+old = """{"behaviour":"Surface uses the new test, budget, follow-up rule, class and constraint-cost line, and Open reads the intent back","check":"grep -q 'compromise' claude/skills/plan-v2-engine/references/open-and-challenge.md && grep -qi 'eight' claude/skills/plan-v2-engine/references/open-and-challenge.md && grep -qi 'outside the budget' claude/skills/plan-v2-engine/references/open-and-challenge.md && grep -q 'class' claude/skills/plan-v2-engine/references/open-and-challenge.md && ! grep -q 'zero questions before the gate is the normal case' claude/skills/plan-v2-engine/SKILL.md","kind":"forward","positive":"","writes_build":false}"""
+new = """{"behaviour":"Surface uses the new test, budget, follow-up rule, class and constraint-cost line, and Open reads the intent back","check":"grep -q 'compromise' claude/skills/plan-v2-engine/references/open-and-challenge.md && grep -qi 'eight' claude/skills/plan-v2-engine/references/open-and-challenge.md && grep -qi 'outside the budget' claude/skills/plan-v2-engine/references/open-and-challenge.md && grep -q 'class' claude/skills/plan-v2-engine/references/open-and-challenge.md && grep -qi 'lift' claude/skills/plan-v2-engine/references/open-and-challenge.md && grep -qi 'see and do' claude/skills/plan-v2-engine/references/open-and-challenge.md && ! grep -q 'zero questions before the gate is the normal case' claude/skills/plan-v2-engine/SKILL.md","kind":"forward","positive":"","writes_build":false}"""
+by = "tool"
+recovered = false
+
+[[findings]]
+id = "F7"
+run = "U1"
+cell = "C5"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "test-gaps"
+route = "verifier"
+file = ".claude/flows/v2-ui-fidelity/tasks.toml"
+symbol = "wire-the-visual-pass-and-the-question-loop-into-the-implement-v2-engine"
+summary = "Task 19's check pins neither the no-look-handover rule nor the parked-on-question re-ask, two brief criteria only it writes"
+severity = "minor"
+failure_scenario = "Success criteria 'a handover asking the user to review the look ... is not minted where screenshots could settle it' and 'an unanswered one parks its task and is asked again' are written into drain.md only by task 19's detail (step 9 and 'Parked rows at the next invocation'). A worker that skips both clauses passes the check, which greps only visual.md, visual: and questions.md, so the engine keeps minting 'review the look' handovers."
+fix = "Extend the check with `grep -qi 'the look' claude/skills/implement-v2-engine/references/drain.md && grep -qi 'open question' claude/skills/implement-v2-engine/references/drain.md`; both count 0 in drain.md at base."
+effort = "trivial"
+counter = "Task 18's questions.md could carry the re-ask, but its check greps only QUESTION <, inputs answer and plan decide; no task's check names the handover rule."
+grade = "high"
+evidence = [
+    "tasks show 19 detail: drain.md step 9 handover rule; 'Parked rows at the next invocation' covers a row parked on an open question",
+    "tasks show 19 accept[0] check greps visual.md, visual:, questions.md only",
+    "grep -ci 'the look' and 'open question' on drain.md at HEAD: 0 and 0",
+]
+target = "task:wire-the-visual-pass-and-the-question-loop-into-the-implement-v2-engine.spec.accept[0]"
+expect = """{"behaviour":"the engine names the visual pass, its run prefix and the question loop","check":"grep -q 'visual.md' claude/skills/implement-v2-engine/SKILL.md && grep -q 'visual:' claude/skills/implement-v2-engine/SKILL.md && grep -q 'questions.md' claude/skills/implement-v2-engine/SKILL.md && grep -q 'visual.md' claude/skills/implement-v2-engine/references/drain.md && grep -q 'visual:' claude/skills/implement-v2-engine/references/run-milestone.md","kind":"forward","positive":"","writes_build":false}"""
+new = """{"behaviour":"the engine names the visual pass, its run prefix and the question loop, refuses a look-review handover the captures can settle, and re-asks a row parked on an open question","check":"grep -q 'visual.md' claude/skills/implement-v2-engine/SKILL.md && grep -q 'visual:' claude/skills/implement-v2-engine/SKILL.md && grep -q 'questions.md' claude/skills/implement-v2-engine/SKILL.md && grep -q 'visual.md' claude/skills/implement-v2-engine/references/drain.md && grep -qi 'the look' claude/skills/implement-v2-engine/references/drain.md && grep -qi 'open question' claude/skills/implement-v2-engine/references/drain.md && grep -q 'visual:' claude/skills/implement-v2-engine/references/run-milestone.md","kind":"forward","positive":"","writes_build":false}"""
+tier = "cited"
+anchor = "plan|.claude/flows/v2-ui-fidelity/tasks.toml|wire-the-visual-pass-and-the-question-loop-into-the-implement-v2-engine"
+status = "resolved"
+first_seen = 2026-11-17
+resolution = "applied to task:wire-the-visual-pass-and-the-question-loop-into-the-implement-v2-engine.spec.accept[0]"
+resolved = 2026-11-17
+
+[findings.applied]
+at = "2026-11-17T12:19:54.7936374Z"
+tier = "cited"
+target = "task:wire-the-visual-pass-and-the-question-loop-into-the-implement-v2-engine.spec.accept[0]"
+old = """{"behaviour":"the engine names the visual pass, its run prefix and the question loop","check":"grep -q 'visual.md' claude/skills/implement-v2-engine/SKILL.md && grep -q 'visual:' claude/skills/implement-v2-engine/SKILL.md && grep -q 'questions.md' claude/skills/implement-v2-engine/SKILL.md && grep -q 'visual.md' claude/skills/implement-v2-engine/references/drain.md && grep -q 'visual:' claude/skills/implement-v2-engine/references/run-milestone.md","kind":"forward","positive":"","writes_build":false}"""
+new = """{"behaviour":"the engine names the visual pass, its run prefix and the question loop, refuses a look-review handover the captures can settle, and re-asks a row parked on an open question","check":"grep -q 'visual.md' claude/skills/implement-v2-engine/SKILL.md && grep -q 'visual:' claude/skills/implement-v2-engine/SKILL.md && grep -q 'questions.md' claude/skills/implement-v2-engine/SKILL.md && grep -q 'visual.md' claude/skills/implement-v2-engine/references/drain.md && grep -qi 'the look' claude/skills/implement-v2-engine/references/drain.md && grep -qi 'open question' claude/skills/implement-v2-engine/references/drain.md && grep -q 'visual:' claude/skills/implement-v2-engine/references/run-milestone.md","kind":"forward","positive":"","writes_build":false}"""
+by = "tool"
+recovered = false
+
+[[findings]]
+id = "F8"
+run = "U1"
+cell = "C5"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "test-gaps"
+route = "verifier"
+file = ".claude/flows/v2-ui-fidelity/tasks.toml"
+symbol = "write-the-implement-v2-visual-pass"
+summary = "Nothing tests that the visual pass hands the user's chosen design to the inspector; task 17 never names where it gets it"
+severity = "major"
+failure_scenario = "Success criterion 2 says the visual check reads the layout the user picked. Task 16's Workflow takes a `design` arg and task 15's inspector compares against it, but task 17's detail lists every visual.md step without one sourcing the design, and C1 says visual.md builds the launch from gate-list 'and from nothing else', whose visual object carries no design. A worker following the detail launches implement-v2-visual with no design; the inspector skips its design pass; every accept check (17's greps, 16's node tests) still passes."
+fix = "Append an accept entry to task 17 pinning the design input, e.g. check `grep -q 'design/ui-' claude/skills/implement-v2-engine/references/visual.md`, and add to its detail that visual.md passes as `design` the docs/flows/<slug>/design/ui-<milestone>.md the UI rows cite in spec.design (C1's 'from nothing else' must then allow it, or gate-list must carry it)."
+effort = "small"
+counter = "If gate-list's visual object (task 7) or C1 named a design path the gap would close at the source; neither does: C1 lists only states, controls and looks."
+grade = "high"
+evidence = [
+    "tasks show 17 detail: no step reads or passes a design",
+    "plan view C1: visual.md builds the inspector launch from gate-list's {states, controls, looks} 'and from nothing else'",
+    "plan view task 16 action: Workflow args include `design`; task 15 detail step (4) compares against the chosen design",
+]
+target = "task:write-the-implement-v2-visual-pass.spec.accept[+]"
+new = """{"behaviour":"the visual pass hands the milestone's chosen design (design/ui-<milestone>.md) to the inspector launch","check":"grep -q 'design/ui-' claude/skills/implement-v2-engine/references/visual.md","kind":"forward","positive":"","writes_build":false}"""
+tier = "advisory"
+anchor = "plan|.claude/flows/v2-ui-fidelity/tasks.toml|write-the-implement-v2-visual-pass"
+status = "resolved"
+first_seen = 2026-11-17
+resolution = "applied to task:write-the-implement-v2-visual-pass.spec.accept[+]"
+resolved = 2026-11-17
+
+[findings.applied]
+at = "2026-11-17T12:28:13.8526148Z"
+tier = "advisory"
+target = "task:write-the-implement-v2-visual-pass.spec.accept[+]"
+old = "null"
+new = """{"behaviour":"the visual pass hands the milestone's chosen design (design/ui-<milestone>.md) to the inspector launch","check":"grep -q 'design/ui-' claude/skills/implement-v2-engine/references/visual.md","kind":"forward","positive":"","writes_build":false}"""
+by = "user"
+recovered = false
+
+[[findings]]
+id = "F9"
+run = "U1"
+cell = "C4"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "feasibility"
+route = "verifier"
+file = "docs/flows/v2-ui-fidelity/brief.md"
+symbol = "Success criteria"
+summary = "Criterion 'a plan with no UI work runs exactly as it does today' contradicts D6, D10, D14 and D9, which change planning and the build for every plan"
+severity = "minor"
+failure_scenario = "Once milestone A lands, a non-UI plan gets the rewritten Surface test and 8/4 budget (D6, user-stated), two intent read-backs (D10), approve refusing a silent one-way door (D14) and worker questions mid-run (D9/D11). The criterion as written is then false for every plan; the intent-fidelity lens task 29 builds, which checks work against the brief's success criteria, or a worker reading the brief, would flag or narrow those changes to UI plans."
+fix = "Narrow the criterion to what the plan builds for non-UI plans (task 19's outcome: a milestone without ui_states runs exactly as before), and say the surfacing and build-time question changes apply to every plan, as D6 states."
+effort = "trivial"
+counter = "If the user meant 'no UI work' to cover only the visual pass and design step, the fix is wording only; D6's user-stated text applies to all planning, so the literal criterion cannot hold."
+grade = "high"
+evidence = [
+    "docs/flows/v2-ui-fidelity/brief.md:55 'A plan with no UI work runs exactly as it does today.'",
+    "plan.toml D6 (user-stated): planning asks every hard-to-unwind or compromise call; Surface test 1 rewritten; budget 8/4, no UI condition",
+    "plan.toml D10 read-back twice, D14 approve refuses agent-assumed one-way doors: neither keyed on UI",
+    "brief.md:26,29 scope areas 3 and 6 (surfacing, build-time questions) are not UI-only",
+    "tasks.toml task 19 outcome: 'a milestone without ui_states runs exactly as before'",
+]
+target = "brief#Success criteria"
+expect = '"A plan with no UI work runs exactly as it does today."'
+new = '"A plan with no UI work gets no design step, capture or visual pass, and its milestones run and gate exactly as they do today; the surfacing and build-time question changes apply to every plan."'
+tier = "user"
+same_as = "F21"
+related = [
+    "F2",
+    "F3",
+]
+anchor = "plan|docs/flows/v2-ui-fidelity/brief.md|Success criteria"
+outcome = "repeat"
+status = "merged"
+first_seen = 2026-11-17
+merged_into = "F21"
+
+[[findings]]
+id = "F10"
+run = "U1"
+cell = "C4"
+seen_in = ["U1"]
+family = "plan"
+kind = "cleanup"
+lens = "ripple"
+route = "verifier"
+file = "docs/flows/v2-ui-fidelity/brief.md"
+line = 20
+symbol = "Scope budget"
+summary = "Scope budget says 'across five areas' but lists six; area 6 (build-time questions) was added without updating the count"
+effort = "trivial"
+edit = "Change 'across five areas' to 'across six areas'."
+direction = "change"
+old = "One flow in `dev-tools`, across five areas, each landable on its own:"
+target = "brief#Scope budget"
+expect = '"across five areas"'
+new = '"across six areas"'
+tier = "user"
+same_as = "F1"
+related = ["F1"]
+anchor = "plan|docs/flows/v2-ui-fidelity/brief.md|Scope budget"
+outcome = "repeat"
+status = "merged"
+first_seen = 2026-11-17
+merged_into = "F1"
+
+[[findings]]
+id = "F11"
+run = "U1"
+cell = "C4"
+seen_in = ["U1"]
+family = "plan"
+kind = "advisory"
+lens = "contrarian"
+route = "none"
+file = "docs/flows/v2-ui-fidelity/brief.md"
+symbol = "Success criteria"
+summary = "Clipping and overflow detection on image-only stacks rests on an optional geometry.json and a vision judge the plan's own D7 evidence puts near chance"
+angle = "alternative"
+rationale = "Success criterion 1 promises clipped or overflowing content fails the gate or reaches the user. D7's evidence says image-only overflow and clipping judgement is near chance, yet C3/D20/D27 make geometry.json optional, and task 13 ships a geometry probe only for web; a QML or other image-captured stack gets the vision judge alone. D28 needs only one control per milestone, so a control of another class (a reserved band) does not reveal a lenient pass on overflow. A near-chance pass neither fails the gate nor reaches the user, so the criterion is unmet for those stacks while the run looks sound."
+alternative = "Make overflow and clipping mechanically checked classes: geometry.json (or a text capture) is required whenever a milestone judges them, or a control is required per mechanically unjudgeable class."
+adoption_cost = "Edit C3/D27 and tasks 6, 13 and 17: require geometry.json (or a text grid) for any milestone whose look entries or rubric classes include overflow or clipping, or have plan check require a control per such class; a few lines of contract prose and one check-class."
+target = "brief#Success criteria"
+tier = "question"
+related = [
+    "F2",
+    "F3",
+]
+anchor = "plan|docs/flows/v2-ui-fidelity/brief.md|Success criteria"
+status = "resolved"
+first_seen = 2026-11-17
+resolution = "Revised by the user at triage: geometry is required for image-captured states (decision D33); the contract, renderer and visual pass tasks carry it."
+resolved = 2026-11-17
+addressed = [
+    "brief#Success criteria",
+    "task:write-the-ui-capture-contract-and-defect-rubric.detail",
+    "task:ship-the-web-geometry-probe-and-html-renderer.detail",
+    "task:write-the-implement-v2-visual-pass.detail",
+    "contract:C3.claim",
+]
+
+[[findings]]
+id = "F12"
+run = "U1"
+cell = "C10"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "plan-executor"
+route = "verifier"
+file = ".claude/flows/v2-ui-fidelity/tasks.toml"
+symbol = "accept-a-look-owner-judged-on-capture-states"
+summary = "Adding `states` to Accept breaks the full literal in update.rs tests and is lost by show.rs accept_json; Files omits both"
+severity = "major"
+failure_scenario = "The worker adds `states` to struct Accept (schema.rs:276). The #[cfg(test)] literal at tasks/update.rs:2416 lists every field with no `..`, so the test build fails to compile and the task's own `accept_look` nextest cannot run. tasks/show.rs:145 accept_json, which `tasks show`, update.rs:586/1710 edit matching and review targets use, never prints `states`, so a look entry round-tripped through show and update loses its states. The constraint 'touch no file outside this task's files' forbids both edits."
+fix = "Add tomlctl/src/tasks/update.rs (give the test literal near :2416 an empty `states`) and tomlctl/src/tasks/show.rs (print `states` in accept_json only when non-empty, as run_by) to the Files line; optionally tomlctl/src/tasks/snapshot.rs spec_json for glimpse."
+effort = "trivial"
+counter = "If Accept derived Default and every literal used `..`, update.rs would compile; update.rs:2416-2425 lists all eight fields explicitly."
+grade = "high"
+evidence = [
+    "tomlctl/src/tasks/update.rs:2415-2426: fn accept builds Accept with every field listed, no struct-update",
+    "tomlctl/src/tasks/show.rs:145-166: accept_json writes behaviour..covered_by, probe; no other key",
+    "tomlctl/src/tasks/update.rs:586-587,1710: edit matching and review spec value go through accept_json",
+]
+target = "task:accept-a-look-owner-judged-on-capture-states.files"
+expect = '["tomlctl/src/tasks/schema.rs","tomlctl/src/tasks/add.rs","tomlctl/tests/tasks_spec_add.rs","tomlctl/src/plan/store.rs"]'
+new = '["tomlctl/src/tasks/schema.rs","tomlctl/src/tasks/add.rs","tomlctl/tests/tasks_spec_add.rs","tomlctl/src/plan/store.rs","tomlctl/src/tasks/update.rs","tomlctl/src/tasks/show.rs"]'
+tier = "cited"
+anchor = "plan|.claude/flows/v2-ui-fidelity/tasks.toml|accept-a-look-owner-judged-on-capture-states"
+status = "resolved"
+first_seen = 2026-11-17
+resolution = "applied to task:accept-a-look-owner-judged-on-capture-states.files"
+resolved = 2026-11-17
+
+[findings.applied]
+at = "2026-11-17T12:19:55.4442761Z"
+tier = "cited"
+target = "task:accept-a-look-owner-judged-on-capture-states.files"
+old = '["tomlctl/src/tasks/schema.rs","tomlctl/src/tasks/add.rs","tomlctl/tests/tasks_spec_add.rs","tomlctl/src/plan/store.rs"]'
+new = '["tomlctl/src/tasks/schema.rs","tomlctl/src/tasks/add.rs","tomlctl/tests/tasks_spec_add.rs","tomlctl/src/plan/store.rs","tomlctl/src/tasks/update.rs","tomlctl/src/tasks/show.rs"]'
+by = "tool"
+recovered = false
+
+[[findings]]
+id = "F13"
+run = "U1"
+cell = "C10"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "plan-executor"
+route = "verifier"
+file = ".claude/flows/v2-ui-fidelity/tasks.toml"
+symbol = "check-look-entries-and-structural-ui-acceptance"
+summary = "plan/accept-no-check errors on every elaborated look entry, whose check D15 requires empty; no task exempts it, so plan approve refuses"
+severity = "major"
+failure_scenario = "After milestone A, a planner writes a look entry (run_by look, states, empty check, per D15). check.rs:609-616 raises plan/accept-no-check as an error for any elaborated entry with an empty check, and approve.rs:229/331 refuses approval on any check error. Neither task 5 nor task 6 exempts the look owner, so no plan using a look entry can be approved."
+fix = "In task 6's Detail add: exempt an entry whose owner() is look from plan/accept-no-check (its check is empty by design, D15), and add a check_ui_ test that an elaborated look entry raises no accept-no-check."
+effort = "trivial"
+counter = "If accept-no-check already skipped non-worker owners; check.rs:609 tests only check emptiness and `elaborated`."
+grade = "high"
+evidence = [
+    "tomlctl/src/plan/check.rs:608-616: `if !has_check && elaborated` pushes error plan/accept-no-check",
+    "tomlctl/src/plan/approve.rs:229,331-342: approve refuses when plan check reports errors",
+    "D15: a look entry's `check` stays empty",
+]
+target = "task:check-look-entries-and-structural-ui-acceptance.detail"
+expect = """"Decision classes live beside plan/decision-bind-unknown (check.rs:464). Each new class needs a row in the finding-class table of claude/skills/tomlctl/references/plan.md, which task 9 writes; until it lands, the cli::dispatch::tests finding_classes test fails, which the milestone gate runs after both. A deferred milestone's rows are exempt from ui-accept-structural, as from accept checks.""""
+new = """"Decision classes live beside plan/decision-bind-unknown (check.rs:488). Each new class needs a row in the finding-class table of claude/skills/tomlctl/references/plan.md, which task 9 writes; until it lands, the cli::dispatch::tests finding_classes test fails, which the milestone gate runs after both. A deferred milestone's rows are exempt from ui-accept-structural, as from accept checks. A look entry's check is empty by design (D15), so exempt an entry whose owner is look from plan/accept-no-check (check.rs:609), and add a check_ui_ test that an elaborated look entry raises no accept-no-check.""""
+tier = "advisory"
+anchor = "plan|.claude/flows/v2-ui-fidelity/tasks.toml|check-look-entries-and-structural-ui-acceptance"
+status = "resolved"
+first_seen = 2026-11-17
+resolution = "Accepted by the user at triage (fix all) and fixed by the author in the task rows named by the targets."
+resolved = 2026-11-17
+addressed = [
+    "task:check-look-entries-and-structural-ui-acceptance.detail",
+    "task:check-look-entries-and-structural-ui-acceptance.action",
+    "task:document-decision-classes-the-one-way-rule-and-milestone-ui-flags.action",
+    "decision:D3.decision",
+]
+
+[[findings]]
+id = "F14"
+run = "U1"
+cell = "C6"
+seen_in = ["U1"]
+family = "plan"
+kind = "cleanup"
+lens = "plan-structure"
+route = "verifier"
+file = "docs/flows/v2-ui-fidelity/brief.md"
+symbol = "Scope budget"
+summary = "Scope budget says the flow spans five areas but lists six, the sixth (build-time questions) added later"
+effort = "trivial"
+counter = "None: brief.md lines 20-30 number six areas under a sentence saying five."
+edit = "Change 'across five areas' to 'across six areas' so the count matches the numbered list, which ends at item 6, questions during the build."
+direction = "change"
+target = "brief#Scope budget"
+expect = '"across five areas"'
+new = '"across six areas"'
+tier = "user"
+same_as = "F1"
+related = [
+    "F1",
+    "F10",
+]
+anchor = "plan|docs/flows/v2-ui-fidelity/brief.md|Scope budget"
+outcome = "repeat"
+status = "merged"
+first_seen = 2026-11-17
+merged_into = "F1"
+
+[[findings]]
+id = "F15"
+run = "U1"
+cell = "C6"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "plan-structure"
+route = "verifier"
+file = ".claude/flows/v2-ui-fidelity/tasks.toml"
+symbol = "check-look-entries-and-structural-ui-acceptance"
+summary = "D3 promises plan check refuses a UI milestone naming no states; no task builds it, so the first success criterion rests on planner judgment alone"
+severity = "major"
+failure_scenario = "A planner writes a milestone that reshapes a panel but never runs the design step or passes --ui-state. Task 6's four classes all key on ui_states already being set, so plan check is silent; gate-list prints no `visual` object, task 19 skips the visual pass, and the milestone commits with no screenshots judged, which the brief's first success criterion and D3 ('plan check refuses a UI milestone that names none') say cannot happen."
+fix = "Either give task 6 a fifth class, plan/ui-milestone-no-states, that flags a non-deferred milestone with no ui_states whose rows' files match the globs under `paths` in .claude/ui-capture.toml (read when present), with a row in plan.md's finding-class table via task 9; or drop the refusal clause from D3 and record that a UI milestone is identified only by the planner's listed judgement under D5."
+effort = "small"
+counter = "A task outside 6 adds such a class; tasks show 1-34 and the D17 class list name none, and nothing else reads ui-capture paths at plan time except task 26's review survey."
+grade = "high"
+evidence = [
+    "plan.toml D3: 'plan check refuses a UI milestone that names none'",
+    "tasks show 6 action: the four classes look-state-unknown, look-without-states, ui-controls-missing, ui-accept-structural all require ui_states or a look entry",
+    "D17 lists the same four classes and no refusal for a UI milestone with no states",
+    "brief.md:34 success criterion: when a UI milestone is gated, an agent looks at screenshots of its declared states",
+]
+fix_files = [
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/tests/plan_check.rs",
+    "claude/skills/tomlctl/references/plan.md",
+    ".claude/flows/v2-ui-fidelity/plan.toml",
+]
+blocked_on = "decision"
+blocked_missing = "How plan check can tell a milestone is UI when it declares no states: D5 leaves that to the planner, and only a project's ui-capture `paths` globs (D27) give a mechanical signal."
+blocked_options = [
+    "Key a new error or warning class on .claude/ui-capture.toml paths matching a row's files: mechanical, but silent in a project with no ui-capture.toml.",
+    "Drop D3's refusal clause and rely on D5's listed planner judgement at Design: no new code, but an unmarked UI milestone skips the visual pass unseen.",
+]
+target = "task:check-look-entries-and-structural-ui-acceptance.action"
+expect = '"Add plan check classes: plan/look-state-unknown (error), plan/look-without-states (error, a look entry in a milestone with no ui_states), plan/ui-controls-missing (error, a milestone with ui_states and no ui_controls) and plan/ui-accept-structural (warning, a pending row in a milestone with ui_states whose accept entries are all writes_build = false and none is a look entry)."'
+tier = "advisory"
+related = ["F13"]
+anchor = "plan|.claude/flows/v2-ui-fidelity/tasks.toml|check-look-entries-and-structural-ui-acceptance"
+status = "resolved"
+first_seen = 2026-11-17
+resolution = "Accepted by the user at triage (fix all) and fixed by the author in the task rows named by the targets."
+resolved = 2026-11-17
+addressed = [
+    "task:check-look-entries-and-structural-ui-acceptance.detail",
+    "task:check-look-entries-and-structural-ui-acceptance.action",
+    "task:document-decision-classes-the-one-way-rule-and-milestone-ui-flags.action",
+    "decision:D3.decision",
+]
+
+[[findings]]
+id = "F16"
+run = "U1"
+cell = "C6"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "plan-structure"
+route = "verifier"
+file = ".claude/flows/v2-ui-fidelity/tasks.toml"
+symbol = "bring-design-surface-again-and-the-spec-rules-into-line"
+summary = "The no-look-handover criterion is enforced only at drain step 9; plan-time handovers in write-and-prove.md get no such rule"
+severity = "minor"
+failure_scenario = "At Write, a planner records an `attended` handover 'review the look of the Themes page' on a UI milestone, as the seed flow's H1 (source_task 32) was. write-and-prove.md's Handovers paragraph only says a handover is for a step no agent can perform; task 23 edits that file but its detail never touches Handovers, and task 19's rule lives in drain.md step 9, which plan-time Write never reads. The handover is minted though the milestone's captures could settle it, against the brief's success criterion."
+fix = "Append to task 23's detail a Handovers clause: a handover asking the user to review the look or reproduce a visual defect is not recorded for a milestone with ui_states, since the visual pass's captures settle it; state the look as a look entry on the row instead."
+effort = "trivial"
+counter = "If plan-time handovers can never concern look (e.g. H1 was minted by the drain, not at Write), drain step 9 alone covers the criterion; H1 in reportdesignkit carries no proposal record with a run_id, unlike H2, which suggests plan time."
+grade = "medium"
+evidence = [
+    "brief.md:53-54: a handover asking the user to review the look is not minted where screenshots could settle it",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md:63 Handovers paragraph mints handovers at Write; :75 plan handover set",
+    "tasks show 23 detail covers Design read-back, ui-layout, Surface again and spec rules, not Handovers",
+    "task 19 detail: only drain.md step 9 gains the rule",
+]
+target = "task:bring-design-surface-again-and-the-spec-rules-into-line.detail"
+expect = '''"Section 1, Design: open with the second read-back (the account made concrete, changes marked); after Milestones, a milestone that adds or reshapes a UI surface goes through references/ui-layout.md and is added with --ui-state and --ui-control; decisions carry a class. Section 2, Surface again: replace the restated three tests (lines 82-88) with a citation of open-and-challenge.md section 5, budget and follow-up rule included. Section 3, spec rules: a user-visible behaviour is never accepted on a read-only check alone; it gets a test that drives it or a look entry (run_by = \"look\", states naming the milestone's ui_states, empty check); reword the worked example so its grep-and-test-f entries are shown proving internal facts, not user-visible behaviour."'''
+new = '''"Section 1, Design: open with the second read-back (the account made concrete, changes marked); after Milestones, a milestone that adds or reshapes a UI surface goes through references/ui-layout.md and is added with --ui-state and --ui-control; decisions carry a class; in Handovers, a handover asking the user to review the look or reproduce a visual defect is not recorded for a milestone with ui_states, since its captures settle it: state the look as a look entry instead. Section 2, Surface again: replace the restated three tests (lines 82-88) with a citation of open-and-challenge.md section 5, budget and follow-up rule included. Section 3, spec rules: a user-visible behaviour is never accepted on a read-only check alone; it gets a test that drives it or a look entry (run_by = \"look\", states naming the milestone's ui_states, empty check); reword the worked example so its grep-and-test-f entries are shown proving internal facts, not user-visible behaviour."'''
+tier = "advisory"
+anchor = "plan|.claude/flows/v2-ui-fidelity/tasks.toml|bring-design-surface-again-and-the-spec-rules-into-line"
+status = "resolved"
+first_seen = 2026-11-17
+resolution = "Accepted by the user at triage (fix all) and fixed by the author in the task rows named by the targets."
+resolved = 2026-11-17
+addressed = ["task:bring-design-surface-again-and-the-spec-rules-into-line.detail"]
+
+[[findings]]
+id = "F17"
+run = "U1"
+cell = "C6"
+seen_in = ["U1"]
+family = "plan"
+kind = "advisory"
+lens = "plan-structure"
+route = "none"
+file = ".claude/flows/v2-ui-fidelity/tasks.toml"
+symbol = "milestone:B"
+summary = "Surfacing, read-back and build-time question criteria are proven only by greps over prose; milestone B exercises the visual pass and design step only"
+angle = "risk"
+rationale = "Six of the brief's success criteria (taste surfacing, engineering-limit cost, follow-up rounds, the two read-backs, build-time questions that park and re-ask) are checked by tasks 18, 20, 21, 23 and 24 with grep accept entries over skill prose. Milestone B's goal and gate prove only the inspector on fixtures, and its elaboration exercises the design step. The question loop (C4: worker SendMessage, 600 s wait, orchestrator AskUserQuestion while a Workflow runs, park and re-ask) is the most fragile path and no milestone runs it end to end, so the plan can finish green with it broken."
+adoption_cost = "Widen milestone B's goal with one fixture task whose spec leaves a planted compromise, so a worker posts a question, the orchestrator asks it, and one unanswered case parks and is re-asked; or record that the loop is first proven in a consuming flow."
+target = "milestone:B.goal"
+tier = "advisory"
+anchor = "plan|.claude/flows/v2-ui-fidelity/tasks.toml|milestone:B"
+status = "parked"
+first_seen = 2026-11-17
+park_reason = "Parked at triage by the user: the questioning, read-back and build-time question changes are prompt prose proven by greps; they are exercised in use, starting with milestone B elaboration."
+
+[[findings]]
+id = "F18"
+run = "U1"
+cell = "C9"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "plan-executor"
+route = "verifier"
+file = ".claude/flows/v2-ui-fidelity/tasks.toml"
+symbol = "refuse-approval-over-a-silent-one-way-door"
+summary = "'Group the gate report's assumptions by class' leaves the JSON shape and the class order to the executor"
+severity = "major"
+failure_scenario = "At the gate_report step the executor must choose between keeping `assumptions` a flat list sorted by class (adding a `class` key) and replacing it with a map or list of per-class groups, and in which order the seven classes come. One executor keeps the flat key, another nests it; approve.md (documented by a later task) and the attended approval gate read whichever shape lands, so the two diverge on an interface other tasks consume."
+fix = "State the shape in the Detail: keep `assumptions` a flat list, add `class` (null when unset) in assumption(), and stable-sort by class in vocabulary order with unclassed last, keeping the binds-descending order within a class."
+effort = "trivial"
+counter = "If the plan's preamble or a decision fixed the gate report's output shape, the choice would be settled; D13 says only 'groups agent-assumed decisions by class'."
+grade = "high"
+evidence = [
+    "tomlctl/src/plan/approve.rs:58-64 gate_report sorts assumed by Reverse(binds.len()) into a flat Vec",
+    'tomlctl/src/plan/approve.rs:124 emits "assumptions" as a flat array of assumption() objects',
+    "D13: 'The approval gate groups agent-assumed decisions by class' names no shape or order",
+]
+target = "task:refuse-approval-over-a-silent-one-way-door.detail"
+expect = """"Add a sibling of unanswered_decisions (store.rs:350) for silent one-way doors and call it wherever unanswered_decisions is called: approve.rs:226 and stage.rs's prove-stage blocker. The refusal names each decision id and says to surface it. In gate_report (approve.rs:58) keep the existing order within a class and add the class to assumption() (approve.rs:161); an unclassed decision groups last.""""
+new = """"Add a sibling of unanswered_decisions (store.rs:350) for silent one-way doors and call it wherever unanswered_decisions is called: approve.rs:226 and stage.rs's prove-stage blocker. The refusal names each decision id and says to surface it. In gate_report (approve.rs:58) keep `assumptions` a flat list: add `class` (null when unset) to assumption() (approve.rs:161) and stable-sort by class in vocabulary order (structure, look, ux, cost, vocabulary, architecture, compromise), keeping the existing binds-descending order within a class; an unclassed decision groups last.""""
+tier = "advisory"
+anchor = "plan|.claude/flows/v2-ui-fidelity/tasks.toml|refuse-approval-over-a-silent-one-way-door"
+status = "resolved"
+first_seen = 2026-11-17
+resolution = "Accepted by the user at triage (fix all) and fixed by the author in the task rows named by the targets."
+resolved = 2026-11-17
+addressed = ["task:refuse-approval-over-a-silent-one-way-door.detail"]
+
+[[findings]]
+id = "F19"
+run = "U1"
+cell = "C9"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "plan-executor"
+route = "verifier"
+file = ".claude/flows/v2-ui-fidelity/tasks.toml"
+symbol = "refuse-approval-over-a-silent-one-way-door"
+summary = "Detail lists two unanswered_decisions call sites; stage.rs amend_report (and view.rs) also call it, so stage can advise an --amend approve refuses"
+severity = "minor"
+failure_scenario = "The executor wires the new predicate into approve.rs:226 and stage.rs's prove-stage blocker only, as listed. approve.rs:226 runs whether or not --amend is passed, so an amend over a silent one-way door is refused, but stage.rs amend_report (line 273) checks only unanswered_decisions and reports `plan approve --amend` as the next step: plan stage points the user at a command that refuses. view.rs:470 also reports unanswered decisions as blockers and is not on the Files line."
+fix = "Name amend_report in the Detail as a third call site (stage.rs is already on the Files line), and say that view.rs's human blockers are left unchanged in this task, or add tomlctl/src/plan/view.rs to Files and the call site to the Detail."
+effort = "trivial"
+counter = "If approve's amend path skipped the decision checks, amend_report would be right to ignore them; approve.rs:226 is unconditional on `amend`."
+grade = "high"
+evidence = [
+    "tomlctl/src/plan/stage.rs:246 prove-stage call; tomlctl/src/plan/stage.rs:273 amend_report call, returning AMEND_APPROVAL when unanswered is none",
+    "tomlctl/src/plan/approve.rs:226 unanswered refusal runs regardless of `amend` (refuse_open_runs alone is gated on !amend at :223)",
+    'tomlctl/src/plan/view.rs:470 "unanswered_decisions" blocker in the human view, not on Files',
+]
+target = "task:refuse-approval-over-a-silent-one-way-door.detail"
+expect = """"Add a sibling of unanswered_decisions (store.rs:350) for silent one-way doors and call it wherever unanswered_decisions is called: approve.rs:226 and stage.rs's prove-stage blocker. The refusal names each decision id and says to surface it. In gate_report (approve.rs:58) keep the existing order within a class and add the class to assumption() (approve.rs:161); an unclassed decision groups last.""""
+new = """"Add a sibling of unanswered_decisions (store.rs:350) for silent one-way doors and call it beside unanswered_decisions in approve.rs:226 and in stage.rs at both the prove-stage blocker and amend_report, so stage never advises an --amend approve would refuse; view.rs's blocker list is left as it is. The refusal names each decision id and says to surface it. In gate_report (approve.rs:58) keep the existing order within a class and add the class to assumption() (approve.rs:161); an unclassed decision groups last.""""
+tier = "advisory"
+anchor = "plan|.claude/flows/v2-ui-fidelity/tasks.toml|refuse-approval-over-a-silent-one-way-door"
+status = "resolved"
+first_seen = 2026-11-17
+resolution = "Accepted by the user at triage (fix all) and fixed by the author in the task rows named by the targets."
+resolved = 2026-11-17
+addressed = ["task:refuse-approval-over-a-silent-one-way-door.detail"]
+
+[[findings]]
+id = "F20"
+run = "U1"
+cell = "C9"
+seen_in = ["U1"]
+family = "plan"
+kind = "advisory"
+lens = "plan-executor"
+route = "none"
+file = ".claude/flows/v2-ui-fidelity/tasks.toml"
+symbol = "give-milestones-capture-states-and-controls"
+summary = "ui_states/ui_controls follow gate_probes with no tasks-store version bump, so an older binary strips them silently, the risk D13 bumps plan.toml for"
+angle = "risk"
+rationale = "Following gate_probes exactly means no schema bump: tasks SCHEMA_VERSION stays 2 and milestone_from_toml reads only known keys, so a pre-change tomlctl that rewrites tasks.toml (any tasks or plan milestone write) drops ui_states and ui_controls without error. D13 and D30 bump plan.toml for exactly this reason for decision class; D16 and this task are silent on it, so the visual pass's states could vanish on a mixed-binary machine."
+adoption_cost = "Either accept it (gate_probes and after shipped the same way) and say so in D16, or add a SCHEMA_VERSION 3 tier to tasks/schema.rs stamped when a milestone carries ui fields, like D30, adding schema tests to this task."
+target = "task:give-milestones-capture-states-and-controls.detail"
+tier = "advisory"
+anchor = "plan|.claude/flows/v2-ui-fidelity/tasks.toml|give-milestones-capture-states-and-controls"
+status = "resolved"
+first_seen = 2026-11-17
+resolution = "Accepted by the user at triage (fix all) and fixed by the author in the task rows named by the targets."
+resolved = 2026-11-17
+addressed = [
+    "task:give-milestones-capture-states-and-controls.detail",
+    "task:accept-a-look-owner-judged-on-capture-states.detail",
+    "decision:D34.decision",
+]
+
+[[findings]]
+id = "F21"
+run = "U1"
+cell = "C3"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "check:acceptance-contradiction"
+route = "verifier"
+file = "docs/flows/v2-ui-fidelity/brief.md"
+symbol = "Success criteria"
+summary = "Success criterion 'a plan with no UI work runs exactly as today' is broken by tasks 2, 11, 20, 21 and 24, which change every plan"
+severity = "critical"
+failure_scenario = "After milestone A lands, a plan with no UI work is planned and run: Surface asks under the new test and budget of eight (task 21), Open reads the intent back (task 21), plan approve refuses a silent one-way door (task 2), workers may post QUESTION lines and park (task 20), and pre-flight demands decision_class and inputs_plan_ledger (task 11). The criterion is checked at the end and no task order satisfies it; the intent-fidelity lens (task 29) reading it reports a divergence on every non-UI flow."
+fix = "Scope the criterion to the UI machinery, which is what the plan keeps unchanged (task 7 and task 19 constraints): say that a plan with no UI work runs no capture, layout design step or visual pass and its gate-list output, gate and commit are as today, while the surfacing, read-back, one-way-door and build-time question changes apply to every plan, as D6, D9 and D14 intend."
+effort = "trivial"
+counter = "If the criterion is read as covering only the UI machinery, tasks 7 and 19 already guarantee it; but its text says 'exactly as it does today' with no such scope, and D6/D9/D14 bind all plans."
+grade = "high"
+evidence = [
+    "docs/flows/v2-ui-fidelity/brief.md:55 'A plan with no UI work runs exactly as it does today.'",
+    "plan.toml D6 (user-stated): planning asks every hard-to-unwind or compromise call; Surface test 1 rewritten; budget 8/4, no UI condition",
+    "plan.toml D10 read-back twice, D14 approve refuses agent-assumed one-way doors: neither keyed on UI",
+    "brief.md:26,29 scope areas 3 and 6 (surfacing, build-time questions) are not UI-only",
+    "tasks.toml task 19 outcome: 'a milestone without ui_states runs exactly as before'",
+]
+target = "brief#Success criteria"
+expect = '"A plan with no UI work runs exactly as it does today."'
+new = '"A plan with no UI work runs no capture, layout design step or visual pass, and its gate-list output, gate and commit are as they are today; the surfacing, read-back, one-way-door and build-time question changes apply to every plan."'
+tier = "user"
+related = [
+    "F2",
+    "F3",
+    "F9",
+    "F11",
+]
+anchor = "plan|docs/flows/v2-ui-fidelity/brief.md|Success criteria"
+status = "resolved"
+first_seen = 2026-11-17
+resolution = "Revised by the user at triage: the criterion now asks for direction discussion on every plan and limits only the UI machinery to UI flows (decision D31); scope budget gains area 7."
+resolved = 2026-11-17
+addressed = [
+    "brief#Success criteria",
+    "brief#Scope budget",
+    "task:rewrite-surface-for-taste-compromise-and-follow-up-questions.detail",
+    "task:bring-design-surface-again-and-the-spec-rules-into-line.detail",
+]
+
+[[findings]]
+id = "F22"
+run = "U1"
+cell = "C3"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "check:acceptance-contradiction"
+route = "verifier"
+file = ".claude/flows/v2-ui-fidelity/plan.toml"
+symbol = "C1"
+summary = "C1 says visual.md builds the inspector launch from gate-list's visual object and nothing else, which holds no design, so the pick never reaches the inspector"
+severity = "minor"
+failure_scenario = "Task 17's worker writes visual.md to C1: it builds the implement-v2-visual launch from gate-list's visual object {states, controls, looks} only. Task 16's Workflow takes a `design` arg and task 15's inspector compares against the chosen design, but nothing supplies it, so the inspector skips its design pass and the brief criterion that the visual check reads the layout the user picked fails. C1 already contradicts task 17, which also reads .claude/ui-capture.toml."
+fix = "Rewrite C1's claim so visual.md builds the capture and the inspector launch from the visual object, the project's .claude/ui-capture.toml and the milestone's chosen design at docs/flows/<slug>/design/ui-<milestone>.md (D4, task 22), and from nothing else. F8 carries the matching accept on task 17."
+effort = "trivial"
+counter = "A deep worker on task 17 could derive the design path from D4's convention despite C1; C1's 'nothing else' would still be false against task 17's own ui-capture.toml read."
+grade = "high"
+evidence = [
+    "plan.toml C1 claim: 'visual.md builds the capture and the inspector launch from it and from nothing else'",
+    "task 7 action: visual object is {states, controls, looks: [{task, accept, behaviour, states}]}, no design key",
+    "task 16 action: Workflow args include `design`",
+    "task 15 detail step (4): compare against the chosen design's picture or text",
+    "brief.md:38-39: 'the workers and the visual check read the one picked'",
+]
+target = "contract:C1.claim"
+expect = """"tomlctl plan emit gate-list prints a `visual` object, present only when the milestone has ui_states, holding `states` (array of state names), `controls` (array of state names) and `looks` (array of {task, accept, behaviour, states}); implement-v2-engine's visual.md builds the capture and the inspector launch from it and from nothing else.""""
+new = """"tomlctl plan emit gate-list prints a `visual` object, present only when the milestone has ui_states, holding `states` (array of state names), `controls` (array of state names) and `looks` (array of {task, accept, behaviour, states}); implement-v2-engine's visual.md builds the capture and the inspector launch from it, the project's .claude/ui-capture.toml and the milestone's chosen design at docs/flows/<slug>/design/ui-<milestone>.md, and from nothing else.""""
+tier = "cited"
+anchor = "plan|.claude/flows/v2-ui-fidelity/plan.toml|C1"
+status = "resolved"
+first_seen = 2026-11-17
+resolution = "applied to contract:C1.claim"
+resolved = 2026-11-17
+
+[findings.applied]
+at = "2026-11-17T12:19:55.8874742Z"
+tier = "cited"
+target = "contract:C1.claim"
+old = """"tomlctl plan emit gate-list prints a `visual` object, present only when the milestone has ui_states, holding `states` (array of state names), `controls` (array of state names) and `looks` (array of {task, accept, behaviour, states}); implement-v2-engine's visual.md builds the capture and the inspector launch from it and from nothing else.""""
+new = """"tomlctl plan emit gate-list prints a `visual` object, present only when the milestone has ui_states, holding `states` (array of state names), `controls` (array of state names) and `looks` (array of {task, accept, behaviour, states}); implement-v2-engine's visual.md builds the capture and the inspector launch from it, the project's .claude/ui-capture.toml and the milestone's chosen design at docs/flows/<slug>/design/ui-<milestone>.md, and from nothing else.""""
+by = "tool"
+recovered = false
+
+[[findings]]
+id = "F23"
+run = "U1"
+cell = "C3"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "check:acceptance-contradiction"
+route = "verifier"
+file = ".claude/flows/v2-ui-fidelity/tasks.toml"
+symbol = "teach-plan-workers-to-ask-the-user-mid-run"
+summary = "Task 20's one-question-per-run constraint leaves a worker no route for a second, later compromise but to decide it silently"
+severity = "minor"
+failure_scenario = "A deep worker asks about compromise A, gets the answer and continues; later in the same run it meets an unrelated hard-to-unwind choice B it could not batch with A. The constraint forbids a second question and the procedure parks only on an unanswered question, so the worker decides B silently, against the brief criterion that such a choice is never decided silently and task 20's own outcome."
+fix = "Keep the one-question limit but give the second choice a route: a compromise or hard-to-unwind choice met after the run's one question parks the task with that choice and its options written in the run note, for the drain to ask."
+effort = "trivial"
+counter = "If the worker procedure task 20 writes already parks on any further compromise, the gap closes; task 20's detail names parking only for an unanswered question."
+grade = "medium"
+evidence = [
+    "tasks show 20: constraints[2] 'Never more than one question per task run; batch related choices into one question.'",
+    "task 20 detail: 'Not answered: set the row parked' is the only park route",
+    "brief.md:48-49: a compromise a worker meets 'is never decided silently'",
+]
+target = "task:teach-plan-workers-to-ask-the-user-mid-run.spec.constraints[2]"
+expect = '"Never more than one question per task run; batch related choices into one question."'
+new = '"Never more than one question per task run; batch related choices into one question. A compromise or hard-to-unwind choice met after that question parks the task with the choice and its options in the run note, for the drain to ask."'
+tier = "cited"
+anchor = "plan|.claude/flows/v2-ui-fidelity/tasks.toml|teach-plan-workers-to-ask-the-user-mid-run"
+status = "resolved"
+first_seen = 2026-11-17
+resolution = "applied to task:teach-plan-workers-to-ask-the-user-mid-run.spec.constraints[2]"
+resolved = 2026-11-17
+
+[findings.applied]
+at = "2026-11-17T12:19:55.9473953Z"
+tier = "cited"
+target = "task:teach-plan-workers-to-ask-the-user-mid-run.spec.constraints[2]"
+old = '"Never more than one question per task run; batch related choices into one question."'
+new = '"Never more than one question per task run; batch related choices into one question. A compromise or hard-to-unwind choice met after that question parks the task with the choice and its options in the run note, for the drain to ask."'
+by = "tool"
+recovered = false
+
+[[findings]]
+id = "F24"
+run = "U1"
+cell = "C3"
+seen_in = ["U1"]
+family = "plan"
+kind = "cleanup"
+lens = "ripple"
+route = "verifier"
+file = "docs/flows/v2-ui-fidelity/brief.md"
+line = 20
+symbol = "Scope budget"
+summary = "Scope budget says 'five areas' but lists six since area 6 (questions during the build) was added"
+effort = "trivial"
+edit = "Change 'across five areas' to 'across six areas'."
+direction = "change"
+old = "One flow in `dev-tools`, across five areas, each landable on its own:"
+target = "brief#Scope budget"
+expect = '"One flow in `dev-tools`, across five areas, each landable on its own:"'
+new = '"One flow in `dev-tools`, across six areas, each landable on its own:"'
+tier = "user"
+same_as = "F1"
+related = [
+    "F1",
+    "F10",
+    "F14",
+]
+anchor = "plan|docs/flows/v2-ui-fidelity/brief.md|Scope budget"
+outcome = "repeat"
+status = "merged"
+first_seen = 2026-11-17
+merged_into = "F1"
+
+[[findings]]
+id = "F25"
+run = "U1"
+cell = "C3"
+seen_in = ["U1"]
+family = "plan"
+kind = "advisory"
+lens = "check:acceptance-contradiction"
+route = "none"
+file = "docs/flows/v2-ui-fidelity/brief.md"
+symbol = "Success criteria"
+summary = "Criterion and D26 say nothing keys UI detection on web file types, yet task 27's ui-change signal fires on the frontend globs (D23)"
+angle = "risk"
+rationale = "The stack-agnostic criterion and user-stated one-way D26 read 'nothing keys on web file types or a browser', while agent-assumed D23 and task 27 detect UI changes by the frontend globs plus QML and the declared paths. Task 27 is bound to both D23 and D26, so its worker meets a literal contradiction, and the intent-fidelity lens (task 29) checks built work against this criterion. The intent is likely 'never only on web file types'; the user should confirm that reading and the criterion's wording, or drop the frontend globs and rely on declared paths."
+adoption_cost = "Reword one brief criterion and D26's last sentence to 'nothing requires web file types or a browser', with the user's assent; or remove the frontend globs from task 27's detect, losing UI review on web projects with no .claude/ui-capture.toml."
+target = "brief#Success criteria"
+tier = "question"
+related = [
+    "F2",
+    "F3",
+    "F9",
+    "F11",
+]
+anchor = "plan|docs/flows/v2-ui-fidelity/brief.md|Success criteria"
+status = "resolved"
+first_seen = 2026-11-17
+resolution = "Revised by the user at triage: UI detection never depends only on web file types; declared capture paths mark a UI change on any stack (decision D26)."
+resolved = 2026-11-17
+addressed = [
+    "brief#Success criteria",
+    "decision:D26.decision",
+]
+
+[[findings]]
+id = "F26"
+run = "U1"
+cell = "C8"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "plan-executor"
+route = "verifier"
+file = ".claude/flows/v2-ui-fidelity/tasks.toml"
+symbol = "teach-plan-workers-to-ask-the-user-mid-run"
+summary = "The new ask procedure contradicts three standing rules in the same two files that the task does not tell the worker to change"
+severity = "major"
+failure_scenario = "The worker adds the question section to plan-worker-procedure only. The shipped agents then also say 'The only write you make to any store is tomlctl tasks update' (forbidden-ops block), lite's 'When to return failed' says an open choice is always failed, and a finding-fix task 'return failed, never parked' when it needs a decision. A worker meeting a compromise gets contradictory orders: post via inputs add or never write another store; park or fail. Either it never asks, or the worker invents which rule wins."
+fix = "Extend the Detail: (1) amend the plan-worker-forbidden-ops shared block in both files to allow exactly one `tomlctl inputs add` question record per run besides the tasks update; (2) in plan-worker-lite.md's 'When to return failed', carve out a compromise or hard-to-unwind choice, which is asked instead; (3) in 'Tasks that answer review findings', say whether an unanswered question on a finding-fix task parks or fails; (4) note that deep's Judgement 'Divergent behaviour is a person's call' now asks first. All edits stay inside the task's two files."
+effort = "small"
+counter = "If the forbidden-ops block were already scoped to exclude inputs.toml, or the Detail elsewhere named these sections, there would be no contradiction; neither holds at HEAD."
+grade = "high"
+evidence = [
+    "claude/agents/plan-worker-deep.md:131-139 plan-worker-forbidden-ops: 'The only write you make to any store is tomlctl tasks update ... Every other tomlctl write verb, on any store, is the orchestrator's'",
+    "claude/agents/plan-worker-lite.md:122-126: return failed when 'the detail leaves a choice open at a point where you would have to decide something'",
+    "claude/agents/plan-worker-deep.md:50 (procedure block): finding-fix task needing a decision returns 'failed, never parked'",
+    "task 20 Detail: 'Not answered: set the row parked' and posts with `tomlctl inputs add`",
+]
+target = "task:teach-plan-workers-to-ask-the-user-mid-run.detail"
+tier = "advisory"
+related = ["F23"]
+anchor = "plan|.claude/flows/v2-ui-fidelity/tasks.toml|teach-plan-workers-to-ask-the-user-mid-run"
+status = "resolved"
+first_seen = 2026-11-17
+resolution = "Accepted by the user at triage (fix all) and fixed by the author in the task rows named by the targets."
+resolved = 2026-11-17
+addressed = ["task:teach-plan-workers-to-ask-the-user-mid-run.detail"]
+
+[[findings]]
+id = "F27"
+run = "U1"
+cell = "C8"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "plan-executor"
+route = "verifier"
+file = ".claude/flows/v2-ui-fidelity/tasks.toml"
+symbol = "teach-plan-workers-to-ask-the-user-mid-run"
+summary = "The wait loop's stop test is unstated, and `inputs list ... --get id` exits 0 with empty output, so a literal until loop ends on the first poll"
+severity = "major"
+failure_scenario = "A worker writes `until tomlctl inputs list --kind question --where id=I9 --where status=handled --get id; do sleep 15; done` as the Detail describes. The question is not yet handled, the command prints nothing and exits 0, so the loop exits at once; the worker finds no answer and parks the task seconds after asking, never giving the user the ten minutes D9 promises. Nor does the Detail bound the loop below the 600000 ms tool timeout, so a kill leaves no clean not-answered branch."
+fix = 'State the loop in the Detail: poll until the output is non-empty, e.g. `deadline=$((SECONDS+590)); until [ -n "$(tomlctl inputs list --kind question --where id=<input id> --where status=handled --get id)" ] || [ $SECONDS -ge $deadline ]; do sleep 15; done`, then re-check once to choose the answered or parked branch; name how the picked option is read (`tomlctl inputs list --kind answer --where answers=<input id> --get picked`).'
+effort = "trivial"
+counter = "If `--get` on an empty row report exited non-zero, the exit-code loop would work; it exits 0."
+grade = "high"
+evidence = [
+    "`tomlctl inputs list --kind question --where id=I999 --where status=handled --get id` printed nothing, exit=0 (run at 52fe01b9)",
+    "claude/skills/tomlctl/references/inputs.md:176 answer records carry `answers` and `picked`",
+]
+target = "task:teach-plan-workers-to-ask-the-user-mid-run.detail"
+tier = "advisory"
+related = ["F23"]
+anchor = "plan|.claude/flows/v2-ui-fidelity/tasks.toml|teach-plan-workers-to-ask-the-user-mid-run"
+status = "resolved"
+first_seen = 2026-11-17
+resolution = "Accepted by the user at triage (fix all) and fixed by the author in the task rows named by the targets."
+resolved = 2026-11-17
+addressed = ["task:teach-plan-workers-to-ask-the-user-mid-run.detail"]
+
+[[findings]]
+id = "F28"
+run = "U1"
+cell = "C8"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "plan-executor"
+route = "verifier"
+file = ".claude/flows/v2-ui-fidelity/tasks.toml"
+symbol = "write-the-implement-v2-visual-pass"
+summary = "The Workflow args need a `design` path and a round the task never sources; C1 says the launch is built from gate-list alone"
+severity = "major"
+failure_scenario = "Task 16's implement-v2-visual takes {slug, milestone, round, capture_dir, design, states, controls, looks}. Task 17's Detail says only 'launch implement-v2-visual with args written first', and C1 says visual.md builds the launch 'from it [gate-list visual] and from nothing else', which carries no design. D4 (the chosen mock under docs/flows/<slug>/design/ui-<milestone>.md) does not bind task 17. The worker must invent where `design` comes from, or omit it, and the inspector judges with no chosen mock, or the launch is refused."
+fix = "Name the args object in the Detail: slug; milestone; round = the visual round (1 on the first pass, then one more than the fix rounds counted from the `visual <id> round <n>: ` prefix); capture_dir = <out>/<milestone>-<round>/; design = docs/flows/<slug>/design/ui-<milestone>.md, the D4 file; states, controls and looks from gate-list's `visual`. Bind D4 to task 17, and loosen C1's 'from nothing else' to name ui-capture.toml and the design file."
+effort = "small"
+counter = "If task 16's validation treats `design` as optional and the inspector does not need the mock, the omission is harmless; task 16 lists it as an arg without saying so."
+grade = "medium"
+evidence = [
+    "task 16 Action: 'given {slug, milestone, round, capture_dir, design, states, controls, looks}'",
+    "contract C1 claim: visual.md 'builds the capture and the inspector launch from it and from nothing else'; C1 visual object holds only states, controls, looks",
+    "D4 binds write-and-prove.md, elaborate.md and task 22, not task 17",
+]
+target = "task:write-the-implement-v2-visual-pass.detail"
+tier = "advisory"
+related = ["F8"]
+anchor = "plan|.claude/flows/v2-ui-fidelity/tasks.toml|write-the-implement-v2-visual-pass"
+status = "resolved"
+first_seen = 2026-11-17
+resolution = "Accepted by the user at triage (fix all) and fixed by the author in the task rows named by the targets."
+resolved = 2026-11-17
+addressed = ["task:write-the-implement-v2-visual-pass.detail"]
+
+[[findings]]
+id = "F29"
+run = "U1"
+cell = "C8"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "plan-executor"
+route = "verifier"
+file = ".claude/flows/v2-ui-fidelity/tasks.toml"
+symbol = "write-the-implement-v2-visual-pass"
+summary = "After minting visual fix tasks the Detail does not say to re-run the gate; copying the precedent's 'come back here' commits ungated fix code"
+severity = "major"
+failure_scenario = "The Detail says to model on apply-rows.md's Reproduce check, whose fix-task text ends 'relaunch through run-milestone.md, step 3, and come back here when every row is done'. That check runs before the gate, so coming back still reaches the gate. The visual pass runs after the gate: a worker copying the precedent writes 'come back here', so the fix rows' edits get a visual pass and then the commit, never the gate's build and tests."
+fix = "Add to the Detail: once the visual fix rows are done, the drain re-enters at the gate (drain.md step 7), and the visual pass runs again only after the gate passes; the gate's own fix rounds and the visual rounds are counted apart."
+effort = "trivial"
+counter = "If task 19's drain wiring forced every return through step 7 whatever visual.md says, the gap would close there; task 19 rewires only the gate-pass edge and re-entry stamping."
+grade = "medium"
+evidence = [
+    "claude/skills/implement-v2-engine/references/apply-rows.md:169 'Then relaunch through run-milestone.md, step 3, and come back here when every row is done'",
+    "apply-rows.md:63 the reproduce check runs 'before the gate (step 7)'",
+    "task 17 Detail: 'Model it on apply-rows.md's Reproduce check'; D18: visual pass runs after the gate passes and before the commit",
+]
+target = "task:write-the-implement-v2-visual-pass.detail"
+related = ["F8"]
+anchor = "plan|.claude/flows/v2-ui-fidelity/tasks.toml|write-the-implement-v2-visual-pass"
+status = "refuted"
+first_seen = 2026-11-17
+
+[[findings]]
+id = "F30"
+run = "U2"
+cell = "C13"
+seen_in = ["U2"]
+family = "plan"
+kind = "cleanup"
+lens = "plan-structure"
+route = "verifier"
+file = "docs/flows/v2-ui-fidelity/brief.md"
+symbol = "Success criteria"
+summary = "First criterion says the gate agent looks at screenshots, which a terminal-UI milestone never produces (D27 text grids, milestone B's terminal panel)"
+effort = "trivial"
+counter = "If the inspector's terminal-UI pass were meant to render text grids to PNG first, 'screenshots' would hold; D27 and C3 have the command write <state>.txt with no image."
+edit = "In the first Success criterion, say the agent looks at the captures of the declared states, screenshots or text grids for a terminal UI, so the criterion can be met by the terminal fixture milestone B proves and by any TUI project under D26/D27."
+direction = "change"
+target = "brief#Success criteria"
+expect = '"an agent looks at screenshots of its declared states"'
+new = '"an agent looks at captures of its declared states (screenshots, or text grids for a terminal UI)"'
+tier = "user"
+related = [
+    "F3",
+    "F11",
+    "F21",
+    "F25",
+]
+anchor = "plan|docs/flows/v2-ui-fidelity/brief.md|Success criteria"
+status = "resolved"
+first_seen = 2026-11-17
+resolution = "applied to brief#Success criteria"
+resolved = 2026-11-17
+
+[findings.applied]
+at = "2026-11-17T12:47:18.1926616Z"
+tier = "user"
+target = "brief#Success criteria"
+old = '"an agent looks at screenshots of its declared states"'
+new = '"an agent looks at captures of its declared states (screenshots, or text grids for a terminal UI)"'
+by = "user"
+recovered = false
+
+[[findings]]
+id = "F31"
+run = "U2"
+cell = "C13"
+seen_in = ["U2"]
+family = "plan"
+kind = "cleanup"
+lens = "plan-structure"
+route = "verifier"
+file = "docs/flows/v2-ui-fidelity/brief.md"
+symbol = "Success criteria"
+summary = "Handover criterion forbids a look handover only 'where screenshots could settle it', narrower than task 23's rule for any milestone with ui_states"
+effort = "trivial"
+counter = "If the brief deliberately scoped the handover rule to image-captured UIs; D26 and the last criterion put every stack through one contract."
+edit = "In the handover criterion, replace 'where screenshots could' with 'where the milestone's captures could', matching task 23's Design rule (no look handover for a milestone with ui_states, since its captures settle it), which covers text-grid states too."
+direction = "change"
+target = "brief#Success criteria"
+expect = '"where screenshots could"'
+new = """"where the milestone's captures could""""
+tier = "user"
+related = [
+    "F3",
+    "F11",
+    "F21",
+    "F25",
+]
+anchor = "plan|docs/flows/v2-ui-fidelity/brief.md|Success criteria"
+status = "resolved"
+first_seen = 2026-11-17
+resolution = "applied to brief#Success criteria"
+resolved = 2026-11-17
+
+[findings.applied]
+at = "2026-11-17T12:47:18.2420575Z"
+tier = "user"
+target = "brief#Success criteria"
+old = '"where screenshots could"'
+new = """"where the milestone's captures could""""
+by = "user"
+recovered = false
+
+[[findings]]
+id = "F32"
+run = "U2"
+cell = "C13"
+seen_in = ["U2"]
+family = "plan"
+kind = "cleanup"
+lens = "plan-dependencies"
+route = "verifier"
+file = "docs/flows/v2-ui-fidelity/brief.md"
+line = 20
+symbol = "Scope budget"
+summary = "Scope budget calls the areas 'each landable on its own'; the plan couples them: look accepts need area 1's ui_states, visual pass reads area 2's design"
+effort = "trivial"
+counter = "If 'landable' meant only 'separately describable' rather than shippable alone; D24 and the needs edges show the areas cannot ship independently."
+edit = "Replace 'each landable on its own' with wording that matches the plan: the areas land together in milestone A (D24) because they build on one another. Task 5 (look owner, area 4) needs task 4 (ui_states, area 1) and D17 errors on a look entry in a milestone with no ui_states; C1 has visual.md read design/ui-<milestone>.md from area 2's design step."
+direction = "change"
+target = "brief#Scope budget"
+expect = '"each landable on its own"'
+new = '"landed together in milestone A and proven in milestone B, since later areas build on earlier ones"'
+tier = "user"
+related = ["F1"]
+anchor = "plan|docs/flows/v2-ui-fidelity/brief.md|Scope budget"
+status = "resolved"
+first_seen = 2026-11-17
+resolution = "applied to brief#Scope budget"
+resolved = 2026-11-17
+
+[findings.applied]
+at = "2026-11-17T12:47:18.2927037Z"
+tier = "user"
+target = "brief#Scope budget"
+old = '"each landable on its own"'
+new = '"landed together in milestone A and proven in milestone B, since later areas build on earlier ones"'
+by = "user"
+recovered = false
+
+[[findings]]
+id = "F33"
+run = "U2"
+cell = "C14"
+seen_in = ["U2"]
+family = "plan"
+kind = "defect"
+lens = "feasibility"
+route = "verifier"
+file = ".claude/flows/v2-ui-fidelity/tasks.toml"
+symbol = "update-elaboration-and-approval-for-the-new-surfacing-rules"
+summary = "'Zero survivors is the normal case' survives in elaborate.md, open-and-challenge.md and write-and-prove.md; no task's detail removes it, contradicting D6"
+severity = "minor"
+failure_scenario = "Task 24's lite executor edits elaborate.md:51 for a budget of four and leaves its next sentence 'Zero survivors is the normal case; record nothing for them.' A later --elaborate session reads that the normal elaboration asks nothing, the stance the brief's criterion ('Planning and elaboration put to the user the choices that need taste...') and D6 reverse. Tasks 21 and 23 leave the same framing at open-and-challenge.md:150 and write-and-prove.md section 2 ('This normally finds nothing'); only SKILL.md:16's version is removed by an accept."
+fix = "Task 24 detail: name the removal of elaborate.md:51's 'Zero survivors is the normal case' (keep 'when nothing survives, record nothing'). Likewise task 21's detail drops 'Zero survivors is the normal case.' from open-and-challenge.md section 5 (line 150), and task 23's detail drops 'This normally finds nothing' from write-and-prove.md section 2; each accept may add a `! grep -q 'normal case'` or `! grep -q 'normally finds nothing'` on its file."
+effort = "trivial"
+counter = "An executor rewriting Surface for D6 would read the contradiction and drop the sentence unprompted; task 21's accept already pins SKILL.md:16's twin, so the gap is only the other three sites."
+grade = "high"
+evidence = [
+    "claude/skills/plan-v2-engine/references/elaborate.md:51: 'Zero survivors is the normal case; record nothing for them.'",
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md:150: 'Zero survivors is the normal case. At most three go to the user'",
+    "write-and-prove.md section 2 ends 'This normally finds nothing, and then there is nothing to record.'",
+    "tasks show 24/21/23: no detail or accept names these sentences; only task 21's accept has `! grep -q 'zero questions before the gate is the normal case' SKILL.md`",
+]
+target = "task:update-elaboration-and-approval-for-the-new-surfacing-rules.detail"
+expect = """"elaborate.md:51 asks at most three in ONE AskUserQuestion call; AskUserQuestion takes four questions per call, so a round is one call of up to four and a follow-up round is another call. elaborate.md:220 names only design/<name>.md files; widen it so a PNG or text grid under design/ is committed. approve.md's refusal table is near line 138.""""
+new = """"elaborate.md:51 asks at most three in ONE AskUserQuestion call; AskUserQuestion takes four questions per call, so a round is one call of up to four and a follow-up round is another call. Drop elaborate.md:51's 'Zero survivors is the normal case', which D6 reverses; when nothing survives, record nothing. elaborate.md:220 names only design/<name>.md files; widen it so a PNG or text grid under design/ is committed. approve.md's refusal table is near line 138.""""
+tier = "advisory"
+anchor = "plan|.claude/flows/v2-ui-fidelity/tasks.toml|update-elaboration-and-approval-for-the-new-surfacing-rules"
+status = "resolved"
+first_seen = 2026-11-17
+resolution = "Accepted by the user at re-check triage (fix all) and fixed by the author in the task details named by the targets."
+resolved = 2026-11-17
+addressed = [
+    "task:rewrite-surface-for-taste-compromise-and-follow-up-questions.detail",
+    "task:bring-design-surface-again-and-the-spec-rules-into-line.detail",
+    "task:update-elaboration-and-approval-for-the-new-surfacing-rules.detail",
+]
+
+[[findings]]
+id = "F34"
+run = "U2"
+cell = "C14"
+seen_in = ["U2"]
+family = "plan"
+kind = "defect"
+lens = "plan-risk"
+route = "verifier"
+file = ".claude/flows/v2-ui-fidelity/tasks.toml"
+symbol = "update-elaboration-and-approval-for-the-new-surfacing-rules"
+summary = "The brief's 'one-way door never assumed silently' holds only at plan approve; a decision recorded during --elaborate is never checked, since no approval follows"
+severity = "minor"
+failure_scenario = "During /plan-v2 <slug> --elaborate B, the planner records an agent-assumed, door = one-way decision with surfaced = false. elaborate.md section 5 flips the milestone runnable and section 6 commits; plan stage on an approved plan returns no blockers unless the brief changed (stage.rs assess), and task 2 hooks the new predicate only into approve.rs and the pre-approval and amend stage branches. The one-way door ships, listed only in the close after the commit, the D22 case the brief cites."
+fix = "Task 24 action: elaborate.md section 5 (Flip) gains a step before the flip: list the decisions that are agent-assumed, door one-way and not surfaced with `tomlctl items list .claude/flows/<slug>/plan.toml --array decision --where provenance=agent-assumed --where door=one-way --where surfaced=false --select id --lines`, and surface each through AskUserQuestion before flipping, since no approval runs after elaboration."
+effort = "trivial"
+counter = "elaborate.md section 2 cites open-and-challenge.md section 5, where task 21 writes 'an agent-assumed one-way door is always surfaced', so the prose rule reaches elaboration; only the mechanical floor D14 adds is missing there."
+grade = "high"
+evidence = [
+    "tomlctl/src/plan/stage.rs assess: an approved plan with no brief change returns report(stage, next, Vec::new()), no blockers",
+    "claude/skills/plan-v2-engine/references/elaborate.md section 6: 'No re-approval is needed unless the brief changed'; agent-assumed decisions are only listed in the close",
+    "task 2 detail: the predicate is called in approve.rs:226 and stage.rs's prove-stage and amend_report branches only",
+    "brief Success criteria: 'Planning and elaboration put to the user ... A one-way door is never assumed silently.'",
+]
+target = "task:update-elaboration-and-approval-for-the-new-surfacing-rules.action"
+expect = """"elaborate.md section 2: a budget of four in the first round, follow-ups asked outside it, the UI design step for a UI milestone, and the milestone's section of design/direction.md refined and cited by its rows; section 6: the commit stages every file the elaboration wrote under docs/flows/<slug>/design/, images included. approve.md: a refusal row for a silent one-way door and the gate's assumptions shown grouped by class.""""
+new = """"elaborate.md section 2: a budget of four in the first round, follow-ups asked outside it, the UI design step for a UI milestone, and the milestone's section of design/direction.md refined and cited by its rows; section 5: before the flip, list every decision that is agent-assumed, door one-way and not surfaced (tomlctl items list .claude/flows/<slug>/plan.toml --array decision --where provenance=agent-assumed --where door=one-way --where surfaced=false --select id --lines) and surface each, since no approval follows elaboration; section 6: the commit stages every file the elaboration wrote under docs/flows/<slug>/design/, images included. approve.md: a refusal row for a silent one-way door and the gate's assumptions shown grouped by class.""""
+tier = "advisory"
+anchor = "plan|.claude/flows/v2-ui-fidelity/tasks.toml|update-elaboration-and-approval-for-the-new-surfacing-rules"
+status = "resolved"
+first_seen = 2026-11-17
+resolution = "Accepted by the user at re-check triage (fix all) and fixed by the author in the task details named by the targets."
+resolved = 2026-11-17
+addressed = [
+    "task:rewrite-surface-for-taste-compromise-and-follow-up-questions.detail",
+    "task:bring-design-surface-again-and-the-spec-rules-into-line.detail",
+    "task:update-elaboration-and-approval-for-the-new-surfacing-rules.detail",
+]
+
+[[findings]]
+id = "F35"
+run = "U2"
+cell = "C16"
+seen_in = ["U2"]
+family = "plan"
+kind = "defect"
+lens = "check:acceptance-contradiction"
+route = "verifier"
+file = ".claude/flows/v2-ui-fidelity/plan.toml"
+symbol = "D33"
+summary = "Brief criterion puts geometry checks on review captures, but D33 binds no review task and D27, bound to task 28, still calls geometry.json optional"
+severity = "minor"
+failure_scenario = "brief#Success criteria: 'Capture, judgement and review are stack agnostic ... A state captured as an image comes with geometry checks'. D33 binds 13, 15 and 17 only. Task 28's worker view carries D27 ('plus an optional geometry.json'), and task 27's detail has ui-visual judge captures against defects.md with no word on geometry. A review of an image-stack UI change whose capture omits a state's geometry key, or reports a clipping, is judged by vision alone, the case D33 rejected as near chance."
+fix = """Append "27" and "28" to D33's binds so the review check and the ui-visual lens are told a missing image-state geometry key is a capture failure. Task 28 should record that failure beside `ui-capture: none`, and task 27 should treat each geometry.json entry as a defect, as the inspector does in task 15 step 1. Optionally reword D27's 'plus an optional geometry.json' to cite D33."""
+effort = "trivial"
+counter = "Refuted if task 27 or 28's worker view or detail already requires geometry for image states. I read both views and their details, and C3's check greps only 'ui-capture.toml' in checks/ui-capture.md."
+grade = "medium"
+evidence = [
+    "docs/flows/v2-ui-fidelity/brief.md:61-64: the review and geometry criterion",
+    "plan.toml D33 binds = [ui-capture/SKILL.md, 13, 15, 17]; D27 binds 13, 17, 28 and says 'plus an optional geometry.json'",
+    "plan view --for worker --task 28: shows D23 and D27 and C3, but not D33; task 28 detail never mentions geometry",
+    "Task 27 detail: lenses judge captures 'against the ui-capture skill's references/defects.md'; no geometry.json read",
+]
+fix_files = [".claude/flows/v2-ui-fidelity/tasks.toml"]
+target = "decision:D33.binds"
+expect = '["claude/skills/ui-capture/SKILL.md","13","15","17"]'
+new = '["claude/skills/ui-capture/SKILL.md","13","15","17","27","28"]'
+tier = "user"
+anchor = "plan|.claude/flows/v2-ui-fidelity/plan.toml|D33"
+status = "resolved"
+first_seen = 2026-11-17
+resolution = "applied to decision:D33.binds"
+resolved = 2026-11-17
+
+[findings.applied]
+at = "2026-11-17T12:47:18.3195869Z"
+tier = "user"
+target = "decision:D33.binds"
+old = '["claude/skills/ui-capture/SKILL.md","13","15","17"]'
+new = '["claude/skills/ui-capture/SKILL.md","13","15","17","27","28"]'
+by = "user"
+recovered = false
+
+[[findings]]
+id = "F36"
+run = "U2"
+cell = "C17"
+seen_in = ["U2"]
+family = "plan"
+kind = "defect"
+lens = "plan-executor"
+route = "verifier"
+file = ".claude/flows/v2-ui-fidelity/tasks.toml"
+symbol = "wire-the-visual-pass-and-the-question-loop-into-the-implement-v2-engine"
+summary = "The report table 'gains visual rows' but `plan run report` takes a closed kind vocabulary with no visual kind, and no task adds one"
+severity = "major"
+failure_scenario = """The executor adds a `visual:` section mapped to kind `visual` in drain.md's Section/kind table. At the end of an invocation with an unsound inspection or exhausted visual rounds, the orchestrator stages a `kind = "visual"` row and `tomlctl plan run report` refuses it with `unknown kind visual — expected one of parked, failed, ...`, so the needs_human report is never recorded. The other reading (reuse `gate`) is not stated, so two executors diverge."""
+fix = 'Settle the kind in the Detail: visual lines print under the existing `gate:` section, e.g. `- milestone <id> visual round <n> unsound: control <state> passed` and `- milestone <id> visual failed after round <n>: <state> — <capture path>`, recorded with kind `gate`; no new section. If a separate section is wanted instead, a task owning tomlctl/src/plan/schema.rs must add `Visual => "visual"` to ReportKind first and task 19 must need it.'
+effort = "trivial"
+counter = "A task elsewhere in the plan adding a `visual` ReportKind variant; only task 1 touches plan/schema.rs and it adds a decision class."
+grade = "high"
+evidence = [
+    "tomlctl/src/plan/schema.rs:170-184: ReportKind vocabulary is parked, failed, handover, no-worker, withheld, gate, audit, out-of-lane, store-change, reconcile",
+    "tomlctl/src/plan/run_report.rs:79-84: an unknown kind is refused `unknown kind ... expected one of`",
+    "drain.md:541-552: the Section-to-kind table every report row is recorded through",
+    "tasks list: plan/schema.rs is claimed only by task 1 (add-an-optional-class-to-plan-decisions)",
+]
+fix_files = ["tomlctl/src/plan/schema.rs"]
+target = "task:wire-the-visual-pass-and-the-question-loop-into-the-implement-v2-engine.detail"
+tier = "advisory"
+related = ["F7"]
+anchor = "plan|.claude/flows/v2-ui-fidelity/tasks.toml|wire-the-visual-pass-and-the-question-loop-into-the-implement-v2-engine"
+status = "resolved"
+first_seen = 2026-11-17
+resolution = "Accepted by the user at re-check triage (fix all) and fixed by the author in the task details named by the targets."
+resolved = 2026-11-17
+addressed = [
+    "task:wire-the-visual-pass-and-the-question-loop-into-the-implement-v2-engine.detail",
+    "task:write-the-implement-v2-visual-pass.detail",
+]
+
+[[findings]]
+id = "F37"
+run = "U2"
+cell = "C17"
+seen_in = ["U2"]
+family = "plan"
+kind = "defect"
+lens = "plan-executor"
+route = "verifier"
+file = ".claude/flows/v2-ui-fidelity/tasks.toml"
+symbol = "write-the-implement-v2-visual-pass"
+summary = "A capture failure 'mints a fix task on the capture' with no files and no round prefix, so it can loop uncapped or land on files no row holds"
+severity = "minor"
+failure_scenario = "A capture writes no geometry.json key for an image state. The visual pass mints a fix task 'on the capture': the capture command is the project's own script, named only by ui-capture.toml's `command`, so the executor must invent the task's files, and whether its reason opens `visual <id> round <n>: ` is unstated. Without the prefix a capture that keeps failing mints a fix task every pass with no two-round cap; with it, a capture fault spends a visual round. Two executors write different rules."
+fix = "In the Detail, say: a capture failure's fix task holds the files the capture command runs (read from ui-capture.toml's command, and the milestone rows that edit them), its reason opens `visual <id> round <n>: capture`, so it counts toward the same two rounds; when no file in the repo can be named, report it in needs_human instead of minting."
+effort = "trivial"
+counter = "apply-rows.md's precedent names a rule for fixes with no files; it does not: every reproduce fix task holds the finding's files."
+grade = "medium"
+evidence = [
+    "task 17 detail: 'a missing one is a capture failure that mints a fix task on the capture, not a visual verdict' with no files or reason rule",
+    "drain.md:376 and :382-388: rounds are counted only from the reason prefix, so an unprefixed fix task is uncounted",
+]
+target = "task:write-the-implement-v2-visual-pass.detail"
+tier = "advisory"
+related = [
+    "F8",
+    "F28",
+    "F29",
+]
+anchor = "plan|.claude/flows/v2-ui-fidelity/tasks.toml|write-the-implement-v2-visual-pass"
+status = "resolved"
+first_seen = 2026-11-17
+resolution = "Accepted by the user at re-check triage (fix all) and fixed by the author in the task details named by the targets."
+resolved = 2026-11-17
+addressed = [
+    "task:wire-the-visual-pass-and-the-question-loop-into-the-implement-v2-engine.detail",
+    "task:write-the-implement-v2-visual-pass.detail",
+]
+
+[[findings]]
+id = "F38"
+run = "U2"
+cell = "C17"
+seen_in = ["U2"]
+family = "plan"
+kind = "defect"
+lens = "plan-executor"
+route = "verifier"
+file = ".claude/flows/v2-ui-fidelity/tasks.toml"
+symbol = "rewrite-surface-for-taste-compromise-and-follow-up-questions"
+summary = "Which questions draw on the eight-per-session budget is unsettled: Surface alone, Surface plus Surface again, or the interview too"
+severity = "minor"
+failure_scenario = "Writing section 5's budget sentence, the executor must choose whether 'eight a planning session' bounds Surface alone, is shared with Surface again (which task 23 points at this section for), or also counts the new section 1 interview rounds. One executor writes eight for Surface and eight more after Design, another eight in total across both; the interview may or may not count. The user then gets a different number of questions per plan depending on who wrote the prose."
+fix = "State in the Detail: the eight bounds the first round of Surface and Surface again together for the session; the section 1 interview and the two read-backs are outside it, scaled by D31 instead."
+effort = "trivial"
+counter = "D6's 'eight such questions a planning session' already means both Surface steps together and only hard-to-unwind or compromise calls; an executor reading D6 closely lands there, but the interview's place is still unstated."
+grade = "medium"
+evidence = [
+    "D6 and D8: 'up to eight such questions a planning session ... first round only'",
+    "SKILL.md:54,56: Surface and Surface again are separate steps; task 23 replaces Surface again's tests with a citation of section 5, budget included",
+]
+target = "task:rewrite-surface-for-taste-compromise-and-follow-up-questions.detail"
+related = ["F6"]
+anchor = "plan|.claude/flows/v2-ui-fidelity/tasks.toml|rewrite-surface-for-taste-compromise-and-follow-up-questions"
+status = "refuted"
+first_seen = 2026-11-17
+
+[[findings]]
+id = "F39"
+run = "U2"
+cell = "C17"
+seen_in = ["U2"]
+family = "plan"
+kind = "cleanup"
+lens = "plan-executor"
+route = "verifier"
+file = ".claude/flows/v2-ui-fidelity/tasks.toml"
+symbol = "rewrite-surface-for-taste-compromise-and-follow-up-questions"
+summary = "The Detail leaves SKILL.md's step-table rows calling zero Surface questions 'normal', contradicting the new role rule in the same file"
+effort = "trivial"
+edit = "Add to the Detail's SKILL.md sentence: the step table's Surface row ('Nothing passes the three tests, which is normal') and Surface again row ('Nothing Design raised passes the tests, which is normal') drop 'which is normal' and read 'Nothing passes the tests' and 'Nothing Design raised passes the tests'. No other task owns SKILL.md."
+direction = "change"
+target = "task:rewrite-surface-for-taste-compromise-and-follow-up-questions.detail"
+tier = "advisory"
+related = ["F6"]
+anchor = "plan|.claude/flows/v2-ui-fidelity/tasks.toml|rewrite-surface-for-taste-compromise-and-follow-up-questions"
+status = "resolved"
+first_seen = 2026-11-17
+resolution = "Accepted by the user at re-check triage (fix all) and fixed by the author in the task details named by the targets."
+resolved = 2026-11-17
+addressed = [
+    "task:rewrite-surface-for-taste-compromise-and-follow-up-questions.detail",
+    "task:bring-design-surface-again-and-the-spec-rules-into-line.detail",
+    "task:update-elaboration-and-approval-for-the-new-surfacing-rules.detail",
+]
+
+[[findings]]
+id = "F40"
+run = "U2"
+cell = "C18"
+seen_in = ["U2"]
+family = "plan"
+kind = "defect"
+lens = "probe:plan-v2-engine-skill-gaps"
+route = "verifier"
+file = ".claude/flows/v2-ui-fidelity/tasks.toml"
+symbol = "rewrite-surface-for-taste-compromise-and-follow-up-questions"
+summary = "No task adds `visual:` to plan-v2-engine's open-run rule, so /plan-v2 re-entry abandons a live visual:<id> run as if it were its own"
+severity = "minor"
+failure_scenario = "/implement-v2 runs milestone A's visual pass and holds an open visual:A run (task 17). In a second session the user runs /plan-v2 <slug>; plan stage lists visual:A as a blocking open run (stage.rs:64 exempts only elaborate:/cold-read:). SKILL.md:106 and open-and-challenge.md:228 protect only implement: and reproduce:, so 'Otherwise abandon' applies; the visual pass's plan run finish --step visual:A then refuses 'no unfinished run of step' (records.rs:703), losing the run row D18 makes the pass's record."
+fix = "Append to task 21's detail the instruction that SKILL.md's open-run rule (line 106) and open-and-challenge.md section 6 (line 228) name `visual:` beside `implement:` and `reproduce:` as runs that belong to /implement-v2, never abandoned or relaunched; task 19 makes the same change to implement-v2-engine's own rule."
+effort = "trivial"
+counter = "Refuted if any task's detail or spec already adds visual: to plan-v2-engine's SKILL.md or open-and-challenge.md; a grep of tasks.toml finds visual: only in tasks 17, 18 and 19, none owning those files."
+grade = "high"
+evidence = [
+    "claude/skills/plan-v2-engine/SKILL.md:106 names only `implement:` or `reproduce:` runs as /implement-v2's; line 107 abandons every other run",
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md:228 repeats the same two prefixes",
+    "tasks.toml task 19 detail adds `visual:` only to implement-v2-engine/SKILL.md and run-milestone.md; task 21 owns plan-v2-engine/SKILL.md and open-and-challenge.md and its detail never mentions visual:",
+    "tomlctl/src/plan/stage.rs:83 is_milestone_scoped exempts only elaborate:/cold-read:, so visual:<id> blocks and next reads relaunch-or-abandon",
+    "tomlctl/src/plan/records.rs:703 run finish refuses 'no unfinished run of step' once the row is abandoned",
+]
+target = "task:rewrite-surface-for-taste-compromise-and-follow-up-questions.detail"
+expect = """"SKILL.md:16's 'Ask only when the answer changes the plan... zero questions before the gate is the normal case' becomes: ask every ambiguous call that is hard to unwind or is a compromise, at any level, and aim to build better than the user would specify while staying consistent with their expectations; the step table gains the interview (in Open) and the directions step (before Design, written by task 23 in write-and-prove.md). open-and-challenge.md section 1: before filling the brief, interview the user about goals, constraints and what good looks like, in AskUserQuestion rounds whose length scales with the work's complexity and ambiguity (decision D31); after the brief is filled, give the user a short account of what they will see and do once the work lands and fold corrections into the brief before Investigate. Section 5: test 1 becomes 'would getting it wrong be visible to the user, costly to undo, or a compromise the user has not made'; tests 2 and 3 stay; the budget is eight a planning session in the first round, asked in batches of up to four, and a question an answer opens is asked in further rounds outside the budget until none opens; each decision records a `class`; a question whose options an engineering limit narrows states what lifting the limit would cost; an agent-assumed one-way door is always surfaced, since approval refuses it. Cite docs/plans/v2-planning.md's dogfooding revisit trigger in one line.""""
+new = """"SKILL.md:16's 'Ask only when the answer changes the plan... zero questions before the gate is the normal case' becomes: ask every ambiguous call that is hard to unwind or is a compromise, at any level, and aim to build better than the user would specify while staying consistent with their expectations; the step table gains the interview (in Open) and the directions step (before Design, written by task 23 in write-and-prove.md). open-and-challenge.md section 1: before filling the brief, interview the user about goals, constraints and what good looks like, in AskUserQuestion rounds whose length scales with the work's complexity and ambiguity (decision D31); after the brief is filled, give the user a short account of what they will see and do once the work lands and fold corrections into the brief before Investigate. Section 5: test 1 becomes 'would getting it wrong be visible to the user, costly to undo, or a compromise the user has not made'; tests 2 and 3 stay; the budget is eight a planning session in the first round, asked in batches of up to four, and a question an answer opens is asked in further rounds outside the budget until none opens; each decision records a `class`; a question whose options an engineering limit narrows states what lifting the limit would cost; an agent-assumed one-way door is always surfaced, since approval refuses it. Cite docs/plans/v2-planning.md's dogfooding revisit trigger in one line. The open-run rule (SKILL.md near line 106) and open-and-challenge.md section 6 (near line 228) name `visual:` beside `implement:` and `reproduce:` as runs that belong to /implement-v2 and are never abandoned or relaunched, since the visual pass (task 17) records an open visual:<id> run between gate and commit.""""
+tier = "advisory"
+related = [
+    "F6",
+    "F38",
+    "F39",
+]
+anchor = "plan|.claude/flows/v2-ui-fidelity/tasks.toml|rewrite-surface-for-taste-compromise-and-follow-up-questions"
+status = "resolved"
+first_seen = 2026-11-17
+resolution = "Accepted by the user at re-check triage (fix all) and fixed by the author in the task details named by the targets."
+resolved = 2026-11-17
+addressed = [
+    "task:rewrite-surface-for-taste-compromise-and-follow-up-questions.detail",
+    "task:bring-design-surface-again-and-the-spec-rules-into-line.detail",
+    "task:update-elaboration-and-approval-for-the-new-surfacing-rules.detail",
+]
+
+[[findings]]
+id = "F41"
+run = "U2"
+cell = "C18"
+seen_in = ["U2"]
+family = "plan"
+kind = "cleanup"
+lens = "probe:plan-v2-engine-skill-gaps"
+route = "verifier"
+file = ".claude/flows/v2-ui-fidelity/tasks.toml"
+symbol = "rewrite-surface-for-taste-compromise-and-follow-up-questions"
+summary = "Task 22 adds references/ui-layout.md, but no task lists it in plan-v2-engine SKILL.md's references list, which task 21 owns"
+effort = "trivial"
+counter = "Refuted if another task owning SKILL.md, or task 21's spec, already adds the entry; only task 21 lists SKILL.md in files and its action and detail never name ui-layout.md."
+edit = "Extend task 21's action so SKILL.md's references list (lines 64-69) gains an entry for references/ui-layout.md, the UI layout design step task 22 writes, used by Design and by elaboration; and line 8's 'the three references', already one short of the four listed, stops counting them."
+direction = "change"
+target = "task:rewrite-surface-for-taste-compromise-and-follow-up-questions.action"
+expect = '"Rewrite the role rule and Surface by decisions D6, D8, D10 and D31: an interview before the brief, the read-back after Open, and the new Surface test, budget and follow-up rule."'
+new = """"Rewrite the role rule and Surface by decisions D6, D8, D10 and D31: an interview before the brief, the read-back after Open, and the new Surface test, budget and follow-up rule; list references/ui-layout.md (task 22's UI layout design step, used by Design and elaboration) in SKILL.md's references list and drop the stale count in 'the three references'.""""
+tier = "cited"
+related = [
+    "F6",
+    "F38",
+    "F39",
+]
+anchor = "plan|.claude/flows/v2-ui-fidelity/tasks.toml|rewrite-surface-for-taste-compromise-and-follow-up-questions"
+status = "resolved"
+first_seen = 2026-11-17
+resolution = "Accepted by the user at re-check triage (fix all) and fixed by the author in the task details named by the targets."
+resolved = 2026-11-17
+addressed = [
+    "task:rewrite-surface-for-taste-compromise-and-follow-up-questions.detail",
+    "task:bring-design-surface-again-and-the-spec-rules-into-line.detail",
+    "task:update-elaboration-and-approval-for-the-new-surfacing-rules.detail",
+]
+
+[[verdicts]]
+finding = "F1"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/v2-ui-fidelity/brief.md:20-30"
+rationale = "Line 20 says 'across five areas' and lines 22-30 number six. Counter checked: area 6 (questions during the build, D9/D11) is its own numbered item, not a sub-point of area 3 (Surfacing, which covers planning and elaboration), and D9/D11 have their own tasks (18, 20). expect matches line 20 verbatim; new changes only the count."
+
+[[verdicts]]
+finding = "F2"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/v2-ui-fidelity/brief.md:55"
+rationale = "Line 55 says a plan with no UI work runs exactly as today, but D14/Task 2 refuse approval of any plan over a silent agent-assumed one-way door, D6/Task 21 rewrite Surface for all plans, D10 adds read-backs and D9/Task 20 make every worker ask mid-run. New text is accurate: Task 4 stores non-UI milestones as today and Task 7 pins gate-list byte-identical without ui_states. Read loosely the counter holds, but the literal text cannot pass."
+
+[[verdicts]]
+finding = "F3"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/v2-ui-fidelity/brief.md:38-39"
+rationale = "Lines 38-39 require options 'as pictures'. Task 22 draws a terminal UI's options as text grids saved as .txt, and its outcome reads 'pictures or text grids', treating the two as distinct; D26 and line 56-57 make the contract stack agnostic. The counter's loose reading is not the plan's own usage. expect matches line 39; new only admits the terminal case."
+
+[[verdicts]]
+finding = "F4"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/v2-ui-fidelity/brief.md:98-99"
+rationale = "Line 98 lists accept kinds as forward or falsifier and line 99 names tomlctl/src/tasks/schema.rs, where lines 41-44 define KIND_GUARD and ACCEPT_KINDS = [forward, falsifier, guard]. Guard is live (Tasks 11, 20, 27 carry Kind: guard accepts) and no task removes it; Task 5's detail names guard. expect matches line 98 verbatim."
+
+[[verdicts]]
+finding = "F10"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/v2-ui-fidelity/brief.md:20-30"
+rationale = """The brief's Scope budget at line 20 reads "across five areas", and the numbered list under it at lines 22-30 runs 1 to 6, with item 6 being build-time questions (D9, D11). `expect` matches the current value, which occurs once in the brief. Changing five to six fixes the count and changes nothing else. C1's rule-out is about "each landable on its own" set against D24's single build milestone, a different clause, so it does not defeat this count fix."""
+
+[[verdicts]]
+finding = "F9"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/v2-ui-fidelity/brief.md:55"
+rationale = "brief.md:55 says a non-UI plan runs exactly as today, but D6 (user-stated) rewrites Surface test 1 and the budget for all planning, D10 adds two read-backs, D14 makes approve refuse silent one-way doors, and D9/D11 add worker questions mid-build; none is keyed on UI, and brief.md:26,29 scope areas 3 and 6 are not UI-only. Task 29's intent-fidelity lens reads the brief's Success criteria, so the contradiction is live. C5's rule-out cites store tests (empty ui lists, classless store), which pin only the UI-specific paths and do not defeat it. Minor stands."
+
+[[verdicts]]
+finding = "F6"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = ".claude/flows/v2-ui-fidelity/tasks.toml:784"
+rationale = "Counter tested: no other check pins either clause. Task 21's check (tasks.toml:784) greps compromise, eight, outside the budget, class and the removed SKILL.md line only; task 23's check pins write-and-prove.md's read-back, the Milestone A gates are cargo and verify-shared-blocks, and no contract check names open-and-challenge.md. grep -ci 'lift' and 'see and do' on open-and-challenge.md at HEAD give 0 and 0, so the new greps fail now and match the detail's own wording. expect equals the current value; new adds only the two greps."
+
+[[verdicts]]
+finding = "F7"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = ".claude/flows/v2-ui-fidelity/tasks.toml:724"
+rationale = "Counter tested: task 18's check greps questions.md for QUESTION <, inputs answer and plan decide only; C4's check greps QUESTION <; no task, contract or Milestone A gate check names the look-handover rule or the parked-on-open-question re-ask. Task 19's check (tasks.toml:724) greps visual.md, visual: and questions.md only. drain.md at HEAD has 0 hits for 'the look' and 'open question', and both phrases are the detail's own wording. expect matches the current value; new adds two greps and widens behaviour accordingly."
+
+[[verdicts]]
+finding = "F5"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl plan view --slug v2-ui-fidelity --for human: Task 32 Action and Task 33 Action list no panel-sizing control; brief.md:36-37 names 'a panel taller or shorter than its content needs'"
+rationale = "Counter checked: Milestone B is deferred, but Task 32/33 actions enumerate their controls (tile scaling, blank notices band, overflow, off-style glyph; column, truncation, border, blank band) and none sizes a panel independently of content. Task 14's rubric lists 'reserved empty space' and 'panel taller or shorter' as separate classes, so the blank band does not cover it. expect matches Task 32's current action verbatim; new adds only the missing control."
+
+[[verdicts]]
+finding = "F8"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl plan view --slug v2-ui-fidelity --for human: C1 'builds the capture and the inspector launch from it and from nothing else'; Task 7 visual = {states, controls, looks}; Task 17 Detail names no design"
+rationale = "Counter checked: Task 7's visual object carries only states, controls and looks, and C1 binds visual.md to it 'and from nothing else', yet Task 16's Workflow takes design and Task 15 step (4) compares against it. Task 17's detail and accept never source design/ui-<milestone>.md (Task 22 writes it), so brief criterion 2 can silently lapse. The new accept closes the test gap; C1's 'nothing else' wording should also admit the design path, a record outside this target."
+
+[[verdicts]]
+finding = "F14"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/v2-ui-fidelity/brief.md:20-30"
+rationale = 'expect holds: brief.md:20 reads "across five areas", while the numbered list under Scope budget runs 1-6 (lines 22-30), item 6 being questions during the build (D9, D11). No other file in the flow refers to a five- or six-area count, so nothing pins five as deliberate. new changes only the count and fixes exactly the mismatch. The C1/C4 rule-outs concern "each landable on its own" versus the single milestone, a different clause, so they do not defeat this row.'
+
+[[verdicts]]
+finding = "F19"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/stage.rs:273"
+rationale = "The counter fails: approve.rs:226 refuses on unanswered_decisions whatever the value of amend. Only refuse_open_runs is gated on !amend, at :223. grep finds three calls to unanswered_decisions: approve.rs:226, stage.rs:246 and stage.rs:273 (amend_report). amend_report returns AMEND_APPROVAL when unanswered is none, so it also needs the new predicate. The Detail names only two call sites. view.rs:418 builds its own list through is_unanswered and is not a caller. The new value fixes the gap and stays within the Files line."
+
+[[verdicts]]
+finding = "F24"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/v2-ui-fidelity/brief.md:20-31"
+rationale = 'brief.md:20 reads "across five areas" while the numbered list at lines 22-31 holds six items; item 6 (questions during the build, D9/D11) is numbered on its own, not folded into item 3 (Surfacing covers planning and elaboration only), so recounting is the right fix. expect matches the current text byte for byte and new changes only the count. The C1/C4 rule-outs concern "each landable on its own" vs milestone A, not the count, so they do not defeat this row.'
+
+[[verdicts]]
+finding = "F15"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl plan view --slug v2-ui-fidelity --for human: line 185 D3 'plan check refuses a UI milestone that names none'; line 1045 task 6 constraint 'A plan with no ui_states anywhere reports no new finding'"
+rationale = "Counter fails: plan view shows D3 (line 185) promising plan check refuses a UI milestone naming no states, but D17 and task 6's four classes all key on ui_states or a look entry, and task 6's constraint (line 1045) says a plan with no ui_states anywhere reports no new finding, which forbids that refusal. No other task (4, 9, 22, 23, 25, 26) adds it. Block kept: a ui-capture paths error contradicts D5's reason against keying UI-ness on file edits, and dropping the clause edits user-confirmed D3; neither option is dominated."
+
+[[verdicts]]
+finding = "F18"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+severity = "minor"
+citation = "tomlctl/src/plan/approve.rs:58-64,124; tomlctl/tests/plan_lifecycle.rs:560; tomlctl/src/plan/schema.rs:52"
+rationale = """expect matches the task detail verbatim. The nested-shape fork is mostly closed already: tests/plan_lifecycle.rs:560 reads gate["assumptions"][0], and that file is outside the task's files. But class order is genuinely open. vocabulary! (schema.rs:52) derives no Ord, so the executor has to invent a rank, and approve.md and plan.md:414 only say "grouped". new pins a flat list, a null class, vocabulary order and binds order within a class, and changes nothing else. The trigger is narrow, so I lowered severity to minor."""
+
+[[verdicts]]
+finding = "F21"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+severity = "major"
+citation = "docs/flows/v2-ui-fidelity/brief.md:55"
+rationale = "Counter tested: the C5 rule-out reads line 55 as UI-machinery scope, and tasks 4/6/7 pin that, but the text says 'exactly as it does today'. The brief's own criteria at 40-49 (surfacing, read-back, build-time questions) apply to every plan, as do user-stated D6 and tasks 2, 20, 21. So the criterion is unsatisfiable as written; task 29's lens, composed on any review bound to this flow, would read it. Plan still executes, so major, not critical."
+
+[[verdicts]]
+finding = "F16"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "write-and-prove.md:63 Handovers paragraph names no look rule; reportdesignkit plan.toml:2587-2593 H1 (attended, 'review the look') added by 08f7671c 'Elaborate the Themes page milestone', no attempt.handover for task 32"
+rationale = "Counter fails: git log -S on H1's action text in reportdesignkit finds only 08f7671c, a plan-time elaboration commit, and no [attempt.handover] exists for task 32 (H2's has one at plan.toml:3245), so look handovers are minted at plan time. Task 23's detail matches expect and never touches Handovers; task 19 adds the rule to drain.md step 9 only; no other task names it. The new text adds just that clause. Note elaborate.md has no Handovers step of its own, so the rule reaches elaboration only via write-and-prove."
+
+[[verdicts]]
+finding = "F22"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = ".claude/flows/v2-ui-fidelity/plan.toml:619-622"
+rationale = "Counter fails: C1 says visual.md builds the capture and inspector launch from gate-list's visual object 'and from nothing else', and task 7 defines that object as {states, controls, looks} with no design. Task 16's Workflow takes a `design` arg and task 15's step (4) compares against the chosen design, yet task 17's detail names no design source. C1 already contradicts task 17's own ui-capture.toml read. The new value names both inputs and D4's design path. Minor holds."
+
+[[verdicts]]
+finding = "F23"
+run = "U1"
+by = "verifier"
+verdict = "plausible"
+citation = ".claude/flows/v2-ui-fidelity/tasks.toml:740"
+rationale = "Task 20's constraint caps a run at one question, and its detail parks only on an unanswered one, so a second choice met later has no stated route. That gap is partial. plan-worker-deep.md:126 (Judgement, outside the shared block) already parks when two ways differ in what a user would see. But a hard-to-unwind choice that is not user-visible falls to :124, which fills the gap and only records it as a deviation, against brief.md:48-49. The new value closes the gap."
+
+[[verdicts]]
+finding = "F12"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/tasks/update.rs:2415-2426"
+rationale = "Counter fails: Accept (tasks/schema.rs:276) derives no Default, and the cfg(test) helper update.rs:2416 lists all eight fields with no struct update, so adding `states` breaks the lib test build. show.rs:145 accept_json emits no unknown keys, so states would vanish from tasks show and update's move notes. No task in the flow owns update.rs or show.rs, and task 5's constraint forbids touching them. expect matches the current files list; new adds exactly the two files. C5's rule-out concerns byte round-trip, not this."
+
+[[verdicts]]
+finding = "F13"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/check.rs:608-616"
+rationale = "check.rs:609-616 raises error plan/accept-no-check for any elaborated entry with an empty check, with no owner test; D15 (plan view) says a look entry's check stays empty; approve.rs:229 refuse_check_errors refuses on any error. Neither task 5 nor 6 mentions accept-no-check, so a plan with an elaborated look entry cannot be approved. expect matches task 6's detail; new also corrects decision-bind-unknown to check.rs:488, where it now sits, and adds the exemption and its test."
+
+[[verdicts]]
+finding = "F26"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "claude/agents/plan-worker-deep.md:135"
+rationale = "Counter fails: forbidden-ops (deep:135, lite:140) says the only store write is tasks update and every other tomlctl write verb on any store is the orchestrator's; task 20 adds inputs add but edits only the procedure block. Lite 'When to return failed' (lite:126) still fails any open choice, and procedure:50 says a finding-fix needing a decision is failed, never parked. Task 20's lite parenthetical softens one of three; task 12 changes only inputs.md's writer rule, not the agents."
+
+[[verdicts]]
+finding = "F27"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl inputs list --kind question --where id=I999 --where status=handled --get id -> no output, exit=0"
+rationale = """Reproduced: --get on an empty filtered report prints nothing and exits 0, so `until <that command>` ends on the first poll and the worker parks at once, defeating D9's ten-minute wait. -q cannot be combined with --where (exit 1 with an error), so no exit-code form exists; the Detail must say to test non-empty output, e.g. until [ -n "$(...)" ], with an own deadline under the 600000 ms tool timeout."""
+
+[[verdicts]]
+finding = "F28"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "task:write-the-implement-v2-visual-pass.detail; contract C1"
+rationale = "Task 16 Action takes {slug, milestone, round, capture_dir, design, states, controls, looks} and refuses bad args; task 17 Detail never names design, and C1 says visual.md builds the launch from gate-list's visual object (states, controls, looks) and nothing else. D4's ui-<milestone>.md path binds write-and-prove.md, elaborate.md and task 22, not 17. Round and capture_dir are derivable from the Detail; design is not, so the worker must invent it against C1."
+
+[[verdicts]]
+finding = "F29"
+run = "U1"
+by = "verifier"
+verdict = "refuted"
+citation = "claude/skills/implement-v2-engine/references/drain.md:291"
+rationale = "Any relaunch re-enters run-milestone step 3 and its notification is drained from step 1; drain.md:291 sends a milestone whose rows are all done to step 7, the gate, and task 19 makes only a gate pass go by way of visual.md (drain.md:367). Gate fix rounds use the same path (drain.md:387). So a visual fix row cannot reach the commit without regating, whatever 'come back here' says. At most a wording point for visual.md, not a defect."
+
+[[verdicts]]
+finding = "F12"
+run = "U1"
+by = "audit"
+verdict = "confirmed"
+citation = "tomlctl/src/tasks/update.rs:2415-2426"
+rationale = "Upheld: the cfg(test) helper at update.rs:2416-2425 builds Accept with all eight fields and no struct update, so adding states breaks the lib test build as the failure_scenario says."
+
+[[verdicts]]
+finding = "F18"
+run = "U1"
+by = "audit"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/approve.rs:58-64"
+rationale = "Upheld: gate_report sorts a flat Vec by binds only (approve.rs:64) and the vocabulary enum (schema.rs:52) derives no Ord, so the class order is left to the executor."
+
+[[verdicts]]
+finding = "F23"
+run = "U1"
+by = "audit"
+verdict = "confirmed"
+citation = ".claude/flows/v2-ui-fidelity/tasks.toml:740"
+rationale = "Upheld: tasks.toml:740 caps a run at one question and the detail parks only on an unanswered one, so a later hard-to-unwind choice has no stated route but a silent decision."
+
+[[verdicts]]
+finding = "F29"
+run = "U1"
+by = "audit"
+verdict = "refuted"
+citation = "claude/skills/implement-v2-engine/references/drain.md:291"
+rationale = "Upheld refutation: drain.md:291 sends any milestone whose rows are all done to step 7, the gate, so visual fix rows relaunched through step 3 are regated before the commit whatever visual.md's wording."
+
+[[verdicts]]
+finding = "F30"
+run = "U2"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/v2-ui-fidelity/brief.md:36"
+rationale = "expect text sits at brief.md:36 verbatim. D27 and task 3's contract let a state be <state>.txt only (text grid, no image), task 33 (milestone B) captures a terminal panel as text grids, and D26 puts TUIs through the same contract, so 'looks at screenshots' cannot be met for a terminal-only milestone. The second criterion already uses 'pictures, or as text grids for a terminal UI'; the new text mirrors that and changes nothing else. No note or decision scopes the criterion to images."
+
+[[verdicts]]
+finding = "F31"
+run = "U2"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/v2-ui-fidelity/brief.md:55"
+rationale = "'where screenshots could' sits at brief.md:55. Task 23's detail (drain.md step 9) and the plan-v2 Design rule both refuse a look handover 'where the milestone's captures can settle it' / for any milestone with ui_states, covering text-grid states too (D26, D27). Nothing in the brief or decisions scopes the handover rule to image captures, so the criterion is narrower than the plan it governs. The new wording aligns it with the tasks and changes nothing else."
+
+[[verdicts]]
+finding = "F35"
+run = "U2"
+by = "verifier"
+verdict = "confirmed"
+citation = ".claude/flows/v2-ui-fidelity/plan.toml:664-669"
+rationale = "expect matches D33.binds (plan.toml:664-669: SKILL.md, 13, 15, 17). Counter fails for task 27: its worker view carries neither D33 nor C3 and grep finds no 'geometry', and its detail has lenses judge captures against defects.md only. Task 28 partly survives via C3 ('every image state has a key'), but its view also shows D27 (plan.toml:541) calling geometry.json optional. Adding 27 and 28 to binds puts D33 in both views; D27's stale 'optional' wording stays and may want its own row."
+
+[[verdicts]]
+finding = "F33"
+run = "U2"
+by = "verifier"
+verdict = "plausible"
+citation = "claude/skills/plan-v2-engine/references/elaborate.md:51"
+rationale = "elaborate.md:51 still ends 'Zero survivors is the normal case; record nothing for them.' Task 24's detail and accept check (grep for ui-layout.md and 'four') never name that sentence, and the brief's Current state (plan view line ~101) lists 'the normal case' as part of the problem D6 reverses. The counter holds partly: an executor rewriting section 2 might drop it unprompted, but task 24 is lite and pinned to line 51's cap, so survival is likely, not certain. Minor stands."
+
+[[verdicts]]
+finding = "F34"
+run = "U2"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/stage.rs:203"
+rationale = "On an approved plan assess returns report(stage, next, Vec::new()) unless the brief changed (stage.rs:181-204), and elaboration runs only on an approved plan; elaborate.md section 6 says no approval gate shows its decisions and re-approval is not needed. Task 2 hooks the predicate into approve and the pre-approval/amend stage branches only. The counter's prose rule (task 21) reaches elaboration but is not the D14 floor, so an elaboration one-way door reaches the user only in the post-commit close. Minor holds; the fix query runs cleanly."
+
+[[verdicts]]
+finding = "F39"
+run = "U2"
+by = "verifier"
+verdict = "confirmed"
+citation = "claude/skills/plan-v2-engine/SKILL.md:54-56"
+rationale = "Counter tested: no other task edits SKILL.md (plan view lists it only under task 21's Files; task 23 edits write-and-prove.md). Task 21's Detail rewrites SKILL.md:16, dropping 'zero questions before the gate is the normal case' (its Accept greps that away), and adds rows to the step table, but leaves SKILL.md:54 and :56 saying a skipped Surface is 'normal'. That contradicts D's ask-every-hard-to-unwind rule. The edit only adds those two row changes to the Detail; nothing else moves."
+
+[[verdicts]]
+finding = "F36"
+run = "U2"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/schema.rs:172"
+rationale = "Counter fails: of the 34 tasks only task 1 holds plan/schema.rs, and it adds a decision class; nothing adds a ReportKind. ReportKind (schema.rs:172-183) is closed and parse_row refuses an unknown kind (run_report.rs:79-84). Task 19 asks drain.md's Section/kind table to gain visual rows, and task 17 and D19 report unsound inspection and exhausted rounds in needs_human, but no record names their kind. Task 19 holds only md files, so a `visual` kind cannot be recorded and `gate` reuse is unstated. Severity stays major."
+
+[[verdicts]]
+finding = "F37"
+run = "U2"
+by = "verifier"
+verdict = "confirmed"
+citation = "claude/skills/implement-v2-engine/references/apply-rows.md:150-153"
+rationale = "Task 17's detail says only that a missing state file or geometry key 'mints a fix task on the capture, not a visual verdict'; it names no files and no reason prefix. Its precedent gives no rule for that case: a reproduce fix task takes the fixing row's files and a 'reproduce <id> round <n>: ' prefix (apply-rows.md:150-153), and drain.md:376-386 counts gate rounds only by prefix. The capture command is named only in ui-capture.toml, so the files must be invented, and an unprefixed task escapes the two-round cap. Minor stands."
+
+[[verdicts]]
+finding = "F38"
+run = "U2"
+by = "verifier"
+verdict = "refuted"
+citation = "tomlctl plan view --slug v2-ui-fidelity --for human: line 246 (D6 'up to eight such questions a planning session'), line 1754 (task 21 detail: 'the budget is eight a planning session in the first round'; interview 'rounds whose length scales with the work's complexity and ambiguity')"
+rationale = "D6 and task 21's own detail fix the unit as 'a planning session', so Surface and Surface again share one eight; per-step eight would contradict the stated unit, and task 23 cites section 5 'budget included', which carries that wording over. D8's 'a step's first round' says which questions count (first rounds, not follow-ups), not a per-step quota. The interview is set by D31 and task 21's section 1 as variable-length rounds scaled to complexity, which a fixed eight would contradict, and it is not a Surface question. No real fork remains for an executor."
+
+[[verdicts]]
+finding = "F32"
+run = "U2"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl plan view --slug v2-ui-fidelity --for human: Task 5 'Needs: 2, 4'; Task 17 Detail 'design = docs/flows/<slug>/design/ui-<milestone>.md'"
+rationale = """brief.md:20 still says the seven areas are "each landable on its own". The plan view shows they are coupled: Task 5 (look owner) needs 4 (ui_states), Task 17 makes visual.md read design/ui-<milestone>.md, and Task 23 needs 21 and 22. C14's rule-out is about cadence, and D24 is agent-assumed; the finding is about a description, so the rule-out does not defeat it. But `new` overreaches. B proves only the visual pass, and area 1 builds on area 2. I cite outside brief.md so the row stays advisory. Say instead: "built together in milestone A, since several build on one another"."""
+
+[[verdicts]]
+finding = "F40"
+run = "U2"
+by = "verifier"
+verdict = "confirmed"
+citation = "claude/skills/plan-v2-engine/SKILL.md:106"
+rationale = "Counter holds false: visual: appears in tasks.toml only in tasks 17-19, and task 19's detail edits implement-v2-engine only. plan-v2-engine SKILL.md:106 and open-and-challenge.md:228 (section 6) protect only implement:/reproduce:; stage.rs:82 is_milestone_scoped exempts only elaborate:/cold-read:, so a visual:<id> run blocks and falls to 'Otherwise abandon'. structure-challenge.md:212 named these two sites; no task took them. Task 21 owns both files, so new is in scope. C17 rule-out is about class values, unrelated."
+
+[[verdicts]]
+finding = "F41"
+run = "U2"
+by = "verifier"
+verdict = "confirmed"
+citation = ".claude/flows/v2-ui-fidelity/tasks.toml:1667; claude/skills/plan-v2-engine/SKILL.md:8,64-69"
+rationale = """Holds. expect matches tasks.toml:1667 verbatim. Only task 21 lists plan-v2-engine/SKILL.md in Files (plan view: lone SKILL.md edit at task 21); its action and detail never name ui-layout.md, while task 22 creates it. SKILL.md:64-69 lists four references, and SKILL.md:8 says "the three references", already stale. The sibling implement-v2 task explicitly adds visual.md and questions.md to its references list, so the omission here is an inconsistency. new fixes exactly that, inside task 21's own files. C17's rule-out concerns decision classes, not this site."""
+
+[[verdicts]]
+finding = "F34"
+run = "U2"
+by = "audit"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/stage.rs:203"
+rationale = "Upheld: stage.rs:203 returns report(stage, next, Vec::new()) for an approved plan with no brief change, so a one-way door recorded during elaboration meets no mechanical check, as the failure_scenario says."
+
+[[verdicts]]
+finding = "F36"
+run = "U2"
+by = "audit"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/schema.rs:172"
+rationale = "Upheld: schema.rs:170-183 declares ReportKind as a closed vocabulary with no visual kind, and no other task touches schema.rs to add one, so a visual report row is refused."
+
+[[verdicts]]
+finding = "F37"
+run = "U2"
+by = "audit"
+verdict = "confirmed"
+citation = "claude/skills/implement-v2-engine/references/apply-rows.md:150-153"
+rationale = "Upheld: the precedent fix tasks take the fixing row's files and a round prefix that the two-round cap counts, and task 17's capture-failure fix task names neither, so executors must invent both."
+
+[[verdicts]]
+finding = "F38"
+run = "U2"
+by = "audit"
+verdict = "refuted"
+citation = "tomlctl plan view --slug v2-ui-fidelity --for human: line 1754 (task 21 detail)"
+rationale = "Upheld refutation: task 21's own detail sets 'the budget is eight a planning session in the first round' in section 5 and gives the section 1 interview variable-length rounds, so no fork is left for the executor."

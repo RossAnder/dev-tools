@@ -1,0 +1,1978 @@
+schema_version = 2
+last_updated = 2026-11-17
+plan_path = ""
+last_import_refs = []
+
+[policy]
+checkpoints = "milestones"
+max_parallel = 6
+commit_granularity = "per-task"
+origin = "plan"
+note = ""
+
+[[checkpoints]]
+id = "A"
+rationale = "The harness sees and judges the UI it builds, shows layout options before UI tasks are written, asks the user every hard-to-unwind or compromise call at plan time and during the build, and reviews UI changes and fidelity to intent, through a stack-agnostic capture contract."
+
+[[checkpoints]]
+id = "B"
+rationale = "The visual pass is proven on two dev-tools fixtures, a web panel captured as images and a terminal panel captured as text grids, each with clean states the inspector passes and planted-defect controls it fails, and the catch rate is reported."
+
+[[file_notes]]
+ref = "write-the-ui-capture-contract-and-defect-rubric"
+file = "claude/skills/ui-capture/SKILL.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-ui-capture-contract-and-defect-rubric"
+file = "claude/skills/ui-capture/references/defects.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "ship-the-web-geometry-probe-and-html-renderer"
+file = "claude/skills/ui-capture/scripts/geometry-probe.js"
+note = "(new)"
+
+[[file_notes]]
+ref = "ship-the-web-geometry-probe-and-html-renderer"
+file = "claude/skills/ui-capture/scripts/render.sh"
+note = "(new)"
+
+[[file_notes]]
+ref = "create-the-ui-inspector-agent"
+file = "claude/agents/ui-inspector.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "add-the-implement-v2-visual-workflow"
+file = "claude/workflows/implement-v2-visual.js"
+note = "(new)"
+
+[[file_notes]]
+ref = "add-the-implement-v2-visual-workflow"
+file = "claude/workflows/tests/visual.test.mjs"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-implement-v2-visual-pass"
+file = "claude/skills/implement-v2-engine/references/visual.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-implement-v2-build-time-question-loop"
+file = "claude/skills/implement-v2-engine/references/questions.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-ui-layout-design-step"
+file = "claude/skills/plan-v2-engine/references/ui-layout.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "add-the-ui-visual-and-interaction-review-lenses"
+file = "claude/skills/review-v2-lenses/lenses/ui-visual.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "add-the-ui-visual-and-interaction-review-lenses"
+file = "claude/skills/review-v2-lenses/lenses/interaction.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "add-the-ui-capture-review-check"
+file = "claude/skills/review-v2-lenses/checks/ui-capture.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "add-the-intent-fidelity-lens-and-its-compose-rule"
+file = "claude/skills/review-v2-lenses/lenses/intent-fidelity.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "build-the-web-fixture-panel"
+file = "claude/skills/ui-capture/fixtures/web/panel.html"
+note = "(new)"
+
+[[file_notes]]
+ref = "build-the-web-fixture-panel"
+file = "claude/skills/ui-capture/fixtures/web/states.txt"
+note = "(new)"
+
+[[file_notes]]
+ref = "declare-the-fixtures-capture-command"
+file = "claude/skills/ui-capture/fixtures/capture.sh"
+note = "(new)"
+
+[[file_notes]]
+ref = "declare-the-fixtures-capture-command"
+file = ".claude/ui-capture.toml"
+note = "(new)"
+
+[[specs]]
+ref = "add-an-optional-class-to-plan-decisions"
+outcome = "A decision can carry a class from a fixed list; plan decide accepts and updates it, the store round-trips it, a store without classes is byte-identical to today's, and an older binary cannot silently strip it."
+constraints = [
+    "Touch no file outside this task's files.",
+    "An unknown class value is refused with the list of accepted values.",
+    "A store with no class anywhere keeps its present schema_version.",
+]
+means = []
+design = []
+precedent = ["tomlctl/src/plan/schema.rs"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "decisions have a class vocabulary"
+check = """grep -q 'compromise' tomlctl/src/plan/schema.rs && grep -q '"class"' tomlctl/src/plan/records.rs"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a decision's class round-trips through plan decide, an unknown class is refused, and a classless store is unchanged"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/decision_class/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.premises]]
+claim = "decisions are serialised by decision_to_toml"
+check = "grep -q 'fn decision_to_toml' tomlctl/src/plan/schema.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "refuse-approval-over-a-silent-one-way-door"
+outcome = "A plan cannot be approved while it rests on a one-way door the user was never asked about, and the approval gate shows assumptions grouped by class."
+constraints = [
+    "Touch no file outside this task's files.",
+    "A one-way decision that is user-stated or user-confirmed, or agent-assumed and surfaced, is never refused by the new rule.",
+]
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the store has a silent one-way door predicate used by approve"
+check = "grep -q 'silent_one_way' tomlctl/src/plan/store.rs && grep -q 'silent_one_way' tomlctl/src/plan/approve.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "approve refuses an unsurfaced agent-assumed one-way decision and accepts a surfaced or user-answered one"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/silent_one_way/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.premises]]
+claim = "approval refuses on unanswered decisions through unanswered_decisions"
+check = "grep -q 'fn unanswered_decisions' tomlctl/src/plan/store.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "show-a-decisions-class-in-plan-view"
+outcome = "A person reading a plan sees each decision's class and how many decisions each class holds."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Output for a decision with no class is unchanged.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the view's class output has its test"
+check = "grep -q 'view_decision_class' tomlctl/tests/plan_view.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a classed decision shows its class on the Standing line and an unclassed one is unchanged"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/view_decision_class/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs]]
+ref = "give-milestones-capture-states-and-controls"
+outcome = "A milestone can declare which capture states its visual pass judges and which planted-defect control states the inspector must fail; a milestone without them is stored exactly as today."
+constraints = [
+    "Touch no file outside this task's files.",
+    "A store whose milestones carry no ui fields is byte-identical after a write.",
+    "In tomlctl/src/plan/lane.rs (near line 706) and tomlctl/src/tasks/milestones.rs (near line 294) edit only the #[cfg(test)] MilestoneSpec literals, giving the new fields empty values.",
+]
+means = []
+design = []
+precedent = ["tomlctl/src/plan/milestone.rs"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "milestones carry ui_states and ui_controls"
+check = "grep -q 'ui_states' tomlctl/src/tasks/schema.rs && grep -q 'ui_controls' tomlctl/src/tasks/schema.rs && grep -q 'ui-control' tomlctl/src/cli/types/plan.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "plan milestone add and update set, replace and clear the ui lists, refuse a bad or doubled name, and leave a store without them unchanged"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/milestone_ui/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.premises]]
+claim = "MilestoneSpec has gate_probes to follow"
+check = "grep -q 'pub(crate) gate_probes' tomlctl/src/tasks/schema.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "accept-a-look-owner-judged-on-capture-states"
+outcome = "A task can state a user-visible behaviour that an inspector judges on named capture states, and such an entry is never probed or mistaken for an exit-code check."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Existing accept entries round-trip byte-identically.",
+    "In tomlctl/src/plan/store.rs edit only the #[cfg(test)] Accept literal near line 714, giving `states` an empty value.",
+]
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "accept entries know the look owner and its states"
+check = """grep -q '"look"' tomlctl/src/tasks/schema.rs && grep -q '"states"' tomlctl/src/tasks/add.rs"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a look entry needs states and an empty check, states is refused on other owners, and plan probes skips a look entry"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/accept_look/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.premises]]
+claim = "accept owners are worker, gate and covered"
+check = "grep -q 'RUN_BY_OWNERS' tomlctl/src/tasks/schema.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "check-look-entries-and-structural-ui-acceptance"
+outcome = "plan check refuses a look entry that names an undeclared state or sits in a milestone without states, refuses a UI milestone without a control state, and warns when a UI milestone's row proves its behaviour only with reads."
+constraints = [
+    "Touch no file outside this task's files.",
+    "A plan with no ui_states anywhere reports no new finding.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "plan check has the five new classes and the look exemption"
+check = "grep -q 'look-state-unknown' tomlctl/src/plan/check.rs && grep -q 'ui-accept-structural' tomlctl/src/plan/check.rs && grep -q 'ui-controls-missing' tomlctl/src/plan/check.rs && grep -q 'ui-milestone-no-states' tomlctl/src/plan/check.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "each new class fires on its case, a look entry raises no accept-no-check, and a plan without ui_states or a capture config reports nothing new"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/check_ui_/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs]]
+ref = "emit-the-visual-pass-inputs-from-gate-list"
+outcome = "The engine gets everything the visual pass needs for a milestone from one verb, and no look entry is ever silently dropped."
+constraints = [
+    "Touch no file outside this task's files.",
+    "gate-list output for a milestone without ui_states is byte-identical to today's.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "gate-list collects look entries into a visual object"
+check = """grep -q '"visual"' tomlctl/src/plan/emit.rs && grep -q 'looks' tomlctl/src/plan/emit.rs"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a milestone with ui_states prints visual with its states, controls and looks, and one without prints no visual key"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/gate_list_visual/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs]]
+ref = "add-a-plan-ledger-to-the-inputs-store"
+outcome = "A question about one task of a flow can be logged in the inputs store and found by flow and task."
+constraints = ["Touch no file outside this task's files."]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the inputs store accepts a plan ledger"
+check = """grep -q '"plan"' tomlctl/src/inputs.rs"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a question with ledger plan, a flow and task items is added and listed, and one naming a scope is refused"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/inputs_plan_ledger/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs]]
+ref = "document-decision-classes-the-one-way-rule-and-milestone-ui-flags"
+outcome = "The tomlctl references describe every new plan field, flag, refusal and check class as built."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Follow the documentation-conventions skill; state what the verb does, no change history.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the plan reference documents the new class, flags and check classes"
+check = "grep -q 'ui-accept-structural' claude/skills/tomlctl/references/plan.md && grep -q -- '--ui-control' claude/skills/tomlctl/references/plan.md && grep -q 'compromise' claude/skills/tomlctl/references/plan-store.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs]]
+ref = "document-the-look-owner-and-milestone-ui-fields-in-the-task-store-references"
+outcome = "A planner reading the task-store references can write a look entry and a UI milestone correctly."
+constraints = ["Touch no file outside this task's files."]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the task references document the look owner and ui fields"
+check = """grep -q 'run_by = "look"' claude/skills/tomlctl/references/tasks-write.md && grep -q 'ui_controls' claude/skills/tomlctl/references/tasks-store.md"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs]]
+ref = "register-the-new-capabilities"
+outcome = "A carrier refuses to run against an installed tomlctl that lacks the verbs this flow adds, naming cargo install --path tomlctl."
+constraints = ["Touch no file outside this task's files."]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the three features are registered and required by the carriers"
+check = "grep -q 'ui_look' tomlctl/src/cli/types/mod.rs && grep -q 'decision_class' claude/commands/plan-v2.md && grep -q 'inputs_plan_ledger' claude/commands/implement-v2.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "capabilities lists exactly the expected features"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^capabilities::/)'"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs]]
+ref = "let-plan-workers-post-questions-in-the-inputs-contract"
+outcome = "The inputs contract allows exactly the writes the build-time question loop needs and no more."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Keep the rule that no agent answers, withdraws or acknowledges a question by its own judgement.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the contract names the plan worker's question write and the orchestrator's relayed answer"
+check = '''grep -q 'plan worker' claude/skills/flow-contract-user-inputs/SKILL.md && grep -q 'ledger plan\|`plan` ledger\|ledger = "plan"' claude/skills/flow-contract-user-inputs/SKILL.md'''
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs]]
+ref = "write-the-ui-capture-contract-and-defect-rubric"
+outcome = "One skill holds the capture contract every project implements, for any UI stack, and the defect rubric every judge of a capture uses."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Nothing in the contract requires a browser or a web file type.",
+    "Follow the documentation-conventions skill.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the skill states the contract with its flags, outputs and config"
+check = "grep -q -- '--list' claude/skills/ui-capture/SKILL.md && grep -q 'geometry.json' claude/skills/ui-capture/SKILL.md && grep -q 'ui-capture.toml' claude/skills/ui-capture/SKILL.md && grep -qi 'ratatui' claude/skills/ui-capture/SKILL.md && grep -qi 'qml' claude/skills/ui-capture/SKILL.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the rubric covers reserved empty space, scaling and terminal alignment"
+check = "grep -qi 'empty space' claude/skills/ui-capture/references/defects.md && grep -qi 'scal' claude/skills/ui-capture/references/defects.md && grep -qi 'column' claude/skills/ui-capture/references/defects.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs]]
+ref = "ship-the-web-geometry-probe-and-html-renderer"
+outcome = "A web project, a design mock or a fixture can be captured to the contract's PNG and geometry report with nothing installed beyond a browser."
+constraints = [
+    "Touch no file outside this task's files.",
+    "No npm or other package dependency.",
+    "Runs under Git Bash on Windows and under bash on Linux and macOS.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the renderer and the probe exist with a self-test"
+check = "test -f claude/skills/ui-capture/scripts/render.sh && grep -q -- '--self-test' claude/skills/ui-capture/scripts/render.sh && grep -q 'scrollWidth' claude/skills/ui-capture/scripts/geometry-probe.js"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the self-test renders a planted overflow page to a PNG and reports the overflow"
+check = "bash claude/skills/ui-capture/scripts/render.sh --self-test"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "gate"
+
+[[specs]]
+ref = "create-the-ui-inspector-agent"
+outcome = "An independent agent judges captures against the rubric, the look entries and the chosen design, leaning to fail, never pass, when unsure."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Follow the frontmatter shape of claude/agents/review-verifier.md.",
+    "Carry the teammate-delivery block the other flow agents carry, by scripts/shared-blocks.toml, if that block's files list must include every agent under claude/agents; otherwise none.",
+]
+premises = []
+means = []
+design = []
+precedent = [
+    "claude/agents/review-verifier.md",
+    "claude/agents/plan-cold-reader.md",
+]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the inspector states its verdicts, control rule and return shape"
+check = "grep -q 'unsure' claude/agents/ui-inspector.md && grep -qi 'control' claude/agents/ui-inspector.md && grep -q 'defects.md' claude/agents/ui-inspector.md && grep -q '^model:' claude/agents/ui-inspector.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs]]
+ref = "add-the-implement-v2-visual-workflow"
+outcome = "The engine can launch independent inspection of a milestone's captures in one saved Workflow and gets back an index it can act on."
+constraints = [
+    "Touch no file outside this task's files.",
+    "No Date.now, Math.random or argless new Date in the script.",
+]
+premises = []
+means = []
+design = []
+precedent = [
+    "claude/workflows/implement-v2-milestone.js",
+    "claude/workflows/tests/harness.test.mjs",
+]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the Workflow dispatches ui-inspector and its tests exist"
+check = "grep -q 'ui-inspector' claude/workflows/implement-v2-visual.js && grep -q 'implement-v2-visual' claude/workflows/tests/visual.test.mjs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the Workflow's grouping, refusal and dead-agent handling pass under node"
+check = "node --test claude/workflows/tests/"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs]]
+ref = "write-the-implement-v2-visual-pass"
+outcome = "A UI milestone cannot commit until an independent inspector has judged its declared states, controls proving the inspector caught planted defects, with defects fixed or reported to the user with their captures."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Keep to the engine's role rules: no inline build, gate or capture.",
+    "Follow the documentation-conventions skill.",
+]
+premises = []
+means = []
+design = []
+precedent = ["claude/skills/implement-v2-engine/references/apply-rows.md"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the visual pass reads gate-list, records visual:<id> runs, handles controls and unsure verdicts, and counts its own rounds"
+check = "grep -q 'emit gate-list' claude/skills/implement-v2-engine/references/visual.md && grep -q 'visual:<id>' claude/skills/implement-v2-engine/references/visual.md && grep -q 'unsure' claude/skills/implement-v2-engine/references/visual.md && grep -q 'visual <id> round' claude/skills/implement-v2-engine/references/visual.md && grep -q 'ui-capture.toml' claude/skills/implement-v2-engine/references/visual.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the visual pass hands the milestone's chosen design (design/ui-<milestone>.md) to the inspector launch"
+check = "grep -q 'design/ui-' claude/skills/implement-v2-engine/references/visual.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs]]
+ref = "write-the-implement-v2-build-time-question-loop"
+outcome = "A compromise or hard-to-unwind choice a worker meets reaches the user while the milestone runs, and the answer reaches the worker or its re-dispatch."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Follow the documentation-conventions skill.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the loop answers the QUESTION line, relays the pick, binds a decision and never answers for the user"
+check = "grep -q 'QUESTION <' claude/skills/implement-v2-engine/references/questions.md && grep -q 'inputs answer' claude/skills/implement-v2-engine/references/questions.md && grep -q 'plan decide' claude/skills/implement-v2-engine/references/questions.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs]]
+ref = "wire-the-visual-pass-and-the-question-loop-into-the-implement-v2-engine"
+outcome = "The engine runs the visual pass on every UI milestone and handles worker questions, and a milestone without ui_states runs exactly as before."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Every added clause points to visual.md or questions.md instead of restating them.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the engine names the visual pass, its run prefix and the question loop, refuses a look-review handover the captures can settle, and re-asks a row parked on an open question"
+check = "grep -q 'visual.md' claude/skills/implement-v2-engine/SKILL.md && grep -q 'visual:' claude/skills/implement-v2-engine/SKILL.md && grep -q 'questions.md' claude/skills/implement-v2-engine/SKILL.md && grep -q 'visual.md' claude/skills/implement-v2-engine/references/drain.md && grep -qi 'the look' claude/skills/implement-v2-engine/references/drain.md && grep -qi 'open question' claude/skills/implement-v2-engine/references/drain.md && grep -q 'visual:' claude/skills/implement-v2-engine/references/run-milestone.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs]]
+ref = "teach-plan-workers-to-ask-the-user-mid-run"
+outcome = "A worker never decides a compromise or hard-to-unwind choice silently: it asks through the orchestrator and either continues on the answer or parks with the question open."
+constraints = [
+    "Touch no file outside this task's files.",
+    "The plan-worker-procedure block stays byte-identical across both files; run bash scripts/verify-shared-blocks.sh.",
+    "Never more than one question per task run; batch related choices into one question. A compromise or hard-to-unwind choice met after that question parks the task with the choice and its options in the run note, for the drain to ask.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "both workers are granted SendMessage and carry the question procedure"
+check = "grep -q '^tools:.*SendMessage' claude/agents/plan-worker-deep.md && grep -q '^tools:.*SendMessage' claude/agents/plan-worker-lite.md && grep -q 'QUESTION <' claude/agents/plan-worker-deep.md && grep -q 'QUESTION <' claude/agents/plan-worker-lite.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the shared worker blocks stay identical"
+check = "bash scripts/verify-shared-blocks.sh"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "bash scripts/verify-shared-blocks.sh"
+
+[[specs]]
+ref = "rewrite-surface-for-taste-compromise-and-follow-up-questions"
+outcome = "Planning asks the user every hard-to-unwind or compromise call, taste and UX included, follows up instead of assuming, and reads the intent back before investigating."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Follow the documentation-conventions skill.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "Surface uses the new test, budget, follow-up rule, class and constraint-cost line, and Open reads the intent back"
+check = "grep -q 'compromise' claude/skills/plan-v2-engine/references/open-and-challenge.md && grep -qi 'eight' claude/skills/plan-v2-engine/references/open-and-challenge.md && grep -qi 'outside the budget' claude/skills/plan-v2-engine/references/open-and-challenge.md && grep -q 'class' claude/skills/plan-v2-engine/references/open-and-challenge.md && grep -qi 'lift' claude/skills/plan-v2-engine/references/open-and-challenge.md && grep -qi 'see and do' claude/skills/plan-v2-engine/references/open-and-challenge.md && ! grep -q 'zero questions before the gate is the normal case' claude/skills/plan-v2-engine/SKILL.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs]]
+ref = "write-the-ui-layout-design-step"
+outcome = "Before a UI milestone's tasks are written, the user picks among concrete layouts shown as pictures or text grids, and the pick reaches workers and the inspector."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Nothing in the step requires a browser for a terminal UI.",
+    "Follow the documentation-conventions skill.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the design step covers the Artifact page, terminal grids, the recorded pick and the declared states and controls"
+check = '''grep -q 'Artifact' claude/skills/plan-v2-engine/references/ui-layout.md && grep -q 'render.sh' claude/skills/plan-v2-engine/references/ui-layout.md && grep -q '.txt' claude/skills/plan-v2-engine/references/ui-layout.md && grep -q 'ui_controls\|--ui-control' claude/skills/plan-v2-engine/references/ui-layout.md'''
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs]]
+ref = "bring-design-surface-again-and-the-spec-rules-into-line"
+outcome = "Design runs the UI design step, Surface again shares one rule with Surface, and specs never accept user-visible behaviour on a grep alone."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Follow the documentation-conventions skill.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "Design opens with the directions step and read-back, writes direction.md, runs the UI design step, and the spec rules require look entries and direction citations"
+check = '''grep -q 'ui-layout.md' claude/skills/plan-v2-engine/references/write-and-prove.md && grep -q 'direction.md' claude/skills/plan-v2-engine/references/write-and-prove.md && grep -q 'run_by = "look"' claude/skills/plan-v2-engine/references/write-and-prove.md && grep -qi 'read-back\|read back' claude/skills/plan-v2-engine/references/write-and-prove.md && ! grep -q 'It must be a different plan' claude/skills/plan-v2-engine/references/write-and-prove.md'''
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs]]
+ref = "update-elaboration-and-approval-for-the-new-surfacing-rules"
+outcome = "Elaboration asks with the same rule as planning, commits the design pictures it makes, and approval explains the new refusal."
+constraints = ["Touch no file outside this task's files."]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "elaboration names its budget and the design step, and approval names the silent one-way refusal and class grouping"
+check = '''grep -q 'ui-layout.md' claude/skills/plan-v2-engine/references/elaborate.md && grep -qi 'four' claude/skills/plan-v2-engine/references/elaborate.md && grep -qi 'never surfaced\|silent one-way' claude/skills/plan-v2-engine/references/approve.md && grep -qi 'grouped by class' claude/skills/plan-v2-engine/references/approve.md'''
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs]]
+ref = "have-the-cold-reader-flag-open-look-choices-and-structural-ui-acceptance"
+outcome = "A cold read catches a UI task that would leave the worker to guess the look, or that proves the look with a grep."
+constraints = ["Touch no file outside this task's files."]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the cold reader names the UI flags and the direction citation"
+check = "grep -qi 'look entry' claude/agents/plan-cold-reader.md && grep -qi 'layout' claude/agents/plan-cold-reader.md && grep -q 'direction.md' claude/agents/plan-cold-reader.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs]]
+ref = "detect-ui-changes-on-any-stack-in-the-review-survey"
+outcome = "A review can tell a UI change on a terminal, QML or any other stack from the project's own declaration, not only from web file types."
+constraints = [
+    "Touch no file outside this task's files.",
+    "A detector without the option behaves exactly as today.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the diff detector reads the project's capture paths"
+check = "grep -q 'ui_capture_paths' tomlctl/src/review/catalogue.rs && grep -q 'ui-capture.toml' tomlctl/src/review/survey.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a changed file under a declared path fires the signal, one outside does not, and a missing config selects nothing"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/ui_capture_paths/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs]]
+ref = "add-the-ui-visual-and-interaction-review-lenses"
+outcome = "Every review of a UI change, on any stack, judges how it looks and behaves."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Neither lens is experimental.",
+]
+premises = []
+means = []
+design = []
+precedent = ["claude/skills/review-v2-lenses/lenses/correctness.md"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the signal, tags and both lenses exist"
+check = "grep -q 'ui-change' claude/skills/review-v2-lenses/vocabulary.toml && grep -q 'interaction-states' claude/skills/review-v2-lenses/vocabulary.toml && grep -q 'layout-sizing' claude/skills/review-v2-lenses/lenses/ui-visual.md && grep -q 'interaction-states' claude/skills/review-v2-lenses/lenses/interaction.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the catalogue validates with the new entries"
+check = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests::catalogue"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs]]
+ref = "add-the-ui-capture-review-check"
+outcome = "UI lens finders judge real captures of the changed UI whenever the project declares how to capture it."
+constraints = ["Touch no file outside this task's files."]
+premises = []
+means = []
+design = []
+precedent = ["claude/skills/review-v2-lenses/checks/dev-server-probe.md"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the check runs the declared capture and states its fallback"
+check = "grep -q 'ui-capture.toml' claude/skills/review-v2-lenses/checks/ui-capture.md && grep -q 'ui-capture: none' claude/skills/review-v2-lenses/checks/ui-capture.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs]]
+ref = "add-the-intent-fidelity-lens-and-its-compose-rule"
+outcome = "A review of a flow's work checks it against the brief and every decision the user made."
+constraints = ["Touch no file outside this task's files."]
+premises = []
+means = []
+design = []
+precedent = ["claude/skills/review-v2-lenses/lenses/plan-grounding.md"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the lens reads the brief and user decisions and the engine composes it on flow-bound runs"
+check = "grep -q 'brief.md' claude/skills/review-v2-lenses/lenses/intent-fidelity.md && grep -q 'user-stated' claude/skills/review-v2-lenses/lenses/intent-fidelity.md && grep -q 'intent-fidelity' claude/skills/review-v2-engine/references/compose.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs]]
+ref = "link-the-new-agent-skill-and-workflow"
+outcome = "Running the link script makes the new agent, skill and Workflow live under the Claude config dir."
+constraints = ["Touch no file outside this task's files."]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "both link scripts list the three new entries"
+check = "grep -q 'ui-inspector.md' scripts/link-v2-review.ps1 && grep -q 'ui-capture' scripts/link-v2-review.ps1 && grep -q 'implement-v2-visual.js' scripts/link-v2-review.ps1 && grep -q 'ui-inspector.md' scripts/link-v2-review.sh && grep -q 'implement-v2-visual.js' scripts/link-v2-review.sh"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs]]
+ref = "describe-the-visual-pass-and-build-time-questions-in-claudemd"
+outcome = "A session working in dev-tools knows the visual pass, the capture contract and the question loop exist and where they live."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Follow the documentation-conventions skill; route detail to the skill files rather than restating it.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "CLAUDE.md names the inspector, the capture skill and the visual Workflow"
+check = "grep -q 'ui-inspector' CLAUDE.md && grep -q 'ui-capture' CLAUDE.md && grep -q 'implement-v2-visual' CLAUDE.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs]]
+ref = "build-the-web-fixture-panel"
+outcome = "A web panel with known-clean and known-defective states the visual pass can be measured on."
+constraints = [
+    "Touch no file outside this task's files.",
+    "No external resources; one self-contained HTML file.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the clean web states (empty, one item, many items, long label) show none of the rubric's defects, judged as look entries once elaborated"
+check = ""
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs]]
+ref = "build-the-terminal-fixture-panel"
+outcome = "A terminal panel with known-clean and known-defective text-grid states."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Plain text, one line per terminal row, no escape codes.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the clean terminal states show none of the rubric's defects, judged as look entries once elaborated"
+check = ""
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs]]
+ref = "declare-the-fixtures-capture-command"
+outcome = "dev-tools declares a capture, so its fixtures go through the same contract any project uses."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Write .claude/ui-capture.toml through tomlctl set, never the Write tool.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the capture command lists every fixture state and captures one"
+check = ""
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[milestones]]
+id = "A"
+gates = [
+    "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check",
+    "cargo clippy --workspace --locked --all-targets",
+    "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast",
+    "bash scripts/verify-shared-blocks.sh",
+    "cargo install --path tomlctl --locked",
+]
+elaboration = "upfront"
+defer_reason = ""
+
+[[milestones.gate_probes]]
+gate = "bash scripts/verify-shared-blocks.sh"
+probe = "gawk --version"
+verdict = "holds"
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+
+[[milestones.gate_probes]]
+gate = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+probe = "cargo nextest --version"
+verdict = "holds"
+at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+
+[[milestones]]
+id = "B"
+gates = ["bash claude/skills/ui-capture/fixtures/capture.sh --list"]
+elaboration = "deferred"
+defer_reason = "Runs only after milestone A is linked into the Claude config dir and a new session has started, since new agents and Workflows register at session start; elaborating it then also exercises the new UI design step."
+after = ["A"]
+
+[[items]]
+id = 1
+ref = "add-an-optional-class-to-plan-decisions"
+title = "Add an optional class to plan decisions"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/plan/records.rs",
+    "tomlctl/tests/plan_records.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add `class` to Decision with a closed vocabulary, written only when set, accepted by plan decide, and stamp a bumped schema version when any decision carries one."
+detail = "Vocabulary: structure, look, ux, cost, vocabulary, architecture, compromise. Use the vocabulary! macro beside Provenance and Door. decision_to_toml writes every field today (schema.rs:724); write `class` only when set so stores without it stay byte-stable. Version scheme (decision D30): raise SCHEMA_VERSION to 4; write_version (schema.rs:516) stamps 4 when any decision has a class, 3 when the store holds attempts, gate rounds or reports and no class, and BASE_SCHEMA_VERSION (2) otherwise; from_toml (schema.rs:556) keeps refusing anything above SCHEMA_VERSION, so move the test newer_schema_version_is_refused (schema.rs:1840) to 5. Add `class` to DECISION_KEYS (records.rs:27), upsert_decision and the field projection record_value (records.rs:454)."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 2
+ref = "refuse-approval-over-a-silent-one-way-door"
+title = "Refuse approval over a silent one-way door"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/store.rs",
+    "tomlctl/src/plan/approve.rs",
+    "tomlctl/src/plan/stage.rs",
+    "tomlctl/tests/plan_approve.rs",
+]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "Make plan approve refuse, and plan stage report as a blocker, any decision that is agent-assumed, door one-way and not surfaced; group the gate report's assumptions by class."
+detail = "Add a sibling of unanswered_decisions (store.rs:350) for silent one-way doors and call it beside unanswered_decisions in approve.rs:226 and in stage.rs at both the prove-stage blocker and amend_report, so stage never advises an --amend approve would refuse; view.rs's blocker list is left as it is. The refusal names each decision id and says to surface it. In gate_report (approve.rs:58) keep `assumptions` a flat list: add `class` (null when unset) to assumption() (approve.rs:161) and stable-sort by class in vocabulary order (structure, look, ux, cost, vocabulary, architecture, compromise), unclassed last, keeping the existing binds-descending order within a class."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 3
+ref = "show-a-decisions-class-in-plan-view"
+title = "Show a decision's class in plan view"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/tests/plan_view.rs",
+]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "Print a decision's class on its Standing line in plan view --for human, and count decisions by class in the digest's counts."
+detail = "The Standing line is rendered near view.rs:644 as `Standing: <provenance>, <door> door`; append `, <class>` when set. Counts near view.rs:383."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 4
+ref = "give-milestones-capture-states-and-controls"
+title = "Give milestones capture states and controls"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/plan/milestone.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/tests/plan_milestone.rs",
+    "tomlctl/src/plan/lane.rs",
+    "tomlctl/src/tasks/milestones.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add optional `ui_states` and `ui_controls` string lists to MilestoneSpec, set by repeatable --ui-state and --ui-control flags on plan milestone add and update, written only when non-empty."
+detail = "Follow gate_probes exactly: MilestoneSpec at tasks/schema.rs:369, its parse and write near schema.rs:1317-1387 (written only when non-empty, schema.rs:1347), the --gate-probe flag in cli/types/plan.rs (lines 435 and 484) and its handling in plan/milestone.rs, including the audited patch. A state name matches ^[a-z0-9][a-z0-9-]{0,63}$; a name in both lists, or repeated in one, is refused. On update, a flag replaces that list whole; a --clear-ui flag empties both. Versioning (decision D34): raise SCHEMA_VERSION (tasks/schema.rs:30) to 3 and add a predicate beside holds_v2_keys (:502) that is true when any milestone carries ui_states or ui_controls, so such a store stamps 3, a store with only the present v2 keys stamps 2 and one with none stamps 1; move the newer-version refusal test to 4. Task 5 extends the same predicate to look entries."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 5
+ref = "accept-a-look-owner-judged-on-capture-states"
+title = "Accept a look owner judged on capture states"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/tasks/add.rs",
+    "tomlctl/tests/tasks_spec_add.rs",
+    "tomlctl/src/plan/store.rs",
+    "tomlctl/src/tasks/update.rs",
+    "tomlctl/src/tasks/show.rs",
+]
+needs = [
+    2,
+    4,
+]
+coupling = []
+deps_note = ""
+action = 'Add run_by = "look" and a `states` list on accept entries: a look entry must have states and an empty check; states is refused on any other owner.'
+detail = """RUN_BY_OWNERS at tasks/schema.rs:49, Accept at :276, owner_problem at :309, accept_from_toml and accept_to_toml at :1176 and :1200 (write `states` only when set, as run_by). ACCEPT_FIELDS in add.rs:99 gains "states"; add.rs validates run_by near :624. A look entry's kind stays forward, falsifier or guard. plan probes already skips a non-worker owner (probes.rs:179) and discriminates() needs a non-empty check (probes.rs:874), so a look entry is never probed and never counts as discriminating; add a test proving both rather than changing probes.rs. Extend task 4's version-3 predicate to an accept entry with run_by look or non-empty states (decision D34)."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 6
+ref = "check-look-entries-and-structural-ui-acceptance"
+title = "Check look entries and structural UI acceptance"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/tests/plan_check.rs",
+]
+needs = [
+    4,
+    5,
+]
+coupling = []
+deps_note = ""
+action = "Add plan check classes: plan/look-state-unknown (error), plan/look-without-states (error, a look entry in a milestone with no ui_states), plan/ui-controls-missing (error, a milestone with ui_states and no ui_controls), plan/ui-accept-structural (warning, a pending row in a milestone with ui_states whose accept entries are all writes_build = false and none is a look entry) and plan/ui-milestone-no-states (warning, a non-deferred milestone with no ui_states whose rows' files match a glob under `paths` in .claude/ui-capture.toml); and exempt a look entry from plan/accept-no-check."
+detail = "Decision classes live beside plan/decision-bind-unknown (check.rs:488). Each new class needs a row in the finding-class table of claude/skills/tomlctl/references/plan.md, which task 9 writes; until it lands, the cli::dispatch::tests finding_classes test fails, which the milestone gate runs after both. A deferred milestone's rows are exempt from ui-accept-structural and ui-milestone-no-states, as from accept checks. plan/ui-milestone-no-states reads .claude/ui-capture.toml from the repo root when present; with no config, or no `paths`, it reports nothing; a malformed config is reported once as the warning's detail, never an error. A look entry's check is empty by design (D15), so exempt an entry whose owner is look from plan/accept-no-check (check.rs:609); add a check_ui_ test that an elaborated look entry raises no accept-no-check."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 7
+ref = "emit-the-visual-pass-inputs-from-gate-list"
+title = "Emit the visual pass inputs from gate-list"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/emit.rs",
+    "tomlctl/tests/plan_emit.rs",
+    "claude/skills/tomlctl/references/plan-engine.md",
+]
+needs = [
+    4,
+    5,
+]
+coupling = []
+deps_note = ""
+action = "Make plan emit gate-list print a `visual` object when the milestone has ui_states: {states, controls, looks: [{task, accept, behaviour, states}]}; look entries never enter `commands` or `skipped`."
+detail = "gate_list is at emit.rs:169; its owner match has `_ => continue` at :213, which would drop a look entry silently. Match RUN_BY_LOOK explicitly and collect it into `looks`, in row order then accept order, accept being the entry's index. Omit `visual` entirely when the milestone has no ui_states. Document the key in plan-engine.md's gate-list output section."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 8
+ref = "add-a-plan-ledger-to-the-inputs-store"
+title = "Add a plan ledger to the inputs store"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/inputs.rs",
+    "tomlctl/tests/inputs.rs",
+    "claude/skills/tomlctl/references/inputs.md",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add `plan` to the inputs LEDGERS (inputs.rs:58), whose items are task ids of the flow named in `flow`; document it in inputs.md's ledger values."
+detail = "A question with ledger plan must name a flow, not a scope; items are task ids as strings. inputs list --where ledger=plan --where flow=<slug> must find it."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 9
+ref = "document-decision-classes-the-one-way-rule-and-milestone-ui-flags"
+title = "Document decision classes, the one-way rule and milestone ui flags"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/tomlctl/references/plan.md",
+    "claude/skills/tomlctl/references/plan-store.md",
+    "claude/skills/review-v2-method/references/plan-records.md",
+]
+needs = [
+    1,
+    2,
+    4,
+    6,
+]
+coupling = []
+deps_note = ""
+action = "Document: the decision `class` key and its values (plan decide, plan-store.md's decision table, plan-records.md's decision fields); approve's refusal over a silent one-way door; plan milestone add and update's --ui-state, --ui-control and --clear-ui; both schema version bumps; and a finding-class table row for each of plan/look-state-unknown, plan/look-without-states, plan/ui-controls-missing, plan/ui-accept-structural and plan/ui-milestone-no-states, with the look entry's exemption from plan/accept-no-check."
+detail = ""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 10
+ref = "document-the-look-owner-and-milestone-ui-fields-in-the-task-store-references"
+title = "Document the look owner and milestone ui fields in the task store references"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/tomlctl/references/tasks-store.md",
+    "claude/skills/tomlctl/references/tasks-write.md",
+]
+needs = [
+    4,
+    5,
+]
+coupling = []
+deps_note = ""
+action = """Document run_by = "look" with its `states` key and rules in both references' accept sections, and the milestone `ui_states` and `ui_controls` keys in tasks-store.md's milestone shape."""
+detail = ""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 11
+ref = "register-the-new-capabilities"
+title = "Register the new capabilities"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/README.md",
+    "claude/commands/implement-v2.md",
+    "claude/commands/plan-v2.md",
+]
+needs = [
+    1,
+    4,
+    5,
+    7,
+    8,
+]
+coupling = []
+deps_note = ""
+action = "Add features `decision_class`, `ui_look` and `inputs_plan_ledger` to FEATURES (cli/types/mod.rs:208), the exact-count list in tests/capabilities.rs (near line 1856), the README sample block and feature table, implement-v2.md's pre-flight list (ui_look, inputs_plan_ledger) and plan-v2.md's pre-flight (decision_class, ui_look)."
+detail = "accept_run_by is the precedent for FEATURES, tests/capabilities.rs, the README and implement-v2.md:29; plan-v2.md's pre-flight step 2 (near line 34) names review_apply and milestone_schedule today, so add decision_class and ui_look beside them with the same stop message."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 12
+ref = "let-plan-workers-post-questions-in-the-inputs-contract"
+title = "Let plan workers post questions in the inputs contract"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/flow-contract-user-inputs/SKILL.md"]
+needs = [8]
+coupling = []
+deps_note = ""
+action = "Amend the writer rules: a plan worker may `inputs add` one `question` with ledger plan, its flow and its own task id, and nothing else; the implement-v2 orchestrator may record with `inputs answer` the option the user picked in its own AskUserQuestion for that question, which relays the user's answer and is not answering on their behalf. Add the plan ledger to the field table and the question kind's description."
+detail = ""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 13
+ref = "write-the-ui-capture-contract-and-defect-rubric"
+title = "Write the ui-capture contract and defect rubric"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/ui-capture/SKILL.md",
+    "claude/skills/ui-capture/references/defects.md",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Create the ui-capture skill: SKILL.md states the stack-neutral project capture contract; references/defects.md is the visual defect rubric."
+detail = "Contract (decisions D27 and D33): .claude/ui-capture.toml with `command` (run from the repo root), `out` and `paths` (UI source globs). The command accepts --out <dir>, repeated --only <state> and --list (one state name per line); per state it writes <state>.png, <state>.txt (a terminal cell grid, one line per row, no escape codes) or both, at a fixed viewport or terminal size and scale 1, never full-page, since the Read tool downsamples large images (notes/screenshot-capture.md). It writes geometry.json, an object keyed by state name whose value is an array of {kind, locator, detail}, kind overflow, clipping, overlap or offscreen: every state captured as an image has a key, its array empty when nothing is found, and a missing key is a capture failure; a text-grid-only state needs no key. Exit 0 means every asked state was captured. Give one paragraph per stack on how a project meets it: web (Playwright or headless Chrome, with the geometry probe this skill ships), QML and Quickshell (grabToImage or a screenshot of a fixed-size window, item bounds for geometry), terminal UIs such as ratatui (TestBackend buffer to text). Controls: a state whose name is listed as a milestone control carries a planted defect. The rubric lists defect classes, each a yes-or-no question with what counts and a worked example per stack where it applies: element scaling with its container where it should not, reserved empty space, a panel taller or shorter than its content needs, clipped or overflowing content, overlap, misalignment, a control or glyph in a style the project does not use, truncation without an ellipsis, a terminal column or border out of line, colour as the only signal. State that an observed defect is a fail and is never talked down (notes/critic-reliability.md), and that an unsure answer is reported as unsure."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 14
+ref = "ship-the-web-geometry-probe-and-html-renderer"
+title = "Ship the web geometry probe and HTML renderer"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/ui-capture/scripts/geometry-probe.js",
+    "claude/skills/ui-capture/scripts/render.sh",
+]
+needs = [13]
+coupling = []
+deps_note = ""
+action = "Write geometry-probe.js, a dependency-free browser script that scans the DOM for overflow, clipping, overlap and offscreen elements and records them in the contract's geometry shape; and render.sh, which renders an HTML file to a PNG and a geometry.json with an installed Chromium-family browser in headless mode, with a --self-test that renders a planted overflow page and fails unless the PNG exists and the overflow is reported."
+detail = "Probe 2026-11-17: `chrome --headless=new --disable-gpu --hide-scrollbars --force-device-scale-factor=1 --window-size=W,H --screenshot=<png> file:///<html>` writes the PNG, and `--dump-dom` prints the DOM after scripts run, so the probe can write its result into a data attribute that render.sh extracts. Discover the browser in order: $UI_CAPTURE_BROWSER, chrome, chromium, msedge on PATH, the standard Windows and macOS install paths, then the newest chromium-*/ under the Playwright cache. Usage: render.sh [--size WxH] <html> <out-dir> <state>; it writes <out-dir>/<state>.png and merges the state's key into <out-dir>/geometry.json in the contract's shape (an object keyed by state, each an array of {kind, locator, detail}, empty when clean), creating the file when absent. Exit 2 with a message when no browser is found."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 15
+ref = "create-the-ui-inspector-agent"
+title = "Create the ui-inspector agent"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/agents/ui-inspector.md"]
+needs = [13]
+coupling = []
+deps_note = ""
+action = "Write the ui-inspector agent: a skeptical judge of captured UI states that reads each state's PNG or text grid, the geometry report, the milestone's look entries and the chosen design, and returns a verdict per state."
+detail = "Frontmatter: name, description, model opus, effort high, tools Read, Grep, Glob, Bash, Write (Write only for its note). Procedure per state: (1) every geometry.json violation for the state is a fail with its locator; (2) answer every rubric class of the ui-capture skill's references/defects.md as a separate yes, no or unsure with a location, re-reading the image region before a yes; (3) judge each look entry naming the state against its behaviour; (4) compare against the chosen design's picture or text as a separate pass, judging arrangement, not pixels. An observed defect is a fail and is never downgraded; unsure is unsure, never pass. A state listed as a control must show a defect; if it shows none, say so. Return the C2 shape: {states: [{state, control, verdict, defects: [{class, location, detail}], note}]}, verdict pass, fail or unsure, and write the full reasoning to the note path its prompt names. Model and effort live only here; never edits code."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 16
+ref = "add-the-implement-v2-visual-workflow"
+title = "Add the implement-v2-visual Workflow"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/workflows/implement-v2-visual.js",
+    "claude/workflows/tests/visual.test.mjs",
+]
+needs = [15]
+coupling = []
+deps_note = ""
+action = "Write the saved Workflow implement-v2-visual: given {slug, milestone, round, capture_dir, design, states, controls, looks}, it dispatches ui-inspector agents over the states in groups of at most four, each with its note path, and returns an index {states: [{state, control, verdict, defects, note, error}], errors, script_version}. Add node:test cases under claude/workflows/tests/."
+detail = "Follow implement-v2-milestone.js and review-v2.js for meta, arg validation (refuse the whole launch with errors ending `no agent launched` on bad args, starting no agent), agentType use and the null-agent case (a dead agent's states come back with status no-return). Note paths: docs/flows/<slug>/notes/run/visual-<milestone>-<round>-<n>.md. The harness in tests/harness.test.mjs loads scripts as AsyncFunction bodies with stubbed globals; reuse its loader. The dispatch test workflow_scripts_logic_passes_under_node runs `node --test claude/workflows/tests/`, and command_lint checks any `tomlctl` command embedded in prompt strings."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 17
+ref = "write-the-implement-v2-visual-pass"
+title = "Write the implement-v2 visual pass"
+effort = "L"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/implement-v2-engine/references/visual.md"]
+needs = [
+    7,
+    13,
+    16,
+]
+coupling = []
+deps_note = ""
+action = "Write references/visual.md, the visual pass a milestone with ui_states runs after its gate passes and before its commit."
+detail = "Model it on apply-rows.md's Reproduce check. Steps: read `visual` from plan emit gate-list; read .claude/ui-capture.toml (absent: stop and report in needs_human that the milestone declares states but the project declares no capture); the visual round is 1 on the first pass and one more than the fix rounds counted from the `visual <id> round <n>: ` prefix after that; dispatch the verification agent once with the capture command plus --out <out>/<milestone>-<round>/ (out from the config) and an --only per state and control. Before launching the inspector, check every asked state has its file and every image state its geometry.json key (decision D33); a missing one is a capture failure that mints a fix task on the capture, not a visual verdict. Launch implement-v2-visual with this args object, written first: slug; milestone; round; capture_dir = <out>/<milestone>-<round>/; design = docs/flows/<slug>/design/ui-<milestone>.md, the file the UI rows cite in spec.design (decision D4); states, controls and looks from gate-list's `visual`. Record it as plan run start --step visual:<id>, never resumed, no Agent fallback; finish the run on the index. The record is that run row, the inspector notes under docs/flows/<slug>/notes/run/, and, for every failing or unsure state, its capture copied to docs/flows/<slug>/notes/run/visual-<id>-<round>/ so the path given to the user survives (decision D18); nothing goes through plan run gate, whose rounds the gate owns. A control whose verdict is pass makes the run unsound: report it in needs_human and mint nothing for that run. An unsure verdict is read by the orchestrator from the note and the capture itself and settled as pass or fail. A fail mints one fix task per separable defect: files from the look entry's task or the rows whose files render the state, accept the failed look entry or a new look entry naming the state and the defect, reason opening `visual <id> round <n>: `; two rounds at most, after which the milestone goes uncommitted to the user with each state's copied capture path. Never run the capture or judge a state yourself beyond reading an unsure one. A capture failure's fix task holds the files the capture command runs (from ui-capture.toml's command, and the milestone rows that edit them), and its reason opens `visual <id> round <n>: capture`, so it counts toward the same two rounds; when no file in the repo can be named, report it in needs_human instead of minting."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 18
+ref = "write-the-implement-v2-build-time-question-loop"
+title = "Write the implement-v2 build-time question loop"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/implement-v2-engine/references/questions.md"]
+needs = [
+    8,
+    12,
+]
+coupling = []
+deps_note = ""
+action = "Write references/questions.md: how the orchestrator answers a worker's `QUESTION <input id>` message while a milestone's Workflow runs."
+detail = "Decisions D9 and D11. On the message: read the question with tomlctl inputs list --kind question; ask the user with AskUserQuestion using its prompt and options (no timeout); record the pick with tomlctl inputs answer; record the answer as a user-stated decision bound to the task id (plan decide), so the worker view carries it on any re-dispatch; end the turn. The worker is waiting on the question's status and resumes itself. If the worker has already parked (its 600-second wait ended), the answer still lands and the drain re-dispatches the row. At the drain, a parked row whose question is open is asked again with the parked re-ask; an answered one is re-dispatched. Never answer a worker's question yourself. Only the plan ledger's questions of this flow are answered this way."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 19
+ref = "wire-the-visual-pass-and-the-question-loop-into-the-implement-v2-engine"
+title = "Wire the visual pass and the question loop into the implement-v2 engine"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/implement-v2-engine/SKILL.md",
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "claude/skills/implement-v2-engine/references/run-milestone.md",
+]
+needs = [
+    17,
+    18,
+]
+coupling = []
+deps_note = ""
+action = "Thread the visual pass and the question loop through the engine's enumerations."
+detail = "SKILL.md: the role rule 'You ask every user question' names the build-time question loop; rule 3 names implement-v2-visual as a third Workflow launch under the same rules; the step table gains the visual pass between gate and commit; the references list gains visual.md and questions.md; the open-run rule names `visual:` beside `implement:` and `reproduce:` (SKILL.md near lines 89 and 105). drain.md: step 7's 'passes the gate: go to the commit' (near line 367) goes by way of visual.md when the milestone has ui_states; 'Stamping on re-entry' (near line 474) reruns the visual pass before the commit for such a milestone; step 9 says a handover asking the user to review the look or reproduce a visual defect is not minted where the milestone's captures can settle it; the needs_human report's section table gains visual rows (unsound inspection, rounds exhausted); 'Parked rows at the next invocation' covers a row parked on an open question. run-milestone.md: the stale-row reset and open-run lists name `visual:` (near lines 17 and 40); 'What comes back' says a QUESTION message may arrive mid-run and is handled by questions.md. The visual pass's report lines go under the existing gate section with kind gate, since plan run report has no visual kind: `- milestone <id> visual round <n> unsound: control <state> passed` and `- milestone <id> visual failed after round <n>: <state> - <capture path>`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 20
+ref = "teach-plan-workers-to-ask-the-user-mid-run"
+title = "Teach plan workers to ask the user mid-run"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/agents/plan-worker-deep.md",
+    "claude/agents/plan-worker-lite.md",
+]
+needs = [12]
+coupling = []
+deps_note = ""
+action = "Add SendMessage to both workers' tools and a section to the shared plan-worker-procedure block on asking the user, byte-identical in both files."
+detail = """When the spec leaves a choice that is a compromise or hard to unwind: post the question with `tomlctl inputs add` (kind question, author implement-v2, ledger plan, flow <slug>, items ["<task id>"], a self-contained prompt, choice single, two to four options naming the costs), send the orchestrator one SendMessage to main whose first line is `QUESTION <input id> task <n>`, then wait in ONE Bash call with timeout 600000: `deadline=$((SECONDS+590)); until [ -n "$(tomlctl inputs list --kind question --where id=<input id> --where status=handled --get id)" ] || [ $SECONDS -ge $deadline ]; do sleep 15; done`, then test the same list once more to choose the branch (a standalone sleep is blocked, and `--get id` exits 0 with empty output, so the test is on non-empty output). Answered: read the pick with `tomlctl inputs list --kind answer --where answers=<input id> --get picked` and continue. Not answered: set the row parked, write the question id and options in the run note, and return. Load SendMessage with ToolSearch when it is not already present. A look entry is never the worker's to run. Bring the files' standing rules into line in the same edit: the plan-worker-forbidden-ops block in both files allows exactly one `tomlctl inputs add` question record per run besides the task row update; plan-worker-lite.md's 'When to return failed' carves out a compromise or hard-to-unwind choice, which is asked instead; 'Tasks that answer review findings' says an unanswered question on a finding-fix task parks the row; plan-worker-deep.md's Judgement line that divergent behaviour is a person's call now asks first. Both shared blocks are checked by bash scripts/verify-shared-blocks.sh against scripts/shared-blocks.toml."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 21
+ref = "rewrite-surface-for-taste-compromise-and-follow-up-questions"
+title = "Rewrite Surface for taste, compromise and follow-up questions"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/plan-v2-engine/SKILL.md",
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md",
+]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "Rewrite the role rule and Surface by decisions D6, D8, D10 and D31: an interview before the brief, the read-back after Open, and the new Surface test, budget and follow-up rule."
+detail = """SKILL.md:16's 'Ask only when the answer changes the plan... zero questions before the gate is the normal case' becomes: ask every ambiguous call that is hard to unwind or is a compromise, at any level, and aim to build better than the user would specify while staying consistent with their expectations; the step table gains the interview (in Open) and the directions step (before Design, written by task 23 in write-and-prove.md). open-and-challenge.md section 1: before filling the brief, interview the user about goals, constraints and what good looks like, in AskUserQuestion rounds whose length scales with the work's complexity and ambiguity (decision D31); after the brief is filled, give the user a short account of what they will see and do once the work lands and fold corrections into the brief before Investigate. Section 5: test 1 becomes 'would getting it wrong be visible to the user, costly to undo, or a compromise the user has not made'; tests 2 and 3 stay; the budget is eight a planning session in the first round, asked in batches of up to four, and a question an answer opens is asked in further rounds outside the budget until none opens; each decision records a `class`; a question whose options an engineering limit narrows states what lifting the limit would cost; an agent-assumed one-way door is always surfaced, since approval refuses it. Cite docs/plans/v2-planning.md's dogfooding revisit trigger in one line. Remove "Zero survivors is the normal case" from section 5 (near line 150), keeping that nothing surviving is recorded. Reword the SKILL.md step-table rows for Surface and Surface again so they no longer call zero questions normal. SKILL.md's open-run rule (near line 106) and open-and-challenge.md section 6 (near line 228) name `visual:` beside `implement:` and `reproduce:` as runs that belong to /implement-v2, never abandoned or relaunched. Add references/ui-layout.md to SKILL.md's references list."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 22
+ref = "write-the-ui-layout-design-step"
+title = "Write the UI layout design step"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/plan-v2-engine/references/ui-layout.md"]
+needs = [
+    13,
+    14,
+]
+coupling = []
+deps_note = ""
+action = "Write references/ui-layout.md, the design step for a milestone that adds or reshapes a UI surface, used by Design and by elaboration."
+detail = "Decisions D4, D5 and D26. The planner lists the milestones it judged UI and not UI for the user to correct. Per UI milestone: draft two or three really different layouts. Web and QML: an HTML mock per option styled after the project, published as one Artifact page showing all options side by side when the Artifact tool is present; each option rendered to PNG with the ui-capture skill's scripts/render.sh into docs/flows/<slug>/design/ui-<milestone>/<option>.png. Terminal UI: each option drawn as a text grid, shown directly in the question's preview and saved as <option>.txt. Ask with AskUserQuestion, an ASCII preview per option. Record the pick as a user-stated or user-confirmed decision of class look, rejected holding the others, bound to the UI rows; write docs/flows/<slug>/design/ui-<milestone>.md with a section per surface naming the chosen picture or grid and the constraints the pick implies (sizes, what scales, what stays fixed), which UI rows cite as spec.design; declare the milestone's ui_states, at least one ui_control, and look entries naming those states on the UI rows. Content extremes (empty, one, many, a long label, a short and a tall window or terminal) are states, since dead space and sizing show only there."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 23
+ref = "bring-design-surface-again-and-the-spec-rules-into-line"
+title = "Bring Design, Surface again and the spec rules into line"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/plan-v2-engine/references/write-and-prove.md"]
+needs = [
+    5,
+    21,
+    22,
+]
+coupling = []
+deps_note = ""
+action = "Update write-and-prove.md for the directions step, the read-back, the UI design step, UI milestones, look entries and the direction citation, and dedupe Surface again."
+detail = """Section 1, Design: open with the directions step (decision D31): from the brief, the notes and the structure challenge, present two or three distinct directions with trade-offs (cost, risk, what each makes easy or hard later), at a length scaled to the work's complexity and ambiguity, and ask the user to choose or steer; record the choice as a decision of class architecture and write docs/flows/<slug>/design/direction.md with an overarching section and a section per milestone (decision D32); then the second read-back (the account made concrete, changes marked). After Milestones, a milestone that adds or reshapes a UI surface goes through references/ui-layout.md and is added with --ui-state and --ui-control; decisions carry a class; in Handovers, a handover asking the user to review the look or reproduce a visual defect is not recorded for a milestone with ui_states, since its captures settle it: state the look as a look entry instead. Section 2, Surface again: replace the restated three tests (lines 82-88) with a citation of open-and-challenge.md section 5, budget and follow-up rule included. Section 3, spec rules: every task cites the direction section that applies to it in spec.design; a user-visible behaviour is never accepted on a read-only check alone; it gets a test that drives it or a look entry (run_by = "look", states naming the milestone's ui_states, empty check); reword the worked example so its grep-and-test-f entries are shown proving internal facts, not user-visible behaviour. Drop "This normally finds nothing" from section 2."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 24
+ref = "update-elaboration-and-approval-for-the-new-surfacing-rules"
+title = "Update elaboration and approval for the new surfacing rules"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/plan-v2-engine/references/elaborate.md",
+    "claude/skills/plan-v2-engine/references/approve.md",
+]
+needs = [
+    2,
+    21,
+    22,
+]
+coupling = []
+deps_note = ""
+action = "elaborate.md section 2: a budget of four in the first round, follow-ups asked outside it, the UI design step for a UI milestone, and the milestone's section of design/direction.md refined and cited by its rows; section 6: the commit stages every file the elaboration wrote under docs/flows/<slug>/design/, images included. approve.md: a refusal row for a silent one-way door and the gate's assumptions shown grouped by class."
+detail = """elaborate.md:51 asks at most three in ONE AskUserQuestion call; AskUserQuestion takes four questions per call, so a round is one call of up to four and a follow-up round is another call. elaborate.md:220 names only design/<name>.md files; widen it so a PNG or text grid under design/ is committed. approve.md's refusal table is near line 138. Remove elaborate.md section 2's "Zero survivors is the normal case" (near line 51), keeping that nothing surviving records nothing. Section 5 (Flip) gains a step before the flip, since no approval follows an elaboration: list the decisions that are agent-assumed, door one-way and not surfaced with `tomlctl items list .claude/flows/<slug>/plan.toml --array decision --where provenance=agent-assumed --where door=one-way --where surfaced=false --select id --lines`, and surface each through AskUserQuestion before flipping."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 25
+ref = "have-the-cold-reader-flag-open-look-choices-and-structural-ui-acceptance"
+title = "Have the cold reader flag open look choices and structural UI acceptance"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/agents/plan-cold-reader.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add three things the cold reader reports as unactionable: a UI task that leaves a layout, sizing, style or interaction choice to the worker with no design citation or decision settling it; a user-visible behaviour whose only accept entries are read-only checks with no look entry or driving test; and a task that cites no section of design/direction.md, or whose spec reads as a generic standalone implementation of its outcome rather than the flow's direction."
+detail = ""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 26
+ref = "detect-ui-changes-on-any-stack-in-the-review-survey"
+title = "Detect UI changes on any stack in the review survey"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/survey.rs",
+    "tomlctl/src/review/catalogue.rs",
+    "tomlctl/tests/review_survey.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add a diff detector option `ui_capture_paths = true` that also selects a changed file matching any glob in the project's .claude/ui-capture.toml `paths`."
+detail = "diff_signal is at survey.rs:652 and calls detect.selects on each changed file; extend the selection, reading the config once per survey from the run's root. A missing config or missing `paths` selects nothing extra; an unreadable or malformed config is an Unknown outcome naming the file, as other detector errors are. The Detect struct and its parse are in catalogue.rs; the catalogue validator must accept the new key."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 27
+ref = "add-the-ui-visual-and-interaction-review-lenses"
+title = "Add the ui-visual and interaction review lenses"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/review-v2-lenses/vocabulary.toml",
+    "claude/skills/review-v2-lenses/lenses/ui-visual.md",
+    "claude/skills/review-v2-lenses/lenses/interaction.md",
+]
+needs = [
+    13,
+    26,
+]
+coupling = []
+deps_note = ""
+action = "Add a `ui-change` diff signal (detect: the frontend globs plus **/*.qml, with ui_capture_paths = true), the concern tags of the two new lenses (ui-visual: layout-sizing, overflow-clipping, style-conformance; interaction: interaction-states, input-handling), style globs (css, scss, less, html, qml) in routing.executable, and the two lens files activated on ui-change."
+detail = """Lens format: claude/skills/review-v2-lenses/SKILL.md (frontmatter families code, mode judgement, produces all three, owns, activation signal with apply_when signals ["ui-change"], slice per-subsystem, v1_category quality). Tags go in vocabulary.toml under a `# <lens>` comment group before any lens owns them; each owned tag gets an Owns paragraph led by the tag in backticks. The validator needs exactly one owner per (family, tag) (catalogue.rs:841), so add only these two lenses' tags; intent-fidelity's tags arrive with its lens in task 29. The lenses judge the captures the ui-capture check produced (task 28) against the ui-capture skill's references/defects.md, cite the capture path in evidence, and fall back to source with evidence no higher than medium when no capture exists. interaction covers empty, loading, error and disabled states, focus, keyboard and pointer, scroll and autoscroll. The gate is the catalogue_validates dispatch test. A geometry.json entry for a captured state is a defect, as for the inspector, and an image state with no geometry key is a capture failure to report, not a pass (decision D33)."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 28
+ref = "add-the-ui-capture-review-check"
+title = "Add the ui-capture review check"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/review-v2-lenses/checks/ui-capture.md"]
+needs = [
+    13,
+    27,
+]
+coupling = []
+deps_note = ""
+action = "Add a catalogue check, executor verification, applying on ui-change, that runs the project's capture command from .claude/ui-capture.toml into the run directory before the cells, so UI lens finders read the captures; when no config exists it records `ui-capture: none` and the lenses fall back to source."
+detail = "Model on checks/dev-server-probe.md and SKILL.md's Check entry-format table (lines 101-112). A verification check runs a fixed command from its discover ladder and the surveyor runs nothing, so the check's command is the declared capture command with --out <run dir>/ui-capture and no --only: it captures every state the project lists. Record the output directory where baselines record a check's log path. When the capture ran but an image state has no geometry.json key, record `ui-capture: incomplete` with the states missing it, beside `ui-capture: none` for no config (decision D33)."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 29
+ref = "add-the-intent-fidelity-lens-and-its-compose-rule"
+title = "Add the intent-fidelity lens and its compose rule"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/review-v2-lenses/lenses/intent-fidelity.md",
+    "claude/skills/review-v2-engine/references/compose.md",
+    "claude/skills/review-v2-lenses/vocabulary.toml",
+]
+needs = [27]
+coupling = []
+deps_note = ""
+action = "Add intent-fidelity's concern tags (criteria-fidelity, decision-fidelity) to vocabulary.toml under a `# intent-fidelity` group, the intent-fidelity lens (opt-in, slice whole-scope, v1_category completeness, owning both tags) and a compose rule passing --lens +intent-fidelity on every code-family run whose store is a flow with .claude/flows/<slug>/plan.toml."
+detail = "The lens reads docs/flows/<slug>/brief.md (Intent, Non-goals, Success criteria) and the user-stated and user-confirmed decisions with `tomlctl items list .claude/flows/<slug>/plan.toml --array decision --where-in provenance=user-stated,user-confirmed`, follows each decision's binds to task files and commits, and reports a divergence in code as a defect anchored on the code, and a sign that a decision itself is now wrong as an advisory question, never an edit. Does not flag: agent-assumed decisions (contrarian's decision-challenges) and plan-time criterion coverage (plan-structure's goal-coverage). compose.md passes --lens +id only from the user's flags today (near line 32); add the flow-bound rule, never for a --scope run."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 30
+ref = "link-the-new-agent-skill-and-workflow"
+title = "Link the new agent, skill and Workflow"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "scripts/link-v2-review.ps1",
+    "scripts/link-v2-review.sh",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add entries for agents/ui-inspector.md, skills/ui-capture and workflows/implement-v2-visual.js to both link scripts' entry lists, in the same order in both."
+detail = ""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 31
+ref = "describe-the-visual-pass-and-build-time-questions-in-claudemd"
+title = "Describe the visual pass and build-time questions in CLAUDE.md"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["CLAUDE.md"]
+needs = [
+    19,
+    24,
+]
+coupling = []
+deps_note = ""
+action = "Add to CLAUDE.md's Planning v2, Implement v2 and Review v2 sections one bullet each: the UI design step and the question rule; the visual pass with ui-inspector, the ui-capture contract and build-time worker questions; the ui-visual, interaction and intent-fidelity lenses. Name the new agent, skill and Workflow in the deploy bullets."
+detail = ""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 32
+ref = "build-the-web-fixture-panel"
+title = "Build the web fixture panel"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/ui-capture/fixtures/web/panel.html",
+    "claude/skills/ui-capture/fixtures/web/states.txt",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "A small static panel in the project's high-contrast style, with clean states (empty list, one item, many items, long label) and planted-defect control states (tiles scaling with the panel, a reserved blank notices band, overflowing label, an off-style +/- glyph, a panel held at full viewport height over a one-item list), each state selected by URL fragment."
+detail = ""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 33
+ref = "build-the-terminal-fixture-panel"
+title = "Build the terminal fixture panel"
+effort = "S"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/ui-capture/fixtures/tui/"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Text-grid captures of a small terminal panel at a fixed 80x24: clean states and planted-defect controls (a column out of line, a label truncated without an ellipsis, a border collision, a blank band)."
+detail = ""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 34
+ref = "declare-the-fixtures-capture-command"
+title = "Declare the fixtures' capture command"
+effort = "S"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/ui-capture/fixtures/capture.sh",
+    ".claude/ui-capture.toml",
+]
+needs = [
+    32,
+    33,
+]
+coupling = []
+deps_note = ""
+action = "A capture command meeting the ui-capture contract for both fixtures (render.sh per web state, copy per terminal state, --list, --only, --out), declared in .claude/ui-capture.toml with paths naming the fixtures directory."
+detail = ""
+acceptance = ""
+agent = ""
+commit = ""

@@ -1,0 +1,817 @@
+schema_version = 2
+last_updated = 2026-11-17
+
+[binding]
+branch = "main"
+scope = []
+
+[id_high_water]
+C = 4
+D = 34
+H = 2
+
+[[decision]]
+id = "D1"
+decision = "An independent visual inspector agent judges a UI milestone's screenshots after its gate passes, launched through a saved Workflow as the reproduce check is; workers do not self-judge screenshots."
+why = "Claude self-grades design leniently; a separate skeptical evaluator is the practical fix (notes/critic-reliability.md)."
+provenance = "user-confirmed"
+door = "two-way"
+binds = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "claude/agents/verification.md",
+    "15",
+    "16",
+    "17",
+]
+rejected = []
+evidence = "notes/critic-reliability.md (Anthropic harness report, UICrit); notes/structure-challenge.md claim 1 (verification may not interpret; rule 4 allows one Agent dispatch); apply-rows.md reproduce check precedent."
+if_false = "Workers capture and judge their own task's states before returning, and no post-gate pass exists."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D2"
+decision = "A visual defect the inspector or a geometry check observes fails the visual pass and mints fix tasks in the same milestone, at most two fix rounds; after that the defects go to the user in the milestone report with their screenshot paths."
+why = "Mirrors the gate's fail-and-fix loop so the user is not the first to see a defect."
+provenance = "user-confirmed"
+door = "two-way"
+binds = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "tomlctl/src/plan/schema.rs",
+    "17",
+]
+rejected = []
+evidence = "drain.md step 7 fix-task minting; apply-rows.md:171 two-round cap; notes/accept-look.md (no judged outcome in the gate record)."
+if_false = "Visual findings are only reported to the user at milestone end and never block the commit."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D3"
+decision = "A project declares one capture command and its state manifest once, in the project; each UI milestone names the states it must capture on its milestone record (optional `ui_states` and `ui_controls` lists, written only when non-empty). plan check warns, not refuses, on a milestone with no ui_states whose rows touch files under the project's declared ui-capture paths, since whether a milestone is UI is the planner's call (D5)."
+why = "The capture is project code; which states prove a milestone is a plan fact a verb can check. The user chose a warning over a refusal at plan review U1 (F15)."
+provenance = "user-stated"
+door = "one-way"
+binds = [
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/plan/milestone.rs",
+    "4",
+    "13",
+]
+rejected = []
+evidence = "notes/screenshot-capture.md (reportdesignkit scripts/visual-audit.mjs already is such a command); notes/structure-challenge.md claim 4 (gate_probes template)."
+if_false = "States live only in a design file per milestone, or every gate captures every project state, and no verb can check coverage."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = true
+
+[[decision]]
+id = "D4"
+decision = "Show layout options as an Artifact page of two or three HTML mocks styled after the project, with an ASCII preview of each in the AskUserQuestion pick; the chosen mock's picture is saved under docs/flows/<slug>/design/ beside a ui-<milestone>.md that UI tasks cite."
+why = "Terminal AskUserQuestion previews are ASCII only; the Artifact tool is present in attended plan sessions and shows real pictures."
+provenance = "user-confirmed"
+door = "two-way"
+binds = [
+    "claude/skills/plan-v2-engine/references/write-and-prove.md",
+    "claude/skills/plan-v2-engine/references/elaborate.md",
+    "22",
+]
+rejected = []
+evidence = "notes/design-step.md (preview format markdown in CLI; spec.design and bound decisions reach workers, view.rs:503,529); Artifact tool listed in this orchestrator session."
+if_false = "Options are ASCII previews only, or prototypes rendered from the project's real components through a spike milestone."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D5"
+decision = "The design step runs for a milestone that adds a UI surface or changes the layout of one, judged by the planner, who lists the milestones it judged UI and not UI at the step so the user can correct the call."
+why = "Every UI-file edit would put a mock round on trivial fixes; a planner mark alone hides the call."
+provenance = "user-confirmed"
+door = "two-way"
+binds = [
+    "claude/skills/plan-v2-engine/references/write-and-prove.md",
+    "22",
+]
+rejected = []
+evidence = "notes/design-step.md; package-design-tools milestones E-G (layout reshapes) versus D's fixes."
+if_false = "Every milestone whose files include a UI file gets the design step, or only those the user flags."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D6"
+decision = "Planning asks the user every ambiguous call that is hard to unwind or is a compromise, at any level from the abstract to a task's specifics, whether or not the plan's structure changes; Surface's test 1 becomes 'would getting it wrong be visible to the user, costly to undo, or a compromise the user has not made'. The budget is up to eight such questions a planning session and four an elaboration, asked in batches of up to four, and each decision records a class so veto rates are measured per class. A question an answer opens is asked, never assumed. The harness aims to build better than the user would specify, and holds consistency with the user's expectations as a key goal."
+why = "The user, 2026-11-17: 'I expect that a plan-v2 will go through all ambiguous calls with me that are either difficult to unwind, are compromises. This could be at any levels from abstract to task level specifics if required. If an answer opens up new questions, these should not be assumed. I would like to trust the harness agents to build something better than I can imagine but I want a key goal of theirs to be that we build something consistent with my expectations.'"
+provenance = "user-stated"
+door = "two-way"
+binds = [
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md",
+    "claude/skills/plan-v2-engine/SKILL.md",
+    "tomlctl/src/plan/schema.rs",
+    "21",
+    "23",
+    "24",
+    "25",
+]
+rejected = []
+evidence = "notes/surface-mechanics.md (prose-only budget; class field about six Rust files; v2-planning.md:651 revisit trigger)."
+if_false = "Keep the cap of three and test 1, adding only a taste exemption, or ask every survivor with no cap."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = true
+
+[[decision]]
+id = "D7"
+decision = "Prove the visual pipeline in this flow on a small fixture UI kept under the dev-tools tree (a static page with planted defects and a capture script), so the inspector's catch rate is measured before any project adopts it; reportdesignkit's adoption stays its own flow."
+why = "The brief keeps project-side work out, but the inspector's reliability is the claim most likely to be false (notes/critic-reliability.md)."
+provenance = "user-confirmed"
+door = "two-way"
+binds = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "32",
+    "33",
+    "34",
+]
+rejected = []
+evidence = "notes/critic-reliability.md (image-only overflow and clipping near chance); notes/screenshot-capture.md (Read downsamples large captures)."
+if_false = "The pipeline ships unproven and is first exercised on reportdesignkit's next UI flow."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D8"
+decision = "The eight and four question budget bounds a step's first round only; questions that an answer opens are asked in further rounds outside the budget until no answer opens a new one."
+why = "D6: a question an answer opens is asked, never assumed, which a hard cap would contradict."
+provenance = "user-confirmed"
+door = "two-way"
+binds = [
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md",
+    "21",
+    "24",
+]
+rejected = []
+evidence = "D6 as the user stated it."
+if_false = "The budget is hard: follow-ups count toward it, and any overflow is recorded agent-assumed and shown at approval."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D9"
+decision = "A plan worker that meets a compromise or a hard-to-unwind choice its spec does not settle posts it as a question record through tomlctl, pings the orchestrator with SendMessage, and waits on the record's answer inside one bounded Bash wait of ten minutes. The orchestrator asks the user at once (D11). With no answer by then the worker parks the task with the question open, and the question is raised again at the next checkpoint or the next chance to ask. Choices that are neither stay the deep worker's and are listed in the milestone report."
+why = "The user, 2026-11-17: 'Ask live, if no answer in 10 min, orchestrator provides input if trivial, park otherwise, raise at next checkpoint or opportunity.' Probes the same day showed a Workflow agent can SendMessage the main session and wait on a file condition with an until loop, and that standalone sleep is blocked."
+provenance = "user-stated"
+door = "two-way"
+binds = [
+    "claude/agents/plan-worker-deep.md",
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "18",
+    "20",
+]
+rejected = []
+evidence = "claude/agents/plan-worker-deep.md (licensed for specs that describe the outcome more than the edit); CLAUDE.md Implement v2 (parked = only a person can unblock)."
+if_false = "Workers decide and the milestone report lists every such choice for review after the fact."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = true
+
+[[decision]]
+id = "D10"
+decision = "Read the intent back twice: right after Open, the brief's Intent and Success criteria as a short account of what the user will see and do, for correction before any investigation launches; and before Design, the same account made concrete by the investigation, with what changed marked."
+why = "D6 makes consistency with the user's expectations a key goal; a misread caught after Open costs no investigation."
+provenance = "user-confirmed"
+door = "two-way"
+binds = [
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md",
+    "21",
+    "23",
+]
+rejected = []
+evidence = "package-design-tools D46 reversed by D63 ('The brief was that...'); brief success criterion on the account before Design."
+if_false = "One read-back only, before Design."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D11"
+decision = "During a running milestone the orchestrator asks a worker's question with the AskUserQuestion picker, and nothing times out while it is open. When the worker's own ten-minute wait ends unanswered, the task parks with the question open; the user's later answer is recorded and applied when the task is re-dispatched. The orchestrator never answers a worker's question for the user. This refines D9's fallback."
+why = "The user chose the picker with no timeout over a non-blocking text ask, 2026-11-17."
+provenance = "user-stated"
+door = "two-way"
+binds = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "18",
+]
+rejected = []
+evidence = "Probe 2026-11-17 (worker waits on a file condition); the AskUserQuestion tool returns only on an answer."
+if_false = "The orchestrator asks with the AskUserQuestion picker, and while it is open nothing times out: an unanswered question holds the worker until its own wait ends, then the task parks."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = true
+
+[[decision]]
+id = "D12"
+decision = "Keep the harness's present structure, as the structure challenge found: each part of this work lands as an extension in a seam that exists, and no restructure is adopted."
+why = "The challenger's verdict was no restructure, and each claim it raised checks against the code: the apply-rows conditional slice, gate_probes' write-only-when-set pattern, the drop-in review catalogue."
+provenance = "agent-assumed"
+door = "two-way"
+binds = ["claude/skills/implement-v2-engine/SKILL.md"]
+rejected = []
+evidence = "notes/structure-challenge.md; implement-v2-engine/SKILL.md:70 (apply rows slice); tasks/schema.rs:1347 (gate_probes)."
+if_false = "A cross-engine contract skill or a pass registry would be built first."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D13"
+decision = "Add an optional `class` to a decision, one of structure, look, ux, cost, vocabulary, architecture or compromise, written only when set; a store holding one is stamped with a bumped schema version so an older binary refuses rather than strips it. The approval gate groups agent-assumed decisions by class."
+why = "D6 asks for per-class veto rates; the store drops unknown keys on read (plan/schema.rs:16), so an unstamped field would be stripped silently."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/plan/records.rs",
+    "tomlctl/src/plan/approve.rs",
+    "1",
+    "2",
+    "3",
+    "9",
+]
+evidence = "notes/surface-mechanics.md (about six Rust files; omit-when-default; write_version at schema.rs:516)."
+if_false = "Class lives in prose only and veto rates per class are not measurable."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Encode the class as a prefix of `why`"
+because = "no verb could group or count by it"
+
+[[decision]]
+id = "D14"
+decision = "plan approve refuses, and plan stage reports as a blocker, a decision that is agent-assumed with door one-way and was never surfaced."
+why = "The brief's criterion that a one-way door is never assumed silently; package-design-tools D22 was exactly that."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/plan/store.rs",
+    "tomlctl/src/plan/approve.rs",
+    "2",
+    "24",
+]
+rejected = []
+evidence = "notes/surface-mechanics.md (one predicate beside unanswered_decisions, store.rs:350; approve.rs:226)."
+if_false = "One-way doors are only listed at the gate, as today."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D15"
+decision = """A judged acceptance is an accept entry with run_by = "look" and a `states` list naming the milestone's capture states it is judged on; its `behaviour` is the criterion, its `check` stays empty, probes skip it, and it never counts as discriminating beside a guard."""
+why = "The owner route costs probes nothing (probes.rs:179) and keeps kind's polarity meaning."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/tasks/add.rs",
+    "5",
+    "10",
+]
+evidence = "notes/accept-look.md."
+if_false = "A fourth accept kind, which breaks verdict() and the polarity probes rely on."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "A `look` kind"
+because = "an unknown kind reads broken in probes.rs verdict() and has no polarity"
+
+[[decision.rejected]]
+option = "A separate `rubric` field"
+because = "the behaviour line already states the criterion the inspector judges"
+
+[[decision]]
+id = "D16"
+decision = "A milestone carries optional `ui_states` (the capture states its visual pass judges) and `ui_controls` (planted-defect states the inspector must fail), both written only when non-empty and set through plan milestone add and update. plan emit gate-list prints a `visual` object holding the states, the controls and the milestone's look entries, so no look entry falls through its owner match."
+why = "D3 puts the states on the milestone record; gate_list's `_ => continue` arm would otherwise drop look entries silently (emit.rs:213)."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/plan/milestone.rs",
+    "tomlctl/src/plan/emit.rs",
+    "4",
+    "7",
+]
+rejected = []
+evidence = "notes/accept-look.md; notes/structure-challenge.md claim 4."
+if_false = "States live in design files and the engine assembles the visual pass's inputs by hand."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D17"
+decision = "plan check reports a look entry naming a state its milestone does not list (error), a look entry in a milestone with no ui_states (error), a milestone with ui_states and no ui_controls (error), and, as a warning, a pending row in a milestone with ui_states whose accept entries are all writes_build = false with no look entry."
+why = "The brief's criterion that no user-visible behaviour is accepted on a grep or file check alone needs a mechanical floor; keying it on the milestone's declared states rather than file extensions keeps it stack agnostic (D26), since a ratatui view is a .rs file; D28 requires a control on every UI milestone."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/plan/check.rs",
+    "6",
+]
+rejected = []
+evidence = "notes/structure-challenge.md claim 9; D26; D28."
+if_false = "The rule is enforced only by the cold reader and plan review."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D18"
+decision = "The visual pass runs after a UI milestone's gate passes and before its commit: the verification agent runs the project's capture command into <out>/<milestone>-<round>/ under the project's declared out directory, then the saved Workflow implement-v2-visual dispatches ui-inspector agents over the captures, recorded as a `visual:<id>` run. Its record is that run row, the inspector notes under docs/flows/<slug>/notes/run/, the captures of every failing or unsure state copied beside those notes so the paths given to the user survive, and the fix tasks' reasons; nothing is written through plan run gate."
+why = "verification may not interpret (verification.md:127), a third Workflow keeps rule 4's one-Agent-dispatch rule, and plan run gate keys rounds by milestone and round alone, so visual rows there would merge into the gate's own rerun (run_gate.rs:141)."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "claude/agents/verification.md",
+    "17",
+    "19",
+]
+evidence = "notes/structure-challenge.md claims 1 to 3; apply-rows.md reproduce check precedent; notes/cold-read-A.md unactionable 4."
+if_false = "A new judged record kind in plan.toml."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Record visual rows through plan run gate"
+because = "they would become a later seq of the gate's round and a gate --rerun would merge into them"
+
+[[decision.rejected]]
+option = "A new [[look]] record under plan run"
+because = "a new verb and schema for what the run row, notes and fix-task reasons already carry"
+
+[[decision]]
+id = "D19"
+decision = "A visual fix task carries the failed look entry, or for a rubric defect a new look entry naming the state, as its accept; reason opens `visual <id> round <n>: `, and the visual pass counts its own two rounds apart from the gate's. A control state the inspector passes is not fixed: it is reported in needs_human as an unsound inspection and the milestone's look verdicts are not trusted for that run."
+why = "D2's fail-and-fix loop needs a reproducing check; a look has no command, so the look entry is the reproducer. A passed control means the inspector missed a planted defect."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "17",
+]
+rejected = []
+evidence = "drain.md fix rounds (round counting by reason prefix); apply-rows.md:171."
+if_false = "Visual defects are fixed with no accept and no round count."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D20"
+decision = "Ship a ui-capture skill as the single home of: the stack-neutral project capture contract (a command taking --out, repeated --only and --list, writing per state an image `<state>.png` and/or a text capture `<state>.txt` of a terminal cell grid, plus an optional `geometry.json` of layout violations in a stack-neutral schema); the visual defect rubric, with web, QML and terminal worked examples, that the inspector and the ui-visual lens both cite; and two optional web helpers, a browser-side geometry probe script and a dependency-free renderer that turns an HTML file into a PNG and a geometry report with an installed Chromium-family browser in headless mode."
+why = "D26 makes the contract stack agnostic; a terminal UI's cell grid reads better as text than as an image; headless Chrome covers web fixtures and HTML mocks with nothing to install (probe 2026-11-17)."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "13",
+    "14",
+]
+evidence = "Probe 2026-11-17 (chrome --headless=new --screenshot and --dump-dom); notes/critic-reliability.md; D26."
+if_false = "Each project supplies its own geometry checks and mocks are not rendered to images."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Add Playwright as a dev-tools dependency"
+because = "headless Chrome's screenshot and dump-dom flags cover the fixture and mock rendering with nothing to install"
+
+[[decision]]
+id = "D21"
+decision = "Give the inputs store a `plan` ledger whose items are task ids of the named flow, let a plan worker post a `question` there (the one agent besides the orchestrator that may), and let the implement-v2 orchestrator record the answer the user picked in its AskUserQuestion with `inputs answer`, which relays the user's own pick."
+why = "D9 wants the question logged through tomlctl and answerable from glimpse; the ledger vocabulary has no target for a flow's task today."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "claude/skills/flow-contract-user-inputs/SKILL.md",
+    "8",
+    "12",
+]
+rejected = []
+evidence = "claude/skills/tomlctl/references/inputs.md (ledger values review, optimise, plan-review, backlog; items need a ledger); flow-contract-user-inputs writer rules."
+if_false = "Worker questions live only in run notes and glimpse cannot show them."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D22"
+decision = "An answer to a worker's question becomes a user-stated decision bound to the task, so the worker view injects it when the task runs or is re-dispatched."
+why = "Bound decisions already reach the worker view (plan/view.rs:503), and a decision is where the plan keeps what the user said."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "18",
+]
+rejected = []
+evidence = "notes/design-step.md (view.rs:503 bound decisions)."
+if_false = "The answer is pasted into the task's detail, outside the decision record."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D23"
+decision = "The ui-visual and interaction lenses activate on a new `ui-change` diff signal, which fires on the frontend globs, QML files, or any file under the project's declared ui-capture `paths`, and are not experimental; intent-fidelity is opt-in and composed by a rule in the review engine on every code-family run bound to a flow that has plan.toml. The finders read the captures a ui-capture catalogue check produces through verification before the cells."
+why = "The brief's review criterion holds by default for UI changes; web file types cannot mark a ratatui or QML change, so the project's own declaration does (D26, D27)."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "claude/skills/review-v2-lenses/vocabulary.toml",
+    "claude/skills/review-v2-engine/references/compose.md",
+    "26",
+    "27",
+    "28",
+    "29",
+]
+rejected = []
+evidence = "notes/review-ui-lenses.md; tomlctl/src/review/survey.rs:652 diff_signal; D26; D27."
+if_false = "The lenses ship experimental and run only when a project or the user opts in, by path in its lens config."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D24"
+decision = "Cut two milestones: A builds everything; B, deferred and after A, builds two dev-tools fixtures as a UI milestone whose visual pass is the inspector's proof, its clean states judged and its planted-defect states declared as controls. B is elaborated in a new session after A is linked, which also exercises the new UI design step."
+why = "New agents and Workflows register only at session start and new file links need one elevated run, so the proof cannot run in A's invocation; D7 asks for the catch rate in this flow."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "32",
+    "33",
+    "34",
+]
+rejected = []
+evidence = "write-and-prove.md How many (a deferred or replan point justifies a cut); D7; scripts/link-v2-review.ps1 header (file links need elevation or Developer Mode)."
+if_false = "One milestone and an unproven inspector."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D25"
+decision = "Investigation answered every lens; no Unknown is left for Design to assume."
+why = "Six notes, each with a verdict, read against the cited code."
+provenance = "agent-assumed"
+door = "two-way"
+binds = ["docs/flows/v2-ui-fidelity/brief.md"]
+rejected = []
+evidence = "notes/screenshot-capture.md, critic-reliability.md, surface-mechanics.md, accept-look.md, design-step.md, review-ui-lenses.md."
+if_false = "A lens would be re-run."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D26"
+decision = "The capture strategy is stack agnostic: web is the most common case, but QML and Quickshell UIs, terminal UIs such as ratatui, and other stacks capture, get judged and get reviewed through the same contract. UI detection never depends only on web file types: a project's declared capture paths mark a UI change on any stack, beside the web and QML file globs."
+why = "The user, 2026-11-17: 'although web UI is the most common case, I want the capture strategy to be stack agnostic. E.g. qml/quickshell as well, TUI (ratatui), etc.'; at plan review U1 (F25) the user kept the globs beside the declared paths and reworded the rule."
+provenance = "user-stated"
+door = "one-way"
+binds = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "13",
+    "14",
+    "22",
+    "26",
+    "27",
+]
+rejected = []
+evidence = "User message during Design."
+if_false = "The capture contract is a browser contract."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = true
+
+[[decision]]
+id = "D27"
+decision = "A project declares its capture in .claude/ui-capture.toml: `command` (run from the repo root, accepting --out <dir>, repeated --only <state> and --list), `out` (the default output directory) and `paths` (globs naming the UI's source, so reviews can tell a UI change on any stack). Per state the command writes `<state>.png`, `<state>.txt` (a terminal cell grid), or both, at a fixed viewport or terminal size and scale 1, plus an optional geometry.json; exit 0 means every asked state was captured."
+why = "D3 and D26: one stack-neutral declaration per project that the visual pass, the review check and plan time all read."
+provenance = "user-confirmed"
+door = "one-way"
+binds = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "13",
+    "17",
+    "28",
+]
+rejected = []
+evidence = "notes/screenshot-capture.md (reportdesignkit visual-audit's flags and output layout; Read downsamples large images, so viewport-sized at scale 1); D26."
+if_false = "Projects describe captures in a free-form document the orchestrator interprets per run."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D28"
+decision = "Every UI milestone's visual pass also captures at least one planted-defect control state, which the inspector must fail, so each run checks the inspector is not passing what it should catch."
+why = "The research's main risk is a lenient inspector that passes real defects; a control is the visual pass's negative probe."
+provenance = "user-confirmed"
+door = "two-way"
+binds = [
+    "tomlctl/src/plan/check.rs",
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "6",
+    "17",
+    "22",
+]
+rejected = []
+evidence = "notes/critic-reliability.md (false-pass bias; Anthropic harness report)."
+if_false = "Controls are optional and used only by the dev-tools proof."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D29"
+decision = "The proof milestone uses two dev-tools fixtures: a web panel rendered by headless Chrome to PNGs, and a terminal panel captured as text grids; each with clean states and planted-defect controls."
+why = "D26 makes the contract stack agnostic, and a web-only proof would leave the text-capture path unproven."
+provenance = "user-confirmed"
+door = "two-way"
+binds = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "32",
+    "33",
+    "34",
+]
+rejected = []
+evidence = "D7, D26; glimpse is a ratatui app in this repo but planting defects there would damage a real tool."
+if_false = "A web fixture only, or a real glimpse view capture through ratatui's TestBackend."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D30"
+decision = "Raise SCHEMA_VERSION to 4. write_version stamps 4 when any decision carries a class, 3 when the store holds attempts, gate rounds or reports and no class, and BASE_SCHEMA_VERSION (2) otherwise; from_toml still refuses anything above SCHEMA_VERSION, and the newer-version test moves to 5."
+why = "Stamping SCHEMA_VERSION + 1 would write a store the same binary refuses (plan/schema.rs:556, test newer_schema_version_is_refused); a third tier keeps class-free stores at today's stamp."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/plan/schema.rs",
+    "1",
+]
+rejected = []
+evidence = "notes/cold-read-A.md unactionable 1; plan/schema.rs:516 write_version tiers; :556 refusal."
+if_false = "Class is written without a version stamp and an older binary strips it on its next write."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D31"
+decision = "Every plan opens with an interview about goals, constraints and what good looks like, before the brief is written, and presents two or three distinct directions with their trade-offs after investigation, before Design, for the user to choose or steer. Both scale in length with the plan's complexity and ambiguity. The aim is a clear flow-level direction, so tasks carry an overarching and task-specific vision rather than generic standalone implementations."
+why = "The user, 2026-11-17: 'I would also like more questioning and exploratory discussion around direction before diving in for all work.' and 'Interview + directions of variable length/scale depending on complexity and ambiguity. The goal is to set clear flow level direction such that tasks are not applying generic standalone implementations in lieu of clear overarching and task specific vision.'"
+provenance = "user-stated"
+door = "two-way"
+binds = [
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md",
+    "21",
+    "23",
+]
+rejected = []
+evidence = "Plan review U1, finding F21, answered by the user."
+if_false = "Planning keeps the read-backs alone."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = true
+
+[[decision]]
+id = "D32"
+decision = "The chosen direction is written to docs/flows/<slug>/design/direction.md, with an overarching section and a section per milestone, and every task cites the section that applies to it as spec.design, so the worker view inlines the vision; the cold reader reports a task that cites no direction section or whose spec reads as a generic standalone implementation of its outcome."
+why = "D31's aim is that tasks carry the flow's vision; spec.design citations are what the worker view already inlines (plan/view.rs:529)."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "claude/skills/plan-v2-engine/references/write-and-prove.md",
+    "claude/agents/plan-cold-reader.md",
+    "23",
+    "25",
+]
+rejected = []
+evidence = "notes/design-step.md (view.rs:529 design_block inlines cited sections)."
+if_false = "The direction lives only in a decision record, injected only into the tasks it binds."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D33"
+decision = "A state the capture command writes as an image must come with geometry.json entries for that state, which the capture records even when empty; a text-grid state is exempt, since clipping and overflow show in its text. A missing geometry record for an image state is a capture failure, not a pass."
+why = "The user chose to require geometry for image states (plan review U1, F11): a vision judge is near chance on clipping and overflow (notes/critic-reliability.md)."
+provenance = "user-stated"
+door = "one-way"
+binds = [
+    "claude/skills/ui-capture/SKILL.md",
+    "13",
+    "15",
+    "17",
+    "27",
+    "28",
+]
+rejected = []
+evidence = "Plan review U1, finding F11; notes/critic-reliability.md."
+if_false = "Geometry stays optional and clipping and overflow on image stacks rest on the vision judge."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = true
+
+[[decision]]
+id = "D34"
+decision = "Raise the task store's SCHEMA_VERSION to 3. A store stamps 3 when any milestone carries ui_states or ui_controls or any accept entry has run_by look or states, 2 when it holds the present v2 keys only, and 1 otherwise; the newer-version refusal test moves to 4."
+why = "Plan review U1, F20: tasks/schema.rs drops unknown keys, so an older binary would strip the UI fields silently; the same reason D30 bumps plan.toml."
+provenance = "agent-assumed"
+door = "two-way"
+binds = [
+    "tomlctl/src/tasks/schema.rs",
+    "4",
+    "5",
+]
+rejected = []
+evidence = "tomlctl/src/tasks/schema.rs:26-34 (SCHEMA_VERSION 2, BASE 1) and holds_v2_keys at :502."
+if_false = "An older tomlctl silently drops ui_states, ui_controls and look entries on its next write."
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[contract]]
+id = "C1"
+kind = "interface"
+claim = "tomlctl plan emit gate-list prints a `visual` object, present only when the milestone has ui_states, holding `states` (array of state names), `controls` (array of state names) and `looks` (array of {task, accept, behaviour, states}); implement-v2-engine's visual.md builds the capture and the inspector launch from it, the project's .claude/ui-capture.toml and the milestone's chosen design at docs/flows/<slug>/design/ui-<milestone>.md, and from nothing else."
+check = """grep -q '"visual"' tomlctl/src/plan/emit.rs && grep -q 'emit gate-list' claude/skills/implement-v2-engine/references/visual.md && grep -q 'looks' claude/skills/implement-v2-engine/references/visual.md"""
+tasks = [
+    7,
+    17,
+]
+provides = "plan emit gate-list visual object"
+consumes = "implement-v2-engine references/visual.md"
+
+[[contract]]
+id = "C2"
+kind = "interface"
+claim = "A ui-inspector returns one object per launch, {states: [{state, control, verdict, defects: [{class, location, detail}], note}]}, verdict being pass, fail or unsure, and writes its full reasoning to the note path its prompt names; the implement-v2-visual Workflow returns an index of those objects and visual.md reads that index."
+check = "grep -q 'unsure' claude/agents/ui-inspector.md && grep -q 'ui-inspector' claude/workflows/implement-v2-visual.js && grep -q 'unsure' claude/skills/implement-v2-engine/references/visual.md"
+tasks = [
+    15,
+    16,
+    17,
+]
+provides = "ui-inspector return object"
+consumes = "implement-v2-visual Workflow and visual.md"
+
+[[contract]]
+id = "C3"
+kind = "interface"
+claim = "The ui-capture skill states the project capture contract: .claude/ui-capture.toml with command, out and paths; the command takes --out <dir>, repeated --only <state> and --list; per state it writes <state>.png and/or <state>.txt at a fixed size and scale 1; geometry.json is an object keyed by state, each an array of {kind, locator, detail} with kind overflow, clipping, overlap or offscreen, and every image state has a key. visual.md, the ui-capture catalogue check and the renderer follow it."
+check = "grep -q -- '--list' claude/skills/ui-capture/SKILL.md && grep -q 'geometry.json' claude/skills/ui-capture/SKILL.md && grep -q 'ui-capture.toml' claude/skills/implement-v2-engine/references/visual.md && grep -q 'ui-capture.toml' claude/skills/review-v2-lenses/checks/ui-capture.md"
+tasks = [
+    13,
+    14,
+    17,
+    28,
+]
+provides = "ui-capture contract"
+consumes = "visual.md, checks/ui-capture.md, scripts/render.sh"
+
+[[contract]]
+id = "C4"
+kind = "interface"
+claim = "A plan worker asks the user by posting a `question` input with ledger `plan`, flow the slug and items its task id, then sending the orchestrator one SendMessage line opening `QUESTION <input id>`; it waits in one Bash call of at most 600 seconds until `tomlctl inputs list` shows that question handled, and parks with the question open when it is not. implement-v2-engine's questions.md answers exactly that line."
+check = "grep -q 'QUESTION <' claude/agents/plan-worker-deep.md && grep -q 'QUESTION <' claude/skills/implement-v2-engine/references/questions.md"
+tasks = [
+    18,
+    20,
+]
+provides = "plan-worker question protocol"
+consumes = "implement-v2-engine references/questions.md"
+
+[[run]]
+step = "investigate"
+workflow = "plan-v2-investigate"
+args_hash = "a04164def4e13500a85c9e08715b39081ec7a89761dbb7939e1fd31df5747686"
+run_id = "wf_1593b23a-34b"
+session = "87651e3e-35f6-48ee-b55a-5b6d6d4f7634"
+started = 2026-11-17T10:58:34Z
+finished = 2026-11-17T11:05:53Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "challenge"
+run_id = ""
+session = "87651e3e-35f6-48ee-b55a-5b6d6d4f7634"
+started = 2026-11-17T11:06:21Z
+finished = 2026-11-17T11:11:48Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "surface"
+run_id = ""
+session = "87651e3e-35f6-48ee-b55a-5b6d6d4f7634"
+started = 2026-11-17T11:34:06Z
+finished = 2026-11-17T11:34:07Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "cold-read"
+workflow = "plan-v2-prove"
+args_hash = "458efeda2e1cd6b01e1ee5671456a16b0f78f8b1a3f9468520c9d91efce7ee98"
+run_id = "wf_e115138b-86f"
+session = "87651e3e-35f6-48ee-b55a-5b6d6d4f7634"
+started = 2026-11-17T11:51:37Z
+finished = 2026-11-17T11:58:33Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "review"
+workflow = "plan-v2-review"
+run_id = "wf_d828e905-846"
+session = "87651e3e-35f6-48ee-b55a-5b6d6d4f7634"
+started = 2026-11-17T12:01:48Z
+finished = 2026-11-17T12:48:04Z
+skip_reason = ""
+outcome = "ok"
+
+[[handover]]
+id = "H1"
+reason = "permissions"
+action = "From an elevated PowerShell in the dev-tools checkout, run scripts/link-v2-review.ps1 so the new ui-inspector agent, ui-capture skill and implement-v2-visual Workflow are linked into the Claude config dir; file symbolic links need elevation while Developer Mode is off."
+when = "After milestone A's commit, before elaborating milestone B."
+done_when = "scripts/link-v2-review.ps1 exits 0, and ~/.claude/agents/ui-inspector.md and ~/.claude/workflows/implement-v2-visual.js are links into this repo."
+source_task = 30
+done = false
+
+[[handover]]
+id = "H2"
+reason = "restart"
+action = "Start a new Claude Code session in dev-tools, so the newly linked agent, skill and Workflow and the reinstalled tomlctl load, then run /plan-v2 v2-ui-fidelity --elaborate B."
+when = "After the elevated link run."
+done_when = "The new session lists the ui-inspector agent type and the implement-v2-visual Workflow."
+source_task = 19
+done = false
