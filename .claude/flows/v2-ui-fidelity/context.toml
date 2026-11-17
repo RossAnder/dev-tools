@@ -1,9 +1,10 @@
 slug = "v2-ui-fidelity"
 plan_path = "docs/flows/v2-ui-fidelity/brief.md"
-status = "draft"
+status = "in-progress"
 created = 2026-11-17
 updated = 2026-11-17
 scope = []
+branch = "main"
 
 [tasks]
 total = 0

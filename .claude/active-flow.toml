@@ -1046,3 +1046,10 @@ scope = [
     "claude/skills/implement-v2-engine/**",
     "claude/skills/plan-v2-engine/**",
 ]
+
+[[active]]
+slug = "v2-ui-fidelity"
+last_used = "2026-11-17T12:51:36.2283386Z"
+
+[active.binding]
+branch = "main"
