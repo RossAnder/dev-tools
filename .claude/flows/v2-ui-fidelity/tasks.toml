@@ -1,5 +1,5 @@
 schema_version = 2
-last_updated = 2026-11-17
+last_updated = 2026-11-18
 plan_path = ""
 last_import_refs = []
 audit = true
@@ -149,7 +149,7 @@ check = "grep -q 'fn decision_to_toml' tomlctl/src/plan/schema.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+at = "565754b52a1bb7df02987e4b41655d3c21fd1494"
 neg_rc = 0
 verdict = "holds"
 
@@ -192,7 +192,7 @@ check = "grep -q 'fn unanswered_decisions' tomlctl/src/plan/store.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+at = "565754b52a1bb7df02987e4b41655d3c21fd1494"
 neg_rc = 0
 verdict = "holds"
 
@@ -270,7 +270,7 @@ check = "grep -q 'pub(crate) gate_probes' tomlctl/src/tasks/schema.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+at = "565754b52a1bb7df02987e4b41655d3c21fd1494"
 neg_rc = 0
 verdict = "holds"
 
@@ -314,7 +314,7 @@ check = "grep -q 'RUN_BY_OWNERS' tomlctl/src/tasks/schema.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+at = "565754b52a1bb7df02987e4b41655d3c21fd1494"
 neg_rc = 0
 verdict = "holds"
 
@@ -1118,6 +1118,31 @@ kind = "forward"
 positive = ""
 writes_build = true
 
+[[specs]]
+ref = "teach-the-finding-class-scan-the-decision-class-vocabulary-read"
+outcome = """The finding-class scan no longer reads the decision `class` field's vocab(table, "class", ...) call in plan/schema.rs as a finding-class construction site, and both finding_classes tests pass"""
+constraints = [
+    "Keep the decision `class` field's behaviour unchanged: optional, closed vocabulary, refused with the accepted values when unknown, written only when set",
+    "Prefer the narrower fix: reword the schema.rs read site when that is enough, or teach the scanner to skip a vocabulary read only when it cannot be told apart otherwise; never weaken the scan for real finding-class construction sites",
+    "Do not change the documented plan classes or any finding class's severity",
+]
+premises = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "Both finding_classes tests pass, and the rest of the dispatch subset still does"
+check = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+kind = "forward"
+positive = ""
+writes_build = true
+
+[[specs.means]]
+text = "Read how finding_classes.rs recognises a `class` construction site and change whichever side is the narrower fix"
+binding = "suggested"
+detail = "The failure is a false positive of the scanner on a new field named class, not a missing documented class"
+
 [[milestones]]
 id = "A"
 gates = [
@@ -1134,13 +1159,13 @@ defer_reason = ""
 gate = "bash scripts/verify-shared-blocks.sh"
 probe = "gawk --version"
 verdict = "holds"
-at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+at = "565754b52a1bb7df02987e4b41655d3c21fd1494"
 
 [[milestones.gate_probes]]
 gate = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
 probe = "cargo nextest --version"
 verdict = "holds"
-at = "52fe01b9a17c76c7068e241fa891e6cacd6fcbc6"
+at = "565754b52a1bb7df02987e4b41655d3c21fd1494"
 
 [[milestones]]
 id = "B"
@@ -1149,12 +1174,21 @@ elaboration = "deferred"
 defer_reason = "Runs only after milestone A is linked into the Claude config dir and a new session has started, since new agents and Workflows register at session start; elaborating it then also exercises the new UI design step."
 after = ["A"]
 
+[[changes]]
+at = 2026-11-18T07:14:05Z
+ref = "teach-the-finding-class-scan-the-decision-class-vocabulary-read"
+field = "*"
+old = ""
+new = "Teach the finding-class scan the decision class vocabulary read"
+actor = "orchestrator"
+reason = """tangential breakage from tasks 15, 17, 21, 22, 23 and 28: cli::dispatch::tests::finding_classes::documented_plan_classes_match_the_source and the_plan_scan_reads_both_construction_sites_and_no_tasks_class fail with 'tomlctl/src/plan/schema.rs: no severity resolves for `class`'; task 1's vocab(table, "class", ...) read in the decision parser looks like a finding-class construction site to the scanner"""
+
 [[items]]
 id = 1
 ref = "add-an-optional-class-to-plan-decisions"
 title = "Add an optional class to plan decisions"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1170,15 +1204,15 @@ deps_note = ""
 action = "Add `class` to Decision with a closed vocabulary, written only when set, accepted by plan decide, and stamp a bumped schema version when any decision carries one."
 detail = "Vocabulary: structure, look, ux, cost, vocabulary, architecture, compromise. Use the vocabulary! macro beside Provenance and Door. decision_to_toml writes every field today (schema.rs:724); write `class` only when set so stores without it stay byte-stable. Version scheme (decision D30): raise SCHEMA_VERSION to 4; write_version (schema.rs:516) stamps 4 when any decision has a class, 3 when the store holds attempts, gate rounds or reports and no class, and BASE_SCHEMA_VERSION (2) otherwise; from_toml (schema.rs:556) keeps refusing anything above SCHEMA_VERSION, so move the test newer_schema_version_is_refused (schema.rs:1840) to 5. Add `class` to DECISION_KEYS (records.rs:27), upsert_decision and the field projection record_value (records.rs:454)."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "882d343ff25e9810268821851f52c3fb51bd3de7"
 
 [[items]]
 id = 2
 ref = "refuse-approval-over-a-silent-one-way-door"
 title = "Refuse approval over a silent one-way door"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1195,15 +1229,15 @@ deps_note = ""
 action = "Make plan approve refuse, and plan stage report as a blocker, any decision that is agent-assumed, door one-way and not surfaced; group the gate report's assumptions by class."
 detail = "Add a sibling of unanswered_decisions (store.rs:350) for silent one-way doors and call it beside unanswered_decisions in approve.rs:226 and in stage.rs at both the prove-stage blocker and amend_report, so stage never advises an --amend approve would refuse; view.rs's blocker list is left as it is. The refusal names each decision id and says to surface it. In gate_report (approve.rs:58) keep `assumptions` a flat list: add `class` (null when unset) to assumption() (approve.rs:161) and stable-sort by class in vocabulary order (structure, look, ux, cost, vocabulary, architecture, compromise), unclassed last, keeping the existing binds-descending order within a class."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "882d343ff25e9810268821851f52c3fb51bd3de7"
 
 [[items]]
 id = 3
 ref = "show-a-decisions-class-in-plan-view"
 title = "Show a decision's class in plan view"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1218,15 +1252,15 @@ deps_note = ""
 action = "Print a decision's class on its Standing line in plan view --for human, and count decisions by class in the digest's counts."
 detail = "The Standing line is rendered near view.rs:644 as `Standing: <provenance>, <door> door`; append `, <class>` when set. Counts near view.rs:383."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "882d343ff25e9810268821851f52c3fb51bd3de7"
 
 [[items]]
 id = 4
 ref = "give-milestones-capture-states-and-controls"
 title = "Give milestones capture states and controls"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1245,15 +1279,15 @@ deps_note = ""
 action = "Add optional `ui_states` and `ui_controls` string lists to MilestoneSpec, set by repeatable --ui-state and --ui-control flags on plan milestone add and update, written only when non-empty."
 detail = "Follow gate_probes exactly: MilestoneSpec at tasks/schema.rs:369, its parse and write near schema.rs:1317-1387 (written only when non-empty, schema.rs:1347), the --gate-probe flag in cli/types/plan.rs (lines 435 and 484) and its handling in plan/milestone.rs, including the audited patch. A state name matches ^[a-z0-9][a-z0-9-]{0,63}$; a name in both lists, or repeated in one, is refused. On update, a flag replaces that list whole; a --clear-ui flag empties both. Versioning (decision D34): raise SCHEMA_VERSION (tasks/schema.rs:30) to 3 and add a predicate beside holds_v2_keys (:502) that is true when any milestone carries ui_states or ui_controls, so such a store stamps 3, a store with only the present v2 keys stamps 2 and one with none stamps 1; move the newer-version refusal test to 4. Task 5 extends the same predicate to look entries."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "882d343ff25e9810268821851f52c3fb51bd3de7"
 
 [[items]]
 id = 5
 ref = "accept-a-look-owner-judged-on-capture-states"
 title = "Accept a look owner judged on capture states"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1275,15 +1309,15 @@ deps_note = ""
 action = 'Add run_by = "look" and a `states` list on accept entries: a look entry must have states and an empty check; states is refused on any other owner.'
 detail = """RUN_BY_OWNERS at tasks/schema.rs:49, Accept at :276, owner_problem at :309, accept_from_toml and accept_to_toml at :1176 and :1200 (write `states` only when set, as run_by). ACCEPT_FIELDS in add.rs:99 gains "states"; add.rs validates run_by near :624. A look entry's kind stays forward, falsifier or guard. plan probes already skips a non-worker owner (probes.rs:179) and discriminates() needs a non-empty check (probes.rs:874), so a look entry is never probed and never counts as discriminating; add a test proving both rather than changing probes.rs. Extend task 4's version-3 predicate to an accept entry with run_by look or non-empty states (decision D34)."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "882d343ff25e9810268821851f52c3fb51bd3de7"
 
 [[items]]
 id = 6
 ref = "check-look-entries-and-structural-ui-acceptance"
 title = "Check look entries and structural UI acceptance"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1301,15 +1335,15 @@ deps_note = ""
 action = "Add plan check classes: plan/look-state-unknown (error), plan/look-without-states (error, a look entry in a milestone with no ui_states), plan/ui-controls-missing (error, a milestone with ui_states and no ui_controls), plan/ui-accept-structural (warning, a pending row in a milestone with ui_states whose accept entries are all writes_build = false and none is a look entry) and plan/ui-milestone-no-states (warning, a non-deferred milestone with no ui_states whose rows' files match a glob under `paths` in .claude/ui-capture.toml); and exempt a look entry from plan/accept-no-check."
 detail = "Decision classes live beside plan/decision-bind-unknown (check.rs:488). Each new class needs a row in the finding-class table of claude/skills/tomlctl/references/plan.md, which task 9 writes; until it lands, the cli::dispatch::tests finding_classes test fails, which the milestone gate runs after both. A deferred milestone's rows are exempt from ui-accept-structural and ui-milestone-no-states, as from accept checks. plan/ui-milestone-no-states reads .claude/ui-capture.toml from the repo root when present; with no config, or no `paths`, it reports nothing; a malformed config is reported once as the warning's detail, never an error. A look entry's check is empty by design (D15), so exempt an entry whose owner is look from plan/accept-no-check (check.rs:609); add a check_ui_ test that an elaborated look entry raises no accept-no-check."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "882d343ff25e9810268821851f52c3fb51bd3de7"
 
 [[items]]
 id = 7
 ref = "emit-the-visual-pass-inputs-from-gate-list"
 title = "Emit the visual pass inputs from gate-list"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1328,15 +1362,15 @@ deps_note = ""
 action = "Make plan emit gate-list print a `visual` object when the milestone has ui_states: {states, controls, looks: [{task, accept, behaviour, states}]}; look entries never enter `commands` or `skipped`."
 detail = "gate_list is at emit.rs:169; its owner match has `_ => continue` at :213, which would drop a look entry silently. Match RUN_BY_LOOK explicitly and collect it into `looks`, in row order then accept order, accept being the entry's index. Omit `visual` entirely when the milestone has no ui_states. Document the key in plan-engine.md's gate-list output section."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "882d343ff25e9810268821851f52c3fb51bd3de7"
 
 [[items]]
 id = 8
 ref = "add-a-plan-ledger-to-the-inputs-store"
 title = "Add a plan ledger to the inputs store"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1352,15 +1386,15 @@ deps_note = ""
 action = "Add `plan` to the inputs LEDGERS (inputs.rs:58), whose items are task ids of the flow named in `flow`; document it in inputs.md's ledger values."
 detail = "A question with ledger plan must name a flow, not a scope; items are task ids as strings. inputs list --where ledger=plan --where flow=<slug> must find it."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "882d343ff25e9810268821851f52c3fb51bd3de7"
 
 [[items]]
 id = 9
 ref = "document-decision-classes-the-one-way-rule-and-milestone-ui-flags"
 title = "Document decision classes, the one-way rule and milestone ui flags"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1381,15 +1415,15 @@ deps_note = ""
 action = "Document: the decision `class` key and its values (plan decide, plan-store.md's decision table, plan-records.md's decision fields); approve's refusal over a silent one-way door; plan milestone add and update's --ui-state, --ui-control and --clear-ui; both schema version bumps; and a finding-class table row for each of plan/look-state-unknown, plan/look-without-states, plan/ui-controls-missing, plan/ui-accept-structural and plan/ui-milestone-no-states, with the look entry's exemption from plan/accept-no-check."
 detail = ""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "882d343ff25e9810268821851f52c3fb51bd3de7"
 
 [[items]]
 id = 10
 ref = "document-the-look-owner-and-milestone-ui-fields-in-the-task-store-references"
 title = "Document the look owner and milestone ui fields in the task store references"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1407,15 +1441,15 @@ deps_note = ""
 action = """Document run_by = "look" with its `states` key and rules in both references' accept sections, and the milestone `ui_states` and `ui_controls` keys in tasks-store.md's milestone shape."""
 detail = ""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "882d343ff25e9810268821851f52c3fb51bd3de7"
 
 [[items]]
 id = 11
 ref = "register-the-new-capabilities"
 title = "Register the new capabilities"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1439,15 +1473,15 @@ deps_note = ""
 action = "Add features `decision_class`, `ui_look` and `inputs_plan_ledger` to FEATURES (cli/types/mod.rs:208), the exact-count list in tests/capabilities.rs (near line 1856), the README sample block and feature table, implement-v2.md's pre-flight list (ui_look, inputs_plan_ledger) and plan-v2.md's pre-flight (decision_class, ui_look)."
 detail = "accept_run_by is the precedent for FEATURES, tests/capabilities.rs, the README and implement-v2.md:29; plan-v2.md's pre-flight step 2 (near line 34) names review_apply and milestone_schedule today, so add decision_class and ui_look beside them with the same stop message."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "882d343ff25e9810268821851f52c3fb51bd3de7"
 
 [[items]]
 id = 12
 ref = "let-plan-workers-post-questions-in-the-inputs-contract"
 title = "Let plan workers post questions in the inputs contract"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1459,15 +1493,15 @@ deps_note = ""
 action = "Amend the writer rules: a plan worker may `inputs add` one `question` with ledger plan, its flow and its own task id, and nothing else; the implement-v2 orchestrator may record with `inputs answer` the option the user picked in its own AskUserQuestion for that question, which relays the user's answer and is not answering on their behalf. Add the plan ledger to the field table and the question kind's description."
 detail = ""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "882d343ff25e9810268821851f52c3fb51bd3de7"
 
 [[items]]
 id = 13
 ref = "write-the-ui-capture-contract-and-defect-rubric"
 title = "Write the ui-capture contract and defect rubric"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1482,15 +1516,15 @@ deps_note = ""
 action = "Create the ui-capture skill: SKILL.md states the stack-neutral project capture contract; references/defects.md is the visual defect rubric."
 detail = "Contract (decisions D27 and D33): .claude/ui-capture.toml with `command` (run from the repo root), `out` and `paths` (UI source globs). The command accepts --out <dir>, repeated --only <state> and --list (one state name per line); per state it writes <state>.png, <state>.txt (a terminal cell grid, one line per row, no escape codes) or both, at a fixed viewport or terminal size and scale 1, never full-page, since the Read tool downsamples large images (notes/screenshot-capture.md). It writes geometry.json, an object keyed by state name whose value is an array of {kind, locator, detail}, kind overflow, clipping, overlap or offscreen: every state captured as an image has a key, its array empty when nothing is found, and a missing key is a capture failure; a text-grid-only state needs no key. Exit 0 means every asked state was captured. Give one paragraph per stack on how a project meets it: web (Playwright or headless Chrome, with the geometry probe this skill ships), QML and Quickshell (grabToImage or a screenshot of a fixed-size window, item bounds for geometry), terminal UIs such as ratatui (TestBackend buffer to text). Controls: a state whose name is listed as a milestone control carries a planted defect. The rubric lists defect classes, each a yes-or-no question with what counts and a worked example per stack where it applies: element scaling with its container where it should not, reserved empty space, a panel taller or shorter than its content needs, clipped or overflowing content, overlap, misalignment, a control or glyph in a style the project does not use, truncation without an ellipsis, a terminal column or border out of line, colour as the only signal. State that an observed defect is a fail and is never talked down (notes/critic-reliability.md), and that an unsure answer is reported as unsure."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "882d343ff25e9810268821851f52c3fb51bd3de7"
 
 [[items]]
 id = 14
 ref = "ship-the-web-geometry-probe-and-html-renderer"
 title = "Ship the web geometry probe and HTML renderer"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1505,15 +1539,15 @@ deps_note = ""
 action = "Write geometry-probe.js, a dependency-free browser script that scans the DOM for overflow, clipping, overlap and offscreen elements and records them in the contract's geometry shape; and render.sh, which renders an HTML file to a PNG and a geometry.json with an installed Chromium-family browser in headless mode, with a --self-test that renders a planted overflow page and fails unless the PNG exists and the overflow is reported."
 detail = "Probe 2026-11-17: `chrome --headless=new --disable-gpu --hide-scrollbars --force-device-scale-factor=1 --window-size=W,H --screenshot=<png> file:///<html>` writes the PNG, and `--dump-dom` prints the DOM after scripts run, so the probe can write its result into a data attribute that render.sh extracts. Discover the browser in order: $UI_CAPTURE_BROWSER, chrome, chromium, msedge on PATH, the standard Windows and macOS install paths, then the newest chromium-*/ under the Playwright cache. Usage: render.sh [--size WxH] <html> <out-dir> <state>; it writes <out-dir>/<state>.png and merges the state's key into <out-dir>/geometry.json in the contract's shape (an object keyed by state, each an array of {kind, locator, detail}, empty when clean), creating the file when absent. Exit 2 with a message when no browser is found."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "882d343ff25e9810268821851f52c3fb51bd3de7"
 
 [[items]]
 id = 15
 ref = "create-the-ui-inspector-agent"
 title = "Create the ui-inspector agent"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1525,15 +1559,15 @@ deps_note = ""
 action = "Write the ui-inspector agent: a skeptical judge of captured UI states that reads each state's PNG or text grid, the geometry report, the milestone's look entries and the chosen design, and returns a verdict per state."
 detail = "Frontmatter: name, description, model opus, effort high, tools Read, Grep, Glob, Bash, Write (Write only for its note). Procedure per state: (1) every geometry.json violation for the state is a fail with its locator; (2) answer every rubric class of the ui-capture skill's references/defects.md as a separate yes, no or unsure with a location, re-reading the image region before a yes; (3) judge each look entry naming the state against its behaviour; (4) compare against the chosen design's picture or text as a separate pass, judging arrangement, not pixels. An observed defect is a fail and is never downgraded; unsure is unsure, never pass. A state listed as a control must show a defect; if it shows none, say so. Return the C2 shape: {states: [{state, control, verdict, defects: [{class, location, detail}], note}]}, verdict pass, fail or unsure, and write the full reasoning to the note path its prompt names. Model and effort live only here; never edits code."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "882d343ff25e9810268821851f52c3fb51bd3de7"
 
 [[items]]
 id = 16
 ref = "add-the-implement-v2-visual-workflow"
 title = "Add the implement-v2-visual Workflow"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1548,15 +1582,15 @@ deps_note = ""
 action = "Write the saved Workflow implement-v2-visual: given {slug, milestone, round, capture_dir, design, states, controls, looks}, it dispatches ui-inspector agents over the states in groups of at most four, each with its note path, and returns an index {states: [{state, control, verdict, defects, note, error}], errors, script_version}. Add node:test cases under claude/workflows/tests/."
 detail = "Follow implement-v2-milestone.js and review-v2.js for meta, arg validation (refuse the whole launch with errors ending `no agent launched` on bad args, starting no agent), agentType use and the null-agent case (a dead agent's states come back with status no-return). Note paths: docs/flows/<slug>/notes/run/visual-<milestone>-<round>-<n>.md. The harness in tests/harness.test.mjs loads scripts as AsyncFunction bodies with stubbed globals; reuse its loader. The dispatch test workflow_scripts_logic_passes_under_node runs `node --test claude/workflows/tests/`, and command_lint checks any `tomlctl` command embedded in prompt strings."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "882d343ff25e9810268821851f52c3fb51bd3de7"
 
 [[items]]
 id = 17
 ref = "write-the-implement-v2-visual-pass"
 title = "Write the implement-v2 visual pass"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1572,15 +1606,15 @@ deps_note = ""
 action = "Write references/visual.md, the visual pass a milestone with ui_states runs after its gate passes and before its commit."
 detail = "Model it on apply-rows.md's Reproduce check. Steps: read `visual` from plan emit gate-list; read .claude/ui-capture.toml (absent: stop and report in needs_human that the milestone declares states but the project declares no capture); the visual round is 1 on the first pass and one more than the fix rounds counted from the `visual <id> round <n>: ` prefix after that; dispatch the verification agent once with the capture command plus --out <out>/<milestone>-<round>/ (out from the config) and an --only per state and control. Before launching the inspector, check every asked state has its file and every image state its geometry.json key (decision D33); a missing one is a capture failure that mints a fix task on the capture, not a visual verdict. Launch implement-v2-visual with this args object, written first: slug; milestone; round; capture_dir = <out>/<milestone>-<round>/; design = docs/flows/<slug>/design/ui-<milestone>.md, the file the UI rows cite in spec.design (decision D4); states, controls and looks from gate-list's `visual`. Record it as plan run start --step visual:<id>, never resumed, no Agent fallback; finish the run on the index. The record is that run row, the inspector notes under docs/flows/<slug>/notes/run/, and, for every failing or unsure state, its capture copied to docs/flows/<slug>/notes/run/visual-<id>-<round>/ so the path given to the user survives (decision D18); nothing goes through plan run gate, whose rounds the gate owns. A control whose verdict is pass makes the run unsound: report it in needs_human and mint nothing for that run. An unsure verdict is read by the orchestrator from the note and the capture itself and settled as pass or fail. A fail mints one fix task per separable defect: files from the look entry's task or the rows whose files render the state, accept the failed look entry or a new look entry naming the state and the defect, reason opening `visual <id> round <n>: `; two rounds at most, after which the milestone goes uncommitted to the user with each state's copied capture path. Never run the capture or judge a state yourself beyond reading an unsure one. A capture failure's fix task holds the files the capture command runs (from ui-capture.toml's command, and the milestone rows that edit them), and its reason opens `visual <id> round <n>: capture`, so it counts toward the same two rounds; when no file in the repo can be named, report it in needs_human instead of minting."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "882d343ff25e9810268821851f52c3fb51bd3de7"
 
 [[items]]
 id = 18
 ref = "write-the-implement-v2-build-time-question-loop"
 title = "Write the implement-v2 build-time question loop"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1595,15 +1629,15 @@ deps_note = ""
 action = "Write references/questions.md: how the orchestrator answers a worker's `QUESTION <input id>` message while a milestone's Workflow runs."
 detail = "Decisions D9 and D11. On the message: read the question with tomlctl inputs list --kind question; ask the user with AskUserQuestion using its prompt and options (no timeout); record the pick with tomlctl inputs answer; record the answer as a user-stated decision bound to the task id (plan decide), so the worker view carries it on any re-dispatch; end the turn. The worker is waiting on the question's status and resumes itself. If the worker has already parked (its 600-second wait ended), the answer still lands and the drain re-dispatches the row. At the drain, a parked row whose question is open is asked again with the parked re-ask; an answered one is re-dispatched. Never answer a worker's question yourself. Only the plan ledger's questions of this flow are answered this way."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "882d343ff25e9810268821851f52c3fb51bd3de7"
 
 [[items]]
 id = 19
 ref = "wire-the-visual-pass-and-the-question-loop-into-the-implement-v2-engine"
 title = "Wire the visual pass and the question loop into the implement-v2 engine"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1622,15 +1656,15 @@ deps_note = ""
 action = "Thread the visual pass and the question loop through the engine's enumerations."
 detail = "SKILL.md: the role rule 'You ask every user question' names the build-time question loop; rule 3 names implement-v2-visual as a third Workflow launch under the same rules; the step table gains the visual pass between gate and commit; the references list gains visual.md and questions.md; the open-run rule names `visual:` beside `implement:` and `reproduce:` (SKILL.md near lines 89 and 105). drain.md: step 7's 'passes the gate: go to the commit' (near line 367) goes by way of visual.md when the milestone has ui_states; 'Stamping on re-entry' (near line 474) reruns the visual pass before the commit for such a milestone; step 9 says a handover asking the user to review the look or reproduce a visual defect is not minted where the milestone's captures can settle it; the needs_human report's section table gains visual rows (unsound inspection, rounds exhausted); 'Parked rows at the next invocation' covers a row parked on an open question. run-milestone.md: the stale-row reset and open-run lists name `visual:` (near lines 17 and 40); 'What comes back' says a QUESTION message may arrive mid-run and is handled by questions.md. The visual pass's report lines go under the existing gate section with kind gate, since plan run report has no visual kind: `- milestone <id> visual round <n> unsound: control <state> passed` and `- milestone <id> visual failed after round <n>: <state> - <capture path>`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "882d343ff25e9810268821851f52c3fb51bd3de7"
 
 [[items]]
 id = 20
 ref = "teach-plan-workers-to-ask-the-user-mid-run"
 title = "Teach plan workers to ask the user mid-run"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1645,15 +1679,15 @@ deps_note = ""
 action = "Add SendMessage to both workers' tools and a section to the shared plan-worker-procedure block on asking the user, byte-identical in both files."
 detail = """When the spec leaves a choice that is a compromise or hard to unwind: post the question with `tomlctl inputs add` (kind question, author implement-v2, ledger plan, flow <slug>, items ["<task id>"], a self-contained prompt, choice single, two to four options naming the costs), send the orchestrator one SendMessage to main whose first line is `QUESTION <input id> task <n>`, then wait in ONE Bash call with timeout 600000: `deadline=$((SECONDS+590)); until [ -n "$(tomlctl inputs list --kind question --where id=<input id> --where status=handled --get id)" ] || [ $SECONDS -ge $deadline ]; do sleep 15; done`, then test the same list once more to choose the branch (a standalone sleep is blocked, and `--get id` exits 0 with empty output, so the test is on non-empty output). Answered: read the pick with `tomlctl inputs list --kind answer --where answers=<input id> --get picked` and continue. Not answered: set the row parked, write the question id and options in the run note, and return. Load SendMessage with ToolSearch when it is not already present. A look entry is never the worker's to run. Bring the files' standing rules into line in the same edit: the plan-worker-forbidden-ops block in both files allows exactly one `tomlctl inputs add` question record per run besides the task row update; plan-worker-lite.md's 'When to return failed' carves out a compromise or hard-to-unwind choice, which is asked instead; 'Tasks that answer review findings' says an unanswered question on a finding-fix task parks the row; plan-worker-deep.md's Judgement line that divergent behaviour is a person's call now asks first. Both shared blocks are checked by bash scripts/verify-shared-blocks.sh against scripts/shared-blocks.toml."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "882d343ff25e9810268821851f52c3fb51bd3de7"
 
 [[items]]
 id = 21
 ref = "rewrite-surface-for-taste-compromise-and-follow-up-questions"
 title = "Rewrite Surface for taste, compromise and follow-up questions"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1668,15 +1702,15 @@ deps_note = ""
 action = "Rewrite the role rule and Surface by decisions D6, D8, D10 and D31: an interview before the brief, the read-back after Open, and the new Surface test, budget and follow-up rule."
 detail = """SKILL.md:16's 'Ask only when the answer changes the plan... zero questions before the gate is the normal case' becomes: ask every ambiguous call that is hard to unwind or is a compromise, at any level, and aim to build better than the user would specify while staying consistent with their expectations; the step table gains the interview (in Open) and the directions step (before Design, written by task 23 in write-and-prove.md). open-and-challenge.md section 1: before filling the brief, interview the user about goals, constraints and what good looks like, in AskUserQuestion rounds whose length scales with the work's complexity and ambiguity (decision D31); after the brief is filled, give the user a short account of what they will see and do once the work lands and fold corrections into the brief before Investigate. Section 5: test 1 becomes 'would getting it wrong be visible to the user, costly to undo, or a compromise the user has not made'; tests 2 and 3 stay; the budget is eight a planning session in the first round, asked in batches of up to four, and a question an answer opens is asked in further rounds outside the budget until none opens; each decision records a `class`; a question whose options an engineering limit narrows states what lifting the limit would cost; an agent-assumed one-way door is always surfaced, since approval refuses it. Cite docs/plans/v2-planning.md's dogfooding revisit trigger in one line. Remove "Zero survivors is the normal case" from section 5 (near line 150), keeping that nothing surviving is recorded. Reword the SKILL.md step-table rows for Surface and Surface again so they no longer call zero questions normal. SKILL.md's open-run rule (near line 106) and open-and-challenge.md section 6 (near line 228) name `visual:` beside `implement:` and `reproduce:` as runs that belong to /implement-v2, never abandoned or relaunched. Add references/ui-layout.md to SKILL.md's references list."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "882d343ff25e9810268821851f52c3fb51bd3de7"
 
 [[items]]
 id = 22
 ref = "write-the-ui-layout-design-step"
 title = "Write the UI layout design step"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1691,15 +1725,15 @@ deps_note = ""
 action = "Write references/ui-layout.md, the design step for a milestone that adds or reshapes a UI surface, used by Design and by elaboration."
 detail = "Decisions D4, D5 and D26. The planner lists the milestones it judged UI and not UI for the user to correct. Per UI milestone: draft two or three really different layouts. Web and QML: an HTML mock per option styled after the project, published as one Artifact page showing all options side by side when the Artifact tool is present; each option rendered to PNG with the ui-capture skill's scripts/render.sh into docs/flows/<slug>/design/ui-<milestone>/<option>.png. Terminal UI: each option drawn as a text grid, shown directly in the question's preview and saved as <option>.txt. Ask with AskUserQuestion, an ASCII preview per option. Record the pick as a user-stated or user-confirmed decision of class look, rejected holding the others, bound to the UI rows; write docs/flows/<slug>/design/ui-<milestone>.md with a section per surface naming the chosen picture or grid and the constraints the pick implies (sizes, what scales, what stays fixed), which UI rows cite as spec.design; declare the milestone's ui_states, at least one ui_control, and look entries naming those states on the UI rows. Content extremes (empty, one, many, a long label, a short and a tall window or terminal) are states, since dead space and sizing show only there."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "882d343ff25e9810268821851f52c3fb51bd3de7"
 
 [[items]]
 id = 23
 ref = "bring-design-surface-again-and-the-spec-rules-into-line"
 title = "Bring Design, Surface again and the spec rules into line"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1715,15 +1749,15 @@ deps_note = ""
 action = "Update write-and-prove.md for the directions step, the read-back, the UI design step, UI milestones, look entries and the direction citation, and dedupe Surface again."
 detail = """Section 1, Design: open with the directions step (decision D31): from the brief, the notes and the structure challenge, present two or three distinct directions with trade-offs (cost, risk, what each makes easy or hard later), at a length scaled to the work's complexity and ambiguity, and ask the user to choose or steer; record the choice as a decision of class architecture and write docs/flows/<slug>/design/direction.md with an overarching section and a section per milestone (decision D32); then the second read-back (the account made concrete, changes marked). After Milestones, a milestone that adds or reshapes a UI surface goes through references/ui-layout.md and is added with --ui-state and --ui-control; decisions carry a class; in Handovers, a handover asking the user to review the look or reproduce a visual defect is not recorded for a milestone with ui_states, since its captures settle it: state the look as a look entry instead. Section 2, Surface again: replace the restated three tests (lines 82-88) with a citation of open-and-challenge.md section 5, budget and follow-up rule included. Section 3, spec rules: every task cites the direction section that applies to it in spec.design; a user-visible behaviour is never accepted on a read-only check alone; it gets a test that drives it or a look entry (run_by = "look", states naming the milestone's ui_states, empty check); reword the worked example so its grep-and-test-f entries are shown proving internal facts, not user-visible behaviour. Drop "This normally finds nothing" from section 2."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "882d343ff25e9810268821851f52c3fb51bd3de7"
 
 [[items]]
 id = 24
 ref = "update-elaboration-and-approval-for-the-new-surfacing-rules"
 title = "Update elaboration and approval for the new surfacing rules"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1742,15 +1776,15 @@ deps_note = ""
 action = "elaborate.md section 2: a budget of four in the first round, follow-ups asked outside it, the UI design step for a UI milestone, and the milestone's section of design/direction.md refined and cited by its rows; section 6: the commit stages every file the elaboration wrote under docs/flows/<slug>/design/, images included. approve.md: a refusal row for a silent one-way door and the gate's assumptions shown grouped by class."
 detail = """elaborate.md:51 asks at most three in ONE AskUserQuestion call; AskUserQuestion takes four questions per call, so a round is one call of up to four and a follow-up round is another call. elaborate.md:220 names only design/<name>.md files; widen it so a PNG or text grid under design/ is committed. approve.md's refusal table is near line 138. Remove elaborate.md section 2's "Zero survivors is the normal case" (near line 51), keeping that nothing surviving records nothing. Section 5 (Flip) gains a step before the flip, since no approval follows an elaboration: list the decisions that are agent-assumed, door one-way and not surfaced with `tomlctl items list .claude/flows/<slug>/plan.toml --array decision --where provenance=agent-assumed --where door=one-way --where surfaced=false --select id --lines`, and surface each through AskUserQuestion before flipping."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "882d343ff25e9810268821851f52c3fb51bd3de7"
 
 [[items]]
 id = 25
 ref = "have-the-cold-reader-flag-open-look-choices-and-structural-ui-acceptance"
 title = "Have the cold reader flag open look choices and structural UI acceptance"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1762,15 +1796,15 @@ deps_note = ""
 action = "Add three things the cold reader reports as unactionable: a UI task that leaves a layout, sizing, style or interaction choice to the worker with no design citation or decision settling it; a user-visible behaviour whose only accept entries are read-only checks with no look entry or driving test; and a task that cites no section of design/direction.md, or whose spec reads as a generic standalone implementation of its outcome rather than the flow's direction."
 detail = ""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "882d343ff25e9810268821851f52c3fb51bd3de7"
 
 [[items]]
 id = 26
 ref = "detect-ui-changes-on-any-stack-in-the-review-survey"
 title = "Detect UI changes on any stack in the review survey"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1786,15 +1820,15 @@ deps_note = ""
 action = "Add a diff detector option `ui_capture_paths = true` that also selects a changed file matching any glob in the project's .claude/ui-capture.toml `paths`."
 detail = "diff_signal is at survey.rs:652 and calls detect.selects on each changed file; extend the selection, reading the config once per survey from the run's root. A missing config or missing `paths` selects nothing extra; an unreadable or malformed config is an Unknown outcome naming the file, as other detector errors are. The Detect struct and its parse are in catalogue.rs; the catalogue validator must accept the new key."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "882d343ff25e9810268821851f52c3fb51bd3de7"
 
 [[items]]
 id = 27
 ref = "add-the-ui-visual-and-interaction-review-lenses"
 title = "Add the ui-visual and interaction review lenses"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1813,15 +1847,15 @@ deps_note = ""
 action = "Add a `ui-change` diff signal (detect: the frontend globs plus **/*.qml, with ui_capture_paths = true), the concern tags of the two new lenses (ui-visual: layout-sizing, overflow-clipping, style-conformance; interaction: interaction-states, input-handling), style globs (css, scss, less, html, qml) in routing.executable, and the two lens files activated on ui-change."
 detail = """Lens format: claude/skills/review-v2-lenses/SKILL.md (frontmatter families code, mode judgement, produces all three, owns, activation signal with apply_when signals ["ui-change"], slice per-subsystem, v1_category quality). Tags go in vocabulary.toml under a `# <lens>` comment group before any lens owns them; each owned tag gets an Owns paragraph led by the tag in backticks. The validator needs exactly one owner per (family, tag) (catalogue.rs:841), so add only these two lenses' tags; intent-fidelity's tags arrive with its lens in task 29. The lenses judge the captures the ui-capture check produced (task 28) against the ui-capture skill's references/defects.md, cite the capture path in evidence, and fall back to source with evidence no higher than medium when no capture exists. interaction covers empty, loading, error and disabled states, focus, keyboard and pointer, scroll and autoscroll. The gate is the catalogue_validates dispatch test. A geometry.json entry for a captured state is a defect, as for the inspector, and an image state with no geometry key is a capture failure to report, not a pass (decision D33)."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "882d343ff25e9810268821851f52c3fb51bd3de7"
 
 [[items]]
 id = 28
 ref = "add-the-ui-capture-review-check"
 title = "Add the ui-capture review check"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1836,15 +1870,15 @@ deps_note = ""
 action = "Add a catalogue check, executor verification, applying on ui-change, that runs the project's capture command from .claude/ui-capture.toml into the run directory before the cells, so UI lens finders read the captures; when no config exists it records `ui-capture: none` and the lenses fall back to source."
 detail = "Model on checks/dev-server-probe.md and SKILL.md's Check entry-format table (lines 101-112). A verification check runs a fixed command from its discover ladder and the surveyor runs nothing, so the check's command is the declared capture command with --out <run dir>/ui-capture and no --only: it captures every state the project lists. Record the output directory where baselines record a check's log path. When the capture ran but an image state has no geometry.json key, record `ui-capture: incomplete` with the states missing it, beside `ui-capture: none` for no config (decision D33)."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "882d343ff25e9810268821851f52c3fb51bd3de7"
 
 [[items]]
 id = 29
 ref = "add-the-intent-fidelity-lens-and-its-compose-rule"
 title = "Add the intent-fidelity lens and its compose rule"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1860,15 +1894,15 @@ deps_note = ""
 action = "Add intent-fidelity's concern tags (criteria-fidelity, decision-fidelity) to vocabulary.toml under a `# intent-fidelity` group, the intent-fidelity lens (opt-in, slice whole-scope, v1_category completeness, owning both tags) and a compose rule passing --lens +intent-fidelity on every code-family run whose store is a flow with .claude/flows/<slug>/plan.toml."
 detail = "The lens reads docs/flows/<slug>/brief.md (Intent, Non-goals, Success criteria) and the user-stated and user-confirmed decisions with `tomlctl items list .claude/flows/<slug>/plan.toml --array decision --where-in provenance=user-stated,user-confirmed`, follows each decision's binds to task files and commits, and reports a divergence in code as a defect anchored on the code, and a sign that a decision itself is now wrong as an advisory question, never an edit. Does not flag: agent-assumed decisions (contrarian's decision-challenges) and plan-time criterion coverage (plan-structure's goal-coverage). compose.md passes --lens +id only from the user's flags today (near line 32); add the flow-bound rule, never for a --scope run."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "882d343ff25e9810268821851f52c3fb51bd3de7"
 
 [[items]]
 id = 30
 ref = "link-the-new-agent-skill-and-workflow"
 title = "Link the new agent, skill and Workflow"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1883,15 +1917,15 @@ deps_note = ""
 action = "Add entries for agents/ui-inspector.md, skills/ui-capture and workflows/implement-v2-visual.js to both link scripts' entry lists, in the same order in both."
 detail = ""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "882d343ff25e9810268821851f52c3fb51bd3de7"
 
 [[items]]
 id = 31
 ref = "describe-the-visual-pass-and-build-time-questions-in-claudemd"
 title = "Describe the visual pass and build-time questions in CLAUDE.md"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1906,8 +1940,8 @@ deps_note = ""
 action = "Add to CLAUDE.md's Planning v2, Implement v2 and Review v2 sections one bullet each: the UI design step and the question rule; the visual pass with ui-inspector, the ui-capture contract and build-time worker questions; the ui-visual, interaction and intent-fidelity lenses. Name the new agent, skill and Workflow in the deploy bullets."
 detail = ""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "882d343ff25e9810268821851f52c3fb51bd3de7"
 
 [[items]]
 id = 32
@@ -1977,3 +2011,26 @@ detail = ""
 acceptance = ""
 agent = ""
 commit = ""
+
+[[items]]
+id = 35
+ref = "teach-the-finding-class-scan-the-decision-class-vocabulary-read"
+title = "Teach the finding-class scan the decision class vocabulary read"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/cli/dispatch/tests/finding_classes.rs",
+]
+needs = [1]
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-deep"
+commit = "882d343ff25e9810268821851f52c3fb51bd3de7"

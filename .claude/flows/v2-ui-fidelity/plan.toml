@@ -1,5 +1,5 @@
-schema_version = 2
-last_updated = 2026-11-17
+schema_version = 3
+last_updated = 2026-11-18
 
 [binding]
 branch = "main"
@@ -806,6 +806,78 @@ finished = 2026-11-17T12:48:04Z
 skip_reason = ""
 outcome = "ok"
 
+[[run]]
+step = "implement:A"
+workflow = "implement-v2-milestone"
+args_hash = "3bacac56712314f7f525c7e4a24bda7aacd665202b92ecbea2b6524adb676c5b"
+run_id = "wf_91c92752-34f"
+session = "0e7d5ad0-ebb9-4af4-a635-01af43d0b99d"
+started = 2026-11-18T06:43:52Z
+finished = 2026-11-18T07:13:02Z
+skip_reason = ""
+outcome = "ok"
+tasks = [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+]
+digest_at = 2026-11-18T06:43:06Z
+
+[run.store_digest]
+changes = "4f53cda18c2baa0c"
+milestones = "c26e36072dd605b8"
+rest = "8ec3252927ad2dfa"
+rows = "53f9938f0ccadcba"
+specs = "546d7b6381724e01"
+
+[[run]]
+step = "implement:A"
+workflow = "implement-v2-milestone"
+args_hash = "ac05e4b874ede1645cb7c7d05f721f08baf7a8089c735ee4c56157847dbbec6f"
+run_id = "wf_4f38eb26-377"
+session = "0e7d5ad0-ebb9-4af4-a635-01af43d0b99d"
+started = 2026-11-18T07:14:25Z
+finished = 2026-11-18T07:15:16Z
+skip_reason = ""
+outcome = "ok"
+tasks = [35]
+digest_at = 2026-11-18T07:14:12Z
+
+[run.store_digest]
+changes = "35decfb522966fcb"
+milestones = "c26e36072dd605b8"
+rest = "8ec3252927ad2dfa"
+rows = "f283a5f4c0c37e6c"
+specs = "74399728f4ec9820"
+
 [[handover]]
 id = "H1"
 reason = "permissions"
@@ -823,3 +895,1129 @@ when = "After the elevated link run."
 done_when = "The new session lists the ui-inspector agent type and the implement-v2-visual Workflow."
 source_task = 19
 done = false
+
+[[attempt]]
+task = 1
+run_id = "wf_91c92752-34f"
+milestone = "A"
+status = "done"
+summary = "decisions carry an optional closed-vocabulary `class`, written only when set and stamping schema_version 4"
+block = "present"
+files_touched = [
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/plan/records.rs",
+    "tomlctl/tests/plan_records.rs",
+]
+tangential = []
+
+[[attempt.deviations]]
+what = "Added a named RUN_RECORDS_SCHEMA_VERSION (3) constant for the middle tier rather than writing the literal, and kept newer_schema_version_is_refused as SCHEMA_VERSION + 1 (now 5) instead of a literal 5"
+why = "The existing tiers are named constants with compile-time ordering asserts; a third named tier keeps that idiom and the refusal test follows SCHEMA_VERSION automatically"
+means = "move the test newer_schema_version_is_refused to 5"
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+result = "pass"
+
+[[attempt.checks]]
+command = "rustfmt --edition 2024 tomlctl/src/plan/schema.rs tomlctl/src/plan/records.rs tomlctl/tests/plan_records.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = """grep -q 'compromise' tomlctl/src/plan/schema.rs && grep -q '"class"' tomlctl/src/plan/records.rs"""
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/decision_class/)'"
+result = "not-run"
+
+[[attempt]]
+task = 2
+run_id = "wf_91c92752-34f"
+milestone = "A"
+status = "done"
+summary = "plan approve refuses a silent agent-assumed one-way door, plan stage holds it at prove, and the gate groups assumptions by class"
+block = "present"
+files_touched = [
+    "tomlctl/src/plan/store.rs",
+    "tomlctl/src/plan/approve.rs",
+    "tomlctl/src/plan/stage.rs",
+    "tomlctl/tests/plan_approve.rs",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+result = "pass"
+
+[[attempt.checks]]
+command = "rustfmt --edition 2024 --check tomlctl/src/plan/store.rs tomlctl/src/plan/approve.rs tomlctl/src/plan/stage.rs tomlctl/tests/plan_approve.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -q 'silent_one_way' tomlctl/src/plan/store.rs && grep -q 'silent_one_way' tomlctl/src/plan/approve.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/silent_one_way/)'"
+result = "not-run"
+
+[[attempt]]
+task = 3
+run_id = "wf_91c92752-34f"
+milestone = "A"
+status = "done"
+summary = "plan view prints a decision's class on its Standing line and the digest counts decisions by class"
+block = "present"
+files_touched = [
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/tests/plan_view.rs",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -q 'view_decision_class' tomlctl/tests/plan_view.rs"
+result = "pass"
+
+[[attempt]]
+task = 4
+run_id = "wf_91c92752-34f"
+milestone = "A"
+status = "done"
+summary = "milestones carry optional ui_states and ui_controls, set by --ui-state, --ui-control and --clear-ui, and stamp the task store at version 3"
+block = "present"
+files_touched = [
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/plan/milestone.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/tests/plan_milestone.rs",
+    "tomlctl/src/plan/lane.rs",
+    "tomlctl/src/tasks/milestones.rs",
+]
+deviations = []
+
+[[attempt.tangential]]
+kind = "question"
+area = "claude/skills/tomlctl/references/plan.md"
+summary = "The new --ui-state, --ui-control and --clear-ui flags on plan milestone add and update are not yet in the plan reference's flag tables; a sibling documentation task in this milestone owns that file."
+why = "If the flag-table gate compares clap flags with the reference, it fails until that documentation lands."
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+result = "pass"
+
+[[attempt.checks]]
+command = "rustfmt --edition 2024 --check on each edited file"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -q 'ui_states' tomlctl/src/tasks/schema.rs && grep -q 'ui_controls' tomlctl/src/tasks/schema.rs && grep -q 'ui-control' tomlctl/src/cli/types/plan.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/milestone_ui/)'"
+result = "not-run"
+
+[[attempt]]
+task = 5
+run_id = "wf_91c92752-34f"
+milestone = "A"
+status = "done"
+summary = 'accept entries take run_by = "look" with a `states` list, validated, round-tripped and stamping version 3'
+block = "present"
+files_touched = [
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/tasks/add.rs",
+    "tomlctl/src/tasks/show.rs",
+    "tomlctl/src/tasks/update.rs",
+    "tomlctl/src/plan/store.rs",
+    "tomlctl/tests/tasks_spec_add.rs",
+]
+deviations = []
+
+[[attempt.tangential]]
+kind = "debt"
+area = "tomlctl/src/tasks/snapshot.rs"
+summary = "The snapshot's accept JSON writes run_by and covered_by on every entry but not the new `states` list."
+why = "glimpse and any snapshot reader will not see which capture states a look entry is judged on."
+
+[[attempt.tangential]]
+kind = "question"
+area = "tomlctl/src/plan/store.rs"
+summary = "entry_matches compares the string fields and writes_build of a written accept entry but not `states`."
+why = "Two look entries differing only in states would both match a review edit's entry; harmless today, worth a look when plan review targets look entries."
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+result = "pass"
+
+[[attempt.checks]]
+command = "rustfmt --edition 2024 --check tomlctl/src/tasks/schema.rs tomlctl/src/tasks/add.rs tomlctl/src/tasks/update.rs tomlctl/src/tasks/show.rs tomlctl/src/plan/store.rs tomlctl/tests/tasks_spec_add.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = """grep -q '"look"' tomlctl/src/tasks/schema.rs && grep -q '"states"' tomlctl/src/tasks/add.rs"""
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/accept_look/)'"
+result = "not-run"
+
+[[attempt]]
+task = 6
+run_id = "wf_91c92752-34f"
+milestone = "A"
+status = "done"
+summary = "plan check gains the five UI classes and exempts a look entry from accept-no-check"
+block = "present"
+files_touched = [
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/tests/plan_check.rs",
+]
+tangential = []
+
+[[attempt.deviations]]
+what = "A look entry's states are checked against the milestone's ui_states only. A state that is listed only in ui_controls is reported as plan/look-state-unknown, and the detail says that a control state is the inspector's to fail."
+why = "D17 says 'a state its milestone does not list' and does not say which list. A control is a planted defect that the inspector must fail (D28), so a behaviour accepted on a control state would contradict itself. The alternative was to accept either list, which would let a look entry pass on a defect state."
+means = "detail: plan/look-state-unknown"
+
+[[attempt.deviations]]
+what = "When a look entry sits in a milestone with no ui_states, only plan/look-without-states is reported. plan/look-state-unknown is not reported as well."
+why = "Every state would otherwise be reported a second time for the same cause. One finding per cause matches how the other classes in check.rs report."
+means = "detail: class list"
+
+[[attempt.deviations]]
+what = "A malformed .claude/ui-capture.toml is reported as one plan/ui-milestone-no-states warning that names no task, whatever milestones the plan has. Malformed means unreadable, not valid TOML, a `paths` that is not an array of strings, or a glob that does not compile. The capture paths are matched as globset globs with literal_separator, the same as review/cells.rs PathSet, but without its directory-prefix form."
+why = "The detail says to report it once as the warning's detail and never as an error. The config belongs to the project, so the warning does not depend on the plan. PathSet is private to review, so the glob idiom is repeated here rather than shared."
+means = "detail: malformed config"
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+result = "pass"
+
+[[attempt.checks]]
+command = "rustfmt --edition 2024 --check tomlctl/src/plan/check.rs tomlctl/tests/plan_check.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -q 'look-state-unknown' tomlctl/src/plan/check.rs && grep -q 'ui-accept-structural' tomlctl/src/plan/check.rs && grep -q 'ui-controls-missing' tomlctl/src/plan/check.rs && grep -q 'ui-milestone-no-states' tomlctl/src/plan/check.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/check_ui_/)'"
+result = "not-run"
+
+[[attempt]]
+task = 7
+run_id = "wf_91c92752-34f"
+milestone = "A"
+status = "done"
+summary = "plan emit gate-list prints a `visual` object for a milestone with ui_states"
+block = "present"
+files_touched = [
+    "tomlctl/src/plan/emit.rs",
+    "tomlctl/tests/plan_emit.rs",
+    "claude/skills/tomlctl/references/plan-engine.md",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "rustfmt --edition 2024 --check tomlctl/src/plan/emit.rs tomlctl/tests/plan_emit.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+result = "pass"
+
+[[attempt.checks]]
+command = """grep -q '"visual"' tomlctl/src/plan/emit.rs && grep -q 'looks' tomlctl/src/plan/emit.rs"""
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/gate_list_visual/)'"
+result = "not-run"
+
+[[attempt]]
+task = 8
+run_id = "wf_91c92752-34f"
+milestone = "A"
+status = "done"
+summary = "plan ledger added to the inputs store, with tests and reference docs"
+block = "present"
+files_touched = [
+    "tomlctl/src/inputs.rs",
+    "tomlctl/tests/inputs.rs",
+    "claude/skills/tomlctl/references/inputs.md",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = """grep -q '"plan"' tomlctl/src/inputs.rs"""
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml"
+result = "pass"
+
+[[attempt]]
+task = 9
+run_id = "wf_91c92752-34f"
+milestone = "A"
+status = "done"
+summary = "documented decision class, the silent one-way refusal, milestone ui flags, both schema bumps and five new check classes"
+block = "present"
+files_touched = [
+    "claude/skills/tomlctl/references/plan.md",
+    "claude/skills/tomlctl/references/plan-store.md",
+    "claude/skills/review-v2-method/references/plan-records.md",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "grep -q 'ui-accept-structural' plan.md && grep -q -- '--ui-control' plan.md && grep -q 'compromise' plan-store.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "fail"
+
+[[attempt]]
+task = 10
+run_id = "wf_91c92752-34f"
+milestone = "A"
+status = "done"
+summary = "look owner and milestone ui fields documented in both task-store references"
+block = "present"
+files_touched = [
+    "claude/skills/tomlctl/references/tasks-store.md",
+    "claude/skills/tomlctl/references/tasks-write.md",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = """grep -q 'run_by = "look"' tasks-write.md && grep -q 'ui_controls' tasks-store.md"""
+result = "pass"
+
+[[attempt]]
+task = 11
+run_id = "wf_91c92752-34f"
+milestone = "A"
+status = "done"
+summary = "registered decision_class, ui_look, inputs_plan_ledger as features and required them in both carriers"
+block = "present"
+files_touched = [
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/README.md",
+    "claude/commands/implement-v2.md",
+    "claude/commands/plan-v2.md",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "grep -q 'ui_look' tomlctl/src/cli/types/mod.rs && grep -q 'decision_class' claude/commands/plan-v2.md && grep -q 'inputs_plan_ledger' claude/commands/implement-v2.md"
+result = "pass"
+
+[[attempt]]
+task = 12
+run_id = "wf_91c92752-34f"
+milestone = "A"
+status = "done"
+summary = "inputs contract now allows a plan worker's question and the orchestrator's relayed answer"
+block = "present"
+files_touched = ["claude/skills/flow-contract-user-inputs/SKILL.md"]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = '''grep -q 'plan worker' ... && grep -q 'ledger plan\|`plan` ledger\|ledger = "plan"' ...'''
+result = "pass"
+
+[[attempt]]
+task = 13
+run_id = "wf_91c92752-34f"
+milestone = "A"
+status = "done"
+summary = "the ui-capture skill states the stack-neutral capture contract, and its references/defects.md holds the ten-class visual defect rubric"
+block = "present"
+files_touched = [
+    "claude/skills/ui-capture/SKILL.md",
+    "claude/skills/ui-capture/references/defects.md",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "grep -q -- '--list' claude/skills/ui-capture/SKILL.md && grep -q 'geometry.json' claude/skills/ui-capture/SKILL.md && grep -q 'ui-capture.toml' claude/skills/ui-capture/SKILL.md && grep -qi 'ratatui' claude/skills/ui-capture/SKILL.md && grep -qi 'qml' claude/skills/ui-capture/SKILL.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -qi 'empty space' claude/skills/ui-capture/references/defects.md && grep -qi 'scal' claude/skills/ui-capture/references/defects.md && grep -qi 'column' claude/skills/ui-capture/references/defects.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "not-run"
+
+[[attempt]]
+task = 14
+run_id = "wf_91c92752-34f"
+milestone = "A"
+status = "done"
+summary = "geometry-probe.js and render.sh written; a planted overflow and a clean page render correctly on Chrome, Edge and Playwright Chromium"
+block = "present"
+files_touched = [
+    "claude/skills/ui-capture/scripts/geometry-probe.js",
+    "claude/skills/ui-capture/scripts/render.sh",
+]
+
+[[attempt.deviations]]
+what = "The probe pass sizes its window by measurement rather than passing --window-size=W,H unchanged: render.sh reads the viewport the probe saw and widens the window by the shortfall, up to three launches, failing if it never reaches WxH"
+why = "Measured with Chrome 157 on Windows: --screenshot lays the page out at exactly WxH (800x600 PNG, fixed border fills it), but a page loaded for --dump-dom at --window-size=800,600 gets a 784x505 viewport, so geometry measured at the given size would not match the shot. Alternatives weighed: one launch with both --screenshot and --dump-dom (load-time scripts still see 784x505, so no better); a hardcoded frame offset (platform dependent)."
+means = "detail: render with --window-size=W,H and extract the probe result from --dump-dom"
+
+[[attempt.deviations]]
+what = "The page-side driver writes the report at load and rewrites it from setTimeout, two animation frames and fonts.ready when fonts are still loading, instead of waiting for fonts and frames before probing once"
+why = "Measured with Chrome 157: on a page carrying the probe, --dump-dom serialised the DOM before a fonts.ready callback or a requestAnimationFrame callback ran, even with --virtual-time-budget, so a single deferred probe returned nothing; Edge 157 did run them. Probing synchronously at load is accurate for layout because the probe forces style and layout itself."
+means = "SKILL.md's web guidance: wait for fonts and two animation frames before measuring"
+
+[[attempt.deviations]]
+what = "PATH discovery also tries google-chrome, google-chrome-stable, chromium-browser and microsoft-edge, each after its family's name in the detail's order"
+why = "Those are the executable names Linux packages install; without them a Linux machine with Chrome on PATH would fall through to the Playwright cache or fail"
+means = "detail: chrome, chromium, msedge on PATH"
+
+[[attempt.tangential]]
+kind = "other"
+area = "claude/skills/ui-capture/scripts/render.sh"
+summary = "On this machine the newest Playwright Chromium (chromium-1255/chrome-win64) lacks chrome.dll and fails to start; discovery picks the newest chromium-*/ by number, so a broken newest install is chosen over a working older one"
+why = "Only matters when no system Chrome or Edge is installed; render.sh then fails with the browser's own DLL error rather than trying an older build"
+
+[[attempt.checks]]
+command = "test -f claude/skills/ui-capture/scripts/render.sh && grep -q -- '--self-test' claude/skills/ui-capture/scripts/render.sh && grep -q 'scrollWidth' claude/skills/ui-capture/scripts/geometry-probe.js"
+result = "pass"
+
+[[attempt.checks]]
+command = "node --check claude/skills/ui-capture/scripts/geometry-probe.js"
+result = "pass"
+
+[[attempt.checks]]
+command = "bash -n claude/skills/ui-capture/scripts/render.sh"
+result = "pass"
+
+[[attempt.checks]]
+command = "bash claude/skills/ui-capture/scripts/render.sh --self-test"
+result = "not-run"
+
+[[attempt]]
+task = 15
+run_id = "wf_91c92752-34f"
+milestone = "A"
+status = "done"
+summary = "the ui-inspector agent judges captured states in four separate passes and returns the C2 shape"
+block = "present"
+files_touched = ["claude/agents/ui-inspector.md"]
+tangential = []
+
+[[attempt.deviations]]
+what = "Added `skills: [ui-capture]` and `color: magenta` to the frontmatter beyond the listed name, description, model, effort and tools"
+why = "review-verifier.md, the named frontmatter precedent, carries `color:` and a `skills:` preload; preloading ui-capture puts its judging rules in context, which the tools list (no Skill tool) could not otherwise load. The link scripts already junction skills/ui-capture into the config dir. The alternative, naming the rubric path only in the prompt, leaves the binding rules unloaded when the Workflow omits it"
+means = "Frontmatter: name, description, model opus, effort high, tools Read, Grep, Glob, Bash, Write"
+
+[[attempt.deviations]]
+what = "Each state's `note` field in the return carries the note path, and unsure answers are kept out of `defects` and written to the note with their location"
+why = "The C2 shape does not say whether `note` is a path or a summary; the Workflow task builds an index with each state's note path, so the path is what it consumes. Keeping `defects` to observed defects lets visual.md mint one fix task per entry without filtering unsure ones"
+means = "Return the C2 shape: {states: [{state, control, verdict, defects: [{class, location, detail}], note}]}"
+
+[[attempt.checks]]
+command = "grep -q 'unsure' claude/agents/ui-inspector.md && grep -qi 'control' claude/agents/ui-inspector.md && grep -q 'defects.md' claude/agents/ui-inspector.md && grep -q '^model:' claude/agents/ui-inspector.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "fail"
+
+[[attempt]]
+task = 16
+run_id = "wf_91c92752-34f"
+milestone = "A"
+status = "done"
+summary = "implement-v2-visual Workflow dispatches ui-inspector over groups of at most four states and returns an index; node:test cases added"
+block = "present"
+files_touched = [
+    "claude/workflows/implement-v2-visual.js",
+    "claude/workflows/tests/visual.test.mjs",
+]
+tangential = []
+
+[[attempt.deviations]]
+what = "Each index entry carries a `status` field (ok, no-return, error, missing) beside the action's {state, control, verdict, defects, note, error}"
+why = "The detail asks a dead agent's states to come back with status no-return, which the action's field list has no slot for; verdict is null whenever status is not ok, so visual.md can tell an unjudged state from a judged one"
+means = "the index shape in the task's action"
+
+[[attempt.deviations]]
+what = "The test file carries its own copy of the harness loader instead of importing it"
+why = "harness.test.mjs exports nothing, and importing it would register its tests a second time under node --test; editing it is outside this task's files"
+means = "reuse the loader in tests/harness.test.mjs"
+
+[[attempt.checks]]
+command = "grep -q 'ui-inspector' claude/workflows/implement-v2-visual.js && grep -q 'implement-v2-visual' claude/workflows/tests/visual.test.mjs"
+result = "pass"
+
+[[attempt.checks]]
+command = "node --test claude/workflows/tests/visual.test.mjs"
+result = "pass"
+
+[[attempt]]
+task = 17
+run_id = "wf_91c92752-34f"
+milestone = "A"
+status = "done"
+summary = "wrote references/visual.md, the visual pass a UI milestone runs between its gate and its commit"
+block = "present"
+files_touched = ["claude/skills/implement-v2-engine/references/visual.md"]
+
+[[attempt.deviations]]
+what = "A capture-failure fix task's accept is a gate-owned check running the capture command with --only on the failed states and --out <out>/<id>-capture-check/, not a look entry"
+why = "A capture failure can be on a control state, and a look entry may name only ui_states (plan/look-state-unknown); a look entry also proves nothing about a command's exit. The next pass's capture check still catches a missing geometry.json key, which the exit does not. Alternatives weighed: a look entry naming the state (refused for controls, and judges a picture rather than the capture), or no accept (refused, plan/spec-no-accept)."
+means = "detail: fix task accept is the failed look entry or a new look entry naming the state"
+
+[[attempt.deviations]]
+what = "A state the index leaves without a verdict (no-return, error, missing) relaunches the whole round's args once, not only the unsettled states"
+why = "The Workflow names notes visual-<id>-<round>-<n>.md from the round and group index alone, so a subset relaunch in the same round would overwrite a first-launch note covering other states; the same args regroup identically and rewrite every note of the round. The detail does not say how to handle these statuses. Alternatives weighed: subset relaunch (note collision), or no relaunch (a transient agent death would leave the milestone uncommitted)."
+means = "none stated; apply-rows.md's relaunch-once precedent"
+
+[[attempt.deviations]]
+what = "An unsound run (a control passed) and states still unjudged after the relaunch leave the milestone uncommitted, reported, rather than re-inspected in the same invocation"
+why = "The detail says mint nothing for an unsound run; the outcome says the milestone cannot commit until controls prove the inspector caught planted defects, so the only consistent end is uncommitted with a report line."
+means = "detail: report it in needs_human and mint nothing for that run"
+
+[[attempt.tangential]]
+kind = "debt"
+area = "claude/skills/implement-v2-engine/references/drain.md"
+summary = "visual.md exempts a non-ignored capture out directory from the clean-tree and out-of-lane checks, but drain.md and run-milestone.md do not yet name that exemption, and the wiring task's detail does not list it"
+why = "A project whose capture out directory is not git-ignored would otherwise see its captures flagged as out-of-lane edits in the drain after a visual fix round"
+
+[[attempt.checks]]
+command = "grep -q 'emit gate-list' visual.md && grep -q 'visual:<id>' && grep -q 'unsure' && grep -q 'visual <id> round' && grep -q 'ui-capture.toml'"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -q 'design/ui-' claude/skills/implement-v2-engine/references/visual.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "fail"
+
+[[attempt]]
+task = 18
+run_id = "wf_91c92752-34f"
+milestone = "A"
+status = "done"
+summary = "wrote the implement-v2 orchestrator's build-time question loop in references/questions.md"
+block = "present"
+files_touched = ["claude/skills/implement-v2-engine/references/questions.md"]
+
+[[attempt.deviations]]
+what = "The doc tells the orchestrator to treat .claude/inputs.toml and its sidecar as the loop's own writes in the lane check and to stage them in the flow-store commit"
+why = "The inputs store is tracked and lies outside the flow directories, so both the worker's inputs add and the orchestrator's inputs answer leave it modified; plan emit lane-check exempts only .claude/backlog.toml (BACKLOG_STORE in tomlctl/src/plan/lane.rs), and the pre-flight clean-tree list and the flow-store commit in run-milestone.md and drain.md do not name it. Alternatives: leave it unmentioned (the next pre-flight would stop on it) or fail for files outside this task (drain.md and run-milestone.md are held by sibling tasks). Guidance here was the narrowest path inside this task's file"
+means = "detail: the loop as described, which says nothing about the inputs store's place in the lane check or commit"
+
+[[attempt.deviations]]
+what = "Questions with choice text, or more than four options, are not put to the AskUserQuestion picker; they are left open and reported under needs_human"
+why = "AskUserQuestion takes two to four options; the worker protocol posts single-choice questions with two to four options, so anything else is outside the protocol"
+means = "detail: ask the user with AskUserQuestion using its prompt and options"
+
+[[attempt.tangential]]
+kind = "bug"
+area = "tomlctl/src/plan/lane.rs"
+summary = "plan emit lane-check and the implement-v2 pre-flight clean-tree check do not exempt .claude/inputs.toml and its sidecar, and drain.md's flow-store commit does not stage them, though plan workers and the orchestrator now write that store during a run"
+why = "A milestone with a worker question will show the inputs store as out-of-lane and, if left uncommitted, stop the next pre-flight; questions.md works around it in prose only"
+
+[[attempt.checks]]
+command = "grep -q 'QUESTION <' claude/skills/implement-v2-engine/references/questions.md && grep -q 'inputs answer' claude/skills/implement-v2-engine/references/questions.md && grep -q 'plan decide' claude/skills/implement-v2-engine/references/questions.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "fail"
+
+[[attempt]]
+task = 19
+run_id = "wf_91c92752-34f"
+milestone = "A"
+status = "done"
+summary = "the engine's SKILL.md, drain.md and run-milestone.md now route a UI milestone through visual.md and a running worker's questions through questions.md"
+block = "present"
+files_touched = [
+    "claude/skills/implement-v2-engine/SKILL.md",
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "claude/skills/implement-v2-engine/references/run-milestone.md",
+]
+deviations = []
+
+[[attempt.tangential]]
+kind = "bug"
+area = "tomlctl/src/plan/schema.rs"
+summary = "cli::dispatch::tests::finding_classes (documented_plan_classes_match_the_source, the_plan_scan_reads_both_construction_sites_and_no_tasks_class) fail: no severity resolves for `class` in plan/schema.rs"
+why = "The finding-class scanner cannot parse a new construction shape in the uncommitted schema.rs edits; the milestone gate's dispatch-tests step will fail until the scanner or the raise site is fixed"
+
+[[attempt.checks]]
+command = "accept: grep chain over SKILL.md, drain.md and run-milestone.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "fail"
+
+[[attempt]]
+task = 20
+run_id = "wf_91c92752-34f"
+milestone = "A"
+status = "done"
+summary = 'both plan workers are granted SendMessage and carry a shared "Asking the user" procedure, with their standing rules brought into line'
+block = "present"
+files_touched = [
+    "claude/agents/plan-worker-deep.md",
+    "claude/agents/plan-worker-lite.md",
+]
+
+[[attempt.deviations]]
+what = "The placeholder in the question id is written `<input-id>`, not `<input id>`, in the SendMessage line and the wait and read commands"
+why = "Project CLAUDE.md requires single-token placeholders in tomlctl commands in agent files, and the command_lint gate rejects `<input id>` as an unknown argument (it does so today in the sibling's questions.md). `QUESTION <input-id> task <n>` still opens `QUESTION <`, so the C4 contract check and the accept check match"
+means = "Detail's literal spelling `QUESTION <input id> task <n>`"
+
+[[attempt.deviations]]
+what = "plan-worker-deep.md's Judgement gains a line that a choice which is neither a compromise nor hard to unwind and changes nothing a user sees stays the worker's, recorded as a deviation so the milestone report lists it; both descriptions and the lite intro mention asking"
+why = "D9 says such choices stay the deep worker's and are listed in the milestone report; the worker side of that listing is the note's deviations, so the Judgement section names it. The frontmatter descriptions otherwise contradicted the new procedure"
+means = "Detail lists the rule edits; these two are consistency edits it does not name"
+
+[[attempt.tangential]]
+kind = "bug"
+area = "claude/skills/implement-v2-engine/references/questions.md"
+summary = "command_lint fails on two tomlctl lines there that use the multi-token placeholder `<input id>` (an `inputs list --where id=<input id>` and a `plan decide --ndjson ...-<input id>.toml`)"
+why = "cli::dispatch::tests fails the milestone gate until the placeholder is spelled `<input-id>`; the worker side now uses `<input-id>`, so the two files should agree"
+
+[[attempt.checks]]
+command = "grep -q '^tools:.*SendMessage' claude/agents/plan-worker-deep.md && grep -q '^tools:.*SendMessage' claude/agents/plan-worker-lite.md && grep -q 'QUESTION <' claude/agents/plan-worker-deep.md && grep -q 'QUESTION <' claude/agents/plan-worker-lite.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "bash scripts/verify-shared-blocks.sh"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "fail"
+
+[[attempt]]
+task = 21
+run_id = "wf_91c92752-34f"
+milestone = "A"
+status = "done"
+summary = "Surface asks hard-to-unwind and compromise calls with a budget, follow-up rounds and a class; Open interviews and reads the intent back"
+block = "present"
+files_touched = [
+    "claude/skills/plan-v2-engine/SKILL.md",
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md",
+]
+
+[[attempt.deviations]]
+what = "Added the directions step as its own step-table row, 'Directions', between Surface and Design, rather than folding it into the Design row"
+why = "The detail says the table gains the directions step before Design while task 23 writes it as the opening of write-and-prove.md section 1; a separate row keeps the order visible. The alternative, rewording the Design row, would hide that it runs every time. The row records no run step, so re-entry is unchanged"
+means = "step table gains the directions step (before Design)"
+
+[[attempt.tangential]]
+kind = "bug"
+area = "tomlctl/src/cli/dispatch/tests/finding_classes.rs"
+summary = """documented_plan_classes_match_the_source and the_plan_scan_reads_both_construction_sites_and_no_tasks_class fail: 'tomlctl/src/plan/schema.rs: no severity resolves for `class`'. The finding-class scanner reads the new `vocab(table, "class", ...)` call in the decision parser as a finding class"""
+why = "The milestone's dispatch-tests gate fails until the scanner is taught that shape or the call is reworded; no task in this milestone names that test file as far as this worker saw"
+
+[[attempt.checks]]
+command = "accept check (grep for compromise, eight, outside the budget, class, lift, see and do in open-and-challenge.md; no 'zero questions before the gate is the normal case' in SKILL.md)"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "fail"
+
+[[attempt]]
+task = 22
+run_id = "wf_91c92752-34f"
+milestone = "A"
+status = "done"
+summary = "references/ui-layout.md is written: the UI/not-UI list, drafted options as HTML mocks rendered to PNG or as text grids, the Artifact page, the AskUserQuestion pick, the look decision, the ui-<milestone>.md design file, and the states, controls and look entries"
+block = "present"
+files_touched = ["claude/skills/plan-v2-engine/references/ui-layout.md"]
+
+[[attempt.deviations]]
+what = "The HTML mocks are written under the session scratchpad. Only their PNG renders, the render's geometry.json and terminal .txt grids go under docs/flows/<slug>/design/ui-<milestone>/"
+why = "The detail names the PNG path and says nothing about where the mock HTML lives. The scratchpad is the engine's place for staging, and keeping the HTML out of design/ keeps what approval must commit to the pictures that workers and the inspector read. The other option was to commit each mock as <option>.html next to its PNG, which would make re-rendering possible but adds a file nobody reads."
+means = "detail: an HTML mock per option, rendered to docs/flows/<slug>/design/ui-<milestone>/<option>.png"
+
+[[attempt.deviations]]
+what = "Added -narrow and -short extreme renders of each option, the fixed-surface stance-skip (a recorded design language or earlier pick means no options are drafted), and a row that declares .claude/ui-capture.toml when the project has no capture"
+why = "Content and size extremes are where dead space shows, which the detail stresses. A recorded user stance already settles a question under Surface's third test. A milestone with ui_states and no capture command leaves the visual pass nothing to run."
+means = "detail"
+
+[[attempt.tangential]]
+kind = "bug"
+area = "tomlctl/src/cli/dispatch/tests/finding_classes.rs"
+summary = "cli::dispatch::tests finding_classes fails: 'tomlctl/src/plan/schema.rs: no severity resolves for `class`'. The finding-class scanner reads the new decision `class` field as a finding class."
+why = "The milestone gate fails this subset until the scanner, or the shape of the schema.rs site, is taught the difference"
+
+[[attempt.checks]]
+command = '''grep -q 'Artifact' claude/skills/plan-v2-engine/references/ui-layout.md && grep -q 'render.sh' claude/skills/plan-v2-engine/references/ui-layout.md && grep -q '.txt' claude/skills/plan-v2-engine/references/ui-layout.md && grep -q 'ui_controls\|--ui-control' claude/skills/plan-v2-engine/references/ui-layout.md'''
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "fail"
+
+[[attempt]]
+task = 23
+run_id = "wf_91c92752-34f"
+milestone = "A"
+status = "done"
+summary = "Design opens with directions, direction.md and the second read-back, runs the UI layout step, Surface again cites Surface's rule, and the spec rules require direction citations and look entries"
+block = "present"
+files_touched = ["claude/skills/plan-v2-engine/references/write-and-prove.md"]
+deviations = []
+
+[[attempt.tangential]]
+kind = "bug"
+area = "tomlctl/src/plan/schema.rs"
+summary = "The finding-class scan in cli::dispatch::tests::finding_classes panics on schema.rs: 'no severity resolves for `class`'. The new decision `class` field's validation reads to the scanner as a finding-class construction site."
+why = "Two dispatch tests (documented_plan_classes_match_the_source, the_plan_scan_reads_both_construction_sites_and_no_tasks_class) fail, and the pre-commit hook runs that subset, so the milestone cannot commit until either schema.rs or the scanner is changed."
+
+[[attempt.checks]]
+command = """accept check: grep for ui-layout.md, direction.md, run_by = "look", read-back, and no 'It must be a different plan'"""
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "fail"
+
+[[attempt]]
+task = 24
+run_id = "wf_91c92752-34f"
+milestone = "A"
+status = "done"
+summary = "elaborate.md and approve.md carry the new surfacing rules"
+block = "present"
+files_touched = [
+    "claude/skills/plan-v2-engine/references/elaborate.md",
+    "claude/skills/plan-v2-engine/references/approve.md",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "accept grep chain (ui-layout.md, four, silent one-way, grouped by class)"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "fail"
+
+[[attempt]]
+task = 25
+run_id = "wf_91c92752-34f"
+milestone = "A"
+status = "done"
+summary = "cold reader now reports open look choices, read-only-only UI acceptance and missing direction citations"
+block = "present"
+files_touched = ["claude/agents/plan-cold-reader.md"]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "grep -qi 'look entry' ... && grep -qi 'layout' ... && grep -q 'direction.md' claude/agents/plan-cold-reader.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "pass"
+
+[[attempt]]
+task = 26
+run_id = "wf_91c92752-34f"
+milestone = "A"
+status = "done"
+summary = "diff detectors take `ui_capture_paths = true`, selecting changed files under the project's `.claude/ui-capture.toml` `paths`"
+block = "present"
+files_touched = [
+    "tomlctl/src/review/survey.rs",
+    "tomlctl/src/review/catalogue.rs",
+    "tomlctl/tests/review_survey.rs",
+]
+
+[[attempt.deviations]]
+what = "A detector with `ui_capture_paths = true` and no `files` selects only the capture paths, not every changed file"
+why = "With `files` absent `Detect::selects` matches every path, so a bare 'also selects' would make the option do nothing there. Selecting only the declared paths gives the option a meaning on its own. The alternative, keeping select-all, makes the option inert. A detector without the option still goes through `Detect::selects` unchanged."
+means = "detail: extend the selection with the capture paths"
+
+[[attempt.deviations]]
+what = "The catalogue validator also rejects `ui_capture_paths` when it is not a boolean or sits on a non-diff signal"
+why = "Stack and health detectors never read the config, so the key would silently do nothing there. The other option was to accept the key anywhere and ignore it, which hides an authoring mistake."
+means = "detail: the catalogue validator must accept the new key"
+
+[[attempt.tangential]]
+kind = "debt"
+area = "tomlctl/src/review/survey.rs"
+summary = "The capture-config `paths` loader now exists twice: `load_capture_paths` in review/survey.rs and `ui_capture_paths` in plan/check.rs"
+why = "Both read `.claude/ui-capture.toml` with the same glob semantics (`./` trimmed, literal separator). Moving the loader to one shared module would keep the two readers from drifting. That needs a file this task does not hold."
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+result = "pass"
+
+[[attempt.checks]]
+command = "rustfmt --edition 2024 tomlctl/tests/review_survey.rs tomlctl/src/review/survey.rs tomlctl/src/review/catalogue.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -q 'ui_capture_paths' tomlctl/src/review/catalogue.rs && grep -q 'ui-capture.toml' tomlctl/src/review/survey.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/ui_capture_paths/)'"
+result = "not-run"
+
+[[attempt]]
+task = 27
+run_id = "wf_91c92752-34f"
+milestone = "A"
+status = "done"
+summary = "ui-change signal, five concern tags, style routing globs and the ui-visual and interaction lenses added"
+block = "present"
+files_touched = [
+    "claude/skills/review-v2-lenses/vocabulary.toml",
+    "claude/skills/review-v2-lenses/lenses/ui-visual.md",
+    "claude/skills/review-v2-lenses/lenses/interaction.md",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "grep -q 'ui-change' claude/skills/review-v2-lenses/vocabulary.toml && grep -q 'interaction-states' claude/skills/review-v2-lenses/vocabulary.toml && grep -q 'layout-sizing' claude/skills/review-v2-lenses/lenses/ui-visual.md && grep -q 'interaction-states' claude/skills/review-v2-lenses/lenses/interaction.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "tomlctl review catalogue --builtin <scratch copy without ui_capture_paths> --project .claude/review-lenses --check"
+result = "pass"
+
+[[attempt.checks]]
+command = "tomlctl review catalogue --builtin claude/skills/review-v2-lenses --project .claude/review-lenses --check"
+result = "fail"
+
+[[attempt]]
+task = 28
+run_id = "wf_91c92752-34f"
+milestone = "A"
+status = "done"
+summary = "added the ui-capture verification check that runs the declared capture into the run directory before the cells"
+block = "present"
+files_touched = ["claude/skills/review-v2-lenses/checks/ui-capture.md"]
+
+[[attempt.deviations]]
+what = "The incomplete-geometry test is done by the orchestrator when it records the verification return: it lists the *.png files under <run dir>/ui-capture and the top-level keys of geometry.json. The check does not get a second command for it."
+why = "The detail fixes the check's command as the declared capture command with --out and no --only, and the verification agent only runs commands and returns logs. So the PNG-vs-key comparison has to happen where the baseline is recorded. Alternatives weighed: a second verification command running a comparison script (no such script exists in the task's files, and it adds a key the barrier would wait on), or leaving the comparison to the finders (the lenses already report a missing key, but the detail asks for a recorded `ui-capture: incomplete`)."
+means = "Model on checks/dev-server-probe.md"
+
+[[attempt.deviations]]
+what = "The no-config and no-signal baselines are recorded as `none — ui-capture: none; <reason>`, and the incomplete and failed outcomes as `<run dir>/ui-capture — ui-capture: incomplete: <states>` and `... — ui-capture: failed, exit <n>; log <path>`"
+why = "Engine survey stage 6 and runs.rs's baselines validation expect each value to be a path or `none — <reason>`. The lenses read the literal `ui-capture: none` / `ui-capture: incomplete` text. Each value starts with the convention's prefix and carries the lenses' literal after it."
+means = "Record the output directory where baselines record a check's log path"
+
+[[attempt.tangential]]
+kind = "question"
+area = "claude/agents/review-surveyor.md"
+summary = "The surveyor's step 8 gives every verification-executor check a `verification:` line regardless of activation or apply_when signals, so a signal-activated verification check must self-gate in its discover ladder (ui-capture does, with a first no-signal rung)"
+why = "A future signal-gated verification check that omits that rung would dispatch on every code run"
+
+[[attempt.tangential]]
+kind = "other"
+area = "tomlctl/src/plan/schema.rs"
+summary = "cli::dispatch::tests::finding_classes (two tests) fails on the working tree: 'no severity resolves for `class`' in plan/schema.rs, an uncommitted edit from elsewhere in this flow"
+why = "The pre-commit dispatch-tests gate will block the milestone until it is fixed"
+
+[[attempt.checks]]
+command = "grep -q 'ui-capture.toml' claude/skills/review-v2-lenses/checks/ui-capture.md && grep -q 'ui-capture: none' claude/skills/review-v2-lenses/checks/ui-capture.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "tomlctl review catalogue --builtin <scratch copy of review-v2-lenses> --check"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "fail"
+
+[[attempt]]
+task = 29
+run_id = "wf_91c92752-34f"
+milestone = "A"
+status = "done"
+summary = "intent-fidelity lens, its two concern tags and the flow-bound compose rule are in place"
+block = "present"
+files_touched = [
+    "claude/skills/review-v2-lenses/lenses/intent-fidelity.md",
+    "claude/skills/review-v2-lenses/vocabulary.toml",
+    "claude/skills/review-v2-engine/references/compose.md",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "grep -q 'brief.md' claude/skills/review-v2-lenses/lenses/intent-fidelity.md && grep -q 'user-stated' claude/skills/review-v2-lenses/lenses/intent-fidelity.md && grep -q 'intent-fidelity' claude/skills/review-v2-engine/references/compose.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "fail"
+
+[[attempt.checks]]
+command = "tomlctl review catalogue --check --builtin claude/skills/review-v2-lenses"
+result = "fail"
+
+[[attempt]]
+task = 30
+run_id = "wf_91c92752-34f"
+milestone = "A"
+status = "done"
+summary = "added ui-inspector agent, ui-capture skill and implement-v2-visual Workflow entries to both link scripts"
+block = "present"
+files_touched = [
+    "scripts/link-v2-review.ps1",
+    "scripts/link-v2-review.sh",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "grep chain for the three entries in both link scripts"
+result = "pass"
+
+[[attempt]]
+task = 31
+run_id = "wf_91c92752-34f"
+milestone = "A"
+status = "done"
+summary = "CLAUDE.md describes the visual pass, capture contract, UI design step and UI lenses"
+block = "present"
+files_touched = ["CLAUDE.md"]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "grep -q 'ui-inspector' CLAUDE.md && grep -q 'ui-capture' CLAUDE.md && grep -q 'implement-v2-visual' CLAUDE.md"
+result = "pass"
+
+[[attempt]]
+task = 35
+run_id = "wf_4f38eb26-377"
+milestone = "A"
+status = "done"
+summary = "the decision class read in plan/schema.rs no longer looks like a finding-class construction site to the scan"
+block = "present"
+files_touched = ["tomlctl/src/plan/schema.rs"]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "rustfmt --edition 2024 --check tomlctl/src/plan/schema.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "not-run"
+
+[[gate_round]]
+milestone = "A"
+round = 0
+seq = 1
+at = 2026-11-18T07:34:26Z
+outcome = "pass"
+
+[[gate_round.commands]]
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+duration_s = 4
+summary = ""
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "cargo clippy --workspace --locked --all-targets"
+outcome = "pass"
+duration_s = 45
+summary = ""
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 418
+summary = "Summary [ 331.936s] 3346 tests run: 3346 passed (3 slow), 1 skipped"
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+duration_s = 2
+summary = ""
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "bash claude/skills/ui-capture/scripts/render.sh --self-test"
+outcome = "pass"
+duration_s = 26
+summary = ""
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "node --test claude/workflows/tests/"
+outcome = "pass"
+duration_s = 1
+summary = "tests 30, pass 30, fail 0"
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+outcome = "pass"
+duration_s = 9
+summary = "libtest x1: 56 passed; 0 failed"
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "cargo install --path tomlctl --locked"
+outcome = "pass"
+duration_s = 512
+summary = ""
+failed_ids = []
+log = ""
+
+[[report]]
+at = 2026-11-18T07:38:38Z
+milestone = "A"
+why = "milestone A committed; milestone B is deferred and needs elaboration"
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "run wf_91c92752-34f: every reported command was an accept check, a narrower form of one, or the cli::dispatch::tests subset — allowed"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "run wf_4f38eb26-377: no build or test-suite command reported — allowed"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 1
+text = "milestone A did not run task 1 accept 1: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 2
+text = "milestone A did not run task 2 accept 1: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 3
+text = "milestone A did not run task 3 accept 1: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 4
+text = "milestone A did not run task 4 accept 1: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 5
+text = "milestone A did not run task 5 accept 1: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 6
+text = "milestone A did not run task 6 accept 1: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 7
+text = "milestone A did not run task 7 accept 1: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 8
+text = "milestone A did not run task 8 accept 1: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 11
+text = "milestone A did not run task 11 accept 1: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 20
+text = "milestone A did not run task 20 accept 1: covered_by bash scripts/verify-shared-blocks.sh"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 26
+text = "milestone A did not run task 26 accept 1: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 27
+text = "milestone A did not run task 27 accept 1: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false

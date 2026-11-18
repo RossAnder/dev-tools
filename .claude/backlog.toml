@@ -1,5 +1,5 @@
 schema_version = 1
-last_updated = 2026-11-16
+last_updated = 2026-11-18
 
 [[backlog]]
 id = "B-de0a0d87"
@@ -13316,3 +13316,122 @@ context = "Seen 2026-11-16 on strapi-server, task 15 (a database sync script): t
 base_sha = "04b98a98e4c2569089b04ec1db9c9db9b3e219d9"
 resolved = 2026-11-16
 resolution = "Workers may not touch live systems: the shared plan-worker forbidden-ops block now forbids connecting to deployed services, production or shared databases or cloud accounts with repository credentials, even read-only, or copying their data, unless the task's constraints name the system and grant access; a check needing one is not-run, a task needing one is parked."
+
+[[backlog]]
+id = "B-92183e4a"
+kind = "bug"
+summary = "plan emit lane-check and the implement-v2 pre-flight clean-tree check do not exempt .claude/inputs.toml and its sidecar, though plan workers and the orchestrator now write that store during a run"
+area = "tomlctl/src/plan/lane.rs"
+tags = []
+status = "open"
+created = 2026-11-18T07:15:58Z
+last_seen = 2026-11-18T07:15:58Z
+seen_count = 1
+dedup_id = "92183e4ae9e51073"
+origin = "implement-v2"
+flow = "v2-ui-fidelity"
+context = "Only .claude/backlog.toml is exempted in lane.rs. drain.md and questions.md tell the orchestrator in prose to treat the inputs store as the question loop's own writes and stage it in the flow-store commit; until lane.rs exempts it, a milestone with a worker question shows it as out-of-lane."
+base_sha = "565754b52a1bb7df02987e4b41655d3c21fd1494"
+related = ["B-ccdfe310"]
+
+[[backlog]]
+id = "B-fd73fd52"
+kind = "debt"
+summary = "The task snapshot's accept JSON writes run_by and covered_by on every entry but not the new look-entry states list"
+area = "tomlctl/src/tasks/snapshot.rs"
+tags = []
+status = "open"
+created = 2026-11-18T07:15:58Z
+last_seen = 2026-11-18T07:15:58Z
+seen_count = 1
+dedup_id = "fd73fd5270946879"
+origin = "implement-v2"
+flow = "v2-ui-fidelity"
+context = "glimpse and other snapshot readers cannot see which capture states a look entry is judged on. Add states beside run_by and covered_by in the snapshot's accept projection."
+base_sha = "565754b52a1bb7df02987e4b41655d3c21fd1494"
+related = ["B-9728b95d"]
+
+[[backlog]]
+id = "B-3e09bec6"
+kind = "question"
+summary = "entry_matches compares an accept entry's string fields and writes_build but not its states list"
+area = "tomlctl/src/plan/store.rs"
+tags = []
+status = "open"
+created = 2026-11-18T07:15:58Z
+last_seen = 2026-11-18T07:15:58Z
+seen_count = 1
+dedup_id = "3e09bec6a5ec26fd"
+origin = "implement-v2"
+flow = "v2-ui-fidelity"
+context = "Two look entries differing only in states would both match a review edit's expected entry. Harmless today; revisit when plan review targets look entries."
+base_sha = "565754b52a1bb7df02987e4b41655d3c21fd1494"
+related = ["B-9e645146"]
+
+[[backlog]]
+id = "B-e35cef56"
+kind = "annoyance"
+summary = "render.sh picks the newest Playwright chromium-* build by number even when that install is broken, instead of falling back to an older working one"
+area = "claude/skills/ui-capture/scripts/render.sh"
+tags = []
+status = "open"
+created = 2026-11-18T07:15:58Z
+last_seen = 2026-11-18T07:15:58Z
+seen_count = 1
+dedup_id = "e35cef5696426609"
+origin = "implement-v2"
+flow = "v2-ui-fidelity"
+context = "Matters only when no system Chrome or Edge is found. Workaround: set UI_CAPTURE_BROWSER to a working browser executable."
+base_sha = "565754b52a1bb7df02987e4b41655d3c21fd1494"
+related = ["B-734077ea"]
+
+[[backlog]]
+id = "B-67d7bd8c"
+kind = "debt"
+summary = "The .claude/ui-capture.toml paths loader exists twice: load_capture_paths in review/survey.rs and ui_capture_paths in plan/check.rs"
+area = "tomlctl/src/review/survey.rs"
+tags = []
+status = "open"
+created = 2026-11-18T07:15:58Z
+last_seen = 2026-11-18T07:15:58Z
+seen_count = 1
+dedup_id = "67d7bd8c5bee62ed"
+origin = "implement-v2"
+flow = "v2-ui-fidelity"
+context = "Both read the same config with the same glob semantics (leading ./ trimmed, literal separator). Move the loader into one shared module so the two readers cannot drift."
+base_sha = "565754b52a1bb7df02987e4b41655d3c21fd1494"
+related = ["B-68a8161f"]
+
+[[backlog]]
+id = "B-12b1f631"
+kind = "question"
+summary = "The review surveyor gives every verification-executor check a verification line regardless of its activation signals, so a signal-activated verification check must self-gate in its discover ladder"
+area = "claude/agents/review-surveyor.md"
+tags = []
+status = "open"
+created = 2026-11-18T07:15:58Z
+last_seen = 2026-11-18T07:15:58Z
+seen_count = 1
+dedup_id = "12b1f631128644a5"
+origin = "implement-v2"
+flow = "v2-ui-fidelity"
+context = "checks/ui-capture.md self-gates with a first no-signal rung. A future signal-gated verification check that omits that rung would dispatch on every code run."
+base_sha = "565754b52a1bb7df02987e4b41655d3c21fd1494"
+related = ["B-4c8af16f"]
+
+[[backlog]]
+id = "B-55dc5f0b"
+kind = "bug"
+summary = "claude/skills/ui-capture/scripts/render.sh has no eol=lf pin in .gitattributes, so a Windows checkout under autocrlf writes it CRLF"
+area = ".gitattributes"
+tags = []
+status = "open"
+created = 2026-11-18T07:38:20Z
+last_seen = 2026-11-18T07:38:20Z
+seen_count = 1
+dedup_id = "55dc5f0b939cb1f1"
+origin = "implement-v2"
+flow = "v2-ui-fidelity"
+context = "scripts/** and .githooks/** are pinned to LF because a CRLF shebang fails exec on Linux; Git Bash tolerates CRLF, so the breakage is invisible on Windows. Add claude/skills/**/scripts/** text eol=lf (the index is already LF, so the pin rewrites nothing)."
+base_sha = "882d343ff25e9810268821851f52c3fb51bd3de7"
+evidence = [".gitattributes:36"]
