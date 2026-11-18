@@ -30,7 +30,10 @@ check = "bun run tokens --check"
 - `id` must be unique, and a key outside the five above is refused.
 - Every key is required and non-blank, and each array non-empty.
 - A malformed file is refused with an error naming the generator and the key. `plan check` turns that
-  into one warning naming no row; `plan emit gate-list` refuses with it.
+  into one warning naming no row; `plan emit gate-list` refuses with it. `plan request add`, for a
+  payload with paths, falls back to no generators and reports the problem in a `warnings` array of
+  its output, so no output is granted mechanically and every path stays open for the orchestrator;
+  the worker view prints one line naming the problem.
 
 ## The readers
 

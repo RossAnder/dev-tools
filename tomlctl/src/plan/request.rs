@@ -29,7 +29,7 @@ use crate::generated;
 use crate::io::{read_json_value_from_arg, read_ndjson_source, repo_or_cwd_root};
 use crate::items::{parse_ndjson_batch, row_err, row_string};
 use crate::output::{Rows, print_json_compact, print_report};
-use crate::tasks::schema::{Store, normal_path};
+use crate::tasks::schema::Store;
 use crate::tasks::{load_store, resolve_store_path};
 
 type Row = Map<String, JsonValue>;
@@ -59,8 +59,21 @@ pub(super) fn add(args: PlanRequestAddArgs) -> Result<()> {
     } = args;
     let slug = target.slug.as_str();
     let payload = parse_payload(&read_json_value_from_arg(&json).context("parsing --json")?)?;
-    let generators = generated::load(&repo_or_cwd_root()?)
-        .map_err(|err| refusal(format!("{}: {err}", generated::CONFIG)))?;
+    // A malformed generated-file map must not cost a running worker its one
+    // request: without it no output is granted mechanically, so every path
+    // stays open for the orchestrator, and the summary names the problem.
+    let mut warnings = Vec::new();
+    let generators = if payload.paths.is_empty() {
+        Vec::new()
+    } else {
+        generated::load(&repo_or_cwd_root()?).unwrap_or_else(|err| {
+            warnings.push(format!(
+                "{} is malformed, so no declared output was granted: {err}",
+                generated::CONFIG
+            ));
+            Vec::new()
+        })
+    };
     let tasks = load_tasks(slug, integrity.verify_integrity)?;
     let at = crate::time::now_toml_datetime()?;
 
@@ -128,7 +141,11 @@ pub(super) fn add(args: PlanRequestAddArgs) -> Result<()> {
         plan.requests.push(request.clone());
         Ok(request)
     })?;
-    print_json_compact(&summary(&request))
+    let mut out = summary(&request);
+    if !warnings.is_empty() {
+        out["warnings"] = json!(warnings);
+    }
+    print_json_compact(&out)
 }
 
 /// The run id and milestone of the newest open `implement:<id>` run that
@@ -220,7 +237,11 @@ fn parse_payload(value: &JsonValue) -> Result<Payload> {
     for (index, entry) in entries(object, "paths")?.into_iter().enumerate() {
         let at = format!("paths[{index}]");
         check_keys(entry, PATH_KEYS, &at)?;
-        let path = normal_path(&text(entry, "path", &at)?);
+        let raw = text(entry, "path", &at)?;
+        let path = generated::canonical_path(&raw);
+        if path.is_empty() {
+            return Err(refusal(format!("{at}: `{raw}` names no file")));
+        }
         if !seen.insert(fold_key(&path)) {
             return Err(refusal(format!(
                 "{at}: `{path}` is named twice; name each path once"
@@ -346,7 +367,11 @@ pub(super) fn rule(args: PlanRequestRuleArgs) -> Result<()> {
                 .ok_or_else(|| {
                     row_err(row.line, format!("request {id} has no item `{}`", row.item))
                 })?;
-            if !named.insert(row.item.clone()) {
+            let key = match item {
+                ItemRef::Path(i) => (true, i),
+                ItemRef::Change(i) => (false, i),
+            };
+            if !named.insert(key) {
                 return Err(row_err(
                     row.line,
                     format!("item `{}` is ruled twice", row.item),
@@ -400,9 +425,13 @@ pub(super) fn rule(args: PlanRequestRuleArgs) -> Result<()> {
     print_json_compact(&summary(&request))
 }
 
-/// `p<n>` or `c<n>`, numbered from 1, as a zero-based index.
+/// `p<n>` or `c<n>`, numbered from 1, as a zero-based index. `<n>` is plain
+/// digits with no leading zero, so each item has exactly one spelling.
 fn item_ref(item: &str) -> Option<ItemRef> {
     let (kind, number) = item.split_at_checked(1)?;
+    if number.starts_with('0') || !number.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
     let number: usize = number.parse().ok()?;
     let index = number.checked_sub(1)?;
     match kind {
@@ -593,6 +622,20 @@ mod tests {
     }
 
     #[test]
+    fn paths_are_stored_canonical_and_one_naming_no_file_is_refused() {
+        let parsed = payload(r#"{"paths":[{"path":"src/./a//b.rs","why":"w"}]}"#).expect("parses");
+        assert_eq!(parsed.paths[0].0, "src/a/b.rs");
+        for raw in ["./", ".", "././", "./."] {
+            let body = format!(r#"{{"paths":[{{"path":"{raw}","why":"w"}}]}}"#);
+            assert!(payload(&body).is_err(), "{raw}");
+        }
+        assert!(
+            payload(r#"{"paths":[{"path":"src/a.rs","why":"b"},{"path":"src/./A.rs","why":"c"}]}"#)
+                .is_err()
+        );
+    }
+
+    #[test]
     fn an_unknown_key_is_refused_naming_it_at_every_level() {
         for (raw, key) in [
             (r#"{"paths":[],"extra":1}"#, "extra"),
@@ -621,7 +664,8 @@ mod tests {
     fn item_refs_number_from_one() {
         assert!(matches!(item_ref("p1"), Some(ItemRef::Path(0))));
         assert!(matches!(item_ref("c3"), Some(ItemRef::Change(2))));
-        for bad in ["p0", "x1", "p", "", "c-1"] {
+        assert!(matches!(item_ref("p10"), Some(ItemRef::Path(9))));
+        for bad in ["p0", "x1", "p", "", "c-1", "p01", "p+1", "c 1"] {
             assert!(item_ref(bad).is_none(), "{bad}");
         }
     }

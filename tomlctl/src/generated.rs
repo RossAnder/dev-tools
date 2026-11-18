@@ -1,6 +1,5 @@
 // The project's generated-file map, read by plan check, gate-list, the worker
 // view and plan request add so they agree on which outputs an input edit implies.
-#![allow(dead_code)]
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -17,7 +16,6 @@ const KEYS: [&str; 5] = ["id", "inputs", "outputs", "regenerate", "check"];
 
 pub(crate) struct Generator {
     pub(crate) id: String,
-    pub(crate) input_globs: Vec<String>,
     pub(crate) inputs: GlobSet,
     pub(crate) outputs: Vec<String>,
     pub(crate) regenerate: String,
@@ -82,7 +80,6 @@ fn parse(text: &str) -> Result<Vec<Generator>, String> {
             .map_err(|e| format!("generator {id:?}: `inputs`: {e}"))?;
         out.push(Generator {
             id,
-            input_globs,
             inputs,
             outputs: outputs.iter().map(|o| normal_path(o)).collect(),
             regenerate,
@@ -135,6 +132,42 @@ pub(crate) fn outputs_of(generators: &[Generator], files: &[String]) -> BTreeSet
         .collect()
 }
 
+/// The outputs of `generator` that `files` does not hold, compared by
+/// `path_key`, so a letter-case variant of an output counts as held.
+pub(crate) fn missing_outputs<'a>(generator: &'a Generator, files: &[String]) -> Vec<&'a str> {
+    let held: BTreeSet<String> = files.iter().map(|f| path_key(f)).collect();
+    generator
+        .outputs
+        .iter()
+        .filter(|output| !held.contains(&path_key(output)))
+        .map(String::as_str)
+        .collect()
+}
+
+/// `path` with slashes normalised and every empty and `.` segment dropped, so
+/// `./a//./b` and `a/b` name one file. A leading `/` is kept, so an absolute
+/// path still reads as absolute; `..` segments are kept as written.
+pub(crate) fn canonical_path(path: &str) -> String {
+    let normal = normal_path(path);
+    let joined = normal
+        .split('/')
+        .filter(|segment| !segment.is_empty() && *segment != ".")
+        .collect::<Vec<_>>()
+        .join("/");
+    if normal.starts_with('/') {
+        format!("/{joined}")
+    } else {
+        joined
+    }
+}
+
+/// The one key two paths are compared by: `canonical_path` with letter case
+/// folded, which also catches a variant a case-insensitive file system would
+/// resolve to the same file.
+pub(crate) fn path_key(path: &str) -> String {
+    canonical_path(path).to_lowercase()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -167,6 +200,28 @@ check = "bun run tokens --check"
     fn case_variant_input_still_matches() {
         let gens = parse(GOOD).unwrap();
         assert_eq!(touched(&gens, &files(&["src/Tokens.CSS"])).len(), 1);
+    }
+
+    #[test]
+    fn a_case_variant_of_an_output_counts_as_held() {
+        let gens = parse(GOOD).unwrap();
+        assert!(
+            missing_outputs(&gens[0], &files(&["src/tokens.css", "src/Tokens.gen.ts"])).is_empty()
+        );
+        assert_eq!(
+            missing_outputs(&gens[0], &files(&["src/tokens.css"])),
+            ["src/tokens.gen.ts"]
+        );
+    }
+
+    #[test]
+    fn canonical_path_drops_empty_and_dot_segments() {
+        assert_eq!(canonical_path("src/./a.rs"), "src/a.rs");
+        assert_eq!(canonical_path(".\\src//a.rs"), "src/a.rs");
+        assert_eq!(canonical_path("./"), "");
+        assert_eq!(canonical_path("//etc/./passwd"), "/etc/passwd");
+        assert_eq!(canonical_path("src/../a.rs"), "src/../a.rs");
+        assert_eq!(path_key("Src/./A.rs"), path_key("src//a.rs"));
     }
 
     #[test]

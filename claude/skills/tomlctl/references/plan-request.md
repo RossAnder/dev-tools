@@ -43,7 +43,7 @@ The payload is one JSON object; an unknown key at any level refuses the call, na
 
 | Key | Meaning |
 |---|---|
-| `paths` | Files the task needs and does not hold; each `{path, why}`, both non-empty. A path is normalised to repo-relative with `/` separators. |
+| `paths` | Files the task needs and does not hold; each `{path, why}`, both non-empty. A path is canonicalised: slashes normalised, empty and `.` segments dropped (so a leading `./` goes); one that canonicalises to nothing is refused. |
 | `changes` | Corrections to the task's own spec; each `{field, what, evidence}`, all non-empty. `field` is `accept`, `means`, `constraints`, `detail` or `files`. |
 
 Items are numbered in the order given: `p1`, `p2`, … for paths and `c1`, `c2`, … for changes. The
@@ -63,7 +63,7 @@ order:
    `.claude/generated.toml`, of a generator whose input the task holds.
 5. **Otherwise open**, left for `plan request rule`.
 
-Paths are compared by a folded key (slashes normalised, a leading `./` dropped, letter case folded),
+Paths are compared by a folded key (the canonical form above with letter case folded),
 so a case-only variant of a held file counts as the same file. A change item is never ruled by `add`:
 it stays open. Mechanical rulings are written with `by = "tomlctl"`; the request is `ruled` at once
 when no item is left open, and `open` otherwise.
@@ -82,6 +82,7 @@ Prints the request and one entry per item:
 | `items[].ruling` | `open`, `granted`, `denied` or `needs-user`. |
 | `items[].by` | `tomlctl` for a mechanical ruling, `orchestrator` for one made by `rule`, `""` while open. |
 | `items[].reason` | Why, in a line; `""` while open. |
+| `warnings` | Present only when `.claude/generated.toml` failed to load for a payload with paths; each entry names the problem. No declared output is then granted, so every path stays open. |
 
 ## `plan request rule`
 
@@ -101,7 +102,7 @@ Each row is `{"item","ruling","reason"}`, all three required and no other key:
 
 | Key | Meaning |
 |---|---|
-| `item` | `p<n>` or `c<n>`, naming an item the request has; an item is ruled once per call and only while it is `open`. |
+| `item` | `p<n>` or `c<n>` with plain digits and no leading zero or sign (`p01` and `p+1` are refused), naming an item the request has; an item is ruled once per call, judged by its parsed ref, and only while it is `open`. |
 | `ruling` | `granted`, `denied` or `needs-user`. `open` is not a ruling. |
 | `reason` | A non-blank line saying why. |
 

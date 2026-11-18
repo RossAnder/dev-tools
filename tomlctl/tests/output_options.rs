@@ -1570,9 +1570,6 @@ fn apply_flow(root: &Path) {
     );
 }
 
-/// The `plan` group's flows, added to its fixture alone so that no other group
-/// sees them in `flow list` or `flow resolve`. Approving a plan then committing
-/// `PLAN_FILE` is what gives `plan drift` an affected task.
 fn request_flow(root: &Path, slug: &str) {
     setup(root, &["plan", "open", "--slug", slug], "");
     write_tasks_store(
@@ -1629,6 +1626,9 @@ fn request_flows(root: &Path) {
     );
 }
 
+/// The `plan` group's flows, added to its fixture alone so that no other group
+/// sees them in `flow list` or `flow resolve`. Approving a plan then committing
+/// `PLAN_FILE` is what gives `plan drift` an affected task.
 fn plan_flows(root: &Path) {
     request_flows(root);
     open_plan(root, PLAN_SLUG);

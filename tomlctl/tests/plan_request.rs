@@ -288,6 +288,49 @@ fn rule_refuses_an_item_that_is_already_ruled() {
 }
 
 #[test]
+fn a_partial_rule_leaves_the_request_open_and_rules_a_change_item_by_index() {
+    let (_dir, root) = flow(&[row(1, &[], &["src/one.ts"])], &[1]);
+    let out = stdout_json(
+        &add(
+            &root,
+            1,
+            &json!({
+                "paths": [{ "path": "src/new.ts", "why": "w" }],
+                "changes": [{ "field": "means", "what": "w", "evidence": "e" }],
+            }),
+        )
+        .success(),
+    );
+    assert_eq!(out["status"], "open", "{out}");
+    let c1 = item(&out, "c1");
+    assert_eq!(c1["ruling"], "open", "{out}");
+    assert_eq!(c1["by"], "", "{out}");
+    let id = out["id"].as_str().unwrap().to_string();
+
+    let partial = stdout_json(
+        &rule(
+            &root,
+            &id,
+            &[json!({ "item": "c1", "ruling": "denied", "reason": "r" })],
+        )
+        .success(),
+    );
+    assert_eq!(partial["status"], "open", "{partial}");
+    let rows = list(&root);
+    assert_eq!(rows[0]["ruled_at"], "", "{rows:?}");
+    assert_eq!(rows[0]["changes"][0]["ruling"], "denied", "{rows:?}");
+    assert_eq!(rows[0]["changes"][0]["by"], "orchestrator", "{rows:?}");
+    assert_eq!(rows[0]["paths"][0]["ruling"], "open", "{rows:?}");
+
+    let missing = rule(&root, &id, &[grant("p2", "no such item")]).failure();
+    assert!(stderr(&missing).contains("has no item"), "{missing:?}");
+
+    let done = stdout_json(&rule(&root, &id, &[grant("p1", "free")]).success());
+    assert_eq!(done["status"], "ruled", "{done}");
+    assert_ne!(list(&root)[0]["ruled_at"], "");
+}
+
+#[test]
 fn rule_refuses_a_request_that_is_no_longer_open() {
     let (_dir, root) = flow(&[row(1, &[], &["src/one.ts"])], &[1]);
     let out = stdout_json(&add_paths(&root, 1, &["src/new.ts"]).success());
@@ -335,6 +378,33 @@ fn a_second_request_from_the_same_task_in_a_run_is_refused() {
     let text = stderr(&refused);
     assert!(text.contains("already posted"), "{text}");
     assert_eq!(list(&root).len(), 1);
+}
+
+#[test]
+fn a_task_may_post_again_in_a_later_run() {
+    let (_dir, root) = flow(&[row(1, &[], &["src/one.ts"])], &[1]);
+    add_paths(&root, 1, &["src/a.ts"]).success();
+    cli(&root)
+        .args(["plan", "run", "finish", "--slug", SLUG])
+        .args(["--step", &format!("implement:{MILESTONE}")])
+        .args(["--run-id", RUN_ID])
+        .assert()
+        .success();
+    cli(&root)
+        .args(["plan", "run", "start", "--slug", SLUG])
+        .args(["--step", &format!("implement:{MILESTONE}")])
+        .args(["--run-id", "wf_2"])
+        .args(["--tasks", "1"])
+        .assert()
+        .success();
+
+    add_paths(&root, 1, &["src/b.ts"]).success();
+
+    let rows = list(&root);
+    assert_eq!(rows.len(), 2, "{rows:?}");
+    let runs: Vec<&str> = rows.iter().map(|r| r["run_id"].as_str().unwrap()).collect();
+    assert!(runs.contains(&"wf_1") && runs.contains(&"wf_2"), "{rows:?}");
+    assert!(rows.iter().all(|r| r["milestone"] == MILESTONE), "{rows:?}");
 }
 
 #[test]

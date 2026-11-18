@@ -754,7 +754,6 @@ fn generator_lines(row: &TaskRow) -> Vec<String> {
             )];
         }
     };
-    let held: BTreeSet<String> = row.files.iter().map(|f| normal_path(f)).collect();
     crate::generated::touched(&generators, &row.files)
         .into_iter()
         .map(|generator| {
@@ -764,11 +763,9 @@ fn generator_lines(row: &TaskRow) -> Vec<String> {
                 code(&generator.id),
                 code(&generator.regenerate)
             );
-            let missing: Vec<String> = generator
-                .outputs
-                .iter()
-                .filter(|output| !held.contains(*output))
-                .map(|output| code(output))
+            let missing: Vec<String> = crate::generated::missing_outputs(generator, &row.files)
+                .into_iter()
+                .map(code)
                 .collect();
             if !missing.is_empty() {
                 line.push_str(&format!(

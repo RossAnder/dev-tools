@@ -34,7 +34,7 @@ The tree must be clean except for:
 - `.claude/backlog.toml` and `.claude/backlog.toml.sha256`;
 - `.claude/inputs.toml` and `.claude/inputs.toml.sha256`, which the question loop and the user's captures write, by [questions.md](questions.md), section "The writes during a live run";
 - the `files` of every started row;
-- the paths granted by a request not yet applied, which a session that ended before its drain's Granted requests step left in the tree, by [requests.md](requests.md), section "Re-entry";
+- the paths granted by a request not yet applied, which a session that ended before its drain's Granted requests step left in the tree, by [requests.md](requests.md), section "Re-entry", listed by `tomlctl plan request list --slug <slug> --where applied=false --select id,task,paths --lines`, taking each `paths` item whose `ruling` is `granted`;
 - when the flow has `[[finding_links]]`, the review stores they name, by [apply-rows.md](apply-rows.md), section "Linked review stores in the clean-tree and lane checks";
 - when a milestone has `ui_states`, the paths under the capture `out` that `.claude/ui-capture.toml` declares, by [visual.md](visual.md), section "The capture directory in the tree checks".
 

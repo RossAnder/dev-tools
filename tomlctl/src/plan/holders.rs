@@ -3,8 +3,10 @@
 //!
 //! The milestone Workflow never starts a task beside one in its `needs`
 //! closure, up or down, and has released every `done` row's files, so only the
-//! remaining rows of the requester's milestone can collide with it. A path is
-//! compared by its folded key, which also catches a letter-case variant that a
+//! remaining rows of the requester's milestone can collide with it. Only the
+//! `needs` edges are walked: the Workflow is not sent `coupling`, so a row
+//! coupled to the requester can run beside it. A path is compared by its
+//! folded key, which also catches a letter-case variant that a
 //! case-insensitive file system would resolve to the same file.
 
 use std::collections::BTreeSet;
@@ -14,13 +16,13 @@ use anyhow::Result;
 use super::schema::PlanStore;
 use super::schema_request::Ruling;
 use crate::errors::{ErrorKind, tagged_err};
-use crate::tasks::schema::{Status, Store, TaskRow, normal_path};
+use crate::tasks::schema::{Status, Store, TaskRow};
 
-/// The one key paths are compared by: slashes normalised, a leading `./`
-/// dropped, letter case folded. Stricter than the milestone Workflow's
-/// `fileKey`, which keeps a leading `./`.
+/// The one key paths are compared by, `generated::path_key`: slashes
+/// normalised, empty and `.` segments dropped, letter case folded. Stricter
+/// than the milestone Workflow's `fileKey`, which keeps a leading `./`.
 pub(crate) fn fold_key(path: &str) -> String {
-    normal_path(path).to_lowercase()
+    crate::generated::path_key(path)
 }
 
 /// Why `path` can never be granted to a task of flow `slug`, or `None` when
@@ -133,18 +135,12 @@ pub(crate) fn holder(
     Ok(None)
 }
 
-/// `id` with every task it transitively depends on and every task that
-/// transitively depends on it, over the `needs` and `coupling` edges the task
-/// graph's `closure_up` and `closure_down` walk. A dangling edge is skipped and
-/// a cycle ends the walk; `tasks check` reports both.
+/// `id` with every task it transitively needs and every task that transitively
+/// needs it, over the `needs` edges the milestone Workflow gates a start on.
+/// A dangling edge is skipped and a cycle ends the walk; `tasks check` reports
+/// both.
 fn closure(rows: &[TaskRow], id: u32) -> BTreeSet<u32> {
-    let edges = |row: &TaskRow| -> Vec<u32> {
-        row.needs
-            .iter()
-            .chain(row.coupling.iter())
-            .copied()
-            .collect()
-    };
+    let edges = |row: &TaskRow| -> Vec<u32> { row.needs.clone() };
     let mut related = BTreeSet::from([id]);
 
     let mut seen = BTreeSet::from([id]);
@@ -294,6 +290,34 @@ mod tests {
     }
 
     #[test]
+    fn a_row_coupled_to_the_requester_still_holds() {
+        let mut coupled = row(6, Status::Pending, &["tests/a.rs"], &[]);
+        coupled.coupling = vec![5];
+        let store = tasks(vec![
+            row(5, Status::InProgress, &["src/a.rs"], &[]),
+            coupled,
+        ]);
+        let found = holder(&store, &plan(Vec::new()), 5, "tests/a.rs")
+            .expect("resolves")
+            .expect("held");
+        assert_eq!(found.task, 6);
+    }
+
+    #[test]
+    fn a_dot_or_doubled_slash_variant_of_a_held_path_is_held() {
+        let store = tasks(vec![
+            row(1, Status::InProgress, &["src/b.rs"], &[]),
+            row(2, Status::Pending, &["src/a.rs"], &[]),
+        ]);
+        for path in ["src/./a.rs", "src//a.rs"] {
+            let found = holder(&store, &plan(Vec::new()), 1, path)
+                .expect("resolves")
+                .expect(path);
+            assert_eq!(found.task, 2, "{path}");
+        }
+    }
+
+    #[test]
     fn a_done_or_deferred_row_never_holds() {
         let store = tasks(vec![
             row(1, Status::InProgress, &["src/a.ts"], &[]),
@@ -380,6 +404,8 @@ mod tests {
             "./.Claude/backlog.toml",
             "docs/flows/demo/notes/run/task-1.md",
             "Docs\\Flows\\Demo\\brief.md",
+            "docs/./flows/demo/x.md",
+            ".claude//backlog.toml",
         ] {
             assert!(forbidden("demo", path).is_some(), "{path}");
         }
@@ -397,6 +423,7 @@ mod tests {
             "c:/repo/a.rs",
             "src/../../x.rs",
             "..",
+            "//etc/passwd",
         ] {
             assert!(forbidden("demo", path).is_some(), "{path}");
         }

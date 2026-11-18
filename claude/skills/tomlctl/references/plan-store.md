@@ -298,4 +298,4 @@ invocation.
 | `paths` | Each `{path, why, ruling, by, reason}`: a file the task needs and does not hold. |
 | `changes` | Each `{field, what, evidence, ruling, by, reason}`: a correction to the task's own `accept`, `means`, `constraints`, `detail` or `files`. |
 
-`ruling` is `open`, `granted`, `denied` or `needs-user`; `by` is `tomlctl` for a mechanical ruling, `orchestrator` for one made by `plan request rule`, and absent while open.
+`ruling` is `open`, `granted`, `denied` or `needs-user`; `by` is `tomlctl` for a mechanical ruling, `orchestrator` for one made by `plan request rule`, and `""` while open.

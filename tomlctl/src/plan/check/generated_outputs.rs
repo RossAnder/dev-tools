@@ -40,12 +40,7 @@ pub(super) fn generated_output_findings(tasks: &Store, root: &Path) -> Vec<Findi
         }
         let held: BTreeSet<String> = row.files.iter().map(|f| normal_path(f)).collect();
         for generator in generated::touched(&generators, &row.files) {
-            let missing: Vec<&str> = generator
-                .outputs
-                .iter()
-                .filter(|output| !held.contains(*output))
-                .map(String::as_str)
-                .collect();
+            let missing = generated::missing_outputs(generator, &row.files);
             if missing.is_empty() {
                 continue;
             }

@@ -1596,6 +1596,27 @@ fn an_input_held_with_its_output_is_clean() {
 }
 
 #[test]
+fn a_generated_input_on_a_done_row_or_a_deferred_milestone_does_not_warn() {
+    let done = swap(TASKS, "status = \"pending\"", "status = \"done\"");
+    let flow = Flow::with_tasks(&done);
+    write_generated_config(&flow, GENERATOR);
+    assert_clean(&flow);
+
+    let deferred = swap(
+        &swap(
+            TASKS,
+            "elaboration = \"upfront\"",
+            "elaboration = \"deferred\"",
+        ),
+        "defer_reason = \"\"",
+        "defer_reason = \"depends on the store\"",
+    );
+    let flow = Flow::with_tasks(&deferred);
+    write_generated_config(&flow, GENERATOR);
+    assert_clean(&flow);
+}
+
+#[test]
 fn no_generated_config_is_clean() {
     assert_clean(&Flow::with_tasks(TASKS));
 }

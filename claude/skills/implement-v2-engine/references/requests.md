@@ -134,7 +134,7 @@ tomlctl tasks list --slug <slug> --where-contains files=<path> --select id,statu
 
 - A `pending` holder in a later milestone gains the granted row in its `needs`, re-issued whole on that holder's own row in the same batch, so it runs after the work it builds on.
 - A `done` holder of this milestone is needed by the granted row, unless a dependency path already runs between them in either direction (`tomlctl tasks closure --slug <slug> --task <n> --up` or `--down`).
-- A started holder with no commit in another milestone was a holder `add` and `rule` should have refused: grant nothing for that path, park the granted row yourself by [drain.md](drain.md), step 6, and name both rows.
+- A started holder with no commit in another milestone, which `add` and `rule` do not check since they compare only the rows of the requester's milestone, and which the schedule should never let run beside this one: grant nothing for that path, park the granted row yourself by [drain.md](drain.md), step 6, and name both rows.
 
 ```bash
 tomlctl tasks update --slug <slug> --ndjson <scratch>/implement-<id>-<round>-grants.toml
@@ -152,7 +152,7 @@ tomlctl plan request applied <ids> --slug <slug>
 
 ### Report
 
-Each ruled item becomes one `request` entry of the milestone report, with `task` the requesting task and `needs_person` `false`: `<request-id> <item> <ruling>: <reason>`, as [report.md](report.md) lays out its `requests:` section. A breach goes under `audit:` instead, and a path it granted under `needs_human`.
+Each ruled item becomes one `request` entry of the milestone report, with `task` the requesting task and `needs_person` `false`, in the line shape [report.md](report.md) lays out for its `requests:` section. A breach goes under `audit:` instead, and a path it granted under `needs_human`.
 
 ## Re-entry
 

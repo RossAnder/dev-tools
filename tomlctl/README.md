@@ -89,7 +89,7 @@ tomlctl inputs ack <id>... --by <command>              # new → acknowledged
 tomlctl inputs handle <id>... --by <command> --note <text>   # new or acknowledged → handled
 tomlctl inputs withdraw <id>...                        # withdraw new records, all or none
 tomlctl inputs answer <question-id> [--pick <option>]... [--text <text>]   # answer a new question and mark it handled
-tomlctl plan open|decide|contract|handover|run|milestone|check|view|probes|stage|gate|approve|drift --slug <s>   # a v2 flow's plan.toml, brief and task-store side tables; `plan open` creates the plan.toml that makes a flow v2
+tomlctl plan open|decide|contract|handover|request|run|milestone|check|view|probes|stage|gate|approve|drift --slug <s>   # a v2 flow's plan.toml, brief and task-store side tables; `plan open` creates the plan.toml that makes a flow v2
 tomlctl plan emit launch-args|gate-list|reproduce-units --slug <s> --milestone <id>   # a milestone's Workflow args, gate command list or reproduce launches, built from the stores; read-only
 tomlctl review sync-v1 --slug <s>                      # read v1 apply outcomes back onto the v2 store through v2_ref
 tomlctl review run start --slug <s> --command review-v2 --family code --depth standard --base <rev> [--head <rev>] [--set-json scope=<json>]   # mint U<n>, validate the lens catalogue, create the run directory
