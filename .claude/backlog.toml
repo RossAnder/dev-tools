@@ -13449,3 +13449,20 @@ base_sha = "882d343ff25e9810268821851f52c3fb51bd3de7"
 evidence = [".gitattributes:36"]
 resolved = 2026-11-18
 resolution = "4415cef9: claude/skills/*/scripts/** pinned to LF"
+
+[[backlog]]
+id = "B-7106068f"
+kind = "bug"
+summary = "render.sh cannot render a state narrower than 500 px: the geometry probe never reaches the asked viewport"
+area = "claude/skills/ui-capture"
+tags = ["ui-capture"]
+status = "open"
+created = 2026-11-18T08:32:55Z
+last_seen = 2026-11-18T08:32:55Z
+seen_count = 1
+dedup_id = "7106068fc6130a43"
+origin = "plan-v2"
+flow = "v2-ui-fidelity"
+context = "Headless Chrome's --dump-dom window never lays out narrower than 500 px, so render.sh's geometry pass widens the window three times, still reads a 500 px viewport, and exits 1 with 'could not size the probe's viewport'. The --screenshot pass does honour the width (a 480x360 PNG comes out 480 wide), so only the geometry key is missing. Measured 2026-11-18: --size 480x360 and 320x360 fail; 500x360 and 600x400 pass. Workaround: render mocks and fixture states at 500 px wide or more (v2-ui-fidelity decision D38). A fix probably lays the probe page out inside a fixed-size iframe, which needs --allow-file-access-from-files for a file:// child. Only mocks and fixtures go through render.sh; a project's own capture command drives its own browser."
+base_sha = "ba73780bb476497ef3c43d5807c9ce243dd5d16e"
+evidence = ["claude/skills/ui-capture/scripts/render.sh:276"]
