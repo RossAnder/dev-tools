@@ -527,6 +527,7 @@ fn a_v2_task_carries_its_spec_notes_and_links() {
             "writes_build": false,
             "run_by": "",
             "covered_by": "",
+            "states": [],
             "owner": "worker",
             "probeable": true,
             "probe": {"at": "abc", "neg_rc": 1, "pos_rc": 0, "verdict": "healthy"},

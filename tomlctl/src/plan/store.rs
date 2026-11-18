@@ -282,6 +282,19 @@ fn entry_matches(entry: &JsonValue, stored: &Accept) -> bool {
             return false;
         }
     }
+    if let Some(given) = entry.get("states") {
+        compared = true;
+        let matches = given.as_array().is_some_and(|given| {
+            given.len() == stored.states.len()
+                && given
+                    .iter()
+                    .zip(&stored.states)
+                    .all(|(given, stored)| given.as_str() == Some(stored.as_str()))
+        });
+        if !matches {
+            return false;
+        }
+    }
     compared
 }
 
@@ -753,6 +766,28 @@ summary = "Not a plan finding."
             pos_rc: None,
             verdict: "healthy".to_string(),
         }
+    }
+
+    #[test]
+    fn an_entry_naming_states_matches_only_the_same_states_in_order() {
+        let mut stored = accept("", false);
+        stored.run_by = "look".to_string();
+        stored.states = vec!["wide".to_string(), "narrow".to_string()];
+        let entry = |value| serde_json::json!({"behaviour": "b", "states": value});
+        assert!(entry_matches(
+            &entry(serde_json::json!(["wide", "narrow"])),
+            &stored
+        ));
+        assert!(!entry_matches(&entry(serde_json::json!(["wide"])), &stored));
+        assert!(!entry_matches(
+            &entry(serde_json::json!(["narrow", "wide"])),
+            &stored
+        ));
+        assert!(!entry_matches(&entry(serde_json::json!("wide")), &stored));
+        assert!(entry_matches(
+            &serde_json::json!({"behaviour": "b"}),
+            &stored
+        ));
     }
 
     fn tasks_with_accept(entry: Accept) -> Store {
