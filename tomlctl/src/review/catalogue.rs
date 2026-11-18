@@ -130,6 +130,7 @@ const DETECT_KEYS: &[&str] = &[
     "count",
     "window",
     "threshold",
+    "ui_capture_paths",
 ];
 /// Frontmatter fields a project `[override.<id>]` may replace; any other key
 /// names a body section.
@@ -2069,6 +2070,14 @@ fn read_vocabulary(
                 let mut inner = Front::new(d, path, format!("{at}.detect."), f.errors);
                 inner.only(DETECT_KEYS, "detect table");
                 inner.globs("files");
+                match d.get("ui_capture_paths") {
+                    None => {}
+                    Some(TomlValue::Boolean(_)) if kind == Some(SignalKind::Diff) => {}
+                    Some(TomlValue::Boolean(_)) => {
+                        inner.problem("ui_capture_paths", "is allowed only on a diff signal");
+                    }
+                    Some(_) => inner.problem("ui_capture_paths", "must be a boolean"),
+                }
                 Some(d.clone())
             }
             Some(TomlValue::Table(_)) => {

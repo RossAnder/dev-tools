@@ -14,7 +14,7 @@ Each check below stops the engine on failure, with the reason reported; none is 
 tomlctl plan stage --slug <slug>
 ```
 
-`stage` must read `approved` (every row still `pending`) or `running`. `done` means every row is `done`: there is nothing to run, so report that the flow's status is still to be moved and stop. Any other stage means the plan is not approved: stop and name `/plan-v2 <slug>`, which owns everything before approval. `open_runs` naming an `implement:<id>` or `reproduce:<id>` step is an open run, settled by the skill's Re-entry section before anything here continues. An `open_runs` entry `elaborate:<id>` or `cold-read:<id>` is a plan-v2 elaboration in progress in another session: leave it alone and never settle it here. It owns no task rows, so it is not an open run for the stale `in-progress` reset below either. A `blockers` entry other than an open run, such as a brief changed since approval, stops the engine with that entry quoted.
+`stage` must read `approved` (every row still `pending`) or `running`. `done` means every row is `done`: there is nothing to run, so report that the flow's status is still to be moved and stop. Any other stage means the plan is not approved: stop and name `/plan-v2 <slug>`, which owns everything before approval. `open_runs` naming an `implement:<id>`, `reproduce:<id>` or `visual:<id>` step is an open run, settled by the skill's Re-entry section before anything here continues. An `open_runs` entry `elaborate:<id>` or `cold-read:<id>` is a plan-v2 elaboration in progress in another session: leave it alone and never settle it here. It owns no task rows, so it is not an open run for the stale `in-progress` reset below either. A `blockers` entry other than an open run, such as a brief changed since approval, stops the engine with that entry quoted.
 
 The store checks run in step 2, scoped to the picked milestone, never flow-wide: a milestone being elaborated holds half-written rows that would otherwise refuse every milestone.
 
@@ -33,11 +33,12 @@ The tree must be clean except for:
 
 - `.claude/backlog.toml` and `.claude/backlog.toml.sha256`;
 - the `files` of every started row;
-- when the flow has `[[finding_links]]`, the review stores they name, by [apply-rows.md](apply-rows.md), section "Linked review stores in the clean-tree and lane checks".
+- when the flow has `[[finding_links]]`, the review stores they name, by [apply-rows.md](apply-rows.md), section "Linked review stores in the clean-tree and lane checks";
+- when a milestone has `ui_states`, the paths under the capture `out` that `.claude/ui-capture.toml` declares, by [visual.md](visual.md), section "The capture directory in the tree checks".
 
 Paths under `.claude/flows/<slug>/` and `docs/flows/<slug>/`, the flow's own directories, are never listed. A path under another flow's `.claude/flows/<other>/` or `docs/flows/<other>/` is exempt too, unless a row's `files` names it: no worker builds on another flow's records, and both commits stage by path, the milestone's by its rows' `files` and the flow-store commit by this flow's own directories, so neither can sweep it in. Name those paths in one informing line of the report, as another flow's uncommitted records. Any other path is someone else's edit, and a worker would build on it or a milestone commit, which stages its rows' `files`, would sweep it in. Stop and name each path; the user commits, moves or discards it, never the engine.
 
-**Stale `in-progress` rows.** With no open `implement:` or `reproduce:` run, a row still `in-progress` is left over from a run that ended without its worker's final status. Reset every one to `pending`, leaving its edits in place for the next worker's own-diff step:
+**Stale `in-progress` rows.** With no open `implement:`, `reproduce:` or `visual:` run, a row still `in-progress` is left over from a run that ended without its worker's final status. Reset every one to `pending`, leaving its edits in place for the next worker's own-diff step:
 
 ```bash
 tomlctl tasks list --slug <slug> --where status=in-progress --select id --lines
@@ -246,6 +247,8 @@ While the run is live, its workers own the rows they hold: write no `tasks` fiel
 ### What comes back
 
 The Workflow runs a rolling pool, not waves: up to `max_parallel` workers at once, of which at most `max_compile_parallel`, when given, hold a crate source file, and whenever one returns, each free slot is filled, in args order, with a task whose `needs` and `after` ids have all returned `done`, whose files no running task holds, and which a full compile cap does not hold back. A long task holds back only the tasks that wait on it or share its files.
+
+**A question mid-run.** Before the notification, a worker may send a message whose first line is `QUESTION <input id> task <n>`: it met a choice its spec does not settle and is waiting on the user's answer. It arrives as a new turn while the run is live; handle it by [questions.md](questions.md), then end the turn and keep waiting for the notification.
 
 The notification's result is an index, `{slug, milestone, tasks: [{id, status, note, error, deviations, handover, needs_files}], errors, script_version}`. A `needs_files` the Workflow refuses is emptied and its reason put in that entry's `error`. `needs_files` is empty unless the worker returned `failed` because its task cannot be done inside its `files`; it names the repo-relative paths the task would also need, none of which the worker edited, and its note gives one line per path saying why. The drain replan reads it to widen the task's `files`. An index whose `tasks` is empty and whose `errors` ends `no agent launched` is the Workflow refusing its args: a completed run, not a launch `error`. Close it as `errors`, report `errors`, and never relaunch the same args. Each entry's `status` is the worker's own (`done`, `failed`, `parked`) or one the Workflow sets:
 

@@ -426,6 +426,46 @@ fn an_answered_surfaced_decision_passes() {
 }
 
 #[test]
+fn silent_one_way_door_is_refused_naming_it_and_held_at_prove_by_stage() {
+    let plan = format!("{BINDING}{ASSUMED}").replace("two-way", "one-way");
+    let flow = Flow::committed(&plan, TASKS, BRIEF.as_bytes());
+    let (message, kind) = flow.refused(&skip_args());
+    assert_eq!(kind, "validation");
+    assert!(message.contains("never surfaced: D1"), "{message}");
+    assert!(message.contains("surface"), "{message}");
+
+    let assert = flow
+        .tomlctl(&["plan", "stage", "--slug", SLUG])
+        .assert()
+        .success();
+    let report = stdout_json(&assert);
+    assert_eq!(report["stage"], "prove", "{report}");
+    assert_eq!(report["next"], "plan decide", "{report}");
+    let blockers = report["blockers"].to_string();
+    assert!(blockers.contains("never surfaced: D1"), "{report}");
+}
+
+#[test]
+fn silent_one_way_rule_passes_a_one_way_door_the_user_answered() {
+    for provenance in ["user-stated", "user-confirmed"] {
+        let plan = format!("{BINDING}{ASSUMED}")
+            .replace("two-way", "one-way")
+            .replace("agent-assumed", provenance);
+        let flow = Flow::committed(&plan, TASKS, BRIEF.as_bytes());
+        flow.approve(&skip_args());
+    }
+}
+
+#[test]
+fn silent_one_way_rule_leaves_a_surfaced_one_way_door_to_the_unanswered_rule() {
+    let plan = format!("{BINDING}{ASSUMED}surfaced = true\n").replace("two-way", "one-way");
+    let flow = Flow::committed(&plan, TASKS, BRIEF.as_bytes());
+    let (message, _) = flow.refused(&skip_args());
+    assert!(message.contains("unanswered: D1"), "{message}");
+    assert!(!message.contains("never surfaced"), "{message}");
+}
+
+#[test]
 fn an_unsurfaced_assumption_does_not_block_approval() {
     let plan = format!("{BINDING}{ASSUMED}");
     let flow = Flow::committed(&plan, TASKS, BRIEF.as_bytes());
@@ -1353,6 +1393,51 @@ fn gate_reports_each_item_in_the_screens_order() {
             "source_task": 1
         }])
     );
+}
+
+const CLASSED_PLAN: &str = r#"schema_version = 4
+
+[[decision]]
+id = "D1"
+decision = "Unclassed and wide."
+provenance = "agent-assumed"
+door = "two-way"
+binds = ["1", "2", "3"]
+
+[[decision]]
+id = "D2"
+decision = "A compromise."
+provenance = "agent-assumed"
+door = "two-way"
+class = "compromise"
+binds = ["1"]
+
+[[decision]]
+id = "D3"
+decision = "A narrow look."
+provenance = "agent-assumed"
+door = "two-way"
+class = "look"
+binds = ["1"]
+
+[[decision]]
+id = "D4"
+decision = "A wide look."
+provenance = "agent-assumed"
+door = "two-way"
+class = "look"
+binds = ["1", "2"]
+"#;
+
+#[test]
+fn gate_groups_assumptions_by_class_in_vocabulary_order_with_unclassed_last() {
+    let flow = Flow::staged(CLASSED_PLAN, TASKS, BRIEF.as_bytes());
+    let report = flow.gate();
+    let rows = report["assumptions"].as_array().expect("an array");
+    let ids: Vec<&str> = rows.iter().filter_map(|row| row["id"].as_str()).collect();
+    assert_eq!(ids, ["D4", "D3", "D2", "D1"], "{report}");
+    assert_eq!(rows[0]["class"], "look");
+    assert_eq!(rows[3]["class"], Value::Null);
 }
 
 #[test]

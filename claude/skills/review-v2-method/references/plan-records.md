@@ -53,7 +53,7 @@ A lens check on a section with no record — the Summary, the Status line, the D
 | `design/<file>.md#<anchor>` | text inside the section | `docs/flows/<slug>/design/<file>.md` | `<anchor>` |
 
 - `<ref>` is the task's derived ref as `tasks show` prints it, never its numeric id.
-- A decision's keys are `decision`, `why`, `provenance`, `door`, `binds`, `rejected`, `evidence`, `if_false`, `revisit_if`, `check`, `surfaced` and `vetoed`.
+- A decision's keys are `decision`, `why`, `provenance`, `door`, `class` (one of `structure`, `look`, `ux`, `cost`, `vocabulary`, `architecture` or `compromise`, written only when set), `binds`, `rejected`, `evidence`, `if_false`, `revisit_if`, `check`, `surfaced` and `vetoed`.
 - A design `<anchor>` is the heading's slug, the same form a spec's `design` entries cite.
 - `title` is not a target, since a retitle can move the ref every other finding names. Raise a title fault as `advisory`.
 - `file` must be the target's file, and `symbol`, when given, its symbol; `review add` refuses either when it differs. Always set `symbol`, since it is what matches a prior finding. `line` is optional on a v2 flow; leave it out.

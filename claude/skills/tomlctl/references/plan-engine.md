@@ -169,12 +169,13 @@ The commands the milestone gate runs, in order.
 |---|---|---|---|
 | `--milestone` | id | The milestone whose gate is listed. | required |
 
-Prints `{commands, skipped}`.
+Prints `{commands, skipped}`, and `{commands, skipped, visual}` when the milestone has `ui_states`.
 
 | Key | Holds |
 |---|---|
 | `commands` | The milestone's `gates` in stored order (`source = "gate"`), then each accept check whose effective owner is `gate`, in row then entry order (`source = "accept:<task>:<index>"`). |
 | `skipped` | Rows of `task`, `accept` and `reason`: `duplicate` for a command already listed, `covered_by <command>` for a `covered` entry. |
+| `visual` | Present only when the milestone has `ui_states`. `states` holds the milestone's `ui_states`, `controls` its `ui_controls` (`[]` when none), and `looks` each `run_by = "look"` entry of its rows as `{task, accept, behaviour, states}`, in row then entry order, `accept` being the entry's index. A look entry never enters `commands` or `skipped`. |
 
 Holds and `timeout:`, `rerun:` or `transient:` options stay the orchestrator's to add.
 

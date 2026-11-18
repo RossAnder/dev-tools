@@ -23,7 +23,8 @@ use crate::io::repo_or_cwd_root;
 use crate::output::print_json_line;
 use crate::review::reproduce_state;
 use crate::tasks::schema::{
-    Premise, RUN_BY_COVERED, RUN_BY_GATE, Status, Store, TaskRow, TaskSpec, premise_target,
+    Premise, RUN_BY_COVERED, RUN_BY_GATE, RUN_BY_LOOK, Status, Store, TaskRow, TaskSpec,
+    premise_target,
 };
 use crate::tasks::{load_store, resolve_store_path};
 
@@ -165,7 +166,9 @@ fn launch_args(args: PlanEmitLaunchArgs) -> Result<()> {
 
 /// The milestone's gates in stored order, then each gate-owned accept check of
 /// its rows by row id and entry. Holds and per-command options are the
-/// orchestrator's to add, so none is printed here.
+/// orchestrator's to add, so none is printed here. A milestone with
+/// `ui_states` also gets a `visual` object holding its look entries, which
+/// are judged rather than run and so never enter `commands` or `skipped`.
 fn gate_list(args: PlanEmitGateListArgs) -> Result<()> {
     let PlanEmitGateListArgs {
         target,
@@ -173,10 +176,12 @@ fn gate_list(args: PlanEmitGateListArgs) -> Result<()> {
         integrity,
     } = args;
     let tasks = load_milestone_store(&target.slug, &milestone, integrity.verify_integrity)?;
+    let milestone_spec = tasks.milestones.iter().find(|spec| spec.id == milestone);
 
     let mut listed: BTreeSet<&str> = BTreeSet::new();
     let mut commands: Vec<JsonValue> = Vec::new();
     let mut skipped: Vec<JsonValue> = Vec::new();
+    let mut looks: Vec<JsonValue> = Vec::new();
     for gate in tasks
         .milestones
         .iter()
@@ -210,12 +215,29 @@ fn gate_list(args: PlanEmitGateListArgs) -> Result<()> {
                     }
                     "duplicate".to_string()
                 }
+                RUN_BY_LOOK => {
+                    looks.push(json!({
+                        "task": row.id,
+                        "accept": index,
+                        "behaviour": accept.behaviour,
+                        "states": accept.states,
+                    }));
+                    continue;
+                }
                 _ => continue,
             };
             skipped.push(json!({ "task": row.id, "accept": index, "reason": reason }));
         }
     }
-    print_json_line(&json!({ "commands": commands, "skipped": skipped }))
+    let mut out = json!({ "commands": commands, "skipped": skipped });
+    if let Some(spec) = milestone_spec.filter(|spec| !spec.ui_states.is_empty()) {
+        out["visual"] = json!({
+            "states": spec.ui_states,
+            "controls": spec.ui_controls,
+            "looks": looks,
+        });
+    }
+    print_json_line(&out)
 }
 
 const REVIEW_RUNS_DIR: &str = ".review-v2-runs";

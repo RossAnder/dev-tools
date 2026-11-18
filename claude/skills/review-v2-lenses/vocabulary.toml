@@ -140,6 +140,16 @@ kind = "diff"
 meaning = "The change touches UI components, markup or styles."
 detect = { files = ["**/*.tsx", "**/*.jsx", "**/*.vue", "**/*.svelte", "**/*.css", "**/*.scss", "**/*.less", "**/*.html", "**/*.cshtml", "**/*.razor"] }
 
+# `ui_capture_paths` adds the project's declared ui-capture `paths`, so a
+# terminal or other non-web UI marks the change on its own declaration.
+[signals.ui-change]
+kind = "diff"
+meaning = "The change touches a user interface on any stack: web components, markup or styles, QML, or a file under the project's declared ui-capture paths."
+detect = { files = [
+  "**/*.tsx", "**/*.jsx", "**/*.vue", "**/*.svelte", "**/*.css", "**/*.scss", "**/*.less",
+  "**/*.html", "**/*.cshtml", "**/*.razor", "**/*.qml",
+], ui_capture_paths = true }
+
 [signals.docs-touched]
 kind = "diff"
 meaning = "The change touches prose documentation."
@@ -455,6 +465,37 @@ families = ["code"]
 meaning = "Docs describing removed features or superseded procedures."
 families = ["code"]
 
+# ui-visual
+[concerns.layout-sizing]
+meaning = "Elements sized by their container instead of their content, reserved empty space, and panels sized wrong for what they hold."
+families = ["code"]
+
+[concerns.overflow-clipping]
+meaning = "Content clipped, overflowing, overlapping, offscreen or truncated without an ellipsis, and terminal columns or borders out of line."
+families = ["code"]
+
+[concerns.style-conformance]
+meaning = "Controls, glyphs, alignment and colour cues that depart from the project's own UI style."
+families = ["code"]
+
+# interaction
+[concerns.interaction-states]
+meaning = "Empty, loading, error and disabled states missing, wrong or indistinguishable."
+families = ["code"]
+
+[concerns.input-handling]
+meaning = "Focus, keyboard and pointer input, scroll and autoscroll that do not behave as the user expects."
+families = ["code"]
+
+# intent-fidelity
+[concerns.criteria-fidelity]
+meaning = "Built work that departs from the flow brief's intent, crosses one of its non-goals, or leaves a success criterion unmet."
+families = ["code"]
+
+[concerns.decision-fidelity]
+meaning = "Built work that departs from a decision the user stated or confirmed for the flow."
+families = ["code"]
+
 # memory-runtime
 [concerns.allocations]
 meaning = "Avoidable allocation and copying on a hot path."
@@ -663,7 +704,8 @@ families = ["perf"]
 executable = [
   "**/*.rs", "**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx", "**/*.mjs", "**/*.cjs", "**/*.vue",
   "**/*.svelte", "**/*.cs", "**/*.cshtml", "**/*.razor", "**/*.sql", "**/*.py", "**/*.go",
-  "**/*.sh", "**/*.ps1", "**/*.psm1", "**/.githooks/*",
+  "**/*.sh", "**/*.ps1", "**/*.psm1", "**/.githooks/*", "**/*.css", "**/*.scss", "**/*.less",
+  "**/*.html", "**/*.qml",
 ]
 tests = [
   "**/tests/**", "**/test/**", "**/__tests__/**", "**/tests.rs", "**/*_test.rs", "**/*_tests.rs",

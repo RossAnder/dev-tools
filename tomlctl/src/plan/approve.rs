@@ -14,7 +14,9 @@ use serde_json::{Value as JsonValue, json};
 use toml::Value as TomlValue;
 
 use super::check::{self, CLASS_BRIEF_CHANGED};
-use super::schema::{Approval, Decision, Door, PlanStore, Provenance, ReviewOutcome};
+use super::schema::{
+    Approval, Decision, DecisionClass, Door, PlanStore, Provenance, ReviewOutcome,
+};
 use super::store::{self, AppliedEdit, BRIEF_FILE, PlanReviewState, brief_digest};
 use crate::backlog::schema::STATUS_OPEN;
 use crate::backlog::triage::{Transition, triage_value};
@@ -61,7 +63,14 @@ fn gate_report(plan: &PlanStore, tasks: &Store, review: &PlanReviewState) -> Jso
         .iter()
         .filter(|d| d.provenance == Provenance::AgentAssumed)
         .collect();
-    assumed.sort_by_key(|d| std::cmp::Reverse(d.binds.len()));
+    // Grouped by class in vocabulary order, the declaration order of its variants,
+    // with unclassed ones last; within a class, the widest first.
+    assumed.sort_by_key(|d| {
+        let class = d
+            .class
+            .map_or(DecisionClass::VOCABULARY.len(), |c| c as usize);
+        (class, std::cmp::Reverse(d.binds.len()))
+    });
 
     let one_way: Vec<JsonValue> = plan
         .decisions
@@ -165,6 +174,7 @@ fn assumption(decision: &Decision) -> JsonValue {
         "why": decision.why,
         "binds": decision.binds,
         "door": decision.door.as_str(),
+        "class": decision.class.map(|c| c.as_str()),
         "surfaced": decision.surfaced,
         "evidence": decision.evidence,
         "if_false": decision.if_false,
@@ -225,6 +235,9 @@ pub(super) fn approve(args: PlanApproveArgs) -> Result<()> {
     }
     if let Some(unanswered) = store::unanswered_decisions(&plan) {
         return Err(refuse(unanswered));
+    }
+    if let Some(silent) = store::silent_one_way_decisions(&plan) {
+        return Err(refuse(silent));
     }
     refuse_check_errors(&slug, &read_integrity, amend)?;
     if review == ReviewOutcome::Ran {

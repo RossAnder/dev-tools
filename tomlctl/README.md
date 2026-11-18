@@ -394,7 +394,8 @@ downstream flow-command templates can feature-gate at boot without parsing
                "plan_emit_lane_check", "milestone_schedule",
                "snapshot_plan_records",
                "plan_run_records", "authored_files", "agent_usage",
-               "review_finding_read"],
+               "review_finding_read", "decision_class", "ui_look",
+               "inputs_plan_ledger"],
   "subcommands": ["parse", "get", "set", "set-json", "validate",
                   "items", "blocks", "array-append", "capabilities",
                   "integrity", "flow", "json", "backlog", "tasks",
@@ -608,3 +609,6 @@ Feature meanings:
 | `authored_files` | the library's `authored_list` and `authored_read` list and read the authored files under a flow's directory |
 | `agent_usage` | the agent record carries a `usage` table of the token counts a hook payload reported |
 | `review_finding_read` | the library's `review_finding` reads a single finding row from a review store |
+| `decision_class` | a question carries a `decision_class`, so the plan and the engine can tell a structural call from one of taste, architecture, cost or UX |
+| `ui_look` | the plan records the UI look the user chose from the layout options shown before tasks are written |
+| `inputs_plan_ledger` | `inputs` reads and writes the plan ledger the implement engine uses to ask the user its questions |

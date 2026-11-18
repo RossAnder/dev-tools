@@ -219,6 +219,10 @@ pub(crate) const FEATURES: &[&str] = &[
     "authored_files",
     "agent_usage",
     "review_finding_read",
+    // Decision classes on questions, the UI look records and the plan-ledger inputs.
+    "decision_class",
+    "ui_look",
+    "inputs_plan_ledger",
 ];
 
 /// User-facing top-level subcommand names, as they appear in

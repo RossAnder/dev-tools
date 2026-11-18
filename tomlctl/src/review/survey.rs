@@ -17,7 +17,7 @@ use std::process::Command;
 
 use anyhow::Result;
 use clap::Args;
-use globset::{Glob, GlobSet, GlobSetBuilder};
+use globset::{Glob, GlobBuilder, GlobSet, GlobSetBuilder};
 use jiff::SignedDuration;
 use regex::bytes::Regex;
 use serde_json::{Value as JsonValue, json};
@@ -186,6 +186,7 @@ fn evaluate(root: &Path, run: &Run, detectors: &[&super::catalogue::Signal]) -> 
         scope: &run.scope,
         tracked: list_tracked(root),
         diff: None,
+        capture: None,
     };
     let mut out: Vec<Detected> = Vec::new();
     for kind in [SignalKind::Stack, SignalKind::Diff, SignalKind::Health] {
@@ -245,6 +246,9 @@ struct Detect {
     count: Option<Vec<CountEntry>>,
     window: Option<i64>,
     threshold: Option<Threshold>,
+    /// A diff detector also selects a changed file under the `paths` of the
+    /// project's capture config; without `files` it selects only those.
+    ui_capture_paths: bool,
 }
 
 fn strings(value: &TomlValue, key: &str) -> Result<Vec<String>, String> {
@@ -268,6 +272,38 @@ fn globset(globs: &[String], key: &str) -> Result<GlobSet, String> {
         builder.add(Glob::new(glob).map_err(|e| format!("`{key}` glob {glob:?}: {e}"))?);
     }
     builder.build().map_err(|e| format!("`{key}`: {e}"))
+}
+
+const UI_CAPTURE_CONFIG: &str = ".claude/ui-capture.toml";
+
+/// A `paths` glob's `*` stops at `/`, as the plan check matching the same
+/// config reads it.
+fn load_capture_paths(root: &Path) -> Result<GlobSet, String> {
+    let text = match fs::read_to_string(root.join(UI_CAPTURE_CONFIG)) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(GlobSet::empty()),
+        Err(e) => return Err(e.to_string()),
+    };
+    let table: Table = toml::from_str(&text)
+        .map_err(|e| e.to_string().lines().next().unwrap_or_default().to_string())?;
+    let Some(raw) = table.get("paths") else {
+        return Ok(GlobSet::empty());
+    };
+    let entries = raw
+        .as_array()
+        .ok_or_else(|| "`paths` must be an array of strings".to_string())?;
+    let mut builder = GlobSetBuilder::new();
+    for entry in entries {
+        let text = entry
+            .as_str()
+            .ok_or_else(|| "`paths` must be an array of strings".to_string())?;
+        let glob = GlobBuilder::new(text.trim_start_matches("./"))
+            .literal_separator(true)
+            .build()
+            .map_err(|e| format!("`paths` glob {text:?}: {e}"))?;
+        builder.add(glob);
+    }
+    builder.build().map_err(|e| format!("`paths`: {e}"))
 }
 
 impl Detect {
@@ -322,6 +358,11 @@ impl Detect {
             },
             Some(_) => return Err("`threshold` must be an integer or `{ per_kloc = N }`".into()),
         };
+        let ui_capture_paths = match table.get("ui_capture_paths") {
+            None => false,
+            Some(TomlValue::Boolean(b)) => *b,
+            Some(_) => return Err("`ui_capture_paths` must be a boolean".into()),
+        };
         Ok(Self {
             files,
             contains,
@@ -329,6 +370,7 @@ impl Detect {
             count,
             window,
             threshold,
+            ui_capture_paths,
         })
     }
 
@@ -503,6 +545,7 @@ struct Repo<'a> {
     scope: &'a [String],
     tracked: Result<Vec<String>, String>,
     diff: Option<Result<Vec<Changed>, String>>,
+    capture: Option<Result<GlobSet, String>>,
 }
 
 impl Repo<'_> {
@@ -565,6 +608,17 @@ impl Repo<'_> {
     }
 
     // -------------------------------------------------------- diff
+
+    /// The `paths` globs of the capture config, read once per survey: empty with
+    /// no config or no `paths`, and `Err` naming the file when it cannot be read.
+    fn capture_paths(&mut self) -> Result<GlobSet, String> {
+        if self.capture.is_none() {
+            self.capture = Some(
+                load_capture_paths(self.root).map_err(|e| format!("`{UI_CAPTURE_CONFIG}`: {e}")),
+            );
+        }
+        self.capture.clone().expect("filled above")
+    }
 
     fn changed(&mut self) -> Result<&[Changed], String> {
         if self.diff.is_none() {
@@ -651,6 +705,20 @@ impl Repo<'_> {
 
     fn diff_signal(&mut self, detect: &Detect) -> Outcome {
         let (root, head) = (self.root, self.head);
+        let capture = if detect.ui_capture_paths {
+            match self.capture_paths() {
+                Ok(globs) => Some(globs),
+                Err(e) => return Outcome::Unknown(e),
+            }
+        } else {
+            None
+        };
+        let selects = |path: &str| match &capture {
+            None => detect.selects(path),
+            Some(globs) => {
+                globs.is_match(path) || detect.files.as_ref().is_some_and(|g| g.is_match(path))
+            }
+        };
         let changed = match self.changed() {
             Ok(changed) => changed,
             Err(e) => return Outcome::Unknown(e),
@@ -658,8 +726,7 @@ impl Repo<'_> {
         let mut roots = BTreeSet::new();
         let mut errors = Vec::new();
         for file in changed {
-            let selected = detect.selects(&file.path)
-                || file.old.as_deref().is_some_and(|old| detect.selects(old));
+            let selected = selects(&file.path) || file.old.as_deref().is_some_and(&selects);
             if !selected || !detect.contains_passes(&file.patch) {
                 continue;
             }

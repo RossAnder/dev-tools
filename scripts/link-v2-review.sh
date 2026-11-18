@@ -40,17 +40,20 @@ agents/plan-challenger.md
 agents/plan-cold-reader.md
 agents/plan-worker-lite.md
 agents/plan-worker-deep.md
+agents/ui-inspector.md
 skills/review-v2-engine
 skills/review-v2-method
 skills/review-v2-lenses
 skills/plan-v2-engine
 skills/implement-v2-engine
 skills/apply-v2-engine
+skills/ui-capture
 workflows/review-v2.js
 workflows/plan-v2-review.js
 workflows/plan-v2-investigate.js
 workflows/plan-v2-prove.js
 workflows/implement-v2-milestone.js
+workflows/implement-v2-visual.js
 '
 
 # The physical path a path names, its directory components resolved; a directory is

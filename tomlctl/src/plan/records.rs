@@ -9,8 +9,8 @@ use anyhow::Result;
 use serde_json::{Map, Value as JsonValue, json};
 
 use super::schema::{
-    Contract, ContractKind, Decision, Door, Handover, HandoverReason, PlanStore, Provenance,
-    RecordKind, Rejected, Run, RunOutcome, Vocabulary,
+    Contract, ContractKind, Decision, DecisionClass, Door, Handover, HandoverReason, PlanStore,
+    Provenance, RecordKind, Rejected, Run, RunOutcome, Vocabulary,
 };
 use super::{schema, store};
 use crate::cli::{
@@ -30,6 +30,7 @@ const DECISION_KEYS: &[&str] = &[
     "why",
     "provenance",
     "door",
+    "class",
     "binds",
     "rejected",
     "evidence",
@@ -201,6 +202,7 @@ fn upsert_decision(plan: &mut PlanStore, line: usize, row: &Row) -> Result<Strin
     let text = |key: &str| row_string(line, key, row.get(key));
     let provenance = vocab_value::<Provenance>(line, "provenance", row)?;
     let door = vocab_value::<Door>(line, "door", row)?;
+    let class = vocab_value::<DecisionClass>(line, "class", row)?;
     let binds = row_strings(line, "binds", row.get("binds"))?;
     let rejected = row_rejected(line, row)?;
     let surfaced = row_bool(line, "surfaced", row)?;
@@ -220,6 +222,9 @@ fn upsert_decision(plan: &mut PlanStore, line: usize, row: &Row) -> Result<Strin
             }
             if let Some(v) = door {
                 d.door = v;
+            }
+            if let Some(v) = class {
+                d.class = Some(v);
             }
             if let Some(v) = binds {
                 d.binds = v;
@@ -262,6 +267,7 @@ fn upsert_decision(plan: &mut PlanStore, line: usize, row: &Row) -> Result<Strin
                 why: text("why")?.unwrap_or_default(),
                 provenance,
                 door,
+                class,
                 binds: binds.unwrap_or_default(),
                 rejected: rejected.unwrap_or_default(),
                 evidence: text("evidence")?.unwrap_or_default(),
@@ -465,6 +471,7 @@ pub(super) fn record_value(
                 "why" => json!(d.why),
                 "provenance" => json!(d.provenance.as_str()),
                 "door" => json!(d.door.as_str()),
+                "class" => json!(d.class.map_or("", DecisionClass::as_str)),
                 "binds" => json!(d.binds),
                 "rejected" => JsonValue::Array(
                     d.rejected

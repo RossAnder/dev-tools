@@ -25,7 +25,11 @@ tomlctl plan open --slug <slug> [--from <id>[,<id>...]] --branch <branch> [--sco
 - `--branch` is the current branch, from the line above.
 - `--scope` repeats once per path glob the goal itself names, and is omitted when it names none. Do not infer globs from what you expect to touch; Design and the sweep below find that.
 
-Then Edit `docs/flows/<slug>/brief.md`, which `plan open` wrote as a skeleton. Fill its six sections from the discussion: Intent, Non-goals, Scope budget, Success criteria, Background, Unknowns. Intent and Success criteria are what the user wants true, in their terms, and the structure challenge is built from them, so keep design out of both. Unknowns lists the questions the plan cannot be written without; each becomes a lens below, or is marked settled when reading settles it first.
+**Interview.** Before filling the brief, interview the user about the goals, the constraints and what good looks like once the work lands, in `AskUserQuestion` rounds of up to four questions. Scale the rounds with the work's complexity and ambiguity: a narrow fix may need one question confirming what done means, a new surface or a cross-cutting change several rounds. Ask what the discussion left open rather than what it already said, and ask again where an answer opens a question. The interview sets the flow-level direction that every task later carries, so a task never stands in for that vision with a generic implementation of its own.
+
+Then Edit `docs/flows/<slug>/brief.md`, which `plan open` wrote as a skeleton. Fill its six sections from the discussion and the interview: Intent, Non-goals, Scope budget, Success criteria, Background, Unknowns. Intent and Success criteria are what the user wants true, in their terms, and the structure challenge is built from them, so keep design out of both. Unknowns lists the questions the plan cannot be written without; each becomes a lens below, or is marked settled when reading settles it first.
+
+**Read-back.** Once the brief is filled, give the user a short account, from its Intent and Success criteria, of what they will see and do once the work lands: the screens, commands or outputs they meet and what each lets them do. Ask through `AskUserQuestion` whether it matches what they mean, and fold every correction into the brief before Investigate launches, since a misread caught here costs no investigation. The second read-back, before Design, is in [write-and-prove.md](write-and-prove.md#1-design).
 
 ## 2. Investigate
 
@@ -141,13 +145,15 @@ tomlctl plan run finish --slug <slug> --step challenge --outcome <outcome>
 
 ## 5. Surface
 
-Before Design elaborates anything, find the assumptions the user should see. A candidate is anything the plan takes for granted, a dependency choice, a reading of the scope or a large restructure among them. It reaches the user only when it passes all three tests:
+Before Design elaborates anything, find the assumptions the user should see. A candidate is anything the plan takes for granted, at any level from the abstract to one task's specifics: a dependency choice, a reading of the scope, a large restructure, a look, a behaviour the user will meet, a cost or a name among them. It reaches the user only when it passes all three tests:
 
-1. What would change if the answer were no? It must be a different plan.
+1. Would getting it wrong be visible to the user, costly to undo, or a compromise the user has not made? Any one is enough, whether or not the plan's structure changes.
 2. Can I settle it by reading or running something? Then settle it.
 3. Does a recorded user stance already answer it? CLAUDE.md, memory, ADRs, the brief and what the user decided earlier in this session count. The challenger and the investigators never saw that stance, so a note of theirs arguing the other way does not reopen it: record the stance as the decision and the note as its counter-evidence.
 
-Zero survivors is the normal case. At most three go to the user; when more pass, ask about the three whose `if_false` changes the plan most and record the rest as below. When nothing survives, record that, so a new session can see Surface ran:
+An agent-assumed one-way door always goes to the user, whatever the tests say, since `plan approve` refuses one that was never surfaced.
+
+**Budget.** The first round asks at most eight questions a planning session, in `AskUserQuestion` batches of up to four. When more pass, ask about the eight whose `if_false` changes the most for the user and record the rest as below. A question an answer opens is asked in a further round, outside the budget, and the rounds go on until no answer opens a new one; such a question is never answered by assumption. The budget is a starting point for dogfooding to revise, as the surfacing risk in `docs/plans/v2-planning.md` says. When nothing survives, record that, so a new session can see Surface ran:
 
 ```bash
 tomlctl plan run skip --slug <slug> --step surface --reason '<why nothing survived>'
@@ -163,7 +169,7 @@ tomlctl sweep -e '(?-u:\bNAME\b)' --exclude 'docs/flows/**' --lines
 
 The header line carries `truncated` and `coverage_complete`. When `truncated` is true, rerun with a higher `--max-hits` before counting anything. When `coverage_complete` is false, a skipped file can hide a site, so the evidence names the skipped counts and the plan claims no more than the sweep saw. A site outside the brief's scope is a candidate only when it leads to materially different work; otherwise it is a file Design adds.
 
-**Each surfaced item** shows the claim, the evidence read, what changes if it is false, and the default. Record it before asking, as a decision with `surfaced = true`:
+**Each surfaced item** shows the claim, the evidence read, what changes if it is false, and the default. When an engineering limit narrows its options, such as a dependency the project refuses, a platform gap or a time budget, the question names the limit and states what lifting it would cost, so the user can choose to lift it rather than only pick inside it. Record it before asking, as a decision with `surfaced = true` and a `class`, one of `structure`, `look`, `ux`, `cost`, `vocabulary`, `architecture` or `compromise`, so veto rates are counted per class:
 
 ```toml
 [[record]]
@@ -171,6 +177,7 @@ decision = "<the default, phrased as an instruction>"
 why = "<one line>"
 provenance = "agent-assumed"
 door = "one-way"
+class = "<class>"
 binds = ["<an existing path>"]
 evidence = "<what was read>"
 if_false = "<what changes>"
@@ -196,7 +203,7 @@ provenance = "user-confirmed"
 vetoed = false
 ```
 
-Every candidate that did not reach the user and still shapes the plan becomes a decision with `provenance = "agent-assumed"` and `surfaced = false`, its `evidence` naming what settled it or the stance that answered it. These are disclosed at approval.
+Every candidate that did not reach the user and still shapes the plan becomes a decision with `provenance = "agent-assumed"`, `surfaced = false` and its `class`, its `evidence` naming what settled it or the stance that answered it. These are disclosed at approval.
 
 Once the answers are applied, record that Surface ran:
 
@@ -225,7 +232,7 @@ tomlctl plan view --slug <slug> --for digest --select stage_inputs.runs
 
 Record the relaunch on the open row when it notifies, with `plan run finish --slug <slug> --step investigate --run-id <new runId> --outcome <outcome>`, then recompute the pending lenses from `notes/` as in section 2. An agent the relaunch reran meets its own earlier note and returns `no-note`; its note on disk still counts as done when it opens `Verdict:`.
 
-**Never abandon or relaunch an `implement:` or `reproduce:` run**: those belong to `/implement-v2`. An `elaborate:<id>` or `cold-read:<id>` run from another session is asked about through `AskUserQuestion`, never abandoned silently.
+**Never abandon or relaunch an `implement:`, `reproduce:` or `visual:` run**: those belong to `/implement-v2`. An `elaborate:<id>` or `cold-read:<id>` run from another session is asked about through `AskUserQuestion`, never abandoned silently.
 
 **Otherwise abandon**, which is the only path for a `challenge` run and for any other run from another session:
 

@@ -641,6 +641,28 @@ fn human_prints_the_whole_plan_as_markdown() {
 }
 
 #[test]
+fn view_decision_class() {
+    let plan = PLAN
+        .replacen("schema_version = 1", "schema_version = 4", 1)
+        .replacen(
+            "door = \"two-way\"\nbinds = [\"1\"]",
+            "door = \"two-way\"\nclass = \"look\"\nbinds = [\"1\"]",
+            1,
+        );
+    let flow = Flow::seeded(Some(TASKS), &plan, Some(BRIEF.as_bytes()));
+    let human = flow.view(&["--for", "human"]);
+    assert!(
+        human.contains("agent-assumed, two-way door, look"),
+        "{human}"
+    );
+    assert!(human.contains("user-stated, one-way door\n"), "{human}");
+    assert_eq!(
+        flow.digest()["counts"]["decisions"]["by_class"],
+        json!({"look": 1})
+    );
+}
+
+#[test]
 fn human_shows_an_approval_and_the_audit_trail() {
     let plan = format!(
         "{PLAN}\n[[approval]]\ncommit = \"abc1234\"\nat = 2026-11-05T15:00:00Z\n\

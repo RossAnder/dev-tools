@@ -986,3 +986,114 @@ fn survey_refuses_an_unknown_run() {
         .failure()
         .stderr(predicates::str::contains("no run U9"));
 }
+
+const UI_CHANGE: &str = r#"
+[signals.ui-change]
+kind = "diff"
+meaning = "a UI change"
+detect = { files = ["**/*.vue"], ui_capture_paths = true }
+
+[signals.vue-only]
+kind = "diff"
+meaning = "a Vue change"
+detect = { files = ["**/*.vue"] }
+"#;
+
+/// Commits `setup`, then a change to a Vue file, a file under `tui/src/` and a
+/// server file, and surveys that change.
+fn survey_ui_change(setup: impl FnOnce(&Fixture)) -> Option<JsonValue> {
+    let fx = Fixture::new(UI_CHANGE)?;
+    fx.write("README.md", "x\n");
+    setup(&fx);
+    let base = fx.commit("first");
+    fx.write("web/App.vue", "<template/>\n")
+        .write("tui/src/app.rs", "fn draw() {}\n")
+        .write("tui/src/deep/view.rs", "fn view() {}\n")
+        .write("server/src/main.rs", "fn main() {}\n");
+    fx.commit("second");
+    let run = fx.start(&base);
+    Some(fx.survey(&run))
+}
+
+#[test]
+fn ui_capture_paths_select_declared_files_beside_the_globs() {
+    let Some(out) = survey_ui_change(|fx| {
+        fx.write(".claude/ui-capture.toml", "paths = [\"./tui/src/*.rs\"]\n");
+    }) else {
+        return;
+    };
+    assert_eq!(
+        roots(&out, "ui-change"),
+        Some(vec!["tui/src".to_string(), "web".to_string()]),
+        "a `*` stops at `/`, and server/ is outside every path"
+    );
+    assert_eq!(
+        roots(&out, "vue-only"),
+        Some(vec!["web".to_string()]),
+        "a detector without the option ignores the config"
+    );
+}
+
+#[test]
+fn ui_capture_paths_without_a_config_select_nothing_extra() {
+    let Some(out) = survey_ui_change(|_| {}) else {
+        return;
+    };
+    assert_eq!(roots(&out, "ui-change"), Some(vec!["web".to_string()]));
+}
+
+#[test]
+fn ui_capture_paths_without_paths_select_nothing_extra() {
+    let Some(out) = survey_ui_change(|fx| {
+        fx.write(".claude/ui-capture.toml", "command = \"capture\"\n");
+    }) else {
+        return;
+    };
+    assert_eq!(roots(&out, "ui-change"), Some(vec!["web".to_string()]));
+}
+
+#[test]
+fn ui_capture_paths_from_a_malformed_config_are_unknown() {
+    let Some(out) = survey_ui_change(|fx| {
+        fx.write(".claude/ui-capture.toml", "paths = \"tui/**\"\n");
+    }) else {
+        return;
+    };
+    let reason = unknown_reason(&out, "ui-change").expect("ui-change is unknown, not false");
+    assert!(reason.contains(".claude/ui-capture.toml"), "{reason}");
+    assert_eq!(roots(&out, "vue-only"), Some(vec!["web".to_string()]));
+}
+
+#[test]
+fn ui_capture_paths_must_be_a_boolean_on_a_diff_signal() {
+    for detect in [
+        "[signals.ui-change]\nkind = \"diff\"\nmeaning = \"m\"\ndetect = { ui_capture_paths = \"yes\" }\n",
+        "[signals.ui-stack]\nkind = \"stack\"\nmeaning = \"m\"\ndetect = { files = [\"**/*.qml\"], ui_capture_paths = true }\n",
+    ] {
+        let Some(fx) = Fixture::new(detect) else {
+            return;
+        };
+        fx.write("README.md", "x\n");
+        let head = fx.commit("first");
+        fx.tomlctl()
+            .args([
+                "review",
+                "run",
+                "start",
+                "--scope",
+                SCOPE,
+                "--command",
+                "review-v2",
+                "--family",
+                "code",
+                "--depth",
+                "quick",
+            ])
+            .arg(format!("--base={head}"))
+            .arg("--builtin")
+            .arg(&fx.builtin)
+            .assert()
+            .failure()
+            .stderr(predicates::str::contains("ui_capture_paths"));
+    }
+}

@@ -786,6 +786,103 @@ fn gate_list_skips_a_duplicate_command() {
     );
 }
 
+fn look(behaviour: &str, states: &[&str]) -> Value {
+    json!({
+        "behaviour": behaviour,
+        "check": "",
+        "kind": "forward",
+        "writes_build": false,
+        "run_by": "look",
+        "states": states,
+    })
+}
+
+#[test]
+fn gate_list_visual_holds_states_controls_and_looks() {
+    let (_dir, root) = sandbox();
+    let items = vec![
+        row(2, "pending", MILESTONE, &[], &["src/two.rs"]),
+        row(1, "pending", MILESTONE, &[], &["src/one.rs"]),
+    ];
+    let specs = vec![
+        accept_spec(
+            2,
+            vec![
+                look("the list fits the panel", &["empty", "full"]),
+                accept("cargo test --test two", true, None),
+                look("the badge is legible", &["full"]),
+            ],
+        ),
+        accept_spec(1, vec![look("the header aligns", &["empty"])]),
+    ];
+    let doc = store(
+        items,
+        specs,
+        json!({
+            "schema_version": 3,
+            "milestones": [{
+                "id": MILESTONE,
+                "gates": [SUITE],
+                "ui_states": ["empty", "full"],
+                "ui_controls": ["clipped"],
+            }],
+        }),
+    );
+    seed_tasks(&root, &doc);
+
+    let out = gate_list(&root);
+
+    assert_eq!(
+        out["commands"],
+        json!([
+            { "command": SUITE, "source": "gate" },
+            { "command": "cargo test --test two", "source": "accept:2:1" },
+        ]),
+        "a look entry never enters commands: {out}"
+    );
+    assert_eq!(out["skipped"], json!([]), "nor skipped: {out}");
+    assert_eq!(
+        out["visual"],
+        json!({
+            "states": ["empty", "full"],
+            "controls": ["clipped"],
+            "looks": [
+                { "task": 1, "accept": 0, "behaviour": "the header aligns", "states": ["empty"] },
+                {
+                    "task": 2,
+                    "accept": 0,
+                    "behaviour": "the list fits the panel",
+                    "states": ["empty", "full"],
+                },
+                { "task": 2, "accept": 2, "behaviour": "the badge is legible", "states": ["full"] },
+            ],
+        }),
+        "looks in row order then accept order: {out}"
+    );
+}
+
+#[test]
+fn gate_list_visual_is_absent_without_ui_states() {
+    let (_dir, root) = sandbox();
+    let items = vec![row(1, "pending", MILESTONE, &[], &["src/one.rs"])];
+    let specs = vec![accept_spec(
+        1,
+        vec![accept("cargo test --test one", true, None)],
+    )];
+    seed_tasks(&root, &gate_store(items, specs));
+
+    let out = gate_list(&root);
+
+    assert!(out.get("visual").is_none(), "{out}");
+    let keys: Vec<&str> = out
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(keys, ["commands", "skipped"], "{out}");
+}
+
 const SCOPE: &str = "fixture";
 const SCOPE_STORE: &str = ".claude/review-v2/fixture.toml";
 

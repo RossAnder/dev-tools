@@ -117,6 +117,40 @@ fn gate_probes_json(probes: &[GateProbe]) -> String {
     JsonValue::Array(pairs).to_string()
 }
 
+/// Refuses a capture-state name outside `^[a-z0-9][a-z0-9-]{0,63}$`, or one
+/// given twice to `flag`.
+fn check_ui_names(flag: &str, names: &[String]) -> Result<()> {
+    for (index, name) in names.iter().enumerate() {
+        let mut chars = name.chars();
+        let well_formed = name.len() <= 64
+            && chars
+                .next()
+                .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+            && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+        if !well_formed {
+            return Err(refuse(format!(
+                "`{flag} {name}` is not a state name: lowercase letters, digits and `-`, \
+                 starting with a letter or digit, at most 64 characters"
+            )));
+        }
+        if names[..index].contains(name) {
+            return Err(refuse(format!("`{flag} {name}` is given twice")));
+        }
+    }
+    Ok(())
+}
+
+/// Refuses a name that is both a state the visual pass judges and a control
+/// the inspector must fail.
+fn check_ui_disjoint(id: &str, states: &[String], controls: &[String]) -> Result<()> {
+    match states.iter().find(|name| controls.contains(name)) {
+        Some(name) => Err(refuse(format!(
+            "`{name}` is both a ui state and a ui control of milestone `{id}`"
+        ))),
+        None => Ok(()),
+    }
+}
+
 /// Refuses an `after` id that is not stored before `id` in `[[checkpoints]]`;
 /// an id not yet stored counts as last.
 fn check_after(store: &Store, id: &str, after: &[String]) -> Result<()> {
@@ -146,6 +180,9 @@ pub(super) fn add(args: PlanMilestoneAddArgs) -> Result<()> {
         return Err(refuse("`--id` must not be empty".to_string()));
     }
     let gate_probes = gate_probes_for(&id, &parse_gate_probes(&args.gate_probe)?, &args.gate, &[])?;
+    check_ui_names("--ui-state", &args.ui_state)?;
+    check_ui_names("--ui-control", &args.ui_control)?;
+    check_ui_disjoint(&id, &args.ui_state, &args.ui_control)?;
     let reason = trimmed(args.reason.as_deref()).to_string();
     if args.defer && reason.is_empty() {
         return Err(refuse("`--defer` needs `--reason <text>`".to_string()));
@@ -181,6 +218,8 @@ pub(super) fn add(args: PlanMilestoneAddArgs) -> Result<()> {
             },
             gate_probes: gate_probes.clone(),
             after: args.after.clone(),
+            ui_states: args.ui_state.clone(),
+            ui_controls: args.ui_control.clone(),
         });
         if store.audit {
             store.changes.push(change(
@@ -203,6 +242,9 @@ pub(super) fn update(args: PlanMilestoneUpdateArgs) -> Result<()> {
         && args.gate.is_empty()
         && !args.clear_gate
         && args.gate_probe.is_empty()
+        && args.ui_state.is_empty()
+        && args.ui_control.is_empty()
+        && !args.clear_ui
         && args.after.is_empty()
         && !args.clear_after
         && !args.defer
@@ -210,10 +252,19 @@ pub(super) fn update(args: PlanMilestoneUpdateArgs) -> Result<()> {
     {
         return Err(refuse(
             "nothing to update: pass `--goal`, `--gate`, `--clear-gate`, `--gate-probe`, \
-             `--after`, `--clear-after`, `--defer` or `--elaborated`"
+             `--ui-state`, `--ui-control`, `--clear-ui`, `--after`, `--clear-after`, \
+             `--defer` or `--elaborated`"
                 .to_string(),
         ));
     }
+    if args.clear_ui && (!args.ui_state.is_empty() || !args.ui_control.is_empty()) {
+        return Err(refuse(
+            "`--clear-ui` and `--ui-state` or `--ui-control` set the ui lists two different ways"
+                .to_string(),
+        ));
+    }
+    check_ui_names("--ui-state", &args.ui_state)?;
+    check_ui_names("--ui-control", &args.ui_control)?;
     if args.clear_after && !args.after.is_empty() {
         return Err(refuse(
             "`--clear-after` and `--after` set the after list two different ways".to_string(),
@@ -243,6 +294,9 @@ pub(super) fn update(args: PlanMilestoneUpdateArgs) -> Result<()> {
         goal: args.goal.clone(),
         gates: (!args.gate.is_empty() || args.clear_gate).then(|| args.gate.clone()),
         gate_probes: (!gate_probes.is_empty()).then_some(gate_probes),
+        ui_states: (!args.ui_state.is_empty() || args.clear_ui).then(|| args.ui_state.clone()),
+        ui_controls: (!args.ui_control.is_empty() || args.clear_ui)
+            .then(|| args.ui_control.clone()),
         after: (!args.after.is_empty() || args.clear_after).then(|| args.after.clone()),
         elaboration: match (args.defer, args.elaborated) {
             (true, _) => Some(ELABORATION_DEFERRED.to_string()),
@@ -265,6 +319,8 @@ struct MilestonePatch {
     /// `(gate, probe)` pairs replacing the whole probe list, each checked
     /// against the gates the patch leaves.
     gate_probes: Option<Vec<(String, String)>>,
+    ui_states: Option<Vec<String>>,
+    ui_controls: Option<Vec<String>>,
     after: Option<Vec<String>>,
     elaboration: Option<String>,
     defer_reason: Option<String>,
@@ -316,6 +372,8 @@ fn patch_milestone(
                 defer_reason: String::new(),
                 gate_probes: Vec::new(),
                 after: Vec::new(),
+                ui_states: Vec::new(),
+                ui_controls: Vec::new(),
             });
             store.milestones.len() - 1
         }
@@ -332,6 +390,29 @@ fn patch_milestone(
             "gate_probes",
             gate_probes_json(&old),
             gate_probes_json(&spec.gate_probes),
+        ));
+    }
+    if patch.ui_states.is_some() || patch.ui_controls.is_some() {
+        check_ui_disjoint(
+            id,
+            patch.ui_states.as_deref().unwrap_or(&spec.ui_states),
+            patch.ui_controls.as_deref().unwrap_or(&spec.ui_controls),
+        )?;
+    }
+    if let Some(states) = &patch.ui_states {
+        let old = std::mem::replace(&mut spec.ui_states, states.clone());
+        changes.push((
+            "ui_states",
+            json!(old).to_string(),
+            json!(states).to_string(),
+        ));
+    }
+    if let Some(controls) = &patch.ui_controls {
+        let old = std::mem::replace(&mut spec.ui_controls, controls.clone());
+        changes.push((
+            "ui_controls",
+            json!(old).to_string(),
+            json!(controls).to_string(),
         ));
     }
     if let Some(after) = &patch.after {

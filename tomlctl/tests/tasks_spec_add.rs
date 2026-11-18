@@ -260,6 +260,137 @@ fn accept_worker_owner_refuses_a_building_check() {
     );
 }
 
+fn look(states: Value) -> Value {
+    json!({
+        "behaviour": "the empty cart reads as empty",
+        "kind": "forward",
+        "writes_build": false,
+        "run_by": "look",
+        "states": states,
+    })
+}
+
+#[test]
+fn accept_look_states_round_trip_and_stamp_version_3() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, FIXTURE);
+    let envelope = add_many(
+        &root,
+        &row_with_spec(&json!({"accept": [look(json!(["empty-cart", "full-cart"]))]})),
+    );
+    let id = envelope["rows"][0]["id"].to_string();
+
+    let doc = read_store(&store);
+    assert_eq!(
+        doc.get("schema_version").and_then(toml::Value::as_integer),
+        Some(3)
+    );
+    let stored = &side_table(&doc, "specs")[0]["accept"][0];
+    assert_eq!(text(stored, "run_by"), "look");
+    assert_eq!(text(stored, "check"), "");
+    let states: Vec<&str> = stored["states"]
+        .as_array()
+        .expect("states is an array")
+        .iter()
+        .filter_map(toml::Value::as_str)
+        .collect();
+    assert_eq!(states, ["empty-cart", "full-cart"]);
+
+    let out = cli(&root)
+        .args(["tasks", "show", &id, "--slug", TASKS_SLUG, "--with", "spec"])
+        .assert()
+        .success();
+    let shown: Value = serde_json::from_slice(&out.get_output().stdout).expect("stdout is JSON");
+    let accept = &shown["spec"]["accept"][0];
+    assert_eq!(accept["run_by"], json!("look"));
+    assert_eq!(accept["states"], json!(["empty-cart", "full-cart"]));
+    assert_sidecar_matches(&store);
+}
+
+#[test]
+fn accept_look_needs_states_and_an_empty_check() {
+    assert_refused(
+        &row_with_spec(&json!({"accept": [look(json!([]))]})),
+        "needs `states`",
+    );
+    let mut checked = look(json!(["empty-cart"]));
+    checked["check"] = json!("grep -q cart src/cart.rs");
+    assert_refused(
+        &row_with_spec(&json!({"accept": [checked]})),
+        "needs an empty `check`",
+    );
+}
+
+#[test]
+fn accept_look_states_are_refused_on_any_other_owner() {
+    assert_refused(
+        &row_with_spec(&json!({"accept": [
+            {"check": "true", "kind": "guard", "writes_build": false, "run_by": "gate",
+             "states": ["empty-cart"]}
+        ]})),
+        "`states` is allowed only with `run_by = \"look\"`",
+    );
+    assert_refused(
+        &row_with_spec(&json!({"accept": [
+            {"check": "true", "kind": "forward", "writes_build": false, "states": ["empty-cart"]}
+        ]})),
+        "`states` is allowed only with `run_by = \"look\"`",
+    );
+}
+
+/// A look entry gets no probe line, even marked as not writing the build, and
+/// a guard beside it stands alone: it never counts as discriminating.
+#[test]
+fn accept_look_is_never_probed_and_never_discriminates() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, FIXTURE);
+    let envelope = add_many(
+        &root,
+        &row_with_spec(&json!({"accept": [
+            {"behaviour": "the cart holds", "check": "true", "kind": "guard",
+             "writes_build": false},
+            look(json!(["empty-cart"])),
+        ]})),
+    );
+    let id = envelope["rows"][0]["id"].as_u64().expect("a numeric id");
+
+    let out = cli(&root)
+        .args(["plan", "probes", "--slug", TASKS_SLUG, "--emit"])
+        .assert()
+        .success();
+    let script = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let guard_prefix = format!("p {id}:0 neg ");
+    let hex = script
+        .lines()
+        .find_map(|line| line.strip_prefix(&guard_prefix))
+        .and_then(|rest| rest.split(' ').next())
+        .unwrap_or_else(|| panic!("no probe line for the guard in:\n{script}"))
+        .to_string();
+    assert!(
+        !script.contains(&format!("p {id}:1 ")),
+        "the look entry was probed:\n{script}"
+    );
+
+    let capture = root.join("capture.tsv");
+    fs::write(
+        &capture,
+        format!(
+            "head\t0123456789abcdef0123456789abcdef01234567\n\
+             {id}:0\tneg\tsha256={hex}\trc=0\t\t\n"
+        ),
+    )
+    .unwrap();
+    cli(&root)
+        .args(["plan", "probes", "--slug", TASKS_SLUG, "--record"])
+        .arg(&capture)
+        .assert()
+        .success();
+    let doc = read_store(&store);
+    let accept = &side_table(&doc, "specs")[0]["accept"];
+    assert_eq!(text(&accept[0]["probe"], "verdict"), "guard-alone");
+    assert!(accept[1].get("probe").is_none(), "{}", accept[1]);
+}
+
 /// A deferred milestone's task states behaviour before any check exists.
 #[test]
 fn a_behaviour_with_no_check_needs_no_kind() {

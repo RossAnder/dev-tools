@@ -1271,6 +1271,168 @@ fn an_incomplete_handover_fails_every_milestone_scope() {
     );
 }
 
+const UI_LISTS: &str =
+    "defer_reason = \"\"\nui_states = [\"list-empty\"]\nui_controls = [\"list-broken\"]";
+
+const LOOK: &str = r#", { behaviour = "the empty list reads well", check = "", kind = "forward", run_by = "look", states = ["list-empty"] }]"#;
+
+/// The base fixture with its milestone declaring `ui` and its spec carrying a
+/// `look` entry when `look` is set.
+fn ui_tasks(ui: &str, look: bool) -> String {
+    let tasks = swap(TASKS, "defer_reason = \"\"", ui);
+    if look {
+        swap(&tasks, " } }]", &format!(" }} }}{LOOK}"))
+    } else {
+        tasks
+    }
+}
+
+fn write_capture_config(flow: &Flow, text: &str) {
+    let dir = flow.root.join(".claude");
+    fs::create_dir_all(&dir).expect(".claude dir");
+    fs::write(dir.join("ui-capture.toml"), text).expect("ui-capture.toml");
+}
+
+fn finding_ids(flow: &Flow, class: &str) -> Vec<Value> {
+    let (_, report) = flow.run();
+    report["findings"]
+        .as_array()
+        .expect("a findings array")
+        .iter()
+        .find(|finding| finding["class"] == class)
+        .unwrap_or_else(|| panic!("no `{class}` in {report}"))["ids"]
+        .as_array()
+        .expect("an ids array")
+        .clone()
+}
+
+#[test]
+fn check_ui_a_plan_without_states_or_a_capture_config_reports_nothing_new() {
+    assert_clean(&Flow::with_tasks(TASKS));
+
+    let flow = Flow::with_tasks(TASKS);
+    write_capture_config(
+        &flow,
+        "command = \"bun run visual-audit\"\nout = \".ui-capture\"\n",
+    );
+    assert_clean(&flow);
+
+    let flow = Flow::with_tasks(TASKS);
+    write_capture_config(&flow, "paths = [\"web/src/**\"]\n");
+    assert_clean(&flow);
+}
+
+#[test]
+fn check_ui_an_elaborated_look_entry_raises_no_accept_no_check() {
+    assert_clean(&Flow::with_tasks(&ui_tasks(UI_LISTS, true)));
+}
+
+#[test]
+fn check_ui_a_look_state_the_milestone_does_not_list_is_an_error() {
+    let tasks = swap(
+        &ui_tasks(UI_LISTS, true),
+        "states = [\"list-empty\"] }",
+        "states = [\"list-full\"] }",
+    );
+    assert_reports_error(&Flow::with_tasks(&tasks), "plan/look-state-unknown");
+
+    let control = swap(
+        &ui_tasks(UI_LISTS, true),
+        "states = [\"list-empty\"] }",
+        "states = [\"list-broken\"] }",
+    );
+    assert_reports_error(&Flow::with_tasks(&control), "plan/look-state-unknown");
+}
+
+#[test]
+fn check_ui_a_look_entry_in_a_milestone_without_states_is_an_error() {
+    let tasks = ui_tasks("defer_reason = \"\"", true);
+    assert_reports_error(&Flow::with_tasks(&tasks), "plan/look-without-states");
+}
+
+#[test]
+fn check_ui_a_milestone_with_states_and_no_control_is_an_error() {
+    let tasks = ui_tasks("defer_reason = \"\"\nui_states = [\"list-empty\"]", true);
+    let flow = Flow::with_tasks(&tasks);
+    assert_reports_error(&flow, "plan/ui-controls-missing");
+    assert_eq!(finding_ids(&flow, "plan/ui-controls-missing"), vec![1]);
+}
+
+#[test]
+fn check_ui_a_pending_row_proving_a_ui_milestone_on_reads_alone_warns() {
+    let flow = Flow::with_tasks(&ui_tasks(UI_LISTS, false));
+    assert_reports_warning(&flow, "plan/ui-accept-structural");
+    assert_eq!(finding_ids(&flow, "plan/ui-accept-structural"), vec![1]);
+
+    let done = swap(
+        &ui_tasks(UI_LISTS, false),
+        "status = \"pending\"",
+        "status = \"done\"",
+    );
+    assert_clean(&Flow::with_tasks(&done));
+
+    let building = swap(
+        &ui_tasks(UI_LISTS, false),
+        "writes_build = false",
+        "writes_build = true",
+    );
+    assert_clean(&Flow::with_tasks(&building));
+
+    let deferred = swap(
+        &ui_tasks(
+            "defer_reason = \"depends on the store\"\nui_states = [\"list-empty\"]\nui_controls = \
+             [\"list-broken\"]",
+            false,
+        ),
+        "elaboration = \"upfront\"",
+        "elaboration = \"deferred\"",
+    );
+    assert_clean(&Flow::with_tasks(&deferred));
+}
+
+#[test]
+fn check_ui_a_milestone_editing_capture_paths_with_no_states_warns() {
+    let flow = Flow::with_tasks(TASKS);
+    write_capture_config(&flow, "paths = [\"src/**\"]\n");
+    assert_reports_warning(&flow, "plan/ui-milestone-no-states");
+    assert_eq!(finding_ids(&flow, "plan/ui-milestone-no-states"), vec![1]);
+
+    let flow = Flow::with_tasks(&ui_tasks(UI_LISTS, true));
+    write_capture_config(&flow, "paths = [\"src/**\"]\n");
+    assert_clean(&flow);
+
+    let deferred = swap(
+        &swap(
+            TASKS,
+            "elaboration = \"upfront\"",
+            "elaboration = \"deferred\"",
+        ),
+        "defer_reason = \"\"",
+        "defer_reason = \"depends on the store\"",
+    );
+    let flow = Flow::with_tasks(&deferred);
+    write_capture_config(&flow, "paths = [\"src/**\"]\n");
+    assert_clean(&flow);
+}
+
+#[test]
+fn check_ui_a_malformed_capture_config_is_one_warning() {
+    for text in [
+        "paths = 3\n",
+        "paths = [3]\n",
+        "paths = [\"src/[\"]\n",
+        "paths = [\n",
+    ] {
+        let flow = Flow::with_tasks(TASKS);
+        write_capture_config(&flow, text);
+        assert_reports_warning(&flow, "plan/ui-milestone-no-states");
+        assert!(
+            finding_ids(&flow, "plan/ui-milestone-no-states").is_empty(),
+            "`{text}` should name no task"
+        );
+    }
+}
+
 #[test]
 fn a_milestone_scope_naming_no_checkpoint_is_refused() {
     let flow = Flow::with_tasks(TASKS);

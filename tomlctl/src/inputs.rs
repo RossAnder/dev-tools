@@ -55,7 +55,7 @@ pub(crate) const STATUSES: [&str; 4] = [
     STATUS_WITHDRAWN,
 ];
 
-pub(crate) const LEDGERS: [&str; 4] = ["review", "optimise", "plan-review", "backlog"];
+pub(crate) const LEDGERS: [&str; 5] = ["review", "optimise", "plan-review", "backlog", "plan"];
 pub(crate) const CHOICES: [&str; 3] = ["single", "multi", "text"];
 
 const AUTHOR_USER: &str = "user";
@@ -598,6 +598,11 @@ pub(crate) fn validate(row: &toml::Table) -> Result<()> {
     }
     if row.contains_key("flow") && row.contains_key("scope") {
         return Err(invalid("a record targets a `flow` or a `scope`, not both"));
+    }
+    if optional_str(row, "ledger")? == Some("plan") && row.contains_key("scope") {
+        return Err(invalid(
+            "a `plan` ledger record names the `flow` whose tasks it concerns, not a `scope`",
+        ));
     }
     if !row.contains_key("ledger")
         && let Some(field) = ["flow", "scope", "items"]

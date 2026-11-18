@@ -24,10 +24,15 @@ use toml::Value as TomlValue;
 use toml::map::Map;
 use toml::value::Datetime;
 
-/// The newest version this binary reads, stamped on a store holding `specs`,
-/// `milestones`, `changes`, `finding_links`, `audit` or `id_high_water`. A binary that only knows
-/// [`BASE_SCHEMA_VERSION`] refuses that stamp rather than dropping those keys.
-pub(crate) const SCHEMA_VERSION: i64 = 2;
+/// The newest version this binary reads, stamped on a store whose milestones
+/// carry `ui_states` or `ui_controls` or whose accept entries carry
+/// `run_by = "look"` or `states`. A binary that only knows an older version
+/// refuses that stamp rather than dropping those keys.
+pub(crate) const SCHEMA_VERSION: i64 = 3;
+
+/// The stamp on a store holding `specs`, `milestones`, `changes`,
+/// `finding_links`, `audit` or `id_high_water` and none of the newer keys.
+pub(crate) const V2_SCHEMA_VERSION: i64 = 2;
 
 /// The stamp on a store holding none of those keys, so it stays readable by a
 /// binary that predates them.
@@ -46,7 +51,11 @@ pub(crate) const ACCEPT_KINDS: [&str; 3] = [KIND_FORWARD, KIND_FALSIFIER, KIND_G
 pub(crate) const RUN_BY_WORKER: &str = "worker";
 pub(crate) const RUN_BY_GATE: &str = "gate";
 pub(crate) const RUN_BY_COVERED: &str = "covered";
-pub(crate) const RUN_BY_OWNERS: [&str; 3] = [RUN_BY_WORKER, RUN_BY_GATE, RUN_BY_COVERED];
+/// A judged acceptance: an inspector reads `behaviour` against the entry's
+/// `states`, so it has no command and nothing probes it.
+pub(crate) const RUN_BY_LOOK: &str = "look";
+pub(crate) const RUN_BY_OWNERS: [&str; 4] =
+    [RUN_BY_WORKER, RUN_BY_GATE, RUN_BY_COVERED, RUN_BY_LOOK];
 
 pub(crate) const BINDING_REQUIRED: &str = "required";
 pub(crate) const BINDING_SUGGESTED: &str = "suggested";
@@ -287,6 +296,9 @@ pub(crate) struct Accept {
     pub(crate) run_by: String,
     /// The gate command a `covered` check is covered by; `""` when absent.
     pub(crate) covered_by: String,
+    /// The milestone capture states a `look` entry is judged on; empty on
+    /// every other owner.
+    pub(crate) states: Vec<String>,
     pub(crate) probe: Option<Probe>,
 }
 
@@ -303,8 +315,9 @@ impl Accept {
         }
     }
 
-    /// Why `run_by` and `covered_by` cannot stand together with `writes_build`,
-    /// `None` when they can. A worker never runs a check that builds.
+    /// Why `run_by`, `covered_by` and `states` cannot stand together with
+    /// `writes_build` and `check`, `None` when they can. A worker never runs a
+    /// check that builds, and a `look` entry is judged, never run.
     pub(crate) fn owner_problem(&self) -> Option<String> {
         if !self.run_by.is_empty() && !RUN_BY_OWNERS.contains(&self.run_by.as_str()) {
             return Some(format!(
@@ -312,6 +325,23 @@ impl Accept {
                 self.run_by,
                 RUN_BY_OWNERS.join(", ")
             ));
+        }
+        if self.run_by == RUN_BY_LOOK {
+            if self.states.is_empty() {
+                return Some(
+                    "`run_by = \"look\"` needs `states`: the capture states it is judged on"
+                        .to_string(),
+                );
+            }
+            if !self.check.trim().is_empty() {
+                return Some(
+                    "`run_by = \"look\"` needs an empty `check`: an inspector judges the \
+                     behaviour, nothing runs"
+                        .to_string(),
+                );
+            }
+        } else if !self.states.is_empty() {
+            return Some("`states` is allowed only with `run_by = \"look\"`".to_string());
         }
         if self.run_by == RUN_BY_WORKER && self.writes_build {
             return Some(
@@ -373,6 +403,10 @@ pub(crate) struct MilestoneSpec {
     pub(crate) defer_reason: String,
     pub(crate) gate_probes: Vec<GateProbe>,
     pub(crate) after: Vec<String>,
+    /// The capture states the milestone's visual pass judges.
+    pub(crate) ui_states: Vec<String>,
+    /// Planted-defect states the inspector must fail.
+    pub(crate) ui_controls: Vec<String>,
 }
 
 /// A cheap command that fails where `gate`, one of its milestone's gates, cannot
@@ -500,6 +534,20 @@ impl Store {
     }
 
     /// Whether the store holds any key that stamps it [`SCHEMA_VERSION`].
+    pub(crate) fn holds_v3_keys(&self) -> bool {
+        self.milestones.iter().any(|entry| {
+            !entry.id.is_empty() && (!entry.ui_states.is_empty() || !entry.ui_controls.is_empty())
+        }) || self.specs.iter().any(|spec| {
+            !spec.r#ref.is_empty()
+                && spec
+                    .accept
+                    .iter()
+                    .any(|entry| entry.run_by == RUN_BY_LOOK || !entry.states.is_empty())
+        })
+    }
+
+    /// Whether the store holds any key that stamps it at least
+    /// [`V2_SCHEMA_VERSION`].
     pub(crate) fn holds_v2_keys(&self) -> bool {
         self.audit
             || self.id_high_water > 0
@@ -821,9 +869,12 @@ pub(crate) fn to_toml(store: &Store) -> TomlValue {
         .filter(|entry| !entry.r#ref.is_empty())
         .map(change_to_toml)
         .collect();
-    let stamp = match store.holds_v2_keys() {
-        true => SCHEMA_VERSION,
-        false => BASE_SCHEMA_VERSION,
+    let stamp = if store.holds_v3_keys() {
+        SCHEMA_VERSION
+    } else if store.holds_v2_keys() {
+        V2_SCHEMA_VERSION
+    } else {
+        BASE_SCHEMA_VERSION
     };
 
     let mut root = Table::new();
@@ -1191,12 +1242,13 @@ fn accept_from_toml(table: &Table, context: &str) -> Result<Accept> {
             .unwrap_or(true),
         run_by: str_or(table, "run_by", ""),
         covered_by: lf(&str_or(table, "covered_by", "")),
+        states: str_array(table, "states"),
         probe,
     })
 }
 
-/// `run_by` and `covered_by` are written only when set, so an entry carrying
-/// neither keeps the bytes it was stored with.
+/// `run_by`, `covered_by` and `states` are written only when set, so an entry
+/// carrying none of them keeps the bytes it was stored with.
 fn accept_to_toml(entry: &Accept) -> TomlValue {
     let Accept {
         behaviour,
@@ -1206,6 +1258,7 @@ fn accept_to_toml(entry: &Accept) -> TomlValue {
         writes_build,
         run_by,
         covered_by,
+        states,
         probe,
     } = entry;
     let mut table = Table::new();
@@ -1222,6 +1275,9 @@ fn accept_to_toml(entry: &Accept) -> TomlValue {
     }
     if !covered_by.is_empty() {
         table.insert("covered_by".to_string(), TomlValue::String(lf(covered_by)));
+    }
+    if !states.is_empty() {
+        table.insert("states".to_string(), str_arr_value(states));
     }
     if let Some(probe) = probe {
         table.insert("probe".to_string(), probe_to_toml(probe));
@@ -1341,11 +1397,14 @@ fn milestone_from_toml(value: &TomlValue, index: usize) -> Result<MilestoneSpec>
         defer_reason: lf(&str_or(table, "defer_reason", "")),
         gate_probes,
         after: lf_array(table, "after"),
+        ui_states: str_array(table, "ui_states"),
+        ui_controls: str_array(table, "ui_controls"),
     })
 }
 
-/// `gate_probes` is written only when it holds an entry, so a milestone with
-/// none keeps the bytes it was stored with.
+/// `gate_probes`, `after`, `ui_states` and `ui_controls` are written only when
+/// they hold an entry, so a milestone with none keeps the bytes it was stored
+/// with.
 fn milestone_to_toml(entry: &MilestoneSpec) -> TomlValue {
     let MilestoneSpec {
         id,
@@ -1354,6 +1413,8 @@ fn milestone_to_toml(entry: &MilestoneSpec) -> TomlValue {
         defer_reason,
         gate_probes,
         after,
+        ui_states,
+        ui_controls,
     } = entry;
     let mut table = Table::new();
     table.insert("id".to_string(), TomlValue::String(id.clone()));
@@ -1388,6 +1449,12 @@ fn milestone_to_toml(entry: &MilestoneSpec) -> TomlValue {
     }
     if !after.is_empty() {
         table.insert("after".to_string(), lf_arr_value(after));
+    }
+    if !ui_states.is_empty() {
+        table.insert("ui_states".to_string(), str_arr_value(ui_states));
+    }
+    if !ui_controls.is_empty() {
+        table.insert("ui_controls".to_string(), str_arr_value(ui_controls));
     }
     TomlValue::Table(table)
 }
@@ -2015,7 +2082,7 @@ mod tests {
     /// `writes_build = false` row, a dated change.
     fn v2_fixture() -> Store {
         Store {
-            schema_version: SCHEMA_VERSION,
+            schema_version: V2_SCHEMA_VERSION,
             audit: true,
             id_high_water: 40,
             specs: vec![TaskSpec {
@@ -2031,6 +2098,7 @@ mod tests {
                         writes_build: false,
                         run_by: String::new(),
                         covered_by: String::new(),
+                        states: Vec::new(),
                         probe: Some(Probe {
                             at: "0d1bf49".to_string(),
                             neg_rc: Some(1),
@@ -2046,6 +2114,7 @@ mod tests {
                         writes_build: false,
                         run_by: "gate".to_string(),
                         covered_by: String::new(),
+                        states: Vec::new(),
                         probe: Some(Probe {
                             at: "0d1bf49".to_string(),
                             neg_rc: Some(0),
@@ -2061,6 +2130,7 @@ mod tests {
                         writes_build: true,
                         run_by: "covered".to_string(),
                         covered_by: "cargo nextest run --manifest-path x/Cargo.toml".to_string(),
+                        states: Vec::new(),
                         probe: None,
                     },
                 ],
@@ -2096,6 +2166,8 @@ mod tests {
                     at: "0d1bf49".to_string(),
                 }],
                 after: Vec::new(),
+                ui_states: Vec::new(),
+                ui_controls: Vec::new(),
             }],
             changes: vec![Change {
                 at: Some("2026-11-05".parse().expect("bare date parses")),
@@ -2238,10 +2310,34 @@ commit = ""
             let root = doc.as_table().expect("root table");
             assert_eq!(
                 root.get("schema_version"),
-                Some(&TomlValue::Integer(SCHEMA_VERSION)),
+                Some(&TomlValue::Integer(V2_SCHEMA_VERSION)),
                 "`{key}` alone left the stamp at the base version"
             );
             assert!(root.contains_key(key), "`{key}` was not written");
+        }
+    }
+
+    /// Either ui list alone stamps the newest version, and the stamp round-trips.
+    #[test]
+    fn a_milestone_ui_list_raises_the_stamp_to_version_3() {
+        for (states, controls) in [
+            (vec!["empty-cart".to_string()], Vec::new()),
+            (Vec::new(), vec!["clipped-label".to_string()]),
+        ] {
+            let mut store = v2_fixture();
+            store.milestones[0].ui_states = states.clone();
+            store.milestones[0].ui_controls = controls.clone();
+            store.schema_version = SCHEMA_VERSION;
+            let text = toml::to_string(&to_toml(&store)).expect("serialises");
+            assert!(text.starts_with("schema_version = 3\n"), "{text}");
+            assert_eq!(text.contains("ui_states = "), !states.is_empty(), "{text}");
+            assert_eq!(
+                text.contains("ui_controls = "),
+                !controls.is_empty(),
+                "{text}"
+            );
+            let reparsed: TomlValue = toml::from_str(&text).expect("the output parses");
+            assert_eq!(from_toml(&reparsed).expect("parses"), store);
         }
     }
 
@@ -2351,6 +2447,7 @@ commit = ""
             writes_build,
             run_by: String::new(),
             covered_by: String::new(),
+            states: Vec::new(),
             probe: None,
         };
         assert_eq!(entry(false).owner(), RUN_BY_WORKER);
@@ -2375,6 +2472,69 @@ commit = ""
             ..entry(true)
         };
         assert!(stray_cover.owner_problem().is_some());
+    }
+
+    fn look_entry() -> Accept {
+        Accept {
+            behaviour: "the empty cart reads as empty".to_string(),
+            check: String::new(),
+            kind: KIND_FORWARD.to_string(),
+            positive: String::new(),
+            writes_build: true,
+            run_by: RUN_BY_LOOK.to_string(),
+            covered_by: String::new(),
+            states: vec!["empty-cart".to_string()],
+            probe: None,
+        }
+    }
+
+    #[test]
+    fn accept_look_needs_states_and_an_empty_check() {
+        assert_eq!(look_entry().owner(), RUN_BY_LOOK);
+        assert_eq!(look_entry().owner_problem(), None);
+        let stateless = Accept {
+            states: Vec::new(),
+            ..look_entry()
+        };
+        let problem = stateless.owner_problem().expect("refused");
+        assert!(problem.contains("states"), "{problem}");
+        let checked = Accept {
+            check: "grep -q a f".to_string(),
+            ..look_entry()
+        };
+        let problem = checked.owner_problem().expect("refused");
+        assert!(problem.contains("check"), "{problem}");
+    }
+
+    #[test]
+    fn accept_look_states_are_refused_on_every_other_owner() {
+        for run_by in ["", RUN_BY_WORKER, RUN_BY_GATE] {
+            let entry = Accept {
+                check: "grep -q a f".to_string(),
+                writes_build: false,
+                run_by: run_by.to_string(),
+                ..look_entry()
+            };
+            let problem = entry.owner_problem().expect("refused");
+            assert!(problem.contains("`states`"), "{run_by}: {problem}");
+        }
+    }
+
+    /// A look entry writes `states` and stamps the newest version; the stamp
+    /// and the entry round-trip.
+    #[test]
+    fn accept_look_round_trips_and_raises_the_stamp_to_version_3() {
+        let mut store = v2_fixture();
+        store.specs[0].accept.push(look_entry());
+        store.schema_version = SCHEMA_VERSION;
+        let text = toml::to_string(&to_toml(&store)).expect("serialises");
+        assert!(text.starts_with("schema_version = 3\n"), "{text}");
+        assert!(text.contains("states = [\"empty-cart\"]"), "{text}");
+        let reparsed: TomlValue = toml::from_str(&text).expect("the output parses");
+        assert_eq!(from_toml(&reparsed).expect("parses"), store);
+
+        let plain = toml::to_string(&to_toml(&v2_fixture())).expect("serialises");
+        assert!(!plain.contains("states"), "{plain}");
     }
 
     /// A spec holding a bare string where a table belongs is a damaged store,
@@ -2510,17 +2670,17 @@ commit = ""
     #[test]
     fn newer_schema_version_is_refused() {
         let mut raw = to_toml(&fixture());
-        raw.as_table_mut().expect("root table").insert(
-            "schema_version".to_string(),
-            TomlValue::Integer(SCHEMA_VERSION + 1),
-        );
+        raw.as_table_mut()
+            .expect("root table")
+            .insert("schema_version".to_string(), TomlValue::Integer(3));
+        assert!(from_toml(&raw).is_ok(), "version 3 is this binary's own");
+        raw.as_table_mut()
+            .expect("root table")
+            .insert("schema_version".to_string(), TomlValue::Integer(4));
         let message = from_toml(&raw)
             .expect_err("newer schema rejected")
             .to_string();
-        assert!(
-            message.contains(&(SCHEMA_VERSION + 1).to_string()),
-            "{message}"
-        );
+        assert!(message.contains('4'), "{message}");
         assert!(message.contains(&SCHEMA_VERSION.to_string()), "{message}");
     }
 

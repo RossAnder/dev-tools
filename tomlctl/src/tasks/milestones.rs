@@ -302,6 +302,8 @@ mod tests {
             defer_reason: String::new(),
             gate_probes: Vec::new(),
             after: after.iter().map(|a| (*a).to_string()).collect(),
+            ui_states: Vec::new(),
+            ui_controls: Vec::new(),
         }
     }
 

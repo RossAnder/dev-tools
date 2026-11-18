@@ -434,6 +434,18 @@ pub(crate) struct PlanMilestoneAddArgs {
     )]
     pub(crate) gate_probe: Vec<String>,
     #[arg(
+        long = "ui-state",
+        value_name = "NAME",
+        help = "A capture state the milestone's visual pass judges (repeatable)"
+    )]
+    pub(crate) ui_state: Vec<String>,
+    #[arg(
+        long = "ui-control",
+        value_name = "NAME",
+        help = "A planted-defect state the inspector must fail (repeatable)"
+    )]
+    pub(crate) ui_control: Vec<String>,
+    #[arg(
         long = "after",
         value_name = "ID",
         help = "A milestone stored earlier that this one must run after; repeat for several"
@@ -482,6 +494,26 @@ pub(crate) struct PlanMilestoneUpdateArgs {
                 probe list, keeping the verdict of a probe given unchanged)"
     )]
     pub(crate) gate_probe: Vec<String>,
+    #[arg(
+        long = "ui-state",
+        value_name = "NAME",
+        help = "A capture state the milestone's visual pass judges (repeatable; the flags given \
+                replace the whole list)"
+    )]
+    pub(crate) ui_state: Vec<String>,
+    #[arg(
+        long = "ui-control",
+        value_name = "NAME",
+        help = "A planted-defect state the inspector must fail (repeatable; the flags given \
+                replace the whole list)"
+    )]
+    pub(crate) ui_control: Vec<String>,
+    #[arg(
+        long = "clear-ui",
+        help = "Empty both the ui-state and ui-control lists; refused with --ui-state or \
+                --ui-control"
+    )]
+    pub(crate) clear_ui: bool,
     #[arg(
         long = "after",
         value_name = "ID",

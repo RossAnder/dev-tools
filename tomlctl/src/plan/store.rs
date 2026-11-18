@@ -17,7 +17,7 @@ use anyhow::{Context, Result};
 use serde_json::Value as JsonValue;
 use toml::Value as TomlValue;
 
-use super::schema::{self, PlanStore, Run, RunState};
+use super::schema::{self, Door, PlanStore, Provenance, Run, RunState};
 use crate::cli::{
     ReadIntegrityArgs, WriteIntegrityArgs, read_integrity_opts, write_integrity_opts,
 };
@@ -358,6 +358,28 @@ pub(super) fn unanswered_decisions(plan: &PlanStore) -> Option<String> {
         format!(
             "surfaced decisions still agent-assumed, so unanswered: {}",
             unanswered.join(", ")
+        )
+    })
+}
+
+/// Why `plan approve` would refuse the plan's one-way doors the agent assumed and never
+/// put to the user, `None` when there is none. One the user stated or confirmed, or
+/// one surfaced, is never named here: a surfaced one still agent-assumed is
+/// [`unanswered_decisions`]'s.
+pub(super) fn silent_one_way_decisions(plan: &PlanStore) -> Option<String> {
+    let silent: Vec<&str> = plan
+        .decisions
+        .iter()
+        .filter(|d| {
+            d.door == Door::OneWay && d.provenance == Provenance::AgentAssumed && !d.surfaced
+        })
+        .map(|d| d.id.as_str())
+        .collect();
+    (!silent.is_empty()).then(|| {
+        format!(
+            "one-way decisions agent-assumed and never surfaced: {}; surface each to the user \
+             with plan decide",
+            silent.join(", ")
         )
     })
 }
@@ -719,6 +741,7 @@ summary = "Not a plan finding."
             writes_build: false,
             run_by: String::new(),
             covered_by: String::new(),
+            states: Vec::new(),
             probe: probed.then(schema_probe),
         }
     }

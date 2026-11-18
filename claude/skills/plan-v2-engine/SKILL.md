@@ -5,7 +5,7 @@ description: "Orchestrator contract for authoring a v2 plan — the role rules, 
 
 # Plan v2 engine
 
-This is the orchestrator's half of authoring a v2 plan. The `/plan-v2` carrier checks the session can run it and then invokes this skill; everything from reading the arguments to the approved commit is here and in the three references. The agents' half is their own frontmatter and shared blocks: you give each one an assignment, never a restatement of its method.
+This is the orchestrator's half of authoring a v2 plan. The `/plan-v2` carrier checks the session can run it and then invokes this skill; everything from reading the arguments to the approved commit is here and in its references. The agents' half is their own frontmatter and shared blocks: you give each one an assignment, never a restatement of its method.
 
 A v2 plan has no plan document. It lives in `docs/flows/<slug>/` (the brief, `design/` and the agents' notes, all committed) and in `.claude/flows/<slug>/` (`plan.toml` and `tasks.toml`, written only through `tomlctl` verbs). `tomlctl plan stage` computes where it stands from those files alone.
 
@@ -13,7 +13,7 @@ A v2 plan has no plan document. It lives in `docs/flows/<slug>/` (the brief, `de
 
 You hold the intent, tools hold the code facts, and fresh agents hold no assumptions. So:
 
-- **You own the dialogue and every gate.** A Workflow has no user hook and a subagent has no `AskUserQuestion`, so every question to the user comes from this conversation. Ask only when the answer changes the plan and the user knows something you cannot look up; zero questions before the gate is the normal case.
+- **You own the dialogue and every gate.** A Workflow has no user hook and a subagent has no `AskUserQuestion`, so every question to the user comes from this conversation. Ask every ambiguous call that is hard to unwind or is a compromise the user has not made, at any level from the plan's direction to one task's specifics, taste and UX included, whether or not the plan's structure changes; settle by reading what reading can settle. A question an answer opens is asked, never assumed. Aim to build better than the user would specify, while keeping what lands consistent with what they expect.
 - **You own every record.** Decisions, contracts, milestones and task rows are yours to write, never delegated, and an agent's note is never applied without your reading the code it cites.
 - **You read source yourself** for any fact a decision rests on. A note is where to look, not the evidence, which is why this engine has no vet pass.
 - **Intent is frozen in the brief.** Its Intent and Success criteria, a task's `outcome` and an `accept` entry's `behaviour` change only with the user's say-so. Tasks may change freely; that change is audited, not forbidden.
@@ -48,12 +48,13 @@ Anything else is the discussion being planned.
 
 | Step | Run step | Skipped when | Reference |
 |---|---|---|---|
-| Open | — | Never | [open-and-challenge.md](references/open-and-challenge.md) |
+| Open | — | Never: the interview before the brief and the read-back after it scale with the work, never to nothing | [open-and-challenge.md](references/open-and-challenge.md) |
 | Investigate | `investigate` | No Unknowns, the backlog evidence already answers them, or `--depth quick` | [open-and-challenge.md](references/open-and-challenge.md) |
 | Structure challenge | `challenge` | No structure to challenge, such as a one-file fix, or `--depth quick` | [open-and-challenge.md](references/open-and-challenge.md) |
-| Surface | `surface` | Nothing passes the three tests, which is normal | [open-and-challenge.md](references/open-and-challenge.md) |
+| Surface | `surface` | Nothing passes the three tests, recorded with its reason | [open-and-challenge.md](references/open-and-challenge.md) |
+| Directions | — | Never: two or three directions and the second read-back, at a length scaled to the work's complexity and ambiguity | [write-and-prove.md](references/write-and-prove.md) |
 | Design | — | Never for decisions; `design/` files when no task needs prose | [write-and-prove.md](references/write-and-prove.md) |
-| Surface again | — | Nothing Design raised passes the tests, which is normal | [write-and-prove.md](references/write-and-prove.md) |
+| Surface again | — | Nothing Design raised passes the tests | [write-and-prove.md](references/write-and-prove.md) |
 | Write | — | Never | [write-and-prove.md](references/write-and-prove.md) |
 | Prove | `cold-read` | The store check, premises and probes never; the cold read for a plan of a few deep tasks, or `--depth quick` | [write-and-prove.md](references/write-and-prove.md) |
 | Review | `review` | `--no-review`, or you judge the plan low risk and `--review` was not given; otherwise invoke the `review-v2-engine` skill and follow its `references/plan-flow.md` | [approve.md](references/approve.md) |
@@ -63,8 +64,9 @@ Every skip is recorded with `plan run skip` and a reason, so each step can be me
 
 The references hold the procedure:
 
-- [references/open-and-challenge.md](references/open-and-challenge.md): writing under `docs/flows/`, Open, Investigate, the fan-out check around every launch with its script `scripts/fanout-check.sh`, the structure challenge, Surface, and open runs on re-entry.
-- [references/write-and-prove.md](references/write-and-prove.md): Design, Surface again, Write, and Prove with its store check, premises, cold read, probes and the cold-read relaunch rule.
+- [references/open-and-challenge.md](references/open-and-challenge.md): writing under `docs/flows/`, Open with its interview and read-back, Investigate, the fan-out check around every launch with its script `scripts/fanout-check.sh`, the structure challenge, Surface, and open runs on re-entry.
+- [references/write-and-prove.md](references/write-and-prove.md): the directions step, Design, Surface again, Write, and Prove with its store check, premises, cold read, probes and the cold-read relaunch rule.
+- [references/ui-layout.md](references/ui-layout.md): the layout step for a milestone that adds or reshapes a UI surface, used by Design and by elaboration: drafted layout options shown to the user, the pick recorded as a decision of class `look`, and the milestone's capture states and look entries.
 - [references/approve.md](references/approve.md): the Review step with its skip table, the gate, the two commits, the approval stamp, the status transition, and the v1-carrier warning shown at the gate and repeated at the close.
 - [references/elaborate.md](references/elaborate.md): `--elaborate <id>`, the procedure for elaborating a deferred milestone of an approved or running plan.
 
@@ -103,7 +105,7 @@ Keep the rows whose `plan_path` is under `docs/flows/`, and offer them through `
 - **A run still live in this session**, its notification not yet arrived, is not re-entry. Wait for the notification, or stop it with `TaskStop` and the launch's `taskId`. Never abandon and relaunch over a live run.
 - **Relaunch** an `investigate` or `cold-read` run with `Workflow({name, args, resumeFromRunId})` only when all three hold: the open row's `session` is this session's `CLAUDE_CODE_SESSION_ID`; the args file in `<scratch>` still hashes to the open row's `args_hash`, since the runtime does not hold the args and the store holds only that hash; and nothing a prompt points at has changed since launch, HEAD included, against the `head-before.txt` that launch's fan-out snapshot wrote and by a fan-out check against that snapshot. A relaunch returns the cached result of every agent whose prompt is unchanged, even when a file that prompt points at has changed, and a changed prompt reruns that agent and every one after it, so an edited relaunch buys nothing over a fresh launch.
 - **A `review` run** is never relaunched and never abandoned by this rule: the review store holds what it reached, so resume it from the store by the `review-v2-engine` skill's `references/plan-flow.md` section 13, which also says when the user's dropping the review abandons the row.
-- **An `implement:` or `reproduce:` run** belongs to `/implement-v2`: never abandon or relaunch it. An `elaborate:<id>` or `cold-read:<id>` run from another session is asked about through `AskUserQuestion`, never abandoned silently.
+- **An `implement:`, `reproduce:` or `visual:` run** belongs to `/implement-v2`: never abandon or relaunch it. An `elaborate:<id>` or `cold-read:<id>` run from another session is asked about through `AskUserQuestion`, never abandoned silently.
 - **Otherwise abandon** with `tomlctl plan run abandon --slug <slug> --step <s> --reason '<why>'`, recompute what is pending from the brief's Unknowns and `notes/`, and launch afresh. A `challenge` run, and any `investigate` or `cold-read` run from another session, is always abandoned.
 
 The detail, and what "nothing changed" means for each step, is in [open-and-challenge.md](references/open-and-challenge.md), section "Open runs on re-entry", for `investigate` and `challenge`, and in [write-and-prove.md](references/write-and-prove.md), the cold-read "Relaunch" rule, for `cold-read`.

@@ -30,7 +30,7 @@ The index is `{slug, milestone, tasks: [{id, status, note, error, deviations, ha
 |---|---|---|
 | `done` | The worker met its checks and wrote `done` on its row | Nothing, unless it reports deviations or a handover |
 | `failed` | The worker tried and could not meet its checks, or its task needs the files in `needs_files` | Replan (step 6); a non-empty `needs_files` widens the row, under "Widening a row from `needs_files`" |
-| `parked` | Only a person can unblock it | `needs_human`; no replan |
+| `parked` | Only a person can unblock it | `needs_human`; no replan. A row parked on a question its worker posted, open or answered, is settled first, by [questions.md](questions.md), section "At the drain" |
 | `blocked` | A need returned something other than `done` | Nothing; it follows its need |
 | `error` | The worker threw, or found itself outside `root` | A wrong root stops the engine: the environment is wrong, not the task. Otherwise as `no-return` |
 | `no-return`, `mismatch` | Nothing usable came back | Relaunch unchanged once; see step 6 |
@@ -68,7 +68,7 @@ tomlctl plan emit lane-check --slug <slug> --milestone <id>
 
 It reads the latest `implement:<id>` run and the task ids `plan run start --tasks` recorded on it, so it answers for an abandoned run settled at re-entry as for one this session launched. Rows, specs and trail rows of a milestone deferred when the run opened are left out, so a second session's elaboration is not reported. It prints `{clean, run_id, out_of_lane, store_writes, digest}`. On `"clean": true` there is nothing out of lane and no store change: go on to the attempts below. Otherwise read `out_of_lane` here and `store_writes` and `digest` in step 5.
 
-**Out-of-lane edits.** Each `out_of_lane` entry is `{path, rows}`: an uncommitted path in no row the run dispatched, in no started row as the pre-flight in [run-milestone.md](run-milestone.md), step 1, defines it, and not the backlog store or a linked review store, by [apply-rows.md](apply-rows.md), section "Linked review stores in the clean-tree and lane checks", nor their sidecars. Paths under `.claude/flows/<slug>/` and `docs/flows/<slug>/` are never listed. A non-empty `rows` names the rows holding the path, none of which a worker has started. Look for the worker that made the edit in the notes you read and in the `files_touched` they name. When a note accounts for the path and the task needed it, widen that task's `files` through the replan (step 6) so the edit is in its lane. Otherwise list the path in `needs_human` and do not gate: the engine never commits, moves or discards an edit nobody owns.
+**Out-of-lane edits.** Each `out_of_lane` entry is `{path, rows}`: an uncommitted path in no row the run dispatched, in no started row as the pre-flight in [run-milestone.md](run-milestone.md), step 1, defines it, and not the backlog store or a linked review store, by [apply-rows.md](apply-rows.md), section "Linked review stores in the clean-tree and lane checks", nor their sidecars. Paths under `.claude/flows/<slug>/` and `docs/flows/<slug>/` are never listed. `.claude/inputs.toml` and its sidecar, when listed, are the question loop's writes, accounted for by [questions.md](questions.md), section "The writes during a live run"; a path under a UI milestone's capture `out` is the visual pass's own output, by [visual.md](visual.md), section "The capture directory in the tree checks". A non-empty `rows` names the rows holding the path, none of which a worker has started. Look for the worker that made the edit in the notes you read and in the `files_touched` they name. When a note accounts for the path and the task needed it, widen that task's `files` through the replan (step 6) so the edit is in its lane. Otherwise list the path in `needs_human` and do not gate: the engine never commits, moves or discards an edit nobody owns.
 
 ### The attempts
 
@@ -300,7 +300,7 @@ tomlctl plan emit gate-list --slug <slug> --milestone <id>
 
 It prints `{commands: [{command, source}], skipped: [{task, accept, reason}]}`. `commands` holds the milestone's `gates` in stored order, `source` `gate`, then every accept check whose owner is the gate, in row order and within a row in `accept` order, `source` `accept:<task>:<index>`. A check a worker ran is not there, and neither is a command byte-identical to one already listed, which is `skipped` with reason `duplicate`. An accept check its plan marked as covered by one of the milestone's gates is `skipped` with reason `covered_by <command>`: it is not run, and the gate summary in the closing report names each such check, its task and the gate that covered it.
 
-There is nothing to run only when `commands` is empty: go to step 8 and say in the closing report that the milestone had no gate.
+There is nothing to run only when `commands` is empty: go to step 8, by way of [visual.md](visual.md) when the milestone has `ui_states`, and say in the closing report that the milestone had no gate.
 
 Otherwise dispatch the `verification` agent once, one-shot, with no `name:` and no `model:`:
 
@@ -364,7 +364,7 @@ tomlctl plan run gate --slug <slug> --milestone <id> --round <n> --ndjson <scrat
 
 Every other gate call passes no flag and records a new run of its round, so a gate run again at a later invocation keeps the earlier results. This record counts nothing: the rounds already spent still come from the `gate <id> round` reasons, below.
 
-Every block `pass` or `flaky`, the held commands' included, passes the gate: go to the commit. A `timeout` costs no fix round: dispatch once more with a larger `timeout:` on that command, after the fix round when another block is a `fail`. A second `timeout` mints nothing: go on from step 8 without the commit, leave the milestone uncommitted, and report it in `needs_human` with the command and its budget.
+Every block `pass` or `flaky`, the held commands' included, passes the gate: go to the commit, by way of the visual pass in [visual.md](visual.md) when the milestone has `ui_states`. That pass may mint fix tasks and come back through run-milestone step 3 and this gate before the commit runs. A `timeout` costs no fix round: dispatch once more with a larger `timeout:` on that command, after the fix round when another block is a `fail`. A second `timeout` mints nothing: go on from step 8 without the commit, leave the milestone uncommitted, and report it in `needs_human` with the command and its budget.
 
 ### Fix rounds
 
@@ -424,9 +424,11 @@ tomlctl plan handover set --slug <slug> --ndjson <scratch>/implement-<id>-<round
 
 A handover proposed in the note but empty in the index, or the other way round, is still a proposal: the note is the fuller account.
 
+**The look is not a handover** where the milestone's captures can settle it. On a milestone with `ui_states`, a proposal asking the user to review the look of a state, or to reproduce a visual defect, is work the visual pass does: write no handover for it. A state it names that the pass captures is judged there, by [visual.md](visual.md); one the pass does not capture is a look entry or a `ui_states` gap for the replan (step 6), not a person's step.
+
 ## 10. Commit
 
-Run this when the gate has passed, or when the milestone has no gate.
+Run this when the gate has passed, or when the milestone has no gate, and, for a milestone with `ui_states`, once its visual pass has passed by [visual.md](visual.md).
 
 **Stage exactly the milestone's work.** The milestone's rows are the rows of `tasks list --slug <slug> --where checkpoint=<id>`; their `files` together are the commit's candidates. Read the uncommitted paths, one unquoted path per line, and stage only the candidates among them, compared byte for byte, since `git add` refuses a path that matches nothing; commit with the same pathspec, so nothing else already in the index rides along:
 
@@ -467,15 +469,15 @@ git commit -m "<message>" -- <each path that printed>
 
 A line opening `!!` is a path the repository's ignore rules keep out, such as a gate log under a `*.log` rule or the backlog under a `.claude/*` rule. Stage none of them and never `git add -f`: the ignore rules are the repository's. Run `git check-ignore -v <path>` on each and put one `reconcile` entry per path in the report, quoting the rule, with `needs_person = true`, so the user can add an exception or accept that the record stays local.
 
-Each store's `.sha256` sidecar is staged beside it; the pre-commit hook compares the two. This commit may stage another session's elaboration writes, which stay non-runnable because that milestone stays deferred until its elaboration's last write.
+When the question loop wrote `.claude/inputs.toml` during the milestone, stage it and its sidecar here too, by [questions.md](questions.md), section "The writes during a live run". Each store's `.sha256` sidecar is staged beside it; the pre-commit hook compares the two. This commit may stage another session's elaboration writes, which stay non-runnable because that milestone stays deferred until its elaboration's last write.
 
 ### Stamping on re-entry
 
-A milestone whose rows are all `done` with an empty `commit` is one whose run ended between the commit and the stamp, or before the gate. When `HEAD` is a milestone commit holding the rows' files, so that `tomlctl plan drift --slug <slug> --uncommitted --get uncommitted_files` prints none of them and `git -c core.quotePath=false show --name-only --format= HEAD` lists them, stamp `HEAD`'s sha as above, then, when the milestone holds an apply row, run [apply-rows.md](apply-rows.md) **Reconcile** before the flow-store commit, and make the flow-store commit. Otherwise a milestone holding no apply row runs the gate again from step 7, and one holding an apply row goes back through the tail of step 6 first: the **Reproduce check** when a row fixes a finding, then the **Settle drain** when a row settles one, then the gate. Running the settle drain again is safe: it skips a finding an earlier pass recorded.
+A milestone whose rows are all `done` with an empty `commit` is one whose run ended between the commit and the stamp, or before the gate. When `HEAD` is a milestone commit holding the rows' files, so that `tomlctl plan drift --slug <slug> --uncommitted --get uncommitted_files` prints none of them and `git -c core.quotePath=false show --name-only --format= HEAD` lists them, stamp `HEAD`'s sha as above, then, when the milestone holds an apply row, run [apply-rows.md](apply-rows.md) **Reconcile** before the flow-store commit, and make the flow-store commit. Otherwise a milestone holding no apply row runs the gate again from step 7, and one holding an apply row goes back through the tail of step 6 first: the **Reproduce check** when a row fixes a finding, then the **Settle drain** when a row settles one, then the gate. Running the settle drain again is safe: it skips a finding an earlier pass recorded. On a milestone with `ui_states`, a gate that passes here runs the visual pass again before the commit, by [visual.md](visual.md), its round counted from the `visual <id> round ` reasons already minted.
 
 ### Next
 
-Go to run-milestone step 2 when this milestone was committed and `--milestone` was not given; step 2's schedule decides whether anything runs, so a parked row no longer stops the engine by itself. Otherwise end the invocation with the report below: the stop rule of step 6, and a gate that failed after round 2 or timed out twice, reach here without a commit.
+Go to run-milestone step 2 when this milestone was committed and `--milestone` was not given; step 2's schedule decides whether anything runs, so a parked row no longer stops the engine by itself. Otherwise end the invocation with the report below: the stop rule of step 6, a gate that failed after round 2 or timed out twice, and a visual pass that was unsound, failed after round 2 or could not run ([visual.md](visual.md)), reach here without a commit.
 
 ## 11. The `needs_human` report
 
@@ -506,6 +508,8 @@ gate:
 - milestone <id> failed after round <n>: <command> — <failed_ids>
 - milestone <id> timed out twice: <command> — timeout <seconds>
 - milestone <id> did not run task <n> accept <i>: covered_by <command>
+- milestone <id> visual round <n> unsound: control <state> passed
+- milestone <id> visual failed after round <n>: <state> - <capture path>
 audit:
 - <agent id>: <command> — <allowed|breach>
 - run <run_id> not audited: no transcript directory was kept
@@ -546,7 +550,7 @@ needs_person = false
 | `handovers:` | `handover` |
 | `no worker:` | `no-worker` |
 | `withheld:` | `withheld` |
-| `gate:` | `gate` |
+| `gate:` | `gate`, the visual pass's lines included |
 | `audit:` | `audit` |
 | `out of lane:` | `out-of-lane` |
 | `store changes:` | `store-change` |
@@ -568,7 +572,9 @@ The skill's Re-entry runs this before run-milestone step 3, for each milestone t
 tomlctl tasks list --slug <slug> --where checkpoint=<id> --where status=parked --select id,title --lines
 ```
 
-Read each row's note: its `Status:` line, its evidence and the decision it says would unblock it. Ask the user through `AskUserQuestion`, one question per row and at most four per call, with options drawn from the note: unblock it as the note proposes, unblock it another way, drop the task, or leave it parked.
+A row parked on a question its worker posted is settled from the question, not the note: one left with an open question on the `plan` ledger is asked that question's own prompt and options, and one whose question is already answered is reset without asking, both by [questions.md](questions.md), section "At the drain", whose bound decision is the record of the answer in place of the constraint below.
+
+Read each other row's note: its `Status:` line, its evidence and the decision it says would unblock it. Ask the user through `AskUserQuestion`, one question per row and at most four per call, with options drawn from the note: unblock it as the note proposes, unblock it another way, drop the task, or leave it parked.
 
 The answer must reach the store as a plan field, because moving `status` back to `pending` writes no `[[changes]]` row and so records no answer. Record it in `spec.constraints`, where the next worker reads it in its view, in the same row that unparks the task, with the answer as the `reason`:
 

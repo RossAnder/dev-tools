@@ -294,6 +294,73 @@ fn a_blank_decision_or_claim_is_refused_on_create_and_on_update() {
     assert_eq!(store_text(&root), before, "a refused row persists nothing");
 }
 
+fn store_doc(root: &Path) -> toml::Value {
+    toml::from_str(&store_text(root)).expect("the store parses")
+}
+
+#[test]
+fn a_decision_class_is_set_updated_and_stamps_the_newest_version() {
+    let (_dir, root) = opened();
+    ndjson(&root, "decide", &format!("{GOOD}\n")).success();
+    let classed = GOOD.replace("\"door\"", "\"class\":\"look\",\"door\"");
+    let out = ndjson(&root, "decide", &format!("{classed}\n")).success();
+    assert_eq!(stdout_json(&out)["ids"], serde_json::json!(["D2"]));
+
+    let doc = store_doc(&root);
+    assert_eq!(doc["schema_version"].as_integer(), Some(4));
+    assert!(doc["decision"][0].get("class").is_none(), "{doc}");
+    assert_eq!(doc["decision"][1]["class"].as_str(), Some("look"));
+
+    ndjson(
+        &root,
+        "decide",
+        "{\"id\":\"D2\",\"class\":\"compromise\"}\n",
+    )
+    .success();
+    let doc = store_doc(&root);
+    assert_eq!(doc["decision"][1]["class"].as_str(), Some("compromise"));
+    assert_eq!(
+        doc["decision"][1]["decision"].as_str(),
+        Some("Use the helper.")
+    );
+}
+
+#[test]
+fn an_unknown_decision_class_is_refused_with_the_accepted_values() {
+    let (_dir, root) = opened();
+    ndjson(&root, "decide", &format!("{GOOD}\n")).success();
+    let before = store_text(&root);
+    for row in [
+        GOOD.replace("\"door\"", "\"class\":\"taste\",\"door\""),
+        "{\"id\":\"D1\",\"class\":\"Look\"}".to_string(),
+    ] {
+        let out = ndjson(&root, "decide", &format!("{row}\n")).failure();
+        let message = stderr(&out);
+        assert!(
+            message.contains("structure, look, ux, cost, vocabulary, architecture, compromise"),
+            "{row}: {message}"
+        );
+    }
+    assert_eq!(store_text(&root), before, "a refused row persists nothing");
+}
+
+/// A store whose decisions carry no class keeps the stamp and the keys it was
+/// written with before the class existed.
+#[test]
+fn a_store_without_a_decision_class_keeps_its_schema_version_and_keys() {
+    let (_dir, root) = opened();
+    ndjson(&root, "decide", &format!("{GOOD}\n")).success();
+    let first = store_text(&root);
+    assert!(!first.contains("class"), "{first}");
+    let doc = store_doc(&root);
+    assert_eq!(doc["schema_version"].as_integer(), Some(2));
+
+    ndjson(&root, "decide", "{\"id\":\"D1\",\"why\":\"It exists.\"}\n").success();
+    let doc = store_doc(&root);
+    assert_eq!(doc["schema_version"].as_integer(), Some(2));
+    assert!(doc["decision"][0].get("class").is_none(), "{doc}");
+}
+
 #[test]
 fn a_bad_row_after_a_good_one_persists_neither() {
     let (_dir, root) = opened();

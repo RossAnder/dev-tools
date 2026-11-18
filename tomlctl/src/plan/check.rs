@@ -2,8 +2,9 @@
 //! can raise, which read `plan.toml`, the task store's side tables, `brief.md`
 //! and the `design/` documents.
 //!
-//! Warnings are `plan/milestone-no-gate`, `plan/milestone-order-unqualified` and
-//! `plan/probe-absent`, and `plan/file-only-chain` and `plan/milestone-width`
+//! Warnings are `plan/milestone-no-gate`, `plan/milestone-order-unqualified`,
+//! `plan/probe-absent`, `plan/ui-accept-structural` and
+//! `plan/ui-milestone-no-states`, and `plan/file-only-chain` and `plan/milestone-width`
 //! are info; every other class raised here is an error.
 
 use std::collections::BTreeSet;
@@ -11,6 +12,7 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use anyhow::Result;
+use globset::{GlobBuilder, GlobMatcher};
 use serde_json::json;
 
 use super::schema::{Bind, Contract, Decision, Handover, PlanStore};
@@ -27,7 +29,8 @@ use crate::tasks::finding::{
 use crate::tasks::markdown::FenceState;
 use crate::tasks::milestones;
 use crate::tasks::schema::{
-    BINDING_REQUIRED, Premise, Status, Store, TaskRow, TaskSpec, VERDICT_HEALTHY, normal_path,
+    BINDING_REQUIRED, MilestoneSpec, Premise, RUN_BY_LOOK, Status, Store, TaskRow, TaskSpec,
+    VERDICT_HEALTHY, normal_path,
 };
 use crate::tasks::slug::{dedupe_refs, derive_ref};
 use crate::tasks::{load_store, resolve_store_path};
@@ -180,6 +183,8 @@ pub(crate) fn findings(slug: &str, integrity: &ReadIntegrityArgs) -> Result<Vec<
     );
     found.extend(spec_findings(&tasks, &authored));
     found.extend(milestone_findings(&tasks));
+    found.extend(ui_findings(&tasks));
+    found.extend(ui_scope_findings(&tasks, &root));
     if plan.approvals.is_empty() {
         found.extend(file_chain_findings(&tasks, &plan));
         found.extend(milestone_width_findings(&tasks));
@@ -606,7 +611,8 @@ fn row_spec_findings(
         ));
     }
     for (index, accept) in spec.accept.iter().enumerate() {
-        let has_check = !accept.check.trim().is_empty();
+        // A `look` entry is judged by an inspector, so its empty check is its shape.
+        let has_check = !accept.check.trim().is_empty() || accept.run_by == RUN_BY_LOOK;
         if !has_check && elaborated {
             findings.push(error(
                 "plan/accept-no-check",
@@ -767,6 +773,206 @@ fn milestone_findings(tasks: &Store) -> Vec<Finding> {
         }
     }
     findings
+}
+
+fn milestone_members(tasks: &Store, id: &str) -> Vec<u32> {
+    let ids: BTreeSet<u32> = tasks
+        .items
+        .iter()
+        .filter(|row| row.checkpoint == id)
+        .map(|row| row.id)
+        .collect();
+    ids.into_iter().collect()
+}
+
+/// The classes a milestone's declared capture states raise. A `look` entry is
+/// judged on the milestone's `ui_states` only: a control state is one the
+/// inspector must fail, so no behaviour is accepted on it.
+fn ui_findings(tasks: &Store) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    for milestone in &tasks.milestones {
+        if !milestone.ui_states.is_empty() && milestone.ui_controls.is_empty() {
+            findings.push(error(
+                "plan/ui-controls-missing",
+                milestone_members(tasks, &milestone.id),
+                format!(
+                    "milestone `{}` declares `ui_states` and no `ui_controls`, so nothing shows \
+                     its inspector fails a planted defect",
+                    milestone.id
+                ),
+            ));
+        }
+    }
+    for spec in &tasks.specs {
+        let Some(row) = tasks.find_ref(&spec.r#ref) else {
+            continue;
+        };
+        let id = row.id;
+        let milestone = tasks.milestones.iter().find(|m| m.id == row.checkpoint);
+        let states: &[String] = milestone.map_or(&[], |m| m.ui_states.as_slice());
+        let controls: &[String] = milestone.map_or(&[], |m| m.ui_controls.as_slice());
+        let mut looked = false;
+        for (index, accept) in spec.accept.iter().enumerate() {
+            if accept.run_by != RUN_BY_LOOK {
+                continue;
+            }
+            looked = true;
+            if states.is_empty() {
+                findings.push(error(
+                    "plan/look-without-states",
+                    vec![id],
+                    format!(
+                        "task {id}'s `accept[{index}]` is a `look` entry, and milestone `{}` \
+                         declares no `ui_states`",
+                        row.checkpoint
+                    ),
+                ));
+                continue;
+            }
+            let unknown: Vec<&str> = accept
+                .states
+                .iter()
+                .filter(|state| !states.contains(state))
+                .map(String::as_str)
+                .collect();
+            if unknown.is_empty() {
+                continue;
+            }
+            let control = if unknown
+                .iter()
+                .any(|state| controls.iter().any(|c| c == state))
+            {
+                "; a control state is the inspector's to fail, never a `look` entry's"
+            } else {
+                ""
+            };
+            findings.push(error(
+                "plan/look-state-unknown",
+                vec![id],
+                format!(
+                    "task {id}'s `accept[{index}]` names {}, which milestone `{}` does not list \
+                     in `ui_states`{control}",
+                    quoted_list(&unknown, "no state"),
+                    row.checkpoint
+                ),
+            ));
+        }
+        let structural =
+            !spec.accept.is_empty() && spec.accept.iter().all(|accept| !accept.writes_build);
+        if !states.is_empty()
+            && !milestone.is_some_and(MilestoneSpec::is_deferred)
+            && row.status == Status::Pending
+            && !looked
+            && structural
+        {
+            findings.push(Finding {
+                class: "plan/ui-accept-structural",
+                severity: WARNING,
+                ids: vec![id],
+                detail: format!(
+                    "task {id} sits in milestone `{}`, which declares `ui_states`, and every \
+                     `accept` entry is `writes_build = false` with no `look` entry, so its \
+                     behaviour is accepted on reads alone",
+                    row.checkpoint
+                ),
+            });
+        }
+    }
+    findings
+}
+
+const UI_CAPTURE_CONFIG: &str = ".claude/ui-capture.toml";
+
+/// Per milestone that is not deferred and declares no `ui_states`, the rows
+/// whose files match a `paths` glob of the project's capture config. The config
+/// belongs to the project, not the plan, so a malformed one is one warning.
+fn ui_scope_findings(tasks: &Store, root: &Path) -> Vec<Finding> {
+    let globs = match ui_capture_paths(root) {
+        Ok(globs) => globs,
+        Err(problem) => {
+            return vec![Finding {
+                class: "plan/ui-milestone-no-states",
+                severity: WARNING,
+                ids: Vec::new(),
+                detail: format!("`{UI_CAPTURE_CONFIG}` is malformed: {problem}"),
+            }];
+        }
+    };
+    if globs.is_empty() {
+        return Vec::new();
+    }
+    let declared: BTreeSet<&str> = tasks
+        .checkpoints
+        .iter()
+        .map(|checkpoint| checkpoint.id.as_str())
+        .chain(tasks.milestones.iter().map(|m| m.id.as_str()))
+        .collect();
+    let mut findings = Vec::new();
+    for id in declared {
+        let milestone = tasks.milestones.iter().find(|m| m.id == id);
+        if milestone.is_some_and(|m| m.is_deferred() || !m.ui_states.is_empty()) {
+            continue;
+        }
+        let mut rows: BTreeSet<u32> = BTreeSet::new();
+        let mut files: BTreeSet<String> = BTreeSet::new();
+        for row in tasks.items.iter().filter(|row| row.checkpoint == id) {
+            for file in &row.files {
+                let file = normal_path(file);
+                if globs.iter().any(|glob| glob.is_match(&file)) {
+                    rows.insert(row.id);
+                    files.insert(file);
+                }
+            }
+        }
+        if rows.is_empty() {
+            continue;
+        }
+        let files: Vec<&str> = files.iter().map(String::as_str).collect();
+        findings.push(Finding {
+            class: "plan/ui-milestone-no-states",
+            severity: WARNING,
+            ids: rows.into_iter().collect(),
+            detail: format!(
+                "milestone `{id}` declares no `ui_states`, yet its rows edit {}, under the \
+                 `paths` of `{UI_CAPTURE_CONFIG}`",
+                quoted_list(&files, "no file")
+            ),
+        });
+    }
+    findings
+}
+
+/// The `paths` globs of the capture config at `root`: empty with no config or no
+/// `paths`, and `Err` naming the problem when the config cannot be read.
+fn ui_capture_paths(root: &Path) -> std::result::Result<Vec<GlobMatcher>, String> {
+    let text = match fs::read_to_string(root.join(UI_CAPTURE_CONFIG)) {
+        Ok(text) => text,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(err) => return Err(err.to_string()),
+    };
+    let table: toml::Table = toml::from_str(&text).map_err(|err| {
+        let message = err.to_string();
+        message.lines().next().unwrap_or_default().to_string()
+    })?;
+    let Some(raw) = table.get("paths") else {
+        return Ok(Vec::new());
+    };
+    let entries = raw
+        .as_array()
+        .ok_or_else(|| "`paths` is not an array".to_string())?;
+    entries
+        .iter()
+        .map(|entry| {
+            let text = entry
+                .as_str()
+                .ok_or_else(|| "`paths` holds an entry that is not a string".to_string())?;
+            GlobBuilder::new(text.trim_start_matches("./"))
+                .literal_separator(true)
+                .build()
+                .map(|glob| glob.compile_matcher())
+                .map_err(|err| format!("`paths` entry `{text}`: {err}"))
+        })
+        .collect()
 }
 
 /// Per milestone, the `needs` links inside it whose two rows share a file and

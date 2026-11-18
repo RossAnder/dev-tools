@@ -710,6 +710,8 @@ mod tests {
             defer_reason: String::new(),
             gate_probes: Vec::new(),
             after: Vec::new(),
+            ui_states: Vec::new(),
+            ui_controls: Vec::new(),
         }
     }
 

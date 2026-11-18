@@ -54,7 +54,7 @@ handled_note = "R3, R7 deferred (trigger: writer thread merged)"
 | `author` | every record | `user`, or the command name for an agent-posted question. Self-declared: it proves nothing. |
 | `status` | every record | `new`, `acknowledged`, `handled`, `withdrawn`; assigned by the store and the lifecycle verbs. |
 | `created` | every record | Datetime the record was added. |
-| `ledger` | optional target | `review`, `optimise`, `plan-review`, `backlog`. Required when `flow`, `scope` or `items` is set. |
+| `ledger` | optional target | `review`, `optimise`, `plan-review`, `backlog`, `plan`. Required when `flow`, `scope` or `items` is set. On the `plan` ledger, `flow` is required and `items` holds task ids of that flow. |
 | `flow` / `scope` | optional target | The flow slug of a flow-local ledger, or the scope name of a flow-less one; never both. |
 | `items` | optional target | Non-empty array of item ids in that ledger. |
 | `text` | capture, request, note (required); answer, question (optional) | The body. |
@@ -72,7 +72,7 @@ Unknown fields are refused, a kind's own fields are refused on any other kind, a
 - **`capture`** — a candidate backlog item, in the user's words. It replaces a separate inbox: `/backlog` turns it into a real row.
 - **`request`** — a change the user wants made to the items it targets: a disposition, a reclassification, a reopen.
 - **`note`** — context the user wants a run to take into account. It asks for no particular write.
-- **`question`** — posted by a carrier whose `AskUserQuestion` came back empty. Its target says which ledger and run will read the answer.
+- **`question`** — posted by a carrier whose `AskUserQuestion` came back empty, or by a plan worker that needs a decision while building a task (ledger `plan`, its flow, its own task id in `items`). Its target says which ledger and run will read the answer.
 - **`answer`** — the user's reply to one question. It inherits the question's target, so the carrier that asked finds it.
 
 ## Lifecycle
@@ -96,9 +96,11 @@ new ──ack──▶ acknowledged ──handle──▶ handled
 |---|---|---|
 | The user, through glimpse or the CLI | `add`, `answer`, `withdraw` | captures, requests, notes; answers; withdrawal of their own `new` records |
 | The orchestrator of an owning carrier | `ack`, `handle`; `add` for `question` records only | the records its Step 0 swept in; the questions it posts |
-| Sub-agents (`implement-*`, `research-*`, `verification`, any lens) | none | — |
+| The `/implement-v2` orchestrator | `answer`, only to relay the option the user picked in its own AskUserQuestion for a `plan` ledger question | one `answer` per such question |
+| A plan worker (`plan-worker-lite`, `plan-worker-deep`) | `add` of one `question` with ledger `plan`, its flow and its own task id in `items`, and nothing else | the question it posts |
+| Other sub-agents (`implement-*`, `research-*`, `verification`, any lens) | none | — |
 
-The orchestrator is the only agent writer. A sub-agent never runs `tomlctl inputs add|answer|withdraw`, and does not run `ack` or `handle` either: the orchestrator reads the records, decides, and records the outcome. Never `answer` a question on the user's behalf and never `withdraw` a record, even one that looks obsolete — handle it with a note instead.
+Apart from the plan worker's one question, the orchestrator is the only agent writer. Any other sub-agent never runs `tomlctl inputs add|answer|withdraw`, and does not run `ack` or `handle` either: the orchestrator reads the records, decides, and records the outcome. A plan worker never runs `ack`, `handle`, `answer` or `withdraw`, and posts no second question for the same decision. The `/implement-v2` orchestrator's `answer` relays the user's own pick from its AskUserQuestion; it is not answering on the user's behalf. No agent answers, withdraws or acknowledges a question by its own judgement: never `answer` a question the user has not picked an option for, and never `withdraw` a record, even one that looks obsolete — handle it with a note instead.
 
 ## Trust boundary
 

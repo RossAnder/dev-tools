@@ -65,7 +65,7 @@ tomlctl plan gate --slug <slug>
 
 Show one screen, the arrays in the object's key order, because that order puts the things that need thought before the things that reassure:
 
-1. `assumptions`: each `agent-assumed` decision with `why`, `binds`, `door`, `if_false` and `revisit_if`, in the order given, which ranks them by how much they bind.
+1. `assumptions`: each `agent-assumed` decision with `why`, `binds`, `door`, `if_false` and `revisit_if`, in the order given, which ranks them by how much they bind, shown grouped by class (`structure`, `look`, `ux`, `cost`, `vocabulary`, `architecture`, `compromise`) so the user sees which kind of call was assumed.
 2. `one_way_doors`: each decision with its `provenance` and `revisit_if`.
 3. `risks`: each `skip-reason` row's `detail`, then each `review-finding` row as `id`, `severity`, `target` and `summary`. A `review-finding` row is an open critical or major defect, or an open re-check finding, which the user approves past or acts on.
 4. `task_mix`: tasks by file-count bucket and `executor`.
@@ -136,6 +136,7 @@ Each precondition is a `kind=validation` refusal, and nothing is written until a
 |---|---|
 | A run is open; the message names the open steps | The open-run rule in `SKILL.md`: relaunch the oldest open step, or `plan run abandon --step <s> --reason <why>`, then step 1 again |
 | A surfaced decision is still `agent-assumed` | Ask it through `AskUserQuestion` and record the answer with `plan decide`. A surfaced decision is never answered on the user's behalf |
+| A decision is `agent-assumed` with door one-way and was never surfaced (a silent one-way door); `plan stage` reports it as a blocker | Ask it through `AskUserQuestion` and record the answer with `plan decide`, setting `surfaced = true`. A one-way door is never left assumed without the user seeing it |
 | `plan check` reports an error | The verb `plan stage` names for that class, then Prove from the change on. Step 1 should have caught this; a refusal here means something changed after it |
 | `` `--review ran` refused: `` with no finished plan-family run, or an unfinished one | Close the run by the review engine's `plan-flow.md` section 9, or resume an interrupted one by its section 13 |
 | `` `--review ran` refused: `` with an open user-tier or question-tier finding | Ask it by `plan-flow.md` section 7: a user-tier row is accepted and applied with `--user-accepted`, or vetoed and dismissed; a question-tier row is revised through the `plan` verbs or kept, then resolved with `review triage --resolve` |

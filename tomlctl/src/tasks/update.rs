@@ -2421,6 +2421,7 @@ mod tests {
             writes_build: true,
             run_by: String::new(),
             covered_by: String::new(),
+            states: Vec::new(),
             probe: None,
         }
     }

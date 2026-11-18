@@ -123,6 +123,9 @@ otherwise; `writes_build` keeps its one meaning, whether running the check build
 | `worker` | The task's worker. Only this owner is probed, and only with `writes_build = false`: `run_by = "worker"` on a building check is refused at write. |
 | `gate` | The milestone's gate, through [`plan emit gate-list`](plan-engine.md#plan-emit-gate-list). |
 | `covered` | Nobody separately: the gate `covered_by` names already runs it. `gate-list` skips it. |
+| `look` | The visual inspector, never a command: the entry carries `states`, the milestone's capture states it is judged on, its `behaviour` is the criterion and its `check` stays empty. Probes skip it, and it never counts as discriminating beside a guard. |
+
+`states` is allowed only with `run_by = "look"`, which needs a non-empty `states` and an empty `check`; a store holding either raises `schema_version` to `2`.
 
 `tasks add`, `add-many` and `update` refuse an unknown `run_by`, `worker` on a building check,
 `covered` without `covered_by` and `covered_by` without `covered`; `plan check` reports the same as
@@ -132,7 +135,7 @@ otherwise; `writes_build` keeps its one meaning, whether running the check build
 `[[milestones]]`: `id` (a `[[checkpoints]]` id), `gates`, `gate_probes`, `elaboration` (`upfront`
 when absent, `deferred`, or `elaborated` once a deferred milestone's tasks exist) and
 `defer_reason`, and `after`, the earlier milestone ids this one runs after, set by
-`plan milestone add|update --after` and omitted while empty. `gate_probes` is a list of `{gate, probe, verdict, at}` tables written as
+`plan milestone add|update --after` and omitted while empty. `ui_states` lists the capture states the milestone's visual pass judges and `ui_controls` the planted-defect states the inspector must fail; each is omitted while empty. `gate_probes` is a list of `{gate, probe, verdict, at}` tables written as
 `[[milestones.gate_probes]]` and omitted while empty: `gate` is one of the milestone's `gates`,
 `probe` a cheap command that fails where that gate cannot pass here, and `verdict` (`holds`, `fails`
 or `broken`) and `at` (the capture's head) are written only by `plan probes --record --gates`

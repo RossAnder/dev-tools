@@ -96,7 +96,7 @@ const SPEC_FIELDS: [&str; 8] = [
     "precedent",
     "executor",
 ];
-const ACCEPT_FIELDS: [&str; 7] = [
+const ACCEPT_FIELDS: [&str; 8] = [
     "behaviour",
     "check",
     "kind",
@@ -104,6 +104,7 @@ const ACCEPT_FIELDS: [&str; 7] = [
     "writes_build",
     "run_by",
     "covered_by",
+    "states",
 ];
 const PREMISE_FIELDS: [&str; 3] = ["claim", "check", "at"];
 const MEANS_FIELDS: [&str; 3] = ["text", "binding", "detail"];
@@ -623,6 +624,7 @@ fn accept_entry(entry: &SpecObject<'_>) -> Result<Accept> {
         writes_build,
         run_by: entry.one_of("run_by", &RUN_BY_OWNERS)?.unwrap_or_default(),
         covered_by: entry.text("covered_by")?.unwrap_or_default(),
+        states: entry.strings("states")?.unwrap_or_default(),
         probe: None,
     };
     match accept.owner_problem() {

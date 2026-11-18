@@ -243,11 +243,11 @@ fn assess(
         .iter()
         .filter(|f| f.severity == ERROR || f.class == "plan/probe-absent")
         .collect();
-    let unanswered = store::unanswered_decisions(plan);
-    if !proving.is_empty() || unanswered.is_some() {
-        let next = prove_next(&proving, unanswered.is_some());
+    let undecided = undecided(plan);
+    if !proving.is_empty() || !undecided.is_empty() {
+        let next = prove_next(&proving, !undecided.is_empty());
         let mut blockers = summarise(&proving);
-        blockers.extend(unanswered);
+        blockers.extend(undecided);
         return report("prove", next, blockers);
     }
 
@@ -259,7 +259,7 @@ fn assess(
 }
 
 /// A changed brief asks for `--amend`, unless `plan approve` would refuse it: an
-/// unanswered decision or any other check error clears first.
+/// unanswered decision, a silent one-way door or any other check error clears first.
 fn amend_report(
     stage: &'static str,
     plan: &PlanStore,
@@ -270,15 +270,23 @@ fn amend_report(
         .iter()
         .filter(|f| f.severity == ERROR && f.class != CLASS_BRIEF_CHANGED)
         .collect();
-    let unanswered = store::unanswered_decisions(plan);
+    let undecided = undecided(plan);
     let mut blockers = summarise(brief);
-    if refusing.is_empty() && unanswered.is_none() {
+    if refusing.is_empty() && undecided.is_empty() {
         return report(stage, AMEND_APPROVAL, blockers);
     }
-    let next = prove_next(&refusing, unanswered.is_some());
+    let next = prove_next(&refusing, !undecided.is_empty());
     blockers.extend(summarise(&refusing));
-    blockers.extend(unanswered);
+    blockers.extend(undecided);
     report(stage, next, blockers)
+}
+
+/// The decision states `plan approve` refuses, each answered through `plan decide`.
+fn undecided(plan: &PlanStore) -> Vec<String> {
+    store::unanswered_decisions(plan)
+        .into_iter()
+        .chain(store::silent_one_way_decisions(plan))
+        .collect()
 }
 
 /// What keeps review unsettled, empty when it is settled. `plan approve --review ran`'s

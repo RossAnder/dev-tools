@@ -11,7 +11,7 @@ that write it and the check classes are [plan.md](plan.md); the probe verdicts a
 ## `plan.toml` store shape
 
 ```toml
-schema_version = 2
+schema_version = 4
 last_updated = 2026-11-05
 
 [binding]
@@ -27,6 +27,7 @@ decision = "what to do, phrased as an instruction"
 why = "one line"
 provenance = "agent-assumed"
 door = "two-way"
+class = "structure"
 binds = ["3", "src/a.rs"]
 evidence = "what was read"
 if_false = "what changes"
@@ -139,10 +140,11 @@ Keys are written in that order, each root key but `schema_version` omitted while
 restamps `last_updated`, re-emits the store from this shape, so an unknown key is dropped, and
 LF-normalises free text. A `schema_version` newer than the binary's is refused rather than read.
 
-The stamp is `2` while the store holds no `[[attempt]]`, `[[gate_round]]` or `[[report]]`, and `3`
-while it holds any. A binary that predates those arrays therefore refuses such a store rather than
-rewriting it without them, and a store that holds none reads and writes as it did before they
-existed. Emptying all three returns the stamp to `2`. An absent `schema_version` reads as `2`.
+The stamp is `4` while any decision carries a `class`, otherwise `3` while the store holds an
+`[[attempt]]`, `[[gate_round]]` or `[[report]]`, and `2` while it holds none of those. A binary that
+predates those keys or arrays therefore refuses such a store rather than rewriting it without them,
+and a store that holds none reads and writes as it did before they existed. Removing what raised the
+stamp returns it to the lower value. An absent `schema_version` reads as `2`.
 
 `[binding]` holds the branch and scope a draft keeps here until approval, so that it matches no
 flow-resolver step before then.
@@ -159,6 +161,7 @@ id is then never minted again.
 | `why` | The reason, in a line. |
 | `provenance` | `user-stated`, `user-confirmed` or `agent-assumed`. A surfaced decision counts as unanswered while it is still `agent-assumed`. |
 | `door` | `one-way` for a choice that is costly to reverse, otherwise `two-way`. |
+| `class` | Optional: `structure`, `look`, `ux`, `cost`, `vocabulary`, `architecture` or `compromise`. Written only when set; the approval screen groups agent-assumed decisions by it. An unknown value is refused. |
 | `binds` | What the decision applies to. An all-digit entry names a task id and nothing else, so a file named `3` cannot satisfy it; any other entry is a path, which must be on some row's `files` or exist under the repo root. A directory reaches every file under it in the worker view. |
 | `rejected` | The options turned down, each exactly `{option, because}`. |
 | `evidence` | What was read to reach it. |

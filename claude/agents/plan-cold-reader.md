@@ -24,6 +24,9 @@ You are the cold reader for one milestone of a v2 plan. A worker will be handed 
 ## What counts
 
 - **Unactionable**: a point where a worker would have to guess, or would have to decide something the plan never settles. Name the task, the sentence and what is missing.
+- **Unactionable, open look choice**: a UI task that leaves a layout, sizing, style or interaction choice to the worker, with no design citation and no decision that settles it. Name the task and the choice left open.
+- **Unactionable, unproven look**: a user-visible behaviour whose only accept entries are read-only checks (a grep, a type check), with no look entry and no driving test that would show it working. Name the task and the behaviour.
+- **Unactionable, no direction**: a task that cites no section of `design/direction.md` in its design field, or whose spec reads as a generic standalone implementation of its outcome rather than the flow's direction. Name the task and say which of the two it is.
 - **False premise**: a claim about the code that the code contradicts. Give the claim, what you read and its `file:line`.
 - **Check command**: for each task acceptance you can run, the exact command and what it printed. A command that cannot discriminate, or fails on the present tree for a reason other than the missing change, is reported.
 

@@ -8,7 +8,13 @@ Every record below lives in `.claude/flows/<slug>/` and is written only through 
 
 Design turns the brief, the notes and the source you read into records. The orchestrator owns every one of them; nothing here is delegated.
 
-**Decisions.** Each choice the tasks will rest on is a `plan decide` row: the structure challenge's choose-or-veto, each Unknown a note settled, each option weighed and dropped. Phrase `decision` as an instruction, give `rejected` the fact that sank each alternative, and set `door` to `one-way` when undoing it later would cost more than the plan. `provenance` is `agent-assumed` unless the user said or confirmed it.
+**Directions.** Design opens by setting the flow's direction with the user. From the brief, the notes and the structure challenge, draft two or three distinct directions the work could take, each with its trade-offs: what it costs, what it risks, and what it makes easy or hard later. Directions differ in approach, not in wording; two that would produce the same tasks are one. Scale the account with the work's complexity and ambiguity: a narrow fix may need a line per direction, a new surface or a cross-cutting change a paragraph each. Ask the user through `AskUserQuestion` to choose one or steer, the direction you would take first with one line of why. This question is Design's own and is not counted against Surface's budget; a question the answer opens is asked in a further round, never assumed. Record the choice as a decision of class `architecture`, `surfaced = true`, the other directions in `rejected`, and apply the answer as the table in [open-and-challenge.md, section 5](open-and-challenge.md#5-surface) says.
+
+Then write `docs/flows/<slug>/design/direction.md` with the Write tool: an `## Overarching` section stating the chosen direction, what it optimises for and what it gives up, and the expectations every task must stay consistent with; and, once Milestones below are cut, one `## Milestone <id>` section per milestone saying what that milestone contributes to the direction and how its tasks should read it. These sections are what every task cites in `spec.design` (section 3), so a worker receives the flow's vision rather than building a generic standalone implementation of its outcome.
+
+**Read-back.** Before any other record, give the user the second read-back that [open-and-challenge.md, section 1](open-and-challenge.md#1-open) promises: the account of what they will see and do once the work lands, made concrete by the investigation and the chosen direction, naming the actual screens, commands, outputs and values they will meet, with every point that changed since the first read-back marked as changed. Ask through `AskUserQuestion` whether it still matches what they mean, and fold every correction into the brief, and into `direction.md` when it touches the direction, before recording anything else.
+
+**Decisions.** Each choice the tasks will rest on is a `plan decide` row: the structure challenge's choose-or-veto, each Unknown a note settled, each option weighed and dropped. Phrase `decision` as an instruction, give `rejected` the fact that sank each alternative, and set `door` to `one-way` when undoing it later would cost more than the plan. `provenance` is `agent-assumed` unless the user said or confirmed it. Every decision carries a `class`, one of the vocabulary [open-and-challenge.md, section 5](open-and-challenge.md#5-surface) names, so veto rates are counted per class.
 
 ```toml
 [[record]]
@@ -16,6 +22,7 @@ decision = "Put the retry loop in its own module and call it from fetch."
 why = "fetch is called from four places and only one of them wants retries."
 provenance = "agent-assumed"
 door = "two-way"
+class = "architecture"
 binds = ["src/a.rs"]
 rejected = [{ option = "Retry inside fetch", because = "the three batch callers already retry and would double their attempts" }]
 evidence = "read src/a.rs and every caller the sweep found"
@@ -58,7 +65,9 @@ A gate that can fail for reasons of this environment, such as a link or install 
 
 Upfront elaboration is the norm. Defer a later milestone only when its detail depends on what earlier ones will produce, and say why with `--defer --reason '<why>'`; its tasks then carry outcome, behaviour, constraints and estimated files, and gain `check`, premises and precedent when it is elaborated.
 
-**Design files.** Write `docs/flows/<slug>/design/<name>.md` only where a task needs prose no record holds: a data shape, a lock order, a migration sequence. A task cites a section as `design/<name>.md#<anchor>`, the anchor being the heading slugged by the task store's ref rule, so `## Lock order` is `#lock-order`. `plan check` reports a citation that resolves to no section as `plan/design-anchor-dead`.
+**UI milestones.** Once the milestones are cut, and before any row is written, a milestone that adds a UI surface or reshapes the layout of one goes through [ui-layout.md](ui-layout.md): you judge which milestones are UI and list the call for every milestone so the user can correct it, the user picks among concrete layouts, and the pick is recorded as a `look` decision and a `design/ui-<milestone>.md` file. Its capture states and controls are declared with `--ui-state` and `--ui-control`, on `plan milestone add` when the step runs before the milestone is added, otherwise on `plan milestone update`. A deferred UI milestone runs the step when it is elaborated.
+
+**Design files.** Write `docs/flows/<slug>/design/<name>.md` only where a task needs prose no record holds: a data shape, a lock order, a migration sequence. `direction.md` and each `ui-<milestone>.md` are design files of this kind, written by the steps above. A task cites a section as `design/<name>.md#<anchor>`, the anchor being the heading slugged by the task store's ref rule, so `## Lock order` is `#lock-order`. `plan check` reports a citation that resolves to no section as `plan/design-anchor-dead`.
 
 **Handovers.** A handover is recorded only for a step no agent can perform, one of the six reasons of `design/handover.md#reasons`. Record one step per row, with `reason`, `action`, `when`, `done_when` and `source_task`. Stage the rows with Write once the tasks exist, since `source_task` names a row, then load them:
 
@@ -77,15 +86,11 @@ tomlctl plan handover set --slug <slug> --ndjson <scratch>/handover.toml
 
 Landing work an agent can perform goes to its home (`design/handover.md#where-agent-performable-steps-go-instead`): an install or link is a gate on the last milestone. No handover is the expected case.
 
+For a milestone that declares `ui_states`, record no handover asking the user to review the look or to reproduce a visual defect: the milestone's captures and its inspector settle those. State what the user would have checked as a look entry on the row that builds it (section 3).
+
 ## 2. Surface again
 
-Design often decides things the first Surface never saw: a dependency it settled on, a scope it widened, a one-way door. Put each through the same three tests:
-
-1. What would change if the answer were no? It must be a different plan.
-2. Can I settle it by reading or running something? Then settle it.
-3. Does a recorded user stance already answer it? CLAUDE.md, memory and ADRs count.
-
-A survivor takes the item shape Surface uses: a `plan decide` row with `surfaced = true`, showing the claim, the evidence read, what changes if it is false and the default, asked through `AskUserQuestion` before Write, with the answer recorded as `user-confirmed` or `user-stated` and `vetoed` set to match. This normally finds nothing, and then there is nothing to record.
+Design often decides things the first Surface never saw: a dependency it settled on, a scope it widened, a one-way door, a behaviour or a look the user will meet. Put each candidate through Surface's rule in [open-and-challenge.md, section 5](open-and-challenge.md#5-surface): its three tests, its budget, which is per planning session and so counts the questions Surface already asked, and its follow-up rule, under which a question an answer opens is asked in a further round and never assumed. A survivor takes the item shape and `class` that section gives, is asked through `AskUserQuestion` before Write, and has its answer applied by that section's table. A candidate that did not reach the user and still shapes the plan is recorded as that section says for one, `surfaced = false` with its `class`.
 
 ## 3. Write
 
@@ -111,15 +116,16 @@ action = "Wait for the Retry-After delay before retrying a 429."
 [record.spec]
 outcome = "A 429 response is retried once, after the delay its Retry-After header names."
 constraints = ["The public signature of fetch stays as it is.", "Touch no file outside this task's files."]
+design = ["design/direction.md#milestone-a"]
 precedent = ["src/backoff.rs"]
 executor = "lite"
 [[record.spec.accept]]
-behaviour = "the retry module exists"
+behaviour = "the retry guard lives in its own module"
 check = "test -f src/retry.rs"
 kind = "forward"
 writes_build = false
 [[record.spec.accept]]
-behaviour = "a retry after 429 waits the header's delay"
+behaviour = "a caller that gets a 429 receives the response retried after the header's delay"
 check = "cargo nextest run -E 'test(retry_after)'"
 kind = "forward"
 [[record.spec.premises]]
@@ -138,6 +144,7 @@ needs = [1]
 checkpoint = "A"
 [record.spec]
 outcome = "fetch goes through the retry guard."
+design = ["design/direction.md#milestone-a"]
 executor = "lite"
 [[record.spec.accept]]
 behaviour = "fetch calls the guard"
@@ -154,13 +161,25 @@ detail = "A local loop would bypass the backoff cap the guard enforces."
 tomlctl tasks add-many --slug <slug> --ndjson <scratch>/tasks.toml
 ```
 
+In this example the `test -f` and `grep` entries prove internal facts, where the code sits and what calls what. The one behaviour a user of `fetch` meets, the retry after a 429, is accepted by the test that drives it, never by a read of the source.
+
 The batch is all-or-nothing: an unknown key, a dangling edge or a cycle lands nothing, and the refusal names the record.
 
 **The spec rules.**
 
 - `outcome` is what must be true afterwards, in the brief's terms.
+- `design` cites, on every task, the section of `design/direction.md` that applies to it: its milestone's section, or `#overarching` where the milestone has none of its own. A UI row also cites its surface's section of `design/ui-<milestone>.md`. The worker view inlines each cited section, which is how the flow's direction reaches the worker.
 - `behaviour` is yours. It states what must be observably true, and nobody else may change what it asserts: a cold reader may turn it into a `check`, never rewrite it, because a model left to write an oracle captures the code's actual behaviour rather than the intended one.
 - `check` must exit non-zero when the behaviour does not hold, the contract a `success:` key has. `kind` is `forward` (fails now, passes after the work), `falsifier` (passes now, naming a check that binds what the task changes) or `guard` (passes now and after, beside a row that discriminates). `positive` is an optional positive-control command, left out when there is none.
+- A behaviour the user sees or meets is never accepted on a read-only check alone, since a `grep` or `test -f` proves where code is, not what it does. Give it a check that drives it, such as a test that runs the command or the view, or, in a milestone that declares `ui_states`, a look entry: `run_by = "look"`, `states` naming states from the milestone's `ui_states` and never a control, the `behaviour` written as the criterion the inspector judges, and an empty `check`. Read-only checks are for internal facts, such as a symbol's location or a registration line.
+
+```toml
+[[record.spec.accept]]
+behaviour = "the section list keeps its width and the form takes the rest, with no dead band below a short form"
+run_by = "look"
+states = ["settings-empty", "settings-many", "settings-short-window"]
+```
+
 - `writes_build = false` is what gets probed. Mark it on every check that only reads, such as `grep`, `test -f`, `git diff` or a `tomlctl` read verb. Leave it out on a check that builds, tests or writes anything, which then runs only at the milestone's gate; absent counts as true.
 - `run_by` is set only where the default is wrong (`design/shapes.md#accept-owner`). `gate` marks a read-only check that only the gate can pass. `covered`, with `covered_by` naming the exact gate command, marks a narrow test the milestone's suite gate already runs, so it is not run twice; a worker's own narrow run of such a test is named in `detail`.
 - `means` is empty by default. Name a means only when a worker left free would go wrong, and give every `required` entry its reason in `detail`, since wrong or over-specified instructions do more harm than missing ones. A `tool` or `clerk` task gets its targets enumerated, because it will not generalise an instruction from one item to the next; a `deep` task gets a scope clause in `constraints`, because it can expand scope.

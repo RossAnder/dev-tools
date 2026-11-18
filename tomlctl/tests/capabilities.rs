@@ -1867,6 +1867,11 @@ fn capabilities_features_contains_every_plan_feature() {
         "authored_files",
         "agent_usage",
         "review_finding_read",
+        // Decision classes on questions, the UI look records and the plan-ledger
+        // inputs.
+        "decision_class",
+        "ui_look",
+        "inputs_plan_ledger",
     ];
     for name in expected {
         assert!(

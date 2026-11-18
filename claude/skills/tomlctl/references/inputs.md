@@ -55,7 +55,7 @@ tomlctl inputs list --ledger optimise --flow <slug> --item O12
 |---|---|---|---|
 | `--pending` | bool | Keep only `new` and `acknowledged` records. | off |
 | `--kind` | `capture` \| `request` \| `note` \| `question` \| `answer` | Keep records of this kind. Repeatable; any may match. An unknown kind errors. | all kinds |
-| `--ledger` | `review` \| `optimise` \| `plan-review` \| `backlog` | Keep records whose `ledger` equals it. An unknown ledger errors. | any |
+| `--ledger` | `review` \| `optimise` \| `plan-review` \| `backlog` \| `plan` | Keep records whose `ledger` equals it. An unknown ledger errors. | any |
 | `--flow` | slug | Keep records whose `flow` equals it. A record with no `flow` never matches. | any |
 | `--scope` | name | Keep records whose `scope` equals it. A record with no `scope` never matches. | any |
 | `--item` | id | Keep records whose `items` array contains it. | any |
@@ -94,7 +94,8 @@ printf '%s' '{"kind":"question","author":"review","ledger":"review","flow":"<slu
 - **Handled records:** a `handled` record needs `handled`, `handled_by` and a non-empty
   `handled_note`, and a record at any other status carries none of the three.
 - **Target:** `flow`, `scope` and `items` each need `ledger`, and `flow` and `scope` are
-  refused together.
+  refused together. Ledger `plan` targets one flow's tasks: `flow` names the flow, `items` are
+  its task ids as strings (`"8"`), and a `scope` is refused.
 
 ## `inputs ack`
 

@@ -377,14 +377,23 @@ fn counts(plan: &PlanStore, tasks: &Store) -> JsonValue {
     let count_decisions =
         |matches: fn(&Decision) -> bool| decisions.iter().filter(|d| matches(d)).count();
     let count_tasks = |status: Status| tasks.items.iter().filter(|r| r.status == status).count();
+    let mut decision_counts = json!({
+        "total": decisions.len(),
+        "surfaced": count_decisions(|d| d.surfaced),
+        "vetoed": count_decisions(|d| d.vetoed),
+        "agent_assumed": count_decisions(|d| d.provenance == Provenance::AgentAssumed),
+        "one_way": count_decisions(|d| d.door == Door::OneWay),
+    });
+    let mut by_class = serde_json::Map::new();
+    for class in decisions.iter().filter_map(|d| d.class) {
+        let slot = by_class.entry(class.as_str()).or_insert(json!(0));
+        *slot = json!(slot.as_u64().unwrap_or(0) + 1);
+    }
+    if !by_class.is_empty() {
+        decision_counts["by_class"] = JsonValue::Object(by_class);
+    }
     json!({
-        "decisions": {
-            "total": decisions.len(),
-            "surfaced": count_decisions(|d| d.surfaced),
-            "vetoed": count_decisions(|d| d.vetoed),
-            "agent_assumed": count_decisions(|d| d.provenance == Provenance::AgentAssumed),
-            "one_way": count_decisions(|d| d.door == Door::OneWay),
-        },
+        "decisions": decision_counts,
         "contracts": plan.contracts.len(),
         "tasks": {
             "total": tasks.items.len(),
@@ -632,15 +641,16 @@ fn decision_block(out: &mut String, decision: &Decision) {
         decision.id,
         one_line(&decision.decision)
     ));
-    field(
-        out,
-        "Standing",
-        &format!(
-            "{}, {} door",
-            decision.provenance.as_str(),
-            decision.door.as_str()
-        ),
+    let mut standing = format!(
+        "{}, {} door",
+        decision.provenance.as_str(),
+        decision.door.as_str()
     );
+    if let Some(class) = decision.class {
+        standing.push_str(", ");
+        standing.push_str(class.as_str());
+    }
+    field(out, "Standing", &standing);
     if decision.surfaced || decision.vetoed {
         let state = match (decision.surfaced, decision.vetoed) {
             (true, true) => "surfaced, vetoed",

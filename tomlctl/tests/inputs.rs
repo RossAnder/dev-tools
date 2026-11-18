@@ -244,6 +244,40 @@ fn inputs_refusals_exit_nonzero_with_a_tagged_error() {
 }
 
 #[test]
+fn inputs_plan_ledger_questions_target_a_flow_task() {
+    let (_dir, root) = sandbox();
+    let question = r#"{"kind": "question", "author": "plan-worker", "ledger": "plan", "flow": "demo", "items": ["8"], "prompt": "Which layout?", "choice": "single", "options": ["a", "b"]}"#;
+    let id = minted(&inputs_with_stdin(&root, &["add", "--json", "-"], question));
+    let found = listed(
+        &root,
+        &["--ledger", "plan", "--flow", "demo", "--item", "8"],
+    );
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0]["id"], id.as_str());
+
+    let out = cli(&root)
+        .args(["--error-format", "json", "inputs", "add", "--json"])
+        .arg(r#"{"kind": "question", "author": "plan-worker", "ledger": "plan", "scope": "demo", "items": ["8"], "prompt": "Which?", "choice": "text"}"#)
+        .write_stdin("")
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    let error = parse_json_error_envelope(&stderr);
+    assert_eq!(error["kind"], "validation", "{stderr}");
+}
+
+#[test]
+fn inputs_plan_ledger_is_listed_by_the_gate_filter() {
+    let (_dir, root) = sandbox();
+    inputs_with_stdin(
+        &root,
+        &["add", "--json", "-"],
+        r#"{"kind": "note", "ledger": "plan", "flow": "demo", "items": ["3"], "text": "x"}"#,
+    );
+    assert_eq!(listed(&root, &["--ledger", "plan"]).len(), 1);
+}
+
+#[test]
 fn inputs_handle_ndjson_notes_each_record() {
     let (_dir, root) = sandbox();
     let first = minted(&inputs(

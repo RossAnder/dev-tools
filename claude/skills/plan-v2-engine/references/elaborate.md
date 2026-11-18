@@ -48,7 +48,9 @@ Then read what the upstream milestones actually built, from the code at HEAD, no
 
 ## 2. Surface and decide
 
-Put each assumption the elaboration rests on through the three tests of [open-and-challenge.md, section 5](open-and-challenge.md#5-surface). Ask every survivor in ONE `AskUserQuestion` call, at most three as that section says, each recorded first as a decision with `surfaced = true` and its answer recorded after. Zero survivors is the normal case; record nothing for them.
+Put each assumption the elaboration rests on through the three tests of [open-and-challenge.md, section 5](open-and-challenge.md#5-surface). The budget is four questions in the first round, asked in one `AskUserQuestion` call of up to four; when more survive, ask the four whose `if_false` changes the most for the user. A question an answer opens is asked in a further call outside the budget, and rounds go on until no answer opens a new one, never answered by assumption. Each is recorded first as a decision with `surfaced = true` and a `class`, and its answer recorded after. When nothing survives, record nothing.
+
+**A UI milestone.** When the milestone adds a surface or reshapes an arrangement, run the layout step of [ui-layout.md](ui-layout.md) before any row is revised: the user picks among drafted options, the pick is a decision of class `look`, and the pictures and `design/ui-<milestone>.md` are written under `docs/flows/<slug>/design/`. Refine the milestone's section of `design/direction.md` where the pick changes it, and cite that section from each row of the milestone in `spec.design`.
 
 Each choice the revised rows rest on is a `plan decide` row, in the shape of [write-and-prove.md, section 1](write-and-prove.md#1-design), `provenance = "agent-assumed"` unless the user said or confirmed it:
 
@@ -211,13 +213,21 @@ tomlctl plan check --slug <slug> --milestone <id>
 
 `--reason` names what landed: the decisions, the rows added and revised, and the cold read's outcome. The check runs once more because `plan/accept-no-check` now applies to these rows. An error here is fixed with `tasks update --ndjson`, and the entries that fix touches are probed again by 4d before the commit; the milestone is already runnable, so do this before ending the turn.
 
+**Before the flip**, since no approval follows an elaboration, list the decisions that are agent-assumed, one-way and never surfaced:
+
+```bash
+tomlctl items list .claude/flows/<slug>/plan.toml --array decision --where provenance=agent-assumed --where door=one-way --where surfaced=false --select id --lines
+```
+
+Surface each through `AskUserQuestion`, recorded by `plan decide`, before the flip command above runs.
+
 ## 6. Finish and commit
 
 ```bash
 tomlctl plan run finish --slug <slug> --step elaborate:<id> --outcome ok
 ```
 
-Commit once, with the message from the `commit-conventions` skill, staging each path by name, never the whole flow directory: `.claude/flows/<slug>/plan.toml`, `.claude/flows/<slug>/tasks.toml`, both `.sha256` sidecars, each `docs/flows/<slug>/design/<name>.md` this elaboration wrote, and `docs/flows/<slug>/notes/cold-read-<id>.md`.
+Commit once, with the message from the `commit-conventions` skill, staging each path by name, never the whole flow directory: `.claude/flows/<slug>/plan.toml`, `.claude/flows/<slug>/tasks.toml`, both `.sha256` sidecars, every file this elaboration wrote under `docs/flows/<slug>/design/`, the `<name>.md` files and the PNG or text-grid pictures beside them included, and `docs/flows/<slug>/notes/cold-read-<id>.md`.
 
 ```bash
 git add -- <each-path>

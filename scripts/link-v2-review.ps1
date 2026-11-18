@@ -33,17 +33,20 @@ $entries = @(
     @{ Kind = 'agents'; Name = 'plan-cold-reader.md' }
     @{ Kind = 'agents'; Name = 'plan-worker-lite.md' }
     @{ Kind = 'agents'; Name = 'plan-worker-deep.md' }
+    @{ Kind = 'agents'; Name = 'ui-inspector.md' }
     @{ Kind = 'skills'; Name = 'review-v2-engine' }
     @{ Kind = 'skills'; Name = 'review-v2-method' }
     @{ Kind = 'skills'; Name = 'review-v2-lenses' }
     @{ Kind = 'skills'; Name = 'plan-v2-engine' }
     @{ Kind = 'skills'; Name = 'implement-v2-engine' }
     @{ Kind = 'skills'; Name = 'apply-v2-engine' }
+    @{ Kind = 'skills'; Name = 'ui-capture' }
     @{ Kind = 'workflows'; Name = 'review-v2.js' }
     @{ Kind = 'workflows'; Name = 'plan-v2-review.js' }
     @{ Kind = 'workflows'; Name = 'plan-v2-investigate.js' }
     @{ Kind = 'workflows'; Name = 'plan-v2-prove.js' }
     @{ Kind = 'workflows'; Name = 'implement-v2-milestone.js' }
+    @{ Kind = 'workflows'; Name = 'implement-v2-visual.js' }
 )
 
 function Get-FullPath([string]$path) {

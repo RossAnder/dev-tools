@@ -10,9 +10,10 @@
 //!
 //! `to_toml` inserts keys in that order and `preserve_order` holds it, so a
 //! write is byte-stable with no sort step. A write stamps `SCHEMA_VERSION` when
-//! the store holds an attempt, gate round or report, so that a binary predating
-//! those arrays refuses it rather than dropping them, and `BASE_SCHEMA_VERSION`
-//! otherwise. Each root key but `schema_version` is omitted while empty. Free text is LF-normalised on both read and write,
+//! a decision carries a `class`, `RUN_RECORDS_SCHEMA_VERSION` when the store
+//! otherwise holds an attempt, gate round or report, and `BASE_SCHEMA_VERSION`
+//! else, so that a binary predating those keys refuses the store rather than
+//! dropping them. Each root key but `schema_version` is omitted while empty. Free text is LF-normalised on both read and write,
 //! because a lone `\r` forces `toml`'s escaped string form. Unknown keys are
 //! dropped: the store is tool-owned and every write re-emits it from this shape.
 
@@ -27,14 +28,19 @@ use crate::tasks::schema::{
     as_date as as_datetime, id_array, lf, normal_path, str_arr_value, str_array,
 };
 
-/// The newest stamp this build reads; a store holding run records is written at it.
-pub(crate) const SCHEMA_VERSION: i64 = 3;
+/// The newest stamp this build reads; a store whose decisions carry a class is
+/// written at it.
+pub(crate) const SCHEMA_VERSION: i64 = 4;
 
-/// The stamp of a store holding no attempt, gate round or report, and the
-/// version an unstamped store reads as.
+/// The stamp of a store holding run records and no decision class.
+pub(crate) const RUN_RECORDS_SCHEMA_VERSION: i64 = 3;
+
+/// The stamp of a store holding no attempt, gate round, report or decision
+/// class, and the version an unstamped store reads as.
 pub(crate) const BASE_SCHEMA_VERSION: i64 = 2;
 
-const _: () = assert!(SCHEMA_VERSION > BASE_SCHEMA_VERSION);
+const _: () = assert!(SCHEMA_VERSION > RUN_RECORDS_SCHEMA_VERSION);
+const _: () = assert!(RUN_RECORDS_SCHEMA_VERSION > BASE_SCHEMA_VERSION);
 
 type Table = Map<String, TomlValue>;
 
@@ -92,6 +98,19 @@ vocabulary!(Door {
     OneWay => "one-way",
     TwoWay => "two-way",
 });
+
+vocabulary!(
+    /// What kind of call a decision is, so veto rates can be counted per kind.
+    DecisionClass {
+        Structure => "structure",
+        Look => "look",
+        Ux => "ux",
+        Cost => "cost",
+        Vocabulary => "vocabulary",
+        Architecture => "architecture",
+        Compromise => "compromise",
+    }
+);
 
 vocabulary!(ContractKind {
     Invariant => "invariant",
@@ -242,6 +261,8 @@ pub(crate) struct Decision {
     pub(crate) why: String,
     pub(crate) provenance: Provenance,
     pub(crate) door: Door,
+    /// Written only when set, so a store without one keeps its bytes and stamp.
+    pub(crate) class: Option<DecisionClass>,
     /// Read through [`Bind::parse`].
     pub(crate) binds: Vec<String>,
     pub(crate) rejected: Vec<Rejected>,
@@ -514,10 +535,13 @@ impl Default for PlanStore {
 impl PlanStore {
     /// The stamp a write gives this store.
     pub(crate) fn write_version(&self) -> i64 {
-        if self.attempts.is_empty() && self.gate_rounds.is_empty() && self.reports.is_empty() {
+        if self.decisions.iter().any(|d| d.class.is_some()) {
+            SCHEMA_VERSION
+        } else if self.attempts.is_empty() && self.gate_rounds.is_empty() && self.reports.is_empty()
+        {
             BASE_SCHEMA_VERSION
         } else {
-            SCHEMA_VERSION
+            RUN_RECORDS_SCHEMA_VERSION
         }
     }
 
@@ -704,11 +728,16 @@ fn id_high_water_to_toml(marks: &BTreeMap<String, u64>) -> TomlValue {
 fn decision_from_toml(table: &Table, context: &str) -> Result<Decision> {
     let id = required_str(table, "id", context)?;
     let context = format!("decision {id}");
+    let class: Option<DecisionClass> = match table.get("class") {
+        None => None,
+        Some(_) => Some(vocab(table, "class", &context)?),
+    };
     Ok(Decision {
         decision: lf(&str_or(table, "decision")),
         why: lf(&str_or(table, "why")),
         provenance: vocab(table, "provenance", &context)?,
         door: vocab(table, "door", &context)?,
+        class,
         binds: str_array(table, "binds"),
         rejected: rejected_from_toml(table, &context)?,
         evidence: lf(&str_or(table, "evidence")),
@@ -728,6 +757,7 @@ fn decision_to_toml(decision: &Decision) -> TomlValue {
         why,
         provenance,
         door,
+        class,
         binds,
         rejected,
         evidence,
@@ -749,6 +779,12 @@ fn decision_to_toml(decision: &Decision) -> TomlValue {
         "door".to_string(),
         TomlValue::String(door.as_str().to_string()),
     );
+    if let Some(class) = class {
+        table.insert(
+            "class".to_string(),
+            TomlValue::String(class.as_str().to_string()),
+        );
+    }
     table.insert("binds".to_string(), str_arr_value(binds));
     table.insert(
         "rejected".to_string(),
@@ -1475,7 +1511,7 @@ pub(crate) mod tests {
 
     pub(crate) fn fixture() -> PlanStore {
         PlanStore {
-            schema_version: SCHEMA_VERSION,
+            schema_version: RUN_RECORDS_SCHEMA_VERSION,
             last_updated: Some(at("2020-01-02")),
             binding: Binding {
                 branch: "main".to_string(),
@@ -1488,6 +1524,7 @@ pub(crate) mod tests {
                 why: "It already exists.".to_string(),
                 provenance: Provenance::AgentAssumed,
                 door: Door::OneWay,
+                class: None,
                 binds: vec!["3".to_string(), "src/a.rs".to_string()],
                 rejected: vec![Rejected {
                     option: "A new helper".to_string(),
@@ -1740,12 +1777,12 @@ pub(crate) mod tests {
         ];
         for store in alone {
             let store = PlanStore {
-                schema_version: SCHEMA_VERSION,
+                schema_version: RUN_RECORDS_SCHEMA_VERSION,
                 ..store
             };
             assert_eq!(
                 to_toml(&store)["schema_version"].as_integer(),
-                Some(SCHEMA_VERSION)
+                Some(RUN_RECORDS_SCHEMA_VERSION)
             );
             assert_eq!(rendered_round_trip(&store), store);
         }
@@ -1766,7 +1803,10 @@ pub(crate) mod tests {
             &keys[keys.len() - 4..],
             ["handover", "attempt", "gate_round", "report"]
         );
-        assert_eq!(doc["schema_version"].as_integer(), Some(SCHEMA_VERSION));
+        assert_eq!(
+            doc["schema_version"].as_integer(),
+            Some(RUN_RECORDS_SCHEMA_VERSION)
+        );
     }
 
     #[test]
@@ -1791,8 +1831,46 @@ pub(crate) mod tests {
     /// carries, so such a binary cannot rewrite the store without them.
     #[test]
     fn a_store_holding_run_records_is_stamped_above_the_base() {
-        assert_eq!(fixture().write_version(), SCHEMA_VERSION);
+        assert_eq!(fixture().write_version(), RUN_RECORDS_SCHEMA_VERSION);
         assert_eq!(base_fixture().write_version(), BASE_SCHEMA_VERSION);
+    }
+
+    fn classed(mut store: PlanStore) -> PlanStore {
+        store.decisions[0].class = Some(DecisionClass::Compromise);
+        store.schema_version = SCHEMA_VERSION;
+        store
+    }
+
+    /// A class stamps the newest version whether or not run records are held,
+    /// so a binary predating the key refuses the store instead of stripping it.
+    #[test]
+    fn a_decision_class_round_trips_and_stamps_the_newest_version() {
+        for store in [classed(fixture()), classed(base_fixture())] {
+            assert_eq!(store.write_version(), SCHEMA_VERSION);
+            let doc = to_toml(&store);
+            assert_eq!(doc["schema_version"].as_integer(), Some(SCHEMA_VERSION));
+            assert_eq!(doc["decision"][0]["class"].as_str(), Some("compromise"));
+            assert_eq!(rendered_round_trip(&store), store);
+        }
+    }
+
+    #[test]
+    fn a_decision_without_a_class_writes_no_class_key() {
+        let doc = to_toml(&fixture());
+        assert!(doc["decision"][0].get("class").is_none(), "{doc}");
+    }
+
+    #[test]
+    fn an_unknown_decision_class_is_refused_with_the_vocabulary() {
+        let mut raw = to_toml(&fixture());
+        record_mut(&mut raw, "decision")
+            .insert("class".to_string(), TomlValue::String("taste".to_string()));
+        let message = from_toml(&raw).expect_err("unknown class").to_string();
+        assert!(message.contains("taste"), "{message}");
+        assert!(
+            message.contains(&DecisionClass::VOCABULARY.join(", ")),
+            "{message}"
+        );
     }
 
     #[test]
@@ -1985,7 +2063,10 @@ pub(crate) mod tests {
         let read = from_toml(&raw).expect("an older store parses");
         assert_eq!(read.schema_version, 1);
         let written = to_toml(&read);
-        assert_eq!(written["schema_version"].as_integer(), Some(SCHEMA_VERSION));
+        assert_eq!(
+            written["schema_version"].as_integer(),
+            Some(RUN_RECORDS_SCHEMA_VERSION)
+        );
     }
 
     #[test]

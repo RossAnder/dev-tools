@@ -888,3 +888,178 @@ fn clear_after_beside_after_is_refused_and_writes_nothing() {
     assert_eq!(err["kind"], json!("validation"), "{err}");
     assert_eq!(fs::read(&store).unwrap(), before);
 }
+
+fn names_of(doc: &toml::Value, index: usize, key: &str) -> Option<Vec<String>> {
+    table(doc, "milestones")[index]
+        .get(key)
+        .and_then(toml::Value::as_array)
+        .map(|list| {
+            list.iter()
+                .map(|entry| entry.as_str().unwrap().to_string())
+                .collect()
+        })
+}
+
+fn stamp(doc: &toml::Value) -> i64 {
+    doc["schema_version"].as_integer().unwrap()
+}
+
+fn strings(names: &[&str]) -> Option<Vec<String>> {
+    Some(names.iter().map(|name| (*name).to_string()).collect())
+}
+
+#[test]
+fn milestone_ui_lists_are_set_replaced_and_cleared() {
+    let (_tmp, root) = sandbox();
+    let store = seed_v2(&root, FIXTURE);
+    milestone(
+        &root,
+        "add",
+        &[
+            "--id",
+            "A",
+            "--goal",
+            "g",
+            "--ui-state",
+            "empty-cart",
+            "--ui-state",
+            "full-cart",
+            "--ui-control",
+            "clipped-label",
+        ],
+    )
+    .success();
+    let doc = read_store(&store);
+    assert_eq!(stamp(&doc), 3, "{doc}");
+    assert_eq!(
+        names_of(&doc, 0, "ui_states"),
+        strings(&["empty-cart", "full-cart"])
+    );
+    assert_eq!(
+        names_of(&doc, 0, "ui_controls"),
+        strings(&["clipped-label"])
+    );
+
+    milestone(&root, "update", &["--id", "A", "--ui-state", "checkout"]).success();
+    let doc = read_store(&store);
+    assert_eq!(names_of(&doc, 0, "ui_states"), strings(&["checkout"]));
+    assert_eq!(
+        names_of(&doc, 0, "ui_controls"),
+        strings(&["clipped-label"]),
+        "a --ui-state update leaves the control list alone"
+    );
+
+    milestone(&root, "update", &["--id", "A", "--ui-control", "0-overlap"]).success();
+    let doc = read_store(&store);
+    assert_eq!(names_of(&doc, 0, "ui_states"), strings(&["checkout"]));
+    assert_eq!(names_of(&doc, 0, "ui_controls"), strings(&["0-overlap"]));
+
+    milestone(&root, "update", &["--id", "A", "--clear-ui"]).success();
+    let doc = read_store(&store);
+    assert_eq!(names_of(&doc, 0, "ui_states"), None, "{doc}");
+    assert_eq!(names_of(&doc, 0, "ui_controls"), None, "{doc}");
+    assert_eq!(
+        stamp(&doc),
+        2,
+        "a store left with no ui list goes back to 2"
+    );
+}
+
+#[test]
+fn milestone_ui_refuses_a_bad_or_doubled_name_and_writes_nothing() {
+    let (_tmp, root) = sandbox();
+    let store = seed_v2(&root, FIXTURE);
+    let too_long = "a".repeat(65);
+    for bad in [
+        vec!["--ui-state", "Upper"],
+        vec!["--ui-state=-leading-dash"],
+        vec!["--ui-state", "has space"],
+        vec!["--ui-state", "under_score"],
+        vec!["--ui-state", ""],
+        vec!["--ui-control", too_long.as_str()],
+        vec!["--ui-state", "same", "--ui-state", "same"],
+        vec!["--ui-control", "same", "--ui-control", "same"],
+        vec!["--ui-state", "both", "--ui-control", "both"],
+    ] {
+        let mut args = vec!["--id", "A", "--goal", "g"];
+        args.extend(bad.iter().copied());
+        let err = refused(&root, "add", &args);
+        assert_eq!(err["kind"], json!("validation"), "{bad:?}: {err}");
+    }
+    assert!(table(&read_store(&store), "milestones").is_empty());
+
+    let longest = "a".repeat(64);
+    milestone(
+        &root,
+        "add",
+        &[
+            "--id",
+            "A",
+            "--goal",
+            "g",
+            "--ui-state",
+            longest.as_str(),
+            "--ui-control",
+            "clipped",
+        ],
+    )
+    .success();
+    let before = fs::read(&store).unwrap();
+    for bad in [
+        vec!["--ui-state", "clipped"],
+        vec!["--ui-control", longest.as_str()],
+        vec!["--ui-state", "x", "--ui-state", "x"],
+        vec!["--clear-ui", "--ui-state", "x"],
+        vec!["--clear-ui", "--ui-control", "x"],
+    ] {
+        let mut args = vec!["--id", "A"];
+        args.extend(bad.iter().copied());
+        let err = refused(&root, "update", &args);
+        assert_eq!(err["kind"], json!("validation"), "{bad:?}: {err}");
+    }
+    assert_eq!(fs::read(&store).unwrap(), before);
+}
+
+#[test]
+fn milestone_ui_absent_leaves_the_store_as_it_was() {
+    let (_tmp, root) = sandbox();
+    let store = seed_v2(&root, FIXTURE);
+    milestone(&root, "add", &["--id", "A", "--goal", "g", "--gate", "x"]).success();
+    let before = fs::read_to_string(&store).unwrap();
+    assert!(!before.contains("ui_"), "{before}");
+    assert!(before.starts_with("schema_version = 2\n"), "{before}");
+
+    milestone(&root, "update", &["--id", "A", "--ui-state", "home"]).success();
+    milestone(&root, "update", &["--id", "A", "--clear-ui"]).success();
+    assert_eq!(fs::read_to_string(&store).unwrap(), before);
+}
+
+#[test]
+fn milestone_ui_update_is_audited_on_an_audited_store() {
+    let (_tmp, root) = sandbox();
+    let store = seed_v2(&root, &audited_fixture());
+    milestone(&root, "add", &["--id", "A", "--goal", "g", "--reason", "r"]).success();
+    let rows_before = table(&read_store(&store), "changes").len();
+
+    milestone(
+        &root,
+        "update",
+        &[
+            "--id",
+            "A",
+            "--ui-state",
+            "home",
+            "--ui-control",
+            "broken-home",
+            "--reason",
+            "the visual pass",
+        ],
+    )
+    .success();
+    let doc = read_store(&store);
+    let added: Vec<&str> = table(&doc, "changes")[rows_before..]
+        .iter()
+        .map(|row| text(row, "field"))
+        .collect();
+    assert_eq!(added, vec!["ui_states", "ui_controls"], "{doc}");
+}

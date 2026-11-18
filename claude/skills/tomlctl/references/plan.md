@@ -135,6 +135,12 @@ tomlctl plan decide --slug <slug> --ndjson <path>
 
 Prints `{"ok":true,"ids":["D1"]}`, one id per row in order.
 
+A row may carry `class`, the kind of call the decision is: `structure`, `look`, `ux`, `cost`,
+`vocabulary`, `architecture` or `compromise`. An unknown value refuses the batch, naming the
+vocabulary. It is written only when set, and a store holding any classed decision is stamped
+`schema_version = 4`, so a binary predating the key refuses the store rather than dropping it.
+[`plan gate`](#plan-gate) groups the agent-assumed decisions by class, in that order, unclassed last.
+
 ## `plan contract`
 
 Adds or updates contracts on the same terms as `plan decide`. A new row needs `kind` and a non-empty
@@ -287,7 +293,7 @@ table is refused. On an audited store `--reason` is required, blank is refused, 
 `[[changes]]` row with `field = "*"` carrying that reason.
 
 ```bash
-tomlctl plan milestone add --slug <slug> --id <id> --goal '<text>' [--gate '<command>']... [--gate-probe '<gate> :: <probe>']... [--after <id>]... [--defer --reason '<text>']
+tomlctl plan milestone add --slug <slug> --id <id> --goal '<text>' [--gate '<command>']... [--gate-probe '<gate> :: <probe>']... [--after <id>]... [--ui-state <name>]... [--ui-control <name>]... [--defer --reason '<text>']
 ```
 
 | Flag | Value | Meaning | Default |
@@ -297,10 +303,15 @@ tomlctl plan milestone add --slug <slug> --id <id> --goal '<text>' [--gate '<com
 | `--gate` | command, repeatable | Command that must pass at the milestone's drain. | none |
 | `--gate-probe` | `<gate> :: <probe>`, repeatable | Stores a [gate probe](plan-probes.md#gate-probes), split at the first ` :: `. `<gate>` must equal one of the milestone's gates; no separator, an empty side, or a probe equal to its gate is refused. | none |
 | `--after` | id, repeatable | An earlier milestone this one must run after, stored as `after`. It must name a checkpoint stored before this one, or `plan check` reports `plan/milestone-after-unknown` or `plan/milestone-after-forward`. | none |
+| `--ui-state` | name, repeatable | A capture state the milestone's visual pass judges, stored in `ui_states`. A name is lowercase letters, digits and `-`, starting with a letter or digit, at most 64 characters; a malformed or repeated name is refused. | none |
+| `--ui-control` | name, repeatable | A planted-defect state the inspector must fail, stored in `ui_controls`, under the same name rule. A name that is also a `--ui-state` is refused. | none |
 | `--defer` | — | Sets `elaboration = "deferred"`, so the milestone's tasks are elaborated just before it runs. Needs `--reason`. | `upfront` |
 | `--reason` | text | Why it is deferred, and why it was added on an audited store, which requires it. | `""` |
 
 Prints `{"ok":true,"id":"A"}`.
+
+A milestone holding `ui_states` or `ui_controls`, or a task store holding a `look` accept entry, stamps
+`tasks.toml` at `schema_version = 3`, so a binary predating those keys refuses the store.
 
 ## `plan milestone update`
 
@@ -311,7 +322,7 @@ with `ref = "milestone:<id>"`: `goal`, `gates`, `gate_probes`, `elaboration`, `d
 or `gate_probes` row's `old` and `new` are compact JSON, such as `["a","b"]`.
 
 ```bash
-tomlctl plan milestone update --slug <slug> --id <id> [--goal '<text>'] [--gate '<command>']... [--clear-gate] [--gate-probe '<gate> :: <probe>']... [--after <id>]... [--clear-after] [--defer] [--elaborated] [--reason '<text>']
+tomlctl plan milestone update --slug <slug> --id <id> [--goal '<text>'] [--gate '<command>']... [--clear-gate] [--gate-probe '<gate> :: <probe>']... [--after <id>]... [--clear-after] [--ui-state <name>]... [--ui-control <name>]... [--clear-ui] [--defer] [--elaborated] [--reason '<text>']
 ```
 
 | Flag | Value | Meaning | Default |
@@ -323,6 +334,9 @@ tomlctl plan milestone update --slug <slug> --id <id> [--goal '<text>'] [--gate 
 | `--gate-probe` | `<gate> :: <probe>`, repeatable | Replaces the whole probe list, checked against the gates this call leaves; a pair already stored keeps its verdict. | keeps it |
 | `--after` | id, repeatable | Replaces the whole `after` list with the ids given, each a checkpoint stored before this one. | keeps it |
 | `--clear-after` | — | Empties the `after` list. Refused with `kind=validation` alongside `--after`. | keeps it |
+| `--ui-state` | name, repeatable | Replaces the whole `ui_states` list, under the name rule of `plan milestone add`. | keeps it |
+| `--ui-control` | name, repeatable | Replaces the whole `ui_controls` list. A name that is also a state the call leaves is refused. | keeps it |
+| `--clear-ui` | — | Empties both lists. Refused alongside `--ui-state` or `--ui-control`. | keeps them |
 | `--defer` | — | Sets `elaboration = "deferred"` and `defer_reason`. Needs `--reason`. No flag moves a milestone back to `upfront`. | keeps it |
 | `--elaborated` | — | Sets `elaboration = "elaborated"` on a milestone currently `deferred`, keeping `defer_reason`. Needs `--reason`. Refused on an `upfront` or already `elaborated` milestone, and alongside `--defer`. | keeps it |
 | `--reason` | text | Why it is deferred or elaborated, and why it changed on an audited store. | `""` |
@@ -411,7 +425,7 @@ tomlctl plan gate --slug <slug>
 
 | Key | Row fields | Holds |
 |---|---|---|
-| `assumptions` | `id`, `decision`, `why`, `binds`, `door`, `surfaced`, `evidence`, `if_false`, `revisit_if` | `agent-assumed` decisions, ranked by how many entries they bind. |
+| `assumptions` | `id`, `decision`, `class`, `why`, `binds`, `door`, `surfaced`, `evidence`, `if_false`, `revisit_if` | `agent-assumed` decisions, grouped by `class` in vocabulary order with unclassed ones last, and within a class ranked by how many entries they bind. `class` is `null` when unset. |
 | `one_way_doors` | `id`, `decision`, `provenance`, `revisit_if` | Every one-way decision, whatever its provenance. |
 | `risks` | `kind`, then `detail`, or `id`, `severity`, `target`, `summary` | `kind = "skip-reason"` for each `[[run]]` of step `review` with a skip reason, then `kind = "review-finding"` for each open critical or major defect and each open re-check finding. A missing `severity` or `target` reads `""`. |
 | `task_mix` | `files`, `executor`, `tasks` | Row counts by file-count bucket (`1`, `2-3`, `4+`) and spec `executor`. A row with no files counts as `1`, and one with no spec under an empty executor. |
@@ -442,6 +456,9 @@ Each precondition is a `kind=validation` refusal, and nothing is written until a
   `relaunch step <s> or plan run abandon --step <s> --reason <why>` choice. `--amend` does not refuse an
   open run, because it runs at the `running` stage, where an open run may be live execution.
 - Every surfaced decision is answered, meaning no longer `agent-assumed`.
+- No decision is both `door = "one-way"` and `agent-assumed` while unsurfaced. The refusal reads
+  `one-way decisions agent-assumed and never surfaced: <ids>; surface each to the user with plan decide`.
+  A one-way decision the user stated or confirmed, or one surfaced, does not count here.
 - `plan check` reports no error. Under `--amend`, `plan/brief-changed` does not count.
 - `--review ran` needs a `[[runs]]` row in `review-v2.toml` with `family = "plan"` and a non-empty
   `finished`. The refusal reads `` `--review ran` refused: <reasons joined by "; "> `` and names ids for:
@@ -535,7 +552,10 @@ input, gate command list and reproduce launches from; their flags and output are
 | `plan/spec-orphan` | error | A spec is keyed on a `ref` no row carries. |
 | `plan/spec-no-outcome` | error | A spec has a blank `outcome`. |
 | `plan/spec-no-accept` | error | A spec has no `accept` entry. |
-| `plan/accept-no-check` | error | An `accept` entry has a blank `check`, unless its task's milestone is deferred. |
+| `plan/accept-no-check` | error | An `accept` entry has a blank `check`, unless its task's milestone is deferred or the entry is `run_by = "look"`, whose empty `check` is its shape. |
+| `plan/ui-controls-missing` | error | A milestone declares `ui_states` and no `ui_controls`, so nothing shows its inspector fails a planted defect. `ids` names the milestone's rows. |
+| `plan/look-without-states` | error | A task's `look` accept entry sits in a milestone that declares no `ui_states`. |
+| `plan/look-state-unknown` | error | A `look` entry's `states` names a state the milestone's `ui_states` does not list. A name that is a `ui_controls` state is called out, since a control is the inspector's to fail and never a `look` entry's. |
 | `plan/accept-owner-invalid` | error | An `accept` entry's `run_by` is not `worker`, `gate` or `covered`; is `worker` on a check whose `writes_build` is not `false`; is `covered` with no `covered_by`; or a `covered_by` is set without `covered`. |
 | `plan/accept-cover-unknown` | error | An `accept` entry's `covered_by` equals no gate of its row's checkpoint milestone. |
 | `plan/gate-probe-unknown` | error | A milestone's stored gate probe names a gate that is no longer one of the milestone's gates. |
@@ -547,6 +567,8 @@ input, gate command list and reproduce launches from; their flags and output are
 | `plan/probe-unhealthy` | error | An `accept` entry's recorded verdict is anything but `healthy`. |
 | `plan/probe-absent` | warning | An `accept` entry of a `pending` row, with a non-empty `check`, `writes_build = false` and an effective owner of `worker`, has no probe. A row added after approval, which an audited store marks with a `[[changes]]` row of `field = "*"` and an empty `old`, is not reported, since probes run only before approval. |
 | `plan/milestone-no-gate` | warning | A milestone, or a checkpoint with no `[[milestones]]` row, has no non-blank gate. |
+| `plan/ui-accept-structural` | warning | A pending row, in a milestone that declares `ui_states` and is not deferred, has no `look` entry and every `accept` entry is `writes_build = false`, so its behaviour is accepted on reads alone. |
+| `plan/ui-milestone-no-states` | warning | A milestone that is not deferred and declares no `ui_states` holds rows whose `files` match a `paths` glob of the project's `.claude/ui-capture.toml`; `ids` names those rows. A config that cannot be read or parsed is one finding naming no row. |
 | `plan/milestone-order-unqualified` | warning | One finding per milestone after the first that does not depend, through `needs`, `coupling` or `after` at any distance, on an earlier milestone, so `/implement-v2` may run it first. `detail` names the earlier milestones. `plan milestone update --id <later> --after <earlier>` where the earlier one must go first. |
 | `plan/file-only-chain` | info | Before the first approval only: one finding per milestone holding a `needs` link whose two rows share a file but no contract names both and no premise of the later row is at `after:<earlier>`. `ids` names the linked rows; `detail` lists each link with its shared files, and the milestone's longest `needs` chain against its row count. Splitting the file lets the rows run together. |
 | `plan/milestone-width` | info | Before the first approval only: one finding per milestone, after the first and not deferred, holding rows whose direct `needs` all sit in a milestone earlier than the one just before it, or that have no `needs`. `ids` names the rows; `detail` gives the earliest milestone each could join, the one after its latest need or the first when it has none, skipping any deferred milestone, and how many of the milestone's rows wait. Moving the rows earlier, or merging the milestones, lets them run sooner. |

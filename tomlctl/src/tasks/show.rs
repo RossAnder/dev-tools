@@ -158,6 +158,9 @@ pub(super) fn accept_json(entries: &[Accept]) -> JsonValue {
             if !entry.covered_by.is_empty() {
                 map.insert("covered_by".to_string(), json!(entry.covered_by));
             }
+            if !entry.states.is_empty() {
+                map.insert("states".to_string(), json!(entry.states));
+            }
             if let Some(probe) = &entry.probe {
                 map.insert("probe".to_string(), accept_probe_json(probe));
             }
