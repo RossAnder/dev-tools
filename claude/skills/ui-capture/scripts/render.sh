@@ -21,7 +21,7 @@ state's layout violations into <out-dir>/geometry.json, creating it when absent 
 other states' keys.
 
 The browser is $UI_CAPTURE_BROWSER, else chrome, chromium or msedge on PATH, else a standard
-Windows or macOS install, else the newest Chromium in the Playwright cache.
+Windows or macOS install, else the newest Chromium in the Playwright cache that starts.
 
 --self-test renders a clean page and a page with a planted overflow, and fails unless both PNGs
 exist, the clean state is empty and the overflow is reported.
@@ -58,6 +58,17 @@ file_url() {
   esac
 }
 
+# A cache build can be left half-installed, so a candidate must start headless before it is
+# chosen; a newer broken build then falls through to an older working one.
+browser_starts() {
+  local profile status
+  profile=$(mktemp -d) || return 1
+  run_browser "$1" 64 64 "$profile" --dump-dom about:blank >/dev/null 2>&1
+  status=$?
+  rm -rf "$profile"
+  return "$status"
+}
+
 playwright_chromium() {
   local cache dir exe
   for cache in "${PLAYWRIGHT_BROWSERS_PATH:-}" \
@@ -71,7 +82,7 @@ playwright_chromium() {
         "$dir"/chrome-linux64/chrome "$dir"/chrome-linux/chrome \
         "$dir"/chrome-mac*/Chromium.app/Contents/MacOS/Chromium \
         "$dir"/chrome-mac*/"Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"; do
-        if [ -x "$exe" ]; then
+        if [ -x "$exe" ] && browser_starts "$exe"; then
           printf '%s' "$exe"
           return 0
         fi
