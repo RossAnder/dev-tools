@@ -10730,7 +10730,7 @@ tags = [
     "review-v2",
     "measurement",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-10T13:50:41Z
 last_seen = 2026-11-10T13:50:41Z
 seen_count = 1
@@ -10740,6 +10740,8 @@ flow = "review-v2-first-run-repairs"
 context = "measurement.md works around it by reading a model under 30 audited rows as insufficient on every band and counting per class with review list --kind ... --for audit per store. A per-class split (confirmed defect, refuted defect, checked cleanup) in stats would let the five-run review read the bands directly."
 base_sha = "18d17dcff260703f5f701855d50f09d81a2252f0"
 related = ["B-fc4d7f8b"]
+promoted = 2026-11-18
+promoted_to = "review-v2-cells-and-handoff"
 
 [[backlog]]
 id = "B-18a1a40e"
@@ -13537,7 +13539,7 @@ kind = "debt"
 summary = "review plan --propose bundles correctness, security and test-gaps over mixed rule-sliced slices and spends the ceiling on repeat passes before candidate lenses"
 area = "tomlctl/src/review"
 tags = ["review-v2"]
-status = "open"
+status = "promoted"
 created = 2026-11-18T16:21:40Z
 last_seen = 2026-11-18T16:21:40Z
 seen_count = 1
@@ -13547,6 +13549,8 @@ flow = "mid-run-requests"
 context = "Run U3 (46 files, 3907 lines, standard): the 14-cell proposal put correctness+security+test-gaps on slices mixing Cargo.lock, agent prose and test files, spread security over prose despite the trust-boundary signal naming one Rust file, and gave 7 cells to pass-2 repeats while cutting hygiene and doc-drift for ceiling. The orchestrator rewrote the map by subsystem. Outcome evidence: 13 of 31 findings were duplicates, and the two repeat cells plus the context-free cells found almost nothing the first-pass cells had not. Slice security by the trust-boundary roots, keep test-gaps on test files, and rank candidate lenses ahead of repeat passes."
 base_sha = "d4fc6f684790cb3b8982e670e666b55ebcd7c82e"
 related = ["B-39b9e713"]
+promoted = 2026-11-18
+promoted_to = "review-v2-cells-and-handoff"
 
 [[backlog]]
 id = "B-0a796f50"
@@ -13610,7 +13614,7 @@ kind = "debt"
 summary = "review schedule mints independent fix tasks for findings whose fixes interact, so a doc fix can describe behaviour another task changes"
 area = "tomlctl/src/review"
 tags = ["apply-v2"]
-status = "open"
+status = "promoted"
 created = 2026-11-18T16:21:40Z
 last_seen = 2026-11-18T16:21:40Z
 seen_count = 1
@@ -13620,6 +13624,8 @@ flow = "mid-run-requests"
 context = "mid-run-requests apply-1: F48 (code: plan request add refuses on a malformed generated map) and F62 (doc: generated.md omits that refusal) were scheduled as separate tasks. The F48 fix switched to a warning, while F62's task wrote the refusal into the doc, so the two contradicted and an extra task (33) and launch were needed. Triage had judged the pair distinct. When one finding's fix changes the behaviour another finding's doc fix describes, schedule should order them (needs) or merge them, or triage should link them."
 base_sha = "d4fc6f684790cb3b8982e670e666b55ebcd7c82e"
 related = ["B-7b9d8057"]
+promoted = 2026-11-18
+promoted_to = "review-v2-cells-and-handoff"
 
 [[backlog]]
 id = "B-4e15b9fa"
@@ -13630,7 +13636,7 @@ tags = [
     "review-v2",
     "propose",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-18T16:32:33Z
 last_seen = 2026-11-18T16:32:33Z
 seen_count = 1
@@ -13643,6 +13649,8 @@ related = [
     "B-abc59fb3",
     "B-39b9e713",
 ]
+promoted = 2026-11-18
+promoted_to = "review-v2-cells-and-handoff"
 
 [[backlog]]
 id = "B-4e8de7c0"
@@ -13676,7 +13684,7 @@ tags = [
     "ceiling",
     "escalations",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-18T16:32:33Z
 last_seen = 2026-11-18T16:32:33Z
 seen_count = 1
@@ -13689,6 +13697,8 @@ evidence = [
     "claude/skills/review-v2-engine/references/triage-and-close.md",
 ]
 related = ["B-6f17f239"]
+promoted = 2026-11-18
+promoted_to = "review-v2-cells-and-handoff"
 
 [[backlog]]
 id = "B-8bd7a593"
@@ -13699,7 +13709,7 @@ tags = [
     "review-v2",
     "convert",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-18T16:32:33Z
 last_seen = 2026-11-18T16:32:33Z
 seen_count = 1
@@ -13711,3 +13721,5 @@ evidence = [
     "tomlctl/src/review/add.rs:411",
     "claude/skills/review-v2-engine/references/triage-and-close.md",
 ]
+promoted = 2026-11-18
+promoted_to = "review-v2-cells-and-handoff"

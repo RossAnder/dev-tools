@@ -560,6 +560,14 @@ tasks = [
 provides = "feature names"
 consumes = "the engine's pre-flight list"
 
+[[approval]]
+commit = "ec56fff955f9f7a603bcaaf691dcbb00da5835a1"
+at = 2026-11-18T20:15:57Z
+brief_sha256 = "d2cfd511b20ebc23f87dfe54d687935f6d476ee5e3efca0648a39e3d1b382cb2"
+by = "user"
+review = "ran"
+reason = ""
+
 [[run]]
 step = "investigate"
 workflow = "plan-v2-investigate"

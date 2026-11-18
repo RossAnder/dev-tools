@@ -1060,3 +1060,10 @@ last_used = "2026-11-18T14:05:59.1785491Z"
 
 [active.binding]
 branch = "main"
+
+[[active]]
+slug = "review-v2-cells-and-handoff"
+last_used = "2026-11-18T20:15:57.7374509Z"
+
+[active.binding]
+branch = "main"
