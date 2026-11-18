@@ -48,7 +48,7 @@ The capture is recorded by this pass's run row and notes alone, never through `p
 
 ## 4. Check the capture
 
-Before launching the inspectors, check the capture is whole. A capture whose block is not `pass`, or `flaky` (a pass), is a capture failure. Otherwise list `<dir>` and read `<dir>/geometry.json` with the Read tool, and check every asked state and control:
+Before launching the inspectors, check the capture is whole. A capture whose block is `fail`, or a second `timeout` (below), is a capture failure; `pass` and `flaky` (a pass) go on to the checks. Otherwise list `<dir>` and read `<dir>/geometry.json` with the Read tool, and check every asked state and control:
 
 - it has `<state>.png`, `<state>.txt` or both;
 - when it has `<state>.png`, `geometry.json` has a key for it, an empty array counting as a key.

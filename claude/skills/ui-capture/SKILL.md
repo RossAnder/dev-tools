@@ -15,13 +15,15 @@ A project declares its capture once, in `.claude/ui-capture.toml` at the repo ro
 command = "bun run visual-audit"
 out = ".ui-capture"
 paths = ["web/src/**", "shell/**/*.qml"]
+controls = ["settings-04"]
 ```
 
 | Key | Value |
 |---|---|
-| `command` | The capture command, run from the repo root through the shell. The flags below are appended to it. |
-| `out` | The default output directory, relative to the repo root. A caller that passes `--out` overrides it. |
-| `paths` | Globs naming the UI's source files. A change touching any of them is a UI change, on any stack, beside the web and QML file globs the review vocabulary already knows. |
+| `command` | Required. The capture command, run from the repo root through the shell. The flags below are appended to it. |
+| `out` | Required. The default output directory, relative to the repo root; the visual pass builds each round's directory under it. A caller that passes `--out` overrides it. |
+| `paths` | Optional. Globs naming the UI's source files. A change touching any of them is a UI change, on any stack, beside the web and QML file globs the review vocabulary already knows. |
+| `controls` | Optional. The names of the capture's control states (see **Controls** below), each one the command knows. A review of a change reads this list so its lenses skip each control's planted defect; the visual pass takes its controls from the milestone, never from this key. |
 
 ## The command
 
@@ -73,7 +75,7 @@ Every state captured as an image has a key in `geometry.json`, its array empty w
 
 ## Controls
 
-A milestone may name some of its states as controls. A control state carries a defect planted on purpose, so a judge that finds nothing in it is a judge that is not looking, and its answers on the other states cannot be trusted. The capture command captures a control like any other state; the project builds the planted defect into the state itself. The judge is not told which states are controls, so a control it fails is a defect it found without being told one was there. A control is judged against the look entries of the clean states that share its name up to the last `-`, so a project names each state `<surface>-<n>`, such as `settings-03`, with a control taking its surface's prefix.
+A milestone may name some of its states as controls. A control state carries a defect planted on purpose, so a judge that finds nothing in it is a judge that is not looking, and its answers on the other states cannot be trusted. The capture command captures a control like any other state; the project builds the planted defect into the state itself. The visual pass's inspector is not told which states are controls, so a control it fails is a defect it found without being told one was there; it judges the states it is given and never reads the declaration's `controls`. A review lens is told: it judges the change rather than the inspector, so it skips each control the declaration lists and never reports the planted defect as one the change made. A project lists every control in the declaration's `controls`, so a review that captures every state knows which ones carry a plant. A control is judged against the look entries of the clean states that share its name up to the last `-`, so a project names each state `<surface>-<n>`, such as `settings-03`, with a control taking its surface's prefix.
 
 ## Judging a capture
 

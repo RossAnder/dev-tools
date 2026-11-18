@@ -17,7 +17,7 @@ discover = [
 
 ## Runs
 
-The project's own capture command, once per run, before the cells, so the UI lens finders judge real captures of the changed UI rather than reading its source alone. The capture contract — `.claude/ui-capture.toml` with its `command`, `out` and `paths` keys, the command's `--out`, `--only` and `--list` flags, the per-state `<state>.png` and `<state>.txt` outputs and the `geometry.json` layout report — is the `ui-capture` skill's; this check only runs it.
+The project's own capture command, once per run, before the cells, so the UI lens finders judge real captures of the changed UI rather than reading its source alone. The capture contract — `.claude/ui-capture.toml` with its `command`, `out`, `paths` and `controls` keys, the command's `--out`, `--only` and `--list` flags, the per-state `<state>.png` and `<state>.txt` outputs and the `geometry.json` layout report — is the `ui-capture` skill's; this check only runs it.
 
 The surveyor walks `discover` in order and stops at the first rung that settles the line. It runs nothing, and it never runs the capture command or its `--list` to see which states exist. A run whose signals lack `ui-change` resolves `none` on the first rung. Otherwise it reads `.claude/ui-capture.toml` at the repository root: when the file is absent, or holds no `command` string, the line resolves to `none — ui-capture: none; the project declares no .claude/ui-capture.toml`. When it holds one, the resolved command is that `command` with ` --out <run dir>/ui-capture` appended, `<run dir>` being the run's `dir`. The digest lists it on one `verification:` line keyed `ui-capture`.
 
@@ -39,7 +39,7 @@ The command's exit status and its output directory together say what the finders
 - **Any other exit.** At least one state was not captured: a capture failure, never a pass. Whatever the directory holds may be partial.
 - **No config.** `none — ui-capture: none; …` means no capture ran. The lenses fall back to the changed source and grade their findings as their `No capture` probe says.
 
-To tell exit 0 from incomplete, the orchestrator, when the verification return arrives, lists the `*.png` files directly under `<run dir>/ui-capture` and the top-level keys of `<run dir>/ui-capture/geometry.json`. Each `<state>.png` whose `<state>` is not a key is a state missing its geometry. Reading those two is all it does: it judges no capture.
+To tell exit 0 from incomplete, the orchestrator, when the verification return arrives, lists the `*.png` files directly under `<run dir>/ui-capture` and the top-level keys of `<run dir>/ui-capture/geometry.json`. Each `<state>.png` whose `<state>` is not a key is a state missing its geometry. It also reads the `controls` array of `.claude/ui-capture.toml`, the project's planted-defect states, absent meaning none. Reading those three is all it does: it judges no capture.
 
 ## Fence or finding mapping
 
@@ -50,6 +50,8 @@ To tell exit 0 from incomplete, the orchestrator, when the verification return a
 - any other exit: `<run dir>/ui-capture — ui-capture: failed, exit <n>; log <log path>`, the log path being the one the verification return gave;
 - no config, or no `ui-change` signal: the `none — ui-capture: none; <reason>` line the surveyor resolved, recorded as written.
 
-`review show <cell> --for finder` carries that entry. A finder reads the states in its slice from the directory it names. `ui-capture: incomplete` means the named states are reported as capture failures, as the lenses' measured-geometry probe says, and the rest are read as captured. `ui-capture: failed` means only what the directory holds may be read, and every state the slice reaches that has no output there is judged from source. `ui-capture: none` means no capture: the lenses read the changed source.
+When the declaration's `controls` is non-empty, each entry that names the directory ends with `; controls: <state>, <state>`, naming every control as declared, so exit 0 records `<run dir>/ui-capture; controls: <state>, ...`.
+
+`review show <cell> --for finder` carries that entry. A finder reads the states in its slice from the directory it names. A state named under `controls:` carries a defect planted on purpose: the finder skips it, reports neither its planted defect nor its `geometry.json` entries, and counts it in its coverage note as a control. `ui-capture: incomplete` means the named states are reported as capture failures, as the lenses' measured-geometry probe says, and the rest are read as captured. `ui-capture: failed` means only what the directory holds may be read, and every state the slice reaches that has no output there is judged from source. `ui-capture: none` means no capture: the lenses read the changed source.
 
 This check writes no findings. A missing geometry key or a failed capture is reported by the finder that reads it, inside its own slice, never by this check.

@@ -609,6 +609,6 @@ Feature meanings:
 | `authored_files` | the library's `authored_list` and `authored_read` list and read the authored files under a flow's directory |
 | `agent_usage` | the agent record carries a `usage` table of the token counts a hook payload reported |
 | `review_finding_read` | the library's `review_finding` reads a single finding row from a review store |
-| `decision_class` | a question carries a `decision_class`, so the plan and the engine can tell a structural call from one of taste, architecture, cost or UX |
-| `ui_look` | the plan records the UI look the user chose from the layout options shown before tasks are written |
+| `decision_class` | a plan decision may carry `class` (`structure`, `look`, `ux`, `cost`, `vocabulary`, `architecture`, `compromise`) via `plan decide`, which stamps plan.toml `schema_version = 4`; `plan gate` groups agent-assumed decisions by it |
+| `ui_look` | milestones carry `ui_states` and `ui_controls` (`plan milestone add\|update --ui-state/--ui-control/--clear-ui`), an accept entry may be `run_by = "look"` with `states`, `plan emit gate-list` prints `visual`, `plan check` reports the five UI classes, and tasks.toml is stamped `schema_version = 3` |
 | `inputs_plan_ledger` | `inputs` reads and writes the plan ledger the implement engine uses to ask the user its questions |

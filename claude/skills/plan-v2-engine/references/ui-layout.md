@@ -76,7 +76,9 @@ Every file this step writes under `docs/flows/<slug>/design/` is committed with 
 
 **States.** Name the capture states the milestone's visual pass judges, by the `ui-capture` skill's contract. Give every surface its content extremes, because dead space, a panel that grows with its container and a fixed-height panel show only there: empty, one item, many items, a long label, and a short and a tall window, or a short and a tall terminal. Where the project's capture command already exists, `<command> --list` prints the state names it knows; reuse those names, and give each new state a row of the milestone that teaches the command to reach it, the command's source in that row's `files`. A project with no `.claude/ui-capture.toml` gets a row that declares one, since the visual pass has nothing to run without it.
 
-**Controls.** Declare at least one control: a state carrying a defect planted on purpose, which the inspector must fail. A control is listed only as a control, never among the states a look entry names, and `plan check` refuses a milestone with states and no control (`plan/ui-controls-missing`). Choose a defect from the `ui-capture` skill's rubric that the milestone's own surfaces could plausibly have, such as a label clipped in a narrow state, and give it to the row that builds the states.
+Name every state `<surface>-<n>`, as the `ui-capture` skill's Controls section sets out: one surface prefix per surface and a two-digit number. A name that describes the state leaks what it shows, so a control's name says nothing about its defect, and the control takes its own surface's looks.
+
+**Controls.** Declare at least one control: a state carrying a defect planted on purpose, which the inspector must fail. A control is listed only as a control, never among the states a look entry names, and `plan check` refuses a milestone with states and no control (`plan/ui-controls-missing`). Choose a defect from the `ui-capture` skill's rubric that the milestone's own surfaces could plausibly have, such as a label clipped in a narrow state, and give it to the row that builds the states. A control takes its surface's prefix and the next free number, never a name that describes the planted defect.
 
 ```bash
 tomlctl plan milestone update --slug <slug> --id <milestone> --ui-state <state> --ui-state <state> --ui-control <control> --reason '<why>'
@@ -90,7 +92,7 @@ The flags given replace each whole list, so repeat every state. `--reason` is ne
 [[record.spec.accept]]
 behaviour = "the section list keeps its width and the form takes the rest, with no dead band below a short form"
 run_by = "look"
-states = ["settings-empty", "settings-many", "settings-short-window"]
+states = ["settings-01", "settings-02", "settings-04"]
 ```
 
 Write the behaviour from the design file's constraints, so the inspector judges what the user picked. A UI row whose acceptance is all read-only checks draws `plan/ui-accept-structural` from `plan check`, since a grep cannot see a layout; the look entry is what answers it.

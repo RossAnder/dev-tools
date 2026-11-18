@@ -3,7 +3,7 @@
 │ ──────────────────────────────────────────────────────────────────────────── │
 │ 31  ✓   Write the capture contract                                         1 │
 │ 32  ○   Build the web fixture panel                                        2 │
-│ 33  ○   Rework the capture contract so every project declares its own states,│
+│ 33  ○   Rework the capture contract so every project declares its own state na
 │ 34  ✓   Declare the fixtures capture command                               4 │
 │ 35  ○   Link the inspector into the config dir                             5 │
 │                                                                              │

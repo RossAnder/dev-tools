@@ -66,7 +66,7 @@ commit = ""
 
 | Field | Owner | Meaning |
 |---|---|---|
-| `schema_version` | the tool | `1`, or `2` while the store holds `specs`, `milestones`, `changes`, `audit` or `id_high_water`; every write re-stamps it from the content, so a v1 store stays `1`. Seeded by `flow init` and by the auto-create write path alike. A binary that knows only `1` refuses a `2` store rather than dropping those keys. |
+| `schema_version` | the tool | `1`; `3` while a milestone holds `ui_states` or `ui_controls` or an accept entry holds `run_by = "look"` or `states`; else `2` while the store holds `specs`, `milestones`, `changes`, `audit`, `id_high_water` or `finding_links`. Every write re-stamps it from the content, so a v1 store stays `1`. Seeded by `flow init` and by the auto-create write path alike. A binary that knows only `1` refuses a `2` store, and one that knows only `2` refuses a `3` store, rather than dropping those keys. |
 | `audit` | `plan approve` | `true` once the plan is approved, absent otherwise (§1a). Read strictly: a non-boolean is an error, not `false`. |
 | `id_high_water` | `remove` | The highest id a removal retired from a v2 store, absent while none has (§1a). Read strictly: anything but a non-negative integer is an error. |
 | `[[specs]]`, `[[milestones]]`, `[[changes]]` | the v2 verbs | Additive side tables keyed on `ref`, `[[checkpoints]]` id and `ref` or `milestone:<id>` respectively (§1a). Omitted while empty. |

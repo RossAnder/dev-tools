@@ -139,11 +139,13 @@ Judged signals (`trust-boundary`, `hot-path`, `new-seam`) are never detected. re
 
 `review survey` evaluates every `stack`, `diff` and `health` detector deterministically, stacks first, and records each true signal with its `roots`: the directories it matched, `.` for the repository root. A detector that cannot be evaluated (git unavailable, a manifest that does not parse) records the signal as `unknown` with the reason, never as false.
 
-The detect keys are `files`, `contains`, `manifest`, `count`, `window` and `threshold`; any other key is refused.
+The detect keys are `files`, `contains`, `manifest`, `count`, `window`, `threshold` and `ui_capture_paths`; any other key is refused.
 
 - **`files`** — globs over repo-relative, `/`-separated paths. `**/` matches at any depth, the root included, so `**/Cargo.toml` finds a crate three levels down. Absent means every candidate file.
 - **`contains`** — one regex or an array of them; a file passes when any matches. Each is compiled through `query::compile_user_bytes_regex`: prefer `(?-u:\b)` and `(?i-u:…)` (a Unicode `\b` drops the lazy DFA to the slower PikeVM) and explicit classes such as `[ \t]` and `[A-Za-z0-9_]`. `(?i)`, `\d`, `\w`, `\s` and `\b` compile, but `\p{..}` is refused and a Unicode `\w{21}` exceeds the compile-size limit. Matching is multi-line and CRLF-aware, so `^` and `$` are line anchors. A pattern is capped at 512 bytes. Write patterns as TOML literal strings (`'…'`) so backslashes reach the regex unchanged. The catalogue gate compiles every pattern.
 - **`manifest`** — dotted key paths into TOML (`.toml`) and JSON (`.json`) manifests only; a file passes when any path exists, such as `dependencies.tokio` or `devDependencies.react`. Segments split on `.`, so a package name containing a dot cannot be named this way. MSBuild XML — `.csproj`, `Directory.Packages.props`, `<PackageReference>`, legacy `<Reference Include=…>`, `packages.config` — is matched with `files` plus `contains`.
+
+- **`ui_capture_paths`** — a boolean, allowed only on a diff signal. When true, a changed path is selected when it matches a `paths` glob of the project's `.claude/ui-capture.toml` or the signal's `files` (with no `files`, only the capture paths). A capture config that cannot be read records the signal `unknown`.
 
 When `files`, `manifest` and `contains` are all present, a file must pass each one present.
 

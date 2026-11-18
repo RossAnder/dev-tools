@@ -25,7 +25,7 @@ re-render is a clean diff.
 
 | Key | Set by |
 |---|---|
-| `schema_version` | seeded to `1` by `flow init` and by the auto-create write path; every write re-stamps it `2` while the store holds `audit`, `id_high_water`, `finding_links`, `specs`, `milestones` or `changes`, else `1`. A binary that knows only `1` refuses a `2` store. |
+| `schema_version` | seeded to `1` by `flow init` and by the auto-create write path; every write re-stamps it `3` while a milestone holds `ui_states` or `ui_controls` or an accept entry holds `run_by = "look"` or `states`, else `2` while the store holds `audit`, `id_high_water`, `finding_links`, `specs`, `milestones` or `changes`, else `1`. A binary that knows only `1` refuses a `2` store, and one that knows only `2` refuses a `3` store. |
 | `audit` | `true` once the plan is approved; omitted otherwise. A non-boolean value is an error. Written between `last_import_refs` and `[policy]`. |
 | `id_high_water` | `tasks remove`, on a store in a flow with a `plan.toml` or already holding a v2 key: the highest id a removal retired. `tasks add` and `add-many` mint past it, so an id never names a second task. A bare integer, omitted while `0`; anything but a non-negative integer is an error. Written after `audit`. |
 | `last_updated` | a bare TOML date, restamped on every mutation |
@@ -112,8 +112,8 @@ and a re-issued premise matching in its other fields keeps its stored probe. A r
 `tasks remove` drops the spec keyed on the row, and `tasks add` and `tasks update --ref` drop any
 already keyed on the `ref` they claim, which is never a `ref` holding a `[[changes]]` trail.
 
-<a id="accept-owner"></a>**Accept owner.** `run_by` says who runs an `accept` check: `worker`, `gate`
-or `covered`. `covered_by` is the exact command of one gate of the row's checkpoint milestone, set
+<a id="accept-owner"></a>**Accept owner.** `run_by` says who runs an `accept` check: `worker`, `gate`,
+`covered` or `look`. `covered_by` is the exact command of one gate of the row's checkpoint milestone, set
 only with `run_by = "covered"`. Each key is written only when set, so an entry with neither keeps its
 bytes. The effective owner is `run_by`, else `worker` for `writes_build = false` and `gate`
 otherwise; `writes_build` keeps its one meaning, whether running the check builds, tests or writes.
@@ -125,7 +125,7 @@ otherwise; `writes_build` keeps its one meaning, whether running the check build
 | `covered` | Nobody separately: the gate `covered_by` names already runs it. `gate-list` skips it. |
 | `look` | The visual inspector, never a command: the entry carries `states`, the milestone's capture states it is judged on, its `behaviour` is the criterion and its `check` stays empty. Probes skip it, and it never counts as discriminating beside a guard. |
 
-`states` is allowed only with `run_by = "look"`, which needs a non-empty `states` and an empty `check`; a store holding either raises `schema_version` to `2`.
+`states` is allowed only with `run_by = "look"`, which needs a non-empty `states` and an empty `check`; a store holding either raises `schema_version` to `3`.
 
 `tasks add`, `add-many` and `update` refuse an unknown `run_by`, `worker` on a building check,
 `covered` without `covered_by` and `covered_by` without `covered`; `plan check` reports the same as

@@ -1,3 +1,14 @@
 command = "bash claude/skills/ui-capture/fixtures/capture.sh"
 out = ".ui-capture"
 paths = ["claude/skills/ui-capture/fixtures/**"]
+controls = [
+    "web-02",
+    "web-05",
+    "web-07",
+    "web-09",
+    "web-11",
+    "tui-02",
+    "tui-05",
+    "tui-07",
+    "tui-09",
+]

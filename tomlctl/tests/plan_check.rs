@@ -1335,6 +1335,12 @@ fn check_ui_a_look_state_the_milestone_does_not_list_is_an_error() {
         "states = [\"list-full\"] }",
     );
     assert_reports_error(&Flow::with_tasks(&tasks), "plan/look-state-unknown");
+    let (_, report) = Flow::with_tasks(&tasks).run();
+    let detail = report["findings"][0]["detail"].as_str().expect("a detail");
+    assert!(
+        !detail.contains("a control state is the inspector's to fail"),
+        "{report}"
+    );
 
     let control = swap(
         &ui_tasks(UI_LISTS, true),
@@ -1342,6 +1348,12 @@ fn check_ui_a_look_state_the_milestone_does_not_list_is_an_error() {
         "states = [\"list-broken\"] }",
     );
     assert_reports_error(&Flow::with_tasks(&control), "plan/look-state-unknown");
+    let (_, report) = Flow::with_tasks(&control).run();
+    let detail = report["findings"][0]["detail"].as_str().expect("a detail");
+    assert!(
+        detail.contains("a control state is the inspector's to fail"),
+        "{report}"
+    );
 }
 
 #[test]

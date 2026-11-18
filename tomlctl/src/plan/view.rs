@@ -22,7 +22,7 @@ use crate::review::implementer_findings;
 use crate::tasks::finding::{ERROR, WARNING};
 use crate::tasks::markdown::FenceState;
 use crate::tasks::schema::{
-    Accept, FileKind, RUN_BY_COVERED, Status, Store, TaskRow, TaskSpec, normal_path,
+    Accept, FileKind, RUN_BY_COVERED, RUN_BY_LOOK, Status, Store, TaskRow, TaskSpec, normal_path,
 };
 use crate::tasks::slug::derive_ref;
 use crate::tasks::{load_store, resolve_store_path};
@@ -753,7 +753,11 @@ fn spec_block(out: &mut String, spec: &TaskSpec) {
         out.push_str("**Accept:**\n\n");
         for accept in &spec.accept {
             out.push_str(&format!("- {}\n", accept.behaviour));
-            if accept.check.is_empty() {
+            if accept.run_by == RUN_BY_LOOK {
+                out.push_str("  - Run by: look\n");
+                let states = code_all(&accept.states).join(", ");
+                out.push_str(&format!("  - States: {states}\n"));
+            } else if accept.check.is_empty() {
                 out.push_str("  - Check: none yet\n");
             } else {
                 out.push_str(&format!("  - Check: {}\n", code(&accept.check)));

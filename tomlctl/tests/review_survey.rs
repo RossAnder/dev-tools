@@ -997,6 +997,11 @@ detect = { files = ["**/*.vue"], ui_capture_paths = true }
 kind = "diff"
 meaning = "a Vue change"
 detect = { files = ["**/*.vue"] }
+
+[signals.ui-only]
+kind = "diff"
+meaning = "m"
+detect = { ui_capture_paths = true }
 "#;
 
 /// Commits `setup`, then a change to a Vue file, a file under `tui/src/` and a
@@ -1032,6 +1037,11 @@ fn ui_capture_paths_select_declared_files_beside_the_globs() {
         Some(vec!["web".to_string()]),
         "a detector without the option ignores the config"
     );
+    assert_eq!(
+        roots(&out, "ui-only"),
+        Some(vec!["tui/src".to_string()]),
+        "a detector without files selects only the declared paths"
+    );
 }
 
 #[test]
@@ -1040,6 +1050,11 @@ fn ui_capture_paths_without_a_config_select_nothing_extra() {
         return;
     };
     assert_eq!(roots(&out, "ui-change"), Some(vec!["web".to_string()]));
+    assert_ne!(
+        roots(&out, "ui-only").map(|r| !r.is_empty()),
+        Some(true),
+        "ui-only selects no root"
+    );
 }
 
 #[test]

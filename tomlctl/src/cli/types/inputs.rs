@@ -18,7 +18,7 @@ pub(crate) enum InputsOp {
             help = "capture|request|note|question|answer (repeatable; any may match)"
         )]
         kind: Vec<String>,
-        #[arg(long, help = "review|optimise|plan-review|backlog")]
+        #[arg(long, help = "review|optimise|plan-review|backlog|plan")]
         ledger: Option<String>,
         #[arg(long, value_name = "SLUG")]
         flow: Option<String>,

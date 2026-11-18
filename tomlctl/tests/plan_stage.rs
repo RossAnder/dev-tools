@@ -1124,6 +1124,31 @@ fn a_changed_brief_clears_an_unanswered_decision_before_naming_the_amend_it_woul
 }
 
 #[test]
+fn a_changed_brief_clears_an_unsurfaced_one_way_decision_before_naming_the_amend_it_would_refuse() {
+    let plan = format!("{PLAN}{}", approval());
+    let edited = format!("{BRIEF}Added later.\n");
+    let flow = Flow::seeded(TASKS, &plan, Some(&edited), None);
+    let seed = json!({
+        "decision": "Use the lock.",
+        "provenance": "agent-assumed",
+        "door": "one-way",
+        "binds": ["1"],
+    });
+    flow.verb(&["plan", "decide", "--ndjson", "-"], &format!("{seed}\n"));
+
+    let report = flow.stage();
+    assert_eq!(report["next"], "plan decide", "{report}");
+    assert_eq!(
+        report["blockers"],
+        json!([
+            BRIEF_CHANGED,
+            "one-way decisions agent-assumed and never surfaced: D1; surface each to the user with plan decide",
+        ]),
+        "{report}"
+    );
+}
+
+#[test]
 fn a_changed_brief_clears_another_check_error_before_naming_the_amend_it_would_refuse() {
     let plan = format!("{PLAN}{}", approval());
     let edited = format!("{BRIEF}Added later.\n");

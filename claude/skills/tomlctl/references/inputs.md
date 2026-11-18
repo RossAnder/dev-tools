@@ -94,8 +94,8 @@ printf '%s' '{"kind":"question","author":"review","ledger":"review","flow":"<slu
 - **Handled records:** a `handled` record needs `handled`, `handled_by` and a non-empty
   `handled_note`, and a record at any other status carries none of the three.
 - **Target:** `flow`, `scope` and `items` each need `ledger`, and `flow` and `scope` are
-  refused together. Ledger `plan` targets one flow's tasks: `flow` names the flow, `items` are
-  its task ids as strings (`"8"`), and a `scope` is refused.
+  refused together. Ledger `plan` targets one flow's tasks: it requires `flow`, which names the
+  flow, `items` are its task ids as strings (`"8"`), and a `scope` is refused.
 
 ## `inputs ack`
 

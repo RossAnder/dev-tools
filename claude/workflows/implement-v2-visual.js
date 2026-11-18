@@ -44,7 +44,6 @@ const RETURN_SCHEMA = {
         type: 'object',
         properties: {
           state: { type: 'string' },
-          control: { type: 'boolean' },
           verdict: { type: 'string', enum: VERDICTS },
           defects: { type: 'array', items: DEFECT_SCHEMA },
           note: { type: 'string' },

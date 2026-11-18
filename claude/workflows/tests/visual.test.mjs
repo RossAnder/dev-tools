@@ -210,6 +210,55 @@ test('implement-v2-visual: a state the inspector leaves out is missing, and a wr
   assert.equal(planted.control, true)
 })
 
+test('implement-v2-visual: a malformed inspector return is judged state by state', async () => {
+  const note = 'docs/flows/demo/notes/run/visual-B-1-1.md'
+  const good = (state) => ({ state, verdict: 'pass', defects: [], note })
+
+  const none = await runtime(() => ({})).run(visualArgs())
+  assert.equal(none.states.length, 3)
+  none.states.forEach((s) => {
+    assert.equal(s.status, 'error')
+    assert.equal(s.error, 'returned no states array')
+  })
+
+  const maybe = await runtime(() => ({
+    states: [{ state: 'wide', verdict: 'maybe', defects: [], note }, good('narrow'), good('planted')],
+  })).run(visualArgs())
+  assert.equal(maybe.states[0].status, 'error')
+  assert.equal(maybe.states[1].status, 'ok')
+
+  const extra = await runtime(() => ({
+    states: [
+      good('wide'),
+      { state: 'wide', verdict: 'fail', defects: [], note },
+      good('narrow'),
+      good('planted'),
+      good('ghost'),
+    ],
+  })).run(visualArgs())
+  assert.equal(extra.states.length, 3)
+  assert.equal(extra.states[0].verdict, 'pass')
+  assert.ok(extra.errors.some((e) => e.includes('which it was not asked')))
+  assert.ok(extra.errors.some((e) => e.includes('twice; the first kept')))
+
+  const empty = await runtime(() => ({
+    states: [{ ...good('wide'), note: '' }, good('narrow'), good('planted')],
+  })).run(visualArgs())
+  assert.equal(empty.states[0].status, 'ok')
+  assert.equal(empty.states[0].error, 'wrote no note')
+
+  const backslash = await runtime(() => ({
+    states: [
+      { ...good('wide'), note: 'C:\\repo\\docs\\flows\\demo\\notes\\run\\visual-B-1-1.md' },
+      good('narrow'),
+      good('planted'),
+    ],
+  })).run(visualArgs())
+  assert.equal(backslash.states[0].status, 'ok')
+  assert.equal(backslash.states[0].error, null)
+  assert.equal(backslash.states[0].note, note)
+})
+
 test('implement-v2-visual: bad args refuse the whole launch and start no agent', async () => {
   const cases = [
     [{ slug: 'Bad Slug' }, 'slug '],

@@ -316,10 +316,12 @@ A milestone holding `ui_states` or `ui_controls`, or a task store holding a `loo
 ## `plan milestone update`
 
 Changes a milestone named in `[[checkpoints]]`, creating its `[[milestones]]` row if it has none. An
-unknown id is `kind=not_found`, and a call changing none of goal, gates, gate probes, deferral or
-elaboration is refused. On an audited store it needs `--reason`, and appends one `[[changes]]` row per changed field
-with `ref = "milestone:<id>"`: `goal`, `gates`, `gate_probes`, `elaboration`, `defer_reason`. A `gates`
-or `gate_probes` row's `old` and `new` are compact JSON, such as `["a","b"]`.
+unknown id is `kind=not_found`, and a call changing none of goal, gates, gate probes, after, UI
+states or controls, deferral or elaboration is refused. On an audited store it needs `--reason`, and
+appends one `[[changes]]` row per changed field with `ref = "milestone:<id>"`: `goal`, `gates`,
+`gate_probes`, `after`, `ui_states`, `ui_controls`, `elaboration`, `defer_reason`. A `gates`,
+`gate_probes`, `after`, `ui_states` or `ui_controls` row's `old` and `new` are compact JSON, such as
+`["a","b"]`.
 
 ```bash
 tomlctl plan milestone update --slug <slug> --id <id> [--goal '<text>'] [--gate '<command>']... [--clear-gate] [--gate-probe '<gate> :: <probe>']... [--after <id>]... [--clear-after] [--ui-state <name>]... [--ui-control <name>]... [--clear-ui] [--defer] [--elaborated] [--reason '<text>']
@@ -556,7 +558,7 @@ input, gate command list and reproduce launches from; their flags and output are
 | `plan/ui-controls-missing` | error | A milestone declares `ui_states` and no `ui_controls`, so nothing shows its inspector fails a planted defect. `ids` names the milestone's rows. |
 | `plan/look-without-states` | error | A task's `look` accept entry sits in a milestone that declares no `ui_states`. |
 | `plan/look-state-unknown` | error | A `look` entry's `states` names a state the milestone's `ui_states` does not list. A name that is a `ui_controls` state is called out, since a control is the inspector's to fail and never a `look` entry's. |
-| `plan/accept-owner-invalid` | error | An `accept` entry's `run_by` is not `worker`, `gate` or `covered`; is `worker` on a check whose `writes_build` is not `false`; is `covered` with no `covered_by`; or a `covered_by` is set without `covered`. |
+| `plan/accept-owner-invalid` | error | An `accept` entry's `run_by` is not `worker`, `gate`, `covered` or `look`; is `worker` on a check whose `writes_build` is not `false`; is `covered` with no `covered_by`; or a `covered_by` is set without `covered`. |
 | `plan/accept-cover-unknown` | error | An `accept` entry's `covered_by` equals no gate of its row's checkpoint milestone. |
 | `plan/gate-probe-unknown` | error | A milestone's stored gate probe names a gate that is no longer one of the milestone's gates. |
 | `plan/means-required-no-reason` | error | A `means` entry with `binding = "required"` has a blank `detail`. |

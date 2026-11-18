@@ -255,15 +255,25 @@ fn inputs_plan_ledger_questions_target_a_flow_task() {
     assert_eq!(found.len(), 1);
     assert_eq!(found[0]["id"], id.as_str());
 
-    let out = cli(&root)
-        .args(["--error-format", "json", "inputs", "add", "--json"])
-        .arg(r#"{"kind": "question", "author": "plan-worker", "ledger": "plan", "scope": "demo", "items": ["8"], "prompt": "Which?", "choice": "text"}"#)
-        .write_stdin("")
-        .assert()
-        .failure();
-    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
-    let error = parse_json_error_envelope(&stderr);
-    assert_eq!(error["kind"], "validation", "{stderr}");
+    for refused in [
+        r#"{"kind": "question", "author": "plan-worker", "ledger": "plan", "scope": "demo", "items": ["8"], "prompt": "Which?", "choice": "text"}"#,
+        r#"{"kind": "question", "author": "implement-v2", "ledger": "plan", "items": ["8"], "prompt": "Which?", "choice": "text"}"#,
+    ] {
+        let out = cli(&root)
+            .args(["--error-format", "json", "inputs", "add", "--json"])
+            .arg(refused)
+            .write_stdin("")
+            .assert()
+            .failure();
+        let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+        let error = parse_json_error_envelope(&stderr);
+        assert_eq!(error["kind"], "validation", "{refused}: {stderr}");
+    }
+    assert_eq!(
+        listed(&root, &["--ledger", "plan"]).len(),
+        1,
+        "a refused add writes nothing"
+    );
 }
 
 #[test]

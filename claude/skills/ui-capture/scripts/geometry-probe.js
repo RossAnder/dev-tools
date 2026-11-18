@@ -75,7 +75,7 @@
 
   function rendered(el, style) {
     if (SKIP_TAGS[el.tagName]) return false;
-    if (style.display === 'none' || style.visibility !== 'visible') return false;
+    if (style.display === 'none') return false;
     if (parseFloat(style.opacity) === 0) return false;
     return el.getClientRects().length > 0;
   }
@@ -167,7 +167,8 @@
         continue;
       }
       var rect = el.getBoundingClientRect();
-      var hidden = visuallyHidden(rect, style);
+      // visibility is inherited and overridable, so a hidden box is not measured but its descendants are.
+      var hidden = style.visibility !== 'visible' || visuallyHidden(rect, style);
       var isRoot = el === doc.documentElement || el === doc.body;
       var outOfFlow = style.position === 'absolute' || style.position === 'fixed';
 
@@ -178,8 +179,8 @@
       if (!isRoot && !hidden && !mine.clipped && !mine.offscreen) {
         var left = rect.left < -TOLERANCE;
         var right = rect.right > viewW + TOLERANCE;
-        var above = rect.bottom + scrollY < -TOLERANCE;
-        var whollyOut = rect.right <= 0 || rect.left >= viewW || above;
+        var above = rect.top + scrollY < -TOLERANCE;
+        var whollyOut = rect.right <= 0 || rect.left >= viewW || rect.bottom + scrollY <= 0;
         // A box parked wholly offscreen by absolute or fixed positioning is a hiding idiom.
         if ((left || right || above) && !(whollyOut && outOfFlow)) {
           out.push({
