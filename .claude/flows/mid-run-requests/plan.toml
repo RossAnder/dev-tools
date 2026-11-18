@@ -563,6 +563,31 @@ rest = "949355a51a25d57e"
 rows = "7352feea079f8e49"
 specs = "1ef27f3875ff5f7e"
 
+[[run]]
+step = "implement:B"
+workflow = "implement-v2-milestone"
+args_hash = "863dc77fb95667791533a22e535a295fc289b5d8347096208c612c62bd3ec9dd"
+run_id = "wf_65406a94-5d0"
+session = "4df4562d-35a8-4a4d-bbd3-f1a65f0b74c4"
+started = 2026-11-18T14:58:01Z
+finished = 2026-11-18T15:06:46Z
+skip_reason = ""
+outcome = "ok"
+tasks = [
+    16,
+    17,
+    18,
+    19,
+]
+digest_at = 2026-11-18T14:57:46Z
+
+[run.store_digest]
+changes = "93731500f0f4e8dd"
+milestones = "fa850cf5ce8369b0"
+rest = "949355a51a25d57e"
+rows = "7fc9a4b133b848fa"
+specs = "1ef27f3875ff5f7e"
+
 [[handover]]
 id = "H1"
 reason = "restart"
@@ -1088,6 +1113,151 @@ tangential = []
 command = "rustfmt --edition 2024 --check tomlctl/src/plan/check/generated_outputs.rs"
 result = "pass"
 
+[[attempt]]
+task = 16
+run_id = "wf_65406a94-5d0"
+milestone = "B"
+status = "done"
+summary = "requests.md written, REQUEST routed from run-milestone.md, linked from SKILL.md in all four places"
+block = "present"
+files_touched = [
+    "claude/skills/implement-v2-engine/references/requests.md",
+    "claude/skills/implement-v2-engine/references/run-milestone.md",
+    "claude/skills/implement-v2-engine/SKILL.md",
+]
+
+[[attempt.deviations]]
+what = "A request still open when the drain reaches the Granted requests step is ruled denied by the orchestrator with the reason 'unanswered before the worker's wait ended', then marked applied"
+why = "plan request applied refuses an open request (plan-request.md), so without a ruling such a request would stay outstanding for ever and its record would never reach the report; the worker already took the denial route, so denied matches what happened"
+means = "detail step 3 lists only ruled, unapplied requests"
+
+[[attempt.deviations]]
+what = "With no kept transcript directory, the orchestrator-ruled grants are not dropped silently: each granted path goes to the replan as a needs_files entry (drain.md 'Widening a row from needs_files', a done row's status untouched) and each granted change to step 6 as a re-spec input"
+why = "the detail says such a run applies only tomlctl-ruled items but not what becomes of the rest; leaving them unapplied would exempt their paths from the clean-tree check indefinitely, and the worker may already have edited the granted file. Alternatives weighed: leave them outstanding (stuck exemption), or park the row for the user (costly for a routine session end). Re-judging through the existing widening rules keeps the audit gap closed without a new mechanism"
+means = "detail step 3, no-transcript sentence"
+
+[[attempt.deviations]]
+what = "A breached (worker-ruled) request is marked applied with nothing written, and each path it granted is reported under needs_human as an out-of-lane edit nobody owns, so the milestone does not gate while it stands"
+why = "'treated as denied, never applied' leaves the worker's edit in the tree; drain.md step 3's rule for an edit nobody owns is the existing path, and marking it applied stops re-entry from re-processing it"
+means = "detail step 3, audit sentence"
+
+[[attempt.deviations]]
+what = "A parked row that holds grants keeps its parked status; the grant waits in its spec until the parked handling (step 6, questions.md 'At the drain', or the next invocation's re-ask) unparks it. Only a failed row is reset to pending in the grant row"
+why = "resetting a parked row to pending would bypass the parked re-ask and the question loop, which own unparking; the relaunch still happens once the row is unparked"
+means = "detail step 3: 'one on a failed or parked row is, so that row is relaunched once'"
+
+[[attempt.deviations]]
+what = "Added a holder case the detail does not name: a started, uncommitted holder in another milestone means no grant for that path and the granted row is parked by the orchestrator"
+why = "add and rule should refuse such a holder, so reaching it means the mechanical check missed one; ordering it either way could hold a milestone behind another's uncommitted work, which drain.md's widening section already sends to the user"
+means = "detail step 3 holder ordering"
+
+[[attempt.tangential]]
+kind = "question"
+area = "claude/skills/implement-v2-engine/references/drain.md"
+summary = "requests.md cites drain.md step 5a ('Granted requests') and the report's requests: section, which sibling tasks add; if their headings differ the citations need to follow"
+why = "the cross-file references are only consistent once the drain and report tasks land with the names their specs give"
+
+[[attempt.checks]]
+command = "grep -q 'REQUEST <request-id> task <n>' claude/skills/implement-v2-engine/references/requests.md && grep -q 'requests.md' claude/skills/implement-v2-engine/SKILL.md && grep -q 'requests.md' claude/skills/implement-v2-engine/references/run-milestone.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "not-run"
+
+[[attempt]]
+task = 17
+run_id = "wf_65406a94-5d0"
+milestone = "B"
+status = "done"
+summary = "drain.md gains step 5a Granted requests and its knock-on rules; report.md gains the requests: section and kind request"
+block = "present"
+files_touched = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "claude/skills/implement-v2-engine/references/report.md",
+]
+tangential = []
+
+[[attempt.deviations]]
+what = "The step-3 'What the run's agents ran' audit text stays under step 3; its opening now says it runs after step 5a, and step 5a ends by sending the reader back to it."
+why = "Keeping the block in place keeps every inbound citation to drain step 3 valid, among them requests.md's 'the directory drain step 3 names' for the transcript directory. Moving the text into 5a would have broken that citation, and the task holds only drain.md and report.md. The detail's own wording, 'say where it now runs and keep its rules', allows either."
+means = "Action: move the step-3 agents audit after the Granted requests step"
+
+[[attempt.checks]]
+command = "grep -q 'Granted requests' claude/skills/implement-v2-engine/references/drain.md && grep -q 'requests:' claude/skills/implement-v2-engine/references/report.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "wc -l claude/skills/implement-v2-engine/references/drain.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "not-run"
+
+[[attempt]]
+task = 18
+run_id = "wf_65406a94-5d0"
+milestone = "B"
+status = "done"
+summary = "both plan workers carry an Asking the orchestrator section and request before failing for a file or a stale spec point"
+block = "present"
+files_touched = [
+    "claude/agents/plan-worker-lite.md",
+    "claude/agents/plan-worker-deep.md",
+]
+tangential = []
+
+[[attempt.deviations]]
+what = "Renamed the forbidden-ops bullet from 'One row and one question' to 'One row, one question and one request'"
+why = "The bullet now allows a third write; no file outside the two workers cites the old label (rg over the repo, flow notes aside)"
+means = "detail: widen the 'One row and one question' bullet"
+
+[[attempt.deviations]]
+what = "Also widened the shared block's failed and parked bullets in 'Done, failed or parked': failed now names a file the request did not get, and parked adds a needs-user item met after the one question was spent"
+why = "Without it the status definitions contradicted the new section's denial and needs-user branches"
+means = "detail lists step 7 and the forbidden-ops block as the shared-block edits"
+
+[[attempt.deviations]]
+what = "Lite's stale-symbol bullet in 'When to return failed' also says 'after a request for the correction is denied or unanswered', besides the file-boundary bullet"
+why = "The detail says lite's failed list says 'after a request for it is denied'; the stale-code bullet is the spec-correction counterpart of the file bullet"
+means = "detail: tier sections say 'after a request for it is denied'"
+
+[[attempt.checks]]
+command = "bash scripts/verify-shared-blocks.sh"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -q 'Asking the orchestrator' claude/agents/plan-worker-lite.md && grep -q 'Asking the orchestrator' claude/agents/plan-worker-deep.md && grep -q 'REQUEST <request-id> task <n>' claude/agents/plan-worker-deep.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "not-run"
+
+[[attempt]]
+task = 19
+run_id = "wf_65406a94-5d0"
+milestone = "B"
+status = "done"
+summary = "apply-rows, the task-store writer rule and the question loop now name the request procedure"
+block = "present"
+files_touched = [
+    "claude/skills/implement-v2-engine/references/apply-rows.md",
+    "claude/skills/flow-contract-task-store/SKILL.md",
+    "claude/skills/implement-v2-engine/references/questions.md",
+]
+tangential = []
+
+[[attempt.deviations]]
+what = "The needs_files widening bullet in apply-rows.md covers any failed fix-row return with a non-empty needs_files, described as the route taken after a denied or unanswered scope request, rather than only one whose request record reads denied"
+why = "A worker whose wait timed out returns needs_files the same way, and the drain cannot tell the two apart from the index; the tier move fails both for the same reason"
+means = "detail: a fix row returning failed with needs_files is widened by drain.md's widening rules"
+
+[[attempt.checks]]
+command = "grep -q 'requests.md' claude/skills/implement-v2-engine/references/apply-rows.md && grep -q 'plan request add' claude/skills/flow-contract-task-store/SKILL.md && grep -q 'requests.md' claude/skills/implement-v2-engine/references/questions.md"
+result = "pass"
+
 [[gate_round]]
 milestone = "A"
 round = 0
@@ -1150,3 +1320,183 @@ duration_s = 2
 summary = ""
 failed_ids = []
 log = ""
+
+[[gate_round]]
+milestone = "B"
+round = 0
+seq = 1
+at = 2026-11-18T15:07:50Z
+outcome = "pass"
+
+[[gate_round.commands]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+outcome = "pass"
+duration_s = 11
+summary = "libtest x1: 56 passed; 0 failed"
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+duration_s = 1
+summary = ""
+failed_ids = []
+log = ""
+
+[[report]]
+at = 2026-11-18T15:08:50Z
+milestone = "B"
+why = "every milestone is committed"
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "agent-a8e967219d2dce3a9: cd <scratchpad>/tc && CARGO_TARGET_DIR=$PWD/target cargo build (a full build of a scratch copy of the crate, run A round 1) — breach"
+path = ""
+needs_person = true
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "agent-a8e967219d2dce3a9: CARGO_TARGET_DIR=$PWD/target cargo test --lib -- plan::request and -- cli::dispatch::tests in a scratch copy (run A round 1) — allowed"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "agent-a396a12bfe20c9413: rustfmt --check tomlctl/tests/plan_check.rs; cargo nextest run -E 'test(/^plan_check::.*generated.../)' (run A round 1) — allowed"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "agent-a8af4a9c66c57a63c and agent-a900e34155e37fc31: cargo test --manifest-path tomlctl/Cargo.toml --lib -- documented_plan_classes (run A round 1) — allowed"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "agent-afdebf6b598942a88: cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^output_options::/)' (run A round 1) — allowed"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "agent-a08ca42842f90d459, agent-ad13655b8dd4f4a25, agent-a8af0e95b55c7d4cc and the rest: accept-check greps, a run-note write and bash scripts/verify-shared-blocks.sh (task 18's accept check) — allowed"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "reconcile"
+task = 13
+text = "task 13: the note's Status is `done` but the task row is `pending` (run wf_dc30a361-19d; the worker never wrote status or agent; agent set by the orchestrator and the task relaunched in run wf_d372a2b0-b84, which finished it)"
+path = "docs/flows/mid-run-requests/notes/run/task-13.md"
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 0
+text = "milestone A did not run the worker-built accept checks of tasks 1-5, 7-15 (accept 1; task 5 also accept 2): covered_by CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 0
+text = "milestone B did not run task 16 accept 1, task 17 accept 1, task 18 accept 2, task 19 accept 1: covered_by cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 0
+text = "milestone A gate round 0: cargo install --path glimpse --locked failed twice on os error 5 (glimpse.exe locked by two running glimpse processes); passed once the user closed glimpse"
+path = ""
+needs_person = false
+
+[[report]]
+at = 2026-11-18T15:08:59Z
+milestone = "B"
+why = "every milestone is committed"
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "agent-a8e967219d2dce3a9: cd <scratchpad>/tc && CARGO_TARGET_DIR=$PWD/target cargo build (a full build of a scratch copy of the crate, run A round 1) — breach"
+path = ""
+needs_person = true
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "agent-a8e967219d2dce3a9: CARGO_TARGET_DIR=$PWD/target cargo test --lib -- plan::request and -- cli::dispatch::tests in a scratch copy (run A round 1) — allowed"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "agent-a396a12bfe20c9413: rustfmt --check tomlctl/tests/plan_check.rs; cargo nextest run -E 'test(/^plan_check::.*generated.../)' (run A round 1) — allowed"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "agent-a8af4a9c66c57a63c and agent-a900e34155e37fc31: cargo test --manifest-path tomlctl/Cargo.toml --lib -- documented_plan_classes (run A round 1) — allowed"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "agent-afdebf6b598942a88: cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^output_options::/)' (run A round 1) — allowed"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "agent-a08ca42842f90d459, agent-ad13655b8dd4f4a25, agent-a8af0e95b55c7d4cc and the rest: accept-check greps, a run-note write and bash scripts/verify-shared-blocks.sh (task 18's accept check) — allowed"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "reconcile"
+task = 13
+text = "task 13: the note's Status is `done` but the task row is `pending` (run wf_dc30a361-19d; the worker never wrote status or agent; agent set by the orchestrator and the task relaunched in run wf_d372a2b0-b84, which finished it)"
+path = "docs/flows/mid-run-requests/notes/run/task-13.md"
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 0
+text = "milestone A did not run the worker-built accept checks of tasks 1-5, 7-15 (accept 1; task 5 also accept 2): covered_by CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 0
+text = "milestone B did not run task 16 accept 1, task 17 accept 1, task 18 accept 2, task 19 accept 1: covered_by cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 0
+text = "milestone A gate round 0: cargo install --path glimpse --locked failed twice on os error 5 (glimpse.exe locked by two running glimpse processes); passed once the user closed glimpse"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "handover"
+task = 2
+text = "H1 from task 2 (restart): Restart the glimpse pane so it runs the glimpse milestone A's gate reinstalled, which reads a schema-5 plan.toml. — when: After milestone A's commit, before the first /implement-v2 run that posts a plan request.; done when: glimpse shows the mid-run-requests flow without a parse error."
+path = ""
+needs_person = true
