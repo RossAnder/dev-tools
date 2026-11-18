@@ -12,7 +12,6 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use anyhow::Result;
-use globset::{GlobBuilder, GlobMatcher};
 use serde_json::json;
 
 use super::schema::{Bind, Contract, Decision, Handover, PlanStore};
@@ -34,6 +33,7 @@ use crate::tasks::schema::{
 };
 use crate::tasks::slug::{dedupe_refs, derive_ref};
 use crate::tasks::{load_store, resolve_store_path};
+use crate::ui_capture::{self, CONFIG as UI_CAPTURE_CONFIG};
 
 const DESIGN_DIR: &str = "design";
 pub(crate) const REQUIRED_SECTIONS: [&str; 4] =
@@ -881,13 +881,11 @@ fn ui_findings(tasks: &Store) -> Vec<Finding> {
     findings
 }
 
-const UI_CAPTURE_CONFIG: &str = ".claude/ui-capture.toml";
-
 /// Per milestone that is not deferred and declares no `ui_states`, the rows
 /// whose files match a `paths` glob of the project's capture config. The config
 /// belongs to the project, not the plan, so a malformed one is one warning.
 fn ui_scope_findings(tasks: &Store, root: &Path) -> Vec<Finding> {
-    let globs = match ui_capture_paths(root) {
+    let globs = match ui_capture::load_paths(root) {
         Ok(globs) => globs,
         Err(problem) => {
             return vec![Finding {
@@ -918,7 +916,7 @@ fn ui_scope_findings(tasks: &Store, root: &Path) -> Vec<Finding> {
         for row in tasks.items.iter().filter(|row| row.checkpoint == id) {
             for file in &row.files {
                 let file = normal_path(file);
-                if globs.iter().any(|glob| glob.is_match(&file)) {
+                if globs.is_match(&file) {
                     rows.insert(row.id);
                     files.insert(file);
                 }
@@ -940,39 +938,6 @@ fn ui_scope_findings(tasks: &Store, root: &Path) -> Vec<Finding> {
         });
     }
     findings
-}
-
-/// The `paths` globs of the capture config at `root`: empty with no config or no
-/// `paths`, and `Err` naming the problem when the config cannot be read.
-fn ui_capture_paths(root: &Path) -> std::result::Result<Vec<GlobMatcher>, String> {
-    let text = match fs::read_to_string(root.join(UI_CAPTURE_CONFIG)) {
-        Ok(text) => text,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(err) => return Err(err.to_string()),
-    };
-    let table: toml::Table = toml::from_str(&text).map_err(|err| {
-        let message = err.to_string();
-        message.lines().next().unwrap_or_default().to_string()
-    })?;
-    let Some(raw) = table.get("paths") else {
-        return Ok(Vec::new());
-    };
-    let entries = raw
-        .as_array()
-        .ok_or_else(|| "`paths` is not an array".to_string())?;
-    entries
-        .iter()
-        .map(|entry| {
-            let text = entry
-                .as_str()
-                .ok_or_else(|| "`paths` holds an entry that is not a string".to_string())?;
-            GlobBuilder::new(text.trim_start_matches("./"))
-                .literal_separator(true)
-                .build()
-                .map(|glob| glob.compile_matcher())
-                .map_err(|err| format!("`paths` entry `{text}`: {err}"))
-        })
-        .collect()
 }
 
 /// Per milestone, the `needs` links inside it whose two rows share a file and

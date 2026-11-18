@@ -17,7 +17,7 @@ use std::process::Command;
 
 use anyhow::Result;
 use clap::Args;
-use globset::{Glob, GlobBuilder, GlobSet, GlobSetBuilder};
+use globset::{Glob, GlobSet, GlobSetBuilder};
 use jiff::SignedDuration;
 use regex::bytes::Regex;
 use serde_json::{Value as JsonValue, json};
@@ -31,6 +31,7 @@ use crate::cli::{ReadIntegrityArgs, ReviewStore, WriteIntegrityArgs};
 use crate::io::repo_or_cwd_root;
 use crate::output::print_json_compact;
 use crate::query::compile_user_bytes_regex;
+use crate::ui_capture;
 
 #[derive(Args)]
 pub(crate) struct ReviewSurveyArgs {
@@ -272,38 +273,6 @@ fn globset(globs: &[String], key: &str) -> Result<GlobSet, String> {
         builder.add(Glob::new(glob).map_err(|e| format!("`{key}` glob {glob:?}: {e}"))?);
     }
     builder.build().map_err(|e| format!("`{key}`: {e}"))
-}
-
-const UI_CAPTURE_CONFIG: &str = ".claude/ui-capture.toml";
-
-/// A `paths` glob's `*` stops at `/`, as the plan check matching the same
-/// config reads it.
-fn load_capture_paths(root: &Path) -> Result<GlobSet, String> {
-    let text = match fs::read_to_string(root.join(UI_CAPTURE_CONFIG)) {
-        Ok(text) => text,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(GlobSet::empty()),
-        Err(e) => return Err(e.to_string()),
-    };
-    let table: Table = toml::from_str(&text)
-        .map_err(|e| e.to_string().lines().next().unwrap_or_default().to_string())?;
-    let Some(raw) = table.get("paths") else {
-        return Ok(GlobSet::empty());
-    };
-    let entries = raw
-        .as_array()
-        .ok_or_else(|| "`paths` must be an array of strings".to_string())?;
-    let mut builder = GlobSetBuilder::new();
-    for entry in entries {
-        let text = entry
-            .as_str()
-            .ok_or_else(|| "`paths` must be an array of strings".to_string())?;
-        let glob = GlobBuilder::new(text.trim_start_matches("./"))
-            .literal_separator(true)
-            .build()
-            .map_err(|e| format!("`paths` glob {text:?}: {e}"))?;
-        builder.add(glob);
-    }
-    builder.build().map_err(|e| format!("`paths`: {e}"))
 }
 
 impl Detect {
@@ -614,7 +583,8 @@ impl Repo<'_> {
     fn capture_paths(&mut self) -> Result<GlobSet, String> {
         if self.capture.is_none() {
             self.capture = Some(
-                load_capture_paths(self.root).map_err(|e| format!("`{UI_CAPTURE_CONFIG}`: {e}")),
+                ui_capture::load_paths(self.root)
+                    .map_err(|e| format!("`{}`: {e}", ui_capture::CONFIG)),
             );
         }
         self.capture.clone().expect("filled above")

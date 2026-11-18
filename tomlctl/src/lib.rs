@@ -39,6 +39,7 @@ mod tasks;
 #[cfg(test)]
 mod test_support;
 mod time;
+mod ui_capture;
 mod union_find;
 
 use std::ffi::OsString;
